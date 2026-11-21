@@ -9,55 +9,68 @@ ALLOWED_INFIX: Final = ". Allowed arguments are: "
 VALUE_ERROR_PREFIX: Final = "Value error, "
 
 
-class Dump(TypedDict):
-    admin_jwt_scope: str
-    admin_allowed_routes: list[str]
-    team_id_jwt_field: str | None
-    team_id_upsert: bool
-    team_ids_jwt_field: str | None
-    upsert_sso_user_to_team: bool
-    team_allowed_routes: list[str]
-    team_id_default: str | None
-    team_alias_jwt_field: str | None
-    org_id_jwt_field: str | None
-    org_alias_jwt_field: str | None
-    user_id_jwt_field: str | None
-    user_email_jwt_field: str | None
-    user_allowed_email_domain: str | None
-    user_roles_jwt_field: str | None
-    user_allowed_roles: list[str] | None
-    user_id_upsert: bool
-    end_user_id_jwt_field: str | None
-    agent_id_jwt_field: str | None
-    mcp_client_id_jwt_field: str | None
-    public_key_ttl: float
-    public_key_stale_ttl: float
-    public_allowed_routes: list[str]
-    enforce_rbac: bool
-    roles_jwt_field: str | None
-    role_mappings: JsonValue
-    object_id_jwt_field: str | None
-    scope_mappings: JsonValue
-    enforce_scope_based_access: bool
-    enforce_team_based_model_access: bool
-    custom_validate: None
-    jwt_litellm_role_map: JsonValue
-    sync_user_role_and_teams: bool
-    oidc_userinfo_endpoint: str | None
-    oidc_userinfo_enabled: bool
-    oidc_userinfo_cache_ttl: float
-    virtual_key_claim_field: str | None
-    virtual_key_mapping_cache_ttl: float
-    unregistered_jwt_client_behavior: str
-    routing_overrides: JsonValue
-    team_claim_fallback: bool
-    fallback_to_db_teams: bool
-    issuers: JsonValue
+# functional syntax, since some LiteLLM field names are too long for identifiers
+Dump = TypedDict(
+    "Dump",
+    {
+        "admin_jwt_scope": str,
+        "admin_allowed_routes": list[str],
+        "team_id_jwt_field": str | None,
+        "team_id_upsert": bool,
+        "team_ids_jwt_field": str | None,
+        "upsert_sso_user_to_team": bool,
+        "team_allowed_routes": list[str],
+        "team_id_default": str | None,
+        "team_alias_jwt_field": str | None,
+        "org_id_jwt_field": str | None,
+        "org_alias_jwt_field": str | None,
+        "user_id_jwt_field": str | None,
+        "user_email_jwt_field": str | None,
+        "user_allowed_email_domain": str | None,
+        "user_roles_jwt_field": str | None,
+        "user_allowed_roles": list[str] | None,
+        "user_id_upsert": bool,
+        "end_user_id_jwt_field": str | None,
+        "agent_id_jwt_field": str | None,
+        "mcp_client_id_jwt_field": str | None,
+        "public_key_ttl": float,
+        "public_key_stale_ttl": float,
+        "public_allowed_routes": list[str],
+        "enforce_rbac": bool,
+        "roles_jwt_field": str | None,
+        "role_mappings": JsonValue,
+        "object_id_jwt_field": str | None,
+        "scope_mappings": JsonValue,
+        "enforce_scope_based_access": bool,
+        "enforce_team_based_model_access": bool,
+        "custom_validate": None,
+        "jwt_litellm_role_map": JsonValue,
+        "sync_user_role_and_teams": bool,
+        "oidc_userinfo_endpoint": str | None,
+        "oidc_userinfo_enabled": bool,
+        "oidc_userinfo_cache_ttl": float,
+        "virtual_key_claim_field": str | None,
+        "virtual_key_mapping_cache_ttl": float,
+        "unregistered_jwt_client_behavior": str,
+        "routing_overrides": JsonValue,
+        "team_claim_fallback": bool,
+        "fallback_to_db_teams": bool,
+        "issuers": JsonValue,
+    },
+)
+
+
+class ErrorItem(TypedDict):
+    type: str
+    loc: list[int | str]
+    msg: str
 
 
 # pydantic keeps an unvalidated default such as 600 an int, so the typed dump reads TTLs as floats
 DUMP: Final[TypeAdapter[Dump]] = TypeAdapter(Dump)
 JSON_VALUE: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+# ValidationError.errors() carries the rejected input as Any, so its JSON form is read instead
+ERRORS: Final[TypeAdapter[list[ErrorItem]]] = TypeAdapter(list[ErrorItem])
 
 
 class Scenario(TypedDict):
@@ -71,11 +84,15 @@ class Input(TypedDict):
     scenarios: list[Scenario]
 
 
-class Probe(TypedDict):
-    issuer: str | None
-    issuer_config: JsonValue
-    virtual_key_claim_field: str | None
-    unregistered_jwt_client_behavior: str
+Probe = TypedDict(
+    "Probe",
+    {
+        "issuer": str | None,
+        "issuer_config": JsonValue,
+        "virtual_key_claim_field": str | None,
+        "unregistered_jwt_client_behavior": str,
+    },
+)
 
 
 class Accepted(TypedDict):
@@ -127,10 +144,10 @@ def outcome(scenario: Scenario) -> Outcome:
     try:
         auth = LiteLLM_JWTAuth(**resolved(scenario))
     except ValidationError as error:
-        first = error.errors()[0]
+        first = ERRORS.validate_json(error.json())[0]
         message = first["msg"].removeprefix(VALUE_ERROR_PREFIX)
         constraint = message if first["type"] == "value_error" else None
-        return {"rejected": "validation", "location": list(first["loc"]), "constraint": constraint}
+        return {"rejected": "validation", "location": first["loc"], "constraint": constraint}
     except ValueError as error:
         return value_error(str(error))
     probes = [probe(auth, issuer) for issuer in scenario["issuers"]]

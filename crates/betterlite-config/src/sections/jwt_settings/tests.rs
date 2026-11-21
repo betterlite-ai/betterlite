@@ -14,10 +14,9 @@ use tempfile::NamedTempFile;
 use tracing::subscriber::with_default;
 
 use super::Settings;
-use super::construct::{Context, construct};
+use super::construct::{Context, RawJwtAuth, construct};
 use super::error::JwtSettingsError;
 use super::groups::DEFAULT_JWKS_STALE_TTL;
-use super::raw::RawJwtAuth;
 use super::records::UnregisteredClientBehavior;
 use super::validator::UnregisteredLoader;
 
@@ -131,27 +130,33 @@ fn absent_settings_take_every_default() {
 #[case::field_oidc_userinfo_endpoint("oidc_userinfo_endpoint")]
 #[case::field_virtual_key_claim_field("virtual_key_claim_field")]
 fn optional_text_rows(#[case] name: &str) {
-    assert_eq!(field("{}", &[], name), JsonData::Null);
-    assert_eq!(
-        field(&format!("{{{name}: null}}"), &[], name),
-        JsonData::Null
-    );
-    assert_eq!(field(&format!("{{{name}: ''}}"), &[], name), text(""));
-    assert_eq!(
-        field(&format!("{{{name}: realm.claim}}"), &[], name),
-        text("realm.claim")
-    );
     let reference = format!("{{{name}: os.environ/CLAIM}}");
-    assert_eq!(field(&reference, &[("CLAIM", "sub")], name), text("sub"));
-    assert_eq!(field(&reference, &[("CLAIM", "")], name), JsonData::Null);
-    assert_eq!(
+    let accepted = [
+        field("{}", &[], name),
+        field(&format!("{{{name}: null}}"), &[], name),
+        field(&format!("{{{name}: ''}}"), &[], name),
+        field(&format!("{{{name}: realm.claim}}"), &[], name),
+        field(&reference, &[("CLAIM", "sub")], name),
+        field(&reference, &[("CLAIM", "")], name),
+    ];
+    let expected = [
+        JsonData::Null,
+        JsonData::Null,
+        text(""),
+        text("realm.claim"),
+        text("sub"),
+        JsonData::Null,
+    ];
+    assert_eq!(accepted, expected);
+    let rejected = [
         rejection(&reference, &[]),
-        format!("environment variable CLAIM for {name} is not set")
-    );
+        rejection(&format!("{{{name}: 5}}"), &[]),
+        rejection(&format!("{{{name}: [sub]}}"), &[]),
+        rejection(&format!("{{{name}: true}}"), &[]),
+    ];
     let invalid = format!("invalid value at {name}");
-    assert_eq!(rejection(&format!("{{{name}: 5}}"), &[]), invalid);
-    assert_eq!(rejection(&format!("{{{name}: [sub]}}"), &[]), invalid);
-    assert_eq!(rejection(&format!("{{{name}: true}}"), &[]), invalid);
+    let unset = format!("environment variable CLAIM for {name} is not set");
+    assert_eq!(rejected, [unset, invalid.clone(), invalid.clone(), invalid]);
 }
 
 #[rstest]
@@ -220,6 +225,7 @@ fn unbounded_ttl_rows(#[case] name: &str, #[case] default: f64) {
     let invalid = format!("invalid value at {name}");
     assert_eq!(rejection(&format!("{{{name}: 'ten'}}"), &[]), invalid);
     assert_eq!(rejection(&format!("{{{name}: true}}"), &[]), invalid);
+    assert_eq!(rejection(&format!("{{{name}: .nan}}"), &[]), invalid);
 }
 
 #[rstest]
@@ -232,13 +238,20 @@ fn unbounded_ttl_rows(#[case] name: &str, #[case] default: f64) {
 #[case::field_public_key_stale_ttl_nan("{public_key_stale_ttl: .nan}", None)]
 #[case::field_public_key_stale_ttl_text("{public_key_stale_ttl: 'hour'}", None)]
 fn stale_ttl_rows(#[case] yaml: &str, #[case] expected: Option<f64>) {
-    let outcome = build(yaml, &[])
-        .map(|built| built.keys.public_key_stale_ttl.to_bits())
-        .map_err(|error| error.to_string());
-    let wanted = expected
-        .map(f64::to_bits)
-        .ok_or_else(|| "invalid value at public_key_stale_ttl".to_owned());
-    assert_eq!(outcome, wanted);
+    match expected {
+        Some(ttl) => assert_eq!(
+            build(yaml, &[])
+                .unwrap()
+                .keys
+                .public_key_stale_ttl
+                .to_bits(),
+            ttl.to_bits()
+        ),
+        None => assert_eq!(
+            rejection(yaml, &[]),
+            "invalid value at public_key_stale_ttl"
+        ),
+    }
 }
 
 #[rstest]
@@ -344,7 +357,7 @@ fn unregistered_behavior_rows(
     #[case] expected: Option<UnregisteredClientBehavior>,
 ) {
     let outcome = build(yaml, &[("BEHAVIOR", "reject")])
-        .map(|built| built.virtual_keys.unregistered_jwt_client_behavior)
+        .map(|built| built.virtual_keys.unregistered_client)
         .map_err(|error| error.to_string());
     let wanted =
         expected.ok_or_else(|| "invalid value at unregistered_jwt_client_behavior".to_owned());

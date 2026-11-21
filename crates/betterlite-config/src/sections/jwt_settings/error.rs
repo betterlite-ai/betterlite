@@ -1,10 +1,9 @@
-use std::fmt;
-
 use betterlite_env::EnvError;
 use serde::Serialize;
+use serde_path_to_error::Segment;
 use thiserror::Error;
 
-use super::validator::{LoadFailure, ReturnAnnotation};
+use super::validator::LoadFailure;
 
 // LiteLLM_JWTAuth.__annotations__ in declaration order, the list LiteLLM prints after an unknown key
 pub const ALLOWED_KEYS: [&str; 43] = [
@@ -66,39 +65,36 @@ pub enum Step {
 pub struct Location(pub Vec<Step>);
 
 impl Location {
-    #[must_use]
-    pub fn key(&self, name: &str) -> Self {
-        let mut steps = self.0.clone();
-        steps.push(Step::Key(name.to_owned()));
-        Self(steps)
-    }
-
-    #[must_use]
-    pub fn index(&self, position: usize) -> Self {
-        let mut steps = self.0.clone();
-        steps.push(Step::Index(position));
-        Self(steps)
-    }
-}
-
-impl From<&str> for Location {
-    fn from(name: &str) -> Self {
-        Self(vec![Step::Key(name.to_owned())])
-    }
-}
-
-impl fmt::Display for Location {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (position, step) in self.0.iter().enumerate() {
-            if position > 0 {
-                formatter.write_str(".")?;
-            }
-            match step {
-                Step::Key(name) => formatter.write_str(name)?,
-                Step::Index(index) => write!(formatter, "{index}")?,
-            }
+    // serde's path names the record when a required key is missing, so the key from its message is added
+    pub(super) fn decoded(error: &serde_path_to_error::Error<serde_json::Error>) -> Self {
+        let mut steps: Vec<Step> = error
+            .path()
+            .iter()
+            .filter_map(|segment| match segment {
+                Segment::Seq { index } => Some(Step::Index(*index)),
+                Segment::Map { key } => Some(Step::Key(key.clone())),
+                Segment::Enum { .. } | Segment::Unknown => None,
+            })
+            .collect();
+        let message = error.inner().to_string();
+        let missing = message.strip_prefix("missing field `");
+        if let Some(name) = missing.and_then(|rest| rest.split('`').next()) {
+            steps.push(Step::Key(name.to_owned()));
         }
-        Ok(())
+        Self(steps)
+    }
+
+    #[must_use]
+    pub fn dotted(&self) -> String {
+        let parts: Vec<String> = self
+            .0
+            .iter()
+            .map(|step| match step {
+                Step::Key(name) => name.clone(),
+                Step::Index(index) => index.to_string(),
+            })
+            .collect();
+        parts.join(".")
     }
 }
 
@@ -114,15 +110,15 @@ pub enum JwtSettingsError {
     ObjectIdWithoutRoleMappings,
     // LiteLLM's text names the reverse of the condition that raises it
     #[error("scope_mappings must be set if enforce_scope_based_access is true.")]
-    ScopeMappingsWithoutEnforcement,
+    ScopesNotEnforced,
     #[error("Custom validator must be annotated to return Literal[True], got {annotation}")]
-    ValidatorAnnotation { annotation: ReturnAnnotation },
+    ValidatorAnnotation { annotation: String },
     #[error(transparent)]
     ValidatorLoad {
         #[from]
         source: LoadFailure,
     },
-    #[error("invalid value at {location}")]
+    #[error("invalid value at {}", .location.dotted())]
     Invalid { location: Location },
     #[error("JWT issuer {issuer} must configure audience or set disable_audience_validation=True")]
     AudienceMissing { location: Location, issuer: String },
@@ -131,13 +127,15 @@ pub enum JwtSettingsError {
     )]
     AudienceConflict { location: Location, issuer: String },
     #[error("environment variable {variable} for {field} is not set")]
-    MissingEnvironment {
-        variable: String,
-        field: &'static str,
-    },
+    MissingEnvironment { variable: String, field: String },
     #[error(transparent)]
     Environment {
         #[from]
         source: EnvError,
+    },
+    #[error("the settings could not be encoded for decoding")]
+    Encode {
+        #[from]
+        source: serde_json::Error,
     },
 }

@@ -5,9 +5,8 @@ use std::sync::Mutex;
 use rstest::rstest;
 
 use super::super::Settings;
-use super::super::construct::{Context, construct};
+use super::super::construct::{Context, RawJwtAuth, construct};
 use super::super::error::JwtSettingsError;
-use super::super::raw::RawJwtAuth;
 use super::super::records::{Selector, UnregisteredClientBehavior};
 use super::super::validator::{
     LoadFailure, ReturnAnnotation, UnregisteredLoader, ValidatorLoader, ValidatorRequest,
@@ -76,12 +75,12 @@ general_settings:
 #[test]
 fn loads_all_jwt_fields() {
     let loaded = load(ALL_FIELDS, &[]).unwrap();
-    assert_eq!(loaded.admin.admin_jwt_scope, "admin.scope");
-    assert_eq!(loaded.admin.admin_allowed_routes, ["management_routes"]);
+    assert_eq!(loaded.routes.admin_jwt_scope, "admin.scope");
+    assert_eq!(loaded.routes.admin_allowed_routes, ["management_routes"]);
     assert_eq!(loaded.teams.team_id_jwt_field.as_deref(), Some("team.id"));
     assert!(loaded.teams.team_id_upsert && loaded.teams.upsert_sso_user_to_team);
     assert_eq!(loaded.teams.team_ids_jwt_field.as_deref(), Some("team.ids"));
-    assert_eq!(loaded.teams.team_allowed_routes, ["openai_routes"]);
+    assert_eq!(loaded.routes.team_allowed_routes, ["openai_routes"]);
     assert_eq!(
         loaded.teams.team_id_default.as_deref(),
         Some("default-team")
@@ -122,7 +121,7 @@ fn loads_all_jwt_fields() {
         0.0_f64.to_bits()
     );
     assert_eq!(
-        loaded.rbac.public_allowed_routes,
+        loaded.routes.public_allowed_routes,
         ["public_routes", "info_routes"]
     );
     assert!(loaded.rbac.enforce_rbac);
@@ -130,9 +129,7 @@ fn loads_all_jwt_fields() {
     assert_eq!(loaded.rbac.role_mappings.as_ref().map(Vec::len), Some(1));
     assert_eq!(loaded.rbac.object_id_jwt_field.as_deref(), Some("oid"));
     assert_eq!(loaded.scopes.scope_mappings.as_ref().map(Vec::len), Some(1));
-    assert!(
-        loaded.scopes.enforce_scope_based_access && loaded.scopes.enforce_team_based_model_access
-    );
+    assert!(loaded.scopes.enforce_scope_based_access && loaded.scopes.team_model_access);
     assert_eq!(loaded.custom_validate, None);
     assert_eq!(
         loaded.sync.jwt_litellm_role_map.as_ref().map(Vec::len),
@@ -156,7 +153,7 @@ fn loads_all_jwt_fields() {
         45.0_f64.to_bits()
     );
     assert_eq!(
-        loaded.virtual_keys.unregistered_jwt_client_behavior,
+        loaded.virtual_keys.unregistered_client,
         UnregisteredClientBehavior::AutoRegister
     );
     let overrides = loaded.routing.routing_overrides.as_ref().unwrap();
@@ -197,7 +194,7 @@ fn env_top_level_resolution() {
     assert!(loaded.rbac.enforce_rbac);
     assert_eq!(loaded.keys.public_key_ttl.to_bits(), 90.0_f64.to_bits());
     assert_eq!(
-        loaded.virtual_keys.unregistered_jwt_client_behavior,
+        loaded.virtual_keys.unregistered_client,
         UnregisteredClientBehavior::Reject
     );
     assert_eq!(
@@ -205,7 +202,7 @@ fn env_top_level_resolution() {
         Some("azp")
     );
     assert_eq!(loaded.claims.user_email_jwt_field, None);
-    assert_eq!(loaded.teams.team_allowed_routes, ["os.environ/TEAM"]);
+    assert_eq!(loaded.routes.team_allowed_routes, ["os.environ/TEAM"]);
     assert_eq!(loaded.routing.issuers.unwrap()[0].issuer, "os.environ/TEAM");
     let missing = load(&nested("{org_id_jwt_field: os.environ/ORG}"), &[]).unwrap_err();
     assert!(
@@ -385,9 +382,5 @@ fn custom_annotation_must_be_literal_true(#[case] rendered: &str) {
     assert_eq!(
         error.to_string(),
         format!("Custom validator must be annotated to return Literal[True], got {rendered}")
-    );
-    assert_eq!(
-        ReturnAnnotation::LiteralTrue.to_string(),
-        "typing.Literal[True]"
     );
 }

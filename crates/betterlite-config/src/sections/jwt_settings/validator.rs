@@ -1,4 +1,3 @@
-use std::fmt;
 use std::path::Path;
 
 use thiserror::Error;
@@ -13,17 +12,8 @@ pub struct ValidatorRequest<'request> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReturnAnnotation {
     LiteralTrue,
-    // the loader's rendering of any other hint, None when the validator has no return annotation
+    // the loader's rendering of any other hint, such as typing.Literal[False] or None
     Other(String),
-}
-
-impl fmt::Display for ReturnAnnotation {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::LiteralTrue => formatter.write_str("typing.Literal[True]"),
-            Self::Other(rendered) => formatter.write_str(rendered),
-        }
-    }
 }
 
 #[derive(Debug, Error)]

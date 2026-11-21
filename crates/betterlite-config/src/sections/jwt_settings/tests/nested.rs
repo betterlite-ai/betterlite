@@ -206,7 +206,7 @@ fn issuers_keep_every_field() {
             org_id_jwt_field: Some("org".to_owned()),
             end_user_id_jwt_field: Some("eid".to_owned()),
             virtual_key_claim_field: Some("client".to_owned()),
-            unregistered_jwt_client_behavior: Some(UnregisteredClientBehavior::Reject),
+            unregistered_client: Some(UnregisteredClientBehavior::Reject),
         }])
     );
 }
@@ -322,8 +322,8 @@ fn issuer_accessors(
             Some(Selector::One(expected.to_owned()))
         );
     }
-    assert_eq!(built.virtual_key_claim_field(issuer), claim_field);
-    assert_eq!(built.unregistered_jwt_client_behavior(issuer), behavior);
+    assert_eq!(built.claim_field(issuer), claim_field);
+    assert_eq!(built.client_behavior(issuer), behavior);
     assert_eq!(built.routing.issuers.as_ref().map(Vec::len), Some(4));
 }
 
@@ -338,21 +338,21 @@ fn issuer_accessors(
 #[case::mapping_null_issuers("{issuers: null, virtual_key_claim_field: null}", false)]
 fn virtual_key_mapping_configured(#[case] yaml: &str, #[case] configured: bool) {
     let built = build(yaml, &[]).unwrap();
-    assert_eq!(built.is_virtual_key_mapping_configured(), configured);
+    assert_eq!(built.mapping_configured(), configured);
 }
 
 #[test]
 fn accessors_without_issuers_use_the_globals() {
     let built = build("{unregistered_jwt_client_behavior: reject}", &[]).unwrap();
     assert_eq!(built.issuer_config(Some("a")), None);
-    assert_eq!(built.virtual_key_claim_field(Some("a")), None);
+    assert_eq!(built.claim_field(Some("a")), None);
     assert_eq!(
-        built.unregistered_jwt_client_behavior(Some("a")),
+        built.client_behavior(Some("a")),
         UnregisteredClientBehavior::Reject
     );
     let defaults = build("{}", &[]).unwrap();
     assert_eq!(
-        defaults.unregistered_jwt_client_behavior(None),
+        defaults.client_behavior(None),
         UnregisteredClientBehavior::FallbackTeamMapping
     );
 }

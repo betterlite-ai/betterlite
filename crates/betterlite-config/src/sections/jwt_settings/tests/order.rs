@@ -94,12 +94,13 @@ fn paired_role_values_load() {
     true
 )]
 fn object_id_rows(#[case] yaml: &str, #[case] accepted: bool) {
-    let built = build(yaml, &[("EMPTY", "")]);
-    if accepted {
-        built.unwrap();
+    let outcome = build(yaml, &[("EMPTY", "")]).map(drop);
+    let wanted = if accepted {
+        Ok(())
     } else {
-        assert_eq!(built.unwrap_err().to_string(), OBJECT_ID);
-    }
+        Err(OBJECT_ID.to_owned())
+    };
+    assert_eq!(outcome.map_err(|error| error.to_string()), wanted);
 }
 
 #[rstest]
@@ -129,9 +130,9 @@ fn object_id_rows(#[case] yaml: &str, #[case] accepted: bool) {
     None
 )]
 #[case::field_scope_mappings_null("{scope_mappings: null}", Some(false))]
-#[case::field_enforce_scope_based_access_reference_text(
+#[case::field_enforce_scope_based_access_reference_no_is_false(
     "{scope_mappings: [], enforce_scope_based_access: os.environ/NO}",
-    Some(false)
+    None
 )]
 #[case::field_enforce_scope_based_access_reference_true(
     "{scope_mappings: [], enforce_scope_based_access: os.environ/TRUE}",
@@ -147,10 +148,6 @@ fn object_id_rows(#[case] yaml: &str, #[case] accepted: bool) {
 )]
 #[case::field_enforce_scope_based_access_reference_empty(
     "{scope_mappings: [], enforce_scope_based_access: os.environ/EMPTY}",
-    None
-)]
-#[case::field_enforce_scope_based_access_reference_unset(
-    "{scope_mappings: [], enforce_scope_based_access: os.environ/UNSET}",
     None
 )]
 fn scope_precheck_rows(#[case] yaml: &str, #[case] enforced: Option<bool>) {
@@ -175,7 +172,12 @@ fn scope_precheck_reads_plain_text_before_its_type() {
         "invalid value at enforce_scope_based_access"
     );
     let empty = "{scope_mappings: [], enforce_scope_based_access: ''}";
-    assert_eq!(rejection(empty, &[]), SCOPES);
+    assert_eq!(
+        rejection(empty, &[]),
+        "invalid value at enforce_scope_based_access"
+    );
+    let absent = "{scope_mappings: [], enforce_scope_based_access: null}";
+    assert_eq!(rejection(absent, &[]), SCOPES);
     let listed = "{scope_mappings: [], enforce_scope_based_access: [true]}";
     assert_eq!(
         rejection(listed, &[]),
@@ -241,9 +243,13 @@ fn unknown_keys_list_the_allowed_arguments() {
     "{issuers: [{issuer: a, extra: 1}]}",
     "invalid value at issuers.0.extra"
 )]
-#[case::earlier_item_first(
+#[case::item_fields_before_issuer_validator(
     "{issuers: [{issuer: a}, {issuer: 5}]}",
-    "JWT issuer a must configure audience or set disable_audience_validation=True"
+    "invalid value at issuers.1.issuer"
+)]
+#[case::issuer_validator_in_item_order(
+    "{issuers: [{issuer: a, audience: x}, {issuer: b}, {issuer: c}]}",
+    "JWT issuer b must configure audience"
 )]
 #[case::models_before_scope(
     "{scope_mappings: [{models: 5}], enforce_scope_based_access: true}",

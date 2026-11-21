@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_config::loader::parse_view;
 use betterlite_config::sections::jwt_settings::Settings;
-use betterlite_config::sections::jwt_settings::construct::{Context, construct};
+use betterlite_config::sections::jwt_settings::construct::{Context, RawJwtAuth, construct};
 use betterlite_config::sections::jwt_settings::error::{ALLOWED_KEYS, JwtSettingsError, Location};
-use betterlite_config::sections::jwt_settings::raw::RawJwtAuth;
 use betterlite_config::sections::jwt_settings::records::{
     IssuerConfig, UnregisteredClientBehavior,
 };
@@ -73,7 +72,8 @@ struct Probe {
     issuer: Option<String>,
     issuer_config: Option<IssuerConfig>,
     virtual_key_claim_field: Option<String>,
-    unregistered_jwt_client_behavior: UnregisteredClientBehavior,
+    #[serde(rename = "unregistered_jwt_client_behavior")]
+    behavior: UnregisteredClientBehavior,
 }
 
 impl Helper for Op {
@@ -118,15 +118,12 @@ fn accepted(built: Settings, issuers: &[Option<String>]) -> Outcome {
         .map(|issuer| Probe {
             issuer: issuer.clone(),
             issuer_config: built.issuer_config(issuer.as_deref()).cloned(),
-            virtual_key_claim_field: built
-                .virtual_key_claim_field(issuer.as_deref())
-                .map(str::to_owned),
-            unregistered_jwt_client_behavior: built
-                .unregistered_jwt_client_behavior(issuer.as_deref()),
+            virtual_key_claim_field: built.claim_field(issuer.as_deref()).map(str::to_owned),
+            behavior: built.client_behavior(issuer.as_deref()),
         })
         .collect();
     Outcome::Accepted {
-        virtual_key_mapping_configured: built.is_virtual_key_mapping_configured(),
+        virtual_key_mapping_configured: built.mapping_configured(),
         probes,
         accepted: Box::new(built),
     }
@@ -153,13 +150,14 @@ fn rejected(error: &JwtSettingsError) -> Result<Outcome, Box<HelperError>> {
         }),
         JwtSettingsError::RolesWithoutPair
         | JwtSettingsError::ObjectIdWithoutRoleMappings
-        | JwtSettingsError::ScopeMappingsWithoutEnforcement => Ok(Outcome::Message {
+        | JwtSettingsError::ScopesNotEnforced => Ok(Outcome::Message {
             rejected: Rejected::ValueError,
             message: error.to_string(),
         }),
         JwtSettingsError::ValidatorAnnotation { .. }
         | JwtSettingsError::ValidatorLoad { .. }
         | JwtSettingsError::MissingEnvironment { .. }
-        | JwtSettingsError::Environment { .. } => Err::<Outcome, _>(error).or_config_error(),
+        | JwtSettingsError::Environment { .. }
+        | JwtSettingsError::Encode { .. } => Err::<Outcome, _>(error).or_config_error(),
     }
 }

@@ -1,23 +1,18 @@
-mod build;
 pub mod construct;
-mod convert;
 pub mod error;
 pub mod groups;
-mod nested;
-pub mod raw;
 pub mod records;
 mod tests;
 pub mod validator;
 
 use serde::{Deserialize, Serialize};
 
-use self::construct::{Context, construct};
+use self::construct::{Context, RawJwtAuth, construct};
 use self::error::JwtSettingsError;
 use self::groups::{
-    AdminFields, ClaimFields, KeyFields, RbacFields, RoutingFields, ScopeFields, SyncFields,
+    ClaimFields, KeyFields, RbacFields, RouteFields, RoutingFields, ScopeFields, SyncFields,
     TeamFields, UserinfoFields, VirtualKeyFields,
 };
-use self::raw::RawJwtAuth;
 use self::records::{IssuerConfig, UnregisteredClientBehavior};
 use self::validator::UnregisteredLoader;
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -37,11 +32,11 @@ struct RawGeneral {
     litellm_jwtauth: Option<RawJwtAuth>,
 }
 
-// grouped in LiteLLM_JWTAuth's field order, and serialized flat like its model_dump
+// grouped close to LiteLLM_JWTAuth's field order, and serialized flat like its model_dump
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Settings {
     #[serde(flatten)]
-    pub admin: AdminFields,
+    pub routes: RouteFields,
     #[serde(flatten)]
     pub teams: TeamFields,
     #[serde(flatten)]
@@ -64,7 +59,7 @@ pub struct Settings {
 }
 
 impl Settings {
-    // the first exact issuer match wins; duplicates later in the list are never reached
+    // get_issuer_config: the first exact issuer match wins, and later duplicates are never reached
     #[must_use]
     pub fn issuer_config(&self, issuer: Option<&str>) -> Option<&IssuerConfig> {
         let wanted = issuer?;
@@ -72,8 +67,9 @@ impl Settings {
         issuers.iter().find(|config| config.issuer == wanted)
     }
 
+    // is_virtual_key_mapping_configured: a global or any issuer claim field, '' included
     #[must_use]
-    pub fn is_virtual_key_mapping_configured(&self) -> bool {
+    pub fn mapping_configured(&self) -> bool {
         self.virtual_keys.virtual_key_claim_field.is_some()
             || self
                 .routing
@@ -84,20 +80,18 @@ impl Settings {
     }
 
     #[must_use]
-    pub fn virtual_key_claim_field(&self, issuer: Option<&str>) -> Option<&str> {
+    pub fn claim_field(&self, issuer: Option<&str>) -> Option<&str> {
         self.issuer_config(issuer)
             .and_then(|config| config.virtual_key_claim_field.as_deref())
             .or(self.virtual_keys.virtual_key_claim_field.as_deref())
     }
 
+    // get_unregistered_jwt_client_behavior: a matched issuer's policy, else the global one
     #[must_use]
-    pub fn unregistered_jwt_client_behavior(
-        &self,
-        issuer: Option<&str>,
-    ) -> UnregisteredClientBehavior {
+    pub fn client_behavior(&self, issuer: Option<&str>) -> UnregisteredClientBehavior {
         self.issuer_config(issuer)
-            .and_then(|config| config.unregistered_jwt_client_behavior)
-            .unwrap_or(self.virtual_keys.unregistered_jwt_client_behavior)
+            .and_then(|config| config.unregistered_client)
+            .unwrap_or(self.virtual_keys.unregistered_client)
     }
 }
 
@@ -139,13 +133,19 @@ fn config_error(error: JwtSettingsError) -> ConfigError {
         JwtSettingsError::Environment { source } => return ConfigError::Environment { source },
         JwtSettingsError::RolesWithoutPair => String::from("user_allowed_roles"),
         JwtSettingsError::ObjectIdWithoutRoleMappings => String::from("role_mappings"),
-        JwtSettingsError::ScopeMappingsWithoutEnforcement => String::from("scope_mappings"),
+        JwtSettingsError::ScopesNotEnforced => String::from("scope_mappings"),
         JwtSettingsError::ValidatorAnnotation { .. } | JwtSettingsError::ValidatorLoad { .. } => {
             String::from("custom_validate")
         }
+        JwtSettingsError::Encode { .. } => {
+            return ConfigError::InvalidScalar {
+                path: PREFIX.to_owned(),
+                value: false,
+            };
+        }
         JwtSettingsError::Invalid { location }
         | JwtSettingsError::AudienceMissing { location, .. }
-        | JwtSettingsError::AudienceConflict { location, .. } => location.to_string(),
+        | JwtSettingsError::AudienceConflict { location, .. } => location.dotted(),
     };
     ConfigError::InvalidScalar {
         path: format!("{PREFIX}.{field}"),
