@@ -39,5 +39,13 @@ call:
       - error: |-
           {"error":{"message":"Extra parameters [] are not allowed. Set extra-parameters to 'pass-through'","type":"invalid_request_error"}}
         body: {model: deployment, top_p: 0.5}
+      # a hint without the invalid-index marker takes the pass-through branch even when messages are present
+      - error: |-
+          {"error":{"message":"Extra parameters [top_p] are not allowed. Set extra-parameters to 'pass-through'","type":"invalid_request_error"}}
+        body:
+          model: deployment
+          messages: [{role: user, content: hi}]
+          top_p: 0.5
+          temperature: 2
 env: {}
 compare: {ignore: []}

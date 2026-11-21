@@ -37,6 +37,13 @@ pub(super) fn drop_tool_level_extra_fields() {
             r#"{"model":"deployment","messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function","function":{"name":"first"}},{"type":"function","function":{"name":"second"}},{"type":"function","function":{"name":"third"}},"plain-text"],"tool_choice":"auto"}"#,
         )
     );
+    // a tool-level name without the extra-inputs marker leaves the tools alone
+    let repaired = repair(
+        &support::wrapped("tools[0].extra is not allowed"),
+        &support::body(support::TOOLS),
+    )
+    .expect("the repair runs");
+    assert_eq!(repaired, support::body(support::TOOLS));
 }
 
 pub(super) fn remove_tool_call_index() {
@@ -152,6 +159,20 @@ pub(super) fn extra_parameters_list() {
     assert_eq!(
         repaired,
         support::body(r#"{"model":"deployment","top_p":0.5}"#)
+    );
+    // a pass-through hint drops the parameters even when messages are present, since only the invalid-index marker takes the first branch
+    let repaired = repair(
+        &support::pass_through("Extra parameters [top_p] are not allowed."),
+        &support::body(
+            r#"{"model":"deployment","messages":[{"role":"user","content":"hi"}],"top_p":0.5,"temperature":2}"#,
+        ),
+    )
+    .expect("the repair runs");
+    assert_eq!(
+        repaired,
+        support::body(
+            r#"{"model":"deployment","messages":[{"role":"user","content":"hi"}],"temperature":2}"#,
+        )
     );
 }
 
