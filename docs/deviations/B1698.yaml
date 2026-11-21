@@ -1,0 +1,9 @@
+task: B1698
+deviations:
+  - what: Baseline correction amounts and deltas are checked finite values before storage; a malformed nonfinite publication is rejected instead of contaminating cumulative savings.
+    why: Persisted corrections must be reversible monetary values under the workspace's finite-money contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L317-L334
+  - what: A correction's actual_delta and savings_delta, and the per-entity daily savings written from them, are exact decimal differences of the two publications' amounts, where LiteLLM subtracts the same amounts as Python floats.
+    why: The daily savings column is Decimal money in betterlite, and an exact difference keeps stored corrections reversible to the cent; the two agree whenever both amounts are representable in binary floating point and can differ in the last bit otherwise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L317-L334
+kept_bugs: []
