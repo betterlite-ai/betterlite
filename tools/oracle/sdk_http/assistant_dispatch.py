@@ -137,7 +137,7 @@ def dispatch_run(run: OperationCall, api_base: str) -> Step:
         return asyncio.run(invoke(router, run, data))
     except openai.APIError as error:
         return Step(ids=[], status=None, events=None, failure=project_failure(error).failure)
-    except Exception as error:  # noqa: BLE001 https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7183-L7190
+    except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7183-L7190
         failure = Failure(cls=type(error).__name__, status=0, message=str(error))
         return Step(ids=[], status=None, events=None, failure=failure)
 

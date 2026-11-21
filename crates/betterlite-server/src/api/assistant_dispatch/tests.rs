@@ -498,17 +498,17 @@ async fn dispatch_all_assistant_operations(#[case] case: OpCase) {
 
 // the request the operation sent, or none when the case expects the lazy stream
 fn assert_posted(outcome: &OutcomeView, posted: Option<&Posted>) {
-    let Some(posted) = posted else {
+    let Some(expected) = posted else {
         // stream=true stays a lazy manager until its owner enters it; no provider request happened yet
         assert!(outcome.seen.is_empty());
         return;
     };
     let seen = outcome.seen.first().expect("the operation sent a request");
-    assert_eq!(seen.method, posted.method);
-    if let Some(url) = posted.url {
+    assert_eq!(seen.method, expected.method);
+    if let Some(url) = expected.url {
         assert_eq!(seen.url, url);
     }
-    if let Some(authorization) = posted.authorization {
+    if let Some(authorization) = expected.authorization {
         assert_eq!(seen.authorization.as_deref(), Some(authorization));
     }
 }

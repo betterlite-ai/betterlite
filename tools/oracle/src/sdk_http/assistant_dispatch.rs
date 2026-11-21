@@ -26,7 +26,7 @@ mod projection;
 mod request;
 
 use model::{OperationCall, Step};
-use projection::{dropped, project};
+use projection::project;
 use request::{assistant_config, data};
 
 // A case runs the installed wrappers under one assistants_config each, in order.
@@ -129,8 +129,5 @@ async fn one(
         transport: Arc::clone(wiring.transport),
         limits: ApiLimits::default(),
     };
-    match dispatcher.dispatch(&request).await {
-        Ok(answer) => project(answer).await,
-        Err(error) => dropped(error),
-    }
+    project(dispatcher.dispatch(&request).await).await
 }

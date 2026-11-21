@@ -87,7 +87,7 @@ where
             environment: dispatcher.environment.clone(),
             azure: dispatcher.azure.clone(),
         },
-        limits: dispatcher.limits.clone(),
+        limits: dispatcher.limits,
         settings: dispatcher.resources.clone(),
     };
     match facade.run(&input).await {

@@ -82,7 +82,7 @@ const fn function_name(operation: MessageOperation) -> &'static str {
     }
 }
 
-fn build_request<'request>(
+const fn build_request<'request>(
     provider: &'request str,
     thread_id: &'request str,
     data: Option<&'request MessageData>,

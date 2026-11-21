@@ -20,7 +20,7 @@ const fn record(ids: Vec<String>, status: Option<String>) -> Step {
 }
 
 // A wrapper call that raised reports no ids, status or events.
-fn failed_step(failure: Failure) -> Step {
+const fn failed_step(failure: Failure) -> Step {
     Step {
         ids: Vec::new(),
         status: None,
