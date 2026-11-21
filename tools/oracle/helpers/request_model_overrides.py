@@ -209,16 +209,16 @@ def call_value(
             premium_user=call["premium_user"],
         )
     except (ValueError, TypeError):
-        return JSON.validate_python(
-            {"error": {"status": None, "type": None, "param": None, "code": None}}
-        )
-    return JSON.validate_python(
-        {
-            "data": data,
-            "enforced_params": resolved,
-            "diagnostics": diagnostics,
+        failure: JsonValue = {
+            "error": {"status": None, "type": None, "param": None, "code": None}
         }
-    )
+        return failure
+    result: JsonValue = {
+        "data": data,
+        "enforced_params": JSON.validate_python(resolved),
+        "diagnostics": diagnostics,
+    }
+    return result
 
 
 def run(input_value: OverridesInput) -> list[JsonValue]:
