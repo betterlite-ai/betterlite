@@ -443,7 +443,8 @@ fn reads_baggage_session(#[case] baggage: &str, #[case] session_id: Option<&str>
     r#"{"metadata": {"user_id": "user_1_account__session_sess-9"}}"#,
     r#"{"metadata": {"user_id": "user_1_account__session_sess-9", "session_id": "sess-9"}, "litellm_session_id": "sess-9"}"#
 )]
-#[case::no_metadata_slot(&[("x-litellm-agent-id", "agent-1")], r#"{"metadata": "text"}"#, r#"{"metadata": "text"}"#)]
+#[case::non_object_metadata_slot(&[("x-litellm-agent-id", "agent-1")], r#"{"metadata": "text"}"#, r#"{"metadata": "text"}"#)]
+#[case::missing_metadata_slot(&[("x-litellm-agent-id", "agent-1")], "{}", "{}")]
 fn header_metadata(#[case] headers: Pairs, #[case] data: &str, #[case] expected: &str) {
     let result = prepare(&Settings::default(), input(headers, data));
     assert_eq!(result.data, request_data(expected));

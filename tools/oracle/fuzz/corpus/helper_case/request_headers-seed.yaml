@@ -5,7 +5,7 @@ call:
     clean:
       - headers: [[Authorization, Bearer sk-1], [x-api-key, k], [X-Custom, v]]
         litellm_key_header_name: x-my-key
-        forward_llm_provider_auth_headers: true
+        forward_auth_headers: true
         authenticated_with_header: authorization
     backend:
       - headers: [[x-litellm-timeout, "9"], [x-custom, one]]

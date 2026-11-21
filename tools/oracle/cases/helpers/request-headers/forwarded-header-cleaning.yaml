@@ -12,7 +12,7 @@ call:
           - [x-litellm-api-key, sk-proxy-2]
           - [x-mcp-servers, github]
         litellm_key_header_name: null
-        forward_llm_provider_auth_headers: false
+        forward_auth_headers: false
         authenticated_with_header: null
       - headers:
           - [Authorization, Bearer sk-proxy-1]
@@ -24,41 +24,41 @@ call:
           - [x-mcp-servers, github]
           - [Proxy-Authorization, Basic abc]
         litellm_key_header_name: null
-        forward_llm_provider_auth_headers: true
+        forward_auth_headers: true
         authenticated_with_header: authorization
       - headers:
           - [x-api-key, sk-proxy-1]
           - [api-key, azure-key]
         litellm_key_header_name: null
-        forward_llm_provider_auth_headers: true
+        forward_auth_headers: true
         authenticated_with_header: X-API-Key
       - headers:
           - [X-My-Key, sk-proxy-1]
           - [x-goog-api-key, google-key]
           - [X-Other, kept]
         litellm_key_header_name: x-my-key
-        forward_llm_provider_auth_headers: false
+        forward_auth_headers: false
         authenticated_with_header: null
       - headers:
           - [x-goog-api-key, sk-proxy-1]
           - [api-key, azure-key]
         litellm_key_header_name: X-Goog-Api-Key
-        forward_llm_provider_auth_headers: true
+        forward_auth_headers: true
         authenticated_with_header: x-goog-api-key
       - headers:
           - [Authorization, Bearer sk-ant-oat01-subscription]
           - [anthropic-beta, oauth-2025-04-20]
         litellm_key_header_name: null
-        forward_llm_provider_auth_headers: false
+        forward_auth_headers: false
         authenticated_with_header: x-litellm-api-key
       - headers:
           - [Authorization, Bearer sk-ant-oat01-subscription]
         litellm_key_header_name: null
-        forward_llm_provider_auth_headers: true
+        forward_auth_headers: true
         authenticated_with_header: Authorization
       - headers: []
         litellm_key_header_name: null
-        forward_llm_provider_auth_headers: true
+        forward_auth_headers: true
         authenticated_with_header: null
     backend: []
     model_group: []

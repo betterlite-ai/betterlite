@@ -25,7 +25,7 @@ pub(crate) struct Input {
 pub(crate) struct CleanCall {
     pub(super) headers: Pairs,
     pub(super) litellm_key_header_name: Option<String>,
-    pub(super) forward_llm_provider_auth_headers: bool,
+    pub(super) forward_auth_headers: bool,
     pub(super) authenticated_with_header: Option<String>,
 }
 

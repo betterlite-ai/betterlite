@@ -86,7 +86,7 @@ fn slot(name: &str) -> MetadataField {
 fn clean_value(call: &CleanCall) -> Value {
     let auth = HeaderAuth {
         litellm_key_header_name: call.litellm_key_header_name.clone(),
-        forward_llm_provider_auth_headers: call.forward_llm_provider_auth_headers,
+        forward_llm_provider_auth_headers: call.forward_auth_headers,
         authenticated_with_header: call.authenticated_with_header.clone(),
     };
     let headers: IndexMap<String, String> = call.headers.iter().cloned().collect();

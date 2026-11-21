@@ -26,7 +26,7 @@ Pairs = list[tuple[str, str]]
 class CleanCall(TypedDict):
     headers: Pairs
     litellm_key_header_name: str | None
-    forward_llm_provider_auth_headers: bool
+    forward_auth_headers: bool
     authenticated_with_header: str | None
 
 
@@ -91,12 +91,12 @@ AUTH: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 
 
 def clean(call: CleanCall) -> JsonValue:
-    # the proxy hands clean_headers the request's Headers, which keep each name as the caller sent it
+    # the proxy hands clean_headers the request's Headers, and they keep each name as the caller sent it
     raw_headers = Headers(raw=[(name.encode(), value.encode()) for name, value in call["headers"]])
     cleaned: dict[str, str] = clean_headers(
         raw_headers,
         litellm_key_header_name=call["litellm_key_header_name"],
-        forward_llm_provider_auth_headers=call["forward_llm_provider_auth_headers"],
+        forward_llm_provider_auth_headers=call["forward_auth_headers"],
         authenticated_with_header=call["authenticated_with_header"],
     )
     outcome = {"forwarded": cleaned, "logged": redact_credential_headers(cleaned)}
@@ -147,7 +147,7 @@ def otel_trace_id(call: OtelCall) -> JsonValue:
     parent = None
     if span is not None:
         parent = NonRecordingSpan(SpanContext(span[0], span[1], is_remote=False))
-    stamped: dict[str, object] = dict(call["data"])
+    stamped = dict[str, object](call["data"])
     add_otel_trace_id_to_request(stamped, call["slot"], parent)
     return JSON.validate_python(stamped)
 
