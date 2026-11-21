@@ -55,14 +55,14 @@ impl<K: PreCallKey> PreCall<K> for PreCallStep<K> {
     }
 }
 
-async fn configured_fallbacks<K: PreCallKey>(
-    step: &PreCallStep<K>,
-    key: &K,
-) -> Option<Vec<JsonValue>> {
+async fn configured_fallbacks<K>(step: &PreCallStep<K>, key: &K) -> Option<Vec<JsonValue>>
+where
+    K: PreCallKey,
+{
     let router = step.ports.router.as_deref()?;
     let listed = match key_fallbacks(key) {
         Some(value) => value.clone(),
-        None => router.fallbacks().await?,
+        None => JsonValue::Array(router.fallbacks().await?),
     };
     let JsonValue::Array(items) = listed else {
         return None;
@@ -73,11 +73,14 @@ async fn configured_fallbacks<K: PreCallKey>(
     Some(items)
 }
 
-async fn fallback_models<K: PreCallKey>(
+async fn fallback_models<K>(
     step: &PreCallStep<K>,
     model: &str,
     fallbacks: &[JsonValue],
-) -> Option<Vec<String>> {
+) -> Option<Vec<String>>
+where
+    K: PreCallKey,
+{
     let router = step.ports.router.as_deref()?;
     let models = router.fallback_models(model, fallbacks).await?;
     if models.is_empty() {
@@ -86,12 +89,15 @@ async fn fallback_models<K: PreCallKey>(
     Some(models)
 }
 
-async fn attempt_fallbacks<K: PreCallKey>(
+async fn attempt_fallbacks<K>(
     step: &PreCallStep<K>,
     input: &PreCallInput<'_, K>,
     plan: RetryPlan,
     tags_before: &mut Option<BTreeSet<String>>,
-) -> Result<PreCallOutput, PreCallError> {
+) -> Result<PreCallOutput, PreCallError>
+where
+    K: PreCallKey,
+{
     for model in &plan.models {
         if model == &plan.original {
             continue;
@@ -126,7 +132,10 @@ async fn attempt_fallbacks<K: PreCallKey>(
     Err(plan.rate_limited)
 }
 
-fn key_fallbacks<K: PreCallKey>(key: &K) -> Option<&JsonValue> {
+fn key_fallbacks<K>(key: &K) -> Option<&JsonValue>
+where
+    K: PreCallKey,
+{
     let JsonValue::Object(fields) = key.key_router_settings()? else {
         return None;
     };

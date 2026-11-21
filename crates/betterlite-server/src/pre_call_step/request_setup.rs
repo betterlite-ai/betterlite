@@ -18,22 +18,25 @@ use crate::pre_call::rewrites::{apply_aliases, apply_overrides, file_search_stor
 use crate::pre_call::route_type::RouteType;
 use crate::stream_cleanup::fallback_flag::drop_fallback_errors_flag;
 
-pub(super) async fn prepare<K: PreCallKey>(
+pub(super) async fn prepare<K>(
     preparer: &dyn RequestPreparer<K>,
     data: JsonMap,
     input: &PreCallInput<'_, K>,
-) -> Result<JsonMap, PreCallError> {
+) -> Result<JsonMap, PreCallError>
+where
+    K: PreCallKey,
+{
     let arrival = data.clone();
-    let prepared = preparer
+    let answer = preparer
         .prepare(data, input.request, input.key, input.version)
         .await;
-    held_error(arrival, prepared)
+    held_error(arrival, answer)
 }
 
-pub(super) fn drop_flag<K: PreCallKey>(
-    step: &PreCallStep<K>,
-    data: &mut JsonMap,
-) -> Result<(), PreCallError> {
+pub(super) fn drop_flag<K>(step: &PreCallStep<K>, data: &mut JsonMap) -> Result<(), PreCallError>
+where
+    K: PreCallKey,
+{
     let mut request_body = to_request_data(data);
     drop_fallback_errors_flag(&step.settings.fallback_errors, &mut request_body);
     let held = data.clone();
@@ -41,11 +44,14 @@ pub(super) fn drop_flag<K: PreCallKey>(
     Ok(())
 }
 
-pub(super) async fn authorize_stores<K: PreCallKey>(
+pub(super) async fn authorize_stores<K>(
     step: &PreCallStep<K>,
     data: &JsonMap,
     input: &PreCallInput<'_, K>,
-) -> Result<(), PreCallError> {
+) -> Result<(), PreCallError>
+where
+    K: PreCallKey,
+{
     if !matches!(
         input.route_type,
         RouteType::Responses | RouteType::ResponsesWebsocket
@@ -64,11 +70,14 @@ pub(super) async fn authorize_stores<K: PreCallKey>(
     Ok(())
 }
 
-pub(super) fn rewrite_model<K: PreCallKey>(
+pub(super) fn rewrite_model<K>(
     settings: &PreCallSettings,
     data: &mut JsonMap,
     input: &PreCallInput<'_, K>,
-) -> Result<(), PreCallError> {
+) -> Result<(), PreCallError>
+where
+    K: PreCallKey,
+{
     if let Some(endpoint_model) = input.model {
         let checked = reject_url_valued_destination(DestinationField::Model, endpoint_model, &[])
             .map_err(|error| destination_failure(&error));
@@ -95,11 +104,14 @@ pub(super) fn rewrite_model<K: PreCallKey>(
     Ok(())
 }
 
-pub(super) async fn router_phase<K: PreCallKey>(
+pub(super) async fn router_phase<K>(
     step: &PreCallStep<K>,
     data: &mut JsonMap,
     input: &PreCallInput<'_, K>,
-) -> Result<(), PreCallError> {
+) -> Result<(), PreCallError>
+where
+    K: PreCallKey,
+{
     let Some(router) = step.ports.router.as_deref() else {
         return Ok(());
     };

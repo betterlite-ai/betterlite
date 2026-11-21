@@ -10,11 +10,14 @@ use crate::pre_call::key::PreCallKey;
 use crate::pre_call::rewrites::{resolve_call_id, stream_usage_updates, streamable_models};
 use crate::pre_call::route_type::RouteType;
 
-pub(super) fn identify<K: PreCallKey>(
+pub(super) fn identify<K>(
     step: &PreCallStep<K>,
     data: &mut JsonMap,
     input: &PreCallInput<'_, K>,
-) -> String {
+) -> String
+where
+    K: PreCallKey,
+{
     let call_id = resolve_call_id(
         input
             .request
@@ -30,7 +33,10 @@ pub(super) fn identify<K: PreCallKey>(
     call_id
 }
 
-fn tag_call<K: PreCallKey>(step: &PreCallStep<K>, data: &JsonMap, call_id: &str) {
+fn tag_call<K>(step: &PreCallStep<K>, data: &JsonMap, call_id: &str)
+where
+    K: PreCallKey,
+{
     let tracer = step.ports.tracer.as_ref();
     tag_call_id(tracer, Some(call_id));
     tag_request(
@@ -41,12 +47,14 @@ fn tag_call<K: PreCallKey>(step: &PreCallStep<K>, data: &JsonMap, call_id: &str)
     );
 }
 
-pub(super) fn stream_usage<K: PreCallKey>(
+pub(super) fn stream_usage<K>(
     step: &PreCallStep<K>,
     data: &mut JsonMap,
     route_type: RouteType,
     team_id: Option<&str>,
-) {
+) where
+    K: PreCallKey,
+{
     let target_model = data.get("model").cloned().unwrap_or(JsonValue::Null);
     let updates = stream_usage_updates(
         data,
@@ -64,13 +72,16 @@ pub(super) fn stream_usage<K: PreCallKey>(
     data.extend(updates);
 }
 
-pub(super) fn build_logging<K: PreCallKey>(
+pub(super) fn build_logging<K>(
     step: &PreCallStep<K>,
     data: &mut JsonMap,
     input: &PreCallInput<'_, K>,
     call_id: &str,
     start_time: DateTime<FixedOffset>,
-) -> Result<LoggingState, PreCallError> {
+) -> Result<LoggingState, PreCallError>
+where
+    K: PreCallKey,
+{
     let redactor = step.redactor.as_ref().map_err(|error| PreCallError {
         failure: internal(error.to_string()),
         data: data.clone(),

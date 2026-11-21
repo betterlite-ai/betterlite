@@ -14,18 +14,24 @@ use crate::pre_call::key::PreCallKey;
 use crate::pre_call::rewrites::request_model;
 use crate::pre_call::route_type::RouteType;
 
-pub(super) async fn merge_guardrails<K: PreCallKey>(
+pub(super) async fn merge_guardrails<K>(
     step: &PreCallStep<K>,
     mut data: JsonMap,
     rate_limited_model: Option<&str>,
-) -> JsonMap {
+) -> JsonMap
+where
+    K: PreCallKey,
+{
     if let Some(alias) = rate_limited_model {
         data = step.ports.guardrail_merge.merge(data, Some(alias)).await;
     }
     step.ports.guardrail_merge.merge(data, None).await
 }
 
-pub(super) fn prefetch<K: PreCallKey>(step: &PreCallStep<K>, data: &JsonMap) {
+pub(super) fn prefetch<K>(step: &PreCallStep<K>, data: &JsonMap)
+where
+    K: PreCallKey,
+{
     let Some(router) = step.ports.router.as_deref() else {
         return;
     };
@@ -35,11 +41,14 @@ pub(super) fn prefetch<K: PreCallKey>(step: &PreCallStep<K>, data: &JsonMap) {
     router.arm_prefetch(model, data);
 }
 
-pub(super) async fn hook<K: PreCallKey>(
+pub(super) async fn hook<K>(
     step: &PreCallStep<K>,
     data: JsonMap,
     input: &PreCallInput<'_, K>,
-) -> Result<JsonMap, PreCallError> {
+) -> Result<JsonMap, PreCallError>
+where
+    K: PreCallKey,
+{
     let held = data.clone();
     step.ports
         .hooks
@@ -51,12 +60,15 @@ pub(super) async fn hook<K: PreCallKey>(
         })
 }
 
-pub(super) async fn check_added_tags<K: PreCallKey>(
+pub(super) async fn check_added_tags<K>(
     step: &PreCallStep<K>,
     data: &JsonMap,
     input: &PreCallInput<'_, K>,
     tags_before: &mut Option<BTreeSet<String>>,
-) -> Result<(), PreCallError> {
+) -> Result<(), PreCallError>
+where
+    K: PreCallKey,
+{
     let known = tags_before.get_or_insert_with(BTreeSet::new);
     let added: Vec<String> = tags_from_request_body(&to_request_data(data))
         .into_iter()
@@ -84,11 +96,13 @@ pub(super) async fn check_added_tags<K: PreCallKey>(
         })
 }
 
-pub(super) async fn attach<K: PreCallKey>(
+pub(super) async fn attach<K>(
     step: &PreCallStep<K>,
     data: &mut JsonMap,
     input: &PreCallInput<'_, K>,
-) {
+) where
+    K: PreCallKey,
+{
     if input.route_type == RouteType::GetResponses {
         step.ports.retrieval.attach(data, input.key).await;
     }

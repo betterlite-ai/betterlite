@@ -148,7 +148,7 @@ fn record_tags(data: &JsonMap, tags_before: &mut Option<BTreeSet<String>>) {
 }
 
 pub(super) fn request_route(request: &Parts) -> String {
-    let url_path = request.uri().path();
+    let url_path = request.uri.path();
     // an Axum URI is already the dispatched path, so no ASGI scope root applies
     let path = decoded_route_path(url_path).unwrap_or_else(|| url_path.to_owned());
     get_request_route(&RequestRouteSource {

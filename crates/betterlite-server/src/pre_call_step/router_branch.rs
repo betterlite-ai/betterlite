@@ -12,12 +12,15 @@ use crate::router_weight_references::weights::{RouterWeights, decode_router_weig
 
 use super::json::to_decision;
 
-pub(super) async fn apply_router_settings<K: PreCallKey>(
+pub(super) async fn apply_router_settings<K>(
     data: &mut JsonMap,
     settings: &JsonMap,
     router: &dyn RouterView<K>,
     key: &K,
-) -> Result<(), PreCallFailure> {
+) -> Result<(), PreCallFailure>
+where
+    K: PreCallKey,
+{
     data.insert(
         String::from("router_settings_override"),
         JsonValue::Object(settings.clone()),

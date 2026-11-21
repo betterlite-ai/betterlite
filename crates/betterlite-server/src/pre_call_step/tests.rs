@@ -163,16 +163,16 @@ fn input_for<'input>(
 }
 
 fn ports(fake: &Arc<Fake>, tracer: Arc<dyn Tracer + Send + Sync>) -> PreCallPorts<TestKey> {
-    let preparer: Arc<dyn RequestPreparer<TestKey>> = Arc::clone(fake);
-    let vector_stores: Arc<dyn VectorStoreAccess<TestKey>> = Arc::clone(fake);
-    let router_settings: Arc<dyn RouterSettingsSource<TestKey>> = Arc::clone(fake);
-    let router: Arc<dyn RouterView<TestKey>> = Arc::clone(fake);
-    let stream_options: Arc<dyn StreamOptionsCheck> = Arc::clone(fake);
-    let guardrail_merge: Arc<dyn GuardrailMerge> = Arc::clone(fake);
-    let compression: Arc<dyn CompressionArming> = Arc::clone(fake);
-    let hooks: Arc<dyn PreCallHooks<TestKey>> = Arc::clone(fake);
-    let tag_budgets: Arc<dyn TagBudgets<TestKey>> = Arc::clone(fake);
-    let retrieval: Arc<dyn RetrievalPipelines<TestKey>> = Arc::clone(fake);
+    let preparer: Arc<dyn RequestPreparer<TestKey>> = Arc::<Fake>::clone(fake);
+    let vector_stores: Arc<dyn VectorStoreAccess<TestKey>> = Arc::<Fake>::clone(fake);
+    let router_settings: Arc<dyn RouterSettingsSource<TestKey>> = Arc::<Fake>::clone(fake);
+    let router: Arc<dyn RouterView<TestKey>> = Arc::<Fake>::clone(fake);
+    let stream_options: Arc<dyn StreamOptionsCheck> = Arc::<Fake>::clone(fake);
+    let guardrail_merge: Arc<dyn GuardrailMerge> = Arc::<Fake>::clone(fake);
+    let compression: Arc<dyn CompressionArming> = Arc::<Fake>::clone(fake);
+    let hooks: Arc<dyn PreCallHooks<TestKey>> = Arc::<Fake>::clone(fake);
+    let tag_budgets: Arc<dyn TagBudgets<TestKey>> = Arc::<Fake>::clone(fake);
+    let retrieval: Arc<dyn RetrievalPipelines<TestKey>> = Arc::<Fake>::clone(fake);
     PreCallPorts {
         preparer,
         vector_stores,
@@ -877,7 +877,7 @@ async fn standalone_router_settings_answer_none() {
 async fn standalone_allows_the_tag_budgets() {
     let budgets = AllowAllBudgets;
     let model = RequestModel::Absent;
-    let skips = budgets.skips_budget("/chat/completions", &model).await;
+    let skips = TagBudgets::<TestKey>::skips_budget(&budgets, "/chat/completions", &model).await;
     assert!(skips);
     let key = TestKey::default();
     let tags = [String::from("tag")];
