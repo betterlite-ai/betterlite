@@ -47,7 +47,7 @@ pub(crate) async fn within_deadline<T, Work>(
     work: Work,
 ) -> Result<T, BoundedTransactionError>
 where
-    Work: Future<Output = Result<T, PostgresError>>,
+    Work: Future<Output = Result<T, PostgresError>> + Send,
 {
     let deadline = Duration::from_millis(timeout_ms).saturating_add(TRANSACTION_COMMIT_SLACK);
     match timeout(deadline, work).await {
