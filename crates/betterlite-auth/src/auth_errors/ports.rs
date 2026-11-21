@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_db::database_faults::DbError;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -33,7 +32,7 @@ pub struct AuthLog {
 }
 
 pub struct ServiceFailure<'failure> {
-    pub error: &'failure DbError,
+    pub error: &'failure AuthFailure,
     pub call_type: &'static str,
     pub duration: Duration,
 }

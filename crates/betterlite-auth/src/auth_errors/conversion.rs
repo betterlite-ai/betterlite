@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_db::database_availability::chain::Chain;
 use betterlite_db::database_availability::classification::is_service_unavailable;
 use betterlite_db::database_availability::projection::service_unavailable_error;
-use betterlite_db::database_faults::DbError;
+use betterlite_db::database_faults::{DbError, is_database_connection_error};
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
@@ -102,6 +102,21 @@ impl AuthFailure {
                 status_code: None,
                 marker: Marker::Absent,
             },
+        }
+    }
+
+    // PrismaDBExceptionHandler.is_database_connection_error also counts the proxy's own no-database rejection
+    #[must_use]
+    pub fn is_database_connection_error(&self) -> bool {
+        match self {
+            Self::Database(error) => is_database_connection_error(error.error_type),
+            Self::Proxy { exception, .. } => {
+                exception.error_type == ProxyErrorTypes::NoDbConnection.to_string()
+            }
+            Self::BudgetExceeded { .. }
+            | Self::ModelAccessDenied { .. }
+            | Self::Http { .. }
+            | Self::Other { .. } => false,
         }
     }
 

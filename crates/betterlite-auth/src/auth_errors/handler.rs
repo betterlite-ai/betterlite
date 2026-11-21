@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_db::database_faults::is_database_connection_error;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_models::call_helpers::expected_error::is_expected_client_error;
 use betterlite_models::decisions::Json;
@@ -93,12 +92,9 @@ impl<Ports: AuthErrorPorts + ?Sized> AuthErrorHandler<'_, Ports> {
         error: AuthFailure,
         request: FailedRequest<'_>,
     ) -> Result<UserAPIKeyAuth, HandlerError> {
-        if let AuthFailure::Database(database_error) = &error
-            && self.settings.allow_requests_on_db_unavailable
-            && is_database_connection_error(database_error.error_type)
-        {
+        if self.settings.allow_requests_on_db_unavailable && error.is_database_connection_error() {
             self.ports.record_service_failure(&ServiceFailure {
-                error: database_error,
+                error: &error,
                 call_type: "get_key_object",
                 duration: Duration::ZERO,
             });

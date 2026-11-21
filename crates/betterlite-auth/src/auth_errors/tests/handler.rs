@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_db::database_faults::ErrorType;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
+use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -79,6 +81,36 @@ async fn outage_bypass_requires_a_connection_error() {
         .filter(|event| matches!(event, Event::Service { .. }));
     assert_eq!(services.count(), 0);
     assert_eq!(ports.hook_calls().len(), 1);
+}
+
+#[tokio::test]
+async fn no_database_proxy_rejection_takes_the_outage_bypass() {
+    let fixture = Fixture::new();
+    let exception = ProxyException::new(ProxyExceptionInit {
+        message: "No connected db.".to_owned(),
+        error_type: "no_db_connection".to_owned(),
+        param: Some("None".to_owned()),
+        code: ExceptionCode::Status(400_i64),
+        headers: BTreeMap::new(),
+        openai_code: None,
+        provider_specific_fields: BTreeMap::new(),
+    });
+    let failure = AuthFailure::Proxy {
+        exception,
+        invalid_virtual_key: false,
+    };
+    let allowed = Recorder::replying(Reply::Original);
+    let identity = fixture
+        .handle(&allowed, OUTAGE_ALLOWED, failure.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        identity.view.token.user_id.as_deref(),
+        Some(DB_UNAVAILABLE_FALLBACK_USER_ID)
+    );
+    let refused = Recorder::replying(Reply::Original);
+    let outcome = fixture.handle(&refused, settings(false), failure).await;
+    assert_eq!(rejected(outcome).failure.exception().code, "400");
 }
 
 #[tokio::test]
