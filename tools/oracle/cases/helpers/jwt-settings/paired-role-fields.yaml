@@ -1,0 +1,13 @@
+kind: helper
+name: jwt-settings-paired-role-fields
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"user_roles_jwt_field": "realm.roles"}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"user_allowed_roles": ["admin"]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": null}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"user_roles_jwt_field": null, "user_allowed_roles": ["admin"]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"user_roles_jwt_field": "realm.roles", "user_allowed_roles": ["admin", "ops"]}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"user_roles_jwt_field": "realm.roles", "object_id_jwt_field": "oid"}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}

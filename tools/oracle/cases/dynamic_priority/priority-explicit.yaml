@@ -1,0 +1,17 @@
+kind: helper
+name: dynamic-priority-explicit
+call:
+  b3051:
+    function: allocation
+    model: gpt-4
+    rpm: 100
+    tpm: 1000
+    window_size: 60
+    priority_reservation:
+      prod: 0.5
+      dev: 0.25
+    team_metadata: null
+    key_metadata:
+      priority: prod
+env: {}
+compare: {ignore: []}

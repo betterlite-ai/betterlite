@@ -1,0 +1,18 @@
+task: B890
+deviations:
+  - what: A user_roles_jwt_field or roles_jwt_field path longer than 8192 bytes or with more than 256 segments returns RoleClaimError::Path instead of navigating the token, since the lookup goes through B213's bounded dot-path lookup with the same limits B760 uses for the other claim fields.
+    why: The path comes from operator configuration and B213 owns the only dot-path parser; no working configuration uses a path near those bounds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dot_notation_indexing.py#L32-L77
+kept_bugs:
+  - what: is_allowed_user_role and the role_mappings lookup iterate a string roles claim by character and an object claim by its keys, so a claim "ops" matches an allowed or mapped role "o".
+    why: The task asks for the claim-shape behavior as LiteLLM has it, and a setup whose IdP sends a single string role may rely on what it grants today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L642-L654
+  - what: The role_mappings lookup treats a false, zero, empty string, empty list or empty object roles claim as no mapping, while true or a nonzero number fails as not iterable.
+    why: The `if not jwt_role` check decides this in LiteLLM and the task keeps it, so a token that sends false gets no RBAC role instead of an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L322-L326
+  - what: jwt_litellm_role_map reads the roles claim with a list default, so a string or object roles claim maps to no LiteLLM role, although role_mappings reads the same claim as characters or keys.
+    why: get_nested_value replaces a found value whose type differs from the default; role sync setups see no role change for such tokens today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L606-L619
+  - what: get_scopes returns a scope list unchanged, members that are not strings included, and only an exact string member equal to admin_jwt_scope grants proxy_admin.
+    why: The task keeps the list shape; the extra members never grant anything, so copying them changes no access decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L735-L746

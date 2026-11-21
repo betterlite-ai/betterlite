@@ -1,0 +1,38 @@
+kind: helper
+name: azure-realtime-api-key-versus-token
+call:
+  azure_realtime:
+    kind: connect
+    model: realtime-a
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 4096
+    azure_api_base: null
+    azure_api_key: null
+    azure_api_version: null
+    queries:
+      - {api_base: "https://example.test", api_version: null, realtime_protocol: "GA", query_params: null, api_key: "key-one", azure_ad_token: "token-one"}
+      - {api_base: "https://example.test", api_version: null, realtime_protocol: "GA", query_params: null, api_key: "", azure_ad_token: "token-two"}
+      - {api_base: "https://example.test", api_version: null, realtime_protocol: "GA", query_params: null, api_key: null, azure_ad_token: "token-three"}
+      - {api_base: "https://example.test", api_version: null, realtime_protocol: "GA", query_params: null, api_key: "key-four", azure_ad_token: null}
+    protocols: []
+    failures: []
+    http_setups: []
+calls:
+  - azure_realtime:
+      kind: connect
+      model: realtime-a
+      scope_headers: []
+      ssl_verification: enabled
+      max_message_size_bytes: 4096
+      azure_api_base: null
+      azure_api_key: null
+      azure_api_version: null
+      queries:
+        - {api_base: "https://example.test", api_version: null, realtime_protocol: "GA", query_params: null, api_key: null, azure_ad_token: null}
+      protocols: []
+      failures: []
+      http_setups: []
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "4096"
+compare: {ignore: []}

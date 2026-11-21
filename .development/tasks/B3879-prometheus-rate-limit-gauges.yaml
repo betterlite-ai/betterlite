@@ -2,7 +2,7 @@ id: B3879
 title: Prometheus remaining rate limit gauges
 description: >-
   Project legacy metadata and v3 rate-limit headers into remaining/allowed/used gauges and remove obsolete series when a configured limit disappears.
-  Fill only missing provider remaining values from the router's existing usage service.
+  Fill only missing provider remaining values from the router's usage, read through a port this task declares: betterlite-router depends on betterlite-logging, so this module cannot call the router. In prometheus_rate_limits.rs define `RemainingModelGroupUsage` with one async method `get_remaining_model_group_usage(&self, model_group: &str)` returning the header-name to integer map Router.get_remaining_model_group_usage returns (router.py L11331), the same pattern as logging_metadata's `DeploymentPricing`. The caller passes `Option<&dyn RemainingModelGroupUsage>`; None is LiteLLM's missing llm_router and returns early. Tests use a scripted fake. B8655's prometheus arm, which already waits on B847 and on this task, implements the port over B847's Router.get_remaining_model_group_usage.
 
   Implement functions that track rate limit state across three scales: per-key-model limits (legacy metadata and v3 headers), per-key and per-team limits (v3 headers from rate limiters),
   and deployment TPM/RPM limits (static model_info). When an upstream provider returns x-ratelimit-remaining headers, export those values as gauges. When headers are missing,
@@ -42,7 +42,7 @@ dod:
     proof: [behavior-tests]
   - text: "Implement set_deployment_tpm_rpm_limit_metrics that reads tpm and rpm from model_info (with fallback to litellm_params), constructs UserAPIKeyLabelValues with deployment-level labels, and sets separate TPM and RPM gauges only when values are present."
     proof: [behavior-tests]
-  - text: "Implement async_set_router_remaining_metrics that checks if x_ratelimit_remaining_tokens and x_ratelimit_remaining_requests are already present, fetches model-group usage from Router::get_remaining_model_group_usage if both are missing, and sets the two gauges with no error propagation (log and return on exception)."
+  - text: "Implement async_set_router_remaining_metrics that checks if x_ratelimit_remaining_tokens and x_ratelimit_remaining_requests are already present, fetches model-group usage through the `RemainingModelGroupUsage` port (Router.get_remaining_model_group_usage) if both are missing, and sets the two gauges with no error propagation (log and return on exception)."
     proof: [behavior-tests]
   - text: "Series removal for rate limits uses BoundedPrometheusSeriesTracker.remove_series when limit becomes None, passing the gauge and constructed label tuple."
     proof: [behavior-tests]
@@ -52,7 +52,7 @@ dod:
     proof: [behavior-tests]
   - text: "Deployment tpm/rpm metrics are constructed with litellm_model_name, model_id, api_base and api_provider labels from the deployment model_info and litellm_params."
     proof: [behavior-tests]
-  - text: "Router-remaining fallback returns early without error propagation if llm_router is unavailable, Router::get_remaining_model_group_usage raises, or model_group is missing."
+  - text: "Router-remaining fallback returns early without error propagation if no `RemainingModelGroupUsage` is passed (llm_router unavailable), the port call raises, or model_group is missing."
     proof: [behavior-tests]
 
 checks:
@@ -73,7 +73,7 @@ out_of_scope:
   - "Label construction and validation; B3873 provides the factory and context."
   - "Gauge collector operations (labels, set, remove); B3874 provides the collector interface."
   - "Series TTL and removal tracking; B3876 implements BoundedPrometheusSeriesTracker."
-  - "Router instantiation or caching; Router.get_remaining_model_group_usage is called with standard error handling."
+  - "Router instantiation or caching, and the router-backed `RemainingModelGroupUsage` implementation: B8655's prometheus arm, over B847's Router.get_remaining_model_group_usage."
   - "Model group resolution; B3891 provides get_model_group_from_litellm_kwargs."
   - "StandardLoggingPayload construction and typing; B254 provides the records."
   - "UserAPIKeyLabelValues construction beyond what's needed for these metrics; B3870 owns the type."
@@ -83,7 +83,7 @@ pitfalls:
   - "v3 header type checking must reject bool (using isinstance(value, bool)) before checking isinstance(value, int), since bool is a subclass of int."
   - "Legacy metadata variables are model-group-specific (litellm-key-remaining-{requests,tokens}-{model_group}); always format the variable name with the resolved model_group."
   - "When both limit and remaining are present, compute used = limit - remaining and set both allowed and used gauges; omit them only when limit is None."
-  - "Router.get_remaining_model_group_usage is async; _async_set_router_remaining_metrics must await it and never propagate exceptions (log and return instead)."
+  - "The port method is async, like Router.get_remaining_model_group_usage; _async_set_router_remaining_metrics must await it and never propagate exceptions (log and return instead)."
   - "Deployment TPM/RPM limits are independent; only set the gauge if the value is Some (not None), so missing tpm does not prevent setting rpm."
   - "Series removal passes a tuple of label values constructed from labelnames, not the dict of labels; use (labels.get(label) for label in labelnames)."
   - "v3 headers for per-model limits use x-ratelimit-model_per_key-remaining-*, while per-key/team limits use x-ratelimit-{api_key,team}-{limit,remaining}-*; do not conflate."

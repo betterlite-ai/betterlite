@@ -14,15 +14,19 @@ description: >-
 
 
   Install these completed leaf operations: B535 Azure image HTTP execution and operation polling; B536 Azure image
-  generation and edits; B537 Azure OpenAI speech transport; B538 Azure native SSML synthesis; B539 Azure native
-  and OpenAI transcription. Each dispatch fixture must reach its leaf with a fake transport and assert the resulting
-  request or reply; accept already normalized settings and reuse leaf errors.
+  generation and edits; B539 Azure native and OpenAI transcription. Each dispatch fixture must reach its leaf with a
+  fake transport and assert the resulting request or reply; accept already normalized settings and reuse leaf errors.
+  Both speech operations go through B537, which is not built yet: OpenAI speech through AzureChatCompletion.audio_speech
+  (main.py L8453) and native SSML through AzureAVATextToSpeechConfig.dispatch_text_to_speech (main.py L8410), which then
+  runs B538 synthesis. Give openai_speech and native_ssml each a dispatcher arm that fails with a typed unavailable error
+  naming the operation, the way betterlite-logging CatalogError::Unavailable answers an adapter not built yet; never
+  a silent skip or a fallback to another arm. B537 replaces both arms with its dispatch and adds their oracle cases.
 
 
   Named case contracts: image_generation: Parameterize Azure DALL-E2 operation polling and DALL-E3/GPT image generation
   through B535/B536; retain their API versions, body and retry/error behavior. image_edit: Dispatch B536 GPT-image
-  edits with B535 transport and multipart request. openai_speech: Dispatch B537 Azure OpenAI binary speech with
-  its endpoint/auth headers. native_ssml: Dispatch B538 native SSML speech with its XML/media headers. transcription:
+  edits with B535 transport and multipart request. openai_speech and native_ssml: each fails with the typed unavailable
+  error naming its operation and calls no transport. transcription:
   Parameterize B539 OpenAI-compatible and native Azure transcription, preserving each content type and response
   projection.
 
@@ -46,7 +50,8 @@ description: >-
 
 
   Write rstest function azure_media_dispatch_cases in betterlite-provider with these exact named cases (one per
-  oracle file): image_generation, image_edit, openai_speech, native_ssml, transcription. Each case exercises its
+  oracle file, except the two speech cases, which stay Rust-only until B537): image_generation, image_edit,
+  openai_speech, native_ssml, transcription. Each case exercises its
   named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
   route registration; this task must not register a duplicate axum route.
 
@@ -97,9 +102,9 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1090-L1140
   why: Operation contract delegated to B536; only native dispatcher wiring is added here.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1362-L1426
-  why: Operation contract delegated to B537; only native dispatcher wiring is added here.
+  why: Operation contract B537 adds to this dispatcher later; this task builds only its unavailable arm.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L145-L161
-  why: Operation contract delegated to B538; only native dispatcher wiring is added here.
+  why: Operation contract B538 owns and B537 reaches through its AVA dispatch; this task builds only the unavailable arm and calls no B538 code.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L44-L45
   why: Operation contract delegated to B539; only native dispatcher wiring is added here.
 dod:
@@ -114,16 +119,12 @@ dod:
   - case-image-edit
   - oracle
   - helper-python
-- text: 'openai_speech: Dispatch B537 Azure OpenAI binary speech with its endpoint/auth headers.'
+- text: 'openai_speech: fails with the typed unavailable error naming the operation until B537 adds its arm.'
   proof:
   - case-openai-speech
-  - oracle
-  - helper-python
-- text: 'native_ssml: Dispatch B538 native SSML speech with its XML/media headers.'
+- text: 'native_ssml: fails with the typed unavailable error naming the operation until B537 adds its arm.'
   proof:
   - case-native-ssml
-  - oracle
-  - helper-python
 - text: 'transcription: Parameterize B539 OpenAI-compatible and native Azure transcription, preserving each content
     type and response projection.'
   proof:
@@ -149,10 +150,10 @@ checks:
     why: Dispatch B536 GPT-image edits with B535 transport and multipart request.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_image_edit$/)'
   - id: case-openai-speech
-    why: Dispatch B537 Azure OpenAI binary speech with its endpoint/auth headers.
+    why: The openai_speech arm skips silently or reaches a transport before B537 builds it.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_openai_speech$/)'
   - id: case-native-ssml
-    why: Dispatch B538 native SSML speech with its XML/media headers.
+    why: The native_ssml arm skips silently or reaches a transport before B537 builds it.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_media_dispatch_cases::case_[0-9]+_native_ssml$/)'
   - id: case-transcription
     why: Parameterize B539 OpenAI-compatible and native Azure transcription, preserving each content type and response
@@ -175,8 +176,6 @@ checks:
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-media-dispatch/image-generation.yaml
 - tools/oracle/cases/helpers/providers/azure-media-dispatch/image-edit.yaml
-- tools/oracle/cases/helpers/providers/azure-media-dispatch/openai-speech.yaml
-- tools/oracle/cases/helpers/providers/azure-media-dispatch/native-ssml.yaml
 - tools/oracle/cases/helpers/providers/azure-media-dispatch/transcription.yaml
 deviations: []
 out_of_scope:

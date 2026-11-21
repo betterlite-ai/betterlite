@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-settings-fallback-without-user-upsert-accepted
+call:
+  jwt_settings:
+    scenarios:
+      - {"settings": {"fallback_to_db_teams": true, "user_id_upsert": false}, "references": {}, "environment": {}, "issuers": []}
+      - {"settings": {"fallback_to_db_teams": true, "team_claim_fallback": true}, "references": {}, "environment": {}, "issuers": []}
+env: {}
+compare: {ignore: []}
