@@ -5,367 +5,33 @@ use std::sync::Arc;
 
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::{DecisionsJson, Json};
-use betterlite_openai::api::audio_file_input::HEALTH_CHECK_AUDIO;
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
 
 use self::support::{
-    DOCUMENT_URL, FakeBackend, FakeCheapestModels, FakeDocuments, FakeLogging, IMAGE_BYTES,
-    MissingDocuments, bad_request_class, content_policy_class, context_window_class,
-    evaluation_params_with_questions, probe_params, probe_params_from_json, run_default, run_mode,
-    run_provider, unclassified_class, unsupported_params_class, with_input, with_logging,
+    FakeBackend, FakeCheapestModels, FakeLogging, IMAGE_BYTES, bad_request_class,
+    content_policy_class, context_window_class, evaluation_params_with_questions, probe_params,
+    probe_params_from_json, run_mode, unclassified_class, unsupported_params_class, with_logging,
     with_prompt,
 };
-use super::batch::LIST_BATCHES_SUPPORTED_PROVIDERS;
+use super::batch::BATCH_PROVIDERS;
 use super::calls::HealthProbeReply;
 use super::error::HealthProbeError;
 use super::evaluation::{HEALTH_CHECK_QUESTION, evaluation_questions};
 use super::image_data::{IMAGE_EDIT_HEALTH_CHECK_PROMPT, health_check_image};
 use super::logging::HealthProbeLogging;
-use super::params::{HealthProbeParams, Param};
+use super::params::Param;
 use super::plan::{HealthProbeArguments, plan_health_probe};
 use super::response::{
     HealthCheckResponse, REGION_HEADER, REMAINING_REQUESTS_HEADER, REMAINING_TOKENS_HEADER,
     health_check_response,
 };
 use super::run::run_health_probe;
-use super::tracking::{HEALTH_CHECK_SERVICE_ACCOUNT_NAME, add_tracking_information};
+use super::tracking::{SERVICE_ACCOUNT, add_tracking_information};
 use super::wildcard::probe_wildcard_model;
 
 mod support;
 
-#[rstest]
-#[case::chat("chat")]
-#[case::completion("completion")]
-#[case::embedding("embedding")]
-#[case::audio_speech("audio_speech")]
-#[case::audio_transcription("audio_transcription")]
-#[case::image_generation("image_generation")]
-#[case::image_edit("image_edit")]
-#[case::video_generation("video_generation")]
-#[case::rerank("rerank")]
-#[case::realtime("realtime")]
-#[case::batch("batch")]
-#[case::responses("responses")]
-#[case::ocr("ocr")]
-#[case::evaluation("evaluation")]
-#[tokio::test]
-async fn mode_each_mode_sends_its_own_call(#[case] mode: &str) {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"m","messages":[]}"#);
-    run_default(mode, params, &backend).await.unwrap();
-    assert_eq!(backend.take_mode(), mode);
-}
-
-#[test]
-fn mode_unknown_name_has_no_plan() {
-    let args = HealthProbeArguments::default();
-    let plan = plan_health_probe("vision", "m", "openai", HealthProbeParams::default(), args);
-    assert!(plan.is_none());
-}
-
-#[tokio::test]
-async fn mode_chat_keeps_messages_and_every_parameter() {
-    let backend = FakeBackend::new();
-    let entries =
-        r#"{"model":"gpt-5","messages":[{"role":"user","content":"hi"}],"temperature":0.2}"#;
-    let params = probe_params_from_json(entries);
-    run_default("chat", params, &backend).await.unwrap();
-    let call = backend.take_chat();
-    assert!(call.parameters.contains_key("messages"));
-    let temperature = serde_json::to_string(call.parameters.get("temperature").unwrap()).unwrap();
-    assert_eq!(temperature, "0.2");
-}
-
-#[rstest]
-#[case::missing(None, "test")]
-#[case::empty(Some(""), "test")]
-#[case::given(Some("say hi"), "say hi")]
-#[tokio::test]
-async fn mode_completion_sends_the_given_prompt_or_the_test_prompt(
-    #[case] prompt: Option<&str>,
-    #[case] expected: &str,
-) {
-    let backend = FakeBackend::new();
-    let entries = r#"{"model":"gpt-5","messages":[{"role":"user","content":"hi"}]}"#;
-    let params = probe_params_from_json(entries);
-    run_mode("completion", params, with_prompt(prompt), &backend)
-        .await
-        .unwrap();
-    let call = backend.take_completion();
-    assert!(!call.parameters.contains_key("messages"));
-    assert_eq!(
-        call.parameters.get("prompt"),
-        Some(&Json::Text(expected.to_owned()))
-    );
-}
-
-#[rstest]
-#[case::missing(None, r#"["test"]"#)]
-#[case::empty(Some(vec![]), r#"["test"]"#)]
-#[case::given(Some(vec!["alpha", "beta"]), r#"["alpha","beta"]"#)]
-#[tokio::test]
-async fn mode_embedding_sends_the_given_input_or_the_test_input(
-    #[case] input: Option<Vec<&str>>,
-    #[case] expected: &str,
-) {
-    let backend = FakeBackend::new();
-    let entries = r#"{"model":"text-embedding-3-small","messages":[]}"#;
-    let params = probe_params_from_json(entries);
-    run_mode("embedding", params, with_input(input), &backend)
-        .await
-        .unwrap();
-    let call = backend.take_embedding();
-    assert!(!call.parameters.contains_key("messages"));
-    let sent = serde_json::to_string(call.parameters.get("input").unwrap()).unwrap();
-    assert_eq!(sent, expected);
-}
-
-#[rstest]
-#[case::missing(r#"{"model":"tts"}"#, r#""alloy""#)]
-#[case::given(r#"{"model":"tts","voice":"nova"}"#, r#""nova""#)]
-#[case::null(r#"{"model":"tts","voice":null}"#, "null")]
-#[tokio::test]
-async fn mode_audio_speech_adds_alloy_only_without_a_voice_key(
-    #[case] entries: &str,
-    #[case] expected: &str,
-) {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(entries);
-    run_default("audio_speech", params, &backend).await.unwrap();
-    let call = backend.take_audio_speech();
-    let voice = serde_json::to_string(call.parameters.get("voice").unwrap()).unwrap();
-    assert_eq!(voice, expected);
-    assert_eq!(
-        call.parameters.get("input"),
-        Some(&Json::Text("test".to_owned()))
-    );
-}
-
-#[tokio::test]
-async fn mode_audio_transcription_sends_the_health_wav() {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"whisper-1","messages":[],"language":"en"}"#);
-    let reply = run_default("audio_transcription", params, &backend)
-        .await
-        .unwrap();
-    assert_eq!(reply, HealthProbeReply::default());
-    let call = backend.take_audio_transcription();
-    assert_eq!(call.file, HEALTH_CHECK_AUDIO);
-    assert!(!call.parameters.contains_key("messages"));
-    assert_eq!(
-        call.parameters.get("language"),
-        Some(&Json::Text("en".to_owned()))
-    );
-}
-
-#[rstest]
-#[case::missing(None, None)]
-#[case::empty(Some(""), Some(""))]
-#[case::given(Some("a blue circle"), Some("a blue circle"))]
-#[tokio::test]
-async fn mode_image_generation_keeps_the_prompt_as_given(
-    #[case] prompt: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"dall-e-3","messages":[]}"#);
-    run_mode("image_generation", params, with_prompt(prompt), &backend)
-        .await
-        .unwrap();
-    let call = backend.take_image_generation();
-    assert!(!call.parameters.contains_key("messages"));
-    let prompt_value = expected.map_or(Json::Null, |text| Json::Text(text.to_owned()));
-    assert_eq!(call.parameters.get("prompt"), Some(&prompt_value));
-}
-
-#[rstest]
-#[case::missing(None, "test video generation")]
-#[case::given(Some("a cat"), "a cat")]
-#[tokio::test]
-async fn mode_video_generation_sends_the_given_prompt_or_the_default(
-    #[case] prompt: Option<&str>,
-    #[case] expected: &str,
-) {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"veo","messages":[]}"#);
-    run_mode("video_generation", params, with_prompt(prompt), &backend)
-        .await
-        .unwrap();
-    let call = backend.take_video_generation();
-    assert!(!call.parameters.contains_key("messages"));
-    assert_eq!(
-        call.parameters.get("prompt"),
-        Some(&Json::Text(expected.to_owned()))
-    );
-}
-
-#[rstest]
-#[case::missing(None, "")]
-#[case::given(Some("capital of France?"), "capital of France?")]
-#[tokio::test]
-async fn mode_rerank_sends_the_given_query_or_an_empty_one(
-    #[case] prompt: Option<&str>,
-    #[case] expected: &str,
-) {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"rerank-v3","messages":[]}"#);
-    run_mode("rerank", params, with_prompt(prompt), &backend)
-        .await
-        .unwrap();
-    let call = backend.take_rerank();
-    assert!(!call.parameters.contains_key("messages"));
-    assert_eq!(
-        call.parameters.get("query"),
-        Some(&Json::Text(expected.to_owned()))
-    );
-    let documents = serde_json::to_string(call.parameters.get("documents").unwrap()).unwrap();
-    assert_eq!(documents, r#"["my sample text"]"#);
-}
-
-#[tokio::test]
-async fn mode_realtime_passes_the_identity_and_the_full_params() {
-    let backend = FakeBackend::new();
-    let entries = concat!(
-        r#"{"model":"ignored-by-the-plan","api_base":"https://api.test","#,
-        r#""api_version":"2024-01-01","api_key":"sk-test","#,
-        r#""messages":[{"role":"user","content":"hi"}]}"#
-    );
-    let params = probe_params_from_json(entries);
-    run_provider("realtime", "openai", params, &backend)
-        .await
-        .unwrap();
-    let call = backend.take_realtime();
-    assert_eq!(call.model, "resolved-model");
-    assert_eq!(call.custom_llm_provider, "openai");
-    assert_eq!(call.api_base.as_deref(), Some("https://api.test"));
-    assert_eq!(call.api_version.as_deref(), Some("2024-01-01"));
-    assert_eq!(call.api_key.unwrap().expose_secret(), "sk-test");
-    assert!(call.model_params.contains_key("messages"));
-}
-
-#[tokio::test]
-async fn mode_responses_sends_the_test_input() {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"o4-mini","messages":[]}"#);
-    run_default("responses", params, &backend).await.unwrap();
-    let call = backend.take_responses();
-    assert!(!call.parameters.contains_key("messages"));
-    assert_eq!(
-        call.parameters.get("input"),
-        Some(&Json::Text("test".to_owned()))
-    );
-}
-
-#[tokio::test]
-async fn mode_ocr_sends_the_injected_document() {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"text-extract","messages":[]}"#);
-    run_mode("ocr", params, HealthProbeArguments::default(), &backend)
-        .await
-        .unwrap();
-    let call = backend.take_ocr();
-    assert_eq!(call.document.source(), DOCUMENT_URL);
-    assert!(!call.parameters.contains_key("messages"));
-}
-
-#[tokio::test]
-async fn mode_ocr_document_failure_is_lazy() {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"text-extract"}"#);
-    let args = HealthProbeArguments::default();
-    let plan = plan_health_probe("ocr", "resolved-model", "openai", params, args).unwrap();
-    let error = run_health_probe(plan, &backend, &MissingDocuments)
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        HealthProbeError::OcrDocumentUnavailable { .. }
-    ));
-    assert_eq!(backend.call_count(), 0);
-}
-
-#[tokio::test]
-async fn mode_evaluation_validation_is_lazy() {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"m","state":true}"#);
-    let args = HealthProbeArguments::default();
-    let plan = plan_health_probe("evaluation", "m", "openai", params, args).unwrap();
-    let error = run_health_probe(plan, &backend, &FakeDocuments)
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        HealthProbeError::EvaluationPayload { field: "state", .. }
-    ));
-    assert_eq!(backend.call_count(), 0);
-}
-
-#[rstest]
-#[case::model(r#"{"model":7}"#, "model")]
-#[case::api_base(r#"{"model":"m","api_base":7}"#, "api_base")]
-#[case::api_key(r#"{"model":"m","api_key":7}"#, "api_key")]
-#[tokio::test]
-async fn mode_typed_parameters_with_a_wrong_type_are_rejected(
-    #[case] entries: &str,
-    #[case] key: &str,
-) {
-    let parsed = serde_json::from_str(entries).unwrap();
-    let Err(error) = HealthProbeParams::from_map(parsed) else {
-        panic!("a wrong parameter type is rejected");
-    };
-    assert!(matches!(
-        error,
-        HealthProbeError::ParameterType { key: reported } if reported == key
-    ));
-}
-
-#[rstest]
-#[case::completion("completion", "prompt")]
-#[case::embedding("embedding", "input")]
-#[case::audio_speech("audio_speech", "input")]
-#[case::audio_transcription("audio_transcription", "file")]
-#[case::image_generation("image_generation", "prompt")]
-#[case::image_edit_image("image_edit", "image")]
-#[case::image_edit_prompt("image_edit", "prompt")]
-#[case::video_generation("video_generation", "prompt")]
-#[case::rerank_query("rerank", "query")]
-#[case::rerank_documents("rerank", "documents")]
-#[case::responses("responses", "input")]
-#[case::ocr("ocr", "document")]
-#[tokio::test]
-async fn mode_repeated_key_fails_without_a_call(#[case] mode: &str, #[case] key: &str) {
-    let mut entries = serde_json::json!({"model": "m"});
-    entries
-        .as_object_mut()
-        .unwrap()
-        .insert(key.to_owned(), serde_json::json!("given"));
-    let backend = FakeBackend::new();
-    let error = run_mode(
-        mode,
-        probe_params(entries),
-        HealthProbeArguments::default(),
-        &backend,
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        HealthProbeError::RepeatedParameter { key: reported, mode: reported_mode }
-            if reported == key && reported_mode == mode
-    ));
-    assert_eq!(backend.call_count(), 0);
-}
-
-#[tokio::test]
-async fn mode_api_key_travels_as_a_secret_not_as_a_parameter() {
-    let backend = FakeBackend::new();
-    let params = probe_params_from_json(r#"{"model":"gpt-5","api_key":"sk-test"}"#);
-    run_default("chat", params, &backend).await.unwrap();
-    let call = backend.take_chat();
-    assert!(!call.parameters.contains_key("api_key"));
-    assert_eq!(call.api_key.unwrap().expose_secret(), "sk-test");
-}
+include!("tests/modes.rs");
 
 #[test]
 fn evaluation_hosted_vllm_question_is_a_choice() {
@@ -414,9 +80,15 @@ async fn evaluation_state_uses_the_given_prompt_or_the_default(
 ) {
     let backend = FakeBackend::new();
     let params = probe_params_from_json(r#"{"model":"m","messages":[]}"#);
-    run_mode("evaluation", params, with_prompt(prompt), &backend)
-        .await
-        .unwrap();
+    run_mode(
+        "evaluation",
+        "openai",
+        params,
+        with_prompt(prompt),
+        &backend,
+    )
+    .await
+    .unwrap();
     let call = backend.take_evaluation();
     assert_eq!(call.params.state, DecisionsJson::Text(expected.to_owned()));
 }
@@ -425,9 +97,15 @@ async fn evaluation_state_uses_the_given_prompt_or_the_default(
 async fn evaluation_hosted_vllm_plan_builds_the_choice_questions() {
     let backend = FakeBackend::new();
     let params = probe_params_from_json(r#"{"model":"m"}"#);
-    run_provider("evaluation", "hosted_vllm", params, &backend)
-        .await
-        .unwrap();
+    run_mode(
+        "evaluation",
+        "hosted_vllm",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
     let call = backend.take_evaluation();
     let questions = serde_json::to_string(&call.params.questions).unwrap();
     assert!(questions.contains(r#""type":"choice""#));
@@ -442,7 +120,15 @@ async fn evaluation_parameters_override_the_built_state_and_questions() {
         r#""questions":{"custom":{"type":"noul","instructions":"custom question"}}}"#
     );
     let params = probe_params_from_json(entries);
-    run_default("evaluation", params, &backend).await.unwrap();
+    run_mode(
+        "evaluation",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
     let call = backend.take_evaluation();
     let state = serde_json::to_string(&call.params.state).unwrap();
     assert_eq!(state, r#"{"custom":true}"#);
@@ -462,7 +148,15 @@ async fn evaluation_optional_fields_reach_the_call() {
         r#""extra_headers":{"x-team":"health"},"top_k":5}"#
     );
     let params = probe_params_from_json(entries);
-    run_default("evaluation", params, &backend).await.unwrap();
+    run_mode(
+        "evaluation",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
     let call = backend.take_evaluation();
     assert_eq!(
         call.params.api_base.as_deref(),
@@ -484,9 +178,15 @@ async fn evaluation_optional_fields_reach_the_call() {
 async fn evaluation_payload_without_a_model_key_is_rejected() {
     let backend = FakeBackend::new();
     let params = probe_params_from_json(r#"{"state":"health check"}"#);
-    let error = run_default("evaluation", params, &backend)
-        .await
-        .unwrap_err();
+    let error = run_mode(
+        "evaluation",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(
         error,
         HealthProbeError::EvaluationPayload { field: "model", .. }
@@ -506,9 +206,15 @@ async fn evaluation_payload_without_a_model_key_is_rejected() {
 async fn evaluation_invalid_payloads_are_rejected(#[case] entries: &str, #[case] field: &str) {
     let backend = FakeBackend::new();
     let params = probe_params_from_json(entries);
-    let error = run_default("evaluation", params, &backend)
-        .await
-        .unwrap_err();
+    let error = run_mode(
+        "evaluation",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(
         error,
         HealthProbeError::EvaluationPayload { field: reported, .. } if reported == field
@@ -520,7 +226,15 @@ async fn evaluation_invalid_payloads_are_rejected(#[case] entries: &str, #[case]
 async fn evaluation_accepts_128_questions() {
     let backend = FakeBackend::new();
     let params = evaluation_params_with_questions(128);
-    run_default("evaluation", params, &backend).await.unwrap();
+    run_mode(
+        "evaluation",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
     assert_eq!(backend.call_count(), 1);
 }
 
@@ -528,9 +242,15 @@ async fn evaluation_accepts_128_questions() {
 async fn evaluation_rejects_129_questions() {
     let backend = FakeBackend::new();
     let params = evaluation_params_with_questions(129);
-    let error = run_default("evaluation", params, &backend)
-        .await
-        .unwrap_err();
+    let error = run_mode(
+        "evaluation",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(
         error,
         HealthProbeError::EvaluationPayload {
@@ -638,7 +358,7 @@ fn tracking_replaces_an_earlier_metadata_value() {
         panic!("the tracking metadata is an object");
     };
     let tags = serde_json::to_string(metadata.get("tags").unwrap()).unwrap();
-    let expected = format!(r#"["{HEALTH_CHECK_SERVICE_ACCOUNT_NAME}"]"#);
+    let expected = format!(r#"["{SERVICE_ACCOUNT}"]"#);
     assert_eq!(tags, expected);
     assert!(!metadata.contains_key("user_api_key_auth"));
 }
@@ -651,7 +371,7 @@ fn tracking_applies_the_internal_health_principal() {
     let Param::Value(Json::Object(metadata)) = updated.litellm_metadata else {
         panic!("the tracking metadata is an object");
     };
-    let name = Json::Text(HEALTH_CHECK_SERVICE_ACCOUNT_NAME.to_owned());
+    let name = Json::Text(SERVICE_ACCOUNT.to_owned());
     assert_eq!(metadata.get("user_api_key"), Some(&name));
     assert_eq!(metadata.get("user_api_key_hash"), Some(&name));
     assert_eq!(metadata.get("user_api_key_alias"), Some(&name));
@@ -677,9 +397,15 @@ async fn batch_supported_providers_force_the_provider_on_list_batches(#[case] pr
         r#""custom_llm_provider":"given"}"#
     );
     let params = probe_params_from_json(entries);
-    run_provider("batch", provider, params, &backend)
-        .await
-        .unwrap();
+    run_mode(
+        "batch",
+        provider,
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
     let call = backend.take_batch();
     assert_eq!(
         call.parameters.get("custom_llm_provider"),
@@ -691,7 +417,7 @@ async fn batch_supported_providers_force_the_provider_on_list_batches(#[case] pr
 #[test]
 fn batch_supported_provider_list_matches_litellm() {
     assert_eq!(
-        LIST_BATCHES_SUPPORTED_PROVIDERS,
+        BATCH_PROVIDERS,
         [
             "openai",
             "azure",
@@ -714,9 +440,15 @@ async fn batch_other_providers_send_the_full_chat_call(#[case] provider: &str) {
         r#""custom_llm_provider":"given"}"#
     );
     let params = probe_params_from_json(entries);
-    run_provider("batch", provider, params, &backend)
-        .await
-        .unwrap();
+    run_mode(
+        "batch",
+        provider,
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
     let call = backend.take_chat();
     assert!(call.parameters.contains_key("messages"));
     assert_eq!(
@@ -731,10 +463,11 @@ async fn batch_updates_the_logging_object_before_the_call() {
     let logging = Arc::new(FakeLogging::new(backend.events(), false));
     let entries = r#"{"model":"m","api_base":"https://api.test","messages":[]}"#;
     let params = probe_params_from_json(entries);
-    run_provider(
+    run_mode(
         "batch",
         "openai",
         with_logging(params, logging.clone()),
+        HealthProbeArguments::default(),
         &backend,
     )
     .await
@@ -764,10 +497,11 @@ async fn batch_logging_update_skips_a_falsy_api_base(#[case] entries: &str) {
     let backend = FakeBackend::new();
     let logging = Arc::new(FakeLogging::new(backend.events(), false));
     let params = probe_params_from_json(entries);
-    run_provider(
+    run_mode(
         "batch",
         "openai",
         with_logging(params, logging.clone()),
+        HealthProbeArguments::default(),
         &backend,
     )
     .await
@@ -783,9 +517,15 @@ async fn batch_logging_failure_stops_before_the_call() {
     let backend = FakeBackend::new();
     let logging: Arc<dyn HealthProbeLogging> = Arc::new(FakeLogging::new(backend.events(), true));
     let params = with_logging(probe_params_from_json(r#"{"model":"m"}"#), logging);
-    let error = run_provider("batch", "openai", params, &backend)
-        .await
-        .unwrap_err();
+    let error = run_mode(
+        "batch",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(error, HealthProbeError::Logging { .. }));
     assert_eq!(backend.call_count(), 0);
 }
@@ -795,7 +535,15 @@ async fn image_edit_sends_the_health_image_and_prompt() {
     let backend = FakeBackend::new();
     let entries = r#"{"model":"gpt-image-1","messages":[],"api_key":"sk-test"}"#;
     let params = probe_params_from_json(entries);
-    let reply = run_default("image_edit", params, &backend).await.unwrap();
+    let reply = run_mode(
+        "image_edit",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
     assert_eq!(reply, HealthProbeReply::default());
     let call = backend.take_image_edit();
     assert_eq!(call.prompt, IMAGE_EDIT_HEALTH_CHECK_PROMPT);
@@ -827,7 +575,15 @@ async fn image_edit_returns_an_empty_response_for_moderation_failures(
     let backend = FakeBackend::new();
     backend.fail_image_edit(class, message);
     let params = probe_params_from_json(r#"{"model":"gpt-image-1"}"#);
-    let reply = run_default("image_edit", params, &backend).await.unwrap();
+    let reply = run_mode(
+        "image_edit",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
     assert_eq!(reply, HealthProbeReply::default());
     assert_eq!(backend.call_count(), 1);
 }
@@ -844,9 +600,15 @@ async fn image_edit_returns_other_failures_unchanged(
     let expected = class.clone();
     backend.fail_image_edit(class, message);
     let params = probe_params_from_json(r#"{"model":"gpt-image-1"}"#);
-    let error = run_default("image_edit", params, &backend)
-        .await
-        .unwrap_err();
+    let error = run_mode(
+        "image_edit",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap_err();
     assert_eq!(error.to_string(), message);
     assert!(matches!(
         error,
@@ -931,9 +693,15 @@ async fn response_run_returns_the_backend_headers_or_nothing() {
         .headers
         .insert(REGION_HEADER.to_owned(), "westus".to_owned());
     let params = probe_params_from_json(r#"{"model":"gpt-5"}"#);
-    let reply = run_mode("chat", params, HealthProbeArguments::default(), &backend)
-        .await
-        .unwrap();
+    let reply = run_mode(
+        "chat",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         reply.hidden_headers.get(REGION_HEADER).map(String::as_str),
         Some("westus")
@@ -942,6 +710,7 @@ async fn response_run_returns_the_backend_headers_or_nothing() {
     let empty_params = probe_params_from_json(r#"{"model":"gpt-5"}"#);
     let empty_reply = run_mode(
         "chat",
+        "openai",
         empty_params,
         HealthProbeArguments::default(),
         &empty,

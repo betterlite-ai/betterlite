@@ -314,32 +314,25 @@ impl CheapestChatModels for FakeCheapestModels {
     }
 }
 
-pub(super) struct FakeDocuments;
-
-impl OcrHealthDocuments for FakeDocuments {
-    fn health_check_document(
-        &self,
-        _model: &str,
-        _custom_llm_provider: &str,
-    ) -> Result<OcrDocument, HealthProbeError> {
-        Ok(OcrDocument::DocumentUrl {
-            document_url: DOCUMENT_URL.to_owned(),
-            extra: BTreeMap::new(),
-        })
-    }
+pub(super) struct FakeDocuments {
+    pub(super) missing: bool,
 }
 
-pub(super) struct MissingDocuments;
-
-impl OcrHealthDocuments for MissingDocuments {
+impl OcrHealthDocuments for FakeDocuments {
     fn health_check_document(
         &self,
         model: &str,
         custom_llm_provider: &str,
     ) -> Result<OcrDocument, HealthProbeError> {
-        Err(HealthProbeError::OcrDocumentUnavailable {
-            model: model.to_owned(),
-            custom_llm_provider: custom_llm_provider.to_owned(),
+        if self.missing {
+            return Err(HealthProbeError::OcrDocumentUnavailable {
+                model: model.to_owned(),
+                custom_llm_provider: custom_llm_provider.to_owned(),
+            });
+        }
+        Ok(OcrDocument::DocumentUrl {
+            document_url: DOCUMENT_URL.to_owned(),
+            extra: BTreeMap::new(),
         })
     }
 }
@@ -402,31 +395,13 @@ pub(super) fn with_logging(
 
 pub(super) async fn run_mode(
     mode: &str,
+    provider: &str,
     params: HealthProbeParams,
     arguments: HealthProbeArguments,
     backend: &FakeBackend,
 ) -> Result<HealthProbeReply, HealthProbeError> {
-    let plan = plan_health_probe(mode, "resolved-model", "openai", params, arguments).unwrap();
-    run_health_probe(plan, backend, &FakeDocuments).await
-}
-
-pub(super) async fn run_provider(
-    mode: &str,
-    provider: &str,
-    params: HealthProbeParams,
-    backend: &FakeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    let args = HealthProbeArguments::default();
-    let plan = plan_health_probe(mode, "resolved-model", provider, params, args).unwrap();
-    run_health_probe(plan, backend, &FakeDocuments).await
-}
-
-pub(super) async fn run_default(
-    mode: &str,
-    params: HealthProbeParams,
-    backend: &FakeBackend,
-) -> Result<HealthProbeReply, HealthProbeError> {
-    run_mode(mode, params, HealthProbeArguments::default(), backend).await
+    let plan = plan_health_probe(mode, "resolved-model", provider, params, arguments).unwrap();
+    run_health_probe(plan, backend, &FakeDocuments { missing: false }).await
 }
 
 pub(super) fn with_prompt(prompt: Option<&str>) -> HealthProbeArguments {
