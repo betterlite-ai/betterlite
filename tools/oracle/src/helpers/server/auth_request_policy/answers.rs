@@ -70,7 +70,7 @@ fn classify(row: &ClassifyCase) -> bool {
     }
 }
 
-fn facts<'row>(row: &'row ClassifyCase, class: ErrorClass) -> ErrorFacts<'row> {
+fn facts(row: &ClassifyCase, class: ErrorClass) -> ErrorFacts<'_> {
     ErrorFacts {
         class,
         code: row.code.as_deref(),
@@ -172,7 +172,7 @@ fn pre_db(call: &PreDbCase) -> Value {
     };
     match pre_db_read_auth_checks(&request, &settings) {
         Ok(()) => accepted(),
-        Err(error) => rejected(error.into_proxy_exception()),
+        Err(error) => rejected(&error.into_proxy_exception()),
     }
 }
 
@@ -195,7 +195,7 @@ fn accepted() -> Value {
     })
 }
 
-fn rejected(exception: ProxyException) -> Value {
+fn rejected(exception: &ProxyException) -> Value {
     json!({
         "ok": false,
         "status": exception.code.parse::<i64>().ok(),

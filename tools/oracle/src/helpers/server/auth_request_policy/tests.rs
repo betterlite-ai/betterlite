@@ -52,10 +52,10 @@ fn helper_seeds_select_auth_request_policy() {
 fn byte_projection_divides_by_a_mebibyte() {
     let one_byte_over = 1_048_577.0_f64.div(1_048_576.0_f64);
     let output = Op::decode_and_run(&json!({
-        "calls": [{"function": "bytes_to_mb", "values": [0, 0x0008_0000, 0x0010_0000, 0x0010_0001]}],
+        "calls": [{"function": "bytes_to_mb", "values": [0_i32, 0x0008_0000_i32, 0x0010_0000_i32, 0x0010_0001_i32]}],
     }))
     .expect("the projection runs");
-    assert_eq!(output, json!([[0.0, 0.5, 1.0, one_byte_over]]));
+    assert_eq!(output, json!([[0.0_f64, 0.5_f64, 1.0_f64, one_byte_over]]));
 }
 
 #[test]
@@ -94,10 +94,10 @@ fn ip_projection_trusts_the_whole_forwarded_header() {
 fn classification_requires_the_marker_and_a_401() {
     let output = Op::decode_and_run(&json!({
         "calls": [{"function": "classify", "rows": [
-            {"kind": "proxy", "code": "401", "status_code": 401, "marker": "exact_true", "message": "m"},
-            {"kind": "proxy", "code": "401", "status_code": 401, "marker": "absent", "message": "m"},
-            {"kind": "http", "code": "403", "status_code": 401, "marker": "exact_true", "message": "m"},
-            {"kind": "other", "code": "401", "status_code": 401, "marker": "exact_true", "message": "m"},
+            {"kind": "proxy", "code": "401", "status_code": 401_i32, "marker": "exact_true", "message": "m"},
+            {"kind": "proxy", "code": "401", "status_code": 401_i32, "marker": "absent", "message": "m"},
+            {"kind": "http", "code": "403", "status_code": 401_i32, "marker": "exact_true", "message": "m"},
+            {"kind": "other", "code": "401", "status_code": 401_i32, "marker": "exact_true", "message": "m"},
         ]}],
     }))
     .expect("the projection runs");
@@ -185,7 +185,7 @@ fn pre_db_denies_an_unlisted_ip_with_auth_error_403() {
         json!([[
             {
                 "ok": false,
-                "status": 403,
+                "status": 403_i32,
                 "type": "auth_error",
                 "param": "None",
                 "code": "403",
@@ -251,7 +251,7 @@ fn pre_db_denies_an_empty_allowlist() {
         json!([[
             {
                 "ok": false,
-                "status": 403,
+                "status": 403_i32,
                 "type": "auth_error",
                 "param": "None",
                 "code": "403",
