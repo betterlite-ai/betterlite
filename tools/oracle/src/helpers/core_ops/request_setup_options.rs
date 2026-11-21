@@ -12,9 +12,10 @@ use betterlite_core::api::request_principal_metadata::team_callbacks::DefaultTea
 use betterlite_core::api::request_principal_metadata::{Metadata, PrincipalFacts};
 use betterlite_core::api::request_setup_options::callbacks::CallbackSettings;
 use betterlite_core::api::request_setup_options::destinations::disabled_backends;
+use betterlite_core::api::request_setup_options::error::RequestSetupOptionsError;
 use betterlite_core::api::request_setup_options::{
     CallbackVarsDecryption, RandomSessionIds, RequestSetupOptions, RequestSetupOptionsInput,
-    RequestSetupSettings, SetupDiagnostic,
+    RequestSetupOptionsResult, RequestSetupSettings, SetupDiagnostic,
 };
 use betterlite_logging::otel::config::destination::SpanScope;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -75,7 +76,7 @@ impl Helper for Op {
     }
 }
 
-fn service(
+const fn service(
     settings: RequestSetupSettings,
 ) -> RequestSetupOptions<RandomSessionIds, Plaintext, BTreeMap<String, String>> {
     RequestSetupOptions {
@@ -122,7 +123,11 @@ fn prepare_value(call: &PrepareCall) -> Value {
         metadata_variable_name: slot,
         principal: call.principal.clone(),
     };
-    match options.prepare(input) {
+    outcome_value(options.prepare(input))
+}
+
+fn outcome_value(outcome: Result<RequestSetupOptionsResult, RequestSetupOptionsError>) -> Value {
+    match outcome {
         Ok(result) => json!({
             "outcome": {
                 "data": result.data,
