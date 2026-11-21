@@ -926,3 +926,20 @@ async fn fallback_returns_the_failure_without_a_router() {
     assert_eq!(error.failure, rate_limited());
     assert!(!fake.events().contains(&Call::Fallbacks));
 }
+
+#[tokio::test]
+async fn fallback_returns_the_failure_when_models_do_not_resolve() {
+    let mut script = fallback_script(&["a"], &["gpt"]);
+    script.fallback_models = None;
+    let (events, result) = fallback_run(script, r#"{"model": "gpt"}"#, TestKey::default()).await;
+    let error = match result {
+        Ok(_) => panic!("the rate limit must surface"),
+        Err(error) => error,
+    };
+    assert_eq!(error.failure, rate_limited());
+    assert_eq!(text_at(&error.data, "model"), "gpt");
+    assert!(events.contains(&Call::FallbackModels(
+        String::from("gpt"),
+        vec![String::from("a")],
+    )));
+}
