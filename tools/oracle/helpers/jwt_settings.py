@@ -1,63 +1,59 @@
-from typing import Final, Literal, TypeAlias, TypedDict
+from typing import Annotated, Final, Literal, TypeAlias, TypedDict
 
 from litellm.proxy._types import LiteLLM_JWTAuth
 from litellm.secret_managers.main import str_to_bool
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
 UNKNOWN_PREFIX: Final = "Invalid arguments provided: "
 ALLOWED_INFIX: Final = ". Allowed arguments are: "
 VALUE_ERROR_PREFIX: Final = "Value error, "
 
 
-# functional syntax, since some LiteLLM field names are too long for identifiers
-Dump = TypedDict(
-    "Dump",
-    {
-        "admin_jwt_scope": str,
-        "admin_allowed_routes": list[str],
-        "team_id_jwt_field": str | None,
-        "team_id_upsert": bool,
-        "team_ids_jwt_field": str | None,
-        "upsert_sso_user_to_team": bool,
-        "team_allowed_routes": list[str],
-        "team_id_default": str | None,
-        "team_alias_jwt_field": str | None,
-        "org_id_jwt_field": str | None,
-        "org_alias_jwt_field": str | None,
-        "user_id_jwt_field": str | None,
-        "user_email_jwt_field": str | None,
-        "user_allowed_email_domain": str | None,
-        "user_roles_jwt_field": str | None,
-        "user_allowed_roles": list[str] | None,
-        "user_id_upsert": bool,
-        "end_user_id_jwt_field": str | None,
-        "agent_id_jwt_field": str | None,
-        "mcp_client_id_jwt_field": str | None,
-        "public_key_ttl": float,
-        "public_key_stale_ttl": float,
-        "public_allowed_routes": list[str],
-        "enforce_rbac": bool,
-        "roles_jwt_field": str | None,
-        "role_mappings": JsonValue,
-        "object_id_jwt_field": str | None,
-        "scope_mappings": JsonValue,
-        "enforce_scope_based_access": bool,
-        "enforce_team_based_model_access": bool,
-        "custom_validate": None,
-        "jwt_litellm_role_map": JsonValue,
-        "sync_user_role_and_teams": bool,
-        "oidc_userinfo_endpoint": str | None,
-        "oidc_userinfo_enabled": bool,
-        "oidc_userinfo_cache_ttl": float,
-        "virtual_key_claim_field": str | None,
-        "virtual_key_mapping_cache_ttl": float,
-        "unregistered_jwt_client_behavior": str,
-        "routing_overrides": JsonValue,
-        "team_claim_fallback": bool,
-        "fallback_to_db_teams": bool,
-        "issuers": JsonValue,
-    },
-)
+# two LiteLLM names pass 30 characters, so they get shorter keys and are read and written by alias
+class Dump(TypedDict):
+    admin_jwt_scope: str
+    admin_allowed_routes: list[str]
+    team_id_jwt_field: str | None
+    team_id_upsert: bool
+    team_ids_jwt_field: str | None
+    upsert_sso_user_to_team: bool
+    team_allowed_routes: list[str]
+    team_id_default: str | None
+    team_alias_jwt_field: str | None
+    org_id_jwt_field: str | None
+    org_alias_jwt_field: str | None
+    user_id_jwt_field: str | None
+    user_email_jwt_field: str | None
+    user_allowed_email_domain: str | None
+    user_roles_jwt_field: str | None
+    user_allowed_roles: list[str] | None
+    user_id_upsert: bool
+    end_user_id_jwt_field: str | None
+    agent_id_jwt_field: str | None
+    mcp_client_id_jwt_field: str | None
+    public_key_ttl: float
+    public_key_stale_ttl: float
+    public_allowed_routes: list[str]
+    enforce_rbac: bool
+    roles_jwt_field: str | None
+    role_mappings: JsonValue
+    object_id_jwt_field: str | None
+    scope_mappings: JsonValue
+    enforce_scope_based_access: bool
+    team_model_access: Annotated[bool, Field(alias="enforce_team_based_model_access")]
+    custom_validate: None
+    jwt_litellm_role_map: JsonValue
+    sync_user_role_and_teams: bool
+    oidc_userinfo_endpoint: str | None
+    oidc_userinfo_enabled: bool
+    oidc_userinfo_cache_ttl: float
+    virtual_key_claim_field: str | None
+    virtual_key_mapping_cache_ttl: float
+    unregistered_client: Annotated[str, Field(alias="unregistered_jwt_client_behavior")]
+    routing_overrides: JsonValue
+    team_claim_fallback: bool
+    fallback_to_db_teams: bool
+    issuers: JsonValue
 
 
 class ErrorItem(TypedDict):
@@ -84,19 +80,15 @@ class Input(TypedDict):
     scenarios: list[Scenario]
 
 
-Probe = TypedDict(
-    "Probe",
-    {
-        "issuer": str | None,
-        "issuer_config": JsonValue,
-        "virtual_key_claim_field": str | None,
-        "unregistered_jwt_client_behavior": str,
-    },
-)
+class Probe(TypedDict):
+    issuer: str | None
+    issuer_config: JsonValue
+    virtual_key_claim_field: str | None
+    behavior: str
 
 
 class Accepted(TypedDict):
-    accepted: Dump
+    accepted: JsonValue
     virtual_key_mapping_configured: bool
     probes: list[Probe]
 
@@ -151,8 +143,9 @@ def outcome(scenario: Scenario) -> Outcome:
     except ValueError as error:
         return value_error(str(error))
     probes = [probe(auth, issuer) for issuer in scenario["issuers"]]
+    dump = DUMP.validate_json(auth.model_dump_json())
     return {
-        "accepted": DUMP.validate_json(auth.model_dump_json()),
+        "accepted": JSON_VALUE.validate_json(DUMP.dump_json(dump, by_alias=True)),
         "virtual_key_mapping_configured": auth.is_virtual_key_mapping_configured(),
         "probes": probes,
     }
@@ -175,5 +168,5 @@ def probe(auth: LiteLLM_JWTAuth, issuer: str | None) -> Probe:
         "issuer": issuer,
         "issuer_config": dumped,
         "virtual_key_claim_field": auth.get_virtual_key_claim_field(issuer),
-        "unregistered_jwt_client_behavior": auth.get_unregistered_jwt_client_behavior(issuer).value,
+        "behavior": auth.get_unregistered_jwt_client_behavior(issuer).value,
     }

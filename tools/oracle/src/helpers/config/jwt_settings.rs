@@ -72,7 +72,6 @@ struct Probe {
     issuer: Option<String>,
     issuer_config: Option<IssuerConfig>,
     virtual_key_claim_field: Option<String>,
-    #[serde(rename = "unregistered_jwt_client_behavior")]
     behavior: UnregisteredClientBehavior,
 }
 
