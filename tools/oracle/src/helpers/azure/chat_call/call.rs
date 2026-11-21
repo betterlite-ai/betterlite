@@ -206,15 +206,10 @@ fn outcome_of(outcome: Result<ChatOutcome, AzureChatError>) -> Outcome {
     }
 }
 
-fn optional_object(case: &CallCase) -> Result<Object, Box<HelperError>> {
-    let value = serde_json::to_value(&case.optional_params).or_value_error()?;
-    serde_json::from_value(value).or_value_error()
-}
-
 pub(super) fn completion(case: &CallCase) -> Result<Value, Box<HelperError>> {
     let source = source_of(case);
     let secrets = Secrets::of(case);
-    let mut params = optional_object(case)?;
+    let mut params = case.optional_params.clone();
     let settings = Settings {
         azure: AzureSettings {
             default_max_retries: case.default_max_retries,

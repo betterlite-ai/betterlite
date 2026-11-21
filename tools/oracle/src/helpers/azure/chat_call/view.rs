@@ -29,112 +29,20 @@ pub(super) fn calls(values: Vec<Value>) -> Value {
 pub(super) fn report(source: &ScriptedSource, recorder: &Recorder, outcome: &Outcome) -> Value {
     json!({
         "outcome": outcome.name,
-        "gets": gets_value(source),
-        "gateways": gateways_value(source),
-        "requests": requests_value(source),
-        "pre": pre_values(recorder),
-        "post": post_values(recorder),
-        "response_headers": response_headers_value(recorder),
+        "gets": serde_json::to_value(source.gets()).unwrap_or(Value::Null),
+        "gateways": serde_json::to_value(source.gateways()).unwrap_or(Value::Null),
+        "requests": serde_json::to_value(source.requests()).unwrap_or(Value::Null),
+        "pre": recorder.pre.iter().map(pre_value).collect::<Vec<Value>>(),
+        "post": recorder.post.iter().map(post_value).collect::<Vec<Value>>(),
+        "response_headers": recorder
+            .response_headers
+            .last()
+            .map_or(Value::Null, |headers| {
+                serde_json::to_value(headers).unwrap_or(Value::Null)
+            }),
         "reply": outcome.reply,
         "error": outcome.error,
         "forward": outcome.forward,
-    })
-}
-
-fn response_headers_value(recorder: &Recorder) -> Value {
-    recorder
-        .response_headers
-        .last()
-        .map_or(Value::Null, |headers| {
-            Value::Object(
-                headers
-                    .iter()
-                    .map(|(name, value)| (name.clone(), Value::String(value.clone())))
-                    .collect(),
-            )
-        })
-}
-
-fn gets_value(source: &ScriptedSource) -> Value {
-    Value::Array(
-        source
-            .gets()
-            .iter()
-            .map(|record| {
-                json!({
-                    "api_version": record.api_version,
-                    "api_base": record.api_base,
-                    "api_key": record.api_key,
-                    "model": record.model,
-                    "is_async": record.is_async,
-                    "supplied": record.supplied,
-                    "litellm_params": {
-                        "azure_ad_token": record.azure_ad_token,
-                        "max_retries": record.max_retries,
-                        "timeout": record.timeout,
-                    },
-                })
-            })
-            .collect(),
-    )
-}
-
-fn gateways_value(source: &ScriptedSource) -> Value {
-    Value::Array(
-        source
-            .gateways()
-            .iter()
-            .map(|record| {
-                json!({
-                    "api_base": record.api_base,
-                    "model": record.model,
-                    "api_version": record.api_version,
-                    "max_retries": record.max_retries,
-                    "timeout": record.timeout,
-                    "api_key": record.api_key,
-                    "acompletion": record.acompletion,
-                })
-            })
-            .collect(),
-    )
-}
-
-fn requests_value(source: &ScriptedSource) -> Value {
-    Value::Array(
-        source
-            .requests()
-            .iter()
-            .map(|record| {
-                json!({
-                    "data": record.data,
-                    "caller_headers": record.caller_headers,
-                })
-            })
-            .collect(),
-    )
-}
-
-fn pre_values(recorder: &Recorder) -> Value {
-    Value::Array(recorder.pre.iter().map(pre_value).collect())
-}
-
-fn post_values(recorder: &Recorder) -> Value {
-    Value::Array(recorder.post.iter().map(post_value).collect())
-}
-
-fn headers_value(args: &AdditionalArgs) -> Value {
-    args.headers.as_ref().map_or(Value::Null, |headers| {
-        Value::Object(
-            headers
-                .iter()
-                .map(|(name, value)| {
-                    (
-                        name.clone(),
-                        serde_json::to_value(value).unwrap_or(Value::Null),
-                    )
-                })
-                .collect(),
-        )
     })
 }
 
@@ -144,7 +52,10 @@ fn args_fields(args: &AdditionalArgs) -> Map<String, Value> {
         Some(DecisionsJson::Bool(true))
     );
     let mut fields = Map::new();
-    fields.insert("headers".to_owned(), headers_value(args));
+    fields.insert(
+        "headers".to_owned(),
+        serde_json::to_value(&args.headers).unwrap_or(Value::Null),
+    );
     fields.insert(
         "api_base".to_owned(),
         args.api_base

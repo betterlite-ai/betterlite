@@ -78,10 +78,6 @@ fn extra_args(
     }
 }
 
-fn messages_input(data: &Object) -> decisions::Json {
-    data.get("messages").map_or(decisions::Json::Null, logged)
-}
-
 // pre_call(input=messages, api_key=api_key, additional_args={"headers", "api_version", "api_base", "complete_input_dict", "openai_sdk"})
 pub(super) fn sync_pre_call<Client>(
     call: &ChatCall<'_, Client>,
@@ -133,7 +129,7 @@ pub(super) fn async_pre_call<Client>(
     data: &Object,
 ) -> PreCallRecord {
     PreCallRecord {
-        input: messages_input(data),
+        input: data.get("messages").map_or(decisions::Json::Null, logged),
         api_key: client.api_key.clone(),
         additional_args: extra_args(
             Some(call.api_base.to_owned()),
@@ -149,7 +145,7 @@ pub(super) fn async_pre_call<Client>(
 pub(super) fn async_post_call(data: &Object, original: decisions::Json) -> PostCall {
     PostCall {
         original_response: original,
-        input: messages_input(data),
+        input: data.get("messages").map_or(decisions::Json::Null, logged),
         additional_args: extra_args(
             None,
             None,

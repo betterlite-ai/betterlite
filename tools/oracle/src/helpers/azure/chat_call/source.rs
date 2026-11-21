@@ -11,6 +11,7 @@ use betterlite_openai::output_limits::raw_send::{
 };
 use betterlite_prompts::arguments::json::Json;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Serialize;
 use serde_json::{Map, Value};
 
 pub(super) mod answer;
@@ -27,26 +28,32 @@ pub(super) const CHAT_BODY: &str = concat!(
     r#""usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#
 );
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub(super) struct RequestRecord {
     pub data: Value,
     pub caller_headers: Json,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub(super) struct GetRecord {
     pub api_version: Option<String>,
     pub api_base: Option<String>,
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub is_async: bool,
+    pub supplied: bool,
+    pub litellm_params: GetParams,
+}
+
+// the client parameters get_azure_openai_client received, as the oracle reports them
+#[derive(Clone, Serialize)]
+pub(super) struct GetParams {
     pub azure_ad_token: Option<String>,
     pub max_retries: Option<i64>,
     pub timeout: Option<f64>,
-    pub supplied: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub(super) struct GatewayRecord {
     pub api_base: String,
     pub model: String,
@@ -175,14 +182,16 @@ impl ClientSource for ScriptedSource {
                 api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
                 model: call.model.map(str::to_owned),
                 is_async: call.is_async,
-                azure_ad_token: call
-                    .litellm_params
-                    .azure_ad_token
-                    .as_ref()
-                    .map(|token| token.expose_secret().to_owned()),
-                max_retries: call.litellm_params.max_retries,
-                timeout: call.litellm_params.timeout,
                 supplied: call.supplied.is_some(),
+                litellm_params: GetParams {
+                    azure_ad_token: call
+                        .litellm_params
+                        .azure_ad_token
+                        .as_ref()
+                        .map(|token| token.expose_secret().to_owned()),
+                    max_retries: call.litellm_params.max_retries,
+                    timeout: call.litellm_params.timeout,
+                },
             },
         ))
     }

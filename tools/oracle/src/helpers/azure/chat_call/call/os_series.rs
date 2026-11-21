@@ -16,7 +16,7 @@ use super::super::CallCase;
 use super::super::hooks::Recorder;
 use super::super::source::{ScriptedSource, ScriptedTransport};
 use super::super::view::{self, Outcome};
-use super::{Secrets, block_on, message_text, optional_object, source_of};
+use super::{Secrets, block_on, message_text, source_of};
 
 struct Delegate {
     forward: Arc<Mutex<Value>>,
@@ -143,7 +143,7 @@ fn report(
 pub(crate) fn run(case: &CallCase) -> Result<Value, Box<HelperError>> {
     let source = source_of(case);
     let secrets = Secrets::of(case);
-    let params = optional_object(case)?;
+    let params = case.optional_params.clone();
     let supplied = case.supplied.then(|| source.handle());
     let call = o_series_call(case, &secrets, &params, supplied);
     let delegate = Delegate {

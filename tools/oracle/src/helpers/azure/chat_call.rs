@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 use serde::Deserialize;
 
@@ -48,7 +49,7 @@ pub(crate) struct CallCase {
     #[serde(default = "default_timeout")]
     pub(super) timeout: f64,
     #[serde(default)]
-    pub(super) optional_params: BTreeMap<String, serde_json::Value>,
+    pub(super) optional_params: Object,
     #[serde(default)]
     pub(super) litellm_params: LiteLlmParams,
     #[serde(default)]
