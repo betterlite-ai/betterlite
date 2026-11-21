@@ -14,5 +14,6 @@ call:
       - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"callback_settings": {"callback_vars": {"not_a_callback_var": "x"}}}}
       - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"callback_settings": {"success_callback": "langfuse"}}}
       - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"callback_settings": {"callback_vars": {"langfuse_secret_key": 7}}}}
+      - {"function": "resolve", "encrypt": false, "salt_key": "team-callback-policy-salt", "metadata": {"callback_settings": {"success_callback": ["langfuse"], "owner": "ops", "callback_vars": {"langfuse_host": "https://lf.example"}}}}
 env: {}
 compare: {ignore: []}
