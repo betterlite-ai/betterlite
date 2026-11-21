@@ -2,7 +2,6 @@
 
 mod support;
 
-use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context, Waker};
 use std::time::Duration;
