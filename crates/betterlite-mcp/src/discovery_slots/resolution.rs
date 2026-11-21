@@ -6,7 +6,7 @@ use tokio::time::{sleep, timeout};
 use super::DiscoverySlots;
 use super::clock::Clock;
 use super::discover::discover_server;
-use super::slot::{FailureReason, SlotOutcome};
+use super::slot::SlotOutcome;
 use crate::oauth_discovery::fetch::MetadataFetcher;
 use crate::oauth_resource::resource_identity::redact_mcp_resource_url;
 use crate::registry::servers::ServerRegistry;
@@ -16,7 +16,8 @@ use crate::server_record::MCPServer;
 
 enum Attempt {
     Settled(SlotOutcome),
-    Unresolved { retryable: bool },
+    Retryable,
+    Final,
 }
 
 impl<F, C> DiscoverySlots<F, C>
@@ -33,7 +34,7 @@ where
         let limit = self.settings.fetch.metadata_timeout;
         let outcome = match timeout(limit, self.resolve(&server, generation)).await {
             Ok(outcome) => outcome,
-            Err(_elapsed) => SlotOutcome::Failed(FailureReason::TimedOut),
+            Err(_elapsed) => SlotOutcome::TimedOut,
         };
         let server_id = &server.fields.server_id;
         let origin = redact_mcp_resource_url(server.fields.url.as_deref())
@@ -42,13 +43,13 @@ where
             SlotOutcome::Resolved(_) => tracing::info!(
                 "MCP OAuth discovery resolved the OAuth endpoints of server {server_id} from {origin}"
             ),
-            SlotOutcome::Failed(FailureReason::TimedOut) => {
+            SlotOutcome::TimedOut => {
                 tracing::warn!(
                     "Deferred MCP OAuth discovery timed out after {limit:?} for server {server_id} ({origin})"
                 );
                 self.record_failure(server_id, generation);
             }
-            SlotOutcome::Failed(FailureReason::Incomplete) => {
+            SlotOutcome::Incomplete => {
                 tracing::warn!(
                     "Deferred MCP OAuth discovery for server {server_id} ({origin}) returned incomplete metadata; the next request retries after the backoff"
                 );
@@ -62,12 +63,13 @@ where
     async fn resolve(&self, server: &MCPServer, generation: u64) -> SlotOutcome {
         let mut delays = self.settings.retry_delays.iter();
         loop {
-            let retryable = match self.attempt_once(server, generation).await {
+            match self.attempt_once(server, generation).await {
                 Attempt::Settled(outcome) => return outcome,
-                Attempt::Unresolved { retryable } => retryable,
-            };
-            let Some(delay) = delays.next().filter(|_| retryable) else {
-                return SlotOutcome::Failed(FailureReason::Incomplete);
+                Attempt::Final => return SlotOutcome::Incomplete,
+                Attempt::Retryable => {}
+            }
+            let Some(delay) = delays.next() else {
+                return SlotOutcome::Incomplete;
             };
             sleep(*delay).await;
         }
@@ -84,8 +86,10 @@ where
             attempt.metadata.as_ref(),
         );
         if endpoints_unresolved(&candidate) {
-            return Attempt::Unresolved {
-                retryable: attempt.retryable,
+            return if attempt.retryable {
+                Attempt::Retryable
+            } else {
+                Attempt::Final
             };
         }
         Attempt::Settled(self.publish(candidate, generation).await)

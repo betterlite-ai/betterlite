@@ -5,7 +5,7 @@ use tokio::sync::watch;
 use super::DiscoverySlots;
 use super::clock::Clock;
 use super::error::DiscoveryUnavailable;
-use super::slot::{DiscoveryRun, OutcomeWatch, SlotOutcome};
+use super::slot::{DiscoveryRun, FailureReason, OutcomeWatch, SlotOutcome};
 use crate::oauth_discovery::fetch::MetadataFetcher;
 use crate::server_oauth::unresolved::endpoints_unresolved;
 use crate::server_record::MCPServer;
@@ -24,7 +24,11 @@ where
         if let Some(run) = &slot.run {
             // the run drops its sender when it returns, so a closed channel means it is done
             let finished = run.outcome.has_changed().is_err();
-            let resolved = matches!(*run.outcome.borrow(), Some(SlotOutcome::Resolved(_)));
+            let resolved = run
+                .outcome
+                .borrow()
+                .as_ref()
+                .is_some_and(|settled| matches!(settled, SlotOutcome::Resolved(_)));
             if !finished || now < slot.retry_after || resolved {
                 return Some(run.outcome.clone());
             }
@@ -65,14 +69,16 @@ where
         let Some(mut outcome) = self.prime_one(server) else {
             return Some(Ok(self.registered_server(server).await));
         };
-        let finished = match outcome.wait_for(Option::is_some).await {
-            Ok(value) => value.clone(),
-            Err(_closed) => None,
-        };
+        let finished = outcome
+            .wait_for(Option::is_some)
+            .await
+            .ok()
+            .and_then(|value| value.clone());
         let reason = match finished? {
             SlotOutcome::Resolved(resolved) => return Some(Ok(*resolved)),
             SlotOutcome::Stale => return None,
-            SlotOutcome::Failed(reason) => reason,
+            SlotOutcome::TimedOut => FailureReason::TimedOut,
+            SlotOutcome::Incomplete => FailureReason::Incomplete,
         };
         let current = self.registered_server(server).await;
         if current.is_client_forwarded_token() {

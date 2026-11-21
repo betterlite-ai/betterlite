@@ -18,7 +18,8 @@ pub enum FailureReason {
 #[derive(Clone, Debug, PartialEq)]
 pub enum SlotOutcome {
     Resolved(Box<MCPServer>),
-    Failed(FailureReason),
+    TimedOut,
+    Incomplete,
     Stale,
 }
 

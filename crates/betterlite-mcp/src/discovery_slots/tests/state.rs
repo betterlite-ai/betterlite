@@ -220,3 +220,13 @@ async fn state_registered_server_reads_database_then_config_then_the_given_serve
     let gamma = server("gamma", "oauth2");
     assert_eq!(slots.registered_server(&gamma).await, gamma);
 }
+
+#[tokio::test(start_paused = true)]
+async fn state_tokio_clock_follows_the_runtime_clock() {
+    let before = TokioClock.now();
+    advance(Duration::from_secs(3)).await;
+    assert_eq!(
+        TokioClock.now().duration_since(before),
+        Duration::from_secs(3)
+    );
+}

@@ -9,11 +9,11 @@ use http::{HeaderMap, StatusCode};
 use rstest::rstest;
 use tokio::sync::{RwLock, Semaphore};
 use tokio::task::yield_now;
-use tokio::time::{Instant, sleep};
+use tokio::time::{Instant, advance, sleep};
 use tokio_util::task::TaskTracker;
 
 use super::DiscoverySlots;
-use super::clock::Clock;
+use super::clock::{Clock, TokioClock};
 use super::discover::{discover_server, discovery_needs, is_retryable};
 use super::error::DiscoveryUnavailable;
 use super::settings::{DiscoverySettings, ON_STARTUP_VARIABLE};
