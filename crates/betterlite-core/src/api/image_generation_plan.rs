@@ -91,9 +91,11 @@ where
             .map_err(|failure| error::raised(plan.redactor, failure))?;
         match returned {
             GenerationReturn::Response(response) => Ok(*response),
-            GenerationReturn::Mapping(mapping) => {
-                error::mapping(plan.redactor, mapping, &model, &provider)
-            }
+            GenerationReturn::Mapping(mapping) => serde_json::to_value(mapping)
+                .and_then(serde_json::from_value)
+                .map_err(|source| {
+                    error::refused(plan.redactor, &source.to_string(), &model, &provider)
+                }),
             GenerationReturn::Coroutine(pending) => pending
                 .await
                 .map_err(|failure| error::raised(plan.redactor, failure)),

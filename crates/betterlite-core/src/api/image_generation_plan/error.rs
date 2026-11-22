@@ -1,8 +1,6 @@
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::ErrorClass;
-use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
-use betterlite_openai::api::image_contracts::records::ImageResponse;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
@@ -70,19 +68,6 @@ pub(super) fn raised(
             }
         }
     }
-}
-
-// ImageResponse(**mapping): a refused dict raises the wrapper's own exception under the resolved provider
-pub(super) fn mapping(
-    redactor: &Redactor,
-    mapping: Json,
-    model: &str,
-    provider: &str,
-) -> Result<ImageResponse, AimageGenerationError> {
-    let value = serde_json::to_value(mapping)
-        .map_err(|source| refused(redactor, &source.to_string(), model, provider))?;
-    serde_json::from_value(value)
-        .map_err(|source| refused(redactor, &source.to_string(), model, provider))
 }
 
 pub(super) fn refused(
