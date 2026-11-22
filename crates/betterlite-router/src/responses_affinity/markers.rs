@@ -2,7 +2,7 @@ use betterlite_core::api::response_id_codecs::encrypted::{
     decode_encrypted_item_id, unwrap_encrypted_content,
 };
 use betterlite_core::api::response_id_traversal::record::Record;
-use betterlite_prompts::message_content::{Content, ContentPart, Message};
+use betterlite_prompts::message_content::{Content, Message};
 use betterlite_prompts::reasoning_fields::encrypted_signature::encrypted_content_of_block;
 
 // _extract_model_id_from_input: only a list is scanned, in order, and the first encoded item decides.
@@ -43,14 +43,11 @@ fn message_model_id(message: &Message) -> Option<String> {
     let Some(Content::Parts(blocks)) = &message.content else {
         return None;
     };
-    blocks.iter().find_map(block_model_id)
-}
-
-// _model_id_of_anthropic_block: the block carries a B903 wrapper inside its encrypted reasoning field.
-#[must_use]
-pub fn block_model_id(block: &ContentPart) -> Option<String> {
-    let content = encrypted_content_of_block(block)?;
-    wrapped_model_id(&content)
+    blocks.iter().find_map(|block| {
+        encrypted_content_of_block(block)
+            .as_deref()
+            .and_then(wrapped_model_id)
+    })
 }
 
 // _model_id_from_wrapped_encrypted_content: an empty metadata id carries no marker.

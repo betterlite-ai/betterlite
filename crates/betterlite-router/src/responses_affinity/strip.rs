@@ -4,6 +4,7 @@ use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_core::api::response_id_traversal::reasoning::strip_encrypted_reasoning as strip_input_reasoning;
 use betterlite_core::api::response_id_traversal::record::Record;
 use betterlite_prompts::message_content::{Content, ContentPart, Message};
+use betterlite_prompts::reasoning_fields::encrypted_signature::encrypted_content_of_block;
 use betterlite_prompts::reasoning_fields::strip_encrypted::strip_encrypted_reasoning as strip_message_blocks;
 
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -12,7 +13,7 @@ use crate::responses_affinity::boundary::{Boundary, encryption_boundary};
 use crate::responses_affinity::error::AffinityError;
 use crate::responses_affinity::history::History;
 use crate::responses_affinity::identity::deployment_id;
-use crate::responses_affinity::markers::{block_model_id, item_model_id};
+use crate::responses_affinity::markers::{item_model_id, wrapped_model_id};
 
 // _strip_reasoning_the_target_cannot_decrypt: drop the marked history none of the targets can read, in place.
 pub(crate) fn strip_for_targets(
@@ -41,7 +42,10 @@ pub(crate) fn strip_for_targets(
         strip_input_reasoning(input, item_selected);
     }
     let block_predicate = |block: &ContentPart| {
-        block_model_id(block).is_some_and(|origin| origins.get(&origin).copied() != Some(true))
+        encrypted_content_of_block(block)
+            .as_deref()
+            .and_then(wrapped_model_id)
+            .is_some_and(|origin| origins.get(&origin).copied() != Some(true))
     };
     strip_messages(history, Some(&block_predicate));
     Ok(())
@@ -87,7 +91,11 @@ fn add_message_origins(messages: &[Message], origins: &mut BTreeSet<String>) {
         let Some(Content::Parts(blocks)) = &message.content else {
             continue;
         };
-        origins.extend(blocks.iter().filter_map(block_model_id));
+        origins.extend(blocks.iter().filter_map(|block| {
+            encrypted_content_of_block(block)
+                .as_deref()
+                .and_then(wrapped_model_id)
+        }));
     }
 }
 
