@@ -146,6 +146,13 @@ fn a_negative_or_non_finite_penalty_is_rejected() {
     );
 }
 
+// the wire spelling each mode records as adaptive_router_decision.eligible_mode
+#[test]
+fn the_eligible_modes_render_the_declared_wire_names() {
+    assert_eq!(AdaptiveEligible::All.as_str(), "all");
+    assert_eq!(AdaptiveEligible::ClassifiedTier.as_str(), "classified_tier");
+}
+
 #[test]
 fn an_unknown_eligible_mode_is_rejected() {
     let source = router("        adaptive_eligible: every_tier\n");
