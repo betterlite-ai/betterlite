@@ -19,7 +19,7 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use crate::end_user::EndUserCostTrackingSettings;
 use crate::fields::payload::StandardLoggingPayload;
-use crate::prometheus::RequestedModelCatalog;
+use crate::prometheus::failure::RequestedModelCatalog;
 use crate::prometheus::failure::deployment_labels::{
     DeploymentFailureLabels, DeploymentFailureSources, deployment_failure_labels,
 };
@@ -92,19 +92,23 @@ impl RemovableMetric for ProbeMetric {
     }
 }
 
+// a bool on the test wire; the newtype keeps struct_excessive_bools off the three catalog answers
+#[derive(Clone, Copy)]
+pub(crate) struct Answer(bool);
+
 pub(crate) struct FakeCatalog {
-    pub(crate) recognized: bool,
-    pub(crate) public: bool,
-    pub(crate) pattern: bool,
+    pub(crate) recognized: Answer,
+    pub(crate) public: Answer,
+    pub(crate) pattern: Answer,
     pub(crate) calls: Mutex<Vec<String>>,
 }
 
 impl FakeCatalog {
     pub(crate) fn rejecting() -> Self {
         Self {
-            recognized: false,
-            public: false,
-            pattern: false,
+            recognized: Answer(false),
+            public: Answer(false),
+            pattern: Answer(false),
             calls: Mutex::new(Vec::new()),
         }
     }
@@ -123,15 +127,15 @@ impl RequestedModelCatalog for FakeCatalog {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(model.to_owned());
-        self.recognized
+        self.recognized.0
     }
 
     fn is_team_public_model(&self, _model: &str) -> bool {
-        self.public
+        self.public.0
     }
 
     fn matches_pattern_route(&self, _model: &str) -> bool {
-        self.pattern
+        self.pattern.0
     }
 }
 

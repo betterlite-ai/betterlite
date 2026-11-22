@@ -34,11 +34,14 @@ impl FallbackEvent {
     }
 }
 
-pub fn log_fallback_event<G: DeploymentMetrics>(
+pub fn log_fallback_event<G>(
     metrics: &G,
     request: &FallbackRequest<'_>,
     event: FallbackEvent,
-) -> DeploymentResult<G> {
+) -> DeploymentResult<G>
+where
+    G: DeploymentMetrics,
+{
     tracing::debug!(
         "Prometheus: {}, original_model_group: {}",
         event.entry_point(),
@@ -64,11 +67,14 @@ pub fn log_fallback_event<G: DeploymentMetrics>(
     )
 }
 
-fn fallback_values<G: DeploymentMetrics>(
+fn fallback_values<G>(
     metrics: &G,
     request: &FallbackRequest<'_>,
     standard: &StandardLoggingMetadata,
-) -> UserApiKeyLabelValues {
+) -> UserApiKeyLabelValues
+where
+    G: DeploymentMetrics,
+{
     let mut entries: Vec<(String, LabelDumpValue)> = Vec::new();
     let requested = Json::Text(request.original_model_group.to_owned());
     let bounded = metrics.bounded_model_label(Some(&requested), true, request.catalog);

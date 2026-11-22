@@ -19,10 +19,10 @@ const COOLED_DOWN_LABELS: [&str; 5] = [
 ];
 
 // ast-grep-ignore: no-long-names
-pub fn increment_deployment_cooled_down<G: DeploymentMetrics>(
-    metrics: &G,
-    labels: CooledDownLabels<'_>,
-) {
+pub fn increment_deployment_cooled_down<G>(metrics: &G, labels: CooledDownLabels<'_>)
+where
+    G: DeploymentMetrics,
+{
     let values = [
         labels.litellm_model_name,
         labels.model_id,
@@ -51,10 +51,10 @@ pub fn increment_callback_logging_failure(counter: &Handle, callback_name: &str)
         .inc(MetricValue::Finite(Decimal::ONE));
 }
 
-pub fn record_managed_batch_created<G: DeploymentMetrics>(
-    metrics: &G,
-    labels: BatchCreatedLabels<'_>,
-) {
+pub fn record_managed_batch_created<G>(metrics: &G, labels: BatchCreatedLabels<'_>)
+where
+    G: DeploymentMetrics,
+{
     let pairs: Vec<(&str, &str)> = [
         ("model", labels.model),
         ("api_provider", labels.api_provider),

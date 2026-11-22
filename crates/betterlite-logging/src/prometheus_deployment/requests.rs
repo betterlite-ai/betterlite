@@ -6,7 +6,7 @@ use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
 use rust_decimal::Decimal;
 
 use crate::fields::payload::StandardLoggingPayload;
-use crate::prometheus::RequestedModelCatalog;
+use crate::prometheus::failure::RequestedModelCatalog;
 use crate::prometheus::failure::exception::LabelException;
 use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
 

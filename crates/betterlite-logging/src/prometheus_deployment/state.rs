@@ -6,11 +6,14 @@ use super::metrics::{DeploymentMetrics, DeploymentResult};
 use super::requests::DeploymentLabels;
 use super::values::push_text;
 
-pub fn set_litellm_deployment_state<G: DeploymentMetrics>(
+pub fn set_litellm_deployment_state<G>(
     metrics: &G,
     state: DeploymentState,
     labels: DeploymentLabels<'_>,
-) -> DeploymentResult<G> {
+) -> DeploymentResult<G>
+where
+    G: DeploymentMetrics,
+{
     let mut entries = Vec::new();
     push_text(
         &mut entries,
@@ -30,25 +33,31 @@ pub fn set_litellm_deployment_state<G: DeploymentMetrics>(
 }
 
 // ast-grep-ignore: no-one-line-functions - the three named setters are LiteLLM's entry points
-pub fn set_deployment_healthy<G: DeploymentMetrics>(
-    metrics: &G,
-    labels: DeploymentLabels<'_>,
-) -> DeploymentResult<G> {
+pub fn set_deployment_healthy<G>(metrics: &G, labels: DeploymentLabels<'_>) -> DeploymentResult<G>
+where
+    G: DeploymentMetrics,
+{
     set_litellm_deployment_state(metrics, DeploymentState::Healthy, labels)
 }
 
 // ast-grep-ignore: no-one-line-functions - the three named setters are LiteLLM's entry points
-pub fn set_deployment_partial_outage<G: DeploymentMetrics>(
+pub fn set_deployment_partial_outage<G>(
     metrics: &G,
     labels: DeploymentLabels<'_>,
-) -> DeploymentResult<G> {
+) -> DeploymentResult<G>
+where
+    G: DeploymentMetrics,
+{
     set_litellm_deployment_state(metrics, DeploymentState::PartialOutage, labels)
 }
 
 // ast-grep-ignore: no-one-line-functions - the three named setters are LiteLLM's entry points
-pub fn set_deployment_complete_outage<G: DeploymentMetrics>(
+pub fn set_deployment_complete_outage<G>(
     metrics: &G,
     labels: DeploymentLabels<'_>,
-) -> DeploymentResult<G> {
+) -> DeploymentResult<G>
+where
+    G: DeploymentMetrics,
+{
     set_litellm_deployment_state(metrics, DeploymentState::CompleteOutage, labels)
 }

@@ -11,8 +11,8 @@ use super::metric::DeploymentMetric;
 use super::requests::SuccessRequest;
 use super::success::set_llm_deployment_success_metrics;
 use super::support::{
-    Fixture, ProbeGauges, capture_logs, expected_labels, hidden_params, inc_amount, json_object,
-    labels_of, metric_of, now, number, update_of,
+    Fixture, ProbeGauges, Recorded, capture_logs, expected_labels, hidden_params, inc_amount,
+    json_object, labels_of, metric_of, now, number, payload_with, update_of,
 };
 
 fn params(entries: &[(&str, Json)]) -> JsonObject {
@@ -35,7 +35,7 @@ fn model_info_params() -> JsonObject {
 }
 
 fn success_payload(extra: &[(&str, Json)]) -> StandardLoggingPayload {
-    super::support::payload_with(extra)
+    payload_with(extra)
 }
 
 fn full_payload() -> StandardLoggingPayload {
@@ -97,7 +97,7 @@ fn request<'request>(
         values,
         context: None,
         start_time: Decimal::ZERO,
-        end_time: Decimal::from(2),
+        end_time: Decimal::from(2_i64),
         output_tokens: timing.output_tokens,
         now: now(),
     }
@@ -133,8 +133,7 @@ fn an_invalid_key_success_records_nothing() {
     assert!(gauges.updates().is_empty());
 }
 
-#[test]
-fn a_full_success_writes_every_metric_in_order() {
+fn full_success_events() -> Vec<Recorded> {
     let gauges = ProbeGauges::new();
     let fixture = fixture();
     let litellm_params = model_info_params();
@@ -148,11 +147,14 @@ fn a_full_success_writes_every_metric_in_order() {
             Timing {
                 stream: Some(true),
                 completion_start_time: Some(Decimal::ONE),
-                output_tokens: Some(Decimal::from(4)),
+                output_tokens: Some(Decimal::from(4_i64)),
             },
         ),
     );
-    let events = gauges.updates();
+    gauges.updates()
+}
+
+fn assert_success_metric_order(events: &[Recorded]) {
     let names: Vec<&'static str> = events.iter().map(metric_of).collect();
     assert_eq!(
         names,
@@ -169,6 +171,9 @@ fn a_full_success_writes_every_metric_in_order() {
             "litellm_deployment_latency_per_output_token",
         ]
     );
+}
+
+fn assert_tpm_limit_labels(events: &[Recorded]) {
     assert_eq!(
         labels_of(&events[0]),
         &expected_labels(
@@ -182,13 +187,16 @@ fn a_full_success_writes_every_metric_in_order() {
             ],
         )
     );
+}
+
+fn assert_limit_updates(events: &[Recorded]) {
     assert_eq!(
         update_of(&events[0]),
-        MetricUpdate::Set(MetricValue::Finite(Decimal::from(100)))
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(100_i64)))
     );
     assert_eq!(
         update_of(&events[1]),
-        MetricUpdate::Set(MetricValue::Finite(Decimal::from(10)))
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(10_i64)))
     );
     assert_eq!(
         update_of(&events[2]),
@@ -200,12 +208,15 @@ fn a_full_success_writes_every_metric_in_order() {
     );
     assert_eq!(
         update_of(&events[4]),
-        MetricUpdate::Set(MetricValue::Finite(Decimal::from(5)))
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(5_i64)))
     );
     assert_eq!(
         update_of(&events[5]),
-        MetricUpdate::Set(MetricValue::Finite(Decimal::from(7)))
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(7_i64)))
     );
+}
+
+fn assert_healthy_state_labels(events: &[Recorded]) {
     assert_eq!(
         labels_of(&events[6]),
         &expected_labels(
@@ -218,6 +229,9 @@ fn a_full_success_writes_every_metric_in_order() {
             ],
         )
     );
+}
+
+fn assert_success_and_total(events: &[Recorded]) {
     assert_eq!(update_of(&events[7]), inc_amount());
     assert_eq!(
         metric_of(&events[7]),
@@ -238,6 +252,16 @@ fn a_full_success_writes_every_metric_in_order() {
             ],
         )
     );
+}
+
+#[test]
+fn a_full_success_writes_every_metric_in_order() {
+    let events = full_success_events();
+    assert_success_metric_order(&events);
+    assert_tpm_limit_labels(&events);
+    assert_limit_updates(&events);
+    assert_healthy_state_labels(&events);
+    assert_success_and_total(&events);
     assert_eq!(
         update_of(&events[9]),
         MetricUpdate::Observe(MetricValue::Finite(Decimal::new(25, 2)))
@@ -266,7 +290,7 @@ fn litellm_params_limits_are_written_without_model_info() {
         .expect("the params tpm limit is written");
     assert_eq!(
         update_of(&event),
-        MetricUpdate::Set(MetricValue::Finite(Decimal::from(42)))
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(42_i64)))
     );
 }
 
@@ -386,8 +410,8 @@ fn a_streaming_success_measures_from_the_completion_start_time() {
             Some(true),
             Some(Decimal::ONE),
             Decimal::ZERO,
-            Decimal::from(3),
-            Some(Decimal::from(2)),
+            Decimal::from(3_i64),
+            Some(Decimal::from(2_i64)),
         ),
         Some(Decimal::new(5, 1))
     );
@@ -400,8 +424,8 @@ fn a_streaming_zero_first_token_falls_back_to_the_response_time() {
             Some(true),
             Some(Decimal::ONE),
             Decimal::ONE,
-            Decimal::from(3),
-            Some(Decimal::from(2)),
+            Decimal::from(3_i64),
+            Some(Decimal::from(2_i64)),
         ),
         Some(Decimal::ONE)
     );
@@ -414,8 +438,8 @@ fn a_non_streaming_success_uses_the_response_time() {
             None,
             Some(Decimal::ONE),
             Decimal::ZERO,
-            Decimal::from(3),
-            Some(Decimal::from(3)),
+            Decimal::from(3_i64),
+            Some(Decimal::from(3_i64)),
         ),
         Some(Decimal::ONE)
     );
@@ -424,8 +448,8 @@ fn a_non_streaming_success_uses_the_response_time() {
             Some(false),
             Some(Decimal::ONE),
             Decimal::ZERO,
-            Decimal::from(3),
-            Some(Decimal::from(3)),
+            Decimal::from(3_i64),
+            Some(Decimal::from(3_i64)),
         ),
         Some(Decimal::ONE)
     );
@@ -438,11 +462,33 @@ fn zero_output_tokens_skips_the_per_token_latency() {
             None,
             None,
             Decimal::ZERO,
-            Decimal::from(2),
+            Decimal::from(2_i64),
             Some(Decimal::ZERO)
         ),
         None
     );
+}
+
+#[test]
+fn zero_output_tokens_are_not_an_error() {
+    let gauges = ProbeGauges::new();
+    let fixture = fixture();
+    let litellm_params = params(&[]);
+    let payload = success_payload(&[("api_base", Json::Text(String::new()))]);
+    let (captured, _guard) = capture_logs(tracing::Level::ERROR);
+    set_llm_deployment_success_metrics(
+        &gauges,
+        &request(
+            &fixture.values,
+            &litellm_params,
+            Some(&payload),
+            Timing {
+                output_tokens: Some(Decimal::ZERO),
+                ..Timing::default()
+            },
+        ),
+    );
+    assert!(!captured.text().contains("Prometheus Error"));
 }
 
 #[test]
@@ -452,8 +498,8 @@ fn negative_output_tokens_skip_the_per_token_latency() {
             None,
             None,
             Decimal::ZERO,
-            Decimal::from(2),
-            Some(Decimal::from(-1)),
+            Decimal::from(2_i64),
+            Some(Decimal::from(-1_i64)),
         ),
         None
     );
@@ -462,8 +508,8 @@ fn negative_output_tokens_skip_the_per_token_latency() {
 #[test]
 fn a_missing_output_token_count_defaults_to_one() {
     assert_eq!(
-        latency_value(None, None, Decimal::ZERO, Decimal::from(2), None),
-        Some(Decimal::from(2))
+        latency_value(None, None, Decimal::ZERO, Decimal::from(2_i64), None),
+        Some(Decimal::from(2_i64))
     );
 }
 
@@ -530,22 +576,26 @@ fn a_success_error_is_logged_at_error_and_stops_later_writes() {
     );
 }
 
-#[test]
-fn remaining_values_are_set_rather_than_incremented() {
-    let gauges = ProbeGauges::new();
-    let fixture = fixture();
-    let litellm_params = params(&[]);
+fn remaining_requests_payload(value: &str) -> StandardLoggingPayload {
     let headers = Json::Object(json_object(&[(
         "x_ratelimit_remaining_requests",
-        Json::Text("11".to_owned()),
+        Json::Text(value.to_owned()),
     )]));
-    let payload = success_payload(&[
+    success_payload(&[
         ("api_base", Json::Text(String::new())),
         (
             "hidden_params",
             hidden_params(&[("additional_headers", headers)]),
         ),
-    ]);
+    ])
+}
+
+#[test]
+fn remaining_values_are_set_rather_than_incremented() {
+    let gauges = ProbeGauges::new();
+    let fixture = fixture();
+    let litellm_params = params(&[]);
+    let payload = remaining_requests_payload("11");
     set_llm_deployment_success_metrics(
         &gauges,
         &request(
@@ -562,7 +612,7 @@ fn remaining_values_are_set_rather_than_incremented() {
         .expect("the remaining requests gauge is set");
     assert_eq!(
         update_of(&event),
-        MetricUpdate::Set(MetricValue::Finite(Decimal::from(11)))
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(11_i64)))
     );
     assert_eq!(
         labels_of(&event),
@@ -632,16 +682,12 @@ fn the_plain_overhead_histogram_is_skipped_when_guardrails_are_absent() {
     assert!(names.contains(&"litellm_deployment_success_responses"));
 }
 
-#[test]
-fn an_observed_header_and_overhead_use_the_metric_label_lists() {
-    let gauges = ProbeGauges::new();
-    let fixture = fixture();
-    let litellm_params = params(&[]);
+fn overhead_and_token_header_payload() -> StandardLoggingPayload {
     let headers = Json::Object(json_object(&[(
         "x_ratelimit_remaining_tokens",
         number("9"),
     )]));
-    let payload = success_payload(&[
+    success_payload(&[
         ("api_base", Json::Text("https://api.example".to_owned())),
         (
             "hidden_params",
@@ -650,18 +696,10 @@ fn an_observed_header_and_overhead_use_the_metric_label_lists() {
                 ("additional_headers", headers),
             ]),
         ),
-    ]);
-    set_llm_deployment_success_metrics(
-        &gauges,
-        &request(
-            &fixture.values,
-            &litellm_params,
-            Some(&payload),
-            Timing::default(),
-        ),
-    );
-    let events = gauges.updates();
-    assert_eq!(metric_of(&events[0]), "litellm_overhead_latency_metric");
+    ])
+}
+
+fn assert_overhead_metric_labels(events: &[Recorded]) {
     assert_eq!(
         labels_of(&events[0]),
         &expected_labels(
@@ -674,6 +712,26 @@ fn an_observed_header_and_overhead_use_the_metric_label_lists() {
             ],
         )
     );
+}
+
+#[test]
+fn an_observed_header_and_overhead_use_the_metric_label_lists() {
+    let gauges = ProbeGauges::new();
+    let fixture = fixture();
+    let litellm_params = params(&[]);
+    let payload = overhead_and_token_header_payload();
+    set_llm_deployment_success_metrics(
+        &gauges,
+        &request(
+            &fixture.values,
+            &litellm_params,
+            Some(&payload),
+            Timing::default(),
+        ),
+    );
+    let events = gauges.updates();
+    assert_eq!(metric_of(&events[0]), "litellm_overhead_latency_metric");
+    assert_overhead_metric_labels(&events);
     assert_eq!(
         update_of(&events[0]),
         MetricUpdate::Observe(MetricValue::Finite(Decimal::new(2, 3)))
@@ -684,6 +742,6 @@ fn an_observed_header_and_overhead_use_the_metric_label_lists() {
         .expect("the tokens gauge is set");
     assert_eq!(
         update_of(tokens),
-        MetricUpdate::Set(MetricValue::Finite(Decimal::from(9)))
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(9_i64)))
     );
 }

@@ -6,9 +6,9 @@ use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
 use rust_decimal::Decimal;
 
 use crate::end_user::EndUserCostTrackingSettings;
-use crate::prometheus::RequestedModelCatalog;
 use crate::prometheus::bounded_series::CounterEmission;
 use crate::prometheus::budget_gauges::gauge::label_pairs;
+use crate::prometheus::failure::RequestedModelCatalog;
 use crate::prometheus::failure::deployment_labels::{
     DeploymentFailureLabels, DeploymentFailureSources, deployment_failure_labels,
 };
@@ -137,13 +137,16 @@ pub trait DeploymentMetrics: RateLimitGauges {
 }
 
 // the one labeled emission, so a metrics type that overrides increment_counter keeps the same series
-pub(crate) fn emit_labeled_counter<Metrics: DeploymentMetrics>(
+pub(crate) fn emit_labeled_counter<Metrics>(
     metrics: &Metrics,
     metric: DeploymentMetric,
     values: &UserApiKeyLabelValues,
     source: LabelSource<'_>,
     now: Instant,
-) -> DeploymentResult<Metrics> {
+) -> DeploymentResult<Metrics>
+where
+    Metrics: DeploymentMetrics,
+{
     let counter = metrics.metric(metric);
     let emission = CounterEmission {
         counter: &counter,

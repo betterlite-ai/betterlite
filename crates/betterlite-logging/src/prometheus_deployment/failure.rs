@@ -27,10 +27,10 @@ struct FailureFields {
 }
 
 // ast-grep-ignore: no-long-names
-pub fn set_llm_deployment_failure_metrics<G: DeploymentMetrics>(
-    metrics: &G,
-    request: &FailureRequest<'_>,
-) {
+pub fn set_llm_deployment_failure_metrics<G>(metrics: &G, request: &FailureRequest<'_>)
+where
+    G: DeploymentMetrics,
+{
     if let Err(error) = record_failure(metrics, request) {
         tracing::debug!(
             "Prometheus Error: set_llm_deployment_failure_metrics. Exception occured - {error}"
@@ -38,10 +38,10 @@ pub fn set_llm_deployment_failure_metrics<G: DeploymentMetrics>(
     }
 }
 
-fn record_failure<G: DeploymentMetrics>(
-    metrics: &G,
-    request: &FailureRequest<'_>,
-) -> DeploymentResult<G> {
+fn record_failure<G>(metrics: &G, request: &FailureRequest<'_>) -> DeploymentResult<G>
+where
+    G: DeploymentMetrics,
+{
     let fields = failure_fields(request);
     if metrics.skip_invalid_key(None, None, request.exception) {
         return Ok(());
@@ -119,11 +119,14 @@ fn params_model_group(params: &JsonObject) -> Option<String> {
         .find_map(|metadata| metadata.get("model_group").and_then(model_group_field))
 }
 
-fn failure_values<G: DeploymentMetrics>(
+fn failure_values<G>(
     metrics: &G,
     request: &FailureRequest<'_>,
     fields: &FailureFields,
-) -> UserApiKeyLabelValues {
+) -> UserApiKeyLabelValues
+where
+    G: DeploymentMetrics,
+{
     let identity = identity::failure_identity(metrics, request);
     let mut entries: Vec<(String, LabelDumpValue)> = Vec::new();
     deployment_values(metrics, request, fields, &mut entries);
@@ -152,12 +155,14 @@ fn failure_values<G: DeploymentMetrics>(
     UserApiKeyLabelValues::from_entries(&entries)
 }
 
-fn deployment_values<G: DeploymentMetrics>(
+fn deployment_values<G>(
     metrics: &G,
     request: &FailureRequest<'_>,
     fields: &FailureFields,
     entries: &mut Vec<(String, LabelDumpValue)>,
-) {
+) where
+    G: DeploymentMetrics,
+{
     if fields.selected {
         push_text(entries, "litellm_model_name", request.model);
         push_text(entries, "model_id", fields.model_id.as_deref());
@@ -179,12 +184,14 @@ fn deployment_values<G: DeploymentMetrics>(
 }
 
 // a LiteLLM-side reject has no deployment, so only the bounded caller names label the request
-fn rejected_values<G: DeploymentMetrics>(
+fn rejected_values<G>(
     metrics: &G,
     request: &FailureRequest<'_>,
     fields: &FailureFields,
     entries: &mut Vec<(String, LabelDumpValue)>,
-) {
+) where
+    G: DeploymentMetrics,
+{
     for name in ["litellm_model_name", "model_id", "api_base", "api_provider"] {
         push_text(entries, name, Some(""));
     }
