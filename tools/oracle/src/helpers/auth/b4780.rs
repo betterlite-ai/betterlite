@@ -11,7 +11,7 @@ use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::agent_registry::AgentRegistry;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::runtime::{Builder, Runtime};
 
@@ -137,15 +137,27 @@ fn human_grants(
     Ok(json!(granted))
 }
 
+// the answer a delegated-team case expects: the chosen team, or the status and detail of the refusal
+#[derive(Serialize)]
+#[serde(untagged)]
+enum TeamAnswer {
+    Team(Option<String>),
+    Denied { status: u16, detail: String },
+}
+
 fn delegated_team(
     runtime: &Runtime,
     resolver: &CaseResolver<'_>,
     request: &DelegatedTeamRequest<'_>,
 ) -> HelperResult {
-    match runtime.block_on(resolve_delegated_agent_team(resolver, request)) {
-        Ok(team) => Ok(json!(team)),
-        Err(error) => Ok(json!({"status": error.status(), "detail": error.to_string()})),
-    }
+    let answer = match runtime.block_on(resolve_delegated_agent_team(resolver, request)) {
+        Ok(team) => TeamAnswer::Team(team),
+        Err(error) => TeamAnswer::Denied {
+            status: error.status(),
+            detail: error.to_string(),
+        },
+    };
+    serde_json::to_value(answer).or_value_error()
 }
 
 async fn accessible(
