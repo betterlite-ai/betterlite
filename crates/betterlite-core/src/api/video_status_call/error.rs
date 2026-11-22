@@ -85,21 +85,13 @@ fn rejected_failure(
         return field_failure(field, expected, provider, error.to_string());
     }
     let message = error.to_string();
-    // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
     if matches!(
         error,
         VideoStatusCallError::UnknownProvider { .. }
             | VideoStatusCallError::Unsupported { .. }
             | VideoStatusCallError::Selection(_)
     ) {
-        return VideoStatusCallError::Mapped {
-            class: ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
-                message.clone(),
-                Some(MODEL.to_owned()),
-                provider,
-            ))),
-            message,
-        };
+        return provider_failure(message, provider);
     }
     let raw = rejected_exception(&message, provider);
     raw_failure(message, raw, redactor)
@@ -112,18 +104,6 @@ pub fn status_failure(
     provider: &str,
     redactor: &Redactor,
 ) -> VideoStatusCallError {
-    // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
-    if matches!(error, VideoStatusError::UnknownProvider { .. }) {
-        let message = error.to_string();
-        return VideoStatusCallError::Mapped {
-            class: ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
-                message.clone(),
-                Some(MODEL.to_owned()),
-                provider,
-            ))),
-            message,
-        };
-    }
     let raw = match error {
         VideoStatusError::Converted(carried) => {
             let mut raw =
@@ -137,11 +117,27 @@ pub fn status_failure(
         VideoStatusError::FieldType { field, expected } => {
             return field_failure(field, expected, provider, error.to_string());
         }
+        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+        VideoStatusError::UnknownProvider { .. } => {
+            return provider_failure(error.to_string(), provider);
+        }
         VideoStatusError::Client(_)
         | VideoStatusError::Logging(_)
         | VideoStatusError::Suspended => raw_exception(error.to_string(), provider, None),
     };
     raw_failure(error.to_string(), raw, redactor)
+}
+
+// the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+fn provider_failure(message: String, provider: &str) -> VideoStatusCallError {
+    VideoStatusCallError::Mapped {
+        class: ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
+            message.clone(),
+            Some(MODEL.to_owned()),
+            provider,
+        ))),
+        message,
+    }
 }
 
 fn field_failure(
