@@ -79,16 +79,16 @@ impl Settings {
 
 // _active_tier_severity: the position of a tier in the active severity order
 pub fn tier_severity(catalog: &TierSet, tier: &Tier) -> Result<usize, TurnOverrideError> {
-    let Some(rank) = catalog
+    let position = catalog
         .tier_names()
         .iter()
-        .position(|name| *name == tier.name())
-    else {
-        return Err(TurnOverrideError::UnknownTier {
+        .position(|name| *name == tier.name());
+    match position {
+        Some(rank) => Ok(rank),
+        None => Err(TurnOverrideError::UnknownTier {
             tier: tier.name().to_owned(),
-        });
-    };
-    Ok(rank)
+        }),
+    }
 }
 
 // a configured tier name as the pipeline tier: a defined name for a custom set, else the built-in member
@@ -99,13 +99,15 @@ pub fn active_tier(catalog: &TierSet, name: &str) -> Result<Tier, TurnOverrideEr
             .into_iter()
             .find(|defined| *defined == name)
             .map(|defined| Tier::Named(defined.to_owned()))
-            .ok_or_else(|| TurnOverrideError::UnknownTier {
-                tier: name.to_owned(),
-            });
+            .ok_or_else(|| unknown_tier(name));
     }
     ComplexityTier::built_in(name)
         .map(Tier::BuiltIn)
-        .ok_or_else(|| TurnOverrideError::UnknownTier {
-            tier: name.to_owned(),
-        })
+        .ok_or_else(|| unknown_tier(name))
+}
+
+fn unknown_tier(name: &str) -> TurnOverrideError {
+    TurnOverrideError::UnknownTier {
+        tier: name.to_owned(),
+    }
 }
