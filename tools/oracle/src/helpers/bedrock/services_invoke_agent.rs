@@ -201,32 +201,36 @@ pub(super) fn error_kind(error: &InvokeAgentRequestError) -> String {
         InvokeAgentRequestError::InvalidModelFormat => "invalid_model_format".to_owned(),
         InvokeAgentRequestError::EmptyMessages => "empty_messages".to_owned(),
         InvokeAgentRequestError::WrongType { field } => format!("wrong_type:{field}"),
-        InvokeAgentRequestError::Segment(source) => segment_kind(source),
-        InvokeAgentRequestError::Endpoint(source) => endpoint_kind(source),
         InvokeAgentRequestError::Parameters { .. } => "parameters".to_owned(),
         InvokeAgentRequestError::Signing { .. } => "signing".to_owned(),
-    }
-}
-
-fn segment_kind(error: &HttpError) -> String {
-    match error {
-        HttpError::Required { field_name } => format!("required:{field_name}"),
-        HttpError::DotSegment { field_name } => format!("dot_segment:{field_name}"),
-        HttpError::UnsupportedProxyScheme { .. } => "unsupported_proxy_scheme".to_owned(),
-        HttpError::InvalidProxyUrl { .. } => "invalid_proxy_url".to_owned(),
-        HttpError::Client(_) => "client".to_owned(),
-        HttpError::Request(_) => "request".to_owned(),
-        HttpError::Timeout => "timeout".to_owned(),
-        HttpError::TooLarge { .. } => "too_large".to_owned(),
-    }
-}
-
-fn endpoint_kind(error: &AwsEndpointError) -> String {
-    match error {
-        AwsEndpointError::Region { .. } => "invalid_region".to_owned(),
-        AwsEndpointError::Endpoint { .. } => "invalid_endpoint".to_owned(),
-        AwsEndpointError::Pattern(_) => "invalid_pattern".to_owned(),
-        AwsEndpointError::Field { .. } => "invalid_field".to_owned(),
+        InvokeAgentRequestError::Segment(HttpError::Required { field_name }) => {
+            format!("required:{field_name}")
+        }
+        InvokeAgentRequestError::Segment(HttpError::DotSegment { field_name }) => {
+            format!("dot_segment:{field_name}")
+        }
+        InvokeAgentRequestError::Segment(HttpError::UnsupportedProxyScheme { .. }) => {
+            "unsupported_proxy_scheme".to_owned()
+        }
+        InvokeAgentRequestError::Segment(HttpError::InvalidProxyUrl { .. }) => {
+            "invalid_proxy_url".to_owned()
+        }
+        InvokeAgentRequestError::Segment(HttpError::Client(_)) => "client".to_owned(),
+        InvokeAgentRequestError::Segment(HttpError::Request(_)) => "request".to_owned(),
+        InvokeAgentRequestError::Segment(HttpError::Timeout) => "timeout".to_owned(),
+        InvokeAgentRequestError::Segment(HttpError::TooLarge { .. }) => "too_large".to_owned(),
+        InvokeAgentRequestError::Endpoint(AwsEndpointError::Region { .. }) => {
+            "invalid_region".to_owned()
+        }
+        InvokeAgentRequestError::Endpoint(AwsEndpointError::Endpoint { .. }) => {
+            "invalid_endpoint".to_owned()
+        }
+        InvokeAgentRequestError::Endpoint(AwsEndpointError::Pattern(_)) => {
+            "invalid_pattern".to_owned()
+        }
+        InvokeAgentRequestError::Endpoint(AwsEndpointError::Field { .. }) => {
+            "invalid_field".to_owned()
+        }
     }
 }
 

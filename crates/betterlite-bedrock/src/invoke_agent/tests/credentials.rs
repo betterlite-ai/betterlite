@@ -210,11 +210,17 @@ fn sign_failure() -> InvokeAgentRequestError {
     .unwrap_err()
 }
 
-fn prepare_failure() -> InvokeAgentRequestError {
+fn assert_failures_are_secret_safe() {
+    let sign_error = sign_failure();
+    assert!(matches!(
+        &sign_error,
+        InvokeAgentRequestError::Signing { .. }
+    ));
+    assert_secret_free(&sign_error);
     let context = messages(r#"[{"role":"user","content":"hi"}]"#);
     let supplied = headers(&[]);
     let optional = optional_with_region("us-east-1");
-    block_on(prepare_request(
+    let prepare_error = block_on(prepare_request(
         PrepareRequest {
             model: "not-agent/one",
             messages: &context,
@@ -231,17 +237,7 @@ fn prepare_failure() -> InvokeAgentRequestError {
         },
         |_settings: &AwsSettings, _region: &str| ready(Ok(fixture_credentials("AKIDFIRST"))),
     ))
-    .unwrap_err()
-}
-
-fn assert_failures_are_secret_safe() {
-    let sign_error = sign_failure();
-    assert!(matches!(
-        &sign_error,
-        InvokeAgentRequestError::Signing { .. }
-    ));
-    assert_secret_free(&sign_error);
-    let prepare_error = prepare_failure();
+    .unwrap_err();
     assert!(matches!(
         &prepare_error,
         InvokeAgentRequestError::InvalidModelFormat

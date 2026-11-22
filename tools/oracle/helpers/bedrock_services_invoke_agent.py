@@ -111,7 +111,7 @@ class InvokeAgentApi(Protocol):
         model: str,
         params: Params,
         extra: Params,
-        stream: bool | None = None,
+        stream: bool | None = None,  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L75
         /,
     ) -> str: ...
 
@@ -123,8 +123,8 @@ class InvokeAgentApi(Protocol):
         base: str,
         key: str | None = None,
         model: str | None = None,
-        stream: bool | None = None,
-        fake_stream: bool | None = None,
+        stream: bool | None = None,  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L108
+        fake_stream: bool | None = None,  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L108
         /,
     ) -> tuple[Headers, bytes | None]: ...
 
@@ -139,7 +139,7 @@ class InvokeAgentApi(Protocol):
     def get_error_class(self, message: str, status: int, headers: Headers, /) -> ErrorLike: ...
 
     def should_fake_stream(
-        self, model: str | None, stream: bool | None, provider: str | None = None, /
+        self, model: str | None, stream: bool | None, provider: str | None = None, /  # noqa: FBT001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L490-L496
     ) -> bool: ...
 
 
@@ -171,18 +171,6 @@ def _apply_environment(run: EnvironmentRun | None) -> None:
         os.environ["AWS_DEFAULT_REGION"] = session_region
 
 
-def _error_kind(message: str) -> str:
-    if message.startswith("Invalid model format"):
-        return "invalid_model_format"
-    if message.startswith("Invalid AWS region format"):
-        return "invalid_region"
-    if message.endswith(" is required"):
-        return f"required:{message.removesuffix(' is required')}"
-    if message.endswith(" cannot be a dot path segment"):
-        return f"dot_segment:{message.removesuffix(' cannot be a dot path segment')}"
-    raise ValueError(message)
-
-
 def _url_result(config: InvokeAgentApi, run: UrlRun) -> JsonValue:
     run_params = run.get("optional_params")
     optional_params: Params = {} if run_params is None else run_params
@@ -194,7 +182,18 @@ def _url_result(config: InvokeAgentApi, run: UrlRun) -> JsonValue:
     try:
         url = config.get_complete_url(run.get("api_base"), None, run["model"], optional_params, {})
     except ValueError as error:
-        return {"ok": False, "error": _error_kind(str(error)), "params": optional_params}
+        message = str(error)
+        if message.startswith("Invalid model format"):
+            kind = "invalid_model_format"
+        elif message.startswith("Invalid AWS region format"):
+            kind = "invalid_region"
+        elif message.endswith(" is required"):
+            kind = f"required:{message.removesuffix(' is required')}"
+        elif message.endswith(" cannot be a dot path segment"):
+            kind = f"dot_segment:{message.removesuffix(' cannot be a dot path segment')}"
+        else:
+            raise
+        return {"ok": False, "error": kind, "params": optional_params}
     session_id = optional_params.get("sessionID")
     if session_id:
         return {"ok": True, "url": url, "params": optional_params}
@@ -268,8 +267,8 @@ def _policy_result(config: InvokeAgentApi, case: PolicyRun) -> JsonValue:
         "supported": list[JsonValue](supported),
         "mapped": mapped,
         "should_fake_stream": [
-            config.should_fake_stream(None, False),
-            config.should_fake_stream(MODEL, True),
+            config.should_fake_stream(None, False),  # noqa: FBT003  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L490-L496
+            config.should_fake_stream(MODEL, True),  # noqa: FBT003  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L490-L496
             config.should_fake_stream(MODEL, None),
         ],
         "headers": Params(validated),
