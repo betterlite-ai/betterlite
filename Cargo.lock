@@ -2396,6 +2396,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "jsonschema",
+ "jsonwebtoken",
  "mutants",
  "pem",
  "percent-encoding",
