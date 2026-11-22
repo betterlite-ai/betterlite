@@ -5,13 +5,18 @@ use std::ops::ControlFlow;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
-use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
+use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, StreamingScanKey};
+use betterlite_guardrails::unified_dispatch::emit::{
+    HttpErrorDetail, StreamErrorEmission, StreamHttpError, emit_streaming_http_error,
+    handle_streaming_block,
+};
 use betterlite_guardrails::unified_dispatch::flags::is_redundant_scan;
 
 use super::error::StreamHookError;
 use super::stream_end::StreamEndCheck;
+use crate::guardrails::unified_stream::error::StreamLoopError;
 use crate::guardrails::unified_stream::round::call_streaming;
 use crate::guardrails::unified_stream::{StreamLoopParams, StreamOutput};
 
@@ -175,5 +180,95 @@ where
     pub(crate) fn send(&mut self, item: GuardrailValue) {
         self.responses_yielded.push(item.clone());
         self.outputs.push_back(Ok(StreamOutput::Item(item)));
+    }
+
+    // LiteLLM's ModifyResponseException and HTTPException handlers; the block measures against what the client got
+    pub(crate) fn terminate<T, G>(
+        &mut self,
+        params: &StreamLoopParams<'_, T, G>,
+        failure: GuardrailFailure,
+    ) where
+        T: BaseTranslation<Failure = GuardrailFailure>,
+    {
+        let stream_started = !self.responses_yielded.is_empty();
+        match failure {
+            GuardrailFailure::ModifyResponse(details) => {
+                self.push_block(params.translation, details, stream_started);
+            }
+            GuardrailFailure::Http { status, detail } => {
+                self.emit_http(
+                    params,
+                    status,
+                    HttpErrorDetail::Text(detail),
+                    stream_started,
+                );
+            }
+            GuardrailFailure::HttpObject { status, detail } => {
+                let fields = HttpErrorDetail::Object(detail.into_iter().collect());
+                self.emit_http(params, status, fields, stream_started);
+            }
+            other @ (GuardrailFailure::GuardrailRaised { .. }
+            | GuardrailFailure::BlockedPii { .. }
+            | GuardrailFailure::SensitiveDataRoute(_)
+            | GuardrailFailure::Other(_)) => {
+                let failed = StreamLoopError::Guardrail { source: other };
+                self.outputs.push_back(Err(StreamHookError::Loop(failed)));
+            }
+        }
+    }
+
+    fn push_block<T>(
+        &mut self,
+        translation: &T,
+        mut details: Box<ModifyResponseFailure>,
+        stream_started: bool,
+    ) where
+        T: BaseTranslation<Failure = GuardrailFailure>,
+    {
+        if details.original_response.is_none() {
+            details.original_response = Some(GuardrailValue::Array(self.responses_so_far.clone()));
+        }
+        let blocked = GuardrailFailure::ModifyResponse(details);
+        let chunks = handle_streaming_block(
+            translation,
+            blocked,
+            stream_started,
+            &self.responses_yielded,
+        )
+        .map(StreamOutput::BlockChunks)
+        .map_err(|source| StreamHookError::Loop(StreamLoopError::Block { source }));
+        self.outputs.push_back(chunks);
+    }
+
+    fn emit_http<T, G>(
+        &mut self,
+        params: &StreamLoopParams<'_, T, G>,
+        status_code: u16,
+        detail: HttpErrorDetail,
+        stream_started: bool,
+    ) where
+        T: BaseTranslation<Failure = GuardrailFailure>,
+    {
+        let emission = StreamErrorEmission {
+            call_type: Some(params.call_type),
+            responses_so_far: &self.responses_so_far,
+            request_data: &*params.request_data,
+            translation: Some(params.translation),
+            stream_started,
+            responses_yielded: Some(&self.responses_yielded),
+        };
+        let error = StreamHttpError {
+            status_code,
+            detail,
+        };
+        let emitted = emit_streaming_http_error(error, &emission)
+            .map_err(|source| StreamHookError::Loop(StreamLoopError::Http { source }));
+        match emitted {
+            Ok(items) => {
+                let sent = items.into_iter().map(|item| Ok(StreamOutput::Item(item)));
+                self.outputs.extend(sent);
+            }
+            Err(failed) => self.outputs.push_back(Err(failed)),
+        }
     }
 }

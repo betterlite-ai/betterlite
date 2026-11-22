@@ -168,7 +168,15 @@ fn gate_open<E>(
     Ok(admitted)
 }
 
-impl<'run, T, G, S, E> HookState<'run, T, G, S, E> {
+impl<'run, T, G, S, E> HookState<'run, T, G, S, E>
+where
+    T: BaseTranslation<Guardrail = G, LogTarget = GuardrailLogTarget, Failure = GuardrailFailure>
+        + StreamEndCheck
+        + Sync,
+    G: GuardrailContract,
+    S: Stream<Item = Result<GuardrailValue, E>> + Send,
+    E: Error + Send + Sync + 'static,
+{
     // a plan error is the only output, so the source is never polled
     fn new(start: Result<Stage<'run, T, G>, StreamHookError<E>>, source: S) -> Self {
         let mut window = Window {
@@ -195,17 +203,7 @@ impl<'run, T, G, S, E> HookState<'run, T, G, S, E> {
             finished,
         }
     }
-}
 
-impl<T, G, S, E> HookState<'_, T, G, S, E>
-where
-    T: BaseTranslation<Guardrail = G, LogTarget = GuardrailLogTarget, Failure = GuardrailFailure>
-        + StreamEndCheck
-        + Sync,
-    G: GuardrailContract,
-    S: Stream<Item = Result<GuardrailValue, E>> + Send,
-    E: Error + Send + Sync + 'static,
-{
     async fn next_output(&mut self) -> Option<HookOutput<E>> {
         loop {
             if let Some(output) = self.window.outputs.pop_front() {
