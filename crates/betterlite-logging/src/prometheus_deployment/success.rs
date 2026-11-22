@@ -21,7 +21,7 @@ use crate::prometheus_rate_limits::deployment::set_deployment_tpm_rpm_limit_metr
 
 use super::error::{HeaderValueError, PrometheusDeploymentError};
 use super::metric::DeploymentMetric;
-use super::metrics::{DeploymentMetrics, DeploymentResult};
+use super::metrics::{DeploymentMetrics, DeploymentResult, DeploymentValueResult};
 use super::requests::{DeploymentLabels, SuccessRequest};
 use super::state::set_deployment_healthy;
 use super::values::object_field;
@@ -62,7 +62,14 @@ fn record_success<G: DeploymentMetrics>(
     record_limits(metrics, request, payload, &fields)?;
     record_overhead(metrics, request, payload)?;
     record_remaining(metrics, request, payload)?;
-    record_success_totals(metrics, request, payload, &fields)
+    let outage = DeploymentLabels {
+        litellm_model_name: request.model.unwrap_or_default(),
+        model_id: Some(fields.model_id.as_deref().unwrap_or_default()),
+        api_base: Some(payload.api_base.as_str()),
+        api_provider: fields.llm_provider.as_deref().unwrap_or_default(),
+    };
+    set_deployment_healthy(metrics, outage)?;
+    record_success_totals(metrics, request)
 }
 
 fn success_fields(request: &SuccessRequest<'_>) -> SuccessFields {
@@ -88,16 +95,7 @@ fn success_fields(request: &SuccessRequest<'_>) -> SuccessFields {
 fn record_success_totals<G: DeploymentMetrics>(
     metrics: &G,
     request: &SuccessRequest<'_>,
-    payload: &StandardLoggingPayload,
-    fields: &SuccessFields,
 ) -> DeploymentResult<G> {
-    let outage = DeploymentLabels {
-        litellm_model_name: request.model.unwrap_or_default(),
-        model_id: Some(fields.model_id.as_deref().unwrap_or_default()),
-        api_base: Some(payload.api_base.as_str()),
-        api_provider: fields.llm_provider.as_deref().unwrap_or_default(),
-    };
-    set_deployment_healthy(metrics, outage)?;
     let source = metrics.label_source(request.context);
     metrics.increment_counter(
         DeploymentMetric::SuccessResponses,
@@ -251,10 +249,9 @@ fn decimal_text(text: &str) -> Option<Decimal> {
     }
 }
 
-fn record_latency<G: DeploymentMetrics>(
-    metrics: &G,
+fn measured_latency<G: DeploymentMetrics>(
     request: &SuccessRequest<'_>,
-) -> DeploymentResult<G> {
+) -> DeploymentValueResult<Decimal, G> {
     let response = request
         .end_time
         .checked_sub(request.start_time)
@@ -273,6 +270,14 @@ fn record_latency<G: DeploymentMetrics>(
         Some(seconds) if seconds != Decimal::ZERO => seconds,
         Some(_) | None => response,
     };
+    Ok(latency)
+}
+
+fn record_latency<G: DeploymentMetrics>(
+    metrics: &G,
+    request: &SuccessRequest<'_>,
+) -> DeploymentResult<G> {
+    let latency = measured_latency::<G>(request)?;
     let output_tokens = request.output_tokens.unwrap_or(Decimal::ONE);
     if output_tokens <= Decimal::ZERO {
         return Ok(());

@@ -7,7 +7,7 @@ use betterlite_models::decisions::Json;
 
 use crate::prometheus::failure::exception::LabelException;
 
-use super::fallbacks::{log_failure_fallback_event, log_success_fallback_event};
+use super::fallbacks::{FallbackEvent, log_fallback_event};
 use super::requests::FallbackRequest;
 use super::support::{
     FakeCatalog, ProbeGauges, call, capture_logs, exception, expected_labels, inc_amount,
@@ -69,9 +69,10 @@ fn success_fallback_increments_the_successful_fallbacks_counter() {
     ]);
     let status = exception(Some("400"), None);
     let tags: [String; 0] = [];
-    log_success_fallback_event(
+    log_fallback_event(
         &gauges,
         &request(Some("fallback-1"), &tags, &metadata, &status),
+        FallbackEvent::Success,
     )
     .unwrap();
     let events = gauges.updates();
@@ -98,9 +99,10 @@ fn failure_fallback_increments_the_failed_fallbacks_counter() {
     ]);
     let status = exception(Some("400"), None);
     let tags: [String; 0] = [];
-    log_failure_fallback_event(
+    log_fallback_event(
         &gauges,
         &request(Some("fallback-1"), &tags, &metadata, &status),
+        FallbackEvent::Failure,
     )
     .unwrap();
     let events = gauges.updates();
@@ -130,7 +132,12 @@ fn litellm_metadata_wins_over_metadata_when_both_are_present() {
     };
     let status = exception(None, None);
     let tags: [String; 0] = [];
-    log_success_fallback_event(&gauges, &request(None, &tags, &metadata, &status)).unwrap();
+    log_fallback_event(
+        &gauges,
+        &request(None, &tags, &metadata, &status),
+        FallbackEvent::Success,
+    )
+    .unwrap();
     let events = gauges.updates();
     assert_eq!(
         labels_of(&events[0])
@@ -146,7 +153,12 @@ fn metadata_is_read_when_litellm_metadata_is_absent() {
     let metadata = slots_with(&[("user_api_key_alias", "meta-alias")]);
     let status = exception(None, None);
     let tags: [String; 0] = [];
-    log_success_fallback_event(&gauges, &request(None, &tags, &metadata, &status)).unwrap();
+    log_fallback_event(
+        &gauges,
+        &request(None, &tags, &metadata, &status),
+        FallbackEvent::Success,
+    )
+    .unwrap();
     let events = gauges.updates();
     assert_eq!(
         labels_of(&events[0])
@@ -162,7 +174,12 @@ fn an_exception_without_a_status_code_gives_the_text_none() {
     let metadata = slots_with(&[("user_api_key_hash", "hash-1")]);
     let status = exception(None, None);
     let tags: [String; 0] = [];
-    log_success_fallback_event(&gauges, &request(None, &tags, &metadata, &status)).unwrap();
+    log_fallback_event(
+        &gauges,
+        &request(None, &tags, &metadata, &status),
+        FallbackEvent::Success,
+    )
+    .unwrap();
     let events = gauges.updates();
     assert_eq!(
         labels_of(&events[0])
@@ -188,7 +205,7 @@ fn the_requested_model_is_bounded_against_the_catalog() {
         catalog: Some(&catalog),
         now: now(),
     };
-    log_success_fallback_event(&gauges, &fallback).unwrap();
+    log_fallback_event(&gauges, &fallback, FallbackEvent::Success).unwrap();
     let events = gauges.updates();
     assert_eq!(
         labels_of(&events[0])
@@ -210,7 +227,12 @@ fn a_router_originated_group_passes_through_without_a_catalog() {
     let metadata = slots_with(&[]);
     let status = exception(None, None);
     let tags: [String; 0] = [];
-    log_success_fallback_event(&gauges, &request(None, &tags, &metadata, &status)).unwrap();
+    log_fallback_event(
+        &gauges,
+        &request(None, &tags, &metadata, &status),
+        FallbackEvent::Success,
+    )
+    .unwrap();
     let events = gauges.updates();
     assert_eq!(
         labels_of(&events[0])
@@ -227,7 +249,12 @@ fn the_success_event_logs_its_name_before_recording() {
     let status = exception(None, None);
     let tags: [String; 0] = [];
     let (captured, _guard) = capture_logs(tracing::Level::DEBUG);
-    log_success_fallback_event(&gauges, &request(None, &tags, &metadata, &status)).unwrap();
+    log_fallback_event(
+        &gauges,
+        &request(None, &tags, &metadata, &status),
+        FallbackEvent::Success,
+    )
+    .unwrap();
     assert!(
         captured
             .text()
@@ -242,7 +269,12 @@ fn the_failure_event_logs_its_name_before_recording() {
     let status = exception(None, None);
     let tags: [String; 0] = [];
     let (captured, _guard) = capture_logs(tracing::Level::DEBUG);
-    log_failure_fallback_event(&gauges, &request(None, &tags, &metadata, &status)).unwrap();
+    log_fallback_event(
+        &gauges,
+        &request(None, &tags, &metadata, &status),
+        FallbackEvent::Failure,
+    )
+    .unwrap();
     assert!(
         captured
             .text()

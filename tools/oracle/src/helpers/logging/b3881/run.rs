@@ -8,9 +8,7 @@ use betterlite_logging::prometheus_deployment::failure::{
     // ast-grep-ignore: no-long-names
     set_llm_deployment_failure_metrics as record_failure_metrics,
 };
-use betterlite_logging::prometheus_deployment::fallbacks::{
-    log_failure_fallback_event, log_success_fallback_event,
-};
+use betterlite_logging::prometheus_deployment::fallbacks::{FallbackEvent, log_fallback_event};
 use betterlite_logging::prometheus_deployment::requests::{
     FailureRequest, FallbackRequest, SuccessRequest,
 };
@@ -40,66 +38,70 @@ pub(super) fn run(input: &Input) -> HelperResult {
     Ok(json!({ "events": probe.events_value() }))
 }
 
-fn failure(probe: &Probe, input: &Input) {
-    let model = text(&input.kwargs, "model");
-    let params = object_field(&input.kwargs, "litellm_params").unwrap_or_default();
-    let exception = input.exception.as_ref().map(probe_exception);
-    record_failure_metrics(
-        probe,
-        &FailureRequest {
-            model: model.as_deref(),
-            exception: exception.as_ref(),
-            litellm_params: &params,
-            payload: input.payload.as_ref(),
-            catalog: None,
-            now: Instant::now(),
-        },
-    );
+struct RequestValues {
+    model: Option<String>,
+    params: JsonObject,
+    exception: Option<LabelException>,
+    empty_exception: LabelException,
+    tags: Vec<String>,
+    metadata: MetadataSlots,
+    values: UserApiKeyLabelValues,
 }
 
-fn fallback(probe: &Probe, input: &Input, success: bool) {
-    let model = text(&input.kwargs, "model");
-    let tags = tags(&input.kwargs);
-    let metadata = MetadataSlots {
-        metadata: object_field(&input.kwargs, "metadata"),
-        litellm_metadata: object_field(&input.kwargs, "litellm_metadata"),
-    };
-    let exception = probe_exception(&input.exception.clone().unwrap_or_default());
-    let request = FallbackRequest {
-        original_model_group: &input.original_model_group,
-        model: model.as_deref(),
-        tags: &tags,
-        metadata: &metadata,
-        exception: &exception,
-        catalog: None,
-        now: Instant::now(),
-    };
-    if success {
-        log_success_fallback_event(probe, &request).ok();
-    } else {
-        log_failure_fallback_event(probe, &request).ok();
+impl RequestValues {
+    fn read(input: &Input) -> Self {
+        RequestValues {
+            model: text(&input.kwargs, "model"),
+            params: object_field(&input.kwargs, "litellm_params").unwrap_or_default(),
+            exception: input.exception.as_ref().map(probe_exception),
+            empty_exception: probe_exception(&BTreeMap::new()),
+            tags: tags(&input.kwargs),
+            metadata: MetadataSlots {
+                metadata: object_field(&input.kwargs, "metadata"),
+                litellm_metadata: object_field(&input.kwargs, "litellm_metadata"),
+            },
+            values: values(input),
+        }
     }
 }
 
-fn success(probe: &Probe, input: &Input) {
-    let model = text(&input.kwargs, "model");
-    let params = object_field(&input.kwargs, "litellm_params").unwrap_or_default();
-    let stream = stream_flag(&input.kwargs);
-    let exception = input.exception.as_ref().map(probe_exception);
-    let label_values = values(input);
-    record_success_metrics(
-        probe,
-        &SuccessRequest {
-            model: model.as_deref(),
-            stream,
+struct Requests<'parts> {
+    failure: FailureRequest<'parts>,
+    fallback: FallbackRequest<'parts>,
+    success: SuccessRequest<'parts>,
+}
+
+fn build_requests<'parts>(parts: &'parts RequestValues, input: &'parts Input) -> Requests<'parts> {
+    let now = Instant::now();
+    Requests {
+        failure: FailureRequest {
+            model: parts.model.as_deref(),
+            exception: parts.exception.as_ref(),
+            litellm_params: &parts.params,
+            payload: input.payload.as_ref(),
+            catalog: None,
+            now,
+        },
+        fallback: FallbackRequest {
+            original_model_group: &input.original_model_group,
+            model: parts.model.as_deref(),
+            tags: &parts.tags,
+            metadata: &parts.metadata,
+            exception: parts.exception.as_ref().unwrap_or(&parts.empty_exception),
+            catalog: None,
+            now,
+        },
+        success: SuccessRequest {
+            model: parts.model.as_deref(),
+            stream: stream_flag(&input.kwargs),
             completion_start_time: input
                 .completion_start_time
                 .as_deref()
                 .and_then(|text| Decimal::from_str(text).ok()),
-            litellm_params: &params,
+            litellm_params: &parts.params,
             payload: input.payload.as_ref(),
-            exception: exception.as_ref(),
-            values: &label_values,
+            exception: parts.exception.as_ref(),
+            values: &parts.values,
             context: None,
             start_time: input
                 .start_time
@@ -115,9 +117,32 @@ fn success(probe: &Probe, input: &Input) {
                 .output_tokens
                 .as_deref()
                 .and_then(|text| Decimal::from_str(text).ok()),
-            now: Instant::now(),
+            now,
         },
-    );
+    }
+}
+
+fn failure(probe: &Probe, input: &Input) {
+    let parts = RequestValues::read(input);
+    let built = build_requests(&parts, input);
+    record_failure_metrics(probe, &built.failure);
+}
+
+fn fallback(probe: &Probe, input: &Input, success: bool) {
+    let parts = RequestValues::read(input);
+    let built = build_requests(&parts, input);
+    let event = if success {
+        FallbackEvent::Success
+    } else {
+        FallbackEvent::Failure
+    };
+    log_fallback_event(probe, &built.fallback, event).ok();
+}
+
+fn success(probe: &Probe, input: &Input) {
+    let parts = RequestValues::read(input);
+    let built = build_requests(&parts, input);
+    record_success_metrics(probe, &built.success);
 }
 
 fn stream_flag(kwargs: &JsonObject) -> Option<bool> {

@@ -12,33 +12,38 @@ use super::metrics::{DeploymentMetrics, DeploymentResult};
 use super::requests::FallbackRequest;
 use super::values::{fallback_exception_status, push_identity, push_text};
 
-pub fn log_success_fallback_event<G: DeploymentMetrics>(
-    metrics: &G,
-    request: &FallbackRequest<'_>,
-) -> DeploymentResult<G> {
-    tracing::debug!(
-        "Prometheus: log_success_fallback_event, original_model_group: {}",
-        request.original_model_group
-    );
-    record_fallback(metrics, request, DeploymentMetric::SuccessfulFallbacks)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FallbackEvent {
+    Success,
+    Failure,
 }
 
-pub fn log_failure_fallback_event<G: DeploymentMetrics>(
-    metrics: &G,
-    request: &FallbackRequest<'_>,
-) -> DeploymentResult<G> {
-    tracing::debug!(
-        "Prometheus: log_failure_fallback_event, original_model_group: {}",
-        request.original_model_group
-    );
-    record_fallback(metrics, request, DeploymentMetric::FailedFallbacks)
+impl FallbackEvent {
+    fn metric(self) -> DeploymentMetric {
+        match self {
+            FallbackEvent::Success => DeploymentMetric::SuccessfulFallbacks,
+            FallbackEvent::Failure => DeploymentMetric::FailedFallbacks,
+        }
+    }
+
+    fn entry_point(self) -> &'static str {
+        match self {
+            FallbackEvent::Success => "log_success_fallback_event",
+            FallbackEvent::Failure => "log_failure_fallback_event",
+        }
+    }
 }
 
-fn record_fallback<G: DeploymentMetrics>(
+pub fn log_fallback_event<G: DeploymentMetrics>(
     metrics: &G,
     request: &FallbackRequest<'_>,
-    metric: DeploymentMetric,
+    event: FallbackEvent,
 ) -> DeploymentResult<G> {
+    tracing::debug!(
+        "Prometheus: {}, original_model_group: {}",
+        event.entry_point(),
+        request.original_model_group
+    );
     // get_metadata_variable_name_from_kwargs: litellm_metadata when the kwargs have that key, else metadata
     let metadata = match metadata_variable_name(request.metadata) {
         MetadataBucket::Metadata => request.metadata.metadata.as_ref(),
@@ -51,7 +56,12 @@ fn record_fallback<G: DeploymentMetrics>(
         metrics.settings(),
         metrics.end_user_settings(),
     )?;
-    metrics.increment_counter(metric, &values, LabelSource::Context(&context), request.now)
+    metrics.increment_counter(
+        event.metric(),
+        &values,
+        LabelSource::Context(&context),
+        request.now,
+    )
 }
 
 fn fallback_values<G: DeploymentMetrics>(

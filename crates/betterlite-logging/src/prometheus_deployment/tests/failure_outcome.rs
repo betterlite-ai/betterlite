@@ -11,8 +11,8 @@ use super::failure::set_llm_deployment_failure_metrics;
 use super::metric::DeploymentMetric;
 use super::requests::FailureRequest;
 use super::support::{
-    FailingGauges, FakeCatalog, ProbeGauges, call, capture_logs, exception, expected_labels,
-    inc_amount, json_object, labels_of, metric_of, now, update_of,
+    FakeCatalog, ProbeGauges, call, capture_logs, exception, expected_labels, inc_amount,
+    json_object, labels_of, metric_of, now, update_of,
 };
 
 fn params(entries: &[(&str, Json)]) -> JsonObject {
@@ -476,8 +476,7 @@ fn an_invalid_key_failure_records_nothing() {
 
 #[test]
 fn a_failure_error_is_logged_at_debug_and_stops_the_later_writes() {
-    let inner = ProbeGauges::new();
-    let gauges = FailingGauges::failing_on(inner, DeploymentMetric::FailureResponses);
+    let gauges = ProbeGauges::new().failing_on(DeploymentMetric::FailureResponses);
     let payload = selected_payload();
     let status = exception(Some("400"), None);
     let litellm_params = params(&[]);
@@ -493,7 +492,7 @@ fn a_failure_error_is_logged_at_debug_and_stops_the_later_writes() {
             now: now(),
         },
     );
-    let events = gauges.inner.updates();
+    let events = gauges.updates();
     assert_eq!(events.len(), 1);
     assert_eq!(metric_of(&events[0]), "litellm_deployment_state");
     assert!(

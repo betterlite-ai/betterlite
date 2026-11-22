@@ -89,16 +89,7 @@ pub trait DeploymentMetrics: RateLimitGauges {
         source: LabelSource<'_>,
         now: Instant,
     ) -> DeploymentResult<Self> {
-        let counter = self.metric(metric);
-        let emission = CounterEmission {
-            counter: &counter,
-            metric_name: metric.name(),
-            supported_labels: self.labels_for(metric),
-            tracker: self.tracker(),
-            limits: self.limits(),
-        };
-        emission.inc_labeled_counter(values, source, MetricValue::Finite(Decimal::ONE), now)?;
-        Ok(())
+        emit_labeled_counter(self, metric, values, source, now)
     }
 
     fn set_gauge(
@@ -143,4 +134,24 @@ pub trait DeploymentMetrics: RateLimitGauges {
         self.increment_plain(metric, pairs);
         Ok(())
     }
+}
+
+// the one labeled emission, so a metrics type that overrides increment_counter keeps the same series
+pub(crate) fn emit_labeled_counter<Metrics: DeploymentMetrics>(
+    metrics: &Metrics,
+    metric: DeploymentMetric,
+    values: &UserApiKeyLabelValues,
+    source: LabelSource<'_>,
+    now: Instant,
+) -> DeploymentResult<Metrics> {
+    let counter = metrics.metric(metric);
+    let emission = CounterEmission {
+        counter: &counter,
+        metric_name: metric.name(),
+        supported_labels: metrics.labels_for(metric),
+        tracker: metrics.tracker(),
+        limits: metrics.limits(),
+    };
+    emission.inc_labeled_counter(values, source, MetricValue::Finite(Decimal::ONE), now)?;
+    Ok(())
 }

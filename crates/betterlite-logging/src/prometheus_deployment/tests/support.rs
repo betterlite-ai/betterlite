@@ -29,12 +29,14 @@ use crate::prometheus_helpers::bounded_series_tracker::{
     BoundedPrometheusSeriesTracker, ChildRemoval, RemovableMetric, SeriesLimits,
 };
 use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
+use crate::prometheus_label_projection::prometheus_label_factory::LabelSource;
 use crate::prometheus_label_schema::{PrometheusLabelSettings, get_labels};
 use crate::prometheus_rate_limits::gauge::RateLimitGauges;
 use crate::prometheus_rate_limits::metric::RateLimitMetric;
 
+use super::error::PrometheusDeploymentError;
 use super::metric::DeploymentMetric;
-use super::metrics::DeploymentMetrics;
+use super::metrics::{DeploymentMetrics, DeploymentResult, emit_labeled_counter};
 
 pub(crate) type EventLog = Arc<Mutex<Vec<Recorded>>>;
 
@@ -140,6 +142,7 @@ pub(crate) struct ProbeGauges {
     tracker: BoundedPrometheusSeriesTracker,
     limits: SeriesLimits,
     skip_invalid_key: bool,
+    failing: Option<DeploymentMetric>,
     bounded_override: Option<String>,
     failure_labels_override: Option<DeploymentFailureLabels>,
     exception_class_override: Option<String>,
@@ -186,6 +189,7 @@ impl ProbeGauges {
             tracker: BoundedPrometheusSeriesTracker::default(),
             limits: SeriesLimits::default(),
             skip_invalid_key: false,
+            failing: None,
             bounded_override: None,
             failure_labels_override: None,
             exception_class_override: None,
@@ -194,6 +198,11 @@ impl ProbeGauges {
 
     pub(crate) fn skipping_invalid_keys(mut self) -> Self {
         self.skip_invalid_key = true;
+        self
+    }
+
+    pub(crate) fn failing_on(mut self, metric: DeploymentMetric) -> Self {
+        self.failing = Some(metric);
         self
     }
 
@@ -344,6 +353,19 @@ impl DeploymentMetrics for ProbeGauges {
     ) -> bool {
         self.record("skip_invalid_key", "");
         self.skip_invalid_key
+    }
+
+    fn increment_counter(
+        &self,
+        metric: DeploymentMetric,
+        values: &UserApiKeyLabelValues,
+        source: LabelSource<'_>,
+        now: Instant,
+    ) -> DeploymentResult<Self> {
+        if self.failing == Some(metric) {
+            return Err(PrometheusDeploymentError::Overflow);
+        }
+        emit_labeled_counter(self, metric, values, source, now)
     }
 }
 
@@ -564,94 +586,4 @@ pub(crate) fn update_of(record: &Recorded) -> MetricUpdate {
 
 pub(crate) fn inc_amount() -> MetricUpdate {
     MetricUpdate::Inc(MetricValue::Finite(Decimal::ONE))
-}
-
-pub(crate) struct FailingGauges {
-    pub(crate) inner: ProbeGauges,
-    pub(crate) failing: DeploymentMetric,
-}
-
-impl FailingGauges {
-    pub(crate) fn failing_on(inner: ProbeGauges, failing: DeploymentMetric) -> Self {
-        Self { inner, failing }
-    }
-}
-
-impl RateLimitGauges for FailingGauges {
-    type Gauge = ProbeMetric;
-
-    fn gauge(&self, metric: RateLimitMetric) -> ProbeMetric {
-        self.inner.gauge(metric)
-    }
-
-    fn supported_labels(&self, metric: RateLimitMetric) -> &[String] {
-        self.inner.supported_labels(metric)
-    }
-
-    fn tracker(&self) -> &BoundedPrometheusSeriesTracker {
-        self.inner.tracker()
-    }
-}
-
-impl DeploymentMetrics for FailingGauges {
-    fn metric(&self, metric: DeploymentMetric) -> ProbeMetric {
-        self.inner.metric(metric)
-    }
-
-    fn labels_for(&self, metric: DeploymentMetric) -> &[String] {
-        self.inner.labels_for(metric)
-    }
-
-    fn settings(&self) -> &PrometheusLabelSettings {
-        self.inner.settings()
-    }
-
-    fn end_user_settings(&self) -> EndUserCostTrackingSettings {
-        self.inner.end_user_settings()
-    }
-
-    fn limits(&self) -> &SeriesLimits {
-        self.inner.limits()
-    }
-
-    fn failure_labels(&self, sources: &DeploymentFailureSources<'_>) -> DeploymentFailureLabels {
-        self.inner.failure_labels(sources)
-    }
-
-    fn bounded_model_label(
-        &self,
-        requested_model: Option<&Json>,
-        router_originated: bool,
-        catalog: Option<&dyn RequestedModelCatalog>,
-    ) -> Option<String> {
-        self.inner
-            .bounded_model_label(requested_model, router_originated, catalog)
-    }
-
-    fn exception_class(&self, exception: &LabelException) -> String {
-        self.inner.exception_class(exception)
-    }
-
-    fn skip_invalid_key(
-        &self,
-        enum_status_code: Option<&str>,
-        exception: Option<&LabelException>,
-        kwargs_exception: Option<&LabelException>,
-    ) -> bool {
-        self.inner
-            .skip_invalid_key(enum_status_code, exception, kwargs_exception)
-    }
-
-    fn increment_counter(
-        &self,
-        metric: DeploymentMetric,
-        values: &UserApiKeyLabelValues,
-        source: crate::prometheus_label_projection::prometheus_label_factory::LabelSource<'_>,
-        now: Instant,
-    ) -> super::metrics::DeploymentResult<Self> {
-        if metric == self.failing {
-            return Err(super::error::PrometheusDeploymentError::Overflow);
-        }
-        self.inner.increment_counter(metric, values, source, now)
-    }
 }

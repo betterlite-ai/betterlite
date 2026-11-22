@@ -97,24 +97,26 @@ fn failure_fields(request: &FailureRequest<'_>) -> FailureFields {
     }
 }
 
+// LiteLLM reads litellm_metadata first and the caller's metadata second, and a falsy one falls through
+fn metadata_sources(params: &JsonObject) -> [Option<&JsonObject>; 2] {
+    [
+        object_field(params, "litellm_metadata"),
+        object_field(params, "metadata"),
+    ]
+}
+
 fn params_model_id(params: &JsonObject) -> Option<String> {
-    let internal = object_field(params, "litellm_metadata")
-        .and_then(|metadata| object_field(metadata, "model_info"))
-        .filter(|info| !info.is_empty());
-    let caller = object_field(params, "metadata")
-        .and_then(|metadata| object_field(metadata, "model_info"))
-        .filter(|info| !info.is_empty());
-    text_field(internal.or(caller)?, "id").map(str::to_owned)
+    let model_info = metadata_sources(params)
+        .into_iter()
+        .filter_map(|metadata| object_field(metadata?, "model_info"))
+        .find(|info| !info.is_empty())?;
+    text_field(model_info, "id").map(str::to_owned)
 }
 
 fn params_model_group(params: &JsonObject) -> Option<String> {
-    let internal = object_field(params, "litellm_metadata")
-        .and_then(|metadata| metadata.get("model_group"))
-        .and_then(model_group_field);
-    let caller = object_field(params, "metadata")
-        .and_then(|metadata| metadata.get("model_group"))
-        .and_then(model_group_field);
-    internal.or(caller)
+    metadata_sources(params)
+        .into_iter()
+        .find_map(|metadata| metadata.get("model_group").and_then(model_group_field))
 }
 
 fn failure_values<G: DeploymentMetrics>(

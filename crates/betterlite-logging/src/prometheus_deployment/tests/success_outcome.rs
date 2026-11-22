@@ -9,8 +9,8 @@ use super::metric::DeploymentMetric;
 use super::requests::SuccessRequest;
 use super::success::set_llm_deployment_success_metrics;
 use super::support::{
-    FailingGauges, Fixture, ProbeGauges, capture_logs, expected_labels, hidden_params, inc_amount,
-    json_object, labels_of, metric_of, now, number, update_of,
+    Fixture, ProbeGauges, capture_logs, expected_labels, hidden_params, inc_amount, json_object,
+    labels_of, metric_of, now, number, update_of,
 };
 
 fn params(entries: &[(&str, Json)]) -> JsonObject {
@@ -494,8 +494,7 @@ fn a_non_numeric_header_is_logged_at_error_and_stops_later_writes() {
 
 #[test]
 fn a_success_error_is_logged_at_error_and_stops_later_writes() {
-    let inner = ProbeGauges::new();
-    let gauges = FailingGauges::failing_on(inner, DeploymentMetric::SuccessResponses);
+    let gauges = ProbeGauges::new().failing_on(DeploymentMetric::SuccessResponses);
     let fixture = fixture();
     let litellm_params = params(&[]);
     let payload = success_payload(&[("api_base", Json::Text(String::new()))]);
@@ -511,7 +510,7 @@ fn a_success_error_is_logged_at_error_and_stops_later_writes() {
             None,
         ),
     );
-    let names: Vec<&'static str> = gauges.inner.updates().iter().map(metric_of).collect();
+    let names: Vec<&'static str> = gauges.updates().iter().map(metric_of).collect();
     assert!(names.contains(&"litellm_deployment_state"));
     assert!(!names.contains(&"litellm_deployment_total_requests"));
     assert!(!names.contains(&"litellm_deployment_latency_per_output_token"));
