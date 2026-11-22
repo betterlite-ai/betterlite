@@ -1,15 +1,10 @@
+use betterlite_http::user_url::split::urlparse;
 use betterlite_openai::files::records::{FileKind, FileObject, FileStatus, FilesPurpose};
 use percent_encoding::percent_decode_str;
 
 use super::{S3SigningError, UPLOAD_CONTENT_LENGTH_PARAM, UPLOAD_URL_PARAM, param_text};
 use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput, HeaderError};
 use crate::request_policy::{Params, RequestValue};
-
-// urllib.parse.uses_params: only these schemes split ;params off the last path segment
-const PARAM_SCHEMES: [&str; 16] = [
-    "", "ftp", "hdl", "prospero", "http", "imap", "https", "shttp", "rtsp", "rtsps", "rtspu",
-    "sip", "sips", "mms", "sftp", "tel",
-];
 
 // re.match(r"https://s3\.([^.]+)\.amazonaws\.com/([^/]+)/(.+)")
 fn path_style(url: &str) -> Option<(&str, &str, &str)> {
@@ -27,46 +22,6 @@ fn virtual_host(url: &str) -> Option<(&str, &str, &str)> {
     Some((region, bucket, after_region.strip_prefix("amazonaws.com/")?))
 }
 
-// urllib.parse.urlparse(url).path, without the query, fragment and ;params it splits off
-fn parsed_path(url: &str) -> Option<String> {
-    let cleaned: String = url
-        .trim_start_matches(|character: char| character <= ' ')
-        .chars()
-        .filter(|character| !matches!(character, '\t' | '\r' | '\n'))
-        .collect();
-    let (scheme, after_scheme) = match cleaned.split_once(':') {
-        Some((scheme, rest))
-            if scheme.starts_with(|character: char| character.is_ascii_alphabetic())
-                && scheme.chars().all(|character| {
-                    character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
-                }) =>
-        {
-            (scheme.to_ascii_lowercase(), rest)
-        }
-        Some(_) | None => (String::new(), cleaned.as_str()),
-    };
-    let path = match after_scheme.strip_prefix("//") {
-        Some(rest) => {
-            let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-            let (netloc, path) = rest.split_at_checked(end)?;
-            if netloc.contains('[') != netloc.contains(']') {
-                return None;
-            }
-            path
-        }
-        None => after_scheme,
-    };
-    let without_query = path.split(['?', '#']).next()?;
-    let last_segment = without_query.rfind('/').unwrap_or_default();
-    let params_at = without_query
-        .get(last_segment..)?
-        .find(';')
-        .map(|offset| last_segment.saturating_add(offset))
-        .filter(|_| PARAM_SCHEMES.contains(&scheme.as_str()));
-    let end = params_at.unwrap_or(without_query.len());
-    without_query.get(..end).map(str::to_owned)
-}
-
 pub fn convert_https_url_to_s3_uri(url: &str) -> Result<(String, String), S3SigningError> {
     let unparsable = || S3SigningError::UnparsableUrl {
         url: url.to_owned(),
@@ -81,7 +36,7 @@ pub fn convert_https_url_to_s3_uri(url: &str) -> Result<(String, String), S3Sign
     let (bucket, raw_key) = if let Some((bucket, key)) = regex_match {
         (bucket.to_owned(), key.to_owned())
     } else {
-        let path = parsed_path(url).ok_or_else(unparsable)?;
+        let path = urlparse(url, "").map_err(|_error| unparsable())?.path;
         let (bucket, key) = path
             .trim_start_matches('/')
             .split_once('/')

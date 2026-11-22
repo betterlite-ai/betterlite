@@ -51,6 +51,8 @@ fn path_fallback() {
         ("s3x://h/b/k;v=1", "s3://b/k;v=1 | k;v=1"),
         ("  https://h/b/\tk", "s3://b/k | k"),
         ("b/k", "s3://b/k | k"),
+        // urlparse accepts a bracketed IPv6 host and keeps its path
+        ("https://[::1]/b/k", "s3://b/k | k"),
         // a key that starts with a newline gives the regexes nothing to capture
         ("https://s3.r.amazonaws.com/b/\nx", "s3://b/x | x"),
         ("https://bk.s3.r.amazonaws.com/\nx/y", "s3://x/y | y"),
@@ -73,6 +75,11 @@ fn unparsable_urls() {
         "https://my.bucket.s3.us-west-2.amazonaws.com/k",
         "https://[h/b/k",
         "https://h]/b/k",
+        // urlparse rejects a bracketed host that is not an IPv6 address
+        "https://[h]/b/k",
+        "https://[127.0.0.1]/b/k",
+        // urlparse rejects a netloc whose NFKC form contains a path separator
+        "https://\u{2100}/b/k",
     ];
     for url in urls {
         let error = convert_https_url_to_s3_uri(url).unwrap_err();

@@ -28,5 +28,9 @@ call:
       - "https://my.bucket.s3.us-west-2.amazonaws.com/k"
       - "https://[h/b/k"
       - "https://h]/b/k"
+      - "https://[h]/b/k"
+      - "https://[127.0.0.1]/b/k"
+      - "https://\u2100/b/k"
+      - "https://[::1]/b/k"
 env: {}
 compare: {ignore: []}
