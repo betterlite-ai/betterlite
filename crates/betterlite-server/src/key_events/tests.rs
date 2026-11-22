@@ -402,6 +402,15 @@ async fn update_response_unused() {
     assert!(!masked.contains("sk-other"), "{masked}");
 }
 
+#[tokio::test]
+async fn update_missing_key_typed_error() {
+    let harness = wired(AUDIT);
+    let event = updated(r#"{"key_alias": "renamed"}"#, ROW, "{}");
+    let error = harness.dispatch(&event, &caller()).await.unwrap_err();
+    assert!(matches!(error, KeyEventError::MissingUpdateKey));
+    assert!(harness.records().is_empty());
+}
+
 #[rstest]
 #[case::response_alias_wins(Some(r#"{"key_alias": "req"}"#), "resp", "litellm/resp")]
 #[case::requested_alias_when_response_blank(Some(r#"{"key_alias": "req"}"#), "", "litellm/req")]
