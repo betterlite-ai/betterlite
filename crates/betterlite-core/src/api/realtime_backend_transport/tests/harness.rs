@@ -134,6 +134,7 @@ pub(super) fn invalid_status_code(status_code: u16, message: &str) -> DialOutcom
 
 struct DialRecord {
     url: String,
+    headers: HeaderMap,
     ssl: RealtimeSsl,
     max_size: usize,
     open_timeout: Duration,
@@ -154,6 +155,7 @@ impl RealtimeWebSocketDialer for ScriptedDialer {
     async fn connect(&self, request: &DialRequest<'_>) -> Result<ConnectedBackend, DialError> {
         self.records.lock().unwrap().push(DialRecord {
             url: request.url.to_owned(),
+            headers: request.headers.clone(),
             ssl: request.ssl.clone(),
             max_size: request.max_size,
             open_timeout: request.open_timeout,
@@ -239,6 +241,8 @@ struct TestProvider {
     synthetic: Option<Json>,
     own_backend: bool,
     validate_error: Option<String>,
+    open_backend_error: Option<String>,
+    open_headers: Arc<Mutex<Vec<HeaderMap>>>,
     backend_log: Arc<Mutex<BackendLog>>,
     send_error: Option<String>,
     close_error: Option<String>,
@@ -251,10 +255,15 @@ impl BaseRealtimeConfig for TestProvider {
     type Backend = FakeBackend;
 
     fn validate_environment(&self, environment: &Environment<'_>) -> Result<HeaderMap, io::Error> {
-        self.validate_error.as_ref().map_or_else(
-            || Ok(environment.headers.clone()),
-            |message| Err(io::Error::other(message.clone())),
-        )
+        if let Some(message) = &self.validate_error {
+            return Err(io::Error::other(message.clone()));
+        }
+        let mut headers = environment.headers.clone();
+        headers.insert(
+            VALIDATED_HEADER.to_owned(),
+            Json::Text(VALIDATED_HEADER_VALUE.to_owned()),
+        );
+        Ok(headers)
     }
 
     fn get_complete_url(
@@ -288,8 +297,12 @@ impl BaseRealtimeConfig for TestProvider {
     async fn open_backend(
         &self,
         _url: &str,
-        _headers: &HeaderMap,
+        headers: &HeaderMap,
     ) -> Result<Option<Self::Backend>, io::Error> {
+        self.open_headers.lock().unwrap().push(headers.clone());
+        if let Some(message) = &self.open_backend_error {
+            return Err(io::Error::other(message.clone()));
+        }
         if self.own_backend {
             return Ok(Some(FakeBackend {
                 log: Arc::clone(&self.backend_log),
@@ -377,6 +390,8 @@ pub(super) struct RelayObservation {
     pub(super) backend_setup_complete: SessionFlag,
     pub(super) turn_detection_update_sent: SessionFlag,
     pub(super) stored_messages: usize,
+    pub(super) client_wants_beta: SessionFlag,
+    pub(super) cancelled: SessionFlag,
 }
 
 enum RelayOutcome {
@@ -422,6 +437,8 @@ fn record_observation(shared: &Mutex<RelayObservation>, session: &SessionRelay<'
     observation.backend_setup_complete = session.state.setup.backend_setup_complete;
     observation.turn_detection_update_sent = session.state.setup.turn_detection_update_sent;
     observation.stored_messages = session.state.messages.len();
+    observation.client_wants_beta = session.state.client_wants_beta;
+    observation.cancelled = SessionFlag(session.cancellation.is_cancelled());
 }
 
 async fn receive_outcome(source: &mut (dyn RealtimeBackendSource + '_)) -> SourceOutcome {
@@ -453,6 +470,8 @@ pub(super) struct HarnessOptions {
     pub(super) synthetic: Option<Json>,
     pub(super) own_backend: SessionFlag,
     pub(super) validate_error: Option<String>,
+    pub(super) open_backend_error: Option<String>,
+    pub(super) client_scope_headers: Vec<(String, String)>,
     pub(super) metadata: Option<IndexMap<String, Json>>,
     pub(super) query_params: Option<IndexMap<String, String>>,
     pub(super) dials: Vec<DialOutcome>,
@@ -476,6 +495,8 @@ impl Default for HarnessOptions {
             synthetic: None,
             own_backend: SessionFlag(false),
             validate_error: None,
+            open_backend_error: None,
+            client_scope_headers: Vec::new(),
             metadata: None,
             query_params: None,
             dials: vec![DialOutcome::Connect],
@@ -516,6 +537,19 @@ impl HarnessOptions {
 
     pub(super) fn with_validate_error(mut self, validate_error: Option<String>) -> Self {
         self.validate_error = validate_error;
+        self
+    }
+
+    pub(super) fn with_open_backend_error(mut self, open_backend_error: Option<String>) -> Self {
+        self.open_backend_error = open_backend_error;
+        self
+    }
+
+    pub(super) fn with_client_scope_headers(
+        mut self,
+        client_scope_headers: Vec<(String, String)>,
+    ) -> Self {
+        self.client_scope_headers = client_scope_headers;
         self
     }
 
@@ -605,6 +639,7 @@ pub(super) struct Harness<'callback> {
     verification: Verification,
     max_message_size_bytes: usize,
     records: Arc<Mutex<Vec<DialRecord>>>,
+    open_headers: Arc<Mutex<Vec<HeaderMap>>>,
     client_log: Arc<Mutex<ClientLog>>,
     backend_log: Arc<Mutex<BackendLog>>,
     pub(super) observation: Arc<Mutex<RelayObservation>>,
@@ -615,6 +650,7 @@ struct SharedLogs {
     backend: Arc<Mutex<BackendLog>>,
     client: Arc<Mutex<ClientLog>>,
     records: Arc<Mutex<Vec<DialRecord>>>,
+    open_headers: Arc<Mutex<Vec<HeaderMap>>>,
     observation: Arc<Mutex<RelayObservation>>,
 }
 
@@ -625,6 +661,8 @@ fn provider_of(options: &HarnessOptions, logs: &SharedLogs) -> Arc<TestProvider>
         synthetic: options.synthetic.clone(),
         own_backend: options.own_backend.0,
         validate_error: options.validate_error.clone(),
+        open_backend_error: options.open_backend_error.clone(),
+        open_headers: Arc::clone(&logs.open_headers),
         backend_log: Arc::clone(&logs.backend),
         send_error: options.backend_send_error.clone(),
         close_error: options.backend_close_error.clone(),
@@ -636,7 +674,9 @@ fn client_of(options: &HarnessOptions, logs: &SharedLogs) -> ClientHandle {
     let socket: Box<dyn RealtimeClientSocket> = Box::new(FakeClient::new(options, logs));
     ClientHandle {
         socket: Arc::new(TokioMutex::new(socket)),
-        scope: WebSocketScope::default(),
+        scope: WebSocketScope {
+            headers: options.client_scope_headers.clone(),
+        },
     }
 }
 
@@ -671,6 +711,9 @@ fn relay_of(fails: bool, logs: &SharedLogs) -> RecordingRelay {
         },
     }
 }
+
+const VALIDATED_HEADER: &str = "x-provider-validated";
+const VALIDATED_HEADER_VALUE: &str = "yes";
 
 fn auth_headers() -> HeaderMap {
     HeaderMap::from([(
@@ -708,6 +751,7 @@ pub(super) fn harness(options: HarnessOptions, callback_refs: Vec<&TestCallback>
         verification: options.verification,
         max_message_size_bytes: options.max_message_size_bytes,
         records: Arc::clone(&logs.records),
+        open_headers: Arc::clone(&logs.open_headers),
         client_log: Arc::clone(&logs.client),
         backend_log: Arc::clone(&logs.backend),
         observation: Arc::clone(&logs.observation),
@@ -716,6 +760,7 @@ pub(super) fn harness(options: HarnessOptions, callback_refs: Vec<&TestCallback>
 
 pub(super) struct DialObservation {
     pub(super) url: String,
+    pub(super) headers: HeaderMap,
     pub(super) ssl: RealtimeSsl,
     pub(super) max_size: usize,
     pub(super) open_timeout: Duration,
@@ -776,6 +821,7 @@ impl Harness<'_> {
             .iter()
             .map(|entry| DialObservation {
                 url: entry.url.clone(),
+                headers: entry.headers.clone(),
                 ssl: entry.ssl.clone(),
                 max_size: entry.max_size,
                 open_timeout: entry.open_timeout,
@@ -786,6 +832,10 @@ impl Harness<'_> {
 
     pub(super) fn source_outcome(&self) -> SourceOutcome {
         self.observation.lock().unwrap().source_outcome.clone()
+    }
+
+    pub(super) fn open_backend_headers(&self) -> Vec<HeaderMap> {
+        self.open_headers.lock().unwrap().clone()
     }
 }
 

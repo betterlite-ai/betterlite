@@ -16,6 +16,7 @@ async fn realtime_initial_setup_sequence() {
     skips_a_missing_synthetic_event().await;
     drops_an_empty_metadata_map().await;
     sets_or_keeps_the_model_for_an_intent().await;
+    forwards_the_client_beta_scope().await;
     closes_after_a_cancelled_relay().await;
 }
 
@@ -140,6 +141,33 @@ async fn sets_or_keeps_the_model_for_an_intent() {
             .force_transcription_model,
         None
     );
+
+    keeps_the_default_model_without_an_intent().await;
+}
+
+async fn keeps_the_default_model_without_an_intent() {
+    let mut missing_intent = harness(HarnessOptions::default(), Vec::new());
+    missing_intent.run().await.unwrap();
+    assert_eq!(
+        missing_intent
+            .observation
+            .lock()
+            .unwrap()
+            .force_transcription_model,
+        None
+    );
+}
+
+async fn forwards_the_client_beta_scope() {
+    let options = HarnessOptions::default()
+        .with_client_scope_headers(vec![("OpenAI-Beta".to_owned(), "realtime=v1".to_owned())]);
+    let mut beta = harness(options, Vec::new());
+    beta.run().await.unwrap();
+    assert!(beta.observation.lock().unwrap().client_wants_beta.0);
+
+    let mut plain = harness(HarnessOptions::default(), Vec::new());
+    plain.run().await.unwrap();
+    assert!(!plain.observation.lock().unwrap().client_wants_beta.0);
 }
 
 async fn closes_after_a_cancelled_relay() {
@@ -148,6 +176,10 @@ async fn closes_after_a_cancelled_relay() {
         .with_relay_fails(SessionFlag(true));
     let mut cancelled = harness(options, Vec::new());
     cancelled.run().await.unwrap();
+    assert!(cancelled.observation.lock().unwrap().cancelled.0);
+    let mut running = harness(HarnessOptions::default(), Vec::new());
+    running.run().await.unwrap();
+    assert!(!running.observation.lock().unwrap().cancelled.0);
     assert!(cancelled.closed());
     assert_eq!(cancelled.close().map(|close| close.0), Some(1011));
     assert!(

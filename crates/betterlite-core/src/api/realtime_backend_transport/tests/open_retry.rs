@@ -1,13 +1,15 @@
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
+use betterlite_models::decisions::Json;
 
 use super::harness::{
     DialOutcome, HarnessOptions, SourceOutcome, harness, invalid_status, invalid_status_code, os,
-    websocket,
+    parse, websocket,
 };
 use crate::api::realtime_backend_transport::dial::{RealtimeSsl, realtime_ssl};
 use crate::api::realtime_backend_transport::error::RealtimeConnectionError;
+use crate::api::realtime_contracts::error::HeaderMap;
 use crate::api::realtime_session_state::state::SessionFlag;
 
 #[tokio::test(start_paused = true)]
@@ -18,6 +20,8 @@ async fn realtime_backend_open_retry() {
     reports_the_invalid_status_code().await;
     uses_a_provider_owned_backend().await;
     fails_config_before_dialing().await;
+    passes_the_validated_headers_to_the_dialer().await;
+    closes_when_the_provider_backend_cannot_open().await;
     dials_without_verification_for_wss().await;
     keeps_the_ssl_argument_on_a_ws_url();
     closes_after_a_failed_setup_send().await;
@@ -118,6 +122,53 @@ async fn fails_config_before_dialing() {
     assert!(invalid_headers.dials().is_empty());
     assert!(invalid_headers.texts().is_empty());
     assert!(invalid_headers.close().is_none());
+}
+
+async fn passes_the_validated_headers_to_the_dialer() {
+    let mut validated = harness(HarnessOptions::default(), Vec::new());
+    validated.run().await.unwrap();
+    let dials = validated.dials();
+    assert_eq!(dials.len(), 1);
+    let expected = HeaderMap::from([
+        (
+            "Authorization".to_owned(),
+            Json::Text("Bearer test".to_owned()),
+        ),
+        (
+            "x-provider-validated".to_owned(),
+            Json::Text("yes".to_owned()),
+        ),
+    ]);
+    assert_eq!(dials[0].headers, expected);
+    assert_eq!(validated.open_backend_headers(), vec![expected]);
+}
+
+async fn closes_when_the_provider_backend_cannot_open() {
+    let secret = format!("sk-{}", "a".repeat(48));
+    let options = HarnessOptions::default()
+        .with_open_backend_error(Some(format!("{secret} the provider backend is gone")));
+    let mut provider_failed = harness(options, Vec::new());
+    provider_failed.run().await.unwrap();
+    assert!(provider_failed.dials().is_empty());
+    assert_eq!(provider_failed.open_backend_headers().len(), 1);
+    let texts = provider_failed.texts();
+    assert_eq!(texts.len(), 1);
+    assert!(!texts[0].contains(&secret));
+    let Json::Object(event) = parse(&texts[0]) else {
+        panic!("the server error event is not a JSON object");
+    };
+    assert_eq!(event.get("type"), Some(&Json::Text("error".to_owned())));
+    assert!(matches!(
+        event.get("error"),
+        Some(Json::Object(error))
+            if error.get("type") == Some(&Json::Text("server_error".to_owned()))
+    ));
+    let close = provider_failed.close().unwrap();
+    assert_eq!(close.0, 1011);
+    let reason = close.1.unwrap();
+    assert!(!reason.contains(&secret));
+    assert!(reason.starts_with("Internal server error: "));
+    assert!(reason.contains("the provider backend is gone"));
 }
 
 async fn dials_without_verification_for_wss() {
