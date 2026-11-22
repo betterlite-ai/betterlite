@@ -51,4 +51,5 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: [authorization]
-  ignore: []
+  ignore:
+    - {pointer: /upstream/0/body, why: a multipart boundary is random on each side so the captured body bytes never match}

@@ -62,4 +62,8 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: [authorization, x-api-key]
-  ignore: []
+  ignore:
+    - {pointer: /upstream/0/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - {pointer: /upstream/1/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - {pointer: /upstream/2/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - {pointer: /upstream/3/body, why: a multipart boundary is random on each side so the captured body bytes never match}

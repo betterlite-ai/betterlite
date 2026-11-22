@@ -87,3 +87,7 @@ compare:
   ignore:
     - pointer: /file_provider_write/value/steps/7/failure/message
       why: the openai client prints the error body as a Python dict, betterlite's status error prints it as JSON
+    - {pointer: /upstream/0/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - {pointer: /upstream/1/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - {pointer: /upstream/2/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - {pointer: /upstream/5/body, why: a multipart boundary is random on each side so the captured body bytes never match}
