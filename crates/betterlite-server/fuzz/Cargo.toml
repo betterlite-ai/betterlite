@@ -496,3 +496,10 @@ path = "fuzz_targets/tag_report_query.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "shadow_req"
+path = "fuzz_targets/shadow_req.rs"
+test = false
+doc = false
+bench = false

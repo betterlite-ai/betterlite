@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_error::error::class_message;
+use betterlite_error::error::ErrorClass;
 use betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provider;
 
 use super::support::{Bench, Case, Plan, VIDEO_BODY, remix_call};
@@ -20,6 +20,7 @@ fn remix_provider_decodes_from_the_video_id() {
         panic!("the decoded name is parsed like an explicit one");
     };
     assert_eq!(provider, "not-a-provider");
+    assert_eq!(failure.class.metadata().status_code, 400);
     assert!(bench.requests().is_empty());
 }
 
@@ -35,10 +36,16 @@ fn remix_provider_decoded_groq_is_unsupported() {
         panic!("the decoded provider is the unsupported one");
     };
     assert_eq!(provider, "groq");
-    assert_eq!(
-        class_message(&failure.class),
-        "APIConnectionError: GroqException - video remix is not supported for groq"
-    );
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!(
+            "an unsupported provider answers 400, got {:?}",
+            failure.class
+        );
+    };
+    assert_eq!(failure.class.metadata().status_code, 400);
+    assert_eq!(details.message, "video remix is not supported for groq");
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("groq"));
     assert!(bench.requests().is_empty());
 }
 
@@ -90,7 +97,7 @@ fn remix_provider_explicit_empty_is_unknown() {
         failure.error,
         VideoCallError::UnknownProvider { .. }
     ));
-    assert_eq!(failure.class.metadata().status_code, 500);
+    assert_eq!(failure.class.metadata().status_code, 400);
     assert!(bench.requests().is_empty());
 }
 
@@ -106,5 +113,6 @@ fn remix_provider_unknown_name_is_unknown() {
         panic!("the provider name is rejected before any config is built");
     };
     assert_eq!(provider, "not-a-provider");
+    assert_eq!(failure.class.metadata().status_code, 400);
     assert!(bench.requests().is_empty());
 }

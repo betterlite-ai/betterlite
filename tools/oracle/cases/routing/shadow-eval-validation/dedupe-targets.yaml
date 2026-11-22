@@ -1,0 +1,12 @@
+kind: probe
+name: shadow-eval-validation-dedupe-targets
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_validation:
+        steps:
+          - parse:
+              text: '{"api_key_ids":["b","a","b"],"team_ids":["t","t"],"user_ids":["u1","u1"],"models":["m","m"],"router_names":["r2","r1","r2"],"shadow_percentage":50}'
+compare:
+  ignore: []
