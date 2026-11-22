@@ -16,8 +16,8 @@ use tokio::time::timeout;
 use self::support::{
     BatchAnswer, DeploymentCatalog, FULL_KEY, FixedClock, LogCapture, MINUTE, NEAR_MAX,
     RecordingCache, START_OF_MINUTE, WriteFailure, admit, answered, auth_with_hash, detail_text,
-    every_dimension, final_write, fixture_with, fixture_with_catalog, global_count, id, minute,
-    new_fixture, objects, principal, rejection, request_body, split_calls, written_ids,
+    every_dimension, final_write, fixture_with, fixture_with_catalog, global_count, hashed_key, id,
+    minute, new_fixture, objects, principal, rejection, request_body, split_calls, written_ids,
 };
 use super::facts::GLOBAL_KEY;
 use crate::legacy_admission::error::LegacyAdmissionError;
@@ -226,14 +226,14 @@ async fn cache_key_absent_parts_skip_ids(
     #[case] expected: [bool; 6],
 ) {
     let fixture = new_fixture();
-    let caller = auth_with_hash(text);
+    let auth = principal(text);
     let metadata = if cap {
         r#"{"global_max_parallel_requests": 9}"#
     } else {
         "{}"
     };
     let mut request = request_body(model, metadata);
-    admit(&fixture, &caller.auth, &mut request).await.unwrap();
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let keys = split_calls(&fixture.cache.calls())
         .gets
         .pop()
@@ -492,14 +492,14 @@ async fn model_limit_id_uses_none_text(
     #[case] has_key: bool,
 ) {
     let fixture = new_fixture();
-    let caller = auth_with_hash(text);
-    let mut request = request_body(model, "{}");
-    admit(&fixture, &caller.auth, &mut request).await.unwrap();
+    let auth = principal(text);
     let prefix = if has_key {
-        caller.hash.as_str()
+        hashed_key(&auth)
     } else {
-        "None"
+        String::from("None")
     };
+    let mut request = request_body(model, "{}");
+    admit(&fixture, &auth, &mut request).await.unwrap();
     let expected = format!(
         "{prefix}::{}::{MINUTE}::request_count",
         model.unwrap_or("None")
