@@ -452,6 +452,7 @@ fn group_log(root: &Path) -> String {
     fs::read_to_string(group.join("litellm.log")).unwrap()
 }
 
+#[derive(Clone)]
 struct ReplayCall {
     model: String,
     data: Object,
@@ -615,25 +616,30 @@ fn path_model_operation(path: &str) -> (&str, &str) {
 fn generation_answer(operation: &str, upstream: &UpstreamAnswer) -> Option<GenerationAnswer> {
     let headers = answer_headers(&upstream.headers);
     match operation {
-        "generateContent" => Some(GenerationAnswer {
-            headers,
-            body: GenerationBody::Json(
-                serde_json::from_value(upstream.body.clone().expect("a JSON answer"))
-                    .expect("the answer is JSON"),
-            ),
-        }),
-        "streamGenerateContent" => {
-            let events = upstream.events.as_ref().expect("SSE events").clone();
-            Some(GenerationAnswer {
-                headers,
-                body: GenerationBody::Events(Box::pin(stream::iter(
-                    events
-                        .into_iter()
-                        .map(|event| Ok::<Vec<u8>, GenAiOutputError>(event.into_bytes())),
-                ))),
-            })
-        }
+        "generateContent" => Some(json_generation(headers, upstream)),
+        "streamGenerateContent" => Some(stream_generation(headers, upstream)),
         _ => None,
+    }
+}
+
+fn json_generation(headers: HeaderMap, upstream: &UpstreamAnswer) -> GenerationAnswer {
+    let body = serde_json::from_value(upstream.body.clone().expect("a JSON answer"))
+        .expect("the answer is JSON");
+    GenerationAnswer {
+        headers,
+        body: GenerationBody::Json(body),
+    }
+}
+
+fn stream_generation(headers: HeaderMap, upstream: &UpstreamAnswer) -> GenerationAnswer {
+    let events = upstream.events.as_ref().expect("SSE events").clone();
+    GenerationAnswer {
+        headers,
+        body: GenerationBody::Events(Box::pin(stream::iter(
+            events
+                .into_iter()
+                .map(|event| Ok::<Vec<u8>, GenAiOutputError>(event.into_bytes())),
+        ))),
     }
 }
 
@@ -641,14 +647,18 @@ fn counter_reply(operation: &str, upstream: &UpstreamAnswer) -> Option<TokenCoun
     if operation != "countTokens" {
         return None;
     }
+    Some(counted_response(upstream))
+}
+
+fn counted_response(upstream: &UpstreamAnswer) -> TokenCountResponse {
     let original = serde_json::from_value::<TokenCountOriginal>(
         upstream.body.clone().expect("a provider count reply"),
     )
     .expect("the provider count reply decodes");
-    Some(TokenCountResponse {
+    TokenCountResponse {
         total_tokens: 0,
         original_response: Some(original),
-    })
+    }
 }
 
 fn answer_headers(headers: &BTreeMap<String, String>) -> HeaderMap {
@@ -716,6 +726,19 @@ fn genai_request(case: &HttpCase) -> Request<Body> {
         .expect("the request builds")
 }
 
+fn recorded_generation(replay: &GenaiReplay) -> ReplayCall {
+    let recorded = replay
+        .generation
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(recorded.len(), 1);
+    recorded
+        .first()
+        .cloned()
+        .expect("one scripted generation call")
+}
+
 fn assert_generated(replay: &GenaiReplay) {
     assert_eq!(replay.status, StatusCode::OK);
     assert_eq!(
@@ -726,13 +749,7 @@ fn assert_generated(replay: &GenaiReplay) {
         response_header(&replay.headers, "content-type"),
         Some("application/json")
     );
-    let recorded = replay
-        .generation
-        .calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(recorded.len(), 1);
-    let call = recorded.first().expect("one scripted generation call");
+    let call = recorded_generation(replay);
     assert_eq!(call.model, replay.model);
     assert!(!call.streamed);
     assert_eq!(
@@ -766,13 +783,7 @@ fn assert_streamed(replay: &GenaiReplay) {
         String::from_utf8(replay.body.to_vec()).expect("SSE bytes are UTF-8"),
         expected
     );
-    let recorded = replay
-        .generation
-        .calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(recorded.len(), 1);
-    let call = recorded.first().expect("one scripted stream call");
+    let call = recorded_generation(replay);
     assert_eq!(call.model, replay.model);
     assert!(call.streamed);
     assert_eq!(call.data.get("stream"), Some(&Json::Bool(true)));
@@ -792,22 +803,26 @@ fn assert_counted(replay: &GenaiReplay) {
         serde_json::from_slice::<serde_json::Value>(&replay.body).expect("a JSON answer"),
         replay.upstream.body.clone().expect("the scripted body")
     );
-    let translator_calls = replay
-        .translator
-        .calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(translator_calls.len(), 1);
-    let translation = translator_calls.first().expect("one translation call");
+    let translation = {
+        let calls = replay
+            .translator
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        assert_eq!(calls.len(), 1);
+        calls.first().cloned().expect("one translation call")
+    };
     assert_eq!(translation.0, replay.model);
     assert_eq!(translation.1, replay.contents);
-    let counter_calls = replay
-        .counter
-        .calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(counter_calls.len(), 1);
-    let count = counter_calls.first().expect("one count call");
+    let count = {
+        let calls = replay
+            .counter
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        assert_eq!(calls.len(), 1);
+        calls.first().cloned().expect("one count call")
+    };
     assert_eq!(count.0.model, replay.model);
     assert_eq!(count.0.contents, replay.contents);
     assert!(count.0.messages.is_empty());
@@ -815,5 +830,5 @@ fn assert_counted(replay: &GenaiReplay) {
 }
 
 fn response_header<'headers>(headers: &'headers HeaderMap, name: &str) -> Option<&'headers str> {
-    headers.get(name).and_then(|value| value.to_str().ok())
+    headers.get(name)?.to_str().ok()
 }
