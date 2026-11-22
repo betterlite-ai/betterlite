@@ -1,0 +1,41 @@
+kind: helper
+name: auth-errors-db-outage-enabled-internal-user
+call:
+  auth_errors:
+    rows:
+      # the bypass records the service failure, warns, and issues the restricted internal user
+      - step: handle
+        failure: {kind: connect, message: connection refused, type: "", param: null, status_code: 0, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: [allow_requests_on_db_unavailable]
+        identity: null
+        request_data: {model: gpt-4o}
+        route: /v1/responses/resp_123
+        user_agent: curl/8.5
+        client_host: 203.0.113.7
+      # the proxy's own no-database rejection counts as the same outage
+      - step: handle
+        failure: {kind: proxy, message: No connected db., type: no_db_connection, param: "None", status_code: 400, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: [allow_requests_on_db_unavailable]
+        identity: null
+        request_data: {}
+        route: /v1/chat/completions
+        user_agent: null
+        client_host: 203.0.113.7
+      # an ordinary 401 is rejected even with the bypass on
+      - step: handle
+        failure: {kind: http, message: "Authentication Error, key expired", type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: [allow_requests_on_db_unavailable]
+        identity: null
+        request_data: {}
+        route: /v1/chat/completions
+        user_agent: null
+        client_host: 203.0.113.7
+env: {}
+compare:
+  ignore: []

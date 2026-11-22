@@ -1,0 +1,5 @@
+# a word is a load error for either lookup setting
+environment_variables:
+  RESPONSES_SESSION_LOOKUP_MAX_ATTEMPTS: bad
+  RESPONSES_SESSION_LOOKUP_RETRY_INTERVAL: bad
+model_list: []
