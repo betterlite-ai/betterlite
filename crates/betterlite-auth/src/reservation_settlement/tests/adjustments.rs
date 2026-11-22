@@ -94,6 +94,14 @@ async fn a_positive_delta_fits_a_readable_counter() {
     assert!(counter_can_apply_adjustment(&fake, "spend:key:k1", decimal("5")).await);
 }
 
+// a positive delta only adds, so it fits even where the sum would not be representable
+#[tokio::test]
+async fn a_positive_delta_at_the_decimal_ceiling_stays_consistent() {
+    let fake = counters(&[]);
+    let _previous = lock(&fake.values).insert("spend:key:k1".to_owned(), Decimal::MAX);
+    assert!(counter_can_apply_adjustment(&fake, "spend:key:k1", decimal("1")).await);
+}
+
 #[tokio::test]
 async fn the_negative_floor_absorbs_rounding() {
     let cases = [
