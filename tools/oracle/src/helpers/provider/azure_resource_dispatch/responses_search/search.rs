@@ -84,7 +84,10 @@ fn call_of<'call>(
                 optional_params: None,
             },
         )),
-        _ => Err(failure(OTHER)),
+        Step::ResponsesUrl(_)
+        | Step::ResponsesTransform(_)
+        | Step::ResponsesResource(_)
+        | Step::ResponsesInputItems(_) => Err(failure(OTHER)),
     }
 }
 
@@ -125,29 +128,34 @@ fn settings_of(step: &Step) -> Settings {
             connection_id: None,
             token: None,
         },
-        _ => Settings::default(),
+        Step::ResponsesUrl(_)
+        | Step::ResponsesTransform(_)
+        | Step::ResponsesResource(_)
+        | Step::ResponsesInputItems(_)
+        | Step::SearchHeaders(_)
+        | Step::SearchReply(_) => Settings::default(),
     }
 }
 
 fn headers_of(step: &Step) -> Headers {
-    match step {
-        Step::SearchHeaders(value) => value.headers.clone(),
-        _ => Headers::new(),
-    }
+    let Step::SearchHeaders(value) = step else {
+        return Headers::new();
+    };
+    value.headers.clone()
 }
 
 fn secret_of(step: &Step) -> Option<SecretString> {
-    match step {
-        Step::SearchHeaders(value) => value.api_key.clone().map(SecretString::from),
-        _ => None,
-    }
+    let Step::SearchHeaders(value) = step else {
+        return None;
+    };
+    value.api_key.clone().map(SecretString::from)
 }
 
 fn query_of(step: &Step) -> SearchQuery {
-    match step {
-        Step::SearchRequest(value) => SearchQuery::Single(value.query.clone()),
-        _ => SearchQuery::Single(String::new()),
-    }
+    let Step::SearchRequest(value) = step else {
+        return SearchQuery::Single(String::new());
+    };
+    SearchQuery::Single(value.query.clone())
 }
 
 fn options_of(step: &Step) -> Object {
@@ -161,10 +169,10 @@ fn options_of(step: &Step) -> Object {
 }
 
 const fn body_of(step: &Step) -> &[u8] {
-    match step {
-        Step::SearchReply(value) => value.body.as_bytes(),
-        _ => &[],
-    }
+    let Step::SearchReply(value) = step else {
+        return &[];
+    };
+    value.body.as_bytes()
 }
 
 fn search_failure(error: &AzureSearchError) -> Box<HelperError> {

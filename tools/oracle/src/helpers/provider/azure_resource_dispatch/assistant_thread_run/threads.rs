@@ -20,9 +20,8 @@ const CREATE_TEXT: &str = r#"{"messages":[{"role":"user","content":"hello"}]}"#;
 
 // B687's thread create and retrieve over the same fake transport
 pub(super) fn answer(step: &Step) -> Answer {
-    let reply = match step {
-        Step::ThreadCreate(value) | Step::ThreadGet(value) => value,
-        _ => return Err(failure(OTHER)),
+    let (Step::ThreadCreate(reply) | Step::ThreadGet(reply)) = step else {
+        return Err(failure(OTHER));
     };
     let runtime = runtime()?;
     let fake = Arc::new(AssistantsFake::new(vec![FakeReply::json(
@@ -59,7 +58,13 @@ fn call_of<'call>(
     match step {
         Step::ThreadCreate(_) => Ok(("thread_create", ThreadOperation::Create(create))),
         Step::ThreadGet(_) => Ok(("thread_get", ThreadOperation::Retrieve(&reply.target_id))),
-        _ => Err(failure(OTHER)),
+        Step::DefinitionsCreate(_)
+        | Step::DefinitionsList(_)
+        | Step::DefinitionsDelete(_)
+        | Step::MessageCreate(_)
+        | Step::MessageList(_)
+        | Step::RunPoll(_)
+        | Step::RunStream(_) => Err(failure(OTHER)),
     }
 }
 

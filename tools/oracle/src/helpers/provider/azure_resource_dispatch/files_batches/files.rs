@@ -108,8 +108,8 @@ fn value(reply: FileReply) -> Value {
 }
 
 fn leaf_failure(source: &FilesError) -> Box<HelperError> {
-    match source {
-        FilesError::Status(status) => with_status(failure(status.message.clone()), status.status),
-        error => failure(error),
-    }
+    let FilesError::Status(status) = source else {
+        return failure(source);
+    };
+    with_status(failure(status.message.clone()), status.status)
 }

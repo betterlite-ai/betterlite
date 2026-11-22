@@ -22,9 +22,8 @@ const RUN_TEXT: &str = r#"{"thread_id":"thread_1","assistant_id":"asst_1","model
 
 // B543's buffered and streaming runs; the streaming run keeps the SDK stream's event names
 pub(super) fn answer(step: &Step) -> Answer {
-    let fixture = match step {
-        Step::RunPoll(value) | Step::RunStream(value) => value,
-        _ => return Err(failure(OTHER)),
+    let (Step::RunPoll(fixture) | Step::RunStream(fixture)) = step else {
+        return Err(failure(OTHER));
     };
     let runtime = runtime()?;
     let fake = Arc::new(AssistantsFake::new(

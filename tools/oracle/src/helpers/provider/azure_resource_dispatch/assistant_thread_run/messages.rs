@@ -23,9 +23,8 @@ const MESSAGE_TEXT: &str = r#"{"role":"user","content":"hello"}"#;
 
 // B697's message append and list, the append path carrying the attachment policy
 pub(super) fn answer(step: &Step) -> Answer {
-    let reply = match step {
-        Step::MessageCreate(value) | Step::MessageList(value) => value,
-        _ => return Err(failure(OTHER)),
+    let (Step::MessageCreate(reply) | Step::MessageList(reply)) = step else {
+        return Err(failure(OTHER));
     };
     let runtime = runtime()?;
     let fake = Arc::new(AssistantsFake::new(vec![FakeReply::json(
@@ -70,7 +69,13 @@ fn call_of<'call>(
             },
         )),
         Step::MessageList(_) => Ok(("message_list", MessageCall::List(&reply.target_id))),
-        _ => Err(failure(OTHER)),
+        Step::DefinitionsCreate(_)
+        | Step::DefinitionsList(_)
+        | Step::DefinitionsDelete(_)
+        | Step::ThreadCreate(_)
+        | Step::ThreadGet(_)
+        | Step::RunPoll(_)
+        | Step::RunStream(_) => Err(failure(OTHER)),
     }
 }
 

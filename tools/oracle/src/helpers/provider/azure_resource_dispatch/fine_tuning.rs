@@ -92,12 +92,12 @@ fn answer(step: &Step) -> Result<(&'static str, Value), Box<HelperError>> {
         return Err(failure(OTHER));
     }
     let kind = kind(step);
-    let value = match result? {
-        AzureResourceResult::FineTuning(fine_tuning::Outcome::Job(job)) => {
-            job_value(step, &job, &data)
-        }
-        AzureResourceResult::FineTuning(fine_tuning::Outcome::Page(page)) => page_value(&page)?,
-        _ => return Err(failure(OTHER)),
+    let AzureResourceResult::FineTuning(outcome) = result? else {
+        return Err(failure(OTHER));
+    };
+    let value = match outcome {
+        fine_tuning::Outcome::Job(job) => job_value(step, &job, &data),
+        fine_tuning::Outcome::Page(page) => page_value(&page)?,
     };
     Ok((kind, value))
 }

@@ -71,7 +71,10 @@ fn call_of<'call>(
                 query,
             },
         )),
-        _ => Err(failure(OTHER)),
+        Step::SearchHeaders(_)
+        | Step::SearchUrl(_)
+        | Step::SearchRequest(_)
+        | Step::SearchReply(_) => Err(failure(OTHER)),
     }
 }
 
@@ -92,10 +95,10 @@ fn value_of(
 }
 
 fn text_of(step: &Step) -> String {
-    match step {
-        Step::ResponsesTransform(value) => value.input.clone(),
-        _ => String::new(),
-    }
+    let Step::ResponsesTransform(value) = step else {
+        return String::new();
+    };
+    value.input.clone()
 }
 
 fn query_of(step: &Step) -> ListInputItemsQuery {

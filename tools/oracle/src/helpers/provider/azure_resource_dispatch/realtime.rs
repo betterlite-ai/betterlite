@@ -166,11 +166,13 @@ fn session_urls(
     Ok(urls)
 }
 
+type HeaderPair = (BTreeMap<String, String>, BTreeMap<String, String>);
+
 fn session_headers(
     runtime: &Runtime,
     step: &HttpSetup,
     key: &SecretString,
-) -> Result<(BTreeMap<String, String>, BTreeMap<String, String>), Box<HelperError>> {
+) -> Result<HeaderPair, Box<HelperError>> {
     let headers = match through(
         runtime,
         Call::SessionHeaders {
@@ -182,7 +184,7 @@ fn session_headers(
         Outcome::Url(_) | Outcome::Connection(_) => return Err(failure(OTHER)),
     };
     let calls_headers = match through(runtime, Call::CallsHeaders(&step.ephemeral_key))? {
-        Outcome::Headers(headers) => headers,
+        Outcome::Headers(calls) => calls,
         Outcome::Url(_) | Outcome::Connection(_) => return Err(failure(OTHER)),
     };
     Ok((headers, calls_headers))

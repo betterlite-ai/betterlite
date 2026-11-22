@@ -159,8 +159,8 @@ fn value(reply: BatchReply) -> Value {
 }
 
 fn sdk_failure(source: &SdkError) -> Box<HelperError> {
-    match source {
-        SdkError::Status { status, .. } => with_status(failure("the fixture failed"), *status),
-        error => failure(error),
-    }
+    let SdkError::Status { status, .. } = source else {
+        return failure(source);
+    };
+    with_status(failure("the fixture failed"), *status)
 }

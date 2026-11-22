@@ -68,10 +68,10 @@ impl Planned {
     pub(super) fn planned(&self) -> super::support::Reply {
         let mut reply = super::support::Reply::json(self.status, &self.body);
         for (name, value) in &self.headers {
-            let name = http::HeaderName::from_bytes(name.as_bytes());
-            let value = http::HeaderValue::from_str(value);
-            if let (Ok(name), Ok(value)) = (name, value) {
-                reply.headers.insert(name, value);
+            let parsed_name = http::HeaderName::from_bytes(name.as_bytes());
+            let parsed_value = http::HeaderValue::from_str(value);
+            if let (Ok(header), Ok(text)) = (parsed_name, parsed_value) {
+                reply.headers.insert(header, text);
             }
         }
         reply

@@ -22,11 +22,11 @@ const CREATE_TEXT: &str = r#"{"model":"gpt-4o"}"#;
 
 // B686's three definition facades, each answered by the one fake transport
 pub(super) fn answer(step: &Step) -> Answer {
-    let reply = match step {
-        Step::DefinitionsCreate(value)
-        | Step::DefinitionsList(value)
-        | Step::DefinitionsDelete(value) => value,
-        _ => return Err(failure(OTHER)),
+    let (Step::DefinitionsCreate(reply)
+    | Step::DefinitionsList(reply)
+    | Step::DefinitionsDelete(reply)) = step
+    else {
+        return Err(failure(OTHER));
     };
     let runtime = runtime()?;
     let fake = Arc::new(AssistantsFake::new(vec![FakeReply::json(
@@ -67,7 +67,12 @@ fn call_of<'call>(
             "definitions_delete",
             DefinitionCall::Delete(&reply.target_id),
         )),
-        _ => Err(failure(OTHER)),
+        Step::ThreadCreate(_)
+        | Step::ThreadGet(_)
+        | Step::MessageCreate(_)
+        | Step::MessageList(_)
+        | Step::RunPoll(_)
+        | Step::RunStream(_) => Err(failure(OTHER)),
     }
 }
 
