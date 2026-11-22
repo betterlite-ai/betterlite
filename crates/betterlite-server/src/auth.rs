@@ -123,6 +123,9 @@ fn stage_input(
         AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
             auth_tag_budgets::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
+            auth_end_users::stage_input(request, authenticated)?,
+        ))),
     }
 }
 
@@ -205,6 +208,24 @@ async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFail
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)) => Ok(other),
+    }
+}
+
+async fn prefetch_end_users(input: StageInput) -> Result<StageInput, StageFailure> {
+    match input {
+        StageInput::AuthEndUsers(stage) => {
+            auth_end_users::prefetch(&stage)
+                .await
+                .map_err(StageFailure::EndUsers)?;
+            Ok(StageInput::AuthEndUsers(stage))
+        }
+        other @ (StageInput::MasterKey(_)
+        | StageInput::AuthRequestPolicy(_)
+        | StageInput::RequestBodySafety(_)
+        | StageInput::AuthRequestModels(_)
+        | StageInput::AuthModelPatterns(_)
+        | StageInput::AuthResourceGrants(_)
+        | StageInput::AuthTagBudgets(_)) => Ok(other),
     }
 }
 
