@@ -1,12 +1,10 @@
 use betterlite_error::error::{ErrorClass, ErrorContext};
 
 use super::support::{
-    Behavior, Bench, FakeProviders, Fixture, Journal, Outcome, REQUEST_TIMEOUT, RecordingConfig,
-    VIDEO_ID, WIRE_BODY, Wire, async_call, call, failed, redactor, request,
+    Bench, Fixture, Journal, Outcome, RecordingConfig, VIDEO_ID, WIRE_BODY, Wire, async_call, call,
+    failed, request, transport_caller,
 };
 use crate::api::video_content_call::VideoContentCallError;
-use crate::api::video_content_call::VideoContentCaller;
-use crate::api::video_content_call::handler::ContentTransportHandler;
 use crate::api::videos_http_transport::client::{ClientKind, SuppliedClient};
 
 fn mapped_class() -> ErrorClass {
@@ -57,16 +55,7 @@ async fn error_mapping_content_async_wrapper_keeps_the_mapped_class() {
 #[test]
 fn error_mapping_content_transport_failure_keeps_the_provider_status() {
     let journal = Journal::new();
-    let caller = VideoContentCaller {
-        providers: FakeProviders::with_config(
-            &journal,
-            Behavior::Found,
-            RecordingConfig::failing(),
-        ),
-        handler: ContentTransportHandler,
-        redactor: redactor(),
-        request_timeout: REQUEST_TIMEOUT,
-    };
+    let caller = transport_caller(&journal, RecordingConfig::failing());
     let mut fixture = Fixture::new();
     let wire = Wire::new();
     let work = caller.video_content(

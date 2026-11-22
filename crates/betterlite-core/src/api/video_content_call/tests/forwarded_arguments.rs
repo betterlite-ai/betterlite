@@ -1,9 +1,8 @@
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    Behavior, Bench, FakeProviders, Fixture, Journal, Outcome, REQUEST_TIMEOUT, VIDEO_ID,
-    WIRE_BODY, Wire, call_with, handled, headers, kwargs, pending_bytes, ready, redactor, request,
-    text,
+    Bench, FakeProviders, Fixture, Journal, Outcome, RecordingConfig, VIDEO_ID, WIRE_BODY, Wire,
+    call_with, handled, headers, kwargs, pending_bytes, ready, request, text, transport_caller,
 };
 use crate::api::video_content_call::VideoContentCaller;
 use crate::api::video_content_call::handler::ContentTransportHandler;
@@ -33,15 +32,40 @@ fn forwarded_arguments_content_reach_the_handler() {
     assert!(wire.seen().is_empty());
 }
 
+// the provider side of the transport call: its wire request and the transform inputs it was given
+fn assert_provider_reached(
+    caller: &VideoContentCaller<FakeProviders, ContentTransportHandler>,
+    wire: &Wire,
+) {
+    let seen = wire.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "GET");
+    assert_eq!(seen[0].url, "http://mock.test/videos/video-1");
+    let extra = ("x-extra".to_owned(), "one".to_owned());
+    assert!(seen[0].headers.contains(&extra));
+    let provider = ("x-provider".to_owned(), "gemini".to_owned());
+    assert!(seen[0].headers.contains(&provider));
+    let contexts = caller.providers.config.contexts();
+    assert_eq!(contexts.len(), 1);
+    let variant = contexts[0].1.as_deref();
+    assert_eq!(variant, Some("thumbnail"));
+    let context_header = contexts[0].2.get("x-extra").map(String::as_str);
+    assert_eq!(context_header, Some("one"));
+    let environments = caller.providers.config.environments();
+    assert_eq!(environments.len(), 1);
+    assert_eq!(environments[0].model, "");
+    assert_eq!(environments[0].api_key, None);
+    let params = environments[0].litellm_params.as_ref();
+    assert!(params.is_some_and(|params| params.is_empty()));
+    let environment_header = environments[0].headers.get("x-extra").map(String::as_str);
+    assert_eq!(environment_header, Some("one"));
+    assert!(caller.providers.source.calls().is_empty());
+}
+
 #[test]
 fn forwarded_arguments_content_transport_reaches_the_provider() {
     let journal = Journal::new();
-    let caller = VideoContentCaller {
-        providers: FakeProviders::new(&journal, Behavior::Found),
-        handler: ContentTransportHandler,
-        redactor: redactor(),
-        request_timeout: REQUEST_TIMEOUT,
-    };
+    let caller = transport_caller(&journal, RecordingConfig::new());
     let mut fixture = Fixture::new();
     let wire = Wire::new();
     let mut request = request(VIDEO_ID);
@@ -58,47 +82,13 @@ fn forwarded_arguments_content_transport_reaches_the_provider() {
         &mut fixture.state,
     );
     assert_eq!(ready(work), WIRE_BODY.as_bytes().to_vec());
-    let seen = wire.seen();
-    assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0].method, "GET");
-    assert_eq!(seen[0].url, "http://mock.test/videos/video-1");
-    let extra = ("x-extra".to_owned(), "one".to_owned());
-    assert!(seen[0].headers.contains(&extra));
-    let provider_header = ("x-provider".to_owned(), "gemini".to_owned());
-    assert!(seen[0].headers.contains(&provider_header));
-    let contexts = caller.providers.config.contexts();
-    assert_eq!(contexts.len(), 1);
-    assert_eq!(contexts[0].1.as_deref(), Some("thumbnail"));
-    assert_eq!(
-        contexts[0].2.get("x-extra").map(String::as_str),
-        Some("one")
-    );
-    let environments = caller.providers.config.environments();
-    assert_eq!(environments.len(), 1);
-    assert_eq!(environments[0].model, "");
-    assert_eq!(environments[0].api_key, None);
-    assert!(
-        environments[0]
-            .litellm_params
-            .as_ref()
-            .is_some_and(|params| params.is_empty())
-    );
-    assert_eq!(
-        environments[0].headers.get("x-extra").map(String::as_str),
-        Some("one")
-    );
-    assert!(caller.providers.source.calls().is_empty());
+    assert_provider_reached(&caller, &wire);
 }
 
 #[tokio::test]
 async fn forwarded_arguments_content_transport_uses_the_async_client() {
     let journal = Journal::new();
-    let caller = VideoContentCaller {
-        providers: FakeProviders::new(&journal, Behavior::Found),
-        handler: ContentTransportHandler,
-        redactor: redactor(),
-        request_timeout: REQUEST_TIMEOUT,
-    };
+    let caller = transport_caller(&journal, RecordingConfig::new());
     let mut fixture = Fixture::new();
     let wire = Wire::new();
     let mut request = request(VIDEO_ID);

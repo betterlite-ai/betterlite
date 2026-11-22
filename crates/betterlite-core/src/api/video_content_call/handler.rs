@@ -80,7 +80,7 @@ where
             video_content_handler(&deps, &call, logging, is_async)
                 .await
                 .map_err(|error| {
-                    transport_failure(error, &request.custom_llm_provider, config, redactor)
+                    transport_failure(&error, &request.custom_llm_provider, config, redactor)
                 })
         })
     }

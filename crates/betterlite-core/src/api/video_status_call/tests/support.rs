@@ -1,4 +1,4 @@
-use std::future::{pending, ready};
+use std::future::{pending, ready as future_ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -76,7 +76,7 @@ pub(crate) enum Event {
     Lookup { provider: String },
     Validate { headers: Headers, api_key: bool },
     Transform { video_id: String, headers: Headers },
-    Handled(Handled),
+    Handled(Box<Handled>),
     SyncClient,
     AsyncClient,
     Sent(StatusRequest),
@@ -109,7 +109,7 @@ pub(crate) struct Logged {
 impl Event {
     fn into_handled(self) -> Option<Handled> {
         if let Self::Handled(handled) = self {
-            Some(handled)
+            Some(*handled)
         } else {
             None
         }
@@ -238,17 +238,16 @@ impl FakeProviders {
 impl VideoStatusProviders for FakeProviders {
     type Factories = FakeFactories;
 
-    fn video_config<'providers>(
-        &'providers self,
+    fn video_config(
+        &self,
         provider: ProviderId,
-    ) -> Result<Option<&'providers StatusConfig<'providers, FakeFactories>>, VideoSelectionError>
-    {
+    ) -> Result<Option<&StatusConfig<'_, FakeFactories>>, VideoSelectionError> {
         self.journal.push(Event::Lookup {
             provider: provider.to_string(),
         });
         match self.behavior {
             Behavior::Found => {
-                let config: &'providers StatusConfig<'providers, FakeFactories> = &self.config;
+                let config: &StatusConfig<'_, FakeFactories> = &self.config;
                 Ok(Some(config))
             }
             Behavior::Missing => Ok(None),
@@ -428,7 +427,7 @@ impl ErrorConverter for Converter {
     ) -> BaseLlmException {
         match failure {
             StatusFailure::Transform(provider) => {
-                let headers = provider.headers.unwrap_or_else(Headers::new);
+                let headers = provider.headers.clone().unwrap_or_else(Headers::new);
                 config.get_error_class(
                     &provider.message,
                     provider.status_code.unwrap_or(500),
@@ -443,13 +442,13 @@ impl ErrorConverter for Converter {
 }
 
 pub(crate) enum Outcome {
-    Video(VideoObject),
+    Video(Box<VideoObject>),
     Fails { class: ErrorClass, message: String },
 }
 
 impl Outcome {
     pub(crate) fn answers() -> Self {
-        Self::Video(video(VIDEO_ID))
+        Self::Video(Box::new(video(VIDEO_ID)))
     }
 
     pub(crate) fn fails(class: ErrorClass, message: &str) -> Self {
@@ -481,7 +480,7 @@ impl<Factories: ClientFactories> VideoStatusHandling<Factories> for FakeHandler 
         request: StatusHandlerRequest<'call, Factories::Synchronous, Factories::Asynchronous>,
         is_async: bool,
     ) -> PendingVideoStatus<'call> {
-        self.journal.push(Event::Handled(Handled {
+        self.journal.push(Event::Handled(Box::new(Handled {
             video_id: request.video_id.clone(),
             custom_llm_provider: request.custom_llm_provider.clone(),
             litellm_params: request.litellm_params.clone(),
@@ -494,16 +493,18 @@ impl<Factories: ClientFactories> VideoStatusHandling<Factories> for FakeHandler 
             }),
             is_async,
             logged: logged(environment.logging),
-        }));
+        })));
         match &self.outcome {
-            Outcome::Video(video) => Box::pin(ready::<Result<VideoObject, VideoStatusCallError>>(
-                Ok(video.clone()),
-            )),
+            Outcome::Video(video) => Box::pin(future_ready::<
+                Result<VideoObject, VideoStatusCallError>,
+            >(Ok((**video).clone()))),
             Outcome::Fails { class, message } => {
-                Box::pin(ready(Err(VideoStatusCallError::Mapped {
-                    class: class.clone(),
-                    message: message.clone(),
-                })))
+                Box::pin(future_ready::<Result<VideoObject, VideoStatusCallError>>(
+                    Err(VideoStatusCallError::Mapped {
+                        class: class.clone(),
+                        message: message.clone(),
+                    }),
+                ))
             }
         }
     }
@@ -674,10 +675,7 @@ impl Bench {
 
 pub(crate) type StatusWork<'bench> = Result<VideoStatusWork<'bench>, VideoStatusCallError>;
 
-pub(crate) fn call<'bench>(
-    bench: &'bench mut Bench,
-    request: VideoStatusRequest,
-) -> StatusWork<'bench> {
+pub(crate) fn call(bench: &mut Bench, request: VideoStatusRequest) -> StatusWork<'_> {
     bench.run(request, None)
 }
 
@@ -703,7 +701,7 @@ pub(crate) fn ready(work: Result<VideoStatusWork<'_>, VideoStatusCallError>) -> 
     let Ok(VideoStatusWork::Ready(video)) = work else {
         panic!("the call answers with the video");
     };
-    video
+    *video
 }
 
 pub(crate) fn failed(

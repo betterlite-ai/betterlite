@@ -55,15 +55,21 @@ pub fn failure(
     provider: &str,
     redactor: &Redactor,
 ) -> VideoStatusCallError {
-    match error {
-        VideoStatusCallError::Mapped {
-            class,
-            message: mapped,
-        } => VideoStatusCallError::Mapped {
-            class: dispatch(&DispatchInput::Mapped(class), redactor),
-            message: mapped,
-        },
-        unmapped => rejected_failure(&unmapped, provider, redactor),
+    if let VideoStatusCallError::Mapped {
+        class,
+        message: mapped,
+    } = error
+    {
+        return remapped(class, mapped, redactor);
+    }
+    rejected_failure(&error, provider, redactor)
+}
+
+// dispatch wraps the class a mapped error already carries, leaving its message as it was
+fn remapped(class: ErrorClass, message: String, redactor: &Redactor) -> VideoStatusCallError {
+    VideoStatusCallError::Mapped {
+        class: dispatch(&DispatchInput::Mapped(class), redactor),
+        message,
     }
 }
 
@@ -83,11 +89,11 @@ fn rejected_failure(
 // what the B3337 handler's failure carries into exception_type: a converted class or an unconverted provider failure
 #[must_use]
 pub fn status_failure(
-    error: VideoStatusError,
+    error: &VideoStatusError,
     provider: &str,
     redactor: &Redactor,
 ) -> VideoStatusCallError {
-    let raw = match &error {
+    let raw = match error {
         VideoStatusError::Converted(carried) => {
             let mut raw =
                 raw_exception(carried.message.clone(), provider, Some(carried.status_code));

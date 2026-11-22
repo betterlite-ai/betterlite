@@ -52,12 +52,21 @@ pub struct VideoStatusRequest {
 
 // what the sync entry hands back: the object, or the handler future async_call=true asked it to return
 pub enum VideoStatusWork<'call> {
-    Ready(VideoObject),
+    Ready(Box<VideoObject>),
     Pending(PendingVideoStatus<'call>),
 }
 
 pub type PendingVideoStatus<'call> =
     Pin<Box<dyn Future<Output = Result<VideoObject, VideoStatusCallError>> + Send + 'call>>;
+
+// the caller's client for a status call: the factories' two clients, or none when the caller supplies one
+pub type StatusClient<'call, Factories> = Option<
+    SuppliedClient<
+        'call,
+        <Factories as ClientFactories>::Synchronous,
+        <Factories as ClientFactories>::Asynchronous,
+    >,
+>;
 
 // the injected collaborators: B3332's selector, the B3337 handler, B185/B186's redactor and B198's request timeout
 pub struct VideoStatusCaller<Providers, Handler> {
@@ -86,13 +95,7 @@ where
     pub fn video_status<'call>(
         &'call self,
         mut request: VideoStatusRequest,
-        client: Option<
-            SuppliedClient<
-                'call,
-                <Providers::Factories as ClientFactories>::Synchronous,
-                <Providers::Factories as ClientFactories>::Asynchronous,
-            >,
-        >,
+        client: StatusClient<'call, Providers::Factories>,
         logging: &'call mut LoggingState,
     ) -> Result<VideoStatusWork<'call>, VideoStatusCallError> {
         let is_async = matches!(
@@ -103,7 +106,7 @@ where
         let mocked = mock_response(&request.kwargs)
             .map_err(|error| failure(error, named, &self.redactor))?;
         if let Some(video) = mocked {
-            return Ok(VideoStatusWork::Ready(video));
+            return Ok(VideoStatusWork::Ready(Box::new(video)));
         }
         let prepared = self.prepare(request, logging)?;
         let provider = prepared.provider.clone();
@@ -126,7 +129,7 @@ where
             return Ok(VideoStatusWork::Pending(pending));
         }
         match poll_once(self.handler.handle(environment, handler_request, false)) {
-            Polled::Ready(outcome) => outcome.map(VideoStatusWork::Ready),
+            Polled::Ready(outcome) => outcome.map(|video| VideoStatusWork::Ready(Box::new(video))),
             Polled::StillWaiting => Err(failure(
                 VideoStatusCallError::Suspended,
                 &provider,
@@ -139,13 +142,7 @@ where
     pub async fn avideo_status<'call>(
         &'call self,
         mut request: VideoStatusRequest,
-        client: Option<
-            SuppliedClient<
-                'call,
-                <Providers::Factories as ClientFactories>::Synchronous,
-                <Providers::Factories as ClientFactories>::Asynchronous,
-            >,
-        >,
+        client: StatusClient<'call, Providers::Factories>,
         logging: &'call mut LoggingState,
     ) -> Result<VideoObject, VideoStatusCallError> {
         request
@@ -153,7 +150,7 @@ where
             .insert(ASYNC_CALL.to_owned(), Json::Bool(true));
         let provider = request.custom_llm_provider.clone().unwrap_or_default();
         let awaiting = match self.video_status(request, client, logging) {
-            Ok(VideoStatusWork::Ready(video)) => Ok(video),
+            Ok(VideoStatusWork::Ready(video)) => Ok(*video),
             Ok(VideoStatusWork::Pending(pending)) => pending.await,
             Err(error) => Err(error),
         };

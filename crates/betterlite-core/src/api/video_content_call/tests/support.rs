@@ -1,4 +1,4 @@
-use std::future::{Future, pending, ready};
+use std::future::{Future, pending, ready as future_ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -19,9 +19,9 @@ use thiserror::Error;
 
 use crate::api::video_content_call::error::VideoContentCallError;
 use crate::api::video_content_call::handler::{
-    ContentHandlerEnvironment, ContentHandlerRequest, VideoContentHandler,
+    ContentHandlerEnvironment, ContentHandlerRequest, ContentTransportHandler, VideoContentHandler,
 };
-use crate::api::video_content_call::providers::VideoContentProviders;
+use crate::api::video_content_call::providers::{Selection, VideoContentProviders};
 use crate::api::video_content_call::{
     PendingContent, VideoContentCaller, VideoContentRequest, VideoContentWork,
 };
@@ -66,7 +66,7 @@ impl Journal {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Event {
     Lookup { provider: String },
-    Handled(Handled),
+    Handled(Box<Handled>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,7 +97,7 @@ pub(crate) struct Logged {
 impl Event {
     fn into_handled(self) -> Option<Handled> {
         if let Self::Handled(handled) = self {
-            Some(handled)
+            Some(*handled)
         } else {
             None
         }
@@ -183,11 +183,10 @@ impl VideoContentProviders for FakeProviders {
     type Config = RecordingConfig;
     type Source = WireSource;
 
-    fn video_config<'providers>(
-        &'providers self,
+    fn video_config(
+        &self,
         provider: ProviderId,
-    ) -> Result<Option<(&'providers Self::Config, &'providers Self::Source)>, VideoSelectionError>
-    {
+    ) -> Result<Selection<'_, Self>, VideoSelectionError> {
         self.journal.push(Event::Lookup {
             provider: provider.to_string(),
         });
@@ -233,7 +232,7 @@ where
         request: ContentHandlerRequest<'call, Source::Client>,
         is_async: bool,
     ) -> PendingContent<'call> {
-        self.journal.push(Event::Handled(Handled {
+        self.journal.push(Event::Handled(Box::new(Handled {
             video_id: request.video_id.clone(),
             custom_llm_provider: request.custom_llm_provider.clone(),
             litellm_params: request.litellm_params.clone(),
@@ -243,17 +242,19 @@ where
             client: request.client.as_ref().map(|supplied| supplied.kind),
             is_async,
             logged: logged(environment.logging),
-        }));
+        })));
         match &self.outcome {
-            Outcome::Bytes(bytes) => Box::pin(ready::<Result<Vec<u8>, VideoContentCallError>>(Ok(
-                bytes.clone(),
-            ))),
+            Outcome::Bytes(bytes) => Box::pin(
+                future_ready::<Result<Vec<u8>, VideoContentCallError>>(Ok(bytes.clone())),
+            ),
             Outcome::Fails { class, message } => {
                 let error = VideoContentCallError::Mapped {
                     class: class.clone(),
                     message: message.clone(),
                 };
-                Box::pin(ready(Err(error)))
+                Box::pin(future_ready::<Result<Vec<u8>, VideoContentCallError>>(Err(
+                    error,
+                )))
             }
             Outcome::NeverAnswers => Box::pin(pending()),
         }
@@ -476,7 +477,7 @@ impl VideoTransport for Wire {
                 url: request.url.to_string(),
                 headers,
             });
-        ready(Ok(UpstreamResponse {
+        future_ready::<Result<UpstreamResponse, TransportError>>(Ok(UpstreamResponse {
             status: 200,
             headers: http::HeaderMap::new(),
             body: WIRE_BODY.as_bytes().to_vec(),
@@ -611,10 +612,7 @@ pub(crate) fn headers(pairs: &[(&str, &str)]) -> Headers {
 
 pub(crate) type ContentWork<'bench> = Result<VideoContentWork<'bench>, VideoContentCallError>;
 
-pub(crate) fn call<'bench>(
-    bench: &'bench mut Bench,
-    request: VideoContentRequest,
-) -> ContentWork<'bench> {
+pub(crate) fn call(bench: &mut Bench, request: VideoContentRequest) -> ContentWork<'_> {
     bench.run(request, None)
 }
 
@@ -624,6 +622,19 @@ pub(crate) fn call_with<'bench>(
     client: SuppliedClient<'bench, Wire>,
 ) -> ContentWork<'bench> {
     bench.run(request, Some(client))
+}
+
+// the caller wired to B3333's own handler, for the cases that reach a wire
+pub(crate) fn transport_caller(
+    journal: &Journal,
+    config: RecordingConfig,
+) -> VideoContentCaller<FakeProviders, ContentTransportHandler> {
+    VideoContentCaller {
+        providers: FakeProviders::with_config(journal, Behavior::Found, config),
+        handler: ContentTransportHandler,
+        redactor: redactor(),
+        request_timeout: REQUEST_TIMEOUT,
+    }
 }
 
 pub(crate) async fn async_call(

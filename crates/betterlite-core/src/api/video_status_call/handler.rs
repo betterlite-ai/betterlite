@@ -5,7 +5,6 @@ use betterlite_redact::secret::Redactor;
 
 use super::PendingVideoStatus;
 use super::error::status_failure;
-use crate::api::video_records::VideoObject;
 use crate::api::video_status_transport::clients::ClientFactories;
 use crate::api::video_status_transport::config::StatusConfig;
 use crate::api::video_status_transport::handler::VideoStatusHandler;
@@ -74,7 +73,7 @@ impl<Factories: ClientFactories> VideoStatusHandling<Factories>
                 Ok(VideoStatusHandled::Pending(pending)) => pending.await,
                 Err(error) => Err(error),
             };
-            outcome.map_err(|error| status_failure(error, &provider, redactor))
+            outcome.map_err(|error| status_failure(&error, &provider, redactor))
         })
     }
 }

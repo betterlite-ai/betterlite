@@ -58,7 +58,11 @@ pub fn failure(
             class: field_class(field, expected, provider),
             message,
         },
-        rejected => VideoContentCallError::Mapped {
+        VideoContentCallError::Unsupported { .. }
+        | VideoContentCallError::Selection(_)
+        | VideoContentCallError::UnknownProvider { .. }
+        | VideoContentCallError::Logging(_)
+        | VideoContentCallError::Suspended => VideoContentCallError::Mapped {
             class: dispatch(
                 &DispatchInput::Raw(Box::new(rejected_exception(&message, provider))),
                 redactor,
@@ -71,7 +75,7 @@ pub fn failure(
 // what the B3333 handler's failure carries into exception_type: the provider's own status, or the local text
 #[must_use]
 pub fn transport_failure<Config>(
-    error: VideoTransportError<Config::Error>,
+    error: &VideoTransportError<Config::Error>,
     provider: &str,
     config: &Config,
     redactor: &Redactor,
@@ -80,7 +84,7 @@ where
     Config: VideoHttpConfig,
 {
     let message = error.to_string();
-    let (text, status_code, synthesized) = match &error {
+    let (text, status_code, synthesized) = match error {
         VideoTransportError::Provider(carried) => (
             carried.message.clone(),
             Some(carried.status_code),

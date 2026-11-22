@@ -8,8 +8,8 @@ use crate::api::video_status_transport::config::StatusConfig;
 pub trait VideoStatusProviders: Send + Sync {
     type Factories: ClientFactories;
 
-    fn video_config<'providers>(
-        &'providers self,
+    fn video_config(
+        &self,
         provider: ProviderId,
-    ) -> Result<Option<&'providers StatusConfig<'providers, Self::Factories>>, VideoSelectionError>;
+    ) -> Result<Option<&StatusConfig<'_, Self::Factories>>, VideoSelectionError>;
 }
