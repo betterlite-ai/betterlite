@@ -6,7 +6,7 @@ use super::{MASKABLE_TEXT_BLOCK_TYPES, PiiCall};
 
 // a client may put its text at the top level or under response, so both shapes are masked
 pub(crate) async fn mask_create_frame<Guard>(
-    call: &PiiCall<'_, Guard, Guard::Settings>,
+    call: &PiiCall<'_, Guard>,
     frame: &mut IndexMap<String, Json>,
 ) -> Result<bool, Guard::Error>
 where
@@ -21,14 +21,14 @@ where
     Ok(masked)
 }
 
-struct Masking<'call, 'policy, Guard>
+struct Masking<'call, Guard>
 where
     Guard: PresidioGuardrailCallback,
 {
-    call: &'call PiiCall<'policy, Guard, Guard::Settings>,
+    call: &'call PiiCall<'call, Guard>,
 }
 
-impl<'call, 'policy, Guard> Masking<'call, 'policy, Guard>
+impl<Guard> Masking<'_, Guard>
 where
     Guard: PresidioGuardrailCallback + Sync,
     Guard::Settings: Sync,

@@ -13,8 +13,8 @@ use rstest::rstest;
 
 use self::support::{
     Client, MaskCall, Masker, QuotaCall, Refused, Verdict, WRAPPED_CONTENT, WRAPPED_ITEM_ID,
-    WRAPPED_RESPONSE_ID, echo, json, key, lock, masker, object, parsed, quota, recording_unmask,
-    request_data,
+    WRAPPED_RESPONSE_ID, echo, json, key, lock, masked_policy, masker, object, parsed, quota,
+    recording_unmask, request_data,
 };
 use super::events::{wrap_item_encrypted_content, ws_event_error};
 use super::quota::{
@@ -33,6 +33,30 @@ use super::{
 
 const CREATE: &str = r#"{"type":"response.create","input":"abcd","max_output_tokens":7}"#;
 const TOKENS: &str = r#"{"metadata":{"pii_tokens":{"<EMAIL_ADDRESS_1>":"a@example.com"}}}"#;
+const EXPECTED_LOGGED: [&str; 5] = [
+    "response.created",
+    "response.completed",
+    "response.failed",
+    "response.incomplete",
+    "error",
+];
+const EXPECTED_FAILURE: [&str; 2] = ["error", "response.failed"];
+const EXPECTED_OUTPUT_ITEM: [&str; 2] = ["response.output_item.added", "response.output_item.done"];
+const EXPECTED_MASKABLE: [&str; 3] = ["input_text", "output_text", "text"];
+const EXPECTED_DELTA: [&str; 4] = [
+    "response.output_text.delta",
+    "response.reasoning_summary_text.delta",
+    "response.refusal.delta",
+    "response.function_call_arguments.delta",
+];
+const EXPECTED_OUTPUT_DONE: [&str; 6] = [
+    "response.output_text.done",
+    "response.content_part.done",
+    "response.output_item.done",
+    "response.function_call_arguments.done",
+    "response.reasoning_summary_text.done",
+    "response.reasoning_summary_part.done",
+];
 
 #[rstest]
 #[case::flat(
@@ -174,45 +198,12 @@ fn ws_event_error_and_event_sets() {
     assert_eq!(ws_event_error(&listed), None);
     let other = object(r#"{"type":"other","error":{"code":"E"}}"#);
     assert_eq!(ws_event_error(&other), None);
-    assert_eq!(
-        LOGGED_EVENT_TYPES,
-        [
-            "response.created",
-            "response.completed",
-            "response.failed",
-            "response.incomplete",
-            "error"
-        ]
-    );
-    assert_eq!(FAILURE_EVENT_TYPES, ["error", "response.failed"]);
-    assert_eq!(
-        OUTPUT_ITEM_EVENT_TYPES,
-        ["response.output_item.added", "response.output_item.done"]
-    );
-    assert_eq!(
-        MASKABLE_TEXT_BLOCK_TYPES,
-        ["input_text", "output_text", "text"]
-    );
-    assert_eq!(
-        DELTA_EVENT_TYPES,
-        [
-            "response.output_text.delta",
-            "response.reasoning_summary_text.delta",
-            "response.refusal.delta",
-            "response.function_call_arguments.delta",
-        ]
-    );
-    assert_eq!(
-        OUTPUT_DONE_EVENT_TYPES,
-        [
-            "response.output_text.done",
-            "response.content_part.done",
-            "response.output_item.done",
-            "response.function_call_arguments.done",
-            "response.reasoning_summary_text.done",
-            "response.reasoning_summary_part.done",
-        ]
-    );
+    assert_eq!(LOGGED_EVENT_TYPES, EXPECTED_LOGGED);
+    assert_eq!(FAILURE_EVENT_TYPES, EXPECTED_FAILURE);
+    assert_eq!(OUTPUT_ITEM_EVENT_TYPES, EXPECTED_OUTPUT_ITEM);
+    assert_eq!(MASKABLE_TEXT_BLOCK_TYPES, EXPECTED_MASKABLE);
+    assert_eq!(DELTA_EVENT_TYPES, EXPECTED_DELTA);
+    assert_eq!(OUTPUT_DONE_EVENT_TYPES, EXPECTED_OUTPUT_DONE);
 }
 
 #[rstest]
@@ -565,14 +556,7 @@ async fn request_guardrail_masking(
             unmask_pii_text: &echo,
         },
     ];
-    let policy = FramePolicy {
-        quota_callbacks: &[],
-        user_api_key_dict: None,
-        guardrail_callbacks: &guardrails,
-        output_guardrail_callbacks: &[],
-        authorized_model: None,
-        request_defaults: None,
-    };
+    let policy = masked_policy(&guardrails, &[]);
     let mut data = request_data(stored);
     let masked = mask_response_create(&policy, &mut data, message)
         .await
@@ -647,14 +631,7 @@ fn response_event_unmasking(
             unmask_pii_text: &second,
         },
     ];
-    let policy = FramePolicy {
-        quota_callbacks: &[],
-        user_api_key_dict: None,
-        guardrail_callbacks: &guardrails,
-        output_guardrail_callbacks: &[],
-        authorized_model: None,
-        request_defaults: None,
-    };
+    let policy = masked_policy(&guardrails, &[]);
     let data = request_data(stored);
     let unmasked = unmask_response_event(&policy, &data, message).unwrap();
     assert_eq!(
@@ -668,14 +645,7 @@ fn response_event_unmasking(
         .collect();
     assert_eq!(*lock(&unmask_calls), expected_calls);
     assert!(lock(&mask_calls).is_empty());
-    let unguarded = FramePolicy::<Masker> {
-        quota_callbacks: &[],
-        user_api_key_dict: None,
-        guardrail_callbacks: &[],
-        output_guardrail_callbacks: &[],
-        authorized_model: None,
-        request_defaults: None,
-    };
+    let unguarded = masked_policy::<Masker>(&[], &[]);
     let untouched = unmask_response_event(&unguarded, &data, message).unwrap();
     assert!(matches!(untouched, Cow::Borrowed(text) if text == message));
 }
@@ -705,14 +675,7 @@ async fn completed_output_masking(
         masker(0, vec![("secret", "[S]")], &calls),
         masker(1, vec![("[S]", "[M]")], &calls),
     ];
-    let policy = FramePolicy {
-        quota_callbacks: &[],
-        user_api_key_dict: None,
-        guardrail_callbacks: &[],
-        output_guardrail_callbacks: &outputs,
-        authorized_model: None,
-        request_defaults: None,
-    };
+    let policy = masked_policy(&[], &outputs);
     let data = request_data("{}");
     let masked = mask_response_completed(&policy, &data, message)
         .await
@@ -737,14 +700,7 @@ async fn completed_output_masking(
         })
         .collect();
     assert_eq!(*lock(&calls), expected_calls);
-    let unguarded = FramePolicy::<Masker> {
-        quota_callbacks: &[],
-        user_api_key_dict: None,
-        guardrail_callbacks: &[],
-        output_guardrail_callbacks: &[],
-        authorized_model: None,
-        request_defaults: None,
-    };
+    let unguarded = masked_policy::<Masker>(&[], &[]);
     let untouched = mask_response_completed(&unguarded, &data, message)
         .await
         .unwrap();

@@ -93,17 +93,20 @@ pub struct FramePolicy<'policy, Guard> {
     pub request_defaults: Option<&'policy WsRequestDefaults<Json>>,
 }
 
-pub(crate) struct PiiCall<'call, Guard, Settings> {
+pub(crate) struct PiiCall<'call, Guard>
+where
+    Guard: PresidioGuardrailCallback,
+{
     pub(crate) guard: &'call Guard,
-    pub(crate) settings: Option<&'call Settings>,
+    pub(crate) settings: Option<&'call Guard::Settings>,
     pub(crate) request_data: &'call RequestData,
     pub(crate) output_parse_pii: bool,
 }
 
-impl<Guard, Settings> PiiCall<'_, Guard, Settings>
+impl<Guard> PiiCall<'_, Guard>
 where
     Guard: PresidioGuardrailCallback + Sync,
-    Settings: Sync,
+    Guard::Settings: Sync,
 {
     pub(crate) async fn check_text(&self, text: &str) -> Result<String, Guard::Error> {
         self.guard

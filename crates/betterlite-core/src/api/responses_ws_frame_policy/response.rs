@@ -187,14 +187,14 @@ where
     }
 }
 
-struct OutputMasking<'call, 'policy, Guard>
+struct OutputMasking<'call, Guard>
 where
     Guard: PresidioGuardrailCallback,
 {
-    call: &'call PiiCall<'policy, Guard, Guard::Settings>,
+    call: &'call PiiCall<'call, Guard>,
 }
 
-impl<'call, 'policy, Guard> OutputMasking<'call, 'policy, Guard>
+impl<Guard> OutputMasking<'_, Guard>
 where
     Guard: PresidioGuardrailCallback + Sync,
     Guard::Settings: Sync,
@@ -205,14 +205,21 @@ where
             let Json::Object(fields) = item else {
                 continue;
             };
-            if let Some(arguments) = text_at(fields, "arguments") {
-                modified |= self.changed(arguments).await?;
-            }
-            for blocks_field in ["summary", "content"] {
-                if let Some(blocks) = block_list(fields, blocks_field) {
-                    modified |= self.blocks(blocks).await?;
-                }
-            }
+            modified |= self.item(fields).await?;
+        }
+        Ok(modified)
+    }
+
+    async fn item(&self, fields: &mut IndexMap<String, Json>) -> Result<bool, Guard::Error> {
+        let mut modified = false;
+        if let Some(arguments) = text_at(fields, "arguments") {
+            modified |= self.changed(arguments).await?;
+        }
+        for blocks_field in ["summary", "content"] {
+            let Some(blocks) = block_list(fields, blocks_field) else {
+                continue;
+            };
+            modified |= self.blocks(blocks).await?;
         }
         Ok(modified)
     }

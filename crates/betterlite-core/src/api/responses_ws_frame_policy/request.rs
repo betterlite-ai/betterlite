@@ -43,6 +43,7 @@ pub fn with_request_defaults(
 }
 
 // overwriting the client's model stops a frame from switching to a deployment the connection wasn't authorized for
+#[must_use]
 pub fn enforce_authorized_model(
     authorized_model: Option<&str>,
     frame: &mut IndexMap<String, Json>,

@@ -17,7 +17,7 @@ use serde_json::value::RawValue;
 use thiserror::Error;
 
 use crate::api::responses_stream_events::ProjectQuotaCallback;
-use crate::api::responses_ws_frame_policy::RequestData;
+use crate::api::responses_ws_frame_policy::{FramePolicy, InputGuardrail, RequestData};
 
 pub(super) const WRAPPED_ITEM_ID: &str = "encitem_bGl0ZWxsbTptb2RlbF9pZDptO2l0ZW1faWQ6aXRlbS05";
 pub(super) const WRAPPED_CONTENT: &str = "litellm_enc:bW9kZWxfaWQ6bQ==;cipher";
@@ -165,6 +165,20 @@ pub(super) fn masker(
         replacements,
         refuse: false,
         calls: Arc::clone(calls),
+    }
+}
+
+pub(super) fn masked_policy<'policy, Guard>(
+    guardrails: &'policy [InputGuardrail<'policy, Guard>],
+    outputs: &'policy [Guard],
+) -> FramePolicy<'policy, Guard> {
+    FramePolicy {
+        quota_callbacks: &[],
+        user_api_key_dict: None,
+        guardrail_callbacks: guardrails,
+        output_guardrail_callbacks: outputs,
+        authorized_model: None,
+        request_defaults: None,
     }
 }
 
