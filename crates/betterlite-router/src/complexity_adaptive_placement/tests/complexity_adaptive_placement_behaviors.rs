@@ -297,11 +297,7 @@ fn a_cold_classified_pool_places_from_that_pool_and_records_the_decision() {
         .pick(&request(&classified, "hello"))
         .expect("the pick succeeds");
     assert_eq!(placed, expected_cold_start_placement());
-    let Some(Json::Object(decision)) = harness.decision() else {
-        panic!("the decision is recorded as an object");
-    };
-    assert_cold_start_fields(decision);
-    assert_cold_start_candidates(decision);
+    assert_eq!(harness.decision(), Some(&expected_cold_start_decision()));
 }
 
 fn expected_cold_start_placement() -> Placed {
@@ -324,55 +320,42 @@ fn expected_cold_start_placement() -> Placed {
     }
 }
 
-fn assert_cold_start_fields(decision: &IndexMap<String, Json>) {
-    assert_eq!(
-        decision.get("phase"),
-        Some(&Json::Text("cold_start".to_owned()))
-    );
-    assert_eq!(
-        decision.get("eligible_mode"),
-        Some(&Json::Text("classified_tier".to_owned()))
-    );
-    assert_eq!(
-        decision.get("request_type"),
-        Some(&Json::Text("general".to_owned()))
-    );
-    assert_eq!(
-        decision.get("chosen_model"),
-        Some(&Json::Text("mini".to_owned()))
-    );
-    assert_eq!(
-        decision.get("quality_weight"),
-        Some(&Json::Number(Number::from_f64(0.3).expect("0.3 is finite")))
-    );
-    assert_eq!(
-        decision.get("cost_weight"),
-        Some(&Json::Number(Number::from_f64(0.7).expect("0.7 is finite")))
-    );
-    assert_eq!(
-        decision.get("tier_distance_penalty"),
-        Some(&Json::Number(Number::from_f64(0.5).expect("0.5 is finite")))
-    );
-    assert_eq!(
-        decision.get("classified_tier"),
-        Some(&Json::Text("SIMPLE".to_owned()))
-    );
-}
-
-fn assert_cold_start_candidates(decision: &IndexMap<String, Json>) {
-    let Some(Json::List(candidates)) = decision.get("candidates") else {
-        panic!("the decision lists its candidates");
-    };
-    assert_eq!(
-        *candidates,
-        vec![Json::Object(IndexMap::from_iter([
-            ("model".to_owned(), Json::Text("mini".to_owned())),
-            (
-                "total_samples".to_owned(),
-                Json::Number(Number::from(0_u64)),
-            ),
-        ]))]
-    );
+fn expected_cold_start_decision() -> Json {
+    Json::Object(IndexMap::from([
+        (
+            "classified_tier".to_owned(),
+            Json::Text("SIMPLE".to_owned()),
+        ),
+        ("request_type".to_owned(), Json::Text("general".to_owned())),
+        (
+            "eligible_mode".to_owned(),
+            Json::Text("classified_tier".to_owned()),
+        ),
+        (
+            "quality_weight".to_owned(),
+            Json::Number(Number::from_f64(0.3).expect("0.3 is finite")),
+        ),
+        (
+            "cost_weight".to_owned(),
+            Json::Number(Number::from_f64(0.7).expect("0.7 is finite")),
+        ),
+        (
+            "tier_distance_penalty".to_owned(),
+            Json::Number(Number::from_f64(0.5).expect("0.5 is finite")),
+        ),
+        ("phase".to_owned(), Json::Text("cold_start".to_owned())),
+        ("chosen_model".to_owned(), Json::Text("mini".to_owned())),
+        (
+            "candidates".to_owned(),
+            Json::List(vec![Json::Object(IndexMap::from([
+                ("model".to_owned(), Json::Text("mini".to_owned())),
+                (
+                    "total_samples".to_owned(),
+                    Json::Number(Number::from(0_u64)),
+                ),
+            ]))]),
+        ),
+    ]))
 }
 
 #[test]
@@ -537,39 +520,30 @@ fn assert_distance_scores(choice: &AdaptiveChoice) {
     assert!(scores[1] > scores[2]);
 }
 
+// the metadata entry a warm pick records, field by field in the source's order
 fn assert_rendered_decision(decision: &IndexMap<String, Json>) {
-    assert_eq!(
-        decision.get("phase"),
-        Some(&Json::Text("adaptive".to_owned()))
-    );
-    assert_eq!(
-        decision.get("eligible_mode"),
-        Some(&Json::Text("all".to_owned()))
-    );
-    assert_eq!(
-        decision.get("classified_tier"),
-        Some(&Json::Text("MEDIUM".to_owned()))
-    );
-    assert_eq!(
-        decision.get("request_type"),
-        Some(&Json::Text("general".to_owned()))
-    );
-    assert_eq!(
-        decision.get("quality_weight"),
-        Some(&Json::Number(Number::from_f64(0.3).expect("0.3 is finite")))
-    );
-    assert_eq!(
-        decision.get("cost_weight"),
-        Some(&Json::Number(Number::from_f64(0.7).expect("0.7 is finite")))
-    );
-    assert_eq!(
-        decision.get("tier_distance_penalty"),
-        Some(&Json::Number(Number::from_f64(0.5).expect("0.5 is finite")))
-    );
-    assert_eq!(
-        decision.get("chosen_model"),
-        Some(&Json::Text("mid".to_owned()))
-    );
+    let fields: [(&str, Json); 8] = [
+        ("classified_tier", Json::Text("MEDIUM".to_owned())),
+        ("request_type", Json::Text("general".to_owned())),
+        ("eligible_mode", Json::Text("all".to_owned())),
+        (
+            "quality_weight",
+            Json::Number(Number::from_f64(0.3).expect("0.3 is finite")),
+        ),
+        (
+            "cost_weight",
+            Json::Number(Number::from_f64(0.7).expect("0.7 is finite")),
+        ),
+        (
+            "tier_distance_penalty",
+            Json::Number(Number::from_f64(0.5).expect("0.5 is finite")),
+        ),
+        ("phase", Json::Text("adaptive".to_owned())),
+        ("chosen_model", Json::Text("mid".to_owned())),
+    ];
+    for (field, expected) in fields {
+        assert_eq!(decision.get(field), Some(&expected), "rendered {field}");
+    }
 }
 
 fn assert_rendered_candidates(decision: &IndexMap<String, Json>, choice: &AdaptiveChoice) {
