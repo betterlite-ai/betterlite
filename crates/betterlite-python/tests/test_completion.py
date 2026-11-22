@@ -3,7 +3,7 @@ import inspect
 import json
 import logging
 from collections.abc import Awaitable, Mapping
-from typing import Final, Protocol
+from typing import Final, Protocol, TypedDict
 
 import httpx
 import pytest
@@ -27,7 +27,7 @@ from completion_server import (
     model_response,
     normalized,
 )
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, TypeAdapter
 
 import betterlite
 from betterlite import _native
@@ -88,6 +88,33 @@ OPENAI_API_ERROR: Final[type[BaseException]] = OPENAI.APIError(
 
 class Answer(BaseModel):
     answer: str
+
+
+class MockMessage(TypedDict):
+    role: str
+    content: str
+
+
+class MockChoice(TypedDict):
+    index: int
+    finish_reason: str
+    message: MockMessage
+
+
+class MockUsage(TypedDict):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+class MockResponseView(TypedDict):
+    object: str
+    model: str
+    choices: list[MockChoice]
+    usage: MockUsage
+
+
+MOCK_RESPONSE_VIEW: Final[TypeAdapter[MockResponseView]] = TypeAdapter(MockResponseView)
 
 
 class TeapotError(Exception):
@@ -341,11 +368,29 @@ def test_mock_raises_supplied() -> None:
 
 
 def test_mock_text_matches_litellm() -> None:
-    ours = model_response(
-        completion(model=GOOD_MODEL, messages=MESSAGES, mock_response=MOCK_TEXT)
+    # LiteLLM's mock answer has no provider_specific_fields; the native answer always writes it
+    ours = MOCK_RESPONSE_VIEW.validate_python(
+        model_response(
+            completion(model=GOOD_MODEL, messages=MESSAGES, mock_response=MOCK_TEXT)
+        ).model_dump()
     )
-    reference = litellm_plain(model=GOOD_MODEL, messages=MESSAGES, mock_response=MOCK_TEXT)
-    assert normalized(ours.model_dump()) == normalized(reference)
+    reference = MOCK_RESPONSE_VIEW.validate_python(
+        litellm_plain(model=GOOD_MODEL, messages=MESSAGES, mock_response=MOCK_TEXT)
+    )
+    assert ours["object"] == reference["object"]
+    assert ours["model"] == reference["model"]
+    assert ours["usage"] == reference["usage"]
+    ours_rows = [
+        (choice["index"], choice["finish_reason"], choice["message"]["role"],
+         choice["message"]["content"])
+        for choice in ours["choices"]
+    ]
+    reference_rows = [
+        (choice["index"], choice["finish_reason"], choice["message"]["role"],
+         choice["message"]["content"])
+        for choice in reference["choices"]
+    ]
+    assert ours_rows == reference_rows
 
 
 def test_mock_timeout_matches() -> None:
