@@ -1,5 +1,6 @@
 import asyncio
 import time
+from http import HTTPStatus
 from typing import Final, NoReturn, Protocol, runtime_checkable
 
 from pydantic import JsonValue
@@ -51,29 +52,29 @@ def _mapped_mock(error: exceptions.MockException, model: str, provider: str) -> 
     name = "OpenAI" if provider == "openai" else f"{provider[0].upper()}{provider[1:]}"
     text = f"{name}Exception - {error.message}"
     status = error.status_code
-    if status in (408, 504):
+    if status in (HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.GATEWAY_TIMEOUT):
         raise exceptions.Timeout(f"Timeout Error: {text}", model, provider)
-    if status in (400, 422):
+    if status in (HTTPStatus.BAD_REQUEST, HTTPStatus.UNPROCESSABLE_ENTITY):
         raise exceptions.BadRequestError(text, model, provider)
-    if status == 401:
+    if status == HTTPStatus.UNAUTHORIZED:
         raise exceptions.AuthenticationError(
             f"AuthenticationError: {text}", llm_provider=provider, model=model
         )
-    if status == 404:
+    if status == HTTPStatus.NOT_FOUND:
         raise exceptions.NotFoundError(f"NotFoundError: {text}", model, provider)
-    if status == 429:
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
         raise exceptions.RateLimitError(
             f"RateLimitError: {text}", llm_provider=provider, model=model
         )
-    if status == 500:
+    if status == HTTPStatus.INTERNAL_SERVER_ERROR:
         raise exceptions.InternalServerError(
             f"InternalServerError: {text}", llm_provider=provider, model=model
         )
-    if status == 502:
+    if status == HTTPStatus.BAD_GATEWAY:
         raise exceptions.BadGatewayError(
             f"BadGatewayError: {text}", llm_provider=provider, model=model
         )
-    if status == 503:
+    if status == HTTPStatus.SERVICE_UNAVAILABLE:
         raise exceptions.ServiceUnavailableError(
             f"ServiceUnavailableError: {text}", llm_provider=provider, model=model
         )
