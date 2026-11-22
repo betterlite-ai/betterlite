@@ -60,15 +60,13 @@ fn choose_team(
     request: &RegisterGuardrailRequest,
     identity: &Caller,
 ) -> Result<String, SubmissionError> {
-    let chosen = request
+    request
         .team_id
         .as_deref()
         .filter(|team| !team.is_empty())
-        .or_else(|| identity.team_id.as_deref().filter(|team| !team.is_empty()));
-    match chosen {
-        Some(team_id) => Ok(team_id.to_owned()),
-        None => Err(SubmissionError::TeamRequired),
-    }
+        .or_else(|| identity.team_id.as_deref().filter(|team| !team.is_empty()))
+        .map(str::to_owned)
+        .ok_or(SubmissionError::TeamRequired)
 }
 
 // only a body team the caller's key is not bound to needs the lookup, and proxy_admin skips it
@@ -185,14 +183,16 @@ fn submission_info(
     identity: &Caller,
 ) -> BTreeMap<String, GuardrailValue> {
     let mut info = request.guardrail_info.clone().unwrap_or_default();
-    let user_id = match identity.user_id.as_deref() {
-        Some(user_id) => GuardrailValue::Text(user_id.to_owned()),
-        None => GuardrailValue::Null,
-    };
-    let email = match identity.user_email.as_deref() {
-        Some(email) => GuardrailValue::Text(email.to_owned()),
-        None => GuardrailValue::Null,
-    };
+    let user_id = identity
+        .user_id
+        .as_deref()
+        .map(str::to_owned)
+        .map_or(GuardrailValue::Null, GuardrailValue::Text);
+    let email = identity
+        .user_email
+        .as_deref()
+        .map(str::to_owned)
+        .map_or(GuardrailValue::Null, GuardrailValue::Text);
     info.insert(SUBMITTED_BY_USER_ID.to_owned(), user_id);
     info.insert(SUBMITTED_BY_EMAIL.to_owned(), email);
     info.insert(TEAM_GUARDRAIL.to_owned(), GuardrailValue::Boolean(true));

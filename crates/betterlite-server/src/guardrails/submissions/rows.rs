@@ -9,7 +9,7 @@ use serde::Deserialize;
 use thiserror::Error;
 
 // the Json columns hold the text LiteLLM wrote, while another tool may have written an object
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum ColumnJson {
     Text(String),

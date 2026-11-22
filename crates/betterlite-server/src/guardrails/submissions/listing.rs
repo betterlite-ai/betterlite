@@ -55,10 +55,7 @@ where
     if visible.as_ref().is_some_and(Vec::is_empty) {
         return Ok(Json(empty_answer()));
     }
-    let filter = match visible {
-        Some(ids) => TeamFilter::Teams(ids),
-        None => TeamFilter::AnyTeam,
-    };
+    let filter = visible.map_or(TeamFilter::AnyTeam, TeamFilter::Teams);
     let rows = database
         .find_team_rows(filter)
         .await
@@ -96,10 +93,10 @@ where
         let visible = user_team_ids(&identity, &state)
             .await
             .map_err(|source| logged(GET_FAILED, source))?;
-        let owned = match row.team_id.as_deref() {
-            Some(team_id) => visible.iter().any(|id| id == team_id),
-            None => false,
-        };
+        let owned = row
+            .team_id
+            .as_deref()
+            .is_some_and(|team_id| visible.iter().any(|id| id == team_id));
         if !owned {
             return Err(SubmissionError::NotOwningTeam);
         }
@@ -153,10 +150,10 @@ fn kept(row: &SubmissionRow, query: &SubmissionQuery) -> bool {
     {
         return false;
     }
-    match query.search.as_deref() {
-        Some(search) => search_matches(row, search),
-        None => true,
-    }
+    query
+        .search
+        .as_deref()
+        .is_none_or(|search| search_matches(row, search))
 }
 
 fn search_matches(row: &SubmissionRow, search: &str) -> bool {
