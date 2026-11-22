@@ -215,8 +215,8 @@ fn number_bool(name: &'static str, number: &Number) -> Result<UiSettingFlag, UiS
             return Ok(UiSettingFlag(true));
         }
         if value.fract().partial_cmp(&0.0) == Some(Ordering::Equal)
-            && value > f64::from(i64::MIN)
-            && value < f64::from(i64::MAX)
+            && value > -9_223_372_036_854_775_808.0_f64
+            && value < 9_223_372_036_854_775_808.0_f64
         {
             return Err(UiSettingsError {
                 kind: UiSettingErrorKind::BoolParsing,
