@@ -67,11 +67,12 @@ async fn redacts_the_secret_from_the_error_event() {
 
 async fn closes_a_dead_client_with_the_error() {
     let options = HarnessOptions::default()
-        .with_dials(vec![os("boom")])
+        .with_dials(vec![os("boom"), os("boom"), os("boom")])
         .with_send_error(Some("the client is gone".to_owned()));
     let mut unsendable = harness(options, Vec::new());
     unsendable.run().await.unwrap();
     assert!(unsendable.texts().is_empty());
+    assert_eq!(unsendable.dials().len(), 3);
     assert_eq!(
         unsendable.close(),
         Some((1011, Some("Internal server error: boom".to_owned())))

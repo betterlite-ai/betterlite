@@ -69,9 +69,12 @@ async fn reports_the_last_dial_error() {
     let options =
         HarnessOptions::default().with_dials(vec![os("first"), websocket("second"), os("third")]);
     let mut failing = harness(options, Vec::new());
-    let error = failing.run().await.unwrap_err();
-    assert_eq!(error.to_string(), "third");
+    failing.run().await.unwrap();
     assert_eq!(failing.dials().len(), 3);
+    assert_eq!(
+        failing.close(),
+        Some((1011, Some("Internal server error: third".to_owned())))
+    );
 }
 
 async fn refuses_with_the_status_close() {

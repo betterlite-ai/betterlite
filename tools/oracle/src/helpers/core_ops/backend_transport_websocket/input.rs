@@ -44,6 +44,7 @@ pub(crate) enum DialDocument {
     Os {
         message: String,
     },
+    #[serde(rename = "websocket")]
     WebSocket {
         message: String,
     },
