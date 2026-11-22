@@ -22,7 +22,7 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::alias::AliasMap;
 use crate::model_catalog_lookup::lookup::CatalogLookup;
 use crate::responses_affinity::config::AffinitySettings;
-use crate::responses_affinity::error::{AffinityError, python_type};
+use crate::responses_affinity::error::{AffinityError, error_type_name};
 use crate::responses_affinity::filter::AffinityCheck;
 use crate::responses_affinity::history::{FilterRequest, History, MetadataSlot};
 use crate::responses_affinity::identity::deployment_id;
@@ -300,7 +300,7 @@ impl Request {
             None => MetadataSlot::Absent,
             Some(Json::Object(fields)) => MetadataSlot::Object(fields),
             Some(value) => MetadataSlot::NotAnObject {
-                python_type: python_type(value),
+                python_type: error_type_name(value),
             },
         };
         let history = History {

@@ -14,7 +14,7 @@ pub enum AffinityError {
 
 // The type name Python's TypeError prints for the value litellm_metadata holds.
 #[must_use]
-pub fn python_type(value: &Json) -> &'static str {
+pub fn error_type_name(value: &Json) -> &'static str {
     match value {
         Json::Null => "NoneType",
         Json::Bool(_) => "bool",

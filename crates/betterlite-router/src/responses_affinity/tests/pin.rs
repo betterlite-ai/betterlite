@@ -1,5 +1,6 @@
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use super::*;
 use crate::responses_affinity::identity::deployment_id;
@@ -113,7 +114,7 @@ fn pinning_does_not_rewrite_unmarked_input() {
 }
 
 #[test]
-fn deployment_id_reads_only_text_and_numbers() {
+fn a_text_or_numeric_id_is_a_deployment_id() {
     assert_eq!(
         deployment_id(&spec("A", params(None, None))),
         Some("A".to_owned())
@@ -123,13 +124,14 @@ fn deployment_id_reads_only_text_and_numbers() {
         Json::Number(serde_json::Number::from(7_i32)),
     )]));
     assert_eq!(deployment_id(&numeric), Some("7".to_owned()));
-    for value in [
-        Json::Null,
-        Json::Bool(true),
-        Json::List(Vec::new()),
-        Json::Object(JsonObject::new()),
-    ] {
-        let row = spec_with_model_info(object(&[("id", value)]));
-        assert_eq!(deployment_id(&row), None);
-    }
+}
+
+#[rstest]
+#[case::null(Json::Null)]
+#[case::boolean(Json::Bool(true))]
+#[case::list(Json::List(Vec::new()))]
+#[case::object(Json::Object(JsonObject::new()))]
+fn a_non_text_id_is_not_a_deployment_id(#[case] value: Json) {
+    let row = spec_with_model_info(object(&[("id", value)]));
+    assert_eq!(deployment_id(&row), None);
 }

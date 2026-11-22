@@ -93,18 +93,18 @@ fn default_settings_follow_the_constructor() {
 }
 
 #[test]
-fn python_type_names_every_json_shape() {
-    assert_eq!(python_type(&Json::Null), "NoneType");
-    assert_eq!(python_type(&Json::Bool(true)), "bool");
+fn every_json_shape_has_its_type_error_name() {
+    assert_eq!(error_type_name(&Json::Null), "NoneType");
+    assert_eq!(error_type_name(&Json::Bool(true)), "bool");
     assert_eq!(
-        python_type(&Json::Number(serde_json::Number::from(1_i32))),
+        error_type_name(&Json::Number(serde_json::Number::from(1_i32))),
         "int"
     );
     let float = serde_json::Number::from_f64(0.5_f64).unwrap();
-    assert_eq!(python_type(&Json::Number(float)), "float");
-    assert_eq!(python_type(&text("value")), "str");
-    assert_eq!(python_type(&Json::List(Vec::new())), "list");
-    assert_eq!(python_type(&Json::Object(JsonObject::new())), "dict");
+    assert_eq!(error_type_name(&Json::Number(float)), "float");
+    assert_eq!(error_type_name(&text("value")), "str");
+    assert_eq!(error_type_name(&Json::List(Vec::new())), "list");
+    assert_eq!(error_type_name(&Json::Object(JsonObject::new())), "dict");
 }
 
 #[test]

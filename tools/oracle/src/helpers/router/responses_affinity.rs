@@ -15,7 +15,7 @@ use betterlite_router::deployment_identity::stable_id::generate_model_id;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::responses_affinity::config::AffinitySettings;
-use betterlite_router::responses_affinity::error::{AffinityError, python_type};
+use betterlite_router::responses_affinity::error::{AffinityError, error_type_name};
 use betterlite_router::responses_affinity::filter::AffinityCheck;
 use betterlite_router::responses_affinity::history::{FilterRequest, History, MetadataSlot};
 use betterlite_router::responses_affinity::identity::deployment_id;
@@ -170,7 +170,7 @@ fn filter_request<'request>(
         None => MetadataSlot::Absent,
         Some(Json::Object(fields)) => MetadataSlot::Object(fields),
         Some(value) => MetadataSlot::NotAnObject {
-            python_type: python_type(value),
+            python_type: error_type_name(value),
         },
     };
     let history = History {
