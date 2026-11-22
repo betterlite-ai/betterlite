@@ -24,7 +24,7 @@ pub(super) struct Holder {
 }
 
 // a case port that cannot answer raises the same 500 a broken real port would
-fn case_failure(detail: String) -> AgentAccessError {
+const fn case_failure(detail: String) -> AgentAccessError {
     AgentAccessError::Rejected {
         status: 500,
         detail,

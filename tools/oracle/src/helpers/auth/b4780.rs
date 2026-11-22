@@ -13,12 +13,12 @@ use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::Deserialize;
 use serde_json::json;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-use ports::{CaseGrants, CaseHumans, Holder, NoTargets, key, source_resolver};
+use ports::{CaseGrants, CaseHumans, CaseResolver, Holder, NoTargets, key, source_resolver};
 
 mod ports;
 mod tests;
@@ -101,17 +101,7 @@ impl Helper for Op {
                 user_id,
                 team_id,
                 sources,
-            } => {
-                let resolver = source_resolver(user_id.as_deref(), sources);
-                let granted = runtime
-                    .block_on(verified_human_agent_grants(
-                        &resolver,
-                        user_id.as_deref(),
-                        team_id.as_deref(),
-                    ))
-                    .or_value_error()?;
-                Ok(json!(granted))
-            }
+            } => human_grants(&runtime, user_id.as_deref(), team_id.as_deref(), sources),
             Input::DelegatedTeam {
                 user_id,
                 team_id,
@@ -128,14 +118,33 @@ impl Helper for Op {
                     explicit_team: *explicit_team,
                     allowed_team_ids: allowed_team_ids.as_ref(),
                 };
-                match runtime.block_on(resolve_delegated_agent_team(&resolver, &request)) {
-                    Ok(team) => Ok(json!(team)),
-                    Err(error) => {
-                        Ok(json!({"status": error.status(), "detail": error.to_string()}))
-                    }
-                }
+                delegated_team(&runtime, &resolver, &request)
             }
         }
+    }
+}
+
+fn human_grants(
+    runtime: &Runtime,
+    user_id: Option<&str>,
+    team_id: Option<&str>,
+    sources: &[SourceFields],
+) -> HelperResult {
+    let resolver = source_resolver(user_id, sources);
+    let granted = runtime
+        .block_on(verified_human_agent_grants(&resolver, user_id, team_id))
+        .or_value_error()?;
+    Ok(json!(granted))
+}
+
+fn delegated_team(
+    runtime: &Runtime,
+    resolver: &CaseResolver<'_>,
+    request: &DelegatedTeamRequest<'_>,
+) -> HelperResult {
+    match runtime.block_on(resolve_delegated_agent_team(resolver, request)) {
+        Ok(team) => Ok(json!(team)),
+        Err(error) => Ok(json!({"status": error.status(), "detail": error.to_string()})),
     }
 }
 
@@ -151,21 +160,10 @@ async fn accessible(
     }
     let lister = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).or_value_error()?;
     let mut context_auths = Vec::new();
-    let mut grants = BTreeMap::new();
     for context in contexts {
         context_auths.push(key(Some(&context.user_id), None).or_value_error()?);
     }
-    for (user_id, grant) in access {
-        let context_holder = Holder {
-            user_id: Some(user_id.clone()),
-            team_id: None,
-        };
-        let granted = match grant {
-            Grant::Every(Everything::Unrestricted) => AgentAccess::Unrestricted,
-            Grant::Only(agent_ids) => AgentAccess::Restricted(agent_ids.clone()),
-        };
-        grants.insert(context_holder, granted);
-    }
+    let grants = case_grants(access);
     let mut listed_agents = Vec::new();
     for agent_fields in agents {
         listed_agents.push(listed_agent(agent_fields)?);
@@ -179,11 +177,28 @@ async fn accessible(
             sources: &[],
         },
     };
-    let listed = Box::pin(accessible_agents(&resolver, &lister, Some(listed_agents)))
+    let shown = Box::pin(accessible_agents(&resolver, &lister, Some(listed_agents)))
         .await
         .or_value_error()?;
-    let agent_ids: Vec<&str> = listed.iter().map(|agent| agent.agent_id.as_str()).collect();
+    let agent_ids: Vec<&str> = shown.iter().map(|agent| agent.agent_id.as_str()).collect();
     Ok(json!(agent_ids))
+}
+
+fn case_grants(access: &BTreeMap<String, Grant>) -> BTreeMap<Holder, AgentAccess> {
+    access
+        .iter()
+        .map(|(user_id, grant)| {
+            let context_holder = Holder {
+                user_id: Some(user_id.clone()),
+                team_id: None,
+            };
+            let granted = match grant {
+                Grant::Every(Everything::Unrestricted) => AgentAccess::Unrestricted,
+                Grant::Only(agent_ids) => AgentAccess::Restricted(agent_ids.clone()),
+            };
+            (context_holder, granted)
+        })
+        .collect()
 }
 
 fn listed_agent(fields: &AgentFields) -> Result<AgentResponse, Box<HelperError>> {
