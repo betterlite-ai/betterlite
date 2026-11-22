@@ -210,7 +210,9 @@ async def step_view(step: EntryStep) -> JsonValue:
     litellm.model_cost = scripted_cost(step["catalog"])
     params = dict(step["params"])
     answer = await HEALTH_CHECK(params, step["mode"], step["prompt"], step["inputs"])
-    result = RESULT.validate_python(answer)
+    # LiteLLM returns the caught exception object under "exception", which no JSON result can carry
+    carried = {key: answer[key] for key in answer if key != "exception"}
+    result = RESULT.validate_python(carried)
     return {
         "resolution": resolution.requested,
         "probe": recorder.arguments,
