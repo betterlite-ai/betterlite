@@ -32,7 +32,7 @@ use crate::spend_writes::warm::is_spend_counter_cache_warm;
 use super::counters::AdmissionCounters;
 
 // the writes' dyn batch implements ActiveSpendBatch only for the 'static object, which rustc cannot generalize in the reservation's Send future (rust-lang/rust#130113); an owned newtype covers every batch
-struct SeedBatch(Arc<dyn CounterBatch>);
+pub(super) struct SeedBatch(Arc<dyn CounterBatch>);
 
 impl ActiveSpendBatch for SeedBatch {
     async fn read(

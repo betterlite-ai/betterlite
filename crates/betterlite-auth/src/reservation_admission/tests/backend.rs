@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -12,18 +13,24 @@ use betterlite_db::spend_rows::rows::{
     SpendCounterRows as DbSpendCounterRows, SpendRow as DbSpendRow, SpendRowLookup,
 };
 use betterlite_models::decisions::Json;
+use betterlite_redis::request_batch::lock;
 use chrono::{DateTime, TimeZone as _, Utc};
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
 
 use crate::budget_counter::CounterEntityType;
 use crate::budget_primitives::window_start::DurationParser;
 use crate::model_budget_limiter::clock::BudgetClock;
+use crate::reservation_admission::backend::SeedBatch;
 use crate::reservation_admission::counters::AdmissionCounters as _;
 use crate::reservation_settlement::backend::SpendCounterBackend;
 use crate::reservation_settlement::counters::SettlementCounters as _;
+use crate::spend_counter_batch::batch::CounterValue;
 use crate::spend_counter_batch::batch::PendingSpendIncrement;
+use crate::spend_counter_batch::batch::SpendCounterBatchError;
 use crate::spend_counter_batch::scope::SpendCounterScope;
+use crate::spend_reseed::cache::ActiveSpendBatch;
 use crate::spend_reseed::locks::LockRegistry;
 use crate::spend_reseed::reseed::SpendCounterReseed;
 use crate::spend_reseed::rows::{
@@ -104,6 +111,28 @@ struct SourceSpend(Option<Json>);
 impl SourceSpendCache for SourceSpend {
     async fn cached(&self, _cache_key: &str) -> Option<Json> {
         self.0.clone()
+    }
+}
+
+// a request batch that keeps every recorded value, so a read answers what a record wrote
+#[derive(Default)]
+struct RecordingBatch(Mutex<BTreeMap<String, Decimal>>);
+
+#[async_trait]
+impl CounterBatch for RecordingBatch {
+    async fn read(
+        &self,
+        counter_key: &str,
+    ) -> Result<Option<CounterValue>, SpendCounterBatchError> {
+        Ok(lock(&self.0).get(counter_key).copied())
+    }
+
+    fn record(&self, counter_key: &str, value: Decimal) {
+        let _previous = lock(&self.0).insert(counter_key.to_owned(), value);
+    }
+
+    fn forget(&self, counter_key: &str) {
+        let _removed = lock(&self.0).remove(counter_key);
     }
 }
 
@@ -247,4 +276,30 @@ async fn the_backend_pipeline_reports_the_counter_value_it_wrote() {
     assert_eq!(counted, vec![Some(amount("4"))]);
     let found = backend.read_cache_value(KEY).await.expect("the read");
     assert_eq!(found, Some(amount("4")));
+}
+
+// seed_source: an auth cache without a spend leaves the counter unwritten rather than storing zero
+#[tokio::test]
+async fn the_backend_skips_a_source_counter_without_a_spend() {
+    let (writes, scope) = backend_fixture(None);
+    let backend = SpendCounterBackend {
+        writes: &writes,
+        scope: scope.as_ref(),
+        redis: None,
+    };
+    backend
+        .seed_source(KEY, "k1")
+        .await
+        .expect("the source seed");
+    let found = backend.read_cache_value(KEY).await.expect("the read");
+    assert_eq!(found, None);
+}
+
+// SeedBatch: the wrapper reads and records through the request's own batch
+#[tokio::test]
+async fn the_seed_batch_reads_and_records_through_the_request_batch() {
+    let seed_batch = SeedBatch(Arc::new(RecordingBatch::default()));
+    seed_batch.record(KEY, amount("2"));
+    let found = seed_batch.read(KEY).await.expect("the batch read");
+    assert_eq!(found, Some(CounterValue::Amount(amount("2"))));
 }
