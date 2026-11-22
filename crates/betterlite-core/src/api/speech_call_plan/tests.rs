@@ -388,6 +388,51 @@ async fn a_raising_coroutine_is_not_invoked_again() {
 }
 
 #[rstest]
+#[case::unmapped_provider(
+    "anthropic/claude-3-5-haiku",
+    SpeechCallError::Unmapped {
+        provider: String::from("anthropic"),
+        message: String::from(
+            "Unable to map the custom llm provider=anthropic to a known provider=[]."
+        ),
+    },
+    "anthropic"
+)]
+#[case::transport_failure(
+    NATIVE,
+    SpeechCallError::Sdk {
+        class: "APIConnectionError",
+        message: String::from("Connection error."),
+    },
+    "openai"
+)]
+#[tokio::test]
+async fn a_status_less_failure_maps_as_an_api_connection(
+    #[case] model: &'static str,
+    #[case] failure: SpeechCallError,
+    #[case] provider: &'static str,
+) {
+    let outcome = run(call(model), vec![Scripted::Raise(failure)]).await;
+    let (raised_model, attributed, error) = raised(&outcome);
+    assert_eq!((raised_model, attributed), (model, provider));
+    assert!(matches!(
+        error,
+        SpeechCallError::Unmapped { .. } | SpeechCallError::Sdk { .. }
+    ));
+    let exception = outcome
+        .result
+        .as_ref()
+        .err()
+        .and_then(|failure| failure.exception(&redactor()))
+        .expect("a failure inside the try has a litellm class");
+    let SpeechFailure::Mapped(class @ ErrorClass::ApiConnection(_)) = &exception.failure else {
+        panic!("a status-less failure becomes an APIConnectionError");
+    };
+    assert_eq!(class.metadata().status_code, 500_u16);
+    assert_eq!(exception.message, error.to_string());
+}
+
+#[rstest]
 #[case::api_base_names_the_provider(
     supplied("tts-1", |speech| speech.api_base = Some(String::from(GROQ_BASE))),
     "groq",

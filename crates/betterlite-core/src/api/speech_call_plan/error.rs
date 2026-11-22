@@ -1,7 +1,9 @@
+use betterlite_error::dispatch::{DispatchInput, dispatch};
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
-use crate::api::speech_call::error::{SpeechCallError, SpeechException, exception};
+use crate::api::speech_call::error::{SpeechCallError, SpeechException, SpeechFailure, exception};
+use crate::api::transcription_call::error::raw_exception;
 
 #[derive(Debug, Error)]
 pub enum AspeechError<Raised> {
@@ -27,7 +29,29 @@ impl AspeechError<SpeechCallError> {
                 model,
                 provider,
                 error,
-            } => Some(exception(error, model, provider, redactor)),
+            } => Some(mapped(error, model, provider, redactor)),
         }
+    }
+}
+
+// speech()'s status-less failures reach exception_type too, and without a status it raises an APIConnectionError
+fn mapped(
+    error: &SpeechCallError,
+    model: &str,
+    provider: &str,
+    redactor: &Redactor,
+) -> SpeechException {
+    match error {
+        SpeechCallError::Sdk { message, .. }
+        | SpeechCallError::Unmapped { message, .. }
+        | SpeechCallError::Internal { message } => {
+            let raw = raw_exception(message, None, model, provider);
+            let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
+            SpeechException {
+                failure: SpeechFailure::Mapped(class),
+                message: message.clone(),
+            }
+        }
+        other => exception(other, model, provider, redactor),
     }
 }
