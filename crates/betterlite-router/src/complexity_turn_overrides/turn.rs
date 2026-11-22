@@ -53,8 +53,7 @@ where
         matched_plan_mode_signal(settings, request.request_kwargs, request.resolved_messages)?;
     let floor = plan_mode_floor(settings, catalog)?;
     let floor_is_top = plan_mode_floor_is_top_tier(settings, catalog)?;
-    // only the newest human turn can escalate: a plumbing-only turn carries no ask, and re-reading
-    // an older ask would treat one escalate request as a fresh one on every later turn
+    // only the newest human turn can escalate; re-reading an older ask would fire it on every later turn
     let escalation_keyword = request
         .newest_ask
         .and_then(|ask| matched_escalation_keyword(settings, catalog, ask));

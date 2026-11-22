@@ -147,8 +147,7 @@ where
     Ok(Some(compiled))
 }
 
-// KeywordTierRule._normalize_keywords and _coerce_tier: the proxy resolves an os.environ tier before
-// pydantic reads it, then the rule strips it, drops blanks and requires one keyword and a tier
+// _normalize_keywords and _coerce_tier: os.environ resolves first, then strip, drop blanks and require a keyword and tier
 fn normalize_rule<L>(
     raw: RawKeywordTierRule,
     path: &str,
