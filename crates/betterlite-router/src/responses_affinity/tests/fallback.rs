@@ -24,7 +24,7 @@ fn an_unavailable_origin_returns_the_full_pool_with_a_warning() {
     let credentials = CredentialSnapshot::default();
     let check = check(settings(true, &[]), &credentials);
     let mut request =
-        Request::with_items(vec![reasoning_item("B"), titled_item("C"), message_item()]);
+        Request::with_items(vec![reasoning_item("A"), titled_item("C"), message_item()]);
     let (returned, logs) = captured(|| request.filter(&check, "gpt-group", &deployments));
     assert_eq!(ids(&returned.unwrap()), ids(&deployments));
     assert!(!request.pinned);
