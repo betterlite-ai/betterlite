@@ -160,7 +160,15 @@ fn apply_secret_fields<D, F, S, R>(
         "auth_value",
         encrypted,
     );
-    resolved.client_id = credentials.client_id.clone().flatten();
+    resolved.client_id = builder.decrypt_credential_field(
+        credentials
+            .client_id
+            .as_ref()
+            .and_then(Option::as_ref)
+            .map(String::as_str),
+        "client_id",
+        encrypted,
+    );
     resolved.client_secret = builder.credential(
         credentials.client_secret.as_ref().and_then(Option::as_ref),
         "client_secret",
