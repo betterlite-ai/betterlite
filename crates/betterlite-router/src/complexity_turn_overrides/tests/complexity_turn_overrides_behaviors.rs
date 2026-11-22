@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use betterlite_config::sections::complexity_turn_overrides::KeywordMatching;
+use betterlite_config::sections::complexity_turn_overrides::{
+    Config as SectionConfig, KeywordMatching,
+};
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::Role;
 use indexmap::IndexMap;
@@ -12,6 +14,7 @@ use super::support::{
     request_kwargs, rules, semantic_settings, tier,
 };
 use crate::classifier_verdict::call::RequestKwargs;
+use crate::complexity_config::Resolved;
 use crate::complexity_turn_overrides::housekeeping::{
     cheapest_configured_tier, matched_housekeeping_sentinel,
 };
@@ -23,6 +26,7 @@ use crate::complexity_turn_overrides::semantic::SemanticKeywordIndex;
 use crate::complexity_turn_overrides::settings::Settings;
 use crate::complexity_turn_overrides::stall::detect_stalled_task;
 use crate::complexity_turn_overrides::turn::{TurnRequest, resolve_turn};
+use crate::custom_dimensions::Validated;
 use crate::semantic_router::service::CallerContext;
 use crate::tier_definitions::checks::ClassifierKind;
 use crate::tier_definitions::model::TierSet;
@@ -193,6 +197,8 @@ fn the_most_severe_lexical_rule_wins_whatever_the_rule_order() {
     );
     let compiled = LexicalRules::compile(&set, &rules(&[(&["api"], "SIMPLE")])).unwrap();
     assert_eq!(compiled.matches("the capital is Paris"), None);
+    let sole = LexicalRules::compile(&set, &rules(&[(&["refund"], "SIMPLE")])).unwrap();
+    assert_eq!(sole.matches("a refund").unwrap().tier.name(), "SIMPLE");
 }
 
 #[test]
@@ -239,6 +245,56 @@ fn both_tool_call_surfaces_share_one_canonical_signature() {
 }
 
 #[test]
+fn calls_with_the_same_name_but_different_arguments_do_not_repeat() {
+    let messages = vec![
+        assistant_tool_use("a1", "search", json_object(&[("q", json_text("one"))])),
+        assistant_tool_use("a2", "search", json_object(&[("q", json_text("two"))])),
+    ];
+    assert!(!detect_stalled_task(Some(&messages), 6, 2));
+}
+
+#[test]
+fn only_tool_result_parts_carry_the_error_flag() {
+    let parts = json_list(vec![
+        json_object(&[
+            ("type", json_text("text")),
+            ("tool_use_id", json_text("a")),
+            ("is_error", Json::Bool(true)),
+        ]),
+        json_object(&[
+            ("type", json_text("text")),
+            ("tool_use_id", json_text("b")),
+            ("is_error", Json::Bool(true)),
+        ]),
+    ]);
+    let messages = vec![
+        json_object(&[("role", json_text("user")), ("content", parts)]),
+        assistant_tool_use("a", "one", Json::Null),
+        assistant_tool_use("b", "two", Json::Null),
+    ];
+    assert!(!detect_stalled_task(Some(&messages), 2, 2));
+}
+
+#[test]
+fn only_assistant_messages_contribute_tool_calls() {
+    let call = json_object(&[
+        ("type", json_text("tool_use")),
+        ("id", json_text("u")),
+        ("name", json_text("two")),
+        ("input", Json::Null),
+    ]);
+    let messages = vec![
+        json_object(&[
+            ("role", json_text("user")),
+            ("content", json_list(vec![call])),
+        ]),
+        assistant_tool_use("a", "one", Json::Null),
+        assistant_tool_use("b", "two", Json::Null),
+    ];
+    assert!(!detect_stalled_task(Some(&messages), 3, 2));
+}
+
+#[test]
 fn a_semantic_hit_selects_its_route_and_reports_no_keyword() {
     let settings = semantic_settings(&[(&["invoice"], "COMPLEX")], 0.5);
     let embedder = Arc::new(FakeEmbedder::new(&[
@@ -271,6 +327,28 @@ fn a_semantic_hit_selects_its_route_and_reports_no_keyword() {
             .litellm_trace_id
             .as_deref(),
         Some("trace-1")
+    );
+}
+
+#[test]
+fn a_tier_named_by_several_rules_gets_one_route() {
+    let settings = semantic_settings(&[(&["invoice"], "COMPLEX"), (&["refund"], "COMPLEX")], 0.5);
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0, 0.0]),
+        ("invoice", vec![1.0, 0.0]),
+        ("refund", vec![0.0, 1.0]),
+        ("please invoice", vec![1.0, 0.0]),
+    ]));
+    let index = SemanticKeywordIndex::new(&settings, &all_pools(), Arc::clone(&embedder)).unwrap();
+    let found =
+        runtime().block_on(index.tier_override("please invoice", &CallerContext::default()));
+    assert_eq!(
+        found.map(|tier| tier.name().to_owned()),
+        Some("COMPLEX".to_owned())
+    );
+    assert_eq!(
+        embedder.documents().last().unwrap().texts,
+        ["invoice", "refund"]
     );
 }
 
@@ -345,6 +423,7 @@ fn the_lexical_matcher_wins_while_semantic_matching_is_off() {
             &request,
         ))
         .unwrap();
+    assert!(!lexical_outcome.stalled);
     assert_eq!(
         lexical_outcome.keyword_override.unwrap().tier.name(),
         "COMPLEX"
@@ -412,6 +491,52 @@ fn the_turn_carries_every_observation_together() {
     assert!(found.housekeeping_sentinel.is_some());
     assert_eq!(found.housekeeping_tier, Some(tier("SIMPLE")));
     assert_eq!(found.keyword_override, None);
+}
+
+#[test]
+fn from_config_reads_the_section_and_the_shared_settings() {
+    let declared = SectionConfig {
+        keyword_tier_rules: Some(vec![rule(&["invoice"], "COMPLEX")]),
+        stall_escalation_enabled: true,
+        stall_escalation_window: 4,
+        stall_repeat_threshold: 2,
+        keyword_matching: KeywordMatching::Semantic,
+        embedding_model: Some("fake-embed".to_owned()),
+        match_threshold: 0.7,
+        housekeeping_cheapest: false,
+    };
+    let resolved = Resolved {
+        tiers: all_pools(),
+        dimensions: Validated {
+            dimensions: Vec::new(),
+            work: 0,
+        },
+        escalation_keywords: Some(vec!["help me".to_owned()]),
+        plan_mode_min_tier: Some("COMPLEX".to_owned()),
+        plan_mode_patterns: Some(vec!["plan".to_owned()]),
+        housekeeping_patterns: Some(vec!["title".to_owned()]),
+        heuristic_first_max_tier: None,
+        hybrid_boundary_margin: None,
+        classification_prompt: None,
+        classification_examples: None,
+    };
+    let found = Settings::from_config(&declared, &resolved, ClassifierKind::Custom, None);
+    assert_eq!(
+        found.keyword_tier_rules,
+        vec![rule(&["invoice"], "COMPLEX")]
+    );
+    assert!(found.stall_escalation_enabled);
+    assert_eq!(found.stall_escalation_window, 4);
+    assert_eq!(found.stall_repeat_threshold, 2);
+    assert_eq!(found.keyword_matching, KeywordMatching::Semantic);
+    assert_eq!(found.embedding_model.as_deref(), Some("fake-embed"));
+    assert_eq!(found.match_threshold, 0.7);
+    assert!(!found.housekeeping_cheapest);
+    assert_eq!(found.escalation_keywords, Some(vec!["help me".to_owned()]));
+    assert_eq!(found.plan_mode_min_tier.as_deref(), Some("COMPLEX"));
+    assert_eq!(found.plan_mode_patterns, vec!["plan".to_owned()]);
+    assert_eq!(found.housekeeping_patterns, vec!["title".to_owned()]);
+    assert_eq!(found.classifier_type, ClassifierKind::Custom);
 }
 
 fn runtime() -> tokio::runtime::Runtime {

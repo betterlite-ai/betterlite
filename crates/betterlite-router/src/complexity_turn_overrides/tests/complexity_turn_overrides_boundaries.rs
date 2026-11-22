@@ -19,7 +19,7 @@ use crate::complexity_turn_overrides::keywords::LexicalRules;
 use crate::complexity_turn_overrides::plan::{
     apply_plan_mode_floor, matched_plan_mode_signal, plan_mode_floor, plan_mode_floor_is_top_tier,
 };
-use crate::complexity_turn_overrides::semantic::SemanticKeywordIndex;
+use crate::complexity_turn_overrides::semantic::{SemanticError, SemanticKeywordIndex};
 use crate::complexity_turn_overrides::settings::{Settings, active_tier, tier_severity};
 use crate::complexity_turn_overrides::stall::detect_stalled_task;
 use crate::semantic_router::service::CallerContext;
@@ -151,6 +151,13 @@ fn the_error_count_is_inclusive_and_needs_the_newest_call() {
         assistant_tool_use("b", "two"),
     ];
     assert!(!detect_stalled_task(Some(&newest_clean), 2, 2));
+    let two_older_errors = vec![
+        tool_results(&[("a", true), ("b", true)]),
+        assistant_tool_use("a", "one"),
+        assistant_tool_use("b", "two"),
+        assistant_tool_use("c", "three"),
+    ];
+    assert!(!detect_stalled_task(Some(&two_older_errors), 3, 2));
 }
 
 #[test]
@@ -220,6 +227,7 @@ fn a_zero_threshold_passes_even_an_orthogonal_query() {
         ("test", vec![1.0, 0.0]),
         ("invoice", vec![1.0, 0.0]),
         ("orthogonal", vec![0.0, 1.0]),
+        ("opposite", vec![-1.0, 0.0]),
     ]));
     let index = SemanticKeywordIndex::new(
         &semantic_settings(&[(&["invoice"], "COMPLEX")], 0.0),
@@ -231,6 +239,25 @@ fn a_zero_threshold_passes_even_an_orthogonal_query() {
         runtime().block_on(index.tier_override("orthogonal", &CallerContext::default())),
         Some(tier("COMPLEX"))
     );
+    assert_eq!(
+        runtime().block_on(index.tier_override("opposite", &CallerContext::default())),
+        Some(tier("COMPLEX"))
+    );
+}
+
+#[test]
+fn an_out_of_range_threshold_fails_index_construction() {
+    let embedder = Arc::new(FakeEmbedder::new(&[("test", vec![1.0, 0.0])]));
+    let low = semantic_settings(&[(&["invoice"], "COMPLEX")], -0.1);
+    assert!(matches!(
+        SemanticKeywordIndex::new(&low, &all_pools(), Arc::clone(&embedder)),
+        Err(SemanticError::Threshold)
+    ));
+    let high = semantic_settings(&[(&["invoice"], "COMPLEX")], 1.5);
+    assert!(matches!(
+        SemanticKeywordIndex::new(&high, &all_pools(), embedder),
+        Err(SemanticError::Threshold)
+    ));
 }
 
 #[test]

@@ -140,6 +140,12 @@ fn environment_values_resolve_once_in_the_config() {
 }
 
 #[test]
+fn an_empty_embedding_model_is_kept_as_declared() {
+    let found = configured("        embedding_model: \"\"\n", &[]).unwrap();
+    assert_eq!(found.embedding_model, Some(String::new()));
+}
+
+#[test]
 fn a_blank_keyword_list_is_rejected() {
     let fields =
         "        keyword_tier_rules:\n          - keywords: [\"  \"]\n            tier: SIMPLE\n";

@@ -80,7 +80,6 @@ pub fn matched_escalation_keyword(
         return None;
     }
     match settings.escalation_keywords.as_deref() {
-        Some(keywords) if keywords.is_empty() => None,
         Some(keywords) => keywords
             .iter()
             .find(|keyword| user_message.contains(keyword.as_str()))

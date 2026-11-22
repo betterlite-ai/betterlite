@@ -9,7 +9,7 @@ use tokio::time::timeout;
 use crate::complexity_scoring::tier::Tier;
 use crate::semantic_math::{MathError, cosine_similarity, validate_documents};
 use crate::semantic_router::index::{RouteIndex, RouteIndexError, parse_inline};
-use crate::semantic_router::select::{BuiltEntry, TOP_K};
+use crate::semantic_router::select::BuiltEntry;
 use crate::semantic_router::service::{CallerContext, EMBEDDING_TIMEOUT, RouteEmbedder};
 use crate::tier_definitions::model::TierSet;
 
@@ -185,24 +185,10 @@ fn select_route(entries: &[BuiltEntry], query: &[f64]) -> Result<Option<String>,
         let score = cosine_similarity(query, &entry.vector, index)?;
         scored.push((entry.route.as_ref(), entry.threshold, score));
     }
-    // the source's index query returns the top_k scores ascending, ties keeping row order
     scored.sort_by(|left, right| right.2.total_cmp(&left.2));
-    scored.truncate(TOP_K.min(scored.len()));
-    scored.sort_by(|left, right| left.2.total_cmp(&right.2));
-    let mut routes: Vec<(&str, f64, f64)> = Vec::new();
     for (name, threshold, score) in scored {
-        if let Some(position) = routes.iter().position(|(found, _, _)| *found == name) {
-            if let Some((_, _, best)) = routes.get_mut(position) {
-                *best = best.max(score);
-            }
-        } else {
-            routes.push((name, threshold, score));
-        }
-    }
-    routes.sort_by(|left, right| right.2.total_cmp(&left.2));
-    for (name, threshold, best) in routes {
         // a zero threshold is falsy in the source and always passes
-        if threshold == 0.0_f64 || best >= threshold {
+        if threshold == 0.0_f64 || score >= threshold {
             return Ok(Some(name.to_owned()));
         }
     }
