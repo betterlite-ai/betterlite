@@ -19,6 +19,7 @@ from completion_server import (
     OPENAI,
     RATE_LIMITED_KEY,
     UNKNOWN_MODEL,
+    CompletionRequest,
     CompletionServer,
     CountView,
     FakeAdapter,
@@ -275,7 +276,7 @@ def test_coroutine_paths() -> None:
 
 
 def assert_response_format_matches(
-    server: CompletionServer, bodies: list[dict[str, JsonValue]]
+    server: CompletionServer, bodies: list[CompletionRequest]
 ) -> None:
     litellm_plain(
         model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
