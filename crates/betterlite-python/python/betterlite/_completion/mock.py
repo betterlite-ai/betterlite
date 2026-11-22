@@ -6,7 +6,7 @@ from typing import Final, NoReturn, Protocol, runtime_checkable
 from pydantic import JsonValue
 
 from betterlite import exceptions
-from betterlite._completion.arguments import JSON, CallValue
+from betterlite._completion.arguments import JSON, CallValue, is_response_format_class
 from betterlite.exceptions._http import Request
 from betterlite.types.utils import ModelResponse
 
@@ -41,6 +41,8 @@ def _is_api_error(error: Exception) -> bool:
 
 def provider_name(value: CallValue) -> str:
     # LiteLLM's `custom_llm_provider or "openai"`: an absent or empty name is openai
+    if is_response_format_class(value):
+        return "openai"
     match value:
         case str() if len(value) > 0:
             return value
@@ -144,6 +146,8 @@ def raise_text_mock(text: str, model: str, provider: str) -> None:
 
 def mock_response_value(value: CallValue, model: str, provider: str) -> JsonValue:
     # a ModelResponse becomes the JSON a mock object is built from; an Exception is raised
+    if is_response_format_class(value):
+        return JSON.validate_python(value)
     match value:
         case ModelResponse():
             # the Rust mock object rejects unknown keys, so the dump leaves its nulls out

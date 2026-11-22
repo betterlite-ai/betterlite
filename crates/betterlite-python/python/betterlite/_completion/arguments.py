@@ -1,9 +1,10 @@
 import inspect
 import logging
 from collections.abc import Mapping
-from typing import Final, Protocol, TypeAlias, TypeGuard, runtime_checkable
+from typing import Final, Protocol, TypeAlias, runtime_checkable
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypeIs
 
 import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
@@ -70,6 +71,9 @@ def messages_value(messages: list[dict[str, JsonValue] | Message]) -> JsonValue:
 
 
 def timeout_value(value: CallValue | TimeoutValues) -> JsonValue:
+    # TypeIs narrows the class out of the union, so the match below names every value it can see
+    if is_response_format_class(value):
+        raise UnsupportedCallArgument("timeout")
     match value:
         case float() | int():
             return value
@@ -88,13 +92,13 @@ def timeout_value(value: CallValue | TimeoutValues) -> JsonValue:
 
 
 # ast-grep-ignore: no-one-line-functions
-def _is_response_format_class(value: CallValue) -> TypeGuard[type[ResponseFormatModel]]:
+def is_response_format_class(value: CallValue) -> TypeIs[type[ResponseFormatModel]]:
     return inspect.isclass(value)
 
 
 def response_format_value(value: CallValue) -> JsonValue:
     # a pydantic class becomes its json_schema; every other value must already be JSON
-    if _is_response_format_class(value):
+    if is_response_format_class(value):
         formatted = type_to_response_format_param(value)
     else:
         formatted = type_to_response_format_param(JSON.validate_python(value))
