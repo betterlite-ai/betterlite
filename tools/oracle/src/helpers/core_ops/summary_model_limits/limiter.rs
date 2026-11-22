@@ -58,7 +58,7 @@ pub(super) struct RateScript {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(super) struct Call {
+pub(super) struct CallRecord {
     call: &'static str,
     hook: Option<String>,
     model: Option<String>,
@@ -76,12 +76,12 @@ struct TokenField {
     token: Option<String>,
 }
 
-fn blank(call: &'static str, principal: Option<&UserAPIKeyAuth>) -> Call {
+fn blank(call: &'static str, principal: Option<&UserAPIKeyAuth>) -> CallRecord {
     let token = principal
         .and_then(|auth| serde_json::to_value(auth).ok())
         .and_then(|fields| serde_json::from_value::<TokenField>(fields).ok())
         .and_then(|field| field.token);
-    Call {
+    CallRecord {
         call,
         hook: None,
         model: None,
@@ -101,12 +101,12 @@ pub(super) struct ScriptedError(String);
 
 pub(super) struct ScriptedLimiter<'script> {
     pub(super) script: &'script RateScript,
-    pub(super) journal: &'script Mutex<Vec<Call>>,
+    pub(super) journal: &'script Mutex<Vec<CallRecord>>,
     pub(super) retained: Mutex<Option<Vec<SummaryDescriptor>>>,
 }
 
 impl ScriptedLimiter<'_> {
-    fn record(&self, stage: Stage, call: Call) -> Result<(), LimiterFailure<ScriptedError>> {
+    fn record(&self, stage: Stage, call: CallRecord) -> Result<(), LimiterFailure<ScriptedError>> {
         self.journal
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -200,7 +200,7 @@ pub(super) struct HooksOffline;
 
 pub(super) struct ScriptedHooks<'script> {
     pub(super) script: &'script RateScript,
-    pub(super) journal: &'script Mutex<Vec<Call>>,
+    pub(super) journal: &'script Mutex<Vec<CallRecord>>,
     pub(super) limiter: ScriptedLimiter<'script>,
 }
 

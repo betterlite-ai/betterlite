@@ -25,7 +25,7 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use budgets::spend_limiter;
-use limiter::{Call, RateScript, ScriptedHooks, ScriptedLimiter};
+use limiter::{CallRecord, RateScript, ScriptedHooks, ScriptedLimiter};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -49,7 +49,7 @@ struct Outcome {
     rate: Option<bool>,
     raised: Option<String>,
     reads: Vec<String>,
-    calls: Vec<Call>,
+    calls: Vec<CallRecord>,
     retained: Option<Vec<SummaryDescriptor>>,
     warnings: Vec<String>,
 }
@@ -77,13 +77,17 @@ impl Helper for Op {
     }
 }
 
-async fn evaluate(summary_model: &str, scenario: &Scenario) -> Result<Outcome, Box<HelperError>> {
-    let principal = scenario
+fn principal_of(scenario: &Scenario) -> Result<Option<UserAPIKeyAuth>, Box<HelperError>> {
+    scenario
         .principal
         .clone()
         .map(|fields| UserAPIKeyAuth::construct(AuthInput::Dict(fields)))
         .transpose()
-        .or_value_error()?;
+        .or_value_error()
+}
+
+async fn evaluate(summary_model: &str, scenario: &Scenario) -> Result<Outcome, Box<HelperError>> {
+    let principal = principal_of(scenario)?;
     let budgets = spend_limiter(&scenario.spend, &scenario.offline)?;
     let journal = Mutex::new(Vec::new());
     let hooks = ScriptedHooks {

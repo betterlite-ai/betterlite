@@ -128,31 +128,29 @@ pub(super) struct OracleBudgets {
 }
 
 impl SummaryModelBudgets for OracleBudgets {
-    fn within_model_budget(
+    async fn within_model_budget(
         &self,
         subject: &BudgetSubject<'_>,
         model_max_budget: &BudgetMap,
         model: &str,
-    ) -> impl Future<Output = Result<(), ErrorClass>> + Send {
-        async move {
-            let checked = self
-                .limiter
-                .within_model_budget(subject, model_max_budget, model)
-                .await;
-            if !self.limiter.cache.tripped.swap(false, Ordering::SeqCst) {
-                return checked;
-            }
-            Err(ErrorClass::Unclassified(Box::new(ErrorContext {
-                message: "offline".to_owned(),
-                model: None,
-                provider: None,
-                max_retries: None,
-                num_retries: None,
-                body_type: None,
-                body_param: None,
-                body_code: None,
-            })))
+    ) -> Result<(), ErrorClass> {
+        let checked = self
+            .limiter
+            .within_model_budget(subject, model_max_budget, model)
+            .await;
+        if !self.limiter.cache.tripped.swap(false, Ordering::SeqCst) {
+            return checked;
         }
+        Err(ErrorClass::Unclassified(Box::new(ErrorContext {
+            message: "offline".to_owned(),
+            model: None,
+            provider: None,
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        })))
     }
 }
 
