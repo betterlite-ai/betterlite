@@ -8,9 +8,12 @@ use super::super::result::Failure;
 use super::providers::WireError;
 use super::{Rejection, StepOutcome};
 
-pub(super) fn step_outcome<Value: Serialize>(
+pub(super) fn step_outcome<Value>(
     result: Result<Value, FileWriteError<WireError>>,
-) -> Result<StepOutcome, SdkHttpError> {
+) -> Result<StepOutcome, SdkHttpError>
+where
+    Value: Serialize,
+{
     match result {
         Ok(value) => Ok(StepOutcome {
             value: Some(serde_json::to_value(value).map_err(SdkHttpError::Serialize)?),

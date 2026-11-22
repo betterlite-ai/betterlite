@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::str::FromStr as _;
 
 use betterlite_models::identity::provider_id::ProviderId;
@@ -16,7 +15,7 @@ pub(super) fn upload_provider<Logger, Client>(
     input: &UploadInput<Logger, Client>,
 ) -> Option<String> {
     let named = input.custom_llm_provider.clone().flatten();
-    named.unwrap_or_else(|| match mode {
+    named.or_else(|| match mode {
         Mode::Sync => None,
         Mode::Asynchronous => Some("openai".to_owned()),
     })
@@ -33,7 +32,7 @@ pub(super) fn create_request<Logger, Client>(input: &UploadInput<Logger, Client>
     }
 }
 // only the literal True arms the guard, and then only a vertex_ai batch passes it
-pub(super) fn passthrough_guard<ProviderError: Error + 'static>(
+pub(super) fn passthrough_guard<ProviderError>(
     passthrough: Option<bool>,
     provider: Option<&str>,
     purpose: CreatePurpose,
@@ -58,7 +57,7 @@ pub(super) fn delete_params<Logger, Client>(
     }
 }
 // LlmProviders(custom_llm_provider): an unknown or missing name is a ValueError naming its repr
-pub(super) fn provider_id<ProviderError: Error + 'static>(
+pub(super) fn provider_id<ProviderError>(
     provider: Option<&str>,
 ) -> Result<ProviderId, FileWriteError<ProviderError>> {
     let unknown = || FileWriteError::UnknownProvider {
@@ -68,7 +67,7 @@ pub(super) fn provider_id<ProviderError: Error + 'static>(
     ProviderId::from_str(name).map_err(|_unparsed| unknown())
 }
 // optional_params.timeout or request_timeout or 600, where zero and empty fall through; an httpx.Timeout keeps its phases only for openai, azure and bedrock
-pub(super) fn write_timeout<Logger, Client, ProviderError: Error + 'static>(
+pub(super) fn write_timeout<Logger, Client, ProviderError>(
     params: &WriteParams<Logger, Client>,
     provider: &str,
 ) -> Result<FineTuningTimeout, FileWriteError<ProviderError>> {

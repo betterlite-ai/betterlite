@@ -367,8 +367,20 @@ impl Answer {
     }
 }
 
-fn request(operation: Operation, provider: Option<Option<&str>>) -> Request {
-    let named = provider.map(|name| name.map(str::to_owned));
+// a case field that tells an absent key from an explicit null from a value
+#[derive(Debug, Clone, Copy)]
+enum Presence<'value> {
+    Absent,
+    Null,
+    Value(&'value str),
+}
+
+fn request(operation: Operation, provider: Presence<'_>) -> Request {
+    let named = match provider {
+        Presence::Absent => None,
+        Presence::Null => Some(None),
+        Presence::Value(name) => Some(Some(name.to_owned())),
+    };
     match operation {
         Operation::Upload => Request::Upload(UploadInput {
             file: FileUpload {
@@ -394,7 +406,7 @@ fn request(operation: Operation, provider: Option<Option<&str>>) -> Request {
     }
 }
 
-fn upload_input(provider: Option<Option<&str>>) -> UploadRequest {
+fn upload_input(provider: Presence<'_>) -> UploadRequest {
     let Request::Upload(input) = request(Operation::Upload, provider) else {
         panic!("the case uploads");
     };
@@ -402,7 +414,8 @@ fn upload_input(provider: Option<Option<&str>>) -> UploadRequest {
 }
 
 fn delete_input(provider: Option<&str>) -> DeleteRequest {
-    let Request::Delete(input) = request(Operation::Delete, provider.map(Some)) else {
+    let named = provider.map_or(Presence::Absent, Presence::Value);
+    let Request::Delete(input) = request(Operation::Delete, named) else {
         panic!("the case deletes");
     };
     input

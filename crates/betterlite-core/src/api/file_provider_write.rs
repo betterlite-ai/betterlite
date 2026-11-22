@@ -201,7 +201,7 @@ pub struct BadRequest<'error> {
     pub url: &'static str,
 }
 #[derive(Debug, Error)]
-pub enum FileWriteError<ProviderError: Error + 'static> {
+pub enum FileWriteError<ProviderError> {
     #[error("logging_obj is required")]
     LoggingObjectRequired,
     #[error(

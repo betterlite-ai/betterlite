@@ -13,8 +13,8 @@ use crate::api::file_provider_write::{FileWriteError, LoggerSeed, SuppliedClient
 use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
 
 use super::{
-    CALL_ID, Credentials, Logged, Recorder, Rejected, Request, Seen, delete, delete_input,
-    sent_data, started, upload, upload_input, write_with,
+    CALL_ID, Credentials, Logged, Presence, Recorder, Rejected, Request, Seen, delete,
+    delete_input, sent_data, started, upload, upload_input, write_with,
 };
 
 const DEFAULT_TIMEOUT: FineTuningTimeout = FineTuningTimeout::Seconds(600.0_f64);
@@ -93,7 +93,7 @@ fn sdk_credentials(cloud: Cloud, mode: Mode, value: &str) -> Credentials {
 
 #[test]
 fn config_first_upload_takes_the_files_config() {
-    let mut input = upload_input(Some(Some("anthropic")));
+    let mut input = upload_input(Presence::Value("anthropic"));
     input.extra_headers = Some(IndexMap::from([("X-Trace".to_owned(), "t1".to_owned())]));
     input.params.api_base = Some("https://anthropic.example".to_owned());
     input.params.api_key = secret("sk-ant");
@@ -128,7 +128,7 @@ fn config_first_upload_takes_the_files_config() {
 // a provider SDK client is not an httpx handler, so the generic paths drop it
 #[test]
 fn generic_paths_drop_an_sdk_client() {
-    let mut uploading = upload_input(Some(Some("anthropic")));
+    let mut uploading = upload_input(Presence::Value("anthropic"));
     uploading.params.client = Some(SuppliedClient::Sdk("sdk"));
     let (_, uploaded) = upload(Mode::Sync, uploading);
     assert!(matches!(
@@ -150,7 +150,7 @@ fn generic_paths_drop_an_sdk_client() {
 #[case::litellm_proxy("litellm_proxy")]
 fn write_provider_dispatch(#[case] provider: &str) {
     let recorder = Recorder::default();
-    let mut uploading = upload_input(Some(Some(provider)));
+    let mut uploading = upload_input(Presence::Value(provider));
     uploading.params.organization = Some("org-request".to_owned());
     uploading.params.max_retries = Some(1);
     uploading.params.client = Some(SuppliedClient::Sdk("ignored"));
@@ -181,7 +181,7 @@ fn write_provider_dispatch(#[case] provider: &str) {
 #[test]
 fn azure_receives_version_retries_and_its_delete_client() {
     let recorder = Recorder::default();
-    let mut uploading = upload_input(Some(Some("azure")));
+    let mut uploading = upload_input(Presence::Value("azure"));
     uploading.params.api_key = secret("az-request");
     uploading.params.api_version = Some("2024-10-21".to_owned());
     uploading.params.max_retries = Some(3);
@@ -273,7 +273,7 @@ fn provider_failures_pass_through_unchanged() {
         seen: Arc::default(),
         failure: Some(failure.clone()),
     };
-    let upload_request = Request::Upload(upload_input(Some(Some("anthropic"))));
+    let upload_request = Request::Upload(upload_input(Presence::Value("anthropic")));
     let uploaded = write_with(&recorder, &configured(), Mode::Sync, upload_request).file();
     assert!(matches!(uploaded, Err(FileWriteError::Provider(ref seen)) if *seen == failure));
     let delete_request = Request::Delete(delete_input(None));
@@ -321,29 +321,44 @@ fn unresolved_hint_keeps_the_declared_provider() {
     assert!(seen.is_empty());
 }
 
+// mode, the litellm_call_id the case sends, its id, the logger's call_type, call id and function id
+type LoggerCase = (
+    Mode,
+    Presence<'static>,
+    Option<&'static str>,
+    &'static str,
+    Option<&'static str>,
+    &'static str,
+);
+
 #[rstest]
-#[case::sync_absent_id(Mode::Sync, None, None, "file_delete", Some(CALL_ID), "")]
-#[case::async_absent_id(Mode::Asynchronous, None, None, "afile_delete", Some(CALL_ID), "")]
-#[case::explicit_null_id(Mode::Sync, Some(None), Some("fn-7"), "file_delete", None, "fn-7")]
-#[case::given_id(
+#[case::sync_absent_id((Mode::Sync, Presence::Absent, None, "file_delete", Some(CALL_ID), ""))]
+#[case::async_absent_id((
     Mode::Asynchronous,
-    Some(Some("call-given")),
+    Presence::Absent,
+    None,
+    "afile_delete",
+    Some(CALL_ID),
+    ""
+))]
+#[case::explicit_null_id((Mode::Sync, Presence::Null, Some("fn-7"), "file_delete", None, "fn-7"))]
+#[case::given_id((
+    Mode::Asynchronous,
+    Presence::Value("call-given"),
     Some(""),
     "afile_delete",
     Some("call-given"),
     ""
-)]
-fn missing_logger_is_created(
-    #[case] mode: Mode,
-    #[case] call_id: Option<Option<&str>>,
-    #[case] id: Option<&str>,
-    #[case] call_type: &'static str,
-    #[case] litellm_call_id: Option<&str>,
-    #[case] function_id: &str,
-) {
+))]
+fn missing_logger_is_created(#[case] case: LoggerCase) {
+    let (mode, call_id, id, call_type, litellm_call_id, function_id) = case;
     let mut input = delete_input(Some("anthropic"));
     input.params.logger = None;
-    input.params.litellm_call_id = call_id.map(|given| given.map(str::to_owned));
+    input.params.litellm_call_id = match call_id {
+        Presence::Absent => None,
+        Presence::Null => Some(None),
+        Presence::Value(given) => Some(Some(given.to_owned())),
+    };
     input.params.id = id.map(str::to_owned);
     let (_, seen) = delete(mode, input);
     let expected = Logged::Created(LoggerSeed {

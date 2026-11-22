@@ -9,7 +9,7 @@ use crate::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutValue,
 };
 
-use super::{Seen, delete, delete_input, sent_data, sent_timeout, upload, upload_input};
+use super::{Presence, Seen, delete, delete_input, sent_data, sent_timeout, upload, upload_input};
 
 const PASSTHROUGH_BODY: &str = "passthrough needs a vertex_ai batch";
 
@@ -29,7 +29,7 @@ fn bad_request<'text>(
 
 #[test]
 fn upload_optional_fields() {
-    let (sent, seen) = upload(Mode::Asynchronous, upload_input(None));
+    let (sent, seen) = upload(Mode::Asynchronous, upload_input(Presence::Absent));
     assert_eq!(sent.unwrap().id, "file-abc");
     let data = sent_data(&seen);
     assert_eq!(data.file.data, b"abc".to_vec());
@@ -39,7 +39,7 @@ fn upload_optional_fields() {
     assert!(data.extra_headers.is_empty() && data.extra_body.is_empty());
     assert!(matches!(seen.as_slice(), [Seen::OpenAiUpload(..)]));
 
-    let mut detailed = upload_input(Some(Some("openai")));
+    let mut detailed = upload_input(Presence::Value("openai"));
     detailed.expires_after = Some(ExpiresAfter { seconds: 3600 });
     detailed.extra_headers = Some(IndexMap::from([("X-Trace".to_owned(), "t1".to_owned())]));
     detailed.extra_body = Some(IndexMap::from([("note".to_owned(), "kept".to_owned())]));
@@ -59,7 +59,7 @@ fn upload_optional_fields() {
 // the undecorated sync function has no default provider, so LlmProviders(None) fails before any request
 #[test]
 fn sync_upload_without_provider_names_none() {
-    let (sent, seen) = upload(Mode::Sync, upload_input(None));
+    let (sent, seen) = upload(Mode::Sync, upload_input(Presence::Absent));
     let error = sent.unwrap_err();
     assert!(matches!(error, FileWriteError::UnknownProvider { .. }));
     assert_eq!(error.to_string(), "None is not a valid LlmProviders");
@@ -69,11 +69,11 @@ fn sync_upload_without_provider_names_none() {
 // a null provider is no provider: each function's own default applies, as an absent one
 #[test]
 fn null_provider_takes_the_mode_default() {
-    let (sent, seen) = upload(Mode::Asynchronous, upload_input(Some(None)));
+    let (sent, seen) = upload(Mode::Asynchronous, upload_input(Presence::Null));
     assert_eq!(sent.unwrap().id, "file-abc");
     assert!(matches!(seen.as_slice(), [Seen::OpenAiUpload(..)]));
 
-    let (sync_sent, sync_seen) = upload(Mode::Sync, upload_input(Some(None)));
+    let (sync_sent, sync_seen) = upload(Mode::Sync, upload_input(Presence::Null));
     assert_eq!(
         sync_sent.unwrap_err().to_string(),
         "None is not a valid LlmProviders"
@@ -87,7 +87,7 @@ fn null_provider_takes_the_mode_default() {
 #[case::fine_tune(CreatePurpose::FineTune)]
 #[case::messages(CreatePurpose::Messages)]
 fn upload_forwards_every_purpose(#[case] purpose: CreatePurpose) {
-    let mut input = upload_input(None);
+    let mut input = upload_input(Presence::Absent);
     input.purpose = purpose;
     let (_, seen) = upload(Mode::Asynchronous, input);
     assert_eq!(sent_data(&seen).purpose, purpose);
@@ -95,7 +95,7 @@ fn upload_forwards_every_purpose(#[case] purpose: CreatePurpose) {
 
 #[test]
 fn upload_without_logger_fails_first() {
-    let mut input = upload_input(Some(Some("openai")));
+    let mut input = upload_input(Presence::Value("openai"));
     input.params.logger = None;
     input.params.passthrough = Some(true);
     let (sent, seen) = upload(Mode::Sync, input);
@@ -121,7 +121,7 @@ fn upload_passthrough_guard(
     #[case] named: &str,
     #[case] wire: &str,
 ) {
-    let mut input = upload_input(Some(provider));
+    let mut input = upload_input(provider.map_or(Presence::Absent, Presence::Value));
     input.purpose = purpose;
     input.params.passthrough = Some(true);
     let (sent, seen) = upload(Mode::Sync, input);
@@ -145,7 +145,7 @@ fn upload_passthrough_guard(
 #[case::false_flag(Some(false), "openai")]
 #[case::absent_flag(None, "openai")]
 fn passthrough_guard_lets_through(#[case] flag: Option<bool>, #[case] provider: &str) {
-    let mut input = upload_input(Some(Some(provider)));
+    let mut input = upload_input(Presence::Value(provider));
     input.params.passthrough = flag;
     let (sent, seen) = upload(Mode::Sync, input);
     assert_eq!(sent.unwrap().id, "file-abc");
@@ -232,7 +232,7 @@ fn write_timeout_coercion(
     #[case] provider: &str,
     #[case] expected: FineTuningTimeout,
 ) {
-    let mut uploading = upload_input(Some(Some(provider)));
+    let mut uploading = upload_input(Presence::Value(provider));
     uploading.params.timeout = timeout.clone();
     uploading.params.request_timeout = request_timeout.clone();
     let (_, uploaded) = upload(Mode::Asynchronous, uploading);
@@ -251,7 +251,7 @@ fn invalid_timeout_text_fails_before_http(
     #[case] timeout: Option<WriteTimeout>,
     #[case] request_timeout: Option<TimeoutValue>,
 ) {
-    let mut input = upload_input(Some(Some("openai")));
+    let mut input = upload_input(Presence::Value("openai"));
     input.params.timeout = timeout;
     input.params.request_timeout = request_timeout;
     let (sent, seen) = upload(Mode::Sync, input);
@@ -281,7 +281,7 @@ fn infinite_timeout_is_rejected(#[case] timeout: TimeoutValue) {
 #[case::sync(Mode::Sync)]
 #[case::asynchronous(Mode::Asynchronous)]
 fn write_mode_reaches_the_provider(#[case] mode: Mode) {
-    let (_, uploaded) = upload(mode, upload_input(Some(Some("openai"))));
+    let (_, uploaded) = upload(mode, upload_input(Presence::Value("openai")));
     assert!(matches!(uploaded.as_slice(), [Seen::OpenAiUpload(call, _)] if call.mode == mode));
     let (_, deleted) = delete(mode, delete_input(Some("anthropic")));
     assert!(
@@ -291,7 +291,7 @@ fn write_mode_reaches_the_provider(#[case] mode: Mode) {
 
 #[test]
 fn unsupported_write() {
-    let (uploaded, upload_calls) = upload(Mode::Sync, upload_input(Some(Some("cohere"))));
+    let (uploaded, upload_calls) = upload(Mode::Sync, upload_input(Presence::Value("cohere")));
     let upload_error = uploaded.unwrap_err();
     assert_eq!(
         upload_error.to_string(),
@@ -322,7 +322,7 @@ fn unsupported_write() {
 fn unknown_provider_text_fails_conversion() {
     let (uploaded, upload_calls) = upload(
         Mode::Asynchronous,
-        upload_input(Some(Some("not-a-provider"))),
+        upload_input(Presence::Value("not-a-provider")),
     );
     let (deleted, delete_calls) = delete(Mode::Asynchronous, delete_input(Some("not-a-provider")));
     let upload_error = uploaded.unwrap_err();
