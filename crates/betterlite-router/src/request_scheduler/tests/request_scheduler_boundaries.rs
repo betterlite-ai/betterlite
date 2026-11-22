@@ -9,7 +9,7 @@ use rstest::rstest;
 use crate::request_scheduler::error::SchedulerError;
 use crate::request_scheduler::flow::Priority;
 use crate::request_scheduler::queue::MAX_PENDING_REQUESTS;
-use crate::request_scheduler::service::RequestScheduler;
+use crate::request_scheduler::service::{MAX_CAS_ATTEMPTS, RequestScheduler};
 use crate::routing_value_store::{RoutingValueStore, StoreSettings};
 
 use super::{
@@ -280,6 +280,33 @@ async fn a_provider_failure_keeps_the_status_code_and_the_stamped_priority() {
             .expect("the queue reads")
             .value
             .is_empty()
+    );
+}
+
+// every compare lost to another writer: the update stops at the attempt bound and names the model
+#[tokio::test]
+async fn a_shared_queue_that_keeps_losing_the_compare_answers_contended() {
+    let (service, server) = shared_scheduler_with(local_store()).await;
+    service
+        .add_request(&item(128, "first", MODEL))
+        .await
+        .expect("the first request queues");
+    server.rival_writes_before_exec(u64::from(MAX_CAS_ATTEMPTS));
+    let error = service
+        .add_request(&item(0, "second", MODEL))
+        .await
+        .expect_err("every compare is lost");
+    assert!(matches!(
+        error,
+        SchedulerError::Contended {
+            attempts: MAX_CAS_ATTEMPTS,
+            ..
+        }
+    ));
+    assert_eq!(error.status_code(), None);
+    assert_eq!(
+        service.queue(MODEL).await.expect("the queue reads").value,
+        entries(&[(128, "first")])
     );
 }
 
