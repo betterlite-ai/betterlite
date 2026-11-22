@@ -27,7 +27,7 @@ use crate::prepared::{PreparedRequest, Upstream};
 
 use super::support::{self, Fixture};
 
-const AZURE_BASE: &str = "https://resource.openai.azure.com";
+pub(super) const AZURE_BASE: &str = "https://resource.openai.azure.com";
 
 fn base_credentials() -> Credentials {
     Credentials {
@@ -48,7 +48,7 @@ fn text_call(optional: Object, credentials: Credentials, acompletion: bool) -> T
     }
 }
 
-fn base_only() -> Credentials {
+pub(super) fn base_only() -> Credentials {
     Credentials {
         api_base: Some(String::from(AZURE_BASE)),
         ..support::credentials()

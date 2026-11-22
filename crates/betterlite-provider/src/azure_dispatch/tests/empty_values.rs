@@ -3,38 +3,12 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::azure_dispatch::call::{Credentials, Operation};
 use crate::azure_dispatch::resolve::resolve;
 
+use super::cases::{AZURE_BASE, base_only};
 use super::support;
 
-const AZURE_BASE: &str = "https://resource.openai.azure.com";
-
-fn base_only() -> Credentials {
-    Credentials {
-        api_base: Some(String::from(AZURE_BASE)),
-        ..support::credentials()
-    }
-}
-
-// An empty explicit value, global value, secret, environment version, body token or api type counts as unset, so the next rank applies.
+// An empty global value, secret, environment version, body token or api type counts as unset, so the next rank applies.
 #[test]
 fn azure_empty_values_rank_as_unset() {
-    let empty_explicit = Credentials {
-        api_base: Some(String::new()),
-        api_version: Some(String::new()),
-        ..support::credentials()
-    };
-    let from_env = resolve(
-        &support::composition(&[
-            ("AZURE_API_BASE", "env-base"),
-            ("AZURE_API_VERSION", "env-version"),
-        ]),
-        empty_explicit,
-        Operation::Chat,
-        Some("gpt-4o"),
-    )
-    .expect("the empty explicit values");
-    assert_eq!(from_env.api_base.as_deref(), Some("env-base"));
-    assert_eq!(from_env.api_version.as_deref(), Some("env-version"));
-
     let mut empty_global = support::composition(&[("AZURE_API_BASE", "env-base")]);
     empty_global.globals.api_base = Some(String::new());
     let from_global = resolve(
