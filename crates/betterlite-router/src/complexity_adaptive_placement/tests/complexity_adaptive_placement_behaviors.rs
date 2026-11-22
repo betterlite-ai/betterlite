@@ -532,43 +532,36 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
     let Some(Json::List(candidates)) = decision.get("candidates") else {
         panic!("the decision lists its candidates");
     };
-    assert_eq!(candidates.len(), 3);
-    for (index, candidate) in candidates.iter().enumerate() {
-        let Json::Object(fields) = candidate else {
-            panic!("each candidate is an object");
-        };
-        assert_eq!(
-            fields.get("model"),
-            Some(&Json::Text(choice.candidates[index].model.clone()))
-        );
-        let Some(Json::Number(sample)) = fields.get("quality_sample") else {
-            panic!("each candidate records its quality sample");
-        };
-        assert_eq!(
-            sample.as_f64().map(f64::to_bits),
-            Some(choice.candidates[index].quality_sample.to_bits())
-        );
-        let Some(Json::Number(cost_score)) = fields.get("cost_score") else {
-            panic!("each candidate records its cost score");
-        };
-        assert_eq!(
-            cost_score.as_f64().map(f64::to_bits),
-            Some(choice.candidates[index].economy_score.to_bits())
-        );
-        assert_eq!(
-            fields.get("tier_distance"),
-            Some(&Json::Number(Number::from(
-                choice.candidates[index].tier_distance
-            )))
-        );
-        let Some(Json::Number(score)) = fields.get("score") else {
-            panic!("each candidate records its score");
-        };
-        assert_eq!(
-            score.as_f64().map(f64::to_bits),
-            Some(choice.candidates[index].score.to_bits())
-        );
-    }
+    let expected: Vec<Json> = choice
+        .candidates
+        .iter()
+        .map(|candidate| {
+            Json::Object(IndexMap::from([
+                ("model".to_owned(), Json::Text(candidate.model.clone())),
+                (
+                    "quality_sample".to_owned(),
+                    Json::Number(
+                        Number::from_f64(candidate.quality_sample).expect("a finite sample"),
+                    ),
+                ),
+                (
+                    "cost_score".to_owned(),
+                    Json::Number(
+                        Number::from_f64(candidate.economy_score).expect("a finite score"),
+                    ),
+                ),
+                (
+                    "tier_distance".to_owned(),
+                    Json::Number(Number::from(candidate.tier_distance)),
+                ),
+                (
+                    "score".to_owned(),
+                    Json::Number(Number::from_f64(candidate.score).expect("a finite score")),
+                ),
+            ]))
+        })
+        .collect();
+    assert_eq!(candidates, &expected);
 }
 
 // the declared weights reach placement_score: the same samples under the pinned defaults keep mini

@@ -112,7 +112,8 @@ struct RawDecision {
     request_type: String,
     eligible_mode: String,
     quality_weight: f64,
-    cost_weight: f64,
+    #[serde(rename = "cost_weight")]
+    economy_weight: f64,
     tier_distance_penalty: f64,
     chosen_model: String,
     candidates: Vec<RawCandidate>,
@@ -124,7 +125,8 @@ struct RawCandidate {
     model: String,
     total_samples: Option<u64>,
     quality_sample: Option<f64>,
-    cost_score: Option<f64>,
+    #[serde(rename = "cost_score")]
+    economy_score: Option<f64>,
     tier_distance: Option<u32>,
     score: Option<f64>,
 }
@@ -145,7 +147,7 @@ impl DecisionOutput {
             request_type,
             eligible_mode,
             quality_weight,
-            cost_weight,
+            economy_weight,
             tier_distance_penalty,
             chosen_model,
             candidates,
@@ -156,7 +158,7 @@ impl DecisionOutput {
             request_type,
             eligible_mode,
             quality_weight: format!("{quality_weight:.6}"),
-            cost_weight: format!("{cost_weight:.6}"),
+            cost_weight: format!("{economy_weight:.6}"),
             tier_distance_penalty: format!("{tier_distance_penalty:.6}"),
             chosen_model,
             candidates: candidates
@@ -173,7 +175,7 @@ impl CandidateOutput {
             model,
             total_samples,
             quality_sample,
-            cost_score,
+            economy_score,
             tier_distance,
             score,
         } = raw;
@@ -181,7 +183,7 @@ impl CandidateOutput {
             model,
             total_samples,
             quality_sample: quality_sample.map(|value| format!("{value:.6}")),
-            cost_score: cost_score.map(|value| format!("{value:.6}")),
+            cost_score: economy_score.map(|value| format!("{value:.6}")),
             tier_distance,
             score: score.map(|value| format!("{value:.6}")),
         }
