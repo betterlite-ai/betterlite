@@ -489,12 +489,15 @@ def test_settings_take_effect(caplog: pytest.LogCaptureFixture) -> None:
     with CompletionServer() as server:
         arguments.proxy_auth = ProxyAuth()
         try:
+            proxied_settings = arguments.settings_snapshot()
+            assert proxied_settings["proxy_headers"] == {PROXY_HEADER: PROXY_VALUE}
             proxied = plain_response(server)
-            assert header_of(server.calls[-1], PROXY_HEADER) == PROXY_VALUE
             arguments.proxy_auth = BrokenProxyAuth()
             with caplog.at_level(logging.WARNING, logger="LiteLLM"):
+                broken_settings = arguments.settings_snapshot()
                 broken = plain_response(server)
             assert BROKEN_PROXY_MESSAGE in caplog.messages
+            assert "proxy_headers" not in broken_settings
         finally:
             arguments.proxy_auth = None
         betterlite.model_alias_map = {GOOD_MODEL: ALIASED_MODEL}
