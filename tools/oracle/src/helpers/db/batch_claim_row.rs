@@ -98,7 +98,7 @@ impl ScriptedTable {
             };
             if stored
                 .iter()
-                .any(|existing| request_id_is(existing, request_id))
+                .any(|existing| text_field(existing, "request_id") == Some(request_id))
             {
                 continue;
             }
@@ -112,7 +112,7 @@ impl ScriptedTable {
         let stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(stored
             .iter()
-            .find(|candidate| request_id_is(candidate, request_id))
+            .find(|candidate| text_field(candidate, "request_id") == Some(request_id))
             .map(charge_row))
     }
 
@@ -178,12 +178,8 @@ fn log_row(value: &JsonData) -> Result<SpendLogRow, Box<HelperError>> {
         .ok_or_else(|| failure("the spend log row is not an object"))
 }
 
-fn request_id_is(row: &SpendLogRow, request_id: &str) -> bool {
-    text_field(row, "request_id") == Some(request_id)
-}
-
 fn claimable(row: &SpendLogRow, request_id: &str) -> bool {
-    request_id_is(row, request_id)
+    text_field(row, "request_id") == Some(request_id)
         && text_field(row, "call_type") == Some(ARETRIEVE_BATCH)
         && text_field(row, "status") == Some(SUCCESS)
         && amount_field(row, "spend") == Some(Decimal::ZERO)
