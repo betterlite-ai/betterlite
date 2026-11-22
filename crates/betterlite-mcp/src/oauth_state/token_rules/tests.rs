@@ -455,7 +455,7 @@ fn matches_a_container_by_its_json_text() {
 }
 
 #[test]
-fn reports_a_null_rule_as_None() {
+fn reports_a_null_rule_as_none() {
     let failure =
         validate_token_response(&json(r#"{"x":"anything"}"#), &rules(r#"{"x":null}"#), "srv")
             .unwrap_err();

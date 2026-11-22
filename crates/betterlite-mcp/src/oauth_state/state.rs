@@ -42,8 +42,8 @@ pub fn decode_state(
     cipher: &dyn SealCipher,
     encoded_state: &str,
 ) -> Result<OauthState, StateError> {
-    match cipher.decrypt(encoded_state, "oauth_state") {
-        Some(json) => serde_json::from_str(&json).map_err(|_error| StateError::Malformed),
-        None => Err(StateError::Undecryptable),
-    }
+    cipher.decrypt(encoded_state, "oauth_state").map_or_else(
+        || Err(StateError::Undecryptable),
+        |json| serde_json::from_str(&json).map_err(|_error| StateError::Malformed),
+    )
 }

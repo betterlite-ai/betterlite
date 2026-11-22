@@ -10,7 +10,7 @@ use crate::oauth_state::SealCipher;
 use crate::oauth_state::test_support::{FieldBoundCipher, PlainCipher, RefusingCipher};
 
 use super::{
-    BRIDGE_CODE_PREFIX, BridgeCodePrefix, PASSTHROUGH_CODE_PREFIX, PassthroughCodeParts,
+    BRIDGE_CODE_PREFIX, BridgeCodePrefix as _, PASSTHROUGH_CODE_PREFIX, PassthroughCodeParts,
     RedeemError, open_bridge_code, open_passthrough_code, redeem_passthrough_code,
     seal_bridge_code, seal_passthrough_code,
 };

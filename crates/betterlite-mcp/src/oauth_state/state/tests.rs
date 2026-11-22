@@ -151,7 +151,7 @@ fn decode_state_reports_a_missing_required_field() {
 
 #[test]
 fn decode_state_ignores_an_unknown_key() {
-    let text = FULL_STATE_JSON.replace("}", r#","unknown":"kept"}"#);
+    let text = FULL_STATE_JSON.replace('}', r#","unknown":"kept"}"#);
     let state = decode_state(&PlainCipher, &text).unwrap();
     assert_eq!(state.original_state, "client-state");
 }

@@ -61,13 +61,7 @@ fn set_state_cookie_is_not_secure_over_http() {
 
 #[test]
 fn resolve_encoded_state_prefers_the_cookie() {
-    let cookies = |name: &str| {
-        if name == "mcp_oauth_state_handle" {
-            Some("encoded".to_owned())
-        } else {
-            None
-        }
-    };
+    let cookies = |name: &str| (name == "mcp_oauth_state_handle").then(|| "encoded".to_owned());
     assert_eq!(resolve_encoded_state(&cookies, "handle"), "encoded");
 }
 
@@ -81,13 +75,7 @@ fn resolve_encoded_state_falls_back_to_the_state() {
 
 #[test]
 fn resolve_encoded_state_ignores_another_handle() {
-    let cookies = |name: &str| {
-        if name == "mcp_oauth_state_other" {
-            Some("encoded".to_owned())
-        } else {
-            None
-        }
-    };
+    let cookies = |name: &str| (name == "mcp_oauth_state_other").then(|| "encoded".to_owned());
     assert_eq!(resolve_encoded_state(&cookies, "handle"), "handle");
 }
 

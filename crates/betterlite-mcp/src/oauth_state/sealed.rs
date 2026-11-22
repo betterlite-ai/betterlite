@@ -98,10 +98,7 @@ fn seal_payload<TPayload>(prefix: &str, payload: &TPayload, cipher: &dyn SealCip
 where
     TPayload: Serialize,
 {
-    let json = match serde_json::to_string(payload) {
-        Ok(json) => json,
-        Err(_error) => String::new(),
-    };
+    let json = serde_json::to_string(payload).unwrap_or_default();
     format!("{prefix}{}", cipher.encrypt(&json))
 }
 

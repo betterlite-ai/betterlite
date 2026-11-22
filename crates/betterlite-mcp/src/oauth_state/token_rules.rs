@@ -101,10 +101,9 @@ fn value_text(value: &JsonValue) -> String {
         JsonValue::Bool(false) => "False".to_owned(),
         JsonValue::Number(number) => number_text(number),
         JsonValue::String(text) => text.clone(),
-        JsonValue::Array(_) | JsonValue::Object(_) => match serde_json::to_string(value) {
-            Ok(text) => text,
-            Err(_error) => String::new(),
-        },
+        JsonValue::Array(_) | JsonValue::Object(_) => {
+            serde_json::to_string(value).unwrap_or_default()
+        }
     }
 }
 
@@ -134,7 +133,7 @@ fn float_text(value: f64) -> String {
         };
     }
     let magnitude = value.abs();
-    if magnitude != 0.0 && !(SCIENTIFIC_LOW..SCIENTIFIC_HIGH).contains(&magnitude) {
+    if magnitude != 0.0_f64 && !(SCIENTIFIC_LOW..SCIENTIFIC_HIGH).contains(&magnitude) {
         return exponent_text(value);
     }
     let text = value.to_string();
