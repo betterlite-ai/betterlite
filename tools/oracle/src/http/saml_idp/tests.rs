@@ -242,7 +242,7 @@ fn rejects_dtd_entity_expansion_and_non_request_documents() {
     ));
     assert!(matches!(
         decode_authn_request_id(b"!!!"),
-        Err(SamlIdpError::RequestBase64)
+        Err(SamlIdpError::RequestBase64(_))
     ));
     let oversized = vec![b'A'; MAX_REQUEST_BYTES.saturating_add(1)];
     assert!(matches!(
@@ -307,8 +307,14 @@ fn replay_authn_request_corpus(root: &Path) -> usize {
                 "{} carries no saml assertion",
                 path.display()
             );
-        } else if let Ok(id) = decode_authn_request_id(&bytes) {
-            panic!("{} should be rejected, decoded {id}", path.display());
+        } else {
+            let decoded_id = decode_authn_request_id(&bytes);
+            assert!(
+                decoded_id.is_err(),
+                "{} should be rejected, decoded {}",
+                path.display(),
+                decoded_id.unwrap_or_default()
+            );
         }
     }
     decoded

@@ -7,8 +7,8 @@ use base64::engine::general_purpose::STANDARD;
 use flate2::read::DeflateDecoder;
 use percent_encoding::percent_decode_str;
 use quick_xml::Error as XmlError;
-use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
+use quick_xml::{Reader, XmlVersion};
 use url::Url;
 use url::form_urlencoded;
 
@@ -50,7 +50,7 @@ fn request_parameter_value(text: &str) -> Result<String, SamlIdpError> {
         .map_err(SamlIdpError::RequestText)
 }
 
-fn request_parameter<'value, Pairs>(pairs: Pairs) -> Result<Cow<'value, str>, SamlIdpError>
+fn request_parameter<'value, Pairs>(mut pairs: Pairs) -> Result<Cow<'value, str>, SamlIdpError>
 where
     Pairs: Iterator<Item = (Cow<'value, str>, Cow<'value, str>)>,
 {
@@ -99,7 +99,9 @@ fn authn_request_id(tag: &BytesStart<'_>) -> Result<String, SamlIdpError> {
         .map_err(XmlError::from)
         .map_err(SamlIdpError::Xml)?
         .ok_or(SamlIdpError::MissingRequestId)?;
-    let value = attribute.unescape_value().map_err(SamlIdpError::Xml)?;
+    let value = attribute
+        .normalized_value(XmlVersion::Implicit1_0)
+        .map_err(SamlIdpError::Xml)?;
     if value.is_empty() || value.len() > MAX_ID_BYTES {
         return Err(SamlIdpError::MissingRequestId);
     }
