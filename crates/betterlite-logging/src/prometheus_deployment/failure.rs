@@ -116,7 +116,7 @@ fn params_model_id(params: &JsonObject) -> Option<String> {
 fn params_model_group(params: &JsonObject) -> Option<String> {
     metadata_sources(params)
         .into_iter()
-        .find_map(|metadata| metadata.get("model_group").and_then(model_group_field))
+        .find_map(|metadata| metadata?.get("model_group").and_then(model_group_field))
 }
 
 fn failure_values<G>(

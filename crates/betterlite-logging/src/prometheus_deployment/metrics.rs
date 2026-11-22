@@ -88,7 +88,10 @@ pub trait DeploymentMetrics: RateLimitGauges {
         values: &UserApiKeyLabelValues,
         source: LabelSource<'_>,
         now: Instant,
-    ) -> DeploymentResult<Self> {
+    ) -> DeploymentResult<Self>
+    where
+        Self: Sized,
+    {
         emit_labeled_counter(self, metric, values, source, now)
     }
 
