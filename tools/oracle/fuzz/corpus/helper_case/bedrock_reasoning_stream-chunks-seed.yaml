@@ -1,0 +1,5 @@
+kind: helper
+name: chunks-seed
+call: {"bedrock_reasoning_stream": {"step": {"chunks": {"chunks": [{"id": "c1", "created": 10, "model": "m", "choices": [{"index": 0, "delta": {"content": "<reasoning>x"}}]}, {"id": "c1", "created": 10, "model": "m", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}]}}}}
+env: {}
+compare: {ignore: []}
