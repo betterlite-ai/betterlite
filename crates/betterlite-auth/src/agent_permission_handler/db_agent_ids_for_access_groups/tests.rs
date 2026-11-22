@@ -8,11 +8,10 @@ use crate::agent_permission_handler::tests::support::{handler, registry, set, st
 #[tokio::test]
 async fn rows_naming_a_declared_group_match() {
     let world = world(true);
-    {
-        let mut state = world.lock();
-        state.rows.push((String::from("alpha"), strings(&["g1"])));
-        state.rows.push((String::from("beta"), strings(&["g2"])));
-    }
+    let mut state = world.lock();
+    state.rows.push((String::from("alpha"), strings(&["g1"])));
+    state.rows.push((String::from("beta"), strings(&["g2"])));
+    drop(state);
     let found = db_agent_ids(&world, &strings(&["g1"]), false)
         .await
         .unwrap();
@@ -59,7 +58,7 @@ async fn the_public_lookup_returns_the_matching_table_rows() {
 #[tokio::test]
 async fn a_table_failure_becomes_a_lookup_error() {
     let world = world(true);
-    world.lock().table_fails = true;
+    world.lock().failures.table = true;
     let error = db_agent_ids(&world, &strings(&["g1"]), true)
         .await
         .unwrap_err();

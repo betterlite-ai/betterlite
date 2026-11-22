@@ -59,7 +59,7 @@ async fn disjoint_grants_deny_everything() {
 #[tokio::test]
 async fn a_strict_team_failure_is_policy_unavailable() {
     let world = world(true);
-    world.lock().team_fails = true;
+    world.lock().failures.team = true;
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(Some("t1"), None, &[]);
     let error = grants
@@ -72,7 +72,7 @@ async fn a_strict_team_failure_is_policy_unavailable() {
 #[tokio::test]
 async fn a_non_strict_team_failure_allows_the_key_access() {
     let world = world(true);
-    world.lock().team_fails = true;
+    world.lock().failures.team = true;
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(Some("t1"), Some((&["alpha"], &[])), &[]);
     let access = grants

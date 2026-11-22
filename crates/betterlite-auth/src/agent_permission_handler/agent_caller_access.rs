@@ -3,6 +3,7 @@ use super::error::GrantError;
 use super::get_allowed_agents_for_team;
 use super::reads::AgentTableReads;
 use crate::agent_access_groups::access::AgentAccess;
+use crate::agent_access_groups::reads::AccessGroupReads;
 use crate::agent_caller::caller_auth::agent_caller_auth;
 use crate::auth_model_patterns::access_groups::AccessGroupLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
@@ -16,14 +17,15 @@ pub(crate) async fn access<Reads, Table, Unified>(
     strict: bool,
 ) -> Result<AgentAccess, GrantError>
 where
+    Reads: AccessGroupReads,
     Table: AgentTableReads,
     Unified: AccessGroupLookup,
 {
-    let Some(auth) = auth else {
+    let Some(key) = auth else {
         return Ok(AgentAccess::Unrestricted);
     };
-    let Some(caller) = agent_caller_auth(auth).map_err(GrantError::from)? else {
+    let Some(forwarded) = agent_caller_auth(key).map_err(GrantError::from)? else {
         return Ok(AgentAccess::Unrestricted);
     };
-    get_allowed_agents_for_team::allowed_agents_for_team(grants, Some(&caller), strict).await
+    get_allowed_agents_for_team::allowed_agents_for_team(grants, Some(&forwarded), strict).await
 }

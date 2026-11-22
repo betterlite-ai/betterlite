@@ -37,15 +37,21 @@ use crate::auth_team_lookup::ports::{
 use crate::auth_user_lookup::cadence::{Cadence, CadenceClock};
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
+// the two reads the tests can make fail: the agents table and the team store
+#[derive(Debug, Default)]
+pub(crate) struct Failures {
+    pub(crate) team: bool,
+    pub(crate) table: bool,
+}
+
 // the scripted reads every collaborator of AgentGrants answers from
 #[derive(Debug, Default)]
 pub(crate) struct State {
     pub(crate) database: bool,
     pub(crate) team: Option<JsonData>,
-    pub(crate) team_fails: bool,
+    pub(crate) failures: Failures,
     pub(crate) team_reads: Vec<(String, bool)>,
     pub(crate) rows: Vec<(String, Vec<String>)>,
-    pub(crate) table_fails: bool,
     pub(crate) table_reads: Vec<(Vec<String>, bool)>,
     pub(crate) groups: BTreeMap<String, AccessGroupTable>,
     pub(crate) group_reads: Vec<(String, bool)>,
@@ -73,7 +79,10 @@ pub(crate) fn world(database: bool) -> World {
     world
 }
 
-pub(crate) fn data<T: Serialize>(value: T) -> JsonData {
+pub(crate) fn data<T>(value: T) -> JsonData
+where
+    T: Serialize,
+{
     serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
 }
 
@@ -131,6 +140,26 @@ pub(crate) fn handler(
     )
 }
 
+// the JSON shapes LiteLLM stores for an object_permission and for a team row
+#[derive(Serialize)]
+struct ObjectPermissionRow<'row> {
+    object_permission_id: &'row str,
+    agents: &'row [&'row str],
+    agent_access_groups: &'row [&'row str],
+}
+
+#[derive(Serialize)]
+struct TeamRow<'row> {
+    team_id: &'row str,
+    object_permission: ObjectPermissionRow<'row>,
+    access_group_ids: &'row [&'row str],
+}
+
+#[derive(Serialize)]
+struct BareTeamRow<'row> {
+    team_id: &'row str,
+}
+
 pub(crate) fn key_auth(
     team_id: Option<&str>,
     permission: Option<(&[&str], &[&str])>,
@@ -141,12 +170,12 @@ pub(crate) fn key_auth(
         fields.insert(String::from("team_id"), JsonData::String(team.to_owned()));
     }
     if let Some((agents, groups)) = permission {
-        let permission = serde_json::json!({
-            "object_permission_id": "key-permission",
-            "agents": agents,
-            "agent_access_groups": groups,
-        });
-        fields.insert(String::from("object_permission"), data(permission));
+        let record = ObjectPermissionRow {
+            object_permission_id: "key-permission",
+            agents,
+            agent_access_groups: groups,
+        };
+        fields.insert(String::from("object_permission"), data(record));
     }
     if !unified.is_empty() {
         fields.insert(String::from("access_group_ids"), data(unified));
@@ -174,19 +203,19 @@ pub(crate) fn agent_auth(agent_id: &str) -> UserAPIKeyAuth {
 }
 
 pub(crate) fn team_row(agents: &[&str], groups: &[&str], unified: &[&str]) -> JsonData {
-    data(serde_json::json!({
-        "team_id": "t1",
-        "object_permission": {
-            "object_permission_id": "team-permission",
-            "agents": agents,
-            "agent_access_groups": groups,
+    data(TeamRow {
+        team_id: "t1",
+        object_permission: ObjectPermissionRow {
+            object_permission_id: "team-permission",
+            agents,
+            agent_access_groups: groups,
         },
-        "access_group_ids": unified,
-    }))
+        access_group_ids: unified,
+    })
 }
 
 pub(crate) fn bare_team() -> JsonData {
-    data(serde_json::json!({"team_id": "t1"}))
+    data(BareTeamRow { team_id: "t1" })
 }
 
 pub(crate) fn group_row(access_group_id: &str, agents: &[&str]) -> AccessGroupTable {
@@ -260,22 +289,25 @@ impl AgentTableReads for World {
         groups: &[String],
         check_db_only: bool,
     ) -> impl Future<Output = Result<Vec<String>, DbError>> + Send {
-        let answer: Result<Vec<String>, DbError> = {
-            let mut state = self.lock();
-            state.table_reads.push((groups.to_vec(), check_db_only));
-            if state.table_fails {
-                Err(DbError::NoDbConnected)
-            } else {
-                let rows = state
-                    .rows
-                    .iter()
-                    .filter(|(_, declared)| declared.iter().any(|group| groups.contains(group)))
-                    .map(|(agent_id, _)| agent_id.clone())
-                    .collect();
-                Ok(rows)
-            }
+        let mut state = self.lock();
+        state.table_reads.push((groups.to_vec(), check_db_only));
+        let failed = state.failures.table;
+        let rows: Vec<String> = if failed {
+            Vec::new()
+        } else {
+            state
+                .rows
+                .iter()
+                .filter(|(_, declared)| declared.iter().any(|group| groups.contains(group)))
+                .map(|(agent_id, _)| agent_id.clone())
+                .collect()
         };
-        ready(answer)
+        drop(state);
+        if failed {
+            ready(Err(DbError::NoDbConnected))
+        } else {
+            ready(Ok(rows))
+        }
     }
 }
 
@@ -345,7 +377,7 @@ impl TeamStore for World {
     async fn find_team(&self, team_id: &str, use_writer: bool) -> StoreAnswer<Option<JsonData>> {
         let mut state = self.lock();
         state.team_reads.push((team_id.to_owned(), use_writer));
-        if state.team_fails {
+        if state.failures.team {
             return Err(store_failure());
         }
         Ok(state.team.clone())

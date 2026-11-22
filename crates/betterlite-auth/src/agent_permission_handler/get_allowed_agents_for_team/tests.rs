@@ -11,17 +11,17 @@ use crate::agent_permission_handler::tests::support::{
 async fn no_auth_or_team_is_unrestricted() {
     let world = world(true);
     let grants = handler(&world, &registry(&[]));
-    let access = grants
+    let no_auth = grants
         .get_allowed_agents_for_team(None, true)
         .await
         .unwrap();
-    assert_eq!(access, AgentAccess::Unrestricted);
+    assert_eq!(no_auth, AgentAccess::Unrestricted);
     let auth = key_auth(None, None, &[]);
-    let access = grants
+    let no_team = grants
         .get_allowed_agents_for_team(Some(&auth), true)
         .await
         .unwrap();
-    assert_eq!(access, AgentAccess::Unrestricted);
+    assert_eq!(no_team, AgentAccess::Unrestricted);
     assert!(world.lock().team_reads.is_empty());
 }
 
@@ -55,11 +55,10 @@ async fn a_team_without_grants_is_unrestricted() {
 #[tokio::test]
 async fn team_declared_groups_add_db_agents() {
     let world = world(true);
-    {
-        let mut state = world.lock();
-        state.team = Some(team_row(&[], &["g1"], &[]));
-        state.rows.push((String::from("alpha"), strings(&["g1"])));
-    }
+    let mut state = world.lock();
+    state.team = Some(team_row(&[], &["g1"], &[]));
+    state.rows.push((String::from("alpha"), strings(&["g1"])));
+    drop(state);
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(Some("t1"), None, &[]);
     let access = grants
@@ -72,13 +71,12 @@ async fn team_declared_groups_add_db_agents() {
 #[tokio::test]
 async fn team_unified_groups_add_their_agents() {
     let world = world(true);
-    {
-        let mut state = world.lock();
-        state.team = Some(team_row(&[], &[], &["u1"]));
-        state
-            .groups
-            .insert(String::from("u1"), group_row("u1", &["beta"]));
-    }
+    let mut state = world.lock();
+    state.team = Some(team_row(&[], &[], &["u1"]));
+    state
+        .groups
+        .insert(String::from("u1"), group_row("u1", &["beta"]));
+    drop(state);
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(Some("t1"), None, &[]);
     let access = grants
@@ -150,7 +148,7 @@ async fn a_missing_team_warns_and_allows_outside_strict_mode() {
 #[tokio::test]
 async fn the_ui_team_failure_skips_the_warning() {
     let world = world(true);
-    world.lock().team_fails = true;
+    world.lock().failures.team = true;
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(Some("litellm-dashboard"), None, &[]);
     let warnings = Warnings::default();
@@ -166,7 +164,7 @@ async fn the_ui_team_failure_skips_the_warning() {
 #[tokio::test]
 async fn a_strict_team_read_failure_is_policy_unavailable() {
     let world = world(true);
-    world.lock().team_fails = true;
+    world.lock().failures.team = true;
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(Some("t1"), None, &[]);
     let error = grants

@@ -8,6 +8,7 @@ use super::error::GrantError;
 use super::reads::AgentTableReads;
 use super::unified_access_group;
 use crate::agent_access_groups::access::AgentAccess;
+use crate::agent_access_groups::reads::AccessGroupReads;
 use crate::auth_model_patterns::access_groups::AccessGroupLookup;
 use crate::auth_team_lookup::error::TeamLookupError;
 use crate::auth_team_lookup::lookup::{TeamRequest, TeamSource};
@@ -26,20 +27,21 @@ pub(crate) async fn allowed_agents_for_team<Reads, Table, Unified>(
     strict: bool,
 ) -> Result<AgentAccess, GrantError>
 where
+    Reads: AccessGroupReads,
     Table: AgentTableReads,
     Unified: AccessGroupLookup,
 {
-    let Some(auth) = auth else {
+    let Some(key) = auth else {
         return Ok(AgentAccess::Unrestricted);
     };
-    let Some(team_id) = auth.view.token.team_id.as_deref() else {
+    let Some(team_id) = key.view.token.team_id.as_deref() else {
         return Ok(AgentAccess::Unrestricted);
     };
     match declared_team_access(grants, team_id, strict).await {
         Ok(access) => Ok(access),
         Err(error) if strict => Err(GrantError::PolicyUnavailable(Box::new(error))),
         Err(error) => {
-            if auth.view.token.team_id.as_deref() != Some(UI_TEAM_ID) {
+            if key.view.token.team_id.as_deref() != Some(UI_TEAM_ID) {
                 warn!("Failed to get allowed agents for team: {error}");
             }
             Ok(AgentAccess::Unrestricted)
@@ -53,6 +55,7 @@ async fn declared_team_access<Reads, Table, Unified>(
     strict: bool,
 ) -> Result<AgentAccess, GrantError>
 where
+    Reads: AccessGroupReads,
     Table: AgentTableReads,
     Unified: AccessGroupLookup,
 {
@@ -96,7 +99,7 @@ where
     Ok(AgentAccess::Restricted(ids))
 }
 
-fn deny_when_strict(strict: bool) -> AgentAccess {
+const fn deny_when_strict(strict: bool) -> AgentAccess {
     if strict {
         AgentAccess::Restricted(BTreeSet::new())
     } else {

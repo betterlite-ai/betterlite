@@ -2,8 +2,10 @@ use std::collections::BTreeSet;
 
 use super::AgentGrants;
 use super::error::GrantError;
+use super::reads::AgentTableReads;
 use crate::agent_access_groups::access::to_stable_ids;
 use crate::agent_access_groups::reads::AccessGroupReads;
+use crate::auth_model_patterns::access_groups::AccessGroupLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
 mod tests;
@@ -16,11 +18,13 @@ pub(crate) async fn agent_access_group_ceiling<Reads, Table, Unified>(
 ) -> Result<Option<BTreeSet<String>>, GrantError>
 where
     Reads: AccessGroupReads,
+    Table: AgentTableReads,
+    Unified: AccessGroupLookup,
 {
-    let Some(auth) = auth else {
+    let Some(key) = auth else {
         return Ok(None);
     };
-    let Some(agent_id) = auth.view.token.agent_id.as_deref() else {
+    let Some(agent_id) = key.view.token.agent_id.as_deref() else {
         return Ok(None);
     };
     let ceiling = grants

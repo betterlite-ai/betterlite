@@ -8,6 +8,7 @@ use super::error::GrantError;
 use super::reads::AgentTableReads;
 use super::unified_access_group;
 use crate::agent_access_groups::access::AgentAccess;
+use crate::agent_access_groups::reads::AccessGroupReads;
 use crate::auth_model_patterns::access_groups::AccessGroupLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
@@ -20,13 +21,14 @@ pub(crate) async fn allowed_agents_for_key<Reads, Table, Unified>(
     strict: bool,
 ) -> Result<AgentAccess, GrantError>
 where
+    Reads: AccessGroupReads,
     Table: AgentTableReads,
     Unified: AccessGroupLookup,
 {
-    let Some(auth) = auth else {
+    let Some(key) = auth else {
         return Ok(AgentAccess::Unrestricted);
     };
-    match declared_key_access(grants, auth, strict).await {
+    match declared_key_access(grants, key, strict).await {
         Ok(access) => Ok(access),
         Err(error) if strict => Err(GrantError::PolicyUnavailable(Box::new(error))),
         Err(error) => {
@@ -42,6 +44,7 @@ async fn declared_key_access<Reads, Table, Unified>(
     strict: bool,
 ) -> Result<AgentAccess, GrantError>
 where
+    Reads: AccessGroupReads,
     Table: AgentTableReads,
     Unified: AccessGroupLookup,
 {

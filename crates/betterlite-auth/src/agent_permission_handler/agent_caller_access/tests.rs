@@ -12,14 +12,14 @@ use crate::agent_permission_handler::tests::support::{
 async fn no_auth_or_caller_is_unrestricted() {
     let world = world(true);
     let grants = handler(&world, &registry(&[]));
-    let access = access(&grants, None, false).await.unwrap();
-    assert_eq!(access, AgentAccess::Unrestricted);
+    let no_auth = access(&grants, None, false).await.unwrap();
+    assert_eq!(no_auth, AgentAccess::Unrestricted);
     let auth = key_auth(Some("t1"), Some((&["alpha"], &[])), &[]);
-    let access = grants
+    let no_caller = grants
         .agent_caller_access(Some(&auth), false)
         .await
         .unwrap();
-    assert_eq!(access, AgentAccess::Unrestricted);
+    assert_eq!(no_caller, AgentAccess::Unrestricted);
     assert!(world.lock().team_reads.is_empty());
 }
 
@@ -40,7 +40,7 @@ async fn the_caller_team_is_read_not_the_key_team() {
 #[tokio::test]
 async fn a_strict_caller_team_failure_is_policy_unavailable() {
     let world = world(true);
-    world.lock().team_fails = true;
+    world.lock().failures.team = true;
     let grants = handler(&world, &registry(&[]));
     let auth = caller_auth("t2");
     let error = grants
@@ -53,7 +53,7 @@ async fn a_strict_caller_team_failure_is_policy_unavailable() {
 #[tokio::test]
 async fn a_non_strict_caller_team_failure_warns_and_allows() {
     let world = world(true);
-    world.lock().team_fails = true;
+    world.lock().failures.team = true;
     let grants = handler(&world, &registry(&[]));
     let auth = caller_auth("t2");
     let warnings = Warnings::default();

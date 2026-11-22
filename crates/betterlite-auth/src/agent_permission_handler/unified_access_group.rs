@@ -8,11 +8,14 @@ use crate::auth_model_patterns::access_groups::{
 mod tests;
 
 // _get_unified_access_group_agents: B747's _get_agent_ids_from_access_groups over the access groups the key or team names
-pub(crate) fn agent_ids<Unified: AccessGroupLookup>(
+pub(crate) fn agent_ids<Unified>(
     lookup: Option<&Unified>,
     access_group_ids: &[String],
     check_db_only: bool,
-) -> Result<BTreeSet<String>, GrantError> {
+) -> Result<BTreeSet<String>, GrantError>
+where
+    Unified: AccessGroupLookup,
+{
     let Some(store) = lookup else {
         return Ok(BTreeSet::new());
     };

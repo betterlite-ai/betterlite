@@ -9,7 +9,7 @@ use crate::auth_team_lookup::error::TeamLookupError;
 #[derive(Debug, thiserror::Error)]
 pub enum GrantError {
     #[error("Agent invocation policy is unavailable")]
-    PolicyUnavailable(#[source] Box<GrantError>),
+    PolicyUnavailable(#[source] Box<Self>),
     #[error("agent grant lookup failed: {0}")]
     Lookup(String),
 }

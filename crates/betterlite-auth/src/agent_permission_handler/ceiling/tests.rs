@@ -38,15 +38,14 @@ async fn null_without_declared_groups_returns_none() {
 #[tokio::test]
 async fn dispatch_reads_the_writer_only_when_strict() {
     let world = world(true);
-    {
-        let mut state = world.lock();
-        state
-            .agent_groups
-            .insert(String::from("alpha"), strings(&["g1"]));
-        state
-            .groups
-            .insert(String::from("g1"), group_row("g1", &["beta"]));
-    }
+    let mut state = world.lock();
+    state
+        .agent_groups
+        .insert(String::from("alpha"), strings(&["g1"]));
+    state
+        .groups
+        .insert(String::from("g1"), group_row("g1", &["beta"]));
+    drop(state);
     let grants = handler(&world, &registry(&[]));
     let auth = agent_auth("alpha");
     let strict = grants
@@ -75,15 +74,14 @@ async fn stable_ids_map_legacy_group_members_to_the_registry_id() {
         .into_iter()
         .find(|id| id != &stable)
         .unwrap();
-    {
-        let mut state = world.lock();
-        state
-            .agent_groups
-            .insert(String::from("kernel"), strings(&["g1"]));
-        state
-            .groups
-            .insert(String::from("g1"), group_row("g1", &[legacy.as_str()]));
-    }
+    let mut state = world.lock();
+    state
+        .agent_groups
+        .insert(String::from("kernel"), strings(&["g1"]));
+    state
+        .groups
+        .insert(String::from("g1"), group_row("g1", &[legacy.as_str()]));
+    drop(state);
     let grants = handler(&world, &agents);
     let auth = agent_auth("kernel");
     let ceiling = grants

@@ -39,7 +39,7 @@ pub struct AgentGrants<Reads, Table, Unified> {
 
 impl<Reads, Table, Unified> AgentGrants<Reads, Table, Unified> {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         registry: Arc<AgentRegistry>,
         ceilings: AgentAccessGroups<Reads>,
         teams: TeamLookup,

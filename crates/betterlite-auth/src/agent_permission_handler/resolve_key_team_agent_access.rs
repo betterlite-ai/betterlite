@@ -4,6 +4,7 @@ use super::get_allowed_agents_for_key;
 use super::get_allowed_agents_for_team;
 use super::reads::AgentTableReads;
 use crate::agent_access_groups::access::{AgentAccess, intersect_agent_access};
+use crate::agent_access_groups::reads::AccessGroupReads;
 use crate::auth_model_patterns::access_groups::AccessGroupLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
@@ -16,6 +17,7 @@ pub(crate) async fn resolve<Reads, Table, Unified>(
     strict: bool,
 ) -> Result<AgentAccess, GrantError>
 where
+    Reads: AccessGroupReads,
     Table: AgentTableReads,
     Unified: AccessGroupLookup,
 {

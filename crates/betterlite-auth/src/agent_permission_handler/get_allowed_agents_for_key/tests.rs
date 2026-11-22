@@ -44,11 +44,10 @@ async fn direct_agents_are_restricted() {
 #[tokio::test]
 async fn declared_groups_add_matching_db_agents() {
     let world = world(true);
-    {
-        let mut state = world.lock();
-        state.rows.push((String::from("alpha"), strings(&["g1"])));
-        state.rows.push((String::from("beta"), strings(&["g2"])));
-    }
+    let mut state = world.lock();
+    state.rows.push((String::from("alpha"), strings(&["g1"])));
+    state.rows.push((String::from("beta"), strings(&["g2"])));
+    drop(state);
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(None, Some((&[], &["g1"])), &[]);
     let access = grants
@@ -78,15 +77,14 @@ async fn unified_groups_add_their_agents() {
 #[tokio::test]
 async fn all_three_sources_union() {
     let world = world(true);
-    {
-        let mut state = world.lock();
-        state
-            .rows
-            .push((String::from("db-agent"), strings(&["g1"])));
-        state
-            .groups
-            .insert(String::from("u1"), group_row("u1", &["unified-agent"]));
-    }
+    let mut state = world.lock();
+    state
+        .rows
+        .push((String::from("db-agent"), strings(&["g1"])));
+    state
+        .groups
+        .insert(String::from("u1"), group_row("u1", &["unified-agent"]));
+    drop(state);
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(None, Some((&["direct-agent"], &["g1"])), &["u1"]);
     let access = grants
@@ -102,7 +100,7 @@ async fn all_three_sources_union() {
 #[tokio::test]
 async fn a_strict_lookup_failure_is_policy_unavailable() {
     let world = world(true);
-    world.lock().table_fails = true;
+    world.lock().failures.table = true;
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(None, Some((&[], &["g1"])), &[]);
     let error = grants
@@ -115,7 +113,7 @@ async fn a_strict_lookup_failure_is_policy_unavailable() {
 #[tokio::test]
 async fn a_non_strict_lookup_failure_warns_and_allows() {
     let world = world(true);
-    world.lock().table_fails = true;
+    world.lock().failures.table = true;
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(None, Some((&[], &["g1"])), &[]);
     let warnings = Warnings::default();
