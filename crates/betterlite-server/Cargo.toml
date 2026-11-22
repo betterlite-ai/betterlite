@@ -48,6 +48,7 @@ betterlite-policy = { path = "../betterlite-policy" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-pyhost = { path = "../betterlite-pyhost" }
+betterlite-rate-limit = { path = "../betterlite-rate-limit" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-roi = { path = "../betterlite-roi" }
