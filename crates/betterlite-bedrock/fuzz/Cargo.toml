@@ -36,6 +36,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_reasoning_stream"
+path = "fuzz_targets/bedrock_reasoning_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_converse_content"
 path = "fuzz_targets/bedrock_converse_content.rs"
 test = false
@@ -206,6 +213,20 @@ bench = false
 [[bin]]
 name = "agentcore_search_reply"
 path = "fuzz_targets/agentcore_search_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "invoke_agent_reply"
+path = "fuzz_targets/invoke_agent_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_s3_signing"
+path = "fuzz_targets/bedrock_services_s3_signing.rs"
 test = false
 doc = false
 bench = false
