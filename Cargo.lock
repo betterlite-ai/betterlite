@@ -4700,6 +4700,7 @@ dependencies = [
  "betterlite-server",
  "form_urlencoded",
  "libfuzzer-sys",
+ "rust_decimal",
  "serde_json",
 ]
 
