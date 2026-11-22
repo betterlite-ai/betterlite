@@ -10,7 +10,7 @@ use crate::decisions::openai::config::Credential;
 
 use super::error::PrepareError;
 use super::fields::RequestFormat;
-use super::{CredentialInput, Selection, present, present_secret};
+use super::{CredentialInput, Selection, present_secret};
 use crate::decisions::openai::request::openai_request_to_ir;
 use crate::decisions::transformation::requests::systemone_request_to_ir;
 use crate::decisions::transformation::wire::ProviderRequestWire;
@@ -24,7 +24,10 @@ pub(super) fn credentials(
     selection: &Selection<'_>,
     input: CredentialInput<'_>,
 ) -> Result<Credentials, PrepareError> {
-    let base_argument = present(input.dynamic_api_base).or_else(|| present(input.api_base));
+    let base_argument = input
+        .dynamic_api_base
+        .filter(|text| !text.is_empty())
+        .or_else(|| input.api_base.filter(|text| !text.is_empty()));
     let resolved_api_base = selection
         .config
         .resolve(Credential::Base, base_argument, selection.environment)

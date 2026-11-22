@@ -18,12 +18,10 @@ use crate::providers::typesafe::decisions::TypeSafeDecisionsConfig;
 
 use self::credentials::combined;
 use super::azure::AzureAiConfig;
-use super::present;
 
 mod credentials;
 
-// ProviderConfigManager.get_provider_decisions_config returns one concrete config per provider; the enum keeps
-// every config's associated constants, which a trait object cannot. Every variant is boxed so the sizes match.
+// ProviderConfigManager.get_provider_decisions_config returns one concrete config per provider, boxed to equal sizes
 pub enum ProviderConfig {
     Openai(Box<OpenAiDecisionsConfig>),
     Openrouter(Box<OpenRouterDecisionsConfig>),
@@ -35,8 +33,7 @@ pub enum ProviderConfig {
     HostedVllm(Box<HostedVllmDecisionsConfig>),
 }
 
-// Every question a selected provider answers. The config trait's associated constants keep it out of a trait
-// object, so this blanket impl reads them and a provider's operations exist once rather than once per variant.
+// Associated constants keep the config trait out of an object, so one blanket impl answers every provider
 pub(crate) trait ProviderOps: Send + Sync {
     fn api_key_required(&self) -> bool;
 
@@ -129,8 +126,7 @@ impl ProviderConfig {
         }
     }
 
-    // OpenAI alone reads globals and environment inside its own resolve, so it gets the environment getter
-    // while the other providers take the value resolved from their env names.
+    // OpenAI alone reads globals and environment inside its own resolve, the others take their env names here
     #[must_use]
     pub(crate) fn resolve(
         &self,
@@ -140,7 +136,7 @@ impl ProviderConfig {
     ) -> Option<String> {
         if let Self::Openai(openai) = self {
             let getter = |name: &str| environment.get(name).cloned().unwrap_or_default();
-            return openai.resolve(present(value), credential, &getter);
+            return openai.resolve(value.filter(|text| !text.is_empty()), credential, &getter);
         }
         let names = match credential {
             Credential::Base => self.ops().api_base_env(),

@@ -187,10 +187,12 @@ pub(super) fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> 
 }
 
 pub(super) fn azure_ai() -> AzureAiConfig {
-    AzureAiConfig::new(Box::new(|api_base: &str, _model: &str| {
-        let base = api_base.trim_end_matches('/');
-        format!("{base}/providers/microsoft/v1/systemone")
-    }))
+    AzureAiConfig {
+        complete_url: Box::new(|api_base: &str, _model: &str| {
+            let base = api_base.trim_end_matches('/');
+            format!("{base}/providers/microsoft/v1/systemone")
+        }),
+    }
 }
 
 pub(super) fn json(text: &str) -> Json {

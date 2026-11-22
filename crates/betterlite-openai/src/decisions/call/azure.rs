@@ -6,14 +6,7 @@ pub const MISSING_API_BASE_MESSAGE: &str = "Missing AZURE_AI_API_BASE - set AZUR
 
 // betterlite-foundry owns the real Azure AI config and depends on this crate, so the route builder arrives as a closure
 pub struct AzureAiConfig {
-    complete_url: Box<dyn Fn(&str, &str) -> String + Send + Sync>,
-}
-
-impl AzureAiConfig {
-    #[must_use]
-    pub fn new(complete_url: Box<dyn Fn(&str, &str) -> String + Send + Sync>) -> Self {
-        Self { complete_url }
-    }
+    pub complete_url: Box<dyn Fn(&str, &str) -> String + Send + Sync>,
 }
 
 impl fmt::Debug for AzureAiConfig {

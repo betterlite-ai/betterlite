@@ -113,7 +113,8 @@ pub fn prepare_call<'logging>(
         config,
     };
     let canonical = canonical_model(&selection, &resolved.model)?;
-    let dropped = drops_params(call.global_drop_params, &call.kwargs);
+    let dropped = call.global_drop_params
+        || normalize_drop_params(call.kwargs.get("drop_params")) == Some(true);
     let request = validate_fields(&selection, call.fields, call.safety_identifier)?;
     let resolved_credentials = credentials(
         &selection,
@@ -222,10 +223,6 @@ fn canonical_model(
     Ok(selection.config.ops().canonical_model(upstream_model))
 }
 
-fn drops_params(global_drop_params: bool, kwargs: &Extra) -> bool {
-    global_drop_params || normalize_drop_params(kwargs.get("drop_params")) == Some(true)
-}
-
 fn validate_fields(
     selection: &Selection<'_>,
     fields: RequestFields,
@@ -238,10 +235,6 @@ fn validate_fields(
             provider: selection.provider.as_str().to_owned(),
             source,
         })
-}
-
-pub(super) fn present(value: Option<&str>) -> Option<&str> {
-    value.filter(|text| !text.is_empty())
 }
 
 fn present_secret(value: Option<&SecretString>) -> Option<&str> {
