@@ -75,3 +75,15 @@ deviations:
       setup never reaches the rejected values; the function rejects them instead of
       casting through Rust's saturating float-to-integer rules.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L933
+  - what: >-
+      A token request whose system clock reads before UNIX_EPOCH, or whose
+      session token cannot be signed, is answered 500 {"error": "server_error"}
+      with the no-cache headers, where LiteLLM signs whatever int(time.time())
+      returns and lets a jwt.encode failure escape to Starlette's plain 500.
+    why: >-
+      Neither branch is reachable in a working setup, since the guard only fires
+      before 1970 and HS256 signing with the master key has no failing input;
+      both keep the endpoint's OAuth error shape instead of panicking or casting
+      a negative float to an issue time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L933-L944
+kept_bugs: []

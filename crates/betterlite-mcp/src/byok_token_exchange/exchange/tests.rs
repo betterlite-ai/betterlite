@@ -516,6 +516,16 @@ async fn a_missing_sink_still_returns_a_grant() {
 }
 
 #[tokio::test]
+async fn a_failed_session_token_issue_answers_server_error_after_the_code_is_consumed() {
+    let codes = FakeCodes::new(record());
+    let sink = FakeSink::default();
+    let result =
+        exchange_authorization_code(&form(), &codes, Some(&sink), Some(&master()), f64::NAN).await;
+    assert!(matches!(result, Err(TokenError::ServerError)));
+    assert!(!codes.stored());
+}
+
+#[tokio::test]
 async fn the_session_token_is_signed_with_the_master_key() {
     let codes = FakeCodes::new(record());
     let sink = FakeSink::default();
