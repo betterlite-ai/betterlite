@@ -40,7 +40,7 @@ where
     let timeout = operation.timeout;
     let (url, headers, data, files) = prepared_edit(operation, runtime)?;
     let body = edit_body(boundary, &data, &files)?;
-    // httpx sets the multipart content type from files=, so the boundary reaches the endpoint here
+    // the content type carries the encoded boundary; see docs/deviations/B695.yaml
     let mut sent_headers = headers.clone();
     let content_type = format!("multipart/form-data; boundary={boundary}");
     sent_headers.insert(String::from("content-type"), content_type);
