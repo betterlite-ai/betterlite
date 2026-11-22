@@ -4,8 +4,7 @@ use thiserror::Error;
 
 use crate::api::claude_plugin_policy::ClaudePluginPolicyError;
 use crate::api::claude_plugin_policy::source::{
-    PATTERN_INVALID, PluginManifest, PluginSource, PluginSpec, build_plugin_manifest,
-    validate_plugin_source,
+    PATTERN_INVALID, PluginSource, PluginSpec, validate_plugin_source,
 };
 
 mod tests;
@@ -55,10 +54,6 @@ impl ClaudePluginWriteInput {
             | ClaudePluginWriteAction::Disable
             | ClaudePluginWriteAction::Delete => Ok(()),
         }
-    }
-
-    pub fn manifest(&self) -> Result<PluginManifest, ClaudePluginWriteFailure> {
-        Ok(build_plugin_manifest(&self.plugin_name, self.spec()?))
     }
 
     pub fn fields(&self) -> Result<PluginFields, ClaudePluginWriteFailure> {

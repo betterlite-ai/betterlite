@@ -1,4 +1,7 @@
-use axum::extract::Extension;
+use std::sync::Arc;
+
+use axum::Json;
+use axum::extract::{Extension, Path, State};
 use betterlite_core::api::claude_plugin_write::{
     ClaudePluginWriteAction, ClaudePluginWriteInput, ClaudePluginWriteResult, PluginMessage,
     SUCCESS,
@@ -7,14 +10,23 @@ use betterlite_core::api::claude_plugin_write::{
 use super::ClaudePluginWriteState;
 use super::access::{gate, require_present, table_failure};
 use super::error::ClaudePluginWriteError;
+use super::wire::PluginPath;
 use crate::auth::auth_identity::AuthContext;
 
-pub(super) async fn set_enabled(
-    state: &ClaudePluginWriteState,
+// the two LiteLLM toggle routes share one body, so the route layer carries which way it goes
+#[derive(Clone, Copy)]
+pub(crate) enum PluginToggle {
+    Enable,
+    Disable,
+}
+
+pub(super) async fn toggle(
+    State(state): State<Arc<ClaudePluginWriteState>>,
     caller: Option<Extension<AuthContext>>,
-    plugin_name: String,
-    enabled: bool,
-) -> Result<ClaudePluginWriteResult, ClaudePluginWriteError> {
+    Path(path): Path<PluginPath>,
+    Extension(toggle): Extension<PluginToggle>,
+) -> Result<Json<ClaudePluginWriteResult>, ClaudePluginWriteError> {
+    let enabled = matches!(toggle, PluginToggle::Enable);
     let action = if enabled {
         ClaudePluginWriteAction::Enable
     } else {
@@ -22,10 +34,10 @@ pub(super) async fn set_enabled(
     };
     let input = ClaudePluginWriteInput {
         action,
-        plugin_name,
+        plugin_name: path.plugin_name,
         spec: None,
     };
-    let gate = gate(state, caller)?;
+    let gate = gate(state.as_ref(), caller)?;
     input.validate()?;
     require_present(gate.store.as_ref(), &input.plugin_name, None).await?;
     let updated_at = state.clock.now().naive_utc();
@@ -34,31 +46,31 @@ pub(super) async fn set_enabled(
         .await
         .map_err(|source| table_failure(None, &source))?;
     let state_word = if enabled { "enabled" } else { "disabled" };
-    Ok(ClaudePluginWriteResult::Message(PluginMessage {
+    Ok(Json(ClaudePluginWriteResult::Message(PluginMessage {
         status: SUCCESS,
         message: format!("Plugin '{}' {state_word}", input.plugin_name),
-    }))
+    })))
 }
 
 pub(super) async fn remove(
-    state: &ClaudePluginWriteState,
+    State(state): State<Arc<ClaudePluginWriteState>>,
     caller: Option<Extension<AuthContext>>,
-    plugin_name: String,
-) -> Result<ClaudePluginWriteResult, ClaudePluginWriteError> {
+    Path(path): Path<PluginPath>,
+) -> Result<Json<ClaudePluginWriteResult>, ClaudePluginWriteError> {
     let input = ClaudePluginWriteInput {
         action: ClaudePluginWriteAction::Delete,
-        plugin_name,
+        plugin_name: path.plugin_name,
         spec: None,
     };
-    let gate = gate(state, caller)?;
+    let gate = gate(state.as_ref(), caller)?;
     input.validate()?;
     require_present(gate.store.as_ref(), &input.plugin_name, None).await?;
     gate.store
         .delete(&input.plugin_name)
         .await
         .map_err(|source| table_failure(None, &source))?;
-    Ok(ClaudePluginWriteResult::Message(PluginMessage {
+    Ok(Json(ClaudePluginWriteResult::Message(PluginMessage {
         status: SUCCESS,
         message: format!("Plugin '{}' deleted", input.plugin_name),
-    }))
+    })))
 }

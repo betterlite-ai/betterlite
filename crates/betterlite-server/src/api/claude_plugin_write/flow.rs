@@ -1,11 +1,16 @@
-use axum::extract::Extension;
+use std::sync::Arc;
+
+use axum::Json;
+use axum::body::Bytes;
+use axum::extract::{Extension, Path, State};
 use betterlite_core::api::claude_plugin_policy::source::{
-    PluginSource, PluginSpec, UpdatePluginSpec,
+    PluginSource, PluginSpec, UpdatePluginSpec, build_plugin_manifest,
 };
 use betterlite_core::api::claude_plugin_policy::{name_conflict_error, plugin_not_found_error};
 use betterlite_core::api::claude_plugin_write::{
-    ClaudePluginWriteAction, ClaudePluginWriteInput, ClaudePluginWriteResult, PluginRegistration,
-    PluginView, REGISTRATION_FAILED, RegistrationAction, SUCCESS, StoredPlugin, UPDATE_FAILED,
+    ClaudePluginWriteAction, ClaudePluginWriteFailure, ClaudePluginWriteInput,
+    ClaudePluginWriteResult, PluginRegistration, PluginView, REGISTRATION_FAILED,
+    RegistrationAction, SUCCESS, StoredPlugin, UPDATE_FAILED,
 };
 use serde::de::DeserializeOwned;
 
@@ -13,7 +18,7 @@ use super::ClaudePluginWriteState;
 use super::access::{Gate, check_body, creator_id, prepare, require_present, table_failure};
 use super::error::ClaudePluginWriteError;
 use super::store::{ClaudePluginStore, NewPlugin, PluginChanges, PluginCreateError};
-use super::wire::CreatePluginBody;
+use super::wire::{CreatePluginBody, PluginPath};
 use crate::auth::auth_identity::AuthContext;
 use crate::search_tool_routes::body::decode_body;
 
@@ -117,14 +122,18 @@ fn registration(
 }
 
 pub(super) async fn create(
-    state: &ClaudePluginWriteState,
+    State(state): State<Arc<ClaudePluginWriteState>>,
     caller: Option<Extension<AuthContext>>,
-    body: &[u8],
-) -> Result<ClaudePluginWriteResult, ClaudePluginWriteError> {
-    let input = create_input(state, body)?;
-    let gate = prepare(state, caller, &input)?;
-    let (created, source) = register_plugin(state, &gate, &input).await?;
-    Ok(registration(created, source, RegistrationAction::Created))
+    body: Bytes,
+) -> Result<Json<ClaudePluginWriteResult>, ClaudePluginWriteError> {
+    let input = create_input(state.as_ref(), &body)?;
+    let gate = prepare(state.as_ref(), caller, &input)?;
+    let (created, source) = register_plugin(state.as_ref(), &gate, &input).await?;
+    Ok(Json(registration(
+        created,
+        source,
+        RegistrationAction::Created,
+    )))
 }
 
 fn new_plugin(
@@ -149,18 +158,22 @@ fn new_plugin(
 }
 
 pub(super) async fn update(
-    state: &ClaudePluginWriteState,
+    State(state): State<Arc<ClaudePluginWriteState>>,
     caller: Option<Extension<AuthContext>>,
-    plugin_name: String,
-    body: &[u8],
-) -> Result<ClaudePluginWriteResult, ClaudePluginWriteError> {
-    let request: UpdatePluginSpec = decode_write(state, body)?;
-    let input = update_write(plugin_name, PluginSpec::from(request));
-    let gate = prepare(state, caller, &input)?;
+    Path(path): Path<PluginPath>,
+    body: Bytes,
+) -> Result<Json<ClaudePluginWriteResult>, ClaudePluginWriteError> {
+    let request: UpdatePluginSpec = decode_write(state.as_ref(), &body)?;
+    let input = update_write(path.plugin_name, PluginSpec::from(request));
+    let gate = prepare(state.as_ref(), caller, &input)?;
     require_present(gate.store.as_ref(), &input.plugin_name, Some(UPDATE_FAILED)).await?;
-    let (changes, source) = plugin_changes(state, &input)?;
+    let (changes, source) = plugin_changes(state.as_ref(), &input)?;
     let stored = require_updated(gate.store.as_ref(), changes, &input.plugin_name).await?;
-    Ok(registration(stored, source, RegistrationAction::Updated))
+    Ok(Json(registration(
+        stored,
+        source,
+        RegistrationAction::Updated,
+    )))
 }
 
 fn plugin_changes(
@@ -183,7 +196,11 @@ fn manifest_json(
     input: &ClaudePluginWriteInput,
     prefix: &str,
 ) -> Result<String, ClaudePluginWriteError> {
-    let manifest = input.manifest()?;
+    let spec = input
+        .spec
+        .as_ref()
+        .ok_or(ClaudePluginWriteFailure::MissingSpec)?;
+    let manifest = build_plugin_manifest(&input.plugin_name, spec);
     serde_json::to_string(&manifest).map_err(|source| ClaudePluginWriteError::Backend {
         message: format!("{prefix}: {source}"),
     })

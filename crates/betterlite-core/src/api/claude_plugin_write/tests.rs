@@ -9,7 +9,8 @@ use super::{
 };
 use crate::api::claude_plugin_policy::ClaudePluginPolicyError;
 use crate::api::claude_plugin_policy::source::{
-    GITHUB_REPO_MISSING, PluginSource, PluginSpec, UNKNOWN_SOURCE,
+    GITHUB_REPO_MISSING, PluginManifest, PluginSource, PluginSpec, UNKNOWN_SOURCE,
+    build_plugin_manifest,
 };
 
 const GITHUB_SPEC: &str = r#"{"source":{"source":"github","repo":"org/plugin"}}"#;
@@ -64,6 +65,13 @@ fn create_write(name: &str) -> ClaudePluginWriteInput {
     )
 }
 
+fn manifest_of(write: &ClaudePluginWriteInput) -> PluginManifest {
+    build_plugin_manifest(
+        &write.plugin_name,
+        write.spec.as_ref().expect("the plugin spec"),
+    )
+}
+
 #[rstest]
 #[case::plain("plugin")]
 #[case::numbered("plugin-2")]
@@ -72,7 +80,7 @@ fn create_write(name: &str) -> ClaudePluginWriteInput {
 fn create_accepts_kebab_names(#[case] name: &str) {
     let write = create_write(name);
     write.validate().unwrap();
-    assert_eq!(write.manifest().unwrap().name, name);
+    assert_eq!(manifest_of(&write).name, name);
 }
 
 #[rstest]
@@ -123,10 +131,6 @@ fn lifecycle_actions_need_no_spec(#[case] action: ClaudePluginWriteAction) {
     let write = input(action, "any-name", None);
     write.validate().unwrap();
     assert!(matches!(
-        write.manifest(),
-        Err(ClaudePluginWriteFailure::MissingSpec)
-    ));
-    assert!(matches!(
         write.fields(),
         Err(ClaudePluginWriteFailure::MissingSpec)
     ));
@@ -150,7 +154,7 @@ fn manifest_uses_the_default_version() {
         "minimal-plugin",
         Some(spec(GITHUB_SPEC)),
     );
-    let manifest = write.manifest().unwrap();
+    let manifest = manifest_of(&write);
     assert_eq!(manifest.version.as_deref(), Some("1.0.0"));
     assert_eq!(
         serde_json::to_string(&manifest).unwrap(),
@@ -167,7 +171,7 @@ fn manifest_drops_empty_fields() {
             r#"{"source":{"source":"github","repo":"org/plugin"},"version":"","description":"","homepage":"","keywords":[],"category":"","domain":"","namespace":""}"#,
         )),
     );
-    let manifest = write.manifest().unwrap();
+    let manifest = manifest_of(&write);
     assert_eq!(manifest.version, None);
     assert_eq!(
         serde_json::to_string(&manifest).unwrap(),

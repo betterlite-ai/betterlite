@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -15,6 +16,7 @@ use betterlite_core::api::claude_plugin_policy::DB_NOT_CONNECTED;
 use betterlite_core::api::claude_plugin_write::StoredPlugin;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::schema_policy_resources::ADD_CLAUDE_CODE_PLUGIN_TABLE;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, Duration, NaiveDateTime, TimeZone as _, Utc};
 use clap::Parser;
@@ -73,10 +75,6 @@ const DELETED_RESPONSE: &str = r#"{"status":"success","message":"Plugin 'delete-
 const ROUTE_CREATE: &str =
     r#"{"name":"route-plugin","source":{"source":"github","repo":"org/route-plugin"}}"#;
 const ROUTE_UPDATE: &str = r#"{"source":{"source":"github","repo":"org/route-plugin"}}"#;
-
-const PLUGIN_TABLE_SQL: &str = include_str!(
-    "../../../../../crates/betterlite-db/src/schema_contract/fixtures/sql/20260228000000_add_claude_code_plugin_table.sql"
-);
 
 #[derive(Default)]
 struct FakeState {
@@ -706,7 +704,8 @@ async fn oversized_body_is_rejected() {
         clock: Arc::new(FixedClock(fixed_now())),
         limits: ApiLimits {
             max_json_bytes: 1,
-            ..ApiLimits::default()
+            max_event_bytes: 1024 * 1024,
+            max_items: 64 * 1024,
         },
     };
     let request = Request::builder()
@@ -734,10 +733,13 @@ struct Environment {
 }
 
 async fn database() -> (PostgresFixture, Pool, PostgresPluginStore) {
+    let table = from_utf8(ADD_CLAUDE_CODE_PLUGIN_TABLE.bytes)
+        .expect("the plugin table migration is UTF-8")
+        .to_owned();
     let url = Environment::parse_from(["claude-plugin-write-tests"])
         .url
         .map(SecretString::from);
-    let statements = vec![PLUGIN_TABLE_SQL.to_owned()];
+    let statements = vec![table];
     let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
         .resolve()
         .await

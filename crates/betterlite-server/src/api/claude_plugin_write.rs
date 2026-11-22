@@ -1,18 +1,16 @@
 mod access;
 mod error;
 mod flow;
-mod handlers;
 mod lifecycle;
 mod store;
 mod wire;
 
-#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Extension};
 use axum::routing::{post, put};
 use betterlite_config::loader::startup::process_environment;
 use betterlite_core::api::api_boundaries::ApiLimits;
@@ -27,9 +25,10 @@ use deadpool_postgres::{Manager, Pool};
 use secrecy::ExposeSecret as _;
 
 use crate::jobs::ptu::attribution::NoOidc;
-use crate::mcp::outbound_credentials::{SystemWallClock, WallClock};
+use crate::mcp::outbound_credentials::WallClock;
 use crate::state::ServerState;
 
+use self::lifecycle::PluginToggle;
 use self::store::{ClaudePluginStore, PostgresPluginStore};
 
 const PLUGINS_PATH: &str = "/claude-code/plugins";
@@ -55,30 +54,25 @@ impl ClaudePluginWriteState {
     }
 }
 
-pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
-    mount(ClaudePluginWriteState {
-        store: database_store(state),
-        clock: Arc::new(SystemWallClock),
-        limits: ApiLimits::default(),
-    })
-}
-
-fn mount(state: ClaudePluginWriteState) -> Router {
+pub(crate) fn mount(state: ClaudePluginWriteState) -> Router {
     Router::new()
-        .route(PLUGINS_PATH, post(handlers::create_plugin))
+        .route(PLUGINS_PATH, post(flow::create))
+        .route(PLUGIN_PATH, put(flow::update).delete(lifecycle::remove))
         .route(
-            PLUGIN_PATH,
-            put(handlers::update_plugin).delete(handlers::delete_plugin),
+            PLUGIN_ENABLE_PATH,
+            post(lifecycle::toggle).layer(Extension(PluginToggle::Enable)),
         )
-        .route(PLUGIN_ENABLE_PATH, post(handlers::enable_plugin))
-        .route(PLUGIN_DISABLE_PATH, post(handlers::disable_plugin))
+        .route(
+            PLUGIN_DISABLE_PATH,
+            post(lifecycle::toggle).layer(Extension(PluginToggle::Disable)),
+        )
         // B1087's ApiLimits owns the JSON limit; axum's 2 MB extractor default would answer first
         .layer(DefaultBodyLimit::disable())
         .with_state(Arc::new(state))
 }
 
 // The proxy reads the URL the CLI wrote before Prisma starts: general_settings.database_url, else DATABASE_URL, else the DATABASE_* parts.
-fn database_store(state: &Arc<ServerState>) -> Option<Arc<dyn ClaudePluginStore>> {
+pub(crate) fn database_store(state: &Arc<ServerState>) -> Option<Arc<dyn ClaudePluginStore>> {
     let secrets = SecretLookup {
         manager: None,
         oidc_http: Arc::new(NoOidc),
