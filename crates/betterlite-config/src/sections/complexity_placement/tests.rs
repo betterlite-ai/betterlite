@@ -157,7 +157,8 @@ fn a_deployment_affinity_router_stamps_the_session_marker() {
 // _uses_tier_pin: user-turn classification pins the tier, and the deployment pin follows the tier pin
 #[test]
 fn a_user_turn_classifier_stamps_the_session_marker() {
-    let source = router("        classification_mode: user_turn\n");
+    let source =
+        router("        deployment_affinity: false\n        classification_mode: user_turn\n");
     let resolved = settings(&source, &[]).unwrap();
     assert_eq!(
         resolved.deployments[0].unwrap().deployment_pin,
@@ -167,7 +168,7 @@ fn a_user_turn_classifier_stamps_the_session_marker() {
 
 #[test]
 fn a_session_affinity_router_stamps_the_session_marker() {
-    let source = router("        session_affinity: true\n");
+    let source = router("        deployment_affinity: false\n        session_affinity: true\n");
     let resolved = settings(&source, &[]).unwrap();
     assert!(resolved.stamps_session_marker());
 }
