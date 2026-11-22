@@ -79,7 +79,7 @@ async fn execute(input: &Input) -> HelperResult {
         "reservation": reservation,
         "error": error,
         "memory": memory_value(&values)?,
-        "pipelines": pipelines_value(&pipelines)?,
+        "pipelines": pipelines_value(&pipelines[..])?,
         "invalidated": &*lock(&memory.invalidated),
     }))
 }
