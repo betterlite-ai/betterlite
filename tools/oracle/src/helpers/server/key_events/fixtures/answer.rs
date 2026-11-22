@@ -156,16 +156,16 @@ fn audit_clock(input: &Input) -> Reply<FixedClock> {
 
 // UserAPIKeyAuth.check_api_key hashes a present api_key and mirrors it into token, so the hook receives hashed credentials
 fn key_event_caller(call: &Caller) -> KeyEventCaller {
-    let (api_key, token) = match call.api_key.as_deref() {
-        Some(raw) => {
+    let (api_key, token) = call.api_key.as_deref().map_or_else(
+        || (None, call.token.clone().map(SecretString::from)),
+        |raw| {
             let hashed = safe_hash_api_key(raw);
             (
                 Some(SecretString::from(hashed.clone())),
                 Some(SecretString::from(hashed)),
             )
-        }
-        None => (None, call.token.clone().map(SecretString::from)),
-    };
+        },
+    );
     KeyEventCaller {
         identity: CallerIdentity {
             user_id: call.user_id.clone(),
