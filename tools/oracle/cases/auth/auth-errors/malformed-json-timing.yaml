@@ -1,0 +1,19 @@
+kind: helper
+name: auth-errors-route-malformed-json-timing
+call:
+  auth_errors:
+    rows:
+      # the unparsable body of a known caller is recorded against that caller once identity is resolved
+      - step: unparsable
+        failure: {kind: proxy, message: "Invalid JSON payload: Expecting property name enclosed in double quotes", type: bad_request_error, param: None, status_code: 400, marked: false, internal_message: ""}
+        reply: replace
+        replacement: {kind: http, message: ignored, type: auth_error, param: null, status_code: 418, marked: false, internal_message: ""}
+        switches: []
+        identity: {user_id: known-user, key_alias: ci-key}
+        request_data: {}
+        route: /v1/embeddings
+        user_agent: null
+        client_host: 192.0.2.10
+env: {}
+compare:
+  ignore: []

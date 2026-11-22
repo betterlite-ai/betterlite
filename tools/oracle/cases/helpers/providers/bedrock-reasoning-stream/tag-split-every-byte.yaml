@@ -1,0 +1,42 @@
+kind: helper
+name: tag-split-every-byte
+call:
+  bedrock_reasoning_stream:
+    step:
+      split:
+        fragments:
+          - "<"
+          - "r"
+          - "e"
+          - "a"
+          - "s"
+          - "o"
+          - "n"
+          - "i"
+          - "n"
+          - "g"
+          - ">"
+          - "h"
+          - "é"
+          - "<"
+          - "/"
+          - "r"
+          - "e"
+          - "a"
+          - "s"
+          - "o"
+          - "n"
+          - "i"
+          - "n"
+          - "g"
+          - ">"
+          - " "
+          - "x"
+        messages:
+          - "<reasoning>hé</reasoning> x"
+          - "<reasoning>a</reasoning>b<reasoning>c</reasoning>"
+          - "<reasoning></reasoning>  hi"
+          - "<reason"
+          - "plain"
+env: {}
+compare: {ignore: []}

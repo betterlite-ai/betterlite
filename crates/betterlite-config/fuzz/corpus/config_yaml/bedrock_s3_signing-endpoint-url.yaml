@@ -1,0 +1,5 @@
+model_list:
+- model_name: bedrock-files
+  litellm_params:
+    model: bedrock/anthropic.claude-3-5-sonnet
+    s3_endpoint_url: os.environ/S3_ENDPOINT_URL

@@ -1,0 +1,117 @@
+kind: helper
+name: current-spend-strict-unverified503
+call:
+  current_spend:
+    op: get_current_spend
+    counter_key: spend:key:hashed-token
+    fallback_spend: 0.0
+    max_budget: 10.0
+    window_entity_type: null
+    window_entity_id: null
+    window_duration: null
+    window_start: null
+    fallback_authoritative: false
+    strict: true
+    redis: false
+    redis_get: null
+    redis_fails: false
+    set_max: null
+    set_max_fails: false
+    batch: none
+    batch_amount: 0.0
+    memory: '2.0'
+    marker: null
+    rows: null
+calls:
+- current_spend:
+    op: get_current_spend
+    counter_key: spend:key:hashed-token
+    fallback_spend: 0.0
+    max_budget: 10.0
+    window_entity_type: null
+    window_entity_id: null
+    window_duration: null
+    window_start: null
+    fallback_authoritative: false
+    strict: true
+    redis: false
+    redis_get: null
+    redis_fails: false
+    set_max: null
+    set_max_fails: false
+    batch: none
+    batch_amount: 0.0
+    memory: '2.0'
+    marker: null
+    rows:
+      primary: 4.0
+      end_user: null
+      window: null
+      fails: true
+      reset_marker: null
+- current_spend:
+    op: get_current_spend
+    counter_key: spend:key:hashed-token
+    fallback_spend: 0.0
+    max_budget: 10.0
+    window_entity_type: null
+    window_entity_id: null
+    window_duration: null
+    window_start: null
+    fallback_authoritative: false
+    strict: true
+    redis: true
+    redis_get: null
+    redis_fails: true
+    set_max: null
+    set_max_fails: false
+    batch: none
+    batch_amount: 0.0
+    memory: '2.0'
+    marker: null
+    rows: null
+- current_spend:
+    op: get_current_spend
+    counter_key: spend:key:hashed-token
+    fallback_spend: 1.0
+    max_budget: 10.0
+    window_entity_type: null
+    window_entity_id: null
+    window_duration: null
+    window_start: null
+    fallback_authoritative: false
+    strict: true
+    redis: false
+    redis_get: null
+    redis_fails: false
+    set_max: null
+    set_max_fails: false
+    batch: none
+    batch_amount: 0.0
+    memory: null
+    marker: null
+    rows: null
+- current_spend:
+    op: get_current_spend
+    counter_key: spend:key:hashed-token
+    fallback_spend: 0.0
+    max_budget: 10.0
+    window_entity_type: null
+    window_entity_id: null
+    window_duration: null
+    window_start: null
+    fallback_authoritative: false
+    strict: false
+    redis: false
+    redis_get: null
+    redis_fails: false
+    set_max: null
+    set_max_fails: false
+    batch: none
+    batch_amount: 0.0
+    memory: '2.0'
+    marker: null
+    rows: null
+env: {}
+compare:
+  ignore: []

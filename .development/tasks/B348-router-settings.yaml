@@ -15,6 +15,10 @@ description: 'Serve GET /router/settings and GET /router/fields using typed resp
   above; synchronous facades and structural accessors reuse the same primitive instead of separate ports. B1100 registers routes/router_settings.rs as a stub, so fill only crates/betterlite-server/src/routes/router_settings.rs and leave routes.rs and state.rs as they are.'
 scope:
   paths:
+  - "tools/oracle/src/compare.rs"
+  - "crates/betterlite-server/src/routes.rs"
+  - "crates/betterlite-server/src/auth/route_match.rs"
+  - "crates/betterlite-server/src"
   - crates/betterlite-server/src/router_settings.rs
   - crates/betterlite-server/src/router_settings/**
   - crates/betterlite-server/src/routes/router_settings.rs
