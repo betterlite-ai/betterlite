@@ -17,9 +17,9 @@ use betterlite_router::context_placement::error::PlacementError;
 use betterlite_router::context_placement::facts::{ModelLimitKey, RouterModelInfo};
 use betterlite_router::context_placement::request::RequestCounter;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
-use betterlite_router::router_predicates::JsonMap;
 use betterlite_router::routing_value_store::StoreSettings;
 use betterlite_router::tier_definitions::model::{TierModelEntry, TierPool, TierSet};
+use indexmap::IndexMap;
 
 use super::super::wire::{DeploymentInput, PoolInput};
 use super::{decimal, invalid};
@@ -56,7 +56,7 @@ fn tier_pool(pool: &PoolInput) -> TierPool {
             .iter()
             .map(|model| TierModelEntry {
                 model_name: model.clone(),
-                params: JsonMap::new(),
+                params: IndexMap::new(),
             })
             .collect(),
     )
