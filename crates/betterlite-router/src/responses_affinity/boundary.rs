@@ -41,10 +41,9 @@ fn effective(
     field: &str,
     fallback: Option<&str>,
 ) -> Option<String> {
-    match credential.and_then(|values| values.get(field)) {
-        Some(value) => text_value(value),
-        None => fallback.map(str::to_owned),
-    }
+    credential
+        .and_then(|values| values.get(field))
+        .map_or_else(|| fallback.map(str::to_owned), text_value)
 }
 
 fn text<'params>(params: &'params JsonObject, field: &str) -> Option<&'params str> {
@@ -64,7 +63,7 @@ fn text<'params>(params: &'params JsonObject, field: &str) -> Option<&'params st
 
 fn text_value(value: &Json) -> Option<String> {
     match value {
-        Json::Text(value) if !value.is_empty() => Some(value.clone()),
+        Json::Text(content) if !content.is_empty() => Some(content.clone()),
         Json::Null
         | Json::Bool(_)
         | Json::Number(_)

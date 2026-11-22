@@ -18,8 +18,8 @@ fn a_marker_pins_the_healthy_deployment_with_that_id() {
     let credentials = CredentialSnapshot::default();
     let check = check(settings(true, &[]), &credentials);
     let mut request = Request::with_items(vec![reasoning_item("A")]);
-    let (returned, logs) = captured(|| request.filter(&check, "gpt-group", &deployments));
-    let returned = returned.unwrap();
+    let (outcome, logs) = captured(|| request.filter(&check, "gpt-group", &deployments));
+    let returned = outcome.unwrap();
     assert_eq!(ids(&returned), vec![Some("A".to_owned())]);
     assert!(request.pinned);
     let decoded = "EncryptedContentAffinityCheck: decoded model_id=A from the request's encrypted content markers";

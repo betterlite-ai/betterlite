@@ -61,11 +61,11 @@ pub(super) fn prompt_object(entries: &[(&str, PromptJson)]) -> PromptObject {
 
 pub(super) fn params(base: Option<&str>, key: Option<&str>) -> JsonObject {
     let mut params = object(&[("model", text("openai/a"))]);
-    if let Some(base) = base {
-        params.insert("api_base".to_owned(), text(base));
+    if let Some(deployment_base) = base {
+        params.insert("api_base".to_owned(), text(deployment_base));
     }
-    if let Some(key) = key {
-        params.insert("api_key".to_owned(), text(key));
+    if let Some(deployment_key) = key {
+        params.insert("api_key".to_owned(), text(deployment_key));
     }
     params
 }
@@ -169,10 +169,10 @@ pub(super) fn message(parts: Vec<ContentPart>) -> Message {
 }
 
 pub(super) fn thinking_part(model_id: Option<&str>) -> ContentPart {
-    let signature = match model_id {
-        Some(model_id) => format!("litellm_encrypted_reasoning:{}", wrapped_marker(model_id)),
-        None => "anthropic-signature".to_owned(),
-    };
+    let signature = model_id.map_or_else(
+        || "anthropic-signature".to_owned(),
+        |origin| format!("litellm_encrypted_reasoning:{}", wrapped_marker(origin)),
+    );
     ContentPart {
         kind: "thinking".to_owned(),
         fields: prompt_object(&[
@@ -232,7 +232,7 @@ pub(super) fn catalog_check<'check, 'catalog>(
     AffinityCheck::new(settings, Some(lookup), credentials)
 }
 
-pub(super) fn no_provider(_model: &str) -> Option<String> {
+pub(super) const fn no_provider(_model: &str) -> Option<String> {
     None
 }
 

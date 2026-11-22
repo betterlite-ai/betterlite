@@ -174,7 +174,7 @@ fn a_later_call_uses_its_own_catalog_for_the_same_origin() {
     let moved_lookup = moved_fixture.lookup();
     let moved_check = catalog_check(settings(true, &[]), &moved_lookup, &credentials);
     let mut stripped = Request::with_items(vec![reasoning_item("A"), reasoning_item("C")]);
-    let _returned = stripped
+    let _moved = stripped
         .filter(&moved_check, "gpt-group", from_ref(&target))
         .unwrap();
     assert_eq!(stripped.input, Some(Json::List(vec![reasoning_item("A")])));

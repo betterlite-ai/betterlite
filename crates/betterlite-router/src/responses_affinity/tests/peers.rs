@@ -31,8 +31,8 @@ fn same_boundary_peers_are_returned_in_pool_order() {
     let credentials = CredentialSnapshot::default();
     let check = catalog_check(settings(true, &[]), &lookup, &credentials);
     let mut request = Request::with_items(vec![reasoning_item("A")]);
-    let (returned, logs) = captured(|| request.filter(&check, "gpt-group", &healthy));
-    let returned = returned.unwrap();
+    let (outcome, logs) = captured(|| request.filter(&check, "gpt-group", &healthy));
+    let returned = outcome.unwrap();
     assert_eq!(
         ids(&returned),
         vec![Some("E".to_owned()), Some("B".to_owned())]

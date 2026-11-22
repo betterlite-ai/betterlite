@@ -49,9 +49,7 @@ fn message_model_id(message: &Message) -> Option<String> {
 // _model_id_of_anthropic_block: the block carries a B903 wrapper inside its encrypted reasoning field.
 #[must_use]
 pub fn block_model_id(block: &ContentPart) -> Option<String> {
-    let Some(content) = encrypted_content_of_block(block) else {
-        return None;
-    };
+    let content = encrypted_content_of_block(block)?;
     wrapped_model_id(&content)
 }
 
@@ -59,8 +57,6 @@ pub fn block_model_id(block: &ContentPart) -> Option<String> {
 #[must_use]
 pub fn wrapped_model_id(content: &str) -> Option<String> {
     let (model_id, _restored) = unwrap_encrypted_content(content);
-    let Some(model_id) = model_id else {
-        return None;
-    };
-    (!model_id.is_empty()).then_some(model_id)
+    let decoded = model_id?;
+    (!decoded.is_empty()).then_some(decoded)
 }

@@ -98,14 +98,14 @@ fn origin_decryptable(
     router: Option<&CatalogLookup<'_>>,
     credentials: &CredentialSnapshot,
 ) -> Result<bool, AffinityError> {
-    let Some(router) = router else {
+    let Some(catalog) = router else {
         return Ok(false);
     };
-    let Some(deployment) = router.get_deployment(origin)? else {
+    let Some(deployment) = catalog.get_deployment(origin)? else {
         return Ok(false);
     };
     let boundary = encryption_boundary(&deployment.litellm_params, credentials);
-    Ok(boundary.is_some_and(|boundary| target_boundaries.contains(&boundary)))
+    Ok(boundary.is_some_and(|candidate| target_boundaries.contains(&candidate)))
 }
 
 fn strip_messages(history: &mut History<'_>, predicate: Option<&dyn Fn(&ContentPart) -> bool>) {

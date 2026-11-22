@@ -36,7 +36,6 @@ impl<'check, 'catalog> AffinityCheck<'check, 'catalog> {
     }
 
     // async_filter_deployments: the healthy pool narrowed to the origin, or to its encryption-boundary peers.
-    #[must_use]
     pub fn filter(&self, request: FilterRequest<'_>) -> Result<Vec<DeploymentSpec>, AffinityError> {
         let FilterRequest {
             model,
@@ -141,5 +140,5 @@ fn request_marker(history: &History<'_>) -> Option<String> {
         Some(marker) if !marker.is_empty() => Some(marker),
         Some(_) | None => anthropic_model_id(history.effective_messages().unwrap_or_default()),
     };
-    marker.filter(|marker| !marker.is_empty())
+    marker.filter(|candidate| !candidate.is_empty())
 }

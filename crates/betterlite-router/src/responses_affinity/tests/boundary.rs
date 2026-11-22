@@ -4,8 +4,8 @@ use betterlite_models::decisions::Json;
 use super::*;
 use crate::responses_affinity::boundary::encryption_boundary;
 
-fn pair(base: &str, key: &str) -> Option<(String, String)> {
-    Some((base.to_owned(), key.to_owned()))
+fn pair(base: &str, key: &str) -> (String, String) {
+    (base.to_owned(), key.to_owned())
 }
 
 #[test]
@@ -13,7 +13,7 @@ fn the_deployment_fields_form_the_boundary() {
     let credentials = CredentialSnapshot::default();
     assert_eq!(
         encryption_boundary(&params(Some("u"), Some("k")), &credentials),
-        pair("u", "k")
+        Some(pair("u", "k"))
     );
 }
 
@@ -28,7 +28,7 @@ fn named_credential_fields_override_by_presence() {
     )]);
     assert_eq!(
         encryption_boundary(&params_with_credential("team-a"), &credentials),
-        pair("cred-base", "cred-key")
+        Some(pair("cred-base", "cred-key"))
     );
 }
 
@@ -46,7 +46,7 @@ fn a_missing_credential_field_falls_back_to_the_deployment() {
     let credentials = credentials(&[("team-a", object(&[("api_base", text("cred-base"))]))]);
     assert_eq!(
         encryption_boundary(&params_with_credential("team-a"), &credentials),
-        pair("cred-base", "deployment-key")
+        Some(pair("cred-base", "deployment-key"))
     );
 }
 
@@ -55,7 +55,7 @@ fn an_unknown_credential_name_keeps_both_deployment_values() {
     let credentials = CredentialSnapshot::default();
     assert_eq!(
         encryption_boundary(&params_with_credential("absent"), &credentials),
-        pair("deployment-base", "deployment-key")
+        Some(pair("deployment-base", "deployment-key"))
     );
 }
 
@@ -89,7 +89,7 @@ fn an_empty_credential_name_keeps_the_deployment_values() {
     )]);
     assert_eq!(
         encryption_boundary(&params_with_credential(""), &credentials),
-        pair("deployment-base", "deployment-key")
+        Some(pair("deployment-base", "deployment-key"))
     );
 }
 
@@ -109,7 +109,7 @@ fn a_non_text_credential_name_keeps_the_deployment_values() {
     );
     assert_eq!(
         encryption_boundary(&params, &credentials),
-        pair("deployment-base", "deployment-key")
+        Some(pair("deployment-base", "deployment-key"))
     );
 }
 
