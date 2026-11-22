@@ -12,10 +12,14 @@ use tokio::time::Instant;
 use tokio_postgres::Client;
 
 use crate::cleanup_metrics::{CleanupMetrics, RunOutcome};
+use crate::postgres_store::session::PostgresStore;
+use crate::spend_retention::batches::deadline::MonotonicClock;
 use crate::spend_retention::batches::settings::CleanupSettings;
 use crate::spend_retention::batches::table::CleanupTable;
 use crate::spend_retention::batches::{SpendLogCleanup, StopReason, TableCleanupResult};
+use crate::spend_retention::runner::clock::{CleanupClock, SystemCleanupClock};
 use crate::spend_retention::runner::error::{LockReleaseError, RunError};
+use crate::spend_retention::runner::job::SpendLogCleanupJob;
 use crate::spend_retention::runner::support::{
     FakeLock, FakePartitions, FixedCleanupClock, HEALTH_IDS, SESSION_COUNT, SESSION_IDS,
     SPEND_COUNT, SPEND_IDS, SlowLock, StepCleanupClock, TAG_IDS, TestDurations, count_rows,
@@ -511,6 +515,28 @@ async fn the_budget_starts_after_the_lease_is_acquired() {
     assert_eq!(runs(&registry, "completed"), Some(1));
     assert_eq!(runs(&registry, "budget_exhausted"), None);
     case.close().await;
+}
+
+#[test]
+fn the_system_clock_reads_the_wall_and_monotonic_clocks() {
+    let clock = SystemCleanupClock;
+    let before = Instant::now();
+    assert!(clock.utc_now() > moment(2024, 1, 1));
+    assert!(clock.now() >= before);
+    assert!(clock.now() <= Instant::now());
+}
+
+#[tokio::test]
+async fn the_job_handle_reports_a_session_it_cannot_open() {
+    let cleanup = Arc::new(fixed_cleanup(
+        retention_settings(SPEND_30D),
+        FakePartitions::default(),
+        None,
+    ));
+    let store = PostgresStore { pool: None };
+    let job = SpendLogCleanupJob::new(cleanup, store, Arc::new(CollectorRegistry::default()));
+    let result = job.run().await;
+    assert!(matches!(result, Err(RunError::Session { .. })));
 }
 
 #[tokio::test]
