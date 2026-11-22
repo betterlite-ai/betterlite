@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use tokio_util::task::TaskTracker;
 
 use super::error::ScanFileError;
-use super::rewind::{RewindOnDrop, finish};
+use super::rewind::{RewindOnDrop, settle_spool};
 use super::spool::{OwnedSpool, Spool};
 use super::worst::{ScanProblem, worst_problem};
 use crate::api::file_batch_guardrails::SCAN_WINDOW;
@@ -60,14 +60,7 @@ where
     };
     let mut close_on_drop = OwnedSpool(Some(redactions.clone()));
     let scanned = scan_windows(&mut guarded.source, &context, call.tasks, &redactions).await;
-    drop(close_on_drop.0.take());
-    let progress = match scanned {
-        Ok(progress) => finish(&mut guarded, Ok::<_, ScanFileError>(progress))?,
-        Err(error) => {
-            redactions.close();
-            finish(&mut guarded, Err(error))?
-        }
-    };
+    let progress = settle_spool(&mut guarded, &mut close_on_drop, scanned)?;
     Ok(finish_scan(progress, redactions))
 }
 

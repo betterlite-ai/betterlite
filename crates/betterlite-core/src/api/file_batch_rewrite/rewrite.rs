@@ -4,7 +4,7 @@ use std::io::{BufRead, Seek};
 use tokio_util::task::TaskTracker;
 
 use super::error::RewriteError;
-use super::rewind::{RewindOnDrop, finish};
+use super::rewind::{RewindOnDrop, settle_spool};
 use super::spool::{OwnedSpool, Spool};
 use crate::api::file_batch_guardrails::lines::{RawLine, iter_lines};
 use crate::api::file_batch_guardrails::records::{BatchScanResult, RecordChange, RecordRedacted};
@@ -55,14 +55,8 @@ where
     };
     let mut close_on_drop = OwnedSpool(Some(output.clone()));
     let copied = copy_records(&mut guarded.source, &plan, tasks, &output).await;
-    drop(close_on_drop.0.take());
-    let rewritten = match copied {
-        Ok(()) => finish(&mut guarded, Ok::<_, RewriteError>(output))?,
-        Err(error) => {
-            output.close();
-            finish(&mut guarded, Err(error))?
-        }
-    };
+    let outcome = copied.map(|()| output);
+    let rewritten = settle_spool(&mut guarded, &mut close_on_drop, outcome)?;
     rewritten.rewind(tasks).await?;
     Ok(rewritten)
 }
