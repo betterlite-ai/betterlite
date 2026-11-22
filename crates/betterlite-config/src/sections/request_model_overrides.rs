@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -7,6 +9,7 @@ use crate::sections::Section;
 mod tests;
 
 const CREDENTIAL_OVERRIDES_PATH: &str = "litellm_settings.enable_model_config_credential_overrides";
+const ENFORCED_PARAMS_KEY: &str = "enforced_params";
 const ENFORCED_PARAMS_PATH: &str = "general_settings.enforced_params";
 const SERVICE_ACCOUNT_PATH: &str = "general_settings.service_account_settings";
 const SERVICE_ACCOUNT_PARAMS_PATH: &str =
@@ -33,28 +36,24 @@ struct RawGeneralSettings {
     service_account_settings: Option<RawServiceAccountSlot>,
 }
 
+// a struct derive fills fields from a sequence positionally, so the object stays a map here
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum RawServiceAccountSlot {
-    Object(RawServiceAccount),
+    Object(BTreeMap<String, Option<RawList>>),
     Other(IgnoredAny),
 }
 
 impl RawServiceAccountSlot {
     fn enforced_params(self) -> Result<Option<RawList>, ConfigError> {
         match self {
-            Self::Object(account) => Ok(account.enforced_params),
+            Self::Object(mut account) => Ok(account.remove(ENFORCED_PARAMS_KEY).flatten()),
             Self::Other(_) => Err(ConfigError::InvalidScalar {
                 path: SERVICE_ACCOUNT_PATH.to_owned(),
                 value: false,
             }),
         }
     }
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct RawServiceAccount {
-    enforced_params: Option<RawList>,
 }
 
 #[derive(Debug, Deserialize)]

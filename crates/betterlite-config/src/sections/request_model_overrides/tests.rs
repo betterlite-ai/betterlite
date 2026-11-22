@@ -128,6 +128,26 @@ enum Expected {
         team_stale_alias_bypass: false,
     })
 )]
+#[case::service_account_settings_null(
+    "general_settings:\n  service_account_settings: null\n",
+    &[],
+    Expected::Loaded(Settings {
+        credential_overrides: false,
+        enforced_params: None,
+        service_account_params: None,
+        team_stale_alias_bypass: false,
+    })
+)]
+#[case::service_account_params_null(
+    "general_settings:\n  service_account_settings:\n    enforced_params: null\n",
+    &[],
+    Expected::Loaded(Settings {
+        credential_overrides: false,
+        enforced_params: None,
+        service_account_params: None,
+        team_stale_alias_bypass: false,
+    })
+)]
 #[case::service_account_params_text(
     "general_settings:\n  service_account_settings:\n    enforced_params: user\n",
     &[],
