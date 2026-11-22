@@ -368,6 +368,7 @@ async fn update_before_value_encoding() {
     assert_eq!(values.get("rotation_count"), Some(&serde_json::json!(0)));
     assert_eq!(values.get("auto_rotate"), Some(&serde_json::json!(false)));
     assert!(values.values().all(|value| !value.is_null()));
+    assert_eq!(values.get("team_id"), None);
     assert!(
         !records[0]
             .before_value

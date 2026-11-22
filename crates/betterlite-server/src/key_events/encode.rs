@@ -44,11 +44,10 @@ pub fn response_dump(response: &GenerateKeyResponse) -> Result<String, DecodeErr
     serde_json::to_string(&value).map_err(DecodeError::Document)
 }
 
-// json.dumps({**data.model_dump(exclude_none=True), **project}, default=str)
+// json.dumps(data.model_dump(exclude_none=True), default=str); an explicit null project_id is restored after masking
 pub fn update_dump(data: &UpdateKeyRequest) -> Result<String, DecodeError> {
     let mut value = object_of(&data.project()?.resolved)?;
     exclude_none(&mut value);
-    insert_project_id(&mut value, data);
     rewrite_instants(&mut value, &UPDATE_INSTANTS, InstantForm::Python);
     rewrite_windows(&mut value, InstantForm::Python);
     serde_json::to_string(&value).map_err(DecodeError::Document)
@@ -80,25 +79,6 @@ fn object_of(values: &BTreeMap<String, JsonData>) -> Result<JsonValue, DecodeErr
     match value {
         value @ JsonValue::Object(_) => Ok(value),
         _ => Err(DecodeError::NotAnObject),
-    }
-}
-
-// the explicit null project_id is merged after exclude_none, so it survives the detach
-fn insert_project_id(value: &mut JsonValue, data: &UpdateKeyRequest) {
-    let JsonValue::Object(fields) = value else {
-        return;
-    };
-    match &data.update.project_id {
-        Some(Some(project_id)) => {
-            fields.insert(
-                "project_id".to_owned(),
-                JsonValue::String(project_id.clone()),
-            );
-        }
-        Some(None) => {
-            fields.insert("project_id".to_owned(), JsonValue::Null);
-        }
-        None => {}
     }
 }
 
