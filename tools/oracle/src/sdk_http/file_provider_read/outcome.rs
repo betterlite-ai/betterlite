@@ -68,34 +68,7 @@ impl StepOutcome {
                 },
                 None,
             ),
-            // a provider status error keeps the SDK's own class, status, type, param, code and message
-            FileReadError::Dispatch(wire) => {
-                let status: &StatusError = match wire {
-                    ReadWireError::OpenAi(FilesError::Status(status))
-                    | ReadWireError::Azure(AzureFilesError::Files {
-                        source: FilesError::Status(status),
-                    }) => status.as_ref(),
-                    ReadWireError::OpenAi(_)
-                    | ReadWireError::Azure(_)
-                    | ReadWireError::Anthropic(_)
-                    | ReadWireError::Unbuilt { .. }
-                    | ReadWireError::Reply
-                    | ReadWireError::Header { .. } => {
-                        return Err(SdkHttpError::Invalid(error.to_string()));
-                    }
-                };
-                (
-                    Failure {
-                        class: sdk_class(status.status).to_owned(),
-                        status: status.status,
-                        kind: Some(status.error_type.clone()),
-                        param: Some(status.param.clone()),
-                        code: Some(status.code.clone()),
-                        message: status.message.clone(),
-                    },
-                    None,
-                )
-            }
+            FileReadError::Dispatch(wire) => (dispatch_failure(wire)?, None),
         };
         Ok(Self {
             file: None,
@@ -104,4 +77,30 @@ impl StepOutcome {
             placeholder,
         })
     }
+}
+
+// a provider status error keeps the SDK's own class, status, type, param, code and message
+fn dispatch_failure(wire: &ReadWireError) -> Result<Failure, SdkHttpError> {
+    let status: &StatusError = match wire {
+        ReadWireError::OpenAi(FilesError::Status(status))
+        | ReadWireError::Azure(AzureFilesError::Files {
+            source: FilesError::Status(status),
+        }) => status.as_ref(),
+        ReadWireError::OpenAi(_)
+        | ReadWireError::Azure(_)
+        | ReadWireError::Anthropic(_)
+        | ReadWireError::Unbuilt { .. }
+        | ReadWireError::Reply
+        | ReadWireError::Header { .. } => {
+            return Err(SdkHttpError::Invalid(wire.to_string()));
+        }
+    };
+    Ok(Failure {
+        class: sdk_class(status.status).to_owned(),
+        status: status.status,
+        kind: Some(status.error_type.clone()),
+        param: Some(status.param.clone()),
+        code: Some(status.code.clone()),
+        message: status.message.clone(),
+    })
 }
