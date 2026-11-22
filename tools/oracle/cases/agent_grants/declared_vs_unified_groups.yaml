@@ -1,0 +1,24 @@
+kind: helper
+name: declared_vs_unified_groups
+call:
+  b4779:
+    operation: grants
+    method: key
+    strict: false
+    database: true
+    key:
+      team_id: null
+      agents: []
+      agent_access_groups: [g1]
+      access_group_ids: [u1]
+    team: null
+    db_agents:
+      - agent_id: db-agent
+        agent_access_groups: [g1]
+    groups:
+      u1: [unified-agent]
+    config_agents: []
+    fail: null
+env: {}
+compare:
+  ignore: []

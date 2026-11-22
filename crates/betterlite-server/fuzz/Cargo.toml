@@ -453,3 +453,31 @@ path = "fuzz_targets/object_permissions.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "search_tool_body"
+path = "fuzz_targets/search_tool_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "coordination_settings"
+path = "fuzz_targets/coordination_settings.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "router_read"
+path = "fuzz_targets/router_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "guardrail_register"
+path = "fuzz_targets/guardrail_register.rs"
+test = false
+doc = false
+bench = false

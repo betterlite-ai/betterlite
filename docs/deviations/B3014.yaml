@@ -1,0 +1,77 @@
+task: B3014
+deviations:
+  - what: >-
+      A spend_db_floor marker whose stored value is not a number is logged and read as
+      absent, so the floor is read from the database again. LiteLLM's float(cached) raises
+      out of _authoritative_floor_spend and fails the request.
+    why: >-
+      The in-memory tier is a typed trait here and can hold a value no number conversion
+      accepts; the read path logs it and keeps serving, the same way a failed Redis read
+      already degrades, instead of turning a cache defect into a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2970-L2972
+  - what: >-
+      A non-numeric marker written during the concurrent database read is logged and the
+      freshly read database value is used. LiteLLM's float(rechecked) raises instead.
+    why: >-
+      A spend reset writes the marker while this read is in flight, so the recheck can see
+      any stored shape; betterlite keeps the fresher marker when it converts and falls
+      through to the database floor when it does not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2986-L2988
+  - what: >-
+      A non-numeric in-memory counter value is logged and read as absent, where LiteLLM's
+      float(in_memory_val) raises out of read_spend_counter_cache_value.
+    why: >-
+      A single-instance deploy reads only this tier, so a bad value must degrade to the
+      caller's fallback and the database reseed rather than fail every request. A numeric
+      text value still reads as spend, as float() does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3019-L3020
+  - what: >-
+      A failed active-batch read is logged and the read continues with Redis and the
+      in-memory tier. LiteLLM's batch.read exception propagates out of
+      read_spend_counter_cache_value and get_current_spend.
+    why: >-
+      The request-scoped batch is an optimization; a cancelled or failed batch in this
+      pod must not fail the request when the direct cache read can still answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3002-L3006
+  - what: >-
+      A failed window spend floor read is logged and answers no floor, so the caller's
+      staleness signal or fallback applies. LiteLLM's _floor_spend_from_db propagates the
+      exception out of get_current_spend.
+    why: >-
+      A window budget reads its floor on every request below the budget; a conversion
+      failure in one window row must degrade to the spend-log aggregate or the fallback,
+      not fail enforcement for the whole window.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2951-L2959
+  - what: >-
+      A failed cold-counter reseed is logged and the caller's fallback applies. LiteLLM's
+      exception from SpendCounterReseed.coalesced propagates out of _read_spend_counter_estimate.
+    why: >-
+      The reseed is the third tier of the read chain; a cache or batch failure inside it
+      leaves the caller's freshly loaded spend as the only value, which is the tier the
+      chain already uses when the database answers nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3032-L3037
+  - what: >-
+      An in-memory read that fails is logged and reads as absent for the counter, the floor
+      marker and the repair comparison. LiteLLM's in-memory get_cache cannot fail.
+    why: >-
+      The tier is a typed trait here, so its error is a value; a cache defect degrades the
+      read to the next tier (or repairs the counter) instead of failing the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3019-L3019
+  - what: >-
+      A failed in-memory repair write is logged and the Redis repair still runs. LiteLLM's
+      in-memory set_cache cannot fail.
+    why: >-
+      The Redis set-max is the write every other pod reads, so it must not be skipped
+      because this pod's local copy could not be updated; the local copy converges on the
+      next floor read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2898-L2899
+kept_bugs:
+  - what: >-
+      Strict mode admits the caller's fallback_spend when the authoritative floor read
+      answers nothing and the fallback reads higher than the counter, without verifying
+      that fallback against Redis or the database.
+    why: >-
+      Tag counters have no database row, so the spend loaded in auth is the only floor
+      they have; LiteLLM returns it before the fail-closed check, and a working setup with
+      tag budgets relies on those requests being admitted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2863-L2866

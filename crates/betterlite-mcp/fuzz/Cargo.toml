@@ -66,3 +66,11 @@ path = "fuzz_targets/sso_assertion_decode.rs"
 test = false
 doc = false
 bench = false
+
+
+[[bin]]
+name = "mcp_sealed_code"
+path = "fuzz_targets/mcp_sealed_code.rs"
+test = false
+doc = false
+bench = false

@@ -30,6 +30,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/src/case.rs
     - tools/oracle/src/case/**
+    - tools/oracle/src/http.rs
     - tools/oracle/src/http/browser_flow.rs
     - tools/oracle/src/http/browser_flow/**
     - tools/oracle/src/http/saml_idp.rs

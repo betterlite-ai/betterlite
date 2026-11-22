@@ -1,0 +1,25 @@
+kind: helper
+name: accessible-union-of-contexts
+call:
+  b4780:
+    operation: accessible
+    agents:
+      - {agent_id: d, identity_managed: false}
+      - {agent_id: a, identity_managed: false}
+      - {agent_id: c, identity_managed: false}
+      - {agent_id: b, identity_managed: false}
+    user_role: internal_user
+    contexts: [{user_id: key}, {user_id: team}, {user_id: open}]
+    access: {key: [a, x], team: [c], open: unrestricted}
+calls:
+  - b4780:
+      operation: accessible
+      agents:
+        - {agent_id: d, identity_managed: false}
+        - {agent_id: a, identity_managed: false}
+      user_role: proxy_admin_viewer
+      contexts: [{user_id: key}]
+      access: {key: [d]}
+env: {}
+compare:
+  ignore: []
