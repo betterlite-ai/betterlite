@@ -7,8 +7,7 @@ use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_logging::logging_state::LoggingState;
 use serde_json::{Map, Value, json};
 
-// The request the recording client saw: method, URL without query, sorted query pairs, the compared
-// headers, the JSON body and the read timeout a caller named (the client's own timeout reads as none)
+// The request the recording client saw: method, URL without query, sorted query pairs, the compared headers, the JSON body and the read timeout a caller named
 pub(crate) fn request(request: Option<&VideoRequest>, wanted: &[String]) -> Value {
     let Some(request) = request else {
         return Value::Null;

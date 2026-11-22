@@ -1,8 +1,10 @@
+#![cfg(test)]
+
 use betterlite_models::decisions::Json;
 
 use crate::api::video_list_call::VideoListCall;
 use crate::api::video_remix_call::support::{
-    Bench, LIST_BODY, encoded_id, headers, json, params, request_header, request_query, run_list,
+    Bench, Case, LIST_BODY, Plan, encoded_id, headers, json, params, request_header, request_query,
 };
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -17,7 +19,9 @@ fn list_pagination_is_sent_as_query() {
         extra_query: Some(params(r#"{"extra":"yes","order":"asc"}"#)),
         ..VideoListCall::default()
     };
-    run_list(&mut bench, &call, REQUEST_TIMEOUT).expect("the list answers");
+    bench
+        .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .expect("the list answers");
     let requests = bench.requests();
     let request = &requests[0];
     assert_eq!(request_query(request, "after").as_deref(), Some("video_7"));
@@ -36,7 +40,9 @@ fn list_params_are_logged_as_given() {
         order: Some("desc".to_owned()),
         ..VideoListCall::default()
     };
-    run_list(&mut bench, &call, REQUEST_TIMEOUT).expect("the list answers");
+    bench
+        .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .expect("the list answers");
     let details = &bench.fixture.state.model_call_details;
     assert_eq!(details.get("after"), Some(&Json::Text(raw_after.clone())));
     assert_eq!(details.get("limit"), Some(&json("5")));
@@ -55,7 +61,9 @@ fn list_extra_headers_reach_the_request() {
         extra_headers: Some(headers(&[("x-test", "1")])),
         ..VideoListCall::default()
     };
-    run_list(&mut bench, &call, REQUEST_TIMEOUT).expect("the list answers");
+    bench
+        .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .expect("the list answers");
     let requests = bench.requests();
     assert_eq!(request_header(&requests[0], "x-test"), "1");
 }

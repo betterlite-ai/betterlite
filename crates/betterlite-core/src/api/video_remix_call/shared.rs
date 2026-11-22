@@ -1,14 +1,27 @@
+use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
+use crate::api::video_remix_call::config::VideoConfigLookup;
 use crate::api::video_remix_list_transport::records::Params;
+
+// The collaborators one video call writes into: B3332's tag lookup, B247's logging state, the pre/post environment and B185's redactor
+pub struct VideoCallDeps<'deps, 'env> {
+    pub configs: &'deps dyn VideoConfigLookup,
+    pub logging: &'deps mut LoggingState,
+    pub env: &'deps PrePostEnv<'env>,
+    pub redactor: &'deps Redactor,
+    // B198's REQUEST_TIMEOUT, the fallback for a call with no usable timeout
+    pub request_timeout_seconds: f64,
+}
 
 // LiteLLM's mock short circuit: a string is parsed as JSON first, then the typed answer is built
 pub(crate) fn mock_answer<T>(

@@ -1,9 +1,11 @@
+#![cfg(test)]
+
 use std::time::Duration;
 
 use super::prepare::prepare_list;
 use crate::api::video_list_call::VideoListCall;
 use crate::api::video_remix_call::error::VideoCallError;
-use crate::api::video_remix_call::support::{Bench, Fixture, LIST_BODY, run_list};
+use crate::api::video_remix_call::support::{Bench, Case, Fixture, LIST_BODY, Plan};
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
 
@@ -51,8 +53,9 @@ fn list_entry_uses_the_calls_timeout() {
         timeout: Some(f64::NAN),
         ..VideoListCall::default()
     };
-    let failure =
-        run_list(&mut bench, &call, REQUEST_TIMEOUT).expect_err("NaN is not a usable duration");
+    let failure = bench
+        .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .expect_err("NaN is not a usable duration");
     assert!(matches!(failure.error, VideoCallError::Timeout { .. }));
     assert!(bench.requests().is_empty());
 }
@@ -64,8 +67,9 @@ fn list_entry_forwards_the_request_timeout() {
         timeout: None,
         ..VideoListCall::default()
     };
-    let failure =
-        run_list(&mut bench, &call, -1.0).expect_err("a negative request timeout is rejected");
+    let failure = bench
+        .list_answer(Plan::seconds(Case::List(&call), -1.0))
+        .expect_err("a negative request timeout is rejected");
     assert!(matches!(failure.error, VideoCallError::Timeout { .. }));
     assert!(bench.requests().is_empty());
 }

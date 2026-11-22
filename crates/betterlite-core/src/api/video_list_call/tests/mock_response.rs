@@ -1,8 +1,10 @@
+#![cfg(test)]
+
 use betterlite_models::decisions::Json;
 
 use crate::api::video_list_call::{VideoListCall, VideoListReply};
 use crate::api::video_remix_call::error::VideoCallError;
-use crate::api::video_remix_call::support::{Bench, LIST_BODY, json, run_list};
+use crate::api::video_remix_call::support::{Bench, Case, LIST_BODY, Plan, json};
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
 
@@ -15,7 +17,9 @@ fn list_mock_response_json_string_returns_objects() {
         )),
         ..VideoListCall::default()
     };
-    let reply = run_list(&mut bench, &call, REQUEST_TIMEOUT).expect("the mock answers");
+    let reply = bench
+        .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .expect("the mock answers");
     let VideoListReply::Objects(objects) = reply else {
         panic!("a mock list is objects");
     };
@@ -32,7 +36,9 @@ fn list_mock_response_invalid_json_is_a_value_error() {
         mock_response: Some(Json::Text("not json".to_owned())),
         ..VideoListCall::default()
     };
-    let failure = run_list(&mut bench, &call, REQUEST_TIMEOUT).expect_err("the mock text is JSON");
+    let failure = bench
+        .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .expect_err("the mock text is JSON");
     assert!(matches!(failure.error, VideoCallError::Mock(_)));
     assert_eq!(failure.class.metadata().status_code, 500);
     assert!(bench.requests().is_empty());
@@ -45,7 +51,9 @@ fn list_mock_response_null_is_no_mock_response() {
         mock_response: Some(Json::Null),
         ..VideoListCall::default()
     };
-    let reply = run_list(&mut bench, &call, REQUEST_TIMEOUT).expect("the provider answers");
+    let reply = bench
+        .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .expect("the provider answers");
     assert!(matches!(reply, VideoListReply::Page(_)));
     assert_eq!(bench.requests().len(), 1);
 }

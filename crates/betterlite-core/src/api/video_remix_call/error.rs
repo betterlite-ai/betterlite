@@ -5,7 +5,6 @@ use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_models::resolution::ResolutionError;
-use betterlite_openai::error::ProviderError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
@@ -78,6 +77,7 @@ pub fn failure(error: VideoCallError, provider: &str, redactor: &Redactor) -> Vi
                     resolution.to_string(),
                     provider,
                     Some(400),
+                    false,
                 ))),
                 redactor,
             )
@@ -104,9 +104,16 @@ fn transport_class(
     redactor: &Redactor,
 ) -> ErrorClass {
     match error {
-        VideoRemixListTransportError::Provider(provider_error) => {
-            provider_class(provider_error, provider, redactor)
-        }
+        // the handler's _handle_error answer, with the status httpx read off the response
+        VideoRemixListTransportError::Provider(provider_error) => dispatch(
+            &DispatchInput::Raw(Box::new(exception(
+                provider_error.message.clone(),
+                provider,
+                Some(provider_error.status_code),
+                provider_error.status_code_is_synthesized,
+            ))),
+            redactor,
+        ),
         VideoRemixListTransportError::Field(FieldError::Type { field, .. }) => {
             named_field_class(error.to_string(), field, provider)
         }
@@ -121,23 +128,8 @@ fn transport_class(
     }
 }
 
-// the handler's _handle_error answer, with the status httpx read off the response
-fn provider_class(error: &ProviderError, provider: &str, redactor: &Redactor) -> ErrorClass {
-    let raw = RawException {
-        model: MODEL.to_owned(),
-        custom_llm_provider: provider.to_owned(),
-        error_str: error.message.clone(),
-        status_code: Some(error.status_code),
-        status_code_is_synthesized: error.status_code_is_synthesized,
-        message: Some(error.message.clone()),
-        body: None,
-        exception_type: String::new(),
-    };
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
-}
-
 fn value_error(message: String, provider: &str, redactor: &Redactor) -> ErrorClass {
-    let mut raw = exception(message, provider, None);
+    let mut raw = exception(message, provider, None, false);
     "ValueError".clone_into(&mut raw.exception_type);
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
@@ -157,13 +149,18 @@ fn named_field_class(message: String, field: &str, provider: &str) -> ErrorClass
     ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
 }
 
-fn exception(message: String, provider: &str, status_code: Option<u16>) -> RawException {
+fn exception(
+    message: String,
+    provider: &str,
+    status_code: Option<u16>,
+    status_code_is_synthesized: bool,
+) -> RawException {
     RawException {
         model: MODEL.to_owned(),
         custom_llm_provider: provider.to_owned(),
         error_str: message.clone(),
         status_code,
-        status_code_is_synthesized: false,
+        status_code_is_synthesized,
         message: Some(message),
         body: None,
         exception_type: String::new(),

@@ -1,8 +1,10 @@
+#![cfg(test)]
+
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::support::{Bench, VIDEO_BODY, json, run_remix};
+use super::support::{Bench, Case, Plan, VIDEO_BODY, json};
 use crate::api::video_remix_call::VideoRemixCall;
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -18,7 +20,9 @@ fn remix_call_type_is_video_remix() {
         litellm_call_id: Some("call-9".to_owned()),
         ..VideoRemixCall::default()
     };
-    run_remix(&mut bench, &call, REQUEST_TIMEOUT).expect("the remix answers");
+    bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect("the remix answers");
     let state = &bench.fixture.state;
     assert_eq!(state.call_type, "video_remix");
     let details = &state.model_call_details;
@@ -60,7 +64,11 @@ fn remix_call_type_is_video_remix() {
 #[test]
 fn remix_call_type_is_set_before_the_handler() {
     let mut bench = Bench::new(500, r#"{"error":{"message":"upstream failed"}}"#);
-    let failure = run_remix(&mut bench, &VideoRemixCall::default(), REQUEST_TIMEOUT)
+    let failure = bench
+        .video_answer(Plan::seconds(
+            Case::Remix(&VideoRemixCall::default()),
+            REQUEST_TIMEOUT,
+        ))
         .expect_err("the provider answer is a failure");
     assert_eq!(failure.class.metadata().status_code, 500);
     assert_eq!(bench.fixture.state.call_type, "video_remix");
@@ -76,7 +84,9 @@ fn remix_metadata_reaches_the_logging_params() {
         litellm_metadata: Some(metadata),
         ..VideoRemixCall::default()
     };
-    run_remix(&mut bench, &call, REQUEST_TIMEOUT).expect("the remix answers");
+    bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect("the remix answers");
     let details = &bench.fixture.state.model_call_details;
     let Some(Json::Object(params)) = details.get("litellm_params") else {
         panic!("litellm_params is an object");

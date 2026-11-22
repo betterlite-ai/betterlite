@@ -1,9 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::MutexGuard;
 use std::time::Duration;
 
 use betterlite_core::api::video_remix_list_transport::VideoRemixListTransport;
-use betterlite_core::api::video_remix_list_transport::client::VideoRequest;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -33,7 +31,7 @@ impl LogSink for Sink {
 
 // The logging environment the pre-call records into, with a clock no case compares
 pub(crate) struct LogEnv {
-    redactor: Redactor,
+    pub(crate) redactor: Redactor,
     sink: Sink,
     now: DateTime<FixedOffset>,
 }
@@ -49,26 +47,23 @@ impl LogEnv {
             now,
         })
     }
+}
 
-    pub(crate) fn pre_post(&self) -> PrePostEnv<'_> {
-        PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &self.redactor,
-            log: &self.sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: self.now,
-        }
-    }
-
-    pub(crate) fn redactor(&self) -> &Redactor {
-        &self.redactor
+// The pre-call environment every case shares: no debug capture, no callbacks, the case's clock
+pub(crate) fn base_env(env: &LogEnv) -> PrePostEnv<'_> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &env.redactor,
+        log: &env.sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: env.now,
     }
 }
 
@@ -108,15 +103,16 @@ pub(crate) struct Bench {
     pub(crate) configs: Lookup,
     pub(crate) transport: VideoRemixListTransport<Source>,
     pub(crate) resolver: Resolver,
-    source: Source,
+    pub(crate) source: Source,
 }
 
 impl Bench {
     pub(crate) fn new(status: u16, body: &str, call_id: &str) -> Result<Self, Box<HelperError>> {
         let env = LogEnv::new()?;
-        let state = logging_state(call_id, env.redactor())?;
-        let wire = Wire::replying(status, body);
-        let source = Source::new(wire);
+        let state = logging_state(call_id, &env.redactor)?;
+        let source = Source {
+            wire: Wire::replying(status, body),
+        };
         Ok(Self {
             state,
             env,
@@ -127,10 +123,6 @@ impl Bench {
             resolver: Resolver::new(),
             source,
         })
-    }
-
-    pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<VideoRequest>> {
-        self.source.requests()
     }
 }
 

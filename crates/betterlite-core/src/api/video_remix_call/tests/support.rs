@@ -1,4 +1,7 @@
+#![cfg(test)]
+
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error as StdError;
 use std::future::{Future, ready};
 use std::io;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -30,14 +33,20 @@ use betterlite_openai::videos::remix::{remix_request, remix_response};
 use betterlite_openai::videos::reply::VideoObject as OpenAiVideoObject;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
+use futures_util::FutureExt as _;
 use http::HeaderMap as HttpHeaders;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::api::video_list_call::VideoListCall;
+use crate::api::video_list_call::{
+    ListRequest, VideoListCall, VideoListDeps, VideoListReply, avideo_list, video_list,
+};
 use crate::api::video_records::VideoObject;
 use crate::api::video_remix_call::config::VideoConfigLookup;
-use crate::api::video_remix_call::{VideoRemixCall, VideoRemixDeps, avideo_remix, video_remix};
+use crate::api::video_remix_call::error::VideoCallFailure;
+use crate::api::video_remix_call::{
+    RemixRequest, VideoRemixCall, VideoRemixDeps, avideo_remix, video_remix,
+};
 use crate::api::video_remix_list_transport::VideoRemixListTransport;
 use crate::api::video_remix_list_transport::client::{
     VideoAsyncClient, VideoClient, VideoClientSource, VideoRequest, VideoSyncClient,
@@ -73,24 +82,33 @@ impl LogEnv {
     }
 
     pub(crate) fn pre_post(&self) -> PrePostEnv<'_> {
-        PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &self.redactor,
-            log: &self.sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: self.now,
-        }
+        base_env(&self.redactor, &self.sink, self.now)
     }
 
     pub(crate) fn redactor(&self) -> &Redactor {
         &self.redactor
+    }
+}
+
+// The pre-call environment every case shares: no debug capture, no callbacks, the fixture's clock
+fn base_env<'env>(
+    redactor: &'env Redactor,
+    log: &'env Sink,
+    now: DateTime<FixedOffset>,
+) -> PrePostEnv<'env> {
+    PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now,
     }
 }
 
@@ -270,6 +288,15 @@ fn core_video(video: &OpenAiVideoObject) -> VideoObject {
         .expect("the openai video is a core video")
 }
 
+fn failed<E>(error: E) -> ConfigFailure
+where
+    E: StdError + Send + Sync + 'static,
+{
+    ConfigFailure {
+        source: Box::new(error),
+    }
+}
+
 fn params_key(params: Option<&Params>) -> Option<SecretString> {
     match params?.get("api_key")? {
         Json::Text(text) => Some(SecretString::from(text.clone())),
@@ -292,7 +319,10 @@ impl VideoRemixListConfig for OpenAiConfig {
         };
         let credentials = VideoCredentials {
             api_key: key,
-            ..VideoCredentials::default()
+            params_api_key: None,
+            global_api_key: None,
+            openai_key: None,
+            environment_api_key: None,
         };
         validate_environment(input_headers(request.headers), &credentials)
             .into_iter()
@@ -328,11 +358,8 @@ impl VideoRemixListConfig for OpenAiConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, ConfigFailure> {
-        remix_response(&reply.raw_response.body, reply.custom_llm_provider)
-            .map(|video| core_video(&video))
-            .map_err(|error| ConfigFailure {
-                source: Box::new(error),
-            })
+        let video = remix_response(&reply.raw_response.body, reply.custom_llm_provider);
+        video.map(|video| core_video(&video)).map_err(failed)
     }
 
     fn transform_video_list_request(
@@ -409,10 +436,11 @@ impl VideoConfigLookup for Lookup {
     }
 }
 
-// One case's logging object, config, pool and transport, all sharing one wire
+// One case's logging object, config, resolution fixture, pool and transport, all sharing one wire
 pub(crate) struct Bench {
     pub(crate) fixture: Fixture,
     pub(crate) configs: Lookup,
+    pub(crate) resolver: Resolver,
     pub(crate) source: Source,
     pub(crate) transport: VideoRemixListTransport<Source>,
 }
@@ -424,6 +452,7 @@ impl Bench {
         Self {
             fixture: Fixture::new(),
             configs: Lookup::new(),
+            resolver: Resolver::new(),
             transport: VideoRemixListTransport {
                 source: source.clone(),
             },
@@ -434,75 +463,149 @@ impl Bench {
     pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<VideoRequest>> {
         self.source.wire.requests()
     }
+
+    // A sync case: the shared runner answers on its first poll, since a sync entry never waits
+    fn poll(&mut self, plan: Plan<'_>) -> Result<Answer, VideoCallFailure> {
+        self.run(plan, Mode::Sync)
+            .now_or_never()
+            .expect("a sync entry answers on the first poll")
+    }
+
+    // The one runner: the fixture's environment and collaborators, the pool, and the entry a mode names
+    async fn run<'call>(&mut self, plan: Plan<'call>, mode: Mode) -> Outcome {
+        let env = self.fixture.env.pre_post();
+        let deps = VideoCallDeps {
+            configs: &self.configs,
+            logging: &mut self.fixture.state,
+            env: &env,
+            redactor: self.fixture.env.redactor(),
+            request_timeout_seconds: plan.seconds,
+        };
+        match plan.case {
+            Case::Remix(call) => {
+                let request = RemixRequest {
+                    transport: &self.transport,
+                    deps,
+                    call,
+                    client: plan.client,
+                };
+                match mode {
+                    Mode::Sync => video_remix(request).map(Answer::Object),
+                    Mode::Async => avideo_remix(request).await.map(Answer::Object),
+                }
+            }
+            Case::List(call) => {
+                let request = ListRequest {
+                    transport: &self.transport,
+                    deps,
+                    call,
+                    client: plan.client,
+                };
+                let resolution = self.resolver.context();
+                match mode {
+                    Mode::Sync => video_list(request).map(Answer::Page),
+                    Mode::Async => avideo_list(request, &resolution).await.map(Answer::Page),
+                }
+            }
+        }
+    }
+
+    // A remix case's answer, from the sync entry
+    pub(crate) fn video_answer(&mut self, plan: Plan<'_>) -> Result<VideoObject, VideoCallFailure> {
+        self.poll(plan)?.video()
+    }
+
+    // A remix case's answer, from the async entry
+    pub(crate) async fn avideo_answer(
+        &mut self,
+        plan: Plan<'_>,
+    ) -> Result<VideoObject, VideoCallFailure> {
+        self.run(plan, Mode::Async).await?.video()
+    }
+
+    // A list case's answer, from the sync entry
+    pub(crate) fn list_answer(
+        &mut self,
+        plan: Plan<'_>,
+    ) -> Result<VideoListReply, VideoCallFailure> {
+        self.poll(plan)?.list()
+    }
+
+    // A list case's answer, from the async entry
+    pub(crate) async fn alist_answer(
+        &mut self,
+        plan: Plan<'_>,
+    ) -> Result<VideoListReply, VideoCallFailure> {
+        self.run(plan, Mode::Async).await?.list()
+    }
 }
 
 pub(crate) const VIDEO_BODY: &str =
     r#"{"id":"video_123","object":"video","status":"in_progress","seconds":"4"}"#;
 pub(crate) const LIST_BODY: &str = r#"{"object":"list","data":[{"id":"video_1","object":"video","status":"queued"}],"has_more":false}"#;
 
-// The two entries, called with the bench's own logging object and pool
-pub(crate) fn run_remix(
-    bench: &mut Bench,
-    call: &VideoRemixCall,
-    request_timeout_seconds: f64,
-) -> Result<VideoObject, crate::api::video_remix_call::error::VideoCallFailure> {
-    let env = bench.fixture.env.pre_post();
-    let deps = VideoRemixDeps {
-        configs: &bench.configs,
-        logging: &mut bench.fixture.state,
-        env: &env,
-        redactor: bench.fixture.env.redactor(),
-        request_timeout_seconds,
-    };
-    video_remix(&bench.transport, deps, call, None)
+// A case's answer, or the failure the entry reported
+type Outcome = Result<Answer, VideoCallFailure>;
+
+// Which entry a case runs: the sync one, or the async one whose handler future the runner awaits
+enum Mode {
+    Sync,
+    Async,
 }
 
-pub(crate) fn run_remix_with_client(
-    bench: &mut Bench,
-    call: &VideoRemixCall,
-    client: VideoClient<'_, Source>,
-) -> Result<VideoObject, crate::api::video_remix_call::error::VideoCallFailure> {
-    let env = bench.fixture.env.pre_post();
-    let deps = VideoRemixDeps {
-        configs: &bench.configs,
-        logging: &mut bench.fixture.state,
-        env: &env,
-        redactor: bench.fixture.env.redactor(),
-        request_timeout_seconds: 6000.0,
-    };
-    video_remix(&bench.transport, deps, call, Some(client))
+// What a case runs: a remix call, or a list call the async entry infers a provider for
+pub(crate) enum Case<'call> {
+    Remix(&'call VideoRemixCall),
+    List(&'call VideoListCall),
 }
 
-pub(crate) async fn run_avideo_remix(
-    bench: &mut Bench,
-    call: &VideoRemixCall,
-    request_timeout_seconds: f64,
-) -> Result<VideoObject, crate::api::video_remix_call::error::VideoCallFailure> {
-    let env = bench.fixture.env.pre_post();
-    let deps = VideoRemixDeps {
-        configs: &bench.configs,
-        logging: &mut bench.fixture.state,
-        env: &env,
-        redactor: bench.fixture.env.redactor(),
-        request_timeout_seconds,
-    };
-    crate::api::video_remix_call::avideo_remix(&bench.transport, deps, call, None).await
+// What a case hands the runner: the call, the request timeout, and any client it supplies instead of the pool's
+pub(crate) struct Plan<'call> {
+    case: Case<'call>,
+    seconds: f64,
+    client: Option<VideoClient<'call, Source>>,
 }
 
-pub(crate) async fn run_avideo_remix_with_client(
-    bench: &mut Bench,
-    call: &VideoRemixCall,
-    client: VideoClient<'_, Source>,
-) -> Result<VideoObject, crate::api::video_remix_call::error::VideoCallFailure> {
-    let env = bench.fixture.env.pre_post();
-    let deps = VideoRemixDeps {
-        configs: &bench.configs,
-        logging: &mut bench.fixture.state,
-        env: &env,
-        redactor: bench.fixture.env.redactor(),
-        request_timeout_seconds: 6000.0,
-    };
-    crate::api::video_remix_call::avideo_remix(&bench.transport, deps, call, Some(client)).await
+impl<'call> Plan<'call> {
+    // A case with the timeout the entry falls back to when the call names none
+    pub(crate) fn seconds(case: Case<'call>, seconds: f64) -> Self {
+        Self {
+            case,
+            seconds,
+            client: None,
+        }
+    }
+
+    // A case that supplies its own client, under the timeout every supplied-client case uses
+    pub(crate) fn client(case: Case<'call>, client: VideoClient<'call, Source>) -> Self {
+        Self {
+            case,
+            seconds: 6000.0,
+            client: Some(client),
+        }
+    }
+}
+
+// What one entry answered, before the case's wrapper says which shape it expects
+enum Answer {
+    Object(VideoObject),
+    Page(VideoListReply),
+}
+
+impl Answer {
+    fn video(self) -> Result<VideoObject, VideoCallFailure> {
+        match self {
+            Answer::Object(object) => Ok(object),
+            Answer::Page(_page) => panic!("a remix case answers with a video object"),
+        }
+    }
+
+    fn list(self) -> Result<VideoListReply, VideoCallFailure> {
+        match self {
+            Answer::Page(page) => Ok(page),
+            Answer::Object(_object) => panic!("a list case answers with a page"),
+        }
+    }
 }
 
 // The resolution fixture avideo_list infers from an empty model with
@@ -532,93 +635,6 @@ impl Resolver {
             globals: GlobalCredentials::default(),
         }
     }
-}
-
-pub(crate) fn run_list(
-    bench: &mut Bench,
-    call: &VideoListCall,
-    request_timeout_seconds: f64,
-) -> Result<
-    crate::api::video_list_call::VideoListReply,
-    crate::api::video_remix_call::error::VideoCallFailure,
-> {
-    let env = bench.fixture.env.pre_post();
-    let deps = crate::api::video_list_call::VideoListDeps {
-        configs: &bench.configs,
-        logging: &mut bench.fixture.state,
-        env: &env,
-        redactor: bench.fixture.env.redactor(),
-        request_timeout_seconds,
-    };
-    crate::api::video_list_call::video_list(&bench.transport, deps, call, None)
-}
-
-pub(crate) async fn run_avideo_list(
-    bench: &mut Bench,
-    resolver: &Resolver,
-    call: &VideoListCall,
-    request_timeout_seconds: f64,
-) -> Result<
-    crate::api::video_list_call::VideoListReply,
-    crate::api::video_remix_call::error::VideoCallFailure,
-> {
-    let env = bench.fixture.env.pre_post();
-    let deps = crate::api::video_list_call::VideoListDeps {
-        configs: &bench.configs,
-        logging: &mut bench.fixture.state,
-        env: &env,
-        redactor: bench.fixture.env.redactor(),
-        request_timeout_seconds,
-    };
-    let resolution = resolver.context();
-    crate::api::video_list_call::avideo_list(&bench.transport, deps, &resolution, call, None).await
-}
-
-pub(crate) fn run_list_with_client(
-    bench: &mut Bench,
-    call: &VideoListCall,
-    client: VideoClient<'_, Source>,
-) -> Result<
-    crate::api::video_list_call::VideoListReply,
-    crate::api::video_remix_call::error::VideoCallFailure,
-> {
-    let env = bench.fixture.env.pre_post();
-    let deps = crate::api::video_list_call::VideoListDeps {
-        configs: &bench.configs,
-        logging: &mut bench.fixture.state,
-        env: &env,
-        redactor: bench.fixture.env.redactor(),
-        request_timeout_seconds: 6000.0,
-    };
-    crate::api::video_list_call::video_list(&bench.transport, deps, call, Some(client))
-}
-
-pub(crate) async fn run_avideo_list_with_client(
-    bench: &mut Bench,
-    resolver: &Resolver,
-    call: &VideoListCall,
-    client: VideoClient<'_, Source>,
-) -> Result<
-    crate::api::video_list_call::VideoListReply,
-    crate::api::video_remix_call::error::VideoCallFailure,
-> {
-    let env = bench.fixture.env.pre_post();
-    let deps = crate::api::video_list_call::VideoListDeps {
-        configs: &bench.configs,
-        logging: &mut bench.fixture.state,
-        env: &env,
-        redactor: bench.fixture.env.redactor(),
-        request_timeout_seconds: 6000.0,
-    };
-    let resolution = resolver.context();
-    crate::api::video_list_call::avideo_list(
-        &bench.transport,
-        deps,
-        &resolution,
-        call,
-        Some(client),
-    )
-    .await
 }
 
 pub(crate) fn request_body(request: &VideoRequest) -> Json {

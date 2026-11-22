@@ -1,7 +1,9 @@
+#![cfg(test)]
+
 use betterlite_models::decisions::Json;
 
 use crate::api::video_list_call::VideoListCall;
-use crate::api::video_remix_call::support::{Bench, LIST_BODY, run_list};
+use crate::api::video_remix_call::support::{Bench, Case, LIST_BODY, Plan};
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
 
@@ -13,7 +15,9 @@ fn list_call_type_is_video_list() {
         user: Some("user-1".to_owned()),
         ..VideoListCall::default()
     };
-    run_list(&mut bench, &call, REQUEST_TIMEOUT).expect("the list answers");
+    bench
+        .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .expect("the list answers");
     let state = &bench.fixture.state;
     assert_eq!(state.call_type, "video_list");
     let details = &state.model_call_details;
@@ -40,7 +44,11 @@ fn list_call_type_is_video_list() {
 #[test]
 fn list_call_type_is_set_before_the_handler() {
     let mut bench = Bench::new(500, r#"{"error":{"message":"upstream failed"}}"#);
-    run_list(&mut bench, &VideoListCall::default(), REQUEST_TIMEOUT)
+    bench
+        .list_answer(Plan::seconds(
+            Case::List(&VideoListCall::default()),
+            REQUEST_TIMEOUT,
+        ))
         .expect_err("the provider answer is a failure");
     assert_eq!(bench.fixture.state.call_type, "video_list");
     assert_eq!(bench.requests().len(), 1);

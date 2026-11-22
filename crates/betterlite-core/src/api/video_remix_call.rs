@@ -1,10 +1,10 @@
 pub mod config;
 pub mod error;
 mod prepare;
-pub(crate) mod shared;
+pub mod shared;
 
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
+use std::future::Future;
+
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_video_identifiers::ids::decode_video_id_with_provider;
@@ -12,14 +12,13 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use self::config::{
-    DEFAULT_PROVIDER, DEFAULT_TIMEOUT_SECONDS, VideoConfigLookup, VideoOperation, provider_config,
-};
+use self::config::{DEFAULT_PROVIDER, DEFAULT_TIMEOUT_SECONDS, VideoOperation, provider_config};
 use self::error::{VideoCallError, VideoCallFailure, failure};
 use self::prepare::{PreparedRemix, prepare_remix};
-use self::shared::mock_answer;
+use self::shared::{VideoCallDeps, mock_answer};
 use crate::api::video_records::VideoObject;
 use crate::api::video_remix_list_transport::client::{VideoClient, VideoClientSource};
+use crate::api::video_remix_list_transport::error::VideoRemixListTransportError;
 use crate::api::video_remix_list_transport::records::Params;
 use crate::api::video_remix_list_transport::{
     Handled, LogContext, RemixCall, VideoRemixListTransport,
@@ -70,91 +69,26 @@ impl Default for VideoRemixCall {
     }
 }
 
-// The collaborators one call writes into: B3332's tag lookup, B247's logging state, the pre/post environment and B185's redactor
-pub struct VideoRemixDeps<'deps, 'env> {
-    pub configs: &'deps dyn VideoConfigLookup,
-    pub logging: &'deps mut LoggingState,
-    pub env: &'deps PrePostEnv<'env>,
-    pub redactor: &'deps Redactor,
-    // B198's REQUEST_TIMEOUT, the fallback for a call with no usable timeout
-    pub request_timeout_seconds: f64,
+// Everything one remix entry hands the transport: the pool, the collaborators, the call and its client
+pub struct RemixRequest<'call, 'deps, 'env, Source: VideoClientSource> {
+    pub transport: &'deps VideoRemixListTransport<Source>,
+    pub deps: VideoCallDeps<'deps, 'env>,
+    pub call: &'call VideoRemixCall,
+    pub client: Option<VideoClient<'call, Source>>,
 }
 
-// video_remix: the mock short circuit, then the provider, the config and the sync handler
-pub fn video_remix<Source>(
-    transport: &VideoRemixListTransport<Source>,
-    deps: VideoRemixDeps<'_, '_>,
-    call: &VideoRemixCall,
-    client: Option<VideoClient<'_, Source>>,
-) -> Result<VideoObject, VideoCallFailure>
-where
-    Source: VideoClientSource,
-{
-    let VideoRemixDeps {
-        configs,
-        logging,
-        env,
-        redactor,
-        request_timeout_seconds,
-    } = deps;
-    let argument_provider = call.custom_llm_provider.as_deref().unwrap_or_default();
-    if let Some(object) = decode_mock(call, argument_provider, redactor)? {
-        return Ok(object);
-    }
-    let provider = remix_provider(call);
-    let ready = VideoRemixDeps {
-        configs,
-        logging,
-        env,
-        redactor,
-        request_timeout_seconds,
-    };
-    run_remix(transport, ready, call, &provider, client)
-        .map_err(|error| failure(error, &provider, redactor))
+// ast-grep-ignore: no-one-line-functions - B3340 exposes LiteLLM's video_remix under this public name
+pub fn video_remix<Source: VideoClientSource>(
+    request: RemixRequest<'_, '_, '_, Source>,
+) -> Result<VideoObject, VideoCallFailure> {
+    remix_begin(request, false)?.finish()
 }
 
-// avideo_remix: the same body through the async handler, awaited here instead of in an executor
-pub async fn avideo_remix<Source>(
-    transport: &VideoRemixListTransport<Source>,
-    deps: VideoRemixDeps<'_, '_>,
-    call: &VideoRemixCall,
-    client: Option<VideoClient<'_, Source>>,
-) -> Result<VideoObject, VideoCallFailure>
-where
-    Source: VideoClientSource,
-{
-    let VideoRemixDeps {
-        configs,
-        logging,
-        env,
-        redactor,
-        request_timeout_seconds,
-    } = deps;
-    let argument_provider = call.custom_llm_provider.as_deref().unwrap_or_default();
-    if let Some(object) = decode_mock(call, argument_provider, redactor)? {
-        return Ok(object);
-    }
-    let provider = remix_provider(call);
-    let ready = VideoRemixDeps {
-        configs,
-        logging,
-        env,
-        redactor,
-        request_timeout_seconds,
-    };
-    run_remix_async(transport, ready, call, &provider, client)
-        .await
-        .map_err(|error| failure(error, &provider, redactor))
-}
-
-// VideoObject(**json.loads(mock_response)) or VideoObject(**mock_response), before any provider work
-fn decode_mock(
-    call: &VideoRemixCall,
-    provider: &str,
-    redactor: &Redactor,
-) -> Result<Option<VideoObject>, VideoCallFailure> {
-    mock_answer(call.mock_response.as_ref(), "a video object")
-        .map_err(|error| failure(VideoCallError::Mock(error), provider, redactor))
+// ast-grep-ignore: no-one-line-functions - B3340 exposes LiteLLM's avideo_remix under this public name
+pub async fn avideo_remix<Source: VideoClientSource>(
+    request: RemixRequest<'_, '_, '_, Source>,
+) -> Result<VideoObject, VideoCallFailure> {
+    remix_begin(request, true)?.finish_async().await
 }
 
 // custom_llm_provider or decode_video_id_with_provider(video_id)["custom_llm_provider"] or "openai"
@@ -168,74 +102,100 @@ fn remix_provider(call: &VideoRemixCall) -> String {
     }
 }
 
-fn run_remix<Source>(
-    transport: &VideoRemixListTransport<Source>,
-    deps: VideoRemixDeps<'_, '_>,
-    call: &VideoRemixCall,
-    provider: &str,
-    client: Option<VideoClient<'_, Source>>,
-) -> Result<VideoObject, VideoCallError>
+// What a remix entry has after the handler ran: its answer, the provider and the redactor an error prints with
+struct RemixBegin<'redactor, Pending> {
+    handled: Handled<VideoObject, Pending>,
+    provider: String,
+    redactor: &'redactor Redactor,
+}
+
+impl<'redactor, Pending> RemixBegin<'redactor, Pending>
 where
-    Source: VideoClientSource,
+    Pending: Future<Output = Result<VideoObject, VideoRemixListTransportError>>,
 {
-    let VideoRemixDeps {
-        configs,
-        logging,
-        env,
-        redactor: _,
-        request_timeout_seconds,
-    } = deps;
-    let config = provider_config(configs, provider, VideoOperation::Remix)?;
-    let prepared = prepare_remix(logging, call, provider, request_timeout_seconds)?;
-    let handled = transport.remix(
-        config,
-        remix_wire_call(call, provider, &prepared, client),
-        LogContext {
-            state: logging,
-            env,
-        },
-        false,
-    )?;
-    match handled {
-        Handled::Done(object) => Ok(object),
-        Handled::Pending(_pending) => Err(VideoCallError::UnexpectedPending {
-            operation: VideoOperation::Remix,
-        }),
+    // the sync entry's answer: the handler must have answered in place
+    fn finish(self) -> Result<VideoObject, VideoCallFailure> {
+        match self.handled {
+            Handled::Done(object) => Ok(object),
+            Handled::Pending(_pending) => Err(remix_pending(&self.provider, self.redactor)),
+        }
+    }
+
+    // the async entry's answer: the handler's future, awaited and mapped like a direct failure
+    async fn finish_async(self) -> Result<VideoObject, VideoCallFailure> {
+        let pending = match self.handled {
+            Handled::Pending(pending) => pending,
+            Handled::Done(object) => return Ok(object),
+        };
+        pending
+            .await
+            .map_err(|error| failure(VideoCallError::from(error), &self.provider, self.redactor))
     }
 }
 
-async fn run_remix_async<Source>(
-    transport: &VideoRemixListTransport<Source>,
-    deps: VideoRemixDeps<'_, '_>,
-    call: &VideoRemixCall,
-    provider: &str,
-    client: Option<VideoClient<'_, Source>>,
-) -> Result<VideoObject, VideoCallError>
-where
-    Source: VideoClientSource,
-{
-    let VideoRemixDeps {
-        configs,
-        logging,
-        env,
-        redactor: _,
-        request_timeout_seconds,
-    } = deps;
-    let config = provider_config(configs, provider, VideoOperation::Remix)?;
-    let prepared = prepare_remix(logging, call, provider, request_timeout_seconds)?;
-    let handled = transport.remix(
-        config,
-        remix_wire_call(call, provider, &prepared, client),
-        LogContext {
-            state: logging,
-            env,
+// the mock short circuit, the provider, the config and the handler, which answers in place or with a future
+fn remix_begin<'call, 'deps, 'env, Source: VideoClientSource>(
+    request: RemixRequest<'call, 'deps, 'env, Source>,
+    is_async: bool,
+) -> Result<
+    RemixBegin<
+        'deps,
+        impl Future<Output = Result<VideoObject, VideoRemixListTransportError>> + Send,
+    >,
+    VideoCallFailure,
+> {
+    let provider = remix_provider(request.call);
+    let redactor = request.deps.redactor;
+    let argument_provider = request
+        .call
+        .custom_llm_provider
+        .as_deref()
+        .unwrap_or_default();
+    let mock = mock_answer(request.call.mock_response.as_ref(), "a video object")
+        .map_err(|error| failure(VideoCallError::Mock(error), argument_provider, redactor))?;
+    let handled = match mock {
+        Some(object) => Handled::Done(object),
+        None => {
+            let VideoCallDeps {
+                configs,
+                logging,
+                env,
+                request_timeout_seconds,
+                ..
+            } = request.deps;
+            let config = provider_config(configs, &provider, VideoOperation::Remix)?;
+            let prepared =
+                prepare_remix(logging, request.call, &provider, request_timeout_seconds)?;
+            request
+                .transport
+                .remix(
+                    config,
+                    remix_wire_call(request.call, &provider, &prepared, request.client),
+                    LogContext {
+                        state: logging,
+                        env,
+                    },
+                    is_async,
+                )
+                .map_err(|error| failure(error, &provider, redactor))?
+        }
+    };
+    Ok(RemixBegin {
+        handled,
+        provider,
+        redactor,
+    })
+}
+
+// a sync handler that answered with a future where the entry expected a direct answer
+fn remix_pending(provider: &str, redactor: &Redactor) -> VideoCallFailure {
+    failure(
+        VideoCallError::UnexpectedPending {
+            operation: VideoOperation::Remix,
         },
-        true,
-    )?;
-    match handled {
-        Handled::Pending(pending) => Ok(pending.await?),
-        Handled::Done(object) => Ok(object),
-    }
+        provider,
+        redactor,
+    )
 }
 
 // video_remix passes no api_key to the handler: the key reaches validate_environment through litellm_params
@@ -261,30 +221,23 @@ where
     }
 }
 
-#[cfg(test)]
 #[path = "video_remix_call/tests/support.rs"]
 pub(crate) mod support;
 
-#[cfg(test)]
 #[path = "video_remix_call/tests/remix_timeout.rs"]
 mod remix_timeout;
 
-#[cfg(test)]
 #[path = "video_remix_call/tests/remix_provider.rs"]
 mod remix_provider;
 
-#[cfg(test)]
 #[path = "video_remix_call/tests/mock_response.rs"]
 mod mock_response;
 
-#[cfg(test)]
 #[path = "video_remix_call/tests/call_type.rs"]
 mod call_type;
 
-#[cfg(test)]
 #[path = "video_remix_call/tests/async_wrapper.rs"]
 mod async_wrapper;
 
-#[cfg(test)]
 #[path = "video_remix_call/tests/unsupported_provider.rs"]
 mod unsupported_provider;

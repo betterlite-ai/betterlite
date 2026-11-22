@@ -1,7 +1,7 @@
 mod prepare;
 
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
+use std::future::Future;
+
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
@@ -12,11 +12,12 @@ use secrecy::SecretString;
 use self::prepare::{PreparedList, prepare_list};
 use crate::api::video_records::VideoObject;
 use crate::api::video_remix_call::config::{
-    DEFAULT_PROVIDER, DEFAULT_TIMEOUT_SECONDS, VideoConfigLookup, VideoOperation, provider_config,
+    DEFAULT_PROVIDER, DEFAULT_TIMEOUT_SECONDS, VideoOperation, provider_config,
 };
 use crate::api::video_remix_call::error::{VideoCallError, VideoCallFailure, failure};
-use crate::api::video_remix_call::shared::mock_answer;
+use crate::api::video_remix_call::shared::{VideoCallDeps, mock_answer};
 use crate::api::video_remix_list_transport::client::{VideoClient, VideoClientSource};
+use crate::api::video_remix_list_transport::error::VideoRemixListTransportError;
 use crate::api::video_remix_list_transport::records::Params;
 use crate::api::video_remix_list_transport::{
     Handled, ListCall, LogContext, VideoRemixListTransport,
@@ -73,92 +74,147 @@ impl Default for VideoListCall {
     }
 }
 
-pub struct VideoListDeps<'deps, 'env> {
-    pub configs: &'deps dyn VideoConfigLookup,
-    pub logging: &'deps mut LoggingState,
-    pub env: &'deps PrePostEnv<'env>,
-    pub redactor: &'deps Redactor,
-    // B198's REQUEST_TIMEOUT, the fallback for a call with no usable timeout
-    pub request_timeout_seconds: f64,
+// Everything one list entry hands the transport: the pool, the collaborators, the call and its client
+pub struct ListRequest<'call, 'deps, 'env, Source: VideoClientSource> {
+    pub transport: &'deps VideoRemixListTransport<Source>,
+    pub deps: VideoCallDeps<'deps, 'env>,
+    pub call: &'call VideoListCall,
+    pub client: Option<VideoClient<'call, Source>>,
 }
 
-pub fn video_list<Source>(
-    transport: &VideoRemixListTransport<Source>,
-    deps: VideoListDeps<'_, '_>,
-    call: &VideoListCall,
-    client: Option<VideoClient<'_, Source>>,
-) -> Result<VideoListReply, VideoCallFailure>
-where
-    Source: VideoClientSource,
-{
-    let VideoListDeps {
-        configs,
-        logging,
-        env,
-        redactor,
-        request_timeout_seconds,
-    } = deps;
-    let argument_provider = call.custom_llm_provider.as_deref().unwrap_or_default();
-    if let Some(objects) = decode_mock(call, argument_provider, redactor)? {
-        return Ok(VideoListReply::Objects(objects));
-    }
-    let provider = sync_provider(call);
-    let ready = VideoListDeps {
-        configs,
-        logging,
-        env,
-        redactor,
-        request_timeout_seconds,
-    };
-    run_list(transport, ready, call, &provider, client)
-        .map_err(|error| failure(error, &provider, redactor))
+// video_list: the mock short circuit, then openai unless the caller named a provider
+pub fn video_list<Source: VideoClientSource>(
+    request: ListRequest<'_, '_, '_, Source>,
+) -> Result<VideoListReply, VideoCallFailure> {
+    let provider = sync_provider(request.call);
+    let argument = request.call.custom_llm_provider.as_deref();
+    list_begin(request, argument.unwrap_or_default(), provider, false)?.finish()
 }
 
-// avideo_list: get_llm_provider(model="") before the mock, then the same body through the async handler
-pub async fn avideo_list<Source>(
-    transport: &VideoRemixListTransport<Source>,
-    deps: VideoListDeps<'_, '_>,
+// avideo_list: get_llm_provider(model="") before the mock, then the async handler awaited here
+pub async fn avideo_list<Source: VideoClientSource>(
+    request: ListRequest<'_, '_, '_, Source>,
     resolution: &ResolutionContext<'_>,
-    call: &VideoListCall,
-    client: Option<VideoClient<'_, Source>>,
-) -> Result<VideoListReply, VideoCallFailure>
-where
-    Source: VideoClientSource,
-{
-    let VideoListDeps {
-        configs,
-        logging,
-        env,
-        redactor,
-        request_timeout_seconds,
-    } = deps;
-    let provider = match &call.custom_llm_provider {
+) -> Result<VideoListReply, VideoCallFailure> {
+    let provider = match &request.call.custom_llm_provider {
         Some(provider) => provider.clone(),
-        None => inferred_provider(resolution).map_err(|error| failure(error, "", redactor))?,
+        None => inferred_provider(resolution)
+            .map_err(|error| failure(error, "", request.deps.redactor))?,
     };
-    if let Some(objects) = decode_mock(call, &provider, redactor)? {
-        return Ok(VideoListReply::Objects(objects));
-    }
-    let ready = VideoListDeps {
-        configs,
-        logging,
-        env,
-        redactor,
-        request_timeout_seconds,
-    };
-    run_list_async(transport, ready, call, &provider, client)
+    list_begin(request, &provider, provider.clone(), true)?
+        .finish_async()
         .await
-        .map_err(|error| failure(error, &provider, redactor))
 }
 
-// [VideoObject(**item) for item in json.loads(mock_response) or mock_response], before any provider work
-fn decode_mock(
-    call: &VideoListCall,
+// The two answers a list entry can carry: the mock's objects, or the handler's answer
+enum ListAnswer<Pending> {
+    Objects(Vec<VideoObject>),
+    Handled(Handled<Params, Pending>),
+}
+
+// What a list entry has after list_begin: its answer, the provider and the redactor an error prints with
+struct ListBegin<'redactor, Pending> {
+    answer: ListAnswer<Pending>,
+    provider: String,
+    redactor: &'redactor Redactor,
+}
+
+impl<'redactor, Pending> ListBegin<'redactor, Pending>
+where
+    Pending: Future<Output = Result<Params, VideoRemixListTransportError>>,
+{
+    // the sync entry's answer: the mock's objects, or the params the handler answered in place
+    fn finish(self) -> Result<VideoListReply, VideoCallFailure> {
+        match self.answer {
+            ListAnswer::Objects(objects) => Ok(VideoListReply::Objects(objects)),
+            ListAnswer::Handled(handled) => list_answer(handled, &self.provider, self.redactor),
+        }
+    }
+
+    // the async entry's answer: the handler's future, awaited and mapped like a direct failure
+    async fn finish_async(self) -> Result<VideoListReply, VideoCallFailure> {
+        let pending = match self.answer {
+            ListAnswer::Objects(objects) => return Ok(VideoListReply::Objects(objects)),
+            ListAnswer::Handled(Handled::Done(params)) => {
+                return Ok(VideoListReply::Page(params));
+            }
+            ListAnswer::Handled(Handled::Pending(pending)) => pending,
+        };
+        let params = pending
+            .await
+            .map_err(|error| failure(VideoCallError::from(error), &self.provider, self.redactor))?;
+        Ok(VideoListReply::Page(params))
+    }
+}
+
+// a sync handler's answer: the params page, or the failure of answering with a future instead
+fn list_answer<Pending: Future<Output = Result<Params, VideoRemixListTransportError>>>(
+    handled: Handled<Params, Pending>,
     provider: &str,
     redactor: &Redactor,
-) -> Result<Option<Vec<VideoObject>>, VideoCallFailure> {
-    mock_answer(call.mock_response.as_ref(), "a video list")
-        .map_err(|error| failure(VideoCallError::Mock(error), provider, redactor))
+) -> Result<VideoListReply, VideoCallFailure> {
+    match handled {
+        Handled::Done(params) => Ok(VideoListReply::Page(params)),
+        Handled::Pending(_pending) => Err(list_pending(provider, redactor)),
+    }
+}
+
+// the mock short circuit, the provider, the config and the handler, which answers in place or with a future
+fn list_begin<'call, 'deps, 'env, Source: VideoClientSource>(
+    request: ListRequest<'call, 'deps, 'env, Source>,
+    mock_provider: &str,
+    provider: String,
+    is_async: bool,
+) -> Result<
+    ListBegin<'deps, impl Future<Output = Result<Params, VideoRemixListTransportError>> + Send>,
+    VideoCallFailure,
+> {
+    let redactor = request.deps.redactor;
+    let mock = mock_answer(request.call.mock_response.as_ref(), "a video list")
+        .map_err(|error| failure(VideoCallError::Mock(error), mock_provider, redactor))?;
+    let answer = match mock {
+        Some(objects) => ListAnswer::Objects(objects),
+        None => {
+            let VideoCallDeps {
+                configs,
+                logging,
+                env,
+                request_timeout_seconds,
+                ..
+            } = request.deps;
+            let config = provider_config(configs, &provider, VideoOperation::List)?;
+            let prepared = prepare_list(logging, request.call, &provider, request_timeout_seconds)?;
+            let handled = request
+                .transport
+                .list(
+                    config,
+                    list_wire_call(request.call, &provider, &prepared, request.client),
+                    LogContext {
+                        state: logging,
+                        env,
+                    },
+                    is_async,
+                )
+                .map_err(|error| failure(error, &provider, redactor))?;
+            ListAnswer::Handled(handled)
+        }
+    };
+    Ok(ListBegin {
+        answer,
+        provider,
+        redactor,
+    })
+}
+
+// a sync handler that answered with a future where the entry expected a direct answer
+fn list_pending(provider: &str, redactor: &Redactor) -> VideoCallFailure {
+    failure(
+        VideoCallError::UnexpectedPending {
+            operation: VideoOperation::List,
+        },
+        provider,
+        redactor,
+    )
 }
 
 // video_list defaults to openai and never infers from the model; an explicit provider is kept as given
@@ -179,76 +235,6 @@ fn inferred_provider(resolution: &ResolutionContext<'_>) -> Result<String, Video
     let resolved = resolve(&request, resolution)?;
     let provider = resolved.provider.slug().to_owned();
     Ok(provider)
-}
-
-fn run_list<Source>(
-    transport: &VideoRemixListTransport<Source>,
-    deps: VideoListDeps<'_, '_>,
-    call: &VideoListCall,
-    provider: &str,
-    client: Option<VideoClient<'_, Source>>,
-) -> Result<VideoListReply, VideoCallError>
-where
-    Source: VideoClientSource,
-{
-    let VideoListDeps {
-        configs,
-        logging,
-        env,
-        redactor: _,
-        request_timeout_seconds,
-    } = deps;
-    let config = provider_config(configs, provider, VideoOperation::List)?;
-    let prepared = prepare_list(logging, call, provider, request_timeout_seconds)?;
-    let handled = transport.list(
-        config,
-        list_wire_call(call, provider, &prepared, client),
-        LogContext {
-            state: logging,
-            env,
-        },
-        false,
-    )?;
-    match handled {
-        Handled::Done(params) => Ok(VideoListReply::Page(params)),
-        Handled::Pending(_pending) => Err(VideoCallError::UnexpectedPending {
-            operation: VideoOperation::List,
-        }),
-    }
-}
-
-async fn run_list_async<Source>(
-    transport: &VideoRemixListTransport<Source>,
-    deps: VideoListDeps<'_, '_>,
-    call: &VideoListCall,
-    provider: &str,
-    client: Option<VideoClient<'_, Source>>,
-) -> Result<VideoListReply, VideoCallError>
-where
-    Source: VideoClientSource,
-{
-    let VideoListDeps {
-        configs,
-        logging,
-        env,
-        redactor: _,
-        request_timeout_seconds,
-    } = deps;
-    let config = provider_config(configs, provider, VideoOperation::List)?;
-    let prepared = prepare_list(logging, call, provider, request_timeout_seconds)?;
-    let handled = transport.list(
-        config,
-        list_wire_call(call, provider, &prepared, client),
-        LogContext {
-            state: logging,
-            env,
-        },
-        true,
-    )?;
-    match handled {
-        Handled::Pending(pending) => Ok(VideoListReply::Page(pending.await?)),
-        Handled::Done(params) => Ok(VideoListReply::Page(params)),
-    }
 }
 
 // video_list passes no api_key to the handler: validate_environment there sees only the params' key
@@ -275,34 +261,26 @@ where
     }
 }
 
-#[cfg(test)]
 #[path = "video_list_call/tests/sync_default_openai.rs"]
 mod sync_default_openai;
 
-#[cfg(test)]
 #[path = "video_list_call/tests/async_inference.rs"]
 mod async_inference;
 
-#[cfg(test)]
 #[path = "video_list_call/tests/list_timeout.rs"]
 mod list_timeout;
 
-#[cfg(test)]
 #[path = "video_list_call/tests/mock_response.rs"]
 mod mock_response;
 
-#[cfg(test)]
 #[path = "video_list_call/tests/pagination_params.rs"]
 mod pagination_params;
 
-#[cfg(test)]
 #[path = "video_list_call/tests/call_type.rs"]
 mod call_type;
 
-#[cfg(test)]
 #[path = "video_list_call/tests/async_wrapper.rs"]
 mod async_wrapper;
 
-#[cfg(test)]
 #[path = "video_list_call/tests/unsupported_provider.rs"]
 mod unsupported_provider;

@@ -1,8 +1,10 @@
+#![cfg(test)]
+
 use betterlite_models::identity::provider_id::ProviderId;
 
 use crate::api::video_list_call::{VideoListCall, VideoListReply};
 use crate::api::video_remix_call::support::{
-    Bench, LIST_BODY, Wire, request_header, run_list, run_list_with_client, secret,
+    Bench, Case, LIST_BODY, Plan, Wire, request_header, secret,
 };
 use crate::api::video_remix_list_transport::client::VideoClient;
 
@@ -11,8 +13,12 @@ const REQUEST_TIMEOUT: f64 = 6000.0;
 #[test]
 fn video_list_defaults_to_openai() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let reply =
-        run_list(&mut bench, &VideoListCall::default(), REQUEST_TIMEOUT).expect("the list answers");
+    let reply = bench
+        .list_answer(Plan::seconds(
+            Case::List(&VideoListCall::default()),
+            REQUEST_TIMEOUT,
+        ))
+        .expect("the list answers");
     let VideoListReply::Page(page) = reply else {
         panic!("a provider answer is a page");
     };
@@ -29,7 +35,12 @@ fn video_list_defaults_to_openai() {
 #[test]
 fn video_list_defaults_the_authorization_header_to_bearer_none() {
     let mut bench = Bench::new(200, LIST_BODY);
-    run_list(&mut bench, &VideoListCall::default(), REQUEST_TIMEOUT).expect("the list answers");
+    bench
+        .list_answer(Plan::seconds(
+            Case::List(&VideoListCall::default()),
+            REQUEST_TIMEOUT,
+        ))
+        .expect("the list answers");
     let requests = bench.requests();
     assert_eq!(request_header(&requests[0], "Authorization"), "Bearer None");
 }
@@ -41,7 +52,9 @@ fn video_list_reads_the_key_from_the_params() {
         api_key: Some(secret("sk-typed")),
         ..VideoListCall::default()
     };
-    run_list(&mut bench, &call, REQUEST_TIMEOUT).expect("the list answers");
+    bench
+        .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .expect("the list answers");
     let requests = bench.requests();
     assert_eq!(
         request_header(&requests[0], "Authorization"),
@@ -53,12 +66,12 @@ fn video_list_reads_the_key_from_the_params() {
 fn video_list_uses_a_supplied_async_client() {
     let mut bench = Bench::new(200, LIST_BODY);
     let wire = Wire::replying(200, LIST_BODY);
-    let reply = run_list_with_client(
-        &mut bench,
-        &VideoListCall::default(),
-        VideoClient::Asynchronous(&wire),
-    )
-    .expect("the supplied client answers");
+    let reply = bench
+        .list_answer(Plan::client(
+            Case::List(&VideoListCall::default()),
+            VideoClient::Asynchronous(&wire),
+        ))
+        .expect("the supplied client answers");
     assert!(matches!(reply, VideoListReply::Page(_)));
     assert_eq!(wire.requests().len(), 1);
     assert!(bench.requests().is_empty());

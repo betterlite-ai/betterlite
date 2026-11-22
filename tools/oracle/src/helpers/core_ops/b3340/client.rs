@@ -1,6 +1,6 @@
 use std::future::{Future, ready};
 use std::io;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_core::api::video_remix_list_transport::client::{
@@ -20,7 +20,7 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(123);
 pub(crate) struct Wire {
     status: u16,
     body: Vec<u8>,
-    requests: Arc<Mutex<Vec<VideoRequest>>>,
+    pub(crate) requests: Arc<Mutex<Vec<VideoRequest>>>,
 }
 
 impl Wire {
@@ -30,10 +30,6 @@ impl Wire {
             body: body.as_bytes().to_vec(),
             requests: Arc::default(),
         }
-    }
-
-    fn requests(&self) -> MutexGuard<'_, Vec<VideoRequest>> {
-        self.requests.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn answer(&self, request: VideoRequest) -> Result<UpstreamResponse, TransportError> {
@@ -71,17 +67,7 @@ impl VideoAsyncClient for Wire {
 // The pool: one wire, so every handler's request lands in the same list
 #[derive(Clone)]
 pub(crate) struct Source {
-    wire: Wire,
-}
-
-impl Source {
-    pub(crate) fn new(wire: Wire) -> Self {
-        Self { wire }
-    }
-
-    pub(crate) fn requests(&self) -> MutexGuard<'_, Vec<VideoRequest>> {
-        self.wire.requests()
-    }
+    pub(crate) wire: Wire,
 }
 
 impl VideoClientSource for Source {

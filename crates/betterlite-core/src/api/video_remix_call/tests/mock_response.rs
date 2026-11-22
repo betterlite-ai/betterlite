@@ -1,6 +1,8 @@
+#![cfg(test)]
+
 use betterlite_models::decisions::Json;
 
-use super::support::{Bench, VIDEO_BODY, json, run_remix};
+use super::support::{Bench, Case, Plan, VIDEO_BODY, json};
 use crate::api::video_remix_call::VideoRemixCall;
 use crate::api::video_remix_call::error::VideoCallError;
 
@@ -15,7 +17,9 @@ fn mock_response_json_string_returns_the_video() {
         )),
         ..VideoRemixCall::default()
     };
-    let video = run_remix(&mut bench, &call, REQUEST_TIMEOUT).expect("the mock answers");
+    let video = bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect("the mock answers");
     assert_eq!(video.id, "video_9");
     assert_eq!(video.status, "queued");
     assert_eq!(bench.fixture.state.call_type, "");
@@ -31,7 +35,9 @@ fn mock_response_object_returns_the_video() {
         )),
         ..VideoRemixCall::default()
     };
-    let video = run_remix(&mut bench, &call, REQUEST_TIMEOUT).expect("the mock answers");
+    let video = bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect("the mock answers");
     assert_eq!(video.id, "video_8");
     assert_eq!(video.seconds.as_deref(), Some("2"));
     assert!(bench.requests().is_empty());
@@ -44,7 +50,9 @@ fn mock_response_invalid_json_is_a_value_error() {
         mock_response: Some(Json::Text("not json".to_owned())),
         ..VideoRemixCall::default()
     };
-    let failure = run_remix(&mut bench, &call, REQUEST_TIMEOUT).expect_err("the mock text is JSON");
+    let failure = bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect_err("the mock text is JSON");
     assert!(matches!(failure.error, VideoCallError::Mock(_)));
     assert_eq!(failure.class.metadata().status_code, 500);
     assert!(bench.requests().is_empty());
@@ -57,7 +65,9 @@ fn mock_response_null_is_no_mock_response() {
         mock_response: Some(Json::Null),
         ..VideoRemixCall::default()
     };
-    let video = run_remix(&mut bench, &call, REQUEST_TIMEOUT).expect("the provider answers");
+    let video = bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect("the provider answers");
     assert_eq!(video.id, "video_123");
     assert_eq!(bench.requests().len(), 1);
 }
@@ -72,7 +82,9 @@ fn mock_response_wins_over_an_unsupported_provider() {
         )),
         ..VideoRemixCall::default()
     };
-    let video = run_remix(&mut bench, &call, REQUEST_TIMEOUT).expect("the mock answers first");
+    let video = bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect("the mock answers first");
     assert_eq!(video.id, "video_7");
     assert!(bench.requests().is_empty());
 }

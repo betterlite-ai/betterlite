@@ -17,6 +17,8 @@ use betterlite_openai::videos::list::{list_request, list_response};
 use betterlite_openai::videos::remix::{remix_request, remix_response};
 use betterlite_openai::videos::reply::VideoObject as OpenAiVideoObject;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 // The OpenAI video config over B525's free functions: the adapter the call layer hands the transport
 pub(crate) struct OpenAiConfig;
@@ -30,19 +32,23 @@ where
     }
 }
 
-fn options(params: &Params) -> Result<VideoOptions, ConfigFailure> {
-    let encoded = serde_json::to_value(params).map_err(failed)?;
-    serde_json::from_value(encoded).map_err(failed)
+// B525's wire types and this helper's params are the same JSON, so each conversion is one round trip
+fn decode<T, V>(value: &V) -> Result<T, ConfigFailure>
+where
+    T: DeserializeOwned,
+    V: Serialize,
+{
+    let encoded = serde_json::to_value(value).map_err(failed)?;
+    let decoded: T = serde_json::from_value(encoded).map_err(failed)?;
+    Ok(decoded)
 }
 
-fn params_from(options: &VideoOptions) -> Result<Params, ConfigFailure> {
-    let encoded = serde_json::to_value(options).map_err(failed)?;
-    serde_json::from_value(encoded).map_err(failed)
-}
-
-fn core_video(video: &OpenAiVideoObject) -> Result<VideoObject, ConfigFailure> {
-    let encoded = serde_json::to_value(video).map_err(failed)?;
-    serde_json::from_value(encoded).map_err(failed)
+// the extra_body params as B525's options, or the empty set a call without them uses
+fn decode_extra(params: Option<&Params>) -> Result<VideoOptions, ConfigFailure> {
+    match params {
+        Some(params) => decode::<VideoOptions, _>(params),
+        None => Ok(VideoOptions::new()),
+    }
 }
 
 fn params_key(params: Option<&Params>) -> Option<SecretString> {
@@ -67,7 +73,10 @@ impl VideoRemixListConfig for OpenAiConfig {
         };
         let credentials = VideoCredentials {
             api_key: key,
-            ..VideoCredentials::default()
+            params_api_key: None,
+            global_api_key: None,
+            openai_key: None,
+            environment_api_key: None,
         };
         validate_environment(input_headers(request.headers), &credentials)
             .into_iter()
@@ -91,22 +100,19 @@ impl VideoRemixListConfig for OpenAiConfig {
         extra_body: Option<&Params>,
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), ConfigFailure> {
-        let extra = match extra_body {
-            Some(params) => options(params)?,
-            None => VideoOptions::new(),
-        };
+        let extra = decode_extra(extra_body)?;
         let (url, body) =
             remix_request(video_id, prompt, context.api_base, &extra).map_err(failed)?;
-        Ok((url, params_from(&body)?))
+        Ok((url, decode::<Params, _>(&body)?))
     }
 
     fn transform_video_remix_response(
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, ConfigFailure> {
-        let video =
-            remix_response(&reply.raw_response.body, reply.custom_llm_provider).map_err(failed)?;
-        core_video(&video)
+        let body = &reply.raw_response.body;
+        let video = remix_response(body, reply.custom_llm_provider).map_err(failed)?;
+        decode::<VideoObject, _>(&video)
     }
 
     fn transform_video_list_request(
@@ -115,7 +121,7 @@ impl VideoRemixListConfig for OpenAiConfig {
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), ConfigFailure> {
         let extra = match query.extra_query {
-            Some(params) => options(params)?,
+            Some(params) => decode::<VideoOptions, _>(params)?,
             None => VideoOptions::new(),
         };
         let (url, params) = list_request(
@@ -125,17 +131,16 @@ impl VideoRemixListConfig for OpenAiConfig {
             query.order,
             &extra,
         );
-        Ok((url, params_from(&params)?))
+        Ok((url, decode::<Params, _>(&params)?))
     }
 
     fn transform_video_list_response(
         &self,
         reply: VideoReply<'_>,
     ) -> Result<Params, ConfigFailure> {
-        let list =
-            list_response(&reply.raw_response.body, reply.custom_llm_provider).map_err(failed)?;
-        let encoded = serde_json::to_value(&list).map_err(failed)?;
-        serde_json::from_value(encoded).map_err(failed)
+        let list = list_response(&reply.raw_response.body, reply.custom_llm_provider);
+        list.map_err(failed)
+            .and_then(|list| decode::<Params, _>(&list))
     }
 
     fn get_error_class(
