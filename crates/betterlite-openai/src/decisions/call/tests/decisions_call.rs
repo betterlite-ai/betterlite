@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::sync::PoisonError;
 use std::time::Duration;
 
@@ -568,7 +569,7 @@ fn errors_image_input_is_refused_by_a_systemone_provider() {
         error.to_string(),
         "Decisions provider 'perplexity' cannot serve this request: input_image content parts are not supported because System One providers accept text input only"
     );
-    let cause = std::error::Error::source(&error).expect("the conversion error stays the source");
+    let cause = Error::source(&error).expect("the conversion error stays the source");
     assert!(cause.downcast_ref::<RequestConversionError>().is_some());
     let class = error.class();
     let ErrorClass::BadRequest(details) = &class else {
