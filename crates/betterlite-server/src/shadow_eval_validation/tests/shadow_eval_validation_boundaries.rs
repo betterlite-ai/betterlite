@@ -44,7 +44,9 @@ fn the_target_count_is_bounded(#[case] count: usize, #[case] rejected: bool) {
 
 #[test]
 fn the_target_ceiling_counts_every_kind_together() {
-    let teams = vec!["t"; 100];
+    let teams: Vec<String> = (0..100_usize)
+        .map(|index| format!("team-{index}"))
+        .collect();
     let body = format!(
         r#"{{"api_key_ids":["k"],"team_ids":{},"router_names":["r"],"shadow_percentage":50}}"#,
         serde_json::to_string(&teams).unwrap()
