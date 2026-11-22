@@ -264,16 +264,14 @@ fn an_async_call_answers_with_the_pending_future() {
     let Handled::Pending(pending) = answer else {
         panic!("async_call asks for the future");
     };
+    let object = block_on(pending).expect("the pending answer");
     let recorded = only_call(&rig);
     assert!(recorded.is_async);
     assert!(
         !recorded.litellm_params.contains_key("async_call"),
         "async_call leaves the params"
     );
-    assert_eq!(
-        block_on(pending).expect("the pending answer"),
-        video("video_3")
-    );
+    assert_eq!(object, video("video_3"));
 }
 
 fn the_async_entry_awaits_the_pending_future() {
