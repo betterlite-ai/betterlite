@@ -22,7 +22,7 @@ pub struct Prepared {
     pub detection: Option<String>,
     pub stream: bool,
 }
-fn rejected(message: String) -> AzureProviderError {
+const fn rejected(message: String) -> AzureProviderError {
     AzureProviderError::Rejected {
         status: 400,
         message,

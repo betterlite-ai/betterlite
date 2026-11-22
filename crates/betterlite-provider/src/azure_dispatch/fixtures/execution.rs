@@ -12,7 +12,7 @@ use super::super::compose::{self, Prepared, ReplyMode};
 use super::super::error::AzureProviderError;
 use super::super::reply::{Projection, embedding_response, project, reply_provider};
 use super::super::resolve::convert;
-use super::types::{Answer, AnswerReply, AzureResult, RecordedRequest};
+use super::types::{Answer, AzureResult, RecordedRequest};
 
 pub(crate) fn recorded(http: &PreparedHttp) -> Result<RecordedRequest, AzureProviderError> {
     let body = serde_json::from_slice(&http.body)
@@ -149,6 +149,7 @@ fn projected(prepared: &Prepared, upstream: UpstreamResponse) -> Result<Reply, O
 }
 
 // The one dispatch entry point: compose, ask the port, project the answer through the production reply code.
+#[must_use]
 pub fn dispatch(composition: &Composition, request: Request, answer: &dyn Answer) -> AzureResult {
     let prepared = match compose::prepare(composition, request) {
         Ok(prepared) => prepared,

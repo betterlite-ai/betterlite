@@ -23,9 +23,8 @@ pub(crate) struct Wire {
     pub(crate) body: Object,
     pub(crate) json_mode: bool,
 }
-fn present(secret: &Option<SecretString>) -> Option<&str> {
+fn present(secret: Option<&SecretString>) -> Option<&str> {
     secret
-        .as_ref()
         .map(SecretString::expose_secret)
         .filter(|text| !text.is_empty())
 }
@@ -38,16 +37,20 @@ fn auth_headers(resolved: &Resolved, version: Option<&str>) -> BTreeMap<String, 
             String::from("application/json"),
         ),
     ]);
-    let key = present(&resolved.api_key);
-    let token = present(&resolved.auth_token);
-    if version.is_some_and(|text| V1_API_VERSIONS.contains(&text)) {
-        if let Some(api_key) = key.or(token) {
-            headers.insert(String::from("authorization"), format!("Bearer {api_key}"));
-        }
-    } else if let Some(token) = token {
-        headers.insert(String::from("authorization"), format!("Bearer {token}"));
-    } else if let Some(api_key) = key {
-        headers.insert(String::from("api-key"), api_key.to_owned());
+    let key = present(resolved.api_key.as_ref());
+    let token = present(resolved.auth_token.as_ref());
+    let v1 = version.is_some_and(|text| V1_API_VERSIONS.contains(&text));
+    let bearer = if v1 { key.or(token) } else { token };
+    let auth = bearer
+        .map(|credential| {
+            (
+                String::from("authorization"),
+                format!("Bearer {credential}"),
+            )
+        })
+        .or_else(|| key.map(|value| (String::from("api-key"), value.to_owned())));
+    if let Some((name, value)) = auth {
+        headers.insert(name, value);
     }
     headers
 }
@@ -185,6 +188,14 @@ pub(crate) fn text(
         &body_options,
         cloudflare,
     ))?;
+    text_wire(resolved, call.model.as_str(), body, extra)
+}
+fn text_wire(
+    resolved: &Resolved,
+    model: &str,
+    body: Object,
+    extra: BTreeMap<String, String>,
+) -> Result<Wire, AzureProviderError> {
     let api_base = resolved
         .api_base
         .as_deref()
@@ -195,12 +206,7 @@ pub(crate) fn text(
         .clone()
         .unwrap_or_else(|| resolved.default_api_version.clone());
     let api_version = Some(version.as_str());
-    let url = url_for(
-        Some(api_base),
-        api_version,
-        call.model.as_str(),
-        "/completions",
-    )?;
+    let url = url_for(Some(api_base), api_version, model, "/completions")?;
     let mut headers = auth_headers(resolved, api_version);
     headers.extend(extra);
     Ok(Wire {

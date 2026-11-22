@@ -141,19 +141,17 @@ impl Ranks<'_, '_> {
             )),
             Operation::Embedding => Ok((
                 Some(api_base.ok_or(AzureProviderError::MissingEmbeddingApiBase)?),
-                defaulted(api_version, default_api_version),
+                Some(defaulted(api_version, default_api_version)),
             )),
-            Operation::Chat => Ok((api_base, defaulted(api_version, default_api_version))),
+            Operation::Chat => Ok((api_base, Some(defaulted(api_version, default_api_version)))),
         }
     }
 }
 // chat and embeddings end their version chain with the module default, so an empty one falls through
-fn defaulted(api_version: Option<String>, default_api_version: &str) -> Option<String> {
-    Some(
-        api_version
-            .filter(|text| !text.is_empty())
-            .unwrap_or_else(|| default_api_version.to_owned()),
-    )
+fn defaulted(api_version: Option<String>, default_api_version: &str) -> String {
+    api_version
+        .filter(|text| !text.is_empty())
+        .unwrap_or_else(|| default_api_version.to_owned())
 }
 pub(crate) fn resolve(
     composition: &Composition,
@@ -171,8 +169,6 @@ pub(crate) fn resolve(
         credentials: &credentials,
         operation,
     };
-    let auth_token = filled_secret(credentials.azure_ad_token.as_ref());
-    let azure_ad_token = ad_token(composition, from_body);
     let (api_base, api_version) = ranks.bases(&default_api_version)?;
     let max_retries = (operation == Operation::Chat)
         .then(|| credentials.max_retries.clone())
@@ -182,8 +178,8 @@ pub(crate) fn resolve(
         api_version,
         api_key: ranks.api_key(),
         api_type: api_type(composition),
-        auth_token,
-        azure_ad_token,
+        auth_token: filled_secret(credentials.azure_ad_token.as_ref()),
+        azure_ad_token: ad_token(composition, from_body),
         headers: credentials.headers.clone(),
         extra_headers: credentials.extra_headers.clone(),
         globals_headers: composition

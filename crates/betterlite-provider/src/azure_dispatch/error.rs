@@ -108,8 +108,8 @@ fn parameters(message: &str) -> OperationError {
     }
 }
 impl From<AzureProviderError> for OperationError {
-    fn from(source: AzureProviderError) -> Self {
-        match source {
+    fn from(error: AzureProviderError) -> Self {
+        match error {
             failure @ (AzureProviderError::MissingTextApiBase
             | AzureProviderError::MissingEmbeddingApiBase) => {
                 provider_error(500, "ValueError", failure.to_string())
@@ -126,12 +126,10 @@ impl From<AzureProviderError> for OperationError {
             AzureProviderError::Rejected { status, message } => {
                 provider_error(status, "AzureOpenAIError", message)
             }
-            AzureProviderError::Header { name, source } => {
-                OperationError::InvalidHeader { name, source }
-            }
+            AzureProviderError::Header { name, source } => Self::InvalidHeader { name, source },
             AzureProviderError::Url { source } => parameters(&source.to_string()),
-            AzureProviderError::Encode { source } => OperationError::Encode { source },
-            AzureProviderError::Transport(source) => OperationError::from(source),
+            AzureProviderError::Encode { source } => Self::Encode { source },
+            AzureProviderError::Transport(source) => Self::from(source),
         }
     }
 }

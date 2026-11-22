@@ -130,11 +130,8 @@ fn text_reply(response: &UpstreamResponse) -> Result<ChatResponse, OperationErro
         })?;
     convert(&projected).map_err(OperationError::from)
 }
-pub(crate) fn embedding_response(
-    response: UpstreamResponse,
-) -> Result<EmbeddingResponse, OperationError> {
-    let checked = success(response)?;
-    let headers: BTreeMap<String, String> = checked
+fn raw_embedding(response: UpstreamResponse) -> RawEmbedding {
+    let headers: BTreeMap<String, String> = response
         .headers
         .iter()
         .map(|(name, value)| {
@@ -144,26 +141,34 @@ pub(crate) fn embedding_response(
             )
         })
         .collect();
-    let raw = RawEmbedding {
-        status: checked.status,
+    RawEmbedding {
+        status: response.status,
         headers,
-        body: checked.body,
-    };
+        body: response.body,
+    }
+}
+pub(crate) fn embedding_response(
+    response: UpstreamResponse,
+) -> Result<EmbeddingResponse, OperationError> {
+    let raw = raw_embedding(success(response)?);
     let parsed = raw.parse().map_err(|error| OperationError::Decode {
         operation: "embedding",
         source: JsonError::io(IoError::other(error.to_string())),
     })?;
     match parsed {
-        Parsed::Embedding(response) => match response_error(&raw.body) {
-            Some(EmbeddingError::Response {
+        Parsed::Embedding(embedding) => {
+            let Some(EmbeddingError::Response {
                 status_code,
                 message,
-            }) => Err(OperationError::from(AzureProviderError::Rejected {
+            }) = response_error(&raw.body)
+            else {
+                return Ok(*embedding);
+            };
+            Err(OperationError::from(AzureProviderError::Rejected {
                 status: status_code,
                 message,
-            })),
-            None => Ok(*response),
-        },
+            }))
+        }
         Parsed::Text(text) => Err(OperationError::Decode {
             operation: "embedding",
             source: JsonError::io(IoError::other(format!(

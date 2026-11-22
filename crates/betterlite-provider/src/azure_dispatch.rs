@@ -17,6 +17,8 @@ pub mod call;
 pub mod compose;
 pub mod error;
 pub mod fixtures;
+// operation.rs names the dispatch outcome, and the fixture module holds the type
+pub(crate) use fixtures::types::AzureResult;
 mod reply;
 mod resolve;
 mod tests;
