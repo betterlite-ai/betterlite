@@ -69,7 +69,7 @@ where
             event.row.team_id.as_deref(),
         )
         .await
-        .map_err(KeyEventError::sink)?;
+        .map_err(KeyEventError::sink::<Manager>)?;
     Ok(())
 }
 

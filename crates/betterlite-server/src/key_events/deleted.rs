@@ -41,7 +41,7 @@ where
         .secrets
         .delete(&rows)
         .await
-        .map_err(KeyEventError::sink)?;
+        .map_err(KeyEventError::sink::<Manager>)?;
     Ok(())
 }
 

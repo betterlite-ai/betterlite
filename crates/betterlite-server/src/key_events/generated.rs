@@ -97,7 +97,7 @@ where
         .secrets
         .store(&secret_name, response_key(&event.response)?, team_id)
         .await
-        .map_err(KeyEventError::sink)?;
+        .map_err(KeyEventError::sink::<Manager>)?;
     Ok(())
 }
 
