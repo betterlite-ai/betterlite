@@ -1,0 +1,29 @@
+kind: helper
+name: delegated-team-smallest-team
+call:
+  b4780:
+    operation: delegated_team
+    user_id: human
+    team_id: null
+    sources:
+      - {team_id: null, agent_ids: [own]}
+      - {team_id: team-2, agent_ids: [b, shared]}
+      - {team_id: team-1, agent_ids: [a, shared]}
+    agent_id: shared
+    explicit_team: false
+    allowed_team_ids: null
+calls:
+  - b4780:
+      operation: delegated_team
+      user_id: human
+      team_id: team-1
+      sources:
+        - {team_id: team-1, agent_ids: []}
+        - {team_id: team-2, agent_ids: [b]}
+        - {team_id: team-10, agent_ids: [b]}
+      agent_id: b
+      explicit_team: false
+      allowed_team_ids: null
+env: {}
+compare:
+  ignore: []

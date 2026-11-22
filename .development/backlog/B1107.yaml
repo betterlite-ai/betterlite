@@ -1,14 +1,14 @@
 id: B1107
 milestone: M5 API families
 title: Team model aliases and credentials
-status: todo
+status: done
 depends_on: [B732, B302, B303, B171, B1087, B1105, B002]
 file: tasks/B1107-request-model-overrides.yaml
 covers:
   - "litellm/proxy/litellm_pre_call_utils.py"
 parent: B124
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2859

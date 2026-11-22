@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-s3-signing-response-seed
+call:
+  bedrock_services_s3_signing:
+    operation: file_response
+    responses:
+      - litellm_params: {upload_url: "https://s3.us-west-2.amazonaws.com/bkt/k.jsonl", _s3_upload_content_length: 4}
+        headers: [[Content-Length, "0"]]
+        now: 1
+    errors:
+      - status_code: 500
+        message: boom
+        headers: []
+env: {}
+compare: {ignore: []}
