@@ -109,20 +109,14 @@ struct FakeDispatch {
 fn seen(target: ReadTarget<'_, FakeConfig, ()>) -> Seen {
     match target {
         ReadTarget::Compatible(read) => Seen::Compatible {
-            api_key: read
-                .api_key
-                .as_ref()
-                .map(|secret| secret.expose_secret().to_owned()),
+            api_key: read.api_key.map(|secret| secret.expose_secret().to_owned()),
             api_base: read.api_base,
             organization: read.organization,
             max_retries: read.max_retries,
             mode: read.mode,
         },
         ReadTarget::Azure(read) => Seen::Azure {
-            api_key: read
-                .api_key
-                .as_ref()
-                .map(|secret| secret.expose_secret().to_owned()),
+            api_key: read.api_key.map(|secret| secret.expose_secret().to_owned()),
             api_base: read.api_base,
             api_version: read.api_version,
             max_retries: read.max_retries,
@@ -132,10 +126,7 @@ fn seen(target: ReadTarget<'_, FakeConfig, ()>) -> Seen {
             let read = *boxed;
             Seen::Generic(Box::new(GenericSeen {
                 config: read.config,
-                api_key: read
-                    .api_key
-                    .as_ref()
-                    .map(|secret| secret.expose_secret().to_owned()),
+                api_key: read.api_key.map(|secret| secret.expose_secret().to_owned()),
                 api_base: read.api_base,
                 trusted: read
                     .trusted
