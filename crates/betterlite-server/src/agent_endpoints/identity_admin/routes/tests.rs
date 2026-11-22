@@ -31,6 +31,7 @@ const SECOND_ISSUER: &str =
 const BOUND: &str = r#"{"agent_id":"agent-1","agent_name":"Bound Agent","agent_card_params":{},"identity_managed":true,"execution_mode":"delegated","identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"00000000-0000-0000-0000-000000000001","client_id":"00000000-0000-0000-0000-000000000002","issuer":"https://login.microsoftonline.com/00000000-0000-0000-0000-000000000001/v2.0","revision":"rev-7","last_authenticated_at":"2026-01-02T03:04:05Z"}}"#;
 const PLAIN: &str = r#"{"agent_id":"agent-1","agent_name":"Plain Agent","agent_card_params":{}}"#;
 const DISABLED: &str = r#"{"agent_id":"agent-1","agent_name":"Disabled Agent","agent_card_params":{},"enabled":false}"#;
+const BOTH: &str = r#"{"agent_id":"agent-1","agent_name":"Both Agent","agent_card_params":{},"identity_managed":true,"execution_mode":"both"}"#;
 const UNREPRESENTABLE: &str = r#"{"agent_id":"agent-1","agent_name":"Bound Agent","agent_card_params":{},"identity_managed":true,"identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}"#;
 const PROVIDERS_PATH: &str = "/v1/agents/identity/providers";
 const STATUS_PATH: &str = "/v1/agents/agent-1/identity";
@@ -346,6 +347,23 @@ async fn status_answers_the_identity_of_a_bound_agent(#[case] given: AuthContext
     assert_eq!(binding.agent_id, "agent-1");
     assert_eq!(binding.issuer, FIRST_ISSUER);
     assert_eq!(binding.revision, "rev-7");
+}
+
+#[tokio::test]
+async fn status_answers_the_both_execution_mode() {
+    let reads = FakeReads::answering(BOTH);
+    let answer = get_status(
+        settings(&[FIRST_ISSUER]),
+        &reads,
+        Some(&caller("proxy_admin")),
+        STATUS_PATH,
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(
+        answer.text(),
+        r#"{"identity":null,"identity_managed":true,"enabled":true,"execution_mode":"both","last_authenticated_at":null}"#
+    );
 }
 
 #[tokio::test]
