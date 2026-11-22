@@ -119,7 +119,7 @@ where
     let mut window: Vec<ParsedRecord> = Vec::with_capacity(SCAN_WINDOW);
     for record in iter_records(&mut *source) {
         window.push(record?);
-        if window.len() < SCAN_WINDOW {
+        if window.len() != SCAN_WINDOW {
             continue;
         }
         drain_window(&mut progress, &mut window, context, tasks, spool).await?;
