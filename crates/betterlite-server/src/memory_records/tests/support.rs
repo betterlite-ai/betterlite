@@ -89,22 +89,25 @@ pub(crate) fn team(
     organization_id: Option<&str>,
     admins: &[&str],
 ) -> TeamBase<String> {
+    let owned_id = team_id.to_owned();
+    let organization = organization_id.map(str::to_owned);
+    let members_with_roles = admins
+        .iter()
+        .map(|user| Member {
+            base: MemberBase {
+                user_id: Some((*user).to_owned()),
+                user_email: None,
+            },
+            role: MemberRole::Admin,
+        })
+        .collect();
     TeamBase {
         team_alias: None,
-        team_id: team_id.to_owned(),
-        organization_id: organization_id.map(str::to_owned),
+        team_id: owned_id,
+        organization_id: organization,
         admins: Vec::new(),
         members: Vec::new(),
-        members_with_roles: admins
-            .iter()
-            .map(|user| Member {
-                base: MemberBase {
-                    user_id: Some((*user).to_owned()),
-                    user_email: None,
-                },
-                role: MemberRole::Admin,
-            })
-            .collect(),
+        members_with_roles,
         team_member_permissions: None,
         metadata: None,
         tpm_limit: None,
