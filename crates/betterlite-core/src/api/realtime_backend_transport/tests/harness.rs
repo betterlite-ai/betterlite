@@ -671,12 +671,13 @@ fn provider_of(options: &HarnessOptions, logs: &SharedLogs) -> Arc<TestProvider>
 }
 
 fn client_of(options: &HarnessOptions, logs: &SharedLogs) -> ClientHandle {
+    let scope = WebSocketScope {
+        headers: options.client_scope_headers.clone(),
+    };
     let socket: Box<dyn RealtimeClientSocket> = Box::new(FakeClient::new(options, logs));
     ClientHandle {
         socket: Arc::new(TokioMutex::new(socket)),
-        scope: WebSocketScope {
-            headers: options.client_scope_headers.clone(),
-        },
+        scope,
     }
 }
 
