@@ -127,22 +127,21 @@ def case_answer(router: Router, call: Input) -> JsonValue:
             )
         )
         rows = cast(list[DeployView], result)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
-    carried = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
-        JsonValue,
-        {
-            "ids": [row_id(row) for row in rows],
-            "input": kwargs.get("input"),
-            "messages": messages_arg,
-            "request_messages": kwargs.get("messages"),
-            "metadata": kwargs.get(METADATA_KEY),
-            "pinned": kwargs.get(PIN_FLAG) is True,
-            "logs": list(logs.capture.messages),
-            "group_affinity_enabled": (
-                EncryptedContentAffinityCheck.has_model_group_affinity_enabled(config)
-            ),
-        },
-    )
-    return carried
+        ids: list[JsonValue] = list[JsonValue](row_id(row) for row in rows)
+        logged: list[JsonValue] = list[JsonValue](logs.capture.messages)
+    answer: dict[str, JsonValue] = {
+        "ids": ids,
+        "input": kwargs.get("input"),
+        "messages": messages_arg,
+        "request_messages": kwargs.get("messages"),
+        "metadata": kwargs.get(METADATA_KEY),
+        "pinned": kwargs.get(PIN_FLAG) is True,
+        "logs": logged,
+        "group_affinity_enabled": (
+            EncryptedContentAffinityCheck.has_model_group_affinity_enabled(config)
+        ),
+    }
+    return answer
 
 
 def run(input_value: Input) -> JsonValue:
