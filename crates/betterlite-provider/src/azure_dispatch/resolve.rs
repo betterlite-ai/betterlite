@@ -15,7 +15,7 @@ pub(crate) struct Resolved {
     pub(crate) api_type: String,
     // the token the SDK authenticates with: only the call's own azure_ad_token parameter reaches it
     pub(crate) auth_token: Option<SecretString>,
-    // main.py's resolved token: extra_body.azure_ad_token, then the parameter, then AZURE_AD_TOKEN
+    // main.py's resolved token: extra_body.azure_ad_token, then AZURE_AD_TOKEN
     pub(crate) azure_ad_token: Option<SecretString>,
     // the call's own headers and extra headers, and litellm.headers, each kept for its own merge
     pub(crate) headers: Option<Headers>,
@@ -87,14 +87,9 @@ fn embedding_extra_body(credentials: &mut Credentials) -> Result<Object, AzurePr
         }
     }
 }
-fn ad_token(
-    composition: &Composition,
-    from_body: Option<String>,
-    auth: Option<SecretString>,
-) -> Option<SecretString> {
+fn ad_token(composition: &Composition, from_body: Option<String>) -> Option<SecretString> {
     from_body
         .map(SecretString::from)
-        .or(auth)
         .or_else(|| filled(composition.lookup("AZURE_AD_TOKEN")).map(SecretString::from))
 }
 struct Ranks<'composition, 'credentials> {
@@ -177,7 +172,7 @@ pub(crate) fn resolve(
         operation,
     };
     let auth_token = filled_secret(credentials.azure_ad_token.as_ref());
-    let azure_ad_token = ad_token(composition, from_body, auth_token.clone());
+    let azure_ad_token = ad_token(composition, from_body);
     let (api_base, api_version) = ranks.bases(&default_api_version)?;
     let max_retries = (operation == Operation::Chat)
         .then(|| credentials.max_retries.clone())
