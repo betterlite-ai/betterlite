@@ -136,6 +136,13 @@ async fn generated_email_failure_continues() {
         harness.steps(),
         ["email:created", "audit:tok-1", "write:litellm/alias-a"]
     );
+    assert_eq!(
+        harness.calls(),
+        [Call::Write {
+            name: "litellm/alias-a".to_owned(),
+            value: "sk-new-key".to_owned(),
+        }]
+    );
     assert_eq!(harness.records().len(), 1);
     assert!(
         harness.warnings()[0].starts_with("Failed to send key created email"),
@@ -543,6 +550,26 @@ async fn rotation_missing_old_token_skips_audit() {
     assert_eq!(
         harness.steps(),
         ["rotate:litellm/old-alias>litellm/alias-a", "email:rotated",]
+    );
+    assert!(harness.records().is_empty());
+}
+
+#[tokio::test]
+async fn rotation_blank_aliases_keep_initial_name() {
+    let harness = wired(STORE);
+    let event = rotated(
+        Some(r#"{"key_alias": ""}"#),
+        ROW,
+        r#"{"key": "sk-new", "token_id": "tok-new", "key_alias": ""}"#,
+    );
+    harness.dispatch(&event, &caller()).await.unwrap();
+    assert_eq!(
+        harness.calls(),
+        [Call::Rotate {
+            current: "litellm/old-alias".to_owned(),
+            new: "litellm/old-alias".to_owned(),
+            value: "sk-new".to_owned(),
+        }]
     );
     assert!(harness.records().is_empty());
 }
