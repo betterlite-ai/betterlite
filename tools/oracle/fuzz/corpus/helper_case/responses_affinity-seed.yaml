@@ -1,0 +1,19 @@
+kind: helper
+name: responses-affinity-seed
+call:
+  responses_affinity:
+    model: gpt-group
+    healthy_deployments:
+      - model_name: gpt-group
+        litellm_params:
+          model: openai/a
+          api_base: https://a.example
+          api_key: sk-a
+        model_info:
+          id: A
+    request_kwargs:
+      input:
+        - type: reasoning
+          id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+env: {}
+compare: {ignore: []}

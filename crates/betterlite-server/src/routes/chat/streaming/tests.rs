@@ -30,13 +30,14 @@ use rstest::rstest;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
-use super::answered_result;
 use super::completion_failure;
-use super::relay::{RelaySource, TextSource};
+use super::relay::{RelaySource, TextSource, answered_result};
 use crate::routes::chat::streaming::ChatCalls;
 use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
 use crate::routes::completions::streaming::pump::{Pump, next_frame};
 use crate::server::chat_setup::chat_executor;
+use crate::state::anthropic_runtime;
+use crate::state::shared::Shared;
 
 fn config_for(source: &str) -> Config {
     ConfigLoader {
@@ -73,7 +74,12 @@ async fn routed_at(
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
         .expect("request");
-    let calls = ChatCalls::new(config, Arc::new(executor)).expect("calls");
+    let shared = Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
+    };
+    let slot = anthropic_runtime::Slot::new(config, &shared);
+    let calls = ChatCalls::new(config, Arc::new(executor), &slot).expect("calls");
     let response = chat_routes_with_call_id(Arc::new(calls), false)
         .expect("router")
         .oneshot(request)

@@ -132,7 +132,7 @@ impl TextCompletionCall for CompletionCalls {
         match mode {
             ChatCallMode::Buffered => {
                 let (result, headers, time) =
-                    answer_chat(&self.state.executor, &chat, &call.deployment, control)
+                    answer_chat(&self.state.executor, &chat, &call.deployment, control, None)
                         .await
                         .map_err(|error| chat_call_failure(error, self))?;
                 let answer =

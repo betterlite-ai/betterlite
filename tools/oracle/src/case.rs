@@ -27,6 +27,7 @@ pub mod browser_flow;
 mod config_inspection;
 mod group;
 mod load;
+pub mod saml_assertion;
 
 pub(crate) use group::{LoadedCase, ScenarioCase};
 pub(crate) use load::{

@@ -233,13 +233,13 @@ where
             .map_err(RealtimeConnectionError::Contract)
     }
 
-    // LiteLLM's generic catch: a redacted server_error event, then a redacted and truncated 1011 close whose only ignorable failure is a completed close
+    // LiteLLM's generic catch, with the log redacted too: a redacted server_error event, then a redacted and truncated 1011 close whose only ignorable failure is a completed close
     async fn handle_failure(
         &self,
         error: &RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>,
     ) -> Result<(), RealtimeConnectionError<Config::Error, Callback::Error, Relay::Error>> {
-        tracing::error!("Error connecting to backend: {error}");
         let message = self.redactor.redact_string(&error.to_string());
+        tracing::error!("Error connecting to backend: {message}");
         let event = realtime_error_event(&message, "server_error")
             .map_err(RealtimeConnectionError::Contract)?;
         if let Err(send_error) = self.client.socket.lock().await.send_text(&event).await {
