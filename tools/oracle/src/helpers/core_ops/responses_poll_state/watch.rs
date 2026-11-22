@@ -9,7 +9,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 #[derive(Clone, Default)]
 pub(super) struct Watch {
-    lines: Arc<Mutex<Vec<Value>>>,
+    pub(super) lines: Arc<Mutex<Vec<Value>>>,
 }
 
 #[derive(Default)]
@@ -36,18 +36,6 @@ impl<Inner: Subscriber> Layer<Inner> for Watch {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(json!({"level": level, "message": message.0}));
-    }
-}
-
-impl Watch {
-    pub(super) fn line_count(&self) -> usize {
-        let lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
-        lines.len()
-    }
-
-    pub(super) fn lines_since(&self, start: usize) -> Value {
-        let lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
-        Value::Array(lines.iter().skip(start).cloned().collect())
     }
 }
 

@@ -10,7 +10,7 @@ from litellm.caching.redis_cache import RedisCache
 from litellm.proxy.response_polling import polling_handler
 from litellm.proxy.response_polling.polling_handler import (
     ResponsePollingHandler,
-    should_use_polling_for_request,
+    should_use_polling_for_request,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L251-L319
 )
 from litellm.types.llms.openai import ResponsesAPIStatus
 from opentelemetry.trace import Span
@@ -168,10 +168,10 @@ async def execute(call: Call, handler: ResponsePollingHandler) -> JsonValue:
         response = await handler.create_initial_state(polling_id, request_data)
         return JSON.validate_json(response.model_dump_json())
     if op == "update":
-        await handler.update_state(polling_id=polling_id, **call["patch"])
+        await handler.update_state(polling_id=polling_id, **call["patch"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L84-L213
         return None
     if op == "get":
-        return JSON.validate_python(await handler.get_state(polling_id))
+        return JSON.validate_python(await handler.get_state(polling_id))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L215-L226
     if op == "cancel":
         return await handler.cancel_polling(polling_id)
     if op == "delete":

@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 #[derive(Default)]
 pub(super) struct ScriptedCache {
     entries: Mutex<BTreeMap<String, Vec<u8>>>,
-    effects: Mutex<Vec<Value>>,
+    pub(super) effects: Mutex<Vec<Value>>,
 }
 
 impl ScriptedCache {
@@ -24,11 +24,6 @@ impl ScriptedCache {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .len()
-    }
-
-    pub(super) fn effects_since(&self, start: usize) -> Value {
-        let effects = self.effects.lock().unwrap_or_else(PoisonError::into_inner);
-        Value::Array(effects.iter().skip(start).cloned().collect())
     }
 
     fn record(&self, effect: Value) {

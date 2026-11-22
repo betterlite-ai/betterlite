@@ -1,3 +1,5 @@
+use std::sync::PoisonError;
+
 use betterlite_config::api::responses_poll_state::{
     DEFAULT_POLLING_TTL, PollingSelector, PollingSettings,
 };
@@ -35,7 +37,11 @@ struct Deployment {
 }
 
 pub(super) fn result(selection: &Selection, watch: &Watch) -> Result<Value, Box<HelperError>> {
-    let start = watch.line_count();
+    let start = watch
+        .lines
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .len();
     let settings = PollingSettings {
         polling_via_cache: selector(&selection.selector)?,
         native_background_mode: selection.native_background_mode.clone(),
@@ -62,7 +68,11 @@ pub(super) fn result(selection: &Selection, watch: &Watch) -> Result<Value, Box<
         selection.redis,
         projection.as_ref(),
     );
-    Ok(json!({"enabled": enabled, "logs": watch.lines_since(start)}))
+    let logs = {
+        let guard = watch.lines.lock().unwrap_or_else(PoisonError::into_inner);
+        Value::Array(guard.iter().skip(start).cloned().collect())
+    };
+    Ok(json!({"enabled": enabled, "logs": logs}))
 }
 
 fn selector(value: &Json) -> Result<PollingSelector, Box<HelperError>> {

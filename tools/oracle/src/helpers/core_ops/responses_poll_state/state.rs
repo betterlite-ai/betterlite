@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::responses_poll_state::access::PollAccess;
@@ -62,7 +62,11 @@ pub(super) async fn call_result(
         }
     }
     let effects_start = cache.effect_count();
-    let logs_start = watch.line_count();
+    let logs_start = watch
+        .lines
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .len();
     let handle: Option<Arc<dyn PollingCache>> = if call.redis {
         Some(Arc::clone(cache))
     } else {
@@ -77,11 +81,19 @@ pub(super) async fn call_result(
         Ok(value) => (value, Value::Null),
         Err(failure) => (Value::Null, Value::String(label(&failure).to_owned())),
     };
+    let effects = {
+        let guard = cache.effects.lock().unwrap_or_else(PoisonError::into_inner);
+        Value::Array(guard.iter().skip(effects_start).cloned().collect())
+    };
+    let logs = {
+        let guard = watch.lines.lock().unwrap_or_else(PoisonError::into_inner);
+        Value::Array(guard.iter().skip(logs_start).cloned().collect())
+    };
     Ok(json!({
         "returned": returned,
         "error": error,
-        "effects": cache.effects_since(effects_start),
-        "logs": watch.lines_since(logs_start),
+        "effects": effects,
+        "logs": logs,
     }))
 }
 
