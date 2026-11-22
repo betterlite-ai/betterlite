@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::iter::once;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::settings::JsonValue;
@@ -92,11 +93,8 @@ fn load(settings: &RouterSettings) -> Result<Config, OperationError> {
 // the case names the settings it sets, and a setting it leaves out stays out of the document
 fn document(settings: &RouterSettings) -> Result<String, OperationError> {
     let value = serde_json::to_value(settings).map_err(invalid)?;
-    let document = JsonValue::Object(
-        [(String::from("router_settings"), without_nulls(value))]
-            .into_iter()
-            .collect(),
-    );
+    let document =
+        JsonValue::Object(once((String::from("router_settings"), without_nulls(value))).collect());
     serde_json::to_string(&document).map_err(invalid)
 }
 
@@ -114,7 +112,10 @@ fn without_nulls(value: JsonValue) -> JsonValue {
     }
 }
 
-fn invalid<E: Display>(error: E) -> OperationError {
+fn invalid<E>(error: E) -> OperationError
+where
+    E: Display,
+{
     OperationError::InvalidRequest {
         message: error.to_string(),
     }
