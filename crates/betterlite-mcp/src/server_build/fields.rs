@@ -8,7 +8,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use secrecy::ExposeSecret as _;
 
 use super::BuildError;
-use super::credentials::{AwsCredentials, ResolvedCredentials};
+use super::credentials::ResolvedCredentials;
 use super::json::normalize_cost_info;
 use super::oauth_step::OAuthResolution;
 use crate::credential_contracts::auth_config::oauth::DEFAULT_SUBJECT_TOKEN_TYPE;
@@ -44,7 +44,6 @@ pub(super) fn server_fields(
     apply_oauth(&mut fields, parts.oauth);
     apply_token_exchange(&mut fields, row, &parts.credentials);
     apply_blob_credentials(&mut fields, &parts.credentials);
-    apply_aws_credentials(&mut fields, &parts.credentials.aws);
     Ok(fields)
 }
 
@@ -168,9 +167,7 @@ fn apply_blob_credentials(fields: &mut ServerFields, credentials: &ResolvedCrede
         .filter(|text| !text.is_empty())
         .unwrap_or("RS256")
         .to_owned();
-}
-
-fn apply_aws_credentials(fields: &mut ServerFields, aws: &AwsCredentials) {
+    let aws = &credentials.aws;
     fields.aws_access_key_id.clone_from(&aws.access_key_id);
     fields
         .aws_secret_access_key

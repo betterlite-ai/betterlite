@@ -21,31 +21,11 @@ pub fn deserialize_json_list(value: Option<&JsonValue>) -> Option<Vec<JsonValue>
 }
 
 fn object_from_text(text: &str) -> Option<BTreeMap<String, JsonValue>> {
-    match serde_json::from_str::<JsonValue>(text) {
-        Ok(JsonValue::Object(entries)) => Some(entries),
-        Ok(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_),
-        ) => None,
-        Err(_error) => None,
-    }
+    serde_json::from_str(text).ok()
 }
 
 fn list_from_text(text: &str) -> Option<Vec<JsonValue>> {
-    match serde_json::from_str::<JsonValue>(text) {
-        Ok(JsonValue::Array(entries)) => Some(entries),
-        Ok(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Object(_),
-        ) => None,
-        Err(_error) => None,
-    }
+    serde_json::from_str(text).ok()
 }
 
 pub fn normalize_cost_info(info: &mut BTreeMap<String, JsonValue>) {
@@ -129,14 +109,9 @@ fn cost_number(value: &JsonValue) -> Option<JsonValue> {
 
 fn display_text(value: Option<&JsonValue>) -> String {
     match value {
-        None | Some(JsonValue::Null) => "None".to_owned(),
+        None => "None".to_owned(),
         Some(JsonValue::String(text)) => text.clone(),
-        Some(JsonValue::Bool(true)) => "True".to_owned(),
-        Some(JsonValue::Bool(false)) => "False".to_owned(),
-        Some(JsonValue::Number(number)) => number.to_string(),
-        Some(stored @ (JsonValue::Array(_) | JsonValue::Object(_))) => {
-            serde_json::to_string(stored).unwrap_or_default()
-        }
+        Some(stored) => repr_text(stored),
     }
 }
 
