@@ -10,53 +10,20 @@ use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
 use secrecy::SecretString;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::super::support::{OTHER, failure, runtime, with_status};
-use super::{Answer, HeadersStep, SearchReplyStep, SearchRequestStep, Step};
+use super::{Answer, Step};
 
 // B546's headers, URL, request and reply calls over the grounded-search settings
 pub(super) fn answer(step: &Step) -> Answer {
+    let parts = parts(step);
     let settings = settings_of(step);
     let config = AzureSearchConfig {
         settings: &settings,
         minter: None,
     };
-    let headers = headers_of(step);
-    let api_key = secret_of(step);
-    let query = query_of(step);
-    let options = options_of(step);
-    let reply = AzureSearchReply {
-        status_code: 200,
-        headers: &[],
-        body: body_of(step),
-    };
-    let (kind, call) = match step {
-        Step::SearchHeaders(_) => (
-            "search_headers",
-            Call::ValidateEnvironment {
-                headers,
-                api_key: api_key.as_ref(),
-                api_base: None,
-            },
-        ),
-        Step::SearchUrl(value) => ("search_url", Call::CompleteUrl(Some(&value.api_base))),
-        Step::SearchRequest(_) => (
-            "search_request",
-            Call::TransformRequest {
-                query: &query,
-                optional_params: &options,
-            },
-        ),
-        Step::SearchReply(_) => (
-            "search_reply",
-            Call::TransformResponse {
-                reply: &reply,
-                optional_params: None,
-            },
-        ),
-        _ => return Err(failure(OTHER)),
-    };
+    let (kind, call) = call_of(step, &parts)?;
     let runtime = runtime()?;
     let result = runtime.block_on(dispatch(AzureResourceOperation::Search(Box::new(
         search::Dispatch {
@@ -64,23 +31,84 @@ pub(super) fn answer(step: &Step) -> Answer {
             call,
         },
     ))));
-    let value = match result {
-        Ok(AzureResourceResult::Search(Outcome::Headers(headers))) => json!({"headers": headers}),
-        Ok(AzureResourceResult::Search(Outcome::Url(url))) => json!({"url": url}),
-        Ok(AzureResourceResult::Search(Outcome::Request(request))) => json!({
+    Ok((kind, value_of(result)?))
+}
+
+struct Parts<'call> {
+    headers: Headers,
+    api_key: Option<SecretString>,
+    query: SearchQuery,
+    options: Object,
+    reply: AzureSearchReply<'call>,
+}
+
+fn parts(step: &Step) -> Parts<'_> {
+    Parts {
+        headers: headers_of(step),
+        api_key: secret_of(step),
+        query: query_of(step),
+        options: options_of(step),
+        reply: AzureSearchReply {
+            status_code: 200,
+            headers: &[],
+            body: body_of(step),
+        },
+    }
+}
+
+fn call_of<'call>(
+    step: &'call Step,
+    parts: &'call Parts<'call>,
+) -> Result<(&'static str, Call<'call>), Box<HelperError>> {
+    match step {
+        Step::SearchHeaders(_) => Ok((
+            "search_headers",
+            Call::ValidateEnvironment {
+                headers: parts.headers.clone(),
+                api_key: parts.api_key.as_ref(),
+                api_base: None,
+            },
+        )),
+        Step::SearchUrl(value) => Ok(("search_url", Call::CompleteUrl(Some(&value.api_base)))),
+        Step::SearchRequest(_) => Ok((
+            "search_request",
+            Call::TransformRequest {
+                query: &parts.query,
+                optional_params: &parts.options,
+            },
+        )),
+        Step::SearchReply(_) => Ok((
+            "search_reply",
+            Call::TransformResponse {
+                reply: &parts.reply,
+                optional_params: None,
+            },
+        )),
+        _ => Err(failure(OTHER)),
+    }
+}
+
+fn value_of(
+    result: Result<AzureResourceResult, AzureResourceError>,
+) -> Result<Value, Box<HelperError>> {
+    match result {
+        Ok(AzureResourceResult::Search(Outcome::Headers(headers))) => {
+            Ok(json!({"headers": headers}))
+        }
+        Ok(AzureResourceResult::Search(Outcome::Url(url))) => Ok(json!({"url": url})),
+        Ok(AzureResourceResult::Search(Outcome::Request(request))) => Ok(json!({
             "model": request.model,
             "input": request.input,
             "tools": request.tools,
-        }),
-        Ok(AzureResourceResult::Search(Outcome::Response(response))) => json!({
+        })),
+        Ok(AzureResourceResult::Search(Outcome::Response(response))) => Ok(json!({
             "results": response.results,
             "object": response.object,
-        }),
-        Ok(_) => return Err(failure(OTHER)),
-        Err(AzureResourceError::Search(error)) => return Err(search_failure(&error)),
-        Err(error) => return Err(failure(error)),
-    };
-    Ok((kind, value))
+        })),
+        Ok(_) => Err(failure(OTHER)),
+        Err(AzureResourceError::Search(error)) => Err(search_failure(&error)),
+        Err(error) => Err(failure(error)),
+    }
 }
 
 fn settings_of(step: &Step) -> Settings {
@@ -132,7 +160,7 @@ fn options_of(step: &Step) -> Object {
     options
 }
 
-fn body_of(step: &Step) -> &[u8] {
+const fn body_of(step: &Step) -> &[u8] {
     match step {
         Step::SearchReply(value) => value.body.as_bytes(),
         _ => &[],
@@ -140,8 +168,8 @@ fn body_of(step: &Step) -> &[u8] {
 }
 
 fn search_failure(error: &AzureSearchError) -> Box<HelperError> {
-    match error.status_code() {
-        Some(status) => with_status(failure(error), status),
-        None => failure(error),
-    }
+    error.status_code().map_or_else(
+        || failure(error),
+        |status| with_status(failure(error), status),
+    )
 }

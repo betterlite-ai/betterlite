@@ -18,8 +18,14 @@ use super::support::{OTHER, failure, runtime};
 // B547's container URL override and its delegated video parameter list, each from the leaf's own call
 pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = runtime()?;
-    let mut urls = Vec::with_capacity(input.urls.len());
-    for step in &input.urls {
+    let urls = url_steps(&runtime, &input.urls)?;
+    let video = video_steps(&runtime, &input.video)?;
+    Ok(json!({"urls": urls, "video": video}))
+}
+
+fn url_steps(runtime: &Runtime, steps: &[UrlStep]) -> Result<Vec<Value>, Box<HelperError>> {
+    let mut urls = Vec::with_capacity(steps.len());
+    for step in steps {
         // the step's environment stands in for os.environ, which the Python helper sets for its call
         let fallback = step
             .module
@@ -32,7 +38,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
             api_version: step.api_version.as_deref(),
         };
         let Outcome::Url(url) = through(
-            &runtime,
+            runtime,
             Call::Url {
                 resource: AzureResource::Container,
                 request,
@@ -43,19 +49,23 @@ pub(super) fn run(input: &Input) -> HelperResult {
         };
         urls.push(json!({"url": url, "params_api_version": step.api_version}));
     }
-    let mut video = Vec::with_capacity(input.video.len());
-    for step in &input.video {
+    Ok(urls)
+}
+
+fn video_steps(runtime: &Runtime, steps: &[VideoStep]) -> Result<Vec<Value>, Box<HelperError>> {
+    let mut video = Vec::with_capacity(steps.len());
+    for step in steps {
         let options: VideoCreate =
             serde_json::from_value(Value::Object(step.options.clone())).map_err(failure)?;
-        let Outcome::VideoParams(mapped) = through(&runtime, Call::VideoParams(&options))? else {
+        let Outcome::VideoParams(mapped) = through(runtime, Call::VideoParams(&options))? else {
             return Err(failure(OTHER));
         };
-        let Outcome::VideoSupported(supported) = through(&runtime, Call::VideoSupported)? else {
+        let Outcome::VideoSupported(supported) = through(runtime, Call::VideoSupported)? else {
             return Err(failure(OTHER));
         };
         video.push(json!({"supported": supported, "mapped": *mapped}));
     }
-    Ok(json!({"urls": urls, "video": video}))
+    Ok(video)
 }
 
 #[derive(Debug, Deserialize)]

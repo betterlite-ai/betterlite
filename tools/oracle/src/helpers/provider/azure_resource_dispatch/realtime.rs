@@ -75,10 +75,9 @@ fn connect(runtime: &Runtime, input: &Input, step: &QuerySetup) -> Result<Value,
     let key = step.api_key.clone().map(SecretString::from);
     let token = step.azure_ad_token.clone().map(SecretString::from);
     let verification = Verification::Enabled;
-    let max_size = match input.max_message_size_bytes {
-        Some(value) => usize::try_from(value).map_err(failure)?,
-        None => 0_usize,
-    };
+    let max_size = input
+        .max_message_size_bytes
+        .map_or(Ok(0_usize), |value| usize::try_from(value).map_err(failure))?;
     let base = step.api_base.as_deref();
     let version = step.api_version.as_deref();
     let protocol = step.realtime_protocol.as_deref();

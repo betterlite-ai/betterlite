@@ -6,16 +6,17 @@ use betterlite_azure::azure_assistant_definitions::operations::{
 };
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::records::AssistantCreate;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::azure_resource_dispatch::assistants::DefinitionsDispatch;
 use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::super::support::{
     AssistantsFake, OTHER, Reply as FakeReply, failure, runtime, with_status,
 };
-use super::{Answer, Fixture, Step};
+use super::{Answer, Fixture, Reply, Step};
 
 const CREATE_TEXT: &str = r#"{"model":"gpt-4o"}"#;
 
@@ -38,15 +39,7 @@ pub(super) fn answer(step: &Step) -> Answer {
         transport: Arc::clone(&fake),
     };
     let data: AssistantCreate = serde_json::from_str(CREATE_TEXT).map_err(failure)?;
-    let (kind, call) = match step {
-        Step::DefinitionsCreate(_) => ("definitions_create", DefinitionCall::Create(&data)),
-        Step::DefinitionsList(_) => ("definitions_list", DefinitionCall::List),
-        Step::DefinitionsDelete(_) => (
-            "definitions_delete",
-            DefinitionCall::Delete(&reply.target_id),
-        ),
-        _ => return Err(failure(OTHER)),
-    };
+    let (kind, call) = call_of(step, reply, &data)?;
     let result = runtime.block_on(dispatch(AzureResourceOperation::AssistantDefinitions(
         Box::pin(
             DefinitionsDispatch {
@@ -59,17 +52,38 @@ pub(super) fn answer(step: &Step) -> Answer {
             .run(),
         ),
     )));
-    let value = match result {
+    Ok((kind, value_of(result)?))
+}
+
+fn call_of<'call>(
+    step: &'call Step,
+    reply: &'call Reply,
+    data: &'call AssistantCreate,
+) -> Result<(&'static str, DefinitionCall<'call>), Box<HelperError>> {
+    match step {
+        Step::DefinitionsCreate(_) => Ok(("definitions_create", DefinitionCall::Create(data))),
+        Step::DefinitionsList(_) => Ok(("definitions_list", DefinitionCall::List)),
+        Step::DefinitionsDelete(_) => Ok((
+            "definitions_delete",
+            DefinitionCall::Delete(&reply.target_id),
+        )),
+        _ => Err(failure(OTHER)),
+    }
+}
+
+fn value_of(
+    result: Result<AzureResourceResult, AzureResourceError>,
+) -> Result<Value, Box<HelperError>> {
+    match result {
         Ok(AzureResourceResult::AssistantDefinitions(reply)) => match reply.reply {
-            DefinitionReply::Page(page) => json!({"count": page.data.len()}),
-            DefinitionReply::Assistant(assistant) => json!({"id": assistant.id}),
-            DefinitionReply::Deleted(deleted) => json!({"deleted": deleted.deleted}),
+            DefinitionReply::Page(page) => Ok(json!({"count": page.data.len()})),
+            DefinitionReply::Assistant(assistant) => Ok(json!({"id": assistant.id})),
+            DefinitionReply::Deleted(deleted) => Ok(json!({"deleted": deleted.deleted})),
         },
-        Ok(_) => return Err(failure(OTHER)),
+        Ok(_) => Err(failure(OTHER)),
         Err(AzureResourceError::AssistantDefinitions(DefinitionsError::Assistants(
             AssistantsError::Status { status, .. },
-        ))) => return Err(with_status(failure("the fixture failed"), status)),
-        Err(error) => return Err(failure(error)),
-    };
-    Ok((kind, value))
+        ))) => Err(with_status(failure("the fixture failed"), status)),
+        Err(error) => Err(failure(error)),
+    }
 }

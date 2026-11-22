@@ -12,7 +12,7 @@ use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
 use futures_util::StreamExt as _;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
 use super::super::support::{AssistantsFake, OTHER, failure, runtime, with_status};
@@ -53,13 +53,20 @@ pub(super) fn answer(step: &Step) -> Answer {
         }
         .run(),
     ))));
+    value_of(&runtime, result)
+}
+
+fn value_of(
+    runtime: &Runtime,
+    result: Result<AzureResourceResult, AzureResourceError>,
+) -> Result<(&'static str, Value), Box<HelperError>> {
     match result {
         Ok(AzureResourceResult::AssistantRuns(RunOutcome::Polled(_kind, reply))) => {
             Ok(("run_poll", json!({"status": reply.status})))
         }
         Ok(AzureResourceResult::AssistantRuns(RunOutcome::Streaming(_kind, events))) => Ok((
             "run_stream",
-            json!({"events": event_names(&runtime, events)?}),
+            json!({"events": event_names(runtime, events)?}),
         )),
         Ok(_) => Err(failure(OTHER)),
         Err(AzureResourceError::AssistantRuns(AssistantsRunError::Runs(

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_openai::response_resources::request::{ListInputItemsQuery, ResourceOperation};
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_provider::azure_resource_dispatch::responses::{self, Call, Outcome};
 use betterlite_provider::azure_resource_dispatch::{
@@ -19,41 +20,7 @@ pub(super) fn answer(step: &Step) -> Answer {
     let input = ResponsesInput::Text(text_of(step));
     let options: Object = Object::new();
     let query = query_of(step);
-    let (kind, call) = match step {
-        Step::ResponsesUrl(value) => (
-            "responses_url",
-            Call::CompleteUrl {
-                api_base: Some(&value.api_base),
-                api_version: value.api_version.as_deref(),
-            },
-        ),
-        Step::ResponsesTransform(value) => (
-            "responses_transform",
-            Call::Transform {
-                model: &value.model,
-                input: &input,
-                options: &options,
-                model_info: None,
-            },
-        ),
-        Step::ResponsesResource(value) => (
-            "responses_resource",
-            Call::Resource {
-                api_base: &value.api_base,
-                response_id: &value.response_id,
-                operation: operation_of(&value.endpoint),
-            },
-        ),
-        Step::ResponsesInputItems(value) => (
-            "responses_input_items",
-            Call::ListInputItems {
-                api_base: &value.api_base,
-                response_id: &value.response_id,
-                query: &query,
-            },
-        ),
-        _ => return Err(failure(OTHER)),
-    };
+    let (kind, call) = call_of(step, &input, &options, &query)?;
     let environment: BTreeMap<String, String> = BTreeMap::new();
     let runtime = runtime()?;
     let result = runtime.block_on(dispatch(AzureResourceOperation::Responses(Box::new(
@@ -62,18 +29,66 @@ pub(super) fn answer(step: &Step) -> Answer {
             call,
         },
     ))));
-    let value = match result {
-        Ok(AzureResourceResult::Responses(Outcome::Url(url))) => json!({"url": url}),
+    Ok((kind, value_of(result)?))
+}
+
+fn call_of<'call>(
+    step: &'call Step,
+    input: &'call ResponsesInput,
+    options: &'call Object,
+    query: &'call ListInputItemsQuery,
+) -> Result<(&'static str, Call<'call>), Box<HelperError>> {
+    match step {
+        Step::ResponsesUrl(value) => Ok((
+            "responses_url",
+            Call::CompleteUrl {
+                api_base: Some(&value.api_base),
+                api_version: value.api_version.as_deref(),
+            },
+        )),
+        Step::ResponsesTransform(value) => Ok((
+            "responses_transform",
+            Call::Transform {
+                model: &value.model,
+                input,
+                options,
+                model_info: None,
+            },
+        )),
+        Step::ResponsesResource(value) => Ok((
+            "responses_resource",
+            Call::Resource {
+                api_base: &value.api_base,
+                response_id: &value.response_id,
+                operation: operation_of(&value.endpoint),
+            },
+        )),
+        Step::ResponsesInputItems(value) => Ok((
+            "responses_input_items",
+            Call::ListInputItems {
+                api_base: &value.api_base,
+                response_id: &value.response_id,
+                query,
+            },
+        )),
+        _ => Err(failure(OTHER)),
+    }
+}
+
+fn value_of(
+    result: Result<AzureResourceResult, AzureResourceError>,
+) -> Result<Value, Box<HelperError>> {
+    match result {
+        Ok(AzureResourceResult::Responses(Outcome::Url(url))) => Ok(json!({"url": url})),
         Ok(AzureResourceResult::Responses(Outcome::Transformed(object))) => {
-            json!({"projected": project(&object)})
+            Ok(json!({"projected": project(&object)}))
         }
         Ok(AzureResourceResult::Responses(Outcome::Resource(request))) => {
-            json!({"url": request.url, "data": request.payload})
+            Ok(json!({"url": request.url, "data": request.payload}))
         }
-        Ok(_) => return Err(failure(OTHER)),
-        Err(error) => return Err(failure(error)),
-    };
-    Ok((kind, value))
+        Ok(_) => Err(failure(OTHER)),
+        Err(error) => Err(failure(error)),
+    }
 }
 
 fn text_of(step: &Step) -> String {

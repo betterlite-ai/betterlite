@@ -21,7 +21,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::super::support::{NoSources, OTHER, failure, runtime, with_status};
+use super::support::{NoSources, OTHER, failure, runtime, with_status};
 
 const CREATE_TEXT: &str = r#"{"model":"gpt-4o-mini","training_file":"file_a"}"#;
 
@@ -171,6 +171,12 @@ fn through(
     let result = runtime.block_on(dispatch(AzureResourceOperation::FineTuning(Box::pin(
         ready(fine_tuning::Dispatch { connection, call }.run()),
     ))));
+    outcome_of(result)
+}
+
+fn outcome_of(
+    result: Result<AzureResourceResult, AzureResourceError>,
+) -> Result<AzureResourceResult, Box<HelperError>> {
     match result {
         Ok(outcome) => Ok(outcome),
         Err(AzureResourceError::FineTuning(AzureFineTuneError::Sdk { source })) => {
@@ -221,16 +227,18 @@ impl Fake {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
-        match self.failure {
-            Some(status) => Err(SdkError {
-                status,
-                error_type: None,
-                param: None,
-                code: None,
-                message: String::from("the fixture failed"),
-            }),
-            None => Ok(self.body.clone().into_bytes()),
-        }
+        self.failure.map_or_else(
+            || Ok(self.body.clone().into_bytes()),
+            |status| {
+                Err(SdkError {
+                    status,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: String::from("the fixture failed"),
+                })
+            },
+        )
     }
 }
 

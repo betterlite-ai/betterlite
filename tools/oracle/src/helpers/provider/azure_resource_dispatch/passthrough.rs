@@ -77,7 +77,7 @@ pub(crate) struct UrlStep {
     pub(super) env_base: Option<String>,
 }
 
-fn config(api_base_env: Option<String>) -> passthrough::Config {
+const fn config(api_base_env: Option<String>) -> passthrough::Config {
     passthrough::Config {
         api_base_env,
         api_key_env: None,

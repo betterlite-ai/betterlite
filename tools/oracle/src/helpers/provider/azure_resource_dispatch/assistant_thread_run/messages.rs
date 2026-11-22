@@ -7,16 +7,17 @@ use betterlite_azure::azure_message_attachments::operations::{
 };
 use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::records::ThreadMessageData;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::azure_resource_dispatch::assistants::MessagesDispatch;
 use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::super::support::{
     AssistantsFake, OTHER, Reply as FakeReply, failure, runtime, with_status,
 };
-use super::{Answer, Fixture, Step};
+use super::{Answer, Fixture, Reply, Step};
 
 const MESSAGE_TEXT: &str = r#"{"role":"user","content":"hello"}"#;
 
@@ -39,17 +40,7 @@ pub(super) fn answer(step: &Step) -> Answer {
         },
     };
     let data: ThreadMessageData = serde_json::from_str(MESSAGE_TEXT).map_err(failure)?;
-    let (kind, call) = match step {
-        Step::MessageCreate(_) => (
-            "message_create",
-            MessageCall::Append {
-                thread_id: &reply.target_id,
-                data: &data,
-            },
-        ),
-        Step::MessageList(_) => ("message_list", MessageCall::List(&reply.target_id)),
-        _ => return Err(failure(OTHER)),
-    };
+    let (kind, call) = call_of(step, reply, &data)?;
     let result = runtime.block_on(dispatch(AzureResourceOperation::AssistantMessages(
         Box::pin(
             MessagesDispatch {
@@ -62,16 +53,39 @@ pub(super) fn answer(step: &Step) -> Answer {
             .run(),
         ),
     )));
-    let value = match result {
+    Ok((kind, value_of(result)?))
+}
+
+fn call_of<'call>(
+    step: &'call Step,
+    reply: &'call Reply,
+    data: &'call ThreadMessageData,
+) -> Result<(&'static str, MessageCall<'call>), Box<HelperError>> {
+    match step {
+        Step::MessageCreate(_) => Ok((
+            "message_create",
+            MessageCall::Append {
+                thread_id: &reply.target_id,
+                data,
+            },
+        )),
+        Step::MessageList(_) => Ok(("message_list", MessageCall::List(&reply.target_id))),
+        _ => Err(failure(OTHER)),
+    }
+}
+
+fn value_of(
+    result: Result<AzureResourceResult, AzureResourceError>,
+) -> Result<Value, Box<HelperError>> {
+    match result {
         Ok(AzureResourceResult::AssistantMessages(reply)) => match reply.reply {
-            MessageReply::Message(message) => json!({"id": message.id}),
-            MessageReply::Page(page) => json!({"count": page.data.len()}),
+            MessageReply::Message(message) => Ok(json!({"id": message.id})),
+            MessageReply::Page(page) => Ok(json!({"count": page.data.len()})),
         },
-        Ok(_) => return Err(failure(OTHER)),
+        Ok(_) => Err(failure(OTHER)),
         Err(AzureResourceError::AssistantMessages(MessagesError::Threads(
             ThreadsError::Status { status, .. },
-        ))) => return Err(with_status(failure("the fixture failed"), status)),
-        Err(error) => return Err(failure(error)),
-    };
-    Ok((kind, value))
+        ))) => Err(with_status(failure("the fixture failed"), status)),
+        Err(error) => Err(failure(error)),
+    }
 }

@@ -4,16 +4,17 @@ use betterlite_azure::azure_thread_messages::error::ThreadMessagesError;
 use betterlite_azure::azure_thread_messages::operations::{ThreadMessagesApi, ThreadOperation};
 use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::records::ThreadCreate;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::azure_resource_dispatch::assistants::ThreadsDispatch;
 use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::super::support::{
     AssistantsFake, OTHER, Reply as FakeReply, failure, runtime, with_status,
 };
-use super::{Answer, Fixture, Step};
+use super::{Answer, Fixture, Reply, Step};
 
 const CREATE_TEXT: &str = r#"{"messages":[{"role":"user","content":"hello"}]}"#;
 
@@ -34,11 +35,7 @@ pub(super) fn answer(step: &Step) -> Answer {
         transport: Arc::clone(&fake),
     };
     let create: ThreadCreate = serde_json::from_str(CREATE_TEXT).map_err(failure)?;
-    let (kind, call) = match step {
-        Step::ThreadCreate(_) => ("thread_create", ThreadOperation::Create(&create)),
-        Step::ThreadGet(_) => ("thread_get", ThreadOperation::Retrieve(&reply.target_id)),
-        _ => return Err(failure(OTHER)),
-    };
+    let (kind, call) = call_of(step, reply, &create)?;
     let result = runtime.block_on(dispatch(AzureResourceOperation::AssistantThreads(
         Box::pin(
             ThreadsDispatch {
@@ -51,13 +48,30 @@ pub(super) fn answer(step: &Step) -> Answer {
             .run(),
         ),
     )));
-    let value = match result {
-        Ok(AzureResourceResult::AssistantThreads(reply)) => json!({"id": reply.thread.id}),
-        Ok(_) => return Err(failure(OTHER)),
+    Ok((kind, value_of(result)?))
+}
+
+fn call_of<'call>(
+    step: &'call Step,
+    reply: &'call Reply,
+    create: &'call ThreadCreate,
+) -> Result<(&'static str, ThreadOperation<'call>), Box<HelperError>> {
+    match step {
+        Step::ThreadCreate(_) => Ok(("thread_create", ThreadOperation::Create(create))),
+        Step::ThreadGet(_) => Ok(("thread_get", ThreadOperation::Retrieve(&reply.target_id))),
+        _ => Err(failure(OTHER)),
+    }
+}
+
+fn value_of(
+    result: Result<AzureResourceResult, AzureResourceError>,
+) -> Result<Value, Box<HelperError>> {
+    match result {
+        Ok(AzureResourceResult::AssistantThreads(reply)) => Ok(json!({"id": reply.thread.id})),
+        Ok(_) => Err(failure(OTHER)),
         Err(AzureResourceError::AssistantThreads(ThreadMessagesError::Threads(
             ThreadsError::Status { status, .. },
-        ))) => return Err(with_status(failure("the fixture failed"), status)),
-        Err(error) => return Err(failure(error)),
-    };
-    Ok((kind, value))
+        ))) => Err(with_status(failure("the fixture failed"), status)),
+        Err(error) => Err(failure(error)),
+    }
 }
