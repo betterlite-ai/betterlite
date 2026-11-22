@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-invoke-agent-url-seed
+call:
+  bedrock_services_invoke_agent:
+    scenario: agent_id_alias_path
+    runs:
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: session-1}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+env: {}
+compare: {ignore: []}

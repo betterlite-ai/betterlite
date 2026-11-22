@@ -162,6 +162,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_other_stability_edits"
+path = "fuzz_targets/bedrock_other_stability_edits.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_pegasus"
 path = "fuzz_targets/bedrock_pegasus.rs"
 test = false
