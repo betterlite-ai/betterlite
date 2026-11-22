@@ -1,13 +1,21 @@
+use std::collections::BTreeSet;
+
+use betterlite_auth::auth_request_models::sources::DispatchContext;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_core::api::request_principal_metadata::Metadata;
 use betterlite_logging::passthrough_logging_state::usage::UpstreamReportedUsage;
 use betterlite_models::decisions::Json;
+use http::HeaderMap;
+use http::header::HeaderValue;
 use serde_json::Number;
 
 use crate::failure_hook::lift::PASS_THROUGH_CALL_TYPE;
 use crate::passthrough::PassthroughLogPayload;
 use crate::passthrough::failure_payload::{build_failure_payload, carry_guardrail_logging_info};
-use crate::passthrough::request_context::{PassThroughKwargs, PassthroughLoggingObj};
+use crate::passthrough::request_context::{
+    PassThroughInit, PassThroughKey, PassThroughKwargs, PassThroughRequest, PassthroughLoggingObj,
+    init_pass_through_kwargs,
+};
 
 fn data(text: &str) -> RequestData {
     serde_json::from_str(text).unwrap()
@@ -32,6 +40,60 @@ fn payload() -> PassthroughLogPayload {
         response_body: None,
         cost_per_request: None,
     }
+}
+
+fn kwargs_with_credentials() -> PassThroughKwargs {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "authorization",
+        HeaderValue::from_static("Bearer sk-secret"),
+    );
+    headers.insert("x-litellm-api-key", HeaderValue::from_static("sk-litellm"));
+    headers.insert("cookie", HeaderValue::from_static("session=abc"));
+    headers.insert("x-custom", HeaderValue::from_static("visible"));
+    let paths = BTreeSet::new();
+    let dispatch = DispatchContext {
+        endpoint_marker: None,
+        path_params: &paths,
+    };
+    let user_api_key_dict = PassThroughKey::default();
+    let mut logging_obj = PassthroughLoggingObj::default();
+    init_pass_through_kwargs(PassThroughInit {
+        request: PassThroughRequest {
+            url: "https://upstream.example/v1",
+            method: "POST",
+            headers: &headers,
+            deployment_model_info: None,
+        },
+        user_api_key_dict: &user_api_key_dict,
+        passthrough_logging_payload: payload(),
+        logging_obj: &mut logging_obj,
+        parsed_body: None,
+        litellm_call_id: None,
+        dispatch: &dispatch,
+    })
+    .unwrap()
+}
+
+fn assert_redacted_headers() {
+    let kwargs = kwargs_with_credentials();
+    let request_payload = build_failure_payload(None, Some(&kwargs), None, None, None);
+    let params = object(&request_payload["litellm_params"]);
+    let proxy_request = object(&params["proxy_server_request"]);
+    let sent_headers = object(&proxy_request["headers"]);
+    assert_eq!(
+        sent_headers["authorization"],
+        Json::Text("***REDACTED***".to_owned())
+    );
+    assert_eq!(
+        sent_headers["x-litellm-api-key"],
+        Json::Text("***REDACTED***".to_owned())
+    );
+    assert_eq!(
+        sent_headers["cookie"],
+        Json::Text("***REDACTED***".to_owned())
+    );
+    assert_eq!(sent_headers["x-custom"], Json::Text("visible".to_owned()));
 }
 
 fn assert_carried() {
@@ -218,4 +280,5 @@ fn passthrough_build_failure_payload() {
     assert_merged(&merged());
     assert_model_and_provider();
     assert_usage();
+    assert_redacted_headers();
 }

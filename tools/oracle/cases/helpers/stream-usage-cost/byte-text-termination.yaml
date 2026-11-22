@@ -1,0 +1,77 @@
+kind: helper
+name: stream-usage-cost-byte-text-termination
+call:
+  b8930:
+    chunk:
+      kind: bytes
+      value: null
+      text: "data: {\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1}}\n\n"
+    enabled: true
+    model_name: gpt-4o
+    prices:
+      recorder: 0.25
+      completion: 0.5
+    log:
+      model: gpt-4o
+      call_type: acompletion
+      details: {}
+calls:
+  - b8930:
+      chunk:
+        kind: bytes
+        value: null
+        text: "data: {\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1}}"
+      enabled: true
+      model_name: gpt-4o
+      prices:
+        recorder: 0.25
+        completion: 0.5
+      log:
+        model: gpt-4o
+        call_type: acompletion
+        details: {}
+  - b8930:
+      chunk:
+        kind: bytes
+        value: null
+        text: "data: {\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1}}\r\n\r\n"
+      enabled: true
+      model_name: gpt-4o
+      prices:
+        recorder: 0.25
+        completion: 0.5
+      log:
+        model: gpt-4o
+        call_type: acompletion
+        details: {}
+  - b8930:
+      chunk:
+        kind: text
+        value: null
+        text: "data: {\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1}}\r\n\r\n"
+      enabled: true
+      model_name: gpt-4o
+      prices:
+        recorder: 0.25
+        completion: 0.5
+      log:
+        model: gpt-4o
+        call_type: acompletion
+        details: {}
+  - b8930:
+      chunk:
+        kind: text
+        value: null
+        text: "data: {\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1}}"
+      enabled: true
+      model_name: gpt-4o
+      prices:
+        recorder: 0.25
+        completion: 0.5
+      log:
+        model: gpt-4o
+        call_type: acompletion
+        details: {}
+env: {}
+compare:
+  ignore: []

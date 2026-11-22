@@ -1,0 +1,19 @@
+kind: helper
+name: invoke-plain-agent-noop
+call:
+  b4781:
+    operation: invoke
+    auth:
+      user_id: human
+      team_id: null
+      agent_id: null
+      context: null
+    target_name: plain-agent
+    registry:
+      - '{"agent_id":"plain","agent_name":"plain-agent","agent_card_params":{}}'
+    store: null
+    granted: []
+    billable: true
+env: {}
+compare:
+  ignore: []
