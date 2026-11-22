@@ -27,7 +27,7 @@ use crate::prepared::{PreparedRequest, Upstream};
 
 use super::support::{self, Fixture};
 
-pub(super) const AZURE_BASE: &str = "https://resource.openai.azure.com";
+const AZURE_BASE: &str = "https://resource.openai.azure.com";
 
 fn base_credentials() -> Credentials {
     Credentials {
@@ -48,7 +48,7 @@ fn text_call(optional: Object, credentials: Credentials, acompletion: bool) -> T
     }
 }
 
-pub(super) fn base_only() -> Credentials {
+fn base_only() -> Credentials {
     Credentials {
         api_base: Some(String::from(AZURE_BASE)),
         ..support::credentials()
@@ -548,7 +548,7 @@ pub(super) fn config_ranks() {
     empty_values_fall_through();
     version_default();
     token_pop();
-    malformed_extra_body();
+    extra_body_token_edges();
     keyless_call();
 }
 
@@ -604,6 +604,16 @@ fn global_ranks(composition: &Composition) {
             .map(SecretString::expose_secret),
         Some("env-token")
     );
+    let mut empty_global = support::composition(&[("AZURE_API_BASE", "env-base")]);
+    empty_global.globals.api_base = Some(String::new());
+    let fell_through = resolve(
+        &empty_global,
+        support::credentials(),
+        Operation::Chat,
+        Some("gpt-4o"),
+    )
+    .expect("the empty global base");
+    assert_eq!(fell_through.api_base.as_deref(), Some("env-base"));
 }
 
 // azure_key beats the environment keys, and AZURE_OPENAI_API_KEY beats AZURE_API_KEY
@@ -614,6 +624,20 @@ fn key_ranks(composition: &mut Composition) {
     assert_key_rank(composition, "env-openai-key");
     let only_azure = support::composition(&[("AZURE_API_KEY", "only-azure-key")]);
     assert_key_rank(&only_azure, "only-azure-key");
+    let empty_environment = support::composition(&[("AZURE_OPENAI_API_KEY", "env-openai-key")]);
+    let mut empty_key = base_only();
+    empty_key.api_key = Some(support::key(""));
+    let keyed = resolve(
+        &empty_environment,
+        empty_key,
+        Operation::Chat,
+        Some("gpt-4o"),
+    )
+    .expect("the empty explicit key");
+    assert_eq!(
+        keyed.api_key.as_ref().map(SecretString::expose_secret),
+        Some("env-openai-key")
+    );
     assert_eq!(DEFAULT_API_TYPE, "azure");
 }
 
@@ -647,18 +671,26 @@ fn empty_values_fall_through() {
     assert_eq!(resolved.api_base.as_deref(), Some("env-base"));
     assert_eq!(resolved.api_version.as_deref(), Some("env-version"));
 
-    let environment = support::composition(&[
+    let secret_environment = support::composition(&[
         ("AZURE_OPENAI_API_KEY", ""),
         ("AZURE_API_KEY", "fallback-key"),
         ("AZURE_AD_TOKEN", ""),
     ]);
-    let resolved = resolve(&environment, base_only(), Operation::Chat, Some("gpt-4o"))
-        .expect("the empty environment secrets");
+    let secret_resolved = resolve(
+        &secret_environment,
+        base_only(),
+        Operation::Chat,
+        Some("gpt-4o"),
+    )
+    .expect("the empty environment secrets");
     assert_eq!(
-        resolved.api_key.as_ref().map(SecretString::expose_secret),
+        secret_resolved
+            .api_key
+            .as_ref()
+            .map(SecretString::expose_secret),
         Some("fallback-key")
     );
-    assert!(resolved.azure_ad_token.is_none());
+    assert!(secret_resolved.azure_ad_token.is_none());
 }
 
 // chat alone falls back to the api-version default
@@ -676,6 +708,17 @@ fn version_default() {
     .expect("the default version");
     assert_eq!(resolved.api_version.as_deref(), Some("2025-02-01-preview"));
     assert_eq!(resolved.api_type, "azure");
+    let empty_version = support::composition(&[("AZURE_API_VERSION", "")]);
+    let from_empty = resolve(&empty_version, base_only(), Operation::Chat, Some("gpt-4o"))
+        .expect("the empty environment version");
+    assert_eq!(
+        from_empty.api_version.as_deref(),
+        Some("2025-02-01-preview")
+    );
+    let empty_type = support::composition(&[("AZURE_API_TYPE", "")]);
+    let typed = resolve(&empty_type, base_only(), Operation::Chat, Some("gpt-4o"))
+        .expect("the empty api type");
+    assert_eq!(typed.api_type, "azure");
 }
 
 // the token pop mutates the body even when it falls back to the environment
@@ -712,7 +755,7 @@ fn token_pop() {
     );
 }
 
-fn malformed_extra_body() {
+fn extra_body_token_edges() {
     let not_object = resolve(
         &support::composition(&[]),
         extra_credentials(r#""text""#),
@@ -734,6 +777,20 @@ fn malformed_extra_body() {
     .err()
     .expect("a non-string token");
     assert!(matches!(not_text, AzureProviderError::ExtraBodyToken));
+    let emptied = resolve(
+        &support::composition(&[("AZURE_AD_TOKEN", "env-token")]),
+        extra_credentials(r#"{"azure_ad_token":""}"#),
+        Operation::Chat,
+        Some("gpt-4o"),
+    )
+    .expect("the empty body token");
+    assert_eq!(
+        emptied
+            .azure_ad_token
+            .as_ref()
+            .map(SecretString::expose_secret),
+        Some("env-token")
+    );
 }
 
 // LiteLLM's SDK refuses a call with no key and no token; the adapter sends it unauthenticated.
