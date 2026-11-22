@@ -1,0 +1,15 @@
+kind: helper
+name: identity-grants-not-a-member-403
+call:
+  identity_grants:
+    users: []
+    denials:
+      - kind: not_a_member
+        user_id: user-1
+        team_id: team-1
+      - kind: not_a_member
+        user_id: user-1
+        team_id: ""
+    teams: []
+env: {}
+compare: {ignore: []}
