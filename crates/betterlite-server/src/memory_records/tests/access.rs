@@ -21,13 +21,13 @@ fn admin_unrestricted_view() {
 #[test]
 fn non_admin_user_visibility() {
     let filter = visibility_filter(&caller(Some("alice"), None, None)).unwrap();
-    assert_eq!(wire(&filter), r#"{"user_id":"alice"}"#);
+    assert_eq!(wire(&filter), r#"{"OR":[{"user_id":"alice"}]}"#);
 }
 
 #[test]
 fn non_admin_team_visibility() {
     let filter = visibility_filter(&caller(None, Some("team-a"), None)).unwrap();
-    assert_eq!(wire(&filter), r#"{"team_id":"team-a"}"#);
+    assert_eq!(wire(&filter), r#"{"OR":[{"team_id":"team-a"}]}"#);
 }
 
 #[test]
