@@ -49,7 +49,7 @@ fn triple(key: &str, amount: f64, ttl: Option<i64>) -> (String, f64, Option<i64>
 #[tokio::test]
 async fn increments_output_tokens_in_both_counters() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let response = ResponseObject::Usage(Usage {
         cached_tokens: Some(4),
@@ -79,7 +79,7 @@ async fn increments_output_tokens_in_both_counters() {
 #[tokio::test]
 async fn increments_input_tokens_without_the_cached_count() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let response = ResponseObject::Usage(Usage {
         cached_tokens: Some(4),
@@ -109,7 +109,7 @@ async fn increments_input_tokens_without_the_cached_count() {
 #[tokio::test]
 async fn increments_total_tokens_without_the_cached_count() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let response = ResponseObject::Usage(Usage {
         cached_tokens: Some(4),
@@ -139,7 +139,7 @@ async fn increments_total_tokens_without_the_cached_count() {
 #[tokio::test]
 async fn shares_the_default_pool_for_an_unreserved_priority() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("low"));
     let response = ResponseObject::Usage(usage(10, 7, 17));
     let recorded_ops = recorded(
@@ -170,7 +170,7 @@ async fn shares_the_default_pool_for_an_unreserved_priority() {
 #[tokio::test]
 async fn shares_the_default_pool_without_a_priority() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(None);
     let response = ResponseObject::Usage(usage(10, 7, 17));
     let recorded_ops = recorded(
@@ -201,7 +201,7 @@ async fn shares_the_default_pool_without_a_priority() {
 #[tokio::test]
 async fn does_nothing_without_a_model_group() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let response = ResponseObject::Usage(usage(10, 7, 17));
     let recorded_ops = recorded(
@@ -222,7 +222,7 @@ async fn does_nothing_without_a_model_group() {
 #[tokio::test]
 async fn does_nothing_without_usage() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let response = ResponseObject::WithUsage(None);
     let recorded_ops = recorded(
@@ -243,7 +243,7 @@ async fn does_nothing_without_usage() {
 #[tokio::test]
 async fn does_nothing_for_an_unmodelled_response() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let success_event = LogSuccessEvent {
         metadata: &metadata,
@@ -259,7 +259,7 @@ async fn does_nothing_for_an_unmodelled_response() {
 #[tokio::test]
 async fn does_nothing_for_a_zero_token_count() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let response = ResponseObject::Usage(usage(0, 0, 0));
     let recorded_ops = recorded(
@@ -281,7 +281,7 @@ async fn does_nothing_for_a_zero_token_count() {
 async fn does_nothing_above_the_exact_float_range() {
     let capture = Capture::start();
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let response = ResponseObject::Usage(usage(0, 0, 0x0020_0000_0000_0001_u64));
     let recorded_ops = recorded(
@@ -308,7 +308,7 @@ async fn does_nothing_above_the_exact_float_range() {
 #[tokio::test]
 async fn keeps_the_configured_window_as_the_ttl() {
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let response = ResponseObject::Usage(usage(10, 7, 17));
     let recorded_ops = recorded(
@@ -336,7 +336,7 @@ async fn keeps_the_configured_window_as_the_ttl() {
 async fn logs_a_known_priority_as_it_is() {
     let capture = Capture::start();
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("high"));
     let response = ResponseObject::Usage(usage(10, 7, 17));
     assert!(
@@ -364,7 +364,7 @@ async fn logs_a_known_priority_as_it_is() {
 async fn redacts_an_unknown_priority_in_the_log() {
     let capture = Capture::start();
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(Some("internal-team-name"));
     let response = ResponseObject::Usage(usage(10, 7, 17));
     assert!(
@@ -399,7 +399,7 @@ async fn redacts_an_unknown_priority_in_the_log() {
 async fn redacts_a_missing_priority_in_the_log() {
     let capture = Capture::start();
     let fixture = CallbackFixture::new();
-    let configured = policy(&[("high", 1.0)]);
+    let configured = policy(&[("high", 1.0_f64)]);
     let metadata = logging_metadata(None);
     let response = ResponseObject::Usage(usage(10, 7, 17));
     assert!(

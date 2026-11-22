@@ -171,10 +171,11 @@ async fn log_success_run(
 }
 
 fn response_object(case: &LogSuccessCase) -> ResponseObject {
-    match &case.usage {
-        Some(usage) => ResponseObject::Usage(usage.clone()),
-        None => ResponseObject::WithUsage(None),
-    }
+    case.usage
+        .as_ref()
+        .map_or(ResponseObject::WithUsage(None), |usage| {
+            ResponseObject::Usage(usage.clone())
+        })
 }
 
 fn policy(case: &LogSuccessCase) -> PriorityPolicy {

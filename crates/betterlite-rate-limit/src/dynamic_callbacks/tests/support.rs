@@ -159,7 +159,7 @@ impl CallbackFixture {
         let incremented: Arc<dyn UsageIncrements> = Arc::<RecordingUsage>::clone(&usage);
         Self {
             usage,
-            store: RecordingStore::default(),
+            store: RecordingStore,
             gauges: ConcurrencyGauges {
                 cache: Arc::new(EmptyGauges),
                 clock: Arc::new(EpochClock),
@@ -342,13 +342,11 @@ impl MessageFields {
         if !self.0.is_empty() {
             self.0.push(' ');
         }
-        if name == "message" {
-            self.0.push_str(rendered);
-        } else {
+        if name != "message" {
             self.0.push_str(name);
             self.0.push('=');
-            self.0.push_str(rendered);
         }
+        self.0.push_str(rendered);
     }
 }
 
