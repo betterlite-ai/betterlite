@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 
 use betterlite_auth::budget_primitives::window_start::DurationParser;
@@ -112,10 +112,10 @@ impl FakeCache {
     }
 
     pub(crate) fn memory_json(&self) -> Value {
-        match self.state().memory.and_then(Decimal::from_f64) {
-            Some(amount) => amount_json(amount),
-            None => Value::Null,
-        }
+        self.state()
+            .memory
+            .and_then(Decimal::from_f64)
+            .map_or(Value::Null, amount_json)
     }
 
     pub(crate) fn sets_json(&self) -> Value {
