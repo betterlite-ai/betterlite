@@ -48,10 +48,10 @@ impl ScriptedRouter {
 impl ModelNameSource for ScriptedRouter {
     fn model_names(&self) -> Result<Option<Vec<String>>, LookupError> {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if state.present {
-            return Ok(Some(state.names.iter().cloned().collect()));
-        }
-        Ok(None)
+        let present = state.present;
+        let names: Vec<String> = state.names.iter().cloned().collect();
+        drop(state);
+        Ok(present.then_some(names))
     }
 }
 

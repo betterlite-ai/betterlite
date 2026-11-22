@@ -119,22 +119,23 @@ impl Helper for Op {
 
 fn answer_call(call: &Call) -> Value {
     match call {
-        Call::FlattenedBudget(call) => json!({ "ok": true, "value": call.record }),
-        Call::WithBudget(call) => {
-            json!({ "ok": true, "value": with_budget(&call.info, call.row.as_ref()) })
-        }
-        Call::BudgetOrNone(call) => {
-            json!({ "ok": true, "value": budget_or_none(call.row.as_ref()) })
-        }
-        Call::BudgetResponse(call) => json!({
+        Call::FlattenedBudget(record) => json!({ "ok": true, "value": record.record }),
+        Call::WithBudget(with_budget_call) => json!({
             "ok": true,
-            "value": budget_response(&call.access_group, call.row.as_ref()),
+            "value": with_budget(&with_budget_call.info, with_budget_call.row.as_ref()),
         }),
-        Call::ValidateModelsExist(call) => validate_answer(call),
-        Call::AddAccessGroupToDeployment(call) => group_answer(call, GroupChange::Add),
-        Call::RemoveDeploymentGroup(call) => group_answer(call, GroupChange::Remove),
-        Call::ReadableModelInfoOrRaise(call) => readable_answer(call),
-        Call::RaiseDegradedServing(call) => raise_answer(call),
+        Call::BudgetOrNone(row_call) => {
+            json!({ "ok": true, "value": budget_or_none(row_call.row.as_ref()) })
+        }
+        Call::BudgetResponse(response_call) => json!({
+            "ok": true,
+            "value": budget_response(&response_call.access_group, response_call.row.as_ref()),
+        }),
+        Call::ValidateModelsExist(validate_call) => validate_answer(validate_call),
+        Call::AddAccessGroupToDeployment(group_call) => group_answer(group_call, GroupChange::Add),
+        Call::RemoveDeploymentGroup(group_call) => group_answer(group_call, GroupChange::Remove),
+        Call::ReadableModelInfoOrRaise(readable_call) => readable_answer(readable_call),
+        Call::RaiseDegradedServing(raise_call) => raise_answer(raise_call),
     }
 }
 

@@ -104,27 +104,27 @@ fn group_database(deployments: Vec<DeploymentRow>) -> ScriptedDatabase {
 fn http_failure(error: GroupDataError) -> HttpFailure {
     match error {
         GroupDataError::Http(failure) => failure,
-        other @ GroupDataError::ValueError { .. }
-        | other @ GroupDataError::Runtime { .. }
-        | other @ GroupDataError::Database(_)
-        | other @ GroupDataError::Catalog(_)
-        | other @ GroupDataError::Row(_) => panic!("expected an HTTP failure, got {other:?}"),
+        other @ (GroupDataError::ValueError { .. }
+        | GroupDataError::Runtime { .. }
+        | GroupDataError::Database(_)
+        | GroupDataError::Catalog(_)
+        | GroupDataError::Row(_)) => panic!("expected an HTTP failure, got {other:?}"),
     }
 }
 
 fn value_error_message(error: GroupDataError) -> String {
     match error {
         GroupDataError::ValueError { message } => message,
-        other @ GroupDataError::Http(_)
-        | other @ GroupDataError::Runtime { .. }
-        | other @ GroupDataError::Database(_)
-        | other @ GroupDataError::Catalog(_)
-        | other @ GroupDataError::Row(_) => panic!("expected a value error, got {other:?}"),
+        other @ (GroupDataError::Http(_)
+        | GroupDataError::Runtime { .. }
+        | GroupDataError::Database(_)
+        | GroupDataError::Catalog(_)
+        | GroupDataError::Row(_)) => panic!("expected a value error, got {other:?}"),
     }
 }
 
-fn runtime_message(error: GroupDataError) -> String {
-    let GroupDataError::Runtime { message } = &error else {
+fn runtime_message(error: &GroupDataError) -> String {
+    let GroupDataError::Runtime { message } = error else {
         panic!("expected a runtime error, got {error:?}")
     };
     message.clone()

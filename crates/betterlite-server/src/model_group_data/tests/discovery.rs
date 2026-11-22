@@ -48,7 +48,7 @@ async fn discovery_bad_row_failure() {
         .await
         .expect_err("the unreadable row");
     assert_eq!(
-        runtime_message(error),
+        runtime_message(&error),
         "model_info for deployment d1 is not a JSON object"
     );
 }
@@ -67,7 +67,7 @@ async fn discovery_non_list_groups_failure() {
         .await
         .expect_err("the malformed groups");
     assert_eq!(
-        runtime_message(error),
+        runtime_message(&error),
         "access_groups for deployment d2 is not a list"
     );
 }
@@ -86,7 +86,7 @@ async fn discovery_non_string_group_failure() {
         .await
         .expect_err("the malformed entry");
     assert_eq!(
-        runtime_message(error),
+        runtime_message(&error),
         "access_groups for deployment d3 holds a non-string entry"
     );
 }
