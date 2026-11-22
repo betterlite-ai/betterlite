@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Final, NoReturn
@@ -187,7 +187,7 @@ def async_chat(server_url: str) -> tuple[AsyncCompletions, AsyncChatView]:
 
 
 @contextmanager
-def adapter_seam(adapter: FakeAdapter) -> Iterator[None]:
+def adapter_seam(adapter: FakeAdapter) -> Generator[None]:
     adapters.adapter_entries = [{"id": ADAPTER_ID, "adapter": adapter}]
     try:
         yield
@@ -196,7 +196,7 @@ def adapter_seam(adapter: FakeAdapter) -> Iterator[None]:
 
 
 @contextmanager
-def config_seam(config_file: Path) -> Iterator[None]:
+def config_seam(config_file: Path) -> Generator[None]:
     arguments.config_path = str(config_file)
     try:
         yield

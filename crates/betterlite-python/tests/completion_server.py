@@ -403,7 +403,7 @@ def header_of(call_record: RecordedCall, name: str) -> str | None:
     return None
 
 
-def error_view(error: BaseException) -> tuple[str, str, int, str, str]:
+def error_view(error: BaseException | ErrorFields) -> tuple[str, str, int, str, str]:
     match error:
         case ErrorFields():
             return (

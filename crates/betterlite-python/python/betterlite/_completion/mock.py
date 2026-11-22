@@ -44,7 +44,8 @@ def provider_name(value: CallValue) -> str:
     match value:
         case str() if len(value) > 0:
             return value
-    return "openai"
+        case object():
+            return "openai"
 
 
 def _mapped_mock(error: exceptions.MockException, model: str, provider: str) -> NoReturn:
