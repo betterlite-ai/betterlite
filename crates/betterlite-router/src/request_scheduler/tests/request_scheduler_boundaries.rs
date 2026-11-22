@@ -247,6 +247,9 @@ async fn a_provider_failure_keeps_the_status_code_and_the_stamped_priority() {
         )
         .await
         .expect_err("the provider refused the call");
+    assert_eq!(error.status_code(), Some(429));
+    assert_eq!(error.code(), Some("429"));
+    assert_eq!(error.priority(), Some(Priority::Low.value()));
     match error {
         SchedulerError::Provider { failure } => {
             assert_eq!(failure.status, 429);
