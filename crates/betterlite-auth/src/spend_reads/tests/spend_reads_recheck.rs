@@ -37,6 +37,25 @@ async fn a_stale_low_counter_is_repaired_to_the_database_floor() {
 }
 
 #[tokio::test]
+async fn an_equal_fallback_is_not_a_staleness_signal() {
+    let fixture = Fixture::new(true);
+    fixture
+        .cache
+        .seed_redis(KEY, ReseedCacheValue::Number(decimal("6")));
+    fixture.rows.set_entity(RowAnswer::Spent(decimal("7")));
+
+    let spend = fixture
+        .reads(false)
+        .get_current_spend(&request(KEY, decimal("6"), Some(decimal("50"))))
+        .await
+        .expect("the equal fallback is not a staleness signal");
+
+    assert_eq!(spend, decimal("6"));
+    assert!(fixture.cache.set_max_calls().is_empty());
+    assert!(written(&fixture.cache.memory_writes(), &marker_key(KEY)).is_none());
+}
+
+#[tokio::test]
 async fn a_healthy_counter_is_returned_without_a_database_read() {
     let fixture = Fixture::new(true);
     fixture

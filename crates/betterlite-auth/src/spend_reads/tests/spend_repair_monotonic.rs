@@ -3,6 +3,8 @@ use crate::spend_reseed::values::ReseedCacheValue;
 
 #[tokio::test]
 async fn memory_is_raised_to_the_database_floor() {
+    let logs = Captured::default();
+    let _guard = logs.install();
     let fixture = Fixture::new(false);
     fixture
         .cache
@@ -21,6 +23,7 @@ async fn memory_is_raised_to_the_database_floor() {
         fixture.cache.memory_writes(),
         [(KEY.to_owned(), decimal("5"), None)]
     );
+    assert!(!logs.has("could not be repaired"));
 }
 
 #[tokio::test]
