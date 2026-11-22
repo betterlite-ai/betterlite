@@ -429,11 +429,11 @@ fn registry_forwards_the_google_pse_hooks() {
         .unwrap();
     assert_eq!(reply.results.len(), 1);
     assert_eq!(reply.results[0].url, "https://example.test/1");
-    let mut signed_input = Headers::new();
-    signed_input.insert("X-Trace".to_owned(), "abc".to_owned());
+    let mut outgoing = Headers::new();
+    outgoing.insert("X-Trace".to_owned(), "abc".to_owned());
     let (signed, encoded) = config
         .sign_request(
-            signed_input,
+            outgoing,
             &OutboundSearch {
                 api_base: "https://www.googleapis.com/customsearch/v1",
                 api_key: None,

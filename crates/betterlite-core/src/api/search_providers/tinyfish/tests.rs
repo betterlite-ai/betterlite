@@ -506,10 +506,10 @@ fn tinyfish_reply_cuts_results_to_the_caller_limit_or_ten() {
 
 #[test]
 fn tinyfish_complete_url_returns_the_base_without_a_record() {
-    let blank_base = environment(&[("TINYFISH_API_KEY", "key"), ("TINYFISH_API_BASE", "")]);
-    let blank = TinyfishSearch::load(&blank_base);
+    let stripped = environment(&[("TINYFISH_API_KEY", "key"), ("TINYFISH_API_BASE", "")]);
+    let unset_base = TinyfishSearch::load(&stripped);
     assert_eq!(
-        blank
+        unset_base
             .complete_url(None, &Object::new(), None, None)
             .unwrap(),
         "https://api.search.tinyfish.ai"
