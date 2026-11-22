@@ -198,7 +198,7 @@ async fn generated_null_token_fallback() {
     assert_eq!(harness.records()[0].object_id, "");
 
     let with_token = wired(BOTH);
-    let event = generated(r#"{}"#, r#"{"key": "sk-new-key", "token_id": "tok-2"}"#);
+    let event = generated("{}", r#"{"key": "sk-new-key", "token_id": "tok-2"}"#);
     with_token.dispatch(&event, &caller()).await.unwrap();
     assert_eq!(
         with_token.steps(),

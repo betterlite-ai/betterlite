@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 
-use crate::key_event_sinks::email::{CreatedKey, EmailError, LegacyEmail};
+use crate::key_event_sinks::email::{CreatedKey, LegacyEmail};
+use crate::key_event_sinks::error::EmailError;
 use crate::key_event_sinks::secrets::SecretSink;
 
 #[derive(Debug, thiserror::Error)]

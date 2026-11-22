@@ -205,15 +205,18 @@ class Clock:
         self.moment = datetime.fromisoformat(moment)
 
     def now(self, tz: timezone | None = None) -> datetime:
-        return self.moment if tz is None else self.moment.astimezone(tz)
+        if tz is None:
+            return self.moment
+        return self.moment.astimezone(tz)
 
 
 class Uuids:
     def __init__(self, value: str) -> None:
-        self.value = UUID(value)
+        self.value = value
 
     def uuid4(self) -> UUID:
-        return self.value
+        issued = UUID(self.value)
+        return issued
 
 
 def parsed(text: str | None) -> JsonValue:
@@ -237,8 +240,7 @@ def audit_view(record: LiteLLM_AuditLogs) -> JsonValue:
     }
 
 
-# the audit writer is replaced by a plain callable so the record is seen where the hook schedules it,
-# before the secret-manager effect the hook awaits next
+# the audit writer is a plain callable, so the record is seen where the hook schedules it, before the secret-manager effect the hook awaits next
 class Recorder:
     def __init__(self, board: Board) -> None:
         self.board = board

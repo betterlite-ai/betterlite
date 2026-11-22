@@ -88,7 +88,7 @@ fn audit_update(
         .ok_or(KeyEventError::MissingUpdateKey)?;
     let object_id = hash_token_if_needed(key.expose_secret());
     let updated_values = encode::update_dump(&event.data).map_err(KeyEventError::Encode)?;
-    let before_value = encode::row_python_dump(&event.row).map_err(KeyEventError::Row)?;
+    let before_value = encode::row_legacy_dump(&event.row).map_err(KeyEventError::Row)?;
     let mut record = audit
         .record(KeyAuditEntry {
             action: AuditAction::Updated,

@@ -4,6 +4,7 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::{Expiry, LiteLLMVerificationToken};
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
+use serde_json::json;
 
 use crate::audit_events::record::timestamp_text;
 use crate::key_fields::error::DecodeError;
@@ -62,7 +63,7 @@ pub fn row_dump(row: &LiteLLMVerificationToken) -> Result<String, serde_json::Er
 }
 
 // json.dumps(existing_key_row.json(exclude_none=True), default=str)
-pub fn row_python_dump(row: &LiteLLMVerificationToken) -> Result<String, serde_json::Error> {
+pub fn row_legacy_dump(row: &LiteLLMVerificationToken) -> Result<String, serde_json::Error> {
     let mut value = serde_json::to_value(row)?;
     rewrite_expiry(&mut value, row.expires.as_ref(), InstantForm::Python);
     rewrite_row(&mut value, InstantForm::Python);
@@ -112,7 +113,7 @@ fn exclude_none(value: &mut JsonValue) {
         router.retain(|_, field| !field.is_null());
         router
             .entry("model_group_alias".to_owned())
-            .or_insert_with(|| JsonValue::Object(Default::default()));
+            .or_insert_with(|| json!({}));
     }
     if let Some(JsonValue::Array(entries)) = fields.get_mut("budget_limits") {
         for entry in entries {
@@ -204,13 +205,13 @@ fn parse_instant(text: &str) -> Option<Instant> {
 fn render_instant(instant: Instant, form: InstantForm) -> String {
     match (instant, form) {
         (Instant::Aware(value), InstantForm::Json) => timestamp_text(value, "Z"),
-        (Instant::Aware(value), InstantForm::Python) => python_aware(value),
+        (Instant::Aware(value), InstantForm::Python) => aware_legacy_text(value),
         (Instant::Naive(value), InstantForm::Json) => naive_json(value),
-        (Instant::Naive(value), InstantForm::Python) => naive_python(value),
+        (Instant::Naive(value), InstantForm::Python) => naive_legacy_text(value),
     }
 }
 
-fn python_aware(value: DateTime<FixedOffset>) -> String {
+fn aware_legacy_text(value: DateTime<FixedOffset>) -> String {
     let seconds = value.format("%Y-%m-%d %H:%M:%S");
     let micros = value.timestamp_subsec_micros();
     let zone = value.format("%:z");
@@ -231,7 +232,7 @@ fn naive_json(value: NaiveDateTime) -> String {
     }
 }
 
-fn naive_python(value: NaiveDateTime) -> String {
+fn naive_legacy_text(value: NaiveDateTime) -> String {
     let seconds = value.format("%Y-%m-%d %H:%M:%S");
     let micros = value.and_utc().timestamp_subsec_micros();
     if micros == 0 {

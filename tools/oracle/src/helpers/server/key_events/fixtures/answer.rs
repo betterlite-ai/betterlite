@@ -101,7 +101,10 @@ pub(crate) async fn answer(input: &Input) -> HelperResult {
             enabled: input.audit == Some(true),
         }),
         clock: Arc::new(audit_clock(input)?),
-        new_id: fixed_id(&input.id),
+        new_id: {
+            let id = input.id.clone();
+            Arc::new(move || id.clone())
+        },
         scheduler: Arc::new(RecordingScheduler {
             board: Arc::clone(&board),
         }),
@@ -116,11 +119,6 @@ pub(crate) async fn answer(input: &Input) -> HelperResult {
     .await
     .is_err();
     Ok(json!({"raised": raised, "trace": board.entries()}))
-}
-
-fn fixed_id(id: &str) -> Arc<dyn Fn() -> String + Send + Sync> {
-    let id = id.to_owned();
-    Arc::new(move || id.clone())
 }
 
 fn settings(input: &Input) -> Settings {
@@ -161,15 +159,16 @@ fn event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
 }
 
 fn generated_event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
-    let data = GenerateKeyRequest::read(&typed(input.data.as_ref(), "data")?)
+    let data = GenerateKeyRequest::read(&decoded::<TypedValue>(input.data.as_ref(), "data")?)
         .map_err(|error| failure("ValidationError", error))?;
-    let response = GenerateKeyResponse::read(&typed(input.response.as_ref(), "response")?)
-        .map_err(|error| failure("ValidationError", error))?;
+    let response =
+        GenerateKeyResponse::read(&decoded::<TypedValue>(input.response.as_ref(), "response")?)
+            .map_err(|error| failure("ValidationError", error))?;
     Ok(KeyEvent::Generated(GeneratedEvent { data, response }))
 }
 
 fn updated_event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
-    let data = UpdateKeyRequest::read(&typed(input.data.as_ref(), "data")?)
+    let data = UpdateKeyRequest::read(&decoded::<TypedValue>(input.data.as_ref(), "data")?)
         .map_err(|error| failure("ValidationError", error))?;
     let row = decoded::<LiteLLMVerificationToken>(input.row.as_ref(), "row")?;
     let response = decoded::<JsonData>(input.response.as_ref(), "response")?;
@@ -183,14 +182,15 @@ fn updated_event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
 fn rotated_event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
     let data = match input.data.as_ref() {
         Some(value) => Some(
-            RegenerateKeyRequest::read(&typed(Some(value), "data")?)
+            RegenerateKeyRequest::read(&decoded::<TypedValue>(Some(value), "data")?)
                 .map_err(|error| failure("ValidationError", error))?,
         ),
         None => None,
     };
     let row = decoded::<LiteLLMVerificationToken>(input.row.as_ref(), "row")?;
-    let response = GenerateKeyResponse::read(&typed(input.response.as_ref(), "response")?)
-        .map_err(|error| failure("ValidationError", error))?;
+    let response =
+        GenerateKeyResponse::read(&decoded::<TypedValue>(input.response.as_ref(), "response")?)
+            .map_err(|error| failure("ValidationError", error))?;
     Ok(KeyEvent::Rotated(RotatedEvent {
         data,
         row,
@@ -210,11 +210,6 @@ fn deleted_event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
         rows,
         response,
     }))
-}
-
-fn typed(value: Option<&JsonValue>, name: &str) -> Result<TypedValue, Box<HelperError>> {
-    let json = decoded::<JsonData>(value, name)?;
-    Ok(TypedValue { json })
 }
 
 fn decoded<T>(value: Option<&JsonValue>, name: &str) -> Result<T, Box<HelperError>>
