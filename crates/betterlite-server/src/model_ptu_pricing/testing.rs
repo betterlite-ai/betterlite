@@ -12,7 +12,7 @@ use crate::model_ptu_pricing::catalog::LoadedCatalog;
 pub struct CostMap {
     pub entries: BTreeMap<String, JsonObject>,
     pub broken: bool,
-    pub lookups: Mutex<Vec<String>>,
+    pub seen: Mutex<Vec<String>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -25,13 +25,13 @@ impl CostMap {
         Self {
             entries,
             broken,
-            lookups: Mutex::new(Vec::new()),
+            seen: Mutex::new(Vec::new()),
         }
     }
 
     #[must_use]
     pub fn lookups(&self) -> Vec<String> {
-        self.lookups
+        self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -46,7 +46,7 @@ impl ModelMetadataSource for CostMap {
         model: &str,
         _keys: &mut ModelCostKeys,
     ) -> impl Future<Output = Result<Option<JsonObject>, Unreachable>> + Send {
-        self.lookups
+        self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(model.to_owned());
@@ -61,7 +61,7 @@ impl ModelMetadataSource for CostMap {
 
 impl LoadedCatalog for CostMap {
     fn entry(&self, key: &str) -> Option<JsonObject> {
-        self.lookups
+        self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(key.to_owned());
