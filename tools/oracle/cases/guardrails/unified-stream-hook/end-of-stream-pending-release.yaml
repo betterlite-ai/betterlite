@@ -1,4 +1,5 @@
-name: unified-stream-hook-buffered-release
+# generic_guardrail_api gets this hook with buffer_until_moderated_default false, so nothing is buffered here: the finish chunk and the chunks after it are held as pending and released only after the final scan passes.
+name: unified-stream-hook-end-of-stream-pending-release
 config: |
   model_list:
     - model_name: oracle-model
