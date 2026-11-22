@@ -49,10 +49,9 @@ pub fn exception_status(endpoint: &JsonObject, exceptions: &BTreeMap<String, Pro
     let Some(model_id) = endpoint_id(endpoint) else {
         return stored_status(endpoint);
     };
-    match exceptions.get(model_id) {
-        Some(failure) => failure.status_code,
-        None => stored_status(endpoint),
-    }
+    exceptions
+        .get(model_id)
+        .map_or_else(|| stored_status(endpoint), |failure| failure.status_code)
 }
 
 // endpoint.get("exception_status", 500): the shared-cache row's integer, else LiteLLM's 500

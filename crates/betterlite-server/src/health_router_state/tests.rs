@@ -213,7 +213,7 @@ impl Fixture {
     fn with_staleness(settings: RouterSettings, staleness: f64) -> Self {
         let clock = TestClock::at(100.0);
         let health = Arc::new(RecordingHealth::default());
-        let shared: Arc<dyn SharedHealth> = Arc::clone(&health);
+        let shared = Arc::clone(&health);
         let states = DeploymentHealthCache::new(staleness, shared, clock.handle());
         Self {
             clock,
