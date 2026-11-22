@@ -42,7 +42,6 @@ struct BudgetLookups<'request> {
     team: TeamBudgetLookup<'request>,
     user: UserBudgetLookup<'request>,
     org: OrgBudgetLookup<'request>,
-    customer: CustomerBudgetLookup<'request>,
 }
 
 type LookupOutcome = Result<(), LookupError>;
@@ -80,20 +79,23 @@ impl<L: RequestBudgetLookups> RemainingBudgetFanOut<L> {
         if !self.enabled {
             return;
         }
-        let lookups = lookups_for(request);
-        match timeout(self.timeout, self.dispatch(lookups)).await {
+        match timeout(self.timeout, self.dispatch(request)).await {
             Ok(outcomes) => log_failures(outcomes),
             Err(_) => log_timeout(self.timeout),
         }
     }
 
-    async fn dispatch(&self, lookups: BudgetLookups<'_>) -> LookupOutcomes {
+    async fn dispatch(&self, request: RemainingBudgetRequest<'_>) -> LookupOutcomes {
+        let lookups = lookups_for(request);
         join5(
             self.lookups.key(lookups.key),
             self.lookups.team(lookups.team),
             self.lookups.user(lookups.user),
             self.lookups.org(lookups.org),
-            self.lookups.customer(lookups.customer),
+            self.lookups.customer(CustomerBudgetLookup {
+                end_user_id: request.end_user_id,
+                response_cost: request.response_cost,
+            }),
         )
         .await
     }
@@ -123,25 +125,20 @@ fn lookups_for(request: RemainingBudgetRequest<'_>) -> BudgetLookups<'_> {
             user_max_budget: metadata_decimal(request.metadata, "user_api_key_user_max_budget"),
             response_cost: request.response_cost,
             carried: UserBudgetSnapshot::from_metadata(request.metadata),
-            user_email: metadata_text(request.metadata.get("user_api_key_user_email")),
+            user_email: request
+                .metadata
+                .get("user_api_key_user_email")
+                .and_then(AgentJson::as_str),
         },
         org: OrgBudgetLookup {
             org_id: request.org_id,
             response_cost: request.response_cost,
             carried: OrgBudgetSnapshot::from_metadata(request.metadata),
-            org_alias: metadata_text(request.metadata.get("user_api_key_org_alias")),
+            org_alias: request
+                .metadata
+                .get("user_api_key_org_alias")
+                .and_then(AgentJson::as_str),
         },
-        customer: CustomerBudgetLookup {
-            end_user_id: request.end_user_id,
-            response_cost: request.response_cost,
-        },
-    }
-}
-
-fn metadata_text(json: Option<&AgentJson>) -> Option<&str> {
-    match json {
-        Some(value) => value.as_str(),
-        None => None,
     }
 }
 
