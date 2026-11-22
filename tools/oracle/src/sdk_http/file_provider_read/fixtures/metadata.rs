@@ -201,7 +201,11 @@ fn failure(error: AnthropicError) -> BaseLlmException {
     }
 }
 
-fn exception(status_code: u16, message: String, headers: ExceptionHeaders) -> BaseLlmException {
+const fn exception(
+    status_code: u16,
+    message: String,
+    headers: ExceptionHeaders,
+) -> BaseLlmException {
     BaseLlmException {
         status_code,
         message,
@@ -214,7 +218,7 @@ fn exception(status_code: u16, message: String, headers: ExceptionHeaders) -> Ba
 fn http_headers(headers: &Headers) -> Result<HttpHeaders, BaseLlmException> {
     let mut map = HttpHeaders::new();
     for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_invalid| {
+        let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|_invalid| {
             exception(
                 0,
                 format!("the header name {name} is not valid"),
@@ -224,11 +228,11 @@ fn http_headers(headers: &Headers) -> Result<HttpHeaders, BaseLlmException> {
         let parsed = HeaderValue::from_str(value).map_err(|_invalid| {
             exception(
                 0,
-                format!("the {name} header value is not valid"),
+                format!("the {header_name} header value is not valid"),
                 BTreeMap::new(),
             )
         })?;
-        map.insert(name, parsed);
+        map.insert(header_name, parsed);
     }
     Ok(map)
 }

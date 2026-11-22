@@ -39,9 +39,9 @@ impl WriteTransport for WireClient {
 
     async fn send(&self, mut request: WriteRequest) -> Result<UpstreamResponse, TransportError> {
         let lent = self.headers.iter().filter_map(|(name, value)| {
-            let name = HeaderName::from_bytes(name.as_bytes()).ok()?;
-            let value = HeaderValue::from_str(value).ok()?;
-            Some((name, value))
+            let header_name = HeaderName::from_bytes(name.as_bytes()).ok()?;
+            let header_value = HeaderValue::from_str(value).ok()?;
+            Some((header_name, header_value))
         });
         request.headers.extend(lent);
         WriteTransport::send(&self.client, request).await

@@ -110,10 +110,9 @@ async fn metadata_answer(
     };
     let lent = lent_client(&read, kind, client);
     let config = provider_config(read.config, &settings)?;
-    let supplied = lent.as_ref().map(|client| SuppliedClient {
-        kind,
-        transport: client,
-    });
+    let supplied = lent
+        .as_ref()
+        .map(|transport| SuppliedClient { kind, transport });
     let deps = MetadataDeps {
         config: &config,
         source: &source,
