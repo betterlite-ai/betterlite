@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_identity::roles::Role;
-use betterlite_core::agents::json::AgentJson as JsonValue;
+use betterlite_core::api::responses_input_content::is_truthy;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use serde::Serialize;
 
@@ -24,18 +24,6 @@ pub fn is_proxy_admin(principal: &Principal) -> bool {
         return true;
     }
     principal.roles.contains(&Role::PlatformAdmin)
-}
-
-// Python truthiness for data.get("api_key"): a missing key, null, false, zero and every empty container fail
-fn has_provider_key(data: &JsonMap) -> bool {
-    match data.get("api_key") {
-        None | Some(JsonValue::Null) => false,
-        Some(JsonValue::Bool(present)) => *present,
-        Some(JsonValue::Number(number)) => number.as_f64().is_some_and(|value| value != 0.0_f64),
-        Some(JsonValue::String(text)) => !text.is_empty(),
-        Some(JsonValue::Array(items)) => !items.is_empty(),
-        Some(JsonValue::Object(fields)) => !fields.is_empty(),
-    }
 }
 
 // the caller's own api_key is the only credential source a non-admin may use; admins keep the env fallback
@@ -60,7 +48,7 @@ impl IntoResponse for CallerKeyMissing {
 }
 
 pub fn enforce_provider_key(data: &JsonMap, principal: &Principal) -> Result<(), CallerKeyMissing> {
-    if is_proxy_admin(principal) || has_provider_key(data) {
+    if is_proxy_admin(principal) || is_truthy(data.get("api_key")) {
         return Ok(());
     }
     Err(CallerKeyMissing)
