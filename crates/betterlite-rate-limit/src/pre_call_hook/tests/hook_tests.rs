@@ -5,11 +5,13 @@ use std::sync::Arc;
 
 use betterlite_core::routes::CallType;
 use betterlite_error::rate_limit::RateLimitDimension;
+use betterlite_models::decisions::Json;
 
 use super::support::{
     self, BatchLimiter, Fixture, Parts, StashSnapshot, count, entries, parallel_key,
     proxy_rate_limit, requests_key, scopes, snapshot, token_window,
 };
+use crate::limiter_assembly::CallTypeRateLimiter as _;
 use crate::limiter_records::{RateLimitResponse, RateLimitType, RateLimitedModel};
 use crate::pre_call_hook::{PreCallHookError, PreCallHookRejection};
 use crate::project_admission::ProjectAdmissionError;
@@ -395,4 +397,103 @@ fn assert_token_statuses(response: &RateLimitResponse) {
             .iter()
             .all(|status| status.code == "OK" && status.rate_limit_type == RateLimitType::Tokens)
     );
+}
+
+#[tokio::test]
+async fn hook_trait_impl_returns_the_proxy_error_for_a_rejected_request() {
+    let fixture = Fixture::plain();
+    let auth = support::auth(r#"{"api_key": "key-1", "rpm_limit": 0}"#);
+    let data = support::data(r#"{"model": "gpt4"}"#);
+    let slot = RequestStashSlot::default();
+
+    let error = fixture
+        .hook
+        .async_pre_call_hook(&auth, &data, CallType::Acompletion, &slot)
+        .await
+        .expect_err("the first pass is over the request limit");
+
+    assert!(
+        error
+            .message
+            .starts_with("Rate limit exceeded for api_key: key-1")
+    );
+}
+
+#[tokio::test]
+async fn hook_trait_impl_falls_back_for_a_missing_batch_limiter() {
+    let fixture = Fixture::plain();
+    let auth = support::auth(r#"{"api_key": "key-1", "rpm_limit": 10}"#);
+    let data = support::data(r#"{"model": "gpt4"}"#);
+    let slot = RequestStashSlot::default();
+
+    let error = fixture
+        .hook
+        .async_pre_call_hook(&auth, &data, CallType::AcreateBatch, &slot)
+        .await
+        .expect_err("the batch call needs a batch limiter");
+
+    assert!(
+        error
+            .message
+            .contains("the batch rate limiter is not registered")
+    );
+}
+
+#[tokio::test]
+async fn hook_rejects_a_reservation_that_one_token_would_pass() {
+    let fixture = Fixture::new(&Parts::new(
+        entries([token_window("api_key", "key-1", 4)]),
+        Vec::new(),
+        None,
+    ));
+    let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 5}"#);
+    let mut data = support::data(
+        r#"{"model": "gpt4", "max_tokens": 10, "messages": [{"role": "user", "content": "hi"}]}"#,
+    );
+
+    let Err(error) = fixture
+        .run(None, &auth, &mut data, CallType::Acompletion)
+        .await
+    else {
+        panic!("the token reservation is over its limit");
+    };
+
+    assert_token_reservation_rejection(&error);
+}
+
+#[tokio::test]
+async fn hook_caps_the_output_tokens_from_the_smallest_configured_limit() {
+    let fixture = Fixture::plain();
+    let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 100}"#);
+    let mut data =
+        support::data(r#"{"model": "gpt4", "messages": [{"role": "user", "content": "hi"}]}"#);
+
+    fixture
+        .run(None, &auth, &mut data, CallType::Acompletion)
+        .await
+        .expect("the reservation passes");
+
+    // a fifth of the smallest TPM limit caps the estimated output
+    assert!(matches!(
+        data.get("max_tokens"),
+        Some(Json::Number(number)) if number.as_i64() == Some(25)
+    ));
+}
+
+#[tokio::test]
+async fn hook_applies_the_responses_output_cap_field_for_its_call_type() {
+    let fixture = Fixture::plain();
+    let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 1000}"#);
+    let mut data = support::data(r#"{"model": "gpt4", "input": "hi"}"#);
+
+    fixture
+        .run(None, &auth, &mut data, CallType::Responses)
+        .await
+        .expect("the reservation passes");
+
+    assert!(matches!(
+        data.get("max_output_tokens"),
+        Some(Json::Number(number)) if number.as_i64() == Some(250)
+    ));
+    assert!(data.get("max_tokens").is_none());
 }
