@@ -1,22 +1,20 @@
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    Fixture, MODEL_GROUP, caller_metadata, deployment, encoded_previous_response_id, fixture,
-    fixture_ttl, generated_flag_text, generated_session_metadata, hook_kwargs, hook_request,
-    marked_hook, marked_session_metadata, metadata, model_info, number, pin, pin_value, pool,
-    request, seed_shared_value, session_metadata, session_pin, settings, shared_store, text,
-    user_pin,
+    Fixture, MODEL_GROUP, encoded_previous_response_id, filtered_with_long_caller_key,
+    filtered_with_long_session_key, fixture, fixture_ttl, generated_flag_text,
+    generated_session_metadata, hook_kwargs, hook_request, marked_hook, marked_session_metadata,
+    metadata, model_info, number, pin, pool, request, seed_shared_value, session_pin, settings,
+    shared_store, text, user_pin,
 };
 use crate::affinity_claims::error::AffinityError::{
     MetadataNotBool, MetadataNotText, TtlOutOfRange,
 };
-use crate::affinity_claims::identity::{
-    AffinityFlag, AffinityKey, CACHE_KEY_PREFIX, hash_user_key,
-};
+use crate::affinity_claims::identity::AffinityFlag;
 use crate::affinity_claims::pin::StoredPin;
 use crate::deployment_affinity::error::DeploymentAffinityError::{Affinity, RequestNotText};
 use crate::routing_state_store::test_support::FakeRedis;
-use crate::routing_value_store::{RouteKey, RouteValue};
+use crate::routing_value_store::RouteValue;
 
 // an empty pool has no stable model map key and passes through
 pub(super) async fn empty_pool() {
@@ -234,28 +232,14 @@ pub(super) async fn hook_unusable_model_id() {
 
 // a model group past the affinity key's byte limit is a best-effort miss that keeps the pool
 pub(super) async fn over_long_model_group_keeps_pool() {
-    let server = FakeRedis::start().await;
-    let store = shared_store(&server);
     let long_group = "g".repeat(2048);
-    // the literal shared key an uncapped builder would produce, so a read that ignored the cap finds the pin
-    let raw = format!("{CACHE_KEY_PREFIX}:{long_group}:{}", hash_user_key("key"));
-    let key = AffinityKey(RouteKey(raw));
-    seed_shared_value(&store, &key, pin_value(&pin("a")), 600).await;
-    let fixture = Fixture::with_shared(settings(&[AffinityFlag::Deployment]), &[], store);
-    let healthy = vec![deployment(&long_group, "a"), deployment(&long_group, "b")];
-    let kwargs = caller_metadata("key");
-    assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["a", "b"]);
+    let selected = filtered_with_long_caller_key(&long_group, "key").await;
+    assert_eq!(selected, ["a", "b"]);
 }
 
 // a session id past the affinity key's byte limit is a best-effort miss that keeps the pool
 pub(super) async fn over_long_session_id_keeps_pool() {
-    let server = FakeRedis::start().await;
-    let store = shared_store(&server);
     let long_session = "s".repeat(2048);
-    let raw = format!("{CACHE_KEY_PREFIX}:session:{MODEL_GROUP}:unscoped:{long_session}");
-    let key = AffinityKey(RouteKey(raw));
-    seed_shared_value(&store, &key, pin_value(&pin("a")), 600).await;
-    let fixture = Fixture::with_shared(settings(&[AffinityFlag::Session]), &[], store);
-    let kwargs = session_metadata(&long_session);
-    assert_eq!(fixture.selected(&kwargs).await, ["a", "b"]);
+    let selected = filtered_with_long_session_key(&long_session).await;
+    assert_eq!(selected, ["a", "b"]);
 }

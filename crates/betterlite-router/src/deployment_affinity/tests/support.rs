@@ -10,7 +10,8 @@ use indexmap::IndexMap;
 
 use crate::affinity_claims::AffinityClaims;
 use crate::affinity_claims::identity::{
-    AffinityFlag, AffinityKey, affinity_cache_key, session_affinity_cache_key,
+    AffinityFlag, AffinityKey, CACHE_KEY_PREFIX, affinity_cache_key, hash_user_key,
+    session_affinity_cache_key,
 };
 use crate::affinity_claims::local::LocalPins;
 use crate::affinity_claims::pin::{AffinityPin, StoredPin};
@@ -26,7 +27,7 @@ use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_state_store::{
     BreakerClock, RedisSettings, RoutingStateStore, Settings as SharedSettings,
 };
-use crate::routing_value_store::{Clock, PinValue, RouteValue, StoreRead, StoreSettings};
+use crate::routing_value_store::{Clock, PinValue, RouteKey, RouteValue, StoreRead, StoreSettings};
 
 pub(crate) const MODEL_GROUP: &str = "gpt-4o";
 
@@ -410,4 +411,52 @@ pub(crate) async fn seed_shared_value(
         .await
         .unwrap();
     assert!(written.value.swapped);
+}
+
+// a pin seeded under a literal raw key past the route key cap, read through a fixture with the shared tier
+pub(crate) async fn seeded_filter(
+    raw: String,
+    flags: &[AffinityFlag],
+    model_group: &str,
+    kwargs: &JsonObject,
+) -> Vec<String> {
+    let server = FakeRedis::start().await;
+    let store = shared_store(&server);
+    let key = AffinityKey(RouteKey(raw));
+    seed_shared_value(&store, &key, pin_value(&pin("a")), 600).await;
+    let fixture = Fixture::with_shared(settings(flags), &[], store);
+    let healthy = vec![deployment(model_group, "a"), deployment(model_group, "b")];
+    fixture
+        .filter_at(model_group, &healthy, Some(kwargs), None)
+        .await
+}
+
+// a caller key past the route key cap, seeded under the literal an uncapped builder would produce
+pub(crate) async fn filtered_with_long_caller_key(
+    model_group: &str,
+    user_key: &str,
+) -> Vec<String> {
+    let raw = format!(
+        "{CACHE_KEY_PREFIX}:{model_group}:{}",
+        hash_user_key(user_key)
+    );
+    seeded_filter(
+        raw,
+        &[AffinityFlag::Deployment],
+        model_group,
+        &caller_metadata(user_key),
+    )
+    .await
+}
+
+// a session key past the route key cap, seeded under the literal an uncapped builder would produce
+pub(crate) async fn filtered_with_long_session_key(session_id: &str) -> Vec<String> {
+    let raw = format!("{CACHE_KEY_PREFIX}:session:{MODEL_GROUP}:unscoped:{session_id}");
+    seeded_filter(
+        raw,
+        &[AffinityFlag::Session],
+        MODEL_GROUP,
+        &session_metadata(session_id),
+    )
+    .await
 }
