@@ -192,18 +192,21 @@ async fn answer(step: &Step, caller: &MemoryCaller) -> Result<Value, StepFailure
             step.code.as_deref(),
             &step.message,
         ))?),
-        Function::InternalError => {
-            let source = CaseError {
-                message: step.message.clone(),
-            };
-            let error = internal_error(&step.log_message, &source, &step.detail);
-            let value = InternalErrorValue {
-                status: error.status.as_u16(),
-                detail: error.detail,
-            };
-            Ok(serde_json::to_value(value)?)
-        }
+        Function::InternalError => internal_error_value(step),
         Function::Request => request_value(step),
         Function::Model => model_value(step),
     }
+}
+
+// _internal_error's answer: the logged exception stays server-side and the step compares status and detail
+fn internal_error_value(step: &Step) -> Result<Value, StepFailure> {
+    let source = CaseError {
+        message: step.message.clone(),
+    };
+    let error = internal_error(&step.log_message, &source, &step.detail);
+    let value = InternalErrorValue {
+        status: error.status.as_u16(),
+        detail: error.detail,
+    };
+    Ok(serde_json::to_value(value)?)
 }

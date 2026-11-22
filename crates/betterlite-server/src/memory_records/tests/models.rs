@@ -117,6 +117,16 @@ fn delete_response_structure() {
     assert!(!kept.deleted);
 }
 
+fn create_with_metadata(metadata: JsonData) -> CreateRequest {
+    CreateRequest {
+        key: "note".to_owned(),
+        value: "hello".to_owned(),
+        metadata: Some(metadata),
+        user_id: None,
+        team_id: None,
+    }
+}
+
 #[test]
 fn metadata_json_serialization() {
     let value = JsonData::Object(BTreeMap::from([
@@ -126,13 +136,7 @@ fn metadata_json_serialization() {
         ),
         ("count".to_owned(), JsonData::Bool(true)),
     ]));
-    let object_request = CreateRequest {
-        key: "note".to_owned(),
-        value: "hello".to_owned(),
-        metadata: Some(value),
-        user_id: None,
-        team_id: None,
-    };
+    let object_request = create_with_metadata(value);
     let column = object_request.metadata_column().unwrap();
     assert_eq!(
         column.as_deref(),
@@ -141,25 +145,13 @@ fn metadata_json_serialization() {
     let decoded: JsonData = serde_json::from_str(column.as_deref().unwrap()).unwrap();
     assert_eq!(decoded, object_request.metadata.clone().unwrap());
 
-    let scalar_request = CreateRequest {
-        key: "note".to_owned(),
-        value: "hello".to_owned(),
-        metadata: Some(JsonData::String("hello".to_owned())),
-        user_id: None,
-        team_id: None,
-    };
+    let scalar_request = create_with_metadata(JsonData::String("hello".to_owned()));
     assert_eq!(
         scalar_request.metadata_column().unwrap().as_deref(),
         Some(r#""hello""#)
     );
 
-    let number_request = CreateRequest {
-        key: "note".to_owned(),
-        value: "hello".to_owned(),
-        metadata: Some(JsonData::Number(serde_json::Number::from(3_i64))),
-        user_id: None,
-        team_id: None,
-    };
+    let number_request = create_with_metadata(JsonData::Number(serde_json::Number::from(3_i64)));
     assert_eq!(
         number_request.metadata_column().unwrap().as_deref(),
         Some("3")
