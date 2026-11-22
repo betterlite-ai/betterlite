@@ -16,8 +16,7 @@ use super::encode;
 use super::error::KeyEventError;
 use super::types::{DeletedEvent, KeyEventCaller};
 
-// async_key_deleted_hook: every audit row is scheduled before the secret-manager delete, which is
-// awaited without a catch because LiteLLM deliberately lets its failure reach the route
+// async_key_deleted_hook: every audit row is scheduled before the secret-manager delete, which is awaited without a catch because LiteLLM deliberately lets its failure reach the route
 pub(super) async fn run<Manager>(
     effects: &KeyEventEffects<'_, Manager>,
     audit: &KeyEventAudit,

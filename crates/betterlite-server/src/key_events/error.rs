@@ -9,9 +9,7 @@ use crate::key_fields::error::DecodeError;
 
 use super::effects::KeyEmailError;
 
-// Preparing an event can fail and the hook then propagates the failure; a sink failure that LiteLLM
-// swallows is a warning inside the hook and never reaches this type. The secret manager's own error
-// type is a parameter of B898's sink, so the effect failure carries it as a boxed source.
+// Preparing an event can fail and the hook then propagates the failure; a sink failure that LiteLLM swallows is a warning inside the hook and never reaches this type. The secret manager's own error type is a parameter of B898's sink, so the effect failure carries it as a boxed source.
 #[derive(Debug, thiserror::Error)]
 pub enum KeyEventError {
     #[error("the key event cannot be encoded")]

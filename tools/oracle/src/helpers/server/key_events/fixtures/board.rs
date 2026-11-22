@@ -40,8 +40,7 @@ impl<S: Subscriber> Layer<S> for Levels {
         {
             return;
         }
-        // LiteLLM's warning text names its private helper and its arguments, so the trace orders
-        // warnings by level alone, as the B898 trace does
+        // LiteLLM's warning text names its private helper and its arguments, so the trace orders warnings by level alone, as the B898 trace does
         self.board.record(json!(["warn"]));
     }
 }

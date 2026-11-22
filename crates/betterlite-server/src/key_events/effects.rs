@@ -9,8 +9,7 @@ pub enum KeyEmailError {
     Rejected(#[from] EmailError),
 }
 
-// the key hooks need the legacy email's decision as a Result so a failure becomes the hook's warning;
-// B898's v0 mailer itself never fails and sends only the created event
+// the key hooks need the legacy email's decision as a Result so a failure becomes the hook's warning; B898's v0 mailer itself never fails and sends only the created event
 #[async_trait]
 pub trait KeyEventEmail: Send + Sync {
     async fn send_created(&self, response: CreatedKey) -> Result<(), KeyEmailError>;

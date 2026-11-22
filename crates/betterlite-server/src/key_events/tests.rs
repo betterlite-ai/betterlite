@@ -9,6 +9,7 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::{Expiry, LiteLLMVerificationToken};
 use chrono::DateTime;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_util::task::TaskTracker;
 use tracing::Level;
@@ -106,21 +107,19 @@ fn caller_with_metadata() -> KeyEventCaller {
     }
 }
 
+#[rstest]
+#[case::absent(r#"{"key_alias": "alias-a"}"#, 0)]
+#[case::explicit_null(r#"{"key_alias": "alias-a", "send_invite_email": null}"#, 0)]
+#[case::disabled(r#"{"key_alias": "alias-a", "send_invite_email": false}"#, 0)]
+#[case::enabled(r#"{"key_alias": "alias-a", "send_invite_email": true}"#, 1)]
 #[tokio::test]
-async fn generated_email_true_only() {
-    for (request, expected) in [
-        (r#"{"key_alias": "alias-a"}"#, 0),
-        (r#"{"key_alias": "alias-a", "send_invite_email": null}"#, 0),
-        (r#"{"key_alias": "alias-a", "send_invite_email": false}"#, 0),
-        (r#"{"key_alias": "alias-a", "send_invite_email": true}"#, 1),
-    ] {
-        let harness = harness();
-        harness
-            .dispatch(&generated(request, RESPONSE), &caller())
-            .await
-            .unwrap();
-        assert_eq!(harness.created_emails(), expected, "{request}");
-    }
+async fn generated_email_true_only(#[case] request: &str, #[case] expected: usize) {
+    let harness = harness();
+    harness
+        .dispatch(&generated(request, RESPONSE), &caller())
+        .await
+        .unwrap();
+    assert_eq!(harness.created_emails(), expected, "{request}");
 }
 
 #[tokio::test]
@@ -403,42 +402,46 @@ async fn update_response_unused() {
     assert!(!masked.contains("sk-other"), "{masked}");
 }
 
+#[rstest]
+#[case::response_alias_wins(Some(r#"{"key_alias": "req"}"#), "resp", "litellm/resp")]
+#[case::requested_alias_when_response_blank(Some(r#"{"key_alias": "req"}"#), "", "litellm/req")]
+#[case::response_alias_without_request(None, "resp", "litellm/resp")]
+#[case::blank_requested_alias_falls_to_response(
+    Some(r#"{"key_alias": ""}"#),
+    "resp",
+    "litellm/resp"
+)]
+#[case::initial_name_when_both_blank(None, "", "litellm/old-alias")]
+#[case::initial_name_for_blank_alias(Some(r#"{"key_alias": ""}"#), "", "litellm/old-alias")]
 #[tokio::test]
-async fn rotation_name_precedence() {
-    let cases = [
-        (Some(r#"{"key_alias": "req"}"#), "resp", "litellm/resp"),
-        (Some(r#"{"key_alias": "req"}"#), "", "litellm/req"),
-        (None, "resp", "litellm/resp"),
-        (Some(r#"{"key_alias": ""}"#), "resp", "litellm/resp"),
-        (None, "", "litellm/old-alias"),
-        (Some(r#"{"key_alias": ""}"#), "", "litellm/old-alias"),
-    ];
-    for (request, response_alias, expected) in cases {
-        let harness = wired(STORE);
-        let response = format!(
-            r#"{{"key": "sk-new", "token_id": "tok-new", "key_alias": "{response_alias}"}}"#
-        );
-        harness
-            .dispatch(&rotated(request, ROW, &response), &caller())
-            .await
-            .unwrap();
-        assert_eq!(
-            harness.calls(),
-            [Call::Rotate {
-                current: "litellm/old-alias".to_owned(),
-                new: expected.to_owned(),
-                value: "sk-new".to_owned(),
-            }],
-            "{request:?} {response_alias:?}"
-        );
-        assert!(
-            harness.records().is_empty(),
-            "{request:?} {response_alias:?}"
-        );
-    }
-
+async fn rotation_name_precedence(
+    #[case] request: Option<&str>,
+    #[case] response_alias: &str,
+    #[case] expected: &str,
+) {
     let harness = wired(STORE);
+    let response =
+        format!(r#"{{"key": "sk-new", "token_id": "tok-new", "key_alias": "{response_alias}"}}"#);
     harness
+        .dispatch(&rotated(request, ROW, &response), &caller())
+        .await
+        .unwrap();
+    assert_eq!(
+        harness.calls(),
+        [Call::Rotate {
+            current: "litellm/old-alias".to_owned(),
+            new: expected.to_owned(),
+            value: "sk-new".to_owned(),
+        }],
+        "{request:?} {response_alias:?}"
+    );
+    assert!(
+        harness.records().is_empty(),
+        "{request:?} {response_alias:?}"
+    );
+
+    let fallback = wired(STORE);
+    fallback
         .dispatch(
             &rotated(
                 None,
@@ -450,7 +453,7 @@ async fn rotation_name_precedence() {
         .await
         .unwrap();
     assert_eq!(
-        harness.calls(),
+        fallback.calls(),
         [Call::Rotate {
             current: "litellm/virtual-key-sk-old".to_owned(),
             new: "litellm/virtual-key-sk-old".to_owned(),
@@ -676,16 +679,22 @@ async fn audit_no_raw_key() {
     fixture.spawner.drain().await;
     let records = lock(&fixture.repository.records).clone();
     assert_eq!(records.len(), 2);
-    for record in &records {
-        for value in [record.before_value.as_ref(), record.updated_values.as_ref()]
-            .into_iter()
-            .flatten()
-        {
-            let text = value.to_string();
-            assert!(!text.contains("raw-secret-value"), "{text}");
-            assert!(!text.contains("old-secret-value"), "{text}");
-        }
-    }
+    let texts = [
+        records[0].before_value.as_ref(),
+        records[0].updated_values.as_ref(),
+        records[1].before_value.as_ref(),
+        records[1].updated_values.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(JsonValue::to_string)
+    .collect::<Vec<_>>();
+    assert!(
+        texts
+            .iter()
+            .all(|text| !text.contains("raw-secret-value") && !text.contains("old-secret-value")),
+        "{texts:?}"
+    );
     let Some(JsonValue::Object(created_values)) = &records[0].updated_values else {
         panic!("the created values are a masked object");
     };
@@ -808,8 +817,12 @@ async fn legacy_email_effects_created_and_rotated() {
         tasks: &tasks,
     };
     let rejected = CreatedKey {
+        token: Reported::Missing,
         spend: Reported::Null(()),
-        ..CreatedKey::default()
+        max_budget: Reported::Missing,
+        user_id: Reported::Missing,
+        team_id: Reported::Missing,
+        key_alias: Reported::Missing,
     };
     assert!(matches!(
         KeyEventEmail::send_created(&email, rejected).await,

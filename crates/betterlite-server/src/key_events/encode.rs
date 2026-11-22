@@ -22,8 +22,7 @@ const ROW_INSTANTS: [&str; 7] = [
     "key_rotation_at",
 ];
 
-// Pydantic has two datetime renderings the stored strings must copy: model_dump_json writes an
-// aware UTC instant as Z, while json.dumps(default=str) writes str(datetime) with a space and +00:00
+// Pydantic has two datetime renderings the stored strings must copy: model_dump_json writes an aware UTC instant as Z, while json.dumps(default=str) writes str(datetime) with a space and +00:00
 #[derive(Clone, Copy)]
 enum InstantForm {
     Json,
@@ -102,8 +101,7 @@ fn insert_project_id(value: &mut JsonValue, data: &UpdateKeyRequest) {
     }
 }
 
-// pydantic's exclude_none also drops nulls inside a nested model, never inside a plain dict; the
-// router settings model then keeps its own non-null default for model_group_alias
+// pydantic's exclude_none also drops nulls inside a nested model, never inside a plain dict; the router settings model then keeps its own non-null default for model_group_alias
 fn exclude_none(value: &mut JsonValue) {
     let JsonValue::Object(fields) = value else {
         return;

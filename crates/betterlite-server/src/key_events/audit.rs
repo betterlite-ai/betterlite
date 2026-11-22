@@ -10,8 +10,7 @@ use crate::audit_events::record::{AuditLogRecord, AuditRecordError};
 use crate::audit_events::settings::AuditSettings;
 use crate::audit_events::sink::{AuditClock, AuditEventSink};
 
-// where a prepared row goes; the hook schedules it and never awaits the write, and the seam is the
-// submission point the oracle compares before B2330's premium gate inside the sink
+// where a prepared row goes; the hook schedules it and never awaits the write, and the seam is the submission point the oracle compares before B2330's premium gate inside the sink
 pub trait KeyAuditScheduler: Send + Sync {
     fn schedule(&self, record: AuditLogRecord);
 }

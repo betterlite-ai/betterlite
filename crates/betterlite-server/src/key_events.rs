@@ -21,8 +21,7 @@ use self::error::KeyEventError;
 use self::types::{KeyEvent, KeyEventCaller};
 use crate::key_event_sinks::team_params::TeamSecretSettings;
 
-// one proxy-facing boundary over the four key lifecycle hooks; each hook schedules its audit rows
-// and never awaits them, so a later sink failure cannot undo the committed key change
+// one proxy-facing boundary over the four key lifecycle hooks; each hook schedules its audit rows and never awaits them, so a later sink failure cannot undo the committed key change
 pub struct KeyEvents<'deps, Manager> {
     pub audit: &'deps KeyEventAudit,
     pub effects: KeyEventEffects<'deps, Manager>,

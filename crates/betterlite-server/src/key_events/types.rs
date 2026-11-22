@@ -41,8 +41,7 @@ pub enum KeyEvent {
     Deleted(DeletedEvent),
 }
 
-// UserAPIKeyAuth: api_key names the caller of created/updated rows, token names the caller of
-// rotated/deleted rows, and the metadata decides whether the changed-by header may stand in
+// UserAPIKeyAuth: api_key names the caller of created/updated rows, token names the caller of rotated/deleted rows, and the metadata decides whether the changed-by header may stand in
 #[derive(Clone, Default)]
 pub struct KeyEventCaller {
     pub identity: CallerIdentity,

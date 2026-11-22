@@ -34,8 +34,7 @@ impl KeyCreatedMailer for BoardMailer {
     }
 }
 
-// B898's created-email decision is kept, and its task is awaited where the hook sends it, so the
-// mail it records sits at the email step of the trace rather than after the hook returned
+// B898's created-email decision is kept, and its task is awaited where the hook sends it, so the mail it records sits at the email step of the trace rather than after the hook returned
 pub(crate) struct WaitingEmail {
     pub(crate) alerting: Vec<String>,
     pub(crate) board: Arc<Board>,
