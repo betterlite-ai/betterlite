@@ -88,15 +88,12 @@ impl Section for Raw {
     {
         let general = self.general_settings;
         let litellm = self.litellm_settings;
-        let budget = max_budget(litellm.max_budget, lookup)?;
         let use_redis = redis_transaction_buffer(&general.use_redis_transaction_buffer)?;
         let dequeue_count =
             initial_environment_integer(lookup, ENV_DEQUEUE_COUNT, DEFAULT_DEQUEUE_COUNT)?;
         let interval = partition_interval(lookup.lookup(ENV_PARTITION_INTERVAL).as_deref());
         let ahead =
             initial_environment_integer(lookup, ENV_PRECREATE_AHEAD, DEFAULT_PRECREATE_AHEAD)?;
-        let queue_max_bytes = max_bytes(lookup)?;
-        let retention_defaults = retention::cleanup_defaults(lookup)?;
         Ok(Settings {
             store_prompts_in_spend_logs: store_prompts(
                 &general.store_prompts_in_spend_logs,
@@ -109,7 +106,7 @@ impl Section for Raw {
             )?,
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
-            max_budget: budget,
+            max_budget: max_budget(litellm.max_budget, lookup)?,
             disable_end_user_cost_tracking: optional_flag(
                 &litellm.disable_end_user_cost_tracking,
                 DISABLE_END_USER_PATH,
@@ -122,11 +119,11 @@ impl Section for Raw {
             max_redis_buffer_dequeue_count: dequeue_count,
             partition_interval: interval,
             precreate_ahead: ahead,
-            spend_log_queue_max_bytes: queue_max_bytes,
+            spend_log_queue_max_bytes: max_bytes(lookup)?,
             spend_logs_url: logs_url(lookup),
             retention: CleanupSettings {
                 general: general.retention,
-                defaults: retention_defaults,
+                defaults: retention::cleanup_defaults(lookup)?,
             },
         })
     }
