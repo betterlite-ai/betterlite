@@ -113,7 +113,7 @@ class LiteLLM:
         max_retries: JsonValue = None,
         default_headers: dict[str, JsonValue] | None = None,
     ) -> None:
-        global_retries = betterlite.num_retries
+        global_retries: JsonValue = betterlite.num_retries
         configured = arguments.num_retries if global_retries is None else global_retries
         retries = max_retries if max_retries is not None else JSON.validate_python(configured)
         self.params = {
