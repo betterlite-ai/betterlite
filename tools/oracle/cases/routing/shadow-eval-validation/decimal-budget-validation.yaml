@@ -1,0 +1,40 @@
+kind: probe
+name: shadow-eval-validation-decimal-budget-validation
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_validation:
+        steps:
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":0.09}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":0.1}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":100}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":100.1}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":33.333333}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"max_budget":0.001}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"max_budget":0.01}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"max_budget":1e-2}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"max_budget":10000}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"max_budget":10000.01}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"duration_days":1}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"duration_days":30}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"duration_days":0}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"duration_days":31}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"shadow_percentage":50,"duration_days":7.5}'
+compare:
+  ignore: []
