@@ -102,7 +102,7 @@ fn observed_reads(hook: &ReverseHook) -> Vec<usize> {
 
 fn expected_reads() -> Vec<usize> {
     let mut reads = vec![32_usize; 32];
-    reads.extend(vec![64_usize; 32]);
+    reads.extend([64_usize; 32]);
     reads.push(66);
     reads
 }
