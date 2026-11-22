@@ -19,6 +19,7 @@ use super::super::repository::ShadowResultsRepository as _;
 use super::super::responses::{LegCounts, group_response};
 use super::super::results::{FunnelTotals, TargetVerdicts};
 use super::super::targets::TargetKey;
+use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_models::ShadowEvalTargetType;
 use crate::shadow_eval_models::ShadowEvalTargetType::{Key as KeyTarget, Team as TeamTarget};
 
@@ -528,10 +529,7 @@ async fn leg_rows_read_naive_columns_as_utc() {
 fn assert_job_config(job: &LegRow) {
     assert_eq!(job.group_id, "job-1");
     assert_eq!(job.target_type, ShadowEvalTargetType::User);
-    assert_eq!(
-        job.direction,
-        crate::shadow_eval_job_loading::jobs::ShadowEvalDirection::Reverse
-    );
+    assert_eq!(job.direction, ShadowEvalDirection::Reverse);
     assert_eq!(job.router_names, vec!["router-a", "router-b"]);
     assert_eq!(job.models, vec!["gpt-5.2"]);
     assert_eq!(job.max_turns, 7);
