@@ -414,7 +414,10 @@ async fn a_request_removed_during_an_outage_does_not_become_the_head() {
 async fn the_pending_changes_stay_bounded_while_the_shared_tier_is_down() {
     let (service, server) = shared_scheduler().await;
     server.set_down(true);
-    queue_and_remove(&service, queue::MAX_PENDING_REQUESTS + 1).await;
+    let request_ids: Vec<String> = (0..=queue::MAX_PENDING_REQUESTS)
+        .map(|index| format!("outage-{index}"))
+        .collect();
+    queue_and_remove(&service, request_ids).await;
     let pending = service
         .pending
         .lock()

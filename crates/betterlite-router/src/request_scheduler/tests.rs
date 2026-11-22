@@ -118,16 +118,16 @@ pub(super) async fn fill_queue(service: &RequestScheduler, count: usize) {
     }
 }
 
-// queue then remove a request per index, the churn a pending record must cancel out
-pub(super) async fn queue_and_remove(service: &RequestScheduler, count: usize) {
-    for index in 0..count {
-        let request_id = format!("outage-{index}");
+// add and remove each queued request once, the churn an outage's pending record must cancel
+pub(super) async fn queue_and_remove(service: &RequestScheduler, mut request_ids: Vec<String>) {
+    while let Some(request_id) = request_ids.pop() {
+        let queued = item(0, &request_id, MODEL);
         service
-            .add_request(&item(0, &request_id, MODEL))
+            .add_request(&queued)
             .await
             .expect("the fallback queue accepts the request");
         service
-            .remove_request(&item(0, &request_id, MODEL))
+            .remove_request(&queued)
             .await
             .expect("the fallback queue removes the request");
     }
