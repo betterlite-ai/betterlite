@@ -35,8 +35,8 @@ deviations:
       (identity_copy_api_key_route_and_model_seed, budget_missing_provider_resolved_before_hook).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L218-L235
   - what: >-
-      general_settings.use_x_forwarded_for written as the quoted string 'true' enables X-Forwarded-For, where
-      LiteLLM's is-True check keeps the switch off for every value that is not the bool.
+      general_settings.use_x_forwarded_for written as the quoted scalar 'true' enables X-Forwarded-For, where
+      LiteLLM's `is True` check keeps the switch off for every value that is not the bool true.
     why: >-
       B744's auth_request_policy section reads the key as a plain bool, and the YAML reader parses a quoted
       scalar's text as a YAML 1.1 boolean before the handler sees it, so the quoted spelling arrives here as
