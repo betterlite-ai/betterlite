@@ -1,0 +1,21 @@
+kind: helper
+name: invoke-price-invalid-503
+call:
+  b4781:
+    operation: invoke
+    auth:
+      user_id: human
+      team_id: null
+      agent_id: null
+      context: null
+    target_name: agent-1
+    registry:
+      - '{"agent_id":"agent-1","agent_name":"managed-agent","agent_card_params":{},"identity_managed":true,"execution_mode":"delegated","identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}'
+    store:
+      - '{"agent_id":"agent-1","agent_name":"managed-agent","agent_card_params":{},"identity_managed":true,"execution_mode":"delegated","identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"},"litellm_params":{"cost_per_query":"not a number"}}'
+    granted:
+      - agent-1
+    billable: true
+env: {}
+compare:
+  ignore: []
