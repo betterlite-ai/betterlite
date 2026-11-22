@@ -188,6 +188,74 @@ async fn the_plain_org_row_is_the_org_source_fallback() {
 }
 
 #[tokio::test]
+async fn a_user_without_a_team_and_a_project_without_an_org_charge_alone() {
+    let fixture = Fixture::new(false);
+    let mut request = input(None);
+    request.user_id = Some("u1");
+    request.project_id = Some("p1");
+
+    increment_spend_counters(&request, &fixture.services())
+        .await
+        .unwrap();
+
+    assert_eq!(fixture.counter("spend:user:u1").await, Some(decimal("2")));
+    assert_eq!(
+        fixture.counter("spend:project:p1").await,
+        Some(decimal("2"))
+    );
+    assert_eq!(
+        fixture.sources.reads(),
+        vec!["u1".to_owned(), "project_id:p1".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn a_failing_item_leaves_its_siblings_charging() {
+    let fixture = Fixture::new(false);
+    fixture.batch.fail_for("spend:team_member:u1:t1");
+    fixture.batch.fail_for("spend:tag:a");
+    fixture.batch.fail_for("spend:model_access_group:g1");
+    fixture.batch.fail_for("spend:org:o1");
+    let tags = texts(&["a", "b"]);
+    let groups = texts(&["g1", "g2"]);
+    let mut request = input(None);
+    request.team_id = Some("t1");
+    request.user_id = Some("u1");
+    request.end_user_id = Some("eu1");
+    request.tags = Some(&tags);
+    request.model_access_groups = Some(&groups);
+    request.org_id = Some("o1");
+    request.project_id = Some("p1");
+
+    let result = increment_spend_counters(&request, &fixture.services()).await;
+
+    assert!(matches!(
+        result,
+        Err(SpendIncrementError::Write(SpendWriteError::Batch(
+            SpendCounterBatchError::Cancelled
+        )))
+    ));
+    assert_eq!(fixture.counter("spend:team_member:u1:t1").await, None);
+    assert_eq!(fixture.counter("spend:user:u1").await, Some(decimal("2")));
+    assert_eq!(
+        fixture.counter("spend:end_user:eu1").await,
+        Some(decimal("2"))
+    );
+    assert_eq!(fixture.counter("spend:tag:a").await, None);
+    assert_eq!(fixture.counter("spend:tag:b").await, Some(decimal("2")));
+    assert_eq!(fixture.counter("spend:model_access_group:g1").await, None);
+    assert_eq!(
+        fixture.counter("spend:model_access_group:g2").await,
+        Some(decimal("2"))
+    );
+    assert_eq!(fixture.counter("spend:org:o1").await, None);
+    assert_eq!(
+        fixture.counter("spend:project:p1").await,
+        Some(decimal("2"))
+    );
+}
+
+#[tokio::test]
 async fn reserved_counters_are_skipped_by_the_direct_increment() {
     let fixture = Fixture::new(false);
     fixture.counters.reseed_unavailable();
