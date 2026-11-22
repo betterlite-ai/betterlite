@@ -375,6 +375,38 @@ async fn a_request_dropped_during_an_outage_stays_out_of_the_shared_tier() {
     );
 }
 
+// a change a shared write carried over is not re-applied by the writes after it
+#[tokio::test]
+async fn a_carried_change_is_forgotten_after_its_write() {
+    let (service, server) = shared_scheduler().await;
+    service
+        .add_request(&item(128, "first", MODEL))
+        .await
+        .expect("the request queues");
+    server.set_down(true);
+    service
+        .add_request(&item(0, "second", MODEL))
+        .await
+        .expect("the fallback queue accepts the request");
+    server.set_down(false);
+    service
+        .add_request(&item(64, "third", MODEL))
+        .await
+        .expect("the shared tier takes the carried entry");
+    service
+        .remove_request(&item(0, "second", MODEL))
+        .await
+        .expect("the removal reaches the shared tier");
+    service
+        .add_request(&item(32, "fourth", MODEL))
+        .await
+        .expect("the next write succeeds");
+    assert_eq!(
+        service.queue(MODEL).await.expect("the queue reads").value,
+        entries(&[(32, "fourth"), (64, "third"), (128, "first")])
+    );
+}
+
 // an empty queue is the setup error Scheduler.poll and Scheduler.peek raise, told apart from the wait
 #[tokio::test]
 async fn an_empty_queue_is_refused() {
