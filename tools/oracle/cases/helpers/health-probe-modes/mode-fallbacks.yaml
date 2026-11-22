@@ -1,0 +1,66 @@
+kind: helper
+name: mode_fallbacks
+call:
+  b4440:
+    mode:
+      - mode: completion
+        model: gpt-4o
+        custom_llm_provider: openai
+        params: {model: gpt-4o}
+        prompt: ""
+        inputs: null
+        logging: false
+        failure: null
+      - mode: embedding
+        model: text-embedding-3-small
+        custom_llm_provider: openai
+        params: {model: text-embedding-3-small}
+        prompt: null
+        inputs: []
+        logging: false
+        failure: null
+      - mode: audio_speech
+        model: tts-1
+        custom_llm_provider: openai
+        params: {model: tts-1}
+        prompt: ""
+        inputs: null
+        logging: false
+        failure: null
+      - mode: video_generation
+        model: sora-2
+        custom_llm_provider: openai
+        params: {model: sora-2}
+        prompt: ""
+        inputs: null
+        logging: false
+        failure: null
+      - mode: rerank
+        model: rerank-v3
+        custom_llm_provider: cohere
+        params: {model: rerank-v3}
+        prompt: ""
+        inputs: null
+        logging: false
+        failure: null
+      - mode: responses
+        model: gpt-5
+        custom_llm_provider: openai
+        params: {model: gpt-5}
+        prompt: ""
+        inputs: null
+        logging: false
+        failure: null
+      - mode: image_generation
+        model: dall-e-3
+        custom_llm_provider: openai
+        params: {model: dall-e-3}
+        prompt: ""
+        inputs: null
+        logging: false
+        failure: null
+    wildcard: []
+    tracking: []
+    response: []
+env: {}
+compare: {ignore: []}
