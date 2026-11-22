@@ -1,5 +1,5 @@
 use crate::redis_spend::log_row::{SpendLogRow, SpendLogValue};
-use crate::spend_log_storage::{SpendLogWriteError, SpendLogsWriter};
+use crate::spend_log_storage::{SpendLogWriteError as _, SpendLogsWriter};
 
 mod tests;
 

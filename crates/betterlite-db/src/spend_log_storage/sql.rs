@@ -68,10 +68,10 @@ pub fn insert_statement() -> String {
         .iter()
         .map(|(name, _)| {
             let column = format!("\"{name}\"");
-            match default_of(name) {
-                Some(default) => format!("COALESCE(src.{column}, {default})"),
-                None => format!("src.{column}"),
-            }
+            default_of(name).map_or_else(
+                || format!("src.{column}"),
+                |default| format!("COALESCE(src.{column}, {default})"),
+            )
         })
         .collect();
     let column_list = columns.join(", ");
