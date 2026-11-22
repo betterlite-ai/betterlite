@@ -239,7 +239,7 @@ impl ClientCache for Cache {
 struct Fake {
     body: String,
     failure: Option<u16>,
-    calls: Mutex<Vec<String>>,
+    calls: Arc<Mutex<Vec<String>>>,
 }
 
 impl Fake {
