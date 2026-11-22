@@ -4,5 +4,5 @@ use betterlite_server::guardrails::submissions::models::decode_register_body;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|body: &[u8]| {
-    let _decoded = decode_register_body(body);
+    drop(decode_register_body(body));
 });
