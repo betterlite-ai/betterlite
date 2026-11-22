@@ -27,4 +27,11 @@ probes:
           - {request_type: general, model: mini, delta_alpha: "1", delta_beta: "0"}
         samples: ["0.5", "0.5", "0.5"]
         kwargs_present: null
-compare: {ignore: []}
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/complexity_adaptive_placement/decision/candidates/1/score
+      reference: "-0.000000"
+      rust: "0.000000"
+      why: betterlite's Decimal cost score is exactly 0.5 for this candidate, so its weighted sum lands on zero and prints 0.000000, where LiteLLM's float cost score is one ulp lower and its tiny negative score prints -0.000000; every other candidate field and the chosen model still match
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/bandit.py#L84-L97
