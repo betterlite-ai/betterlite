@@ -14,6 +14,7 @@ pub struct InvokeEnvironment<'text> {
     pub region_inputs: RegionInputs<'text>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct CompleteUrl<'text> {
     pub api_base: Option<&'text str>,
     pub model: &'text str,

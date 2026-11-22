@@ -22,12 +22,12 @@ pub(super) fn agent_id_alias_path() {
     assert_region_errors();
 }
 
-fn environment(
-    runtime_endpoint: Option<&str>,
-    region_name: Option<&str>,
-    region: Option<&str>,
-    session_region: Option<&str>,
-) -> InvokeEnvironment<'_> {
+fn environment<'text>(
+    runtime_endpoint: Option<&'text str>,
+    region_name: Option<&'text str>,
+    region: Option<&'text str>,
+    session_region: Option<&'text str>,
+) -> InvokeEnvironment<'text> {
     InvokeEnvironment {
         runtime_endpoint,
         region_inputs: RegionInputs {
