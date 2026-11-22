@@ -38,6 +38,7 @@ pub(super) struct MaskCall {
 pub(super) struct Masker {
     pub(super) guard: usize,
     pub(super) replacements: Vec<(&'static str, &'static str)>,
+    pub(super) refuse: bool,
     pub(super) calls: Arc<Mutex<Vec<MaskCall>>>,
 }
 
@@ -57,6 +58,9 @@ impl PresidioGuardrailCallback for Masker {
         request_data: &'call BTreeMap<String, Box<RawValue>>,
     ) -> impl Future<Output = Result<String, Refused>> + Send + 'call {
         assert_eq!(presidio_config, Some(&self.guard));
+        if self.refuse {
+            return ready(Err(Refused));
+        }
         let mut masked = text.to_owned();
         for (from, to) in &self.replacements {
             masked = masked.replace(from, to);
@@ -159,6 +163,7 @@ pub(super) fn masker(
     Masker {
         guard,
         replacements,
+        refuse: false,
         calls: Arc::clone(calls),
     }
 }

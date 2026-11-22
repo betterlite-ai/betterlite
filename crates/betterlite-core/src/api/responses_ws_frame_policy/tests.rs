@@ -12,7 +12,7 @@ use betterlite_openai::api::responses_shapes::websocket::WsRequestDefaults;
 use rstest::rstest;
 
 use self::support::{
-    Client, MaskCall, Masker, QuotaCall, Verdict, WRAPPED_CONTENT, WRAPPED_ITEM_ID,
+    Client, MaskCall, Masker, QuotaCall, Refused, Verdict, WRAPPED_CONTENT, WRAPPED_ITEM_ID,
     WRAPPED_RESPONSE_ID, echo, json, key, lock, masker, object, parsed, quota, recording_unmask,
     request_data,
 };
@@ -749,6 +749,45 @@ async fn completed_output_masking(
         .await
         .unwrap();
     assert!(matches!(untouched, Cow::Borrowed(text) if text == message));
+}
+
+// a callback exception escapes LiteLLM's masking call, so the relay ends instead of forwarding the frame
+#[tokio::test]
+async fn guardrail_errors_end_masking() {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let guardrails = [InputGuardrail {
+        callback: Masker {
+            guard: 0,
+            replacements: Vec::new(),
+            refuse: true,
+            calls: Arc::clone(&calls),
+        },
+        unmask_pii_text: &echo,
+    }];
+    let outputs = [Masker {
+        guard: 1,
+        replacements: Vec::new(),
+        refuse: true,
+        calls: Arc::clone(&calls),
+    }];
+    let policy = FramePolicy {
+        quota_callbacks: &[],
+        user_api_key_dict: None,
+        guardrail_callbacks: &guardrails,
+        output_guardrail_callbacks: &outputs,
+        authorized_model: None,
+        request_defaults: None,
+    };
+    let mut data = request_data("{}");
+    let created = mask_response_create(&policy, &mut data, CREATE).await;
+    assert!(matches!(created, Err(FramePolicyError::Guardrail(Refused))));
+    let completed_frame =
+        r#"{"type":"response.completed","response":{"output":[{"content":[{"text":"secret"}]}]}}"#;
+    let completed = mask_response_completed(&policy, &data, completed_frame).await;
+    assert!(matches!(
+        completed,
+        Err(FramePolicyError::Guardrail(Refused))
+    ));
 }
 
 #[rstest]
