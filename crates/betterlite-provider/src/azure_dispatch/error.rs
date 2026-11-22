@@ -1,5 +1,4 @@
-use std::io::Error as IoError;
-
+use crate::operation::OperationError;
 use betterlite_azure::azure_urls::AzureUrlError;
 use betterlite_azure::chat_call::error::AzureChatError;
 use betterlite_http::proxy::UpstreamResponse;
@@ -9,15 +8,12 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use http::HeaderMap;
 use http::header::InvalidHeaderValue;
 use serde_json::Error as JsonError;
+use std::io::Error as IoError;
 use thiserror::Error;
-
-use crate::operation::OperationError;
-
 pub const MISSING_TEXT_BASE: &str = "api_base is required for Azure OpenAI LLM provider. Either set it dynamically or set the AZURE_API_BASE environment variable.";
 pub const MISSING_EMBEDDING_BASE: &str =
     "No API Base provided for Azure OpenAI LLM provider. Set 'AZURE_API_BASE' in .env";
 pub const MAX_RETRIES_TYPE: &str = "max retries must be an int";
-
 #[derive(Debug, Error)]
 pub enum AzureProviderError {
     #[error(
@@ -54,16 +50,9 @@ pub enum AzureProviderError {
         #[source]
         source: JsonError,
     },
-    #[error("the provider answer is not the expected {operation} response: {source}")]
-    Decode {
-        operation: &'static str,
-        #[source]
-        source: JsonError,
-    },
     #[error(transparent)]
     Transport(#[from] TransportError),
 }
-
 // the status a Python exception carries: a raised ValueError has none
 impl AzureProviderError {
     #[must_use]
@@ -80,12 +69,10 @@ impl AzureProviderError {
             | Self::Header { .. }
             | Self::Url { .. }
             | Self::Encode { .. }
-            | Self::Decode { .. }
             | Self::Transport(_) => None,
         }
     }
 }
-
 impl From<AzureChatError> for AzureProviderError {
     fn from(error: AzureChatError) -> Self {
         let status = match &error {
@@ -98,8 +85,6 @@ impl From<AzureChatError> for AzureProviderError {
         }
     }
 }
-
-// A status and an error body, the way the route renders a provider's own answer.
 fn provider_error(status: u16, kind: &str, message: String) -> OperationError {
     let error = Object::from_iter([
         (String::from("message"), Json::Text(message)),
@@ -115,7 +100,13 @@ fn provider_error(status: u16, kind: &str, message: String) -> OperationError {
         }),
     }
 }
-
+fn parameters(message: &str) -> OperationError {
+    OperationError::Parameters {
+        source: ParameterError::Encode {
+            source: JsonError::io(IoError::other(message.to_owned())),
+        },
+    }
+}
 impl From<AzureProviderError> for OperationError {
     fn from(source: AzureProviderError) -> Self {
         match source {
@@ -123,46 +114,23 @@ impl From<AzureProviderError> for OperationError {
             | AzureProviderError::MissingEmbeddingApiBase) => {
                 provider_error(500, "ValueError", failure.to_string())
             }
-            AzureProviderError::ExtraBodyNotAnObject => OperationError::Parameters {
-                source: ParameterError::Encode {
-                    source: JsonError::io(IoError::other("extra_body must be an object")),
-                },
-            },
-            AzureProviderError::ExtraBodyToken => OperationError::Parameters {
-                source: ParameterError::Encode {
-                    source: JsonError::io(IoError::other(
-                        "extra_body.azure_ad_token must be a string or null",
-                    )),
-                },
-            },
+            failure @ (AzureProviderError::ExtraBodyNotAnObject
+            | AzureProviderError::ExtraBodyToken) => parameters(&failure.to_string()),
+            failure @ (AzureProviderError::HeadersNotObject
+            | AzureProviderError::HeaderValueType { .. }) => {
+                provider_error(400, "AzureOpenAIError", failure.to_string())
+            }
             AzureProviderError::MaxRetriesType => {
                 provider_error(422, "AzureOpenAIError", String::from(MAX_RETRIES_TYPE))
             }
             AzureProviderError::Rejected { status, message } => {
                 provider_error(status, "AzureOpenAIError", message)
             }
-            AzureProviderError::HeadersNotObject => provider_error(
-                400,
-                "AzureOpenAIError",
-                String::from("extra_headers must be an object"),
-            ),
-            AzureProviderError::HeaderValueType { name } => provider_error(
-                400,
-                "AzureOpenAIError",
-                format!("the {name} header value must be a string"),
-            ),
             AzureProviderError::Header { name, source } => {
                 OperationError::InvalidHeader { name, source }
             }
-            AzureProviderError::Url { source } => OperationError::Parameters {
-                source: ParameterError::Encode {
-                    source: JsonError::io(IoError::other(source.to_string())),
-                },
-            },
+            AzureProviderError::Url { source } => parameters(&source.to_string()),
             AzureProviderError::Encode { source } => OperationError::Encode { source },
-            AzureProviderError::Decode { operation, source } => {
-                OperationError::Decode { operation, source }
-            }
             AzureProviderError::Transport(source) => OperationError::from(source),
         }
     }

@@ -1,4 +1,5 @@
-use betterlite_azure::endpoints::projection::CallableProvider;
+use super::call::{Composition, Credentials, Operation};
+use super::error::AzureProviderError;
 use betterlite_config::sections::azure_endpoints::AZURE_DEFAULT_API_VERSION;
 use betterlite_context::chat_config_selection::azure::is_o_series_model;
 use betterlite_openai::openai_base_config::Headers;
@@ -6,34 +7,26 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-
-use super::call::{Composition, Credentials};
-use super::error::AzureProviderError;
-
-pub const DEFAULT_API_TYPE: &str = "azure";
-
-pub struct Resolved {
-    pub api_base: Option<String>,
-    pub api_version: Option<String>,
-    pub api_key: Option<SecretString>,
-    pub api_type: String,
+pub(crate) const DEFAULT_API_TYPE: &str = "azure";
+pub(crate) struct Resolved {
+    pub(crate) api_base: Option<String>,
+    pub(crate) api_version: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
+    pub(crate) api_type: String,
     // the token the SDK authenticates with: only the call's own azure_ad_token parameter reaches it
-    pub auth_token: Option<SecretString>,
+    pub(crate) auth_token: Option<SecretString>,
     // main.py's resolved token: extra_body.azure_ad_token, then the parameter, then AZURE_AD_TOKEN
-    pub azure_ad_token: Option<SecretString>,
-    pub azure_ad_token_provider: Option<CallableProvider>,
+    pub(crate) azure_ad_token: Option<SecretString>,
     // the call's own headers and extra headers, and litellm.headers, each kept for its own merge
-    pub headers: Option<Headers>,
-    pub extra_headers: Option<Headers>,
-    pub globals_headers: Option<Headers>,
-    pub max_retries: Option<Json>,
-    pub extra_body: Object,
-    pub default_api_version: String,
-    pub o_series: bool,
+    pub(crate) headers: Option<Headers>,
+    pub(crate) extra_headers: Option<Headers>,
+    pub(crate) globals_headers: Option<Headers>,
+    pub(crate) max_retries: Option<Json>,
+    pub(crate) extra_body: Object,
+    pub(crate) default_api_version: String,
+    pub(crate) o_series: bool,
 }
-
-// The one JSON conversion the two Json types need: a settings object or a body crosses as its own text.
-pub fn convert<A, B>(value: &A) -> Result<B, AzureProviderError>
+pub(crate) fn convert<A, B>(value: &A) -> Result<B, AzureProviderError>
 where
     A: Serialize + ?Sized,
     B: DeserializeOwned,
@@ -42,31 +35,23 @@ where
         serde_json::to_string(value).map_err(|source| AzureProviderError::Encode { source })?;
     serde_json::from_str(&text).map_err(|source| AzureProviderError::Encode { source })
 }
-
-fn truthy_text(value: Option<&str>) -> Option<String> {
+fn filled(value: Option<&str>) -> Option<String> {
     value.filter(|text| !text.is_empty()).map(str::to_owned)
 }
-
-fn truthy_secret(value: Option<&SecretString>) -> Option<SecretString> {
-    value
-        .filter(|secret| !secret.expose_secret().is_empty())
+fn filled_secret(secret: Option<&SecretString>) -> Option<SecretString> {
+    secret
+        .filter(|text| !text.expose_secret().is_empty())
         .cloned()
 }
-
-// api_base: truthy explicit, litellm.api_base, then AZURE_API_BASE as it stands (an empty value is still set)
-fn ranked_base(composition: &Composition, credentials: &Credentials) -> Option<String> {
-    truthy_text(credentials.api_base.as_deref())
-        .or_else(|| truthy_text(composition.globals.api_base.as_deref()))
-        .or_else(|| composition.lookup("AZURE_API_BASE").map(str::to_owned))
+fn api_type(composition: &Composition) -> String {
+    match composition
+        .lookup("AZURE_API_TYPE")
+        .filter(|kind| !kind.is_empty())
+    {
+        Some(kind) => kind.to_owned(),
+        None => DEFAULT_API_TYPE.to_owned(),
+    }
 }
-
-// api_version: truthy explicit, litellm.api_version, then a non-empty AZURE_API_VERSION
-fn ranked_version(composition: &Composition, credentials: &Credentials) -> Option<String> {
-    truthy_text(credentials.api_version.as_deref())
-        .or_else(|| truthy_text(composition.globals.api_version.as_deref()))
-        .or_else(|| truthy_text(composition.lookup("AZURE_API_VERSION")))
-}
-
 fn default_version(composition: &Composition) -> String {
     composition
         .globals
@@ -74,43 +59,6 @@ fn default_version(composition: &Composition) -> String {
         .clone()
         .unwrap_or_else(|| AZURE_DEFAULT_API_VERSION.to_owned())
 }
-
-// the call's own key, litellm.api_key and litellm.azure_key, the three ranks both providers share
-fn ranked_globals(composition: &Composition, credentials: &Credentials) -> Option<SecretString> {
-    truthy_secret(credentials.api_key.as_ref())
-        .or_else(|| truthy_secret(composition.globals.api_key.as_ref()))
-        .or_else(|| truthy_secret(composition.globals.azure_key.as_ref()))
-}
-
-// api_key: the shared ranks, then AZURE_OPENAI_API_KEY and AZURE_API_KEY as they stand
-fn ranked_key(composition: &Composition, credentials: &Credentials) -> Option<SecretString> {
-    ranked_globals(composition, credentials)
-        .or_else(|| {
-            composition
-                .lookup("AZURE_OPENAI_API_KEY")
-                .filter(|key| !key.is_empty())
-                .map(SecretString::from)
-        })
-        .or_else(|| composition.lookup("AZURE_API_KEY").map(SecretString::from))
-}
-
-// embedding reads only AZURE_API_KEY from the environment, unlike chat and text
-fn ranked_embedding_key(
-    composition: &Composition,
-    credentials: &Credentials,
-) -> Option<SecretString> {
-    ranked_globals(composition, credentials)
-        .or_else(|| composition.lookup("AZURE_API_KEY").map(SecretString::from))
-}
-
-fn api_type(composition: &Composition) -> String {
-    composition
-        .lookup("AZURE_API_TYPE")
-        .filter(|kind| !kind.is_empty())
-        .map_or_else(|| DEFAULT_API_TYPE.to_owned(), str::to_owned)
-}
-
-// optional_params.get("extra_body", {}).pop("azure_ad_token", None): the removal mutates the body's object
 fn take_extra_body(
     credentials: &mut Credentials,
 ) -> Result<(Object, Option<String>), AzureProviderError> {
@@ -129,139 +77,135 @@ fn take_extra_body(
     };
     Ok((fields, token))
 }
-
-fn take_token(
+// embeddings hand kwargs.extra_body straight to the SDK, which merges it into the request body
+fn embedding_extra_body(credentials: &mut Credentials) -> Result<Object, AzureProviderError> {
+    match credentials.extra_body.take() {
+        None | Some(Json::Null) => Ok(Object::new()),
+        Some(Json::Object(fields)) => Ok(fields),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(AzureProviderError::ExtraBodyNotAnObject)
+        }
+    }
+}
+fn ad_token(
     composition: &Composition,
-    explicit: Option<&SecretString>,
     from_body: Option<String>,
+    auth: Option<SecretString>,
 ) -> Option<SecretString> {
     from_body
         .map(SecretString::from)
-        .filter(|token| !token.expose_secret().is_empty())
-        .or_else(|| truthy_secret(explicit))
-        .or_else(|| composition.lookup("AZURE_AD_TOKEN").map(SecretString::from))
+        .or(auth)
+        .or_else(|| filled(composition.lookup("AZURE_AD_TOKEN")).map(SecretString::from))
 }
-
-// main.py merges kwargs.headers with kwargs.extra_headers, then falls back to litellm.headers
-fn take_headers(
-    composition: &Composition,
-    credentials: &Credentials,
-) -> (Option<Headers>, Option<Headers>, Option<Headers>) {
-    let globals = composition
-        .globals
-        .headers
-        .clone()
-        .filter(|map| !map.is_empty());
-    (
-        credentials.headers.clone(),
-        credentials.extra_headers.clone(),
-        globals,
+struct Ranks<'composition, 'credentials> {
+    composition: &'composition Composition,
+    credentials: &'credentials Credentials,
+    operation: Operation,
+}
+impl Ranks<'_, '_> {
+    fn api_base(&self) -> Option<String> {
+        filled(self.credentials.api_base.as_deref())
+            .or_else(|| filled(self.composition.globals.api_base.as_deref()))
+            .or_else(|| self.composition.lookup("AZURE_API_BASE").map(str::to_owned))
+    }
+    fn api_version(&self) -> Option<String> {
+        filled(self.credentials.api_version.as_deref())
+            .or_else(|| filled(self.composition.globals.api_version.as_deref()))
+            .or_else(|| {
+                self.composition
+                    .lookup("AZURE_API_VERSION")
+                    .map(str::to_owned)
+            })
+    }
+    fn api_key(&self) -> Option<SecretString> {
+        let globals = &self.composition.globals;
+        let key = filled_secret(self.credentials.api_key.as_ref())
+            .or_else(|| filled_secret(globals.api_key.as_ref()))
+            .or_else(|| filled_secret(globals.azure_key.as_ref()));
+        if self.operation == Operation::Embedding {
+            return key.or_else(|| {
+                filled(self.composition.lookup("AZURE_API_KEY")).map(SecretString::from)
+            });
+        }
+        key.or_else(|| {
+            filled(self.composition.lookup("AZURE_OPENAI_API_KEY")).map(SecretString::from)
+        })
+        .or_else(|| filled(self.composition.lookup("AZURE_API_KEY")).map(SecretString::from))
+    }
+    // the text and embedding branches own a missing-base failure; chat lets the URL builder refuse it
+    fn bases(
+        &self,
+        default_api_version: &str,
+    ) -> Result<(Option<String>, Option<String>), AzureProviderError> {
+        let api_base = self.api_base();
+        let api_version = self.api_version();
+        match self.operation {
+            Operation::Text => Ok((
+                Some(api_base.ok_or(AzureProviderError::MissingTextApiBase)?),
+                api_version,
+            )),
+            Operation::Embedding => Ok((
+                Some(api_base.ok_or(AzureProviderError::MissingEmbeddingApiBase)?),
+                defaulted(api_version, default_api_version),
+            )),
+            Operation::Chat => Ok((api_base, defaulted(api_version, default_api_version))),
+        }
+    }
+}
+// chat and embeddings end their version chain with the module default, so an empty one falls through
+fn defaulted(api_version: Option<String>, default_api_version: &str) -> Option<String> {
+    Some(
+        api_version
+            .filter(|text| !text.is_empty())
+            .unwrap_or_else(|| default_api_version.to_owned()),
     )
 }
-
-pub fn resolve_chat(
+pub(crate) fn resolve(
     composition: &Composition,
     mut credentials: Credentials,
-    detection_model: &str,
+    operation: Operation,
+    detection_model: Option<&str>,
 ) -> Result<Resolved, AzureProviderError> {
-    let api_base = ranked_base(composition, &credentials);
-    let api_version = Some(
-        ranked_version(composition, &credentials).unwrap_or_else(|| default_version(composition)),
-    );
-    let api_key = ranked_key(composition, &credentials);
-    let auth_token = truthy_secret(credentials.azure_ad_token.as_ref());
-    let (extra_body, from_body) = take_extra_body(&mut credentials)?;
-    let azure_ad_token = take_token(composition, None, from_body);
-    let (headers, extra_headers, globals_headers) = take_headers(composition, &credentials);
+    let default_api_version = default_version(composition);
+    let (extra_body, from_body) = match operation {
+        Operation::Embedding => (embedding_extra_body(&mut credentials)?, None),
+        Operation::Chat | Operation::Text => take_extra_body(&mut credentials)?,
+    };
+    let ranks = Ranks {
+        composition,
+        credentials: &credentials,
+        operation,
+    };
+    let auth_token = filled_secret(credentials.azure_ad_token.as_ref());
+    let azure_ad_token = ad_token(composition, from_body, auth_token.clone());
+    let (api_base, api_version) = ranks.bases(&default_api_version)?;
+    let max_retries = (operation == Operation::Chat)
+        .then(|| credentials.max_retries.clone())
+        .flatten();
     Ok(Resolved {
         api_base,
         api_version,
-        api_key,
+        api_key: ranks.api_key(),
         api_type: api_type(composition),
         auth_token,
         azure_ad_token,
-        azure_ad_token_provider: credentials.azure_ad_token_provider.take(),
-        headers,
-        extra_headers,
-        globals_headers,
-        max_retries: credentials.max_retries.clone(),
+        headers: credentials.headers.clone(),
+        extra_headers: credentials.extra_headers.clone(),
+        globals_headers: composition
+            .globals
+            .headers
+            .clone()
+            .filter(|map| !map.is_empty()),
+        max_retries,
         extra_body,
-        default_api_version: default_version(composition),
-        o_series: is_o_series_model(detection_model),
+        default_api_version,
+        o_series: detection_model.is_some_and(is_o_series_model),
     })
 }
-
-pub fn resolve_text(
-    composition: &Composition,
-    mut credentials: Credentials,
-) -> Result<Resolved, AzureProviderError> {
-    let Some(api_base) = ranked_base(composition, &credentials) else {
-        return Err(AzureProviderError::MissingTextApiBase);
-    };
-    let api_key = ranked_key(composition, &credentials);
-    let auth_token = truthy_secret(credentials.azure_ad_token.as_ref());
-    let (extra_body, from_body) = take_extra_body(&mut credentials)?;
-    let azure_ad_token = take_token(composition, None, from_body);
-    let (headers, extra_headers, globals_headers) = take_headers(composition, &credentials);
-    Ok(Resolved {
-        api_base: Some(api_base),
-        api_version: ranked_version(composition, &credentials),
-        api_key,
-        api_type: api_type(composition),
-        auth_token,
-        azure_ad_token,
-        azure_ad_token_provider: credentials.azure_ad_token_provider.take(),
-        headers,
-        extra_headers,
-        globals_headers,
-        max_retries: None,
-        extra_body,
-        default_api_version: default_version(composition),
-        o_series: false,
-    })
-}
-
-pub fn resolve_embedding(
-    composition: &Composition,
-    mut credentials: Credentials,
-) -> Result<Resolved, AzureProviderError> {
-    let Some(api_base) = ranked_base(composition, &credentials) else {
-        return Err(AzureProviderError::MissingEmbeddingApiBase);
-    };
-    let api_version = Some(
-        ranked_version(composition, &credentials).unwrap_or_else(|| default_version(composition)),
-    );
-    let auth_token = truthy_secret(credentials.azure_ad_token.as_ref());
-    let azure_ad_token = take_token(composition, credentials.azure_ad_token.as_ref(), None);
-    let (headers, extra_headers, globals_headers) = take_headers(composition, &credentials);
-    // embeddings hand kwargs.extra_body straight to the SDK, which merges it into the request body
-    let extra_body = match credentials.extra_body.take() {
-        None | Some(Json::Null) => Object::new(),
-        Some(Json::Object(fields)) => fields,
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(AzureProviderError::ExtraBodyNotAnObject);
-        }
-    };
-    Ok(Resolved {
-        api_base: Some(api_base),
-        api_version,
-        api_key: ranked_embedding_key(composition, &credentials),
-        api_type: api_type(composition),
-        auth_token,
-        azure_ad_token,
-        azure_ad_token_provider: credentials.azure_ad_token_provider.take(),
-        headers,
-        extra_headers,
-        globals_headers,
-        max_retries: None,
-        extra_body,
-        default_api_version: default_version(composition),
-        o_series: false,
-    })
-}
-
-// Merge selected config defaults only for absent keys, so an explicit None stays None.
-pub fn merge_defaults<T>(optional: &mut Object, defaults: &T) -> Result<(), AzureProviderError>
+pub(crate) fn merge_defaults<T>(
+    optional: &mut Object,
+    defaults: &T,
+) -> Result<(), AzureProviderError>
 where
     T: Serialize + ?Sized,
 {

@@ -1,10 +1,3 @@
-use betterlite_http::proxy::ProxiedClient;
-use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers};
-use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_prompts::message_content::Message;
-use secrecy::SecretString;
-use serde::Serialize;
-
 use crate::operation::{
     ChatOperation, EmbeddingOperation, OperationError, OperationRequest, OperationResult,
     RequestKind,
@@ -14,66 +7,46 @@ use crate::prepared::deployment::Deployment;
 use crate::prepared::{PreparedRequest, Upstream};
 use crate::provider::Adapter;
 use crate::transform_retry::{TransformOnUnprocessable, send_with_retry};
-
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers};
+use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::message_content::Message;
+use secrecy::SecretString;
+use serde::Deserialize;
 pub mod call;
 pub mod compose;
-pub mod dispatch;
 pub mod error;
+pub mod fixtures;
+mod reply;
 mod resolve;
-mod wire;
-
 mod tests;
-
+mod wire;
 // ChatDeployment falls back to this base for a deployment that names none; Azure reads it as an unset api_base
 const OPENAI_DEFAULT_BASE: &str = "https://api.openai.com/v1";
-
 // The call kwargs LiteLLM reads before the provider body; none of them is sent to Azure
-const DISCARDED_KEYS: [&str; 9] = [
-    "api_type",
-    "drop_params",
-    "allowed_openai_params",
-    "additional_drop_params",
-    "stream_timeout",
-    "num_retries",
-    "organization",
-    "mock_delay",
-    "mock_timeout",
-];
-
-const EMBEDDING_KEYS: [&str; 10] = [
-    "api_base",
-    "api_key",
-    "api_version",
-    "timeout",
-    "max_retries",
-    "headers",
-    "extra_headers",
-    "extra_body",
-    "azure_ad_token",
-    "metadata",
-];
-
-// B010's stubs, filled by this slice: the provider marker and its typed records.
+const DISCARDED_KEYS: &str = "api_type drop_params allowed_openai_params additional_drop_params stream_timeout num_retries organization mock_delay mock_timeout";
+const EMBEDDING_KEYS: &str = "api_base api_key api_version timeout max_retries headers extra_headers extra_body azure_ad_token metadata";
+const OPTION_KEYS: &str = "api_base api_version api_key headers extra_headers max_retries extra_body azure_ad_token timeout";
+#[derive(Deserialize)]
+struct CallOptions {
+    api_base: Option<String>,
+    api_version: Option<String>,
+    api_key: Option<String>,
+    headers: Option<Headers>,
+    extra_headers: Option<Headers>,
+    max_retries: Option<Json>,
+    extra_body: Option<Json>,
+    azure_ad_token: Option<String>,
+    timeout: Option<f64>,
+}
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Azure;
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AzureRequest;
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AzurePrepared;
-
-// The typed dispatcher's answer: the requests it composed, the reply it projected, and the failure it met
-#[derive(Debug, Clone, Serialize)]
-pub struct AzureResult {
-    pub requests: Vec<dispatch::RecordedRequest>,
-    pub reply: Json,
-    pub error: Json,
-}
-
 impl Adapter for Azure {
     const NAME: &'static str = "azure";
-
     fn prepare(
         &self,
         request: &OperationRequest,
@@ -82,19 +55,21 @@ impl Adapter for Azure {
     ) -> Result<PreparedRequest, OperationError> {
         let composition = call::Composition::process();
         match request.kind() {
-            RequestKind::Chat(chat) => {
-                compose::prepare_chat(&composition, chat_call(chat, deployment, false)?)
-            }
-            RequestKind::Stream(chat) => {
-                compose::prepare_chat(&composition, chat_call(chat, deployment, true)?)
-            }
-            RequestKind::Embedding(embedding) => {
-                compose::prepare_embedding(&composition, embedding_call(embedding, deployment)?)
-            }
-            RequestKind::Other => Err(unsupported()),
+            RequestKind::Chat(chat) => prepared(
+                &composition,
+                call::Request::Chat(Box::new(chat_call(chat, deployment, false)?)),
+            ),
+            RequestKind::Stream(chat) => prepared(
+                &composition,
+                call::Request::Chat(Box::new(chat_call(chat, deployment, true)?)),
+            ),
+            RequestKind::Embedding(embedding) => prepared(
+                &composition,
+                call::Request::Embedding(Box::new(embedding_call(embedding, deployment)?)),
+            ),
+            RequestKind::Other => Err(reply::unsupported()),
         }
     }
-
     async fn execute(
         &self,
         client: &ProxiedClient,
@@ -103,33 +78,32 @@ impl Adapter for Azure {
     ) -> Result<Upstream, OperationError> {
         send_with_retry(client, prepared, deployment, self).await
     }
-
     fn decode(
         &self,
         prepared: &PreparedRequest,
         upstream: Upstream,
     ) -> Result<OperationResult, OperationError> {
-        dispatch::decode(prepared, upstream)
+        reply::decode(prepared, upstream)
     }
 }
-
 impl TransformOnUnprocessable for Azure {}
-
-fn unsupported() -> OperationError {
-    OperationError::UnsupportedOperation {
-        provider: String::from(Azure::NAME),
-        operation: String::from("provider endpoint"),
-    }
+fn prepared(
+    composition: &call::Composition,
+    request: call::Request,
+) -> Result<PreparedRequest, OperationError> {
+    Ok(compose::prepared_request(compose::prepare(
+        composition,
+        request,
+    )?))
 }
-
 fn chat_call(
     chat: &ChatOperation,
     deployment: &Deployment,
     stream: bool,
 ) -> Result<call::ChatCall, OperationError> {
     let fields = chat_request_fields(&chat.request)?;
-    let messages: Vec<Message> = round_trip(&fields.messages)?;
-    let mut optional: Object = round_trip(&fields.params)?;
+    let messages: Vec<Message> = resolve::convert(&fields.messages)?;
+    let mut optional: Object = resolve::convert(&fields.params)?;
     let credentials = credentials(&mut optional, deployment)?;
     Ok(call::ChatCall {
         model: chat.model.clone(),
@@ -140,110 +114,59 @@ fn chat_call(
         supplied: None,
     })
 }
-
 fn embedding_call(
     embedding: &EmbeddingOperation,
     deployment: &Deployment,
 ) -> Result<call::EmbeddingCall, OperationError> {
     let mut request: betterlite_openai::embedding::EmbeddingRequest = embedding.request.clone();
-    let mut optional = Object::new();
-    for name in EMBEDDING_KEYS {
+    let mut passthrough = Object::new();
+    for name in EMBEDDING_KEYS.split(' ') {
         if let Some(value) = request.passthrough.shift_remove(name) {
-            let parsed: Json = serde_json::from_value(value).map_err(encode)?;
-            optional.insert(name.to_owned(), parsed);
+            let parsed: Json = serde_json::from_value(value)
+                .map_err(|source| OperationError::Encode { source })?;
+            passthrough.insert(name.to_owned(), parsed);
         }
     }
-    let credentials = credentials(&mut optional, deployment)?;
+    let credentials = credentials(&mut passthrough, deployment)?;
     Ok(call::EmbeddingCall {
         model: embedding.model.clone(),
         request,
         credentials,
     })
 }
-
-fn round_trip<T>(value: &impl Serialize) -> Result<T, OperationError>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let text = serde_json::to_string(value).map_err(|source| OperationError::Encode { source })?;
-    serde_json::from_str(&text).map_err(|source| OperationError::Encode { source })
-}
-
-// ChatDeployment falls back to the OpenAI base for a deployment that names none.
 fn deployment_base(deployment: &Deployment) -> Option<String> {
-    if deployment.api_base == OPENAI_DEFAULT_BASE {
-        return None;
-    }
-    Some(deployment.api_base.clone())
+    (deployment.api_base != OPENAI_DEFAULT_BASE).then(|| deployment.api_base.clone())
 }
-
-fn take_text(optional: &mut Object, name: &str) -> Option<String> {
-    match optional.shift_remove(name) {
-        Some(Json::Text(text)) => Some(text),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
+fn options(optional: &mut Object) -> Result<CallOptions, OperationError> {
+    let mut values = Object::new();
+    for name in OPTION_KEYS.split(' ') {
+        if let Some(value) = optional.shift_remove(name) {
+            values.insert(name.to_owned(), value);
+        }
     }
+    resolve::convert(&Json::Object(values)).map_err(OperationError::from)
 }
-
-fn take_number(optional: &mut Object, name: &str) -> Option<f64> {
-    match optional.shift_remove(name) {
-        Some(Json::Number(number)) => number.as_f64(),
-        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    }
-}
-
-fn take_headers(
-    optional: &mut Object,
-    name: &str,
-) -> Result<Option<Headers>, error::AzureProviderError> {
-    let Some(value) = optional.shift_remove(name) else {
-        return Ok(None);
-    };
-    let Json::Object(fields) = value else {
-        return Err(error::AzureProviderError::HeadersNotObject);
-    };
-    let mut headers = Headers::new();
-    for (header, value) in fields {
-        let Json::Text(text) = value else {
-            return Err(error::AzureProviderError::HeaderValueType { name: header });
-        };
-        headers.insert(header, text);
-    }
-    Ok(Some(headers))
-}
-
 fn credentials(
     optional: &mut Object,
     deployment: &Deployment,
 ) -> Result<call::Credentials, OperationError> {
-    for name in DISCARDED_KEYS {
+    for name in DISCARDED_KEYS.split(' ') {
         optional.shift_remove(name);
     }
-    let api_base = take_text(optional, "api_base").or_else(|| deployment_base(deployment));
-    let api_version = take_text(optional, "api_version");
-    let api_key = take_text(optional, "api_key")
-        .map(SecretString::from)
-        .or_else(|| deployment.api_key.clone());
-    let headers = take_headers(optional, "headers")?;
-    let extra_headers = take_headers(optional, "extra_headers")?;
-    let max_retries = optional.shift_remove("max_retries");
-    let extra_body = optional.shift_remove("extra_body");
-    let azure_ad_token = take_text(optional, "azure_ad_token").map(SecretString::from);
-    let timeout =
-        take_number(optional, "timeout").or_else(|| Some(deployment.timeout.as_secs_f64()));
+    let options = options(optional)?;
     Ok(call::Credentials {
-        api_base,
-        api_version,
-        api_key,
-        headers,
-        extra_headers,
-        max_retries,
-        extra_body,
-        azure_ad_token,
-        azure_ad_token_provider: None,
+        api_base: options.api_base.or_else(|| deployment_base(deployment)),
+        api_version: options.api_version,
+        api_key: options
+            .api_key
+            .map(SecretString::from)
+            .or_else(|| deployment.api_key.clone()),
+        headers: options.headers,
+        extra_headers: options.extra_headers,
+        max_retries: options.max_retries,
+        extra_body: options.extra_body,
+        azure_ad_token: options.azure_ad_token.map(SecretString::from),
         base_model: None,
-        timeout,
-        cloudflare_params: betterlite_azure::endpoints::cloudflare::CloudflareParams::default(),
+        timeout: options.timeout.or(Some(deployment.timeout.as_secs_f64())),
     })
 }
