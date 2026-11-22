@@ -184,7 +184,9 @@ impl AgentRowLookup for FakeRows {
         log_step(&self.lookups, "row");
         let failure = lock(&self.failure).clone();
         if let Some(message) = failure {
-            return Err(PortFailure::new(FakeFailure { message }));
+            return Err(PortFailure {
+                source: Box::new(FakeFailure { message }),
+            });
         }
         Ok(lock(&self.rows).get(agent_id).cloned())
     }
@@ -255,7 +257,9 @@ impl PublicGroupConfigWriter for FakeConfig {
         log_step(&self.steps, "config");
         let failure = lock(&self.failure).clone();
         if let Some(message) = failure {
-            return Err(PortFailure::new(FakeFailure { message }));
+            return Err(PortFailure {
+                source: Box::new(FakeFailure { message }),
+            });
         }
         *lock(&self.saved) = Some(groups.to_vec());
         Ok(())
@@ -292,7 +296,10 @@ impl KillSwitchTrigger for FakeTrigger {
     async fn fire(&self, agent_id: &str, config: &AgentKillSwitchConfig) -> AgentKillSwitchResult {
         log_step(&self.steps, "fire");
         lock(&self.fired).push((agent_id.to_owned(), config.clone()));
-        lock(&self.result).clone()
+        // fire_kill_switch builds its result with the id the route passed, so the fake names it too
+        let mut result = lock(&self.result).clone();
+        result.agent_id = agent_id.to_owned();
+        result
     }
 }
 

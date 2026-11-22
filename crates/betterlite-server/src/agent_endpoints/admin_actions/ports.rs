@@ -64,17 +64,6 @@ pub struct PortFailure {
     pub source: Box<dyn StdError + Send + Sync>,
 }
 
-impl PortFailure {
-    pub fn new<Failure>(failure: Failure) -> Self
-    where
-        Failure: StdError + Send + Sync + 'static,
-    {
-        Self {
-            source: Box::new(failure),
-        }
-    }
-}
-
 impl AgentRegistryLookup for AgentRegistry {
     fn agent_by_id(&self, agent_id: &str) -> Option<KnownAgent> {
         let agent = self.get_agent_by_id(agent_id)?;

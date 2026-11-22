@@ -125,7 +125,7 @@ async fn webhook_failure_is_502() {
 }
 
 #[tokio::test]
-async fn a_legacy_id_is_fired_as_the_caller_sent_it() {
+async fn a_legacy_id_fires_under_the_stable_id() {
     let fixture = Fixture::new();
     fixture
         .registry
@@ -137,9 +137,12 @@ async fn a_legacy_id_is_fired_as_the_caller_sent_it() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
+    let result: AgentKillSwitchResult = reply.json();
+    assert_eq!(result.agent_id, "stable-1");
     let fired = fixture.trigger.fired();
-    assert_eq!(fired[0].0, "legacy-1");
+    assert_eq!(fired[0].0, "stable-1");
     assert_eq!(fired[0].1.url, URL);
+    assert_eq!(fixture.audit.records()[0].object_id, "stable-1");
 }
 
 #[tokio::test]

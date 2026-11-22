@@ -1,13 +1,13 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
-use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::{AgentKillSwitchConfig, AgentKillSwitchResult};
 use serde::Serialize;
 
 use super::AgentAdminState;
 use super::caller::AdminCaller;
 use super::error::{missing_agent, unexpected_failure};
+use super::ports::KnownAgent;
 use crate::agent_credentials::kill_switch::parse_agent_kill_switch;
 use crate::agent_endpoints::identity_admin::error::{Detail, IdentityAdminError};
 use crate::audit_events::identity::CallerIdentity;
@@ -19,11 +19,14 @@ struct FailureBody {
     detail: AgentKillSwitchResult,
 }
 
-// what the kill switch lookup found: no such agent answers 404, an agent with no switch answers 400
+// what the lookup found: no such agent answers 404, no switch answers 400, and a switch fires under the resolved id
 enum Resolution {
     Missing,
     NoSwitch,
-    Switch(Box<AgentKillSwitchConfig>),
+    Switch {
+        agent_id: String,
+        config: Box<AgentKillSwitchConfig>,
+    },
 }
 
 // the route body: _resolve_agent_kill_switch, the webhook attempt, the audit row, then 200 or 502 with the same result
@@ -36,7 +39,7 @@ pub(super) async fn trigger(
         Ok(resolved) => resolved,
         Err(error) => return error.into_response(),
     };
-    let configured = match resolved {
+    let (resolved_id, configured) = match resolved {
         Resolution::Missing => return missing_agent(agent_id).into_response(),
         Resolution::NoSwitch => {
             let detail = format!("Agent with ID {agent_id} has no kill_switch configured");
@@ -46,9 +49,12 @@ pub(super) async fn trigger(
             };
             return error.into_response();
         }
-        Resolution::Switch(configured) => configured,
+        Resolution::Switch {
+            agent_id: resolved_id,
+            config,
+        } => (resolved_id, config),
     };
-    let result = state.kill_switch.fire(agent_id, &configured).await;
+    let result = state.kill_switch.fire(&resolved_id, &configured).await;
     record_attempt(state, &result, caller).await;
     if result.succeeded() {
         return Json(result).into_response();
@@ -68,20 +74,24 @@ async fn resolve(
             .await
             .map_err(unexpected_failure)?;
         if let Some(stored) = found {
-            return Ok(resolution(stored.kill_switch.as_ref()));
+            return Ok(resolution(stored));
         }
     }
     let Some(agent) = state.registry.agent_by_id(agent_id) else {
         return Ok(Resolution::Missing);
     };
-    Ok(resolution(agent.kill_switch.as_ref()))
+    Ok(resolution(agent))
 }
 
-fn resolution(stored: Option<&AgentJson>) -> Resolution {
-    let Some(config) = parse_agent_kill_switch(stored) else {
+// LiteLLM fires under the row's own id or the registry agent's stable id, so a legacy-id lookup reports the stable id
+fn resolution(agent: KnownAgent) -> Resolution {
+    let Some(config) = parse_agent_kill_switch(agent.kill_switch.as_ref()) else {
         return Resolution::NoSwitch;
     };
-    Resolution::Switch(Box::new(config))
+    Resolution::Switch {
+        agent_id: agent.agent_id,
+        config: Box::new(config),
+    }
 }
 
 // the audit row comes after the attempt, so a failed webhook leaves one too, and its write never changes the answer
