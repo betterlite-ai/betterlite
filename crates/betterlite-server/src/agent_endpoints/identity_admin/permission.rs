@@ -1,3 +1,8 @@
+#![cfg_attr(
+    not(test),
+    expect(dead_code, reason = "B4785 and B4786 call the management check")
+)]
+
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 
 use super::error::{Detail, IdentityAdminError};
@@ -16,14 +21,6 @@ pub(crate) fn check_agent_management_permission(
     })?;
     let role = caller.user_role.map(|role| role.to_string());
     check_agent_management_role(role.as_deref())
-}
-
-// a JWT caller's principal carries its role while its key may not, and caller_identity falls back to the principal's roles
-pub(crate) fn key_has_role(auth: &UserAPIKeyAuth) -> bool {
-    match TeamCaller::try_from(auth) {
-        Ok(caller) => caller.user_role.is_some(),
-        Err(_error) => false,
-    }
 }
 
 // LiteLLM compares user_api_key_dict.user_role, which the master key and JWT callers carry on the principal

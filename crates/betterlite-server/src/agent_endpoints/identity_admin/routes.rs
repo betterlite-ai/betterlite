@@ -11,9 +11,7 @@ use betterlite_core::agents::AgentResponse;
 
 use super::error::{Detail, IdentityAdminError};
 use super::issuers::{IdentitySettings, trusted_agent_issuers};
-use super::permission::{
-    check_agent_management_permission, check_agent_management_role, key_has_role,
-};
+use super::permission::check_agent_management_role;
 use crate::auth::auth_identity::AuthContext;
 use crate::plugin_routes::routes::caller_identity;
 use crate::tracing_routes::router::unauthenticated;
@@ -47,20 +45,17 @@ where
         .with_state(IdentityAdminState { settings, reads })
 }
 
-// the prologue both routes share: an API-key caller is checked as LiteLLM checks the key, and a master-key or JWT caller by the role on its principal
+// the prologue both routes share: the authenticated caller, its role the way plugin_routes reads it, then the admin check
 fn admitted_caller(caller: Option<Extension<AuthContext>>) -> Result<(), Response> {
     let Some(Extension(context)) = caller else {
         return Err(unauthenticated());
     };
-    let checked = match context.principal.source_key.0.as_ref() {
-        Some(key) if key_has_role(key) => check_agent_management_permission(key),
-        Some(_) | None => match caller_identity(&context.principal) {
-            Ok(identity) => check_agent_management_role(identity.user_role.as_deref()),
-            Err(_error) => Err(IdentityAdminError {
-                status: 500,
-                detail: Detail::Text(String::from("the caller's role could not be read")),
-            }),
-        },
+    let checked = match caller_identity(&context.principal) {
+        Ok(identity) => check_agent_management_role(identity.user_role.as_deref()),
+        Err(_error) => Err(IdentityAdminError {
+            status: 500,
+            detail: Detail::Text(String::from("the caller's role could not be read")),
+        }),
     };
     match checked {
         Ok(()) => Ok(()),
