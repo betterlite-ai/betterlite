@@ -180,7 +180,9 @@ impl DeploymentAffinity {
             tracing::debug!("deployment affinity: the cache key is unusable; skipping the claim");
             return;
         };
-        if let Err(error) = self.claims.claim(&usable, pin, ttl_seconds, None).await {
+        // the box keeps the claim's async chain out of every caller's future layout
+        let claimed = Box::pin(self.claims.claim(&usable, pin, ttl_seconds, None)).await;
+        if let Err(error) = claimed {
             tracing::debug!(%error, "deployment affinity: the pin claim failed");
         }
     }

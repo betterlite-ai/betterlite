@@ -151,7 +151,7 @@ async fn the_authenticated_context_pins_the_selected_deployment() {
     )
     .await;
     let pool = vec![deployment("gpt-4o", "dep-a"), deployment("gpt-4o", "dep-b")];
-    let request_kwargs = Json::Object(IndexMap::from([("metadata".to_owned(), metadata.clone())]));
+    let request_kwargs = IndexMap::from([("metadata".to_owned(), metadata)]);
     let selected = affinity
         .filter_deployments(&FilterRequest {
             model: "gpt-4o",
@@ -173,13 +173,13 @@ async fn an_unusable_request_keeps_the_response() {
         "deployment_model_name".to_owned(),
         Json::Bool(true),
     )]));
-    let unused = Json::Object::new();
+    let empty_info = Json::Object(JsonObject::new());
     record_selection(
         &affinity,
         &AuthenticatedRequest {
             metadata: Some(&metadata),
             litellm_metadata: None,
-            model_info: Some(&unused),
+            model_info: Some(&empty_info),
         },
     )
     .await;

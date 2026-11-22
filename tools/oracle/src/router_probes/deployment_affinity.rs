@@ -9,23 +9,33 @@ use crate::router_probes::random::InjectedRandom;
 
 mod engine;
 
+// the probe operation enum keeps one pointer for this payload instead of every field inline
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct Input(Box<Payload>);
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct Input {
-    pub model: String,
-    pub deployments: Vec<Deployment>,
-    pub steps: Vec<Step>,
-    pub ttl_seconds: u32,
+struct Payload {
+    model: String,
+    deployments: Vec<Deployment>,
+    steps: Vec<Step>,
+    ttl_seconds: u32,
     #[serde(default)]
-    pub user_key: bool,
+    defaults: Vec<DefaultFlag>,
     #[serde(default)]
-    pub responses: bool,
+    model_group_affinity_config: IndexMap<String, Vec<String>>,
     #[serde(default)]
-    pub session: bool,
-    #[serde(default)]
-    pub model_group_affinity_config: IndexMap<String, Vec<String>>,
-    #[serde(default)]
-    pub priority_groups: Vec<String>,
+    priority_groups: Vec<String>,
+}
+
+// the three optional_pre_call_checks entries Router turns into a global affinity flag
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum DefaultFlag {
+    UserKey,
+    Responses,
+    Session,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -85,7 +95,7 @@ pub(crate) fn run(
         .build()
         .map_err(|error| engine::invalid(&error.to_string()))?;
     let output = runtime
-        .block_on(engine::execute(input))
+        .block_on(engine::execute(input.0.as_ref()))
         .map_err(|error| engine::invalid(&error.to_string()))?;
     Ok(ProbeOutput::DeploymentAffinity(output))
 }

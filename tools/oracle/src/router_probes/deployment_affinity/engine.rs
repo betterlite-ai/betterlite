@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -17,9 +18,9 @@ use serde_json::Number;
 
 use crate::router_probes::error::OperationError;
 
-use super::{Deployment, Input, Observation, Output, Step, StepKind};
+use super::{DefaultFlag, Deployment, Observation, Output, Payload, Step, StepKind};
 
-pub(super) async fn execute(input: &Input) -> Result<Output, OperationError> {
+pub(super) async fn execute(input: &Payload) -> Result<Output, OperationError> {
     let now = Arc::new(Mutex::new(0.0_f64));
     let service = build_service(input, &now)?;
     let mut steps = Vec::with_capacity(input.steps.len());
@@ -34,7 +35,7 @@ pub(super) async fn execute(input: &Input) -> Result<Output, OperationError> {
 }
 
 fn build_service(
-    input: &Input,
+    input: &Payload,
     now: &Arc<Mutex<f64>>,
 ) -> Result<DeploymentAffinity, OperationError> {
     let handle = Arc::clone(now);
@@ -42,14 +43,12 @@ fn build_service(
     let local =
         LocalPins::new(local_settings(), clock).map_err(|error| invalid(&error.to_string()))?;
     let mut defaults = BTreeSet::new();
-    if input.user_key {
-        defaults.insert(AffinityFlag::Deployment);
-    }
-    if input.responses {
-        defaults.insert(AffinityFlag::ResponsesApi);
-    }
-    if input.session {
-        defaults.insert(AffinityFlag::Session);
+    for flag in &input.defaults {
+        defaults.insert(match flag {
+            DefaultFlag::UserKey => AffinityFlag::Deployment,
+            DefaultFlag::Responses => AffinityFlag::ResponsesApi,
+            DefaultFlag::Session => AffinityFlag::Session,
+        });
     }
     let config = if input.model_group_affinity_config.is_empty() {
         None
@@ -75,7 +74,7 @@ fn build_service(
 
 async fn filter_step(
     service: &DeploymentAffinity,
-    input: &Input,
+    input: &Payload,
     step: &Step,
 ) -> Result<Observation, OperationError> {
     let deployments = pool(input, step)?;
@@ -98,8 +97,8 @@ async fn run_filter(
     service: &DeploymentAffinity,
     filter: &FilterRequest<'_>,
 ) -> Result<Vec<DeploymentSpec>, OperationError> {
-    service
-        .filter_deployments(filter)
+    // the box ends the async chain here, so this crate's future layouts stay inside rustc's query depth
+    Box::pin(service.filter_deployments(filter))
         .await
         .map_err(|error| invalid(&error.to_string()))
 }
@@ -113,8 +112,7 @@ async fn hook_step(
         request_kwargs: &kwargs,
         model_info: step.model_info.as_ref(),
     };
-    service
-        .pre_call_deployment_hook(&request)
+    Box::pin(service.pre_call_deployment_hook(&request))
         .await
         .map_err(|error| invalid(&error.to_string()))?;
     Ok(hook_observation())
@@ -134,7 +132,7 @@ fn selected_ids(deployments: &[DeploymentSpec]) -> Vec<String> {
         .collect()
 }
 
-fn pool(input: &Input, step: &Step) -> Result<Vec<DeploymentSpec>, OperationError> {
+fn pool(input: &Payload, step: &Step) -> Result<Vec<DeploymentSpec>, OperationError> {
     let mut deployments = Vec::new();
     for deployment in &input.deployments {
         let wanted = step
@@ -205,9 +203,7 @@ fn deployment_spec(
 }
 
 fn seconds(now_millis: u64) -> f64 {
-    Number::from(now_millis)
-        .as_f64()
-        .map_or(0.0, |millis| millis / 1000.0)
+    Duration::from_millis(now_millis).as_secs_f64()
 }
 
 const fn local_settings() -> StoreSettings {

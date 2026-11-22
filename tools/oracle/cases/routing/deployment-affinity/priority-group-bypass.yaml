@@ -7,7 +7,7 @@ probes:
       deployment_affinity:
         model: gpt-4o
         ttl_seconds: 3600
-        user_key: true
+        defaults: [user_key]
         priority_groups: [gpt-4o]
         deployments:
           - {id: dep-a, model: openai/gpt-4o}

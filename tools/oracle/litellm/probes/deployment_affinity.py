@@ -68,9 +68,7 @@ class DeploymentAffinity(Operation):
     deployments: list[Deployment]
     steps: list[Step]
     ttl_seconds: int
-    user_key: bool = False
-    responses: bool = False
-    session: bool = False
+    defaults: list[Literal["user_key", "responses", "session"]] = Field(default_factory=list)
     model_group_affinity_config: dict[str, list[str]] = Field(default_factory=dict)
     priority_groups: list[str] = Field(default_factory=list)
 
@@ -84,9 +82,9 @@ class DeploymentAffinity(Operation):
         check: Final[DeploymentAffinityCheck] = DeploymentAffinityCheck(
             cache=cache,
             ttl_seconds=self.ttl_seconds,
-            enable_user_key_affinity=self.user_key,
-            enable_responses_api_affinity=self.responses,
-            enable_session_id_affinity=self.session,
+            enable_user_key_affinity="user_key" in self.defaults,
+            enable_responses_api_affinity="responses" in self.defaults,
+            enable_session_id_affinity="session" in self.defaults,
             model_group_affinity_config=self.model_group_affinity_config,
             is_priority_group=lambda name: name in priority,
         )

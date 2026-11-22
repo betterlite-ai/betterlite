@@ -25,7 +25,8 @@ pub(super) async fn pinned_model_id(
 // the shared tier: its pin, mirrored back into the pod-local cache under the backfill ttl
 async fn shared_model_id(service: &DeploymentAffinity, key: &AffinityKey) -> Option<String> {
     let store = service.claims.shared.as_ref()?;
-    let observed = match store.get(&key.0).await {
+    // the box keeps the store's async chain out of every caller's future layout
+    let observed = match Box::pin(store.get(&key.0)).await {
         Ok(observed) => observed,
         Err(error) => {
             tracing::debug!(%error, "deployment affinity: the shared pin is unreadable");
