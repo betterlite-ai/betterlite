@@ -120,10 +120,14 @@ class BrokenAdapter(MessagesAdapter):
 class LogCapture(MemoryHandler):
     def __init__(self) -> None:
         super().__init__(capacity=1000, flushLevel=logging.CRITICAL)
-        self.previous = LOGGER.level
+        self.previous_handlers: list[logging.Handler] = []
+        self.previous_level = LOGGER.level
 
     def __enter__(self) -> Self:
-        LOGGER.addHandler(self)
+        # the pinned logger's own handler writes to stdout, which carries the helper's JSON answer
+        capture: list[logging.Handler] = [self]
+        self.previous_handlers = LOGGER.handlers
+        LOGGER.handlers = capture
         LOGGER.setLevel(logging.DEBUG)
         return self
 
@@ -133,8 +137,8 @@ class LogCapture(MemoryHandler):
         _error: BaseException | None,
         _trace: TracebackType | None,
     ) -> None:
-        LOGGER.removeHandler(self)
-        LOGGER.setLevel(self.previous)
+        LOGGER.handlers = self.previous_handlers
+        LOGGER.setLevel(self.previous_level)
 
     def lines(self) -> list[JsonValue]:
         return [
