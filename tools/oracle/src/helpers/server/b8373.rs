@@ -11,7 +11,10 @@ use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::coord_redis_boot::settings::CoordinationGeneralSettings;
 use betterlite_server::proxy_request_contracts::coordination_redis::BoolOrText;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
+use serde::de::Error as _;
 use serde_json::{Value, json};
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
@@ -25,7 +28,8 @@ pub(crate) enum Input {
         redis_configured: bool,
     },
     BudgetWarning {
-        max_budget: f64,
+        #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+        max_budget: Decimal,
         database_configured: bool,
     },
     FailClosedWarning {
@@ -120,19 +124,6 @@ fn transaction_buffer(flag: BoolOrText, redis_configured: bool) -> Value {
     }
 }
 
-fn budget_warning(max_budget: f64, database_configured: bool) -> Value {
-    let database = if database_configured {
-        DatabasePresence::Present
-    } else {
-        DatabasePresence::Absent
-    };
-    warned_message(|| warn_budget_without_db(Some(max_budget), database))
-}
-
-fn fail_closed_warning(enabled: bool, redis: RedisPresence) -> Value {
-    warned_message(|| warn_fail_closed_without_redis(enabled, redis))
-}
-
 fn baseline_row(row: &Value) -> HelperResult {
     let stored: Json = serde_json::from_value(row.clone()).or_value_error()?;
     let decoded = decode_tuning_baselines(&stored).or_value_error()?;
@@ -154,11 +145,27 @@ impl Helper for Op {
             Input::BudgetWarning {
                 max_budget,
                 database_configured,
-            } => Ok(budget_warning(*max_budget, *database_configured)),
+            } => {
+                let budget = max_budget.to_f64().ok_or_else(|| {
+                    serde_json::Error::custom(format!(
+                        "max_budget {max_budget} has no f64 representation"
+                    ))
+                })?;
+                let database = if *database_configured {
+                    DatabasePresence::Present
+                } else {
+                    DatabasePresence::Absent
+                };
+                Ok(warned_message(|| {
+                    warn_budget_without_db(Some(budget), database)
+                }))
+            }
             Input::FailClosedWarning {
                 enabled,
                 redis_configured,
-            } => Ok(fail_closed_warning(*enabled, presence(*redis_configured))),
+            } => Ok(warned_message(|| {
+                warn_fail_closed_without_redis(*enabled, presence(*redis_configured))
+            })),
             Input::BaselineRow { row } => baseline_row(row),
         }
     }

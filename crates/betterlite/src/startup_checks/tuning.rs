@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use betterlite_logging::analytics::python::{number_text, repr};
 use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use betterlite_models::key_digest::hashing::hash_token;
@@ -102,7 +101,7 @@ pub fn router_identity(deployment: &Deployment) -> Option<String> {
 }
 
 #[must_use]
-pub fn heuristic_v1_router_fingerprint(deployment: &Deployment) -> Option<(String, String)> {
+pub fn heuristic_router_fingerprint(deployment: &Deployment) -> Option<(String, String)> {
     let model = deployment.model.as_deref()?;
     if !model.starts_with(AUTO_ROUTER_COMPLEXITY_PREFIX) {
         return None;
@@ -119,7 +118,7 @@ pub fn heuristic_v1_router_fingerprint(deployment: &Deployment) -> Option<(Strin
 pub fn snapshot_tuning_baselines(deployments: &[Deployment]) -> TuningBaselines {
     let mut baselines = TuningBaselines::new();
     for deployment in deployments {
-        if let Some((identity, fingerprint)) = heuristic_v1_router_fingerprint(deployment) {
+        if let Some((identity, fingerprint)) = heuristic_router_fingerprint(deployment) {
             baselines.insert(identity, fingerprint);
         }
     }
@@ -128,7 +127,7 @@ pub fn snapshot_tuning_baselines(deployments: &[Deployment]) -> TuningBaselines 
 
 #[must_use]
 pub fn is_mutable_tuned_candidate(candidate: &Deployment, baselines: &TuningBaselines) -> bool {
-    let Some((identity, fingerprint)) = heuristic_v1_router_fingerprint(candidate) else {
+    let Some((identity, fingerprint)) = heuristic_router_fingerprint(candidate) else {
         return false;
     };
     changed_from_baseline(&identity, &fingerprint, baselines)
@@ -141,7 +140,7 @@ pub fn mutable_tuned_identities(
 ) -> BTreeSet<String> {
     let mut identities = BTreeSet::new();
     for deployment in deployments {
-        let Some((identity, fingerprint)) = heuristic_v1_router_fingerprint(deployment) else {
+        let Some((identity, fingerprint)) = heuristic_router_fingerprint(deployment) else {
             continue;
         };
         if changed_from_baseline(&identity, &fingerprint, baselines) {
@@ -188,26 +187,21 @@ fn text_field(fields: &JsonObject, key: &str) -> Option<String> {
 
 fn tags_of(value: Option<&Json>) -> Vec<String> {
     match value {
-        Some(Json::List(items)) => items.iter().map(py_text).collect(),
+        Some(Json::List(items)) => items
+            .iter()
+            .filter_map(|item| match item {
+                Json::Text(text) => Some(text.clone()),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                    None
+                }
+            })
+            .collect(),
         Some(Json::Object(entries)) => entries.keys().cloned().collect(),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_)) | None => Vec::new(),
     }
 }
 
-// Python str() of a JSON value, which router_identity and the baseline row's values go through
-pub(crate) fn py_text(value: &Json) -> String {
-    match value {
-        Json::Text(text) => text.clone(),
-        Json::Bool(true) => "True".to_owned(),
-        Json::Bool(false) => "False".to_owned(),
-        Json::Null => "None".to_owned(),
-        Json::Number(number) => number_text(number),
-        Json::List(_) | Json::Object(_) => repr(value).unwrap_or_default(),
-    }
-}
-
-// json.dumps(..., separators=(",", ":")): the same text without the spaces the defaults add; dumps
-// writes a backslash only inside a string, so the escape toggle needs no position check
+// json.dumps(..., separators=(",", ":")): dumps writes a backslash only inside a string, and only the separator spaces sit outside one
 fn compact_json(value: &Json) -> String {
     let text = dumps(value);
     let mut out = String::with_capacity(text.len());

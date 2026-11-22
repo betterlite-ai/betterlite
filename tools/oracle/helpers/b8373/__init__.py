@@ -3,7 +3,7 @@ import logging
 from collections.abc import Mapping
 from typing import TypedDict
 
-from litellm.caching.caching import RedisCache
+from litellm.caching.redis_cache import RedisCache
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.proxy_server import ProxyStartupEvent
 from litellm.proxy.utils import PrismaClient
@@ -47,9 +47,6 @@ class ConfigTable:
     async def find_unique(self, *, where: Mapping[str, str]) -> ConfigRow | None:
         self.queries.append(dict(where))
         return self.row
-
-    async def create(self, *, data: Mapping[str, str]) -> None:
-        raise AssertionError(f"the baseline row already exists: {data['param_name']}")
 
 
 class FakeDb(PrismaWrapper):
@@ -104,24 +101,18 @@ def transaction_buffer(input_value: Input) -> JsonValue:
 
 def budget_warning(input_value: Input) -> JsonValue:
     capture = install_capture()
-    prisma_client: PrismaClient | None = None
-    if input_value["database_configured"]:
-        prisma_client = FakePrismaClient(ConfigTable(None))
+    prisma_client = FakePrismaClient(ConfigTable(None)) if input_value["database_configured"] else None
     ProxyStartupEvent._warn_budget_without_db(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10157-L10168
-        max_budget=input_value["max_budget"],
-        prisma_client=prisma_client,
+        max_budget=input_value["max_budget"], prisma_client=prisma_client
     )
     return warning_answer(capture)
 
 
 def fail_closed_warning(input_value: Input) -> JsonValue:
     capture = install_capture()
-    cache: RedisCache | None = None
-    if input_value["redis_configured"]:
-        cache = FakeRedisCache()
+    cache = FakeRedisCache() if input_value["redis_configured"] else None
     ProxyStartupEvent._warn_fail_closed_rate_limits_without_redis(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10170-L10179
-        fail_closed_rate_limit_enforcement=input_value["enabled"],
-        redis_usage_cache=cache,
+        fail_closed_rate_limit_enforcement=input_value["enabled"], redis_usage_cache=cache
     )
     return warning_answer(capture)
 

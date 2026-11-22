@@ -3,12 +3,13 @@ use betterlite_auth::auth_user_lookup::ports::PortError;
 use betterlite_logging::python_json::dumps_object;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde::de::Error as _;
 use thiserror::Error;
 use tracing::{info, warn};
 
 use crate::startup_checks::error::StartupCheckError;
 use crate::startup_checks::tuning::{
-    Deployment, TuningBaselines, mutable_tuned_identities, py_text, snapshot_tuning_baselines,
+    Deployment, TuningBaselines, mutable_tuned_identities, snapshot_tuning_baselines,
     tuning_limit_violation,
 };
 
@@ -39,7 +40,7 @@ pub trait TuningBaselineStore: Send + Sync {
 enum BaselineLoadError {
     #[error(transparent)]
     Database(#[from] PortError),
-    #[error("the recorded heuristic-v1 tuning baseline row is not JSON: {0}")]
+    #[error("the recorded heuristic-v1 tuning baseline row cannot be decoded: {0}")]
     Decode(#[source] serde_json::Error),
 }
 
@@ -101,15 +102,19 @@ pub fn decode_tuning_baselines(stored: &Json) -> Result<TuningBaselines, serde_j
             stored.clone()
         }
     };
-    Ok(match decoded {
-        Json::Object(entries) => entries
-            .iter()
-            .map(|(identity, fingerprint)| (identity.clone(), py_text(fingerprint)))
-            .collect(),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            TuningBaselines::new()
-        }
-    })
+    let Json::Object(entries) = decoded else {
+        return Ok(TuningBaselines::new());
+    };
+    let mut baselines = TuningBaselines::new();
+    for (identity, fingerprint) in entries {
+        let Json::Text(fingerprint) = fingerprint else {
+            return Err(serde_json::Error::custom(format!(
+                "the row maps {identity} to a value that is not a string"
+            )));
+        };
+        baselines.insert(identity, fingerprint);
+    }
+    Ok(baselines)
 }
 
 pub async fn enforce_tuning_baseline(

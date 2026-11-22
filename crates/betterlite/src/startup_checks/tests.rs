@@ -29,6 +29,7 @@ use betterlite_server::ui_settings_state::projection::GeneralSettingsTarget;
 use betterlite_server::ui_settings_state::repository::UiSettingsRepository;
 use chrono::DateTime;
 use indexmap::IndexMap;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_util::task::TaskTracker;
@@ -218,19 +219,29 @@ fn true_bool_without_redis_stops_startup_with_litellm_message() {
     assert!(matches!(error, StartupCheckError::TransactionBuffer));
 }
 
+#[rstest]
+#[case::lower_true("true")]
+#[case::upper_true("TRUE")]
+#[case::padded_true(" True ")]
+fn string_flag_truthy_requires_redis(#[case] flag: &str) {
+    let settings = buffer_settings(BoolOrText::Text(flag.to_owned()));
+    assert!(wants_buffer_redis(&settings));
+    check_transaction_buffer(&settings, RedisPresence::Absent).unwrap_err();
+    check_transaction_buffer(&settings, RedisPresence::Present).unwrap();
+}
+
+#[rstest]
+#[case::lower_false("false")]
+#[case::no("no")]
+#[case::empty("")]
+fn string_flag_falsy_leaves_startup_running(#[case] flag: &str) {
+    let settings = buffer_settings(BoolOrText::Text(flag.to_owned()));
+    assert!(!wants_buffer_redis(&settings));
+    check_transaction_buffer(&settings, RedisPresence::Absent).unwrap();
+}
+
 #[test]
-fn string_flag_goes_through_str_to_bool() {
-    for truthy in ["true", "TRUE", " True "] {
-        let settings = buffer_settings(BoolOrText::Text(truthy.to_owned()));
-        assert!(wants_buffer_redis(&settings));
-        check_transaction_buffer(&settings, RedisPresence::Absent).unwrap_err();
-        check_transaction_buffer(&settings, RedisPresence::Present).unwrap();
-    }
-    for falsy in ["false", "no", ""] {
-        let settings = buffer_settings(BoolOrText::Text(falsy.to_owned()));
-        assert!(!wants_buffer_redis(&settings));
-        check_transaction_buffer(&settings, RedisPresence::Absent).unwrap();
-    }
+fn unset_transaction_buffer_flag_stays_off() {
     let unset = CoordinationGeneralSettings::default();
     assert!(!wants_buffer_redis(&unset));
     check_transaction_buffer(&unset, RedisPresence::Absent).unwrap();
@@ -418,25 +429,27 @@ async fn seed_proxy_budget_refuses_missing_duration() {
     assert!(store.upserts.lock().unwrap().is_empty());
 }
 
+#[rstest]
+#[case::no_database(Decimal::from(5), Some("30d"), DatabasePresence::Absent)]
+#[case::zero_budget(Decimal::ZERO, Some("30d"), DatabasePresence::Present)]
+#[case::negative_budget(Decimal::from(-1), Some("30d"), DatabasePresence::Present)]
 #[tokio::test]
-async fn seed_proxy_budget_skips_without_database_or_positive_budget() {
+async fn seed_proxy_budget_skips_without_database_or_positive_budget(
+    #[case] max_budget: Decimal,
+    #[case] duration: Option<&'static str>,
+    #[case] database: DatabasePresence,
+) {
     let store = Arc::new(BudgetStore::default());
     let tasks = TaskTracker::new();
-    for scenario in [
-        budget(Decimal::from(5), Some("30d"), DatabasePresence::Absent),
-        budget(Decimal::ZERO, Some("30d"), DatabasePresence::Present),
-        budget(Decimal::from(-1), Some("30d"), DatabasePresence::Present),
-    ] {
-        seed_proxy_budget(
-            scenario,
-            Arc::clone(&store),
-            Arc::new(FixedReset {
-                outcome: Ok(fixed_reset()),
-            }),
-            &tasks,
-        )
-        .unwrap();
-    }
+    seed_proxy_budget(
+        budget(max_budget, duration, database),
+        Arc::clone(&store),
+        Arc::new(FixedReset {
+            outcome: Ok(fixed_reset()),
+        }),
+        &tasks,
+    )
+    .unwrap();
     tasks.close();
     tasks.wait().await;
     assert!(store.upserts.lock().unwrap().is_empty());
@@ -786,8 +799,8 @@ async fn team_budgets_log_a_failure_and_continue() {
     let params = params_with_teams(teams);
     let master_key = SecretString::from("sk-master".to_owned());
     let updater = RecordingUpdater {
+        calls: Mutex::new(Vec::new()),
         fail_team: Some("team-a".to_owned()),
-        ..RecordingUpdater::default()
     };
     let (logs, _guard) = capture_logs();
     update_default_team_budgets(Some(&params), &master_key, &updater)
@@ -804,8 +817,8 @@ async fn team_budgets_log_a_missing_budget_and_continue() {
     let no_budget = params_with_teams(JsonData::Array(vec![team_entry("team-c", None)]));
     let master_key = SecretString::from("sk-master".to_owned());
     let updater = RecordingUpdater {
+        calls: Mutex::new(Vec::new()),
         fail_team: Some("team-c".to_owned()),
-        ..RecordingUpdater::default()
     };
     let (logs, _guard) = capture_logs();
     update_default_team_budgets(Some(&no_budget), &master_key, &updater)

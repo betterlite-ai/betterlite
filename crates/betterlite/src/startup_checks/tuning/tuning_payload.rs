@@ -5,15 +5,43 @@ use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
 use serde_json::Number;
 
-// tuning_fingerprint's payload: the supplied heuristic-v1 fields after LiteLLM's model validators, as
-// ComplexityRouterConfig.model_dump(mode="json", include=..., exclude=...) produces them
+// the ComplexityRouterConfig.model_dump(mode="json", include=..., exclude=...) fields tuning_fingerprint hashes
 pub(super) fn payload(fields: &JsonObject) -> Option<IndexMap<String, Json>> {
     let mut payload = IndexMap::new();
-    insert_float_map(&mut payload, fields, "tier_boundaries")?;
-    insert_float_option(&mut payload, fields, "reasoning_override_min_score")?;
-    insert_int_map(&mut payload, fields, "token_thresholds")?;
-    insert_float_map(&mut payload, fields, "dimension_weights")?;
-    insert_dimensions(&mut payload, fields)?;
+    if let Some(value) = fields.get("tier_boundaries") {
+        payload.insert(
+            "tier_boundaries".to_owned(),
+            number_map(value, Numbers::Float)?,
+        );
+    }
+    if let Some(value) = fields.get("reasoning_override_min_score") {
+        payload.insert(
+            "reasoning_override_min_score".to_owned(),
+            float_option(value)?,
+        );
+    }
+    if let Some(value) = fields.get("token_thresholds") {
+        payload.insert(
+            "token_thresholds".to_owned(),
+            number_map(value, Numbers::Int)?,
+        );
+    }
+    if let Some(value) = fields.get("dimension_weights") {
+        payload.insert(
+            "dimension_weights".to_owned(),
+            number_map(value, Numbers::Float)?,
+        );
+    }
+    if let Some(value) = fields.get("custom_dimensions") {
+        let Json::List(items) = value else {
+            return None;
+        };
+        let mut dimensions = Vec::with_capacity(items.len());
+        for item in items {
+            dimensions.push(dimension_payload(item)?);
+        }
+        payload.insert("custom_dimensions".to_owned(), Json::List(dimensions));
+    }
     for name in [
         "code_keywords",
         "reasoning_keywords",
@@ -21,41 +49,59 @@ pub(super) fn payload(fields: &JsonObject) -> Option<IndexMap<String, Json>> {
         "custom_technical_keywords",
         "simple_keywords",
     ] {
-        insert_text_list(&mut payload, fields, name)?;
+        match text_list(fields.get(name))? {
+            TextList::Absent => {}
+            TextList::Null => {
+                payload.insert(name.to_owned(), Json::Null);
+            }
+            TextList::Values(texts) => {
+                payload.insert(
+                    name.to_owned(),
+                    Json::List(texts.into_iter().map(Json::Text).collect()),
+                );
+            }
+        }
     }
-    insert_escalation(&mut payload, fields)?;
-    insert_keyword_rules(&mut payload, fields)?;
+    if let Some(value) = fields.get("escalation_keywords") {
+        match text_list(Some(value))? {
+            TextList::Absent | TextList::Null => {}
+            TextList::Values(texts) => {
+                let cleaned: Vec<String> = texts
+                    .iter()
+                    .map(|text| text.trim().to_owned())
+                    .filter(|text| !text.is_empty())
+                    .collect();
+                let default_marker =
+                    matches!(cleaned.as_slice(), [only] if only.as_str() == "LITELLM ESCALATE");
+                if !default_marker {
+                    payload.insert(
+                        "escalation_keywords".to_owned(),
+                        Json::List(cleaned.into_iter().map(Json::Text).collect()),
+                    );
+                }
+            }
+        }
+    }
+    if let Some(value) = fields.get("keyword_tier_rules") {
+        let Json::List(items) = value else {
+            return None;
+        };
+        let mut rules = Vec::with_capacity(items.len());
+        for item in items {
+            rules.push(keyword_rule(item)?);
+        }
+        payload.insert("keyword_tier_rules".to_owned(), Json::List(rules));
+    }
     payload.sort_keys();
     Some(payload)
 }
 
-fn insert_float_map(
-    payload: &mut IndexMap<String, Json>,
-    fields: &JsonObject,
-    name: &str,
-) -> Option<()> {
-    let Some(value) = fields.get(name) else {
-        return Some(());
-    };
-    let Json::Object(declared) = value else {
-        return None;
-    };
-    let mut entries: BTreeMap<String, Json> = BTreeMap::new();
-    for (key, entry) in declared {
-        entries.insert(key.clone(), float_json(entry)?);
-    }
-    payload.insert(name.to_owned(), Json::Object(entries.into_iter().collect()));
-    Some(())
+enum Numbers {
+    Float,
+    Int,
 }
 
-fn insert_int_map(
-    payload: &mut IndexMap<String, Json>,
-    fields: &JsonObject,
-    name: &str,
-) -> Option<()> {
-    let Some(value) = fields.get(name) else {
-        return Some(());
-    };
+fn number_map(value: &Json, numbers: Numbers) -> Option<Json> {
     let Json::Object(declared) = value else {
         return None;
     };
@@ -64,42 +110,21 @@ fn insert_int_map(
         let Json::Number(number) = entry else {
             return None;
         };
-        entries.insert(key.clone(), Json::Number(Number::from(number.as_i64()?)));
+        let converted = match numbers {
+            Numbers::Float => Number::from_f64(number.as_f64()?)?,
+            Numbers::Int => Number::from(number.as_i64()?),
+        };
+        entries.insert(key.clone(), Json::Number(converted));
     }
-    payload.insert(name.to_owned(), Json::Object(entries.into_iter().collect()));
-    Some(())
+    Some(Json::Object(entries.into_iter().collect()))
 }
 
-fn insert_float_option(
-    payload: &mut IndexMap<String, Json>,
-    fields: &JsonObject,
-    name: &str,
-) -> Option<()> {
-    let Some(value) = fields.get(name) else {
-        return Some(());
-    };
-    let normalized = match value {
-        Json::Null => Json::Null,
-        Json::Number(number) => Json::Number(Number::from_f64(number.as_f64()?)?),
-        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => return None,
-    };
-    payload.insert(name.to_owned(), normalized);
-    Some(())
-}
-
-fn insert_dimensions(payload: &mut IndexMap<String, Json>, fields: &JsonObject) -> Option<()> {
-    let Some(value) = fields.get("custom_dimensions") else {
-        return Some(());
-    };
-    let Json::List(items) = value else {
-        return None;
-    };
-    let mut dimensions = Vec::with_capacity(items.len());
-    for item in items {
-        dimensions.push(dimension_payload(item)?);
+fn float_option(value: &Json) -> Option<Json> {
+    match value {
+        Json::Null => Some(Json::Null),
+        Json::Number(number) => Some(Json::Number(Number::from_f64(number.as_f64()?)?)),
+        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
-    payload.insert("custom_dimensions".to_owned(), Json::List(dimensions));
-    Some(())
 }
 
 fn dimension_payload(entry: &Json) -> Option<Json> {
@@ -123,9 +148,15 @@ fn dimension_payload(entry: &Json) -> Option<Json> {
     };
     let scoring_mode = dimension_scoring_mode(fields)?;
     let mut object: BTreeMap<String, Json> = BTreeMap::new();
-    object.insert("keywords".to_owned(), text_list_json(keywords));
+    object.insert(
+        "keywords".to_owned(),
+        Json::List(keywords.into_iter().map(Json::Text).collect()),
+    );
     object.insert("name".to_owned(), Json::Text(name));
-    object.insert("patterns".to_owned(), text_list_json(patterns));
+    object.insert(
+        "patterns".to_owned(),
+        Json::List(patterns.into_iter().map(Json::Text).collect()),
+    );
     if scoring_mode == "match_count" {
         object.insert("scoring_mode".to_owned(), Json::Text(scoring_mode));
     }
@@ -142,63 +173,6 @@ fn dimension_scoring_mode(fields: &JsonObject) -> Option<String> {
             None
         }
     }
-}
-
-fn insert_text_list(
-    payload: &mut IndexMap<String, Json>,
-    fields: &JsonObject,
-    name: &str,
-) -> Option<()> {
-    let Some(value) = fields.get(name) else {
-        return Some(());
-    };
-    let normalized = match text_list(Some(value))? {
-        TextList::Absent => return None,
-        TextList::Null => Json::Null,
-        TextList::Values(texts) => text_list_json(texts),
-    };
-    payload.insert(name.to_owned(), normalized);
-    Some(())
-}
-
-fn insert_escalation(payload: &mut IndexMap<String, Json>, fields: &JsonObject) -> Option<()> {
-    let Some(value) = fields.get("escalation_keywords") else {
-        return Some(());
-    };
-    match text_list(Some(value))? {
-        // a supplied null takes the model default, the built-in marker the payload leaves out
-        TextList::Absent | TextList::Null => {}
-        TextList::Values(texts) => {
-            let mut cleaned = Vec::with_capacity(texts.len());
-            for text in texts {
-                let stripped = text.trim();
-                if !stripped.is_empty() {
-                    cleaned.push(stripped.to_owned());
-                }
-            }
-            let default_marker =
-                matches!(cleaned.as_slice(), [only] if only.as_str() == "LITELLM ESCALATE");
-            if !default_marker {
-                payload.insert("escalation_keywords".to_owned(), text_list_json(cleaned));
-            }
-        }
-    }
-    Some(())
-}
-
-fn insert_keyword_rules(payload: &mut IndexMap<String, Json>, fields: &JsonObject) -> Option<()> {
-    let Some(value) = fields.get("keyword_tier_rules") else {
-        return Some(());
-    };
-    let Json::List(items) = value else {
-        return None;
-    };
-    let mut rules = Vec::with_capacity(items.len());
-    for item in items {
-        rules.push(keyword_rule(item)?);
-    }
-    payload.insert("keyword_tier_rules".to_owned(), Json::List(rules));
-    Some(())
 }
 
 fn keyword_rule(entry: &Json) -> Option<Json> {
@@ -221,20 +195,12 @@ fn keyword_rule(entry: &Json) -> Option<Json> {
     }
     let tier = text_value(fields.get("tier")?)?;
     let mut object = IndexMap::new();
-    object.insert("keywords".to_owned(), text_list_json(keywords));
+    object.insert(
+        "keywords".to_owned(),
+        Json::List(keywords.into_iter().map(Json::Text).collect()),
+    );
     object.insert("tier".to_owned(), Json::Text(tier.trim().to_owned()));
     Some(Json::Object(object))
-}
-
-fn text_list_json(texts: Vec<String>) -> Json {
-    Json::List(texts.into_iter().map(Json::Text).collect())
-}
-
-fn float_json(entry: &Json) -> Option<Json> {
-    let Json::Number(number) = entry else {
-        return None;
-    };
-    Number::from_f64(number.as_f64()?).map(Json::Number)
 }
 
 fn text_value(value: &Json) -> Option<String> {

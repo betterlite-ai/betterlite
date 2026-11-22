@@ -4,9 +4,10 @@ use async_trait::async_trait;
 use betterlite_auth::auth_user_lookup::ports::PortError;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use crate::startup_checks::tuning::{
-    Deployment, TuningBaselines, heuristic_v1_router_fingerprint, is_mutable_tuned_candidate,
+    Deployment, TuningBaselines, heuristic_router_fingerprint, is_mutable_tuned_candidate,
     mutable_tuned_identities, router_identity, snapshot_tuning_baselines, tuning_fingerprint,
     tuning_limit_violation, uses_heuristic_v1,
 };
@@ -58,35 +59,35 @@ fn fingerprint_keeps_a_supplied_null_for_an_optional_field() {
     );
 }
 
-#[test]
-fn fingerprint_rejects_a_null_for_a_required_field() {
-    for text in [
-        r#"{"tier_boundaries": null}"#,
-        r#"{"token_thresholds": null}"#,
-        r#"{"dimension_weights": null}"#,
-        r#"{"custom_dimensions": null}"#,
-    ] {
-        assert_eq!(tuning_fingerprint(Some(&json(text))), None, "{text}");
-    }
+#[rstest]
+#[case::tier_boundaries(r#"{"tier_boundaries": null}"#)]
+#[case::token_thresholds(r#"{"token_thresholds": null}"#)]
+#[case::dimension_weights(r#"{"dimension_weights": null}"#)]
+#[case::custom_dimensions(r#"{"custom_dimensions": null}"#)]
+fn fingerprint_rejects_a_null_for_a_required_field(#[case] text: &str) {
+    assert_eq!(tuning_fingerprint(Some(&json(text))), None, "{text}");
 }
 
-#[test]
-fn fingerprint_omits_the_built_in_escalation_marker() {
-    for text in [
-        r#"{"escalation_keywords": ["LITELLM ESCALATE"]}"#,
-        r#"{"escalation_keywords": ["  LITELLM ESCALATE "]}"#,
-        r#"{"escalation_keywords": null}"#,
-    ] {
-        assert_eq!(
-            tuning_fingerprint(Some(&json(text))).as_deref(),
-            Some(EMPTY_FINGERPRINT),
-            "{text}"
-        );
-    }
-    let other = json(r#"{"escalation_keywords": ["other"]}"#);
+#[rstest]
+#[case::built_in_marker(r#"{"escalation_keywords": ["LITELLM ESCALATE"]}"#, EMPTY_FINGERPRINT)]
+#[case::padded_marker(
+    r#"{"escalation_keywords": ["  LITELLM ESCALATE "]}"#,
+    EMPTY_FINGERPRINT
+)]
+#[case::supplied_null(r#"{"escalation_keywords": null}"#, EMPTY_FINGERPRINT)]
+#[case::blank_before_marker(
+    r#"{"escalation_keywords": ["  ", "LITELLM ESCALATE"]}"#,
+    EMPTY_FINGERPRINT
+)]
+#[case::other_marker(
+    r#"{"escalation_keywords": ["other"]}"#,
+    "64a1d6812c14712781f70d7c24d49136fb1752cf193bf03e39bfb7eb299b14bd"
+)]
+fn fingerprint_omits_the_built_in_escalation_marker(#[case] text: &str, #[case] expected: &str) {
     assert_eq!(
-        tuning_fingerprint(Some(&other)).as_deref(),
-        Some("64a1d6812c14712781f70d7c24d49136fb1752cf193bf03e39bfb7eb299b14bd")
+        tuning_fingerprint(Some(&json(text))).as_deref(),
+        Some(expected),
+        "{text}"
     );
 }
 
@@ -127,33 +128,29 @@ fn fingerprint_normalizes_keyword_tier_rules() {
     );
 }
 
-#[test]
-fn fingerprint_dumps_numbers_and_sorts_map_keys() {
-    let cases = [
-        (
-            r#"{"reasoning_override_min_score": 0.5}"#,
-            "d5c5d1e318adcbbe0223ff13defb7828c2a633f1299924ea634f6861dbc39095",
-        ),
-        (
-            r#"{"token_thresholds": {"low": 10}}"#,
-            "9c59e8ec6997b80083b9600772f439c08dc9945fa72acf9836fa1c19d4612303",
-        ),
-        (
-            r#"{"dimension_weights": {"alpha": 0.5}}"#,
-            "f963c7ff92e98bdb96aca17289199c2854024cf0320b77b261f96d27eccc15f5",
-        ),
-        (
-            r#"{"tier_boundaries": {"b": 0.2, "a": 0.1}}"#,
-            "9af5f7c359f1fc1b3abb244219898744aea984d49b8c44e31a48e2ad5fe34aa1",
-        ),
-    ];
-    for (text, expected) in cases {
-        assert_eq!(
-            tuning_fingerprint(Some(&json(text))).as_deref(),
-            Some(expected),
-            "{text}"
-        );
-    }
+#[rstest]
+#[case::reasoning_override_score(
+    r#"{"reasoning_override_min_score": 0.5}"#,
+    "d5c5d1e318adcbbe0223ff13defb7828c2a633f1299924ea634f6861dbc39095"
+)]
+#[case::token_thresholds(
+    r#"{"token_thresholds": {"low": 10}}"#,
+    "9c59e8ec6997b80083b9600772f439c08dc9945fa72acf9836fa1c19d4612303"
+)]
+#[case::dimension_weights(
+    r#"{"dimension_weights": {"alpha": 0.5}}"#,
+    "f963c7ff92e98bdb96aca17289199c2854024cf0320b77b261f96d27eccc15f5"
+)]
+#[case::tier_boundaries(
+    r#"{"tier_boundaries": {"b": 0.2, "a": 0.1}}"#,
+    "9af5f7c359f1fc1b3abb244219898744aea984d49b8c44e31a48e2ad5fe34aa1"
+)]
+fn fingerprint_dumps_numbers_and_sorts_map_keys(#[case] text: &str, #[case] expected: &str) {
+    assert_eq!(
+        tuning_fingerprint(Some(&json(text))).as_deref(),
+        Some(expected),
+        "{text}"
+    );
 }
 
 #[test]
@@ -162,22 +159,35 @@ fn fingerprint_is_none_for_a_config_litellm_rejects() {
     assert_eq!(tuning_fingerprint(Some(&bad_name)), None);
     let unknown_classifier = json(r#"{"classifier_type": "nope"}"#);
     assert_eq!(tuning_fingerprint(Some(&unknown_classifier)), None);
+    let padded_tier = json(r#"{"keyword_tier_rules": [{"keywords": ["a"], "tier": " MEDIUM "}]}"#);
+    assert_eq!(tuning_fingerprint(Some(&padded_tier)), None);
 }
 
 #[test]
-fn uses_heuristic_v1_follows_classifier_type() {
+fn a_bare_llm_classifier_still_has_a_fingerprint() {
+    let config = json(r#"{"classifier_type": "llm"}"#);
+    assert_eq!(
+        tuning_fingerprint(Some(&config)).as_deref(),
+        Some(EMPTY_FINGERPRINT)
+    );
+}
+
+#[rstest]
+#[case::heuristic(r#"{"classifier_type": "heuristic"}"#, true)]
+#[case::heuristic_first(r#"{"classifier_type": "heuristic_first"}"#, true)]
+#[case::hybrid(r#"{"classifier_type": "hybrid"}"#, true)]
+#[case::llm(r#"{"classifier_type": "llm"}"#, false)]
+#[case::capability(r#"{"classifier_type": "capability"}"#, false)]
+#[case::heuristic_v2(r#"{"classifier_type": "heuristic_v2"}"#, false)]
+#[case::numeric(r#"{"classifier_type": 5}"#, false)]
+fn uses_heuristic_v1_follows_classifier_type(#[case] config: &str, #[case] expected: bool) {
+    assert_eq!(uses_heuristic_v1(Some(&json(config))), expected);
+}
+
+#[test]
+fn uses_heuristic_v1_defaults_on_without_a_config() {
     assert!(uses_heuristic_v1(None));
-    for kind in ["heuristic", "heuristic_first", "hybrid"] {
-        let config = json(&format!(r#"{{"classifier_type": "{kind}"}}"#));
-        assert!(uses_heuristic_v1(Some(&config)), "{kind}");
-    }
-    for kind in ["llm", "capability", "heuristic_v2"] {
-        let config = json(&format!(r#"{{"classifier_type": "{kind}"}}"#));
-        assert!(!uses_heuristic_v1(Some(&config)), "{kind}");
-    }
     assert!(!uses_heuristic_v1(Some(&Json::Null)));
-    let numeric = json(r#"{"classifier_type": 5}"#);
-    assert!(!uses_heuristic_v1(Some(&numeric)));
 }
 
 #[test]
@@ -201,6 +211,21 @@ fn router_identity_prefers_database_ids_and_sorts_tags() {
 }
 
 #[test]
+fn from_entry_reads_only_string_tags_from_a_list() {
+    let entry = json(r#"{"litellm_params": {"tags": ["t", 7, true, null, {"k": "v"}]}}"#);
+    assert_eq!(Deployment::from_entry(&entry).tags, vec!["t".to_owned()]);
+}
+
+#[test]
+fn from_entry_reads_object_tags_from_its_keys() {
+    let entry = json(r#"{"litellm_params": {"tags": {"b": 1, "a": 2}}}"#);
+    assert_eq!(
+        Deployment::from_entry(&entry).tags,
+        vec!["b".to_owned(), "a".to_owned()]
+    );
+}
+
+#[test]
 fn from_entry_reads_the_deployment_fields() {
     let entry = json(
         r#"{"model_name": "router", "litellm_params": {"model": "auto_router/complexity_router/x", "tags": ["t"]}, "model_info": {"id": "m1", "db_model": true}}"#,
@@ -219,7 +244,7 @@ fn from_entry_reads_the_deployment_fields() {
 #[test]
 fn heuristic_pairs_need_the_prefix_and_the_heuristic_classifier() {
     let router = deployment("router", None);
-    let pair = heuristic_v1_router_fingerprint(&router).unwrap();
+    let pair = heuristic_router_fingerprint(&router).unwrap();
     assert_eq!(pair.0, r#"yaml:["router",[]]"#);
     assert_eq!(pair.1, EMPTY_FINGERPRINT);
     let mut other = deployment(
@@ -228,9 +253,9 @@ fn heuristic_pairs_need_the_prefix_and_the_heuristic_classifier() {
             r#"{"classifier_type": "llm", "classifier_llm_config": {"model": "gpt-4o"}}"#,
         )),
     );
-    assert_eq!(heuristic_v1_router_fingerprint(&other), None);
+    assert_eq!(heuristic_router_fingerprint(&other), None);
     other.model = Some("gpt-4o".to_owned());
-    assert_eq!(heuristic_v1_router_fingerprint(&other), None);
+    assert_eq!(heuristic_router_fingerprint(&other), None);
 }
 
 #[test]
@@ -260,10 +285,9 @@ fn mutable_candidates_compare_against_the_baseline_then_the_default() {
         snapshot[r#"yaml:["changed",[]]"#],
         "288bc4eb844e342af70ed64a73035eb69f5500753e8d09c3013d59ce6f6b123d"
     );
-    assert_eq!(
-        mutable_tuned_identities(&[changed, untouched], &TuningBaselines::new()).len(),
-        1
-    );
+    let identities = mutable_tuned_identities(&[changed, untouched], &TuningBaselines::new());
+    assert_eq!(identities.len(), 1);
+    assert!(identities.contains(r#"yaml:["changed",[]]"#));
 }
 
 #[test]
@@ -335,7 +359,10 @@ impl TuningBaselineStore for BaselineStore {
 fn baseline_store(row: Option<Json>) -> BaselineStore {
     BaselineStore {
         row: Mutex::new(row),
-        ..BaselineStore::default()
+        winner: Mutex::new(None),
+        outcome: RecordOutcome::Store,
+        find_error: Mutex::new(None),
+        recorded: Mutex::new(Vec::new()),
     }
 }
 
@@ -387,9 +414,11 @@ async fn load_adopts_the_competing_pods_row_on_a_unique_violation() {
     let mut winner = IndexMap::new();
     winner.insert("yaml:other".to_owned(), Json::Text("abc".to_owned()));
     let store = BaselineStore {
+        row: Mutex::new(None),
         winner: Mutex::new(Some(Json::Object(winner))),
         outcome: RecordOutcome::Unique,
-        ..BaselineStore::default()
+        find_error: Mutex::new(None),
+        recorded: Mutex::new(Vec::new()),
     };
     let baselines = load_tuning_baselines(&store, &[router]).await.unwrap();
     assert_eq!(baselines.len(), 1);
@@ -410,8 +439,11 @@ async fn load_skips_the_gate_when_the_row_cannot_be_read() {
 #[tokio::test]
 async fn load_skips_the_gate_when_the_snapshot_cannot_be_written() {
     let write_failure = BaselineStore {
+        row: Mutex::new(None),
+        winner: Mutex::new(None),
         outcome: RecordOutcome::Fail,
-        ..BaselineStore::default()
+        find_error: Mutex::new(None),
+        recorded: Mutex::new(Vec::new()),
     };
     let (logs, _guard) = capture_logs();
     assert_eq!(load_tuning_baselines(&write_failure, &[]).await, None);
@@ -425,7 +457,18 @@ async fn load_skips_the_gate_when_the_recorded_row_is_not_json() {
     assert_eq!(load_tuning_baselines(&decode_failure, &[]).await, None);
     assert!(
         logs.contents()
-            .contains("the recorded heuristic-v1 tuning baseline row is not JSON")
+            .contains("the recorded heuristic-v1 tuning baseline row cannot be decoded")
+    );
+}
+
+#[tokio::test]
+async fn load_skips_the_gate_when_a_recorded_value_is_not_a_string() {
+    let decode_failure = baseline_store(Some(Json::Text(r#"{"yaml:abc": 7}"#.to_owned())));
+    let (logs, _guard) = capture_logs();
+    assert_eq!(load_tuning_baselines(&decode_failure, &[]).await, None);
+    assert!(
+        logs.contents()
+            .contains("the row maps yaml:abc to a value that is not a string")
     );
 }
 
