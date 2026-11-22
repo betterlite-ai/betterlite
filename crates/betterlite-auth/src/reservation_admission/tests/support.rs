@@ -92,7 +92,10 @@ pub(super) fn seeded(values: &[(&str, &str)], sources: &[(&str, &str)]) -> FakeM
     fake
 }
 
-pub(super) fn request<'a>(counters: &'a [BudgetCounter], cost: &str) -> AdmissionRequest<'a> {
+pub(super) fn request<'counters>(
+    counters: &'counters [BudgetCounter],
+    cost: &str,
+) -> AdmissionRequest<'counters> {
     AdmissionRequest {
         counters,
         token: None,

@@ -183,8 +183,8 @@ async fn the_remaining_budget_tolerance_decides() {
         "9.999999999998",
         CounterEntityType::User,
     )];
-    let fake = seeded(&[(USER, "9.999999999998")], &[]);
-    let admission = admit(&fake, &request(&resized, "4"), &mut Vec::new())
+    let resized_fake = seeded(&[(USER, "9.999999999998")], &[]);
+    let admission = admit(&resized_fake, &request(&resized, "4"), &mut Vec::new())
         .await
         .expect("the resize");
     assert_eq!(admission.reserved_cost, amount("0.000000000002"));
@@ -213,12 +213,12 @@ async fn the_strict_overshoot_tolerance_decides() {
         "6.000000000002",
         CounterEntityType::User,
     )];
-    let fake = seeded(&[(USER, "6.000000000002")], &[]);
-    let strict_request = AdmissionRequest {
+    let outside_fake = seeded(&[(USER, "6.000000000002")], &[]);
+    let outside_request = AdmissionRequest {
         fail_closed_budget_enforcement: true,
         ..request(&outside, "4")
     };
-    let error = admit(&fake, &strict_request, &mut Vec::new())
+    let error = admit(&outside_fake, &outside_request, &mut Vec::new())
         .await
         .expect_err("the strict rejection");
     let AdmissionError::BudgetExceeded { details } = &error else {
@@ -329,20 +329,20 @@ async fn lost_entries_do_not_stop_later_counters() {
         take_calls(&fake).settlements,
         vec![vec![(KEY.to_owned(), amount("-2"))]]
     );
-    let mut applied = vec![
+    let mut both_applied = vec![
         counter_to_reservation_entry(&counters[0], amount("4")),
         counter_to_reservation_entry(&counters[1], amount("4")),
     ];
-    let cost = settle_charge(
+    let both_cost = settle_charge(
         &counters,
         &fake,
         &current_spend,
         vec![None, Some(amount("10"))],
-        &mut applied,
+        &mut both_applied,
     )
     .await
     .expect("the settle");
-    assert_eq!(cost, amount("2"));
+    assert_eq!(both_cost, amount("2"));
     assert_eq!(
         take_calls(&fake).settlements,
         vec![vec![

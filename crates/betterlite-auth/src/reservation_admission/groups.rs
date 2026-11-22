@@ -5,11 +5,11 @@ use rust_decimal::Decimal;
 use crate::budget_counter::BudgetCounter;
 
 // _reservation_groups: everything with room for the estimate is charged in one pipeline, else one counter at a time so the policy settles each before the next is touched
-pub(crate) fn reservation_groups<'a>(
-    counters: &[&'a BudgetCounter],
+pub(crate) fn reservation_groups<'counter>(
+    counters: &[&'counter BudgetCounter],
     current_spend_by_counter_key: &BTreeMap<String, Decimal>,
     reservation_cost: Decimal,
-) -> Vec<Vec<&'a BudgetCounter>> {
+) -> Vec<Vec<&'counter BudgetCounter>> {
     if counters.is_empty() {
         return Vec::new();
     }

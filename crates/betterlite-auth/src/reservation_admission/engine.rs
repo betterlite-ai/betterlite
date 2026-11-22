@@ -10,9 +10,9 @@ use super::initialize::initialize_counters;
 use super::reserve::reserve_reservable_counters;
 
 // the counters a request reserves against and the policy settings the reservation applies
-pub struct AdmissionRequest<'a> {
-    pub counters: &'a [BudgetCounter],
-    pub token: Option<&'a UserAPIKeyAuth>,
+pub struct AdmissionRequest<'request> {
+    pub counters: &'request [BudgetCounter],
+    pub token: Option<&'request UserAPIKeyAuth>,
     pub reservation_cost: Decimal,
     pub fail_closed_budget_enforcement: bool,
     // litellm.budget_exceeded_status_code, 422 unless the caller supplies the configured value

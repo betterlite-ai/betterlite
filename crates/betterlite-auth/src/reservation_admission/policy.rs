@@ -18,8 +18,8 @@ use super::error::AdmissionError;
 const TOLERANCE: Decimal = Decimal::from_parts(1, 0, 0, false, 12);
 
 // one counter the reservation drove over its budget, with the entry it holds and the cost the reservation still carries
-pub(crate) struct OverBudget<'a> {
-    pub(crate) counter: &'a BudgetCounter,
+pub(crate) struct OverBudget<'counter> {
+    pub(crate) counter: &'counter BudgetCounter,
     pub(crate) entry: ReservationEntry,
     pub(crate) reservation_cost: Decimal,
     pub(crate) current_spend: Decimal,

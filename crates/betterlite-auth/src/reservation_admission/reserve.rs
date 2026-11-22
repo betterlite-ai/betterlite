@@ -13,9 +13,9 @@ use super::groups::reservation_groups;
 use super::policy::{OverBudget, apply_over_budget};
 
 // one group's counters with the cost it charges and what the reservation pipeline reported for each of them
-pub(crate) struct GroupCharge<'a> {
-    pub(crate) counters: &'a [&'a BudgetCounter],
-    pub(crate) current_spend: &'a BTreeMap<String, Decimal>,
+pub(crate) struct GroupCharge<'charge> {
+    pub(crate) counters: &'charge [&'charge BudgetCounter],
+    pub(crate) current_spend: &'charge BTreeMap<String, Decimal>,
     pub(crate) cost: Decimal,
     pub(crate) reserved_values: Vec<Option<Decimal>>,
 }
@@ -134,13 +134,13 @@ where
 }
 
 // the policy's input when the counter's reservation landed over its budget, and nothing for a counter the group lost
-fn over_budget<'a>(
-    charge: &'a GroupCharge<'_>,
-    counter: &'a BudgetCounter,
+fn over_budget<'charge>(
+    charge: &'charge GroupCharge<'_>,
+    counter: &'charge BudgetCounter,
     index: usize,
     reservation_cost: Decimal,
     applied_entries: &[ReservationEntry],
-) -> Result<Option<OverBudget<'a>>, AdmissionError> {
+) -> Result<Option<OverBudget<'charge>>, AdmissionError> {
     let Some(entry) = find_entry(applied_entries, &counter.counter_key) else {
         return Ok(None);
     };

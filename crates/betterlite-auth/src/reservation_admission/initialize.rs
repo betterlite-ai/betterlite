@@ -12,11 +12,11 @@ enum SeedAnswer {
 }
 
 // _initialize_reservation_counters: the counters whose value is loaded, in order, one that cannot be loaded skipped unless enforcement is strict
-pub(crate) async fn initialize_counters<'a, C>(
+pub(crate) async fn initialize_counters<'counter, C>(
     counters: &C,
-    budget_counters: &'a [BudgetCounter],
+    budget_counters: &'counter [BudgetCounter],
     fail_closed_budget_enforcement: bool,
-) -> Result<Vec<&'a BudgetCounter>, AdmissionError>
+) -> Result<Vec<&'counter BudgetCounter>, AdmissionError>
 where
     C: AdmissionCounters,
 {

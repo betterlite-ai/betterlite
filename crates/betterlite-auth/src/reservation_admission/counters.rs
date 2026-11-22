@@ -7,7 +7,7 @@ use crate::reservation_settlement::error::SettlementError;
 use crate::spend_counter_batch::batch::PendingSpendIncrement;
 use crate::spend_writes::error::SpendWriteError;
 
-// the reservation-only counter operations on top of the settlement ones: loading a counter, reading its value, and one pipeline that reports what each counter holds after it
+// the reservation-only counter operations on top of the settlement ones
 #[async_trait]
 pub trait AdmissionCounters: SettlementCounters {
     // _ensure_spend_counter_initialized: warm the counter or seed it from its source cache row
