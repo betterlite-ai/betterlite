@@ -1,0 +1,19 @@
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Operation {
+    GenerateContent,
+    StreamGenerateContent,
+    CountTokens,
+}
+
+// FastAPI's {model_name:path} is greedy up to the route's literal suffix, so the last colon decides
+#[must_use]
+pub(super) fn split(rest: &str) -> Option<(&str, Operation)> {
+    let (model, suffix) = rest.rsplit_once(':')?;
+    let operation = match suffix {
+        "generateContent" => Operation::GenerateContent,
+        "streamGenerateContent" => Operation::StreamGenerateContent,
+        "countTokens" => Operation::CountTokens,
+        _other => return None,
+    };
+    Some((model, operation))
+}
