@@ -240,6 +240,6 @@ fn validate_fields(
 fn present_secret(value: Option<&SecretString>) -> Option<&str> {
     match value {
         Some(key) if !key.expose_secret().is_empty() => Some(key.expose_secret()),
-        Some(_key) | None => None,
+        None | Some(_) => None,
     }
 }
