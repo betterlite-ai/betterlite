@@ -84,7 +84,7 @@ impl HealthCheckEntry {
                 )));
             }
         };
-        match self.execute(prepared, arguments).await {
+        match self.probe(prepared, arguments).await {
             Ok(response) => Ok(response),
             Err(failure) => Err(Box::new(self.failure(
                 failure.mode.as_deref(),
@@ -135,71 +135,38 @@ impl HealthCheckEntry {
         })
     }
 
-    // steps 9 to 11: the wildcard probe, the mode plan and the header filter
-    async fn execute(
+    // steps 9 to 11: a star model takes the wildcard probe, everything else its mode plan and the reply's headers
+    async fn probe(
         &self,
         prepared: PreparedProbe,
         arguments: HealthProbeArguments,
     ) -> Result<HealthCheckResponse, FlowFailure> {
-        if prepared.model.contains('*') {
-            return self.probe_wildcard(prepared).await;
+        let PreparedProbe {
+            model,
+            provider,
+            mode,
+            params,
+        } = prepared;
+        if model.contains('*') {
+            return probe_wildcard_model(
+                &model,
+                &provider,
+                params,
+                self.cheapest.as_ref(),
+                self.backend.as_ref(),
+            )
+            .await
+            .map_err(|source| probe_failure(mode, source));
         }
-        self.probe_mode(prepared, arguments).await
-    }
-
-    // step 9: a star model is checked through the provider's three cheapest chat models, with no header step
-    async fn probe_wildcard(
-        &self,
-        prepared: PreparedProbe,
-    ) -> Result<HealthCheckResponse, FlowFailure> {
-        let PreparedProbe {
-            model,
-            provider,
-            mode,
-            params,
-        } = prepared;
-        probe_wildcard_model(
-            &model,
-            &provider,
-            params,
-            self.cheapest.as_ref(),
-            self.backend.as_ref(),
-        )
-        .await
-        .map_err(|source| FlowFailure {
-            mode: Some(mode),
-            error: HealthEntryError::Probe { source },
-        })
-    }
-
-    // steps 10 and 11: the mode plan, the probe call and the three headers kept from the reply
-    async fn probe_mode(
-        &self,
-        prepared: PreparedProbe,
-        arguments: HealthProbeArguments,
-    ) -> Result<HealthCheckResponse, FlowFailure> {
-        let PreparedProbe {
-            model,
-            provider,
-            mode,
-            params,
-        } = prepared;
         let Some(plan) = plan_health_probe(&mode, &model, &provider, params, arguments) else {
             return Err(FlowFailure {
                 mode: Some(mode.clone()),
                 error: HealthEntryError::UnsupportedMode { mode },
             });
         };
-        let reply =
-            match run_health_probe(plan, self.backend.as_ref(), self.documents.as_ref()).await {
-                Ok(reply) => reply,
-                Err(source) => {
-                    return Err(FlowFailure {
-                        mode: Some(mode),
-                        error: HealthEntryError::Probe { source },
-                    });
-                }
-            };
+        let reply = run_health_probe(plan, self.backend.as_ref(), self.documents.as_ref())
+            .await
+            .map_err(|source| probe_failure(mode, source))?;
         Ok(health_check_response(&reply.hidden_headers))
     }
 
@@ -267,5 +234,12 @@ fn chat_mode(mode: Option<String>) -> String {
     match mode.as_deref() {
         None | Some("") => DEFAULT_MODE.to_owned(),
         Some(name) => name.to_owned(),
+    }
+}
+
+fn probe_failure(mode: String, source: HealthProbeError) -> FlowFailure {
+    FlowFailure {
+        mode: Some(mode),
+        error: HealthEntryError::Probe { source },
     }
 }

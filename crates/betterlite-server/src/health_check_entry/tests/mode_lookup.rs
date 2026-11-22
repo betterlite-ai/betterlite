@@ -107,36 +107,36 @@ async fn mode_missing_model_without_a_mode_uses_the_missing_mode_text() {
 }
 
 // the one place ModelCatalog's CatalogModes impl runs: every catalog mode string is Mode's serde name
+#[rstest]
+#[case::audio_speech("audio_speech")]
+#[case::audio_transcription("audio_transcription")]
+#[case::chat("chat")]
+#[case::completion("completion")]
+#[case::embedding("embedding")]
+#[case::evaluation("evaluation")]
+#[case::guardrail("guardrail")]
+#[case::image_edit("image_edit")]
+#[case::image_generation("image_generation")]
+#[case::moderation("moderation")]
+#[case::ocr("ocr")]
+#[case::realtime("realtime")]
+#[case::rerank("rerank")]
+#[case::responses("responses")]
+#[case::search("search")]
+#[case::vector_store("vector_store")]
+#[case::video_generation("video_generation")]
+fn mode_reads_each_catalog_mode_name(#[case] name: &str) {
+    let document = format!(r#"{{"probe-model": {{"mode": "{name}"}}}}"#);
+    let catalog = ModelCatalog::parse(document.as_bytes(), UnknownFields::Reject)
+        .expect("the probe catalog parses");
+    assert_eq!(
+        catalog.catalog_mode("probe-model"),
+        CatalogMode::Mode(name.to_owned())
+    );
+}
+
 #[test]
-fn mode_reads_each_catalog_mode_name() {
-    let names = [
-        "audio_speech",
-        "audio_transcription",
-        "chat",
-        "completion",
-        "embedding",
-        "evaluation",
-        "guardrail",
-        "image_edit",
-        "image_generation",
-        "moderation",
-        "ocr",
-        "realtime",
-        "rerank",
-        "responses",
-        "search",
-        "vector_store",
-        "video_generation",
-    ];
-    for name in names {
-        let document = format!(r#"{{"probe-model": {{"mode": "{name}"}}}}"#);
-        let catalog = ModelCatalog::parse(document.as_bytes(), UnknownFields::Reject)
-            .expect("the probe catalog parses");
-        assert_eq!(
-            catalog.catalog_mode("probe-model"),
-            CatalogMode::Mode(name.to_owned())
-        );
-    }
+fn mode_treats_a_missing_or_unlisted_catalog_entry_as_unset() {
     let catalog = ModelCatalog::parse(br#"{"probe-model": {}}"#, UnknownFields::Reject)
         .expect("the probe catalog parses");
     assert_eq!(catalog.catalog_mode("probe-model"), CatalogMode::NoMode);

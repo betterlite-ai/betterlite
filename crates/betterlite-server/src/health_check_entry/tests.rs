@@ -3,6 +3,7 @@
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
 use self::support::{

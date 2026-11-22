@@ -78,6 +78,27 @@ impl Recorded {
             | Self::Realtime { logging, .. } => logging.as_ref(),
         }
     }
+
+    fn mode(
+        name: &'static str,
+        parameters: IndexMap<String, Json>,
+        logging: Option<Arc<dyn HealthProbeLogging>>,
+    ) -> Self {
+        Self::Mode {
+            name,
+            parameters,
+            logging,
+        }
+    }
+
+    fn realtime(call: RealtimeCall) -> Self {
+        Self::Realtime {
+            model: call.model,
+            provider: call.custom_llm_provider,
+            parameters: call.model_params,
+            logging: call.logging,
+        }
+    }
 }
 
 pub(super) struct FakeBackend {
@@ -157,109 +178,71 @@ impl FakeBackend {
 #[async_trait]
 impl HealthProbeBackend for FakeBackend {
     async fn chat(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "chat",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("chat", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn completion(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "completion",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("completion", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn embedding(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "embedding",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("embedding", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn audio_speech(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "audio_speech",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("audio_speech", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn audio_transcription(
         &self,
         call: AudioTranscriptionCall,
     ) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "audio_transcription",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("audio_transcription", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn image_generation(
         &self,
         call: ProbeCall,
     ) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "image_generation",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("image_generation", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn image_edit(&self, call: ImageEditCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "image_edit",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("image_edit", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn video_generation(
         &self,
         call: ProbeCall,
     ) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "video_generation",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("video_generation", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn rerank(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "rerank",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("rerank", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn realtime(&self, call: RealtimeCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Realtime {
-            model: call.model,
-            provider: call.custom_llm_provider,
-            parameters: call.model_params,
-            logging: call.logging,
-        })
+        self.note(Recorded::realtime(call))
     }
 
     async fn batch(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "batch",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("batch", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn responses(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "responses",
-            parameters: call.parameters,
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("responses", call.parameters, call.logging);
+        self.note(recorded)
     }
 
     async fn ocr(&self, call: OcrCall) -> Result<HealthProbeReply, HealthProbeError> {
@@ -270,11 +253,8 @@ impl HealthProbeBackend for FakeBackend {
     }
 
     async fn evaluation(&self, call: EvaluationCall) -> Result<HealthProbeReply, HealthProbeError> {
-        self.note(Recorded::Mode {
-            name: "evaluation",
-            parameters: IndexMap::new(),
-            logging: call.logging,
-        })
+        let recorded = Recorded::mode("evaluation", IndexMap::new(), call.logging);
+        self.note(recorded)
     }
 }
 
