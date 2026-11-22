@@ -18,10 +18,10 @@ use crate::spend_retention::batches::{SpendLogCleanup, StopReason};
 use crate::spend_retention::runner::progress::RunProgress;
 use crate::spend_retention::runner::support::{
     FakeLock, FakePartitions, FixedCleanupClock, PARTITION_NAMES, SESSION_IDS, SPEND_IDS,
-    StepCleanupClock, TAG_IDS, TOOL_IDS, TestDurations, USER_SESSION_IDS, group_run, moment, naive,
-    provision, retention_settings, seed_daily_tag, seed_health_check, seed_session, seed_sessions,
-    seed_spend_logs, seed_tool_index, seed_tool_indexes, seed_user_session, seed_user_sessions,
-    text_join,
+    StepCleanupClock, TAG_IDS, TOOL_IDS, TestDurations, USER_SESSION_IDS, group_run, install_logs,
+    moment, naive, provision, retention_settings, seed_daily_tag, seed_health_check, seed_session,
+    seed_sessions, seed_spend_logs, seed_tool_index, seed_tool_indexes, seed_user_session,
+    seed_user_sessions, text_join,
 };
 
 use super::GroupWindow;
@@ -251,6 +251,39 @@ async fn expired_partitions_drop_before_their_stragglers_are_deleted() {
     let partitions = text_join(&case.client, PARTITION_NAMES).await;
     assert!(!partitions.contains("LiteLLM_SpendLogs_20241201"));
     assert!(partitions.contains("LiteLLM_SpendLogs_straddle"));
+    assert!(partitions.contains("LiteLLM_SpendLogs_p20250201"));
+    case.close().await;
+}
+
+#[tokio::test]
+async fn a_switch_on_table_that_is_not_partitioned_skips_partition_ddl() {
+    let mut case = provision().await;
+    case.seed_log("old-log", naive(2024, 12, 1, 0)).await;
+    let settings = retention_settings(
+        r#"{"maximum_spend_logs_retention_period": "30d", "use_spend_logs_partitioning": true}"#,
+    );
+    let cleanup = partition_cleanup(settings);
+    let registry = CollectorRegistry::default();
+    let metrics = CleanupMetrics::new(&registry);
+    let progress = RunProgress::default();
+    let mono = cleanup.clock.mono;
+    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, mono);
+    let deadline = deadline_after(mono, 300);
+    let window = GroupWindow {
+        retention_seconds: 2_592_000,
+        deadline,
+    };
+    let (logs, _subscriber) = install_logs();
+    let results = cleanup
+        .clean_spend_log_tables(&mut run, window)
+        .await
+        .expect("the spend group");
+    assert_eq!(results[0].rows_deleted, 1);
+    assert!(
+        !logs
+            .contents()
+            .contains("Failed to ensure spend-log partition")
+    );
     case.close().await;
 }
 
@@ -354,7 +387,7 @@ async fn the_logs_table_gets_half_the_group_time_and_the_index_the_rest() {
         .expect("the spend group");
     assert_eq!(results[0].rows_deleted, 6);
     assert_eq!(results[0].stop_reason, StopReason::BudgetExhausted);
-    assert!(results[1].rows_deleted > 0);
+    assert_eq!(results[1].rows_deleted, 6);
     case.close().await;
 }
 
