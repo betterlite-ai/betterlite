@@ -3,7 +3,7 @@ use super::queue;
 use super::service::{MAX_CAS_ATTEMPTS, RequestScheduler};
 use crate::routing_state_store::RoutingStateStore;
 use crate::routing_state_store::error::{Observed, StoreWarning};
-use crate::routing_value_store::{CompareOutcome, RouteKey, RouteValue, SchedulerTuple};
+use crate::routing_value_store::{CompareOutcome, RouteKey, RouteValue, SchedulerTuple, StoreRead};
 use std::collections::BTreeSet;
 use std::sync::PoisonError;
 // why the shared tier did not take an update: a degraded answer falls back to this worker's copy, a refused change stays an error
@@ -26,49 +26,52 @@ async fn cas<F>(
 where
     F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
 {
-    let read = store
-        .get(key)
-        .await
-        .map_err(|_error| SharedChange::Unavailable(unavailable("async_get_cache")))?;
-    let mut expected = match read {
-        Observed {
-            value,
-            warning: None,
-        } => value,
-        Observed {
-            warning: Some(warning),
-            ..
-        } => return Err(SharedChange::Unavailable(warning)),
-    };
+    let mut expected = shared_read(store, key).await?;
     for _attempt in 0..MAX_CAS_ATTEMPTS {
         let next = change(queue::members(&expected, model)?)?;
-        let outcome = store
-            .compare_and_set(key, &expected, &RouteValue::Members(next.clone()), None)
-            .await
-            .map_err(|_error| SharedChange::Unavailable(unavailable("compare_and_set")))?;
-        match outcome {
-            Observed {
-                value: CompareOutcome { swapped: true, .. },
-                warning: None,
-            } => return Ok(queue::scheduled(&next)),
-            Observed {
-                value:
-                    CompareOutcome {
-                        swapped: false,
-                        current,
-                    },
-                warning: None,
+        match swap(store, key, &expected, &next).await? {
+            CompareOutcome { swapped: true, .. } => return Ok(queue::scheduled(&next)),
+            CompareOutcome {
+                swapped: false,
+                current,
             } => expected = current,
-            Observed {
-                warning: Some(warning),
-                ..
-            } => return Err(SharedChange::Unavailable(warning)),
         }
     }
     Err(SharedChange::Refused(SchedulerError::Contended {
         model: model.to_owned(),
         attempts: MAX_CAS_ATTEMPTS,
     }))
+}
+// the shared read: a warning is this worker's observation, so the caller falls back to its own copy
+async fn shared_read(store: &RoutingStateStore, key: &RouteKey) -> Result<StoreRead, SharedChange> {
+    let read = store
+        .get(key)
+        .await
+        .map_err(|_error| SharedChange::Unavailable(unavailable("async_get_cache")))?;
+    match read {
+        Observed {
+            value,
+            warning: None,
+        } => Ok(value),
+        Observed {
+            warning: Some(warning),
+            ..
+        } => Err(SharedChange::Unavailable(warning)),
+    }
+}
+// the compare-and-set: the outcome says whether this writer won or read the winner's value
+async fn swap(
+    store: &RoutingStateStore,
+    key: &RouteKey,
+    expected: &StoreRead,
+    next: &BTreeSet<String>,
+) -> Result<CompareOutcome, SharedChange> {
+    let written = store
+        .compare_and_set(key, expected, &RouteValue::Members(next.clone()), None)
+        .await
+        .map_err(|_error| SharedChange::Unavailable(unavailable("compare_and_set")))?;
+    let Observed { value, warning } = written;
+    warning.map_or(Ok(value), |reason| Err(SharedChange::Unavailable(reason)))
 }
 impl RequestScheduler {
     // Scheduler.get_queue reads the shared tier first and this worker's copy when it cannot answer
@@ -81,8 +84,11 @@ impl RequestScheduler {
             return self.local_members(&key, model, None);
         };
         match shared.get(&key).await {
-            Ok(observed) if observed.warning.is_none() => Ok(Observed {
-                value: queue::members(&observed.value, model)?,
+            Ok(Observed {
+                value,
+                warning: None,
+            }) => Ok(Observed {
+                value: queue::members(&value, model)?,
                 warning: None,
             }),
             Ok(Observed {

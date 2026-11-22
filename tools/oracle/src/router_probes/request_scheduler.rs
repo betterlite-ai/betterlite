@@ -77,72 +77,98 @@ async fn scenario(payload: &wire::Payload) -> Result<wire::OutputFields, Operati
         calls: calls.load(Ordering::SeqCst),
     })
 }
+// what a step answered: the outcome, or the error's status, code and stamped priority
+type Reply = (wire::Outcome, Option<wire::Failure>);
 async fn apply(
     service: &RequestScheduler,
     step: &wire::Step,
     timeout: &str,
     calls: &Arc<AtomicUsize>,
-) -> Result<(wire::Outcome, Option<wire::Failure>), OperationError> {
+) -> Result<Reply, OperationError> {
     match step {
-        wire::Step::Add {
-            priority,
-            request_id,
-            ..
-        } => {
-            let added = service
-                .add_request(&item(*priority, request_id, step.model()))
-                .await;
-            Ok(answer(added.map(|_added| wire::Outcome::Added)))
-        }
-        wire::Step::Poll {
-            request_id,
-            healthy,
-            ..
-        } => {
-            let polled = service.poll(request_id, step.model(), *healthy).await;
-            Ok(answer(polled.map(|observed| wire::Outcome::Polled {
-                allowed: observed.value,
-            })))
-        }
-        wire::Step::Peek { request_id, .. } => {
-            let peeked = service.peek(request_id, step.model()).await;
-            Ok(answer(peeked.map(|observed| wire::Outcome::Peeked {
-                head: observed.value,
-            })))
-        }
-        wire::Step::Queue { .. } => Ok((wire::Outcome::Queue, None)),
-        wire::Step::Interval { .. } => Ok((
-            wire::Outcome::Interval {
-                interval: format!("{:.6}", service.polling_interval().as_secs_f64()),
-            },
-            None,
-        )),
         wire::Step::Schedule {
             priority,
             request_id,
             healthy,
             ..
         } => {
-            let call = Scripted {
+            let queued = Queued {
+                priority: *priority,
+                request_id,
                 healthy: *healthy,
-                calls: Arc::clone(calls),
             };
-            let scheduled = service
-                .schedule(
-                    &item(*priority, request_id, step.model()),
-                    &call,
-                    &plan(timeout)?,
-                )
-                .await;
-            Ok(answer(scheduled.map(|outcome| wire::Outcome::Scheduled {
-                prioritized: outcome.prioritized,
-                priority: outcome.priority,
-            })))
+            let deadline = plan(timeout)?;
+            Ok(run_scheduled(service, step.model(), &queued, &deadline, calls).await)
         }
+        wire::Step::Queue { .. } => Ok((wire::Outcome::Queue, None)),
+        wire::Step::Interval { .. } => Ok(interval(service)),
+        wire::Step::Add {
+            priority,
+            request_id,
+            ..
+        } => Ok(add(service, step.model(), *priority, request_id).await),
+        wire::Step::Poll {
+            request_id,
+            healthy,
+            ..
+        } => Ok(poll(service, step.model(), request_id, *healthy).await),
+        wire::Step::Peek { request_id, .. } => Ok(peek(service, step.model(), request_id).await),
     }
 }
+async fn add(service: &RequestScheduler, model: &str, priority: u8, request_id: &str) -> Reply {
+    let added = service
+        .add_request(&item(priority, request_id, model))
+        .await;
+    answer(added.map(|_added| wire::Outcome::Added))
+}
+async fn poll(service: &RequestScheduler, model: &str, request_id: &str, healthy: usize) -> Reply {
+    let polled = service.poll(request_id, model, healthy).await;
+    answer(polled.map(|observed| wire::Outcome::Polled {
+        allowed: observed.value,
+    }))
+}
+async fn peek(service: &RequestScheduler, model: &str, request_id: &str) -> Reply {
+    let peeked = service.peek(request_id, model).await;
+    answer(peeked.map(|observed| wire::Outcome::Peeked {
+        head: observed.value,
+    }))
+}
+fn interval(service: &RequestScheduler) -> Reply {
+    let rendered = format!("{:.6}", service.polling_interval().as_secs_f64());
+    (wire::Outcome::Interval { interval: rendered }, None)
+}
+// the schedule step's own fields, gathered so the runner takes one value
+struct Queued<'a> {
+    priority: u8,
+    request_id: &'a str,
+    healthy: usize,
+}
+// the scripted provider is reached only after the queue lets the request run
+async fn run_scheduled(
+    service: &RequestScheduler,
+    model: &str,
+    queued: &Queued<'_>,
+    deadline: &TimeoutPlan,
+    calls: &Arc<AtomicUsize>,
+) -> Reply {
+    let call = Scripted {
+        healthy: queued.healthy,
+        calls: Arc::clone(calls),
+    };
+    let answered = service
+        .schedule(
+            &item(queued.priority, queued.request_id, model),
+            &call,
+            deadline,
+        )
+        .await;
+    answer(answered.map(|outcome| wire::Outcome::Scheduled {
+        prioritized: outcome.prioritized,
+        priority: outcome.priority,
+    }))
+}
 // the service's answer as the case reads it: the outcome, or the error's status, code and stamped priority
-fn answer(result: Result<wire::Outcome, SchedulerError>) -> (wire::Outcome, Option<wire::Failure>) {
+fn answer(result: Result<wire::Outcome, SchedulerError>) -> Reply {
     match result {
         Ok(outcome) => (outcome, None),
         Err(error) => (

@@ -42,20 +42,27 @@ impl RequestScheduler {
         C: ScheduledCall,
     {
         self.add_request(item).await?;
+        let polls = self.wait_for_turn(item, call, plan).await?;
+        let answered = call.call().await;
+        self.remove_request(item).await?;
+        finish(item, polls, answered)
+    }
+    // poll until a healthy deployment or the head admits the request, and stop at the deadline or the cancellation
+    async fn wait_for_turn<C>(
+        &self,
+        item: &FlowItem,
+        call: &C,
+        plan: &TimeoutPlan,
+    ) -> Result<u32, SchedulerError>
+    where
+        C: ScheduledCall,
+    {
         let mut polls = 0_u32;
         loop {
             match plan.remaining(Instant::now().into_std()) {
                 Ok(_remaining) => {}
-                Err(TimeoutError::Cancelled) => {
-                    return Err(self.cancelled(item).await);
-                }
-                Err(
-                    TimeoutError::DeadlineExpired
-                    | TimeoutError::AttemptExpired
-                    | TimeoutError::NotFinite { .. }
-                    | TimeoutError::Negative { .. }
-                    | TimeoutError::OutOfRange { .. },
-                ) => {
+                Err(TimeoutError::Cancelled) => return Err(self.cancelled(item).await),
+                Err(_expired) => {
                     self.remove_request(item).await?;
                     return Err(SchedulerError::TimedOut {
                         model: item.model.clone(),
@@ -67,7 +74,7 @@ impl RequestScheduler {
                 .poll(&item.request_id, &item.model, call.healthy_deployments())
                 .await?;
             if allowed.value {
-                break;
+                return Ok(polls);
             }
             polls = polls.saturating_add(1);
             let slept = plan
@@ -76,21 +83,6 @@ impl RequestScheduler {
                 .await;
             if slept.is_none() {
                 return Err(self.cancelled(item).await);
-            }
-        }
-        // the queue entry leaves on every answer, the success path the pin leaks included
-        let answered = call.call().await;
-        self.remove_request(item).await?;
-        match answered {
-            Ok(()) => Ok(ScheduleOutcome {
-                request_id: item.request_id.clone(),
-                priority: item.priority,
-                polls,
-                prioritized: true,
-            }),
-            Err(mut failure) => {
-                failure.priority = item.priority;
-                Err(SchedulerError::Provider { failure })
             }
         }
     }
@@ -103,6 +95,25 @@ impl RequestScheduler {
                 model: item.model.clone(),
             },
             Err(error) => error,
+        }
+    }
+}
+// the call ran once: a success reports the priority, and a failure keeps its status and code
+fn finish(
+    item: &FlowItem,
+    polls: u32,
+    answered: Result<(), ScheduledFailure>,
+) -> Result<ScheduleOutcome, SchedulerError> {
+    match answered {
+        Ok(()) => Ok(ScheduleOutcome {
+            request_id: item.request_id.clone(),
+            priority: item.priority,
+            polls,
+            prioritized: true,
+        }),
+        Err(mut failure) => {
+            failure.priority = item.priority;
+            Err(SchedulerError::Provider { failure })
         }
     }
 }
