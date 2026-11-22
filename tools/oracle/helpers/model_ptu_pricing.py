@@ -1,12 +1,12 @@
 from typing import Final, Literal, TypedDict
 
 import litellm
-from fastapi import HTTPException
 from litellm.proxy.management_endpoints import model_management_endpoints
 from litellm.types.router import Deployment, LiteLLM_Params, ModelInfo, updateDeployment
 from litellm.types.utils import echoed_cost_map_fields
 from pydantic import JsonValue, TypeAdapter
 from pydantic_core import to_json
+from starlette.exceptions import HTTPException
 
 
 class Tag(TypedDict):
@@ -100,7 +100,7 @@ def priced_answer(call: PricedCall) -> JsonValue:
         model_management_endpoints._raise_if_ptu_deployment_is_priced(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L830-L855
             model_info=call["model_info"], supplied=call["supplied"]
         )
-    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L849-L855
+    except HTTPException as error:
         failed: JsonValue = {"status": error.status_code, "type": None, "param": None, "code": None}
         return {"error": failed}
     return {"error": None}
@@ -113,7 +113,7 @@ def zeroed_answer(call: ZeroedCall) -> JsonValue:
             litellm_params=call["litellm_params"],
             supplied=call["supplied"],
         )
-    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L849-L855
+    except HTTPException as error:
         failed: JsonValue = {"status": error.status_code, "type": None, "param": None, "code": None}
         return {"pricing": None, "error": failed}
     written = dict(pricing)
@@ -128,7 +128,7 @@ def delta_answer(call: DeltaCall) -> JsonValue:
             litellm_params=call["litellm_params"],
             patch=call["patch"],
         )
-    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L849-L855
+    except HTTPException as error:
         failed: JsonValue = {"status": error.status_code, "type": None, "param": None, "code": None}
         return {"written": None, "released": None, "error": failed}
     written = dict(pricing)
@@ -147,7 +147,7 @@ def deployment_answer(call: DeploymentCall) -> JsonValue:
     )
     try:
         priced = model_management_endpoints._ptu_priced_deployment(deployment)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L931-L950
-    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L849-L855
+    except HTTPException as error:
         failed: JsonValue = {"status": error.status_code, "type": None, "param": None, "code": None}
         return {"litellm_params": None, "model_info": None, "error": failed}
     litellm_params = priced.litellm_params.model_dump_json(exclude_none=True)
