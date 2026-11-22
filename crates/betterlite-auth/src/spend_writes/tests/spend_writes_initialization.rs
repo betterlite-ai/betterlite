@@ -55,6 +55,7 @@ async fn a_redis_hit_warms_the_counter() {
 async fn a_cold_counter_seeds_from_its_database_row() {
     let fx = fixture(false);
     fx.rows.hold_spend(decimal("12.5"));
+    fx.sources.put(KEY, source_json("{\"spend\": 4}"));
     fx.writes
         .ensure_spend_counter_initialized(KEY, &[KEY])
         .await

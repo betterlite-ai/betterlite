@@ -30,6 +30,24 @@ async fn the_raw_pipeline_returns_the_redis_values_in_order() {
 }
 
 #[tokio::test]
+async fn the_raw_pipeline_writes_only_the_counters_the_reply_covers() {
+    let fx = fixture(true);
+    fx.layers.answer_pipeline(vec![decimal("5")]);
+    let counted = fx
+        .writes
+        .run_spend_counter_pipeline(&pending_pair())
+        .await
+        .expect("a short reply answers");
+    assert_eq!(counted, vec![Some(decimal("5"))]);
+    assert_eq!(
+        fx.layers.memory_value(KEY),
+        Some(ReseedCacheValue::Number(decimal("5")))
+    );
+    assert_eq!(fx.layers.memory_value(OTHER_KEY), None);
+    assert_eq!(fx.batch.recorded(), vec![(KEY.to_owned(), decimal("5"))]);
+}
+
+#[tokio::test]
 async fn the_raw_pipeline_records_every_counter_after_the_redis_reply() {
     let fx = fixture(true);
     let counted = fx
