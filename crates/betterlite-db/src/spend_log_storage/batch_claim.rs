@@ -128,7 +128,15 @@ where
         return true;
     };
     let row = batch_cost_row_to_write(payload, disable_spend_logs);
-    let Some(found) = claim_batch_row(table, queue, request_id, &row).await else {
+    let Some(found) = match table.insert_rows(from_ref(&row)).await {
+        Ok(1) => return true,
+        Ok(_) => table.find_batch_row(request_id).await,
+        Err(error) => Err(error),
+    }
+    .unwrap_or_else(|error| {
+        queue_after_claim_failure(queue, request_id, &row, &error);
+        None
+    }) else {
         return true;
     };
     let Some(claimed_row) = found.as_ref().filter(|existing| {
@@ -149,30 +157,6 @@ where
         return false;
     }
     take_over_uncharged_row(table, payload, request_id, &row).await
-}
-
-// The claim's insert and read; None when the insert charged the batch, or when a failure queued the row for the next flush.
-async fn claim_batch_row<Table>(
-    table: &Table,
-    queue: &SpendLogQueue,
-    request_id: &str,
-    row: &SpendLogRow,
-) -> Option<BatchChargeRow>
-where
-    Table: BatchClaimTable + ?Sized,
-{
-    let found = match table.insert_rows(from_ref(row)).await {
-        Ok(1) => return None,
-        Ok(_) => table.find_batch_row(request_id).await,
-        Err(error) => Err(error),
-    };
-    match found {
-        Ok(found) => found,
-        Err(error) => {
-            queue_after_claim_failure(queue, request_id, row, &error);
-            None
-        }
-    }
 }
 
 // _take_over_uncharged_batch_cost_row: the zero row an older proxy left behind still needs the charge, and only one retrieve may write it.
