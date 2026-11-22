@@ -144,7 +144,8 @@ def mock_response_value(value: CallValue, model: str, provider: str) -> JsonValu
     # a ModelResponse becomes the JSON a mock object is built from; an Exception is raised
     match value:
         case ModelResponse():
-            return JSON.validate_python(value.model_dump())
+            # the Rust mock object rejects unknown keys, so the dump leaves its nulls out
+            return JSON.validate_python(value.model_dump(exclude_none=True))
         case Exception():
             raise_mock_exception(value, model, provider)
         case str():
