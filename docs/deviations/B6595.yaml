@@ -1,0 +1,12 @@
+task: B6595
+deviations:
+  - what: The upstream OAuth metadata cache, its per-key fetch locks, fetcher counts, generations and insert sequence live in one OAuthMetadataCache value created by the caller and passed in, instead of five module-level dicts, and every operation takes the current time as a tokio::time::Instant argument instead of calling time.time().
+    why: betterlite allows no module state, and tests run on paused tokio time through the argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L99-L118
+  - what: The persisted DCR client store is a DcrClientStore trait whose adapter B8620 writes in betterlite-server, and an undecryptable stored credential comes back unchanged through the cipher's FailureValue::Original policy with debug logging.
+    why: betterlite-mcp cannot import the database code in betterlite-server, and the policy is LiteLLM's decrypt_value_helper with exception_type debug and return_original_value True.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L180-L206
+  - what: token_endpoint_auth_method read from the store stays text on PersistedDcrCredentials and is parsed with the MCPTokenEndpointAuthMethod parser when it is applied; text that does not parse sets the field to None and logs at debug.
+    why: LiteLLM assigns the stored string to the server without validating it, while the Rust server record holds the typed enum.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1418
+kept_bugs: []

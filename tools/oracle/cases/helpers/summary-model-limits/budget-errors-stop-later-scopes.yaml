@@ -1,0 +1,56 @@
+kind: helper
+name: summary-model-limits-budget-errors-stop-later-scopes
+call:
+  summary_model_limits:
+    summary_model: sum
+    scenarios:
+      - principal: &key_budget
+          token: key-1
+          model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          user_id: user-1
+          user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          team_id: team-1
+          team_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          end_user_id: end-1
+          end_user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+        spend: {"virtual_key_spend:key-1:sum:1d": 1}
+        offline: []
+        rate: &no_hook {hook: none, missing: [], base: [], team: [], project: [], organization: [], overall_code: OK, failure: null}
+      - principal: *key_budget
+        spend: {"user_model_spend:user-1:sum:1d": 1.5}
+        offline: []
+        rate: *no_hook
+      - principal: &team_budget
+          token: key-1
+          model_max_budget: {other: {budget_limit: 1.0, time_period: 1d}}
+          user_id: user-1
+          user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          team_id: team-1
+          team_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          end_user_id: end-1
+          end_user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+        spend: {"team_model_spend:team-1:sum:1d": 1}
+        offline: []
+        rate: *no_hook
+      - principal: *key_budget
+        spend: {"end_user_model_spend:end-1:sum:1d": 2}
+        offline: []
+        rate: *no_hook
+      - principal: *key_budget
+        spend: {}
+        offline: ["virtual_key_spend:key-1:sum:1d"]
+        rate: *no_hook
+      - principal: *key_budget
+        spend: {"user_model_spend:user-1:sum:1d": 2}
+        offline: ["user_model_spend:user-1:sum:1d"]
+        rate: *no_hook
+      - principal: *team_budget
+        spend: {}
+        offline: ["team_model_spend:team-1:sum:1d"]
+        rate: *no_hook
+      - principal: *key_budget
+        spend: {}
+        offline: ["end_user_model_spend:end-1:sum:1d"]
+        rate: *no_hook
+env: {}
+compare: {ignore: []}

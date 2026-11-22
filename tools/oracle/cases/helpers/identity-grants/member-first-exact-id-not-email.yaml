@@ -1,0 +1,46 @@
+kind: helper
+name: identity-grants-member-first-exact-id-not-email
+call:
+  identity_grants:
+    users: []
+    denials: []
+    teams:
+      - team:
+          team_id: team-1
+          members_with_roles:
+            - {user_email: user-1, role: user}
+            - {user_id: user-1, user_email: first@example.com, role: user}
+            - {user_id: user-1, role: admin}
+            - {user_id: "", user_email: blank@example.com, role: user}
+        membership: null
+        user_id: user-1
+      - team:
+          team_id: team-1
+          members_with_roles:
+            - {user_email: user-1, role: user}
+            - {user_id: user-1, user_email: first@example.com, role: user}
+            - {user_id: user-1, role: admin}
+            - {user_id: "", user_email: blank@example.com, role: user}
+        membership: null
+        user_id: ""
+      - team:
+          team_id: team-1
+          members_with_roles:
+            - {user_email: user-1, role: user}
+            - {user_id: user-1, user_email: first@example.com, role: user}
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          members_with_roles:
+            - {user_id: user-1, user_email: first@example.com, role: user}
+        membership: null
+        user_id: USER-1
+      - team:
+          team_id: team-1
+          members_with_roles:
+            - {user_id: user-1, user_email: first@example.com, role: user}
+        membership: null
+        user_id: first@example.com
+env: {}
+compare: {ignore: []}
