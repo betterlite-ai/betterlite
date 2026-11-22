@@ -28,9 +28,11 @@ fn replay_bedrock_invoke_response_corpus() -> usize {
         let counter = FixtureCounter::counting(1, 1);
         let run = decode_with(&case, &bytes, &counter);
         if name.starts_with("valid-") {
-            assert!(run.reply.is_ok(), "{name}: {}", run.message());
-        } else {
-            assert!(run.reply.is_err(), "{name} parsed as a reply");
+            if let Err(_error) = &run.reply {
+                panic!("{name}: {}", run.message());
+            }
+        } else if let Ok(_reply) = &run.reply {
+            panic!("{name} parsed as a reply");
         }
         seeds = seeds.saturating_add(1);
     }

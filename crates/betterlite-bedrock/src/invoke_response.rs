@@ -88,7 +88,7 @@ fn route(provider: Option<BedrockInvokeProvider>) -> Route {
 pub async fn decode_invoke_reply<ChatCounter, Reasoning>(
     call: InvokeReplyCall<'_, '_, '_>,
     raw: &RawInvokeReply<'_>,
-    response: ChatResponse,
+    mut response: ChatResponse,
     counter: &ChatCounter,
     reasoning: &Reasoning,
 ) -> Result<InvokeReply, error::InvokeReplyError>
@@ -113,7 +113,6 @@ where
         }
         Route::Family(family) => family,
     };
-    let mut response = response;
     let output = body::family_output(&record, family, &mut response.choices)
         .map_err(|source| error::processing_error(raw, &source))?;
     body::assign_content(&mut response.choices, &output)

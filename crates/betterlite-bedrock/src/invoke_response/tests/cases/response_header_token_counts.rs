@@ -84,18 +84,18 @@ fn python_int_forms_are_parsed() {
 fn invalid_headers_surface() {
     let mut case = fixture();
     case.headers = headers("abc", "4");
-    let run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
+    let input_run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
     assert!(matches!(
-        run.failure(),
+        input_run.failure(),
         InvokeReplyError::TokenCountHeader { name, .. }
             if *name == "x-amzn-bedrock-input-token-count"
     ));
-    assert_eq!(run.status(), None);
+    assert_eq!(input_run.status(), None);
 
     case.headers = headers("4", "nope");
-    let run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
+    let output_run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
     assert!(matches!(
-        run.failure(),
+        output_run.failure(),
         InvokeReplyError::TokenCountHeader { name, .. }
             if *name == "x-amzn-bedrock-output-token-count"
     ));
@@ -104,17 +104,17 @@ fn invalid_headers_surface() {
 fn negative_headers_surface() {
     let mut case = fixture();
     case.headers = headers("-3", "4");
-    let run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
+    let prompt_run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
     assert!(matches!(
-        run.failure(),
+        prompt_run.failure(),
         InvokeReplyError::UsageRange { name } if *name == "prompt_tokens"
     ));
-    assert_eq!(run.status(), None);
+    assert_eq!(prompt_run.status(), None);
 
     case.headers = headers("4", "-2");
-    let run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
+    let completion_run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
     assert!(matches!(
-        run.failure(),
+        completion_run.failure(),
         InvokeReplyError::UsageRange { name } if *name == "completion_tokens"
     ));
 }
@@ -122,38 +122,53 @@ fn negative_headers_surface() {
 fn counter_failures_surface() {
     let case = fixture();
     let counter = FixtureCounter::failing();
-    let run = decode_with(&case, br#"{"results": [{"outputText": "x"}]}"#, &counter);
-    assert!(matches!(run.failure(), InvokeReplyError::TokenCount { .. }));
-    assert_eq!(run.status(), None);
+    let messages_run = decode_with(&case, br#"{"results": [{"outputText": "x"}]}"#, &counter);
+    assert!(matches!(
+        messages_run.failure(),
+        InvokeReplyError::TokenCount { .. }
+    ));
+    assert_eq!(messages_run.status(), None);
 
     let mut header_case = fixture();
     header_case.headers = headers("5", "");
-    let counter = FixtureCounter::failing();
-    let run = decode_with(
+    let header_counter = FixtureCounter::failing();
+    let text_run = decode_with(
         &header_case,
         br#"{"results": [{"outputText": "x"}]}"#,
-        &counter,
+        &header_counter,
     );
-    assert!(matches!(run.failure(), InvokeReplyError::TokenCount { .. }));
+    assert!(matches!(
+        text_run.failure(),
+        InvokeReplyError::TokenCount { .. }
+    ));
 
     let mut tool_case = fixture();
     tool_case.response = with_tool_calls(seeded(), Vec::new());
-    let run = decode(&tool_case, r#"{"results": [{}]}"#);
-    assert!(matches!(run.failure(), InvokeReplyError::TokenCount { .. }));
+    let tool_run = decode(&tool_case, r#"{"results": [{}]}"#);
+    assert!(matches!(
+        tool_run.failure(),
+        InvokeReplyError::TokenCount { .. }
+    ));
 }
 
 fn clock_and_created_ranges_surface() {
     let mut case = fixture();
     case.headers = headers("1", "2");
     case.now = -1.5;
-    let run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
-    assert!(matches!(run.failure(), InvokeReplyError::CreatedOutOfRange));
-    assert_eq!(run.status(), None);
+    let negative_run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
+    assert!(matches!(
+        negative_run.failure(),
+        InvokeReplyError::CreatedOutOfRange
+    ));
+    assert_eq!(negative_run.status(), None);
 
     case.now = f64::NAN;
-    let run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
-    assert!(matches!(run.failure(), InvokeReplyError::ClockOutOfRange));
-    assert_eq!(run.status(), None);
+    let nan_run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
+    assert!(matches!(
+        nan_run.failure(),
+        InvokeReplyError::ClockOutOfRange
+    ));
+    assert_eq!(nan_run.status(), None);
 }
 
 fn created_and_model_are_set() {

@@ -22,16 +22,16 @@ pub(in crate::invoke_response::tests) fn decode_and_processing_errors() {
 fn decode_failures_keep_the_raw_response() {
     let mut case = fixture();
     case.headers = vec![(String::from("x-amzn-requestid"), String::from("req-1"))];
-    let run = decode(&case, "not json");
-    assert_eq!(run.status(), Some(200));
-    assert_eq!(run.message(), "not json");
-    assert_eq!(run.response_headers(), case.headers.as_slice());
+    let invalid_run = decode(&case, "not json");
+    assert_eq!(invalid_run.status(), Some(200));
+    assert_eq!(invalid_run.message(), "not json");
+    assert_eq!(invalid_run.response_headers(), case.headers.as_slice());
 
     case.status = 400;
     let truncated = r#"{"results": [{"outputText": "cut"#;
-    let run = decode(&case, truncated);
-    assert_eq!(run.status(), Some(400));
-    assert_eq!(run.message(), truncated);
+    let truncated_run = decode(&case, truncated);
+    assert_eq!(truncated_run.status(), Some(400));
+    assert_eq!(truncated_run.message(), truncated);
 }
 
 fn invalid_utf8_becomes_replacement_characters() {
