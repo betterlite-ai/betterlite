@@ -1,11 +1,8 @@
 use std::collections::BTreeMap;
-use std::str::FromStr as _;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 use serde_json::Number;
 
 // tuning_fingerprint's payload: the supplied heuristic-v1 fields after LiteLLM's model validators, as
@@ -67,7 +64,7 @@ fn insert_int_map(
         let Json::Number(number) = entry else {
             return None;
         };
-        entries.insert(key.clone(), Json::Number(Number::from(integral(number)?)));
+        entries.insert(key.clone(), Json::Number(Number::from(number.as_i64()?)));
     }
     payload.insert(name.to_owned(), Json::Object(entries.into_iter().collect()));
     Some(())
@@ -136,18 +133,14 @@ fn dimension_payload(entry: &Json) -> Option<Json> {
     Some(Json::Object(object.into_iter().collect()))
 }
 
+// the section's ScoringMode enum admits binary and match_count, so a text is one of those two
 fn dimension_scoring_mode(fields: &JsonObject) -> Option<String> {
     match fields.get("scoring_mode") {
         None => Some("binary".to_owned()),
-        Some(Json::Text(text)) if text == "binary" || text == "match_count" => Some(text.clone()),
-        Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::List(_)
-            | Json::Object(_)
-            | Json::Text(_),
-        ) => None,
+        Some(Json::Text(text)) => Some(text.clone()),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            None
+        }
     }
 }
 
@@ -173,10 +166,8 @@ fn insert_escalation(payload: &mut IndexMap<String, Json>, fields: &JsonObject) 
         return Some(());
     };
     match text_list(Some(value))? {
-        TextList::Absent => return None,
-        TextList::Null => {
-            payload.insert("escalation_keywords".to_owned(), Json::Null);
-        }
+        // a supplied null takes the model default, the built-in marker the payload leaves out
+        TextList::Absent | TextList::Null => {}
         TextList::Values(texts) => {
             let mut cleaned = Vec::with_capacity(texts.len());
             for text in texts {
@@ -244,20 +235,6 @@ fn float_json(entry: &Json) -> Option<Json> {
         return None;
     };
     Number::from_f64(number.as_f64()?).map(Json::Number)
-}
-
-fn integral(number: &Number) -> Option<i64> {
-    if let Some(value) = number.as_i64() {
-        return Some(value);
-    }
-    let text = number.to_string();
-    let scaled = Decimal::from_str(&text)
-        .ok()
-        .or_else(|| number.as_f64().and_then(Decimal::from_f64))?;
-    if !scaled.fract().is_zero() {
-        return None;
-    }
-    scaled.to_i64()
 }
 
 fn text_value(value: &Json) -> Option<String> {

@@ -163,9 +163,14 @@ fn budget_warning_keeps_litellm_text() {
 #[test]
 fn fail_closed_warning_fires_only_when_enabled_without_redis() {
     let (logs, _guard) = capture_logs();
-    warn_fail_closed_without_redis(true, RedisPresence::Absent);
-    warn_fail_closed_without_redis(false, RedisPresence::Absent);
     warn_fail_closed_without_redis(true, RedisPresence::Present);
+    warn_fail_closed_without_redis(false, RedisPresence::Absent);
+    assert!(
+        !logs
+            .contents()
+            .contains("is enabled but no Redis is configured")
+    );
+    warn_fail_closed_without_redis(true, RedisPresence::Absent);
     let contents = logs.contents();
     assert_eq!(
         contents

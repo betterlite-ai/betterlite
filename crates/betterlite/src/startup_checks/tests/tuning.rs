@@ -75,6 +75,7 @@ fn fingerprint_omits_the_built_in_escalation_marker() {
     for text in [
         r#"{"escalation_keywords": ["LITELLM ESCALATE"]}"#,
         r#"{"escalation_keywords": ["  LITELLM ESCALATE "]}"#,
+        r#"{"escalation_keywords": null}"#,
     ] {
         assert_eq!(
             tuning_fingerprint(Some(&json(text))).as_deref(),
@@ -103,6 +104,15 @@ fn fingerprint_dumps_dimensions_with_their_defaults() {
     assert_eq!(
         tuning_fingerprint(Some(&match_count)).as_deref(),
         Some("b5e0dbd3645fed6f12a863d9867cc88ae98f32725dca5a8d78923651f981ec0e")
+    );
+}
+
+#[test]
+fn fingerprint_keeps_punctuation_and_spacing_inside_a_string() {
+    let config = json(r#"{"code_keywords": ["a, b: c \" d \\ e"]}"#);
+    assert_eq!(
+        tuning_fingerprint(Some(&config)).as_deref(),
+        Some("5505d0e544c7b659fd73c9344580db42ae136755a6b1ce9e6915846550d82151")
     );
 }
 
@@ -427,7 +437,7 @@ async fn enforce_returns_baselines_within_the_limit_and_fails_above_it() {
     let within_limit = enforce_tuning_baseline(&store, &changed, Some(&[]), Some(2))
         .await
         .unwrap();
-    assert!(within_limit.is_empty());
+    assert!(within_limit.unwrap().is_empty());
     let error = enforce_tuning_baseline(&store, &changed, Some(&[]), Some(1))
         .await
         .unwrap_err();

@@ -206,7 +206,8 @@ pub(crate) fn py_text(value: &Json) -> String {
     }
 }
 
-// json.dumps(..., separators=(",", ":")): the same text without the spaces the defaults add
+// json.dumps(..., separators=(",", ":")): the same text without the spaces the defaults add; dumps
+// writes a backslash only inside a string, so the escape toggle needs no position check
 fn compact_json(value: &Json) -> String {
     let text = dumps(value);
     let mut out = String::with_capacity(text.len());
@@ -216,13 +217,13 @@ fn compact_json(value: &Json) -> String {
         match character {
             '"' if !escaped => {
                 in_text = !in_text;
+                escaped = false;
                 out.push(character);
             }
-            '\\' if in_text => {
+            '\\' => {
                 escaped = !escaped;
                 out.push(character);
             }
-            ',' | ':' if !in_text => out.push(character),
             ' ' if !in_text => {}
             _ => {
                 escaped = false;
