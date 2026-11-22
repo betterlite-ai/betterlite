@@ -282,6 +282,12 @@ fn router_settings_behaviors(
     "0.5",
     FieldSource::Default
 )]
+#[case::configured_false_pre_call_checks(
+    "router_settings: {enable_pre_call_checks: false}",
+    "enable_pre_call_checks",
+    "false",
+    FieldSource::Default
+)]
 fn router_settings_boundaries(
     #[case] document: &str,
     #[case] key: &str,
