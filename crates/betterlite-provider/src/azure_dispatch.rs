@@ -134,9 +134,6 @@ fn embedding_call(
         credentials,
     })
 }
-fn deployment_base(deployment: &Deployment) -> Option<String> {
-    (deployment.api_base != OPENAI_DEFAULT_BASE).then(|| deployment.api_base.clone())
-}
 fn options(optional: &mut Object) -> Result<CallOptions, OperationError> {
     let mut values = Object::new();
     for name in OPTION_KEYS.split(' ') {
@@ -155,7 +152,9 @@ fn credentials(
     }
     let options = options(optional)?;
     Ok(call::Credentials {
-        api_base: options.api_base.or_else(|| deployment_base(deployment)),
+        api_base: options.api_base.or_else(|| {
+            (deployment.api_base != OPENAI_DEFAULT_BASE).then(|| deployment.api_base.clone())
+        }),
         api_version: options.api_version,
         api_key: options
             .api_key

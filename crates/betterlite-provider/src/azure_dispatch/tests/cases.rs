@@ -393,17 +393,50 @@ pub(super) async fn missing_base() {
     embedding_missing_base(&composition);
 }
 
-fn text_missing_base(composition: &Composition) {
-    let answer = Fixture::ok(support::TEXT_REPLY);
-    let call = text_call(Object::new(), support::credentials(), false);
-    let result = dispatch(composition, Request::Text(Box::new(call)), &answer);
+#[derive(Clone, Copy)]
+enum MissingBase {
+    Text,
+    Chat,
+    Embedding,
+}
+
+fn missing_base_request(kind: MissingBase) -> Request {
+    match kind {
+        MissingBase::Text => Request::Text(Box::new(text_call(
+            Object::new(),
+            support::credentials(),
+            false,
+        ))),
+        MissingBase::Chat => Request::Chat(Box::new(support::chat(
+            "gpt-4o",
+            Object::new(),
+            support::credentials(),
+        ))),
+        MissingBase::Embedding => Request::Embedding(Box::new(support::embedding(
+            "text-embedding-3-small",
+            r#"{"input":["hi"]}"#,
+            support::credentials(),
+        ))),
+    }
+}
+
+fn missing_base_case(composition: &Composition, kind: MissingBase) -> AzureProviderError {
+    let answer = Fixture::ok(match kind {
+        MissingBase::Text => support::TEXT_REPLY,
+        MissingBase::Chat => support::CHAT_REPLY,
+        MissingBase::Embedding => support::EMBEDDING_REPLY,
+    });
+    let result = dispatch(composition, missing_base_request(kind), &answer);
     assert!(answer.sent().is_empty());
     assert_eq!(result.reply, Json::Null);
     assert_eq!(support::error_status(&result), Some(500));
-    let call = text_call(Object::new(), support::credentials(), false);
-    let error = prepare(composition, Request::Text(Box::new(call)))
+    prepare(composition, missing_base_request(kind))
         .err()
-        .expect("the missing base");
+        .expect("the missing base")
+}
+
+fn text_missing_base(composition: &Composition) {
+    let error = missing_base_case(composition, MissingBase::Text);
     assert_eq!(error.to_string(), MISSING_TEXT_BASE);
     assert!(matches!(error, AzureProviderError::MissingTextApiBase));
 }
@@ -427,36 +460,12 @@ fn empty_base_guard() {
 
 // chat has no owned missing-base error: the failure comes from the URL builder
 fn chat_missing_base(composition: &Composition) {
-    let answer = Fixture::ok(support::CHAT_REPLY);
-    let call = support::chat("gpt-4o", Object::new(), support::credentials());
-    let result = dispatch(composition, Request::Chat(Box::new(call)), &answer);
-    assert!(answer.sent().is_empty());
-    assert_eq!(support::error_status(&result), Some(500));
-    let call = support::chat("gpt-4o", Object::new(), support::credentials());
-    let error = prepare(composition, Request::Chat(Box::new(call)))
-        .err()
-        .expect("the missing chat base");
+    let error = missing_base_case(composition, MissingBase::Chat);
     assert!(matches!(error, AzureProviderError::Url { .. }));
 }
 
 fn embedding_missing_base(composition: &Composition) {
-    let request = support::embedding(
-        "text-embedding-3-small",
-        r#"{"input":["hi"]}"#,
-        support::credentials(),
-    );
-    let answer = Fixture::ok(support::EMBEDDING_REPLY);
-    let result = dispatch(composition, Request::Embedding(Box::new(request)), &answer);
-    assert!(answer.sent().is_empty());
-    assert_eq!(support::error_status(&result), Some(500));
-    let request = support::embedding(
-        "text-embedding-3-small",
-        r#"{"input":["hi"]}"#,
-        support::credentials(),
-    );
-    let error = prepare(composition, Request::Embedding(Box::new(request)))
-        .err()
-        .expect("the missing embedding base");
+    let error = missing_base_case(composition, MissingBase::Embedding);
     assert_eq!(error.to_string(), MISSING_EMBEDDING_BASE);
 }
 

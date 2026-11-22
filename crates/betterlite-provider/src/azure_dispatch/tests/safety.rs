@@ -7,21 +7,12 @@ use crate::azure_dispatch::fixtures::execution::dispatch;
 
 use super::support::{self, Fixture};
 
-fn first_identity() -> Credentials {
+fn identity(base: &str, version: &str, key: &str, token: Option<&str>) -> Credentials {
     Credentials {
-        api_base: Some(String::from("https://first.test")),
-        api_version: Some(String::from("2024-01-01")),
-        api_key: Some(support::key("first-key")),
-        ..support::credentials()
-    }
-}
-
-fn second_identity() -> Credentials {
-    Credentials {
-        api_base: Some(String::from("https://second.test")),
-        api_version: Some(String::from("2025-05-05")),
-        api_key: Some(support::key("second-key")),
-        azure_ad_token: Some(support::key("second-token")),
+        api_base: Some(String::from(base)),
+        api_version: Some(String::from(version)),
+        api_key: Some(support::key(key)),
+        azure_ad_token: token.map(support::key),
         ..support::credentials()
     }
 }
@@ -48,10 +39,23 @@ fn azure_provider_credential_identity_isolation() {
 
 fn call_identities(composition: &Composition) {
     let first = Fixture::ok(support::CHAT_REPLY);
-    let call = support::chat("first-model", support::object("{}"), first_identity());
+    let call = support::chat(
+        "first-model",
+        support::object("{}"),
+        identity("https://first.test", "2024-01-01", "first-key", None),
+    );
     dispatch(composition, Request::Chat(Box::new(call)), &first);
     let second = Fixture::ok(support::CHAT_REPLY);
-    let call = support::chat("second-model", support::object("{}"), second_identity());
+    let call = support::chat(
+        "second-model",
+        support::object("{}"),
+        identity(
+            "https://second.test",
+            "2025-05-05",
+            "second-key",
+            Some("second-token"),
+        ),
+    );
     dispatch(composition, Request::Chat(Box::new(call)), &second);
     let first_sent = first.sent();
     let second_sent = second.sent();

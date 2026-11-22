@@ -1,4 +1,5 @@
 use betterlite_azure::azure_chat_base_policy::AzureChatSettings;
+use betterlite_config::loader::EnvironmentLookup as _;
 use betterlite_config::loader::startup::process_environment;
 use betterlite_openai::embedding::EmbeddingRequest;
 use betterlite_openai::openai_base_config::{Headers, OpenAiSettings};
@@ -29,7 +30,10 @@ impl Composition {
     pub fn from_environment(environment: BTreeMap<String, String>) -> Self {
         Self {
             environment,
-            ..Self::default()
+            globals: Globals::default(),
+            chat_defaults: AzureChatSettings::default(),
+            o_series_defaults: OpenAiSettings::default(),
+            openai_system_messages_first: false,
         }
     }
     #[must_use]
@@ -40,9 +44,13 @@ impl Composition {
             .collect();
         Self::from_environment(azure)
     }
+    // an environment secret is unset when the variable is missing or empty
     #[must_use]
-    pub fn lookup(&self, name: &str) -> Option<&str> {
-        self.environment.get(name).map(String::as_str)
+    pub fn secret(&self, name: &str) -> Option<SecretString> {
+        self.environment
+            .lookup(name)
+            .filter(|text| !text.is_empty())
+            .map(SecretString::from)
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,7 +81,10 @@ impl SuppliedClient {
     // _check_dynamic_azure_params: only a non-None version that differs from the client's discards it
     #[must_use]
     pub fn discarded(&self, api_version: Option<&str>) -> bool {
-        api_version.is_some_and(|version| self.api_version.as_deref() != Some(version))
+        match api_version {
+            None => false,
+            Some(version) => self.api_version.as_deref() != Some(version),
+        }
     }
 }
 #[derive(Clone)]

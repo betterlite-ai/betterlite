@@ -91,48 +91,44 @@ enum Reply {
     Embedding(EmbeddingResponse),
 }
 
-fn chat_view(response: &ChatResponse) -> Json {
-    let first = response.choices.first();
-    let content = first.and_then(|choice| choice.message.content.clone());
-    let finish_reason = first.and_then(|choice| choice.finish_reason.clone());
-    Json::Object(Object::from_iter([
-        (String::from("id"), Json::Text(response.id.clone())),
-        (String::from("object"), Json::Text(response.object.clone())),
-        (String::from("model"), Json::Text(response.model.clone())),
-        (
-            String::from("content"),
-            content.map_or(Json::Null, Json::Text),
-        ),
-        (
-            String::from("finish_reason"),
-            finish_reason.map_or(Json::Null, Json::Text),
-        ),
-        (
-            String::from("total_tokens"),
-            Json::Number(Number::from(response.usage.total_tokens)),
-        ),
-    ]))
-}
-
-fn embedding_view(response: &EmbeddingResponse) -> Json {
-    let embedding = response.data.first().map_or(Json::Null, |record| {
-        convert(&record.embedding).unwrap_or(Json::Null)
-    });
-    Json::Object(Object::from_iter([
-        (String::from("object"), Json::Text(response.object.clone())),
-        (String::from("model"), Json::Text(response.model.clone())),
-        (String::from("embedding"), embedding),
-        (
-            String::from("total_tokens"),
-            Json::Number(Number::from(response.usage.total_tokens)),
-        ),
-    ]))
-}
-
 fn view(reply: &Reply) -> Json {
     match reply {
-        Reply::Chat(response) => chat_view(response),
-        Reply::Embedding(response) => embedding_view(response),
+        Reply::Chat(response) => {
+            let first = response.choices.first();
+            let content = first.and_then(|choice| choice.message.content.clone());
+            let finish_reason = first.and_then(|choice| choice.finish_reason.clone());
+            Json::Object(Object::from_iter([
+                (String::from("id"), Json::Text(response.id.clone())),
+                (String::from("object"), Json::Text(response.object.clone())),
+                (String::from("model"), Json::Text(response.model.clone())),
+                (
+                    String::from("content"),
+                    content.map_or(Json::Null, Json::Text),
+                ),
+                (
+                    String::from("finish_reason"),
+                    finish_reason.map_or(Json::Null, Json::Text),
+                ),
+                (
+                    String::from("total_tokens"),
+                    Json::Number(Number::from(response.usage.total_tokens)),
+                ),
+            ]))
+        }
+        Reply::Embedding(response) => {
+            let embedding = response.data.first().map_or(Json::Null, |record| {
+                convert(&record.embedding).unwrap_or(Json::Null)
+            });
+            Json::Object(Object::from_iter([
+                (String::from("object"), Json::Text(response.object.clone())),
+                (String::from("model"), Json::Text(response.model.clone())),
+                (String::from("embedding"), embedding),
+                (
+                    String::from("total_tokens"),
+                    Json::Number(Number::from(response.usage.total_tokens)),
+                ),
+            ]))
+        }
     }
 }
 

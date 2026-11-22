@@ -1,5 +1,6 @@
 use super::call::{Composition, Credentials, Operation};
 use super::error::AzureProviderError;
+use betterlite_config::loader::EnvironmentLookup as _;
 use betterlite_config::sections::azure_endpoints::AZURE_DEFAULT_API_VERSION;
 use betterlite_context::chat_config_selection::azure::is_o_series_model;
 use betterlite_openai::openai_base_config::Headers;
@@ -35,22 +36,17 @@ where
         serde_json::to_string(value).map_err(|source| AzureProviderError::Encode { source })?;
     serde_json::from_str(&text).map_err(|source| AzureProviderError::Encode { source })
 }
-fn filled(value: Option<&str>) -> Option<String> {
-    value.filter(|text| !text.is_empty()).map(str::to_owned)
-}
 fn filled_secret(secret: Option<&SecretString>) -> Option<SecretString> {
     secret
         .filter(|text| !text.expose_secret().is_empty())
         .cloned()
 }
 fn api_type(composition: &Composition) -> String {
-    match composition
+    composition
+        .environment
         .lookup("AZURE_API_TYPE")
         .filter(|kind| !kind.is_empty())
-    {
-        Some(kind) => kind.to_owned(),
-        None => DEFAULT_API_TYPE.to_owned(),
-    }
+        .unwrap_or_else(|| DEFAULT_API_TYPE.to_owned())
 }
 fn default_version(composition: &Composition) -> String {
     composition
@@ -90,7 +86,7 @@ fn embedding_extra_body(credentials: &mut Credentials) -> Result<Object, AzurePr
 fn ad_token(composition: &Composition, from_body: Option<String>) -> Option<SecretString> {
     from_body
         .map(SecretString::from)
-        .or_else(|| filled(composition.lookup("AZURE_AD_TOKEN")).map(SecretString::from))
+        .or_else(|| composition.secret("AZURE_AD_TOKEN"))
 }
 struct Ranks<'composition, 'credentials> {
     composition: &'composition Composition,
@@ -98,19 +94,27 @@ struct Ranks<'composition, 'credentials> {
     operation: Operation,
 }
 impl Ranks<'_, '_> {
+    // an explicit value, then the module globals, then the environment, where an empty base or version is still set
+    fn ranked(&self, explicit: Option<&str>, global: Option<&str>, env: &str) -> Option<String> {
+        explicit
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
+            .or_else(|| global.filter(|text| !text.is_empty()).map(str::to_owned))
+            .or_else(|| self.composition.environment.lookup(env))
+    }
     fn api_base(&self) -> Option<String> {
-        filled(self.credentials.api_base.as_deref())
-            .or_else(|| filled(self.composition.globals.api_base.as_deref()))
-            .or_else(|| self.composition.lookup("AZURE_API_BASE").map(str::to_owned))
+        self.ranked(
+            self.credentials.api_base.as_deref(),
+            self.composition.globals.api_base.as_deref(),
+            "AZURE_API_BASE",
+        )
     }
     fn api_version(&self) -> Option<String> {
-        filled(self.credentials.api_version.as_deref())
-            .or_else(|| filled(self.composition.globals.api_version.as_deref()))
-            .or_else(|| {
-                self.composition
-                    .lookup("AZURE_API_VERSION")
-                    .map(str::to_owned)
-            })
+        self.ranked(
+            self.credentials.api_version.as_deref(),
+            self.composition.globals.api_version.as_deref(),
+            "AZURE_API_VERSION",
+        )
     }
     fn api_key(&self) -> Option<SecretString> {
         let globals = &self.composition.globals;
@@ -118,14 +122,10 @@ impl Ranks<'_, '_> {
             .or_else(|| filled_secret(globals.api_key.as_ref()))
             .or_else(|| filled_secret(globals.azure_key.as_ref()));
         if self.operation == Operation::Embedding {
-            return key.or_else(|| {
-                filled(self.composition.lookup("AZURE_API_KEY")).map(SecretString::from)
-            });
+            return key.or_else(|| self.composition.secret("AZURE_API_KEY"));
         }
-        key.or_else(|| {
-            filled(self.composition.lookup("AZURE_OPENAI_API_KEY")).map(SecretString::from)
-        })
-        .or_else(|| filled(self.composition.lookup("AZURE_API_KEY")).map(SecretString::from))
+        key.or_else(|| self.composition.secret("AZURE_OPENAI_API_KEY"))
+            .or_else(|| self.composition.secret("AZURE_API_KEY"))
     }
     // the text and embedding branches own a missing-base failure; chat lets the URL builder refuse it
     fn bases(
