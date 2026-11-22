@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::loader::ConfigLoader;
-use crate::sections::complexity_placement::{Config, Settings};
+use crate::sections::complexity_placement::{Config, DeploymentPin, Settings};
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
     let lookup: BTreeMap<String, String> = variables
@@ -42,6 +42,7 @@ fn the_defaults_are_the_pinned_litellm_values() {
         Config {
             return_raw_model_name: false,
             max_tokens_from_tier_model: true,
+            deployment_pin: DeploymentPin::Unused,
         }
     );
 }
@@ -63,6 +64,7 @@ fn declared_values_replace_the_defaults() {
         vec![Some(Config {
             return_raw_model_name: true,
             max_tokens_from_tier_model: false,
+            deployment_pin: DeploymentPin::Unused,
         })]
     );
 }
@@ -136,6 +138,65 @@ fn the_router_sibling_keys_do_not_become_unsupported() {
             .unwrap()
             .return_raw_model_name
     );
+}
+
+#[test]
+fn a_deployment_affinity_router_stamps_the_session_marker() {
+    let source = router("        deployment_affinity: true\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments,
+        vec![Some(Config {
+            deployment_pin: DeploymentPin::InUse,
+            ..Config::default()
+        })]
+    );
+    assert!(resolved.stamps_session_marker());
+}
+
+// _uses_tier_pin: user-turn classification pins the tier, and the deployment pin follows the tier pin
+#[test]
+fn a_user_turn_classifier_stamps_the_session_marker() {
+    let source = router("        classification_mode: user_turn\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].unwrap().deployment_pin,
+        DeploymentPin::InUse
+    );
+}
+
+#[test]
+fn a_session_affinity_router_stamps_the_session_marker() {
+    let source = router("        session_affinity: true\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert!(resolved.stamps_session_marker());
+}
+
+// plugins replace the pin machinery, so a non-empty list turns the marker off
+#[test]
+fn a_plugin_list_turns_the_marker_off() {
+    let source =
+        router("        deployment_affinity: true\n        plugins:\n          - name: p\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].unwrap().deployment_pin,
+        DeploymentPin::Unused
+    );
+    assert!(!resolved.stamps_session_marker());
+}
+
+#[test]
+fn an_empty_plugin_list_keeps_the_marker() {
+    let source = router("        deployment_affinity: true\n        plugins: []\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert!(resolved.stamps_session_marker());
+}
+
+#[test]
+fn a_router_configuring_no_pin_keeps_the_marker_off() {
+    let source = router("        return_raw_model_name: true\n");
+    let resolved = settings(&source, &[]).unwrap();
+    assert!(!resolved.stamps_session_marker());
 }
 
 #[test]
