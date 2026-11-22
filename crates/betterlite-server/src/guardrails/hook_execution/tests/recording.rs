@@ -57,14 +57,122 @@ async fn execute(
 }
 
 #[rstest]
+// DECORATED_PRE_CALL: one case per class, at the pre-call hook
+#[case::agent365_pre_call("Agent365Guardrail", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::azure_prompt_shield_pre_call(
+    "AzureContentSafetyPromptShieldGuardrail",
+    GuardrailHook::PreCall,
+    Some("pre_call")
+)]
+#[case::azure_text_moderation_pre_call(
+    "AzureContentSafetyTextModerationGuardrail",
+    GuardrailHook::PreCall,
+    Some("pre_call")
+)]
+#[case::cisco_pre_call("CiscoAIDefenseGuardrail", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::guardrails_ai_pre_call("GuardrailsAI", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::lasso_pre_call("LassoGuardrail", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::mcp_jwt_signer_pre_call("MCPJWTSigner", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::mcp_security_pre_call("MCPSecurityGuardrail", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::purview_pre_call(
+    "MicrosoftPurviewDLPGuardrail",
+    GuardrailHook::PreCall,
+    Some("pre_call")
+)]
+#[case::model_armor_pre_call("ModelArmorGuardrail", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::pangea_pre_call("PangeaHandler", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::panw_prisma_airs_pre_call(
+    "PanwPrismaAirsHandler",
+    GuardrailHook::PreCall,
+    Some("pre_call")
+)]
+#[case::pillar_pre_call("PillarGuardrail", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::semantic_pre_call("SemanticGuardrail", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::tool_permission_pre_call(
+    "ToolPermissionGuardrail",
+    GuardrailHook::PreCall,
+    Some("pre_call")
+)]
 #[case::lakera_pre_call("lakeraAI_Moderation", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::custom_pre_call("myCustomGuardrail", GuardrailHook::PreCall, Some("pre_call"))]
+// DECORATED_MODERATION: one case per class, at the during-call hook
 #[case::aporia_moderation("AporiaGuardrail", GuardrailHook::DuringCall, Some("during_call"))]
+#[case::cisco_moderation(
+    "CiscoAIDefenseGuardrail",
+    GuardrailHook::DuringCall,
+    Some("during_call")
+)]
+#[case::lasso_moderation("LassoGuardrail", GuardrailHook::DuringCall, Some("during_call"))]
+#[case::model_armor_moderation(
+    "ModelArmorGuardrail",
+    GuardrailHook::DuringCall,
+    Some("during_call")
+)]
+#[case::pillar_moderation("PillarGuardrail", GuardrailHook::DuringCall, Some("during_call"))]
+#[case::lakera_moderation("lakeraAI_Moderation", GuardrailHook::DuringCall, Some("during_call"))]
+#[case::custom_moderation("myCustomGuardrail", GuardrailHook::DuringCall, Some("during_call"))]
+// DECORATED_POST_CALL: one case per class, at the post-call hook
+#[case::aporia_post_call(
+    "AporiaGuardrail",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+#[case::cisco_post_call(
+    "CiscoAIDefenseGuardrail",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+#[case::guardrails_ai_post_call(
+    "GuardrailsAI",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+#[case::lasso_post_call(
+    "LassoGuardrail",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+#[case::purview_post_call(
+    "MicrosoftPurviewDLPGuardrail",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+#[case::model_armor_post_call(
+    "ModelArmorGuardrail",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
 #[case::pangea_post_call(
     "PangeaHandler",
     GuardrailHook::PostCall(JsonValue::Null),
     Some("post_call")
 )]
-#[case::custom_pre_call("myCustomGuardrail", GuardrailHook::PreCall, Some("pre_call"))]
+#[case::panw_prisma_airs_post_call(
+    "PanwPrismaAirsHandler",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+#[case::pillar_post_call(
+    "PillarGuardrail",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+#[case::semantic_post_call(
+    "SemanticGuardrail",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+#[case::tool_permission_post_call(
+    "ToolPermissionGuardrail",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+#[case::custom_post_call(
+    "myCustomGuardrail",
+    GuardrailHook::PostCall(JsonValue::Null),
+    Some("post_call")
+)]
+// the class is not decorated for the hook the case calls
 #[case::aporia_pre_call("AporiaGuardrail", GuardrailHook::PreCall, None)]
 #[case::lakera_post_call("lakeraAI_Moderation", GuardrailHook::PostCall(JsonValue::Null), None)]
 #[case::pangea_moderation("PangeaHandler", GuardrailHook::DuringCall, None)]
