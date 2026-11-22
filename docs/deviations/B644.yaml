@@ -1,0 +1,21 @@
+task: B644
+deviations:
+  - what: A Content-Length response header written with decimal digits outside ASCII, such as Arabic-Indic digits, gives a stored size of 0 instead of the number those digits spell.
+    why: S3 sends Content-Length in ASCII, and reading every Unicode decimal digit needs digit tables for a header no AWS endpoint writes that way; the Latin-1 cases (ASCII digits, the superscripts int() rejects, the fractions isdigit() rejects) behave as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L383-L384
+  - what: A Content-Length header, or a recorded _s3_upload_content_length, above the signed 64-bit range fails or falls back to the header, where Python keeps an arbitrarily large int.
+    why: The file object stores bytes as i64, and no S3 object comes near that size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L380-L384
+  - what: An upload URL that urllib rejects fails with "Unable to parse S3 URL" instead of urllib's own message, such as "Invalid IPv6 URL" for an unbalanced bracket.
+    why: Every rejection is a ValueError in LiteLLM, and betterlite keeps one message for each URL it cannot convert; the URLs rejected are urllib's, including a bracketed host that is not an IPv6 address and an NFKC netloc that normalizes to a path separator.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1221-L1230
+  - what: The upload PUT is signed for the URL exactly as given, without the re-quoting requests applies in prepare() before botocore signs it.
+    why: get_complete_file_url already percent-encodes the object key, so the two agree on every URL betterlite builds; re-quoting a caller's custom endpoint would sign a different URL than the one sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1158-L1167
+kept_bugs:
+  - what: A recorded _s3_upload_content_length of true or false is stored as 1 or 0 bytes, and a negative recorded length is stored as given.
+    why: Python's bool is an int, so LiteLLM returns it unchanged; the task keeps that and every recorded int ahead of the response header.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L380-L382
+  - what: s3_region_name is used in the upload endpoint as given, so an invalid name such as Weird builds https://s3.Weird.amazonaws.com, while only the aws_region_name fallback is validated.
+    why: A deployment that relies on a custom s3_region_name keeps working, and LiteLLM validates only the fallback region.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L526-L527
