@@ -1,0 +1,38 @@
+task: B3879
+deviations:
+  - what: >-
+      A true or false in a litellm-key-remaining-requests-{model_group} or litellm-key-remaining-tokens-{model_group} metadata value reaches the remaining gauge as 1 or 0 in LiteLLM, because bool is a subclass of int and the value goes straight to Gauge.set, where betterlite reads the declared integer and returns an error naming metadata.{key} without touching either gauge.
+    why: >-
+      betterlite's Json keeps Bool apart from Number and the legacy variable is declared an integer, so a bool there is outside the field's type; docs/compatibility.md makes a wrong-typed declared value an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2182-L2189
+  - what: >-
+      A litellm-key-remaining-* metadata value outside the i64 range is exported as the arbitrary-precision Python int by LiteLLM, where betterlite returns an error naming metadata.{key} because the value does not fit the declared integer.
+    why: >-
+      betterlite stores the remaining count as i64, so a number the type cannot hold is outside the field's type and is reported instead of silently clamped or wrapped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2182-L2189
+  - what: >-
+      A true or false in model_info.tpm, model_info.rpm, litellm_params.tpm or litellm_params.rpm reaches the deployment limit gauge as 1 or 0 in LiteLLM, because bool is a subclass of int and the value goes straight to Gauge.set, where betterlite returns an error naming the field.
+    why: >-
+      betterlite's Json keeps Bool apart from Number and the tpm and rpm limits are declared integers, so a bool there is outside the field's type and docs/compatibility.md makes that an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2962-L2963
+  - what: >-
+      A tpm or rpm outside the i64 range is exported as the arbitrary-precision Python int by LiteLLM, where betterlite returns an error naming model_info.tpm, model_info.rpm, litellm_params.tpm or litellm_params.rpm because the value does not fit the declared integer.
+    why: >-
+      betterlite stores deployment limits as i64, so a number the type cannot hold is outside the field's type and is reported instead of exported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2962-L2963
+  - what: >-
+      An x-ratelimit-* header whose JSON number does not fit i64 reads as a missing header in betterlite, where LiteLLM's isinstance(value, int) accepts the arbitrary-precision int and sets the gauge to it; a fractional number and a value of any other JSON type read as missing on both sides.
+    why: >-
+      betterlite stores header integers as i64, so a number the type cannot hold is outside the header's declared integer and is treated like any other rejected value, leaving the series to be removed or filled from the router instead of exported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2084-L2091
+  - what: >-
+      LiteLLM rejects a boolean header with an explicit isinstance(value, bool) test before its isinstance(value, int) test, because bool is an int subclass; betterlite's payload reads Bool and Number as separate types, so the same rejection happens in the integer read itself with no bool test of its own.
+    why: >-
+      The observable result matches LiteLLM, since a true or false header reads as missing on both sides; the entry records the explicit bool-first check for the typed JSON model, where the bool can never satisfy the integer read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2084
+kept_bugs:
+  - what: >-
+      A supported label whose value is absent reaches every rate limit gauge as the literal string "None", because LiteLLM fills every missing supported label with None and prometheus_client renders each label value with str().
+    why: >-
+      Metrics scraped from a working LiteLLM deployment carry "None" in those label values, and dashboards and recording rules match on them, so betterlite keeps the literal rather than rendering an empty string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4679-L4681

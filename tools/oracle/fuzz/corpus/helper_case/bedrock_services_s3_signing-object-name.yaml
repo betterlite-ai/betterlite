@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-s3-signing-object-name-seed
+call:
+  bedrock_services_s3_signing:
+    operation: object_name
+    files:
+      - content: "{\"body\": {\"model\": \"bedrock/m:1\"}}"
+        purpose: batch
+        filename: null
+env: {}
+compare: {ignore: []}

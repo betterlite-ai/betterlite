@@ -1,0 +1,15 @@
+kind: helper
+name: team-callback-policy-invalid-callback
+call:
+  team_callback_policy:
+    steps:
+      - {"function": "validate", "callback_name": "langfuse", "callback_vars": {"arize_success_sampling_rate": "0.5"}}
+      - {"function": "validate", "callback_name": "arize", "callback_vars": {"arize_success_sampling_rate": "1.5"}}
+      - {"function": "validate", "callback_name": "arize", "callback_vars": {"arize_error_sampling_rate": "often"}}
+      - {"function": "validate", "callback_name": "langfuse", "callback_vars": {"langfuse_span_scope": "full"}}
+      - {"function": "validate", "callback_name": "langfuse", "callback_vars": {}}
+      - {"function": "validate", "callback_name": "arize", "callback_vars": {"arize_success_sampling_rate": "0.25", "arize_error_sampling_rate": "1"}}
+      - {"function": "validate", "callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "llm_only"}}
+      - {"function": "validate", "callback_name": "langfuse", "callback_vars": {"langfuse_environment": "prod-eu", "langfuse_host": "https://lf.example"}}
+env: {}
+compare: {ignore: []}
