@@ -175,9 +175,10 @@ impl DeploymentMetrics for Probe {
     }
 }
 
+// division leaves trailing zeros in the decimal scale, and the python helper normalizes them away
 fn amount_text(value: MetricValue) -> String {
     match value {
-        MetricValue::Finite(decimal) => decimal.to_string(),
+        MetricValue::Finite(decimal) => decimal.normalize().to_string(),
         MetricValue::PositiveInfinity => "Infinity".to_owned(),
         MetricValue::NegativeInfinity => "-Infinity".to_owned(),
         MetricValue::NotANumber => "NaN".to_owned(),
