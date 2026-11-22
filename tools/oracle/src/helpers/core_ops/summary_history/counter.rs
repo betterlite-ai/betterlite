@@ -28,7 +28,7 @@ pub(super) struct CallRecord {
 }
 
 pub(super) enum CountSource {
-    Scripted(Mutex<VecDeque<usize>>),
+    Scripted(Box<Mutex<VecDeque<usize>>>),
     Real(TokenizerHistoryCounter),
 }
 
@@ -40,9 +40,9 @@ pub(super) struct RecordingCounter {
 impl CountSource {
     pub(super) fn from_case(counter: &CounterInput) -> Result<Self, Box<HelperError>> {
         match counter {
-            CounterInput::Scripted { values } => {
-                Ok(Self::Scripted(Mutex::new(values.iter().copied().collect())))
-            }
+            CounterInput::Scripted { values } => Ok(Self::Scripted(Box::new(Mutex::new(
+                values.iter().copied().collect(),
+            )))),
             CounterInput::Real => {
                 let config = ConfigLoader {
                     lookup: BTreeMap::<String, String>::new(),
@@ -53,9 +53,9 @@ impl CountSource {
                     .or_value_error()?;
                 let client = Arc::new(ProxiedClient::outbound(&Arc::new(policy)).or_value_error()?);
                 let catalog = BundledCatalog::default().get();
-                let counter = runtime_counter(&config, &client, &catalog).or_value_error()?;
+                let built = runtime_counter(&config, &client, &catalog).or_value_error()?;
                 Ok(Self::Real(TokenizerHistoryCounter {
-                    counter: Arc::new(counter),
+                    counter: Arc::new(built),
                 }))
             }
         }

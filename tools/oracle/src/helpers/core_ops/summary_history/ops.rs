@@ -109,9 +109,9 @@ fn count_value(input: &CountInput) -> HelperResult {
         system: input.system.as_ref(),
     };
     let runtime = Builder::new_current_thread().enable_all().build()?;
-    let (counted, logs) =
+    let (total_result, logs) =
         captured(|| runtime.block_on(count_effective_tokens(components, &translator, &counter)));
-    let total = counted.or_value_error()?;
+    let total = total_result.or_value_error()?;
     let calls = counter
         .calls
         .into_inner()
