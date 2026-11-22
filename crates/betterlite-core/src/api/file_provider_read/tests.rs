@@ -27,7 +27,10 @@ use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use super::error::{
     FileReadError, ReadFunction, UNSUPPORTED_BODY, UNSUPPORTED_MODEL, UNSUPPORTED_URL,
 };
-use super::target::{FileListing, FileReadDispatch, NewLogger, ReadLogger, ReadMode, ReadTarget};
+use super::target::{
+    FileListing, FileReadDispatch, NewLogger, ReadAnswer, ReadLogger, ReadMode, ReadOperation,
+    ReadTarget,
+};
 use super::{
     CallerClient, FileProviderRead, Kwarg, ReadContext, ReadEntry, ReadKwargs, ReadProvider,
 };
@@ -157,6 +160,21 @@ fn file_object(id: &str) -> FileObject {
     }
 }
 
+// the file or listing the dispatch answered, which each test unwraps once
+fn answered_file(answer: ReadAnswer) -> FileObject {
+    match answer {
+        ReadAnswer::File(file) => *file,
+        ReadAnswer::Listing(_) => panic!("not a file answer"),
+    }
+}
+
+fn answered_listing(answer: ReadAnswer) -> FileListing {
+    match answer {
+        ReadAnswer::Listing(listing) => listing,
+        ReadAnswer::File(_) => panic!("not a listing answer"),
+    }
+}
+
 impl FileReadDispatch for FakeDispatch {
     type Config = FakeConfig;
     type Client = ();
@@ -168,30 +186,34 @@ impl FileReadDispatch for FakeDispatch {
             .then_some(FakeConfig(provider))
     }
 
-    async fn retrieve(
+    async fn read(
         &self,
         target: ReadTarget<'_, FakeConfig, ()>,
-        file_id: &str,
-    ) -> Result<FileObject, Infallible> {
-        let sent = Sent {
-            target: seen(target),
-            argument: Some(file_id.to_owned()),
+        operation: ReadOperation<'_>,
+    ) -> Result<ReadAnswer, Infallible> {
+        let (argument, answer) = match operation {
+            ReadOperation::Retrieve { file_id } => (
+                Some(file_id.to_owned()),
+                ReadAnswer::File(Box::new(file_object(file_id))),
+            ),
+            ReadOperation::List { purpose } => (
+                purpose.map(str::to_owned),
+                ReadAnswer::Listing(self.listing.clone()),
+            ),
         };
-        self.sent.lock().unwrap().push(sent);
-        Ok(file_object(file_id))
+        self.record(target, argument);
+        Ok(answer)
     }
+}
 
-    async fn list(
-        &self,
-        target: ReadTarget<'_, FakeConfig, ()>,
-        purpose: Option<&str>,
-    ) -> Result<FileListing, Infallible> {
+impl FakeDispatch {
+    // every dispatch keeps the target it was handed and that call's one argument
+    fn record(&self, target: ReadTarget<'_, FakeConfig, ()>, argument: Option<String>) {
         let sent = Sent {
             target: seen(target),
-            argument: purpose.map(str::to_owned),
+            argument,
         };
         self.sent.lock().unwrap().push(sent);
-        Ok(self.listing.clone())
     }
 }
 
@@ -238,9 +260,14 @@ fn text_map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 async fn retrieved(read: &FileProviderRead<FakeDispatch>, kwargs: &ReadKwargs) -> Seen {
-    read.retrieve(ReadEntry::Sync, "file-1", kwargs, bare())
-        .await
-        .unwrap();
+    read.run(
+        ReadEntry::Sync,
+        ReadOperation::Retrieve { file_id: "file-1" },
+        kwargs,
+        bare(),
+    )
+    .await
+    .unwrap();
     sent(read).pop().unwrap().target
 }
 
@@ -257,11 +284,18 @@ async fn retrieve_provider_metadata_compatible(#[case] provider: &str) {
     call.extra_headers = Some(text_map(&[("x-dropped", "1")]));
     call.extra_body = Some(text_map(&[("dropped", "1")]));
     call.max_retries = Some(4);
-    let file = read
-        .retrieve(ReadEntry::Sync, "a b/c%2F", &call, bare())
+    let answer = read
+        .run(
+            ReadEntry::Sync,
+            ReadOperation::Retrieve {
+                file_id: "a b/c%2F",
+            },
+            &call,
+            bare(),
+        )
         .await
         .unwrap();
-    assert_eq!(file, file_object("a b/c%2F"));
+    assert_eq!(answered_file(answer), file_object("a b/c%2F"));
     let expected = Sent {
         target: Seen::Compatible {
             api_base: "https://api.openai.com/v1".to_owned(),
@@ -332,14 +366,24 @@ async fn retrieve_provider_metadata_branch_order(
     let call = kwargs("openai");
     match function {
         ReadFunction::FileRetrieve => {
-            read.retrieve(ReadEntry::Sync, "file-1", &call, bare())
-                .await
-                .unwrap();
+            read.run(
+                ReadEntry::Sync,
+                ReadOperation::Retrieve { file_id: "file-1" },
+                &call,
+                bare(),
+            )
+            .await
+            .unwrap();
         }
         ReadFunction::FileList => {
-            read.list(ReadEntry::Sync, None, &call, bare())
-                .await
-                .unwrap();
+            read.run(
+                ReadEntry::Sync,
+                ReadOperation::List { purpose: None },
+                &call,
+                bare(),
+            )
+            .await
+            .unwrap();
         }
     }
     let target = sent(&read).pop().unwrap().target;
@@ -364,10 +408,16 @@ async fn list_purpose_without_client_cursor(#[case] purpose: Option<&str>) {
     call.after = Some("f".to_owned());
     call.limit = Some(1);
     call.order = Some("asc".to_owned());
-    let listing = read
-        .list(ReadEntry::Sync, purpose, &call, bare())
+    let listing = answered_listing(
+        read.run(
+            ReadEntry::Sync,
+            ReadOperation::List { purpose },
+            &call,
+            bare(),
+        )
         .await
-        .unwrap();
+        .unwrap(),
+    );
     assert_eq!(listing, read.dispatch.listing);
     let expected = Sent {
         target: Seen::Compatible {
@@ -388,10 +438,18 @@ async fn list_purpose_without_client_cursor_generic_files() {
     let read = service(Settings::default(), FileListing::Files(files.clone()));
     let mut call = kwargs("anthropic");
     call.after = Some("f".to_owned());
-    let listing = read
-        .list(ReadEntry::Sync, Some("batch"), &call, bare())
+    let listing = answered_listing(
+        read.run(
+            ReadEntry::Sync,
+            ReadOperation::List {
+                purpose: Some("batch"),
+            },
+            &call,
+            bare(),
+        )
         .await
-        .unwrap();
+        .unwrap(),
+    );
     assert_eq!(listing, FileListing::Files(files));
     let last = sent(&read).pop().unwrap();
     assert_eq!(last.argument.as_deref(), Some("batch"));
@@ -401,9 +459,14 @@ async fn list_purpose_without_client_cursor_generic_files() {
 #[tokio::test]
 async fn list_purpose_without_client_cursor_azure() {
     let read = reader();
-    read.list(ReadEntry::Sync, None, &kwargs("azure"), bare())
-        .await
-        .unwrap();
+    read.run(
+        ReadEntry::Sync,
+        ReadOperation::List { purpose: None },
+        &kwargs("azure"),
+        bare(),
+    )
+    .await
+    .unwrap();
     let target = sent(&read).pop().unwrap().target;
     assert!(matches!(target, Seen::Azure { api_base: None, .. }));
 }
@@ -518,9 +581,21 @@ async fn read_deadline_and_mode_bad_text_fails_first(#[case] provider: &str) {
     let mut call = kwargs(provider);
     call.timeout = Some(ReadTimeout::Plain(text("soon")));
     let retrieve = read
-        .retrieve(ReadEntry::Sync, "file-1", &call, bare())
+        .run(
+            ReadEntry::Sync,
+            ReadOperation::Retrieve { file_id: "file-1" },
+            &call,
+            bare(),
+        )
         .await;
-    let list = read.list(ReadEntry::Sync, None, &call, bare()).await;
+    let list = read
+        .run(
+            ReadEntry::Sync,
+            ReadOperation::List { purpose: None },
+            &call,
+            bare(),
+        )
+        .await;
     assert!(matches!(retrieve, Err(FileReadError::Timeout(_))));
     assert!(matches!(list, Err(FileReadError::Timeout(_))));
     assert_eq!(retrieve.unwrap_err().status(), None);
@@ -541,8 +616,17 @@ async fn read_deadline_and_mode_async(
     let read = reader();
     let mut call = kwargs("anthropic");
     call.is_async = is_async;
-    read.retrieve(entry, "file-1", &call, bare()).await.unwrap();
-    read.list(entry, None, &call, bare()).await.unwrap();
+    read.run(
+        entry,
+        ReadOperation::Retrieve { file_id: "file-1" },
+        &call,
+        bare(),
+    )
+    .await
+    .unwrap();
+    read.run(entry, ReadOperation::List { purpose: None }, &call, bare())
+        .await
+        .unwrap();
     let modes: Vec<bool> = sent(&read)
         .iter()
         .map(|sent| sent.target.mode().is_async)
@@ -567,9 +651,14 @@ async fn read_trusted_context_generic_fields() {
         })),
         logger: None,
     };
-    read.retrieve(ReadEntry::Sync, "file-1", &kwargs("anthropic"), context)
-        .await
-        .unwrap();
+    read.run(
+        ReadEntry::Sync,
+        ReadOperation::Retrieve { file_id: "file-1" },
+        &kwargs("anthropic"),
+        context,
+    )
+    .await
+    .unwrap();
     let generic = sent(&read).pop().unwrap().target.generic();
     assert_eq!(generic.trusted, Some(vec!["bucket".to_owned()]));
     assert_eq!(generic.api_key, None);
@@ -588,9 +677,14 @@ async fn read_trusted_context_drops_sdk_clients() {
         client: Some(CallerClient::Sdk),
         logger: None,
     };
-    read.list(ReadEntry::Sync, None, &call, context)
-        .await
-        .unwrap();
+    read.run(
+        ReadEntry::Sync,
+        ReadOperation::List { purpose: None },
+        &call,
+        context,
+    )
+    .await
+    .unwrap();
     let generic = sent(&read).pop().unwrap().target.generic();
     assert_eq!(generic.client, None);
     assert_eq!(generic.trusted, None);
@@ -681,10 +775,19 @@ async fn read_trusted_context_creates_logger(
     call.id = id;
     match function {
         ReadFunction::FileRetrieve => {
-            read.retrieve(entry, "file-1", &call, bare()).await.unwrap();
+            read.run(
+                entry,
+                ReadOperation::Retrieve { file_id: "file-1" },
+                &call,
+                bare(),
+            )
+            .await
+            .unwrap();
         }
         ReadFunction::FileList => {
-            read.list(entry, None, &call, bare()).await.unwrap();
+            read.run(entry, ReadOperation::List { purpose: None }, &call, bare())
+                .await
+                .unwrap();
         }
     }
     let created = sent(&read).pop().unwrap().target.generic().created;
@@ -721,9 +824,14 @@ async fn read_trusted_context_keeps_supplied_logger() {
         client: None,
         logger: Some(&mut state),
     };
-    read.retrieve(ReadEntry::Sync, "file-1", &kwargs("anthropic"), context)
-        .await
-        .unwrap();
+    read.run(
+        ReadEntry::Sync,
+        ReadOperation::Retrieve { file_id: "file-1" },
+        &kwargs("anthropic"),
+        context,
+    )
+    .await
+    .unwrap();
     assert_eq!(sent(&read).pop().unwrap().target.generic().created, None);
 }
 
@@ -742,11 +850,21 @@ async fn unsupported_file_read(#[case] function: ReadFunction, #[case] message: 
     let call = kwargs("cohere");
     let failure = match function {
         ReadFunction::FileRetrieve => read
-            .retrieve(ReadEntry::Sync, "file-1", &call, bare())
+            .run(
+                ReadEntry::Sync,
+                ReadOperation::Retrieve { file_id: "file-1" },
+                &call,
+                bare(),
+            )
             .await
             .unwrap_err(),
         ReadFunction::FileList => read
-            .list(ReadEntry::Sync, None, &call, bare())
+            .run(
+                ReadEntry::Sync,
+                ReadOperation::List { purpose: None },
+                &call,
+                bare(),
+            )
             .await
             .unwrap_err(),
     };
@@ -779,9 +897,21 @@ async fn unsupported_file_read_unknown_provider() {
     let read = reader();
     let call = kwargs("bogus");
     let retrieve = read
-        .retrieve(ReadEntry::Sync, "file-1", &call, bare())
+        .run(
+            ReadEntry::Sync,
+            ReadOperation::Retrieve { file_id: "file-1" },
+            &call,
+            bare(),
+        )
         .await;
-    let list = read.list(ReadEntry::Sync, None, &call, bare()).await;
+    let list = read
+        .run(
+            ReadEntry::Sync,
+            ReadOperation::List { purpose: None },
+            &call,
+            bare(),
+        )
+        .await;
     assert!(
         matches!(&retrieve, Err(FileReadError::UnknownProvider { name, .. }) if name == "bogus")
     );

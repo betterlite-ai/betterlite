@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::resource_sdk_settings::Settings;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::call_params::TrustedCredentials;
-use betterlite_openai::files::records::FileObject;
 use chrono::{DateTime, FixedOffset};
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -14,7 +13,9 @@ use crate::api::vector_store_http_write::service::SuppliedClient;
 
 use self::error::{FileReadError, ReadFunction};
 use self::plan::{Plan, known_provider, read_timeout};
-use self::target::{FileListing, FileReadDispatch, GenericRead, ReadLogger, ReadMode, ReadTarget};
+use self::target::{
+    FileReadDispatch, GenericRead, ReadAnswer, ReadLogger, ReadMode, ReadOperation, ReadTarget,
+};
 
 pub mod error;
 mod plan;
@@ -100,55 +101,39 @@ impl<Dispatch> FileProviderRead<Dispatch>
 where
     Dispatch: FileReadDispatch,
 {
-    // The OpenAI-compatible names and azure answer before the provider name is read as an enum
-    pub async fn retrieve(
+    // LiteLLM's two orders: retrieve answers the OpenAI-compatible and azure names before it reads a provider config, list asks for one first
+    pub async fn run(
         &self,
         entry: ReadEntry,
-        file_id: &str,
+        operation: ReadOperation<'_>,
         kwargs: &ReadKwargs,
         context: ReadContext<'_, Dispatch::Client>,
-    ) -> Reply<FileObject, Dispatch> {
-        let plan = self.plan(ReadFunction::FileRetrieve, entry, kwargs)?;
+    ) -> Reply<ReadAnswer, Dispatch> {
+        let plan = self.plan(operation.function(), entry, kwargs)?;
         let provider = kwargs.custom_llm_provider.0.as_str();
-        let target = if COMPATIBLE_PROVIDERS.contains(&provider) {
-            ReadTarget::Compatible(plan.compatible())
-        } else if provider == "azure" {
-            ReadTarget::Azure(plan.azure())
-        } else {
-            let config = self.config(provider, plan.function)?;
-            ReadTarget::Generic(Box::new(self.generic(&plan, config, context)))
-        };
-        self.dispatch
-            .retrieve(target, file_id)
-            .await
-            .map_err(FileReadError::Dispatch)
-    }
-
-    // list reads the provider name as an enum first and asks for a provider config before the OpenAI-compatible names
-    pub async fn list(
-        &self,
-        entry: ReadEntry,
-        purpose: Option<&str>,
-        kwargs: &ReadKwargs,
-        context: ReadContext<'_, Dispatch::Client>,
-    ) -> Reply<FileListing, Dispatch> {
-        let plan = self.plan(ReadFunction::FileList, entry, kwargs)?;
-        let provider = kwargs.custom_llm_provider.0.as_str();
-        let target = match self.dispatch.files_config(known_provider(provider)?) {
-            Some(config) => ReadTarget::Generic(Box::new(self.generic(&plan, config, context))),
-            None if COMPATIBLE_PROVIDERS.contains(&provider) => {
-                ReadTarget::Compatible(plan.compatible())
-            }
-            None if provider == "azure" => ReadTarget::Azure(plan.azure()),
-            None => {
-                return Err(FileReadError::Unsupported {
-                    provider: provider.to_owned(),
-                    function: plan.function,
-                });
+        let target = match operation {
+            ReadOperation::Retrieve { .. } => match named_target(&plan, provider) {
+                Some(named) => named,
+                None => ReadTarget::from(self.generic(
+                    &plan,
+                    self.config(provider, plan.function)?,
+                    context,
+                )),
+            },
+            ReadOperation::List { .. } => {
+                match self.dispatch.files_config(known_provider(provider)?) {
+                    Some(config) => ReadTarget::from(self.generic(&plan, config, context)),
+                    None => {
+                        named_target(&plan, provider).ok_or_else(|| FileReadError::Unsupported {
+                            provider: provider.to_owned(),
+                            function: plan.function,
+                        })?
+                    }
+                }
             }
         };
         self.dispatch
-            .list(target, purpose)
+            .read(target, operation)
             .await
             .map_err(FileReadError::Dispatch)
     }
@@ -181,6 +166,7 @@ where
         })
     }
 
+    // the provider's files config, or the 400 LiteLLM raises when the registry has none for it
     fn config(&self, provider: &str, function: ReadFunction) -> Reply<Dispatch::Config, Dispatch> {
         self.dispatch
             .files_config(known_provider(provider)?)
@@ -221,5 +207,22 @@ where
             },
             mode: plan.mode,
         }
+    }
+}
+
+// The two names retrieve answers before it asks for a provider config, and that list falls back to after one
+fn named_target<'call, Dispatch>(
+    plan: &Plan<'_>,
+    provider: &str,
+) -> Option<ReadTarget<'call, Dispatch::Config, Dispatch::Client>>
+where
+    Dispatch: FileReadDispatch,
+{
+    if COMPATIBLE_PROVIDERS.contains(&provider) {
+        Some(ReadTarget::Compatible(plan.compatible()))
+    } else if provider == "azure" {
+        Some(ReadTarget::Azure(plan.azure()))
+    } else {
+        None
     }
 }

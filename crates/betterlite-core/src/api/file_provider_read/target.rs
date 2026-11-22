@@ -12,6 +12,8 @@ use secrecy::SecretString;
 use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use crate::api::vector_store_http_write::service::SuppliedClient;
 
+use super::error::ReadFunction;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ReadMode {
     pub is_async: bool,
@@ -70,11 +72,43 @@ pub enum ReadTarget<'call, Config, Client> {
     Generic(Box<GenericRead<'call, Config, Client>>),
 }
 
+impl<'call, Config, Client> From<GenericRead<'call, Config, Client>>
+    for ReadTarget<'call, Config, Client>
+{
+    fn from(read: GenericRead<'call, Config, Client>) -> Self {
+        Self::Generic(Box::new(read))
+    }
+}
+
 // The list shape of the branch that answered, which the dispatcher hands back without a wrapper
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileListing {
     Page(Box<FilePage>),
     Files(Vec<FileObject>),
+}
+
+// Which of the four entry points runs, with the one argument it forwards
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadOperation<'call> {
+    Retrieve { file_id: &'call str },
+    List { purpose: Option<&'call str> },
+}
+
+impl<'call> ReadOperation<'call> {
+    #[must_use]
+    pub const fn function(self) -> ReadFunction {
+        match self {
+            Self::Retrieve { .. } => ReadFunction::FileRetrieve,
+            Self::List { .. } => ReadFunction::FileList,
+        }
+    }
+}
+
+// What the chosen branch answered: retrieve's file object or the list shape that branch hands back
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReadAnswer {
+    File(Box<FileObject>),
+    Listing(FileListing),
 }
 
 pub trait FileReadDispatch: Send + Sync {
@@ -85,15 +119,9 @@ pub trait FileReadDispatch: Send + Sync {
     // B2464's get_provider_files_config, which lives in the provider crate above this one
     fn files_config(&self, provider: ProviderId) -> Option<Self::Config>;
 
-    fn retrieve(
+    fn read(
         &self,
         target: ReadTarget<'_, Self::Config, Self::Client>,
-        file_id: &str,
-    ) -> impl Future<Output = Result<FileObject, Self::Error>> + Send;
-
-    fn list(
-        &self,
-        target: ReadTarget<'_, Self::Config, Self::Client>,
-        purpose: Option<&str>,
-    ) -> impl Future<Output = Result<FileListing, Self::Error>> + Send;
+        operation: ReadOperation<'_>,
+    ) -> impl Future<Output = Result<ReadAnswer, Self::Error>> + Send;
 }

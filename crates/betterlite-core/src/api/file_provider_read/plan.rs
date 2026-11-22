@@ -37,14 +37,17 @@ impl Plan<'_> {
         }
     }
 
+    // get_azure_credentials' endpoint, key and version, each read from the call, then the settings, then the environment
     pub(super) fn azure(&self) -> AzureRead {
+        let settings = &self.settings;
+        let options = &self.options;
+        let api_base = settings.azure_base(options).map(str::to_owned);
+        let api_key = settings.azure_api_key(options).cloned();
+        let api_version = settings.azure_version(options).map(str::to_owned);
         AzureRead {
-            api_base: self.settings.azure_base(&self.options).map(str::to_owned),
-            api_key: self.settings.azure_api_key(&self.options).cloned(),
-            api_version: self
-                .settings
-                .azure_version(&self.options)
-                .map(str::to_owned),
+            api_base,
+            api_key,
+            api_version,
             max_retries: self.kwargs.max_retries,
             mode: self.mode,
         }
