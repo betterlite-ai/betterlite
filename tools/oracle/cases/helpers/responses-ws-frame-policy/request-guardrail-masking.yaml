@@ -1,0 +1,74 @@
+kind: helper
+name: request-guardrail-masking
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: create
+      message: '{"type": "response.create", "instructions": "i a@example.com", "input": [{"content": "c a@example.com"}, {"output": "o"}, {"content": [{"type": "input_text", "text": "t1"}, {"type": "output_text", "text": "t2"}, {"type": "text", "text": "t3"}, {"type": "input_image", "text": "img"}, {"type": "other", "text": "u"}, {"type": "input_text", "text": 5}, {"type": "input_text"}, "block"]}, "skip", {"content": 5}], "response": {"input": "n a@example.com", "instructions": "ni"}}'
+      authorized_model: null
+      defaults: null
+      guardrails:
+      - {a@example.com: <EMAIL_ADDRESS_1>}
+      - {<EMAIL_ADDRESS_1>: <EMAIL>}
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "input": "plain"}'
+      authorized_model: null
+      defaults: null
+      guardrails:
+      - {}
+      request_data:
+        metadata: {user: x}
+    - kind: create
+      message: '{"type": "response.create", "input": null, "instructions": ["x"]}'
+      authorized_model: null
+      defaults: null
+      guardrails:
+      - {}
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "response": {"input": "n"}}'
+      authorized_model: null
+      defaults: null
+      guardrails:
+      - {"n": "N"}
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "input": [{"content": "c"}]}'
+      authorized_model: null
+      defaults: null
+      guardrails:
+      - {c: C}
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "input": [{"output": [{"type": "text", "text": "t"}]}]}'
+      authorized_model: null
+      defaults: null
+      guardrails:
+      - {t: T}
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "instructions": "i"}'
+      authorized_model: null
+      defaults: null
+      guardrails:
+      - {i: I}
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "client", "input": "a@example.com"}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails:
+      - {a@example.com: <EMAIL_ADDRESS_1>}
+      request_data:
+        litellm_metadata: {team: t}
+    - kind: create
+      message: '{"type": "response.cancel", "input": "a@example.com"}'
+      authorized_model: null
+      defaults: null
+      guardrails:
+      - {a@example.com: <EMAIL_ADDRESS_1>}
+      request_data: {}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,9 @@
+task: B3513
+deviations:
+  - what: A question whose name is empty is rejected, both when a SystemOne question key is blank and when an OpenAI question named "" is converted for a SystemOne provider.
+    why: "LiteLLM keys the question by the empty name and sends it to the provider; betterlite's question names are typed QuestionName values of at least one character, so the request fails with an Invalid Decisions request or cannot-serve error instead."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L63-L67
+  - what: The detail after the "Invalid Decisions request" prefix is serde_json's deserialization error rather than pydantic's ValidationError rendering.
+    why: "Both reject the same malformed request fields with a BadRequestError; the detail text names the failing field and expected type differently because betterlite validates the envelope with typed Rust structs instead of pydantic TypeAdapters."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L180-L188
+kept_bugs: []
