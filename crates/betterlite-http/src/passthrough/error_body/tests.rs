@@ -72,7 +72,8 @@ async fn prefix_replay_stream_across_the_close_releases_the_upstream() {
     replay.aclose();
 
     assert!(closed.load(Ordering::SeqCst));
-    assert!(collected(replay).await.is_empty());
+    // aclose releases the unread upstream, not the prefix already buffered for the replay
+    assert_eq!(delivered(collected(replay).await), vec![b"err".to_vec()]);
 }
 
 #[tokio::test]
