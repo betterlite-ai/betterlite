@@ -193,7 +193,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 class ChunkDelta(TypedDict, total=False):
     content: str
-    role: str
+    role: str | None
 
 
 class StreamChoice(TypedDict):
