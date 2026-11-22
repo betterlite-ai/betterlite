@@ -33,13 +33,14 @@ pub enum KeyEventError {
     },
 }
 
-impl<Manager> From<SinkError<Manager>> for KeyEventError
-where
-    Manager: BaseSecretManager,
-    Manager::Params: TryFrom<TeamSecretSettings>,
-    <Manager::Params as TryFrom<TeamSecretSettings>>::Error: Error + Send + Sync + 'static,
-{
-    fn from(source: SinkError<Manager>) -> Self {
+impl KeyEventError {
+    // SinkError names the secret manager's own error types, which B898's sink owns, so a trait From impl cannot carry it and the effect failure is boxed here
+    pub(super) fn sink<Manager>(source: SinkError<Manager>) -> Self
+    where
+        Manager: BaseSecretManager,
+        Manager::Params: TryFrom<TeamSecretSettings>,
+        <Manager::Params as TryFrom<TeamSecretSettings>>::Error: Error + Send + Sync + 'static,
+    {
         Self::Sink {
             source: Box::new(source),
         }

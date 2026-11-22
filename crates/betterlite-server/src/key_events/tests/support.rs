@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
 use std::future;
+use std::mem::take;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -20,7 +22,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::audit_events::callbacks::{
     AuditCallbackConfig, AuditCallbackDispatcher, AuditCallbackError, AuditCallbackFuture,
@@ -211,7 +213,7 @@ impl AuditTaskSpawner for CollectedSpawner {
 
 impl CollectedSpawner {
     pub(super) async fn drain(&self) {
-        let tasks = std::mem::take(&mut *lock(&self.tasks));
+        let tasks = take(&mut *lock(&self.tasks));
         for task in tasks {
             task.await;
         }
@@ -381,7 +383,7 @@ impl<S: Subscriber> Layer<S> for Lines {
 struct Message(String);
 
 impl Visit for Message {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }
@@ -395,7 +397,7 @@ pub(super) struct Harness {
     pub(super) email: RecordingEmail,
     pub(super) settings: Settings,
     pub(super) audit: KeyEventAudit,
-    pub(super) logs: Arc<Lines>,
+    pub(super) logs: Lines,
     pub(super) teams: Option<ScriptedTeams>,
     pub(super) client: bool,
     pub(super) _logging: DefaultGuard,
@@ -431,11 +433,8 @@ pub(super) fn wired(wiring: Wiring) -> Harness {
         board: Arc::clone(&board),
         records: Mutex::new(Vec::new()),
     });
-    let logs = Arc::new(Lines::at(
-        "betterlite_server::key_events",
-        Some(Level::WARN),
-    ));
-    let logging = set_default(tracing_subscriber::registry().with(Lines::clone(&logs)));
+    let logs = Lines::at("betterlite_server::key_events", Some(Level::WARN));
+    let logging = set_default(tracing_subscriber::registry().with(logs.clone()));
     Harness {
         manager: fake_manager(&board),
         email: recording_email(&board),
@@ -480,7 +479,7 @@ fn recording_email(board: &Arc<Board>) -> RecordingEmail {
 }
 
 fn key_audit(enabled: bool, scheduler: &Arc<RecordingScheduler>) -> KeyEventAudit {
-    let sink: Arc<dyn KeyAuditScheduler> = Arc::clone(scheduler);
+    let sink: Arc<dyn KeyAuditScheduler> = Arc::<RecordingScheduler>::clone(scheduler);
     KeyEventAudit {
         settings: Arc::new(TestAuditSettings { enabled }),
         clock: Arc::new(FixedClock),
@@ -500,8 +499,8 @@ pub(super) struct SinkFixture {
 pub(super) fn sink_fixture() -> SinkFixture {
     let spawner = Arc::new(CollectedSpawner::default());
     let repository = Arc::new(RecordingRepository::default());
-    let tasks: Arc<dyn AuditTaskSpawner> = Arc::clone(&spawner);
-    let stored: Arc<dyn AuditLogRepository> = Arc::clone(&repository);
+    let tasks: Arc<dyn AuditTaskSpawner> = Arc::<CollectedSpawner>::clone(&spawner);
+    let stored: Arc<dyn AuditLogRepository> = Arc::<RecordingRepository>::clone(&repository);
     let sink = AuditEventSink {
         settings: Arc::new(TestAuditSettings { enabled: true }),
         callbacks: Arc::new(AuditCallbackDispatcher::new(
@@ -563,13 +562,11 @@ impl Harness {
     }
 
     fn effects(&self) -> KeyEventEffects<'_, FakeManager> {
-        let directory: Option<&dyn TeamDirectory> =
-            self.teams.as_ref().map(|teams| teams as &dyn TeamDirectory);
         KeyEventEffects {
             secrets: SecretSink {
                 settings: &self.settings,
                 manager: self.client.then_some(&self.manager),
-                teams: directory,
+                teams: directory(self.teams.as_ref()),
             },
             email: &self.email,
         }
@@ -609,6 +606,11 @@ impl Harness {
             .map(|teams| lock(&teams.lookups).clone())
             .unwrap_or_default()
     }
+}
+
+fn directory(teams: Option<&ScriptedTeams>) -> Option<&dyn TeamDirectory> {
+    let scripted = teams?;
+    Some(scripted)
 }
 
 pub(super) fn caller() -> KeyEventCaller {

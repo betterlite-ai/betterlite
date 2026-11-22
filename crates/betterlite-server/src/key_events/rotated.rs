@@ -7,7 +7,6 @@ use tracing::warn;
 
 use crate::audit_events::enums::AuditAction;
 use crate::key_event_sinks::team_params::TeamSecretSettings;
-use crate::key_fields::regenerate::RegenerateKeyRequest;
 
 use super::audit::{KeyAuditEntry, KeyEventAudit};
 use super::effects::{KeyEventEffects, KeyEventEmail};
@@ -62,7 +61,8 @@ where
             response_key(&event.response)?,
             event.row.team_id.as_deref(),
         )
-        .await?;
+        .await
+        .map_err(KeyEventError::sink)?;
     Ok(())
 }
 
@@ -79,19 +79,12 @@ fn new_name(event: &RotatedEvent, initial: &str) -> String {
     let requested = event
         .data
         .as_ref()
-        .and_then(requested_alias)
+        .and_then(|data| data.base.base.key_alias.as_ref().and_then(Option::as_ref))
         .filter(|alias| !alias.is_empty());
-    match from_response.or(requested) {
-        Some(alias) => alias.clone(),
-        None => initial.to_owned(),
-    }
-}
-
-fn requested_alias(data: &RegenerateKeyRequest) -> Option<&String> {
-    match &data.base.base.key_alias {
-        Some(alias) => alias.as_ref(),
-        None => None,
-    }
+    let Some(alias) = from_response.or(requested) else {
+        return initial.to_owned();
+    };
+    alias.clone()
 }
 
 async fn send_rotated_email(

@@ -37,7 +37,11 @@ where
         .iter()
         .map(sink_row)
         .collect::<Result<Vec<_>, KeyEventError>>()?;
-    effects.secrets.delete(&rows).await?;
+    effects
+        .secrets
+        .delete(&rows)
+        .await
+        .map_err(KeyEventError::sink)?;
     Ok(())
 }
 
@@ -74,17 +78,22 @@ fn audit_rows(
 // the secret manager reads only the alias, team and token, so a malformed row it never needs still deletes
 fn sink_row(row: &JsonData) -> Result<LiteLLMVerificationToken, KeyEventError> {
     let value = serde_json::to_value(row).map_err(KeyEventError::Row)?;
-    match value {
-        JsonValue::Object(fields) => {
-            let mut seed = BTreeMap::new();
-            for name in ["token", "key_alias", "team_id"] {
-                if let Some(field) = fields.get(name) {
-                    seed.insert(name.to_owned(), field.clone());
-                }
-            }
-            let object = serde_json::to_value(seed).map_err(KeyEventError::Row)?;
-            serde_json::from_value(object).map_err(KeyEventError::Row)
+    let fields = match value {
+        JsonValue::Object(fields) => fields,
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)) => {
+            return serde_json::from_value(other).map_err(KeyEventError::Row);
         }
-        other => serde_json::from_value(other).map_err(KeyEventError::Row),
+    };
+    let mut seed = BTreeMap::new();
+    for name in ["token", "key_alias", "team_id"] {
+        if let Some(field) = fields.get(name) {
+            seed.insert(name.to_owned(), field.clone());
+        }
     }
+    let object = serde_json::to_value(seed).map_err(KeyEventError::Row)?;
+    serde_json::from_value(object).map_err(KeyEventError::Row)
 }

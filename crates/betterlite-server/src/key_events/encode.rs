@@ -147,7 +147,7 @@ fn rewrite_window(entry: &mut JsonValue, form: InstantForm) {
 }
 
 fn rewrite_instant(value: &mut JsonValue, form: InstantForm) {
-    let Some(text) = value.as_str_mut() else {
+    let JsonValue::String(text) = value else {
         return;
     };
     if let Some(instant) = parse_instant(text) {

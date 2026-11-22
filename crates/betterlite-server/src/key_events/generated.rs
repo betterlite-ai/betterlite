@@ -96,7 +96,8 @@ where
     effects
         .secrets
         .store(&secret_name, response_key(&event.response)?, team_id)
-        .await?;
+        .await
+        .map_err(KeyEventError::sink)?;
     Ok(())
 }
 
@@ -110,7 +111,7 @@ fn secret_name(event: &GeneratedEvent) -> String {
         .as_ref()
         .and_then(Option::as_ref);
     match alias {
-        Some(alias) if !alias.is_empty() => alias.clone(),
+        Some(name) if !name.is_empty() => name.clone(),
         _ => format!(
             "virtual-key-{}",
             token_id(&event.response).unwrap_or("None")

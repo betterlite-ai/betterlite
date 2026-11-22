@@ -68,7 +68,8 @@ where
             alias,
             event.row.team_id.as_deref(),
         )
-        .await?;
+        .await
+        .map_err(KeyEventError::sink)?;
     Ok(())
 }
 

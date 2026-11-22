@@ -229,10 +229,10 @@ fn response_of(input: &Input) -> Reply<GenerateKeyResponse> {
 }
 
 fn optional_request<T>(value: Option<&JsonValue>, read: Reader<T>) -> Reply<Option<T>> {
-    match value {
-        Some(raw) => Ok(Some(request(Some(raw), "data", read)?)),
-        None => Ok(None),
-    }
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    Ok(Some(request(Some(raw), "data", read)?))
 }
 
 fn decoded<T>(value: Option<&JsonValue>, name: &str) -> Reply<T>
