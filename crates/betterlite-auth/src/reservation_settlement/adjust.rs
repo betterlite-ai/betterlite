@@ -209,7 +209,7 @@ where
         }
     }
     if mode == AdjustmentMode::Apply && !pending.is_empty() {
-        let _counted = counters.increment_pipeline(&pending).await?;
+        counters.increment_pipeline(&pending).await?;
     }
     Ok(pending)
 }

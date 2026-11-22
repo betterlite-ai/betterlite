@@ -25,14 +25,14 @@ use super::error::CounterReadError;
 use super::error::SettlementError;
 
 // spend_counter_cache and the request's spend_counter_batch_scope as the settlement code reaches them
-pub struct SpendCounterBackend<'a, Layers, Rows>
+pub struct SpendCounterBackend<'writes, Layers, Rows>
 where
     Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + SpendReadCache,
     Rows: SpendCounterRows,
 {
-    pub writes: &'a SpendCounterWrites<Layers, Rows>,
-    pub scope: &'a SpendCounterScope,
-    pub redis: Option<&'a Arc<RedisCache>>,
+    pub writes: &'writes SpendCounterWrites<Layers, Rows>,
+    pub scope: &'writes SpendCounterScope,
+    pub redis: Option<&'writes Arc<RedisCache>>,
 }
 
 impl<Layers, Rows> SpendCounterBackend<'_, Layers, Rows>

@@ -47,6 +47,7 @@ pub fn get_reserved_counter_keys(handle: &ReservationHandle) -> BTreeSet<String>
             counter_keys.insert(counter_key.clone());
         }
     }
+    drop(state);
     counter_keys
 }
 
@@ -64,5 +65,6 @@ pub fn stamp_reservation_actual_cost(
             .ok_or(SettlementError::Overflow)?;
         entry.applied_adjustment = target;
     }
+    drop(state);
     Ok(())
 }

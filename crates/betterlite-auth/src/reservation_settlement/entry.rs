@@ -29,7 +29,7 @@ pub fn counter_to_reservation_entry(
 
 // _get_entry_reserved_cost: an entry without a cost of its own was reserved at the reservation's cost
 #[must_use]
-pub fn get_entry_reserved_cost(
+pub const fn get_entry_reserved_cost(
     entry: &ReservationEntry,
     default_reserved_cost: Decimal,
 ) -> Decimal {
