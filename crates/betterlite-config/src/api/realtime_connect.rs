@@ -8,8 +8,8 @@ use serde::Deserialize;
 use crate::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
 
 pub const CREDENTIAL_TIMEOUT_VARIABLE: &str = "REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS";
-pub const AZURE_REALTIME_PROTOCOL_VARIABLE: &str = "LITELLM_AZURE_REALTIME_PROTOCOL";
-pub const DEFAULT_CREDENTIAL_TIMEOUT_SECONDS: f64 = 20.0;
+pub const AZURE_PROTOCOL_VARIABLE: &str = "LITELLM_AZURE_REALTIME_PROTOCOL";
+pub const DEFAULT_TIMEOUT_SECONDS: f64 = 20.0;
 
 // The globals and environment-backed fallbacks _arealtime reads before it hands a branch its credentials.
 #[derive(Debug, Clone, Deserialize)]
@@ -52,25 +52,22 @@ impl Default for RealtimeConnectionSettings {
             vertexai_project: None,
             vertexai_location: None,
             azure_realtime_protocol: None,
-            credential_timeout_seconds: DEFAULT_CREDENTIAL_TIMEOUT_SECONDS,
+            credential_timeout_seconds: DEFAULT_TIMEOUT_SECONDS,
         }
     }
 }
 
 const fn default_credential_timeout() -> f64 {
-    DEFAULT_CREDENTIAL_TIMEOUT_SECONDS
+    DEFAULT_TIMEOUT_SECONDS
 }
 
 // Loads the whole config, so an unsupported key fails here exactly as it does for every other section.
-pub fn loads_realtime_connection_settings<L>(
-    source: &str,
-    lookup: L,
-) -> Result<RealtimeConnectionSettings, ConfigError>
+pub fn load_settings<L>(source: &str, lookup: L) -> Result<RealtimeConnectionSettings, ConfigError>
 where
     L: EnvironmentLookup + Sync,
 {
     let azure_realtime_protocol = lookup
-        .lookup(AZURE_REALTIME_PROTOCOL_VARIABLE)
+        .lookup(AZURE_PROTOCOL_VARIABLE)
         .filter(|value| !value.is_empty());
     let credential_timeout_seconds = credential_timeout(&lookup)?;
     let config = ConfigLoader { lookup }.load(source)?;
@@ -106,18 +103,13 @@ where
     L: EnvironmentLookup + ?Sized,
 {
     let Some(text) = lookup.lookup(CREDENTIAL_TIMEOUT_VARIABLE) else {
-        return Ok(DEFAULT_CREDENTIAL_TIMEOUT_SECONDS);
+        return Ok(DEFAULT_TIMEOUT_SECONDS);
     };
-    Ok(
-        number::<f64>(CREDENTIAL_TIMEOUT_VARIABLE, &text)?
-            .unwrap_or(DEFAULT_CREDENTIAL_TIMEOUT_SECONDS),
-    )
+    Ok(number::<f64>(CREDENTIAL_TIMEOUT_VARIABLE, &text)?.unwrap_or(DEFAULT_TIMEOUT_SECONDS))
 }
 
 fn non_empty(value: Option<&str>) -> Option<String> {
-    value
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
+    value.filter(|value| !value.is_empty()).map(str::to_owned)
 }
 
 fn non_empty_secret(value: Option<&SecretString>) -> Option<SecretString> {

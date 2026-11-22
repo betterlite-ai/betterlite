@@ -1,3 +1,4 @@
+#![cfg(test)]
 use std::collections::BTreeMap;
 
 use betterlite_env::EnvError;
@@ -7,11 +8,12 @@ use secrecy::ExposeSecret as _;
 use crate::loader::ConfigError;
 
 use super::{
-    AZURE_REALTIME_PROTOCOL_VARIABLE, CREDENTIAL_TIMEOUT_VARIABLE,
-    DEFAULT_CREDENTIAL_TIMEOUT_SECONDS, loads_realtime_connection_settings,
+    AZURE_PROTOCOL_VARIABLE, CREDENTIAL_TIMEOUT_VARIABLE, DEFAULT_TIMEOUT_SECONDS,
+    RealtimeConnectionSettings, load_settings,
 };
 
-const DEFAULTS: &str = include_str!("../../../../fuzz/corpus/config_yaml/realtime-connect-default.yaml");
+const DEFAULTS: &str =
+    include_str!("../../../../fuzz/corpus/config_yaml/realtime-connect-default.yaml");
 const CONFIGURED: &str =
     include_str!("../../../../fuzz/corpus/config_yaml/realtime-connect-configured.yaml");
 
@@ -28,7 +30,7 @@ fn exposed(value: &Option<secrecy::SecretString>) -> Option<&str> {
 
 #[test]
 fn loads_realtime_connection_settings() {
-    let defaults = loads_realtime_connection_settings(DEFAULTS, lookup(&[])).unwrap();
+    let defaults = load_settings(DEFAULTS, lookup(&[])).unwrap();
     assert_eq!(defaults.api_base, None);
     assert_eq!(exposed(&defaults.api_key), None);
     assert_eq!(exposed(&defaults.openai_key), None);
@@ -44,15 +46,18 @@ fn loads_realtime_connection_settings() {
     assert_eq!(defaults.vertexai_project, None);
     assert_eq!(defaults.vertexai_location, None);
     assert_eq!(defaults.azure_realtime_protocol, None);
-    assert_eq!(
-        defaults.credential_timeout_seconds,
-        DEFAULT_CREDENTIAL_TIMEOUT_SECONDS
-    );
+    assert_eq!(defaults.credential_timeout_seconds, DEFAULT_TIMEOUT_SECONDS);
 }
 
 #[test]
 fn loads_realtime_connection_settings_from_the_config_and_environment() {
-    let configured = loads_realtime_connection_settings(
+    let configured = configured_settings();
+    assert_configured_file_values(&configured);
+    assert_configured_environment_values(&configured);
+}
+
+fn configured_settings() -> RealtimeConnectionSettings {
+    load_settings(
         CONFIGURED,
         lookup(&[
             ("AZURE_API_BASE", "https://azure.example"),
@@ -63,11 +68,14 @@ fn loads_realtime_connection_settings_from_the_config_and_environment() {
             ("VERTEXAI_CREDENTIALS", "{\"type\":\"service_account\"}"),
             ("VERTEXAI_PROJECT", "env-project"),
             ("VERTEXAI_LOCATION", "env-region"),
-            (AZURE_REALTIME_PROTOCOL_VARIABLE, "GA"),
+            (AZURE_PROTOCOL_VARIABLE, "GA"),
             (CREDENTIAL_TIMEOUT_VARIABLE, "12.5"),
         ]),
     )
-    .unwrap();
+    .unwrap()
+}
+
+fn assert_configured_file_values(configured: &RealtimeConnectionSettings) {
     assert_eq!(
         configured.api_base.as_deref(),
         Some("https://global.example/v1")
@@ -83,6 +91,9 @@ fn loads_realtime_connection_settings_from_the_config_and_environment() {
         configured.vertex_location.as_deref(),
         Some("global-vertex-region")
     );
+}
+
+fn assert_configured_environment_values(configured: &RealtimeConnectionSettings) {
     assert_eq!(
         configured.azure_api_base.as_deref(),
         Some("https://azure.example")
@@ -106,7 +117,7 @@ fn loads_realtime_connection_settings_from_the_config_and_environment() {
 
 #[test]
 fn loads_realtime_connection_settings_treats_empty_environment_values_as_unset() {
-    let empty = loads_realtime_connection_settings(
+    let empty = load_settings(
         DEFAULTS,
         lookup(&[
             ("AZURE_API_BASE", ""),
@@ -117,7 +128,7 @@ fn loads_realtime_connection_settings_treats_empty_environment_values_as_unset()
             ("VERTEXAI_CREDENTIALS", ""),
             ("VERTEXAI_PROJECT", ""),
             ("VERTEXAI_LOCATION", ""),
-            (AZURE_REALTIME_PROTOCOL_VARIABLE, ""),
+            (AZURE_PROTOCOL_VARIABLE, ""),
             (CREDENTIAL_TIMEOUT_VARIABLE, ""),
         ]),
     )
@@ -131,19 +142,13 @@ fn loads_realtime_connection_settings_treats_empty_environment_values_as_unset()
     assert_eq!(empty.vertexai_project, None);
     assert_eq!(empty.vertexai_location, None);
     assert_eq!(empty.azure_realtime_protocol, None);
-    assert_eq!(
-        empty.credential_timeout_seconds,
-        DEFAULT_CREDENTIAL_TIMEOUT_SECONDS
-    );
+    assert_eq!(empty.credential_timeout_seconds, DEFAULT_TIMEOUT_SECONDS);
 }
 
 #[test]
 fn loads_realtime_connection_settings_rejects_a_non_numeric_timeout() {
-    let error = loads_realtime_connection_settings(
-        DEFAULTS,
-        lookup(&[(CREDENTIAL_TIMEOUT_VARIABLE, "twenty")]),
-    )
-    .unwrap_err();
+    let error =
+        load_settings(DEFAULTS, lookup(&[(CREDENTIAL_TIMEOUT_VARIABLE, "twenty")])).unwrap_err();
     let ConfigError::Environment {
         source: EnvError::Number { name },
     } = error

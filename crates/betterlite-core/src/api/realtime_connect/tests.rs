@@ -1,6 +1,5 @@
+#![cfg(test)]
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::error::Error as StdError;
-use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -18,7 +17,6 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -28,29 +26,19 @@ use crate::api::realtime_contracts::events::{
     RealtimeResponseTransformInput, RealtimeResponseTypedDict,
 };
 use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
+use crate::api::vertex_chirp::target::AccessTokenResolver;
 use crate::dispatch::error::DispatchError;
 
+use super::dispatch::arealtime;
 use super::token::{
-    VertexAccessTokenSource, VertexTokenError, VertexTokenFuture,
-    resolve_vertex_access_token_bounded,
+    VertexAccessTokenSource, VertexTokenError, VertexTokenFuture, resolve_vertex_token,
 };
 use super::{
-    AzureAdTokenRequest, RealtimeConnectCall, RealtimeConnectDispatch, RealtimeConnectError,
-    RealtimeConnectParams, RealtimeConnection, arealtime,
+    AzureAdTokenRequest, Branch, ConnectionQuery, RealtimeConnectCall, RealtimeConnectDispatch,
+    RealtimeConnectError, RealtimeConnectParams, RealtimeConnection,
 };
 
-#[derive(Debug)]
-struct TestError {
-    message: String,
-}
-
-impl fmt::Display for TestError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl StdError for TestError {}
+type TestError = std::io::Error;
 
 struct TestBackend;
 
@@ -98,7 +86,16 @@ impl BaseRealtimeConfig for TestConfig {
         _model: &str,
         _input: &RealtimeResponseTransformInput,
     ) -> Result<RealtimeResponseTypedDict, Self::Error> {
-        panic!("the realtime dispatch tests never transform a provider response")
+        Ok(RealtimeResponseTypedDict {
+            response: Json::Null,
+            current_output_item_id: None,
+            current_response_id: None,
+            current_delta_chunks: None,
+            current_conversation_id: None,
+            current_item_chunks: None,
+            current_delta_type: None,
+            session_configuration_request: None,
+        })
     }
 }
 
@@ -210,10 +207,9 @@ impl RealtimeConnectDispatch for Recorder {
             .clone()
         {
             Some(tokens) => Ok(tokens),
-            None => Err(DispatchError::NotBuilt {
+            None => Err(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
                 entry: "vertex_access_token_resolver",
-            }
-            .into()),
+            })),
         }
     }
 
@@ -237,10 +233,9 @@ impl RealtimeConnectDispatch for Recorder {
             .clone()
         {
             Some(reply) => Ok(reply),
-            None => Err(DispatchError::NotBuilt {
+            None => Err(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
                 entry: "azure_ad_token_credentials",
-            }
-            .into()),
+            })),
         }
     }
 }
@@ -262,10 +257,6 @@ fn logging_state() -> LoggingState {
         Duration::default,
     )
     .unwrap()
-}
-
-fn empty_litellm_params() -> IndexMap<String, Json> {
-    IndexMap::new()
 }
 
 async fn run(
@@ -305,9 +296,43 @@ fn params() -> RealtimeConnectParams {
     RealtimeConnectParams::default()
 }
 
+fn settings() -> RealtimeConnectionSettings {
+    RealtimeConnectionSettings::default()
+}
+
+fn call<'call>(
+    model: &'call str,
+    connect: &'call RealtimeConnectParams,
+    query: Option<&'call IndexMap<String, String>>,
+    litellm_params: &'call IndexMap<String, Json>,
+    client_sent_beta: bool,
+) -> RealtimeConnectCall<'call> {
+    RealtimeConnectCall {
+        model,
+        params: connect,
+        query_params: query,
+        client: None,
+        client_sent_beta,
+        litellm_params,
+    }
+}
+
 #[tokio::test]
 async fn realtime_generic_dispatch() {
     let dispatch = Recorder::default();
+    let (logging, connection, caller_query) = generic_connection(&dispatch).await;
+    assert_eq!(dispatch.tags(), vec![RealtimeConfigTag::Gemini]);
+    assert_generic_arguments(&connection, &caller_query);
+    assert_generic_metadata_and_logging(&connection, &logging);
+}
+
+async fn generic_connection(
+    dispatch: &Recorder,
+) -> (
+    LoggingState,
+    RealtimeConnection<TestConfig>,
+    IndexMap<String, String>,
+) {
     let mut connect = params();
     connect.api_base = Some(String::from("https://named.example/v1"));
     connect.api_key = Some(secret("sk-named"));
@@ -325,65 +350,66 @@ async fn realtime_generic_dispatch() {
         (String::from("guardrails"), Json::List(vec![text("third")])),
         (String::from("trace"), text("t1")),
     ]));
-    let litellm_params = empty_litellm_params();
-    let query = IndexMap::from([
+    let litellm_params = IndexMap::new();
+    let caller_query = IndexMap::from([
         (String::from("model"), String::from("alias")),
         (String::from("intent"), String::from("transcription")),
     ]);
-    let call = RealtimeConnectCall {
-        model: "gemini/gemini-2.0-flash-live-001",
-        params: &connect,
-        query_params: Some(&query),
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (logging, result) = run(&dispatch, &RealtimeConnectionSettings::default(), &call).await;
-    let RealtimeConnection::Provider(plan) = result.unwrap() else {
+    let call = call(
+        "gemini/gemini-2.0-flash-live-001",
+        &connect,
+        Some(&caller_query),
+        &litellm_params,
+        false,
+    );
+    let (logging, result) = run(dispatch, &settings(), &call).await;
+    (logging, result.unwrap(), caller_query)
+}
+
+fn assert_generic_arguments(
+    connection: &RealtimeConnection<TestConfig>,
+    caller_query: &IndexMap<String, String>,
+) {
+    let Branch::ProviderConfig { tag, .. } = &connection.branch else {
         panic!("a gemini model must take the generic provider-config branch");
     };
-    assert_eq!(dispatch.tags(), vec![RealtimeConfigTag::Gemini]);
+    assert_eq!(*tag, RealtimeConfigTag::Gemini);
+    let args = &connection.args;
+    assert_eq!(args.api_base.as_deref(), Some("https://named.example/v1"));
     assert_eq!(
-        plan.transport.api_base.as_deref(),
-        Some("https://named.example/v1")
-    );
-    assert_eq!(
-        plan.transport
-            .api_key
+        args.api_key
             .as_ref()
             .map(|key| key.expose_secret().as_str()),
         Some("sk-named")
     );
     assert_eq!(
-        plan.transport.headers,
-        HeaderMap::from([
+        args.headers,
+        Some(HeaderMap::from([
             (String::from("x"), text("new")),
             (String::from("y"), text("test")),
-        ])
+        ]))
     );
+    let ConnectionQuery::Transport(Some(query)) = &args.query_params else {
+        panic!("the generic branch carries the transport query");
+    };
     assert_eq!(
-        plan.transport
-            .query_params
-            .as_ref()
-            .and_then(|query| query.get("model")),
+        query.get("model"),
         Some(&String::from("gemini-2.0-flash-live-001"))
     );
+    assert_eq!(query.get("intent"), Some(&String::from("transcription")));
+    assert_eq!(caller_query.get("model").map(String::as_str), Some("alias"));
+}
+
+fn assert_generic_metadata_and_logging(
+    connection: &RealtimeConnection<TestConfig>,
+    logging: &LoggingState,
+) {
+    let metadata = connection.args.litellm_metadata.as_ref().unwrap();
     assert_eq!(
-        plan.transport
-            .query_params
-            .as_ref()
-            .and_then(|query| query.get("intent")),
-        Some(&String::from("transcription"))
-    );
-    assert_eq!(query.get("model").map(String::as_str), Some("alias"));
-    assert_eq!(
-        plan.transport.litellm_metadata.get("guardrails"),
+        metadata.get("guardrails"),
         Some(&Json::List(vec![text("first")]))
     );
-    assert_eq!(
-        plan.transport.litellm_metadata.get("trace"),
-        Some(&text("t1"))
-    );
+    assert_eq!(metadata.get("trace"), Some(&text("t1")));
     assert_eq!(logging.model, "gemini-2.0-flash-live-001");
     assert_eq!(
         logging.litellm_params.get("_arealtime"),
@@ -406,41 +432,30 @@ async fn realtime_generic_dispatch_keeps_guardrails_and_reaches_meta() {
         String::from("guardrails"),
         Json::List(vec![text("third")]),
     )]));
-    let litellm_params = empty_litellm_params();
-    let call = RealtimeConnectCall {
-        model: "meta/muse-1",
-        params: &connect,
-        query_params: None,
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &RealtimeConnectionSettings::default(), &call).await;
-    let RealtimeConnection::Provider(plan) = result.unwrap() else {
+    let litellm_params = IndexMap::new();
+    let call = call("meta/muse-1", &connect, None, &litellm_params, false);
+    let (_, result) = run(&dispatch, &settings(), &call).await;
+    let connection = result.unwrap();
+    let Branch::ProviderConfig { tag, .. } = &connection.branch else {
         panic!("a meta model must take the generic provider-config branch");
     };
+    assert_eq!(*tag, RealtimeConfigTag::Meta);
     assert_eq!(dispatch.tags(), vec![RealtimeConfigTag::Meta]);
+    let metadata = connection.args.litellm_metadata.as_ref().unwrap();
     assert_eq!(
-        plan.transport.litellm_metadata.get("guardrails"),
+        metadata.get("guardrails"),
         Some(&Json::List(vec![text("third")]))
     );
-    assert_eq!(plan.transport.api_base, None);
+    assert_eq!(connection.args.api_base, None);
 }
 
 #[tokio::test]
 async fn realtime_generic_dispatch_rejects_an_unsupported_model() {
     let dispatch = Recorder::default();
     let connect = params();
-    let litellm_params = empty_litellm_params();
-    let call = RealtimeConnectCall {
-        model: "anthropic/claude-x",
-        params: &connect,
-        query_params: None,
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &RealtimeConnectionSettings::default(), &call).await;
+    let litellm_params = IndexMap::new();
+    let call = call("anthropic/claude-x", &connect, None, &litellm_params, false);
+    let (_, result) = run(&dispatch, &settings(), &call).await;
     let error = result.unwrap_err();
     assert_eq!(error.to_string(), "Unsupported model: claude-x");
     assert!(dispatch.tags().is_empty());
@@ -448,41 +463,38 @@ async fn realtime_generic_dispatch_rejects_an_unsupported_model() {
 
 #[tokio::test]
 async fn realtime_openai_and_azure_credentials() {
-    let settings = RealtimeConnectionSettings {
-        api_base: Some(String::from("https://global.example")),
-        api_key: Some(secret("sk-global")),
-        openai_key: Some(secret("sk-openai-global")),
-        azure_api_base: Some(String::from("https://azure.example")),
-        azure_api_key: Some(secret("azure-key")),
-        openai_api_key: Some(secret("openai-key")),
-        ..RealtimeConnectionSettings::default()
-    };
+    let mut settings = settings();
+    settings.api_base = Some(String::from("https://global.example"));
+    settings.api_key = Some(secret("sk-global"));
+    settings.openai_key = Some(secret("sk-openai-global"));
+    settings.azure_api_base = Some(String::from("https://azure.example"));
+    settings.azure_api_key = Some(secret("azure-key"));
+    settings.openai_api_key = Some(secret("openai-key"));
     let dispatch = Recorder::default();
+    let litellm_params = IndexMap::new();
+    azure_global_credentials(&dispatch, &settings, &litellm_params).await;
+    azure_named_version_and_protocol(&dispatch, &settings, &litellm_params).await;
+    azure_ad_token_fallback(&litellm_params).await;
+    openai_credentials(&dispatch, &litellm_params).await;
+}
+
+async fn azure_global_credentials(
+    dispatch: &Recorder,
+    settings: &RealtimeConnectionSettings,
+    litellm_params: &IndexMap<String, Json>,
+) {
     let connect = params();
-    let litellm_params = empty_litellm_params();
     let query = IndexMap::from([(String::from("intent"), String::from("transcription"))]);
-    let call = RealtimeConnectCall {
-        model: "azure/my-deployment",
-        params: &connect,
-        query_params: Some(&query),
-        client: None,
-        client_sent_beta: true,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &settings, &call).await;
-    let RealtimeConnection::Azure(plan) = result.unwrap() else {
-        panic!("an azure model must take the azure branch");
-    };
-    assert_eq!(plan.api_base.as_deref(), Some("https://global.example"));
-    assert_eq!(
-        plan.api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("sk-global")
+    let call = call(
+        "azure/my-deployment",
+        &connect,
+        Some(&query),
+        litellm_params,
+        true,
     );
-    assert_eq!(plan.api_version, "2024-10-01-preview");
-    assert_eq!(plan.protocol, "GA");
-    assert_eq!(plan.azure_ad_token, None);
+    let (_, result) = run(dispatch, settings, &call).await;
+    let connection = result.unwrap();
+    assert_azure_global_arguments(&connection);
     assert!(
         dispatch
             .ad_requests
@@ -490,65 +502,75 @@ async fn realtime_openai_and_azure_credentials() {
             .unwrap_or_else(PoisonError::into_inner)
             .is_empty()
     );
-    assert_eq!(
-        plan.query_params
-            .as_ref()
-            .and_then(|query| query.get("intent")),
-        Some(&Some(String::from("transcription")))
-    );
+}
 
-    let named = RealtimeConnectParams {
-        api_base: Some(String::from("https://named.example")),
-        api_version: Some(String::from("2025-01-01")),
-        realtime_protocol: Some(String::from("beta")),
-        ..RealtimeConnectParams::default()
-    };
-    let call = RealtimeConnectCall {
-        model: "azure_ai/my-deployment",
-        params: &named,
-        query_params: None,
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &settings, &call).await;
-    let RealtimeConnection::Azure(plan) = result.unwrap() else {
-        panic!("an azure_ai model must take the azure branch");
-    };
-    assert_eq!(plan.api_base.as_deref(), Some("https://named.example"));
-    assert_eq!(plan.api_version, "2025-01-01");
-    assert_eq!(plan.protocol, "beta");
-
-    let no_keys = RealtimeConnectionSettings {
-        azure_api_base: Some(String::from("https://azure.example")),
-        ..RealtimeConnectionSettings::default()
-    };
-    let ad_token = RealtimeConnectParams {
-        azure_ad_token: Some(secret("named-ad")),
-        tenant_id: Some(String::from("tenant-1")),
-        ..RealtimeConnectParams::default()
-    };
-    let dispatch = Recorder::with_ad_token(Some(secret("resolved-ad")));
-    let call = RealtimeConnectCall {
-        model: "azure/my-deployment",
-        params: &ad_token,
-        query_params: None,
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &no_keys, &call).await;
-    let RealtimeConnection::Azure(plan) = result.unwrap() else {
+fn assert_azure_global_arguments(connection: &RealtimeConnection<TestConfig>) {
+    let Branch::Azure {
+        api_version,
+        protocol,
+        azure_ad_token,
+    } = &connection.branch
+    else {
         panic!("an azure model must take the azure branch");
     };
-    assert_eq!(plan.api_base.as_deref(), Some("https://azure.example"));
-    assert_eq!(plan.api_key, None);
     assert_eq!(
-        plan.azure_ad_token
+        connection.args.api_base.as_deref(),
+        Some("https://global.example")
+    );
+    assert_eq!(
+        connection
+            .args
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("sk-global")
+    );
+    assert_eq!(api_version, "2024-10-01-preview");
+    assert_eq!(protocol, "GA");
+    assert_eq!(*azure_ad_token, None);
+    let ConnectionQuery::Connector(Some(query)) = &connection.args.query_params else {
+        panic!("the azure branch carries the connector query");
+    };
+    assert_eq!(
+        query.get("intent"),
+        Some(&Some(String::from("transcription")))
+    );
+}
+
+async fn azure_ad_token_fallback(litellm_params: &IndexMap<String, Json>) {
+    let mut no_keys = settings();
+    no_keys.azure_api_base = Some(String::from("https://azure.example"));
+    let mut ad_token = params();
+    ad_token.azure_ad_token = Some(secret("named-ad"));
+    ad_token.tenant_id = Some(String::from("tenant-1"));
+    let dispatch = Recorder::with_ad_token(Some(secret("resolved-ad")));
+    let call = call(
+        "azure/my-deployment",
+        &ad_token,
+        None,
+        litellm_params,
+        false,
+    );
+    let (_, result) = run(&dispatch, &no_keys, &call).await;
+    let connection = result.unwrap();
+    let Branch::Azure { azure_ad_token, .. } = &connection.branch else {
+        panic!("an azure model must take the azure branch");
+    };
+    assert_eq!(
+        connection.args.api_base.as_deref(),
+        Some("https://azure.example")
+    );
+    assert_eq!(connection.args.api_key, None);
+    assert_eq!(
+        azure_ad_token
             .as_ref()
             .map(|token| token.expose_secret().as_str()),
         Some("resolved-ad")
     );
+    assert_azure_ad_request(&dispatch);
+}
+
+fn assert_azure_ad_request(dispatch: &Recorder) {
     assert_eq!(
         *dispatch
             .ad_requests
@@ -559,185 +581,262 @@ async fn realtime_openai_and_azure_credentials() {
             Some(String::from("tenant-1"))
         )]
     );
+}
 
-    let openai = RealtimeConnectionSettings {
-        api_key: None,
-        openai_key: Some(secret("sk-openai-global")),
-        ..RealtimeConnectionSettings::default()
-    };
+async fn openai_credentials(dispatch: &Recorder, litellm_params: &IndexMap<String, Json>) {
+    let mut openai = settings();
+    openai.api_key = None;
+    openai.openai_key = Some(secret("sk-openai-global"));
     let connect = params();
-    let call = RealtimeConnectCall {
-        model: "openai/gpt-realtime",
-        params: &connect,
-        query_params: None,
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &openai, &call).await;
-    let RealtimeConnection::OpenAi(plan) = result.unwrap() else {
-        panic!("an openai model must take the openai branch");
-    };
-    assert_eq!(plan.api_base, "https://api.openai.com/");
+    let call = call("openai/gpt-realtime", &connect, None, litellm_params, false);
+    let (_, result) = run(dispatch, &openai, &call).await;
+    let connection = result.unwrap();
+    assert!(matches!(connection.branch, Branch::OpenAi));
     assert_eq!(
-        plan.api_key
+        connection.args.api_base.as_deref(),
+        Some("https://api.openai.com/")
+    );
+    assert_eq!(
+        connection
+            .args
+            .api_key
             .as_ref()
             .map(|key| key.expose_secret().as_str()),
         Some("sk-openai-global")
     );
 }
 
+async fn azure_named_version_and_protocol(
+    dispatch: &Recorder,
+    settings: &RealtimeConnectionSettings,
+    litellm_params: &IndexMap<String, Json>,
+) {
+    let mut named = params();
+    named.api_base = Some(String::from("https://named.example"));
+    named.api_version = Some(String::from("2025-01-01"));
+    named.realtime_protocol = Some(String::from("beta"));
+    let call = call(
+        "azure_ai/my-deployment",
+        &named,
+        None,
+        litellm_params,
+        false,
+    );
+    let (_, result) = run(dispatch, settings, &call).await;
+    let connection = result.unwrap();
+    let Branch::Azure {
+        api_version,
+        protocol,
+        ..
+    } = &connection.branch
+    else {
+        panic!("an azure_ai model must take the azure branch");
+    };
+    assert_eq!(
+        connection.args.api_base.as_deref(),
+        Some("https://named.example")
+    );
+    assert_eq!(api_version, "2025-01-01");
+    assert_eq!(protocol, "beta");
+}
+
 #[tokio::test]
 async fn realtime_bedrock_and_xai_arguments() {
     let dispatch = Recorder::default();
-    let litellm_params = empty_litellm_params();
-    let connect = RealtimeConnectParams {
-        api_base: Some(String::from("https://bedrock.example")),
-        api_key: Some(secret("bedrock-key")),
-        timeout: Some(30.0_f64),
-        aws_region_name: Some(String::from("us-east-1")),
-        aws_access_key_id: Some(secret("access")),
-        aws_secret_access_key: Some(secret("secret-access")),
-        aws_session_token: Some(secret("session")),
-        aws_role_name: Some(String::from("role")),
-        aws_session_name: Some(String::from("session-name")),
-        aws_profile_name: Some(String::from("profile")),
-        aws_web_identity_token: Some(secret("web-identity")),
-        aws_sts_endpoint: Some(String::from("https://sts.example")),
-        aws_bedrock_runtime_endpoint: Some(String::from("https://runtime.example")),
-        aws_external_id: Some(String::from("external")),
-        aws_session_tags: Some(text("tags")),
-        ..RealtimeConnectParams::default()
-    };
-    let call = RealtimeConnectCall {
-        model: "bedrock/amazon.nova-sonic-v1:0",
-        params: &connect,
-        query_params: None,
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &RealtimeConnectionSettings::default(), &call).await;
-    let RealtimeConnection::Bedrock(plan) = result.unwrap() else {
+    let litellm_params = IndexMap::new();
+    bedrock_full_arguments(&dispatch, &litellm_params).await;
+    bedrock_ignores_generic_and_global(&dispatch, &litellm_params).await;
+    xai_arguments(&dispatch, &litellm_params).await;
+}
+
+fn bedrock_params() -> RealtimeConnectParams {
+    let mut connect = params();
+    connect.api_base = Some(String::from("https://bedrock.example"));
+    connect.api_key = Some(secret("bedrock-key"));
+    connect.timeout = Some(30.0_f64);
+    connect.aws_region_name = Some(String::from("us-east-1"));
+    connect.aws_access_key_id = Some(secret("access"));
+    connect.aws_secret_access_key = Some(secret("secret-access"));
+    connect.aws_session_token = Some(secret("session"));
+    connect.aws_role_name = Some(String::from("role"));
+    connect.aws_session_name = Some(String::from("session-name"));
+    connect.aws_profile_name = Some(String::from("profile"));
+    connect.aws_web_identity_token = Some(secret("web-identity"));
+    connect.aws_sts_endpoint = Some(String::from("https://sts.example"));
+    connect.aws_bedrock_runtime_endpoint = Some(String::from("https://runtime.example"));
+    connect.aws_external_id = Some(String::from("external"));
+    connect.aws_session_tags = Some(text("tags"));
+    connect
+}
+
+async fn bedrock_full_arguments(dispatch: &Recorder, litellm_params: &IndexMap<String, Json>) {
+    let connect = bedrock_params();
+    let call = call(
+        "bedrock/amazon.nova-sonic-v1:0",
+        &connect,
+        None,
+        litellm_params,
+        false,
+    );
+    let (_, result) = run(dispatch, &settings(), &call).await;
+    let connection = result.unwrap();
+    let Branch::Bedrock(args) = &connection.branch else {
         panic!("a bedrock model must take the bedrock branch");
     };
-    assert_eq!(plan.api_base.as_deref(), Some("https://bedrock.example"));
     assert_eq!(
-        plan.api_key
+        connection.args.api_base.as_deref(),
+        Some("https://bedrock.example")
+    );
+    assert_eq!(
+        connection
+            .args
+            .api_key
             .as_ref()
             .map(|key| key.expose_secret().as_str()),
         Some("bedrock-key")
     );
-    assert_eq!(plan.timeout, Some(30.0_f64));
-    assert_eq!(plan.aws_region_name.as_deref(), Some("us-east-1"));
+    assert_eq!(connection.args.timeout, Some(30.0_f64));
+    assert_eq!(connection.args.headers, None);
+    assert_eq!(connection.args.litellm_metadata, None);
+    assert_eq!(connection.args.user_api_key_dict, None);
+    assert!(matches!(
+        connection.args.query_params,
+        ConnectionQuery::Omitted
+    ));
+    assert_bedrock_aws_arguments(args);
+}
+
+fn assert_bedrock_aws_arguments(args: &RealtimeConnectParams) {
+    assert_eq!(args.aws_region_name.as_deref(), Some("us-east-1"));
     assert_eq!(
-        plan.aws_access_key_id
+        args.aws_access_key_id
             .as_ref()
             .map(|key| key.expose_secret().as_str()),
         Some("access")
     );
     assert_eq!(
-        plan.aws_secret_access_key
+        args.aws_secret_access_key
             .as_ref()
             .map(|key| key.expose_secret().as_str()),
         Some("secret-access")
     );
     assert_eq!(
-        plan.aws_session_token
+        args.aws_session_token
             .as_ref()
             .map(|key| key.expose_secret().as_str()),
         Some("session")
     );
-    assert_eq!(plan.aws_role_name.as_deref(), Some("role"));
-    assert_eq!(plan.aws_session_name.as_deref(), Some("session-name"));
-    assert_eq!(plan.aws_profile_name.as_deref(), Some("profile"));
+    assert_eq!(args.aws_role_name.as_deref(), Some("role"));
+    assert_eq!(args.aws_session_name.as_deref(), Some("session-name"));
+    assert_eq!(args.aws_profile_name.as_deref(), Some("profile"));
     assert_eq!(
-        plan.aws_web_identity_token
+        args.aws_web_identity_token
             .as_ref()
             .map(|key| key.expose_secret().as_str()),
         Some("web-identity")
     );
     assert_eq!(
-        plan.aws_sts_endpoint.as_deref(),
+        args.aws_sts_endpoint.as_deref(),
         Some("https://sts.example")
     );
     assert_eq!(
-        plan.aws_bedrock_runtime_endpoint.as_deref(),
+        args.aws_bedrock_runtime_endpoint.as_deref(),
         Some("https://runtime.example")
     );
-    assert_eq!(plan.aws_external_id.as_deref(), Some("external"));
-    assert_eq!(plan.aws_session_tags, Some(text("tags")));
+    assert_eq!(args.aws_external_id.as_deref(), Some("external"));
+    assert_eq!(args.aws_session_tags, Some(text("tags")));
+}
 
-    let globals = RealtimeConnectionSettings {
-        api_base: Some(String::from("https://global.example")),
-        api_key: Some(secret("sk-global")),
-        ..RealtimeConnectionSettings::default()
-    };
-    let connect = RealtimeConnectParams {
-        generic_api_base: Some(String::from("https://generic.example")),
-        ..RealtimeConnectParams::default()
-    };
-    let call = RealtimeConnectCall {
-        model: "bedrock/amazon.nova-sonic-v1:0",
-        params: &connect,
-        query_params: None,
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &globals, &call).await;
-    let RealtimeConnection::Bedrock(plan) = result.unwrap() else {
-        panic!("a bedrock model must take the bedrock branch");
-    };
-    assert_eq!(plan.api_base, None);
-    assert_eq!(plan.api_key, None);
+async fn bedrock_ignores_generic_and_global(
+    dispatch: &Recorder,
+    litellm_params: &IndexMap<String, Json>,
+) {
+    let mut globals = settings();
+    globals.api_base = Some(String::from("https://global.example"));
+    globals.api_key = Some(secret("sk-global"));
+    let mut connect = params();
+    connect.generic_api_base = Some(String::from("https://generic.example"));
+    let call = call(
+        "bedrock/amazon.nova-sonic-v1:0",
+        &connect,
+        None,
+        litellm_params,
+        false,
+    );
+    let (_, result) = run(dispatch, &globals, &call).await;
+    let connection = result.unwrap();
+    assert_eq!(connection.args.api_base, None);
+    assert_eq!(connection.args.api_key, None);
+}
 
-    let xai = RealtimeConnectionSettings {
-        api_base: Some(String::from("https://global.example")),
-        api_key: Some(secret("sk-global")),
-        xai_key: Some(secret("xai-key")),
-        xai_api_base: Some(String::from("https://xai-env.example")),
-        xai_api_key: Some(secret("xai-env-key")),
-        ..RealtimeConnectionSettings::default()
-    };
-    let connect = RealtimeConnectParams {
-        api_base: Some(String::from("https://named.example")),
-        ..RealtimeConnectParams::default()
-    };
-    let call = RealtimeConnectCall {
-        model: "xai/grok-4",
-        params: &connect,
-        query_params: None,
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &xai, &call).await;
-    let RealtimeConnection::Xai(plan) = result.unwrap() else {
-        panic!("an xai model must take the xai branch");
-    };
-    assert_eq!(plan.api_base, "https://named.example");
+async fn xai_arguments(dispatch: &Recorder, litellm_params: &IndexMap<String, Json>) {
+    let mut xai = settings();
+    xai.api_base = Some(String::from("https://global.example"));
+    xai.api_key = Some(secret("sk-global"));
+    xai.xai_key = Some(secret("xai-key"));
+    xai.xai_api_base = Some(String::from("https://xai-env.example"));
+    xai.xai_api_key = Some(secret("xai-env-key"));
+    xai_named_arguments(dispatch, &xai, litellm_params).await;
+    xai_base_fallbacks(dispatch, &xai, litellm_params).await;
+}
+
+async fn xai_named_arguments(
+    dispatch: &Recorder,
+    xai: &RealtimeConnectionSettings,
+    litellm_params: &IndexMap<String, Json>,
+) {
+    let mut connect = params();
+    connect.api_base = Some(String::from("https://named.example"));
+    let connection = xai_connection(dispatch, xai, &connect, litellm_params).await;
+    assert!(matches!(connection.branch, Branch::Xai));
     assert_eq!(
-        plan.api_key
+        connection.args.api_base.as_deref(),
+        Some("https://named.example")
+    );
+    assert_eq!(
+        connection
+            .args
+            .api_key
             .as_ref()
             .map(|key| key.expose_secret().as_str()),
         Some("xai-key")
     );
+}
 
-    let connect = params();
-    let call = RealtimeConnectCall {
-        model: "xai/grok-4",
-        params: &connect,
-        query_params: None,
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &xai, &call).await;
-    let RealtimeConnection::Xai(plan) = result.unwrap() else {
-        panic!("an xai model must take the xai branch");
-    };
-    assert_eq!(plan.api_base, "https://api.x.ai/v1");
+async fn xai_base_fallbacks(
+    dispatch: &Recorder,
+    xai: &RealtimeConnectionSettings,
+    litellm_params: &IndexMap<String, Json>,
+) {
+    let connection = xai_connection(dispatch, xai, &params(), litellm_params).await;
+    assert_eq!(
+        connection.args.api_base.as_deref(),
+        Some("https://xai-env.example")
+    );
+    let mut without_environment_base = xai.clone();
+    without_environment_base.xai_api_base = None;
+    let connection = xai_connection(
+        dispatch,
+        &without_environment_base,
+        &params(),
+        litellm_params,
+    )
+    .await;
+    assert_eq!(
+        connection.args.api_base.as_deref(),
+        Some("https://api.x.ai/v1")
+    );
+}
+
+async fn xai_connection(
+    dispatch: &Recorder,
+    settings: &RealtimeConnectionSettings,
+    connect: &RealtimeConnectParams,
+    litellm_params: &IndexMap<String, Json>,
+) -> RealtimeConnection<TestConfig> {
+    let call = call("xai/grok-4", connect, None, litellm_params, false);
+    let (_, result) = run(dispatch, settings, &call).await;
+    result.unwrap()
 }
 
 #[tokio::test]
@@ -747,59 +846,94 @@ async fn realtime_vertex_credentials_and_refresh() {
         Ok((secret("token-b"), String::from("ignored-project"))),
     ]);
     let dispatch = Recorder::with_tokens(Arc::clone(&tokens));
-    let settings = RealtimeConnectionSettings {
-        vertex_project: Some(String::from("global-project")),
-        vertex_location: Some(String::from("global-region")),
-        vertexai_project: Some(String::from("env-project")),
-        vertexai_location: Some(String::from("env-region")),
-        vertexai_credentials: Some(text("env-credentials")),
-        ..RealtimeConnectionSettings::default()
-    };
+    let (settings, connect, named_credentials, query) = vertex_setup();
+    let connection = vertex_connection(&dispatch, &settings, &connect, &query).await;
+    assert_vertex_connection(&settings, &connection, tokens.as_ref(), &named_credentials).await;
+    assert_vertex_token_failures(tokens.as_ref()).await;
+}
+
+fn vertex_setup() -> (
+    RealtimeConnectionSettings,
+    RealtimeConnectParams,
+    Json,
+    IndexMap<String, String>,
+) {
+    let mut settings = settings();
+    settings.vertex_project = Some(String::from("global-project"));
+    settings.vertex_location = Some(String::from("global-region"));
+    settings.vertexai_project = Some(String::from("env-project"));
+    settings.vertexai_location = Some(String::from("env-region"));
+    settings.vertexai_credentials = Some(text("env-credentials"));
     let named_credentials = Json::Object(IndexMap::from([(
         String::from("type"),
         text("service_account"),
     )]));
-    let connect = RealtimeConnectParams {
-        vertex_credentials: Some(named_credentials.clone()),
-        vertex_project: Some(String::from("named-project")),
-        vertex_location: Some(String::from("")),
-        vertex_ai_location: Some(String::from("ai-location")),
-        timeout: Some(4.0_f64),
-        ..RealtimeConnectParams::default()
-    };
-    let litellm_params = empty_litellm_params();
+    let mut connect = params();
+    connect.vertex_credentials = Some(named_credentials.clone());
+    connect.vertex_project = Some(String::from("named-project"));
+    connect.vertex_location = Some(String::from(""));
+    connect.vertex_ai_location = Some(String::from("ai-location"));
+    connect.timeout = Some(4.0_f64);
     let query = IndexMap::from([(String::from("model"), String::from("gemini-live"))]);
-    let call = RealtimeConnectCall {
-        model: "vertex_ai/gemini-live",
-        params: &connect,
-        query_params: Some(&query),
-        client: None,
-        client_sent_beta: false,
-        litellm_params: &litellm_params,
-    };
-    let (_, result) = run(&dispatch, &settings, &call).await;
-    let RealtimeConnection::Vertex(plan) = result.unwrap() else {
+    (settings, connect, named_credentials, query)
+}
+
+async fn vertex_connection(
+    dispatch: &Recorder,
+    settings: &RealtimeConnectionSettings,
+    connect: &RealtimeConnectParams,
+    query: &IndexMap<String, String>,
+) -> RealtimeConnection<TestConfig> {
+    let litellm_params = IndexMap::new();
+    let call = call(
+        "vertex_ai/gemini-live",
+        connect,
+        Some(query),
+        &litellm_params,
+        false,
+    );
+    let (_, result) = run(dispatch, settings, &call).await;
+    result.unwrap()
+}
+
+async fn assert_vertex_connection(
+    settings: &RealtimeConnectionSettings,
+    connection: &RealtimeConnection<TestConfig>,
+    tokens: &ScriptedTokens,
+    named_credentials: &Json,
+) {
+    let Branch::Vertex {
+        access_token,
+        refresh,
+        project,
+        location,
+    } = &connection.branch
+    else {
         panic!("a vertex_ai model must take the vertex branch");
     };
     assert_eq!(settings.credential_timeout_seconds, 20.0_f64);
-    assert_eq!(plan.access_token.expose_secret(), "token-a");
-    assert_eq!(plan.project, "resolved-project");
-    assert_eq!(plan.location.as_deref(), Some("ai-location"));
-    assert_eq!(plan.transport.api_base, None);
-    assert_eq!(plan.transport.api_key, None);
-    assert_eq!(plan.transport.timeout, Some(4.0_f64));
-    assert_eq!(
-        plan.transport
-            .query_params
-            .as_ref()
-            .and_then(|query| query.get("model")),
-        Some(&String::from("gemini-live"))
-    );
+    assert_eq!(access_token.expose_secret(), "token-a");
+    assert_eq!(project, "resolved-project");
+    assert_eq!(location.as_deref(), Some("ai-location"));
+    assert_eq!(connection.args.api_base, None);
+    assert_eq!(connection.args.api_key, None);
+    assert_eq!(connection.args.timeout, Some(4.0_f64));
+    let ConnectionQuery::Transport(Some(query)) = &connection.args.query_params else {
+        panic!("the vertex transport carries the query");
+    };
+    assert_eq!(query.get("model"), Some(&String::from("gemini-live")));
     assert_eq!(
         *tokens.calls.lock().unwrap_or_else(PoisonError::into_inner),
-        vec![(Some(named_credentials), Some(String::from("named-project")))]
+        vec![(
+            Some(named_credentials.clone()),
+            Some(String::from("named-project"))
+        )]
     );
-    let refreshed = plan.refresh.resolve_access_token().await.unwrap();
+    assert_vertex_refresh(refresh, tokens).await;
+}
+
+async fn assert_vertex_refresh(refresh: &Arc<dyn AccessTokenResolver>, tokens: &ScriptedTokens) {
+    let refreshed = refresh.resolve_access_token().await.unwrap();
     assert_eq!(refreshed.expose_secret(), "token-b");
     let calls = tokens
         .calls
@@ -808,8 +942,10 @@ async fn realtime_vertex_credentials_and_refresh() {
         .clone();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[1].1.as_deref(), Some("resolved-project"));
+}
 
-    let timed_out = resolve_vertex_access_token_bounded(tokens.as_ref(), None, None, 0.0_f64)
+async fn assert_vertex_token_failures(tokens: &ScriptedTokens) {
+    let timed_out = resolve_vertex_token(tokens, None, None, 0.0_f64)
         .await
         .unwrap_err();
     assert_eq!(
@@ -819,7 +955,7 @@ async fn realtime_vertex_credentials_and_refresh() {
     let failures = ScriptedTokens::with(vec![Err(VertexTokenError {
         message: String::from("boom"),
     })]);
-    let failed = resolve_vertex_access_token_bounded(failures.as_ref(), None, None, 20.0_f64)
+    let failed = resolve_vertex_token(failures.as_ref(), None, None, 20.0_f64)
         .await
         .unwrap_err();
     assert_eq!(failed.to_string(), "boom");
