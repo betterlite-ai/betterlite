@@ -38,8 +38,7 @@ use crate::api::videos_http_transport::video_config::{
 
 pub(crate) const VIDEO_ID: &str = "video-1";
 pub(crate) const PROVIDER: &str = "gemini";
-pub(crate) const API_BASE: &str = "http://mock.test/v1";
-pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(6000);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_mins(100);
 pub(crate) const WIRE_BODY: &str = "video-bytes";
 
 #[derive(Clone, Default)]
@@ -466,7 +465,7 @@ impl VideoTransport for Wire {
                 value
                     .to_str()
                     .ok()
-                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
+                    .map(|header_text| (name.as_str().to_owned(), header_text.to_owned()))
             })
             .collect();
         self.seen

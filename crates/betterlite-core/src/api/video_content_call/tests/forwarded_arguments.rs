@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use super::support::{
     Bench, FakeProviders, Fixture, Journal, Outcome, RecordingConfig, VIDEO_ID, WIRE_BODY, Wire,
@@ -56,7 +57,7 @@ fn assert_provider_reached(
     assert_eq!(environments[0].model, "");
     assert_eq!(environments[0].api_key, None);
     let params = environments[0].litellm_params.as_ref();
-    assert!(params.is_some_and(|params| params.is_empty()));
+    assert!(params.is_some_and(IndexMap::is_empty));
     let environment_header = environments[0].headers.get("x-extra").map(String::as_str);
     assert_eq!(environment_header, Some("one"));
     assert!(caller.providers.source.calls().is_empty());

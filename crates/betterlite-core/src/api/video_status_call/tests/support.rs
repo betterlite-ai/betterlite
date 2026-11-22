@@ -47,7 +47,7 @@ use crate::api::video_status_transport::records::{
 
 pub(crate) const VIDEO_ID: &str = "video-1";
 pub(crate) const PROVIDER: &str = "gemini";
-pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(6000);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_mins(100);
 pub(crate) const MOCK_JSON: &str = r#"{"id":"mock-1","object":"video","status":"completed"}"#;
 
 #[derive(Clone, Default)]
