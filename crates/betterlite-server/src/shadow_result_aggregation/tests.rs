@@ -92,7 +92,7 @@ struct SliceRow {
     turns: i64,
     rates: (f64, f64, f64),
     confidence: f64,
-    spends: (f64, f64),
+    spends: (Decimal, Decimal),
     cache_hits: i64,
 }
 
@@ -106,8 +106,8 @@ fn slice(row: SliceRow) -> ShadowEvalSlice {
         shadow_win_rate_pct,
         tie_rate_pct,
         avg_judge_confidence: row.confidence,
-        real_spend: money(real_spend),
-        shadow_spend: money(shadow_spend),
+        real_spend,
+        shadow_spend,
         cache_hit_turns: row.cache_hits,
     }
 }
@@ -302,7 +302,7 @@ enum Behavior {
             turns: 4,
             rates: (75.0_f64, 25.0_f64, 0.0_f64),
             confidence: 0.875_f64,
-            spends: (0.1_f64, 0.2_f64),
+            spends: (money(0.1), money(0.2)),
             cache_hits: 1,
         }),
         slice(SliceRow {
@@ -310,7 +310,7 @@ enum Behavior {
             turns: 2,
             rates: (0.0_f64, 50.0_f64, 50.0_f64),
             confidence: 0.0_f64,
-            spends: (0.0_f64, 0.0_f64),
+            spends: (money(0.0), money(0.0)),
             cache_hits: 0,
         }),
         slice(SliceRow {
@@ -318,7 +318,7 @@ enum Behavior {
             turns: 2,
             rates: (100.0_f64, 0.0_f64, 0.0_f64),
             confidence: 0.5_f64,
-            spends: (0.3_f64, 0.0_f64),
+            spends: (money(0.3), money(0.0)),
             cache_hits: 2,
         }),
     ],

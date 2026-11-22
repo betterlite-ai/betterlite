@@ -171,11 +171,11 @@ fn verdict_group(
 }
 
 fn simple_tier() -> AttemptAggRow {
-    agg("simple", 2, (1, 0, 1), Some(0.625), (0.375, 0.625), 0)
+    agg("simple", 2, (1, 0, 1, 0), Some(0.625), (0.375, 0.625))
 }
 
 fn unclassified_tier() -> AttemptAggRow {
-    agg("UNCLASSIFIED", 1, (0, 1, 0), None, (0.0, 0.0), 1)
+    agg("UNCLASSIFIED", 1, (0, 1, 0, 1), None, (0.0, 0.0))
 }
 
 #[tokio::test]
