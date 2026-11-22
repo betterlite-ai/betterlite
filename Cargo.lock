@@ -3002,6 +3002,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "tokio-tungstenite",
@@ -4739,6 +4740,7 @@ dependencies = [
  "betterlite-server",
  "form_urlencoded",
  "libfuzzer-sys",
+ "rust_decimal",
  "serde_json",
 ]
 
