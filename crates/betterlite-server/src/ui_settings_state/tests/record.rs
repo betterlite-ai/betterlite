@@ -4,6 +4,7 @@ use betterlite_config::sections::settings::settings_resolution::FieldSource;
 use betterlite_config::sections::team_admin_fields::{
     MEMBER_KEY_BUDGETS_PERMISSION, PROJECTS_PERMISSION, SUPPORTED_TEAM_FIELDS,
 };
+use betterlite_config::ui_settings::{CLIENT_HEADERS_SETTING, PROVIDER_HEADERS_SETTING};
 use rstest::rstest;
 
 use super::support::{json, settings};
@@ -263,6 +264,19 @@ fn record_exclude_unset_keeps_a_field_the_caller_sent_at_its_default() {
         record.model_dump_exclude_unset(),
         settings(r#"{"enable_chat_ui": false}"#)
     );
+}
+
+#[test]
+fn schema_descriptions_keep_litellms_escaped_em_dash() {
+    let schema = ui_settings_schema();
+    let client = schema
+        .get(CLIENT_HEADERS_SETTING)
+        .expect("the schema lists the client headers field");
+    let provider = schema
+        .get(PROVIDER_HEADERS_SETTING)
+        .expect("the schema lists the provider headers field");
+    assert!(client.description.contains('\u{2014}'));
+    assert!(provider.description.contains('\u{2014}'));
 }
 
 #[test]
