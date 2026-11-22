@@ -470,7 +470,10 @@ fn price_failures() {
     let error = transform_image_edit_response(INPAINT, &upstream, NOW, &text_price)
         .expect_err("a non-numeric price fails");
     assert_eq!(error.status(), None);
-    assert!(matches!(error, StabilityEditError::Price(_)));
+    assert!(matches!(
+        error,
+        StabilityEditError::Price(ImageCostError::Rate(_))
+    ));
 
     for body in [
         r#"{"output_cost_per_image":[1]}"#,
