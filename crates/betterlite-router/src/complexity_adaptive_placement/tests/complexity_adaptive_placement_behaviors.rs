@@ -763,6 +763,17 @@ fn the_decision_merges_into_existing_request_metadata() {
     assert!(metadata.contains_key("adaptive_router_decision"));
 }
 
+// B374 keeps the pools sorted, so the union follows severity order whatever the YAML order was
+#[test]
+fn available_models_follow_severity_order_not_declaration_order() {
+    let pools: &[(&str, &[&str])] = &[("COMPLEX", &["big"]), ("SIMPLE", &["mini"])];
+    let facts = priced(&[("big", 2), ("mini", 1)]);
+    let router =
+        adaptive_service(adaptive_settings(true), pools, &facts, &[]).expect("the router builds");
+    let snapshot = router.snapshot().expect("adaptive builds a snapshot");
+    assert_eq!(snapshot.available_models, vec!["mini", "big"]);
+}
+
 #[test]
 fn the_snapshot_orders_cells_by_request_type_name_then_model() {
     let facts = priced(&[("mini", 1), ("mid", 2), ("big", 3)]);
