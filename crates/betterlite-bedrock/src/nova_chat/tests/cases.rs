@@ -418,6 +418,26 @@ fn direct_nova_endpoint() {
         .as_ref()
         .expect("the global key");
     assert_eq!(global_short_choice.expose_secret(), "global-key");
+    let blank_environment = BTreeMap::from([
+        (String::from("AMAZON_NOVA_API_BASE"), String::new()),
+        (String::from("AMAZON_NOVA_API_KEY"), String::new()),
+    ]);
+    let from_blank_environment = direct::resolve_endpoint(
+        NovaEndpointRequest {
+            api_base: None,
+            api_key: None,
+            global_api_key: None,
+            litellm_api_key: None,
+        },
+        &blank_environment,
+        &secrets,
+    )
+    .expect("an empty variable is unset");
+    assert_eq!(
+        from_blank_environment.api_base,
+        "https://api.nova.amazon.com/v1"
+    );
+    assert!(from_blank_environment.api_key.is_none());
 }
 
 fn nova_converse_delegation() {
