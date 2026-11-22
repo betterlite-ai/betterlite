@@ -143,6 +143,24 @@ async fn a_legacy_id_is_fired_as_the_caller_sent_it() {
 }
 
 #[tokio::test]
+async fn a_config_agent_fires_without_a_database() {
+    let fixture = Fixture::new();
+    fixture
+        .registry
+        .register(known_with_switch("agent-1", "Agent One", URL));
+    let reply = post(
+        fixture.state_without_database(),
+        &kill_switch_path("agent-1"),
+        &caller(ADMIN),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let fired = fixture.trigger.fired();
+    assert_eq!(fired[0].1.url, URL);
+    assert_eq!(events(&fixture.lookups).join(","), "registry");
+}
+
+#[tokio::test]
 async fn a_db_row_wins_over_the_registry() {
     let fixture = Fixture::new();
     fixture.rows.add(known_with_switch(
