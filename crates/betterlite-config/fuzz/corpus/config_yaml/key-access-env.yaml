@@ -1,0 +1,5 @@
+general_settings:
+  disable_custom_api_keys: os.environ/LITELLM_DISABLE_CUSTOM_API_KEYS
+litellm_settings:
+  key_generation_settings:
+    team_key_generation: {}
