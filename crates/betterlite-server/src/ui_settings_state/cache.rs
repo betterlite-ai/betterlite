@@ -23,10 +23,13 @@ pub enum UiSettingsReadError {
 }
 
 // get_ui_settings_cached: the cached dict comes back as stored, while a database read is sanitized.
-pub async fn get_ui_settings_cached<Memory: MemoryCacheOps>(
+pub async fn get_ui_settings_cached<Memory>(
     cache: &DualCache<Memory>,
     repository: Option<&dyn UiSettingsRepository>,
-) -> Result<UiSettingsDict, UiSettingsReadError> {
+) -> Result<UiSettingsDict, UiSettingsReadError>
+where
+    Memory: MemoryCacheOps,
+{
     let cached = cache.async_get_cache(UI_SETTINGS_CACHE_KEY, false).await;
     if let Some(settings) = cached.and_then(cached_settings) {
         return Ok(settings);

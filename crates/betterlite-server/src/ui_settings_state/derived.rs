@@ -35,10 +35,10 @@ impl PtuCostFlag for EnvironmentAttribution {
 }
 
 #[must_use]
-pub fn derived_ui_settings<Flag: PtuCostFlag>(
-    ptu: &Flag,
-    general_settings: &UiSettingsDict,
-) -> DerivedUiSettings {
+pub fn derived_ui_settings<Flag>(ptu: &Flag, general_settings: &UiSettingsDict) -> DerivedUiSettings
+where
+    Flag: PtuCostFlag,
+{
     DerivedUiSettings {
         enable_ptu_cost_attribution: ptu.enabled(),
         apply_user_budget_to_team_keys: matches!(
@@ -50,12 +50,15 @@ pub fn derived_ui_settings<Flag: PtuCostFlag>(
 
 // _ui_setting_source: the two derived keys report config on their own rules, the rest through source_for.
 #[must_use]
-pub fn ui_setting_source<Flag: PtuCostFlag>(
+pub fn ui_setting_source<Flag>(
     key: &str,
     value: &JsonValue,
     store: &SettingsStore,
     ptu: &Flag,
-) -> FieldSource {
+) -> FieldSource
+where
+    Flag: PtuCostFlag,
+{
     if key == PTU_COST_ATTRIBUTION_SETTING {
         if ptu.configured() || value == &JsonValue::Bool(true) {
             return FieldSource::Config;

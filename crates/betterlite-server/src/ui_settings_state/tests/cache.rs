@@ -10,7 +10,6 @@ use crate::ui_settings_state::cache::{
 };
 use crate::ui_settings_state::decode::{StoredUiSettingsError, decode_stored_ui_settings};
 use crate::ui_settings_state::projection::{GeneralSettingsTarget, apply_runtime_ui_flags};
-use crate::ui_settings_state::repository::UiSettingsRepository;
 use crate::ui_settings_state::values::decision_object;
 
 const ROW: &str = r#"{

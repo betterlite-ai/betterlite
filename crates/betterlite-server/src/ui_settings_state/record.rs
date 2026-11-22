@@ -1,14 +1,14 @@
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use betterlite_config::sections::settings::settings_rules::JsonValue;
+use betterlite_config::sections::team_admin_fields::EDITABLE_FIELDS_SETTING;
 use betterlite_config::ui_settings::{
     ALLOWED_UI_SETTINGS_FIELDS, CLIENT_HEADERS_SETTING, DISABLE_AGENTS_SETTING,
     DISABLE_CUSTOM_KEYS_SETTING, DISABLE_MODEL_ADD_SETTING, DISABLE_ORG_KEY_GENERATE,
-    DISABLE_TEAM_DELETE_SETTING, DISABLE_VECTOR_STORES_SETTING, EDITABLE_FIELDS_SETTING,
-    ENABLE_CHAT_UI_SETTING, HEALTH_DETAILS_SETTING, PAGES_SETTING, PROVIDER_HEADERS_SETTING,
-    PUBLIC_AI_HUB_AUTH_SETTING, TEAM_ADMIN_AGENTS_SETTING, TEAM_ADMIN_VECTOR_STORES,
-    USER_SEARCH_SCOPE_SETTING, UiSettingsDict,
+    DISABLE_TEAM_DELETE_SETTING, DISABLE_VECTOR_STORES_SETTING, ENABLE_CHAT_UI_SETTING,
+    HEALTH_DETAILS_SETTING, PAGES_SETTING, PROVIDER_HEADERS_SETTING, PUBLIC_AI_HUB_AUTH_SETTING,
+    TEAM_ADMIN_AGENTS_SETTING, TEAM_ADMIN_VECTOR_STORES, USER_SEARCH_SCOPE_SETTING, UiSettingsDict,
 };
 use serde::Serialize;
 use serde_json::Number;
@@ -214,7 +214,9 @@ fn number_bool(name: &'static str, number: &Number) -> Result<UiSettingFlag, UiS
         if value.partial_cmp(&1.0) == Some(Ordering::Equal) {
             return Ok(UiSettingFlag(true));
         }
-        if value.fract().partial_cmp(&0.0) == Some(Ordering::Equal) && i64::try_from(value).is_ok()
+        if value.fract().partial_cmp(&0.0) == Some(Ordering::Equal)
+            && value > f64::from(i64::MIN)
+            && value < f64::from(i64::MAX)
         {
             return Err(UiSettingsError {
                 kind: UiSettingErrorKind::BoolParsing,

@@ -15,10 +15,11 @@ pub fn apply_runtime_ui_flags(
 ) -> UiSettingsDict {
     let flags: UiSettingsDict = UI_SETTINGS_FIELDS
         .iter()
+        .copied()
         .filter_map(|key| {
             settings
                 .get(key)
-                .map(|value| ((*key).to_owned(), value.clone()))
+                .map(|value| (key.to_owned(), value.clone()))
         })
         .collect();
     match target {
