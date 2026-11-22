@@ -8,9 +8,13 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.types import Scope
 
-IS_ADMIN: Final = cast(Callable[[UserAPIKeyAuth], bool], agents_endpoints._is_proxy_admin)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L34-L38
-ENFORCE_KEY: Final = cast(Callable[[dict[str, JsonValue], UserAPIKeyAuth], None], agents_endpoints._enforce_caller_supplied_provider_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L41-L70
-MERGE_QUERY: Final = cast(Callable[[dict[str, JsonValue], Request], dict[str, JsonValue]], agents_endpoints._merge_query_params_into_data)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L73-L109
+AdminCheck: TypeAlias = Callable[[UserAPIKeyAuth], bool]
+EnforceKey: TypeAlias = Callable[[dict[str, JsonValue], UserAPIKeyAuth], None]
+MergeQuery: TypeAlias = Callable[[dict[str, JsonValue], Request], dict[str, JsonValue]]
+
+IS_ADMIN: Final[AdminCheck] = cast(AdminCheck, agents_endpoints._is_proxy_admin)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L34-L38
+ENFORCE_KEY: Final[EnforceKey] = cast(EnforceKey, agents_endpoints._enforce_caller_supplied_provider_key)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L41-L70
+MERGE_QUERY: Final[MergeQuery] = cast(MergeQuery, agents_endpoints._merge_query_params_into_data)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L73-L109
 
 AUTH: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 
