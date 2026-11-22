@@ -275,6 +275,7 @@ pub(super) fn text_dispatch() {
     let result = dispatch(&composition, Request::Text(Box::new(call)), &answer);
     text_request_shape(&answer, &result);
     text_post_call(&composition);
+    text_token_auth();
 }
 
 fn text_request_shape(answer: &Fixture, result: &AzureResult) {
@@ -333,6 +334,33 @@ fn text_post_call(composition: &Composition) {
     let plain_call = text_call(Object::new(), base_only(), false);
     let plain = prepare(composition, Request::Text(Box::new(plain_call))).expect("the text call");
     assert!(matches!(plain.mode, ReplyMode::Text { post_call: false }));
+}
+
+// LiteLLM's SDK call refuses a text azure_ad_token kwarg with a 500; the adapter sends it as the bearer token.
+fn text_token_auth() {
+    let credentials = Credentials {
+        api_base: Some(String::from(AZURE_BASE)),
+        api_version: Some(String::from("2024-10-21")),
+        api_key: Some(support::key("call-key")),
+        azure_ad_token: Some(support::key("call-token")),
+        ..support::credentials()
+    };
+    let answer = Fixture::ok(support::TEXT_REPLY);
+    let call = text_call(Object::new(), credentials, false);
+    let result = dispatch(
+        &support::composition(&[]),
+        Request::Text(Box::new(call)),
+        &answer,
+    );
+    assert_eq!(result.error, Json::Null);
+    let sent = answer.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(
+        support::header(&sent[0], "authorization"),
+        Some("Bearer call-token")
+    );
+    assert!(support::header(&sent[0], "api-key").is_none());
+    assert!(support::body_at(&sent[0], "azure_ad_token").is_none());
 }
 
 // An Azure call and an OpenAI call keep their own bases, versions, keys and headers, and the Azure token removal leaves OpenAI alone.
@@ -535,6 +563,7 @@ pub(super) fn config_ranks() {
     global_ranks(&composition);
     key_ranks(&mut composition);
     empty_values_fall_through();
+    empty_secrets_fall_through();
     version_default();
     token_pop();
     malformed_extra_body();
@@ -635,6 +664,22 @@ fn empty_values_fall_through() {
         resolve(&environment, credentials, Operation::Chat, Some("gpt-4o")).expect("the env ranks");
     assert_eq!(resolved.api_base.as_deref(), Some("env-base"));
     assert_eq!(resolved.api_version.as_deref(), Some("env-version"));
+}
+
+// an empty environment secret counts as unset, so the next key rank fills it and no token is resolved
+fn empty_secrets_fall_through() {
+    let environment = support::composition(&[
+        ("AZURE_OPENAI_API_KEY", ""),
+        ("AZURE_API_KEY", "fallback-key"),
+        ("AZURE_AD_TOKEN", ""),
+    ]);
+    let resolved = resolve(&environment, base_only(), Operation::Chat, Some("gpt-4o"))
+        .expect("the empty environment secrets");
+    assert_eq!(
+        resolved.api_key.as_ref().map(SecretString::expose_secret),
+        Some("fallback-key")
+    );
+    assert!(resolved.azure_ad_token.is_none());
 }
 
 // chat alone falls back to the api-version default
