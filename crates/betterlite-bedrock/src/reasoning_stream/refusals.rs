@@ -6,7 +6,7 @@ use indexmap::IndexSet;
 use crate::model_routes::catalog::openai_gpt_version;
 use crate::model_routes::{ModelRouteSelector, ParamMap, ParamValue, RouteError};
 
-const REFUSED_BY_FAMILY: [(&str, &[&str]); 2] = [
+const REFUSED_BY_FAMILY: &[(&str, &[&str])] = &[
     ("openai.gpt-oss", &["logit_bias"]),
     ("xai.", &["frequency_penalty", "presence_penalty"]),
 ];
@@ -18,35 +18,32 @@ const REFUSED_WHILE_REASONING: [&str; 6] = [
     "logprobs",
     "top_logprobs",
 ];
-const REFUSED_EFFORTS_BY_FAMILY: [(&str, &[&str]); 1] = [("xai.", &["none"])];
+const REFUSED_EFFORTS_BY_FAMILY: &[(&str, &[&str])] = &[("xai.", &["none"])];
 const EFFORT_KEY: &str = "reasoning_effort";
+
+#[must_use]
+fn union_by_family(model_id: &str, table: &[(&str, &[&str])]) -> BTreeSet<String> {
+    let mut values = BTreeSet::new();
+    for (family, names) in table {
+        if model_id.contains(*family) {
+            for name in *names {
+                values.insert(String::from(*name));
+            }
+        }
+    }
+    values
+}
 
 #[must_use]
 pub fn params_refused_for(model: &str) -> BTreeSet<String> {
     let (_, model_id) = split_bedrock_region_path(model);
-    let mut refused = BTreeSet::new();
-    for (family, names) in REFUSED_BY_FAMILY {
-        if model_id.contains(family) {
-            for name in names {
-                refused.insert((*name).to_owned());
-            }
-        }
-    }
-    refused
+    union_by_family(&model_id, REFUSED_BY_FAMILY)
 }
 
 #[must_use]
 pub fn reasoning_efforts_refused_for(model: &str) -> BTreeSet<String> {
     let (_, model_id) = split_bedrock_region_path(model);
-    let mut refused = BTreeSet::new();
-    for (family, efforts) in REFUSED_EFFORTS_BY_FAMILY {
-        if model_id.contains(family) {
-            for effort in efforts {
-                refused.insert((*effort).to_owned());
-            }
-        }
-    }
-    refused
+    union_by_family(&model_id, REFUSED_EFFORTS_BY_FAMILY)
 }
 
 #[must_use]

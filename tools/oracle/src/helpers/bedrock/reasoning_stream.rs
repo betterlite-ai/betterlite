@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use betterlite_bedrock::model_routes::{ParamMap, RouteError};
 use betterlite_bedrock::reasoning_stream::refusals::{
     non_string_reasoning_effort, params_refused_for, params_refused_while_reasoning,
@@ -69,10 +67,6 @@ impl Helper for Op {
             Step::Buffered { reply, headers } => buffered::run(reply, headers),
         }
     }
-}
-
-fn sorted(names: BTreeSet<String>) -> Vec<String> {
-    names.into_iter().collect()
 }
 
 fn view(state: &ReasoningTagState, reasoning: &str, content: &str) -> Value {
@@ -161,8 +155,8 @@ fn effort(model: &str, params: &ParamMap) -> HelperResult {
     let refused =
         params_refused_while_reasoning(model, params).map_err(|error| route_error(&error))?;
     Ok(json!({
-        "non_string": sorted(non_string_reasoning_effort(params)),
-        "refused_while_reasoning": sorted(refused),
+        "non_string": non_string_reasoning_effort(params),
+        "refused_while_reasoning": refused,
     }))
 }
 
@@ -172,8 +166,8 @@ fn refusals(models: &[String], params: &ParamMap) -> Value {
         .map(|model| {
             json!({
                 "model": model,
-                "refused_params": sorted(params_refused_for(model)),
-                "refused_efforts": sorted(reasoning_efforts_refused_for(model)),
+                "refused_params": params_refused_for(model),
+                "refused_efforts": reasoning_efforts_refused_for(model),
                 "without_refused_effort": without_refused_effort(model, params),
             })
         })
