@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Coroutine
-from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast, runtime_checkable
 
 import httpx
 import litellm
@@ -187,7 +187,7 @@ def settle(result: ReadResult) -> JsonValue:
 
 
 def placeholder(error: BadRequestError) -> Placeholder:
-    raised: ProviderFailure = error
+    raised = cast(ProviderFailure, error)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219
     request = error.response.request
     return Placeholder(
         body=error.response.text,
