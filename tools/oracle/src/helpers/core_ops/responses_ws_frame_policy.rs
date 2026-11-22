@@ -28,41 +28,70 @@ use self::views::{failure_status, quota_view, sets_view, wrap_view};
 type Replacements = Vec<IndexMap<String, String>>;
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct QuotaStep {
+    message: String,
+    authorized_model: Option<String>,
+    verdicts: Vec<Verdict>,
+    refuse_send: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CreateStep {
+    message: String,
+    authorized_model: Option<String>,
+    defaults: Option<WsRequestDefaults<Json>>,
+    guardrails: Replacements,
+    request_data: IndexMap<String, Json>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UnmaskStep {
+    message: String,
+    guardrails: usize,
+    request_data: IndexMap<String, Json>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CompletedStep {
+    message: String,
+    guardrails: Replacements,
+    request_data: IndexMap<String, Json>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct FailureStep {
+    events: Vec<IndexMap<String, Json>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WrapStep {
+    litellm_metadata: Json,
+    event: IndexMap<String, Json>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SetsStep {
+    candidates: Vec<String>,
+}
+
+// each step is boxed so every variant carries a pointer, well within the 3x variant_size_differences enforces
+#[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Step {
-    Quota {
-        message: String,
-        authorized_model: Option<String>,
-        verdicts: Vec<Verdict>,
-        refuse_send: bool,
-    },
-    Create {
-        message: String,
-        authorized_model: Option<String>,
-        defaults: Option<WsRequestDefaults<Json>>,
-        guardrails: Replacements,
-        request_data: IndexMap<String, Json>,
-    },
-    Unmask {
-        message: String,
-        guardrails: usize,
-        request_data: IndexMap<String, Json>,
-    },
-    Completed {
-        message: String,
-        guardrails: Replacements,
-        request_data: IndexMap<String, Json>,
-    },
-    Failure {
-        events: Vec<IndexMap<String, Json>>,
-    },
-    Wrap {
-        litellm_metadata: Json,
-        event: IndexMap<String, Json>,
-    },
-    Sets {
-        candidates: Vec<String>,
-    },
+    Quota(Box<QuotaStep>),
+    Create(Box<CreateStep>),
+    Unmask(Box<UnmaskStep>),
+    Completed(Box<CompletedStep>),
+    Failure(Box<FailureStep>),
+    Wrap(Box<WrapStep>),
+    Sets(Box<SetsStep>),
 }
 
 #[derive(Deserialize)]
@@ -88,21 +117,23 @@ impl Helper for Op {
 
 async fn answer(step: &Step) -> HelperResult {
     match step {
-        Step::Quota {
-            message,
-            authorized_model,
-            verdicts,
-            refuse_send,
-        } => quota_view(message, authorized_model.as_deref(), verdicts, *refuse_send).await,
-        Step::Create { .. } => create_view(step).await,
-        Step::Unmask { .. } => unmask_view(step),
-        Step::Completed { .. } => completed_view(step).await,
-        Step::Failure { events } => Ok(Value::Array(events.iter().map(failure_status).collect())),
-        Step::Wrap {
-            litellm_metadata,
-            event,
-        } => Ok(json!(wrap_view(event, litellm_metadata))),
-        Step::Sets { candidates } => Ok(sets_view(candidates)),
+        Step::Quota(fields) => {
+            quota_view(
+                &fields.message,
+                fields.authorized_model.as_deref(),
+                &fields.verdicts,
+                fields.refuse_send,
+            )
+            .await
+        }
+        Step::Create(_) => create_view(step).await,
+        Step::Unmask(_) => unmask_view(step),
+        Step::Completed(_) => completed_view(step).await,
+        Step::Failure(fields) => Ok(Value::Array(
+            fields.events.iter().map(failure_status).collect(),
+        )),
+        Step::Wrap(fields) => Ok(json!(wrap_view(&fields.event, &fields.litellm_metadata))),
+        Step::Sets(fields) => Ok(sets_view(&fields.candidates)),
     }
 }
 
@@ -151,40 +182,33 @@ impl Probe {
 }
 
 async fn create_view(step: &Step) -> HelperResult {
-    let Step::Create {
-        message,
-        authorized_model,
-        defaults,
-        guardrails,
-        request_data,
-    } = step
-    else {
+    let Step::Create(fields) = step else {
         return Err(wrong_step("create"));
     };
-    let mut probe = Probe::start(request_data)?;
+    let mut probe = Probe::start(&fields.request_data)?;
     let echo = |text: &str, _pii_tokens: &IndexMap<String, String>| text.to_owned();
-    let inputs = guards(guardrails, &probe.calls, &echo);
+    let inputs = guards(&fields.guardrails, &probe.calls, &echo);
     let outcome = mask_response_create(
-        &frame_policy(&inputs, &[], authorized_model.as_deref(), defaults.as_ref()),
+        &frame_policy(
+            &inputs,
+            &[],
+            fields.authorized_model.as_deref(),
+            fields.defaults.as_ref(),
+        ),
         &mut probe.data,
-        message,
+        &fields.message,
     )
     .await;
     Ok(probe.report(outcome))
 }
 
 fn unmask_view(step: &Step) -> HelperResult {
-    let Step::Unmask {
-        message,
-        guardrails,
-        request_data,
-    } = step
-    else {
+    let Step::Unmask(fields) = step else {
         return Err(wrong_step("unmask"));
     };
-    let probe = Probe::start(request_data)?;
-    let mut unmaskers: Vec<Box<UnmaskPiiText>> = Vec::with_capacity(*guardrails);
-    for index in 0..*guardrails {
+    let probe = Probe::start(&fields.request_data)?;
+    let mut unmaskers: Vec<Box<UnmaskPiiText>> = Vec::with_capacity(fields.guardrails);
+    for index in 0..fields.guardrails {
         unmaskers.push(Box::new(recording_unmask(index, &probe.calls)));
     }
     let inputs: Vec<InputGuardrail<'_, Guard>> = unmaskers
@@ -200,22 +224,17 @@ fn unmask_view(step: &Step) -> HelperResult {
         })
         .collect();
     let policy = frame_policy(&inputs, &[], None, None);
-    let outcome = unmask_response_event(&policy, &probe.data, message);
+    let outcome = unmask_response_event(&policy, &probe.data, &fields.message);
     Ok(probe.report(outcome))
 }
 
 async fn completed_view(step: &Step) -> HelperResult {
-    let Step::Completed {
-        message,
-        guardrails,
-        request_data,
-    } = step
-    else {
+    let Step::Completed(fields) = step else {
         return Err(wrong_step("completed"));
     };
-    let probe = Probe::start(request_data)?;
-    let mut outputs = Vec::with_capacity(guardrails.len());
-    for (index, replacements) in guardrails.iter().enumerate() {
+    let probe = Probe::start(&fields.request_data)?;
+    let mut outputs = Vec::with_capacity(fields.guardrails.len());
+    for (index, replacements) in fields.guardrails.iter().enumerate() {
         outputs.push(Guard {
             index,
             replacements: replacements.clone(),
@@ -223,7 +242,7 @@ async fn completed_view(step: &Step) -> HelperResult {
         });
     }
     let policy = frame_policy(&[], &outputs, None, None);
-    let outcome = mask_response_completed(&policy, &probe.data, message).await;
+    let outcome = mask_response_completed(&policy, &probe.data, &fields.message).await;
     Ok(probe.report(outcome))
 }
 
