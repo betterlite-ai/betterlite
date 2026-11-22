@@ -27,7 +27,7 @@ pub(super) fn integer(value: i64) -> Json {
     Json::Number(Number::from(value))
 }
 
-// The endpoint hands option values over through the same conversion, so a JSON list stays a list here too.
+// Option values arrive through this conversion at the adapter boundary, so a JSON list stays a list here too.
 pub(super) fn options(entries: &[(&str, Json)]) -> EditOptions {
     entries
         .iter()
