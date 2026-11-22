@@ -120,8 +120,7 @@ where
         encrypted: bool,
     ) -> Option<SecretCredential> {
         let secret = stored.as_ref()?.as_ref()?;
-        let text =
-            self.decrypt_credential_field(Some(secret.0.expose_secret().as_str()), key, encrypted)?;
+        let text = self.decrypt_credential_field(Some(secret.0.expose_secret()), key, encrypted)?;
         Some(SecretCredential(StoredSecret(SecretString::from(text))))
     }
 }
@@ -168,7 +167,7 @@ fn apply_secret_fields<D, F, S, R>(
                 .client_private_key
                 .as_ref()
                 .and_then(Option::as_ref)
-                .map(|secret| secret.0.expose_secret().as_str()),
+                .map(|secret| secret.0.expose_secret()),
             "client_private_key",
             encrypted,
         )

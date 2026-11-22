@@ -154,7 +154,7 @@ fn encrypt(cipher: &DbCipher, plaintext: &str) -> String {
         .encrypt_value(StoredValue::<()>::Text(SecretString::from(plaintext)), None)
         .unwrap();
     match sealed {
-        StoredValue::Text(text) => text.expose_secret().clone(),
+        StoredValue::Text(text) => text.expose_secret().to_owned(),
         StoredValue::Other(()) => String::new(),
     }
 }
@@ -170,7 +170,7 @@ fn json(text: &str) -> JsonValue {
 fn secret_text(credential: &Option<SecretCredential>) -> Option<String> {
     credential
         .as_ref()
-        .map(|secret| secret.0.0.expose_secret().clone())
+        .map(|secret| secret.0.0.expose_secret().to_owned())
 }
 
 fn row(source: &str) -> McpServerTable {

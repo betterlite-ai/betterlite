@@ -73,7 +73,7 @@ impl Decryptor for DbCipher {
     fn decrypt(&self, value: &str, key: &str) -> String {
         let stored = StoredValue::<()>::Text(SecretString::from(value));
         match self.decrypt_value(stored, key, KEEP_ORIGINAL) {
-            Some(StoredValue::Text(plaintext)) => plaintext.expose_secret().clone(),
+            Some(StoredValue::Text(plaintext)) => plaintext.expose_secret().to_owned(),
             Some(StoredValue::Other(())) | None => value.to_owned(),
         }
     }
@@ -103,12 +103,12 @@ where
     }
 }
 
-pub struct ServerBuilder<'a, D, F, S, R> {
-    pub decryptor: &'a D,
-    pub env_cipher: &'a DbCipher,
-    pub fetcher: &'a F,
-    pub settings: &'a DiscoverySettings,
-    pub stdio: &'a S,
-    pub slots: &'a R,
+pub struct ServerBuilder<'collaborators, D, F, S, R> {
+    pub decryptor: &'collaborators D,
+    pub env_cipher: &'collaborators DbCipher,
+    pub fetcher: &'collaborators F,
+    pub settings: &'collaborators DiscoverySettings,
+    pub stdio: &'collaborators S,
+    pub slots: &'collaborators R,
     pub prefixes: PrefixPolicy,
 }

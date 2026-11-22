@@ -5,6 +5,7 @@ use betterlite_db::managed_resource_rows::wire::{RowTimestamp, SecretMap};
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_db::mcp_stored_contracts::pinned::MCPInfo;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use rust_decimal::Decimal;
 use secrecy::ExposeSecret as _;
 
 use super::BuildError;
@@ -91,7 +92,7 @@ fn apply_row_flags(fields: &mut ServerFields, row: &McpServerTable) {
         .byok_api_key_help_url
         .clone_from(&row.byok_api_key_help_url);
     fields.source_url.clone_from(&row.source_url);
-    fields.timeout = row.timeout.and_then(|value| value.to_f64());
+    fields.timeout = row.timeout.as_ref().map(Decimal::as_f64);
     fields.max_concurrent_requests = row.max_concurrent_requests;
 }
 
