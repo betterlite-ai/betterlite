@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::env;
 
 use betterlite_azure::resource_urls::{AzureResource, UrlRequest};
 use betterlite_openai::openai_base_config::Object;
@@ -21,8 +20,12 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = runtime()?;
     let mut urls = Vec::with_capacity(input.urls.len());
     for step in &input.urls {
-        let from_env = env::var("AZURE_API_BASE").ok();
-        let fallback = step.module.api_base.clone().or(from_env);
+        // the step's environment stands in for os.environ, which the Python helper sets for its call
+        let fallback = step
+            .module
+            .api_base
+            .clone()
+            .or_else(|| step.environment.get("AZURE_API_BASE").cloned());
         let request = UrlRequest {
             api_base: step.api_base.as_deref(),
             fallback_api_base: fallback.as_deref(),

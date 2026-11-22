@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use betterlite_azure::assistants::error::AssistantsError;
 use betterlite_azure::azure_assistant_definitions::error::DefinitionsError;
 use betterlite_azure::azure_assistant_definitions::operations::{
     AssistantsApi, DefinitionCall, DefinitionReply,
 };
+use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::records::AssistantCreate;
-use betterlite_provider::azure_resource_dispatch::assistants::{self, DefinitionsDispatch};
+use betterlite_provider::azure_resource_dispatch::assistants::DefinitionsDispatch;
 use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };

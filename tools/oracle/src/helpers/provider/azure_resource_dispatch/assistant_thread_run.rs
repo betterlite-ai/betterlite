@@ -9,15 +9,12 @@ use betterlite_azure::azure_assistant_definitions::operations::ClientRequest;
 use betterlite_azure::azure_urls::AuthParams;
 use betterlite_azure::endpoints::projection::{LiteLlmParams, SessionKind};
 use betterlite_config::sections::azure_endpoints::Settings;
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
-use super::support::NoSources;
-
-pub(super) type Answer = Result<(&'static str, Value), Box<HelperError>>;
+use super::support::{Answer, NoSources};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Input {

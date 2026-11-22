@@ -6,7 +6,7 @@ use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::records::RunRequest;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::azure_resource_dispatch::assistants::{
-    self, RunEvents, RunOutcome, RunsDispatch,
+    RunEvents, RunOutcome, RunsDispatch,
 };
 use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,

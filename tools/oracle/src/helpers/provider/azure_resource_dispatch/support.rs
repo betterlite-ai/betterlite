@@ -8,9 +8,8 @@ use betterlite_azure::credentials::source::{
     CallableTokenProvider, CredentialSources, SourceFailure,
 };
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
-use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::{OutboundRequest, merge_query};
+use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::files::transport::{FileTransport, StreamReply};
@@ -21,10 +20,14 @@ use betterlite_oracle_helper_api::error::HelperError;
 use futures_util::stream::iter;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
+use serde_json::Value;
 use tokio::runtime::{Builder, Runtime};
 
 // Reached only if an operation and the result variant it reads back ever disagree
 pub(super) const OTHER: &str = "the dispatch returned another outcome";
+
+// What one step reports back: its kind and the JSON the Python adapter answers with the same call
+pub(super) type Answer = Result<(&'static str, Value), Box<HelperError>>;
 
 pub(super) fn failure<M>(message: M) -> Box<HelperError>
 where
@@ -73,15 +76,6 @@ impl Reply {
         }
     }
 
-    pub(super) fn polled(body: &str) -> Self {
-        let mut reply = Self::json(200, body);
-        reply.headers.insert(
-            HeaderName::from_static("openai-poll-after-ms"),
-            HeaderValue::from_static("0"),
-        );
-        reply
-    }
-
     pub(super) fn upstream(&self) -> UpstreamResponse {
         UpstreamResponse {
             status: self.status,
@@ -91,67 +85,28 @@ impl Reply {
     }
 }
 
-// The request a fake transport received, narrowed to what the compared answer reads
-#[derive(Debug, Clone)]
-pub(super) struct Seen {
-    pub(super) method: String,
-    pub(super) url: String,
-}
-
-impl Seen {
-    fn of(request: &OutboundRequest) -> Self {
-        let mut url = request.url.clone();
-        merge_query(&mut url, &request.query);
-        Self {
-            method: request.method.as_str().to_owned(),
-            url: url.as_str().to_owned(),
-        }
-    }
-}
-
 pub(super) struct FileFake {
     pub(super) reply: Reply,
-    pub(super) seen: Mutex<Vec<Seen>>,
 }
 
 impl FileFake {
-    pub(super) fn new(reply: Reply) -> Self {
-        Self {
-            reply,
-            seen: Mutex::new(Vec::new()),
-        }
-    }
-
-    pub(super) fn first(&self) -> Option<Seen> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .first()
-            .cloned()
-    }
-
-    fn record(&self, request: OutboundRequest) {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Seen::of(&request));
+    pub(super) const fn new(reply: Reply) -> Self {
+        Self { reply }
     }
 }
 
 impl FileTransport for FileFake {
     fn send_buffered(
         &self,
-        request: OutboundRequest,
+        _request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.record(request);
         ready(Ok(self.reply.upstream()))
     }
 
     fn send_stream(
         &self,
-        request: OutboundRequest,
+        _request: OutboundRequest,
     ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
-        self.record(request);
         ready(Err(TransportError::Closed))
     }
 }
@@ -159,29 +114,13 @@ impl FileTransport for FileFake {
 // One queued reply per request: a polled run sends its create and each poll, a streamed one a single body
 pub(super) struct AssistantsFake {
     replies: Mutex<VecDeque<Reply>>,
-    pub(super) seen: Mutex<Vec<Seen>>,
 }
 
 impl AssistantsFake {
     pub(super) fn new(replies: Vec<Reply>) -> Self {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
-            seen: Mutex::new(Vec::new()),
         }
-    }
-
-    pub(super) fn requests(&self) -> Vec<Seen> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    fn record(&self, request: &OutboundRequest) {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Seen::of(request));
     }
 
     fn next(&self) -> Reply {
@@ -196,9 +135,8 @@ impl AssistantsFake {
 impl AssistantsTransport for AssistantsFake {
     fn send(
         &self,
-        request: OutboundRequest,
+        _request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.record(&request);
         ready(Ok(self.next().upstream()))
     }
 }
@@ -206,9 +144,8 @@ impl AssistantsTransport for AssistantsFake {
 impl RunStreamTransport for AssistantsFake {
     fn open(
         &self,
-        request: OutboundRequest,
+        _request: OutboundRequest,
     ) -> impl Future<Output = Result<RunChunks, ThreadRunsError>> + Send {
-        self.record(&request);
         let reply = self.next();
         ready(if reply.status >= 400 {
             Err(ThreadRunsError::Status(
@@ -274,17 +211,5 @@ impl CredentialSources for NoSources {
 
     fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
         Err(unavailable())
-    }
-}
-
-pub(super) fn credentials() -> DeploymentSettings {
-    DeploymentSettings {
-        azure_ad_token: None,
-        tenant_id: None,
-        client_id: None,
-        client_secret: None,
-        azure_scope: String::from("https://cognitiveservices.azure.com/.default"),
-        azure_username: None,
-        azure_password: None,
     }
 }

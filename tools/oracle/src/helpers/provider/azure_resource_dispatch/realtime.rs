@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::env;
 
 use betterlite_azure::realtime::connect::RealtimeConnectSettings;
 use betterlite_azure::realtime::http_config::RealtimeHttpSettings;
@@ -27,7 +26,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         connects.push(connect(&runtime, input, step)?);
     }
     for step in &input.http_setups {
-        http.push(http_view(&runtime, step)?);
+        http.push(http_view(&runtime, input, step)?);
     }
     Ok(json!({"connects": connects, "http": http}))
 }
@@ -37,6 +36,12 @@ pub(crate) struct Input {
     pub(super) model: String,
     #[serde(default)]
     pub(super) max_message_size_bytes: Option<u64>,
+    #[serde(default)]
+    pub(super) azure_api_base: Option<String>,
+    #[serde(default)]
+    pub(super) azure_api_key: Option<String>,
+    #[serde(default)]
+    pub(super) azure_api_version: Option<String>,
     #[serde(default)]
     pub(super) queries: Vec<QuerySetup>,
     #[serde(default)]
@@ -101,13 +106,17 @@ fn connect(runtime: &Runtime, input: &Input, step: &QuerySetup) -> Result<Value,
     }))
 }
 
-fn http_view(runtime: &Runtime, step: &HttpSetup) -> Result<Value, Box<HelperError>> {
+fn http_view(
+    runtime: &Runtime,
+    input: &Input,
+    step: &HttpSetup,
+) -> Result<Value, Box<HelperError>> {
     let settings = RealtimeHttpSettings {
         litellm_api_base: step.litellm_api_base.clone(),
         litellm_api_key: step.litellm_api_key.clone().map(SecretString::from),
-        azure_api_base: env::var("AZURE_API_BASE").ok(),
-        azure_api_key: env::var("AZURE_API_KEY").ok().map(SecretString::from),
-        azure_api_version: env::var("AZURE_API_VERSION").ok(),
+        azure_api_base: input.azure_api_base.clone(),
+        azure_api_key: input.azure_api_key.clone().map(SecretString::from),
+        azure_api_version: input.azure_api_version.clone(),
     };
     let base = settings.api_base(step.api_base.as_deref());
     let key = settings.api_key(step.api_key.as_deref());

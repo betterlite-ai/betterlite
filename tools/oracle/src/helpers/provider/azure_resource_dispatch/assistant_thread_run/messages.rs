@@ -7,7 +7,7 @@ use betterlite_azure::azure_message_attachments::operations::{
 };
 use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::records::ThreadMessageData;
-use betterlite_provider::azure_resource_dispatch::assistants::{self, MessagesDispatch};
+use betterlite_provider::azure_resource_dispatch::assistants::MessagesDispatch;
 use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };

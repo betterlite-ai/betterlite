@@ -4,7 +4,7 @@ use betterlite_azure::azure_thread_messages::error::ThreadMessagesError;
 use betterlite_azure::azure_thread_messages::operations::{ThreadMessagesApi, ThreadOperation};
 use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::records::ThreadCreate;
-use betterlite_provider::azure_resource_dispatch::assistants::{self, ThreadsDispatch};
+use betterlite_provider::azure_resource_dispatch::assistants::ThreadsDispatch;
 use betterlite_provider::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
