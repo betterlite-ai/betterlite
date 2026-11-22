@@ -24,9 +24,9 @@ FLAG: TypeAdapter[bool] = TypeAdapter(bool)
 MESSAGES: TypeAdapter[list[JsonValue] | None] = TypeAdapter(list[JsonValue] | None)
 RECORD: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 RESULT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+HEADERS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
-# The three litellm.a* attributes the four probed modes call, typed as the async calls a health check
-# makes; the wildcard helper imports acompletion itself, so the attribute carries the fake too.
+# the three litellm.a* attributes the probe calls, faked here as async callables
 HEALTH_CHECK: Callable[[dict[str, JsonValue], str | None, str | None, list[str] | None], Awaitable[dict[str, JsonValue]]] = litellm.main.ahealth_check  # noqa: E501  # pyright: ignore[reportAssignmentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8725-L8831
 
 
@@ -59,8 +59,7 @@ class Input(TypedDict):
     steps: list[EntryStep]
 
 
-# The provider resolver ahealth_check calls: it answers the scripted resolution and records what it asked,
-# or raises the missing-provider error B174's ResolutionError gives.
+# the resolver ahealth_check calls: it records what it asked and answers the scripted resolution
 class ScriptedResolution:
     def __init__(self, answer: ResolutionAnswer | None) -> None:
         self.answer = answer
@@ -87,7 +86,10 @@ class ScriptedResolution:
 
 class ProbeReply:
     def __init__(self, headers: dict[str, str] | None) -> None:
-        self._hidden_params: dict[str, JsonValue] = {} if headers is None else {"headers": headers}
+        params: dict[str, JsonValue] = {}
+        if headers is not None:
+            params["headers"] = HEADERS.validate_python(headers)
+        self._hidden_params = params
 
 
 class ProbeRecorder:
@@ -137,7 +139,7 @@ class ProbeRecorder:
             return
         record = RECORD.validate_python(self.raw_request)
         raw = {key: record.get(key) for key in RAW_KEYS}
-        logging_obj.model_call_details.update({"raw_request_typed_dict": raw})  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1360-L1400
+        logging_obj.model_call_details.update({"raw_request_typed_dict": raw})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1360-L1400
 
 
 def scripted_cost(catalog: dict[str, str | None]) -> dict[str, dict[str, str]]:
@@ -187,9 +189,9 @@ def logging_view(logging_obj: Logging | None) -> JsonValue:
         return None
     return {
         "model": logging_obj.model,
-        "messages": MESSAGES.validate_python(logging_obj.messages),  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L609-L619
-        "stream": FLAG.validate_python(logging_obj.stream),  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L609-L619
-        "call_type": TEXT.validate_python(logging_obj.call_type),  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L609-L619
+        "messages": MESSAGES.validate_python(logging_obj.messages),  # type: ignore[misc]  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L609-L619
+        "stream": FLAG.validate_python(logging_obj.stream),  # type: ignore[misc]  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L609-L619
+        "call_type": TEXT.validate_python(logging_obj.call_type),  # type: ignore[misc]  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L609-L619
         "log_raw_request_response": logging_obj.log_raw_request_response,
         "raw_request_only": logging_obj.raw_request_only,
         "call_id_uuid4": UUID4.match(logging_obj.litellm_call_id) is not None,
@@ -202,7 +204,7 @@ async def step_view(step: EntryStep) -> JsonValue:
     resolution = ScriptedResolution(step["resolution"])
     recorder = ProbeRecorder(step["headers"], step["failure"], step["raw_request"])
     CHEAPEST[:] = step["cheapest"]
-    litellm.main.get_llm_provider = resolution  # noqa: E501  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8770-L8777
+    litellm.main.get_llm_provider = resolution  # type: ignore[attr-defined, assignment]  # pyright: ignore[reportAssignmentType, reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8770-L8777
     litellm.acompletion = recorder.acompletion
     litellm.aembedding = recorder.aembedding
     litellm.atext_completion = recorder.atext_completion
@@ -223,7 +225,4 @@ async def step_view(step: EntryStep) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     with redirect_stdout(io.StringIO()):
-        views: list[JsonValue] = []
-        for step in input_value["steps"]:
-            views.append(asyncio.run(step_view(step)))
-        return views
+        return [asyncio.run(step_view(step)) for step in input_value["steps"]]
