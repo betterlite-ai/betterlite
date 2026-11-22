@@ -1,8 +1,10 @@
 use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_core::api::assistant_threads::error::sdk_class;
+use betterlite_core::api::file_http_metadata::error::MetadataError;
 use betterlite_core::api::file_provider_read::error::{
     FileReadError, UNSUPPORTED_BODY, UNSUPPORTED_MODEL, UNSUPPORTED_URL,
 };
+use betterlite_core::api::vector_store_http_write::error::BaseLlmException;
 use betterlite_openai::files::error::{FilesError, StatusError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -86,12 +88,13 @@ fn dispatch_failure(wire: &ReadWireError) -> Result<Failure, SdkHttpError> {
         | ReadWireError::Azure(AzureFilesError::Files {
             source: FilesError::Status(status),
         }) => status.as_ref(),
-        ReadWireError::OpenAi(_)
+        ReadWireError::Metadata(MetadataError::Provider(source)) => return Ok(raised(source)),
+        ReadWireError::Metadata(_)
+        | ReadWireError::OpenAi(_)
         | ReadWireError::Azure(_)
-        | ReadWireError::Anthropic(_)
+        | ReadWireError::Fixture(_)
         | ReadWireError::Unbuilt { .. }
-        | ReadWireError::Reply
-        | ReadWireError::Header { .. } => {
+        | ReadWireError::Reply => {
             return Err(SdkHttpError::Invalid(wire.to_string()));
         }
     };
@@ -103,4 +106,26 @@ fn dispatch_failure(wire: &ReadWireError) -> Result<Failure, SdkHttpError> {
         code: Some(status.code.clone()),
         message: status.message.clone(),
     })
+}
+
+// the metadata handler's provider error: a statusless ValueError or the provider config's own status error
+fn raised(source: &BaseLlmException) -> Failure {
+    if source.status_code >= 400 {
+        return Failure {
+            class: sdk_class(source.status_code).to_owned(),
+            status: source.status_code,
+            kind: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: source.message.clone(),
+        };
+    }
+    Failure {
+        class: "ValueError".to_owned(),
+        status: 0,
+        kind: None,
+        param: None,
+        code: None,
+        message: source.message.clone(),
+    }
 }

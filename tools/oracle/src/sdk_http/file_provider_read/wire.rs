@@ -1,23 +1,26 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_anthropic::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
-use betterlite_anthropic::files::api::FilesApi as AnthropicApi;
-use betterlite_anthropic::files::error::FilesError as AnthropicError;
-use betterlite_anthropic::files::request::{FileCall, FilesClient as AnthropicClient, ListCall};
-use betterlite_azure::azure_files::client::auth::FileAuth;
-use betterlite_azure::azure_files::client::{Opened, SelectedClient};
+use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_azure::azure_files::{Operation as AzureOperation, Reply, call};
-use betterlite_azure::endpoints::projection::ClientKind as AzureKind;
 use betterlite_config::sections::anthropic_credentials::Settings as AnthropicCredentials;
+use betterlite_core::api::file_http_metadata::config::FileParams;
+use betterlite_core::api::file_http_metadata::error::MetadataError;
+use betterlite_core::api::file_http_metadata::service::{
+    ListCall as MetadataListCall, MetadataCall, MetadataDeps, MetadataTarget, MetadataValue,
+    RetrieveCall, prepare, send,
+};
 use betterlite_core::api::file_provider_read::target::{
-    AzureRead, CompatibleRead, FileListing, FileReadDispatch, GenericRead, ReadAnswer, ReadMode,
-    ReadOperation, ReadTarget,
+    AzureRead, CompatibleRead, FileListing, FileReadDispatch, GenericRead, ReadAnswer, ReadLogger,
+    ReadMode, ReadOperation, ReadTarget,
 };
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
-use betterlite_core::api::vector_store_http_write::service::ClientKind;
+use betterlite_core::api::vector_store_http_write::service::{
+    ClientKind, LogContext, SuppliedClient,
+};
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::records::{FileObject, FilePage, FileQuery};
@@ -27,8 +30,12 @@ use betterlite_openai::files::{
 use betterlite_provider::api::file_provider_selection::{
     FileProviderConfig, file_config_selection,
 };
-use http::header::{HeaderMap, HeaderName, HeaderValue};
-use url::Url;
+use chrono::Utc;
+
+use super::fixtures::azure::open;
+use super::fixtures::logging::{Fixture, FixtureError};
+use super::fixtures::metadata::{AnthropicFiles, anthropic_settings, metadata_params};
+use super::fixtures::transport::{DispatchSource, WireClient};
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum ReadWireError {
@@ -37,13 +44,13 @@ pub(super) enum ReadWireError {
     #[error(transparent)]
     Azure(#[from] AzureFilesError),
     #[error(transparent)]
-    Anthropic(#[from] AnthropicError),
+    Metadata(#[from] MetadataError),
+    #[error(transparent)]
+    Fixture(#[from] FixtureError),
     #[error("the oracle sends no {config} request")]
     Unbuilt { config: &'static str },
-    #[error("the azure files call answered with another reply kind")]
+    #[error("the file call answered with another reply kind")]
     Reply,
-    #[error("the header {name} is not valid")]
-    Header { name: String },
 }
 
 // the HTTPHandler a case hands over: its own httpx client adds these headers to every request it sends
@@ -53,8 +60,9 @@ pub(super) struct Handler {
 
 pub(super) struct HttpDispatch {
     pub(super) openai: FilesApi<ProxiedClient>,
-    pub(super) anthropic: AnthropicApi<ProxiedClient>,
+    pub(super) client: ProxiedClient,
     pub(super) credentials: AnthropicCredentials,
+    pub(super) environment: BTreeMap<String, String>,
 }
 
 type Generic<'call> = GenericRead<'call, FileProviderConfig, Handler>;
@@ -74,104 +82,169 @@ impl FileReadDispatch for HttpDispatch {
         target: Target<'_>,
         operation: ReadOperation<'_>,
     ) -> Result<ReadAnswer, Self::Error> {
-        match (target, operation) {
-            (ReadTarget::Compatible(read), ReadOperation::Retrieve { file_id }) => {
-                let client = compatible_client(&read)?;
-                let object = self.openai.retrieve_file(&client, file_id).await?;
-                Ok(ReadAnswer::File(Box::new(object)))
+        match target {
+            ReadTarget::Compatible(read) => compatible_answer(&self.openai, &read, operation).await,
+            ReadTarget::Azure(read) => {
+                azure_answer(&self.client, &self.environment, &read, operation).await
             }
-            (ReadTarget::Compatible(read), ReadOperation::List { purpose }) => {
-                let client = compatible_client(&read)?;
-                let query = FileQuery {
-                    purpose: purpose.map(str::to_owned),
-                };
-                let page = self.openai.list_files(&client, &query).await?;
-                Ok(ReadAnswer::Listing(FileListing::Page(Box::new(page))))
-            }
-            (ReadTarget::Azure(read), asked) => self.azure_answer(&read, asked).await,
-            (ReadTarget::Generic(read), ReadOperation::Retrieve { file_id }) => {
-                let (client, headers) = self.anthropic_client(&read)?;
-                let file = FileCall {
-                    file_id,
-                    headers: &headers,
-                };
-                let object = self.anthropic.retrieve_file(&client, &file).await?;
-                Ok(ReadAnswer::File(Box::new(object)))
-            }
-            (ReadTarget::Generic(read), ReadOperation::List { purpose }) => {
-                let (client, headers) = self.anthropic_client(&read)?;
-                let listed = ListCall {
-                    purpose,
-                    headers: &headers,
-                };
-                let files = self.anthropic.list_files(&client, &listed).await?;
-                Ok(ReadAnswer::Listing(FileListing::Files(files)))
+            ReadTarget::Generic(read) => {
+                metadata_answer(*read, operation, &self.credentials, &self.client).await
             }
         }
     }
 }
 
-impl HttpDispatch {
-    // the azure call both operations share, whose reply kind must be the one the operation asks for
-    async fn azure_answer(
-        &self,
-        read: &AzureRead,
-        operation: ReadOperation<'_>,
-    ) -> Result<ReadAnswer, ReadWireError> {
-        let asked = match operation {
-            ReadOperation::Retrieve { file_id } => AzureOperation::Retrieve(file_id),
-            ReadOperation::List { purpose } => AzureOperation::List(purpose),
-        };
-        let client = azure_client(read)?;
-        match call(&client, &self.openai.transport, asked).await? {
-            Reply::Object(object) => azure_file(operation, object),
-            Reply::Page(page) => azure_page(operation, page),
-            Reply::Content(_) | Reply::Deleted(_) => Err(ReadWireError::Reply),
+// the provider config's own call, run through B2462's prepare/send: client selection, the pre-call and the per-operation timeout rules
+async fn metadata_answer(
+    mut read: Generic<'_>,
+    operation: ReadOperation<'_>,
+    credentials: &AnthropicCredentials,
+    client: &ProxiedClient,
+) -> Result<ReadAnswer, ReadWireError> {
+    let settings = anthropic_settings(credentials);
+    let kind = client_kind(read.mode);
+    let params = metadata_params(read.api_key.as_ref(), read.api_base.as_deref());
+    let asked = metadata_call(operation, &params, &read.headers, read.mode);
+    let source = DispatchSource {
+        client: client.clone(),
+    };
+    let lent = lent_client(&read, kind, client);
+    let config = provider_config(read.config, &settings)?;
+    let supplied = lent.as_ref().map(|client| SuppliedClient {
+        kind,
+        transport: client,
+    });
+    let deps = MetadataDeps {
+        config: &config,
+        source: &source,
+        supplied,
+    };
+    let fixture = Fixture::new()?;
+    let mut built;
+    let state: &mut LoggingState = match &mut read.logger {
+        ReadLogger::Supplied(state) => state,
+        ReadLogger::Created(new) => {
+            built = fixture.state(new)?;
+            &mut built
+        }
+    };
+    let env = fixture.environment();
+    let mut log = LogContext { state, env: &env };
+    let prepared = prepare(&deps, kind, &asked, &mut log)?;
+    answer(send(prepared, &mut log).await?)
+}
+
+// the config LiteLLM's provider lookup hands the metadata handler for this branch
+fn provider_config(
+    config: FileProviderConfig,
+    settings: &AnthropicSettings,
+) -> Result<AnthropicFiles<'_>, ReadWireError> {
+    match config {
+        FileProviderConfig::Anthropic => Ok(AnthropicFiles {
+            settings,
+            clock: || Utc::now().timestamp(),
+        }),
+        other @ (FileProviderConfig::GoogleAiStudio
+        | FileProviderConfig::VertexAi
+        | FileProviderConfig::Bedrock
+        | FileProviderConfig::Manus
+        | FileProviderConfig::Mistral
+        | FileProviderConfig::Xai) => Err(ReadWireError::Unbuilt {
+            config: other.class_name(),
+        }),
+    }
+}
+
+// the OpenAI files client both operations share, whose page or object comes back as the SDK parsed it
+async fn compatible_answer(
+    openai: &FilesApi<ProxiedClient>,
+    read: &CompatibleRead,
+    operation: ReadOperation<'_>,
+) -> Result<ReadAnswer, ReadWireError> {
+    let client = compatible_client(read)?;
+    match operation {
+        ReadOperation::Retrieve { file_id } => {
+            let object = openai.retrieve_file(&client, file_id).await?;
+            Ok(ReadAnswer::File(Box::new(object)))
+        }
+        ReadOperation::List { purpose } => {
+            let query = FileQuery {
+                purpose: purpose.map(str::to_owned),
+            };
+            let page = openai.list_files(&client, &query).await?;
+            Ok(ReadAnswer::Listing(FileListing::Page(Box::new(page))))
         }
     }
+}
 
-    // only the anthropic config is sent; a supplied handler of the call's own mode lends its headers
-    fn anthropic_client(
-        &self,
-        read: &Generic<'_>,
-    ) -> Result<(AnthropicClient, HeaderMap), ReadWireError> {
-        if read.config != FileProviderConfig::Anthropic {
-            return Err(ReadWireError::Unbuilt {
-                config: read.config.class_name(),
-            });
+// the azure call both operations share, whose reply kind must be the one the operation asks for
+async fn azure_answer(
+    client: &ProxiedClient,
+    environment: &BTreeMap<String, String>,
+    read: &AzureRead,
+    operation: ReadOperation<'_>,
+) -> Result<ReadAnswer, ReadWireError> {
+    let opened = open(read, environment)?;
+    match call(&opened, client, azure_operation(operation)).await? {
+        Reply::Object(object) => azure_file(operation, object),
+        Reply::Page(page) => azure_page(operation, page),
+        Reply::Content(_) | Reply::Deleted(_) => Err(ReadWireError::Reply),
+    }
+}
+
+fn metadata_call<'call>(
+    operation: ReadOperation<'call>,
+    params: &'call FileParams,
+    headers: &'call BTreeMap<String, String>,
+    mode: ReadMode,
+) -> MetadataCall<'call> {
+    let target = MetadataTarget {
+        litellm_params: params,
+        extra_headers: Some(headers),
+        ssl_verify: None,
+        timeout: Some(deadline(mode)),
+    };
+    match operation {
+        ReadOperation::Retrieve { file_id } => {
+            MetadataCall::Retrieve(RetrieveCall { file_id, target })
         }
-        let wanted = if read.mode.is_async {
-            ClientKind::Asynchronous
-        } else {
-            ClientKind::Sync
-        };
-        let lent = read
-            .client
-            .as_ref()
-            .filter(|supplied| supplied.kind == wanted)
-            .map(|supplied| &supplied.transport.headers);
-        let mut headers = HeaderMap::new();
-        for (name, value) in lent.into_iter().flatten().chain(&read.headers) {
-            let (key, parsed) = HeaderName::from_bytes(name.as_bytes())
-                .ok()
-                .zip(HeaderValue::from_str(value).ok())
-                .ok_or_else(|| ReadWireError::Header { name: name.clone() })?;
-            headers.insert(key, parsed);
-        }
-        let credentials = &self.credentials;
-        let client = AnthropicClient {
-            api_key: read.api_key.clone(),
-            api_base: read.api_base.clone(),
-            settings: AnthropicSettings {
-                api_key: credentials.api_key.clone(),
-                auth_token: credentials.auth_token.clone(),
-                api_base: credentials.api_base.clone(),
-                use_bearer_for_custom_base: credentials.use_bearer_for_custom_base,
-                anthropic_version: ANTHROPIC_VERSION.to_owned(),
-            },
-            timeout: deadline(read.mode),
-        };
-        Ok((client, headers))
+        ReadOperation::List { purpose } => MetadataCall::List(MetadataListCall { purpose, target }),
+    }
+}
+
+// a supplied HTTPHandler is selected only for its own mode, and then its client's headers ride on the request
+fn lent_client(read: &Generic<'_>, kind: ClientKind, client: &ProxiedClient) -> Option<WireClient> {
+    let supplied = read
+        .client
+        .as_ref()
+        .filter(|supplied| supplied.kind == kind)?;
+    Some(WireClient {
+        client: client.clone(),
+        headers: supplied.transport.headers.clone(),
+    })
+}
+
+const fn client_kind(mode: ReadMode) -> ClientKind {
+    if mode.is_async {
+        ClientKind::Asynchronous
+    } else {
+        ClientKind::Sync
+    }
+}
+
+fn answer(value: MetadataValue) -> Result<ReadAnswer, ReadWireError> {
+    match value {
+        MetadataValue::File(file) => Ok(ReadAnswer::File(Box::new(file))),
+        MetadataValue::Listed(files) => Ok(ReadAnswer::Listing(FileListing::Files(files))),
+        MetadataValue::Deleted(_) => Err(ReadWireError::Reply),
+    }
+}
+
+// the azure SDK call each read operation asks for
+const fn azure_operation(operation: ReadOperation<'_>) -> AzureOperation<'_> {
+    match operation {
+        ReadOperation::Retrieve { file_id } => AzureOperation::Retrieve(file_id),
+        ReadOperation::List { purpose } => AzureOperation::List(purpose),
     }
 }
 
@@ -208,42 +281,6 @@ fn compatible_client(read: &CompatibleRead) -> Result<FilesClient, FilesError> {
         get_openai_client(args, None, read.mode.is_async)?,
         read.mode.is_async,
     )
-}
-
-// the AzureOpenAI client a key and an endpoint build: <endpoint>/openai/ with the version in the query
-fn azure_client(read: &AzureRead) -> Result<Opened, AzureFilesError> {
-    let base = read
-        .api_base
-        .as_deref()
-        .ok_or(AzureFilesError::MissingBaseUrl)?;
-    let key = read
-        .api_key
-        .clone()
-        .ok_or(AzureFilesError::MissingCredentials)?;
-    let base_url = Url::parse(&format!("{}/openai/", base.trim_end_matches('/')))
-        .map_err(|source| AzureFilesError::BaseUrl { source })?;
-    let files = FilesClient {
-        api_key: key.clone(),
-        base_url,
-        organization: None,
-        timeout: deadline(read.mode),
-        max_retries: 0,
-    };
-    let kind = if read.mode.is_async {
-        AzureKind::AsyncAzureOpenAi
-    } else {
-        AzureKind::AzureOpenAi
-    };
-    let client = SelectedClient::new(
-        files,
-        &FileAuth::ApiKey(key),
-        read.api_version.clone(),
-        kind,
-    )?;
-    Ok(Opened {
-        client,
-        is_async: read.mode.is_async,
-    })
 }
 
 // a structured timeout only shapes the SDK's pool, so the wire deadline is its default

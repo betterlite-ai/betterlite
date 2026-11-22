@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use betterlite_anthropic::files::api::FilesApi as AnthropicApi;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -25,6 +24,7 @@ use super::call_kind::CallKind;
 use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
 
+mod fixtures;
 mod outcome;
 mod wire;
 
@@ -134,11 +134,9 @@ impl CallKind for Call {
                     transport: client.clone(),
                     boundaries: Uuid::new_v4,
                 },
-                anthropic: AnthropicApi {
-                    transport: client,
-                    clock: || Utc::now().timestamp(),
-                },
+                client,
                 credentials: config.sections.anthropic_credentials,
+                environment: env.clone(),
             },
             settings: config.sections.resource_sdk_settings,
             clock: || Utc::now().fixed_offset(),
