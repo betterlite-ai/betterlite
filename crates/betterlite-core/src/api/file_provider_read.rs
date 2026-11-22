@@ -211,13 +211,10 @@ where
 }
 
 // The two names retrieve answers before it asks for a provider config, and that list falls back to after one
-fn named_target<'call, Dispatch>(
-    plan: &Plan<'_>,
+fn named_target<'call, Config, Client>(
+    plan: &'call Plan<'_>,
     provider: &str,
-) -> Option<ReadTarget<'call, Dispatch::Config, Dispatch::Client>>
-where
-    Dispatch: FileReadDispatch,
-{
+) -> Option<ReadTarget<'call, Config, Client>> {
     if COMPATIBLE_PROVIDERS.contains(&provider) {
         Some(ReadTarget::Compatible(plan.compatible()))
     } else if provider == "azure" {

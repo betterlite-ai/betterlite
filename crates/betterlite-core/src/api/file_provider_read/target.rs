@@ -94,7 +94,7 @@ pub enum ReadOperation<'call> {
     List { purpose: Option<&'call str> },
 }
 
-impl<'call> ReadOperation<'call> {
+impl ReadOperation<'_> {
     #[must_use]
     pub const fn function(self) -> ReadFunction {
         match self {
