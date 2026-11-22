@@ -15,7 +15,7 @@ use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
-// no parallel slots are stashed in these cases, so the gauges only ever read nothing
+// the slot release reads each gauge and finds no entry, so the fake answers None and never writes
 pub(crate) struct SilentGauges;
 
 #[async_trait::async_trait]

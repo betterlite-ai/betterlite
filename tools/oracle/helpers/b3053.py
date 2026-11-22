@@ -8,6 +8,7 @@ from litellm.litellm_core_utils.custom_logger_registry import CustomLoggerRegist
 from litellm.proxy import proxy_server
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (
+    ParallelSlotAcquisition,
     RateLimitResponse,
     RateLimitStatus,
     RequestRateLimiterStash,
@@ -20,6 +21,8 @@ from typing_extensions import override
 
 CALL_ID: Final = "b3053-call"
 PRIORITY_LOG_PREFIX: Final = "[Dynamic Rate Limiter] Incremented tokens by"
+SLOT_ID: Final = "b3053-slot"
+SLOT_COUNTER_KEY: Final = "b3053-counter"
 
 
 class HiddenParams(TypedDict):
@@ -57,6 +60,7 @@ Input: TypeAlias = PostCallJson | LogSuccessJson
 
 class HeadersAnswer(TypedDict):
     headers: dict[str, JsonValue] | None
+    released: bool
 
 
 class PipelineJson(TypedDict):
@@ -133,6 +137,13 @@ class RecordingCache:
         batch = [pipeline_json(entry) for entry in increment_list]
         self.pipelines.append(batch)
 
+    async def async_get_cache(
+        self, key: str, *, parent_otel_span: JsonValue, local_only: bool
+    ) -> JsonValue:
+        if parent_otel_span is not None or not local_only or not key:
+            raise ProbeUnavailableError("the slot release reads one named local gauge")
+        return None
+
 
 class LogCapture(logging.Handler):
     def __init__(self) -> None:
@@ -168,17 +179,14 @@ def pipeline_json(operation: PipelineIncrement) -> PipelineJson:
 
 
 def probe_response(call: PostCallJson) -> ProbeResponse:
+    headers = dict(call["headers"])
     if call["probe_raises"]:
-        return ProbeResponse(hidden=False, headers={}, raises=True)
-    if call["hidden_params"]:
-        return ProbeResponse(hidden=True, headers=dict(call["headers"]), raises=False)
-    return ProbeResponse(hidden=False, headers={}, raises=False)
+        return ProbeResponse(hidden=False, headers=headers, raises=True)
+    return ProbeResponse(hidden=call["hidden_params"], headers=headers, raises=False)
 
 
 def reported_headers(call: PostCallJson, response: ProbeResponse) -> dict[str, JsonValue] | None:
     if call["probe_raises"]:
-        return None
-    if not call["hidden_params"]:
         return None
     return response.headers
 
@@ -186,10 +194,14 @@ def reported_headers(call: PostCallJson, response: ProbeResponse) -> dict[str, J
 async def post_call_run(call: PostCallJson, handler: DynamicHandler) -> HeadersAnswer:
     stash: RequestRateLimiterStash = get_or_create_request_stash()
     stash.rate_limit_response = RateLimitResponse(overall_code="OK", statuses=call["statuses"])
+    stash.parallel_slot = ParallelSlotAcquisition(slot_id=SLOT_ID, counter_keys=[SLOT_COUNTER_KEY])
     response = probe_response(call)
     auth = UserAPIKeyAuth(metadata=call["key_metadata"], team_metadata=call["team_metadata"])
     await handler.async_post_call_success_hook({"litellm_call_id": CALL_ID}, auth, response)
-    return HeadersAnswer(headers=reported_headers(call, response))
+    return HeadersAnswer(
+        headers=reported_headers(call, response),
+        released=stash.parallel_slot is None,
+    )
 
 
 def post_call_answer(call: PostCallJson) -> HeadersAnswer:

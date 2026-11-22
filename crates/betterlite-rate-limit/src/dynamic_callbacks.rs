@@ -50,21 +50,34 @@ pub struct LogSuccessEvent<'event> {
     pub window_size: i64,
 }
 
+// what response_has_hidden_params read of the response, next to the header map it guards
+pub enum ResponseHeaders<'response> {
+    // the response carries hidden params: the v3 header block and the priority headers go in
+    Hidden(&'response mut AdditionalHeaders),
+    // the response carries none: the v3 hook still settles, and no header is written
+    WithoutHiddenParams(&'response mut AdditionalHeaders),
+    // reading the hidden params raised: the caller caught it and brings no header map
+    Unreadable,
+}
+
 // async_post_call_success_hook: the v3 header block first, then the two headers an active limiter adds
 pub async fn post_call_success_hook(
     settlement: &PostCallSettlement<'_>,
     hook: &SuccessHook<'_>,
     priority: &PriorityMetadata<'_>,
-    headers: Option<&mut AdditionalHeaders>,
+    response: ResponseHeaders<'_>,
 ) {
-    let Some(response_headers) = headers else {
-        settlement.post_call_success_hook(hook, None).await;
-        return;
-    };
-    settlement
-        .post_call_success_hook(hook, Some(&mut *response_headers))
-        .await;
-    write_priority_headers(response_headers, priority);
+    match response {
+        ResponseHeaders::Hidden(headers) => {
+            settlement
+                .post_call_success_hook(hook, Some(&mut *headers))
+                .await;
+            write_priority_headers(headers, priority);
+        }
+        ResponseHeaders::WithoutHiddenParams(_) | ResponseHeaders::Unreadable => {
+            settlement.post_call_success_hook(hook, None).await;
+        }
+    }
 }
 
 // async_log_success_event: the model-wide and priority-pool counters, increased by the tokens this call used

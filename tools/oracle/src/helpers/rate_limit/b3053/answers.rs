@@ -9,11 +9,11 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_rate_limit::concurrency_gauges::ConcurrencyGauges;
 use betterlite_rate_limit::dynamic_callbacks::{
-    LogSuccessEvent, PriorityMetadata, log_success_event, post_call_success_hook,
+    LogSuccessEvent, PriorityMetadata, ResponseHeaders, log_success_event, post_call_success_hook,
 };
 use betterlite_rate_limit::dynamic_priority::settings::{PriorityPolicy, PrioritySettings};
 use betterlite_rate_limit::fail_closed::FailClosedPolicy;
-use betterlite_rate_limit::limiter_records::RateLimitResponse;
+use betterlite_rate_limit::limiter_records::{ParallelSlotAcquisition, RateLimitResponse};
 use betterlite_rate_limit::post_call_settlement::settlement::PostCallSettlement;
 use betterlite_rate_limit::post_call_settlement::success_hook::SuccessHook;
 use betterlite_rate_limit::rate_limit_window_store::WindowStore;
@@ -83,16 +83,21 @@ impl Fixture {
     }
 }
 
+// the slot the case stashes, so the hook's release is observable when it cannot write a header
+const SLOT_ID: &str = "b3053-slot";
+const SLOT_COUNTER_KEY: &str = "b3053-counter";
+
 pub(crate) fn post_call_answer(case: &PostCallCase) -> HelperResult {
     let runtime = Builder::new_current_thread().build()?;
-    let headers = runtime.block_on(post_call_run(case));
-    Ok(json!({"headers": headers}))
+    let mut headers = headers_map(&case.headers);
+    let released = runtime.block_on(post_call_run(case, &mut headers));
+    Ok(json!({
+        "headers": (!case.probe_raises).then_some(&headers),
+        "released": released,
+    }))
 }
 
-async fn post_call_run(case: &PostCallCase) -> Option<AdditionalHeaders> {
-    if case.probe_raises {
-        return None;
-    }
+async fn post_call_run(case: &PostCallCase, headers: &mut AdditionalHeaders) -> bool {
     let fixture = dependencies();
     let slot = install_stash(case);
     let hook = SuccessHook {
@@ -104,9 +109,15 @@ async fn post_call_run(case: &PostCallCase) -> Option<AdditionalHeaders> {
         team_metadata: case.team_metadata.as_ref(),
         key_metadata: &case.key_metadata,
     };
-    let mut headers = case.hidden_params.then(|| headers_map(&case.headers));
-    post_call_success_hook(&fixture.settlement(), &hook, &priority, headers.as_mut()).await;
-    headers
+    let response = if case.probe_raises {
+        ResponseHeaders::Unreadable
+    } else if case.hidden_params {
+        ResponseHeaders::Hidden(headers)
+    } else {
+        ResponseHeaders::WithoutHiddenParams(headers)
+    };
+    post_call_success_hook(&fixture.settlement(), &hook, &priority, response).await;
+    slot_released(&slot)
 }
 
 fn install_stash(case: &PostCallCase) -> RequestStashSlot {
@@ -118,8 +129,23 @@ fn install_stash(case: &PostCallCase) -> RequestStashSlot {
         statuses: case.statuses.clone(),
         reservation_windows: None,
     });
+    state.parallel_slot = Some(ParallelSlotAcquisition {
+        slot_id: SLOT_ID.to_owned(),
+        counter_keys: vec![SLOT_COUNTER_KEY.to_owned()],
+    });
     drop(state);
     slot
+}
+
+fn slot_released(slot: &RequestStashSlot) -> bool {
+    slot.get().is_none_or(|stash| {
+        stash
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .parallel_slot
+            .is_none()
+    })
 }
 
 fn headers_map(entries: &BTreeMap<String, Json>) -> AdditionalHeaders {
