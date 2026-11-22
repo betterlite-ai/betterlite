@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
+use tokio::time::timeout;
 
 use super::support::{
     FakeBatch, FakeCache, FakeError, FakeRows, Logs, LookupRecord, RedisAnswer, SetAnswer,
@@ -44,10 +45,13 @@ async fn all_primary_prefixes_and_empty_ids(
     let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     if let Some(lookup) = expected {
-        assert_eq!(counter.from_db(counter_key).await, Ok(Some(decimal("2.5"))));
+        assert_eq!(
+            counter.reader().from_db(counter_key).await,
+            Some(decimal("2.5"))
+        );
         assert_eq!(rows.lookups(), vec![lookup]);
     } else {
-        assert_eq!(counter.from_db(counter_key).await, Ok(None));
+        assert_eq!(counter.reader().from_db(counter_key).await, None);
         assert!(rows.lookups().is_empty());
     }
 }
@@ -57,9 +61,10 @@ async fn member_last_colon_split() {
     let rows = Arc::new(FakeRows::with_row(spend_row("1.25")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     let outcome = counter
+        .reader()
         .from_db("spend:team_member:user:with:colon:team")
         .await;
-    assert_eq!(outcome, Ok(Some(decimal("1.25"))));
+    assert_eq!(outcome, Some(decimal("1.25")));
     assert_eq!(
         rows.lookups(),
         vec![LookupRecord::TeamMember {
@@ -67,11 +72,14 @@ async fn member_last_colon_split() {
             team_id: "team".to_owned(),
         }]
     );
-    assert_eq!(counter.from_db("spend:team_member:user").await, Ok(None));
-    assert_eq!(counter.from_db("spend:team_member:").await, Ok(None));
+    assert_eq!(
+        counter.reader().from_db("spend:team_member:user").await,
+        None
+    );
+    assert_eq!(counter.reader().from_db("spend:team_member:").await, None);
     assert_eq!(rows.lookups().len(), 1);
-    let empty_ids = counter.from_db("spend:team_member::").await;
-    assert_eq!(empty_ids, Ok(Some(decimal("1.25"))));
+    let empty_ids = counter.reader().from_db("spend:team_member::").await;
+    assert_eq!(empty_ids, Some(decimal("1.25")));
     assert_eq!(
         rows.lookups().last(),
         Some(&LookupRecord::TeamMember {
@@ -103,10 +111,13 @@ async fn valid_window_only_suppresses_key_team(
     let rows = Arc::new(FakeRows::with_row(spend_row("3")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     if suppressed {
-        assert_eq!(counter.from_db(counter_key).await, Ok(None));
+        assert_eq!(counter.reader().from_db(counter_key).await, None);
         assert!(rows.lookups().is_empty());
     } else {
-        assert_eq!(counter.from_db(counter_key).await, Ok(Some(decimal("3"))));
+        assert_eq!(
+            counter.reader().from_db(counter_key).await,
+            Some(decimal("3"))
+        );
         assert_eq!(rows.lookups().len(), 1);
     }
 }
@@ -116,7 +127,7 @@ async fn primary_query_bound_gate_error_log_and_none() {
     let logs = Logs::capture();
     let blocked_rows = Arc::new(FakeRows::with_row(spend_row("9")));
     let blocked = reseed_with(Some(Arc::clone(&blocked_rows)), services(0), 0.05);
-    assert_eq!(blocked.from_db("spend:key:token").await, Ok(None));
+    assert_eq!(blocked.reader().from_db("spend:key:token").await, None);
     assert!(blocked_rows.lookups().is_empty());
     assert!(blocked.stall_tracker.stalled_within(60.0));
     assert!(logs.contains("the bounded lookup failed"));
@@ -124,7 +135,7 @@ async fn primary_query_bound_gate_error_log_and_none() {
     let failing_rows = Arc::new(FakeRows::with_row(spend_row("9")));
     failing_rows.rows_fail.store(true, Ordering::Relaxed);
     let failing = reseed_with(Some(Arc::clone(&failing_rows)), services(25), 5.0);
-    assert_eq!(failing.from_db("spend:key:token").await, Ok(None));
+    assert_eq!(failing.reader().from_db("spend:key:token").await, None);
     assert_eq!(
         failing_rows.lookups(),
         vec![LookupRecord::Key("token".to_owned())]
@@ -133,46 +144,46 @@ async fn primary_query_bound_gate_error_log_and_none() {
 
     let empty_rows = Arc::new(FakeRows::default());
     let empty = reseed_with(Some(Arc::clone(&empty_rows)), services(25), 5.0);
-    assert_eq!(empty.from_db("spend:key:token").await, Ok(None));
+    assert_eq!(empty.reader().from_db("spend:key:token").await, None);
     assert_eq!(empty_rows.lookups().len(), 1);
 }
 
+// the reader answers None for a row it cannot read, like any other failed row read
 #[rstest]
-#[case::non_numeric_text(
-    "\"abc\"",
-    Err(SpendValueError::OutOfRange {
-        text: "abc".to_owned(),
-    })
-)]
-#[case::list("[1]", Err(SpendValueError::NotNumeric { kind: "a list" }))]
-#[case::object(
-    "{\"x\": 1}",
-    Err(SpendValueError::NotNumeric { kind: "an object" })
-)]
-#[case::zero("0", Ok(Some(Decimal::ZERO)))]
-#[case::null("null", Ok(Some(Decimal::ZERO)))]
-#[case::false_value("false", Ok(Some(Decimal::ZERO)))]
-#[case::empty_text("\"\"", Ok(Some(Decimal::ZERO)))]
-#[case::empty_list("[]", Ok(Some(Decimal::ZERO)))]
-#[case::empty_object("{}", Ok(Some(Decimal::ZERO)))]
-#[case::padded_text("\" 2.5 \"", Ok(Some(decimal("2.5"))))]
-#[case::exponent_text("\"1e2\"", Ok(Some(decimal("100"))))]
+#[case::non_numeric_text("\"abc\"")]
+#[case::list("[1]")]
+#[case::object("{\"x\": 1}")]
 #[tokio::test]
-async fn conversion_after_query_catch(
-    #[case] spend: &str,
-    #[case] expected: Result<Option<Decimal>, SpendValueError>,
-) {
+async fn an_unreadable_stored_spend_answers_none(#[case] spend: &str) {
     let counter = reseed(FakeRows::with_row(spend_row(spend)));
-    assert_eq!(counter.from_db("spend:key:token").await, expected);
+    assert_eq!(counter.reader().from_db("spend:key:token").await, None);
+}
+
+#[rstest]
+#[case::zero("0", Decimal::ZERO)]
+#[case::null("null", Decimal::ZERO)]
+#[case::false_value("false", Decimal::ZERO)]
+#[case::empty_text("\"\"", Decimal::ZERO)]
+#[case::empty_list("[]", Decimal::ZERO)]
+#[case::empty_object("{}", Decimal::ZERO)]
+#[case::padded_text("\" 2.5 \"", decimal("2.5"))]
+#[case::exponent_text("\"1e2\"", decimal("100"))]
+#[tokio::test]
+async fn conversion_after_query_catch(#[case] spend: &str, #[case] expected: Decimal) {
+    let counter = reseed(FakeRows::with_row(spend_row(spend)));
+    assert_eq!(
+        counter.reader().from_db("spend:key:token").await,
+        Some(expected)
+    );
 }
 
 #[tokio::test]
 async fn absent_rows_answer_none_for_both_reads() {
     let counter = reseed_with(None, services(25), 5.0);
-    assert_eq!(counter.from_db("spend:key:token").await, Ok(None));
+    assert_eq!(counter.reader().from_db("spend:key:token").await, None);
     assert_eq!(
-        counter.end_user_from_db("spend:end_user:u1").await,
-        Ok(None)
+        counter.reader().end_user_from_db("spend:end_user:u1").await,
+        None
     );
 }
 
@@ -180,8 +191,8 @@ async fn absent_rows_answer_none_for_both_reads() {
 async fn absent_stored_spend_reads_zero() {
     let absent_field = reseed(FakeRows::with_row(SpendRow { spend: None }));
     assert_eq!(
-        absent_field.from_db("spend:key:token").await,
-        Ok(Some(Decimal::ZERO))
+        absent_field.reader().from_db("spend:key:token").await,
+        Some(Decimal::ZERO)
     );
 }
 
@@ -190,26 +201,26 @@ async fn enduser_prefix_floor_read_and_no_tag_reseed() {
     let logs = Logs::capture();
     let rows = Arc::new(FakeRows::with_row(spend_row("4.25")));
     let floor = reseed_with(Some(Arc::clone(&rows)), services(0), 0.05);
-    let floor_spend = floor.end_user_from_db("spend:end_user:u1").await;
-    assert_eq!(floor_spend, Ok(Some(decimal("4.25"))));
+    let floor_spend = floor.reader().end_user_from_db("spend:end_user:u1").await;
+    assert_eq!(floor_spend, Some(decimal("4.25")));
     assert_eq!(rows.lookups(), vec![LookupRecord::EndUser("u1".to_owned())]);
 
     let ungated = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
-    assert_eq!(ungated.end_user_from_db("spend:key:t").await, Ok(None));
-    let empty_floor = ungated.end_user_from_db("spend:end_user:").await;
-    assert_eq!(empty_floor, Ok(Some(decimal("4.25"))));
+    assert_eq!(ungated.reader().end_user_from_db("spend:key:t").await, None);
+    let empty_floor = ungated.reader().end_user_from_db("spend:end_user:").await;
+    assert_eq!(empty_floor, Some(decimal("4.25")));
     assert_eq!(
         rows.lookups().last(),
         Some(&LookupRecord::EndUser(String::new()))
     );
-    assert_eq!(ungated.from_db("spend:tag:t").await, Ok(None));
-    assert_eq!(ungated.from_db("spend:end_user:u1").await, Ok(None));
-    assert_eq!(ungated.end_user_from_db("spend:tag:t").await, Ok(None));
+    assert_eq!(ungated.reader().from_db("spend:tag:t").await, None);
+    assert_eq!(ungated.reader().from_db("spend:end_user:u1").await, None);
+    assert_eq!(ungated.reader().end_user_from_db("spend:tag:t").await, None);
     assert_eq!(rows.lookups().len(), 2);
 
     rows.rows_fail.store(true, Ordering::Relaxed);
-    let failed = ungated.end_user_from_db("spend:end_user:u2").await;
-    assert_eq!(failed, Ok(None));
+    let failed = ungated.reader().end_user_from_db("spend:end_user:u2").await;
+    assert_eq!(failed, None);
     assert!(logs.contains("the counter row read failed"));
 }
 
@@ -376,6 +387,43 @@ async fn local_increment_same_lock() {
     failed.unwrap_err();
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_local_increment_waits_for_an_active_reseed() {
+    let fake_rows = FakeRows::with_row(spend_row("2.5"));
+    fake_rows.hold_reads.store(true, Ordering::Relaxed);
+    let rows = Arc::new(fake_rows);
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    let cache = FakeCache::new(false);
+    let batch = FakeBatch::new(None);
+    let reseed_task = counter.coalesced(&cache, &batch, "spend:key:t", false);
+    tokio::pin!(reseed_task);
+    assert!(
+        timeout(Duration::from_millis(10), reseed_task.as_mut())
+            .await
+            .is_err(),
+        "the reseed parks inside the row read while it owns the key"
+    );
+    let mut increment =
+        Box::pin(counter.increment_in_memory(&cache, "spend:key:t", decimal("1.5")));
+    assert!(
+        timeout(Duration::from_millis(10), increment.as_mut())
+            .await
+            .is_err(),
+        "a local increment cannot precede the active reseed"
+    );
+    assert!(cache.increments().is_empty());
+    rows.read_release.notify_waiters();
+    let reseeded = timeout(Duration::from_secs(1), reseed_task)
+        .await
+        .expect("the reseed finishes");
+    assert_eq!(answered(reseeded), Some(decimal("2.5")));
+    let incremented = timeout(Duration::from_secs(1), increment)
+        .await
+        .expect("the increment runs after the reseed");
+    assert!(matches!(incremented, Ok(Some(_))));
+    assert_eq!(cache.increments().get("spend:key:t"), Some(&decimal("1.5")));
+}
+
 #[tokio::test]
 async fn one_db_load_per_lock() {
     let mut delayed = FakeRows::with_row(spend_row("2.5"));
@@ -482,6 +530,26 @@ async fn multipod_nx_winner_not_multiplied() {
 }
 
 #[tokio::test]
+async fn a_winner_does_not_reread_the_key() {
+    let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    // the miss answers the recheck, so only a winner reread would consume the failure
+    let cache = FakeCache::new(true)
+        .answer(RedisAnswer::Miss)
+        .answer(RedisAnswer::Fail);
+    let batch = FakeBatch::new(None);
+    let outcome = counter
+        .coalesced(&cache, &batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(outcome), Some(decimal("2.5")));
+    assert_eq!(cache.redis_gets.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        cache.memory_sets(),
+        vec![("spend:key:t".to_owned(), decimal("2.5"))]
+    );
+}
+
+#[tokio::test]
 async fn vanished_nx_winner_uses_db() {
     let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
@@ -561,6 +629,67 @@ async fn warm_failure_partial_effects_default_vs_required() {
         .coalesced(&strict_cache, &strict_batch, "spend:key:t", true)
         .await;
     assert!(matches!(strict, Err(CoalescedError::Cache(FakeError))));
+}
+
+#[tokio::test]
+async fn warm_reread_failure_returns_the_database_amount_unless_required() {
+    let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    let batch = FakeBatch::new(None);
+    // the first failure is the recheck read, the second the losing seeder's reread
+    let cache = FakeCache::new(true)
+        .answer(RedisAnswer::Fail)
+        .answer(RedisAnswer::Fail)
+        .with_set_answer(SetAnswer::Taken);
+    let defaulted = counter
+        .coalesced(&cache, &batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(defaulted), Some(decimal("2.5")));
+    assert!(cache.memory_sets().is_empty());
+    assert!(batch.recorded().is_empty());
+
+    let strict_cache = FakeCache::new(true)
+        .answer(RedisAnswer::Fail)
+        .answer(RedisAnswer::Fail)
+        .with_set_answer(SetAnswer::Taken);
+    let strict = counter
+        .coalesced(&strict_cache, &batch, "spend:key:t", true)
+        .await;
+    assert!(matches!(strict, Err(CoalescedError::Cache(FakeError))));
+}
+
+#[tokio::test]
+async fn warm_memory_failures_without_redis_return_the_database_amount() {
+    let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
+    let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
+    let miss_batch = FakeBatch::new(Some(CounterValue::Missing));
+    let read_failed = FakeCache::new(false);
+    read_failed.memory_get_fails.store(true, Ordering::Relaxed);
+    let read_answer = counter
+        .coalesced(&read_failed, &miss_batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(read_answer), Some(decimal("2.5")));
+    assert!(read_failed.memory_sets().is_empty());
+    let strict_read = counter
+        .coalesced(&read_failed, &miss_batch, "spend:key:t", true)
+        .await;
+    assert!(matches!(strict_read, Err(CoalescedError::Cache(FakeError))));
+
+    let write_failed = FakeCache::new(false);
+    write_failed.memory_set_fails.store(true, Ordering::Relaxed);
+    let write_batch = FakeBatch::new(None);
+    let write_answer = counter
+        .coalesced(&write_failed, &write_batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(write_answer), Some(decimal("2.5")));
+    assert!(write_failed.memory_sets().is_empty());
+    let strict_write = counter
+        .coalesced(&write_failed, &write_batch, "spend:key:t", true)
+        .await;
+    assert!(matches!(
+        strict_write,
+        Err(CoalescedError::Cache(FakeError))
+    ));
 }
 
 #[tokio::test]

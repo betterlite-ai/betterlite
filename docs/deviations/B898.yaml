@@ -1,0 +1,24 @@
+task: B898
+deviations:
+  - what: A team's metadata.secret_manager_settings mapping is converted into the secret manager's own typed parameters, and a mapping that does not fit fails the store, rotate, rename or delete with an error naming the params instead of reaching the provider as an untyped dict.
+    why: Rust managers take typed parameters, so a misfit has to surface before the call; the conversion is the place where LiteLLM's model_dump of the metadata would fail too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L441-L484
+  - what: The key created and key rotated emails only take the v0 general_settings.alerting path; the enterprise email loggers that LiteLLM checks first are never consulted, so a rotated key never sends an email.
+    why: The enterprise email loggers are proprietary and not part of betterlite, which matches a LiteLLM install without the enterprise package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L487-L514
+  - what: The warning for a deleted key without an alias drops LiteLLM's "KeyManagementEventHooks._delete_virtual_key_from_secret_manager:" prefix, since the tracing target already names the module.
+    why: The prefix repeats what the log target carries; the level, the token and the rest of the text stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L434-L438
+  - what: The created-key email runs on a task tracker the caller owns instead of an untracked asyncio task, so shutdown can wait for it; key creation still returns without waiting for delivery.
+    why: An untracked task can be dropped on shutdown and lose the email.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L585-L589
+kept_bugs:
+  - what: A key response whose spend is an explicit null fails the created-key email with an error and sends nothing, because LiteLLM's response.get("spend", 0.0) keeps the null and WebhookEvent rejects it; a missing spend still becomes 0.
+    why: It is unclear whether a setup relies on the failure, so it is copied; the key response LiteLLM builds always carries a numeric spend.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L573-L583
+  - what: A failed delete in a batch stops the loop, so the secrets of the keys after it stay in the secret manager.
+    why: The caller sees the failure and can retry the batch; the task asks for the same stop, and changing it would hide which key failed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L422-L438
+  - what: Renaming a key reads the old secret and rotates it under the new name only when the read returns a value; a missing secret logs a warning and leaves the manager untouched, so the renamed key has no stored secret afterwards.
+    why: A setup that renames keys created before store_virtual_keys was turned on relies on the rename not failing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L380-L384
