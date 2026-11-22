@@ -144,7 +144,7 @@ impl RawRouterConfig {
             parse_float,
         )?;
         // the declared field carries ge=0.0: a negative or non-finite penalty has no score to compute
-        if penalty.is_some_and(|value| !(value.is_finite() && value >= 0.0)) {
+        if penalty.is_some_and(|value| !(value.is_finite() && value >= 0.0_f64)) {
             return Err(ConfigError::InvalidScalar {
                 path: penalty_path,
                 value: false,

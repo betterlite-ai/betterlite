@@ -67,8 +67,8 @@ fn declared_values_replace_the_defaults() {
     assert_eq!(
         resolved.weights,
         Some(Weights {
-            quality: Some(0.4),
-            economy: Some(0.6),
+            quality: Some(0.4_f64),
+            economy: Some(0.6_f64),
         })
     );
     assert_eq!(resolved.tier_distance_penalty.to_bits(), 0.25_f64.to_bits());
@@ -125,8 +125,11 @@ fn a_negative_or_non_finite_penalty_is_rejected() {
     let error = settings(&negative, &[]).unwrap_err();
     assert!(error.contains("tier_distance_penalty"), "{error}");
     let infinite = router("        tier_distance_penalty: .inf\n");
-    let error = settings(&infinite, &[]).unwrap_err();
-    assert!(error.contains("tier_distance_penalty"), "{error}");
+    let infinite_error = settings(&infinite, &[]).unwrap_err();
+    assert!(
+        infinite_error.contains("tier_distance_penalty"),
+        "{infinite_error}"
+    );
 }
 
 #[test]

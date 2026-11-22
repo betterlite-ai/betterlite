@@ -310,7 +310,7 @@ fn a_nonfinite_weight_is_rejected() {
             field: "score weight"
         }
     ));
-    let error = placement_score(
+    let infinite_error = placement_score(
         AdaptiveRouterWeights {
             quality: 0.3,
             economy: f64::NEG_INFINITY,
@@ -322,7 +322,7 @@ fn a_nonfinite_weight_is_rejected() {
     )
     .expect_err("an infinite weight has no score");
     assert!(matches!(
-        error,
+        infinite_error,
         BanditMathError::NonFinite {
             field: "score weight"
         }
@@ -385,10 +385,10 @@ fn an_update_past_the_sample_cap_leaves_the_cell() {
     router
         .observe(RequestType::General, "mini", 1.0, 0.0)
         .expect("the update past the cap is dropped");
-    let snapshot = router.snapshot().expect("adaptive builds a snapshot");
-    let cell = cell_in(&snapshot, RequestType::General, "mini");
-    assert_eq!(cell.alpha.to_bits(), 195.0_f64.to_bits());
-    assert_eq!(cell.samples, 190);
+    let capped_snapshot = router.snapshot().expect("adaptive builds a snapshot");
+    let capped_cell = cell_in(&capped_snapshot, RequestType::General, "mini");
+    assert_eq!(capped_cell.alpha.to_bits(), 195.0_f64.to_bits());
+    assert_eq!(capped_cell.samples, 190);
 }
 
 #[test]

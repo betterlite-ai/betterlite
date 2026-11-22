@@ -125,8 +125,8 @@ fn declared_weights_penalty_and_eligible_mode_replace_the_defaults() {
     let resolved = PlacementSettings::resolve(&placement_section::Config {
         adaptive: true,
         weights: Some(Weights {
-            quality: Some(0.4),
-            economy: Some(0.6),
+            quality: Some(0.4_f64),
+            economy: Some(0.6_f64),
         }),
         tier_distance_penalty: 0.25,
         eligible: AdaptiveEligible::ClassifiedTier,
@@ -149,7 +149,7 @@ fn a_declared_weights_object_keeps_its_field_defaults() {
     let resolved = PlacementSettings::resolve(&placement_section::Config {
         adaptive: false,
         weights: Some(Weights {
-            quality: Some(0.9),
+            quality: Some(0.9_f64),
             economy: None,
         }),
         tier_distance_penalty: placement_section::DEFAULT_TIER_DISTANCE_PENALTY,

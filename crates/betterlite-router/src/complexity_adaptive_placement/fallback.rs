@@ -32,14 +32,11 @@ impl AdaptivePlacement {
             random,
         } = fallback;
         let fitting = self.fitting_models(request.classified_tier, request.fit_filter);
-        if request.fit_filter.is_some() && !fitting.is_empty() {
-            let model = pick_from_names(&fitting, request.classified_tier.name(), random)?;
-            return Ok(Placed {
-                model,
-                decision: None,
-            });
-        }
-        let model = model_for_tier(placement, request.classified_tier, random)?;
+        let model = if request.fit_filter.is_some() && !fitting.is_empty() {
+            pick_from_names(&fitting, request.classified_tier.name(), random)?
+        } else {
+            model_for_tier(placement, request.classified_tier, random)?
+        };
         Ok(Placed {
             model,
             decision: None,
