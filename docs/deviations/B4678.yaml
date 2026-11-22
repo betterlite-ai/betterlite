@@ -86,4 +86,16 @@ deviations:
       both keep the endpoint's OAuth error shape instead of panicking or casting
       a negative float to an issue time.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L933-L944
+  - what: >-
+      A token request whose body holds more than 1000 "&"-separated segments is
+      answered 400 {"detail": "Too many fields. Maximum number of fields is
+      1000."} even when most segments are empty, where Starlette counts only
+      non-empty fields and accepts a body with up to 1000 fields however many
+      ampersands separate them.
+    why: >-
+      The shared urlencoded decoder applies the endpoint's part limit before it
+      splits the body, so the limit keeps the decoded allocation bounded by the
+      1000 parts; an OAuth client sends five fields at most, so the difference
+      needs a body already at the cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L834-L842
 kept_bugs: []

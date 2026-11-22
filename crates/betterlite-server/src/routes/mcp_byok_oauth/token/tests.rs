@@ -9,7 +9,6 @@ use serde::Deserialize;
 use super::super::tests::{
     Built, FORM_TYPE, FakeSink, SinkCall, TestApp, VERIFIER, header, post_form, record, send, text,
 };
-use super::{decode_form_component, parse_form};
 
 const TOKEN_URI: &str = "/v1/mcp/oauth/token";
 
@@ -310,27 +309,13 @@ async fn a_raw_utf8_verifier_is_read_as_latin1() {
     assert_eq!(text(response).await, r#"{"error":"invalid_grant"}"#);
 }
 
-#[test]
-fn decodes_form_components_like_starlette() {
-    assert_eq!(decode_form_component(b"a+b"), "a b");
-    assert_eq!(decode_form_component(b"%C3%BC"), "\u{fc}");
-    assert_eq!(decode_form_component(b"\xC3\xBC"), "\u{c3}\u{bc}");
-    assert_eq!(decode_form_component(b"%FF%FE"), "\u{FFFD}\u{FFFD}");
-    assert_eq!(decode_form_component(b"%C3"), "\u{FFFD}");
-    assert_eq!(decode_form_component(b"%ZZ"), "%ZZ");
-    assert_eq!(decode_form_component(b"100%"), "100%");
-    assert_eq!(decode_form_component(b"a=b"), "a=b");
-    assert_eq!(decode_form_component(b""), "");
-}
-
-#[test]
-fn splits_each_pair_at_the_first_equals_sign() {
+#[tokio::test]
+async fn a_body_over_the_segment_cap_answers_the_field_error() {
+    let body = "&".repeat(1001);
+    let (status, response) = exchange(TestApp::with_record(), &body).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(
-        parse_form(b"a=b=c&d"),
-        [
-            ("a".to_owned(), "b=c".to_owned()),
-            ("d".to_owned(), String::new()),
-        ]
+        text(response).await,
+        r#"{"detail":"Too many fields. Maximum number of fields is 1000."}"#
     );
-    assert_eq!(parse_form(b"&&a=1&"), [("a".to_owned(), "1".to_owned())]);
 }
