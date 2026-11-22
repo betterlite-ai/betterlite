@@ -285,13 +285,16 @@ def _policy_result(config: InvokeAgentApi, case: PolicyRun) -> JsonValue:
 def run(input_value: Input) -> JsonValue:
     agent = AmazonInvokeAgentConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L48
     config: InvokeAgentApi = agent  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L48
+    outcome: JsonValue
     if input_value["scenario"] == "agent_id_alias_path" or input_value["scenario"] == "session_id":
-        return {"results": [_url_result(config, item) for item in input_value["runs"]]}
-    if input_value["scenario"] == "agent_input_text":
-        return {"results": [_transform_result(config, item) for item in input_value["runs"]]}
-    if input_value["scenario"] == "agent_signing_and_capability":
-        return {
+        outcome = {"results": [_url_result(config, item) for item in input_value["runs"]]}
+    elif input_value["scenario"] == "agent_input_text":
+        outcome = {"results": [_transform_result(config, item) for item in input_value["runs"]]}
+    elif input_value["scenario"] == "agent_signing_and_capability":
+        outcome = {
             "signing": [_sign_result(config, item) for item in input_value["signing"]],
             "policy": _policy_result(config, input_value["policy"]),
         }
-    raise ValueError(input_value["scenario"])
+    else:
+        raise ValueError(input_value["scenario"])
+    return outcome
