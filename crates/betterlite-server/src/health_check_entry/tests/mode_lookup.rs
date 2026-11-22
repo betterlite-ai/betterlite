@@ -106,6 +106,46 @@ async fn mode_missing_model_without_a_mode_uses_the_missing_mode_text() {
     assert!(matches!(failure.exception, HealthEntryError::ModelNotSet));
 }
 
+// the one place ModelCatalog's CatalogModes impl runs: every catalog mode string is Mode's serde name
+#[test]
+fn mode_reads_each_catalog_mode_name() {
+    let names = [
+        "audio_speech",
+        "audio_transcription",
+        "chat",
+        "completion",
+        "embedding",
+        "evaluation",
+        "guardrail",
+        "image_edit",
+        "image_generation",
+        "moderation",
+        "ocr",
+        "realtime",
+        "rerank",
+        "responses",
+        "search",
+        "vector_store",
+        "video_generation",
+    ];
+    for name in names {
+        let document = format!(r#"{{"probe-model": {{"mode": "{name}"}}}}"#);
+        let catalog = ModelCatalog::parse(document.as_bytes(), UnknownFields::Reject)
+            .expect("the probe catalog parses");
+        assert_eq!(
+            catalog.catalog_mode("probe-model"),
+            CatalogMode::Mode(name.to_owned())
+        );
+    }
+    let catalog = ModelCatalog::parse(br#"{"probe-model": {}}"#, UnknownFields::Reject)
+        .expect("the probe catalog parses");
+    assert_eq!(catalog.catalog_mode("probe-model"), CatalogMode::NoMode);
+    assert_eq!(
+        catalog.catalog_mode("unlisted-model"),
+        CatalogMode::NotListed
+    );
+}
+
 #[tokio::test]
 async fn mode_resolution_receives_the_original_model_string() {
     let harness = Harness::new();
