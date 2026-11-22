@@ -125,6 +125,17 @@ async fn routes_invalid_body_is_422_before_the_database_gate(
     assert_eq!(detail["loc"], parse(loc));
 }
 
+#[tokio::test]
+async fn routes_unknown_key_is_422_naming_it() {
+    let mut setup = fixture();
+    setup.database = false;
+    let harness = build(setup);
+    let body = r#"{"search_tool":{"search_tool_name":"x","litellm_params":{"search_provider":"tavily","surprise":1}}}"#;
+    let (status, text) = send(&harness, "POST", "/search_tools", body, Some(master())).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(text.contains("surprise"), "{text}");
+}
+
 #[rstest]
 #[case::put_on_list("PUT", "/search_tools/list", UPDATE_BODY, "list")]
 #[case::delete_on_list("DELETE", "/search_tools/list", "", "list")]
