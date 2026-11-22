@@ -13,7 +13,7 @@ use crate::spend_retention::batches::{SpendLogCleanup, StopReason, TableCleanupR
 use super::SPEND_LOG_CLEANUP_JOB_NAME;
 use super::clock::CleanupClock;
 use super::error::{RunError, RunFailure};
-use super::groups::{GroupRun, GroupWindow};
+use super::groups::{GroupPlan, GroupRun, GroupWindow};
 use super::lock::CleanupLock;
 use super::partitions::PartitionMaintenance;
 use super::progress::RunProgress;
@@ -193,7 +193,7 @@ where
                 retention_seconds: seconds,
                 deadline: share,
             };
-            results.extend(self.clean_spend_log_tables(run, window).await?);
+            results.extend(self.clean_group(run, GroupPlan::SpendLogs, window).await?);
             pending = pending.saturating_sub(1);
         }
         if let Some(seconds) = retentions.sessions {
@@ -202,7 +202,7 @@ where
                 retention_seconds: seconds,
                 deadline: share,
             };
-            results.extend(self.clean_session_rollup(run, window).await?);
+            results.extend(self.clean_group(run, GroupPlan::Sessions, window).await?);
             pending = pending.saturating_sub(1);
         }
         if let Some(seconds) = retentions.health_checks {
@@ -211,7 +211,10 @@ where
                 retention_seconds: seconds,
                 deadline: share,
             };
-            results.extend(self.clean_health_checks(run, window).await?);
+            results.extend(
+                self.clean_group(run, GroupPlan::HealthChecks, window)
+                    .await?,
+            );
             pending = pending.saturating_sub(1);
         }
         if let Some(seconds) = retentions.daily_tags {
@@ -219,7 +222,7 @@ where
                 retention_seconds: seconds,
                 deadline,
             };
-            results.extend(self.clean_daily_tag_spend(run, window).await?);
+            results.extend(self.clean_group(run, GroupPlan::DailyTags, window).await?);
         }
         Ok(results)
     }

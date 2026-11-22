@@ -73,7 +73,7 @@ static DAILY_TAG_STEPS: [TableStep; 1] = [TableStep {
 
 // the four _clean_* groups the source runs, each over its own member tables
 #[derive(Debug, Clone, Copy)]
-enum GroupPlan {
+pub(super) enum GroupPlan {
     SpendLogs,
     Sessions,
     HealthChecks,
@@ -87,44 +87,8 @@ where
     Durations: DurationParser,
     Partitions: PartitionMaintenance,
 {
-    // _clean_spend_log_tables: drop expired partitions first, then delete the stragglers they cannot reclaim
-    pub(super) async fn clean_spend_log_tables(
-        &self,
-        run: &mut GroupRun<'_, '_, Clock>,
-        window: GroupWindow,
-    ) -> Result<Vec<TableCleanupResult>, RunFailure> {
-        self.clean_group(run, GroupPlan::SpendLogs, window).await
-    }
-
-    // _clean_session_rollup: both session tables carry their own retention horizon, split between them
-    pub(super) async fn clean_session_rollup(
-        &self,
-        run: &mut GroupRun<'_, '_, Clock>,
-        window: GroupWindow,
-    ) -> Result<Vec<TableCleanupResult>, RunFailure> {
-        self.clean_group(run, GroupPlan::Sessions, window).await
-    }
-
-    // _clean_health_checks
-    pub(super) async fn clean_health_checks(
-        &self,
-        run: &mut GroupRun<'_, '_, Clock>,
-        window: GroupWindow,
-    ) -> Result<Vec<TableCleanupResult>, RunFailure> {
-        self.clean_group(run, GroupPlan::HealthChecks, window).await
-    }
-
-    // _clean_daily_tag_spend: the horizon day itself is kept, and so is every row keyed by a non-ISO day
-    pub(super) async fn clean_daily_tag_spend(
-        &self,
-        run: &mut GroupRun<'_, '_, Clock>,
-        window: GroupWindow,
-    ) -> Result<Vec<TableCleanupResult>, RunFailure> {
-        self.clean_group(run, GroupPlan::DailyTags, window).await
-    }
-
-    // one _clean_* group: its cutoff, the partition work the source starts first, then its tables in order
-    async fn clean_group(
+    // one of the source's four _clean_* groups: its cutoff, the partition work it starts first, then its tables
+    pub(super) async fn clean_group(
         &self,
         run: &mut GroupRun<'_, '_, Clock>,
         plan: GroupPlan,
