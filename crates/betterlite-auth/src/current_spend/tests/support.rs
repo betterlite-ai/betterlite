@@ -22,9 +22,10 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use crate::budget_primitives::window_start::DurationParser;
-use crate::current_spend::cache::{CounterBatch, CounterCache};
 use crate::model_budget_limiter::clock::SystemClock as UptimeClock;
 use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
+use crate::spend_reads::batch::SpendBatch;
+use crate::spend_reads::cache::SpendReadCache;
 use crate::spend_reseed::cache::{ActiveSpendBatch, ReseedCache};
 use crate::spend_reseed::locks::LockRegistry;
 use crate::spend_reseed::reseed::SpendCounterReseed;
@@ -84,7 +85,7 @@ pub(super) struct ScriptedRedis {
 pub(super) struct ScriptedCache {
     pub(super) redis: Option<ScriptedRedis>,
     pub(super) memory: Memory,
-    pub(super) expiring: Mutex<Vec<(String, u32)>>,
+    pub(super) expiring: Mutex<Vec<(String, Option<u32>)>>,
     pub(super) journal: Journal,
 }
 
@@ -151,16 +152,19 @@ impl ReseedCache for ScriptedCache {
     }
 }
 
-impl CounterCache for ScriptedCache {
-    fn memory_set_expiring(
+impl SpendReadCache for ScriptedCache {
+    fn memory_set_ttl(
         &self,
         key: &str,
         value: Decimal,
-        ttl_seconds: u32,
+        ttl_seconds: Option<f64>,
     ) -> Result<(), ScriptFailure> {
         self.put(key, value);
+        let ttl = ttl_seconds
+            .and_then(Decimal::from_f64_retain)
+            .and_then(|seconds| u32::try_from(seconds).ok());
         let mut expiring = self.expiring.lock().unwrap_or_else(PoisonError::into_inner);
-        expiring.push((key.to_owned(), ttl_seconds));
+        expiring.push((key.to_owned(), ttl));
         drop(expiring);
         Ok(())
     }
@@ -202,7 +206,7 @@ impl ActiveSpendBatch for JournalBatch {
     }
 }
 
-impl CounterBatch for JournalBatch {
+impl SpendBatch for JournalBatch {
     fn forget(&self, counter_key: &str) {
         let mut journal = self.journal.lock().unwrap_or_else(PoisonError::into_inner);
         journal.push(format!("forget {counter_key}"));

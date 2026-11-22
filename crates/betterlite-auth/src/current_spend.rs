@@ -1,4 +1,3 @@
-pub mod cache;
 mod floor;
 
 use betterlite_db::budget_permission_rows::Timestamp;
@@ -8,16 +7,14 @@ use thiserror::Error;
 
 use crate::budget_counter::CounterEntityType;
 use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
+use crate::spend_reads::batch::SpendBatch;
+use crate::spend_reads::cache::SpendReadCache;
 use crate::spend_reseed::cache::ReseedCache;
 use crate::spend_reseed::reseed::{CoalescedError, SpendCounterReseed};
 use crate::spend_reseed::rows::SpendCounterRows;
 use crate::spend_reseed::values::{SpendValueError, cache_amount};
 
-use self::cache::{CounterBatch, CounterCache};
 use self::floor::{FloorCheck, recheck_floor};
-
-// bounds the authoritative re-reads of a stale-low counter to one per counter per window
-pub const FLOOR_MARKER_TTL_SECONDS: u32 = 5;
 
 pub const BUDGET_UNVERIFIABLE_DETAIL: &str = "Budget enforcement unavailable: current spend could not be verified against Redis or the database, and fail_closed_budget_enforcement is enabled, so the request was rejected to avoid exceeding the configured budget. Retry shortly.";
 
@@ -78,8 +75,8 @@ pub struct CurrentSpend<'deps, Cache: ?Sized, Batch: ?Sized, Rows: SpendCounterR
 
 impl<Cache, Batch, Rows> CurrentSpend<'_, Cache, Batch, Rows>
 where
-    Cache: CounterCache + ?Sized,
-    Batch: CounterBatch + ?Sized,
+    Cache: SpendReadCache + ?Sized,
+    Batch: SpendBatch + ?Sized,
     Rows: SpendCounterRows + DbSpendCounterRows,
 {
     pub async fn get_current_spend(&self, query: &SpendQuery<'_>) -> SpendResult<Decimal, Cache> {

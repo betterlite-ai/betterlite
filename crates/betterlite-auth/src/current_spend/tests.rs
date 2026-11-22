@@ -445,7 +445,10 @@ async fn floor_key_ttl5_no_negative_cache() {
         .await
         .unwrap();
     assert_eq!(entries(&scene.lookups).len(), 1);
-    assert_eq!(entries(&scene.cache.expiring), vec![(MARKER.to_owned(), 5)]);
+    assert_eq!(
+        entries(&scene.cache.expiring),
+        vec![(MARKER.to_owned(), Some(5))]
+    );
     assert_eq!(scene.cache.stored(MARKER), Some(number("3")));
 
     let missing = Scene::new(None, &[(KEY, number("5"))], Some(rows(None)));

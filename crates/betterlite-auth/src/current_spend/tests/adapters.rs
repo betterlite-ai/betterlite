@@ -17,9 +17,11 @@ use betterlite_redis::redis_live_client::LiveClientFactory;
 use rust_decimal::Decimal;
 
 use super::support::money;
-use crate::current_spend::cache::{CounterBatch as _, CounterCache as _};
+use crate::auth_invalidation::SPEND_DB_FLOOR_TTL_SECONDS;
 use crate::spend_counter_batch::batch::CounterValue;
 use crate::spend_counter_batch::scope::SpendCounterScope;
+use crate::spend_reads::batch::SpendBatch as _;
+use crate::spend_reads::cache::SpendReadCache as _;
 use crate::spend_reseed::cache::dual::ReseedCacheError;
 use crate::spend_reseed::cache::{ActiveSpendBatch as _, ReseedCache as _};
 use crate::spend_reseed::values::ReseedCacheValue;
@@ -70,7 +72,11 @@ async fn dual_cache_marker_expires_after_its_ttl_and_skips_redis() {
     let clock = Arc::new(Mutex::new(0.0_f64));
     let cache = local_cache(&clock, None);
     cache
-        .memory_set_expiring("spend_db_floor:spend:key:k", money("2.5"), 5)
+        .memory_set_ttl(
+            "spend_db_floor:spend:key:k",
+            money("2.5"),
+            Some(SPEND_DB_FLOOR_TTL_SECONDS),
+        )
         .unwrap();
     *clock.lock().unwrap() = 4.9_f64;
     let held = cache

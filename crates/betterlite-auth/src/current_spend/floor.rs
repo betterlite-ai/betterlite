@@ -2,14 +2,13 @@ use betterlite_db::spend_rows::key::END_USER_COUNTER_PREFIX;
 use betterlite_db::spend_rows::rows::SpendCounterRows as DbSpendCounterRows;
 use rust_decimal::Decimal;
 
+use crate::auth_invalidation::SPEND_DB_FLOOR_TTL_SECONDS;
+use crate::spend_reads::batch::SpendBatch;
+use crate::spend_reads::cache::SpendReadCache;
 use crate::spend_reseed::rows::SpendCounterRows;
 use crate::spend_reseed::values::{SpendValueError, cache_amount};
 
-use super::cache::{CounterBatch, CounterCache};
-use super::{
-    CurrentSpend, CurrentSpendError, FLOOR_MARKER_TTL_SECONDS, SpendQuery, SpendResult,
-    WindowDescriptors,
-};
+use super::{CurrentSpend, CurrentSpendError, SpendQuery, SpendResult, WindowDescriptors};
 
 pub(super) enum FloorCheck {
     // the request is decided on this spend without the strict check
@@ -25,8 +24,8 @@ pub(super) async fn recheck_floor<Cache, Batch, Rows>(
     current: Decimal,
 ) -> SpendResult<FloorCheck, Cache>
 where
-    Cache: CounterCache + ?Sized,
-    Batch: CounterBatch + ?Sized,
+    Cache: SpendReadCache + ?Sized,
+    Batch: SpendBatch + ?Sized,
     Rows: SpendCounterRows + DbSpendCounterRows,
 {
     let higher_fallback = query.fallback_spend > current;
@@ -51,8 +50,8 @@ async fn authoritative_floor_spend<Cache, Batch, Rows>(
     window: &WindowDescriptors<'_>,
 ) -> SpendResult<Option<Decimal>, Cache>
 where
-    Cache: CounterCache + ?Sized,
-    Batch: CounterBatch + ?Sized,
+    Cache: SpendReadCache + ?Sized,
+    Batch: SpendBatch + ?Sized,
     Rows: SpendCounterRows + DbSpendCounterRows,
 {
     let marker_key = format!("spend_db_floor:{counter_key}");
@@ -68,7 +67,7 @@ where
     }
     spend
         .cache
-        .memory_set_expiring(&marker_key, db_spend, FLOOR_MARKER_TTL_SECONDS)
+        .memory_set_ttl(&marker_key, db_spend, Some(SPEND_DB_FLOOR_TTL_SECONDS))
         .map_err(CurrentSpendError::Cache)?;
     Ok(Some(db_spend))
 }
@@ -79,8 +78,8 @@ async fn floor_spend_from_db<Cache, Batch, Rows>(
     window: &WindowDescriptors<'_>,
 ) -> Result<Option<Decimal>, SpendValueError>
 where
-    Cache: CounterCache + ?Sized,
-    Batch: CounterBatch + ?Sized,
+    Cache: SpendReadCache + ?Sized,
+    Batch: SpendBatch + ?Sized,
     Rows: SpendCounterRows + DbSpendCounterRows,
 {
     let reader = spend.reseed.reader();
@@ -108,8 +107,8 @@ async fn repair_stale_spend_counter<Cache, Batch, Rows>(
     db_spend: Decimal,
 ) -> SpendResult<(), Cache>
 where
-    Cache: CounterCache + ?Sized,
-    Batch: CounterBatch + ?Sized,
+    Cache: SpendReadCache + ?Sized,
+    Batch: SpendBatch + ?Sized,
     Rows: SpendCounterRows,
 {
     let cached = spend

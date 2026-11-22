@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_auth::current_spend::cache::{CounterBatch, CounterCache};
 use betterlite_auth::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
+use betterlite_auth::spend_reads::batch::SpendBatch;
+use betterlite_auth::spend_reads::cache::SpendReadCache;
 use betterlite_auth::spend_reseed::cache::{ActiveSpendBatch, ReseedCache};
 use betterlite_auth::spend_reseed::rows::{
     SpendAggregateRow, SpendCounterRows, WindowEntity, WindowSpendRow,
@@ -132,14 +133,17 @@ impl ReseedCache for ScriptedCache<'_> {
     }
 }
 
-impl CounterCache for ScriptedCache<'_> {
-    fn memory_set_expiring(
+impl SpendReadCache for ScriptedCache<'_> {
+    fn memory_set_ttl(
         &self,
         key: &str,
         value: Decimal,
-        ttl_seconds: u32,
+        ttl_seconds: Option<f64>,
     ) -> Result<(), ScriptedFailure> {
-        let entry = (ReseedCacheValue::Number(value), Some(ttl_seconds));
+        let ttl = ttl_seconds
+            .and_then(Decimal::from_f64_retain)
+            .and_then(|seconds| u32::try_from(seconds).ok());
+        let entry = (ReseedCacheValue::Number(value), ttl);
         self.store(key, entry);
         Ok(())
     }
@@ -210,7 +214,7 @@ impl ActiveSpendBatch for ScriptedBatch {
     }
 }
 
-impl CounterBatch for ScriptedBatch {
+impl SpendBatch for ScriptedBatch {
     fn forget(&self, _counter_key: &str) {
         let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if !matches!(*state, BatchState::Absent) {
