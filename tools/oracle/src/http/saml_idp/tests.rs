@@ -55,7 +55,7 @@ struct CorpusSeed {
 }
 
 #[test]
-fn binds_each_signed_response_to_its_proxys_own_authn_request() {
+fn binds_each_signed_response_to_its_own_proxy_authn_request() {
     let metadata = prepare();
     let idp = StubServer::start(vec![answer(200, Vec::new(), &metadata)]);
     let published = client()
@@ -102,28 +102,37 @@ fn assert_bound(output: &ValidationOutput, request_id: &str, assertion_id: &str)
 fn distinguishes_mutated_assertions_with_the_independent_validator() {
     let metadata = prepare();
     let seed = corpus_seed("valid-authn-request-a.json");
-    let cases = [
-        (Mutation::Unsigned, "not signed"),
-        (Mutation::WrongKey, "Signature validation failed"),
-        (Mutation::Expired, "expired"),
-        (Mutation::WrongAudience, "not a valid audience"),
-        (Mutation::WrongDestination, "instead of"),
-    ];
-    for (mutation, expected) in cases {
-        let assertion_id = format!("_assertion_{mutation:?}");
-        let (output, _response) = sign_and_validate(
-            &seed.saml_request,
-            &seed.request_id,
-            assertion(Some(mutation), &assertion_id),
-            &metadata,
-        );
-        assert!(!output.valid, "{mutation:?} must be rejected");
-        assert!(
-            output.error.contains(expected),
-            "{mutation:?}: {}",
-            output.error
-        );
-    }
+    assert_mutation_rejected(&seed, &metadata, Mutation::Unsigned, "not signed");
+    assert_mutation_rejected(
+        &seed,
+        &metadata,
+        Mutation::WrongKey,
+        "Signature validation failed",
+    );
+    assert_mutation_rejected(&seed, &metadata, Mutation::Expired, "expired");
+    assert_mutation_rejected(
+        &seed,
+        &metadata,
+        Mutation::WrongAudience,
+        "not a valid audience",
+    );
+    assert_mutation_rejected(&seed, &metadata, Mutation::WrongDestination, "instead of");
+}
+
+fn assert_mutation_rejected(seed: &CorpusSeed, metadata: &str, mutation: Mutation, expected: &str) {
+    let assertion_id = format!("_assertion_{mutation:?}");
+    let (output, _response) = sign_and_validate(
+        &seed.saml_request,
+        &seed.request_id,
+        assertion(Some(mutation), &assertion_id),
+        metadata,
+    );
+    assert!(!output.valid, "{mutation:?} must be rejected");
+    assert!(
+        output.error.contains(expected),
+        "{mutation:?}: {}",
+        output.error
+    );
 }
 
 #[test]

@@ -23,7 +23,7 @@ const IDP_ENTITY: &str = "urn:betterlite:oracle:idp";
 const IDP_SSO_URL: &str = "http://idp.invalid/sso";
 // python3-saml allows 300 seconds of clock drift on Conditions, so the expiry must clear that window.
 const EXPIRED_NOT_BEFORE_SECONDS: i64 = -960;
-const EXPIRED_NOT_ON_OR_AFTER_SECONDS: i64 = -360;
+const EXPIRED_NOT_AFTER_SECONDS: i64 = -360;
 const TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%SZ";
 
 #[derive(Serialize)]
@@ -138,7 +138,7 @@ fn validity(
     signed_at: DateTime<Utc>,
 ) -> Result<(DateTime<Utc>, DateTime<Utc>), SamlIdpError> {
     let (before, after) = if assertion.mutation == Some(Mutation::Expired) {
-        (EXPIRED_NOT_BEFORE_SECONDS, EXPIRED_NOT_ON_OR_AFTER_SECONDS)
+        (EXPIRED_NOT_BEFORE_SECONDS, EXPIRED_NOT_AFTER_SECONDS)
     } else {
         (
             assertion.not_before_offset_seconds,

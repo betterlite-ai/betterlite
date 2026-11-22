@@ -35,8 +35,7 @@ pub fn decode_authn_request_id(encoded: &[u8]) -> Result<String, SamlIdpError> {
     root_id(&xml)
 }
 
-// The captured value may be the query parameter, a form body or the redirect itself; all three
-// carry the same bounded base64 payload, and none of them names a location to fetch.
+// The captured value is a query parameter, a form body or the redirect itself, never a location to fetch.
 fn request_parameter_value(text: &str) -> Result<String, SamlIdpError> {
     if text.starts_with("http://") || text.starts_with("https://") {
         let url = Url::parse(text).map_err(SamlIdpError::RequestUrl)?;

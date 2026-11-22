@@ -15,8 +15,8 @@ pub(crate) const MAX_ATTRIBUTE_BYTES: usize = 4096;
 pub(crate) const MAX_RELAY_STATE_BYTES: usize = 1024;
 pub(crate) const MAX_OFFSET_SECONDS: i64 = 86_400;
 
-const DEFAULT_NOT_BEFORE_OFFSET_SECONDS: i64 = -60;
-const DEFAULT_NOT_ON_OR_AFTER_OFFSET_SECONDS: i64 = 300;
+const DEFAULT_NOT_BEFORE_SECONDS: i64 = -60;
+const DEFAULT_NOT_AFTER_SECONDS: i64 = 300;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,9 +27,9 @@ pub(crate) struct SamlAssertion {
     pub(crate) destination: String,
     pub(crate) request_id_capture: String,
     pub(crate) assertion_id: String,
-    #[serde(default = "default_not_before_offset_seconds")]
+    #[serde(default = "default_not_before_seconds")]
     pub(crate) not_before_offset_seconds: i64,
-    #[serde(default = "default_not_on_or_after_offset_seconds")]
+    #[serde(default = "default_not_after_seconds")]
     pub(crate) not_on_or_after_offset_seconds: i64,
     #[serde(default)]
     pub(crate) relay_state: Option<String>,
@@ -48,12 +48,12 @@ pub(crate) enum Mutation {
     SubjectConfirmationOnly,
 }
 
-const fn default_not_before_offset_seconds() -> i64 {
-    DEFAULT_NOT_BEFORE_OFFSET_SECONDS
+const fn default_not_before_seconds() -> i64 {
+    DEFAULT_NOT_BEFORE_SECONDS
 }
 
-const fn default_not_on_or_after_offset_seconds() -> i64 {
-    DEFAULT_NOT_ON_OR_AFTER_OFFSET_SECONDS
+const fn default_not_after_seconds() -> i64 {
+    DEFAULT_NOT_AFTER_SECONDS
 }
 
 impl SamlAssertion {
