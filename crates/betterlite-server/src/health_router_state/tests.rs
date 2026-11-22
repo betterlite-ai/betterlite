@@ -359,11 +359,12 @@ fn capture_logs() -> (LogBuffer, DefaultGuard) {
 
 #[test]
 fn no_router_writes_nothing() {
-    // there is no health cache to reach, and no recording router can prove a write either way
+    let (logs, _guard) = capture_logs();
     let healthy = [object(vec![("model_id", text("a"))])];
     let unhealthy = [object(vec![("model_id", text("b"))])];
     let live = exceptions(&[("b", 500)]);
     write_health_state(None, listing(true), &healthy, &unhealthy, &live);
+    assert!(logs.text().is_empty());
 }
 
 #[test]
