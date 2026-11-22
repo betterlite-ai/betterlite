@@ -1,0 +1,19 @@
+kind: helper
+name: auth-errors-route-db-outage-503
+call:
+  auth_errors:
+    rows:
+      # a key lookup that cannot reach the database answers the chat route with the 503 envelope
+      - step: handle
+        failure: {kind: connect, message: "All connection attempts failed", type: "", param: null, status_code: 0, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: []
+        identity: null
+        request_data: {model: gpt-4o, messages: [{role: user, content: hi}]}
+        route: /chat/completions
+        user_agent: openai-python/1.60.0
+        client_host: 192.0.2.10
+env: {}
+compare:
+  ignore: []

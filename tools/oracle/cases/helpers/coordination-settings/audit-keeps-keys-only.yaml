@@ -1,0 +1,19 @@
+kind: helper
+name: coordination-settings-audit-keeps-keys-only
+call:
+  coordination_settings:
+    function: audit
+    settings:
+      host: cache.internal
+      password: hunter2
+      ssl: false
+      sentinel_password: null
+      startup_nodes:
+        - host: 10.0.0.1
+          port: 7001
+calls:
+  - coordination_settings:
+      function: audit
+      settings: {}
+env: {}
+compare: {ignore: []}

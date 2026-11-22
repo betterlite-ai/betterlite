@@ -1,0 +1,68 @@
+kind: helper
+name: bedrock-other-stability-option-mapping
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: supported_params
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options:
+          size: 1024x1024
+          n: 2
+          response_format: b64_json
+          mask: m2
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {size: 512x512}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {size: 256x256}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {size: 1792x1024}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {size: 1024x1792}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {size: 100x100}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {size: null}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {n: null}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {quality: high}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {quality: high}
+        drop_params: true
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {n: 2, quality: high}
+        drop_params: true
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {user: u}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {mask: m, size: 1024x1024}
+        drop_params: false
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {}
+        drop_params: false
+env: {}
+compare: {ignore: []}

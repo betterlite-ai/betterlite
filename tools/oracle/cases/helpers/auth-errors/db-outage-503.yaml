@@ -1,0 +1,30 @@
+kind: helper
+name: auth-errors-db-outage-503
+call:
+  auth_errors:
+    rows:
+      # an unreachable database answers 503 no_db_connection instead of a 401
+      - step: handle
+        failure: {kind: connect, message: connection refused, type: "", param: null, status_code: 0, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: []
+        identity: null
+        request_data: {model: gpt-4o}
+        route: /v1/chat/completions
+        user_agent: curl/8.5
+        client_host: 203.0.113.7
+      # the failure hook still sees the outage and may answer for it
+      - step: handle
+        failure: {kind: connect, message: connection refused, type: "", param: null, status_code: 0, marked: false, internal_message: ""}
+        reply: replace
+        replacement: {kind: http, message: Service temporarily unavailable, type: auth_error, param: null, status_code: 503, marked: false, internal_message: ""}
+        switches: []
+        identity: null
+        request_data: {model: gpt-4o}
+        route: /v1/embeddings
+        user_agent: null
+        client_host: 198.51.100.4
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,61 @@
+kind: helper
+name: bedrock-s3-signing-managed-upload-object-name
+call:
+  bedrock_services_s3_signing:
+    operation: object_name
+    files:
+      - content: "{\"body\": {\"model\": \"bedrock/us.anthropic.claude:0\"}}\n{\"body\": {\"model\": \"other\"}}"
+        purpose: batch
+        filename: input.jsonl
+      - content: "{\"body\": {\"model\": \"a:b\"}}"
+        purpose: batch
+        filename: null
+      - content: "{\"custom_id\": \"1\"}"
+        purpose: batch
+        filename: null
+      - content: "{\"body\": {}}"
+        purpose: batch
+        filename: null
+      - content: "{\"body\": {\"model\": \"a\"}}\u2028{\"body\": {\"model\": \"b\"}}"
+        purpose: batch
+        filename: null
+      - content: "\x1f\r\n{\"body\": {\"model\": \"q\"}}\v"
+        purpose: batch
+        filename: null
+      - content: "\n  \n"
+        purpose: batch
+        filename: a b.jsonl
+      - content: ""
+        purpose: batch
+        filename: null
+      - content: ""
+        content_hex: ff
+        purpose: assistants
+        filename: ../x.txt
+      - content: "{\"body\": {\"model\": \"m\"}}"
+        purpose: fine-tune
+        filename: null
+      - content: "{\"body\": {\"model\": \"m\"}}"
+        purpose: messages
+        filename: "C:\\data\\upload.jsonl"
+      - content: ""
+        content_hex: ff
+        purpose: batch
+        filename: null
+      - content: "{\"a\": 1}\nnot json"
+        purpose: batch
+        filename: null
+      - content: "\x1f{}"
+        purpose: batch
+        filename: null
+      - content: "{\"body\": {\"model\": 5}}"
+        purpose: batch
+        filename: null
+      - content: "{\"body\": []}"
+        purpose: batch
+        filename: null
+      - content: " [1]"
+        purpose: batch
+        filename: null
+env: {}
+compare: {ignore: []}

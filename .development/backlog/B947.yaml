@@ -1,14 +1,14 @@
 id: B947
 milestone: M5 api families
 title: Responses file search loop
-status: todo
+status: done
 depends_on: [B090, B171, B946, B1087, B732, B1064, B2401, B928, B1138]
 file: tasks/B947-responses-file-search-loop.yaml
 covers:
   - "litellm/responses/file_search/emulated_handler.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2942

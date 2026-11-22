@@ -1,0 +1,135 @@
+kind: helper
+name: bedrock-s3-signing-upload-destination
+call:
+  bedrock_services_s3_signing:
+    operation: destination
+    uploads:
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt}
+        optional_params: {}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: " bkt/pre/fix/ "}
+        optional_params: {}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: ""}
+        optional_params: {}
+        environment: {AWS_S3_BUCKET_NAME: env-bkt}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt}
+        optional_params: {}
+        environment: {}
+        file: {filename: null, content: "{\"body\": {\"model\": \"m\"}}"}
+        purpose: batch
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt, s3_region_name: eu-west-1}
+        optional_params: {s3_region_name: ap-south-1}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt, s3_region_name: ""}
+        optional_params: {s3_region_name: ap-south-1}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt, s3_region_name: Weird}
+        optional_params: {aws_region_name: Bad}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt}
+        optional_params: {aws_region_name: us-east-2}
+        environment: {AWS_REGION_NAME: ca-central-1}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: "arn:aws:bedrock:eu-central-1:123456789012:inference-profile/x"
+        litellm_params: {s3_bucket_name: bkt, s3_region_name: null}
+        optional_params: {}
+        environment: {AWS_REGION_NAME: ca-central-1}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt}
+        optional_params: {}
+        environment: {AWS_REGION_NAME: ca-central-1, AWS_REGION: us-east-1}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt}
+        optional_params: {}
+        environment: {AWS_REGION: us-east-1}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt, s3_region_name: cn-north-1}
+        optional_params: {}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt, s3_endpoint_url: "http://minio:9000///"}
+        optional_params: {}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt, s3_endpoint_url: "http://minio:9000"}
+        optional_params: {s3_endpoint_url: "http://other"}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt}
+        optional_params: {s3_endpoint_url: "http://minio:9000"}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt, s3_endpoint_url: ""}
+        optional_params: {}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {}
+        optional_params: {s3_bucket_name: optional-only}
+        environment: {AWS_S3_BUCKET_NAME: ""}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {}
+        optional_params: {aws_region_name: Bad}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt}
+        optional_params: {aws_region_name: Bad}
+        environment: {}
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt}
+        optional_params: {}
+        environment: {}
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: bkt}
+        optional_params: {}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+      - model: bedrock/anthropic.claude
+        litellm_params: {s3_bucket_name: " / "}
+        optional_params: {}
+        environment: {}
+        file: {filename: a b.txt, content: hello}
+        purpose: assistants
+env: {}
+compare: {ignore: []}
