@@ -1,0 +1,177 @@
+use std::collections::BTreeMap;
+use std::str::FromStr as _;
+use std::time::Instant;
+
+use betterlite_logging::prometheus::failure::exception::LabelException;
+use betterlite_logging::prometheus_deployment::failure::{
+    // ast-grep-ignore: no-long-names
+    set_llm_deployment_failure_metrics as record_failure_metrics,
+};
+use betterlite_logging::prometheus_deployment::fallbacks::{
+    log_failure_fallback_event, log_success_fallback_event,
+};
+use betterlite_logging::prometheus_deployment::requests::{
+    FailureRequest, FallbackRequest, SuccessRequest,
+};
+use betterlite_logging::prometheus_deployment::success::{
+    // ast-grep-ignore: no-long-names
+    set_llm_deployment_success_metrics as record_success_metrics,
+};
+use betterlite_models::call_helpers::metadata::MetadataSlots;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues};
+use rust_decimal::Decimal;
+use serde_json::json;
+
+use super::input::{Function, Input};
+use super::probe::Probe;
+
+pub(super) fn run(input: &Input) -> HelperResult {
+    let probe = Probe::new();
+    match input.function {
+        Function::Failure => failure(&probe, input),
+        Function::FallbackSuccess => fallback(&probe, input, true),
+        Function::FallbackFailure => fallback(&probe, input, false),
+        Function::Success => success(&probe, input),
+    }
+    Ok(json!({ "events": probe.events_value() }))
+}
+
+fn failure(probe: &Probe, input: &Input) {
+    let model = text(&input.kwargs, "model");
+    let params = object(&input.kwargs, "litellm_params");
+    let exception = input.exception.as_ref().map(probe_exception);
+    record_failure_metrics(
+        probe,
+        &FailureRequest {
+            model: model.as_deref(),
+            exception: exception.as_ref(),
+            litellm_params: &params,
+            payload: input.payload.as_ref(),
+            catalog: None,
+            now: Instant::now(),
+        },
+    );
+}
+
+fn fallback(probe: &Probe, input: &Input, success: bool) {
+    let model = text(&input.kwargs, "model");
+    let tags = tags(&input.kwargs);
+    let metadata = MetadataSlots {
+        metadata: object_field(&input.kwargs, "metadata"),
+        litellm_metadata: object_field(&input.kwargs, "litellm_metadata"),
+    };
+    let exception = probe_exception(&input.exception.clone().unwrap_or_default());
+    let request = FallbackRequest {
+        original_model_group: &input.original_model_group,
+        model: model.as_deref(),
+        tags: &tags,
+        metadata: &metadata,
+        exception: &exception,
+        catalog: None,
+        now: Instant::now(),
+    };
+    if success {
+        log_success_fallback_event(probe, &request).ok();
+    } else {
+        log_failure_fallback_event(probe, &request).ok();
+    }
+}
+
+fn success(probe: &Probe, input: &Input) {
+    let model = text(&input.kwargs, "model");
+    let params = object(&input.kwargs, "litellm_params");
+    let stream = match input.kwargs.get("stream") {
+        Some(Json::Bool(flag)) => Some(*flag),
+        Some(Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    };
+    let exception = input.exception.as_ref().map(probe_exception);
+    let values = values(input);
+    record_success_metrics(
+        probe,
+        &SuccessRequest {
+            model: model.as_deref(),
+            stream,
+            completion_start_time: input.completion_start_time.as_deref().and_then(decimal),
+            litellm_params: &params,
+            payload: input.payload.as_ref(),
+            exception: exception.as_ref(),
+            values: &values,
+            context: None,
+            start_time: input
+                .start_time
+                .as_deref()
+                .and_then(decimal)
+                .unwrap_or_default(),
+            end_time: input
+                .end_time
+                .as_deref()
+                .and_then(decimal)
+                .unwrap_or_default(),
+            output_tokens: input.output_tokens.as_deref().and_then(decimal),
+            now: Instant::now(),
+        },
+    );
+}
+
+fn probe_exception(fields: &BTreeMap<String, String>) -> LabelException {
+    LabelException {
+        class_name: "ProbeException".to_owned(),
+        status_code: fields.get("status_code").cloned(),
+        code: fields.get("code").cloned(),
+        llm_provider: fields.get("llm_provider").cloned(),
+        ..LabelException::default()
+    }
+}
+
+fn values(input: &Input) -> UserApiKeyLabelValues {
+    let entries: Vec<(String, LabelDumpValue)> = input
+        .values
+        .iter()
+        .map(|(name, value)| (name.clone(), LabelDumpValue::String(value.clone())))
+        .collect();
+    UserApiKeyLabelValues::from_entries(&entries)
+}
+
+fn text(kwargs: &JsonObject, key: &str) -> Option<String> {
+    match kwargs.get(key) {
+        Some(Json::Text(value)) => Some(value.clone()),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    }
+}
+
+fn object(kwargs: &JsonObject, key: &str) -> JsonObject {
+    object_field(kwargs, key).unwrap_or_default()
+}
+
+fn object_field(kwargs: &JsonObject, key: &str) -> Option<JsonObject> {
+    match kwargs.get(key) {
+        Some(Json::Object(entries)) => Some(entries.clone()),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+        | None => None,
+    }
+}
+
+fn tags(kwargs: &JsonObject) -> Vec<String> {
+    match kwargs.get("tags") {
+        Some(Json::List(items)) => items
+            .iter()
+            .filter_map(|item| match item {
+                Json::Text(text) => Some(text.clone()),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                    None
+                }
+            })
+            .collect(),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
+        | None => Vec::new(),
+    }
+}
+
+fn decimal(text: &str) -> Option<Decimal> {
+    Decimal::from_str(text).ok()
+}
