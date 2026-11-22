@@ -1,0 +1,9 @@
+task: B739
+deviations:
+  - what: A failure reading a cached default end-user budget or a cached team-member default budget escapes the lookup, so a broken cache fails the request instead of counting as a cache miss.
+    why: LiteLLM's DualCache swallows every read exception and answers None; the task requires the initial cache reads to sit outside the fetch catch and surface, so a cache outage is never hidden as "no budget configured".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L294-L297
+  - what: A cache write failure for the default end-user budget returns None where the fetched budget was found, and the same failure for the team-member default budget and for a fetched end-user row escapes the lookup.
+    why: LiteLLM's DualCache swallows every write exception, so the fetched budget or row is still returned; the task makes a default-budget write failure answer None and lets the team-member and end-user fetch paths see it, so a cache that cannot store the row is not served as if it had.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L515-L518
+kept_bugs: []
