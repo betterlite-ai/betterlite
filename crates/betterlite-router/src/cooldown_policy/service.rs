@@ -104,13 +104,20 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
     ) -> impl Future<Output = bool> + Send + 'call {
         let resolution = prepare_fallback(&self.counters, &self.settings, lookup, failure);
         async move {
-            match resolution {
-                Ok(Some(prepared)) => match self.finish_cooldown(&prepared).await {
-                    Ok(cooled) => cooled,
-                    Err(error) => skip_cooldown(&error),
-                },
-                Ok(None) => false,
-                Err(error) => skip_cooldown(&error),
+            let prepared = match resolution {
+                Ok(Some(prepared)) => prepared,
+                Ok(None) => return false,
+                Err(error) => {
+                    tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
+                    return false;
+                }
+            };
+            match self.finish_cooldown(&prepared).await {
+                Ok(cooled) => cooled,
+                Err(error) => {
+                    tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
+                    false
+                }
             }
         }
     }
@@ -220,12 +227,6 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
                     .map_err(CooldownPolicyError::from)
             })
     }
-}
-
-// the fallback path never surfaces a cooldown failure: it logs the reason and keeps the provider error
-fn skip_cooldown(error: &CooldownPolicyError) -> bool {
-    tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
-    false
 }
 
 fn prepare<S>(
