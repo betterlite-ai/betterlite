@@ -5,10 +5,7 @@ pub(crate) const DEFAULT_QUEUE_MAX_BYTES: usize = 64_000_000;
 pub(crate) const ENV_SPEND_LOGS_URL: &str = "SPEND_LOGS_URL";
 
 // SPEND_LOG_QUEUE_MAX_BYTES is max(1, int(...)) at import, so zero and negative budgets load as one byte
-pub(crate) fn max_bytes<Lookup>(lookup: &Lookup) -> Result<usize, ConfigError>
-where
-    Lookup: EnvironmentLookup,
-{
+pub(crate) fn max_bytes(lookup: &dyn EnvironmentLookup) -> Result<usize, ConfigError> {
     let Some(text) = lookup.lookup(ENV_SPEND_LOG_QUEUE_MAX_BYTES) else {
         return Ok(DEFAULT_QUEUE_MAX_BYTES);
     };
@@ -21,10 +18,7 @@ where
 
 // SPEND_LOGS_URL: an empty value counts as unset, so the database branch runs instead
 #[must_use]
-pub(crate) fn logs_url<Lookup>(lookup: &Lookup) -> Option<String>
-where
-    Lookup: EnvironmentLookup,
-{
+pub(crate) fn logs_url(lookup: &dyn EnvironmentLookup) -> Option<String> {
     lookup
         .lookup(ENV_SPEND_LOGS_URL)
         .filter(|url| !url.is_empty())
