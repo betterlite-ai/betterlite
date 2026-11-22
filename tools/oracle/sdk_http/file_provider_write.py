@@ -1,14 +1,19 @@
 import asyncio
 from collections.abc import Coroutine
-from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack, runtime_checkable
 
 import httpx
 import litellm
 import openai
+from litellm.exceptions import BadRequestError
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from fine_tuning_read import JSON, Failure, StructuredTimeout, api_failure, timeout_value
+
+# an unannotated exception class carries Any, so both clauses catch theirs through a typed alias
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
+BAD_REQUEST: Final[type[openai.BadRequestError]] = BadRequestError
 
 # the sync calls answer a record and the async ones a coroutine of one
 WriteResult: TypeAlias = BaseModel | Coroutine[object, object, BaseModel]
@@ -142,6 +147,14 @@ class Raised(BaseModel):
     llm_provider: str
 
 
+# BaseLLMException leaves status_code and message unannotated too
+class ProviderFailure(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status_code: int
+    message: str
+
+
 class StepOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -174,8 +187,9 @@ class FileProviderWriteRequest(BaseModel):
 
 
 # the harness base stands in for an absent api_base
-def param_values(params: Params, harness: str) -> WriteValues:
-    return WriteValues(
+def write_values(step: UploadStep | DeleteStep, harness: str) -> WriteValues:
+    params = step.params
+    values = WriteValues(
         api_base=params.api_base if params.api_base is not None else harness,
         api_key=params.api_key,
         api_version=params.api_version,
@@ -185,33 +199,34 @@ def param_values(params: Params, harness: str) -> WriteValues:
         max_retries=params.max_retries,
         passthrough=params.passthrough,
     )
-
-
-def upload_values(upload: UploadStep, harness: str) -> WriteValues:
-    values = param_values(upload.params, harness)
-    values["file"] = (upload.file.filename, upload.file.content.encode(), upload.file.content_type)
-    values["purpose"] = upload.purpose
-    values["extra_headers"] = upload.extra_headers
-    values["extra_body"] = upload.extra_body
-    if upload.expires_after is not None:
-        values["expires_after"] = ExpiresAfter(
-            anchor=upload.expires_after.anchor, seconds=upload.expires_after.seconds
-        )
-    # an explicit null reaches create_file, an absent provider keeps each function's default
-    if "custom_llm_provider" in upload.model_fields_set:
-        values["custom_llm_provider"] = upload.custom_llm_provider
+    values["extra_headers"] = step.extra_headers
+    values["extra_body"] = step.extra_body
+    match step:
+        case UploadStep():
+            values["file"] = (
+                step.file.filename,
+                step.file.content.encode(),
+                step.file.content_type,
+            )
+            values["purpose"] = step.purpose
+            expires = step.expires_after
+            if expires is not None:
+                values["expires_after"] = ExpiresAfter(anchor=expires.anchor, seconds=expires.seconds)
+            # an explicit null reaches create_file, an absent provider keeps each function's default
+            if "custom_llm_provider" in step.model_fields_set:
+                values["custom_llm_provider"] = step.custom_llm_provider
+        case DeleteStep():
+            values["file_id"] = step.file_id
+            values["model"] = step.model
+            if step.custom_llm_provider is not None:
+                values["custom_llm_provider"] = step.custom_llm_provider
     return values
 
 
-def delete_values(delete: DeleteStep, harness: str) -> WriteValues:
-    values = param_values(delete.params, harness)
-    values["file_id"] = delete.file_id
-    values["model"] = delete.model
-    values["extra_headers"] = delete.extra_headers
-    values["extra_body"] = delete.extra_body
-    if delete.custom_llm_provider is not None:
-        values["custom_llm_provider"] = delete.custom_llm_provider
-    return values
+# a record is known by the dump it answers; pydantic's BaseModel class object carries Any
+@runtime_checkable
+class Dumped(Protocol):
+    def model_dump_json(self, *, exclude_none: bool) -> str: ...
 
 
 # the betterlite records leave out null fields, so the LiteLLM record is dumped without them
@@ -219,11 +234,11 @@ def settle(result: WriteResult) -> JsonValue:
     match result:
         case Coroutine():
             return settle(asyncio.run(result))
-        case BaseModel():
+        case Dumped():
             return JSON.validate_json(result.model_dump_json(exclude_none=True))
 
 
-def rejection(error: litellm.BadRequestError) -> Rejection:
+def rejection(error: openai.BadRequestError) -> Rejection:
     raised = Raised.model_validate(error)
     return Rejection(
         model=raised.model,
@@ -237,12 +252,15 @@ def rejection(error: litellm.BadRequestError) -> Rejection:
 def outcome(call: WriteCall, values: WriteValues) -> StepOutcome:
     try:
         value = settle(call(**values))
-    except litellm.BadRequestError as error:
+    except BAD_REQUEST as error:
         return StepOutcome(failure=api_failure(error), bad_request=rejection(error))
     except openai.APIStatusError as error:
         return StepOutcome(failure=api_failure(error))
-    except BaseLLMException as error:
-        failure = Failure(cls=type(error).__name__, status=error.status_code, message=error.message)
+    except PROVIDER_ERROR as error:
+        provider = ProviderFailure.model_validate(error)
+        failure = Failure(
+            cls=type(error).__name__, status=provider.status_code, message=provider.message
+        )
         return StepOutcome(failure=failure)
     except ValueError as error:
         return StepOutcome(failure=Failure(cls=type(error).__name__, status=0, message=str(error)))
@@ -252,10 +270,10 @@ def outcome(call: WriteCall, values: WriteValues) -> StepOutcome:
 def run_step(step: Step, harness: str) -> StepOutcome:
     match step:
         case CreateKind(create_file=upload):
-            return outcome(API.create_file, upload_values(upload, harness))
+            return outcome(API.create_file, write_values(upload, harness))
         case ACreateKind(acreate_file=upload):
-            return outcome(API.acreate_file, upload_values(upload, harness))
+            return outcome(API.acreate_file, write_values(upload, harness))
         case DeleteKind(file_delete=delete):
-            return outcome(API.file_delete, delete_values(delete, harness))
+            return outcome(API.file_delete, write_values(delete, harness))
         case ADeleteKind(afile_delete=delete):
-            return outcome(API.afile_delete, delete_values(delete, harness))
+            return outcome(API.afile_delete, write_values(delete, harness))
