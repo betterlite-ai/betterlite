@@ -56,20 +56,6 @@ fn input_headers(headers: &Headers) -> BTreeMap<String, SecretString> {
         .collect()
 }
 
-// The remix answer's wire object, decoded into this crate's video record
-fn remix_record(reply: &VideoReply<'_>) -> Result<VideoObject, ConfigFailure> {
-    let video =
-        remix_response(&reply.raw_response.body, reply.custom_llm_provider).map_err(failed)?;
-    decode::<VideoObject, _>(&video)
-}
-
-// The list answer's page, decoded into this crate's params
-fn list_records(reply: &VideoReply<'_>) -> Result<Params, ConfigFailure> {
-    let page =
-        list_response(&reply.raw_response.body, reply.custom_llm_provider).map_err(failed)?;
-    decode::<Params, _>(&page)
-}
-
 impl VideoRemixListConfig for OpenAiConfig {
     fn validate_environment(&self, request: VideoEnvironment<'_>) -> Headers {
         let key = request.api_key.map_or_else(
@@ -119,7 +105,9 @@ impl VideoRemixListConfig for OpenAiConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, ConfigFailure> {
-        remix_record(&reply)
+        let body = &reply.raw_response.body;
+        let video = remix_response(body, reply.custom_llm_provider).map_err(failed)?;
+        decode::<VideoObject, _>(&video)
     }
 
     fn transform_video_list_request(
@@ -144,7 +132,8 @@ impl VideoRemixListConfig for OpenAiConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<Params, ConfigFailure> {
-        list_records(&reply)
+        let page = list_response(&reply.raw_response.body, reply.custom_llm_provider);
+        decode::<Params, _>(&page.map_err(failed)?)
     }
 
     fn get_error_class(
