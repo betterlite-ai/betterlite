@@ -28,7 +28,7 @@ pub fn local_store(
 }
 
 // router_settings.redis_url or redis_host and redis_port: a config naming neither keeps no shared tier
-pub fn shared_settings(config: &Config, unreadable: &str) -> Option<SharedSettings> {
+pub fn shared_settings(config: &Config, unreadable_message: &str) -> Option<SharedSettings> {
     match RedisSettings::try_from(&config.sections.routing_state_store) {
         Ok(redis) => Some(SharedSettings {
             redis,
@@ -36,7 +36,7 @@ pub fn shared_settings(config: &Config, unreadable: &str) -> Option<SharedSettin
         }),
         Err(StateStoreError::NotConfigured) => None,
         Err(error) => {
-            tracing::error!(%error, "{unreadable}");
+            tracing::error!(%error, "{unreadable_message}");
             None
         }
     }
@@ -45,15 +45,15 @@ pub fn shared_settings(config: &Config, unreadable: &str) -> Option<SharedSettin
 // a shared store that cannot be built leaves the caller's own tier alone, as a router without Redis keeps it
 pub fn shared_store(
     config: &Config,
-    unreadable: &str,
-    build_failed: &str,
+    unreadable_message: &str,
+    build_failed_message: &str,
 ) -> Option<RoutingStateStore> {
-    let settings = shared_settings(config, unreadable)?;
+    let settings = shared_settings(config, unreadable_message)?;
     let opened = Instant::now();
     match RoutingStateStore::new(&settings, Arc::new(move || opened.elapsed())) {
         Ok(store) => Some(store),
         Err(error) => {
-            tracing::error!(%error, "{build_failed}");
+            tracing::error!(%error, "{build_failed_message}");
             None
         }
     }
