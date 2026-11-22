@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-s3-signing-contract-seed
+call:
+  bedrock_services_s3_signing:
+    operation: contract
+    handoffs:
+      - headers: {a: "1"}
+        litellm_params: {_s3_signed_request_headers: {a: "2"}}
+    optional_params: {}
+env: {}
+compare: {ignore: []}

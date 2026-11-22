@@ -27,20 +27,6 @@ pub enum SpendAggregateRow {
     Attribute { sum: Option<JsonData> },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SpendRowLookup<'key> {
-    Key(&'key str),
-    TeamMember {
-        user_id: &'key str,
-        team_id: &'key str,
-    },
-    Team(&'key str),
-    User(&'key str),
-    Organization(&'key str),
-    Project(&'key str),
-    EndUser(&'key str),
-}
-
 // _WINDOW_SPEND_ENTITY_TYPES and _WINDOW_SPEND_LOG_FIELDS: only key and team window counters have a row
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowEntity {
@@ -73,18 +59,8 @@ impl WindowEntity {
     }
 }
 
-pub enum LookupAnswer<Row, Failure> {
-    Row(Option<Row>),
-    Failed(Failure),
-}
-
 pub trait SpendCounterRows: Send + Sync + 'static {
     type Error: Error + Send + Sync + 'static;
-
-    fn spend_row(
-        &self,
-        lookup: SpendRowLookup<'_>,
-    ) -> impl Future<Output = Result<Option<SpendRow>, Self::Error>> + Send;
 
     fn window_row(
         &self,

@@ -1,0 +1,60 @@
+kind: helper
+name: summary-history-summary-instruction-selection
+call:
+  summary_history:
+    action: prompts
+    edit_spec: {instructions: "  summarize  "}
+    tools:
+    - name: lookup
+      input_schema: {type: object}
+    system: null
+    summary: null
+    messages: []
+    translation: translated
+calls:
+- summary_history:
+    action: prompts
+    edit_spec: {}
+    tools: null
+    system: null
+    summary: null
+    messages: []
+    translation: translated
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: " \n "}
+    tools: []
+    system: null
+    summary: null
+    messages: []
+    translation: translated
+- summary_history:
+    action: prompts
+    edit_spec: {instructions: "   "}
+    tools:
+    - name: lookup
+      input_schema: {type: object}
+    system: null
+    summary: null
+    messages: []
+    translation: translated
+- summary_history:
+    action: extraction
+    raw: "x <SUMMARY> A\nB </SUMMARY> <summary>two</summary>"
+- summary_history:
+    action: extraction
+    raw: "<Summary>one</summary>"
+- summary_history:
+    action: extraction
+    raw: "<summary> \n </summary><summary>later</summary>"
+- summary_history:
+    action: extraction
+    raw: "no tags <summary>open"
+- summary_history:
+    action: extraction
+    raw: ""
+- summary_history:
+    action: extraction
+    raw: null
+env: {}
+compare: {ignore: []}

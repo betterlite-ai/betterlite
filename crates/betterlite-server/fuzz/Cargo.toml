@@ -455,6 +455,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "search_tool_body"
+path = "fuzz_targets/search_tool_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "shadow_req"
 path = "fuzz_targets/shadow_req.rs"
 test = false
