@@ -35,7 +35,9 @@ RECORDS = []
 class Collect(logging.Handler):
     def emit(self, record):
         RECORDS.append([record.levelname, record.exc_info is not None, record.getMessage()])
-LOG = logging.getLogger("LiteLLM"); LOG.addHandler(Collect()); LOG.setLevel(logging.DEBUG)
+LOG = logging.getLogger("LiteLLM")
+# LiteLLM's handler writes records below WARNING to stdout and would corrupt the JSON
+LOG.handlers.clear(); LOG.addHandler(Collect()); LOG.setLevel(logging.DEBUG)
 def modules(side):
     return {key: importlib.import_module(name) for key, name in SIDES[side].items()}
 def param_row(item):
