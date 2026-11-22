@@ -170,8 +170,8 @@ async fn scan_and_spool_cleanup_cancellation() {
     timeout(TEST_TIMEOUT, reached.notified())
         .await
         .expect("the first window starts");
-    scans.abort_all();
-    scans.join_all().await;
+    // join_all panics on a task it finds cancelled, so shut the set down and discard the cancellation outcome
+    scans.shutdown().await;
     waiting.close();
     waiting.wait().await;
     assert_eq!(cancelled.load(Ordering::SeqCst), 32);
