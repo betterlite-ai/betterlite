@@ -1,38 +1,23 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use rstest::rstest;
 
-use super::{Borrowed, load_realtime_settings};
-use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::sections::openai_realtime::{DEFAULT_MAX_MESSAGE_SIZE_BYTES, MAX_MESSAGE_SIZE_VARIABLE};
+use crate::loader::{ConfigError, ConfigLoader};
+use crate::sections::openai_realtime::{
+    DEFAULT_MAX_MESSAGE_SIZE_BYTES, MAX_MESSAGE_SIZE_VARIABLE, Settings,
+};
 
-fn environment(value: &str) -> BTreeMap<String, String> {
-    BTreeMap::from([(MAX_MESSAGE_SIZE_VARIABLE.to_owned(), value.to_owned())])
-}
-
-// an environment whose only extra is the home lookup the loader forwards
-struct Home(PathBuf);
-
-impl EnvironmentLookup for Home {
-    fn lookup(&self, _name: &str) -> Option<String> {
-        None
-    }
-
-    fn system_home(&self) -> Option<PathBuf> {
-        Some(self.0.clone())
-    }
-}
-
-#[test]
-fn forwards_the_system_home() {
-    let home = Home(PathBuf::from("/opt/litellm"));
-    assert_eq!(
-        Borrowed(&home).system_home(),
-        Some(PathBuf::from("/opt/litellm"))
-    );
+fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+    let lookup = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    Ok(ConfigLoader { lookup }
+        .load(source)?
+        .sections
+        .openai_realtime)
 }
 
 const DEFAULT_SEED: &str =
@@ -42,24 +27,23 @@ const OVERRIDE_SEED: &str =
 
 #[test]
 fn loads_realtime_backend_settings() {
-    let settings =
-        load_realtime_settings(DEFAULT_SEED, &BTreeMap::<String, String>::new()).unwrap();
+    let settings = load(DEFAULT_SEED, &[]).unwrap();
     assert_eq!(
         settings.max_message_size_bytes,
         DEFAULT_MAX_MESSAGE_SIZE_BYTES
     );
     assert_eq!(settings.max_message_size_bytes, 0x0100_0000);
 
-    let numeric = load_realtime_settings(OVERRIDE_SEED, &environment("4096")).unwrap();
+    let numeric = load(OVERRIDE_SEED, &[(MAX_MESSAGE_SIZE_VARIABLE, "4096")]).unwrap();
     assert_eq!(numeric.max_message_size_bytes, 4096);
 
-    let zero = load_realtime_settings(DEFAULT_SEED, &environment("0")).unwrap();
+    let zero = load(DEFAULT_SEED, &[(MAX_MESSAGE_SIZE_VARIABLE, "0")]).unwrap();
     assert_eq!(zero.max_message_size_bytes, 0);
 
-    let empty = load_realtime_settings(DEFAULT_SEED, &environment("")).unwrap();
+    let empty = load(DEFAULT_SEED, &[(MAX_MESSAGE_SIZE_VARIABLE, "")]).unwrap();
     assert_eq!(empty.max_message_size_bytes, DEFAULT_MAX_MESSAGE_SIZE_BYTES);
 
-    let error = load_realtime_settings(DEFAULT_SEED, &environment("-1")).unwrap_err();
+    let error = load(DEFAULT_SEED, &[(MAX_MESSAGE_SIZE_VARIABLE, "-1")]).unwrap_err();
     assert!(error.to_string().contains(MAX_MESSAGE_SIZE_VARIABLE));
 }
 
@@ -68,7 +52,7 @@ fn loads_realtime_backend_settings() {
 #[case::text("not-a-number")]
 #[case::fractional("1.5")]
 fn rejects_values_outside_usize(#[case] rejected: &str) {
-    let error = load_realtime_settings(DEFAULT_SEED, &environment(rejected))
+    let error = load(DEFAULT_SEED, &[(MAX_MESSAGE_SIZE_VARIABLE, rejected)])
         .expect_err("the cap must reject a value outside usize");
     match error {
         ConfigError::Environment {
