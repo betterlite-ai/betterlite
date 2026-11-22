@@ -309,9 +309,9 @@ async fn runs_streaming_row() {
     let AzureResourceResult::AssistantRuns(RunOutcome::Streaming(_kind, events)) = streamed else {
         panic!("a streaming run returns its event stream");
     };
-    let mut events = events.await.expect("the stream opens");
+    let mut stream = events.await.expect("the stream opens");
     let mut names = Vec::new();
-    while let Some(event) = events.next().await {
+    while let Some(event) = stream.next().await {
         names.push(event.expect("the fixture events decode").name().to_owned());
     }
     assert_eq!(names, vec!["thread.run.created", "thread.run.completed"]);

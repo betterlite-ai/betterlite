@@ -40,13 +40,12 @@ impl Fixtures {
     }
 }
 
-fn outcome(call: Call<'_>) -> Result<Outcome, ResourceUrlError> {
+fn outcome(call: Call<'_>) -> Outcome {
     let result = super::block_on(dispatch(AzureResourceOperation::ResourceUrls(Box::new(
         resource_urls::Dispatch { call },
     ))));
     match result {
-        Ok(AzureResourceResult::ResourceUrls(outcome)) => Ok(outcome),
-        Err(AzureResourceError::ResourceUrls(error)) => Err(error),
+        Ok(AzureResourceResult::ResourceUrls(outcome)) => outcome,
         Ok(_) | Err(_) => panic!("the resource urls dispatch returns its own outcome"),
     }
 }
@@ -55,7 +54,7 @@ fn resource_url(
     api_base: Option<&str>,
     api_version: Option<&str>,
     resource: AzureResource,
-) -> Result<Outcome, ResourceUrlError> {
+) -> Outcome {
     outcome(Call::Url {
         resource,
         request: UrlRequest {
@@ -81,7 +80,6 @@ fn container_url_rows() {
     ];
     for (api_base, api_version, expected) in cases {
         let Outcome::Url(url) = resource_url(api_base, api_version, AzureResource::Container)
-            .expect("the container url builds")
         else {
             panic!("the url call returns its endpoint");
         };
@@ -91,7 +89,6 @@ fn container_url_rows() {
 
 fn video_vector_url_rows() {
     let Outcome::Url(video) = resource_url(Some("https://res.test"), None, AzureResource::Video)
-        .expect("the video url builds")
     else {
         panic!("the url call returns its endpoint");
     };
@@ -100,8 +97,7 @@ fn video_vector_url_rows() {
         Some("https://res.test"),
         Some("2024-10-21"),
         AzureResource::VectorStore,
-    )
-    .expect("the vector store url builds") else {
+    ) else {
         panic!("the url call returns its endpoint");
     };
     assert_eq!(
@@ -116,8 +112,7 @@ fn environment_headers_row() {
     let Outcome::Headers(headers) = outcome(Call::Environment {
         auth: fixtures.auth(None),
         params_api_key: Some(&key),
-    })
-    .expect("the environment call returns headers") else {
+    }) else {
         panic!("the environment call returns headers");
     };
     assert_eq!(headers.get("api-key").map(String::as_str), Some("key-1"));
@@ -135,7 +130,6 @@ fn video_environment_rows() {
         api_key: Some(&key),
         params_api_key: &mut params_key,
     })
-    .expect("the video environment call returns headers")
     else {
         panic!("the video environment call returns headers");
     };
@@ -147,16 +141,19 @@ fn video_environment_rows() {
     );
 
     let mut kept: Option<SecretString> = Some(SecretString::from("params-key"));
-    let Outcome::VideoHeaders { headers, .. } = outcome(Call::VideoEnvironment {
+    let Outcome::VideoHeaders {
+        headers: kept_headers,
+        ..
+    } = outcome(Call::VideoEnvironment {
         auth: fixtures.auth(None),
         api_key: Some(&key),
         params_api_key: &mut kept,
     })
-    .expect("the video environment call returns headers") else {
+    else {
         panic!("the video environment call returns headers");
     };
     assert_eq!(
-        headers.get("api-key").map(String::as_str),
+        kept_headers.get("api-key").map(String::as_str),
         Some("params-key"),
         "the params key wins over the positional one"
     );
@@ -166,9 +163,7 @@ fn video_rows() {
     let options: VideoCreate = parse(
         r#"{"model":"sora-2","prompt":"a cat","seconds":"8","size":"720x1280","user":"u1","input_reference":"file-1","characters":[{"id":"c"}]}"#,
     );
-    let Outcome::VideoParams(mapped) =
-        outcome(Call::VideoParams(&options)).expect("the video params map")
-    else {
+    let Outcome::VideoParams(mapped) = outcome(Call::VideoParams(&options)) else {
         panic!("the video params call returns the mapped params");
     };
     assert_eq!(
@@ -179,14 +174,10 @@ fn video_rows() {
         mapped.get("seconds").and_then(|value| value.as_str()),
         Some("8")
     );
-    assert_eq!(
-        mapped.get("characters"),
-        Some(&serde_json::json!([{"id": "c"}]))
-    );
+    let characters = parse(r#"[{"id": "c"}]"#);
+    assert_eq!(mapped.get("characters"), Some(&characters));
 
-    let Outcome::VideoSupported(supported) =
-        outcome(Call::VideoSupported).expect("the supported list reads")
-    else {
+    let Outcome::VideoSupported(supported) = outcome(Call::VideoSupported) else {
         panic!("the supported call returns the parameter list");
     };
     assert_eq!(supported.len(), 7_usize);

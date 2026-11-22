@@ -5,6 +5,7 @@ use betterlite_config::tls::Verification;
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
 
+use super::fixture::leaf_error;
 use crate::azure_resource_dispatch::realtime::{self, Call, Outcome, SessionRoute};
 use crate::azure_resource_dispatch::{
     AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
@@ -29,17 +30,24 @@ fn connect_settings<'text>(
     }
 }
 
-fn connect(settings: &RealtimeConnectSettings<'_>) -> Result<Outcome, RealtimeError> {
+fn connect(settings: &RealtimeConnectSettings<'_>) -> Outcome {
     let result = super::block_on(dispatch(AzureResourceOperation::Realtime(Box::new(
         realtime::Dispatch {
             call: Call::Connection(settings),
         },
     ))));
     match result {
-        Ok(AzureResourceResult::Realtime(outcome)) => Ok(outcome),
-        Err(AzureResourceError::Realtime(error)) => Err(error),
+        Ok(AzureResourceResult::Realtime(outcome)) => outcome,
         Ok(_) | Err(_) => panic!("the realtime dispatch returns its own outcome"),
     }
+}
+
+fn connect_error(settings: &RealtimeConnectSettings<'_>) -> AzureResourceError {
+    leaf_error(super::block_on(dispatch(AzureResourceOperation::Realtime(
+        Box::new(realtime::Dispatch {
+            call: Call::Connection(settings),
+        }),
+    ))))
 }
 
 fn session(call: Call<'_>) -> Outcome {
@@ -55,7 +63,7 @@ fn session(call: Call<'_>) -> Outcome {
 fn connection_plan_row() {
     let key = SecretString::from("key-1");
     let settings = connect_settings(&key, Some("https://res.test"), None, None);
-    let Outcome::Connection(plan) = connect(&settings).expect("the plan builds") else {
+    let Outcome::Connection(plan) = connect(&settings) else {
         panic!("the connection call returns the plan");
     };
     assert_eq!(
@@ -79,7 +87,7 @@ fn connection_beta_rows() {
         Some("2024-10-01-preview"),
         Some("beta"),
     );
-    let Outcome::Connection(plan) = connect(&beta).expect("the beta plan builds") else {
+    let Outcome::Connection(plan) = connect(&beta) else {
         panic!("the connection call returns the plan");
     };
     assert!(plan.backend_uses_beta_protocol);
@@ -89,13 +97,13 @@ fn connection_beta_rows() {
 
     let unversioned = connect_settings(&key, Some("https://res.test"), None, Some("beta"));
     assert!(matches!(
-        connect(&unversioned),
-        Err(RealtimeError::MissingApiVersion)
+        connect_error(&unversioned),
+        AzureResourceError::Realtime(RealtimeError::MissingApiVersion)
     ));
     let baseless = connect_settings(&key, None, None, None);
     assert!(matches!(
-        connect(&baseless),
-        Err(RealtimeError::MissingApiBase)
+        connect_error(&baseless),
+        AzureResourceError::Realtime(RealtimeError::MissingApiBase)
     ));
 }
 

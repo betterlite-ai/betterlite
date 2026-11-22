@@ -35,13 +35,12 @@ fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarget<'
     }
 }
 
-fn outcome(call: passthrough::Dispatch<'_>) -> Result<Outcome, AzurePassthroughError> {
+fn outcome(call: passthrough::Dispatch<'_>) -> Outcome {
     let result = super::block_on(dispatch(AzureResourceOperation::Passthrough(Box::new(
         call,
     ))));
     match result {
-        Ok(AzureResourceResult::Passthrough(outcome)) => Ok(outcome),
-        Err(AzureResourceError::Passthrough(error)) => Err(error),
+        Ok(AzureResourceResult::Passthrough(outcome)) => outcome,
         Ok(_) | Err(_) => panic!("the passthrough dispatch returns its own outcome"),
     }
 }
@@ -50,7 +49,7 @@ fn through(
     config: &passthrough::Config,
     logging: &mut RecordingPassthrough,
     call: Call<'_>,
-) -> Result<Outcome, AzurePassthroughError> {
+) -> Outcome {
     outcome(passthrough::Dispatch {
         config,
         logging,
@@ -69,8 +68,7 @@ fn streaming_rows() {
             endpoint: "/chat/completions",
             request_data: &request,
         },
-    )
-    .expect("the streaming check runs") else {
+    ) else {
         panic!("the streaming call returns its flag");
     };
     assert!(streaming);
@@ -82,8 +80,7 @@ fn streaming_rows() {
             endpoint: "/chat/completions",
             request_data: &plain,
         },
-    )
-    .expect("the streaming check runs") else {
+    ) else {
         panic!("the streaming call returns its flag");
     };
     assert!(!not_streaming);
@@ -100,8 +97,7 @@ fn streaming_missing_row() {
             endpoint: "/chat/completions",
             request_data: &absent,
         },
-    )
-    .expect("the streaming check runs") else {
+    ) else {
         panic!("the streaming call returns its flag");
     };
     assert!(!missing);
@@ -118,8 +114,7 @@ fn url_rows() {
         request_query_params: None,
         litellm_params: &params,
     };
-    let Outcome::Url { url, base } =
-        through(&config, &mut logging, Call::CompleteUrl(request)).expect("the url call builds")
+    let Outcome::Url { url, base } = through(&config, &mut logging, Call::CompleteUrl(request))
     else {
         panic!("the url call returns its endpoint");
     };
@@ -147,7 +142,7 @@ fn url_rows() {
 }
 
 fn logged(call: passthrough::Dispatch<'_>) -> Option<Box<AzureRelayedLog>> {
-    let Outcome::Logged(record) = outcome(call).expect("the logging runs") else {
+    let Outcome::Logged(record) = outcome(call) else {
         panic!("the logging call returns its record");
     };
     record

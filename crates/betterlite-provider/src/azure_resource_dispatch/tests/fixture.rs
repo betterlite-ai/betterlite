@@ -117,11 +117,11 @@ impl FileFake {
             .clone()
     }
 
-    fn record(&self, request: OutboundRequest) {
+    fn record(&self, request: &OutboundRequest) {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(Seen::of(&request));
+            .push(Seen::of(request));
     }
 }
 
@@ -130,7 +130,7 @@ impl FileTransport for FileFake {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.record(request);
+        self.record(&request);
         ready(Ok(self.reply.upstream()))
     }
 
@@ -138,7 +138,7 @@ impl FileTransport for FileFake {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
-        self.record(request);
+        self.record(&request);
         ready(Err(TransportError::Closed))
     }
 }

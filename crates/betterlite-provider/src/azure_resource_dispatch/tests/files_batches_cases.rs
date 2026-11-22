@@ -155,16 +155,18 @@ impl Sdk {
     }
 
     fn reply(&self) -> Result<Vec<u8>, SdkError> {
-        match self.failure {
-            Some(status) => Err(SdkError::Status {
-                status,
-                error_type: Some(String::from("server_error")),
-                param: None,
-                code: None,
-                message: String::from("the fixture failed"),
-            }),
-            None => Ok(self.answer.clone()),
-        }
+        self.failure.map_or_else(
+            || Ok(self.answer.clone()),
+            |status| {
+                Err(SdkError::Status {
+                    status,
+                    error_type: Some(String::from("server_error")),
+                    param: None,
+                    code: None,
+                    message: String::from("the fixture failed"),
+                })
+            },
+        )
     }
 
     fn record(&self, call: String) -> (Result<Vec<u8>, SdkError>, Result<BatchPage, SdkError>) {
