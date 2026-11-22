@@ -130,8 +130,7 @@ fn summed_spend(
     if compensation.is_finite() && compensation.abs() > 0.0_f64 {
         total = total.add(compensation);
     }
-    let exact = Decimal::from_f64_retain(total);
-    exact.ok_or(ShadowResultsError::Unrepresentable { name })
+    Decimal::from_f64_retain(total).ok_or(ShadowResultsError::Unrepresentable { name })
 }
 
 // each leg's slice, keyed by the (target_type, target_id) pair so same-id targets never collapse

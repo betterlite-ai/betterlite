@@ -32,26 +32,21 @@ pub fn target_labels(
     team_rows: &[LabelRow],
     user_rows: &[LabelRow],
 ) -> BTreeMap<TargetKey, (Option<String>, Option<String>)> {
-    let entries = key_rows
-        .iter()
-        .map(|row| (ShadowEvalTargetType::Key, row))
-        .chain(
-            team_rows
-                .iter()
-                .map(|row| (ShadowEvalTargetType::Team, row)),
-        )
-        .chain(
-            user_rows
-                .iter()
-                .map(|row| (ShadowEvalTargetType::User, row)),
-        );
     let mut labels = BTreeMap::new();
-    for (target_type, row) in entries {
-        let key = TargetKey {
-            target_type,
-            target_id: row.target_id.clone(),
-        };
-        labels.insert(key, (row.target_alias.clone(), row.key_name.clone()));
+    for (target_type, rows) in [
+        (ShadowEvalTargetType::Key, key_rows),
+        (ShadowEvalTargetType::Team, team_rows),
+        (ShadowEvalTargetType::User, user_rows),
+    ] {
+        for row in rows {
+            labels.insert(
+                TargetKey {
+                    target_type,
+                    target_id: row.target_id.clone(),
+                },
+                (row.target_alias.clone(), row.key_name.clone()),
+            );
+        }
     }
     labels
 }
