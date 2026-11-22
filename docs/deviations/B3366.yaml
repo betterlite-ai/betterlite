@@ -19,12 +19,13 @@ deviations:
       config from the name, the same seam B3361 uses for provider configs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1082-L1087
   - what: >-
-      A provider name outside the known set fails with "Container provider config not found for provider: X" as an
-      ApiConnection error. LiteLLM's litellm.LlmProviders(name) raises a ValueError for an unknown name before the
-      None check, and only a known provider with no container config reaches that message.
+      A BadRequest (400) with model "" and the provider set answers a provider name outside the known set and a
+      known provider with no container config, with "Container provider config not found for provider: X" as the
+      message. LiteLLM answers 500 for both: its ValueError goes through exception_type as an APIConnectionError.
     why: >-
-      B3361's get_provider_container_config answers None for both cases and has no enum constructor, so the port has
-      one clear failure for the two; docs/compatibility.md leaves Python's constructor messages alone.
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server
+      broke when its own request was wrong. B3361's get_provider_container_config answers None for both cases and has
+      no enum constructor, so the port has one clear failure for the two.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1082-L1087
   - what: >-
       In the Rust request an absent timeout is None and keeps the declared 600 seconds, while an explicit zero takes
