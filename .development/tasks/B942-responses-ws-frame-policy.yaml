@@ -69,6 +69,8 @@ description: >-
   behavior tests, twelve helper fixtures, adapters and wiring must fit the 800 changed-line budget.
 scope:
   paths:
+  - "crates/betterlite-core/src/api/responses_stream_events/tests/framed.rs"
+  - "crates/betterlite-core/src/api/responses_stream_events/tests/**"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_ws_frame_policy.rs
   - crates/betterlite-core/src/api/responses_ws_frame_policy/**
