@@ -67,6 +67,11 @@ const TOKENS: &str = r#"{"metadata":{"pii_tokens":{"<EMAIL_ADDRESS_1>":"a@exampl
     1,
     1024
 )]
+#[case::huge_cap(
+    r#"{"type":"response.create","input":"abcd","max_output_tokens":100000000000000000000}"#,
+    1,
+    1024
+)]
 #[case::true_cap(
     r#"{"type":"response.create","input":"abcd","max_output_tokens":true}"#,
     1,
