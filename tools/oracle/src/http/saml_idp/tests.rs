@@ -147,8 +147,47 @@ fn binds_subject_confirmation_only_responses_through_the_assertion() {
     );
     assert!(output.valid, "{}", output.error);
     assert!(output.response_in_response_to.is_empty());
+    let xml = response_xml(&response);
     let expected = format!("InResponseTo=\"{}\"", seed.request_id);
-    assert!(response.contains(expected.as_str()));
+    assert!(xml.contains(expected.as_str()));
+}
+
+#[test]
+fn carries_subject_and_attributes_through_the_signed_response() {
+    let metadata = prepare();
+    let seed = corpus_seed("valid-authn-request-a.json");
+    let (output, response) = sign_and_validate(
+        &seed.saml_request,
+        &seed.request_id,
+        assertion(None, "_assertion_attributes"),
+        &metadata,
+    );
+    assert!(output.valid, "{}", output.error);
+    let xml = response_xml(&response);
+    assert!(xml.contains("ID=\"_assertion_attributes\""));
+    assert!(xml.contains("<saml:Attribute Name=\"email\">"));
+    assert!(xml.contains("<saml:Attribute Name=\"role\">"));
+    assert!(xml.contains("internal_user"));
+    assert!(xml.contains("urn:betterlite:oracle:idp"));
+    let bound = format!("InResponseTo=\"{}\"", seed.request_id);
+    assert!(xml.contains(bound.as_str()));
+}
+
+#[test]
+fn defaults_validity_offsets_like_the_source_fixture() {
+    let yaml = "\
+subject: alice@example.com
+attributes:
+  email:
+    - alice@example.com
+audience: urn:betterlite:sp
+destination: http://127.0.0.1:4000/sso/key/generate
+request_id_capture: authn
+assertion_id: _assertion_defaults
+";
+    let assertion: SamlAssertion = serde_saphyr::from_str(yaml).expect("the assertion parses");
+    assert_eq!(assertion.not_before_offset_seconds, -60);
+    assert_eq!(assertion.not_on_or_after_offset_seconds, 300);
 }
 
 #[test]
@@ -390,6 +429,7 @@ fn sign_and_validate(
     assertion: SamlAssertion,
     metadata: &str,
 ) -> (ValidationOutput, String) {
+    let relay_state = assertion.relay_state.clone().unwrap_or_default();
     let stub = StubServer::start(vec![redirect(encoded), answer(200, Vec::new(), "")]);
     let responses = run_transcript(&stub, &transcript(&[assertion]));
     assert_eq!(responses.len(), 2);
@@ -398,6 +438,7 @@ fn sign_and_validate(
         Some("application/x-www-form-urlencoded")
     );
     let body = stub.received_body(1).expect("the callback body arrives");
+    assert_eq!(form_value(&body, "RelayState"), relay_state);
     validate_body(&body, expected_id, metadata)
 }
 
@@ -419,6 +460,15 @@ fn validate(input: &ValidationInput<'_>) -> ValidationOutput {
     let document = serde_json::to_vec(input).expect("the validation input serializes");
     let output = run_fixture_script("validate.py", &document).expect("the validator runs");
     serde_json::from_slice(&output).expect("the validator output parses")
+}
+
+fn response_xml(response: &str) -> String {
+    String::from_utf8(
+        STANDARD
+            .decode(response.as_bytes())
+            .expect("the response is base64"),
+    )
+    .expect("the response is UTF-8")
 }
 
 fn form_value(body: &[u8], name: &str) -> String {
