@@ -22,6 +22,7 @@ TICK = 0.01
 SERIAL_LIMIT = SLOW * 2
 COUNTER_FLOOR = 5
 PARALLEL = 2
+COUNTED_HELLO = 9
 
 COMPLETION = (
     '{"id": "chatcmpl-1", "object": "chat.completion", "created": 1700000000,'
@@ -329,17 +330,16 @@ def test_async_stream_chunks() -> None:
 
 def test_checks_count_tokens() -> None:
     request: dict[str, JsonValue] = {
-        "model": "gpt-4o",
-        "messages": [{"role": "user", "content": "hello there"}],
-        "system": "be brief",
+        "model": "gpt-3.5-turbo",
+        "messages": [{"role": "user", "content": "hello world"}],
     }
     with Server(Recorder()) as server:
         counted = TypeAdapter(TokenCount).validate_json(
             session_for(server).count_tokens(json.dumps(request))
         )
-    assert counted["total_tokens"] > 0
-    assert counted["request_model"] == "gpt-4o"
-    assert counted["model_used"] == "gpt-4o"
+    assert counted["total_tokens"] == COUNTED_HELLO
+    assert counted["request_model"] == "gpt-3.5-turbo"
+    assert counted["model_used"] == "gpt-3.5-turbo"
     assert counted["tokenizer_type"] == "local_tokenizer"
 
 

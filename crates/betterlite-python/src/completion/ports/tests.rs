@@ -1,14 +1,43 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
+use betterlite_sdk::completion_call::ports::{LocalTokenCountRequest, LocalTokenCounter as _};
 use betterlite_sdk::completion_request::call::PreparedTimeout;
 use betterlite_sdk::completion_request::error::CompletionRequestError;
 use betterlite_sdk::completion_request::ports::{CompletionTimeout as _, TimeoutRequest};
+use betterlite_tokenizer::count::Counter;
+use betterlite_tokenizer::count::runtime::runtime_counter;
+use pyo3_async_runtimes::tokio::get_runtime;
 
-use super::{SessionTimeouts, number_of};
+use super::super::setup::{outbound_client, runtime_config};
+use super::{LocalCounter, SessionTimeouts, number_of};
 
 fn value(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
+}
+
+fn counted(counter: &Counter, messages: &[Json]) -> usize {
+    get_runtime().block_on(LocalCounter { counter }.count(&LocalTokenCountRequest {
+        model: "gpt-3.5-turbo",
+        messages,
+        tools: None,
+    }))
+}
+
+#[test]
+fn the_local_counter_counts_like_litellm_token_counter() {
+    let client = Arc::new(outbound_client(&BTreeMap::new()).unwrap());
+    let catalog = BundledCatalog::default().get();
+    let counter = runtime_counter(&runtime_config(), &client, &catalog).unwrap();
+    let hello = [value(r#"{"role": "user", "content": "hello world"}"#)];
+    // gpt-3.5-turbo: one message is 3 + "user" + "hello world", and token_counter adds 3 for the reply priming
+    assert_eq!(counted(&counter, &hello), 9);
+    // an empty list has no message tokens, so the reply priming is all LiteLLM counts
+    assert_eq!(counted(&counter, &[]), 3);
 }
 
 fn resolved(

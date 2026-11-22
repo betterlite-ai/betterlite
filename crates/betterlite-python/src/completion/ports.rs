@@ -194,7 +194,8 @@ impl LocalTokenCounter for LocalCounter<'_> {
             custom_tokenizer: None,
             text: None,
             messages: Some(&messages),
-            count_response_tokens: None,
+            // acount_tokens falls back to token_counter's own False, which adds the reply priming and tools
+            count_response_tokens: Some(false),
             tools: request.tools,
             tool_choice: None,
         };
