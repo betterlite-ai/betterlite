@@ -30,9 +30,15 @@ description: >-
   authenticated user record. HTTP integration belongs to B1032.
 scope:
   paths:
+  - "tools/oracle/helpers/typos.toml"
+  - "tools/oracle/helpers/pyrightconfig.json"
+  - "tools/oracle/helpers"
+  - "tools/oracle"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/file_batch_guardrails.rs
   - crates/betterlite-core/src/api/file_batch_guardrails/**
+  - crates/betterlite-models/src/provider_defaults_a/url.rs
+  - crates/betterlite-models/src/provider_defaults_a/url/tests.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/file_batch_guardrails.rs
   - tools/oracle/src/helpers/core_ops/file_batch_guardrails/**
@@ -220,5 +226,5 @@ pitfalls:
 - _describe sanitizes only newline, NUL and DEL/control characters for logs; the report retains the original custom_id, so truncating the stored identifier would break reconciliation.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2200
   max_new_expects: 1

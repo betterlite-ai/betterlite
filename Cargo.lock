@@ -3778,6 +3778,7 @@ dependencies = [
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-policy",
+ "betterlite-prometheus",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",
@@ -4642,6 +4643,7 @@ dependencies = [
  "betterlite-openapi",
  "betterlite-policy",
  "betterlite-postgres-fixture",
+ "betterlite-prometheus",
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-pyhost",
@@ -4741,6 +4743,7 @@ dependencies = [
  "betterlite-server",
  "form_urlencoded",
  "libfuzzer-sys",
+ "rust_decimal",
  "serde_json",
 ]
 

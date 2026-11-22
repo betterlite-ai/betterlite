@@ -1,0 +1,45 @@
+kind: helper
+name: stream-usage-cost-disabled-and-unrecognized
+call:
+  b8930:
+    chunk:
+      kind: object
+      value:
+        object: chat.completion.chunk
+        usage:
+          prompt_tokens: 2
+          completion_tokens: 1
+      text: null
+    enabled: false
+    model_name: gpt-4o
+    prices:
+      recorder: 0.25
+      completion: 0.5
+    log:
+      model: gpt-4o
+      call_type: acompletion
+      details:
+        response_cost_failure_debug_information:
+          error_str: seeded earlier failure
+calls:
+  - b8930:
+      chunk:
+        kind: object
+        value:
+          id: no-event-tag
+          usage:
+            prompt_tokens: 2
+            completion_tokens: 1
+        text: null
+      enabled: true
+      model_name: gpt-4o
+      prices:
+        recorder: 0.25
+        completion: 0.5
+      log:
+        model: gpt-4o
+        call_type: acompletion
+        details: {}
+env: {}
+compare:
+  ignore: []

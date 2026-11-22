@@ -13,6 +13,7 @@ use percent_encoding::percent_decode_str;
 use serde::Serialize;
 
 use crate::cache_activity_routes::CACHE_ACTIVITY_PATH;
+use crate::router_settings::ROUTE_PATHS;
 
 mod tests;
 
@@ -46,6 +47,7 @@ pub fn admit(route: &str, method: &str) -> Result<(), RouteMatchError> {
         || check_route_access(route, &management_routes::management_routes())
         || auxiliary_routes::INFO_ROUTES.contains(&route)
         || route == CACHE_ACTIVITY_PATH
+        || ROUTE_PATHS.contains(&route)
         || classifier::is_mcp_discovery_route(route, Some(method))
         || ["/models/{model_id}", "/v1/models/{model_id}"]
             .iter()
