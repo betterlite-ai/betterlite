@@ -25,7 +25,6 @@ fn integer(number: &Number, field: &'static str) -> Result<i64, ShadowEvalReques
     })
 }
 
-// the exact decimal a JSON number spells, including the scientific notation serde_json keeps verbatim
 fn decimal(number: &Number, field: &'static str) -> Result<Decimal, ShadowEvalRequestError> {
     let token = number.to_string();
     Decimal::from_str(&token)

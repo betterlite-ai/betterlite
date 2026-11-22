@@ -85,7 +85,6 @@ impl JudgeRouter for ShadowEvalRouter<'_> {
 pub struct AnthropicCredentials<'deps> {
     // litellm.anthropic_key, the module-level SDK key litellm_settings configures
     pub anthropic_key: Option<&'deps SecretString>,
-    // litellm.api_key
     pub api_key: Option<&'deps SecretString>,
     // AnthropicModelInfo.get_api_key() and get_auth_token(), read from the injected environment by B567
     pub settings: &'deps AnthropicSettings,

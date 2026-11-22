@@ -51,7 +51,6 @@ pub fn parse_shadow_eval_request(
     let JsonData::Object(object) = document else {
         return Err(ShadowEvalRequestError::NotAnObject);
     };
-    // the retired budget is rejected before any field is read, as the model's mode="before" validator runs
     if object.contains_key("max_turns") {
         return Err(Validation {
             field: "max_turns",
