@@ -241,14 +241,21 @@ fn answer(outcome: Outcome, script: &Script<'_>, log: &str) -> HelperResult {
         .into_iter()
         .map(attributes)
         .collect::<Vec<_>>();
-    let effects = script
-        .effects
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
+    let (queries, reads, sleeps) = {
+        let effects = script
+            .effects
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        (
+            effects.queries.clone(),
+            effects.reads.clone(),
+            effects.sleeps.clone(),
+        )
+    };
     Ok(json!({
-        "queries": effects.queries,
-        "reads": effects.reads,
-        "sleeps": effects.sleeps,
+        "queries": queries,
+        "reads": reads,
+        "sleeps": sleeps,
         "debug": debug,
         "messages": messages,
         "litellm_trace_id": merged.litellm_trace_id,
