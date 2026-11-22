@@ -1,0 +1,24 @@
+{
+  "kind": "helper",
+  "name": "foundry-post-call",
+  "call": {
+    "foundry_provider": {
+      "inputs": [
+        {
+          "op": "dispatch",
+          "model": "gpt-4o",
+          "messages": [{"role": "user", "content": "hi"}],
+          "api_base": "https://res.services.ai.azure.com",
+          "api_key": "sk-foundry-fixture",
+          "headers": null,
+          "globals": {"api_base": null, "api_key": null, "headers": null},
+          "environment": {},
+          "stream": false,
+          "status": 500
+        }
+      ]
+    }
+  },
+  "env": {"LITELLM_RUST": "false", "LITELLM_LOCAL_MODEL_COST_MAP": "true"},
+  "compare": {"ignore": []}
+}

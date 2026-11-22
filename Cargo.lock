@@ -2601,6 +2601,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64 0.23.1",
  "betterlite",
  "betterlite-a2a",
  "betterlite-anthropic",
@@ -2643,6 +2644,7 @@ dependencies = [
  "chrono",
  "clap",
  "cookie_store",
+ "flate2",
  "futures-executor",
  "futures-util",
  "hex",
@@ -2650,6 +2652,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "percent-encoding",
+ "quick-xml",
  "rand 0.10.3",
  "redis",
  "reqwest",

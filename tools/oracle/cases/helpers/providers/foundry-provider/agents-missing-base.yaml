@@ -1,0 +1,25 @@
+{
+  "kind": "helper",
+  "name": "agents-missing-base",
+  "call": {
+    "foundry_provider": {
+      "inputs": [
+        {
+          "op": "dispatch",
+          "model": "agents/agent-no-base",
+          "messages": [{"role": "user", "content": "hi"}],
+          "api_base": null,
+          "api_key": "sk-foundry-fixture",
+          "headers": null,
+          "optionals": {},
+          "globals": {"api_base": null, "api_key": null, "headers": null},
+          "environment": {},
+          "stream": false,
+          "status": null
+        }
+      ]
+    }
+  },
+  "env": {"LITELLM_RUST": "false", "LITELLM_LOCAL_MODEL_COST_MAP": "true"},
+  "compare": {"ignore": []}
+}

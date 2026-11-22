@@ -24,7 +24,6 @@ use crate::azure_dispatch::Azure;
 use crate::bedrock_dispatch_contract::Bedrock;
 use crate::compatible_providers::Compatible;
 use crate::embedding_rerank_providers::EmbeddingRerank;
-use crate::foundry_dispatch::AzureAi;
 use crate::legacy_dispatch::Legacy;
 use crate::openai_dispatch::OpenAi;
 use crate::operation::{ChatOperation, OperationError, OperationRequest};
@@ -86,7 +85,6 @@ fn client() -> ProxiedClient {
 
 #[rstest]
 #[case::azure(Provider::Azure(Azure), "azure")]
-#[case::azure_ai(Provider::AzureAi(AzureAi), "azure_ai")]
 #[case::anthropic_text(
     Provider::Anthropic(Anthropic {
         surface: Surface::Legacy
