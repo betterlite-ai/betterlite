@@ -5,9 +5,8 @@ use std::fs;
 use std::io::Write as _;
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::Path;
-use std::process::Child;
-use std::sync::Mutex;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -275,27 +274,36 @@ fn rejects_saml_steps_that_cannot_be_bound_before_proxies_start() {
     assert!(body_error.to_string().contains("cannot be combined"));
 }
 
-// setpriv installs the pdeathsig that kills the fixture once the thread that spawned it ends.
+// setpriv installs the pdeathsig, so the owner thread waits for the script to report itself before it ends.
 #[test]
 fn kills_the_fixture_process_when_its_owner_thread_ends() {
-    let mut command = fixture_command(Path::new("/bin/sleep"), Path::new("30"));
-    let slot: Mutex<Option<Child>> = Mutex::new(None);
-    thread::scope(|scope| {
+    let directory = tempfile::tempdir().expect("the marker directory exists");
+    let marker = directory.path().join("started");
+    let script_path = directory.path().join("sleeper.sh");
+    let script = format!(
+        "#!/bin/sh\necho $$ > '{}'\nexec /bin/sleep 10\n",
+        marker.display()
+    );
+    fs::write(&script_path, script).expect("the sleeper script writes");
+    let mut command = fixture_command(Path::new("/bin/sh"), &script_path);
+    let mut child = thread::scope(|scope| {
         scope
             .spawn(|| {
                 let child = command.spawn().expect("the sleeper starts");
-                *slot.lock().expect("the sleeper slot lock") = Some(child);
+                let deadline = Instant::now() + Duration::from_secs(30);
+                while !marker.try_exists().expect("the marker path is readable") {
+                    assert!(
+                        Instant::now() < deadline,
+                        "the sleeper never reported its pid"
+                    );
+                    thread::park_timeout(Duration::from_millis(10));
+                }
+                child
             })
             .join()
-            .expect("the owner thread ends");
+            .expect("the owner thread ends")
     });
-    let mut child = slot
-        .lock()
-        .expect("the sleeper slot lock")
-        .take()
-        .expect("the sleeper started");
     let pid = child.id();
-    assert!(Path::new("/proc").join(pid.to_string()).exists());
     let status = child.wait().expect("the sleeper is reaped");
     assert_eq!(status.signal(), Some(9_i32));
     assert!(!Path::new("/proc").join(pid.to_string()).exists());
