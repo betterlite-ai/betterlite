@@ -35,6 +35,9 @@ description: >-
   Tests in messages_call/tests.rs (`messages_call::tests`) are rstest cases with fakes for the dispatch, the routing and the read-through: the required-param table for each listed route type and for anthropic_messages, the mock gate (each name, two names in constant order, a null value, allowed true), the tag filtering removal, every plan rule in order, the override copy only for absent keys, the call reaching the right callee for each plan, one case where the call retries once through B9949's route_with_read_through after a read-through that answers true (B9949's own tests cover the branches that do not retry), and the standalone routing writing the picked deployment's values. Helper oracle cases compare the two pure gates with LiteLLM through the operation named b9800: the Python side calls raise_if_required_body_param_missing and raise_if_mock_testing_params_disallowed on the given data and returns the raised exception's status, detail or message, type, param and code, or nothing.
 scope:
   paths:
+  - "crates/betterlite-server/src/routing/simple_shuffle.rs"
+  - "crates/betterlite-server/src/routes/moderations.rs"
+  - "crates/betterlite-config/tests/fixtures/unsupported/**"
   - crates/betterlite-server/src/messages_call.rs
   - crates/betterlite-server/src/messages_call/**
   - crates/betterlite-server/Cargo.toml

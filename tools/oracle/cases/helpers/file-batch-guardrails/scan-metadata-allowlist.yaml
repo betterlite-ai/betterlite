@@ -1,0 +1,10 @@
+kind: helper
+name: file-batch-guardrails-scan-metadata-allowlist
+call:
+  file_batch_guardrails:
+    calls:
+      - {"function": "scan_metadata", "metadata": {"user": "u", "guardrails": ["g"], "_guardrail_pipelines": [{"name": "p"}], "_pipeline_managed_guardrails": ["m"], "user_api_key_metadata": {"tier": "gold"}, "user_api_key_team_metadata": {"team": "t"}, "tags": ["tag"], "headers": {"x-request": "1"}, "litellm_parent_otel_span": "span", "metadata": {"row": 1}, "user_api_key_hash": "h"}}
+      - {"function": "scan_metadata", "metadata": {}}
+      - {"function": "scan_metadata", "metadata": {"tags": null, "requester_ip_address": "1.2.3.4"}}
+env: {}
+compare: {ignore: []}

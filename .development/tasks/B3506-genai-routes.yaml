@@ -29,6 +29,8 @@ description: >-
 
 scope:
   paths:
+    - "tools/oracle/src/http/postgres/tests.rs"
+    - "tools/oracle/src/helpers/server/Cargo.toml"
     - crates/betterlite-server/src/api/genai_routes.rs
     - crates/betterlite-server/src/api/genai_routes/**
     - tools/oracle/fuzz/corpus/http_case/genai-*

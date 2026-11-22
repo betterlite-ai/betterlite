@@ -1,7 +1,7 @@
 id: B387
 milestone: M2 routing
 title: Automatic router benchmark aggregates
-status: todo
+status: done
 depends_on: [B051, B301, B361, B377]
 file: tasks/B387-benchmark-aggregates.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/management_endpoints/auto_router_endpoints.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2895

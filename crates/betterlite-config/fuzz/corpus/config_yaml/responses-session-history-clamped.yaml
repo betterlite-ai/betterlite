@@ -1,0 +1,5 @@
+# a zero or negative attempt count clamps to one lookup
+environment_variables:
+  RESPONSES_SESSION_LOOKUP_MAX_ATTEMPTS: "-2"
+  RESPONSES_SESSION_LOOKUP_RETRY_INTERVAL: "-1"
+model_list: []

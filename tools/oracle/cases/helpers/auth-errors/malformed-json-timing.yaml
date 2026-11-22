@@ -1,0 +1,30 @@
+kind: helper
+name: auth-errors-malformed-json-timing
+call:
+  auth_errors:
+    rows:
+      # the deferred 400 reaches the failure hook as a bad_request_error with an empty request
+      - step: unparsable
+        failure: {kind: proxy, message: "Invalid JSON payload: Expecting value: line 1 column 1 (char 0)", type: bad_request_error, param: null, status_code: 400, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: []
+        identity: {user_id: known-user, team_id: team-1}
+        request_data: {}
+        route: /v1/chat/completions
+        user_agent: null
+        client_host: 203.0.113.7
+      # a raising hook is logged with its traceback and never replaces the 400
+      - step: unparsable
+        failure: {kind: proxy, message: "Invalid JSON payload: Expecting value: line 1 column 1 (char 0)", type: bad_request_error, param: null, status_code: 400, marked: false, internal_message: ""}
+        reply: raise
+        replacement: null
+        switches: []
+        identity: null
+        request_data: {}
+        route: /v1/chat/completions
+        user_agent: null
+        client_host: 203.0.113.7
+env: {}
+compare:
+  ignore: []

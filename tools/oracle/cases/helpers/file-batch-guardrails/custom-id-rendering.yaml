@@ -1,0 +1,27 @@
+kind: helper
+name: file-batch-guardrails-custom-id-rendering
+call:
+  file_batch_guardrails:
+    calls:
+      - {"function": "custom_id", "line": "{\"custom_id\": \"abc\"}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": 7}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": 1.5}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": true}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": null}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": {\"x\": 1}}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": [\"a\"]}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": \"\"}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": \"a\\nb\\u0000c\\u007f\"}"}
+      - {"function": "custom_id", "line": "{\"custom_id\": \"a\\u001fb\"}"}
+      - {"function": "custom_id", "line": "{\"custom_id\":\"\\ud800\"}"}
+      - {"function": "custom_id", "line": "{\"custom_id\":\"\\ud83d\\ude00\"}"}
+      - {"function": "custom_id", "line": "{\"custom_id\":1e2}"}
+      - {"function": "custom_id", "line": "{\"custom_id\":-0}"}
+      - {"function": "custom_id", "line": "{\"custom_id\":1e16}"}
+      - {"function": "custom_id", "line": "{\"custom_id\":123456789012345678901234567890}"}
+      - {"function": "custom_id", "line": "{\"body\":{}}"}
+      - {"function": "custom_id", "line": "\ufeff{\"custom_id\":\"bom\"}"}
+      - {"function": "report", "scanned_records": 2, "changes": [{"kind": "dropped", "line_number": 2, "custom_id": "a\nb\tc\u001f", "url": null, "guardrail_name": "g", "detail_guardrail_name": null, "blocked_content": false, "status": 400, "cause": "uncaused", "offset": 0, "length": 0}, {"kind": "redacted", "line_number": 3, "custom_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "url": null, "guardrail_name": null, "detail_guardrail_name": null, "blocked_content": false, "status": 400, "cause": "uncaused", "offset": 1, "length": 2}]}
+env: {}
+compare: {ignore: []}
