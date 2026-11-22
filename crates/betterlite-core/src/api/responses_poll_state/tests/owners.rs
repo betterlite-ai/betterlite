@@ -136,6 +136,22 @@ pub(super) async fn identity_denials(cache: &FakeCache, store: &ResponsePollingS
             .expect_err("another team is denied"),
         PollDenial::Team,
     );
+    let no_team = support::caller(Some("a"), None, false, None);
+    support::assert_denial(
+        store
+            .get_state(ID, support::access(&no_team))
+            .await
+            .expect_err("a caller without the record's team is denied"),
+        PollDenial::Team,
+    );
+    let no_user = support::caller(None, Some("t"), false, None);
+    support::assert_denial(
+        store
+            .get_state(ID, support::access(&no_user))
+            .await
+            .expect_err("a caller without the record's user is denied"),
+        PollDenial::User,
+    );
     let admin = support::caller(Some("root"), Some("x"), true, None);
     assert!(
         store
