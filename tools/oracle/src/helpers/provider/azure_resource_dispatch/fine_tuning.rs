@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::ready;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_azure::credentials::cache::RefreshProviderCache;
 use betterlite_azure::endpoints::get_client::ClientCache;
@@ -76,9 +76,23 @@ fn answer(step: &Step) -> Result<(&'static str, Value), Box<HelperError>> {
         Step::Retrieve(_) => fine_tuning::Call::Retrieve(&fixture.job_id),
         Step::Cancel(_) => fine_tuning::Call::Cancel(&fixture.job_id),
     };
-    let result = through(fixture, call)?;
+    let materializer = Materializer {
+        body: fixture.body.clone(),
+        failure: (fixture.status >= 400).then_some(fixture.status),
+        calls: Arc::new(Mutex::new(Vec::new())),
+    };
+    let result = through(&materializer, fixture, call);
+    let recorded = materializer
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    // A swapped or misrouted arm keeps the body but calls another leaf, and the answer alone can't show it
+    if recorded != [leaf_call(step)] {
+        return Err(failure(OTHER));
+    }
     let kind = kind(step);
-    let value = match result {
+    let value = match result? {
         AzureResourceResult::FineTuning(fine_tuning::Outcome::Job(job)) => {
             job_value(step, &job, &data)
         }
@@ -94,6 +108,15 @@ const fn kind(step: &Step) -> &'static str {
         Step::List(_) => "list",
         Step::Retrieve(_) => "retrieve",
         Step::Cancel(_) => "cancel",
+    }
+}
+
+fn leaf_call(step: &Step) -> String {
+    match step {
+        Step::Create(_) => String::from("create"),
+        Step::List(fixture) => format!("list:{:?}:{:?}", fixture.after, fixture.limit),
+        Step::Retrieve(fixture) => format!("retrieve:{}", fixture.job_id),
+        Step::Cancel(fixture) => format!("cancel:{}", fixture.job_id),
     }
 }
 
@@ -135,6 +158,7 @@ fn page_value(page: &[u8]) -> Result<Value, Box<HelperError>> {
 }
 
 fn through(
+    materializer: &Materializer,
     fixture: &Fixture,
     call: fine_tuning::Call<'_>,
 ) -> Result<AzureResourceResult, Box<HelperError>> {
@@ -144,10 +168,6 @@ fn through(
     let sources = NoSources;
     let mut cache = Cache;
     let mut refresh = RefreshProviderCache::new(&sources);
-    let materializer = Materializer {
-        body: fixture.body.clone(),
-        failure: (fixture.status >= 400).then_some(fixture.status),
-    };
     let connection = Connection {
         settings: ClientSettings {
             api_key: Some(SecretString::from(fixture.api_key.clone())),
@@ -166,7 +186,7 @@ fn through(
         refresh_enabled: false,
         cache: &mut cache,
         refresh: &mut refresh,
-        materializer: &materializer,
+        materializer,
     };
     let result = runtime.block_on(dispatch(AzureResourceOperation::FineTuning(Box::pin(
         ready(fine_tuning::Dispatch { connection, call }.run()),
@@ -189,6 +209,7 @@ fn outcome_of(
 struct Materializer {
     body: String,
     failure: Option<u16>,
+    calls: Arc<Mutex<Vec<String>>>,
 }
 
 impl ClientMaterializer for Materializer {
@@ -199,7 +220,7 @@ impl ClientMaterializer for Materializer {
         Ok(Some(Box::new(Fake {
             body: self.body.clone(),
             failure: self.failure,
-            calls: Mutex::new(Vec::new()),
+            calls: Arc::clone(&self.calls),
         })))
     }
 }

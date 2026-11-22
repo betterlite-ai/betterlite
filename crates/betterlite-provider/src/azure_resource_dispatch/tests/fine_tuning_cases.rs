@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::ready;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_azure::credentials::cache::RefreshProviderCache;
 use betterlite_azure::endpoints::get_client::ClientCache;
@@ -32,7 +32,7 @@ enum Answer {
 
 struct Fake {
     answer: Answer,
-    calls: Mutex<Vec<String>>,
+    calls: Arc<Mutex<Vec<String>>>,
 }
 
 impl Fake {
@@ -78,6 +78,7 @@ impl JobsApi for Fake {
 
 struct Materializer {
     answer: Answer,
+    calls: Arc<Mutex<Vec<String>>>,
 }
 
 impl ClientMaterializer for Materializer {
@@ -87,7 +88,7 @@ impl ClientMaterializer for Materializer {
     ) -> Result<Option<Box<dyn JobsApi>>, BuildError> {
         Ok(Some(Box::new(Fake {
             answer: self.answer.clone(),
-            calls: Mutex::new(Vec::new()),
+            calls: Arc::clone(&self.calls),
         })))
     }
 }
@@ -115,13 +116,20 @@ fn settings() -> ClientSettings {
 }
 
 // Every row runs the top-level dispatcher over the leaf's own connection, so the leaf opens the fake SDK
-fn through(answer: Answer, call: Call<'_>) -> Result<AzureResourceResult, AzureResourceError> {
+fn through(
+    answer: Answer,
+    call: Call<'_>,
+) -> (Result<AzureResourceResult, AzureResourceError>, Vec<String>) {
     let endpoints = EndpointSettings::default();
     let environment: BTreeMap<String, String> = BTreeMap::new();
     let sources = NoSources;
     let mut cache = Cache;
     let mut refresh = RefreshProviderCache::new(&sources);
-    let materializer = Materializer { answer };
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let materializer = Materializer {
+        answer,
+        calls: Arc::clone(&calls),
+    };
     let connection = Connection {
         settings: settings(),
         client: None,
@@ -135,23 +143,27 @@ fn through(answer: Answer, call: Call<'_>) -> Result<AzureResourceResult, AzureR
         refresh: &mut refresh,
         materializer: &materializer,
     };
-    super::block_on(dispatch(AzureResourceOperation::FineTuning(Box::pin(
+    let result = super::block_on(dispatch(AzureResourceOperation::FineTuning(Box::pin(
         ready(Dispatch { connection, call }.run()),
-    ))))
+    ))));
+    let recorded = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    (result, recorded)
 }
 
 fn create_rows() {
     let mut data: FineTuneCreate = parse(CREATE_TEXT);
-    let result = through(
+    let (result, recorded) = through(
         Answer::Value(String::from(JOB_JSON)),
         Call::Create(&mut data),
-    )
-    .expect("the create reaches its leaf");
-    let AzureResourceResult::FineTuning(Outcome::Job(job)) = result else {
+    );
+    let AzureResourceResult::FineTuning(Outcome::Job(job)) =
+        result.expect("the create reaches its leaf")
+    else {
         panic!("the create returns a job");
     };
     assert_eq!(job.id, "ft_1");
     assert!(matches!(job.status, JobStatus::Running));
+    assert_eq!(recorded, [String::from("create")]);
     let extra = data
         .extra
         .get("extra_body")
@@ -160,23 +172,38 @@ fn create_rows() {
 }
 
 fn list_rows() {
-    let result = through(
+    let (result, recorded) = through(
         Answer::Value(String::from(PAGE_JSON)),
         Call::List {
             after: Some("ft_0"),
             limit: Some(10),
         },
-    )
-    .expect("the list reaches its leaf");
-    let AzureResourceResult::FineTuning(Outcome::Page(page)) = result else {
+    );
+    let AzureResourceResult::FineTuning(Outcome::Page(page)) =
+        result.expect("the list reaches its leaf")
+    else {
         panic!("the list returns the SDK page");
     };
     assert_eq!(page, PAGE_JSON.as_bytes());
+    assert_eq!(recorded, [String::from("list:Some(\"ft_0\"):Some(10)")]);
+}
+
+// The retrieve and cancel arms differ only in the leaf they call, so each row names the call it expects
+fn job_row(call: Call<'_>, sent: &str) {
+    let (result, recorded) = through(Answer::Value(String::from(JOB_JSON)), call);
+    assert_eq!(recorded, [String::from(sent)]);
+    let AzureResourceResult::FineTuning(Outcome::Job(job)) =
+        result.expect("the job call reaches its leaf")
+    else {
+        panic!("the job call returns a job");
+    };
+    assert_eq!(job.id, "ft_1");
 }
 
 fn failure_rows() {
     let mut data: FineTuneCreate = parse(CREATE_TEXT);
-    let error = leaf_error(through(Answer::Failure(400), Call::Create(&mut data)));
+    let (result, _) = through(Answer::Failure(400), Call::Create(&mut data));
+    let error = leaf_error(result);
     assert!(matches!(
         error,
         AzureResourceError::FineTuning(AzureFineTuneError::Sdk {
@@ -188,5 +215,7 @@ fn failure_rows() {
 pub(super) fn check() {
     create_rows();
     list_rows();
+    job_row(Call::Retrieve("ft_1"), "retrieve:ft_1");
+    job_row(Call::Cancel("ft_1"), "cancel:ft_1");
     failure_rows();
 }
