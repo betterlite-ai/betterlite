@@ -92,7 +92,7 @@ fn selector(raw: Option<Json>, lookup: &dyn EnvironmentLookup) -> SelectorResult
         Some(Json::Bool(true) | Json::Number(_)) => Ok(PollingSelector::Unrecognized),
         Some(Json::Text(text)) => selector_text(text, lookup),
         Some(Json::List(items)) => {
-            resolve_list(items, POLLING_VIA_CACHE_PATH, lookup).map(PollingSelector::Providers)
+            resolve_list(&items, POLLING_VIA_CACHE_PATH, lookup).map(PollingSelector::Providers)
         }
         Some(value @ Json::Object(_)) => Err(invalid_scalar(POLLING_VIA_CACHE_PATH, &value)),
     }
@@ -110,14 +110,14 @@ fn selector_text(text: String, lookup: &dyn EnvironmentLookup) -> SelectorResult
 fn native_background_mode(raw: Option<Json>, lookup: &dyn EnvironmentLookup) -> ProviderNames {
     match raw {
         None | Some(Json::Null) => Ok(Vec::new()),
-        Some(Json::List(items)) => resolve_list(items, NATIVE_BACKGROUND_MODE_PATH, lookup),
+        Some(Json::List(items)) => resolve_list(&items, NATIVE_BACKGROUND_MODE_PATH, lookup),
         Some(value) => Err(invalid_scalar(NATIVE_BACKGROUND_MODE_PATH, &value)),
     }
 }
 
-fn resolve_list(items: Vec<Json>, path: &str, lookup: &dyn EnvironmentLookup) -> ProviderNames {
+fn resolve_list(items: &[Json], path: &str, lookup: &dyn EnvironmentLookup) -> ProviderNames {
     let mut values = Vec::with_capacity(items.len());
-    for item in &items {
+    for item in items {
         let Json::Text(text) = item else {
             return Err(invalid_scalar(path, item));
         };
@@ -133,13 +133,13 @@ fn ttl(raw: Option<RawNumber>, lookup: &dyn EnvironmentLookup) -> TtlSeconds {
     };
     match value {
         RawNumber::Integer(seconds) => Ok(seconds),
-        RawNumber::Text(text) => resolve_ttl_text(text, lookup),
+        RawNumber::Text(text) => resolve_ttl_text(&text, lookup),
         RawNumber::Float(_) => Err(invalid_scalar(TTL_PATH, &Json::Null)),
         RawNumber::Boolean(flag) => Err(invalid_scalar(TTL_PATH, &Json::Bool(flag))),
     }
 }
 
-fn resolve_ttl_text(text: String, lookup: &dyn EnvironmentLookup) -> TtlSeconds {
+fn resolve_ttl_text(text: &str, lookup: &dyn EnvironmentLookup) -> TtlSeconds {
     let Some(name) = text.strip_prefix("os.environ/") else {
         return text
             .parse::<i64>()
