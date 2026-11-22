@@ -27,15 +27,17 @@ use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::videos::VideoOptions;
 use betterlite_openai::videos::config::{VideoCredentials, complete_url, validate_environment};
+use betterlite_openai::videos::error::VideoError;
 use betterlite_openai::videos::list::{list_request, list_response};
 use betterlite_openai::videos::remix::{remix_request, remix_response};
-use betterlite_openai::videos::reply::VideoObject as OpenAiVideoObject;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use futures_util::FutureExt as _;
 use http::HeaderMap as HttpHeaders;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::api::video_list_call::{
     ListRequest, VideoListCall, VideoListReply, avideo_list, video_list,
@@ -281,9 +283,13 @@ fn params_from(options: VideoOptions) -> Params {
         .expect("video options are params")
 }
 
-fn core_video(video: &OpenAiVideoObject) -> VideoObject {
-    serde_json::from_value(serde_json::to_value(video).expect("the openai video serializes"))
-        .expect("the openai video is a core video")
+// B525's answer plus the serde round trip from its wire type to this crate's record
+fn core_response<T: DeserializeOwned, W: Serialize>(
+    wire: Result<W, VideoError>,
+) -> Result<T, ConfigFailure> {
+    let value = wire.map_err(failed)?;
+    let encoded = serde_json::to_value(&value).map_err(failed)?;
+    serde_json::from_value(encoded).map_err(failed)
 }
 
 fn failed<E>(error: E) -> ConfigFailure
@@ -356,9 +362,8 @@ impl VideoRemixListConfig for OpenAiConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, ConfigFailure> {
-        remix_response(&reply.raw_response.body, reply.custom_llm_provider)
-            .map(|object| core_video(&object))
-            .map_err(failed)
+        let body = &reply.raw_response.body;
+        core_response(remix_response(body, reply.custom_llm_provider))
     }
 
     fn transform_video_list_request(
@@ -381,10 +386,8 @@ impl VideoRemixListConfig for OpenAiConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<Params, ConfigFailure> {
-        let list =
-            list_response(&reply.raw_response.body, reply.custom_llm_provider).map_err(failed)?;
-        let encoded = serde_json::to_value(&list).map_err(failed)?;
-        serde_json::from_value(encoded).map_err(failed)
+        let body = &reply.raw_response.body;
+        core_response(list_response(body, reply.custom_llm_provider))
     }
 
     fn get_error_class(

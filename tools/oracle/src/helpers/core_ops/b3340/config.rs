@@ -43,11 +43,6 @@ where
     Ok(decoded)
 }
 
-// the extra_body params as B525's options, or the empty set a call without them uses
-fn decode_extra(params: Option<&Params>) -> Result<VideoOptions, ConfigFailure> {
-    params.map_or(Ok(VideoOptions::new()), decode::<VideoOptions, Params>)
-}
-
 fn params_key(params: Option<&Params>) -> Option<SecretString> {
     match params?.get("api_key")? {
         Json::Text(text) => Some(SecretString::from(text.clone())),
@@ -97,9 +92,13 @@ impl VideoRemixListConfig for OpenAiConfig {
         extra_body: Option<&Params>,
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), ConfigFailure> {
-        let extra = decode_extra(extra_body)?;
-        let (url, body) =
-            remix_request(video_id, prompt, context.api_base, &extra).map_err(failed)?;
+        let (url, body) = remix_request(
+            video_id,
+            prompt,
+            context.api_base,
+            &extra_body.map_or(Ok(VideoOptions::new()), decode::<VideoOptions, Params>)?,
+        )
+        .map_err(failed)?;
         Ok((url, decode::<Params, _>(&body)?))
     }
 
