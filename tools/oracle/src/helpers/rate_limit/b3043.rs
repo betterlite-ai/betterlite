@@ -56,14 +56,13 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let recorder = Arc::new(Recorder::new(&input.cache));
         let slot = RequestStashSlot::default();
-        {
-            let stash = slot.get_or_create();
-            let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.parallel_slot.clone_from(&input.parallel_slot);
-            state
-                .rate_limit_response
-                .clone_from(&input.rate_limit_response);
-        }
+        let stash = slot.get_or_create();
+        let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.parallel_slot.clone_from(&input.parallel_slot);
+        state
+            .rate_limit_response
+            .clone_from(&input.rate_limit_response);
+        drop(state);
         // LiteLLM returns at once for a body that is not a dict, and betterlite's typed body can't be one
         let (raised, data) = match &input.data {
             Json::Object(fields) => {
@@ -223,7 +222,7 @@ fn stash_json(slot: &RequestStashSlot) -> Value {
             "reservation_windows": response.reservation_windows.iter().flatten().collect::<Vec<_>>(),
         })
     });
-    json!({
+    let value = json!({
         "owner_litellm_call_id": &state.owner_litellm_call_id,
         "reservation_released": state.reservation_released,
         "parallel_slot_released": state.parallel_slot.is_none(),
@@ -234,5 +233,7 @@ fn stash_json(slot: &RequestStashSlot) -> Value {
         "otpm_reserved_scopes": &state.otpm_reserved_scopes,
         "otpm_reserved_windows": &state.otpm_reserved_windows,
         "rate_limit_response": stored,
-    })
+    });
+    drop(state);
+    value
 }
