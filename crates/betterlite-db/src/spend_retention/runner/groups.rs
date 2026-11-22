@@ -4,9 +4,7 @@ use tokio_postgres::Client;
 
 use crate::cleanup_metrics::CleanupMetrics;
 use crate::spend_retention::batches::cutoff::Cutoff;
-use crate::spend_retention::batches::deadline::{
-    MonotonicClock as _, group_deadline, remaining_budget,
-};
+use crate::spend_retention::batches::deadline::{group_deadline, remaining_budget};
 use crate::spend_retention::batches::deleter::BatchDeleter;
 use crate::spend_retention::batches::settings::{CleanupBounds, DurationParser, SettingValue};
 use crate::spend_retention::batches::table::CleanupTable;
@@ -16,6 +14,7 @@ mod tests;
 
 use super::clock::CleanupClock;
 use super::error::RunFailure;
+use super::lock::CleanupLock;
 use super::partitions::PartitionMaintenance;
 use super::progress::{RunProgress, SharedProgress};
 
@@ -88,6 +87,7 @@ where
     Clock: CleanupClock,
     Durations: DurationParser + Send + Sync,
     Partitions: PartitionMaintenance,
+    Lock: CleanupLock,
 {
     // one of the source's four _clean_* groups: its cutoff, the partition work it starts first, then its tables
     pub(super) async fn clean_group(

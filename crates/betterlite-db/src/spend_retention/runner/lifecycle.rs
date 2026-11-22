@@ -6,7 +6,7 @@ use tokio::time::Instant;
 use tokio_postgres::Client;
 
 use crate::cleanup_metrics::{CleanupMetrics, RunOutcome};
-use crate::spend_retention::batches::deadline::{MonotonicClock as _, group_deadline};
+use crate::spend_retention::batches::deadline::group_deadline;
 use crate::spend_retention::batches::settings::{DurationParser, Retention};
 use crate::spend_retention::batches::{SpendLogCleanup, StopReason, TableCleanupResult};
 
