@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use betterlite_anthropic::files::error::FilesError as AnthropicError;
 use betterlite_core::api::file_provider_write::FileWriteError;
 use betterlite_openai::files::error::FilesError;
@@ -48,14 +46,9 @@ fn failure(error: &FileWriteError<WireError>) -> Failure {
         FileWriteError::LoggingObjectRequired
         | FileWriteError::TimeoutText { .. }
         | FileWriteError::Timeout(_)
-        | FileWriteError::UnknownProvider { .. } => plain_failure("ValueError", error),
-        FileWriteError::Provider(wire) => provider_failure(wire),
-    }
-}
-// the openai client's status error, raised as is by the openai branch
-fn provider_failure(wire: &WireError) -> Failure {
-    match wire {
-        WireError::OpenAi(FilesError::Status(status)) => Failure {
+        | FileWriteError::UnknownProvider { .. } => plain_failure("ValueError", error.to_string()),
+        // the openai client's status error is raised as is by the openai branch
+        FileWriteError::Provider(WireError::OpenAi(FilesError::Status(status))) => Failure {
             class: class_for_status(status.status).to_owned(),
             status: status.status,
             kind: Some(status.error_type.clone()),
@@ -64,28 +57,27 @@ fn provider_failure(wire: &WireError) -> Failure {
             message: status.message.clone(),
         },
         // the generic handler raises the config's BaseLLMException with the upstream status and text
-        WireError::Anthropic(AnthropicError::Provider(provider)) => Failure {
-            class: "AnthropicError".to_owned(),
-            status: provider.status_code,
-            kind: None,
-            param: None,
-            code: None,
-            message: provider.message.clone(),
-        },
-        WireError::OpenAi(_)
-        | WireError::Anthropic(_)
-        | WireError::NotWired(_)
-        | WireError::Header(_) => plain_failure("APIConnectionError", wire),
+        FileWriteError::Provider(WireError::Anthropic(AnthropicError::Provider(provider))) => {
+            Failure {
+                class: "AnthropicError".to_owned(),
+                status: provider.status_code,
+                kind: None,
+                param: None,
+                code: None,
+                message: provider.message.clone(),
+            }
+        }
+        FileWriteError::Provider(wire) => plain_failure("APIConnectionError", wire.to_string()),
     }
 }
-fn plain_failure(class: &str, error: &impl Display) -> Failure {
+fn plain_failure(class: &str, message: String) -> Failure {
     Failure {
         class: class.to_owned(),
         status: 0,
         kind: None,
         param: None,
         code: None,
-        message: error.to_string(),
+        message,
     }
 }
 // the classes the openai client raises for an HTTP status

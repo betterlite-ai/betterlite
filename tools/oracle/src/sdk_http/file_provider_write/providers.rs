@@ -6,13 +6,13 @@ use betterlite_anthropic::files::error::FilesError as AnthropicError;
 use betterlite_anthropic::files::request::{FileCall, FilesClient as AnthropicClient, Upload};
 use betterlite_core::api::file_http_upload::service::Mode;
 use betterlite_core::api::file_provider_write::{
-    ConfigUpload, DeleteTarget, FileWriteProviders, ProviderCall, UploadTarget,
+    ConfigDelete, ConfigUpload, DeleteTarget, FileWriteProviders, ProviderCall, UploadTarget,
 };
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::files::error::FilesError;
-use betterlite_openai::files::records::{FileDeleted, FileObject};
+use betterlite_openai::files::records::{FileCreate, FileDeleted, FileObject};
 use betterlite_openai::files::{
     ClientArgs, DEFAULT_TIMEOUT, FilesApi, FilesClient, get_openai_client, select_client,
 };
@@ -56,22 +56,22 @@ impl OracleProviders {
         }
     }
 
-    async fn config_upload(
+    async fn anthropic_upload(
         &self,
         upload: &ConfigUpload<'_, Self>,
     ) -> Result<FileObject, WireError> {
-        let client = anthropic_client(
+        let (client, headers) = anthropic_transport(
             upload.config,
             upload.api_key,
             upload.api_base,
             upload.timeout,
+            &upload.headers,
         )?;
         let file = FileData::Tuple3 {
             filename: upload.data.file.filename.clone(),
             content: FileBody::Bytes(upload.data.file.data.clone()),
             content_type: upload.data.file.content_type.clone(),
         };
-        let headers = header_map(&upload.headers)?;
         let call = Upload {
             file: Some(&file),
             purpose: Some(upload.data.purpose.wire_name()),
@@ -79,6 +79,18 @@ impl OracleProviders {
             headers: &headers,
         };
         Ok(self.anthropic.create_file(&client, &call).await?)
+    }
+
+    async fn openai_upload(
+        &self,
+        call: &ProviderCall,
+        data: &FileCreate,
+    ) -> Result<FileObject, WireError> {
+        let client = openai_client(call)?;
+        self.openai
+            .create_file(&client, data)
+            .await
+            .map_err(WireError::from)
     }
 }
 impl FileWriteProviders for OracleProviders {
@@ -93,36 +105,33 @@ impl FileWriteProviders for OracleProviders {
 
     async fn upload(&self, target: UploadTarget<'_, Self>) -> Result<FileObject, WireError> {
         match target {
-            UploadTarget::Config(upload) => self.config_upload(&upload).await,
-            UploadTarget::OpenAi { call, data } => Ok(self
-                .openai
-                .create_file(&openai_client(&call)?, &data)
-                .await?),
+            UploadTarget::Config(upload) => self.anthropic_upload(&upload).await,
+            UploadTarget::OpenAi { call, data } => self.openai_upload(&call, &data).await,
             UploadTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
         }
     }
 
     async fn delete(&self, target: DeleteTarget<'_, Self>) -> Result<FileDeleted, WireError> {
         match target {
-            DeleteTarget::OpenAi { call, file_id } => Ok(self
-                .openai
-                .delete_file(&openai_client(&call)?, file_id)
-                .await?),
-            DeleteTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
             DeleteTarget::Config(delete) => {
-                let client = anthropic_client(
+                let (client, headers) = anthropic_transport(
                     delete.config,
                     delete.params.api_key,
                     delete.params.api_base,
                     delete.timeout,
+                    &delete.headers,
                 )?;
-                let headers = header_map(&delete.headers)?;
                 let call = FileCall {
                     file_id: delete.file_id,
                     headers: &headers,
                 };
                 Ok(self.anthropic.delete_file(&client, &call).await?)
             }
+            DeleteTarget::OpenAi { call, file_id } => {
+                let client = openai_client(&call)?;
+                Ok(self.openai.delete_file(&client, file_id).await?)
+            }
+            DeleteTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
         }
     }
 }
@@ -138,28 +147,28 @@ fn openai_client(call: &ProviderCall) -> Result<FilesClient, FilesError> {
     };
     select_client(get_openai_client(args, None, is_async)?, is_async)
 }
-fn anthropic_client(
+// the client and headers both generic file calls reach the Anthropic SDK with
+fn anthropic_transport(
     config: FileProviderConfig,
     api_key: Option<&SecretString>,
     api_base: Option<&str>,
     timeout: FineTuningTimeout,
-) -> Result<AnthropicClient, WireError> {
-    match config {
-        FileProviderConfig::Anthropic => Ok(AnthropicClient {
+    headers: &IndexMap<String, String>,
+) -> Result<(AnthropicClient, HeaderMap), WireError> {
+    let client = match config {
+        FileProviderConfig::Anthropic => AnthropicClient {
             api_key: api_key.cloned(),
             api_base: api_base.map(str::to_owned),
             settings: AnthropicSettings::default(),
             timeout: deadline(timeout),
-        }),
+        },
         FileProviderConfig::GoogleAiStudio
         | FileProviderConfig::VertexAi
         | FileProviderConfig::Bedrock
         | FileProviderConfig::Manus
         | FileProviderConfig::Mistral
-        | FileProviderConfig::Xai => Err(WireError::NotWired(config.class_name())),
-    }
-}
-fn header_map(headers: &IndexMap<String, String>) -> Result<HeaderMap, WireError> {
+        | FileProviderConfig::Xai => return Err(WireError::NotWired(config.class_name())),
+    };
     let mut map = HeaderMap::new();
     for (name, value) in headers {
         let parsed_name = HeaderName::try_from(name.as_str())
@@ -168,7 +177,7 @@ fn header_map(headers: &IndexMap<String, String>) -> Result<HeaderMap, WireError
             .map_err(|_invalid| WireError::Header(name.clone()))?;
         map.insert(parsed_name, parsed_value);
     }
-    Ok(map)
+    Ok((client, map))
 }
 // an httpx.Timeout bounds the whole request by its read phase here, as the SDK's read deadline does
 fn deadline(timeout: FineTuningTimeout) -> Duration {

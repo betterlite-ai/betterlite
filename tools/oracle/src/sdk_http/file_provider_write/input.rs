@@ -26,7 +26,7 @@ pub(super) async fn run_step(
     };
     match step {
         Step::CreateFile(upload) | Step::ACreateFile(upload) => {
-            let input = upload_input(upload, api_base)?;
+            let input = upload_input(upload, write_params(&upload.params, api_base)?);
             step_outcome(write.create_file(mode, &input).await)
         }
         Step::FileDelete(delete) | Step::AFileDelete(delete) => {
@@ -42,8 +42,8 @@ pub(super) async fn run_step(
         }
     }
 }
-fn upload_input(step: &UploadStep, api_base: &str) -> Result<UploadInput<(), ()>, SdkHttpError> {
-    Ok(UploadInput {
+fn upload_input(step: &UploadStep, params: WriteParams<(), ()>) -> UploadInput<(), ()> {
+    UploadInput {
         file: FileUpload {
             filename: Some(step.file.filename.clone()),
             content_type: Some(step.file.content_type.clone()),
@@ -61,8 +61,8 @@ fn upload_input(step: &UploadStep, api_base: &str) -> Result<UploadInput<(), ()>
         custom_llm_provider: step.custom_llm_provider.clone(),
         extra_headers: step.extra_headers.clone(),
         extra_body: step.extra_body.clone(),
-        params: write_params(&step.params, api_base)?,
-    })
+        params,
+    }
 }
 // the decorator always hands the call a logger; the harness base stands in for an absent api_base
 fn write_params(params: &Params, api_base: &str) -> Result<WriteParams<(), ()>, SdkHttpError> {
@@ -75,21 +75,15 @@ fn write_params(params: &Params, api_base: &str) -> Result<WriteParams<(), ()>, 
                 StructuredTimeout::try_from(phases).map(WriteTimeout::Structured)
             }
         })
-        .transpose()
-        .map_err(invalid_timeout)?;
+        .transpose()?;
     let request_timeout = params
         .request_timeout
         .as_ref()
         .map(TimeoutValue::try_from)
-        .transpose()
-        .map_err(invalid_timeout)?;
+        .transpose()?;
+    let base = Some(params.api_base.as_deref().unwrap_or(api_base).to_owned());
     Ok(WriteParams {
-        api_base: Some(
-            params
-                .api_base
-                .clone()
-                .unwrap_or_else(|| api_base.to_owned()),
-        ),
+        api_base: base,
         api_key: params.api_key.clone().map(SecretString::from),
         api_version: params.api_version.clone(),
         organization: params.organization.clone(),
@@ -104,6 +98,9 @@ fn write_params(params: &Params, api_base: &str) -> Result<WriteParams<(), ()>, 
         credentials: None,
     })
 }
-fn invalid_timeout(error: TimeoutError) -> SdkHttpError {
-    SdkHttpError::Invalid(format!("the case timeout is not a number: {error}"))
+// both timeout kwargs fail the same way, naming the case value that is not a number
+impl From<TimeoutError> for SdkHttpError {
+    fn from(error: TimeoutError) -> Self {
+        Self::Invalid(format!("the case timeout is not a number: {error}"))
+    }
 }
