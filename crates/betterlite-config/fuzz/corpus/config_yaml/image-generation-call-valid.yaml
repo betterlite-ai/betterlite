@@ -1,0 +1,5 @@
+litellm_settings:
+  api_base: https://seed.example
+  api_version: 2024-02-01
+  api_key: seed-key
+  azure_key: seed-azure-key
