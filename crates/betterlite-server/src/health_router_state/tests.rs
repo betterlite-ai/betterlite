@@ -640,7 +640,7 @@ fn a_count_failure_logs_the_warning_and_skips_the_rest() {
 }
 
 #[test]
-fn a_state_failure_logs_the_warning_and_skips_the_failure_loop() {
+fn a_state_failure_logs_the_warning_and_still_counts_the_failure() {
     let fixture = Fixture::with_staleness(settings(true), f64::NAN);
     let (logs, _guard) = capture_logs();
     let unhealthy = [object(vec![
@@ -653,7 +653,17 @@ fn a_state_failure_logs_the_warning_and_skips_the_failure_loop() {
     assert!(logs.text().contains(&format!(
         "Failed to write health state to router cache: {expected}"
     )));
-    assert!(fixture.counters.increments().is_empty());
+    assert!(
+        logs.text()
+            .contains("health_check_routing_state_updated healthy=0 unhealthy=1")
+    );
+    assert_eq!(
+        fixture.counters.increments(),
+        vec![("dep:fails".to_owned(), 1, Duration::from_secs(60))]
+    );
+    let recorded = fixture.cooldowns.recorded();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].deployment_id, "dep");
 }
 
 #[test]

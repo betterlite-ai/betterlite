@@ -98,10 +98,11 @@ fn publish(
         &router.clock,
     );
     if !states.is_empty() {
-        router
-            .health_states
-            .set_states(&states)
-            .map_err(HealthStateError::States)?;
+        // set_deployment_health_states swallows its own failure: the update is dropped and the cycle goes on
+        if let Err(error) = router.health_states.set_states(&states) {
+            let state_error = HealthStateError::States(error);
+            tracing::warn!("Failed to write health state to router cache: {state_error}");
+        }
         let up = states.values().filter(|state| state.is_healthy).count();
         let down = states.values().filter(|state| !state.is_healthy).count();
         tracing::debug!("health_check_routing_state_updated healthy={up} unhealthy={down}");
