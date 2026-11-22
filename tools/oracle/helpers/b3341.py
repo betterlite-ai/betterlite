@@ -35,33 +35,23 @@ class Input(TypedDict):
 
 
 Created: TypeAlias = CharacterObject | Awaitable[CharacterObject]
-Argument: TypeAlias = JsonValue | Logging
+Arg: TypeAlias = JsonValue | Logging
 
 
 class CharacterApi(Protocol):
     # LiteLLM leaves **kwargs unannotated, so the view pins the positional arguments and their types;
     # its video argument is FileTypes, which a file path satisfies and a plain string does not
     def video_create_character(
-        self,
-        name: str,
-        video: PathLike[str],
-        *,
-        litellm_logging_obj: Logging,
-        **kwargs: Argument,
+        self, name: str, video: PathLike[str], *, litellm_logging_obj: Logging, **kwargs: Arg
     ) -> Created: ...
     def avideo_create_character(
-        self,
-        name: str,
-        video: PathLike[str],
-        *,
-        litellm_logging_obj: Logging,
-        **kwargs: Argument,
+        self, name: str, video: PathLike[str], *, litellm_logging_obj: Logging, **kwargs: Arg
     ) -> Created: ...
     def video_get_character(
-        self, character_id: str, *, litellm_logging_obj: Logging, **kwargs: Argument
+        self, character_id: str, *, litellm_logging_obj: Logging, **kwargs: Arg
     ) -> Created: ...
     def avideo_get_character(
-        self, character_id: str, *, litellm_logging_obj: Logging, **kwargs: Argument
+        self, character_id: str, *, litellm_logging_obj: Logging, **kwargs: Arg
     ) -> Created: ...
 
 
@@ -181,8 +171,8 @@ def recorded_timeout(timeout: float | None) -> float:
     return 0.0 if timeout is None else float(timeout)
 
 
-def call_kwargs(call: Input) -> dict[str, Argument]:
-    kwargs: dict[str, Argument] = {
+def call_kwargs(call: Input) -> dict[str, Arg]:
+    kwargs: dict[str, Arg] = {
         "litellm_call_id": call["litellm_call_id"],
         "custom_llm_provider": call.get("custom_llm_provider"),
         "extra_headers": call.get("extra_headers"),
@@ -207,30 +197,20 @@ def answer(call: Input, logging_obj: Logging) -> CharacterObject:
             if call["asynchronous"]
             else CHARACTER_API.video_create_character
         )
-        return asyncio.run(
-            resolved(
-                creator(
-                    call["name"],
-                    Path(call["video"]),
-                    litellm_logging_obj=logging_obj,
-                    **kwargs,
-                )
-            )
+        created = creator(
+            call["name"],
+            Path(call["video"]),
+            litellm_logging_obj=logging_obj,
+            **kwargs,
         )
-    getter = (
-        CHARACTER_API.avideo_get_character
-        if call["asynchronous"]
-        else CHARACTER_API.video_get_character
-    )
-    return asyncio.run(
-        resolved(
-            getter(
-                call["character_id"],
-                litellm_logging_obj=logging_obj,
-                **kwargs,
-            )
+    else:
+        getter = (
+            CHARACTER_API.avideo_get_character
+            if call["asynchronous"]
+            else CHARACTER_API.video_get_character
         )
-    )
+        created = getter(call["character_id"], litellm_logging_obj=logging_obj, **kwargs)
+    return asyncio.run(resolved(created))
 
 
 def run(input_value: Input) -> JsonValue:
