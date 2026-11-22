@@ -1,41 +1,32 @@
-use crate::router_probes::ProbeOutput;
-use crate::router_probes::error::OperationError;
-use crate::router_probes::random::InjectedRandom;
+use crate::router_probes::{ProbeOutput, error::OperationError, random::InjectedRandom};
 use async_trait::async_trait;
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_logging::private_json::error::PrivateJsonError;
-use betterlite_logging::private_json::safe_json::MAX_JSON_BYTES;
-use betterlite_models::catalog::BundledCatalog;
-use betterlite_models::decisions::Json;
+use betterlite_logging::private_json::{error::PrivateJsonError, safe_json::MAX_JSON_BYTES};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::judge_primitives::provider_qualified::ProviderCache;
-use betterlite_models::model_registration::JsonObject;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::ResolutionContext;
+use betterlite_models::{catalog::BundledCatalog, decisions::Json};
+use betterlite_models::{model_registration::JsonObject, resolution::ResolutionContext};
 use betterlite_secret_managers::secret_helpers::SecretManagerReadState;
 use betterlite_secret_managers::secret_types::SecretAccessMode;
-use betterlite_server::judge_targets::call::JudgeCall;
-use betterlite_server::judge_targets::error::JudgeDispatchError;
-use betterlite_server::judge_targets::sdk::JudgeSdk;
+use betterlite_server::judge_targets::{call::JudgeCall, error::JudgeDispatchError, sdk::JudgeSdk};
 use betterlite_server::model_visibility::testing::{Row, Snapshot};
-use betterlite_server::shadow_eval_validation::access::{AdminRole, require_admin};
-use betterlite_server::shadow_eval_validation::error::ShadowEvalRequestError;
-use betterlite_server::shadow_eval_validation::request::{
-    ShadowEvalDirection, StartShadowEvalRequest, parse_shadow_eval_request,
-};
-use betterlite_server::shadow_eval_validation::router_view::{
-    AnthropicCredentials, ShadowEvalRouter,
-};
-use betterlite_server::shadow_eval_validation::start::{
-    StartContext, TargetKey, TargetRecords, validate_start,
+use betterlite_server::shadow_eval_validation::{
+    access::{AdminRole, require_admin},
+    error::ShadowEvalRequestError,
+    request::{ShadowEvalDirection, StartShadowEvalRequest, parse_shadow_eval_request},
+    router_view::{AnthropicCredentials, ShadowEvalRouter},
+    start::{StartContext, TargetKey, TargetRecords, validate_start},
 };
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
+static NO_NAMES: BTreeSet<String> = BTreeSet::new();
+static NO_ENVIRONMENT: BTreeMap<String, String> = BTreeMap::new();
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Input {
@@ -97,7 +88,7 @@ pub enum StepOutput {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum ParseResult {
-    Accepted { request: RequestView },
+    Accepted { request: Box<RequestView> },
     Rejected,
     OverLimit { bytes: usize, limit: usize },
 }
@@ -126,14 +117,11 @@ struct NoSdk;
 impl JudgeSdk for NoSdk {
     async fn acompletion(&self, _call: JudgeCall) -> Result<Json, JudgeDispatchError> {
         Err(JudgeDispatchError {
-            message: "start-time validation dispatches no judge call".to_owned(),
+            message: "validation dispatches no judge call".to_owned(),
         })
     }
 }
-fn invalid<E>(error: E) -> OperationError
-where
-    E: Display,
-{
+fn invalid<E: Display>(error: E) -> OperationError {
     OperationError::InvalidRequest {
         message: error.to_string(),
     }
@@ -154,10 +142,11 @@ fn auth(role: Role) -> Result<UserAPIKeyAuth, OperationError> {
 }
 fn body_bytes(body: &Body) -> Result<Vec<u8>, OperationError> {
     let mut bytes = body.text.clone().into_bytes();
-    let limit = MAX_JSON_BYTES.saturating_add(1);
     let total = body.pad_to.unwrap_or(bytes.len());
-    if total < bytes.len() || total > limit {
-        return Err(invalid(format!("pad_to must be {}..={limit}", bytes.len())));
+    if total < bytes.len() || total > MAX_JSON_BYTES.saturating_add(1) {
+        return Err(invalid(
+            "pad_to must start at the body length and stay within the JSON limit",
+        ));
     }
     bytes.resize(total, b' ');
     Ok(bytes)
@@ -180,12 +169,11 @@ fn view(request: &StartShadowEvalRequest) -> RequestView {
 fn parse_result(body: &Body) -> Result<ParseResult, OperationError> {
     match parse_shadow_eval_request(&body_bytes(body)?) {
         Ok(request) => Ok(ParseResult::Accepted {
-            request: view(&request),
+            request: Box::new(view(&request)),
         }),
         Err(ShadowEvalRequestError::Bounded(PrivateJsonError::TooLarge(bytes, limit))) => {
             Ok(ParseResult::OverLimit { bytes, limit })
         }
-        // every other rejection reads the same to a caller: no job starts
         Err(_rejected) => Ok(ParseResult::Rejected),
     }
 }
@@ -211,39 +199,19 @@ fn step_output(step: &Step, context: &StartContext<'_>) -> Result<StepOutput, Op
         Step::ValidateStart(body) => Ok(StepOutput::ValidateStart(start_result(body, context)?)),
     }
 }
-pub(crate) fn run(
-    input: &Input,
-    _random: &mut InjectedRandom<'_>,
-) -> Result<ProbeOutput, OperationError> {
-    let catalog = BundledCatalog::default().get();
-    let known = BTreeSet::new();
-    let custom = BTreeSet::new();
-    let environment = BTreeMap::new();
-    let resolution = ResolutionContext {
-        catalog: catalog.as_ref(),
-        known_model_names: &known,
-        custom_providers: &custom,
-        environment: &environment,
-        registry: JSONProviderRegistry::load(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    };
-    let cache = ProviderCache::default();
-    let sdk = NoSdk;
-    let info = Json::Object(JsonObject::new());
-    let rows: Vec<Row<'_>> = input
+fn probe_rows<'input>(input: &'input Input, info: &'input Json) -> Vec<Row<'input>> {
+    input
         .router
         .iter()
         .map(|deployment| Row {
             model_name: &deployment.model_name,
             litellm_params: &deployment.litellm_params,
-            model_info: &info,
+            model_info: info,
         })
-        .collect();
-    let fixture = Snapshot::build(&rows, &JsonObject::new()).map_err(invalid)?;
-    let provider = |_model: &str| -> Option<String> { None };
-    let settings = AnthropicSettings::default();
-    let keys: Vec<TargetKey<'_>> = input
+        .collect()
+}
+fn probe_records(input: &Input) -> (Vec<TargetKey<'_>>, Vec<&str>, Vec<&str>) {
+    let keys = input
         .rows
         .keys
         .iter()
@@ -252,8 +220,53 @@ pub(crate) fn run(
             team_id: row.team_id.as_deref(),
         })
         .collect();
-    let teams: Vec<&str> = input.rows.teams.iter().map(String::as_str).collect();
-    let users: Vec<&str> = input.rows.users.iter().map(String::as_str).collect();
+    let teams = input.rows.teams.iter().map(String::as_str).collect();
+    let users = input.rows.users.iter().map(String::as_str).collect();
+    (keys, teams, users)
+}
+fn probe_credentials(settings: &AnthropicSettings) -> AnthropicCredentials<'_> {
+    AnthropicCredentials {
+        anthropic_key: None,
+        api_key: None,
+        settings,
+        secret_state: SecretManagerReadState {
+            client_exists: false,
+            settings_exist: false,
+            access_mode: SecretAccessMode::ReadOnly,
+            hosted_keys: None,
+        },
+    }
+}
+fn probe_steps(
+    steps: &[Step],
+    context: &StartContext<'_>,
+) -> Result<Vec<StepOutput>, OperationError> {
+    steps
+        .iter()
+        .map(|step| step_output(step, context))
+        .collect::<Result<Vec<StepOutput>, OperationError>>()
+}
+pub(crate) fn run(
+    input: &Input,
+    _random: &mut InjectedRandom<'_>,
+) -> Result<ProbeOutput, OperationError> {
+    let catalog = BundledCatalog::default().get();
+    let resolution = ResolutionContext {
+        catalog: catalog.as_ref(),
+        known_model_names: &NO_NAMES,
+        custom_providers: &NO_NAMES,
+        environment: &NO_ENVIRONMENT,
+        registry: JSONProviderRegistry::load(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    let (sdk, cache) = (NoSdk, ProviderCache::default());
+    let info = Json::Object(JsonObject::new());
+    let fixture =
+        Snapshot::build(&probe_rows(input, &info), &JsonObject::new()).map_err(invalid)?;
+    let settings = AnthropicSettings::default();
+    let provider = |_model: &str| -> Option<String> { None };
+    let (keys, teams, users) = probe_records(input);
     let context = StartContext {
         router: Some(ShadowEvalRouter {
             catalog: &fixture.catalog,
@@ -264,27 +277,13 @@ pub(crate) fn run(
         sdk: &sdk,
         cache: &cache,
         resolution: &resolution,
-        credentials: AnthropicCredentials {
-            anthropic_key: None,
-            api_key: None,
-            settings: &settings,
-            secret_state: SecretManagerReadState {
-                client_exists: false,
-                settings_exist: false,
-                access_mode: SecretAccessMode::ReadOnly,
-                hosted_keys: None,
-            },
-        },
+        credentials: probe_credentials(&settings),
         records: TargetRecords {
             keys: &keys,
             teams: &teams,
             users: &users,
         },
     };
-    let steps = input
-        .steps
-        .iter()
-        .map(|step| step_output(step, &context))
-        .collect::<Result<Vec<StepOutput>, OperationError>>()?;
+    let steps = probe_steps(&input.steps, &context)?;
     Ok(ProbeOutput::ShadowEvalValidation(Output { steps }))
 }
