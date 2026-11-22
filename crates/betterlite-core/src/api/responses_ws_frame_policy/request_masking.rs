@@ -37,10 +37,11 @@ where
         &self,
         container: &mut IndexMap<String, Json>,
     ) -> Result<bool, Guard::Error> {
-        let mut masked = false;
-        if let Some(input) = container.get_mut("input") {
-            masked = self.input(input).await?;
-        }
+        let mut masked = if let Some(input) = container.get_mut("input") {
+            self.input(input).await?
+        } else {
+            false
+        };
         if let Some(Json::Text(text)) = container.get_mut("instructions") {
             masked |= self.text(text).await?;
         }

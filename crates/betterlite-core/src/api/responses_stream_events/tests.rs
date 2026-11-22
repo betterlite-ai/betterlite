@@ -660,6 +660,7 @@ impl ProjectQuotaCallback for QuotaCounter {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         let next = calls.saturating_add(1);
         *calls = next;
+        drop(calls);
         Ok(())
     }
 }
