@@ -111,8 +111,8 @@ class RecordingRouter:
         messages: list[dict[str, JsonValue] | Message],
         **params: JsonValue,
     ) -> CompletionOutcome:
-        routed = self.completion(model, messages, **params)
-        return routed
+        await asyncio.sleep(0)
+        return self.completion(model, messages, **params)
 
 
 class Counter:
@@ -205,7 +205,7 @@ def config_seam(config_file: Path) -> Iterator[None]:
 
 
 def adapter_outcome(
-    adapter: FakeAdapter, server_url: str, stream: bool = False
+    adapter: FakeAdapter, server_url: str, *, stream: bool = False
 ) -> CompletionOutcome | None:
     with adapter_seam(adapter):
         return adapter_completion(
