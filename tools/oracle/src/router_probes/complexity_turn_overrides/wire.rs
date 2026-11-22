@@ -60,12 +60,14 @@ fn numeric(value: Option<&Json>) -> Result<Option<&Number>, OperationError> {
 }
 
 pub(super) fn number(value: Option<&Json>, default: f64) -> Result<f64, OperationError> {
-    let Some(declared) = numeric(value)? else {
-        return Ok(default);
-    };
-    declared
-        .as_f64()
-        .ok_or_else(|| invalid("the number is not representable"))
+    numeric(value)?.map_or_else(
+        || Ok(default),
+        |declared| {
+            declared
+                .as_f64()
+                .ok_or_else(|| invalid("the number is not representable"))
+        },
+    )
 }
 
 pub(super) fn count(value: Option<&Json>, default: u32) -> Result<u32, OperationError> {
