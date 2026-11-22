@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 
 use crate::benchmark_aggregates::group::{benchmark_group, benchmarks, summed_agg_row};
 use crate::benchmark_aggregates::row::{SessionAggRow, compared_row, savings_cohort};
-use crate::benchmark_aggregates::totals::{benchmark_totals, pct};
+use crate::benchmark_aggregates::totals::{BenchmarkTotals, benchmark_totals, pct};
 use crate::benchmark_aggregates::window::BenchmarkWindow;
 use crate::routing::benchmark_aggregates::{
     StrategyDeployment, idle_router_groups, strategy_router_key,
