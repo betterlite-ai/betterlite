@@ -80,39 +80,30 @@ pub struct RemixRequest<'call, 'deps, 'env, Source: VideoClientSource> {
     pub client: Option<VideoClient<'call, Source>>,
 }
 
+impl<Source: VideoClientSource> RemixRequest<'_, '_, '_, Source> {
+    // the mock short circuit, then the handler's sync answer or the pending failure
+    fn direct(self) -> Result<VideoObject, VideoCallFailure> {
+        if let Some(object) = remix_mock(self.call, self.deps.redactor)? {
+            return Ok(object);
+        }
+        remix_ready(self)?.direct()
+    }
+}
+
 // ast-grep-ignore: no-one-line-functions - B3340 exposes LiteLLM's video_remix under this public name
 pub fn video_remix<Source: VideoClientSource>(
     request: RemixRequest<'_, '_, '_, Source>,
 ) -> Result<VideoObject, VideoCallFailure> {
-    if let Some(object) = remix_mock(request.call, request.deps.redactor)? {
-        return Ok(object);
-    }
-    let mut ready = remix_ready(request)?;
-    let provider = ready.provider.clone();
-    let redactor = ready.redactor;
-    match ready.run(false)? {
-        Handled::Done(object) => Ok(object),
-        Handled::Pending(_pending) => Err(remix_pending(&provider, redactor)),
-    }
+    request.direct()
 }
 
-// ast-grep-ignore: no-one-line-functions - B3340 exposes LiteLLM's avideo_remix under this public name
 pub async fn avideo_remix<Source: VideoClientSource>(
     request: RemixRequest<'_, '_, '_, Source>,
 ) -> Result<VideoObject, VideoCallFailure> {
     if let Some(object) = remix_mock(request.call, request.deps.redactor)? {
         return Ok(object);
     }
-    let mut ready = remix_ready(request)?;
-    let provider = ready.provider.clone();
-    let redactor = ready.redactor;
-    let pending = match ready.run(true)? {
-        Handled::Done(object) => return Ok(object),
-        Handled::Pending(pending) => pending,
-    };
-    pending
-        .await
-        .map_err(|error| failure(VideoCallError::from(error), &provider, redactor))
+    remix_ready(request)?.awaited().await
 }
 
 // custom_llm_provider or decode_video_id_with_provider(video_id)["custom_llm_provider"] or "openai"
@@ -165,6 +156,26 @@ impl<Source: VideoClientSource> RemixReady<'_, '_, '_, Source> {
             .remix(self.config, call, log, is_async)
             .map_err(|error| failure(error, &self.provider, self.redactor))
     }
+
+    // a sync handler must answer directly; a future in its place is the UnexpectedPending failure
+    fn direct(mut self) -> Result<VideoObject, VideoCallFailure> {
+        let Handled::Done(object) = self.run(false)? else {
+            return Err(remix_pending(&self.provider, self.redactor));
+        };
+        Ok(object)
+    }
+
+    // the async handler's future, awaited here
+    async fn awaited(mut self) -> Result<VideoObject, VideoCallFailure> {
+        let provider = self.provider.clone();
+        let redactor = self.redactor;
+        match self.run(true)? {
+            Handled::Done(object) => Ok(object),
+            Handled::Pending(pending) => pending
+                .await
+                .map_err(|error| failure(VideoCallError::from(error), &provider, redactor)),
+        }
+    }
 }
 
 // the mock short circuit: LiteLLM answers from mock_response before it decodes the provider
@@ -214,13 +225,10 @@ fn remix_ready<'call, 'deps, 'env, Source: VideoClientSource>(
 
 // a sync handler that answered with a future where the entry expected a direct answer
 fn remix_pending(provider: &str, redactor: &Redactor) -> VideoCallFailure {
-    failure(
-        VideoCallError::UnexpectedPending {
-            operation: VideoOperation::Remix,
-        },
-        provider,
-        redactor,
-    )
+    let error = VideoCallError::UnexpectedPending {
+        operation: VideoOperation::Remix,
+    };
+    failure(error, provider, redactor)
 }
 
 // video_remix passes no api_key to the handler: the key reaches validate_environment through litellm_params

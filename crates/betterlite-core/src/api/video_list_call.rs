@@ -85,22 +85,21 @@ pub struct ListRequest<'call, 'deps, 'env, Source: VideoClientSource> {
     pub client: Option<VideoClient<'call, Source>>,
 }
 
-// video_list: the mock short circuit, then openai unless the caller named a provider
+impl<Source: VideoClientSource> ListRequest<'_, '_, '_, Source> {
+    // the mock short circuit, then openai unless the caller named a provider
+    fn direct(self) -> Result<VideoListReply, VideoCallFailure> {
+        if let Some(objects) = list_mock(self.call, self.deps.redactor)? {
+            return Ok(VideoListReply::Objects(objects));
+        }
+        list_ready(sync_provider(self.call), self)?.direct()
+    }
+}
+
+// ast-grep-ignore: no-one-line-functions - B3340 exposes LiteLLM's video_list under this public name
 pub fn video_list<Source: VideoClientSource>(
     request: ListRequest<'_, '_, '_, Source>,
 ) -> Result<VideoListReply, VideoCallFailure> {
-    let argument_provider = request.call.custom_llm_provider.clone().unwrap_or_default();
-    if let Some(objects) = list_mock(request.call, &argument_provider, request.deps.redactor)? {
-        return Ok(VideoListReply::Objects(objects));
-    }
-    let provider = sync_provider(request.call);
-    let mut ready = list_ready(request, provider)?;
-    let answered_provider = ready.provider.clone();
-    let redactor = ready.redactor;
-    match ready.run(false)? {
-        Handled::Done(params) => Ok(VideoListReply::Page(params)),
-        Handled::Pending(_pending) => Err(list_pending(&answered_provider, redactor)),
-    }
+    request.direct()
 }
 
 // avideo_list: get_llm_provider(model="") before the mock, then the async handler awaited here
@@ -113,20 +112,10 @@ pub async fn avideo_list<Source: VideoClientSource>(
         None => inferred_provider(resolution)
             .map_err(|error| failure(error, "", request.deps.redactor))?,
     };
-    if let Some(objects) = list_mock(request.call, &provider, request.deps.redactor)? {
+    if let Some(objects) = list_mock(request.call, request.deps.redactor)? {
         return Ok(VideoListReply::Objects(objects));
     }
-    let mut ready = list_ready(request, provider)?;
-    let answered_provider = ready.provider.clone();
-    let redactor = ready.redactor;
-    let pending = match ready.run(true)? {
-        Handled::Done(params) => return Ok(VideoListReply::Page(params)),
-        Handled::Pending(pending) => pending,
-    };
-    let params = pending
-        .await
-        .map_err(|error| failure(VideoCallError::from(error), &answered_provider, redactor))?;
-    Ok(VideoListReply::Page(params))
+    list_ready(provider, request)?.awaited().await
 }
 
 // The provider and the prepared call, with every collaborator the handler borrows, held by the entry that awaits it
@@ -168,22 +157,43 @@ impl<Source: VideoClientSource> ListReady<'_, '_, '_, Source> {
             .list(self.config, call, log, is_async)
             .map_err(|error| failure(error, &self.provider, self.redactor))
     }
+
+    // a sync handler must answer directly; a future in its place is the UnexpectedPending failure
+    fn direct(mut self) -> Result<VideoListReply, VideoCallFailure> {
+        let Handled::Done(params) = self.run(false)? else {
+            return Err(list_pending(&self.provider, self.redactor));
+        };
+        Ok(VideoListReply::Page(params))
+    }
+
+    // the async handler's future, awaited here
+    async fn awaited(mut self) -> Result<VideoListReply, VideoCallFailure> {
+        let provider = self.provider.clone();
+        let redactor = self.redactor;
+        match self.run(true)? {
+            Handled::Done(params) => Ok(VideoListReply::Page(params)),
+            Handled::Pending(pending) => pending
+                .await
+                .map(VideoListReply::Page)
+                .map_err(|error| failure(VideoCallError::from(error), &provider, redactor)),
+        }
+    }
 }
 
 // the mock short circuit: LiteLLM answers from mock_response before it reads the provider's config
 fn list_mock(
     call: &VideoListCall,
-    mock_provider: &str,
     redactor: &Redactor,
 ) -> Result<Option<Vec<VideoObject>>, VideoCallFailure> {
+    let mock_provider = call.custom_llm_provider.as_deref().unwrap_or_default();
     mock_answer(call.mock_response.as_ref(), "a video list")
         .map_err(|error| failure(VideoCallError::Mock(error), mock_provider, redactor))
 }
 
 // the provider's config and the call's preparation, kept together for the handler
 fn list_ready<'call, 'deps, 'env, Source: VideoClientSource>(
-    request: ListRequest<'call, 'deps, 'env, Source>,
     provider: String,
+    request: ListRequest<'call, 'deps, 'env, Source>,
 ) -> Result<ListReady<'call, 'deps, 'env, Source>, VideoCallFailure> {
     let ListRequest {
         transport,
@@ -217,13 +227,10 @@ fn list_ready<'call, 'deps, 'env, Source: VideoClientSource>(
 
 // a sync handler that answered with a future where the entry expected a direct answer
 fn list_pending(provider: &str, redactor: &Redactor) -> VideoCallFailure {
-    failure(
-        VideoCallError::UnexpectedPending {
-            operation: VideoOperation::List,
-        },
-        provider,
-        redactor,
-    )
+    let error = VideoCallError::UnexpectedPending {
+        operation: VideoOperation::List,
+    };
+    failure(error, provider, redactor)
 }
 
 // video_list defaults to openai and never infers from the model; an explicit provider is kept as given
