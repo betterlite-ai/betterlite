@@ -117,8 +117,8 @@ pub(super) async fn a_text_status_is_cast_and_stored() {
             .await
             .unwrap()
     );
-    let stored = stored_record(&unreadable_harness.shared, "b").unwrap();
-    assert_eq!(stored.status_code, "500");
+    let unreadable_entry = stored_record(&unreadable_harness.shared, "b").unwrap();
+    assert_eq!(unreadable_entry.status_code, "500");
 }
 
 pub(super) async fn deployment_value_types_are_classified() {

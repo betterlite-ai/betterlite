@@ -139,8 +139,8 @@ pub(super) async fn deployment_cooldown_times_beat_the_header() {
     );
     let params_harness = support::harness(Fixture::new(vec![params]), policy(0_u32));
     assert!(callback_cools(&params_harness, "b", &failure, Some(Seconds(9.0_f64))).await);
-    let record = stored_record(&params_harness.shared, "b").unwrap();
-    assert_eq!(record.cooldown_time.to_bits(), 4.0_f64.to_bits());
+    let params_entry = stored_record(&params_harness.shared, "b").unwrap();
+    assert_eq!(params_entry.cooldown_time.to_bits(), 4.0_f64.to_bits());
 }
 
 pub(super) async fn event_fields_come_from_the_deployment() {
