@@ -1,0 +1,19 @@
+task: B8388
+deviations:
+  - what: >-
+      The health path hands B304's on_failure a FailureFacts whose class is Unclassified, because ProbeFailure carries only a status and a message; LiteLLM
+      passes the live exception object itself, so its "APIConnectionError" string check and the class-keyed deployment-level model_info.allowed_fails_policy
+      never match a background health failure here, and the cooldown is decided by status alone.
+    why: >-
+      The exception object does not survive B4443's probe boundary, and docs/compatibility.md keeps Python's str(exception) matching out of the port; a probe
+      that could not reach its provider still requests a cooldown, which the unhealthy verdict the same cycle writes into the health cache already justifies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4457-L4463
+  - what: >-
+      With router_settings.allowed_fails_policy configured, LiteLLM answers a health failure whose exception class has a policy entry from that entry
+      (Router.get_allowed_fails_from_policy, reached through should_cooldown_based_on_allowed_fails_policy); betterlite's Unclassified facts match no class
+      entry and fall back to the router-level allowed_fails, so a setup that sets the policy sees a different cooldown threshold.
+    why: >-
+      The same probe boundary keeps the exception object out, so no class-keyed policy, deployment-level or router-level, can be matched; the fallback is
+      written down rather than left implicit because the policy is a config-visible setting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14643-L14695
+kept_bugs: []
