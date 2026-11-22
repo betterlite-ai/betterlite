@@ -19,6 +19,7 @@ use betterlite_logging::prometheus_deployment::success::{
 use betterlite_models::call_helpers::metadata::MetadataSlots;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues};
 use rust_decimal::Decimal;
@@ -31,10 +32,10 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let probe = Probe::new();
     match input.function {
         Function::Failure => failure(&probe, input),
-        Function::FallbackSuccess => fallback(&probe, input, true),
-        Function::FallbackFailure => fallback(&probe, input, false),
+        Function::FallbackSuccess => fallback(&probe, input, true)?,
+        Function::FallbackFailure => fallback(&probe, input, false)?,
         Function::Success => success(&probe, input),
-    }
+    };
     Ok(json!({ "events": probe.events_value() }))
 }
 
@@ -50,7 +51,7 @@ struct RequestValues {
 
 impl RequestValues {
     fn read(input: &Input) -> Self {
-        RequestValues {
+        Self {
             model: text(&input.kwargs, "model"),
             params: object_field(&input.kwargs, "litellm_params").unwrap_or_default(),
             exception: input.exception.as_ref().map(probe_exception),
@@ -91,34 +92,46 @@ fn build_requests<'parts>(parts: &'parts RequestValues, input: &'parts Input) ->
             catalog: None,
             now,
         },
-        success: SuccessRequest {
-            model: parts.model.as_deref(),
-            stream: stream_flag(&input.kwargs),
-            completion_start_time: input
-                .completion_start_time
-                .as_deref()
-                .and_then(|text| Decimal::from_str(text).ok()),
-            litellm_params: &parts.params,
-            payload: input.payload.as_ref(),
-            exception: parts.exception.as_ref(),
-            values: &parts.values,
-            context: None,
-            start_time: input
-                .start_time
-                .as_deref()
-                .and_then(|text| Decimal::from_str(text).ok())
-                .unwrap_or_default(),
-            end_time: input
-                .end_time
-                .as_deref()
-                .and_then(|text| Decimal::from_str(text).ok())
-                .unwrap_or_default(),
-            output_tokens: input
-                .output_tokens
-                .as_deref()
-                .and_then(|text| Decimal::from_str(text).ok()),
-            now,
-        },
+        success: success_request(parts, input, now),
+    }
+}
+
+fn success_request<'parts>(
+    parts: &'parts RequestValues,
+    input: &'parts Input,
+    now: Instant,
+) -> SuccessRequest<'parts> {
+    let completion_start_time = input
+        .completion_start_time
+        .as_deref()
+        .and_then(|text| Decimal::from_str(text).ok());
+    let start_time = input
+        .start_time
+        .as_deref()
+        .and_then(|text| Decimal::from_str(text).ok())
+        .unwrap_or_default();
+    let end_time = input
+        .end_time
+        .as_deref()
+        .and_then(|text| Decimal::from_str(text).ok())
+        .unwrap_or_default();
+    let output_tokens = input
+        .output_tokens
+        .as_deref()
+        .and_then(|text| Decimal::from_str(text).ok());
+    SuccessRequest {
+        model: parts.model.as_deref(),
+        stream: stream_flag(&input.kwargs),
+        completion_start_time,
+        litellm_params: &parts.params,
+        payload: input.payload.as_ref(),
+        exception: parts.exception.as_ref(),
+        values: &parts.values,
+        context: None,
+        start_time,
+        end_time,
+        output_tokens,
+        now,
     }
 }
 
@@ -128,7 +141,7 @@ fn failure(probe: &Probe, input: &Input) {
     record_failure_metrics(probe, &built.failure);
 }
 
-fn fallback(probe: &Probe, input: &Input, success: bool) {
+fn fallback(probe: &Probe, input: &Input, success: bool) -> Result<(), Box<HelperError>> {
     let parts = RequestValues::read(input);
     let built = build_requests(&parts, input);
     let event = if success {
@@ -136,7 +149,8 @@ fn fallback(probe: &Probe, input: &Input, success: bool) {
     } else {
         FallbackEvent::Failure
     };
-    log_fallback_event(probe, &built.fallback, event).ok();
+    log_fallback_event(probe, &built.fallback, event).or_value_error()?;
+    Ok(())
 }
 
 fn success(probe: &Probe, input: &Input) {
