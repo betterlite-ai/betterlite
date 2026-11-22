@@ -1,0 +1,28 @@
+kind: helper
+name: team-callback-policy-audit-redaction-copy
+call:
+  team_callback_policy:
+    steps:
+      - {"function": "redact", "metadata": {"owner": "ops", "logging": [{"callback_name": "langfuse", "callback_type": "success", "callback_vars": {"langfuse_host": "https://lf.example", "langfuse_secret_key": "sk-1"}}], "callback_settings": {"success_callback": ["langsmith"], "callback_vars": {"langsmith_project": "proj", "langsmith_api_key": "ls-1"}}}}
+      - {"function": "redact", "metadata": {"logging": {"callback_vars": {"langfuse_secret_key": "sk-1"}}, "callback_settings": "sk-1"}}
+      - {"function": "redact", "metadata": {"logging": ["langfuse", 3, null, {"callback_vars": ["sk-1"]}], "callback_settings": {"callback_vars": "sk-1"}}}
+      - {"function": "redact", "metadata": ["logging"]}
+      - {"function": "redact", "metadata": null}
+      - {"function": "audit", "store_audit_logs": false, "team_id": "team-1", "before": {"owner": "ops"}, "after": {"owner": "ops"}, "user_id": "user-1", "api_key": "hashed-key-1", "litellm_changed_by": "ops-bot", "admin_name": "admin", "outcome": "written", "now": "2026-11-21T10:30:00+00:00"}
+      - {"function": "audit", "store_audit_logs": true, "team_id": "team-1", "before": {"owner": "ops", "logging": [{"callback_name": "langsmith", "callback_vars": {"langsmith_project": "proj", "langsmith_api_key": "ls-1"}}]}, "after": {"owner": "ops", "logging": [], "callback_settings": {"callback_vars": {"langfuse_host": "https://lf.example"}}}, "user_id": "user-1", "api_key": "hashed-key-1", "litellm_changed_by": "ops-bot", "admin_name": "admin", "outcome": "written", "now": "2026-11-21T10:30:00+00:00"}
+      - {"function": "audit", "store_audit_logs": true, "team_id": "team-1", "before": {"owner": "ops"}, "after": "not-an-object", "user_id": "user-1", "api_key": null, "litellm_changed_by": "", "admin_name": "admin", "outcome": "written", "now": "2026-11-21T10:30:00+00:00"}
+      - {"function": "audit", "store_audit_logs": true, "team_id": "team-1", "before": null, "after": {"owner": "ops"}, "user_id": "", "api_key": null, "litellm_changed_by": null, "admin_name": "admin", "outcome": "written", "now": "2026-11-21T10:30:00+00:00"}
+      - {"function": "audit", "store_audit_logs": true, "team_id": "team-1", "before": {"owner": "ops"}, "after": {"owner": "ops"}, "user_id": null, "api_key": null, "litellm_changed_by": null, "admin_name": null, "outcome": "written", "now": "2026-11-21T10:30:00+00:00"}
+      - {"function": "audit", "store_audit_logs": true, "team_id": "team-1", "before": {"owner": "ops"}, "after": {"owner": "ops"}, "user_id": "user-1", "api_key": null, "litellm_changed_by": null, "admin_name": "admin", "outcome": "failed", "now": "2026-11-21T10:30:00+00:00"}
+      - {"function": "audit", "store_audit_logs": true, "team_id": "team-1", "before": {"owner": "ops"}, "after": {"owner": "ops"}, "user_id": "user-1", "api_key": null, "litellm_changed_by": null, "admin_name": "admin", "outcome": "cancelled", "now": "2026-11-21T10:30:00+00:00"}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/6/value/record/id
+      why: LiteLLM draws a random UUID for every audit row
+    - pointer: /value/7/value/record/id
+      why: LiteLLM draws a random UUID for every audit row
+    - pointer: /value/8/value/record/id
+      why: LiteLLM draws a random UUID for every audit row
+    - pointer: /value/9/value/record/id
+      why: LiteLLM draws a random UUID for every audit row

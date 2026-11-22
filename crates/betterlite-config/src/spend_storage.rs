@@ -1,3 +1,4 @@
+pub mod retention;
 mod tests;
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::raw::RawNumber;
@@ -5,6 +6,7 @@ use crate::resolve::{parse_money, resolve_number};
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
 use betterlite_db::spend_partitions::calendar::PartitionInterval;
+use betterlite_db::spend_retention::batches::settings::{CleanupGeneralSettings, CleanupSettings};
 use betterlite_secret_managers::secret_lookup::text_to_bool;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -44,6 +46,8 @@ pub struct GeneralSettings {
     missing_session_id: JsonValue,
     disable_spend_updates: JsonValue,
     use_redis_transaction_buffer: JsonValue,
+    #[serde(flatten)]
+    retention: CleanupGeneralSettings,
 }
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SpendUpdates {
@@ -70,6 +74,7 @@ pub struct Settings {
     pub max_redis_buffer_dequeue_count: i64,
     pub partition_interval: PartitionInterval,
     pub precreate_ahead: i64,
+    pub retention: CleanupSettings,
 }
 impl Section for Raw {
     type Settings = Settings;
@@ -85,6 +90,7 @@ impl Section for Raw {
         let dequeue_count = initial_dequeue_count(lookup.lookup(ENV_DEQUEUE_COUNT).as_deref())?;
         let interval = partition_interval(lookup.lookup(ENV_PARTITION_INTERVAL).as_deref());
         let ahead = initial_precreate_ahead(lookup.lookup(ENV_PRECREATE_AHEAD).as_deref())?;
+        let retention_defaults = retention::cleanup_defaults(lookup)?;
         Ok(Settings {
             store_prompts_in_spend_logs: store_prompts(
                 &general.store_prompts_in_spend_logs,
@@ -108,6 +114,10 @@ impl Section for Raw {
             max_redis_buffer_dequeue_count: dequeue_count,
             partition_interval: interval,
             precreate_ahead: ahead,
+            retention: CleanupSettings {
+                general: general.retention,
+                defaults: retention_defaults,
+            },
         })
     }
 }
