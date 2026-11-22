@@ -133,22 +133,18 @@ fn collaborate(input: &Input, board: &Arc<Board>) -> Result<Collaborators, Box<H
         litellm_proxy_admin_name: input.admin_name.clone(),
     };
     Ok(Collaborators {
-        settings: settings(input),
+        settings: Settings {
+            store_virtual_keys: input.settings.store_virtual_keys == Some(true),
+            prefix_for_stored_virtual_keys: input.settings.prefix_for_stored_virtual_keys.clone(),
+            description: input.settings.description.clone(),
+            tags: input.settings.tags.clone().map(SecretTags::Mapping),
+            alerting: input.alerting.clone(),
+        },
         manager,
         teams,
         email,
         audit,
     })
-}
-
-fn settings(input: &Input) -> Settings {
-    Settings {
-        store_virtual_keys: input.settings.store_virtual_keys == Some(true),
-        prefix_for_stored_virtual_keys: input.settings.prefix_for_stored_virtual_keys.clone(),
-        description: input.settings.description.clone(),
-        tags: input.settings.tags.clone().map(SecretTags::Mapping),
-        alerting: input.alerting.clone(),
-    }
 }
 
 fn audit_clock(input: &Input) -> Reply<FixedClock> {
