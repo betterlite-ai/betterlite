@@ -1,0 +1,2 @@
+litellm_settings:
+  include_cost_in_streaming_usage: "yes"
