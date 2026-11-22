@@ -1,4 +1,3 @@
-use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_http::user_url::validate::Resolve;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;

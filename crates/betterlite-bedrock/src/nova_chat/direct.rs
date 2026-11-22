@@ -71,7 +71,7 @@ pub struct NovaEndpointRequest<'call> {
     pub litellm_api_key: Option<&'call SecretString>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct NovaEndpoint {
     pub api_base: String,
     pub api_key: Option<SecretString>,

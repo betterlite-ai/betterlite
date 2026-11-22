@@ -57,7 +57,6 @@ use crate::agentcore_stream::IdSource;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_request::{
     ConverseMedia, ConverseMessageSettings, ConverseRequestInput, ConverseSettings,
-    converse_request,
 };
 use crate::converse_response::wire::ModelResponse;
 use crate::converse_usage::transform::ReasoningTokenCounter;
@@ -190,7 +189,7 @@ impl Fixture {
         }
     }
 
-    const fn catalogs(&self) -> CatalogSources<'_> {
+    pub(super) const fn catalogs(&self) -> CatalogSources<'_> {
         CatalogSources {
             patterns: &self.patterns,
             runtime: &self.runtime,
@@ -198,7 +197,7 @@ impl Fixture {
         }
     }
 
-    fn packaged(&self) -> &ModelCatalog {
+    pub(super) fn packaged(&self) -> &ModelCatalog {
         self.packaged.as_ref()
     }
 
@@ -396,7 +395,7 @@ fn logging_state(redactor: &Redactor) -> LoggingState {
         },
         redactor,
         || String::from("trace"),
-        Duration::default(),
+        Duration::default,
     )
     .expect("the logging state builds")
 }

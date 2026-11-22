@@ -201,7 +201,7 @@ fn nova_inline_cache_points() {
             ..
         }
     ));
-    let not_a_message = [json(r#"3"#)];
+    let not_a_message = [json("3")];
     let message_error = invoke::inline_cache_points(&InlineRequest {
         system: &[],
         messages: &not_a_message,
