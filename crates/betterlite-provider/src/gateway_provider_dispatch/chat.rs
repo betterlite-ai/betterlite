@@ -17,8 +17,8 @@ use super::logging;
 pub const OPENROUTER_PROVIDER: &str = "openrouter";
 pub const VERCEL_PROVIDER: &str = "vercel_ai_gateway";
 pub const OPENROUTER_DEFAULT_API_BASE: &str = "https://openrouter.ai/api/v1";
-const OPENROUTER_REFERER: &str = "HTTP-Referer";
-const OPENROUTER_TITLE: &str = "X-Title";
+pub(super) const OPENROUTER_REFERER: &str = "HTTP-Referer";
+pub(super) const OPENROUTER_TITLE: &str = "X-Title";
 
 // LiteLLM's dispatch arms for the gateway providers; the skip keeps the exhaustive no-op arm within clippy's line limit
 #[rustfmt::skip]
@@ -64,8 +64,6 @@ pub(super) struct Gateway {
     pub(super) which: Which,
     pub(super) provider: &'static str,
     pub(super) default_api_base: &'static str,
-    pub(super) referer: Option<(&'static str, &'static str)>,
-    pub(super) merges_config: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -80,8 +78,6 @@ impl Gateway {
         which: Which::Openrouter,
         provider: OPENROUTER_PROVIDER,
         default_api_base: OPENROUTER_DEFAULT_API_BASE,
-        referer: Some((OPENROUTER_REFERER, OPENROUTER_TITLE)),
-        merges_config: true,
     };
 
     // litellm.completion reaches Vercel through its openai-compatible path: no referer pair, no config merge
@@ -89,8 +85,6 @@ impl Gateway {
         which: Which::Vercel,
         provider: VERCEL_PROVIDER,
         default_api_base: VERCEL_DEFAULT_API_BASE,
-        referer: None,
-        merges_config: false,
     };
 }
 
@@ -145,17 +139,17 @@ fn complete<R>(
         values.third_key,
     ]);
     call.custom_llm_provider = String::from(gateway.provider);
-    call.headers = match gateway.referer {
-        Some(names) => Some(referer_headers(
+    call.headers = match gateway.which {
+        Which::Openrouter => Some(referer_headers(
             context.headers,
             context.settings.headers,
-            names,
+            (OPENROUTER_REFERER, OPENROUTER_TITLE),
             values.site_url,
             values.app_name,
         )),
-        None => headers_or_global(context.headers.cloned(), context.settings.headers),
+        Which::Vercel => headers_or_global(context.headers.cloned(), context.settings.headers),
     };
-    if gateway.merges_config {
+    if let Which::Openrouter = gateway.which {
         merge_config(
             &mut call.optional_params,
             context.class_config,

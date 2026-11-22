@@ -1,7 +1,7 @@
 use betterlite_models::identity::provider_id::ProviderId;
 
 use super::call::EmbeddingCall;
-use super::chat::{Gateway, Which, chains};
+use super::chat::{Gateway, OPENROUTER_REFERER, OPENROUTER_TITLE, Which, chains};
 use super::context::{DispatchSettings, first_nonempty, first_secret, referer_headers};
 
 // main.py's embedding arms; the skip keeps the exhaustive no-op arm within clippy's line limit
@@ -63,7 +63,7 @@ fn resolve(
         Which::Openrouter => Some(referer_headers(
             call.headers.as_ref(),
             settings.headers,
-            (gateway.referer, gateway.title),
+            (OPENROUTER_REFERER, OPENROUTER_TITLE),
             values.site_url,
             values.app_name,
         )),
