@@ -10,45 +10,25 @@ use super::counters::SettlementCounters;
 use super::entry::ReservationEntry;
 use super::error::SettlementError;
 use super::handle::{ReservationHandle, get_reserved_counter_keys};
-use super::reconcile::{ReservationFinality, reconcile_budget_reservation};
+use super::reconcile::settle_reservation_to;
 
 // release_budget_reservation: the request settled no cost, so the reservation comes all the way off the counters
-pub async fn release_budget_reservation<C>(
+pub async fn release_budget_reservation<C: SettlementCounters>(
     counters: &C,
     handle: &ReservationHandle,
-) -> Result<(), SettlementError>
-where
-    C: SettlementCounters,
-{
-    let _pending = reconcile_budget_reservation(
-        counters,
-        handle,
-        Decimal::ZERO,
-        ReservationFinality::Finalize,
-        AdjustmentMode::Apply,
-    )
-    .await?;
+) -> Result<(), SettlementError> {
+    settle_reservation_to(counters, handle, Decimal::ZERO).await?;
     Ok(())
 }
 
 // release_budget_reservation_on_cancel: the provider already billed the input tokens, so a cancel settles at input_cost
 // The caller spawns this on a server-owned task, betterlite's stand-in for asyncio.shield, so a cancelled request cannot drop it
-pub async fn release_reservation_on_cancel<C>(
+pub async fn release_reservation_on_cancel<C: SettlementCounters>(
     counters: &C,
     handle: &ReservationHandle,
-) -> Result<(), SettlementError>
-where
-    C: SettlementCounters,
-{
+) -> Result<(), SettlementError> {
     let input_cost = lock(&handle.0).input_cost;
-    let _pending = reconcile_budget_reservation(
-        counters,
-        handle,
-        input_cost,
-        ReservationFinality::Finalize,
-        AdjustmentMode::Apply,
-    )
-    .await?;
+    settle_reservation_to(counters, handle, input_cost).await?;
     Ok(())
 }
 
@@ -57,7 +37,8 @@ pub async fn invalidate_reservation_keys<C>(counters: &C, handle: &ReservationHa
 where
     C: SettlementCounters,
 {
-    for counter_key in get_reserved_counter_keys(handle) {
+    let counter_keys = get_reserved_counter_keys(handle);
+    for counter_key in counter_keys {
         counters.invalidate(&counter_key).await;
     }
 }
@@ -83,10 +64,9 @@ pub async fn release_unbound_reservation<C>(counters: &C, handle: &ReservationHa
 where
     C: SettlementCounters,
 {
-    if lock(&handle.0).callback_bound {
-        return;
+    if !lock(&handle.0).callback_bound {
+        release_or_invalidate(counters, handle).await;
     }
-    release_or_invalidate(counters, handle).await;
 }
 
 // _release_applied_entries_best_effort: a partial reservation rolls back one entry at a time, and a failed one is dropped directly

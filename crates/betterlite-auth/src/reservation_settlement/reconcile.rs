@@ -18,6 +18,29 @@ pub enum ReservationFinality {
     LeaveOpen,
 }
 
+// the terminal settle both release paths take: an already finalized reservation stays untouched
+pub async fn settle_reservation_to<C>(
+    counters: &C,
+    handle: &ReservationHandle,
+    actual_cost: Decimal,
+) -> Result<(), SettlementError>
+where
+    C: SettlementCounters,
+{
+    if lock(&handle.0).finalized {
+        return Ok(());
+    }
+    let _pending = reconcile_budget_reservation(
+        counters,
+        handle,
+        actual_cost,
+        ReservationFinality::Finalize,
+        AdjustmentMode::Apply,
+    )
+    .await?;
+    Ok(())
+}
+
 // reconcile_budget_reservation: settle every reserved entry on the actual cost, then stamp the record
 pub async fn reconcile_budget_reservation<C>(
     counters: &C,
