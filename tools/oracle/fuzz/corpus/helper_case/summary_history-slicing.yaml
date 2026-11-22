@@ -1,0 +1,12 @@
+kind: helper
+name: summary-history-slicing-seed
+call:
+  summary_history:
+    action: slicing
+    messages:
+    - role: assistant
+      content:
+      - {type: compaction, content: prior}
+    - {role: user, content: next}
+env: {}
+compare: {ignore: []}
