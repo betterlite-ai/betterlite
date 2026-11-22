@@ -79,7 +79,7 @@ async fn body_bytes(stream: ChunkStream) -> Vec<Vec<u8>> {
 
 fn outcomes(items: Vec<Result<Vec<u8>, HttpError>>) -> (Vec<Vec<u8>>, usize) {
     let mut delivered = Vec::new();
-    let mut failed = 0;
+    let mut failed = 0_usize;
     for item in items {
         match item {
             Ok(bytes) => delivered.push(bytes),

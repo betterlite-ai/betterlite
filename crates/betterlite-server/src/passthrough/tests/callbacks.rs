@@ -58,7 +58,9 @@ fn assert_key_level() {
         kwargs["langfuse_host"],
         Json::Text("https://key".to_owned())
     );
-    let trusted = &kwargs[TRUSTED_CALLBACK_VARS_FIELD];
+    let Json::Object(trusted) = &kwargs[TRUSTED_CALLBACK_VARS_FIELD] else {
+        panic!("trusted callback vars is not an object");
+    };
     assert_eq!(
         trusted["langfuse_host"],
         Json::Text("https://key".to_owned())

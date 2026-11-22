@@ -44,7 +44,7 @@ where
     if has_environment_reference(&resolved.callback_vars) {
         return fail_open(
             route_description,
-            "a callback variable is an os.environ/ reference",
+            &"a callback variable is an os.environ/ reference",
         );
     }
     TeamCallbackWiring {

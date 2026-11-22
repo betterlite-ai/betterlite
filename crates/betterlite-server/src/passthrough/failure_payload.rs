@@ -34,7 +34,14 @@ pub fn carry_guardrail_logging_info(
         .and_then(|bucket| bucket.get(GUARDRAIL_INFO_KEY))
     {
         Some(Json::List(items)) if !items.is_empty() => items.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
+        Some(
+            Json::List(_)
+            | Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::Object(_),
+        )
         | None => return,
     };
     let mut slots = MetadataSlots {
