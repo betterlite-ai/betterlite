@@ -338,10 +338,10 @@ async fn lost_pre_read_does_not_stop_the_next_counter(
     fake: &FakeMemory,
     current_spend: &BTreeMap<String, Decimal>,
 ) {
-    let mut both_applied = vec![
-        counter_to_reservation_entry(&counters[0], amount("4")),
-        counter_to_reservation_entry(&counters[1], amount("4")),
-    ];
+    let mut both_applied: Vec<ReservationEntry> = counters
+        .iter()
+        .map(|counter| counter_to_reservation_entry(counter, amount("4")))
+        .collect();
     let both_cost = settle_charge(
         counters,
         fake,
