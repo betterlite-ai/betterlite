@@ -49,7 +49,15 @@ impl AdmissionLimiterError {
     pub fn from_settlement(error: SettlementError) -> Self {
         match error {
             SettlementError::Unverifiable(inner) => Self::Unverifiable(inner),
-            other => Self::Settlement(other),
+            other @ (SettlementError::DescriptorCount { .. }
+            | SettlementError::Reply(_)
+            | SettlementError::Response(_)
+            | SettlementError::AtomicCounter(_)
+            | SettlementError::WindowCounter(_)
+            | SettlementError::ClockBeforeEpoch(_)
+            | SettlementError::ClockOverflow { .. }
+            | SettlementError::UnpairedRefundKeys { .. }
+            | SettlementError::RefundPosition { .. }) => Self::Settlement(other),
         }
     }
 
@@ -59,7 +67,15 @@ impl AdmissionLimiterError {
         match error {
             WindowedAdmissionError::Unverifiable(inner) => Self::Unverifiable(inner),
             WindowedAdmissionError::Settlement(inner) => Self::from_settlement(inner),
-            other => Self::Windowed(other),
+            other @ (WindowedAdmissionError::ClockBeforeEpoch(_)
+            | WindowedAdmissionError::ClockOverflow { .. }
+            | WindowedAdmissionError::WindowStore(_)
+            | WindowedAdmissionError::Gauges(_)
+            | WindowedAdmissionError::Reply(_)
+            | WindowedAdmissionError::Counter(_)
+            | WindowedAdmissionError::Batch(_)
+            | WindowedAdmissionError::WindowPairCount { .. }
+            | WindowedAdmissionError::MissingWindowMetadata { .. }) => Self::Windowed(other),
         }
     }
 }

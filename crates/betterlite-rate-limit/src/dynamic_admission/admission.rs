@@ -72,7 +72,7 @@ pub struct DynamicAdmission<Router> {
     pub providers: Arc<dyn RateLimitProviderResolver>,
 }
 
-impl<Router> DynamicAdmission<Router> {
+impl<Router: Send + Sync> DynamicAdmission<Router> {
     // _check_rate_limits: enforce the model-wide limit and, once saturated, the priority pools, then keep the answer for the post-call side
     pub async fn check_rate_limits(
         &self,

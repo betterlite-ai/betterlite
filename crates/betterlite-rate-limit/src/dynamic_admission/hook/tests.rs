@@ -16,7 +16,7 @@ use crate::dynamic_admission::tests::support::{
 };
 use crate::dynamic_priority::descriptors::{PRIORITY_DESCRIPTOR_KEY, SATURATION_DESCRIPTOR_KEY};
 use crate::dynamic_priority::settings::PriorityPolicy;
-use crate::limiter_records::{CacheCounterValue, RateLimitType};
+use crate::limiter_records::{CacheCounterValue, RateLimitResponse, RateLimitType};
 use crate::request_stash::RequestStashSlot;
 
 fn reserved_policy() -> PriorityPolicy {
@@ -38,19 +38,19 @@ fn setup(
     }
 }
 
-fn group_present() -> Option<GroupAnswer> {
-    Some(GroupAnswer::Limits(limits(Some(100), Some(1000))))
+fn group_present() -> GroupAnswer {
+    GroupAnswer::Limits(limits(Some(100), Some(1000)))
 }
 
-fn allowed_atomic() -> Canned {
-    Ok(response(
+fn allowed_atomic() -> RateLimitResponse {
+    response(
         "OK",
         vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
-    ))
+    )
 }
 
-fn empty_tracking() -> Canned {
-    Ok(response("OK", Vec::new()))
+fn empty_tracking() -> RateLimitResponse {
+    response("OK", Vec::new())
 }
 
 fn seeded_requests(count: i64) -> Vec<(String, CacheCounterValue)> {
@@ -90,10 +90,10 @@ fn run_pre_call(
 #[test]
 fn hook_without_a_model_returns_before_touching_anything() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         Vec::new(),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -109,10 +109,10 @@ fn hook_without_a_model_returns_before_touching_anything() {
 #[test]
 fn hook_with_a_null_model_returns_before_touching_anything() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         Vec::new(),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -132,10 +132,10 @@ fn hook_with_a_null_model_returns_before_touching_anything() {
 #[test]
 fn hook_with_a_non_text_model_returns_before_touching_anything() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         Vec::new(),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -156,8 +156,8 @@ fn hook_claims_the_stash_for_the_call_id() {
     let harness = Harness::build(setup(
         Some(GroupAnswer::Missing),
         Vec::new(),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -177,8 +177,8 @@ fn hook_leaves_the_owner_alone_for_a_non_text_call_id() {
     let harness = Harness::build(setup(
         Some(GroupAnswer::Missing),
         Vec::new(),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -193,7 +193,12 @@ fn hook_leaves_the_owner_alone_for_a_non_text_call_id() {
 
 #[test]
 fn hook_without_a_router_returns_the_router_error() {
-    let harness = Harness::build(setup(None, Vec::new(), allowed_atomic(), empty_tracking()));
+    let harness = Harness::build(setup(
+        None,
+        Vec::new(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
+    ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
     let stash = RequestStashSlot::default();
@@ -218,8 +223,8 @@ fn hook_without_group_info_allows_the_request() {
     let harness = Harness::build(setup(
         Some(GroupAnswer::Missing),
         Vec::new(),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -240,8 +245,8 @@ fn hook_router_failure_is_not_fail_open() {
     let harness = Harness::build(setup(
         Some(GroupAnswer::Unavailable),
         Vec::new(),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -259,10 +264,10 @@ fn hook_router_failure_is_not_fail_open() {
 #[test]
 fn hook_below_threshold_logs_the_saturation_and_tracks() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         seeded_requests(30),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -287,10 +292,10 @@ fn hook_below_threshold_logs_the_saturation_and_tracks() {
 #[test]
 fn hook_logs_none_for_an_absent_priority() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         seeded_requests(30),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = BTreeMap::new();
     let admission_key = key(&key_metadata);
@@ -308,10 +313,10 @@ fn hook_logs_none_for_an_absent_priority() {
 #[test]
 fn hook_saturated_call_enforces_the_priority_pool() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         seeded_requests(60),
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -331,13 +336,13 @@ fn hook_saturated_call_enforces_the_priority_pool() {
 #[test]
 fn hook_unreadable_counter_allows_and_tracks() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         vec![(
             counter_key(MODEL, RateLimitType::Requests),
             CacheCounterValue::Text(String::from("not-a-number")),
         )],
-        allowed_atomic(),
-        empty_tracking(),
+        Ok(allowed_atomic()),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -355,7 +360,7 @@ fn hook_unreadable_counter_allows_and_tracks() {
 #[test]
 fn hook_rejection_reaches_the_caller() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         seeded_requests(60),
         Ok(response(
             "OVER_LIMIT",
@@ -364,7 +369,7 @@ fn hook_rejection_reaches_the_caller() {
                 RateLimitType::Requests,
             )],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -373,7 +378,9 @@ fn hook_rejection_reaches_the_caller() {
     let failure = outcome.expect_err("the model-wide counter overflowed");
     let rejection = match failure {
         PreCallError::Rejection(error) => error,
-        other => panic!("the known status names a 429, got {other:?}"),
+        other @ (PreCallError::ModelGroupInfo(_) | PreCallError::Unverifiable(_)) => {
+            panic!("the known status names a 429, got {other:?}");
+        }
     };
     assert!(
         rejection
@@ -388,10 +395,10 @@ fn hook_rejection_reaches_the_caller() {
 #[test]
 fn hook_fail_closed_503_reaches_the_caller() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         seeded_requests(30),
         Err(unverifiable_failure()),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);
@@ -400,7 +407,9 @@ fn hook_fail_closed_503_reaches_the_caller() {
     let failure = outcome.expect_err("the fail-closed 503 is re-raised");
     match failure {
         PreCallError::Unverifiable(error) => assert_eq!(error.status_code, 503),
-        other => panic!("the unverifiable error keeps its variant, got {other:?}"),
+        other @ (PreCallError::ModelGroupInfo(_) | PreCallError::Rejection(_)) => {
+            panic!("the unverifiable error keeps its variant, got {other:?}");
+        }
     }
     assert!(
         !logs.contains("Error in dynamic rate limiter"),
@@ -411,10 +420,10 @@ fn hook_fail_closed_503_reaches_the_caller() {
 #[test]
 fn hook_other_limiter_errors_are_logged_and_allowed() {
     let harness = Harness::build(setup(
-        group_present(),
+        Some(group_present()),
         seeded_requests(30),
         Err(settlement_failure()),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let key_metadata = metadata("default");
     let admission_key = key(&key_metadata);

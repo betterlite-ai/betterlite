@@ -97,36 +97,63 @@ fn window_store() -> WindowStore {
     }
 }
 
-fn build_assembly(window_size: i64) -> RateLimiterAssembly {
-    let clock: Arc<dyn LimiterClock> = Arc::new(FixedClock);
-    let fail_closed = FailClosedPolicy { enabled: false };
-    let windows = Arc::new(window_store());
-    let gauges = Arc::new(ConcurrencyGauges {
+fn concurrency_gauges(
+    clock: Arc<dyn LimiterClock>,
+    fail_closed: FailClosedPolicy,
+) -> ConcurrencyGauges {
+    ConcurrencyGauges {
         cache: Arc::new(NoGaugeCache),
-        clock: Arc::clone(&clock),
+        clock,
         acquire_script: None,
         release_script: None,
         count_script: None,
         release_batch: None,
         fail_closed,
         check_and_increment_lock: AsyncMutex::new(()),
-    });
-    let admission = Arc::new(WindowedAdmission {
+    }
+}
+
+fn windowed_admission(
+    window_size: i64,
+    clock: Arc<dyn LimiterClock>,
+    fail_closed: FailClosedPolicy,
+    windows: Arc<WindowStore>,
+    gauges: Arc<ConcurrencyGauges>,
+) -> WindowedAdmission {
+    WindowedAdmission {
         window_size,
-        clock: Arc::clone(&clock),
+        clock,
         fail_closed,
-        windows: Arc::clone(&windows),
+        windows,
         refund_script: None,
-        gauges: Arc::clone(&gauges),
+        gauges,
         slot_ids: Arc::new(UuidSlotIds),
-    });
-    let adjustments = Arc::new(TokenAdjustments {
+    }
+}
+
+fn token_adjustments() -> TokenAdjustments {
+    TokenAdjustments {
         windows: window_store(),
         usage: Arc::new(NoUsage),
         post_call_batch: None,
         token_increment_script: None,
         guarded_token_script: None,
-    });
+    }
+}
+
+fn build_assembly(window_size: i64) -> RateLimiterAssembly {
+    let clock: Arc<dyn LimiterClock> = Arc::new(FixedClock);
+    let fail_closed = FailClosedPolicy { enabled: false };
+    let windows = Arc::new(window_store());
+    let gauges = Arc::new(concurrency_gauges(Arc::clone(&clock), fail_closed));
+    let admission = Arc::new(windowed_admission(
+        window_size,
+        Arc::clone(&clock),
+        fail_closed,
+        Arc::clone(&windows),
+        Arc::clone(&gauges),
+    ));
+    let adjustments = Arc::new(token_adjustments());
     RateLimiterAssembly {
         settings: rate_limiter_settings::Settings {
             fail_closed: false,

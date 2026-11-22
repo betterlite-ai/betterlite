@@ -45,7 +45,11 @@ fn detail_error(error: &ProxyRateLimitError) -> &Payload {
 fn detail_text(error: &ProxyRateLimitError) -> &str {
     match detail_error(error) {
         Payload::String(text) => text,
-        other => panic!("the detail error is text, got {other:?}"),
+        other @ (Payload::Null
+        | Payload::Bool(_)
+        | Payload::Number(_)
+        | Payload::Array(_)
+        | Payload::Object(_)) => panic!("the detail error is text, got {other:?}"),
     }
 }
 

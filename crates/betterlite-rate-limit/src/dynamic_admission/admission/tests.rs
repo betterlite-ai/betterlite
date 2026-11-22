@@ -86,8 +86,8 @@ fn check<'check>(
     }
 }
 
-fn empty_tracking() -> Canned {
-    Ok(response("OK", Vec::new()))
+fn empty_tracking() -> RateLimitResponse {
+    response("OK", Vec::new())
 }
 
 fn reservation_windows() -> BTreeSet<ReservationWindowIdentity> {
@@ -132,7 +132,7 @@ async fn admission_model_wide_descriptor_uses_multiplier_one() {
             "OK",
             vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -166,7 +166,7 @@ fn admission_logs_the_atomic_response() {
             "OK",
             vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -194,7 +194,7 @@ async fn admission_below_threshold_sends_only_the_model_wide_descriptor() {
             "OK",
             vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -224,7 +224,7 @@ async fn admission_below_threshold_tracks_the_priority_descriptor() {
             "OK",
             vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -251,7 +251,7 @@ async fn admission_at_threshold_enforces_the_priority_descriptor() {
             "OK",
             vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -281,7 +281,7 @@ async fn admission_above_threshold_enforces_the_priority_descriptor() {
             "OK",
             vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -328,7 +328,7 @@ async fn admission_stores_the_atomic_answer_unchanged_when_enforced() {
     let harness = Harness::build(setup(
         reserved_policy(),
         Ok(atomic.clone()),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -351,7 +351,7 @@ async fn admission_keeps_the_atomic_reservation_windows_when_enforced() {
     let harness = Harness::build(setup(
         reserved_policy(),
         Ok(atomic.clone()),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -399,7 +399,7 @@ async fn admission_no_priority_descriptors_stores_the_atomic_answer() {
     let harness = Harness::build(setup(
         policy(0.5, None),
         Ok(atomic.clone()),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -425,7 +425,7 @@ async fn admission_over_limit_returns_the_429() {
                 RateLimitType::Requests,
             )],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -437,7 +437,9 @@ async fn admission_over_limit_returns_the_429() {
         .expect_err("the model-wide counter overflowed");
     let rejection = match failure {
         CheckRateLimitError::Rejection(error) => error,
-        other => panic!("the known status names a 429, got {other:?}"),
+        other @ (CheckRateLimitError::Denial(_) | CheckRateLimitError::Limiter(_)) => {
+            panic!("the known status names a 429, got {other:?}");
+        }
     };
     assert_eq!(
         rejection.message,
@@ -456,7 +458,7 @@ async fn admission_priority_over_limit_names_the_priority_error() {
             "OVER_LIMIT",
             vec![over_limit(PRIORITY_DESCRIPTOR_KEY, RateLimitType::Tokens)],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -468,7 +470,9 @@ async fn admission_priority_over_limit_names_the_priority_error() {
         .expect_err("the priority pool overflowed");
     let rejection = match failure {
         CheckRateLimitError::Rejection(error) => error,
-        other => panic!("the known status names a 429, got {other:?}"),
+        other @ (CheckRateLimitError::Denial(_) | CheckRateLimitError::Limiter(_)) => {
+            panic!("the known status names a 429, got {other:?}");
+        }
     };
     assert_eq!(header(&rejection, "rate_limit_type"), "tokens");
     assert_eq!(header(&rejection, "x-litellm-saturation"), "50.00%");
@@ -485,7 +489,7 @@ async fn admission_over_limit_resolves_the_provider_once() {
                 RateLimitType::Requests,
             )],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -497,7 +501,9 @@ async fn admission_over_limit_resolves_the_provider_once() {
         .expect_err("the model-wide counter overflowed");
     let rejection = match failure {
         CheckRateLimitError::Rejection(error) => error,
-        other => panic!("the known status names a 429, got {other:?}"),
+        other @ (CheckRateLimitError::Denial(_) | CheckRateLimitError::Limiter(_)) => {
+            panic!("the known status names a 429, got {other:?}");
+        }
     };
     assert_eq!(rejection.model, "gpt-4-0613");
     assert_eq!(rejection.llm_provider, "openai");
@@ -512,7 +518,7 @@ async fn admission_allowing_path_resolves_no_provider() {
             "OK",
             vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -537,7 +543,7 @@ async fn admission_retry_after_comes_from_the_limiter_window() {
                     RateLimitType::Requests,
                 )],
             )),
-            empty_tracking(),
+            Ok(empty_tracking()),
         ),
         120,
     );
@@ -551,7 +557,9 @@ async fn admission_retry_after_comes_from_the_limiter_window() {
         .expect_err("the model-wide counter overflowed");
     let rejection = match failure {
         CheckRateLimitError::Rejection(error) => error,
-        other => panic!("the known status names a 429, got {other:?}"),
+        other @ (CheckRateLimitError::Denial(_) | CheckRateLimitError::Limiter(_)) => {
+            panic!("the known status names a 429, got {other:?}");
+        }
     };
     assert_eq!(header(&rejection, "retry-after"), "120");
     assert_eq!(
@@ -569,7 +577,7 @@ async fn admission_limiter_failure_returns_the_settlement_error() {
     let harness = Harness::build(setup(
         reserved_policy(),
         Err(settlement_failure()),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -591,7 +599,7 @@ async fn admission_fail_closed_error_keeps_its_variant() {
     let harness = Harness::build(setup(
         reserved_policy(),
         Err(unverifiable_failure()),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key(&metadata);
@@ -641,7 +649,7 @@ async fn admission_parent_span_reaches_both_limiter_calls() {
             "OK",
             vec![ok(SATURATION_DESCRIPTOR_KEY, RateLimitType::Requests)],
         )),
-        empty_tracking(),
+        Ok(empty_tracking()),
     ));
     let metadata = BTreeMap::new();
     let admission_key = key_with_span(&metadata, ParentOtelSpan::Opaque);

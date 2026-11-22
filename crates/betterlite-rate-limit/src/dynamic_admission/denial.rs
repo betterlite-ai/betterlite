@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::iter::once;
 use std::ops::Mul as _;
 
 use axum::http::header::HeaderValue;
@@ -224,17 +225,10 @@ fn insert_priority_header(headers: &mut BTreeMap<String, Payload>, priority: Opt
 
 // Python's "x if x is not None else 'not configured'": an explicit 0 is a configured limit
 fn configured_limit(value: Option<i64>) -> String {
-    match value {
-        Some(limit) => limit.to_string(),
-        None => String::from(NOT_CONFIGURED),
-    }
+    value.map_or_else(|| String::from(NOT_CONFIGURED), |limit| limit.to_string())
 }
 
 // {"error": text}, the shape both known-key details take
 fn single_error_detail(text: String) -> Payload {
-    Payload::Object(
-        [(String::from("error"), Payload::String(text))]
-            .into_iter()
-            .collect(),
-    )
+    Payload::Object(once((String::from("error"), Payload::String(text))).collect())
 }
