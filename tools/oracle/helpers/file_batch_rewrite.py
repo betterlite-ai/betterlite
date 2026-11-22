@@ -28,12 +28,6 @@ class Input(TypedDict):
     scenarios: list[Scenario]
 
 
-class NamedHTTPError(HTTPException):
-    def __init__(self, status_code: int, detail: JsonValue, guardrail_name: str | None) -> None:
-        super().__init__(status_code=status_code, detail=detail)
-        self.guardrail_name = guardrail_name
-
-
 def run(input_value: Input) -> JsonValue:
     selected = [chosen(scenario["problems"]) for scenario in input_value["scenarios"]]
     return {"selected": selected}
@@ -45,7 +39,7 @@ def chosen(problems: list[Problem]) -> JsonValue:
     for item in problems:
         failure = scan_failure(item)
         if failure is None:
-            raised = NamedHTTPError(item["status"], None, item["guardrail_name"])
+            raised = HTTPException(status_code=item["status"], detail=None)
             entries.append((item["line_number"], raised))
         else:
             entries.append((item["line_number"], failure))
