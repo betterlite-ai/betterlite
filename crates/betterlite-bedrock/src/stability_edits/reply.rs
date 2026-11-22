@@ -1,8 +1,10 @@
 use betterlite_logging::langfuse_assembly::usage::cost_value;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
-use betterlite_models::image_cost::pricing::raw_price;
+use betterlite_models::image_cost::error::ImageCostError;
+use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use betterlite_models::price_lookup::PriceRecord;
+use betterlite_models::tiered_pricing::Scalar;
 use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHttpResponse, ImageResponse,
 };
@@ -51,11 +53,11 @@ pub fn decode_stability_reply(body: &[u8]) -> Result<StabilityArtifacts, Stabili
     })
 }
 
-// LiteLLM indexes finish_reasons[0]; a string container answers its first character, as Python indexing does.
+// LiteLLM raises only for a truthy finish_reasons[0]; a string container answers its first character, as Python indexing does.
 fn first_finish_reason(value: Option<Json>) -> Result<Option<Json>, StabilityReplyError> {
     match value {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::List(reasons)) => Ok(reasons.into_iter().next()),
+        Some(Json::List(reasons)) => Ok(reasons.into_iter().next().filter(has_content)),
         Some(Json::Text(text)) => Ok(text
             .chars()
             .next()
@@ -195,12 +197,25 @@ fn reply_error(upstream: &ImageHttpResponse, source: StabilityReplyError) -> Sta
     }
 }
 
-// A missing price is zero, an explicit null suppresses the header, and anything else is read as a Decimal.
+// A missing price is zero, an explicit null suppresses the header, and anything else is read as a Decimal, as float() would.
 fn cost_header(record: &PriceRecord) -> Result<Option<Json>, StabilityEditError> {
-    if !record.contains_key(OUTPUT_COST_PER_IMAGE) {
-        return Ok(Some(cost_value(Decimal::ZERO)));
-    }
-    Ok(raw_price(record, OUTPUT_COST_PER_IMAGE)?.map(cost_value))
+    let price = match record.get(OUTPUT_COST_PER_IMAGE) {
+        None => Decimal::ZERO,
+        Some(Scalar::Null) => return Ok(None),
+        Some(Scalar::Bool(flag)) => Decimal::from(u8::from(*flag)),
+        Some(Scalar::Number(number)) => {
+            parse_decimal_lexeme(&number.to_string()).map_err(ImageCostError::Rate)?
+        }
+        Some(Scalar::Text(text)) => {
+            parse_decimal_lexeme(text.trim()).map_err(ImageCostError::Rate)?
+        }
+        Some(Scalar::Array(_) | Scalar::Object(_)) => {
+            return Err(StabilityEditError::from(ImageCostError::WrongFieldType {
+                field: OUTPUT_COST_PER_IMAGE.to_owned(),
+            }));
+        }
+    };
+    Ok(Some(cost_value(price)))
 }
 
 fn upstream_headers(upstream: &ImageHttpResponse) -> Vec<(String, String)> {
