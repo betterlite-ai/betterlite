@@ -10,7 +10,7 @@ use self::support::{
     HEALTHY_HEADERS, Harness, Recorded, RequestedResolution, assert_uuid4, failed, fixed_time,
     healthy, params, resolved, stack_of, state_of,
 };
-use super::ports::{CatalogMode, CatalogModes};
+use super::ports::{CatalogMode, CatalogModes as _};
 use super::{HealthEntryError, RawRequestRecord};
 use crate::health_probe_modes::response::HealthCheckResponse;
 

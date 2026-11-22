@@ -5,10 +5,7 @@ async fn wildcard_star_model_returns_without_processing_headers() {
     harness.cheapest.set(&["cheap-1", "cheap-2", "cheap-3"]);
     harness.backend.reply(&HEALTHY_HEADERS);
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "openai/*"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "openai/*")]), Some("chat"))
         .await;
     assert_eq!(healthy(outcome), HealthCheckResponse::default());
     let call = harness.backend.take();
@@ -33,9 +30,7 @@ async fn wildcard_star_model_skips_the_mode_check() {
     let harness = Harness::new();
     harness.resolver.resolve_to(resolved("*", "openai"));
     harness.cheapest.set(&["cheap-1"]);
-    let outcome = harness
-        .run(params(serde_json::json!({"model": "*"})), Some("bogus"))
-        .await;
+    let outcome = harness.run(params(&[("model", "*")]), Some("bogus")).await;
     assert_eq!(healthy(outcome), HealthCheckResponse::default());
     let call = harness.backend.take();
     assert_eq!(call.name(), "chat");
@@ -47,10 +42,7 @@ async fn wildcard_without_cheap_models_fails_with_the_provider_message() {
     let harness = Harness::new();
     harness.resolver.resolve_to(resolved("openai/*", "openai"));
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "openai/*"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "openai/*")]), Some("chat"))
         .await;
     let failure = failed(outcome);
     let message = "Unable to health check wildcard model for provider openai. Add a model on your config.yaml or contribute here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json";
@@ -65,10 +57,7 @@ async fn wildcard_searches_the_resolved_provider() {
     harness.resolver.resolve_to(resolved("azure/*", "azure"));
     harness.cheapest.set(&["cheap-1"]);
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "openai/*"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "openai/*")]), Some("chat"))
         .await;
     assert_eq!(healthy(outcome), HealthCheckResponse::default());
     assert_eq!(harness.cheapest.request(), Some(("azure".to_owned(), 3)));

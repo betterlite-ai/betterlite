@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_error::error::{ErrorClass, ErrorContext};
@@ -14,7 +14,6 @@ use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
-use serde::Serialize;
 use uuid::Uuid;
 
 use crate::health_check_entry::ports::{CatalogMode, CatalogModes, ProviderResolver};
@@ -144,11 +143,22 @@ impl FakeBackend {
 
     fn note(&self, recorded: Recorded) -> Result<HealthProbeReply, HealthProbeError> {
         self.write_raw_request(recorded.logging());
-        let failure = self.failure.lock().unwrap().clone();
-        self.calls.lock().unwrap().push(recorded);
+        let failure = self
+            .failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(recorded);
         let Some(message) = failure else {
             return Ok(HealthProbeReply {
-                hidden_headers: self.headers.lock().unwrap().clone(),
+                hidden_headers: self
+                    .headers
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clone(),
             });
         };
         Err(backend_failure(&message))
@@ -325,8 +335,9 @@ impl OcrHealthDocuments for FakeDocuments {
         model: &str,
         custom_llm_provider: &str,
     ) -> Result<OcrDocument, HealthProbeError> {
-        *self.seen.lock().unwrap() = Some((model.to_owned(), custom_llm_provider.to_owned()));
-        if *self.missing.lock().unwrap() {
+        *self.seen.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some((model.to_owned(), custom_llm_provider.to_owned()));
+        if *self.missing.lock().unwrap_or_else(PoisonError::into_inner) {
             return Err(HealthProbeError::OcrDocumentUnavailable {
                 model: model.to_owned(),
                 custom_llm_provider: custom_llm_provider.to_owned(),
@@ -383,13 +394,17 @@ impl ProviderResolver for FakeResolver {
             api_base: request.api_base.map(str::to_owned),
             api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
         };
-        *self.request.lock().unwrap() = Some(requested);
-        if *self.failing.lock().unwrap() {
+        *self.request.lock().unwrap_or_else(PoisonError::into_inner) = Some(requested);
+        if *self.failing.lock().unwrap_or_else(PoisonError::into_inner) {
             return Err(ResolutionError::MissingProvider {
                 model: request.model.to_owned(),
             });
         }
-        Ok(self.resolved.lock().unwrap().clone())
+        Ok(self
+            .resolved
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone())
     }
 }
 
@@ -470,11 +485,11 @@ impl Harness {
     }
 }
 
-pub(super) fn params<T>(entries: T) -> HealthProbeParams
-where
-    T: Serialize,
-{
-    let map = serde_json::from_value(serde_json::to_value(entries).unwrap()).unwrap();
+pub(super) fn params(entries: &[(&str, &str)]) -> HealthProbeParams {
+    let map = entries
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), serde_json::to_value(value).unwrap()))
+        .collect();
     HealthProbeParams::from_map(map).unwrap()
 }
 

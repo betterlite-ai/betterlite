@@ -6,10 +6,7 @@ async fn mode_takes_the_catalog_mode_of_the_original_model() {
         .set("text-embedding-3-small", Some("embedding"));
     harness.resolver.resolve_to(resolved("gpt-4o", "openai"));
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "text-embedding-3-small"})),
-            None,
-        )
+        .run(params(&[("model", "text-embedding-3-small")]), None)
         .await;
     assert_eq!(healthy(outcome), HealthCheckResponse::default());
     assert_eq!(harness.backend.take().name(), "embedding");
@@ -25,10 +22,7 @@ async fn mode_takes_the_catalog_mode_of_the_resolved_model() {
         .resolver
         .resolve_to(resolved("text-embedding-3-small", "openai"));
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "openai/text-embedding-3-small"})),
-            None,
-        )
+        .run(params(&[("model", "openai/text-embedding-3-small")]), None)
         .await;
     assert_eq!(healthy(outcome), HealthCheckResponse::default());
     assert_eq!(harness.backend.take().name(), "embedding");
@@ -39,10 +33,7 @@ async fn mode_treats_a_catalog_entry_without_a_mode_as_unset() {
     let harness = Harness::new();
     harness.catalog.set("fireworks-ai-default", None);
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "fireworks-ai-default"})),
-            None,
-        )
+        .run(params(&[("model", "fireworks-ai-default")]), None)
         .await;
     assert_eq!(healthy(outcome), HealthCheckResponse::default());
     assert_eq!(harness.backend.take().name(), "chat");
@@ -55,10 +46,7 @@ async fn mode_ignores_the_catalog_for_an_explicit_mode() {
         .catalog
         .set("text-embedding-3-small", Some("embedding"));
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "text-embedding-3-small"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "text-embedding-3-small")]), Some("chat"))
         .await;
     assert_eq!(healthy(outcome), HealthCheckResponse::default());
     assert_eq!(harness.backend.take().name(), "chat");
@@ -72,10 +60,7 @@ async fn mode_catalogs_neither_model_for_an_empty_mode() {
         .set("text-embedding-3-small", Some("embedding"));
     harness.catalog.set("resolved-model", Some("embedding"));
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "text-embedding-3-small"})),
-            Some(""),
-        )
+        .run(params(&[("model", "text-embedding-3-small")]), Some(""))
         .await;
     assert_eq!(healthy(outcome), HealthCheckResponse::default());
     assert_eq!(harness.backend.take().name(), "chat");
@@ -84,9 +69,7 @@ async fn mode_catalogs_neither_model_for_an_empty_mode() {
 #[tokio::test]
 async fn mode_missing_model_fails_with_model_not_set() {
     let harness = Harness::new();
-    let outcome = harness
-        .run(params(serde_json::json!({})), Some("chat"))
-        .await;
+    let outcome = harness.run(params(&[]), Some("chat")).await;
     let failure = failed(outcome);
     assert_eq!(failure.error, "model not set\nstack trace: model not set");
     assert!(matches!(failure.exception, HealthEntryError::ModelNotSet));
@@ -96,7 +79,7 @@ async fn mode_missing_model_fails_with_model_not_set() {
 #[tokio::test]
 async fn mode_missing_model_without_a_mode_uses_the_missing_mode_text() {
     let harness = Harness::new();
-    let outcome = harness.run(params(serde_json::json!({})), None).await;
+    let outcome = harness.run(params(&[]), None).await;
     let failure = failed(outcome);
     assert_eq!(
         failure.error,
@@ -151,10 +134,7 @@ async fn mode_resolution_receives_the_original_model_string() {
     let harness = Harness::new();
     harness.resolver.failing();
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "openai/unknown"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "openai/unknown")]), Some("chat"))
         .await;
     let failure = failed(outcome);
     let message = "LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=openai/unknown";

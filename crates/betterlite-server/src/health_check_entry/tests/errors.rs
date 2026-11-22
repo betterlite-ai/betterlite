@@ -5,10 +5,7 @@ async fn error_probe_failure_uses_the_stack_trace_separator() {
     let harness = Harness::new();
     harness.backend.fail("boom");
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "my-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "my-model")]), Some("chat"))
         .await;
     let failure = failed(outcome);
     assert_eq!(failure.error, "boom\nstack trace: boom\nboom\nboom");
@@ -34,10 +31,7 @@ async fn error_probe_failure_reports_the_raw_request() {
     };
     harness.backend.record_raw_request(record.clone());
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "my-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "my-model")]), Some("chat"))
         .await;
     let failure = failed(outcome);
     assert_eq!(failure.raw_request, Some(record));
@@ -48,10 +42,7 @@ async fn error_resolution_failure_with_a_mode_uses_the_normal_text() {
     let harness = Harness::new();
     harness.resolver.failing();
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "unknown-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "unknown-model")]), Some("chat"))
         .await;
     let failure = failed(outcome);
     let message = "LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=unknown-model";
@@ -67,7 +58,7 @@ async fn error_missing_mode_failure_uses_the_missing_mode_text() {
     let harness = Harness::new();
     harness.resolver.failing();
     let outcome = harness
-        .run(params(serde_json::json!({"model": "unknown-model"})), None)
+        .run(params(&[("model", "unknown-model")]), None)
         .await;
     let failure = failed(outcome);
     assert_eq!(
@@ -84,10 +75,7 @@ async fn error_redacts_the_stack_text() {
         .backend
         .fail(&format!("the key {SECRET} was rejected"));
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "my-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "my-model")]), Some("chat"))
         .await;
     let failure = failed(outcome);
     let stack = stack_of(&failure);
@@ -108,10 +96,7 @@ async fn error_keeps_the_stack_text_when_redaction_is_disabled() {
         .backend
         .fail(&format!("the key {SECRET} was rejected"));
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "my-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "my-model")]), Some("chat"))
         .await;
     let failure = failed(outcome);
     assert!(stack_of(&failure).contains(SECRET));
@@ -123,10 +108,7 @@ async fn error_cuts_the_stack_text_to_one_thousand_characters() {
     let message = "x".repeat(600);
     harness.backend.fail(&message);
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "my-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "my-model")]), Some("chat"))
         .await;
     let failure = failed(outcome);
     let stack = stack_of(&failure);
@@ -138,13 +120,10 @@ async fn error_cuts_the_stack_text_to_one_thousand_characters() {
 #[tokio::test]
 async fn error_cuts_characters_not_bytes() {
     let harness = Harness::new();
-    let message = "é".repeat(700);
+    let message = "\u{e9}".repeat(700);
     harness.backend.fail(&message);
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "my-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "my-model")]), Some("chat"))
         .await;
     let failure = failed(outcome);
     let stack = stack_of(&failure);

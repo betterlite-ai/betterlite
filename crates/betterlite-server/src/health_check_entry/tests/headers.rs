@@ -8,10 +8,7 @@ async fn headers_keeps_only_the_three_rate_limit_headers() {
         ("x-other-header", "dropped"),
     ]);
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "my-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "my-model")]), Some("chat"))
         .await;
     assert_eq!(
         healthy(outcome),
@@ -30,10 +27,7 @@ async fn headers_partial_reply_leaves_the_missing_headers_unset() {
         .backend
         .reply(&[("x-ratelimit-remaining-tokens", "8")]);
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "my-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "my-model")]), Some("chat"))
         .await;
     let response = healthy(outcome);
     assert_eq!(response.remaining_requests, None);
@@ -45,10 +39,7 @@ async fn headers_partial_reply_leaves_the_missing_headers_unset() {
 async fn headers_empty_reply_gives_an_empty_response() {
     let harness = Harness::new();
     let outcome = harness
-        .run(
-            params(serde_json::json!({"model": "my-model"})),
-            Some("chat"),
-        )
+        .run(params(&[("model", "my-model")]), Some("chat"))
         .await;
     assert_eq!(healthy(outcome), HealthCheckResponse::default());
 }
