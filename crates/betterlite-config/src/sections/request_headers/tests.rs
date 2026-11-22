@@ -155,6 +155,10 @@ fn only(change: fn(&mut Settings)) -> Settings {
     "general_settings: {user_header_name: os.environ/USER_HEADER_UNSET}\n",
     Expected::MissingEnvironment("USER_HEADER_UNSET", "general_settings.user_header_name")
 )]
+#[case::user_header_name_empty_environment(
+    "general_settings: {user_header_name: os.environ/FORWARD_EMPTY}\n",
+    Expected::Loaded(only(|settings| settings.user_header_name = Some(String::new())))
+)]
 #[case::user_header_mapping_from_environment(
     "general_settings: {user_header_mappings: [{header_name: os.environ/MAPPED_HEADER_FROM_ENV, litellm_user_role: internal_user}]}\n",
     Expected::Loaded(only(|settings| settings.user_header_mappings =
@@ -166,6 +170,11 @@ fn only(change: fn(&mut Settings)) -> Settings {
         "MAPPED_HEADER_UNSET",
         "general_settings.user_header_mappings[0].header_name"
     )
+)]
+#[case::user_header_mapping_empty_environment(
+    "general_settings: {user_header_mappings: [{header_name: os.environ/FORWARD_EMPTY, litellm_user_role: customer}]}\n",
+    Expected::Loaded(only(|settings| settings.user_header_mappings =
+        vec![mapping("", UserHeaderRole::Customer)]))
 )]
 #[case::second_user_header_mapping_path(
     "general_settings: {user_header_mappings: [{header_name: X-First, litellm_user_role: internal_user}, {header_name: os.environ/MAPPED_UNSET, litellm_user_role: customer}]}\n",
