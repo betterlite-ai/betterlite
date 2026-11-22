@@ -1,0 +1,41 @@
+kind: helper
+name: model-ptu-pricing-price-delta
+call:
+  model_ptu_pricing:
+    salt_key: b833-salt
+    ptu_enabled: true
+    calls:
+      - function: delta
+        stored_model_info: {id: m1, team_id: t1}
+        model_info: {id: m1, team_id: t1, ptu_count: 2, cost_per_ptu_per_hour: 1.5, ptu_effective_from: "2026-01-01T00:00:00Z", input_cost_per_token: 0.000002}
+        litellm_params: {model: azure/gpt-4o, output_cost_per_second: 0.5, input_cost_per_pixel: 0, search_context_cost_per_query: {search_context_size_low: 0.01}}
+        patch:
+          litellm_params: {rpm: 5, input_cost_per_token: null}
+          model_info: {ptu_count: 2, cost_per_ptu_per_hour: 1.5, ptu_effective_from: "2026-01-01T00:00:00Z"}
+      - function: delta
+        stored_model_info: {id: m1, team_id: t1, ptu_count: 2, cost_per_ptu_per_hour: 1.5}
+        model_info: {id: m1, team_id: t1, ptu_count: 3, cost_per_ptu_per_hour: 1.5, input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+        litellm_params: {model: azure/gpt-4o, input_cost_per_token: 0.0, output_cost_per_token: 0.0}
+        patch:
+          litellm_params: {input_cost_per_token: 0.0}
+          model_info: {ptu_count: 3}
+      - function: delta
+        stored_model_info: {id: m1, team_id: t1}
+        model_info: {id: m1, team_id: t1, input_cost_per_token: 0.000002}
+        litellm_params: {model: azure/gpt-4o, input_cost_per_token: 0.000002}
+        patch:
+          litellm_params: {input_cost_per_token: 0.000002}
+      - function: zeroed
+        model_info: {id: m1, team_id: t1, input_cost_per_token: 0.000002}
+        litellm_params: {model: azure/gpt-4o, input_cost_per_token: 0.000002}
+        supplied: {input_cost_per_token: 0.000002}
+      - function: priced_deployment
+        litellm_params: {model: azure/gpt-4o, input_cost_per_token: 0.000002, allow_client_keepalive_override: false, use_in_pass_through: false, use_litellm_proxy: false, use_xai_oauth: false, merge_reasoning_content_in_choices: false}
+        model_info: {id: m1, db_model: false, member_auto_router: false, team_id: t1, input_cost_per_token: 0.000002}
+      - function: priced_deployment
+        litellm_params: {model: azure/gpt-4o, allow_client_keepalive_override: false, use_in_pass_through: false, use_litellm_proxy: false, use_xai_oauth: false, merge_reasoning_content_in_choices: false}
+        model_info: {id: m1, db_model: false, member_auto_router: false, team_id: t1, ptu_count: 2, cost_per_ptu_per_hour: 1.5, output_cost_per_second: 0.5}
+env:
+  LITELLM_SALT_KEY: b833-salt
+  LITELLM_ENABLE_PTU_COST_ATTRIBUTION: "true"
+compare: {ignore: []}
