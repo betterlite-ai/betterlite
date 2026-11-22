@@ -5,7 +5,7 @@ use crate::adaptive_classification::config::AdaptiveRouterPreferences;
 use crate::adaptive_selection::default_preferences;
 
 // one Router model_list row, as _ensure_adaptive_router reads it
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ModelDeclaration {
     pub model_name: String,
     pub preferences: Option<AdaptiveRouterPreferences>,
@@ -13,7 +13,7 @@ pub struct ModelDeclaration {
     pub info_cost: Option<Decimal>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct ModelFacts {
     pub preferences: IndexMap<String, AdaptiveRouterPreferences>,
     pub costs: IndexMap<String, Decimal>,

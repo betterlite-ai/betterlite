@@ -50,7 +50,7 @@ impl AdaptivePlacement {
 
     // random.choice over the cold candidates, recorded as the classified_tier decision
     pub(super) fn cold_start_outcome<R>(
-        &mut self,
+        &self,
         plan: ColdStartPlan,
         request_kwargs: Option<&mut JsonMap>,
         random: &mut R,

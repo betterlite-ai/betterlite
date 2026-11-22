@@ -12,7 +12,7 @@ use super::error::AdaptivePlacementError;
 const DECISION_KEY: &str = "adaptive_router_decision";
 const METADATA_KEY: &str = "metadata";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ColdStartCandidate {
     pub model: String,
     pub total_samples: u64,
