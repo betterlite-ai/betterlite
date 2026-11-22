@@ -205,32 +205,13 @@ fn reaches_config_embedding_user_without_drop_params_is_refused() {
     assert_eq!(names, [String::from("user")]);
 }
 
-#[test]
-fn reaches_config_embedding_user_with_drop_params_is_dropped() {
+#[rstest]
+#[case::call_drop_params(true)]
+#[case::global_drop_params(false)]
+fn reaches_config_embedding_user_with_drop_params_is_dropped(#[case] call_flag: bool) {
     let deployment = Deployment {
-        drop_params: Some(DropParams::Flag(true)),
-        ..perplexity_deployment(Some("sk-deployment"))
-    };
-    let prepared = Perplexity
-        .prepare(
-            &embedding_operation(r#"{"input":"hello","user":"u1"}"#),
-            &deployment,
-            &catalog(),
-        )
-        .unwrap();
-    let PreparedRequest::Embedding(sent) = &prepared else {
-        panic!("an embedding request");
-    };
-    assert_eq!(
-        body(&sent.http.body),
-        json(r#"{"model":"pplx-embed-v1-0.6b","input":"hello"}"#)
-    );
-}
-
-#[test]
-fn reaches_config_embedding_user_with_global_drop_params_is_dropped() {
-    let deployment = Deployment {
-        global_drop_params: true,
+        drop_params: call_flag.then_some(DropParams::Flag(true)),
+        global_drop_params: !call_flag,
         ..perplexity_deployment(Some("sk-deployment"))
     };
     let prepared = Perplexity
