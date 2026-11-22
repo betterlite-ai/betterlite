@@ -1,7 +1,7 @@
 id: B1652
 milestone: M4 keys, spend and management
 title: Resolve and redact the coordination Redis configuration
-status: todo
+status: done
 depends_on: [B002, B8500, B171, B725, B860, B8411, B8377]
 file: tasks/B1652-coordination-redis-settings.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/management_endpoints/coordination_redis_endpoints.py"
 parent: B066
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2887

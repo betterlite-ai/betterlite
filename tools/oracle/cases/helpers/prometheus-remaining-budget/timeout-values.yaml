@@ -1,0 +1,8 @@
+kind: helper
+name: prometheus-remaining-budget-timeout-values
+call:
+  b9480:
+    function: timeout
+    values: [null, "", "2.5", "0", "-3", "1e999", "0.5"]
+env: {}
+compare: {ignore: []}

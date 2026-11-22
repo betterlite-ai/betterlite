@@ -1,0 +1,13 @@
+kind: helper
+name: openrouter-stream
+call:
+  b8311:
+    op: chat
+    provider: openrouter
+    model: anthropic/claude-3.5-sonnet
+    messages: [{role: user, content: hi}]
+    api_base: "{{upstream}}/passed"
+    api_key: "sk-passed"
+    stream: true
+env: {}
+compare: {ignore: []}

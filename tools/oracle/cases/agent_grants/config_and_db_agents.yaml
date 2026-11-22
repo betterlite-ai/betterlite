@@ -1,0 +1,25 @@
+kind: helper
+name: config_and_db_agents
+call:
+  b4779:
+    operation: grants
+    method: key
+    strict: false
+    database: true
+    key:
+      team_id: null
+      agents: []
+      agent_access_groups: [g1]
+      access_group_ids: []
+    team: null
+    db_agents:
+      - agent_id: db-agent
+        agent_access_groups: [g1]
+    groups: {}
+    config_agents:
+      - agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+    fail: null
+env: {}
+compare:
+  ignore: []

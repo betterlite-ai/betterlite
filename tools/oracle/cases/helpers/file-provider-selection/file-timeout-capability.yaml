@@ -1,0 +1,9 @@
+kind: helper
+name: file-timeout-capability
+env: {}
+compare: {ignore: []}
+call:
+  file_provider_selection:
+    model: ""
+    config_providers: []
+    timeout_providers: [openai, azure, bedrock, gemini, vertex_ai, manus, anthropic, mistral, xai, hosted_vllm, litellm_proxy, OpenAI, "", null, unknown]

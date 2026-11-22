@@ -1,0 +1,12 @@
+kind: probe
+name: router-settings-config-over-runtime
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_settings:
+        endpoint: settings
+        router_settings:
+          timeout: 9.5
+          default_litellm_params: {stream_timeout: 1.5}
+compare: {ignore: []}

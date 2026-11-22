@@ -1,0 +1,11 @@
+task: B10036
+deviations:
+  - what: >-
+      The pass-through kwargs keep every request header name but store "***REDACTED***" for the credential headers
+      (authorization, api-key, x-api-key, x-goog-api-key, ocp-apim-subscription-key, x-litellm-api-key, cookie,
+      proxy-authorization). LiteLLM stores request.headers as is.
+    why: >-
+      The raw values reach every logging callback and the pass-through failure hook, so the caller's keys and session
+      cookie would leak into logs and third-party loggers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L650-L660
+kept_bugs: []

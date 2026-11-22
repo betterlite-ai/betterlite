@@ -3,6 +3,7 @@
     reason = "pass-through records preserve provider JSON that betterlite does not model"
 )]
 
+use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -44,8 +45,26 @@ pub struct PassthroughLogPayload {
     pub cost_per_request: Option<Decimal>,
 }
 
+impl PassthroughLogPayload {
+    #[must_use]
+    pub fn to_json(&self) -> Json {
+        match serde_json::to_value(self).and_then(serde_json::from_value::<Json>) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, "the pass-through logging payload could not be encoded");
+                Json::Null
+            }
+        }
+    }
+}
+
+pub mod callbacks;
+pub mod error_relay;
+pub mod failure_payload;
+pub mod metadata_tags;
 pub mod multipart;
 pub mod non_streaming;
+pub mod request_context;
 pub mod request_data;
 pub mod route_registration;
 mod tests;

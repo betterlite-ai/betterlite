@@ -1,0 +1,1 @@
+{"guardrail_name":"guard","litellm_params":{"guardrail":"generic_guardrail_api","mode":"pre_call","api_base":"https://guard.example.com/check"}}

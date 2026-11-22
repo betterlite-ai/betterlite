@@ -1,0 +1,42 @@
+kind: helper
+name: responses-file-search-failed-search-outcome
+call:
+  responses_file_search_loop:
+    input: question
+    model: gpt-test
+    tools:
+      - {type: file_search, vector_store_ids: ["vs_bad", "vs_good"]}
+    kwargs: {}
+    provider:
+      - id: resp_first
+        created_at: 1700000000
+        model: gpt-test
+        status: completed
+        output:
+          - {type: function_call, name: litellm_file_search, arguments: '{"queries": ["q"]}', call_id: call_1, id: fc_1}
+      - id: resp_final
+        created_at: 1700000001
+        model: gpt-test
+        status: completed
+        output:
+          - type: message
+            id: msg_2
+            status: completed
+            role: assistant
+            content:
+              - {type: output_text, text: after, annotations: []}
+    searches:
+      - {kind: error, vector_store_id: vs_bad, query: q, error: boom}
+      - kind: result
+        vector_store_id: vs_good
+        query: q
+        response:
+          object: vector_store.search_results.page
+          search_query: q
+          data:
+            - {file_id: f1, filename: a.txt, content: [{type: text, text: kept text}]}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/response/output/0/id
+      why: LiteLLM mints the file_search_call id from uuid.uuid4, so only the fields around it are comparable

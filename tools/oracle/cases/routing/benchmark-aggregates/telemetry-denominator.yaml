@@ -1,0 +1,40 @@
+kind: probe
+name: benchmark-aggregates-telemetry-denominator
+probes:
+  - clock: {unix_millis: 1710504000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      benchmark_aggregates:
+        now_unix_millis: 1710504000000
+        start_date: "2024-01-01"
+        end_date: "2024-01-02"
+        rows:
+          - router_name: adaptive-auto
+            router_type: adaptive
+            tier_turns: {}
+            sessions: 2
+            turns: 4
+            unordered_turns: 0
+            covered_turns: 0
+            cache_hits: 0
+            same_model_turns: 0
+            same_model_hits: 0
+            first_visit_turns: 0
+            first_visit_hits: 0
+            return_turns: 1
+            return_hits: 2
+            return_expired_misses: 0
+            return_within_ttl_misses: 0
+            ttl_5m_turns: 0
+            ttl_1h_turns: 0
+            total_tokens: 0
+            spend: 0.0
+            saved_spend: 0.0
+            savings_estimated_turns: 0
+            savings_estimated_actual_spend: 0.0
+            savings_estimated_saved_spend: 0.0
+            classifier_cost: 4.0
+            classifier_cost_recorded_turns: 3
+            session_seconds: 0.0
+compare:
+  ignore: []
