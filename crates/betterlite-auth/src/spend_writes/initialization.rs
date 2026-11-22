@@ -74,7 +74,13 @@ where
         }
         Ok(true)
     }
+}
 
+impl<Layers, Rows> SpendCounterWrites<Layers, Rows>
+where
+    Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers,
+    Rows: SpendCounterRows,
+{
     pub async fn get_source_cache_base_spend(
         &self,
         source_cache_keys: &[&str],

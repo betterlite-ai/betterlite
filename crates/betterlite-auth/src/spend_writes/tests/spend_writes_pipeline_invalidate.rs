@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::spend_counter_batch::batch::PendingSpendIncrement;
 use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
-use crate::spend_writes::layers::CounterLayers;
+use crate::spend_writes::layers::CounterLayers as _;
 
 use super::refusing::refusing_redis_cache;
 use super::support::{Failure, Fault, KEY, OTHER_KEY, decimal, dual_cache, fixture, increment};

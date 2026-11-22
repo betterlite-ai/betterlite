@@ -793,8 +793,10 @@ pub(crate) fn fixture(redis_configured: bool) -> Fixture {
     let rows = Arc::new(FakeRows::cold());
     let sources = Arc::new(FakeSources::empty());
     let reseed = Arc::new(reseed_of(Arc::clone(&rows)));
-    let counted: Arc<dyn CounterBatch> = Arc::clone(&batch);
-    let source_tier: Arc<dyn SourceSpendCache> = Arc::clone(&sources);
+    let batch_handle = Arc::clone(&batch);
+    let counted: Arc<dyn CounterBatch> = batch_handle;
+    let source_handle = Arc::clone(&sources);
+    let source_tier: Arc<dyn SourceSpendCache> = source_handle;
     let writes = SpendCounterWrites {
         layers: Arc::clone(&layers),
         batch: counted,

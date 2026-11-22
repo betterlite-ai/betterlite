@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use betterlite_cache::backend::memory::MemoryCacheOps;
+use betterlite_cache::backend::memory::MemoryCacheOps as _;
 use betterlite_context::local_ttl_cache::CacheValue;
 
 use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
-use crate::spend_writes::layers::CounterLayers;
+use crate::spend_writes::layers::CounterLayers as _;
 
 use super::refusing::refusing_redis_cache;
 use super::support::{

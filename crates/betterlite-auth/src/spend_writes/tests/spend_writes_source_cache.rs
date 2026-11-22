@@ -44,9 +44,9 @@ async fn a_non_object_source_answers_zero() {
     fx.sources.put(KEY, source_json("\"text\""));
     fx.sources.put(OTHER_KEY, source_json("{\"spend\": 4}"));
     assert_eq!(base_of(&fx, &[KEY, OTHER_KEY]).await, decimal("0"));
-    let fx = fixture(false);
-    fx.sources.put(KEY, source_json("7"));
-    assert_eq!(base_of(&fx, &[KEY]).await, decimal("0"));
+    let number_fx = fixture(false);
+    number_fx.sources.put(KEY, source_json("7"));
+    assert_eq!(base_of(&number_fx, &[KEY]).await, decimal("0"));
 }
 
 #[tokio::test]

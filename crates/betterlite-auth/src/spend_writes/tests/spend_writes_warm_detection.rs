@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_cache::backend::memory::MemoryCacheOps;
+use betterlite_cache::backend::memory::MemoryCacheOps as _;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_redis::request_batch::scope::request_redis_batch_scope;
 
@@ -12,7 +12,7 @@ use crate::spend_reseed::cache::ActiveSpendBatch;
 use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::batch::CounterBatch;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
-use crate::spend_writes::layers::CounterLayers;
+use crate::spend_writes::layers::CounterLayers as _;
 
 use super::refusing::refusing_redis_cache;
 use super::support::{Failure, Fault, KEY, Logs, decimal, dual_cache, fixture};
@@ -219,18 +219,19 @@ async fn the_real_memory_tier_stores_the_counter_value() {
         .set_memory_value(KEY, ReseedCacheValue::Unreadable)
         .await
         .expect("an unreadable value stores nothing");
-    let stored = cache
+    let still_stored = cache
         .in_memory_cache
         .get_cache(KEY)
         .expect("the memory tier reads");
-    assert_eq!(stored, Some(CacheValue::Float(2.5)));
+    assert_eq!(still_stored, Some(CacheValue::Float(2.5)));
 }
 
 #[tokio::test]
 async fn the_batch_adapter_reads_and_records_through_the_counter_batch() {
     let fx = fixture(false);
     fx.batch.answer_with(CounterValue::Amount(decimal("3")));
-    let adapter: Arc<dyn CounterBatch> = Arc::clone(&fx.batch);
+    let batch_handle = Arc::clone(&fx.batch);
+    let adapter: Arc<dyn CounterBatch> = batch_handle;
     let read = ActiveSpendBatch::read(&adapter, KEY)
         .await
         .expect("the adapter reads");

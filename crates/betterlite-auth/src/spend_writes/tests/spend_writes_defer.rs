@@ -6,7 +6,7 @@ use betterlite_redis::request_batch::scope::{
     active_post_call_redis_batch, request_redis_batch_scope,
 };
 
-use crate::spend_writes::layers::CounterLayers;
+use crate::spend_writes::layers::CounterLayers as _;
 
 use super::refusing::refusing_redis_cache;
 use super::support::{FakePostCall, KEY, OTHER_KEY, dual_cache, fixture, increment};

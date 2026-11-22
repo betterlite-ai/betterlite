@@ -1,11 +1,11 @@
-use betterlite_cache::backend::memory::MemoryCacheOps;
+use betterlite_cache::backend::memory::MemoryCacheOps as _;
 use betterlite_context::local_ttl_cache::CacheValue;
 
 use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::batch::CounterBatch;
 use crate::spend_writes::error::LayersError;
 use crate::spend_writes::invalidation::invalidate_spend_counter;
-use crate::spend_writes::layers::CounterLayers;
+use crate::spend_writes::layers::CounterLayers as _;
 
 use super::refusing::refusing_redis_cache;
 use super::support::{Failure, Fault, KEY, Logs, decimal, dual_cache, fixture};

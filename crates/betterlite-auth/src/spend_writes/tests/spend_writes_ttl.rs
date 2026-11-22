@@ -1,5 +1,5 @@
 use crate::spend_writes::error::LayersError;
-use crate::spend_writes::layers::CounterLayers;
+use crate::spend_writes::layers::CounterLayers as _;
 
 use super::refusing::refusing_redis_cache;
 use super::support::{Fault, KEY, Logs, dual_cache, fixture};

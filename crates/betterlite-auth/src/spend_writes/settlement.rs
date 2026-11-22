@@ -25,26 +25,26 @@ where
     Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + 'static,
 {
     Arc::new(move |settled: &Settled<f64>| {
-        let settled = settled.clone();
-        let item = item.clone();
-        let layers = Arc::clone(&layers);
-        let batch = Arc::clone(&batch);
+        let settled_value = settled.clone();
+        let pending = item.clone();
+        let layer_handle = Arc::clone(&layers);
+        let batch_handle = Arc::clone(&batch);
         let follow: SettledFollowUp = Box::pin(async move {
             let settlement = Settlement {
-                layers: &*layers,
-                batch: &*batch,
-                item: &item,
+                layers: &*layer_handle,
+                batch: &*batch_handle,
+                item: &pending,
             };
-            settlement.settle(settled).await;
+            settlement.settle(settled_value).await;
         });
         Some(follow)
     })
 }
 
-struct Settlement<'a, Layers> {
-    layers: &'a Layers,
-    batch: &'a dyn CounterBatch,
-    item: &'a PendingSpendIncrement,
+struct Settlement<'borrowed, Layers> {
+    layers: &'borrowed Layers,
+    batch: &'borrowed dyn CounterBatch,
+    item: &'borrowed PendingSpendIncrement,
 }
 
 impl<Layers> Settlement<'_, Layers>
@@ -119,7 +119,10 @@ where
     }
 }
 
-fn debug_failure<T: Display>(error: &T, counter_key: &str, message: &str) {
+fn debug_failure<T>(error: &T, counter_key: &str, message: &str)
+where
+    T: Display,
+{
     tracing::debug!(
         %error,
         counter_key = %counter_key,
