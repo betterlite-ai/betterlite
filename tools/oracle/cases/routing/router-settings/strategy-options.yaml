@@ -1,0 +1,12 @@
+kind: probe
+name: router-settings-strategy-options
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_settings:
+        endpoint: settings
+        router_settings:
+          routing_strategy: latency-based-routing
+          routing_strategy_args: {ttl: 60, lowest_latency_buffer: 0.1, max_latency_list_size: 2048, ttft_percentile: 0.95}
+compare: {ignore: []}

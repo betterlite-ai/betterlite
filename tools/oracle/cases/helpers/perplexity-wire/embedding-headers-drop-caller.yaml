@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-embedding-headers-drop-caller
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "embedding", "urls": [], "headers": [{"api_key": "sk-explicit", "headers": {"X-Caller": "c1", "Authorization": "Bearer caller"}, "env": {"PERPLEXITYAI_API_KEY": "sk-env"}}, {"api_key": null, "headers": {"X-Caller": "c1"}, "env": {"PERPLEXITYAI_API_KEY": "sk-first", "PERPLEXITY_API_KEY": "sk-second"}}, {"api_key": null, "headers": {}, "env": {"PERPLEXITYAI_API_KEY": "", "PERPLEXITY_API_KEY": "sk-second"}}, {"api_key": null, "headers": {}, "env": {"PERPLEXITY_API_KEY": "sk-second"}}, {"api_key": null, "headers": {}, "env": {}}, {"api_key": "", "headers": {}, "env": {"PERPLEXITYAI_API_KEY": "sk-env"}}], "requests": [], "replies": [], "errors": []}

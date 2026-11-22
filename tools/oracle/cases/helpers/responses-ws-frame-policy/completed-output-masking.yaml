@@ -1,0 +1,64 @@
+kind: helper
+name: completed-output-masking
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: completed
+      message: '{"type": "response.completed", "response": {"output": [{"type": "function_call", "arguments": "{\"to\": \"a@example.com\"}"}, {"type": "reasoning", "summary": [{"text": "a@example.com"}, {"text": 5}, "part"]}, {"type": "message", "content": [{"text": "hi a@example.com"}, {"text": "plain"}, "block"]}, "item", {"content": "flat"}]}}'
+      guardrails:
+      - {a@example.com: <EMAIL_ADDRESS_1>}
+      - {<EMAIL_ADDRESS_1>: <EMAIL>}
+      request_data:
+        metadata: {pii_tokens: {}}
+    - kind: completed
+      message: '{"type": "response.completed", "response": {"output": [{"arguments": "secret"}]}}'
+      guardrails:
+      - {secret: '[M]'}
+      request_data: {}
+    - kind: completed
+      message: '{"type": "response.completed", "response": {"output": [{"summary": [{"text": "secret"}]}]}}'
+      guardrails:
+      - {secret: '[M]'}
+      request_data: {}
+    - kind: completed
+      message: '{"type": "response.completed", "response": {"output": [{"arguments": "a", "summary": [{"text": "b"}], "content": [{"text": "c"}]}]}}'
+      guardrails:
+      - {}
+      request_data: {}
+    - kind: completed
+      message: '{"type": "response.completed", "response": {"output": [{"content": [{"text": "secret"}]}]}}'
+      guardrails: []
+      request_data: {}
+    - kind: completed
+      message: not-json
+      guardrails:
+      - {secret: '[M]'}
+      request_data: {}
+    - kind: completed
+      message: '{"type": "response.output_text.delta", "delta": "secret"}'
+      guardrails:
+      - {secret: '[M]'}
+      request_data: {}
+    - kind: completed
+      message: '{"type": "response.completed"}'
+      guardrails:
+      - {secret: '[M]'}
+      request_data: {}
+    - kind: completed
+      message: '{"type": "response.completed", "response": "secret"}'
+      guardrails:
+      - {secret: '[M]'}
+      request_data: {}
+    - kind: completed
+      message: '{"type": "response.completed", "response": {"output": "secret"}}'
+      guardrails:
+      - {secret: '[M]'}
+      request_data: {}
+    - kind: completed
+      message: '{"type": "response.completed", "response": {"output": [{"type": "message", "summary": "secret", "content": {"text": "secret"}}]}}'
+      guardrails:
+      - {secret: '[M]'}
+      request_data: {}
+env: {}
+compare:
+  ignore: []

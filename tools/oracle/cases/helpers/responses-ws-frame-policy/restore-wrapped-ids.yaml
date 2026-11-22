@@ -1,0 +1,50 @@
+kind: helper
+name: restore-wrapped-ids
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: create
+      message: '{"type": "response.create", "input": [{"id": "encitem_bGl0ZWxsbTptb2RlbF9pZDptO2l0ZW1faWQ6aXRlbS05", "encrypted_content": "litellm_enc:bW9kZWxfaWQ6bQ==;cipher", "role": "user"}], "previous_response_id": "resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDptO3Jlc3BvbnNlX2lkOnJlc3Bfb3JpZw==", "response": {"input": [], "previous_response_id": "original"}}'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "input": [{"id": "encitem_1", "encrypted_content": "litellm_enc:x"}], "previous_response_id": "wrapped", "response": {"input": [], "previous_response_id": "original"}}'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "response": {"input": [{"id": "encitem_bGl0ZWxsbTptb2RlbF9pZDptO2l0ZW1faWQ6aXRlbS05"}], "previous_response_id": "resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDptO3Jlc3BvbnNlX2lkOnJlc3Bfb3JpZw=="}}'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "input": "text", "response": {"previous_response_id": "resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDptO3Jlc3BvbnNlX2lkOnJlc3Bfb3JpZw=="}}'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "response": {}, "input": [{"content": "abcd", "id": "encitem_bGl0ZWxsbTptb2RlbF9pZDptO2l0ZW1faWQ6aXRlbS05"}], "max_output_tokens": 7}'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "input": "text", "previous_response_id": 5}'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "input": ["text", 5, {"type": "message", "content": "hi"}], "previous_response_id": null}'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+env: {}
+compare:
+  ignore: []

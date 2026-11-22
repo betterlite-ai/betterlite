@@ -1,7 +1,7 @@
 id: B026
 milestone: M3 providers
 title: Azure AI Foundry
-status: todo
+status: done
 depends_on: [B010, B549, B550, B551, B552, B562, B563, B698, B182, B198, B196, B249, B187, B171, B2230, B560]
 file: tasks/B026-foundry-provider.yaml
 covers:
@@ -21,7 +21,7 @@ covers:
   - "litellm/main.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2878

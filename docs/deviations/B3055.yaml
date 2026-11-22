@@ -1,0 +1,25 @@
+task: B3055
+deviations:
+  - what: >-
+      The per-request stash is a RequestStashSlot that the server gate creates and passes down, not a ContextVar
+      that child tasks and callbacks inherit.
+    why: >-
+      The workspace rules forbid ContextVars for per-run data. B3031 defines the slot and the rule for who owns
+      it, and the gate hands the same slot to the pre-call hook and to the callbacks of one proxy request.
+    link: ""
+  - what: >-
+      request_capacity returns a drop guard and spawns a detached release task instead of being an async context
+      manager.
+    why: >-
+      Rust has no async drop. The detached task keeps the release running and reaches the end when the caller is
+      cancelled, then the cancellation still reaches the caller.
+    link: ""
+  - what: >-
+      A Batch call whose batch limiter slot is empty is refused by the server gate with its own 503, where
+      LiteLLM lazily constructs the batch limiter on the first acreate_batch call.
+    why: >-
+      B5660 wires the batch limiter at boot and B1047 builds the limiter itself, so the slot is filled before
+      B1050's batch create route can send the call type; until then the gate names the missing limiter instead of
+      constructing one it does not own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3337-L3342
+kept_bugs: []

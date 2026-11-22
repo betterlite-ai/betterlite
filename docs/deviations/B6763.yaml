@@ -1,0 +1,24 @@
+task: B6763
+deviations:
+  - what: The build takes its collaborators as constructor arguments of ServerBuilder (a Decryptor, the MetadataFetcher port, DiscoverySettings, a StdioPolicy, a DeferredSlots store and a PrefixPolicy), and the getattr defaults on the row become typed Option, Vec and enum fields; Python reads the cipher, the fetcher, the on-startup flag and the short-prefix env switch from module globals and getattr on the row.
+    why: betterlite wires dependencies through constructors and has no reflection; the observable record, the decrypt calls and the fetch calls are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3025-L3263
+  - what: A failed build is a typed BuildError (invalid MCPInfo, bad stored JSON, invalid timestamp, prefix computation, prefix exhaustion) instead of pydantic ValidationError, ValueError and the RuntimeError raised after the rehash attempts; the prefix-exhaustion text is the Python message verbatim.
+    why: typed errors, no Python exception hierarchy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5478-L5486
+  - what: deserialize_json_dict and deserialize_json_list return Option and accept only the declared shapes. An already-materialized map or list that is empty gives None and a JSON text of "{}" or "[]" gives Some(empty), exactly as Python's `if not data` check and its json.loads path do; a materialized value of another shape gives None where Python returns the value as-is, and a string that parses to another shape gives None where Python returns the parsed value.
+    why: the Rust helpers are typed, and the row type from B858 materializes env, static_headers and the credentials blob before the build sees them, so no caller passes an undeclared shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1577-L1618
+  - what: normalize_cost_info coerces a JSON number or a string parsed as f64 and drops everything else with the Python warning text. Python's float() also accepts bools (True becomes 1.0), numeric strings with underscores and the nan/inf spellings; those are dropped here with the warning. Non-scalar values in the warning render as JSON where Python uses repr.
+    why: a cost of True or nan is a stored-shape error, and a JSON number cannot hold nan or inf; dropping it with the warning matches the function's stated behavior for values that cannot be coerced.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1620-L1664
+  - what: warn_config_id_jag_server_outruns_sso takes the startup assertion gap as an argument; Python reads it from id_jag_assertion_capture_gap_at_startup() inside the helper.
+    why: the module holds no global state, and the caller that knows the startup state passes the gap it has.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1563-L1575
+  - what: warn_if_newly_blocked_stdio uses the alias or server_name only when it is non-empty, and falls back to the text "None"; when both are present but empty strings Python's `row.alias or row.server_name` yields "" and the log reads "MCP server '' will not start".
+    why: betterlite's compatibility rules treat an empty string as absent, and the warning still fires exactly when Python's does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/stdio_gate.py#L26-L28
+  - what: assign_unique_short_prefix reads the short-prefix switch from the injected PrefixPolicy of B6594 and the used prefixes from the caller's map; Python calls is_short_mcp_tool_prefix_enabled() and scans the manager registry, skipping the server's own id.
+    why: the registry belongs to B6765, which calls this function, and the switch lives in the B6594 helpers; the search, the rehash counter and the own-entry rule are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5426-L5486
+kept_bugs: []

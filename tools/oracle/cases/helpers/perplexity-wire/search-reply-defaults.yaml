@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-search-reply-defaults
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "search", "headers": [], "urls": [], "requests": [], "replies": [{"body": "{\"results\": [{\"title\": \"Rust\", \"url\": \"https://rust-lang.org\", \"snippet\": \"A language\", \"date\": \"2026-01-01\", \"last_updated\": \"2026-02-01\", \"extra\": 1}], \"id\": \"s1\"}", "status": 200, "headers": {}}, {"body": "{\"results\": [{\"url\": \"https://a.example\"}, {}]}", "status": 200, "headers": {}}, {"body": "{}", "status": 200, "headers": {}}, {"body": "{\"results\": [{\"title\": \"t\", \"url\": \"u\", \"snippet\": \"s\", \"date\": null}]}", "status": 500, "headers": {}}, {"body": "not json", "status": 200, "headers": {}}]}
