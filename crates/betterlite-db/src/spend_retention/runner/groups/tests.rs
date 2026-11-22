@@ -19,8 +19,9 @@ use crate::spend_retention::runner::progress::RunProgress;
 use crate::spend_retention::runner::support::{
     FakeLock, FakePartitions, FixedCleanupClock, PARTITION_NAMES, SESSION_IDS, SPEND_IDS,
     StepCleanupClock, TAG_IDS, TOOL_IDS, TestDurations, USER_SESSION_IDS, group_run, moment, naive,
-    provision, retention_settings, seed_daily_tag, seed_health_check, seed_session,
-    seed_spend_logs, seed_tool_index, seed_tool_indexes, seed_user_session, text_join,
+    provision, retention_settings, seed_daily_tag, seed_health_check, seed_session, seed_sessions,
+    seed_spend_logs, seed_tool_index, seed_tool_indexes, seed_user_session, seed_user_sessions,
+    text_join,
 };
 
 const DAY_PARTITIONS: &str = r#"CREATE TABLE "LiteLLM_SpendLogs_20241201" PARTITION OF "LiteLLM_SpendLogs" FOR VALUES FROM ('2024-12-01') TO ('2024-12-02');
@@ -320,5 +321,35 @@ async fn the_logs_table_gets_half_the_group_time_and_the_index_the_rest() {
     assert_eq!(results[0].rows_deleted, 6);
     assert_eq!(results[0].stop_reason, StopReason::BudgetExhausted);
     assert!(results[1].rows_deleted > 0);
+    case.close().await;
+}
+
+#[tokio::test]
+async fn the_session_rollups_split_their_group_time() {
+    let mut case = provision().await;
+    seed_sessions(&case, moment(2024, 12, 1), 20).await;
+    seed_user_sessions(&case, moment(2024, 12, 1), 20).await;
+    let settings = retention_settings(r#"{"maximum_autorouter_session_retention_period": "30d"}"#);
+    let start = Instant::now();
+    let clock = StepCleanupClock {
+        utc: moment(2025, 2, 1),
+        start,
+        step: Duration::from_secs(5),
+        readings: AtomicU32::new(0),
+    };
+    let cleanup = step_cleanup(settings, clock);
+    let registry = CollectorRegistry::default();
+    let metrics = CleanupMetrics::new(&registry);
+    let progress = RunProgress::default();
+    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, start);
+    let deadline = deadline_after(start, 100);
+    let results = cleanup
+        .clean_session_rollup(&mut run, 2_592_000, deadline)
+        .await
+        .expect("the session group");
+    assert_eq!(results[0].rows_deleted, 6);
+    assert_eq!(results[0].stop_reason, StopReason::BudgetExhausted);
+    assert_eq!(results[1].rows_deleted, 6);
+    assert_eq!(results[1].stop_reason, StopReason::BudgetExhausted);
     case.close().await;
 }

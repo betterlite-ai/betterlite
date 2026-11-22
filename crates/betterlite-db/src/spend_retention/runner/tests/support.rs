@@ -55,6 +55,8 @@ const MANY_TOOL_INDEX_ROWS: &str = r#"INSERT INTO "LiteLLM_SpendLogToolIndex" (r
 SELECT 'tool-' || g, 'tool', $1::timestamptz FROM generate_series(1, $2) AS g"#;
 const MANY_SESSION_ROWS: &str = r#"INSERT INTO "LiteLLM_AutoRouterSession" (api_key, session_id, router_name, last_turn_at)
 SELECT 'sk-key', 'session-' || g, 'router', $1::timestamptz FROM generate_series(1, $2) AS g"#;
+const MANY_USER_SESSION_ROWS: &str = r#"INSERT INTO "LiteLLM_AutoRouterUserSession" (user_id, api_key, session_id, router_name, last_turn_at)
+SELECT 'user', 'sk-key', 'user-session-' || g, 'router', $1::timestamptz FROM generate_series(1, $2) AS g"#;
 const SESSION_ROW: &str =
     r#"INSERT INTO "LiteLLM_AutoRouterSession" VALUES ($1, $2, 'router', $3)"#;
 const USER_SESSION_ROW: &str =
@@ -159,6 +161,13 @@ pub(crate) async fn seed_sessions(case: &SpendPartitionCase, at: DateTime<Utc>, 
         .execute(MANY_SESSION_ROWS, &[&at, &count])
         .await
         .expect("seeded session rows");
+}
+
+pub(crate) async fn seed_user_sessions(case: &SpendPartitionCase, at: DateTime<Utc>, count: i64) {
+    case.client
+        .execute(MANY_USER_SESSION_ROWS, &[&at, &count])
+        .await
+        .expect("seeded user session rows");
 }
 
 pub(crate) async fn seed_session(case: &SpendPartitionCase, id: &str, at: DateTime<Utc>) {
