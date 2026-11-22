@@ -1,0 +1,1 @@
+{"custom_id": "r1", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "bedrock/us.anthropic.claude-3-5-sonnet:0", "messages": []}}

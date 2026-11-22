@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-other-stability-edits-request
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: model_selection
+        models: [stability.stable-image-inpaint-v1:0, stable-diffusion-xl]
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {size: 1024x1024, n: 2}
+        drop_params: false
+      - function: request
+        model: stability.stable-style-transfer-v1:0
+        prompt: cat
+        image: {value: hello}
+        options: {mask: m2, init_image: override}
+        drop_params: true
+env: {}
+compare: {ignore: []}

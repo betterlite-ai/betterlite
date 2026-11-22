@@ -515,6 +515,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "session_log_json"
+path = "fuzz_targets/session_log_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "responses_file_search_loop"
 path = "fuzz_targets/responses_file_search_loop.rs"
 test = false

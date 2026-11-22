@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-other-stability-edits-response
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"images":["aGVsbG8="],"finish_reasons":[null]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 400
+        body: '{"errors":"bad"}'
+      - function: url
+      - function: multipart
+      - function: environment
+        headers: {x-a: b}
+      - function: error_class
+        message: boom
+        status: 418
+        headers: {h: v}
+env: {}
+compare: {ignore: []}
