@@ -134,8 +134,7 @@ def run(input_value: Input) -> JsonValue:
                 recorder.addFilter(check)
         proxy_logger.addHandler(recorder)
         try:
-            # LiteLLM's console handler routes the quiet malformed-key warning to stdout,
-            # which carries only the protocol JSON
+            # the console handler copies the quiet malformed-key warning to stdout
             with contextlib.redirect_stdout(io.StringIO()):
                 outcome = answer(row, recorder)
         finally:
