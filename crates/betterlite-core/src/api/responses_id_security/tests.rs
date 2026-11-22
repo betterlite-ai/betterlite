@@ -93,7 +93,7 @@ fn cross_user_forbidden(#[case] user: Option<&str>, #[case] team: Option<&str>) 
     assert_eq!(Forbidden::User.detail(), USER_DETAIL);
     assert_eq!(payload, before);
 
-    // the user check runs before the team check, so a wrong team alone gives the user detail
+    // a matching user with a wrong team passes the user check and takes the team branch
     let alice_wrong_team = principal(Some("alice"), Some("team-b"), &[]);
     let wrong_team_error = policy
         .authorize_call(
@@ -104,7 +104,7 @@ fn cross_user_forbidden(#[case] user: Option<&str>, #[case] team: Option<&str>) 
         .unwrap_err();
     assert!(matches!(
         wrong_team_error,
-        ResponsesIdSecurityError::Forbidden(Forbidden::User)
+        ResponsesIdSecurityError::Forbidden(Forbidden::Team)
     ));
 }
 
