@@ -53,7 +53,15 @@ where
         });
     }
     if visible.as_ref().is_some_and(Vec::is_empty) {
-        return Ok(Json(empty_answer()));
+        return Ok(Json(SubmissionListResponse {
+            submissions: Vec::new(),
+            summary: GuardrailSubmissionSummary {
+                total: 0,
+                pending_review: 0,
+                active: 0,
+                rejected: 0,
+            },
+        }));
     }
     let filter = visible.map_or(TeamFilter::AnyTeam, TeamFilter::Teams);
     let rows = database
@@ -102,18 +110,6 @@ where
         }
     }
     Ok(Json(item(&row)))
-}
-
-const fn empty_answer() -> SubmissionListResponse {
-    SubmissionListResponse {
-        submissions: Vec::new(),
-        summary: GuardrailSubmissionSummary {
-            total: 0,
-            pending_review: 0,
-            active: 0,
-            rejected: 0,
-        },
-    }
 }
 
 // the summary counts every row of the query before the status, team and search filters
@@ -204,8 +200,8 @@ pub(super) fn item(row: &SubmissionRow) -> GuardrailSubmissionItem {
         status,
         team_id: row.team_id.clone(),
         team_guardrail: row.team_id.is_some(),
-        litellm_params: Some(mask_sensitive_values(&params)),
-        guardrail_info: Some(info),
+        litellm_params: mask_sensitive_values(&params),
+        guardrail_info: info,
         submitted_by_user_id,
         submitted_by_email,
         submitted_at: row.submitted_at.map(Timestamp::utc),

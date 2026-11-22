@@ -106,7 +106,7 @@ fn storage_binds_the_config_sync_table() {
 }
 
 #[tokio::test]
-async fn storage_round_trips_a_submission() {
+async fn storage_stores_the_created_row_and_publishes() {
     let (fixture, pool) = database().await;
     let store = PostgresStore {
         pool: Some(pool.clone()),
@@ -118,15 +118,6 @@ async fn storage_round_trips_a_submission() {
         .create(new_submission("alpha", "team-a", fixed_now()))
         .await
         .expect("the insert succeeds");
-    assert_created_submission(&created, &journal);
-    assert_round_trip(&rows, &created).await;
-    assert_eq!(journal.lock().unwrap().len(), 1);
-    drop(rows);
-    pool.close();
-    fixture.close_async().await.unwrap();
-}
-
-fn assert_created_submission(created: &SubmissionRow, journal: &Arc<Mutex<Vec<String>>>) {
     assert_eq!(
         journal.lock().unwrap().clone(),
         vec!["litellm_guardrailstable".to_owned()]
@@ -145,15 +136,30 @@ fn assert_created_submission(created: &SubmissionRow, journal: &Arc<Mutex<Vec<St
     );
     assert_eq!(created.submitted_at.map(Timestamp::utc), Some(fixed_now()));
     assert!(created.reviewed_at.is_none());
+    drop(rows);
+    pool.close();
+    fixture.close_async().await.unwrap();
 }
 
-async fn assert_round_trip(rows: &PostgresSubmissionRows<'_>, created: &SubmissionRow) {
+#[tokio::test]
+async fn storage_reads_the_row_by_id_and_name() {
+    let (fixture, pool) = database().await;
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let availability = Availability::default();
+    let journal: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let rows = submission_rows(&store, &availability, &journal);
+    let created = rows
+        .create(new_submission("alpha", "team-a", fixed_now()))
+        .await
+        .expect("the insert succeeds");
     let found = rows
         .find_by_id(&created.guardrail_id)
         .await
         .expect("the read succeeds")
         .expect("the row exists");
-    assert_eq!(&found, created);
+    assert_eq!(found, created);
     assert!(
         rows.find_by_name("alpha")
             .await
@@ -166,12 +172,40 @@ async fn assert_round_trip(rows: &PostgresSubmissionRows<'_>, created: &Submissi
             .expect("the read succeeds")
             .is_none()
     );
+    drop(rows);
+    pool.close();
+    fixture.close_async().await.unwrap();
 }
 
 #[tokio::test]
-async fn storage_orders_team_rows_newest_first() {
+async fn storage_skips_teamless_rows() {
     let (fixture, pool) = database().await;
     insert_teamless(&pool, "g-teamless").await;
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let availability = Availability::default();
+    let journal: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let rows = submission_rows(&store, &availability, &journal);
+    let all = rows
+        .find_team_rows(TeamFilter::AnyTeam)
+        .await
+        .expect("the read succeeds");
+    assert!(all.is_empty());
+    assert!(
+        rows.find_by_name("teamless-guard")
+            .await
+            .expect("the read succeeds")
+            .is_some()
+    );
+    drop(rows);
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+#[tokio::test]
+async fn storage_returns_team_rows_newest_first() {
+    let (fixture, pool) = database().await;
     let store = PostgresStore {
         pool: Some(pool.clone()),
     };
@@ -186,23 +220,6 @@ async fn storage_orders_team_rows_newest_first() {
         .create(new_submission("beta", "team-b", later_now()))
         .await
         .expect("the insert succeeds");
-    assert_team_row_order(&rows, &older, &newer).await;
-    drop(rows);
-    pool.close();
-    fixture.close_async().await.unwrap();
-}
-
-async fn assert_team_row_order(
-    rows: &PostgresSubmissionRows<'_>,
-    older: &SubmissionRow,
-    newer: &SubmissionRow,
-) {
-    assert!(
-        rows.find_by_name("teamless-guard")
-            .await
-            .expect("the read succeeds")
-            .is_some()
-    );
     let all = rows
         .find_team_rows(TeamFilter::AnyTeam)
         .await
@@ -212,15 +229,56 @@ async fn assert_team_row_order(
         ids,
         vec![newer.guardrail_id.as_str(), older.guardrail_id.as_str()]
     );
+    drop(rows);
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+#[tokio::test]
+async fn storage_filters_team_rows_to_the_listed_teams() {
+    let (fixture, pool) = database().await;
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let availability = Availability::default();
+    let journal: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let rows = submission_rows(&store, &availability, &journal);
     let mine = rows
+        .create(new_submission("alpha", "team-a", fixed_now()))
+        .await
+        .expect("the insert succeeds");
+    rows.create(new_submission("beta", "team-b", fixed_now()))
+        .await
+        .expect("the insert succeeds");
+    let listed = rows
         .find_team_rows(TeamFilter::Teams(vec!["team-a".to_owned()]))
         .await
         .expect("the read succeeds");
-    assert_eq!(mine.len(), 1);
-    assert_eq!(mine[0].guardrail_id, older.guardrail_id);
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].guardrail_id, mine.guardrail_id);
+    drop(rows);
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+#[tokio::test]
+async fn storage_returns_nothing_for_no_teams() {
+    let (fixture, pool) = database().await;
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let availability = Availability::default();
+    let journal: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let rows = submission_rows(&store, &availability, &journal);
+    rows.create(new_submission("alpha", "team-a", fixed_now()))
+        .await
+        .expect("the insert succeeds");
     let none = rows
         .find_team_rows(TeamFilter::Teams(Vec::new()))
         .await
         .expect("the read succeeds");
     assert!(none.is_empty());
+    drop(rows);
+    pool.close();
+    fixture.close_async().await.unwrap();
 }

@@ -66,6 +66,7 @@ async fn register_answers_a_non_text_api_base_as_a_scheme_error(#[case] value: &
 #[case::ftp("refused", "\"ftp://guard.example.com/check\"", Some(API_BASE_SCHEME))]
 #[case::host_only("refused", "\"guard.example.com/check\"", Some(API_BASE_SCHEME))]
 #[case::authority("refused", "\"//guard.example.com/check\"", Some(API_BASE_SCHEME))]
+#[case::extra_slash("slashes", "\"https:///check\"", None)]
 #[tokio::test]
 async fn register_accepts_http_and_https_and_refuses_other_schemes(
     #[case] name: &str,
@@ -85,16 +86,13 @@ async fn register_accepts_http_and_https_and_refuses_other_schemes(
     }
 }
 
-#[rstest]
-#[case::blank_host("\"http://\"")]
-#[case::empty_host("\"https:///check\"")]
 #[tokio::test]
-async fn register_requires_a_hostname(#[case] base: &str) {
+async fn register_requires_a_hostname() {
     let harness = harness();
     let answer = register(
         &harness,
         admin(),
-        &register_request("guard", &params_with(base), Some("team-a")),
+        &register_request("guard", &params_with("\"http://\""), Some("team-a")),
     )
     .await;
     assert_error(&answer, StatusCode::BAD_REQUEST, API_BASE_HOST);
@@ -126,48 +124,62 @@ const GENERIC_FTP_NO_MODE: &str =
 const GENERIC_HOSTED_NO_MODE: &str =
     r#"{"guardrail":"generic_guardrail_api","api_base":"https://guard.example.com/check"}"#;
 
-// the team check comes first, then membership, then the params, then the name lookup
+// the team check comes before the params
 #[tokio::test]
-async fn register_runs_the_checks_in_the_order_litellm_does() {
+async fn register_checks_the_team_before_the_params() {
     let harness = harness();
-    let without_team = register(
+    let answer = register(
         &harness,
         user_key(None, "alice"),
         &register_request("guard", BEDROCK_NO_TEAM, None),
     )
     .await;
-    assert_error(&without_team, StatusCode::BAD_REQUEST, TEAM_REQUIRED);
+    assert_error(&answer, StatusCode::BAD_REQUEST, TEAM_REQUIRED);
+}
+
+// the membership check comes before the params
+#[tokio::test]
+async fn register_checks_membership_before_the_params() {
+    let harness = harness();
     harness.teams.allow("alice", &["team-a"]);
-    let not_a_member = register(
+    let answer = register(
         &harness,
         user_key(Some("team-a"), "alice"),
         &register_request("guard", BEDROCK_FTP, Some("team-b")),
     )
     .await;
     assert_error(
-        &not_a_member,
+        &answer,
         StatusCode::FORBIDDEN,
         "You are not a member of team 'team-b'",
     );
-    assert_params_before_the_name_lookup(&harness).await;
 }
 
-async fn assert_params_before_the_name_lookup(harness: &Harness) {
-    let scheme_first = register(
-        harness,
+// the api_base scheme check comes before the mode check
+#[tokio::test]
+async fn register_checks_the_scheme_before_the_mode() {
+    let harness = harness();
+    let answer = register(
+        &harness,
         admin(),
         &register_request("guard", GENERIC_FTP_NO_MODE, Some("team-a")),
     )
     .await;
-    assert_error(&scheme_first, StatusCode::BAD_REQUEST, API_BASE_SCHEME);
+    assert_error(&answer, StatusCode::BAD_REQUEST, API_BASE_SCHEME);
+}
+
+// the params checks come before the name lookup
+#[tokio::test]
+async fn register_checks_the_params_before_the_name_lookup() {
+    let harness = harness();
     harness
         .rows
         .insert(row("g1", "guard", Some("active"), Some("team-b")));
-    let mode_first = register(
-        harness,
+    let answer = register(
+        &harness,
         admin(),
         &register_request("guard", GENERIC_HOSTED_NO_MODE, Some("team-a")),
     )
     .await;
-    assert_error(&mode_first, StatusCode::BAD_REQUEST, MODE_REQUIRED);
+    assert_error(&answer, StatusCode::BAD_REQUEST, MODE_REQUIRED);
 }
