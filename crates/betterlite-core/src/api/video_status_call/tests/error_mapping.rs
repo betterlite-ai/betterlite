@@ -2,9 +2,10 @@ use betterlite_error::error::{ErrorClass, ErrorContext};
 
 use super::support::{
     Behavior, Bench, Environment, Journal, Mode, Outcome, PROVIDER, Production, VIDEO_ID, Wiring,
-    async_call, call, failed, request,
+    async_call, call, failed, redactor, request,
 };
-use crate::api::video_status_call::error::VideoStatusCallError;
+use crate::api::video_status_call::error::{VideoStatusCallError, status_failure};
+use crate::api::video_status_transport::error::VideoStatusError;
 
 fn mapped_class() -> ErrorClass {
     ErrorClass::ApiConnection(Box::new(ErrorContext {
@@ -46,6 +47,26 @@ async fn error_mapping_status_async_wrapper_keeps_the_mapped_class() {
     };
     assert_eq!(class, &mapped_class());
     assert_eq!(message, "the provider refused");
+}
+
+// the handler's async client parses the provider again, and the handler's own failure answers 400 for it
+#[test]
+fn error_mapping_status_transport_unknown_provider_answers_400() {
+    let error = VideoStatusError::UnknownProvider {
+        provider: "bogus".to_owned(),
+    };
+    let mapped = status_failure(&error, "bogus", &redactor());
+    let VideoStatusCallError::Mapped { class, message } = &mapped else {
+        panic!("an unknown provider is mapped, got {mapped:?}");
+    };
+    assert_eq!(message, "unknown video provider bogus");
+    let ErrorClass::BadRequest(details) = class else {
+        panic!("an unknown transport provider answers 400, got {class:?}");
+    };
+    assert_eq!(class.metadata().status_code, 400);
+    assert_eq!(details.message, "unknown video provider bogus");
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("bogus"));
 }
 
 #[test]

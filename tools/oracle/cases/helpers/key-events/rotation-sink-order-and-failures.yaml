@@ -1,0 +1,26 @@
+kind: helper
+name: key-events-rotation-sink-order-and-failures
+call:
+  key_events:
+    event: rotated
+    data: null
+    response: {key: sk-new-rotated-value, token_id: "", key_alias: resp-alias, spend: 0.5}
+    row: {token: "", key_alias: old-alias, team_id: team-a}
+    rows: []
+    caller: {user_id: user-a, api_key: sk-caller-api-key, token: null, metadata: {}, team_metadata: null}
+    changed_by: null
+    admin_name: proxy-admin
+    audit: true
+    now: "2026-01-02T03:04:05Z"
+    id: "00000000-0000-4000-8000-000000000786"
+    settings: {store_virtual_keys: true, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+    client: true
+    runtime: ready
+    teams:
+      team-a: {secret_manager_settings: {kms_key_id: key-eu}}
+    secrets: {}
+    failing: [litellm/old-alias]
+    alerting: [email]
+calls: []
+env: {}
+compare: {ignore: []}
