@@ -1,6 +1,8 @@
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
-use super::support::{Bench, VIDEO_BODY, run_remix};
+use super::support::{Bench, VIDEO_BODY, json, run_remix};
 use crate::api::video_remix_call::VideoRemixCall;
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -63,4 +65,25 @@ fn remix_call_type_is_set_before_the_handler() {
     assert_eq!(failure.class.metadata().status_code, 500);
     assert_eq!(bench.fixture.state.call_type, "video_remix");
     assert_eq!(bench.requests().len(), 1);
+}
+
+#[test]
+fn remix_metadata_reaches_the_logging_params() {
+    let mut bench = Bench::new(200, VIDEO_BODY);
+    let mut metadata = IndexMap::new();
+    metadata.insert("user_id".to_owned(), JsonValue::Text("u-1".to_owned()));
+    let call = VideoRemixCall {
+        litellm_metadata: Some(metadata),
+        ..VideoRemixCall::default()
+    };
+    run_remix(&mut bench, &call, REQUEST_TIMEOUT).expect("the remix answers");
+    let details = &bench.fixture.state.model_call_details;
+    let Some(Json::Object(params)) = details.get("litellm_params") else {
+        panic!("litellm_params is an object");
+    };
+    assert_eq!(
+        params.get("litellm_metadata"),
+        Some(&json(r#"{"user_id":"u-1"}"#))
+    );
+    assert_eq!(params.get("metadata"), Some(&json(r#"{"user_id":"u-1"}"#)));
 }
