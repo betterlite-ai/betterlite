@@ -61,7 +61,7 @@ impl Helper for Op {
                 fragments,
                 messages,
             } => Ok(split(fragments, messages)),
-            Step::Chunks { chunks } => chunks(chunks),
+            Step::Chunks { chunks: items } => chunks(items),
             Step::Effort { model, params } => effort(model, params),
             Step::Refusals { models, params } => Ok(refusals(models, params)),
             Step::Buffered { reply, headers } => buffered::run(reply, headers),
