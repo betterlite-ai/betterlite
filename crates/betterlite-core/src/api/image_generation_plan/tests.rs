@@ -420,6 +420,19 @@ fn unexpected_return_keeps_the_azure_provider() {
     );
 }
 
+fn caller_provider_does_not_drive_attribution() {
+    let mut invocation = keyword_call(Some("openai/dall-e-2"));
+    invocation.call.custom_llm_provider = Some(String::from("azure"));
+    let (result, _) = scripted(Script::Unexpected, invocation);
+    let error = result.expect_err("the integer return is refused");
+    let (class, _) = raised_class(&error);
+    assert_eq!(
+        connection(class).provider.as_deref(),
+        Some("openai"),
+        "only the model and api_base reach get_llm_provider"
+    );
+}
+
 fn empty_provider_falls_back_to_openai() {
     let fallback = refused(&redactor(), INVALID_RESPONSE, "some-model", "");
     let (class, _) = raised_class(&fallback);
@@ -548,6 +561,7 @@ fn async_generation_result_shapes() {
     coroutine_is_awaited_once();
     unexpected_return_is_refused();
     unexpected_return_keeps_the_azure_provider();
+    caller_provider_does_not_drive_attribution();
     empty_provider_falls_back_to_openai();
     unresolved_model_is_a_bad_request();
     callee_unknown_provider_reaches_the_caller();
