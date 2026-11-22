@@ -175,7 +175,7 @@ fn reaches_config_embedding_through_the_perplexity_adapter() {
     assert_eq!(content_type.to_str().unwrap(), "application/json");
     assert_eq!(sent.http.headers.len(), 2);
     assert_eq!(sent.http.deadline, Duration::from_secs(3));
-    assert_eq!(sent.client_model.as_deref(), Some("pplx-embed-v1-0.6b"));
+    assert_eq!(sent.client_model.as_deref(), Some("pplx"));
     assert_eq!(
         body(&sent.http.body),
         json(
@@ -251,6 +251,24 @@ fn reaches_config_embedding_reply_decodes_int8_into_floats() {
         serde_json::to_string(&response.data[0].embedding).unwrap(),
         "[0.0,1.0,-1.0]"
     );
+}
+
+#[test]
+fn reaches_config_embedding_reply_names_the_client_model() {
+    let prepared = Perplexity
+        .prepare(
+            &embedding_operation(r#"{"model":"pplx-embed","input":"hello"}"#),
+            &perplexity_deployment(Some("sk-deployment")),
+            &catalog(),
+        )
+        .unwrap();
+    let reply = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":"AH+B"}],"model":"pplx-embed-v1-0.6b","usage":{"total_tokens":2}}"#;
+    let OperationResult::Embedding(response) =
+        Perplexity.decode(&prepared, buffered(200, reply)).unwrap()
+    else {
+        panic!("an embedding response");
+    };
+    assert_eq!(response.model, "pplx-embed");
 }
 
 #[rstest]

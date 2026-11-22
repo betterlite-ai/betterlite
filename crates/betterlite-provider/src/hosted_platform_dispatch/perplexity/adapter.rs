@@ -68,12 +68,15 @@ impl Adapter for Perplexity {
             Ok(reply) => reply,
             Err(error) => return Err(reply_error(error, checked)),
         };
-        let decoded = serde_json::to_vec(&reply)
+        let mut decoded = serde_json::to_vec(&reply)
             .and_then(|bytes| serde_json::from_slice::<EmbeddingResponse>(&bytes))
             .map_err(|source| OperationError::Decode {
                 operation: "embedding",
                 source,
             })?;
+        if let Some(reply_model) = &sent.client_model {
+            reply_model.clone_into(&mut decoded.model);
+        }
         Ok(OperationResult::Embedding(Box::new(decoded)))
     }
 }
@@ -119,10 +122,11 @@ fn prepared_embedding(
         deadline: resolved.timeout,
         body_limit: None,
     };
+    let client_model = operation.request.model.clone().unwrap_or(resolved.model);
     Ok(PreparedRequest::Embedding(Box::new(PreparedChat {
         http,
         retry: TransformRetry::DISABLED,
-        client_model: Some(resolved.model),
+        client_model: Some(client_model),
     })))
 }
 
