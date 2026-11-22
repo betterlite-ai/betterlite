@@ -2,7 +2,6 @@ use super::error::HealthProbeError;
 use super::evaluation::EvaluationCallParams;
 use super::logging::HealthProbeLogging;
 use super::mode::HealthProbeMode;
-use super::params::HealthProbeParams;
 use betterlite_models::decisions::Json;
 use betterlite_ocr::ocr_document::OcrDocument;
 use indexmap::IndexMap;
@@ -50,16 +49,6 @@ pub struct EvaluationCall {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HealthProbeReply {
     pub hidden_headers: BTreeMap<String, String>,
-}
-pub(crate) fn probe_call(
-    parameters: IndexMap<String, Json>,
-    params: &HealthProbeParams,
-) -> ProbeCall {
-    ProbeCall {
-        parameters,
-        api_key: params.api_key.clone(),
-        logging: params.litellm_logging_obj.clone(),
-    }
 }
 pub(crate) fn ensure_absent(
     parameters: &IndexMap<String, Json>,

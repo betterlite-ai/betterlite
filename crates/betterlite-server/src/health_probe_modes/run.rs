@@ -2,7 +2,7 @@ use super::backend::{HealthProbeBackend, OcrHealthDocuments};
 use super::batch::probe_batch_mode;
 use super::calls::{
     AudioTranscriptionCall, HealthProbeReply, OcrCall, ProbeCall, RealtimeCall, add_parameter,
-    ensure_absent, probe_call,
+    ensure_absent,
 };
 use super::error::HealthProbeError;
 use super::evaluation::evaluation_call;
@@ -19,17 +19,6 @@ struct ProbeRequest<'plan> {
     params: &'plan HealthProbeParams,
     prompt: Option<&'plan str>,
     input: Option<&'plan [String]>,
-}
-impl<'plan> ProbeRequest<'plan> {
-    fn new(plan: &'plan HealthProbePlan) -> Self {
-        Self {
-            model: &plan.model,
-            custom_llm_provider: &plan.custom_llm_provider,
-            params: &plan.params,
-            prompt: plan.prompt.as_deref(),
-            input: plan.input.as_deref(),
-        }
-    }
 }
 // the modes whose backend method takes the probe call built from the health check parameters
 enum ProbeCallMode {
@@ -91,10 +80,20 @@ pub async fn run_health_probe(
     backend: &dyn HealthProbeBackend,
     documents: &dyn OcrHealthDocuments,
 ) -> Result<HealthProbeReply, HealthProbeError> {
-    let probe = ProbeRequest::new(&plan);
+    let probe = ProbeRequest {
+        model: &plan.model,
+        custom_llm_provider: &plan.custom_llm_provider,
+        params: &plan.params,
+        prompt: plan.prompt.as_deref(),
+        input: plan.input.as_deref(),
+    };
     match probe_route(plan.mode) {
         Ok(mode) => {
-            let call = probe_call(mode_parameters(plan.mode, &probe)?, probe.params);
+            let call = ProbeCall {
+                parameters: mode_parameters(plan.mode, &probe)?,
+                api_key: probe.params.api_key.clone(),
+                logging: probe.params.litellm_logging_obj.clone(),
+            };
             send_probe_call(mode, backend, call).await
         }
         Err(SpecialMode::AudioTranscription) => {
@@ -103,7 +102,18 @@ pub async fn run_health_probe(
                 .await
         }
         Err(SpecialMode::ImageEdit) => probe_image_edit(probe.params, backend).await,
-        Err(SpecialMode::Realtime) => backend.realtime(realtime_call(&probe)).await,
+        Err(SpecialMode::Realtime) => {
+            let call = RealtimeCall {
+                model: probe.model.to_owned(),
+                custom_llm_provider: probe.custom_llm_provider.to_owned(),
+                api_base: probe.params.api_base.as_option().cloned(),
+                api_key: probe.params.api_key.clone(),
+                api_version: probe.params.api_version.as_option().cloned(),
+                model_params: probe.params.call_parameters(true)?,
+                logging: probe.params.litellm_logging_obj.clone(),
+            };
+            backend.realtime(call).await
+        }
         Err(SpecialMode::Batch) => {
             probe_batch_mode(probe.custom_llm_provider, probe.params, backend).await
         }
@@ -120,7 +130,7 @@ fn mode_parameters(
 ) -> Result<IndexMap<String, Json>, HealthProbeError> {
     let mut parameters = request
         .params
-        .call_parameters(mode == HealthProbeMode::Chat);
+        .call_parameters(mode == HealthProbeMode::Chat)?;
     if mode == HealthProbeMode::AudioSpeech && !parameters.contains_key("voice") {
         parameters.insert("voice".to_owned(), Json::Text("alloy".to_owned()));
     }
@@ -185,17 +195,6 @@ fn audio_transcription_call(
         logging: request.params.litellm_logging_obj.clone(),
     };
     Ok(call)
-}
-fn realtime_call(request: &ProbeRequest<'_>) -> RealtimeCall {
-    RealtimeCall {
-        model: request.model.to_owned(),
-        custom_llm_provider: request.custom_llm_provider.to_owned(),
-        api_base: request.params.api_base.as_option().cloned(),
-        api_key: request.params.api_key.clone(),
-        api_version: request.params.api_version.as_option().cloned(),
-        model_params: request.params.call_parameters(true),
-        logging: request.params.litellm_logging_obj.clone(),
-    }
 }
 fn ocr_call(
     mode: HealthProbeMode,

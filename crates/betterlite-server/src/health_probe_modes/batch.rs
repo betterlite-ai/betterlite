@@ -1,5 +1,5 @@
 use super::backend::HealthProbeBackend;
-use super::calls::{HealthProbeReply, probe_call};
+use super::calls::{HealthProbeReply, ProbeCall};
 use super::error::HealthProbeError;
 use super::logging::ProbeLoggingUpdate;
 use super::params::HealthProbeParams;
@@ -18,19 +18,27 @@ pub async fn probe_batch_mode(
     params: &HealthProbeParams,
     backend: &dyn HealthProbeBackend,
 ) -> Result<HealthProbeReply, HealthProbeError> {
-    let filtered = params.call_parameters(false);
+    let filtered = params.call_parameters(false)?;
     update_logging(params, &filtered)?;
     if !BATCH_PROVIDERS.contains(&custom_llm_provider) {
-        return backend
-            .chat(probe_call(params.call_parameters(true), params))
-            .await;
+        let call = ProbeCall {
+            parameters: params.call_parameters(true)?,
+            api_key: params.api_key.clone(),
+            logging: params.litellm_logging_obj.clone(),
+        };
+        return backend.chat(call).await;
     }
     let mut parameters = filtered;
     parameters.insert(
         "custom_llm_provider".to_owned(),
         Json::Text(custom_llm_provider.to_owned()),
     );
-    backend.batch(probe_call(parameters, params)).await
+    let call = ProbeCall {
+        parameters,
+        api_key: params.api_key.clone(),
+        logging: params.litellm_logging_obj.clone(),
+    };
+    backend.batch(call).await
 }
 fn update_logging(
     params: &HealthProbeParams,

@@ -64,7 +64,7 @@ pub(crate) fn evaluation_call(
         Json::Object(evaluation_questions(custom_llm_provider)),
     );
     // the filtered keys come last, so a state or questions key in the parameters wins
-    for (key, value) in params.call_parameters(false) {
+    for (key, value) in params.call_parameters(false)? {
         payload.insert(key, value);
     }
     let mut validated = validate_payload(payload)?;
@@ -74,12 +74,6 @@ pub(crate) fn evaluation_call(
         logging: params.litellm_logging_obj.clone(),
     })
 }
-fn invalid_field(key: &'static str, detail: &str) -> HealthProbeError {
-    HealthProbeError::EvaluationPayload {
-        field: key,
-        detail: detail.to_owned(),
-    }
-}
 fn take_field<F>(
     payload: &mut IndexMap<String, Json>,
     key: &'static str,
@@ -88,9 +82,10 @@ where
     F: DeserializeOwned,
 {
     let value = payload.shift_remove(key).unwrap_or(Json::Null);
-    let text =
-        serde_json::to_string(&value).map_err(|error| invalid_field(key, &error.to_string()))?;
-    serde_json::from_str(&text).map_err(|error| invalid_field(key, &error.to_string()))
+    let text = serde_json::to_string(&value)
+        .map_err(|source| HealthProbeError::EvaluationPayload { field: key, source })?;
+    serde_json::from_str(&text)
+        .map_err(|source| HealthProbeError::EvaluationPayload { field: key, source })
 }
 fn validate_payload(
     mut payload: IndexMap<String, Json>,

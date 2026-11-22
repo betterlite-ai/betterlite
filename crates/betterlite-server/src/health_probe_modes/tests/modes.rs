@@ -63,6 +63,24 @@ async fn mode_chat_keeps_messages_and_every_parameter() {
     assert_eq!(temperature, "0.2");
 }
 
+#[tokio::test]
+async fn mode_cache_marker_reaches_the_probe_call() {
+    let backend = FakeBackend::new();
+    let params = probe_params_from_json(r#"{"model":"gpt-5","cache":{"no-cache":true}}"#);
+    run_mode(
+        "completion",
+        "openai",
+        params,
+        HealthProbeArguments::default(),
+        &backend,
+    )
+    .await
+    .unwrap();
+    let call = backend.take_completion();
+    let cache = serde_json::to_string(call.parameters.get("cache").unwrap()).unwrap();
+    assert_eq!(cache, r#"{"no-cache":true}"#);
+}
+
 #[rstest]
 #[case::missing(None, "test")]
 #[case::empty(Some(""), "test")]

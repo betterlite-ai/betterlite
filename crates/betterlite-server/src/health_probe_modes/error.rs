@@ -9,6 +9,12 @@ use thiserror::Error;
 pub enum HealthProbeError {
     #[error("the health check parameter {key} must be a string")]
     ParameterType { key: &'static str },
+    #[error("the health check parameter {key} cannot be converted into the call JSON")]
+    ParameterValue {
+        key: String,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error(
         "the {mode} health check cannot add {key}, because the model parameters already set it"
     )]
@@ -20,8 +26,12 @@ pub enum HealthProbeError {
         "Unable to health check wildcard model for provider {provider}. Add a model on your config.yaml or contribute here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json"
     )]
     NoCheapModel { provider: String },
-    #[error("the evaluation health check field {field} is invalid: {detail}")]
-    EvaluationPayload { field: &'static str, detail: String },
+    #[error("the evaluation health check field {field} is invalid")]
+    EvaluationPayload {
+        field: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("no ocr health check document is available for {model} through {custom_llm_provider}")]
     OcrDocumentUnavailable {
         model: String,

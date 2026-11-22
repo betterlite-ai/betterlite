@@ -1,5 +1,5 @@
 use super::backend::{CheapestChatModels, HealthProbeBackend};
-use super::calls::probe_call;
+use super::calls::ProbeCall;
 use super::error::HealthProbeError;
 use super::params::{HealthProbeParams, Param};
 use super::response::HealthCheckResponse;
@@ -25,7 +25,11 @@ pub async fn probe_wildcard_model(
     if matches!(params.max_tokens, Param::Absent) {
         params.max_tokens = Param::Value(Json::Number(Number::from(HEALTH_CHECK_MAX_TOKENS)));
     }
-    let call = probe_call(params.call_parameters(true), &params);
+    let call = ProbeCall {
+        parameters: params.call_parameters(true)?,
+        api_key: params.api_key.clone(),
+        logging: params.litellm_logging_obj.clone(),
+    };
     backend.chat(call).await?;
     Ok(HealthCheckResponse::default())
 }

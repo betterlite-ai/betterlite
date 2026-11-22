@@ -9,7 +9,7 @@ pub async fn probe_image_edit(
     params: &HealthProbeParams,
     backend: &dyn HealthProbeBackend,
 ) -> Result<HealthProbeReply, HealthProbeError> {
-    let parameters = params.call_parameters(false);
+    let parameters = params.call_parameters(false)?;
     ensure_absent(&parameters, "image", HealthProbeMode::ImageEdit)?;
     ensure_absent(&parameters, "prompt", HealthProbeMode::ImageEdit)?;
     let call = ImageEditCall {

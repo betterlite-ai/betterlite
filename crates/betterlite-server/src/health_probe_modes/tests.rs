@@ -136,7 +136,7 @@ async fn evaluation_parameters_override_the_built_state_and_questions() {
     let questions = serde_json::to_string(&call.params.questions).unwrap();
     assert_eq!(
         questions,
-        r#"{"custom":{"type":"noul","instructions":"custom question"}}"#
+        r#"{"custom":{"type":"noul","instructions":"custom question","criteria":null}}"#
     );
 }
 
@@ -669,8 +669,8 @@ fn response_filtered_parameters_remove_messages() {
         r#""temperature":0.2}"#
     );
     let params = probe_params_from_json(entries);
-    let full = params.call_parameters(true);
-    let filtered = params.call_parameters(false);
+    let full = params.call_parameters(true).unwrap();
+    let filtered = params.call_parameters(false).unwrap();
     assert!(full.contains_key("messages"));
     assert!(!filtered.contains_key("messages"));
     assert_eq!(filtered.get("temperature"), full.get("temperature"));
@@ -682,8 +682,18 @@ fn response_filtered_parameters_drop_a_raw_messages_key() {
     params
         .parameters
         .insert("messages".to_owned(), serde_json::json!([]));
-    assert!(!params.call_parameters(false).contains_key("messages"));
-    assert!(params.call_parameters(true).contains_key("messages"));
+    assert!(
+        !params
+            .call_parameters(false)
+            .unwrap()
+            .contains_key("messages")
+    );
+    assert!(
+        params
+            .call_parameters(true)
+            .unwrap()
+            .contains_key("messages")
+    );
 }
 
 #[test]

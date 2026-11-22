@@ -10,7 +10,7 @@ use betterlite_server::health_probe_modes::tracking::add_tracking_information;
 use betterlite_server::health_probe_modes::wildcard::probe_wildcard_model;
 use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 pub(super) async fn mode_step(step: &ModeStep) -> Value {
     let entries: IndexMap<String, Value> = step.params.clone().into_iter().collect();
     let mut params = match HealthProbeParams::from_map(entries) {
@@ -37,7 +37,10 @@ pub(super) async fn mode_step(step: &ModeStep) -> Value {
     ) else {
         return json!({"error": {"kind": "mode", "detail": &step.mode}});
     };
-    let calls = Recorder::new(step.failure.as_ref());
+    let calls = Recorder {
+        calls: Mutex::new(Vec::new()),
+        failure: step.failure.clone(),
+    };
     match run_health_probe(plan, &calls, &MissingDocuments).await {
         Ok(_) => success_outcome(step, &calls, &updates),
         Err(error) => mode_error(step, &error),
@@ -51,7 +54,10 @@ pub(super) async fn wildcard_step(step: &WildcardStep) -> Value {
             return json!({"error": {"kind": "other", "detail": error.to_string()}});
         }
     };
-    let calls = Recorder::new(None);
+    let calls = Recorder {
+        calls: Mutex::new(Vec::new()),
+        failure: None,
+    };
     let cheapest = FixedCheapest {
         models: step.cheapest.clone(),
     };
@@ -137,6 +143,7 @@ fn mode_error(step: &ModeStep, error: &HealthProbeError) -> Value {
             json!({"error": {"kind": "backend", "detail": class}})
         }
         HealthProbeError::ParameterType { .. }
+        | HealthProbeError::ParameterValue { .. }
         | HealthProbeError::NoCheapModel { .. }
         | HealthProbeError::OcrDocumentUnavailable { .. }
         | HealthProbeError::HealthImage { .. }

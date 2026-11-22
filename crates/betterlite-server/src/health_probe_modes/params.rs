@@ -69,12 +69,12 @@ impl HealthProbeParams {
             .as_option()
             .cloned()
             .map(SecretString::from);
-        let max_tokens = take_json(&mut parameters, "max_tokens");
-        let voice = take_json(&mut parameters, "voice");
-        let messages = take_json(&mut parameters, "messages");
-        let fallbacks = take_json(&mut parameters, "fallbacks");
-        let litellm_metadata = take_json(&mut parameters, "litellm_metadata");
-        let cache = take_json(&mut parameters, "cache");
+        let max_tokens = take_json(&mut parameters, "max_tokens")?;
+        let voice = take_json(&mut parameters, "voice")?;
+        let messages = take_json(&mut parameters, "messages")?;
+        let fallbacks = take_json(&mut parameters, "fallbacks")?;
+        let litellm_metadata = take_json(&mut parameters, "litellm_metadata")?;
+        let cache = take_json(&mut parameters, "cache")?;
         let params = Self {
             model,
             api_base,
@@ -93,8 +93,10 @@ impl HealthProbeParams {
         Ok(params)
     }
     // the provider call kwargs, without api_key and the logging object: both travel as typed fields
-    #[must_use]
-    pub fn call_parameters(&self, include_messages: bool) -> IndexMap<String, Json> {
+    pub fn call_parameters(
+        &self,
+        include_messages: bool,
+    ) -> Result<IndexMap<String, Json>, HealthProbeError> {
         let mut parameters = IndexMap::new();
         insert_parameter(&mut parameters, "model", &self.model);
         insert_parameter(&mut parameters, "api_base", &self.api_base);
@@ -114,10 +116,16 @@ impl HealthProbeParams {
         insert_parameter(&mut parameters, "cache", &self.cache);
         for (key, value) in &self.parameters {
             if include_messages || key != "messages" {
-                parameters.insert(key.clone(), json_from_value(value.clone()));
+                let typed = serde_json::from_value(value.clone()).map_err(|source| {
+                    HealthProbeError::ParameterValue {
+                        key: key.clone(),
+                        source,
+                    }
+                })?;
+                parameters.insert(key.clone(), typed);
             }
         }
-        parameters
+        Ok(parameters)
     }
 }
 fn take_text(
@@ -131,11 +139,22 @@ fn take_text(
         Some(_) => Err(HealthProbeError::ParameterType { key }),
     }
 }
-fn take_json(parameters: &mut IndexMap<String, Value>, key: &'static str) -> Param<Json> {
-    parameters.shift_remove(key).map_or_else(
-        || Param::Absent,
-        |value| Param::Value(json_from_value(value)),
-    )
+fn take_json(
+    parameters: &mut IndexMap<String, Value>,
+    key: &'static str,
+) -> Result<Param<Json>, HealthProbeError> {
+    match parameters.shift_remove(key) {
+        None => Ok(Param::Absent),
+        Some(value) => {
+            let typed = serde_json::from_value(value).map_err(|source| {
+                HealthProbeError::ParameterValue {
+                    key: key.to_owned(),
+                    source,
+                }
+            })?;
+            Ok(Param::Value(typed))
+        }
+    }
 }
 trait ParameterJson {
     fn parameter_json(&self) -> Json;
@@ -162,20 +181,5 @@ where
         Param::Value(inner) => {
             parameters.insert(key.to_owned(), inner.parameter_json());
         }
-    }
-}
-fn json_from_value(value: Value) -> Json {
-    match value {
-        Value::Null => Json::Null,
-        Value::Bool(flag) => Json::Bool(flag),
-        Value::Number(number) => Json::Number(number),
-        Value::String(text) => Json::Text(text),
-        Value::Array(items) => Json::List(items.into_iter().map(json_from_value).collect()),
-        Value::Object(entries) => Json::Object(
-            entries
-                .into_iter()
-                .map(|(key, entry)| (key, json_from_value(entry)))
-                .collect(),
-        ),
     }
 }

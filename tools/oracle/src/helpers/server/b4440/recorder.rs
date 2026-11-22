@@ -19,15 +19,9 @@ use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 pub(super) struct Recorder {
     pub(super) calls: Mutex<Vec<Value>>,
-    failure: Option<Failure>,
+    pub(super) failure: Option<Failure>,
 }
 impl Recorder {
-    pub(super) fn new(failure: Option<&Failure>) -> Self {
-        Self {
-            calls: Mutex::new(Vec::new()),
-            failure: failure.cloned(),
-        }
-    }
     // the arguments a recorded call carries, as the oracle compares them: arbitrary provider JSON
     fn note<T>(&self, name: &str, arguments: &T) -> Result<HealthProbeReply, HealthProbeError>
     where
