@@ -119,6 +119,7 @@ fn written(outcome: Result<PtuPricingDelta, PtuPricingError>) -> JsonObject {
 #[case::float_zero("0.0", [false, false, true])]
 #[case::negative_zero("-0.0", [false, false, true])]
 #[case::exponent_zero("0e3", [false, false, true])]
+#[case::zero_below_decimal_scale("0e-30", [false, false, true])]
 #[case::positive_rate("0.000002", [true, true, false])]
 #[case::negative_rate("-1", [true, true, false])]
 #[case::rate_past_decimal_range("1e400", [true, true, false])]
@@ -165,6 +166,7 @@ fn explicit_zero_price(#[case] text: &str, #[case] expected: [bool; 3]) {
     true,
     None
 )]
+#[case::zero_below_decimal_scale(PTU_INFO, r#"{"input_cost_per_token": 0e-30}"#, true, None)]
 #[case::non_rate_fields(PTU_INFO, r#"{"output_vector_size": 3, "rpm": 10}"#, true, None)]
 #[case::attribution_off(PTU_INFO, r#"{"input_cost_per_token": 0.000002}"#, false, None)]
 #[case::count_alone(
@@ -323,8 +325,9 @@ fn clear_ptu_field(
     #[case] enabled: bool,
     #[case] expected: &[&str],
 ) {
+    // 0e-30 is a zero LiteLLM releases though its scale is past what Decimal can hold
     let model_info = object(
-        r#"{"id": "m1", "input_cost_per_token": 0.0, "output_cost_per_token": 0.00001, "tiered_pricing": [],
+        r#"{"id": "m1", "input_cost_per_token": 0e-30, "output_cost_per_token": 0.00001, "tiered_pricing": [],
             "search_context_cost_per_query": {"search_context_size_low": 0.0, "search_context_size_high": 0}}"#,
     );
     let params = object(
