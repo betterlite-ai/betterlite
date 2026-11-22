@@ -88,12 +88,12 @@ fn reduces_a_url_to_its_path(#[case] url: &str, #[case] expected: Option<&str>) 
     assert_eq!(url_path(url).as_deref(), expected);
 }
 
-fn scanned_as(url: Option<RecordJson>, body: &str) -> Option<CallType> {
-    scannable_call_type(&routes(), url.as_ref(), &object(body))
+fn scanned_as(url: Option<&RecordJson>, body: &str) -> Option<CallType> {
+    scannable_call_type(&routes(), url, &object(body))
 }
 
-fn text(url: &str) -> Option<RecordJson> {
-    Some(RecordJson::Text(RecordText::from(url)))
+fn text(url: &str) -> RecordJson {
+    RecordJson::Text(RecordText::from(url))
 }
 
 #[rstest]
@@ -111,37 +111,37 @@ fn text(url: &str) -> Option<RecordJson> {
 #[case::order_is_the_table_order(None, r#"{"input":1,"messages":[]}"#, Some(CallType::Acompletion))]
 #[case::nothing(None, "{}", None)]
 #[case::unknown_url(
-    text("/v1/unknown"),
+    Some(&text("/v1/unknown")),
     r#"{"prompt":"x"}"#,
     Some(CallType::AtextCompletion)
 )]
-#[case::empty_url(text(""), r#"{"input":"x"}"#, Some(CallType::Aembedding))]
-#[case::number_url(Some(RecordJson::Number("7".to_owned())), r#"{"input":"x"}"#, Some(CallType::Aembedding))]
+#[case::empty_url(Some(&text("")), r#"{"input":"x"}"#, Some(CallType::Aembedding))]
+#[case::number_url(Some(&RecordJson::Number("7".to_owned())), r#"{"input":"x"}"#, Some(CallType::Aembedding))]
 #[case::null_url(
-    Some(RecordJson::Null),
+    Some(&RecordJson::Null),
     r#"{"messages":[]}"#,
     Some(CallType::Acompletion)
 )]
-#[case::list_url(Some(RecordJson::List(Vec::new())), "{}", None)]
+#[case::list_url(Some(&RecordJson::List(Vec::new())), "{}", None)]
 #[case::malformed_url(
-    text("https://[::1/v1/responses"),
+    Some(&text("https://[::1/v1/responses")),
     r#"{"input":"x"}"#,
     Some(CallType::Aembedding)
 )]
 #[case::images_falls_back(
-    text("/v1/images/generations"),
+    Some(&text("/v1/images/generations")),
     r#"{"messages":[]}"#,
     Some(CallType::Acompletion)
 )]
-#[case::input_items_falls_back(text("/responses/r_1/input_items"), "{}", None)]
+#[case::input_items_falls_back(Some(&text("/responses/r_1/input_items")), "{}", None)]
 #[case::url_wins(
-    text("/v1/embeddings"),
+    Some(&text("/v1/embeddings")),
     r#"{"messages":[]}"#,
     Some(CallType::Aembedding)
 )]
-#[case::responses_input(text("/v1/responses"), r#"{"input":"x"}"#, Some(CallType::Aresponses))]
+#[case::responses_input(Some(&text("/v1/responses")), r#"{"input":"x"}"#, Some(CallType::Aresponses))]
 fn falls_back_to_the_body_shape(
-    #[case] url: Option<RecordJson>,
+    #[case] url: Option<&RecordJson>,
     #[case] body: &str,
     #[case] expected: Option<CallType>,
 ) {
@@ -154,7 +154,7 @@ fn a_surrogate_in_a_url_still_matches_a_placeholder() {
     code_points.push(0xD800);
     code_points.extend("/embeddings".chars().map(u32::from));
     let url = Some(RecordJson::Text(RecordText::from_code_points(&code_points)));
-    assert_eq!(scanned_as(url, "{}"), Some(CallType::Aembedding));
+    assert_eq!(scanned_as(url.as_ref(), "{}"), Some(CallType::Aembedding));
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn a_url_past_the_route_limit_falls_back() {
     let long = format!("/engines/{}/embeddings", "m".repeat(5000));
     assert_eq!(call_type_from_url(&routes(), &long), None);
     assert_eq!(
-        scanned_as(text(&long), r#"{"prompt":"x"}"#),
+        scanned_as(Some(&text(&long)), r#"{"prompt":"x"}"#),
         Some(CallType::AtextCompletion)
     );
 }

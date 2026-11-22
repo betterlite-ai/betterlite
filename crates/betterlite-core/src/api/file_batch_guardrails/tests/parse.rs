@@ -23,13 +23,10 @@ fn written(text: &str) -> String {
 #[case::repeated_key_keeps_first_place_last_value(r#"{"a":1,"b":2,"a":3}"#, r#"{"a":3,"b":2}"#)]
 #[case::whitespace(" {\t\"a\" :\r\n[ 1 , {} , [] ] } ", r#"{"a":[1,{},[]]}"#)]
 #[case::literals(
-    r#"[null,true,false,NaN,Infinity,-Infinity]"#,
-    r#"[null,true,false,NaN,Infinity,-Infinity]"#
+    "[null,true,false,NaN,Infinity,-Infinity]",
+    "[null,true,false,NaN,Infinity,-Infinity]"
 )]
-#[case::numbers(
-    r#"[-0,0,10,1.5,2E-3,1e+10,-7.25e1]"#,
-    r#"[-0,0,10,1.5,2E-3,1e+10,-7.25e1]"#
-)]
+#[case::numbers("[-0,0,10,1.5,2E-3,1e+10,-7.25e1]", "[-0,0,10,1.5,2E-3,1e+10,-7.25e1]")]
 #[case::escapes(r#""\"\\\/\b\f\n\r\t""#, r#""\"\\/\u0008\u000c\u000a\u000d\u0009""#)]
 #[case::unicode_escape(r#""\u00e9\u0041""#, "\"\u{e9}A\"")]
 #[case::surrogate_pair(r#""\ud83d\ude00""#, "\"\u{1f600}\"")]
@@ -46,17 +43,17 @@ fn reads_what_json_loads_reads(#[case] text: &str, #[case] expected: &str) {
 
 #[rstest]
 #[case::leading_zero(r#"{"a":01}"#)]
-#[case::bare_minus(r#"[-]"#)]
-#[case::minus_letter(r#"[-x]"#)]
-#[case::dangling_point(r#"[1.]"#)]
-#[case::dangling_exponent(r#"[1e]"#)]
-#[case::signed_dangling_exponent(r#"[1e+]"#)]
-#[case::trailing_list_comma(r#"[1,]"#)]
+#[case::bare_minus("[-]")]
+#[case::minus_letter("[-x]")]
+#[case::dangling_point("[1.]")]
+#[case::dangling_exponent("[1e]")]
+#[case::signed_dangling_exponent("[1e+]")]
+#[case::trailing_list_comma("[1,]")]
 #[case::trailing_object_comma(r#"{"a":1,}"#)]
-#[case::unquoted_key(r#"{a:1}"#)]
+#[case::unquoted_key(concat!("{", "a:1}"))]
 #[case::missing_colon(r#"{"a" 1}"#)]
-#[case::missing_separator(r#"[1 2]"#)]
-#[case::wrong_closer(r#"[1}"#)]
+#[case::missing_separator("[1 2]")]
+#[case::wrong_closer("[1}")]
 #[case::raw_control("\"a\u{1}\"")]
 #[case::raw_newline("\"a\nb\"")]
 #[case::unknown_escape(r#""\q""#)]
@@ -65,10 +62,10 @@ fn reads_what_json_loads_reads(#[case] text: &str, #[case] expected: &str) {
 #[case::signed_hex(r#""\u+123""#)]
 #[case::bad_low_hex(r#""\ud800\uzzzz""#)]
 #[case::unterminated(r#""abc"#)]
-#[case::truncated_true(r#"tr"#)]
-#[case::truncated_nan(r#"Na"#)]
-#[case::truncated_infinity(r#"-Inf"#)]
-#[case::extra_data(r#"{} x"#)]
+#[case::truncated_true("tr")]
+#[case::truncated_nan("Na")]
+#[case::truncated_infinity("-Inf")]
+#[case::extra_data(concat!("{", "} x"))]
 #[case::empty("")]
 #[case::only_whitespace(" \n")]
 #[case::unclosed_list("[1")]

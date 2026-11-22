@@ -10,7 +10,6 @@ mod support;
 use std::collections::{BTreeMap, BTreeSet};
 
 use rstest::rstest;
-use serde_json::json;
 
 use super::records::{
     BatchRejection, BatchScanFailure, BatchScanResult, RecordChange, RecordDropped, RecordRedacted,
@@ -102,14 +101,8 @@ fn reports_each_change_without_its_spool_offsets() {
     let scan = result(vec![redacted(2, "a"), dropped(3, "b", Some("g"))], 3);
     assert_eq!(scan.submitted_records(), 2);
     assert_eq!(
-        serde_json::to_value(scan.report()).unwrap(),
-        json!({
-            "submitted_records": 2,
-            "modified_records": [
-                {"line": 2, "custom_id": "a", "action": "redacted", "guardrail": null},
-                {"line": 3, "custom_id": "b", "action": "dropped", "guardrail": "g"},
-            ],
-        })
+        serde_json::to_string(&scan.report()).unwrap(),
+        r#"{"submitted_records":2,"modified_records":[{"line":2,"custom_id":"a","action":"redacted","guardrail":null},{"line":3,"custom_id":"b","action":"dropped","guardrail":"g"}]}"#
     );
     assert_eq!(
         scan.summary(),

@@ -52,23 +52,23 @@ fn utf8_sequence(bytes: &[u8]) -> Option<(u32, &[u8])> {
 }
 
 fn utf16_code_points(bytes: &[u8], read: fn([u8; 2]) -> u16) -> Option<Vec<u32>> {
-    let pairs = bytes.chunks_exact(2);
-    let whole = pairs.remainder().is_empty();
-    let units = pairs.filter_map(|pair| <[u8; 2]>::try_from(pair).ok().map(read));
+    let (pairs, remainder) = bytes.as_chunks::<2>();
+    let units = pairs.iter().map(|pair| read(*pair));
     let decoded = char::decode_utf16(units)
         .map(|unit| unit.map_or_else(|lone| u32::from(lone.unpaired_surrogate()), u32::from));
-    whole.then(|| decoded.collect())
+    remainder.is_empty().then(|| decoded.collect())
 }
 
 fn wide_code_points(bytes: &[u8], read: fn([u8; 4]) -> u32) -> Option<Vec<u32>> {
-    let quads = bytes.chunks_exact(4);
-    if !quads.remainder().is_empty() {
+    let (quads, remainder) = bytes.as_chunks::<4>();
+    if !remainder.is_empty() {
         return None;
     }
     quads
+        .iter()
         .map(|quad| {
-            let code_point = <[u8; 4]>::try_from(quad).ok().map(read);
-            code_point.filter(|value| *value <= MAX_CODE_POINT)
+            let code_point = read(*quad);
+            (code_point <= MAX_CODE_POINT).then_some(code_point)
         })
         .collect()
 }

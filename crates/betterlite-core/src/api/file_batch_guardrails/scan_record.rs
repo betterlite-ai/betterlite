@@ -155,7 +155,7 @@ fn redaction(
     let compared: BTreeSet<&RecordText> = body
         .keys()
         .chain(scanned.keys())
-        .filter(|key| !injected(*key))
+        .filter(|key| !injected(key))
         .collect();
     if fingerprint(&scanned, &compared) == fingerprint(body, &compared) {
         return None;
