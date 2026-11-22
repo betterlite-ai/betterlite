@@ -84,7 +84,7 @@ impl ImageEditException {
             ),
             // LiteLLM raises UnsupportedParamsError itself and exception_type passes it through: 400, no type, param null, no code
             ImageEditError::Options(ImageInputOptionsError::UnsupportedParams { .. }) => {
-                unsupported_params(error, model, provider)
+                Self::unsupported_params(error, model, provider)
             }
             ImageEditError::UnsupportedConfig { .. }
             | ImageEditError::FormField(_)
