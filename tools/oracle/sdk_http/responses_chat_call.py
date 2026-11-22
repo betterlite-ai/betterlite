@@ -3,11 +3,11 @@ from collections.abc import Coroutine
 from typing import Final
 
 import openai
-from litellm.proxy import proxy_server
-from litellm.proxy.db.prisma_client import PrismaWrapper
-from litellm.proxy.utils import PrismaClient
 from litellm.responses.litellm_completion_transformation.handler import (
     LiteLLMCompletionTransformationHandler,
+)
+from litellm.responses.litellm_completion_transformation.session_handler import (
+    ResponsesSessionHandler,
 )
 from litellm.responses.litellm_completion_transformation.streaming_iterator import (
     LiteLLMCompletionStreamingIterator as Iterator,
@@ -90,26 +90,16 @@ class Recorder:
         self.rows = rows
         self.lookups: list[str] = []
 
-
-class FakeWrapper(PrismaWrapper):
-    def __init__(self, recorder: Recorder) -> None:
-        self.recorder = recorder
-
-    async def query_raw(self, _sql: str, request_id: str) -> list[dict[str, JsonValue]]:
-        self.recorder.lookups.append(request_id)
-        return self.recorder.rows
+    # the spend repository the session handler queries, returning the scripted rows
+    async def spend_logs(self, previous_response_id: str) -> list[dict[str, JsonValue]]:
+        self.lookups.append(previous_response_id)
+        return list(self.rows)
 
 
-class FakePrismaClient(PrismaClient):
-    def __init__(self, wrapper: FakeWrapper) -> None:
-        self.db = wrapper
-
-
-# the session handler resolves both names at call time, so the module attribute is the seam
+# the handler resolves the spend repository on its class at call time, so it is the seam
 def install_history(rows: list[dict[str, JsonValue]]) -> Recorder:
     recorder = Recorder(rows)
-    proxy_server.prisma_client = FakePrismaClient(FakeWrapper(recorder))
-    proxy_server.disable_spend_logs = True
+    ResponsesSessionHandler.get_all_spend_logs_for_previous_response_id = recorder.spend_logs  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/session_handler.py#L266-L306
     return recorder
 
 
