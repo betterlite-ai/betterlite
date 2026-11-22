@@ -5,7 +5,6 @@ call:
   image_generation_call:
     prompt: cat
     model: azure_ai/flux
-    base_model: azure-ai/base
     api_key: foundry-key
     headers: {Authorization: "Bearer caller"}
 upstream:

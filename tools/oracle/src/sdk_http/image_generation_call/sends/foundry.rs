@@ -2,7 +2,7 @@ use betterlite_core::api::image_generation_call::operations::{BranchAnswer, Foun
 use betterlite_error::dispatch::RawException;
 use betterlite_http::proxy::ProxiedClient;
 
-use super::{Post, answer, model_prompt_body};
+use super::{Post, answer, prompt_body};
 
 const FOUNDRY_DEFAULT_VERSION: &str = "2025-02-01-preview";
 
@@ -14,11 +14,7 @@ pub(in crate::sdk_http::image_generation_call) async fn send(
     let base = request.api_base.unwrap_or_default().trim_end_matches('/');
     let version = request.api_version.unwrap_or(FOUNDRY_DEFAULT_VERSION);
     let url = format!("{base}/openai/deployments/{model}/images/generations?api-version={version}");
-    let body = model_prompt_body(
-        request.base_model.unwrap_or(model),
-        request.prompt,
-        request.optional_params,
-    );
+    let body = prompt_body(request.prompt, request.optional_params);
     answer(
         client,
         Post {

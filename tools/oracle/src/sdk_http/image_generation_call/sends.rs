@@ -85,6 +85,14 @@ async fn post(
     Ok(response)
 }
 
+// LiteLLM's azure_deployment_image_generation_json_body drops the model key on this deployment-scoped URL
+pub(super) fn prompt_body(prompt: &str, optional_params: &IndexMap<String, Json>) -> Json {
+    let mut body = IndexMap::new();
+    body.insert(String::from("prompt"), Json::Text(prompt.to_owned()));
+    body.extend(optional_params.clone());
+    Json::Object(body)
+}
+
 pub(super) fn model_prompt_body(
     model: &str,
     prompt: &str,
