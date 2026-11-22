@@ -117,7 +117,12 @@ where
         let mut pending = u32::try_from(steps.len()).unwrap_or(1);
         let mut results = Vec::new();
         for step in steps {
-            let share = group_deadline(window.deadline, self.clock.now(), pending);
+            // the last table keeps the whole group deadline, as _group_deadline does for one group left
+            let share = if pending == 1 {
+                window.deadline
+            } else {
+                group_deadline(window.deadline, self.clock.now(), pending)
+            };
             results.push(self.delete_step(run, *step, cutoff, share).await);
             pending = pending.saturating_sub(1);
         }
