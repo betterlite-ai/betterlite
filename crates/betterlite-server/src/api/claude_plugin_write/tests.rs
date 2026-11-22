@@ -114,6 +114,7 @@ impl FakeStore {
                 enabled,
             },
         );
+        drop(guard);
     }
 
     fn row(&self, name: &str) -> Option<StoredPlugin> {
@@ -149,6 +150,7 @@ impl ClaudePluginStore for FakeStore {
         };
         guard.rows.insert(stored.name.clone(), stored.clone());
         guard.writes.push(write);
+        drop(guard);
         Ok(stored)
     }
 
@@ -164,6 +166,7 @@ impl ClaudePluginStore for FakeStore {
         existing.description = write.description.clone();
         let stored = existing.clone();
         guard.changes.push(write);
+        drop(guard);
         Ok(Some(stored))
     }
 
@@ -181,6 +184,7 @@ impl ClaudePluginStore for FakeStore {
             existing.enabled = enabled;
         }
         guard.toggles.push((plugin_name.to_owned(), enabled));
+        drop(guard);
         Ok(())
     }
 
@@ -191,6 +195,7 @@ impl ClaudePluginStore for FakeStore {
         let mut guard = self.state.lock().expect("the fake store");
         guard.rows.remove(plugin_name);
         guard.deleted.push(plugin_name.to_owned());
+        drop(guard);
         Ok(())
     }
 }
@@ -400,6 +405,7 @@ async fn role_admin_records_the_key_owner() {
     let guard = store.state.lock().expect("the fake store");
     let write = guard.writes.first().expect("the recorded write");
     assert_eq!(write.created_by.as_deref(), Some("key-owner"));
+    drop(guard);
 }
 
 #[rstest]
@@ -483,6 +489,7 @@ async fn plugin_update_source(
     assert_eq!(row.description.as_deref(), Some("replaced"));
     assert_eq!(row.version.as_deref(), Some("2.0.0"));
     assert!(row.enabled);
+    drop(guard);
 }
 
 async fn toggle_call(store: &Arc<FakeStore>, plugin_name: &str, action: &str) -> Reply {

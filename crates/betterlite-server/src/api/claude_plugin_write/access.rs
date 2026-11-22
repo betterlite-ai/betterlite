@@ -25,9 +25,9 @@ pub(super) struct Gate {
 
 pub(super) fn gate(
     state: &ClaudePluginWriteState,
-    caller: Option<Extension<AuthContext>>,
+    extension: Option<Extension<AuthContext>>,
 ) -> Result<Gate, ClaudePluginWriteError> {
-    let Some(Extension(caller)) = caller else {
+    let Some(Extension(caller)) = extension else {
         return Err(ClaudePluginWriteError::Unauthenticated);
     };
     require_admin(&caller)?;
@@ -67,7 +67,7 @@ pub(super) fn creator_id(context: &AuthContext) -> Option<String> {
     None
 }
 
-pub(super) fn check_body(
+pub(super) const fn check_body(
     state: &ClaudePluginWriteState,
     body: &[u8],
 ) -> Result<(), ClaudePluginWriteError> {
@@ -102,9 +102,6 @@ pub(super) async fn require_present(
 
 // register, update and the lifecycle routes each wrap a table failure with their own prefix
 pub(super) fn table_failure(prefix: Option<&str>, source: &TableError) -> ClaudePluginWriteError {
-    let message = match prefix {
-        Some(prefix) => format!("{prefix}: {source}"),
-        None => source.to_string(),
-    };
+    let message = prefix.map_or_else(|| source.to_string(), |label| format!("{label}: {source}"));
     ClaudePluginWriteError::Backend { message }
 }

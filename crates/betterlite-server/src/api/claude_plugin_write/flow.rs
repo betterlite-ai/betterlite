@@ -51,7 +51,7 @@ fn create_input(
     })
 }
 
-fn update_write(plugin_name: String, spec: PluginSpec) -> ClaudePluginWriteInput {
+const fn update_write(plugin_name: String, spec: PluginSpec) -> ClaudePluginWriteInput {
     ClaudePluginWriteInput {
         action: ClaudePluginWriteAction::Update,
         plugin_name,
