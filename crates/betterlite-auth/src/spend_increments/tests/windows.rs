@@ -248,6 +248,25 @@ async fn an_invalid_duration_is_skipped_while_its_sibling_charges() {
     assert!(logs.contains("Skipping budget window with invalid duration"));
 }
 
+#[tokio::test]
+async fn a_non_string_duration_is_skipped_before_its_counter_key() {
+    let fixture = Fixture::new(false);
+    let logs = Logs::capture();
+    fixture.sources.put(
+        "tok",
+        r#"{"budget_limits": [{"budget_duration": 5, "reset_at": "2026-11-18T00:00:00+00:00"}]}"#,
+    );
+
+    increment_spend_counters(&input(Some("tok")), &fixture.services())
+        .await
+        .unwrap();
+
+    assert_eq!(fixture.counter("spend:key:tok").await, Some(decimal("2")));
+    assert_eq!(fixture.counter("spend:key:tok:window:5").await, None);
+    assert!(fixture.queue.records().is_empty());
+    assert!(logs.contains("Skipping budget window with invalid duration"));
+}
+
 #[rstest]
 #[case::list(
     r#"{"budget_limits": [{"budget_duration": "1d", "reset_at": "2026-11-18T00:00:00+00:00"}]}"#
