@@ -1,0 +1,9 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+general_settings:
+  enforced_params: null
+  service_account_settings: {}
+litellm_settings:
+  enable_model_config_credential_overrides: null

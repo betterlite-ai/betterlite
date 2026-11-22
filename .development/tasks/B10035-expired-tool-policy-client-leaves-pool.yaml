@@ -1,0 +1,72 @@
+id: B10035
+title: A tool policy client whose statement passed its deadline leaves the pool
+description: >-
+  Fix a flaky test on main and the pool bug behind it. The scheduled gate run https://github.com/betterlite-ai/betterlite/actions/runs/44997542337
+  (head 0e8778e617d) went red on one test, tool_policy_store::tests::cancel::refresh_cancels_a_read_past_the_deadline
+  in betterlite-db. It panicked at cancel.rs:70 after 0.401 s: the test's own lock_waiters query failed with SQLSTATE
+  57014, "canceling statement due to user request". The other 6034 tests passed.
+
+
+  The only cancel that test sends is the deadline's cancel for the bounded read, so that cancel reached the backend
+  that then ran lock_waiters. That backend is the read's own connection. cancel_statement reports the cancel as
+  delivered, discard_uncancelled (deadline.rs:58) then hands the client back to the pool, and Db::client takes it
+  from the same pool (max_size 2, the lock holder has the other one). cancel_query returns once the server has taken
+  the CancelRequest, and the server signals the backend later, so the cancel can land on whatever statement that
+  connection runs next. Production has the same hole: refresh.rs, blockers.rs, discovery.rs and policy_update.rs all
+  give an expired client back to the pool after a delivered cancel, and a late cancel then fails the next caller's
+  statement on it.
+
+
+  The fix is that a client whose statement passed its deadline never goes back to the pool, whether the cancel was
+  delivered or not. The cancel is still sent, so the server stops the statement. deadline.rs keeps one helper that
+  detaches the expired client, and the four callers use it. a_tls_required_cancel_stops_the_read_over_tls asserted
+  that the cancelled session stayed in the pool; it now expects the read after the cancel to open a new session.
+  B10031 fixed an earlier flake in the same test file.
+scope:
+  paths:
+  - crates/betterlite-db/src/tool_policy_store/deadline.rs
+  - crates/betterlite-db/src/tool_policy_store/refresh.rs
+  - crates/betterlite-db/src/tool_policy_store/blockers.rs
+  - crates/betterlite-db/src/tool_policy_store/discovery.rs
+  - crates/betterlite-db/src/tool_policy_store/policy_update.rs
+  - crates/betterlite-db/src/tool_policy_store/tests/cancel.rs
+  - crates/betterlite-db/src/tool_policy_store/tests/support.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    In refresh.rs, blockers.rs, discovery.rs and policy_update.rs a client whose statement passed its deadline leaves
+    the pool through one helper in deadline.rs, whether cancel_statement delivered the cancel or not, and the cancel is
+    still sent first.
+  proof: [tool-policy-store, cancel-stress]
+- text: >-
+    refresh_cancels_a_read_past_the_deadline asserts that after the read only the table-lock holder is left in the
+    pool, so lock_waiters runs on a connection that never served the read.
+  proof: [tool-policy-store]
+- text: >-
+    a_tls_required_cancel_stops_the_read_over_tls expects 3 TLS handshakes after the read that follows the cancel:
+    the first session, its cancel request and the new session.
+  proof: [tool-policy-store]
+checks:
+  optional: []
+  commands:
+  - id: tool-policy-store
+    why: A tool policy store test broke.
+    run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^tool_policy_store::tests::/)'
+  - id: cancel-stress
+    why: A tool policy cancel test still fails now and then.
+    run: cargo nextest run --locked -p betterlite-db --no-tests=fail --stress-count 30 -E 'test(/^tool_policy_store::tests::cancel::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Raising the deadlines. The tests wait on a table lock, so a longer deadline changes nothing about where the cancel lands.
+- Waiting for the cancelled statement's answer before reusing the client. A cancel that lands after the statement ended still hits the next one, so only leaving the pool closes the hole.
+- Statement deadlines outside tool_policy_store.
+pitfalls:
+- Db::client and the read share db.store's pool (max_size 2). Once the expired client leaves, lock_waiters gets a new connection; warm_pool before the read stays as it is.
+- Keep sending the cancel. Dropping the client alone leaves the statement running on the server until the lock clears, as a_cancel_that_never_answers_discards_the_connection shows.
+- deadpool_postgres::Object::take detaches the client from the pool, and dropping it closes the socket.
+review_level: standard
+budget:
+  max_changed_lines: 120
+  max_new_expects: 0
