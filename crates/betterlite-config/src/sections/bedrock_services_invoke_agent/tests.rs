@@ -33,25 +33,31 @@ fn invoke_agent_config_cases(#[case] check: fn()) {
     check();
 }
 
+const NO_ENVIRONMENT: &[(&str, &str)] = &[];
 const ENVIRONMENT: &[(&str, &str)] = &[("INVOKE_AGENT_SESSION_ID", "from-environment")];
 
 fn check_session_id() {
     for (params, settings, environment, expected) in [
-        ("", "", &[], None),
-        ("", "sessionID: global-value", &[], Some("global-value")),
+        ("", "", NO_ENVIRONMENT, None),
+        (
+            "",
+            "sessionID: global-value",
+            NO_ENVIRONMENT,
+            Some("global-value"),
+        ),
         (
             ", sessionID: deployment-value",
             "",
-            &[],
+            NO_ENVIRONMENT,
             Some("deployment-value"),
         ),
         (
             ", sessionID: deployment-value",
             "sessionID: global-value",
-            &[],
+            NO_ENVIRONMENT,
             Some("deployment-value"),
         ),
-        ("", "sessionID: \"\"", &[], Some("")),
+        ("", "sessionID: \"\"", NO_ENVIRONMENT, Some("")),
         (
             "",
             "sessionID: os.environ/INVOKE_AGENT_SESSION_ID",
