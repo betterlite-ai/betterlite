@@ -225,19 +225,19 @@ where
     let queued = local_members(scheduler, key, model, None)?;
     let next = change(queued.value.clone())?;
     let mut changes = PendingChanges::new();
-    for member in next.difference(&queued.value) {
-        changes.insert(member.clone(), MemberState::Present);
-    }
-    // a member this worker added while the shared tier was down was never in the shared queue, so its removal carries nothing and must leave no record behind
     let mut pending = scheduler
         .pending
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     let recorded = pending.entry(model.to_owned()).or_default();
+    // a change and its reverse cancel, so an add and its removal leave nothing behind and a re-added shared member is recorded again when it leaves
+    for member in next.difference(&queued.value) {
+        if recorded.remove(member) != Some(MemberState::Absent) {
+            changes.insert(member.clone(), MemberState::Present);
+        }
+    }
     for member in queued.value.difference(&next) {
-        if recorded.get(member) == Some(&MemberState::Present) {
-            recorded.remove(member);
-        } else {
+        if recorded.remove(member) != Some(MemberState::Present) {
             changes.insert(member.clone(), MemberState::Absent);
         }
     }

@@ -434,6 +434,32 @@ async fn the_pending_changes_stay_bounded_while_the_shared_tier_is_down() {
     assert_eq!(recorded, 0, "an add and its removal leave no record");
 }
 
+// a member removed and re-added during an outage is still recorded when it leaves again, so the shared queue drops it
+#[tokio::test]
+async fn a_request_readded_during_an_outage_still_leaves_the_shared_queue() {
+    let (service, server) = shared_scheduler().await;
+    service
+        .add_request(&item(0, "first", MODEL))
+        .await
+        .expect("the request queues");
+    server.set_down(true);
+    service
+        .remove_request(&item(0, "first", MODEL))
+        .await
+        .expect("the fallback queue removes the request");
+    service
+        .add_request(&item(0, "first", MODEL))
+        .await
+        .expect("the fallback queue takes the request back");
+    service
+        .remove_request(&item(0, "first", MODEL))
+        .await
+        .expect("the fallback queue removes it again");
+    server.set_down(false);
+    let queued = service.queue(MODEL).await.expect("the queue reads");
+    assert_eq!(queued.value, entries(&[]));
+}
+
 // a change a shared write carried over is not re-applied by the writes after it
 #[tokio::test]
 async fn a_carried_change_is_forgotten_after_its_write() {

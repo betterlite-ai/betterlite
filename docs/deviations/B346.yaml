@@ -3,8 +3,8 @@ deviations:
   - what: Each model's scheduler queue holds at most 1024 pending requests, and a request that would exceed the cap is rejected with a 429 rate-limit error.
     why: The bounded-inputs rule forbids an unbounded queue; LiteLLM's heap takes any number of entries and the pin has no queue bound.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L42-L50
-  - what: A request this worker accepted and then removed while the shared store was down leaves no fallback record, so the record of outage changes stays bounded by the queue's 1024-request cap.
-    why: A record that kept an entry for every add and its later removal would grow with the outage's request rate; the member this worker added was never in the shared queue, so its removal has nothing to carry and no record to keep.
+  - what: A change a worker makes while the shared store is down cancels the record of the opposite change, so an add and its removal leave no fallback record and a re-added member is recorded again when it leaves; the record of outage changes stays bounded by the queue's 1024-request cap.
+    why: A record that kept an entry for every add and its later removal would grow with the outage's request rate; a change and its reverse net to nothing against the shared queue, so neither should leave a record.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L87-L96
   - what: A scheduled request leaves the queue when it completes or is cancelled as well as when it times out.
     why: The async-hygiene rule forbids orphaned entries; LiteLLM removes an entry only on the timeout path, so every completed request and every request that ran through the healthy-deployment poll leaves its entry behind.
