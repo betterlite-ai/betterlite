@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import Coroutine, Mapping
-from typing import Final, Protocol
+from collections.abc import Coroutine
+from typing import Final
 
 import openai
 from litellm.proxy import proxy_server
@@ -15,8 +15,6 @@ from litellm.responses.litellm_completion_transformation.streaming_iterator impo
 from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator as StreamBase
 from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as BaseResponse
 from litellm.types.llms.openai import ResponsesAPIResponse
-from litellm.types.llms.openai import ResponsesAPIOptionalRequestParams as RequestParams
-from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from openai_chat import Failure, project_failure
@@ -33,29 +31,8 @@ Work = (
 RESPONSE: Final[TypeAdapter[ResponsesAPIResponse]] = TypeAdapter(ResponsesAPIResponse)
 
 
-class ResponseEntry(Protocol):
-    def __call__(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/handler.py#L26-L95
-        self,
-        model: str,
-        response_input: str | ResponseInputParam,
-        responses_api_request: RequestParams,
-        /,
-        *,
-        custom_llm_provider: str | None = None,
-        _is_async: bool = False,
-        stream: bool | None = None,
-        extra_headers: Mapping[str, JsonValue] | None = None,
-        **kwargs: JsonValue,
-    ) -> Work: ...
-
-
-class Handlers(Protocol):
-    @property
-    def response_api_handler(self) -> ResponseEntry: ...
-
-
 # The pinned handler LiteLLM's Responses route builds a chat completion call with
-HANDLER: Handlers = LiteLLMCompletionTransformationHandler()
+HANDLER: Final = LiteLLMCompletionTransformationHandler()
 
 
 class StrictModel(BaseModel):
