@@ -89,6 +89,18 @@ fn record_coerces_booleans_like_the_pydantic_model(#[case] value: &str, #[case] 
     UiSettingErrorKind::BoolType,
     None
 )]
+#[case::boolean_float_at_i64_min(
+    "enable_chat_ui",
+    "-9223372036854775808.0",
+    UiSettingErrorKind::BoolType,
+    None
+)]
+#[case::boolean_float_at_i64_max_as_f64(
+    "enable_chat_ui",
+    "9223372036854775808.0",
+    UiSettingErrorKind::BoolType,
+    None
+)]
 #[case::boolean_null("enable_chat_ui", "null", UiSettingErrorKind::BoolType, None)]
 #[case::boolean_array("enable_chat_ui", "[]", UiSettingErrorKind::BoolType, None)]
 #[case::boolean_object("enable_chat_ui", "{}", UiSettingErrorKind::BoolType, None)]
