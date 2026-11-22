@@ -342,15 +342,6 @@ pub(super) fn gen_router(generation: Arc<FakeGeneration>) -> Router {
     })
 }
 
-pub(super) fn gen_router_with_call_id_in_errors(generation: Arc<FakeGeneration>) -> Router {
-    routes(GenaiRoutesState {
-        generation,
-        translator: FakeTranslator::silent(),
-        token_counter: FakeCounter::silent(),
-        include_call_id_in_error_body: true,
-    })
-}
-
 pub(super) fn count_router(translator: Arc<FakeTranslator>, counter: Arc<FakeCounter>) -> Router {
     routes(GenaiRoutesState {
         generation: FakeGeneration::silent(),

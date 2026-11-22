@@ -4,12 +4,12 @@ use axum::http::{HeaderValue, StatusCode};
 use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 
-use crate::api::genai_routes::ports::GenerationBody;
+use crate::api::genai_routes::ports::{GenaiRoutesState, GenerationBody};
+use crate::api::genai_routes::routes;
 
 use super::support::{
-    FakeGeneration, answer, call, error_body, failure, gen_router,
-    gen_router_with_call_id_in_errors, json_body, object, parse, post, post_bytes, text,
-    with_header,
+    FakeCounter, FakeGeneration, FakeTranslator, answer, call, error_body, failure, gen_router,
+    json_body, object, parse, post, post_bytes, text, with_header,
 };
 
 const GEMINI: &str = "gemini-2.0-flash";
@@ -124,12 +124,13 @@ async fn a_pipeline_error_carries_the_call_id_when_the_setting_is_on() {
         "x-litellm-call-id",
         "call-1",
     );
-    let generation = FakeGeneration::failing(exception);
-    let (status, _headers, body) = call(
-        gen_router_with_call_id_in_errors(generation),
-        post(GENERATE, "{}"),
-    )
-    .await;
+    let router = routes(GenaiRoutesState {
+        generation: FakeGeneration::failing(exception),
+        translator: FakeTranslator::silent(),
+        token_counter: FakeCounter::silent(),
+        include_call_id_in_error_body: true,
+    });
+    let (status, _headers, body) = call(router, post(GENERATE, "{}")).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(
         json_body(&body),

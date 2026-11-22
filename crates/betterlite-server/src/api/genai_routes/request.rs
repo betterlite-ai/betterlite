@@ -49,22 +49,23 @@ pub(super) fn with_stream_flags(data: &mut Object) {
 
 // data.get("contents", []): absent or null take the empty list, a list is used as given
 pub(super) fn contents(data: &Object) -> Result<Json, Box<ProxyException>> {
-    match data.get(CONTENTS) {
-        None | Some(Json::Null) => Ok(Json::List(Vec::new())),
-        Some(Json::List(items)) => Ok(Json::List(items.clone())),
+    let value = match data.get(CONTENTS) {
+        None | Some(Json::Null) => return Ok(Json::List(Vec::new())),
+        Some(value) => value,
+    };
+    let Json::List(items) = value else {
         // TokenCountRequest.contents is list[dict] | None, so any other JSON type is a wrong type
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(Box::new(ProxyException::new(ProxyExceptionInit {
-                message: format!("'{CONTENTS}' has the wrong type"),
-                error_type: "invalid_request_error".to_owned(),
-                param: Some(CONTENTS.to_owned()),
-                code: ExceptionCode::Status(400),
-                headers: BTreeMap::new(),
-                openai_code: None,
-                provider_specific_fields: BTreeMap::new(),
-            })))
-        }
-    }
+        return Err(Box::new(ProxyException::new(ProxyExceptionInit {
+            message: format!("'{CONTENTS}' has the wrong type"),
+            error_type: "invalid_request_error".to_owned(),
+            param: Some(CONTENTS.to_owned()),
+            code: ExceptionCode::Status(400),
+            headers: BTreeMap::new(),
+            openai_code: None,
+            provider_specific_fields: BTreeMap::new(),
+        })));
+    };
+    Ok(Json::List(items.clone()))
 }
 
 fn typed(body: JsonObject) -> Object {
