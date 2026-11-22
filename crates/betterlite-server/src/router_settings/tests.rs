@@ -400,10 +400,12 @@ fn litellm_settings_feed_the_router_defaults() {
 #[test]
 fn default_fallbacks_append_to_the_configured_chains() {
     let document = "router_settings: {default_fallbacks: [gpt-3.5-turbo]}";
+    let answer = response(document);
     assert_eq!(
-        value(document, "fallbacks"),
-        json(r#"[{"*": ["gpt-3.5-turbo"]}]"#)
+        answer.current_values.get("fallbacks"),
+        Some(&json(r#"[{"*": ["gpt-3.5-turbo"]}]"#))
     );
+    assert_eq!(answer.current_values.get("default_fallbacks"), None);
 }
 
 #[test]
