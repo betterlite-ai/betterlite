@@ -6,7 +6,7 @@ use std::sync::{Mutex, PoisonError};
 use betterlite_router::semantic_router::service::{CallerContext, RouteEmbedder};
 
 use super::Input;
-use super::wire::{CallOut, count, invalid, vector};
+use super::wire::{CallOut, count, vector};
 use crate::router_probes::error::OperationError;
 
 #[derive(Debug, thiserror::Error)]
