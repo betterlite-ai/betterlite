@@ -1,3 +1,4 @@
+mod cases;
 mod fakes;
 mod views;
 
@@ -22,77 +23,11 @@ use serde_json::value::to_raw_value;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
-use self::fakes::{Calls, Guard, Verdict, recording_unmask};
+use self::cases::Step;
+use self::fakes::{Calls, Guard, recording_unmask};
 use self::views::{failure_status, quota_view, sets_view, wrap_view};
 
 type Replacements = Vec<IndexMap<String, String>>;
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct QuotaStep {
-    message: String,
-    authorized_model: Option<String>,
-    verdicts: Vec<Verdict>,
-    refuse_send: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CreateStep {
-    message: String,
-    authorized_model: Option<String>,
-    defaults: Option<WsRequestDefaults<Json>>,
-    guardrails: Replacements,
-    request_data: IndexMap<String, Json>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct UnmaskStep {
-    message: String,
-    guardrails: usize,
-    request_data: IndexMap<String, Json>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CompletedStep {
-    message: String,
-    guardrails: Replacements,
-    request_data: IndexMap<String, Json>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct FailureStep {
-    events: Vec<IndexMap<String, Json>>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct WrapStep {
-    litellm_metadata: Json,
-    event: IndexMap<String, Json>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SetsStep {
-    candidates: Vec<String>,
-}
-
-// each step is boxed so every variant carries a pointer, well within the 3x variant_size_differences enforces
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Step {
-    Quota(Box<QuotaStep>),
-    Create(Box<CreateStep>),
-    Unmask(Box<UnmaskStep>),
-    Completed(Box<CompletedStep>),
-    Failure(Box<FailureStep>),
-    Wrap(Box<WrapStep>),
-    Sets(Box<SetsStep>),
-}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
