@@ -5,4 +5,9 @@ deviations:
     why: >-
       The adapter composes the HTTP request itself and never builds the SDK client that raises this error, and B531's resolution leaves an absent credential absent; azure_config_ranks proves neither header is sent.
     link: ""
+  - what: >-
+      An azure_text call whose caller passes azure_ad_token fails inside LiteLLM with a 500, "Completions.create() got an unexpected keyword argument 'azure_ad_token'", because the token reaches the SDK request data; betterlite sends the token as the Authorization bearer header instead.
+    why: >-
+      No LiteLLM setup completes such a call, so nothing can depend on the failure; the typed text branch keeps the token as an auth credential and azure_text_dispatch proves the header.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L79-L83"
 kept_bugs: []
