@@ -156,6 +156,19 @@ impl FakeIdentity {
         }
     }
 
+    fn keyed(model: Option<&str>, provider: ProviderIdentity) -> Self {
+        let resolved = ResolvedImageModel {
+            model: model.map(str::to_owned),
+            provider,
+            api_base: None,
+            api_key: Some(SecretString::from("resolved-key")),
+        };
+        Self {
+            result: FakeResult::Resolved(resolved),
+            seen: Mutex::new(Vec::new()),
+        }
+    }
+
     fn failing(model: &str) -> Self {
         Self {
             result: FakeResult::MissingProvider(model.to_owned()),
@@ -202,12 +215,19 @@ impl ImageIdentity for FakeIdentity {
     }
 }
 
-struct TestMapper {
+struct TestMapper<'models> {
     supported: Vec<String>,
+    models: Option<&'models Mutex<Vec<String>>>,
 }
 
-impl OptionalParamsMapper for TestMapper {
-    fn supported_openai_params(&self, _model: &str) -> Vec<String> {
+impl OptionalParamsMapper for TestMapper<'_> {
+    fn supported_openai_params(&self, model: &str) -> Vec<String> {
+        if let Some(models) = self.models {
+            models
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(model.to_owned());
+        }
         self.supported.clone()
     }
 
@@ -471,6 +491,9 @@ impl Recorded for FoundryRequest<'_> {
     fn litellm_params(&self) -> Option<&Params> {
         Some(self.litellm_params)
     }
+    fn base_model(&self) -> Option<&str> {
+        self.base_model
+    }
     fn asynchronous(&self) -> bool {
         self.asynchronous
     }
@@ -609,8 +632,9 @@ type FoundrySeen = (Option<String>, Vec<(String, Json)>);
 struct FakeOps {
     config: Option<ImageGenerationConfigTag>,
     supported: Vec<String>,
-    bedrock: TestMapper,
+    bedrock: TestMapper<'static>,
     configs_seen: Mutex<Vec<(Option<String>, String)>>,
+    mapper_models: Mutex<Vec<String>>,
     entra_seen: Mutex<Vec<(String, String, String, String)>>,
     foundry_seen: Mutex<Vec<FoundrySeen>>,
     sends: Mutex<Vec<Sent>>,
@@ -631,8 +655,12 @@ impl FakeOps {
         Self {
             config,
             supported: supported.clone(),
-            bedrock: TestMapper { supported },
+            bedrock: TestMapper {
+                supported: supported.clone(),
+                models: None,
+            },
             configs_seen: Mutex::new(Vec::new()),
+            mapper_models: Mutex::new(Vec::new()),
             entra_seen: Mutex::new(Vec::new()),
             foundry_seen: Mutex::new(Vec::new()),
             sends: Mutex::new(Vec::new()),
@@ -660,6 +688,13 @@ impl FakeOps {
 
     fn configs(&self) -> Vec<(Option<String>, String)> {
         self.configs_seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn mapper_models(&self) -> Vec<String> {
+        self.mapper_models
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -700,6 +735,7 @@ impl ImageGenerationOperations for FakeOps {
     ) -> Option<Box<dyn OptionalParamsMapper + '_>> {
         Some(Box::new(TestMapper {
             supported: self.supported.clone(),
+            models: Some(&self.mapper_models),
         }))
     }
 

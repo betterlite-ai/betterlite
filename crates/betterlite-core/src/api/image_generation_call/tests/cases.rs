@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_error::envelope::WireField;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
@@ -153,6 +154,17 @@ fn assert_mock_answer(case: &Case<'_>, mock: &str) {
     assert_eq!(answered.hidden_model, None);
 }
 
+// a bare ValueError reaches dispatch as an API connection failure with a 500 and no wire fields
+fn assert_plain_value_error(class: &ErrorClass) {
+    let metadata = class.metadata();
+    assert!(matches!(class, ErrorClass::ApiConnection(_)));
+    assert_eq!(metadata.status_code, 500);
+    assert_eq!(metadata.error_type, WireField::Null);
+    assert_eq!(metadata.param, WireField::Null);
+    assert_eq!(metadata.code, "500");
+    assert_eq!(metadata.openai_code, None);
+}
+
 #[rstest]
 #[case(
     "recraft",
@@ -253,10 +265,13 @@ fn generation_provider_selection(
     let missing = FakeOps::new(None);
     let missing_case = Case::new(&missing, &identity, Settings::default());
     match missing_case.run(call(Some("image-model"), Some(slug))).0 {
-        Err(ImageGenerationException::Mapped { message, .. }) => assert_eq!(
-            message,
-            format!("image generation config is not supported for {slug}")
-        ),
+        Err(ImageGenerationException::Mapped { class, message }) => {
+            assert_eq!(
+                message,
+                format!("image generation config is not supported for {slug}")
+            );
+            assert_plain_value_error(&class);
+        }
         other => panic!("expected the absent config error, got {other:?}"),
     }
     assert!(missing.sends().is_empty());
@@ -291,11 +306,16 @@ fn special_branches_need_a_model(
 ) {
     let ops = FakeOps::new(None);
     let unresolved = FakeIdentity::new(None, ProviderIdentity::Known(provider));
-    let error = Case::new(&ops, &unresolved, Settings::default())
+    match Case::new(&ops, &unresolved, Settings::default())
         .run(call(Some("model"), Some(slug)))
         .0
-        .expect_err("a missing model is rejected");
-    assert_eq!(error.message(), format!("Model needs to be set for {slug}"));
+    {
+        Err(ImageGenerationException::Mapped { class, message }) => {
+            assert_eq!(message, format!("Model needs to be set for {slug}"));
+            assert_plain_value_error(&class);
+        }
+        other => panic!("expected the missing model error, got {other:?}"),
+    }
     assert!(ops.sends().is_empty());
     let identity = FakeIdentity::new(Some("resolved"), ProviderIdentity::Known(provider));
     let case = Case::new(&ops, &identity, Settings::default());
@@ -306,6 +326,62 @@ fn special_branches_need_a_model(
     assert_eq!(sent[0].branch, slug);
     assert_eq!(sent[0].model.as_deref(), Some("resolved"));
     assert_eq!(sent[0].asynchronous, asynchronous);
+}
+
+// LiteLLM's openai branch takes api_key or the resolver's dynamic key, and no other branch reads that key
+#[test]
+fn resolved_key_reaches_only_the_openai_branch() {
+    let openai = FakeOps::new(Some(ImageGenerationConfigTag::OpenAi(String::from(
+        "dall-e-3",
+    ))));
+    let openai_identity = FakeIdentity::keyed(
+        Some("dall-e-3"),
+        ProviderIdentity::Known(ProviderId::Openai),
+    );
+    Case::new(&openai, &openai_identity, Settings::default())
+        .run(call(Some("dall-e-3"), Some("openai")))
+        .0
+        .unwrap();
+    assert_eq!(openai.sends()[0].api_key.as_deref(), Some("resolved-key"));
+
+    let azure = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
+    let azure_identity =
+        FakeIdentity::keyed(Some("dep"), ProviderIdentity::Known(ProviderId::Azure));
+    Case::new(&azure, &azure_identity, Settings::default())
+        .run(call(Some("dep"), Some("azure")))
+        .0
+        .unwrap();
+    let azure_sent = azure.sends();
+    assert!(azure_sent[0].api_key.is_none());
+    assert!(azure_sent[0].header("api-key").is_none());
+
+    let foundry = FakeOps::new(Some(ImageGenerationConfigTag::AzureAi(String::from(
+        "flux",
+    ))));
+    let foundry_identity =
+        FakeIdentity::keyed(Some("flux"), ProviderIdentity::Known(ProviderId::AzureAi));
+    Case::new(&foundry, &foundry_identity, Settings::default())
+        .run(call(Some("flux"), Some("azure_ai")))
+        .0
+        .unwrap();
+    assert!(foundry.sends()[0].api_key.is_none());
+
+    let handler = Arc::new(FixtureHandler::default());
+    let custom = FakeOps::new(None);
+    let custom_identity = FakeIdentity::keyed(
+        Some("custom-model"),
+        ProviderIdentity::Custom(String::from("myprov")),
+    );
+    let handler_case = custom_case(
+        &custom,
+        &custom_identity,
+        vec![Some(Arc::<FixtureHandler>::clone(&handler))],
+    );
+    handler_case
+        .run(call(Some("custom-model"), Some("myprov")))
+        .0
+        .unwrap();
+    assert!(handler.seen()[0].api_key.is_none());
 }
 
 fn custom_provider(
@@ -424,6 +500,7 @@ fn custom_handler_failures(identity: &FakeIdentity) {
 struct HandlerSeen {
     provider: String,
     model: Option<String>,
+    api_key: Option<String>,
     asynchronous: bool,
 }
 
@@ -484,6 +561,9 @@ impl CustomImageHandler for FixtureHandler {
             .push(HandlerSeen {
                 provider: request.provider.to_owned(),
                 model: request.model.map(str::to_owned),
+                api_key: request
+                    .api_key
+                    .map(|secret| secret.expose_secret().to_owned()),
                 asynchronous: request.asynchronous,
             });
         let failure = self.failure.clone();

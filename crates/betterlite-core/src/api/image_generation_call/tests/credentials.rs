@@ -26,8 +26,12 @@ fn azure_call_and_global_tiers() {
     base.api_key = Some(SecretString::from("call-key"));
     case.run(base).0.unwrap();
     case.run(call(Some("dep"), Some("azure"))).0.unwrap();
+    let mut based = call(Some("dep"), Some("azure"));
+    based.kwargs = kwargs(vec![("base_model", Json::Text(String::from("azure/base")))]);
+    let answered = case.run(based).0.expect("the based call answers");
+    assert_eq!(answered.hidden_model.as_deref(), Some("azure/base"));
     let sent = ops.sends();
-    assert_eq!(sent.len(), 2);
+    assert_eq!(sent.len(), 3);
     assert_eq!(sent[0].api_base.as_deref(), Some("https://call.example"));
     assert_eq!(sent[0].api_version.as_deref(), Some("2025-01-01"));
     assert_eq!(sent[0].api_key.as_deref(), Some("call-key"));
@@ -36,6 +40,7 @@ fn azure_call_and_global_tiers() {
     assert_eq!(sent[1].api_base.as_deref(), Some("https://global.example"));
     assert_eq!(sent[1].api_version.as_deref(), Some("2024-06-01"));
     assert_eq!(sent[1].api_key.as_deref(), Some("global-key"));
+    assert_eq!(sent[2].base_model.as_deref(), Some("azure/base"));
 }
 
 // each Azure environment key tier is reached once every tier above it is unset
@@ -93,9 +98,21 @@ fn azure_caller_headers() {
         object(&[("api-key", "caller"), ("Content-Type", "custom")]),
     )]);
     case.run(headers).0.unwrap();
+    let mut mixed = call(Some("dep"), Some("azure"));
+    mixed.api_key = Some(SecretString::from("resolved-key"));
+    mixed.kwargs = kwargs(vec![(
+        "headers",
+        object(&[("API-KEY", "caller"), ("content-type", "custom")]),
+    )]);
+    case.run(mixed).0.unwrap();
     let sent = ops.sends();
+    assert_eq!(sent.len(), 2);
     assert_eq!(sent[0].header("api-key"), Some("caller"));
     assert_eq!(sent[0].header("Content-Type"), Some("custom"));
+    assert_eq!(sent[1].header("API-KEY"), Some("caller"));
+    assert_eq!(sent[1].header("content-type"), Some("custom"));
+    assert_eq!(sent[1].header("api-key"), Some("resolved-key"));
+    assert_eq!(sent[1].header("Content-Type"), Some("application/json"));
 }
 
 // no Azure config lists azure_ad_token, so it folds into extra_body yet still wins for auth and must leave the options
@@ -253,14 +270,22 @@ fn foundry_caller_authorization() {
     let mut lowered = call(Some("flux"), Some("azure_ai"));
     lowered.kwargs = kwargs(vec![("headers", object(&[("API-KEY", "caller")]))]);
     case.run(lowered).0.unwrap();
+    let mut based = call(Some("flux"), Some("azure_ai"));
+    based.kwargs = kwargs(vec![(
+        "base_model",
+        Json::Text(String::from("azure-ai/base")),
+    )]);
+    let answered = case.run(based).0.expect("the based call answers");
+    assert_eq!(answered.hidden_model.as_deref(), Some("azure-ai/base"));
     let sent = ops.sends();
-    assert_eq!(sent.len(), 2);
+    assert_eq!(sent.len(), 3);
     assert_eq!(sent[0].header("Authorization"), Some("Bearer caller"));
     assert_eq!(sent[0].header("Content-Type"), Some("application/json"));
     assert_eq!(sent[0].header("X-Trace"), Some("t"));
     assert!(sent[0].azure_ad_token.is_none());
     assert_eq!(sent[1].header("API-KEY"), Some("caller"));
     assert!(sent[1].header("api-key").is_none());
+    assert_eq!(sent[2].base_model.as_deref(), Some("azure-ai/base"));
     assert!(ops.foundry().is_empty());
     foundry_injected_auth();
 }
@@ -316,6 +341,8 @@ fn generic_kwargs_reach_their_consumers(
     let sent = ops.sends();
     assert_eq!(sent[0].base_model.as_deref(), Some("azure/base"));
     assert_eq!(ops.configs()[0].0.as_deref(), Some("azure/base"));
+    // get_optional_params_image_gen asks the mapper for its supported names with base_model or model
+    assert_eq!(ops.mapper_models(), vec![String::from("azure/base")]);
     assert_eq!(
         sent[0].litellm("azure_username"),
         Some(&Json::Text(String::from("user")))
