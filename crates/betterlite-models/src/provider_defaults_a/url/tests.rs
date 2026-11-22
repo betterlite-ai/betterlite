@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use crate::provider_defaults_a::url::{SplitUrl, UrlError, UrlParts, parse, unparse, urlsplit};
+use crate::provider_defaults_a::url::{UrlError, UrlParts, parse, unparse, urlsplit};
 
 fn parts([scheme, netloc, path, params, query, fragment]: [&str; 6]) -> UrlParts {
     UrlParts {
@@ -10,16 +10,6 @@ fn parts([scheme, netloc, path, params, query, fragment]: [&str; 6]) -> UrlParts
         netloc: netloc.to_owned(),
         path: path.to_owned(),
         params: params.to_owned(),
-        query: query.to_owned(),
-        fragment: fragment.to_owned(),
-    }
-}
-
-fn split([scheme, netloc, path, query, fragment]: [&str; 5]) -> SplitUrl {
-    SplitUrl {
-        scheme: scheme.to_owned(),
-        netloc: netloc.to_owned(),
-        path: path.to_owned(),
         query: query.to_owned(),
         fragment: fragment.to_owned(),
     }
@@ -184,29 +174,45 @@ fn parse_accepts_a_netloc_whose_nfkc_form_stays_a_host(
 #[rstest]
 #[case::params_stay_on_the_path(
     "https://h.example/api/v2;param?q=1#frag",
-    split(["https", "h.example", "/api/v2;param", "q=1", "frag"])
+    ("https", "h.example", "/api/v2;param", "q=1", "frag")
 )]
 #[case::semicolon_before_the_last_slash_is_path_text(
     "https://h.example/a;b/c",
-    split(["https", "h.example", "/a;b/c", "", ""])
+    ("https", "h.example", "/a;b/c", "", "")
 )]
 #[case::empty_params_keep_the_semicolon(
     "https://h.example/api;",
-    split(["https", "h.example", "/api;", "", ""])
+    ("https", "h.example", "/api;", "", "")
 )]
 #[case::params_stay_with_a_scheme_that_ignores_them(
     "custom:/a;b",
-    split(["custom", "", "/a;b", "", ""])
+    ("custom", "", "/a;b", "", "")
 )]
 #[case::scheme_is_lowercased_and_the_query_kept(
     "HTTPS://Tenant.DataRobot.com/api/v2?x=1",
-    split(["https", "Tenant.DataRobot.com", "/api/v2", "x=1", ""])
+    ("https", "Tenant.DataRobot.com", "/api/v2", "x=1", "")
 )]
-#[case::authority_only("https://host", split(["https", "host", "", "", ""]))]
-#[case::relative_path("app.example/api/v2", split(["", "", "app.example/api/v2", "", ""]))]
-#[case::empty("", split(["", "", "", "", ""]))]
-fn urlsplit_keeps_the_params_on_the_path(#[case] source: &str, #[case] expected: SplitUrl) {
-    assert_eq!(urlsplit(source), Ok(expected));
+#[case::authority_only("https://host", ("https", "host", "", "", ""))]
+#[case::relative_path(
+    "app.example/api/v2",
+    ("", "", "app.example/api/v2", "", "")
+)]
+#[case::empty("", ("", "", "", "", ""))]
+fn urlsplit_keeps_the_params_on_the_path(
+    #[case] source: &str,
+    #[case] expected: (&str, &str, &str, &str, &str),
+) {
+    let parsed = urlsplit(source).unwrap();
+    assert_eq!(
+        (
+            parsed.scheme.as_str(),
+            parsed.netloc.as_str(),
+            parsed.path.as_str(),
+            parsed.query.as_str(),
+            parsed.fragment.as_str()
+        ),
+        expected
+    );
 }
 
 #[rstest]
