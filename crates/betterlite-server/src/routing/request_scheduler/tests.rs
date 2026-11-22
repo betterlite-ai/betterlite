@@ -4,16 +4,28 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::routing_state_store::connection::Connection;
 use betterlite_config::types::Config;
+use betterlite_core::message_utilities::prompt_cache_checks::PromptCacheSettings;
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
+use betterlite_models::decisions::Json;
+use betterlite_prompts::cache_accounting::dialect::ModelFacts;
+use betterlite_prompts::cache_defaults::CacheFacts;
+use betterlite_router::prompt_affinity::service::{InjectionDefaults, TokenGate};
 use betterlite_router::request_scheduler::flow::FlowItem;
+use betterlite_router::router_core::services::RouteServices as _;
 use betterlite_router::routing_state_store::Settings as SharedSettings;
 use betterlite_router::routing_state_store::test_support::FakeRedis;
 use betterlite_router::routing_state_store::{RedisSettings, RoutingStateStore};
 use betterlite_router::routing_value_store::{RouteKey, RouteValue, StoreRead};
 
+use crate::routing::prompt_affinity::PromptAffinityInputs;
 use crate::routing::redis_failure_policy::policy_settings;
+use crate::routing::router_core::RouterServices;
 
 use super::build;
 
@@ -55,6 +67,71 @@ fn reader(port: u16) -> RoutingStateStore {
         breaker: policy_settings(&config("model_list: []\n").sections.redis_failure_policy),
     };
     RoutingStateStore::new(&settings, Arc::new(|| Duration::ZERO)).expect("the reader builds")
+}
+
+struct AllowAll;
+
+#[async_trait]
+impl TokenGate for AllowAll {
+    async fn meets_minimum(&self, _model: &str, _messages: &[Json], _minimum: Option<u64>) -> bool {
+        true
+    }
+}
+
+struct NoFacts;
+
+impl ModelFacts for NoFacts {
+    fn cache_breakpoint_flag(&self, _model: &str) -> Option<bool> {
+        None
+    }
+
+    fn provider(&self, _model: &str) -> Option<String> {
+        None
+    }
+}
+
+impl CacheFacts for NoFacts {
+    fn supports_prompt_caching(&self, _model: &str, _provider: &str) -> bool {
+        false
+    }
+}
+
+// the config names no prompt caching check, so its cache and facts are never read
+fn affinity_inputs() -> PromptAffinityInputs<LocalMemoryOps> {
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 0.0_f64);
+    let memory = LocalMemoryOps::new(1024, clock).expect("the memory cache opens");
+    PromptAffinityInputs {
+        cache: Arc::new(DualCache::new(
+            Arc::new(memory),
+            None,
+            DualCacheSettings {
+                default_in_memory_ttl: None,
+                default_redis_ttl: None,
+                batch_cache_expiry: None,
+                max_redis_batch_cache_size: 1000,
+                redis_delete_chunk_size: 1000,
+            },
+        )),
+        gate: Arc::new(AllowAll),
+        facts: Arc::new(NoFacts),
+        catalog: Arc::new(
+            ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("an empty catalog parses"),
+        ),
+        settings: PromptCacheSettings::default(),
+        defaults: InjectionDefaults::default(),
+    }
+}
+
+// the pipeline reads Router.scheduler through the router services, and the config's interval reaches it
+#[test]
+fn the_router_services_expose_the_configured_scheduler() {
+    let loaded = config("model_list: []\nrouter_settings:\n  polling_interval: 0.25\n");
+    let services =
+        RouterServices::from_config(&loaded, affinity_inputs()).expect("the router services build");
+    let scheduler = services
+        .request_scheduler()
+        .expect("the scheduler is configured");
+    assert_eq!(scheduler.polling_interval(), Duration::from_millis(250));
 }
 
 #[tokio::test]
