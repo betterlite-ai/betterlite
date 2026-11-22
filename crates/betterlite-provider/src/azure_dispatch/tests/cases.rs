@@ -57,9 +57,8 @@ fn base_only() -> Credentials {
 
 fn extra_credentials(body: &str) -> Credentials {
     Credentials {
-        api_base: Some(String::from(AZURE_BASE)),
         extra_body: Some(support::json(body)),
-        ..support::credentials()
+        ..base_credentials()
     }
 }
 
