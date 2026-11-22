@@ -1,0 +1,28 @@
+task: B9800
+deviations:
+  - what: >-
+      A /v1/messages request whose data still carries user_config after auth (an admin allowed that
+      banned field) gets a 400 invalid_request_error "user_config is not supported on /v1/messages"
+      instead of a router built from that config.
+    why: >-
+      LiteLLM builds a throwaway Router from client-sent deployment settings per request; betterlite
+      builds routers only from config, and B8692 answers the same way for pass-through routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L38-L50
+  - what: >-
+      Until a task swaps the production router into B081's route, the standalone routing knows only
+      the model groups and litellm models of config.yaml, so team model maps, team public models,
+      wildcard patterns, blocked deployments and the per-deployment keepalive_seconds have no effect
+      on /v1/messages.
+    why: >-
+      The route cannot depend on the router wiring, since that sits above the routes; the chat and
+      embeddings routes on main pick deployments the same way today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L645-L680
+  - what: >-
+      A body that carries its own specific_deployment key is handed to the routing port next to the
+      plan's specific_deployment flag; LiteLLM passes specific_deployment=True next to that data key,
+      so the call raises TypeError and the proxy answers with a 500.
+    why: >-
+      That 500 comes from a duplicate keyword rather than from behavior a setup can rely on. The plan
+      chose the deployment, so its flag is the one that reaches the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L657-L659
+kept_bugs: []

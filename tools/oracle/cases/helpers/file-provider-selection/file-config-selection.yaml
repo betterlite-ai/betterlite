@@ -1,0 +1,14 @@
+kind: helper
+name: file-config-selection
+env: {}
+compare: {ignore: []}
+call:
+  file_provider_selection:
+    model: ""
+    config_providers: [gemini, vertex_ai, bedrock, manus, anthropic, mistral, xai, openai, azure, hosted_vllm, litellm_proxy, cohere]
+    timeout_providers: []
+calls:
+  - file_provider_selection:
+      model: ignored
+      config_providers: [gemini, vertex_ai, bedrock, manus, anthropic, mistral, xai, openai, azure, hosted_vllm, litellm_proxy, cohere]
+      timeout_providers: []
