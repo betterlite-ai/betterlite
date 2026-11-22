@@ -1,13 +1,8 @@
 task: B025
 deviations:
   - what: >-
-      A chat, text or embedding call with no api key and no Azure AD token is sent without an
-      authorization or api-key header, where LiteLLM's AzureOpenAI client refuses the call with
-      the SDK's "Missing credentials" OpenAIError, which the proxy renders as a 500.
+      A chat, text or embedding call with no api key and no Azure AD token is sent without an authorization or api-key header, where LiteLLM's AzureOpenAI client refuses it with the SDK's "Missing credentials" OpenAIError, rendered as a 500.
     why: >-
-      The adapter composes the HTTP request itself and never builds the SDK client that raises
-      this error, and B531's resolution leaves an absent credential absent rather than inventing
-      a failure the route does not own. The Rust test azure_config_ranks proves the request
-      carries neither header.
+      The adapter composes the HTTP request itself and never builds the SDK client that raises this error, and B531's resolution leaves an absent credential absent; azure_config_ranks proves neither header is sent.
     link: ""
 kept_bugs: []
