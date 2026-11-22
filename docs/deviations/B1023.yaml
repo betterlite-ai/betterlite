@@ -1,0 +1,15 @@
+task: B1023
+deviations:
+  - what: A record url whose path is longer than 4096 bytes is not matched against the route table, so the record falls back to its body shape.
+    why: B207's route catalog refuses routes past 4096 bytes, and the body fallback is the same answer LiteLLM gives any url it does not recognize.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L283-L302
+  - what: An unscannable record whose url holds a lone surrogate gets the 400 with that character shown as "?".
+    why: LiteLLM puts the url into the error detail as it parsed it, and writing that detail out fails with a 500; custom_id already gets the same "?" replacement in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L200-L205
+  - what: An unroutable record whose guardrail name holds a lone surrogate gets the 400 with that character shown as "?".
+    why: LiteLLM reads the name from the scanned metadata and puts it into the error detail as it is, so writing that detail out fails with a 500; the unscannable url already gets the same "?" replacement for that reason, and the unroutable message at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L206-L211 spells the name out unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L407-L413
+  - what: Reading a record refuses nesting deeper than 512 containers.
+    why: json.loads stops near Python's recursion limit instead, and B1022's upload validation already refuses any line nested deeper than 128, so no validated line reaches either limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L277-L280
+kept_bugs: []

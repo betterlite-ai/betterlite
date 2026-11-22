@@ -717,7 +717,7 @@ async fn a_blocked_call_answers_the_permission_denied_text() {
 }
 
 #[tokio::test]
-async fn a_missing_model_answers_the_key_error_text() {
+async fn a_missing_model_answers_a_bad_request_naming_the_field() {
     let routing = Arc::new(empty_routing());
     let steps = call_steps(
         Arc::new(FakeDispatch::default()),
@@ -732,8 +732,9 @@ async fn a_missing_model_answers_the_key_error_text() {
     else {
         panic!("a body without a model is refused");
     };
-    assert_eq!(error.status(), 500);
-    assert_eq!(error.to_string(), "'model'");
+    assert_eq!(error.status(), 400);
+    assert_eq!(error.to_string(), "model is a required field");
+    assert_eq!(error.http_detail(), None);
 }
 
 #[tokio::test]

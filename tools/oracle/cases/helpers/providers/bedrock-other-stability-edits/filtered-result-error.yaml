@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-other-stability-filtered-result-error
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 422
+        body: '{not json'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: ''
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"images": ["a'
+env: {}
+compare: {ignore: []}
