@@ -15,7 +15,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::postgres_store::errors::DbError;
-use betterlite_db::table_ops::rows::{RowDecoder, RowError};
+use betterlite_db::table_ops::rows::{RowDecoder as _, RowError};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use tower::ServiceExt as _;
@@ -120,13 +120,6 @@ impl TagReportStore for FakeStore {
     }
 }
 
-pub(super) fn handle(store: Option<&Arc<FakeStore>>) -> TagReportHandle {
-    store.map(|fake| {
-        let handle: Arc<dyn TagReportStore> = Arc::<FakeStore>::clone(fake);
-        handle
-    })
-}
-
 fn principal(subject: &str, roles: Vec<Role>, user_id: Option<&str>) -> Principal {
     Principal {
         principal_type: PrincipalType::Human,
@@ -203,7 +196,15 @@ impl Reply {
     }
 }
 
-pub(super) async fn call(uri: &str, identity: Option<&Principal>, store: TagReportHandle) -> Reply {
+pub(super) async fn call(
+    uri: &str,
+    identity: Option<&Principal>,
+    store: Option<&Arc<FakeStore>>,
+) -> Reply {
+    let report: TagReportHandle = store.map(|fake| {
+        let handle: Arc<dyn TagReportStore> = Arc::<FakeStore>::clone(fake);
+        handle
+    });
     let mut request = Request::builder()
         .method(Method::GET)
         .uri(uri)
@@ -214,7 +215,7 @@ pub(super) async fn call(uri: &str, identity: Option<&Principal>, store: TagRepo
             principal: holder.clone(),
         });
     }
-    reply(super::super::routes(store), request).await
+    reply(super::super::routes(report), request).await
 }
 
 async fn reply(application: Router, request: Request<Body>) -> Reply {

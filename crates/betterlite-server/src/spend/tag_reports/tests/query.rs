@@ -6,10 +6,9 @@ use rstest::rstest;
 use super::super::query::{TagReportQuery, decode_tag_report_query};
 
 fn query_with_tags(tags: Option<&str>) -> TagReportQuery {
-    match tags {
-        Some(text) => decode_tag_report_query(format!("tags={text}").as_bytes()),
-        None => TagReportQuery::default(),
-    }
+    tags.map_or_else(TagReportQuery::default, |text| {
+        decode_tag_report_query(format!("tags={text}").as_bytes())
+    })
 }
 
 #[rstest]

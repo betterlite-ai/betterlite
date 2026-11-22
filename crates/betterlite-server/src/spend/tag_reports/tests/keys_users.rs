@@ -7,8 +7,8 @@ use rstest::rstest;
 use super::super::responses::NO_DATABASE;
 use super::support::{
     DetailEnvelope, ErrorEnvelope, FakeFailure, KeyBody, UserBody, admin, aliased, call, decimal,
-    handle, internal, internal_without_user, key, key_principal, master_key, org_admin, tag_store,
-    user, viewer,
+    internal, internal_without_user, key, key_principal, master_key, org_admin, tag_store, user,
+    viewer,
 };
 
 const FORBIDDEN_USER: &str = "Not authorized to view spend for another user.";
@@ -25,7 +25,7 @@ const UNDECODABLE_ROW: &str = "the stored row is not a JSON object";
 #[tokio::test]
 async fn refuses_a_request_without_an_http_identity(#[case] uri: &str) {
     let store = Arc::new(tag_store());
-    let reply = call(uri, None, handle(Some(&store))).await;
+    let reply = call(uri, None, Some(&store)).await;
     assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
     let envelope: ErrorEnvelope = reply.decode();
     assert_eq!(envelope.error.message, "the API key is not valid");
@@ -44,22 +44,26 @@ async fn lists_every_key_for_an_admin_view(#[case] caller: Principal) {
     let mut fake = tag_store();
     fake.keys = vec![
         key(
-            r#"{"token":"sk-b","key_alias":"b","user_id":"u2","spend":5,"litellm_budget_table":{"budget_id":"budget-1"}}"#,
+            r#"{"token":"sk-b","key_alias":"b","key_name":"primary","user_id":"u2","spend":5,"litellm_budget_table":{"budget_id":"budget-1"}}"#,
         ),
         key(r#"{"token":"sk-a","user_id":"u1","spend":1}"#),
     ];
     let store = Arc::new(fake);
-    let reply = call("/spend/keys", Some(&caller), handle(Some(&store))).await;
+    let reply = call("/spend/keys", Some(&caller), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     let rows: Vec<KeyBody> = reply.decode();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].token.as_deref(), Some("sk-b"));
     assert_eq!(rows[0].key_alias.as_deref(), Some("b"));
+    assert_eq!(rows[0].key_name.as_deref(), Some("primary"));
+    assert_eq!(rows[0].user_id.as_deref(), Some("u2"));
     assert_eq!(
         rows[0].litellm_budget_table.as_ref().unwrap().budget_id,
         "budget-1"
     );
     assert_eq!(rows[1].token.as_deref(), Some("sk-a"));
+    assert_eq!(rows[1].user_id.as_deref(), Some("u1"));
+    assert!(rows[1].key_name.is_none());
     assert!(rows[1].litellm_budget_table.is_none());
     assert_eq!(store.calls(), vec!["keys".to_owned()]);
 }
@@ -73,7 +77,7 @@ async fn scopes_a_non_admin_to_their_own_keys(#[case] caller: Principal) {
     let mut fake = tag_store();
     fake.user_keys = vec![key(r#"{"token":"sk-a","user_id":"u1","spend":2}"#)];
     let store = Arc::new(fake);
-    let reply = call("/spend/keys", Some(&caller), handle(Some(&store))).await;
+    let reply = call("/spend/keys", Some(&caller), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     let rows: Vec<KeyBody> = reply.decode();
     assert_eq!(rows.len(), 1);
@@ -89,7 +93,7 @@ async fn returns_no_keys_for_a_falsey_caller_id(#[case] caller: Principal) {
     let mut fake = tag_store();
     fake.keys = vec![key(r#"{"token":"sk-a","user_id":"u1"}"#)];
     let store = Arc::new(fake);
-    let reply = call("/spend/keys", Some(&caller), handle(Some(&store))).await;
+    let reply = call("/spend/keys", Some(&caller), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.text(), "[]");
     assert!(store.calls().is_empty());
@@ -106,7 +110,7 @@ async fn answers_a_key_store_failure_with_a_bad_request(
     let mut fake = tag_store();
     fake.failure = Some(failure);
     let store = Arc::new(fake);
-    let reply = call("/spend/keys", Some(&admin()), handle(Some(&store))).await;
+    let reply = call("/spend/keys", Some(&admin()), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST);
     let envelope: DetailEnvelope = reply.decode();
     assert_eq!(envelope.detail.error, message);
@@ -117,7 +121,7 @@ async fn answers_a_key_store_failure_with_a_bad_request(
 #[case::users("/spend/users")]
 #[tokio::test]
 async fn answers_a_missing_database_with_a_bad_request(#[case] uri: &str) {
-    let reply = call(uri, Some(&admin()), handle(None)).await;
+    let reply = call(uri, Some(&admin()), None).await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST);
     let envelope: DetailEnvelope = reply.decode();
     assert_eq!(envelope.detail.error, NO_DATABASE);
@@ -137,7 +141,7 @@ async fn lists_every_user_with_the_key_aliases_for_an_admin() {
         ),
     ];
     let store = Arc::new(fake);
-    let reply = call("/spend/users", Some(&admin()), handle(Some(&store))).await;
+    let reply = call("/spend/users", Some(&admin()), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     let body = reply.text();
     assert!(!body.contains("\"password\":"));
@@ -161,12 +165,7 @@ async fn reads_one_user_for_an_admin_without_the_alias_join() {
         r#"{"user_id":"u1","spend":2.5,"password":"hunter2","organization_memberships":[{"user_id":"u1","organization_id":"org-1","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}]}"#,
     ));
     let store = Arc::new(fake);
-    let reply = call(
-        "/spend/users?user_id=u1",
-        Some(&admin()),
-        handle(Some(&store)),
-    )
-    .await;
+    let reply = call("/spend/users?user_id=u1", Some(&admin()), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     let body = reply.text();
     assert!(!body.contains("\"password\":"));
@@ -185,12 +184,7 @@ async fn reads_one_user_for_an_admin_without_the_alias_join() {
 #[tokio::test]
 async fn returns_a_singleton_null_for_an_unknown_user() {
     let store = Arc::new(tag_store());
-    let reply = call(
-        "/spend/users?user_id=missing",
-        Some(&admin()),
-        handle(Some(&store)),
-    )
-    .await;
+    let reply = call("/spend/users?user_id=missing", Some(&admin()), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.text(), "[null]");
     assert_eq!(store.calls(), vec!["user(missing)".to_owned()]);
@@ -201,12 +195,7 @@ async fn reads_an_empty_user_id_as_a_specific_missing_user() {
     let mut fake = tag_store();
     fake.users = vec![aliased(user(r#"{"user_id":"u1","spend":1}"#), &[None])];
     let store = Arc::new(fake);
-    let reply = call(
-        "/spend/users?user_id=",
-        Some(&admin()),
-        handle(Some(&store)),
-    )
-    .await;
+    let reply = call("/spend/users?user_id=", Some(&admin()), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.text(), "[null]");
     assert_eq!(store.calls(), vec!["user()".to_owned()]);
@@ -217,7 +206,7 @@ async fn scopes_a_non_admin_to_their_own_user_row() {
     let mut fake = tag_store();
     fake.user = Some(user(r#"{"user_id":"u1","spend":1}"#));
     let store = Arc::new(fake);
-    let reply = call("/spend/users", Some(&internal("u1")), handle(Some(&store))).await;
+    let reply = call("/spend/users", Some(&internal("u1")), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     let rows: Vec<Option<UserBody>> = reply.decode();
     assert_eq!(rows.len(), 1);
@@ -233,7 +222,7 @@ async fn accepts_an_internal_caller_asking_for_their_own_id() {
     let reply = call(
         "/spend/users?user_id=u1",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -249,7 +238,7 @@ async fn refuses_an_internal_caller_reading_another_user(#[case] requested: &str
     fake.user = Some(user(r#"{"user_id":"u2","spend":1}"#));
     let store = Arc::new(fake);
     let uri = format!("/spend/users?user_id={requested}");
-    let reply = call(&uri, Some(&internal("u1")), handle(Some(&store))).await;
+    let reply = call(&uri, Some(&internal("u1")), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
     let envelope: DetailEnvelope = reply.decode();
     assert_eq!(envelope.detail.error, FORBIDDEN_USER);
@@ -262,12 +251,7 @@ async fn refuses_an_internal_caller_reading_another_user(#[case] requested: &str
 #[tokio::test]
 async fn returns_no_users_for_a_falsey_caller_id_even_with_a_query(#[case] caller: Principal) {
     let store = Arc::new(tag_store());
-    let reply = call(
-        "/spend/users?user_id=u1",
-        Some(&caller),
-        handle(Some(&store)),
-    )
-    .await;
+    let reply = call("/spend/users?user_id=u1", Some(&caller), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.text(), "[]");
     assert!(store.calls().is_empty());
@@ -284,7 +268,7 @@ async fn answers_a_user_store_failure_with_a_bad_request(
     let mut fake = tag_store();
     fake.failure = Some(failure);
     let store = Arc::new(fake);
-    let reply = call("/spend/users", Some(&admin()), handle(Some(&store))).await;
+    let reply = call("/spend/users", Some(&admin()), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST);
     let envelope: DetailEnvelope = reply.decode();
     assert_eq!(envelope.detail.error, message);

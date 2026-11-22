@@ -211,12 +211,12 @@ async fn expands_repeated_tags_with_their_counts_and_spend() {
     let store = postgres_store(&pool);
     let rows = store.raw_tag_spend().await.unwrap();
     assert_eq!(rows.len(), 3);
-    let a = raw_row(&rows, Some("a"));
-    assert_eq!(a.log_count, 3);
-    assert_eq!(a.total_spend, decimal("4.5"));
-    let b = raw_row(&rows, Some("b"));
-    assert_eq!(b.log_count, 1);
-    assert_eq!(b.total_spend, decimal("1.5"));
+    let tag_a = raw_row(&rows, Some("a"));
+    assert_eq!(tag_a.log_count, 3);
+    assert_eq!(tag_a.total_spend, decimal("4.5"));
+    let tag_b = raw_row(&rows, Some("b"));
+    assert_eq!(tag_b.log_count, 1);
+    assert_eq!(tag_b.total_spend, decimal("1.5"));
     let unknown = raw_row(&rows, None);
     assert_eq!(unknown.log_count, 1);
     assert_eq!(unknown.total_spend, decimal("0.5"));

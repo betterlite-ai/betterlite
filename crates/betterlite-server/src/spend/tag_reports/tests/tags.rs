@@ -6,7 +6,7 @@ use rstest::rstest;
 use super::super::responses::NO_DATABASE;
 use super::support::{
     ErrorEnvelope, FakeFailure, RawTagBody, SpendPerTagBody, TagNamesBody, call, daily_tag,
-    decimal, handle, internal, raw_tag, tag_store,
+    decimal, internal, raw_tag, tag_store,
 };
 
 const NO_DB_CONNECTED: &str =
@@ -22,7 +22,7 @@ async fn serves_raw_tag_counts_and_ignores_the_dates() {
     let reply = call(
         "/spend/tags?start_date=not-a-date&end_date=also-bad",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -45,7 +45,7 @@ async fn serves_every_distinct_tag_name() {
     let reply = call(
         "/global/spend/all_tag_names",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -65,7 +65,7 @@ async fn serves_a_bare_list_for_a_missing_tag_name_result() {
     let reply = call(
         "/global/spend/all_tag_names",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -87,7 +87,7 @@ async fn answers_a_tag_query_failure_through_the_proxy_boundary(
     let mut fake = tag_store();
     fake.failure = Some(FakeFailure::Undecodable);
     let store = Arc::new(fake);
-    let reply = call(uri, Some(&internal("u1")), handle(Some(&store))).await;
+    let reply = call(uri, Some(&internal("u1")), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     let envelope: ErrorEnvelope = reply.decode();
     assert_eq!(
@@ -108,7 +108,7 @@ async fn answers_a_missing_tag_database_through_the_proxy_boundary(
     #[case] uri: &str,
     #[case] prefix: &str,
 ) {
-    let reply = call(uri, Some(&internal("u1")), handle(None)).await;
+    let reply = call(uri, Some(&internal("u1")), None).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     let envelope: ErrorEnvelope = reply.decode();
     assert_eq!(envelope.error.message, format!("{prefix}{NO_DATABASE}"));
@@ -124,7 +124,7 @@ async fn requires_both_dates_before_reading_the_view(#[case] uri: &str) {
     let mut fake = tag_store();
     fake.daily = vec![daily_tag(Some("a"), "1", 1)];
     let store = Arc::new(fake);
-    let reply = call(uri, Some(&internal("u1")), handle(Some(&store))).await;
+    let reply = call(uri, Some(&internal("u1")), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST);
     let envelope: ErrorEnvelope = reply.decode();
     assert_eq!(
@@ -138,13 +138,13 @@ async fn requires_both_dates_before_reading_the_view(#[case] uri: &str) {
 }
 
 fn expected_call(tags: Option<&[&str]>) -> String {
-    match tags {
-        None => "daily_tag_spend(s,e,None)".to_owned(),
-        Some(list) => {
+    tags.map_or_else(
+        || "daily_tag_spend(s,e,None)".to_owned(),
+        |list| {
             let owned: Vec<String> = list.iter().map(|tag| (*tag).to_owned()).collect();
             format!("daily_tag_spend(s,e,Some({owned:?}))")
-        }
-    }
+        },
+    )
 }
 
 #[rstest]
@@ -169,7 +169,7 @@ async fn binds_only_the_tags_that_are_not_all_tags(
     fake.daily = vec![daily_tag(Some("a"), "1", 1)];
     let store = Arc::new(fake);
     let uri = format!("/global/spend/tags?start_date=s&end_date=e{suffix}");
-    let reply = call(&uri, Some(&internal("u1")), handle(Some(&store))).await;
+    let reply = call(&uri, Some(&internal("u1")), Some(&store)).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(store.calls(), vec![expected_call(expected.as_deref())]);
 }
@@ -180,7 +180,7 @@ async fn passes_empty_date_text_to_the_store() {
     let reply = call(
         "/global/spend/tags?start_date=&end_date=",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -193,7 +193,7 @@ async fn passes_the_raw_date_text_to_the_store() {
     let reply = call(
         "/global/spend/tags?start_date=2024-1-5&end_date=not-a-date",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -216,7 +216,7 @@ async fn sums_and_ranks_the_daily_rows_for_the_ui() {
     let reply = call(
         "/global/spend/tags?start_date=2024-01-01&end_date=2024-02-01",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -242,7 +242,7 @@ async fn rounds_the_daily_tag_spend_to_four_places() {
     let reply = call(
         "/global/spend/tags?start_date=2024-01-01&end_date=2024-02-01",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert!(reply.text().contains("\"spend\":0.0002"));
@@ -255,7 +255,7 @@ async fn rounds_the_daily_tag_spend_to_four_places() {
 
 #[tokio::test]
 async fn keeps_every_tag_past_the_top_ten() {
-    let names: Vec<String> = (0..12).map(|index| format!("tag-{index}")).collect();
+    let names: Vec<String> = (0_i32..12).map(|index| format!("tag-{index}")).collect();
     let mut fake = tag_store();
     fake.daily = names
         .iter()
@@ -266,7 +266,7 @@ async fn keeps_every_tag_past_the_top_ten() {
     let reply = call(
         "/global/spend/tags?start_date=2024-01-01&end_date=2024-02-01",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     let body: SpendPerTagBody = reply.decode();
@@ -279,7 +279,7 @@ async fn answers_an_empty_daily_result_with_an_empty_list() {
     let reply = call(
         "/global/spend/tags?start_date=2024-01-01&end_date=2024-02-01",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -294,7 +294,7 @@ async fn answers_a_daily_store_failure_with_the_connected_message() {
     let reply = call(
         "/global/spend/tags?start_date=2024-01-01&end_date=2024-02-01",
         Some(&internal("u1")),
-        handle(Some(&store)),
+        Some(&store),
     )
     .await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
