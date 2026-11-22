@@ -20,7 +20,7 @@ pub struct FrameQuotaEstimate {
 struct RejectionFrame {
     #[serde(rename = "type")]
     kind: &'static str,
-    error: RejectionError,
+    error: RejectionBody,
 }
 
 #[derive(Serialize)]
