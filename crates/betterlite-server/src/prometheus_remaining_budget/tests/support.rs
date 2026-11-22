@@ -79,12 +79,11 @@ impl Recorder {
 
     fn record<T: Serialize>(&self, entity: &'static str, lookup: &T) {
         let recorded = to_value(lookup).unwrap();
-        let mut calls = self
-            .inner
+        self.inner
             .calls
             .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        calls.insert(entity, recorded);
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(entity, recorded);
     }
 
     fn mark_finished(&self, entity: &'static str) {

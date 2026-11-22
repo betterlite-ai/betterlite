@@ -40,12 +40,12 @@ impl Section for Raw {
         let Some(text) = lookup.lookup(TIMEOUT_VARIABLE) else {
             return Ok(Settings::default());
         };
-        let seconds = betterlite_env::number::<f64>(TIMEOUT_VARIABLE, &text)
+        let parsed = betterlite_env::number::<f64>(TIMEOUT_VARIABLE, &text)
             .map_err(|source| ConfigError::Environment { source })?;
-        let Some(seconds) = seconds else {
+        let Some(seconds) = parsed else {
             return Ok(Settings::default());
         };
-        if !seconds.is_finite() || seconds <= 0.0 {
+        if !seconds.is_finite() || seconds <= 0.0_f64 {
             // LiteLLM's line; Debug prints the float default as 5.0, like its %s does
             tracing::debug!(
                 "[Non-Blocking] Prometheus: invalid {TIMEOUT_VARIABLE}={text}; using default {:?}s.",

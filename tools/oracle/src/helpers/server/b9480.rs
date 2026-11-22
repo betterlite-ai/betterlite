@@ -59,7 +59,8 @@ struct FanOutCall {
 #[serde(tag = "function", rename_all = "snake_case")]
 enum Input {
     Timeout { values: Vec<Option<String>> },
-    FanOut(FanOutCall),
+    // boxed so the two variants stay close in size
+    FanOut(Box<FanOutCall>),
 }
 
 // the fan-out only reads the collector variant of a gauge, so a unit stand-in stands for every real one
@@ -86,10 +87,10 @@ where
     })
 }
 
-fn configured_timeout(value: Option<&String>) -> Result<f64, Box<HelperError>> {
+fn configured_timeout(value: Option<&str>) -> Result<f64, Box<HelperError>> {
     let mut lookup = BTreeMap::new();
     if let Some(text) = value {
-        lookup.insert(TIMEOUT_VARIABLE.to_owned(), text.clone());
+        lookup.insert(TIMEOUT_VARIABLE.to_owned(), text.to_owned());
     }
     let loaded = ConfigLoader { lookup }
         .load("model_list: []\n")
@@ -104,7 +105,7 @@ fn configured_timeout(value: Option<&String>) -> Result<f64, Box<HelperError>> {
 fn timeout(values: &[Option<String>]) -> HelperResult {
     let mut resolved = Vec::with_capacity(values.len());
     for value in values {
-        resolved.push(configured_timeout(value.as_ref())?);
+        resolved.push(configured_timeout(value.as_deref())?);
     }
     Ok(json!(resolved))
 }
@@ -181,8 +182,10 @@ impl Recorder {
         let recorded = to_value(lookup).map_err(|error| LookupError {
             message: error.to_string(),
         })?;
-        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.insert(entity, recorded);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(entity, recorded);
         Ok(())
     }
 }
