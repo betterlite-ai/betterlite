@@ -24,6 +24,7 @@ pub enum StabilityEditError {
     UnsupportedParameter { parameter: String, model: String },
     #[error("the {field} value has a type the Stability transform does not declare")]
     Field { field: String },
+    // the oracle driver matches this variant, so it goes only in a task that owns tools/oracle
     #[error("Bedrock has no image price entry for {model}")]
     ModelInfo { model: String },
     #[error(transparent)]
