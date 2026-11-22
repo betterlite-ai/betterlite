@@ -2,7 +2,7 @@ mod tests;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
+use betterlite_prompts::arguments::json::Object;
 
 use crate::deployment_affinity::FilterRequest;
 use crate::router_core::candidates::CandidateSet;
