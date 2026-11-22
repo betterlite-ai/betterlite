@@ -8,18 +8,15 @@ use crate::api::video_records::VideoObject;
 pub(crate) fn mock_response(
     kwargs: &IndexMap<String, Json>,
 ) -> Result<Option<VideoObject>, MockDecodeError> {
-    match kwargs.get("mock_response") {
-        None | Some(Json::Null) => Ok(None),
+    let mock = match kwargs.get("mock_response") {
+        None | Some(Json::Null) => return Ok(None),
         Some(Json::Text(text)) => {
-            let parsed = serde_json::from_str::<Json>(text)
-                .map_err(|source| MockDecodeError::Json { source })?;
-            decode(&parsed).map(Some)
+            serde_json::from_str::<Json>(text).map_err(|source| MockDecodeError::Json { source })?
         }
-        Some(value) => decode(value).map(Some),
-    }
-}
-
-fn decode(value: &Json) -> Result<VideoObject, MockDecodeError> {
-    let text = serde_json::to_string(value).map_err(|source| MockDecodeError::Model { source })?;
-    serde_json::from_str::<VideoObject>(&text).map_err(|source| MockDecodeError::Model { source })
+        Some(value) => value.clone(),
+    };
+    let text = serde_json::to_string(&mock).map_err(|source| MockDecodeError::Model { source })?;
+    let object = serde_json::from_str::<VideoObject>(&text)
+        .map_err(|source| MockDecodeError::Model { source })?;
+    Ok(Some(object))
 }

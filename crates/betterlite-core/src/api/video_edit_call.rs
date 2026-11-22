@@ -14,7 +14,7 @@ use indexmap::IndexMap;
 
 use self::error::{VideoEditCallError, VideoEditFailure, failure};
 use self::prepare::{Prepared, prepare};
-use self::request::into_pending;
+use self::request::{hand_off, into_pending};
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::vector_store_http_write::service::SuppliedClient;
 use crate::api::video_edit_transport::calls::{Handled, VideoEditHandlers};
@@ -74,26 +74,12 @@ where
     Handler: VideoEditHandlers + Sync + ?Sized,
     <Handler as VideoEditHandlers>::Client: Sync,
 {
-    let ready = match prepare(deps, call)? {
-        Prepared::Mock(object) => return Ok(Handled::Done(Box::new(object))),
-        Prepared::Call(ready) => ready,
-    };
-    if ready.is_async {
-        return Ok(Handled::Pending(into_pending(ready, deps.handler)));
-    }
-    match deps.handler.video_edit(ready.request(), ready.config) {
-        Ok(Handled::Done(object)) => Ok(Handled::Done(object)),
-        // the transport never answers Pending on its sync path, and a future borrowed from this call cannot leave it
-        Ok(Handled::Pending(_pending)) => Err(failure(
-            VideoEditCallError::SyncPending,
-            &ready.provider,
-            deps.redactor,
-        )),
-        Err(error) => Err(failure(
-            VideoEditCallError::Handler(error),
-            &ready.provider,
-            deps.redactor,
-        )),
+    match prepare(deps, call)? {
+        Prepared::Mock(object) => Ok(Handled::Done(Box::new(object))),
+        Prepared::Call(ready) if ready.is_async => {
+            Ok(Handled::Pending(into_pending(ready, deps.handler)))
+        }
+        Prepared::Call(ready) => hand_off(deps, ready),
     }
 }
 
@@ -114,15 +100,13 @@ where
         ..*call
     };
     let answer = video_edit(deps, &flagged).map_err(|error| error.remapped(deps.redactor))?;
-    match answer {
-        Handled::Done(object) => Ok(*object),
-        // an error raised inside the awaited future reaches this wrapper's except, which maps with the caller's provider
-        Handled::Pending(pending) => pending.await.map_err(|error| {
-            failure(
-                VideoEditCallError::Handler(error),
-                call.custom_llm_provider.unwrap_or_default(),
-                deps.redactor,
-            )
-        }),
-    }
+    let pending = match answer {
+        Handled::Done(object) => return Ok(*object),
+        Handled::Pending(pending) => pending,
+    };
+    // an error raised inside the awaited future reaches this wrapper's except, which maps with the caller's provider
+    let provider = call.custom_llm_provider.unwrap_or_default();
+    pending
+        .await
+        .map_err(|error| failure(VideoEditCallError::Handler(error), provider, deps.redactor))
 }

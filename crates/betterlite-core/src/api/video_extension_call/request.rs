@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use super::VideoExtensionDeps;
+use super::error::{VideoExtensionCallError, VideoExtensionFailure, failure};
 use crate::api::vector_store_http_write::service::SuppliedClient;
 use crate::api::video_edit_transport::calls::{Handled, VideoExtensionRequest, VideoPending};
 use crate::api::video_edit_transport::config::{BaseVideoConfig, Headers, Params};
@@ -39,6 +41,31 @@ impl<Client> Ready<'_, Client> {
             api_key: None,
             is_async: self.is_async,
         }
+    }
+}
+
+// the sync hand-off: the handler's answer turned into the call's result, with model "" on every failure
+pub(crate) fn hand_off<'run, Configs, Handler>(
+    deps: &'run VideoExtensionDeps<'run, Configs, Handler>,
+    ready: Ready<'run, Handler::Client>,
+) -> Result<Handled<'run>, VideoExtensionFailure>
+where
+    Configs: ?Sized,
+    Handler: VideoExtensionHandlers + ?Sized,
+{
+    match deps.handler.video_extension(ready.request(), ready.config) {
+        Ok(Handled::Done(object)) => Ok(Handled::Done(object)),
+        // the transport never answers Pending on its sync path, and a future borrowed from this call cannot leave it
+        Ok(Handled::Pending(_pending)) => Err(failure(
+            VideoExtensionCallError::SyncPending,
+            &ready.provider,
+            deps.redactor,
+        )),
+        Err(error) => Err(failure(
+            VideoExtensionCallError::Handler(error),
+            &ready.provider,
+            deps.redactor,
+        )),
     }
 }
 
