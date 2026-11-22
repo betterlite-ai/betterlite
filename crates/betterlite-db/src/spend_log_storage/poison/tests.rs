@@ -322,12 +322,12 @@ async fn native_sqlstate_classification_follows_the_sqlstate_class() {
         )
         .await
         .expect_err("the statement raises a data rejection");
-    let rejection = SpendLogStoreError::Database(backend(rejection));
-    assert!(rejection.is_data_rejection());
-    assert!(!rejection.is_transient());
-    assert!(!rejection.is_service_unavailable());
-    assert!(!rejection.is_deadlock());
-    assert!(rejection.is_database());
+    let data_failure = SpendLogStoreError::Database(backend(rejection));
+    assert!(data_failure.is_data_rejection());
+    assert!(!data_failure.is_transient());
+    assert!(!data_failure.is_service_unavailable());
+    assert!(!data_failure.is_deadlock());
+    assert!(data_failure.is_database());
     let deadlock = case
         .client
         .batch_execute(
@@ -335,12 +335,12 @@ async fn native_sqlstate_classification_follows_the_sqlstate_class() {
         )
         .await
         .expect_err("the statement raises a deadlock");
-    let deadlock = SpendLogStoreError::Database(backend(deadlock));
-    assert!(deadlock.is_deadlock());
-    assert!(deadlock.is_transient());
-    assert!(!deadlock.is_data_rejection());
-    assert!(!deadlock.is_service_unavailable());
-    assert!(deadlock.is_database());
+    let deadlock_failure = SpendLogStoreError::Database(backend(deadlock));
+    assert!(deadlock_failure.is_deadlock());
+    assert!(deadlock_failure.is_transient());
+    assert!(!deadlock_failure.is_data_rejection());
+    assert!(!deadlock_failure.is_service_unavailable());
+    assert!(deadlock_failure.is_database());
     case.close().await;
 }
 
