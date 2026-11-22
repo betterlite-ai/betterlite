@@ -9,11 +9,15 @@ call:
     custom_providers: [myprov, myprov]
     api_key: custom-key
 upstream:
-  - status: 200
-    headers: {content-type: application/json}
-    body: {created: 5, data: [{url: "https://example.test/c.png"}]}
+  - status: 429
+    headers: {content-type: text/plain}
+    body: slow down
 compare:
   headers: []
   headers_present: []
   upstream_headers: [content-type]
-  ignore: []
+  ignore:
+    - pointer: /image_generation_call/value/failure/message
+      why: >-
+        LiteLLM prefixes the exception's own message with its class name, and
+        each side words the rate limit differently
