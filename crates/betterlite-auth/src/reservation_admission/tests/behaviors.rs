@@ -39,6 +39,10 @@ async fn initialized_counters_charge_as_one_group() {
     );
     assert_eq!(calls.windows, vec![WINDOW.to_owned()]);
     assert_eq!(
+        calls.spends,
+        vec![KEY.to_owned(), WINDOW.to_owned(), USER.to_owned()]
+    );
+    assert_eq!(
         calls.reservations,
         vec![vec![
             (KEY.to_owned(), amount("4")),

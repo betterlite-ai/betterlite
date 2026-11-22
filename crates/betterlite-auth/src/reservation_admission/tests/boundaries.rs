@@ -263,6 +263,29 @@ async fn short_pipeline_answers_fall_back_to_the_pre_read() {
     );
 }
 
+// a counter the cache holds no value for is read at the spend it falls back to before any charge
+async fn a_counter_without_a_cache_value_reads_its_fallback() {
+    let counters = vec![
+        entity(KEY, "10", "0", CounterEntityType::Key),
+        entity(USER, "10", "8", CounterEntityType::User),
+    ];
+    let fake = seeded(&[], &[]);
+    let mut applied = Vec::new();
+    let admission = admit(&fake, &request(&counters, "4"), &mut applied)
+        .await
+        .expect("the admission");
+    assert_eq!(admission.reserved_cost, amount("4"));
+    let calls = take_calls(&fake);
+    assert_eq!(calls.spends, vec![KEY.to_owned(), USER.to_owned()]);
+    assert_eq!(
+        calls.reservations,
+        vec![
+            vec![(KEY.to_owned(), amount("4"))],
+            vec![(USER.to_owned(), amount("4"))],
+        ]
+    );
+}
+
 // every counter skipped at initialization leaves the estimate standing with nothing charged
 async fn an_empty_reservable_list_returns_the_estimate() {
     let counters = vec![entity(USER, "5", "0", CounterEntityType::User)];
@@ -355,6 +378,7 @@ async fn reservation_admission_engine_boundaries() {
     the_strict_overshoot_tolerance_decides().await;
     a_resize_reaches_exactly_the_remaining_headroom().await;
     short_pipeline_answers_fall_back_to_the_pre_read().await;
+    a_counter_without_a_cache_value_reads_its_fallback().await;
     an_empty_reservable_list_returns_the_estimate().await;
     lost_entries_do_not_stop_later_counters().await;
 }
