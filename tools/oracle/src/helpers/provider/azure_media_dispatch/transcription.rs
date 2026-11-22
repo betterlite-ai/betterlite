@@ -15,8 +15,7 @@ use uuid::Uuid;
 
 use super::case::Input;
 use super::{
-    AUDIO, AUDIO_FILE, AUDIO_TYPE, NOW, first_request, json_reply, outcome_error,
-    transcription_view,
+    AUDIO, AUDIO_FILE, AUDIO_TYPE, first_request, json_reply, outcome_error, transcription_view,
 };
 
 pub(super) async fn transcription(input: &Input) -> HelperResult {

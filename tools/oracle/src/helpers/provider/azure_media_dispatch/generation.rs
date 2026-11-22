@@ -14,7 +14,7 @@ pub(super) async fn image_generation(input: &Input) -> HelperResult {
     let call = ImageGenerationOperation {
         model: Some(input.model.clone()),
         prompt: input.prompt.clone(),
-        timeout: Some(600.0),
+        timeout: Some(600.0_f64),
         optional_params: input.options.clone(),
         headers: Vec::new(),
         api_key: Some(SecretString::from(input.api_key.clone())),

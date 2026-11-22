@@ -5,23 +5,23 @@ use serde_json::Value;
 
 // The oracle runs one Azure media operation per input; the case tag names the arm the Python adapter takes.
 #[derive(Debug, Deserialize)]
-pub(super) struct Input {
-    pub(super) case: Kind,
-    pub(super) api_base: String,
-    pub(super) api_version: String,
-    pub(super) model: String,
+pub(crate) struct Input {
+    pub(crate) case: Kind,
+    pub(crate) api_base: String,
+    pub(crate) api_version: String,
+    pub(crate) model: String,
     #[serde(default)]
-    pub(super) prompt: String,
-    pub(super) api_key: String,
+    pub(crate) prompt: String,
+    pub(crate) api_key: String,
     #[serde(default)]
-    pub(super) options: IndexMap<String, Json>,
+    pub(crate) options: IndexMap<String, Json>,
     #[serde(default)]
-    pub(super) reply: Value,
+    pub(crate) reply: Value,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum Kind {
+pub(crate) enum Kind {
     ImageGeneration,
     ImageEdit,
     Transcription,
