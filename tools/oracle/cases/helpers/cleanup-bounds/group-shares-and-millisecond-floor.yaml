@@ -1,0 +1,18 @@
+kind: helper
+name: cleanup-bounds-group-shares-and-millisecond-floor
+call:
+  cleanup_bounds:
+    general_settings:
+      maximum_spend_logs_cleanup_max_batches: "12"
+    retention: []
+    now_ms: 1000
+    deadlines_ms: [1000, 500, 1250, 9000, 40000]
+    groups:
+      - {overall_ms: 10000, groups: 1}
+      - {overall_ms: 10000, groups: 3}
+      - {overall_ms: 10000, groups: 4}
+      - {overall_ms: 500, groups: 2}
+    timestamps: []
+    days: []
+env: {}
+compare: {ignore: []}

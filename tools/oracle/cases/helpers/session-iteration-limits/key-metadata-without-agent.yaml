@@ -1,0 +1,11 @@
+kind: helper
+name: key-metadata-without-agent
+call:
+  b3054:
+    memory:
+      "{session_iterations:s1}:count": 1
+    calls:
+      - key_metadata: {max_iterations: 1}
+        data: {model: gpt-4o, metadata: {session_id: s1}}
+env: {}
+compare: {ignore: []}
