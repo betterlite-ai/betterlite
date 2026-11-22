@@ -40,7 +40,7 @@ impl Answer for Reply {
 // A default arrives either as the value the case names or as the class defaults, which merge only absent keys.
 fn defaults<T: DeserializeOwned + Default>(value: Option<&Value>) -> Result<T, Box<HelperError>> {
     match value {
-        Some(value) => decode(value),
+        Some(named) => decode(named),
         None => Ok(T::default()),
     }
 }
@@ -49,7 +49,7 @@ fn decode_optional<T: DeserializeOwned>(
     value: Option<&Value>,
 ) -> Result<Option<T>, Box<HelperError>> {
     match value {
-        Some(value) => Ok(Some(decode(value)?)),
+        Some(named) => Ok(Some(decode(named)?)),
         None => Ok(None),
     }
 }
@@ -70,8 +70,8 @@ fn optional(case: &Case) -> Result<Object, Box<HelperError>> {
     }
 }
 
-fn request(case: &Case) -> Result<Request, Box<HelperError>> {
-    let credentials = Credentials {
+fn call_credentials(case: &Case) -> Result<Credentials, Box<HelperError>> {
+    Ok(Credentials {
         api_base: case.api_base.clone(),
         api_version: case.api_version.clone(),
         api_key: case.api_key.clone().map(SecretString::from),
@@ -82,7 +82,11 @@ fn request(case: &Case) -> Result<Request, Box<HelperError>> {
         azure_ad_token: case.azure_ad_token.clone().map(SecretString::from),
         base_model: None,
         timeout: None,
-    };
+    })
+}
+
+fn request(case: &Case) -> Result<Request, Box<HelperError>> {
+    let credentials = call_credentials(case)?;
     match case.operation {
         Operation::Chat => Ok(Request::Chat(Box::new(ChatCall {
             model: case.model.clone(),
@@ -116,8 +120,8 @@ fn request(case: &Case) -> Result<Request, Box<HelperError>> {
 fn kept_headers(case: &Case) -> BTreeSet<String> {
     let mut keep: BTreeSet<String> = KEPT_HEADERS.iter().map(|name| (*name).to_owned()).collect();
     for step in once(case).chain(case.second.as_deref()) {
-        for map in [&step.headers, &step.extra_headers] {
-            if let Some(map) = map {
+        for named in [&step.headers, &step.extra_headers] {
+            if let Some(map) = named {
                 keep.extend(map.keys().map(|name| name.to_ascii_lowercase()));
             }
         }
@@ -175,25 +179,33 @@ pub(crate) fn run(case: &Case) -> Result<Observation, Box<HelperError>> {
         o_series_defaults: defaults(case.o_series_defaults.as_ref())?,
         openai_system_messages_first: false,
     };
-    let body = serde_json::to_vec(&case.reply).map_err(|error| failure("ValueError", error))?;
+    let body = serde_json::to_vec(&case.reply).map_err(|cause| failure("ValueError", cause))?;
     let answer = Reply {
         status: case.status,
         body,
     };
-    let keep = kept_headers(case);
+    replay(&composition, case, &answer, &kept_headers(case))
+}
+
+fn replay(
+    composition: &Composition,
+    case: &Case,
+    answer: &Reply,
+    keep: &BTreeSet<String>,
+) -> Result<Observation, Box<HelperError>> {
     let mut requests = Vec::new();
     let mut replies = Vec::new();
     let mut error = Value::Null;
     for step in once(case).chain(case.second.as_deref()) {
-        let result = dispatch(&composition, request(step)?, &answer);
-        requests.extend(requests_view(&result, &keep)?);
+        let result = dispatch(composition, request(step)?, answer);
+        requests.extend(requests_view(&result, keep)?);
         let reply =
-            serde_json::to_value(&result.reply).map_err(|error| failure("ValueError", error))?;
+            serde_json::to_value(&result.reply).map_err(|cause| failure("ValueError", cause))?;
         if result.error == Json::Null {
             replies.push(reply);
         } else {
             error = serde_json::to_value(&result.error)
-                .map_err(|error| failure("ValueError", error))?;
+                .map_err(|cause| failure("ValueError", cause))?;
             break;
         }
     }
