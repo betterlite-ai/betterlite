@@ -61,16 +61,6 @@ pub(super) enum ContentReason {
     NotText,
 }
 
-impl fmt::Display for ContentReason {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => Ok(()),
-            Self::NoChoice => formatter.write_str("list index out of range"),
-            Self::NotText => formatter.write_str("the response text is not a string"),
-        }
-    }
-}
-
 pub(super) fn decode_error(raw: &RawInvokeReply<'_>) -> InvokeReplyError {
     let message = replaced_text(raw.body);
     match bedrock_error(raw.status, message, raw.headers) {
@@ -98,6 +88,11 @@ pub(super) fn content_error(
     output: &str,
     reason: ContentReason,
 ) -> InvokeReplyError {
+    let reason = match reason {
+        ContentReason::Empty => "",
+        ContentReason::NoChoice => "list index out of range",
+        ContentReason::NotText => "the response text is not a string",
+    };
     let message = format!("Error parsing received text={output}.\nError-{reason}");
     match bedrock_error(raw.status, message, raw.headers) {
         Ok(error) => InvokeReplyError::Content(Box::new(error)),

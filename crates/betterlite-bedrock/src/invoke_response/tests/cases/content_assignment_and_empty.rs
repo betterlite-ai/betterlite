@@ -17,7 +17,7 @@ fn missing_and_empty_text_error() {
     let case = fixture();
     let run = decode(&case, r#"{"results": [{}]}"#);
     assert_eq!(run.status(), Some(200));
-    assert_eq!(run.message(), "Error parsing received text=None.\nError-");
+    assert_eq!(run.message(), "Error parsing received text=null.\nError-");
     assert!(matches!(run.failure(), InvokeReplyError::Content(_)));
 
     let empty_run = decode(&case, r#"{"results": [{"outputText": ""}]}"#);
@@ -37,7 +37,7 @@ fn non_string_text_errors() {
     let bool_run = decode(&case, r#"{"results": [{"outputText": true}]}"#);
     assert_eq!(
         bool_run.message(),
-        "Error parsing received text=True.\nError-the response text is not a string"
+        "Error parsing received text=true.\nError-the response text is not a string"
     );
 
     let list_run = decode(&case, r#"{"results": [{"outputText": ["a"]}]}"#);

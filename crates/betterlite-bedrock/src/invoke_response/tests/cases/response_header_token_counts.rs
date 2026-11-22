@@ -11,8 +11,7 @@ pub(in crate::invoke_response::tests) fn response_header_token_counts() {
     empty_headers_fall_back_to_the_counter();
     mixed_case_headers_are_read();
     python_int_forms_are_parsed();
-    invalid_headers_surface();
-    negative_headers_surface();
+    header_errors_surface();
     counter_failures_surface();
     clock_and_created_ranges_surface();
     created_and_model_are_set();
@@ -81,7 +80,7 @@ fn python_int_forms_are_parsed() {
     assert_eq!(usage.total_tokens, 15);
 }
 
-fn invalid_headers_surface() {
+fn header_errors_surface() {
     let mut case = fixture();
     case.headers = headers("abc", "4");
     let input_run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
@@ -99,10 +98,7 @@ fn invalid_headers_surface() {
         InvokeReplyError::TokenCountHeader { name, .. }
             if *name == "x-amzn-bedrock-output-token-count"
     ));
-}
 
-fn negative_headers_surface() {
-    let mut case = fixture();
     case.headers = headers("-3", "4");
     let prompt_run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
     assert!(matches!(

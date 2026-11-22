@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use betterlite_anthropic::usage::ReasoningTokenCounter as AnthropicReasoningCounter;
 use betterlite_bedrock::converse_usage::transform::ReasoningTokenCounter as ConverseReasoningCounter;
 use betterlite_bedrock::pegasus::counter::TokenCounter;
+use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use serde_json::{Value, json};
@@ -30,7 +31,7 @@ impl ConverseReasoningCounter for NoReasoning {
 
 // The oracle answer for a fallback count is the token_count helper, so no tokenizer runs twice here.
 pub(super) struct TokenizerCounter {
-    pub(super) messages: Vec<Value>,
+    pub(super) messages: Json,
 }
 
 #[async_trait]

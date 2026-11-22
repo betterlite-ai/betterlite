@@ -7,6 +7,7 @@ use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::response::ChatResponse;
 use http::{HeaderMap, HeaderName, HeaderValue};
+use num_traits::cast;
 
 use crate::claude_invoke::response::transform_response as claude_transform_response;
 use crate::converse_response::request::{RawReply, ReplyRequest};
@@ -31,14 +32,21 @@ pub(super) fn anthropic<Reasoning>(
 where
     Reasoning: AnthropicReasoningCounter<Failure = Infallible>,
 {
-    let headers = header_map(raw.headers)?;
+    let mut headers = HeaderMap::with_capacity(raw.headers.len());
+    for (name, value) in raw.headers {
+        let header_name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_error| InvokeReplyError::InvalidHeader { name: name.clone() })?;
+        let header_value = HeaderValue::from_str(value)
+            .map_err(|_error| InvokeReplyError::InvalidHeader { name: name.clone() })?;
+        headers.insert(header_name, header_value);
+    }
     let request = ResponseRequest {
         messages: message_slice(call.messages),
         optional_params: call.optional_params,
         litellm_params: call.litellm_params,
         request_data: call.request_data,
         json_mode: call.json_mode,
-        now: usage::seconds(call.now)?,
+        now: cast::<f64, i64>(call.now).ok_or(InvokeReplyError::ClockOutOfRange)?,
         disable_add_prefix_to_prompt: call.disable_add_prefix_to_prompt,
     };
     let raw_response = RawResponse {
@@ -70,7 +78,18 @@ pub(super) fn nova<Reasoning>(
 where
     Reasoning: ConverseReasoningCounter<Failure = Infallible>,
 {
-    let seed = converse_seed(response)?;
+    let seed = ConverseResponse {
+        id: response.id,
+        created: i64::try_from(response.created)
+            .map_err(|_error| InvokeReplyError::CreatedOutOfRange)?,
+        model: response.model,
+        object: response.object,
+        system_fingerprint: response.system_fingerprint,
+        choices: Vec::new(),
+        usage: None,
+        service_tier: response.service_tier.map(Json::Text),
+        trace: None,
+    };
     let request = ReplyRequest {
         model: call.model,
         messages: call.messages,
@@ -107,7 +126,28 @@ pub(super) async fn pegasus<Counter>(
 where
     Counter: TokenCounter + Sync,
 {
-    let mut seed = pegasus_seed(response)?;
+    let created =
+        i64::try_from(response.created).map_err(|_error| InvokeReplyError::CreatedOutOfRange)?;
+    let choices = response
+        .choices
+        .into_iter()
+        .map(|choice| PegasusChoice {
+            index: i64::from(choice.index),
+            message: PegasusMessage {
+                role: choice.message.role,
+                content: choice.message.content,
+                tool_calls: choice.message.tool_calls,
+            },
+            finish_reason: choice.finish_reason,
+        })
+        .collect();
+    let mut seed = PegasusResponse {
+        id: response.id,
+        choices,
+        created,
+        model: response.model,
+        usage: PegasusUsage::default(),
+    };
     let context = ReplyContext {
         status: raw.status,
         headers: raw.headers,
@@ -126,56 +166,4 @@ fn message_slice(messages: &Json) -> &[Json] {
         Json::List(items) => items,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => &[],
     }
-}
-
-fn converse_seed(response: ChatResponse) -> Result<ConverseResponse, InvokeReplyError> {
-    Ok(ConverseResponse {
-        id: response.id,
-        created: i64::try_from(response.created)
-            .map_err(|_error| InvokeReplyError::CreatedOutOfRange)?,
-        model: response.model,
-        object: response.object,
-        system_fingerprint: response.system_fingerprint,
-        choices: Vec::new(),
-        usage: None,
-        service_tier: response.service_tier.map(Json::Text),
-        trace: None,
-    })
-}
-
-fn pegasus_seed(response: ChatResponse) -> Result<PegasusResponse, InvokeReplyError> {
-    let created =
-        i64::try_from(response.created).map_err(|_error| InvokeReplyError::CreatedOutOfRange)?;
-    let choices = response
-        .choices
-        .into_iter()
-        .map(|choice| PegasusChoice {
-            index: i64::from(choice.index),
-            message: PegasusMessage {
-                role: choice.message.role,
-                content: choice.message.content,
-                tool_calls: choice.message.tool_calls,
-            },
-            finish_reason: choice.finish_reason,
-        })
-        .collect();
-    Ok(PegasusResponse {
-        id: response.id,
-        choices,
-        created,
-        model: response.model,
-        usage: PegasusUsage::default(),
-    })
-}
-
-fn header_map(pairs: &[(String, String)]) -> Result<HeaderMap, InvokeReplyError> {
-    let mut headers = HeaderMap::with_capacity(pairs.len());
-    for (name, value) in pairs {
-        let header_name = HeaderName::from_bytes(name.as_bytes())
-            .map_err(|_error| InvokeReplyError::InvalidHeader { name: name.clone() })?;
-        let header_value = HeaderValue::from_str(value)
-            .map_err(|_error| InvokeReplyError::InvalidHeader { name: name.clone() })?;
-        headers.insert(header_name, header_value);
-    }
-    Ok(headers)
 }

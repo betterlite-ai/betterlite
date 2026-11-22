@@ -53,38 +53,6 @@ pub enum InvokeReply {
     Pegasus(PegasusResponse),
 }
 
-enum Route {
-    Anthropic,
-    Nova,
-    Pegasus,
-    Family(body::Family),
-}
-
-const fn route(provider: Option<BedrockInvokeProvider>) -> Route {
-    match provider {
-        Some(BedrockInvokeProvider::Anthropic) => Route::Anthropic,
-        Some(BedrockInvokeProvider::Nova) => Route::Nova,
-        Some(BedrockInvokeProvider::Twelvelabs) => Route::Pegasus,
-        Some(BedrockInvokeProvider::Cohere) => Route::Family(body::Family::Cohere),
-        Some(BedrockInvokeProvider::Ai21) => Route::Family(body::Family::Ai21),
-        Some(
-            BedrockInvokeProvider::Meta
-            | BedrockInvokeProvider::Llama
-            | BedrockInvokeProvider::DeepseekR1,
-        ) => Route::Family(body::Family::Generation),
-        Some(BedrockInvokeProvider::Mistral) => Route::Family(body::Family::Mistral),
-        Some(
-            BedrockInvokeProvider::Amazon
-            | BedrockInvokeProvider::Qwen3
-            | BedrockInvokeProvider::Qwen2
-            | BedrockInvokeProvider::Openai
-            | BedrockInvokeProvider::Stability
-            | BedrockInvokeProvider::Moonshot,
-        )
-        | None => Route::Family(body::Family::Titan),
-    }
-}
-
 pub async fn decode_invoke_reply<ChatCounter, Reasoning>(
     call: InvokeReplyCall<'_, '_, '_>,
     raw: &RawInvokeReply<'_>,
@@ -97,26 +65,42 @@ where
     Reasoning: AnthropicReasoningCounter<Failure = Infallible>
         + ConverseReasoningCounter<Failure = Infallible>,
 {
-    let record = body::parse(raw.body).map_err(|_source| error::decode_error(raw))?;
+    let record = serde_json::from_slice(raw.body).map_err(|_source| error::decode_error(raw))?;
     body::debug_log(&record);
-    let family = match route(invoke_provider(call.model)) {
-        Route::Anthropic => {
+    let family = match invoke_provider(call.model) {
+        Some(BedrockInvokeProvider::Anthropic) => {
             return delegate::anthropic(call, raw, response, reasoning).map(InvokeReply::Anthropic);
         }
-        Route::Nova => {
+        Some(BedrockInvokeProvider::Nova) => {
             return delegate::nova(call, raw, response, reasoning).map(InvokeReply::Nova);
         }
-        Route::Pegasus => {
+        Some(BedrockInvokeProvider::Twelvelabs) => {
             return delegate::pegasus(call, raw, response, counter)
                 .await
                 .map(InvokeReply::Pegasus);
         }
-        Route::Family(family) => family,
+        Some(BedrockInvokeProvider::Cohere) => body::Family::Cohere,
+        Some(BedrockInvokeProvider::Ai21) => body::Family::Ai21,
+        Some(
+            BedrockInvokeProvider::Meta
+            | BedrockInvokeProvider::Llama
+            | BedrockInvokeProvider::DeepseekR1,
+        ) => body::Family::Generation,
+        Some(BedrockInvokeProvider::Mistral) => body::Family::Mistral,
+        Some(
+            BedrockInvokeProvider::Amazon
+            | BedrockInvokeProvider::Qwen3
+            | BedrockInvokeProvider::Qwen2
+            | BedrockInvokeProvider::Openai
+            | BedrockInvokeProvider::Stability
+            | BedrockInvokeProvider::Moonshot,
+        )
+        | None => body::Family::Titan,
     };
     let output = body::family_output(&record, family, &mut response.choices)
         .map_err(|source| error::processing_error(raw, &source))?;
     body::assign_content(&mut response.choices, &output)
-        .map_err(|reason| error::content_error(raw, &body::python_text(&output), reason))?;
+        .map_err(|reason| error::content_error(raw, &body::output_text(&output), reason))?;
     usage::assign(&call, raw, &mut response, counter).await?;
     Ok(InvokeReply::Chat(response))
 }

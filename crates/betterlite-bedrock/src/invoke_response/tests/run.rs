@@ -17,43 +17,31 @@ pub(super) struct Run {
 
 impl Run {
     pub(super) fn chat(&self) -> &ChatResponse {
-        match &self.reply {
-            Ok(InvokeReply::Chat(response)) => response,
-            Ok(InvokeReply::Anthropic(_) | InvokeReply::Nova(_) | InvokeReply::Pegasus(_)) => {
-                panic!("the reply is not a base family chat response")
-            }
-            Err(_error) => panic!("the reply failed"),
-        }
+        let Ok(InvokeReply::Chat(response)) = &self.reply else {
+            panic!("the reply is not a base family chat response");
+        };
+        response
     }
 
     pub(super) fn envelope(&self) -> &ResponseEnvelope {
-        match &self.reply {
-            Ok(InvokeReply::Anthropic(envelope)) => envelope,
-            Ok(InvokeReply::Chat(_) | InvokeReply::Nova(_) | InvokeReply::Pegasus(_)) => {
-                panic!("the reply is not an Anthropic envelope")
-            }
-            Err(_error) => panic!("the reply failed"),
-        }
+        let Ok(InvokeReply::Anthropic(envelope)) = &self.reply else {
+            panic!("the reply is not an Anthropic envelope");
+        };
+        envelope
     }
 
     pub(super) fn nova(&self) -> &ModelResponse {
-        match &self.reply {
-            Ok(InvokeReply::Nova(response)) => response,
-            Ok(InvokeReply::Chat(_) | InvokeReply::Anthropic(_) | InvokeReply::Pegasus(_)) => {
-                panic!("the reply is not a Nova response")
-            }
-            Err(_error) => panic!("the reply failed"),
-        }
+        let Ok(InvokeReply::Nova(response)) = &self.reply else {
+            panic!("the reply is not a Nova response");
+        };
+        response
     }
 
     pub(super) fn pegasus(&self) -> &PegasusResponse {
-        match &self.reply {
-            Ok(InvokeReply::Pegasus(response)) => response,
-            Ok(InvokeReply::Chat(_) | InvokeReply::Anthropic(_) | InvokeReply::Nova(_)) => {
-                panic!("the reply is not a Pegasus response")
-            }
-            Err(_error) => panic!("the reply failed"),
-        }
+        let Ok(InvokeReply::Pegasus(response)) = &self.reply else {
+            panic!("the reply is not a Pegasus response");
+        };
+        response
     }
 
     pub(super) fn failure(&self) -> &InvokeReplyError {

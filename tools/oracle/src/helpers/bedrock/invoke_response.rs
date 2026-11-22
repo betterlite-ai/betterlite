@@ -2,7 +2,9 @@ use betterlite_bedrock::agentcore_stream::UuidV4;
 use betterlite_bedrock::converse_response::request::OptionalParams;
 use betterlite_bedrock::image_call::plan::LogContext;
 use betterlite_bedrock::invoke_response::{InvokeReplyCall, RawInvokeReply, decode_invoke_reply};
+use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -17,8 +19,8 @@ mod tests;
 mod view;
 
 use counter::{NoReasoning, TokenizerCounter};
-use error::{error_json, reply_error, value_error};
-use fixture::{Silent, build_response, deserialize, logging};
+use error::{reply_error, value_error};
+use fixture::{Silent, build_response, logging};
 use view::reply_json;
 
 pub(crate) struct Op;
@@ -36,11 +38,11 @@ pub(crate) struct ReplyCall {
     body: String,
     status: u16,
     headers: Vec<(String, String)>,
-    messages: Vec<Value>,
-    request_data: Value,
-    optional_params: Value,
-    litellm_params: Value,
-    tool_name_mappings: Value,
+    messages: Json,
+    request_data: IndexMap<String, Json>,
+    optional_params: IndexMap<String, Json>,
+    litellm_params: IndexMap<String, Json>,
+    tool_name_mappings: IndexMap<String, String>,
     json_mode: Option<bool>,
     now: f64,
     response: ResponseSeed,
@@ -78,7 +80,12 @@ impl Helper for Op {
             .iter()
             .map(|call| match reply_case(call) {
                 Ok(view) => json!({ "ok": view }),
-                Err(error) => error_json(&error),
+                Err(error) => json!({
+                    "error": {
+                        "class": error.class,
+                        "status": error.status,
+                    }
+                }),
             })
             .collect();
         Ok(json!({ "results": answers }))
@@ -90,25 +97,19 @@ fn reply_case(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
         Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| value_error(error.to_string()))?;
     let sink = Silent;
     let (mut state, env) = logging(&redactor, &sink)?;
-    let counted = deserialize(&Value::Array(call.messages.clone()))?;
-    let messages = deserialize(&Value::Array(call.messages.clone()))?;
-    let request_data = deserialize(&call.request_data)?;
-    let optional_params = deserialize(&call.optional_params)?;
-    let litellm_params = deserialize(&call.litellm_params)?;
-    let tool_name_mappings = deserialize(&call.tool_name_mappings)?;
     let optional = OptionalParams::default();
     let counter = TokenizerCounter {
         messages: call.messages.clone(),
     };
     let decode_call = InvokeReplyCall {
         model: &call.model,
-        messages: &messages,
-        counted_messages: &counted,
-        request_data: &request_data,
-        optional_params: &optional_params,
+        messages: &call.messages,
+        counted_messages: &[],
+        request_data: &call.request_data,
+        optional_params: &call.optional_params,
         optional: &optional,
-        litellm_params: &litellm_params,
-        tool_name_mappings: &tool_name_mappings,
+        litellm_params: &call.litellm_params,
+        tool_name_mappings: &call.tool_name_mappings,
         json_mode: call.json_mode,
         disable_add_prefix_to_prompt: false,
         now: call.now,

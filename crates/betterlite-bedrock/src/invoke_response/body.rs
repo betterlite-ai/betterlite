@@ -1,14 +1,10 @@
 use betterlite_models::call_helpers::finish_reason::map_finish_reason;
 use betterlite_openai::chat::response::ChatChoice;
 use betterlite_prompts::arguments::json::{Json, Object};
-use serde::Serialize as _;
-use serde_json::ser::PrettyFormatter;
 use thiserror::Error;
 
 use crate::invoke_response::error::ContentReason;
 use crate::legacy_models::mistral::{MistralOutputError, output_text};
-
-const INDENT: &[u8] = b"    ";
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Family {
@@ -33,24 +29,12 @@ pub(super) enum FamilyError {
     NotObject,
 }
 
-pub(super) fn parse(body: &[u8]) -> Result<Json, serde_json::Error> {
-    serde_json::from_slice(body)
-}
-
+// LiteLLM logs json.dumps(completion_response); Python's indent=4 form is not ported.
 pub(super) fn debug_log(record: &Json) {
-    let Some(rendered) = rendered(record) else {
+    let Ok(rendered) = serde_json::to_string_pretty(record) else {
         return;
     };
     tracing::debug!("bedrock invoke response {rendered}");
-}
-
-// LiteLLM logs json.dumps(completion_response, indent=4, default=str)
-pub(super) fn rendered(record: &Json) -> Option<String> {
-    let mut bytes = Vec::new();
-    let mut serializer =
-        serde_json::Serializer::with_formatter(&mut bytes, PrettyFormatter::with_indent(INDENT));
-    record.serialize(&mut serializer).ok()?;
-    String::from_utf8(bytes).ok()
 }
 
 pub(super) fn family_output(
@@ -64,14 +48,20 @@ pub(super) fn family_output(
     match family {
         Family::Cohere => cohere(fields, choices),
         Family::Ai21 => ai21(fields),
-        Family::Generation => fields
-            .get("generation")
-            .cloned()
-            .ok_or(FamilyError::Malformed {
-                field: "generation",
-            }),
+        Family::Generation => Ok(field(fields, "generation", "generation")?.clone()),
         Family::Mistral => mistral(fields, choices),
         Family::Titan => titan(fields),
+    }
+}
+
+fn field<'value>(
+    fields: &'value Object,
+    key: &str,
+    name: &'static str,
+) -> Result<&'value Json, FamilyError> {
+    match fields.get(key) {
+        Some(value) => Ok(value),
+        None => Err(FamilyError::Malformed { field: name }),
     }
 }
 
@@ -83,12 +73,8 @@ fn cohere(fields: &Object, choices: &mut [ChatChoice]) -> Result<Json, FamilyErr
         return Ok(Json::Null);
     };
     let first = first_record(generations, "generations")?;
-    let text = first.get("text").cloned().ok_or(FamilyError::Malformed {
-        field: "generations.text",
-    })?;
-    let finish = first.get("finish_reason").ok_or(FamilyError::Malformed {
-        field: "generations.finish_reason",
-    })?;
+    let text = field(first, "text", "generations.text")?.clone();
+    let finish = field(first, "finish_reason", "generations.finish_reason")?;
     let mapped = mapped_finish_reason(finish)?;
     let choice = choices.first_mut().ok_or(FamilyError::MissingChoice)?;
     choice.finish_reason = Some(mapped);
@@ -108,9 +94,7 @@ fn mapped_finish_reason(value: &Json) -> Result<String, FamilyError> {
 }
 
 fn ai21(fields: &Object) -> Result<Json, FamilyError> {
-    let completions = fields.get("completions").ok_or(FamilyError::Malformed {
-        field: "completions",
-    })?;
+    let completions = field(fields, "completions", "completions")?;
     let first = first_record(completions, "completions")?;
     let data = first
         .get("data")
@@ -137,9 +121,7 @@ fn mistral(fields: &Object, choices: &mut [ChatChoice]) -> Result<Json, FamilyEr
 }
 
 fn titan(fields: &Object) -> Result<Json, FamilyError> {
-    let results = fields
-        .get("results")
-        .ok_or(FamilyError::Malformed { field: "results" })?;
+    let results = field(fields, "results", "results")?;
     let first = first_record(results, "results")?;
     Ok(first.get("outputText").cloned().unwrap_or(Json::Null))
 }
@@ -183,13 +165,12 @@ pub(super) fn assign_content(
     }
 }
 
-pub(super) fn python_text(value: &Json) -> String {
+// A non-string output is spelled as standard JSON, since Python's str form is not ported.
+pub(super) fn output_text(value: &Json) -> String {
     match value {
-        Json::Null => "None".to_owned(),
-        Json::Bool(true) => "True".to_owned(),
-        Json::Bool(false) => "False".to_owned(),
-        Json::Number(number) => number.to_string(),
         Json::Text(text) => text.clone(),
-        Json::List(_) | Json::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            serde_json::to_string(value).unwrap_or_default()
+        }
     }
 }

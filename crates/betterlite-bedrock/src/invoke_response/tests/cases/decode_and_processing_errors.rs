@@ -7,15 +7,13 @@ use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::invoke_response::body;
 use crate::invoke_response::tests::counter::FixtureCounter;
-use crate::invoke_response::tests::support::{MODEL, decode, decode_with, fixture, json};
+use crate::invoke_response::tests::support::{MODEL, decode, decode_with, fixture};
 
 pub(in crate::invoke_response::tests) fn decode_and_processing_errors() {
     decode_failures_keep_the_raw_response();
     invalid_utf8_becomes_replacement_characters();
     malformed_family_payloads_are_processing_errors();
-    debug_log_uses_four_spaces();
     debug_log_carries_the_rendered_reply();
 }
 
@@ -109,14 +107,6 @@ fn malformed_family_payloads_are_processing_errors() {
     }
 }
 
-fn debug_log_uses_four_spaces() {
-    let record = json(r#"{"a": 1, "b": [true, null]}"#);
-    assert_eq!(
-        body::rendered(&record).as_deref(),
-        Some("{\n    \"a\": 1,\n    \"b\": [\n        true,\n        null\n    ]\n}")
-    );
-}
-
 #[derive(Clone, Default)]
 struct Captured(Arc<Mutex<Vec<String>>>);
 
@@ -165,4 +155,8 @@ fn debug_log_carries_the_rendered_reply() {
     assert_eq!(messages.len(), 1);
     assert!(messages[0].contains("outputText"));
     assert!(messages[0].contains("the answer"));
+    assert!(
+        messages[0].contains("\"outputText\": \"the answer\""),
+        "the reply is logged as JSON"
+    );
 }

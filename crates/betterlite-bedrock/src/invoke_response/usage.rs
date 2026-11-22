@@ -34,13 +34,25 @@ where
     };
     let total = i128::from(prompt) + i128::from(completion);
     response.usage = ChatUsage {
-        prompt_tokens: in_range(i128::from(prompt), "prompt_tokens")?,
-        completion_tokens: in_range(i128::from(completion), "completion_tokens")?,
-        total_tokens: in_range(total, "total_tokens")?,
+        prompt_tokens: u64::try_from(i128::from(prompt)).map_err(|_error| {
+            InvokeReplyError::UsageRange {
+                name: "prompt_tokens",
+            }
+        })?,
+        completion_tokens: u64::try_from(i128::from(completion)).map_err(|_error| {
+            InvokeReplyError::UsageRange {
+                name: "completion_tokens",
+            }
+        })?,
+        total_tokens: u64::try_from(total).map_err(|_error| InvokeReplyError::UsageRange {
+            name: "total_tokens",
+        })?,
         prompt_tokens_details: None,
         completion_tokens_details: None,
     };
-    response.created = created(call.now)?;
+    response.created =
+        u64::try_from(cast::<f64, i64>(call.now).ok_or(InvokeReplyError::ClockOutOfRange)?)
+            .map_err(|_error| InvokeReplyError::CreatedOutOfRange)?;
     call.model.clone_into(&mut response.model);
     Ok(())
 }
@@ -70,32 +82,17 @@ fn header_count(
     headers: &[(String, String)],
     name: &'static str,
 ) -> Result<Option<i64>, InvokeReplyError> {
-    let Some(value) = header(headers, name).filter(|value| !value.is_empty()) else {
+    let Some(value) = headers
+        .iter()
+        .find(|(header_name, _value)| header_name.eq_ignore_ascii_case(name))
+        .map(|(_name, value)| value.as_str())
+        .filter(|value| !value.is_empty())
+    else {
         return Ok(None);
     };
     parse_python_int(value)
         .map(Some)
         .map_err(|source| InvokeReplyError::TokenCountHeader { name, source })
-}
-
-fn header<'headers>(headers: &'headers [(String, String)], name: &str) -> Option<&'headers str> {
-    headers
-        .iter()
-        .find(|(header_name, _value)| header_name.eq_ignore_ascii_case(name))
-        .map(|(_name, value)| value.as_str())
-}
-
-fn in_range(value: i128, name: &'static str) -> Result<u64, InvokeReplyError> {
-    u64::try_from(value).map_err(|_error| InvokeReplyError::UsageRange { name })
-}
-
-fn created(now: f64) -> Result<u64, InvokeReplyError> {
-    let seconds = seconds(now)?;
-    u64::try_from(seconds).map_err(|_error| InvokeReplyError::CreatedOutOfRange)
-}
-
-pub(super) fn seconds(now: f64) -> Result<i64, InvokeReplyError> {
-    cast::<f64, i64>(now).ok_or(InvokeReplyError::ClockOutOfRange)
 }
 
 pub(super) fn instant(now: f64) -> Result<SystemTime, InvokeReplyError> {

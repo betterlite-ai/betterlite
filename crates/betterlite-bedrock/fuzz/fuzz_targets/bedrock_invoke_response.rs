@@ -1,6 +1,5 @@
 #![no_main]
 
-use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::time::Duration;
 
@@ -19,14 +18,9 @@ use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
-use betterlite_logging::logging_state::types::{
-    CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
-};
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::response::{
-    AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
-};
+use betterlite_openai::chat::response::ChatResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
@@ -35,7 +29,8 @@ use indexmap::IndexMap;
 use libfuzzer_sys::fuzz_target;
 use tokio::runtime::Builder;
 
-const MODEL: &str = "amazon.titan-text-express-v1";
+const INIT: &str = r#"{"model":"amazon.titan-text-express-v1","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"fuzz-call","function_id":"fuzz-function","litellm_trace_id":"fuzz-trace"}"#;
+const SEED: &str = r#"{"id":"chatcmpl-fuzz","object":"chat.completion","created":0,"model":"","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":null,"annotations":null,"audio":null,"refusal":null},"finish_reason":null,"logprobs":null}],"system_fingerprint":null,"service_tier":null}"#;
 
 struct ZeroCounter;
 
@@ -74,58 +69,11 @@ impl LogSink for DiscardingSink {
     fn emit(&self, _record: LogRecord) {}
 }
 
-fn seeded_response() -> ChatResponse {
-    ChatResponse {
-        id: String::from("chatcmpl-fuzz"),
-        object: String::from("chat.completion"),
-        created: 0,
-        model: String::new(),
-        choices: vec![ChatChoice {
-            index: 0,
-            message: AssistantMessage {
-                role: String::from("assistant"),
-                content: None,
-                tool_calls: None,
-                annotations: None,
-                audio: None,
-                refusal: None,
-                provider_specific_fields: MessageProviderFields::default(),
-            },
-            finish_reason: None,
-            logprobs: None,
-            provider_specific_fields: BTreeMap::new(),
-        }],
-        usage: ChatUsage::default(),
-        system_fingerprint: None,
-        service_tier: None,
-    }
-}
-
 fn logging<'borrow>(
     redactor: &'borrow Redactor,
     sink: &'borrow DiscardingSink,
 ) -> Option<(LoggingState, PrePostEnv<'borrow>)> {
-    let start_time =
-        DateTime::<FixedOffset>::parse_from_rfc3339("2026-01-01T00:00:00+00:00").ok()?;
-    let init = LoggingInit {
-        model: MODEL.to_owned(),
-        call_type: String::from("completion"),
-        start_time,
-        litellm_call_id: String::from("fuzz-call"),
-        function_id: String::from("fuzz-function"),
-        messages: None,
-        stream: None,
-        litellm_trace_id: None,
-        kwargs: IndexMap::new(),
-        litellm_params: IndexMap::new(),
-        callback_dynamic_params: IndexMap::new(),
-        trusted_callback_vars: Vec::new(),
-        standard_built_in_tools_params: IndexMap::new(),
-        dynamic_callbacks: DynamicCallbacks::default(),
-        applied_guardrails: None,
-        request_logging: RequestLoggingFlags::default(),
-        callback_policy: CallbackPolicy::default(),
-    };
+    let init: LoggingInit = serde_json::from_str(INIT).ok()?;
     let state = LoggingState::new(
         init,
         CorrelationSetup {
@@ -134,7 +82,7 @@ fn logging<'borrow>(
         },
         redactor,
         || String::from("fuzz-trace"),
-        Duration::default(),
+        Duration::default,
     )
     .ok()?;
     let env = PrePostEnv {
@@ -165,12 +113,15 @@ fn replay(bytes: &[u8]) {
     let Some((mut state, env)) = logging(&redactor, &sink) else {
         return;
     };
+    let Ok(seed) = serde_json::from_str::<ChatResponse>(SEED) else {
+        return;
+    };
     let params: IndexMap<String, Json> = IndexMap::new();
     let mappings: IndexMap<String, String> = IndexMap::new();
     let messages = Json::List(Vec::new());
     let optional = OptionalParams::default();
     let call = InvokeReplyCall {
-        model: MODEL,
+        model: "amazon.titan-text-express-v1",
         messages: &messages,
         counted_messages: &[],
         request_data: &params,
@@ -195,7 +146,7 @@ fn replay(bytes: &[u8]) {
     let _outcome = runtime.block_on(decode_invoke_reply(
         call,
         &raw,
-        seeded_response(),
+        seed,
         &ZeroCounter,
         &NoReasoning,
     ));

@@ -9,7 +9,6 @@ pub(in crate::invoke_response::tests) fn base_family_outputs() {
     ai21_text();
     generation_text();
     mistral_outputs();
-    mistral_choices();
     every_other_provider_is_titan();
 }
 
@@ -110,21 +109,20 @@ fn mistral_outputs() {
         Some("mistral says")
     );
     assert_eq!(response.choices[0].finish_reason.as_deref(), Some("stop"));
-}
 
-fn mistral_choices() {
-    let mut case = fixture();
-    case.model = String::from("mistral.mistral-large-2402-v1:0");
-    let run = decode(
+    let choices_run = decode(
         &case,
         r#"{"choices": [{"message": {"content": "chat text"}, "finish_reason": "length"}]}"#,
     );
-    let response = run.chat();
+    let choices_reply = choices_run.chat();
     assert_eq!(
-        response.choices[0].message.content.as_deref(),
+        choices_reply.choices[0].message.content.as_deref(),
         Some("chat text")
     );
-    assert_eq!(response.choices[0].finish_reason.as_deref(), Some("length"));
+    assert_eq!(
+        choices_reply.choices[0].finish_reason.as_deref(),
+        Some("length")
+    );
 }
 
 fn every_other_provider_is_titan() {

@@ -1,19 +1,19 @@
 import time
 from functools import partial
-from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, Unpack, cast
+from typing import Final, NotRequired, Protocol, TypedDict, Unpack, cast
 
 import httpx
 import litellm
 from litellm.llms.bedrock.chat.invoke_transformations.base_invoke_transformation import (
     AmazonInvokeConfig,
 )
+from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.types.utils import Choices, Message, ModelResponse
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 # register_model prints the provider list to stdout
 litellm.suppress_debug_info = True
-
-Role: TypeAlias = Literal["assistant", "user", "system", "tool", "function"]
 
 
 class Logging(Protocol):
@@ -24,6 +24,7 @@ class Sink(Logging):
     def __init__(self) -> None:
         self.kwargs: dict[str, JsonValue] = {}
 
+    @override
     def post_call(self, **kwargs: JsonValue) -> None:
         self.kwargs = kwargs
 
@@ -47,7 +48,7 @@ class InvokeApi(Protocol):
 
 
 class MessageSeed(TypedDict):
-    role: Role
+    role: str
     content: str | None
     tool_calls: list[JsonValue] | None
 
@@ -128,11 +129,6 @@ def build_model_response(seed: ResponseSeed) -> ModelResponse:
     return ModelResponse(id=seed["id"], choices=choices, created=0, model="")
 
 
-def error_status(error: Exception) -> int | None:
-    carried: object = getattr(error, "status_code", None)
-    return carried if isinstance(carried, int) and not isinstance(carried, bool) else None
-
-
 def reply_view(invoke: InvokeApi, call: ReplyCall) -> JsonValue:
     raw_response = httpx.Response(
         call["status"],
@@ -191,13 +187,10 @@ def reply_result(invoke: InvokeApi, call: ReplyCall) -> JsonValue:
     outcome: JsonValue
     try:
         outcome = {"ok": reply_view(invoke, call)}
+    except BedrockError as error:  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L295-L302
+        outcome = {"error": {"class": type(error).__name__, "status": error.status_code}}
     except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L281-L419
-        outcome = {
-            "error": {
-                "class": type(error).__name__,
-                "status": error_status(error),
-            }
-        }
+        outcome = {"error": {"class": type(error).__name__, "status": None}}
     return outcome
 
 

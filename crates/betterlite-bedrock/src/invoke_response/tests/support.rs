@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -15,9 +14,7 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ToolCall;
-use betterlite_openai::chat::response::{
-    AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
-};
+use betterlite_openai::chat::response::ChatResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_tokenizer::count::request::Message;
 use chrono::{DateTime, FixedOffset};
@@ -35,7 +32,6 @@ use super::run::Run;
 pub(super) const MODEL: &str = "amazon.titan-text-express-v1";
 pub(super) const NOW: f64 = 1_700_000_000.0;
 pub(super) const CREATED: u64 = 1_700_000_000;
-const RESPONSE_OBJECT: &str = "chat.completion";
 const INIT: &str = r#"{"model":"fixture-model","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const LOG_TIME: &str = "2026-01-01T00:00:05+00:00";
 
@@ -82,30 +78,10 @@ pub(super) fn fixture() -> Fixture {
 }
 
 pub(super) fn seeded() -> ChatResponse {
-    ChatResponse {
-        id: String::from("chatcmpl-supplied"),
-        object: RESPONSE_OBJECT.to_owned(),
-        created: 1,
-        model: String::from("previous-model"),
-        choices: vec![ChatChoice {
-            index: 0,
-            message: AssistantMessage {
-                role: String::from("assistant"),
-                content: None,
-                tool_calls: None,
-                annotations: None,
-                audio: None,
-                refusal: None,
-                provider_specific_fields: MessageProviderFields::default(),
-            },
-            finish_reason: None,
-            logprobs: None,
-            provider_specific_fields: BTreeMap::new(),
-        }],
-        usage: ChatUsage::default(),
-        system_fingerprint: None,
-        service_tier: None,
-    }
+    serde_json::from_str(
+        r#"{"id":"chatcmpl-supplied","object":"chat.completion","created":1,"model":"previous-model","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":null,"annotations":null,"audio":null,"refusal":null},"finish_reason":null,"logprobs":null}],"system_fingerprint":null,"service_tier":null}"#,
+    )
+    .expect("the seeded response parses")
 }
 
 pub(super) fn with_tool_calls(

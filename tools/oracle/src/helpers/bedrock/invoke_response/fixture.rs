@@ -14,8 +14,6 @@ use betterlite_openai::chat::response::{
 };
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 
 use betterlite_oracle_helper_api::error::HelperError;
 
@@ -23,7 +21,6 @@ use super::ResponseSeed;
 use super::error::value_error;
 
 const INIT: &str = r#"{"model":"fixture-model","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
-const LOG_TIME: &str = "2026-01-01T00:00:05+00:00";
 
 pub(super) struct Silent;
 
@@ -59,17 +56,10 @@ pub(super) fn logging<'borrow>(
         input_callbacks: &[],
         sentry: None,
         logger_fn: None,
-        now: DateTime::<FixedOffset>::parse_from_rfc3339(LOG_TIME)
+        now: DateTime::<FixedOffset>::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
             .map_err(|error| value_error(error.to_string()))?,
     };
     Ok((state, env))
-}
-
-pub(super) fn deserialize<T>(value: &Value) -> Result<T, Box<HelperError>>
-where
-    T: DeserializeOwned,
-{
-    serde_json::from_value(value.clone()).map_err(|error| value_error(error.to_string()))
 }
 
 pub(super) fn build_response(seed: &ResponseSeed) -> ChatResponse {
