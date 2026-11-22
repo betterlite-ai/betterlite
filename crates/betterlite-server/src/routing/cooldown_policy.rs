@@ -11,14 +11,6 @@ pub struct CooldownObservers {
 }
 
 impl CooldownObservers {
-    #[must_use]
-    pub const fn new(
-        success: Vec<Arc<dyn CooldownObserver>>,
-        global: Vec<Arc<dyn CooldownObserver>>,
-    ) -> Self {
-        Self { success, global }
-    }
-
     // _get_prometheus_logger_from_callbacks: the async success list is searched first, then the global one
     #[must_use]
     pub fn exporter(&self) -> Option<Arc<dyn CooldownObserver>> {
@@ -26,12 +18,5 @@ impl CooldownObservers {
             return Some(Arc::clone(observer));
         }
         self.global.first().map(Arc::clone)
-    }
-
-    // a cooldown reaches the one exporter, since LiteLLM calls a single Prometheus logger per event
-    #[must_use]
-    pub fn handlers(&self) -> Vec<Arc<dyn CooldownObserver>> {
-        let exporter = self.exporter();
-        exporter.into_iter().collect()
     }
 }

@@ -5,7 +5,9 @@ use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::cooldown_decisions::policy::{CooldownPolicy, FailureThresholds};
 use betterlite_router::cooldown_policy::counter::AllowedFailsStore;
 use betterlite_router::cooldown_policy::event::CooldownObserver;
-use betterlite_router::cooldown_policy::service::{CooldownAttempt, CooldownPolicyService};
+use betterlite_router::cooldown_policy::service::{
+    CooldownAttempt, CooldownPolicyService, CooldownSource,
+};
 use betterlite_router::cooldown_state::cooldown::CooldownCache;
 use betterlite_router::cooldown_state::settings::Settings as CooldownSettings;
 use betterlite_router::cooldown_state::shared::SharedCooldowns;
@@ -40,15 +42,53 @@ pub(super) async fn scenario(payload: &Payload) -> Result<Output, String> {
         inferred_provider: &*inferred,
     };
     let (service, recorder) = build_service(payload, &clock_fn)?;
-    seed_minute_counters(&service, payload)?;
-    let cooled = failures(&service, &lookup, payload).await?;
-    let active = active_cooldowns(&service, payload).await?;
+    for _ in 0..payload.minute.successes {
+        service
+            .counters
+            .increment_successes_for_minute(&payload.target)
+            .map_err(|error| error.to_string())?;
+    }
+    let mut cooled = Vec::new();
+    for _ in 0..payload.failures {
+        let attempt = CooldownAttempt {
+            deployment_id: &payload.target,
+            failure: &payload.failure,
+            exception: "probe failure",
+            header_retry_after: None,
+            requested_model_group: None,
+        };
+        let result = service
+            .cool_deployment(&lookup, CooldownSource::Callback(&attempt))
+            .await
+            .map_err(|error| error.to_string())?;
+        cooled.push(result);
+    }
+    let model_ids: Vec<String> = payload
+        .deployments
+        .iter()
+        .map(|deployment| deployment.id.clone())
+        .collect();
+    let mut batch = RoutingReadBatch::default();
+    let mut request = RequestReads::default();
+    let cooling = service
+        .cooldown_debug_info(&mut batch, &mut request, &model_ids)
+        .await
+        .map_err(|error| error.to_string())?;
+    let active: Vec<ActiveOutput> = cooling
+        .iter()
+        .map(|cooldown| {
+            active_output(
+                cooldown.model_id.clone(),
+                cooldown.record.status_code.clone(),
+                cooldown.record.cooldown_time,
+            )
+        })
+        .collect();
     Ok(Output {
         cooled,
         events: recorder.events(),
-        outages: recorder.outages(),
         active,
-        failures_for_minute: service.counters().failures_for_minute(&payload.target),
+        failures_for_minute: service.counters.failures_for_minute(&payload.target),
     })
 }
 
@@ -63,30 +103,6 @@ fn build_service(
         shared_cooldowns,
         Arc::clone(clock_fn),
     );
-    let (counters, local) = build_counters(clock_fn)?;
-    let recorder = Arc::new(Recorder::default());
-    let observer: Arc<dyn CooldownObserver> = Arc::clone(&recorder);
-    let policy = CooldownPolicy {
-        allowed_fails: payload.router.allowed_fails,
-        default_allowed_fails: payload.router.default_allowed_fails,
-        cooldown_time: payload.router.cooldown_time,
-        disable_cooldowns: payload.router.disable_cooldowns,
-        allowed_fails_policy: None,
-        thresholds: FailureThresholds::default(),
-    };
-    let service = CooldownPolicyService::new(
-        policy,
-        cooldowns,
-        counters,
-        AllowedFailsStore::new(local, None),
-        vec![observer],
-    );
-    Ok((service, recorder))
-}
-
-fn build_counters(
-    clock_fn: &Clock,
-) -> Result<(RouterCounters<RoutingStateStore>, Arc<RoutingValueStore>), String> {
     let local = Arc::new(
         RoutingValueStore::new(
             StoreSettings {
@@ -108,75 +124,25 @@ fn build_counters(
         Arc::clone(&local),
         None,
     );
-    Ok((counters, local))
-}
-
-fn seed_minute_counters(
-    service: &CooldownPolicyService<RoutingStateStore>,
-    payload: &Payload,
-) -> Result<(), String> {
-    for _ in 0..payload.minute.successes {
-        service
-            .counters()
-            .increment_successes_for_minute(&payload.target)
-            .map_err(|error| error.to_string())?;
-    }
-    for _ in 0..payload.minute.failures {
-        service
-            .counters()
-            .increment_failures_for_minute(&payload.target)
-            .map_err(|error| error.to_string())?;
-    }
-    Ok(())
-}
-
-async fn failures(
-    service: &CooldownPolicyService<RoutingStateStore>,
-    lookup: &CatalogLookup<'_>,
-    payload: &Payload,
-) -> Result<Vec<bool>, String> {
-    let mut cooled = Vec::new();
-    for _ in 0..payload.failures {
-        let attempt = CooldownAttempt {
-            deployment_id: &payload.target,
-            failure: &payload.failure,
-            exception: &payload.exception,
-            header_retry_after: None,
-            requested_model_group: payload.requested_model_group.as_deref(),
-        };
-        let result = service
-            .deployment_callback_on_failure(lookup, &attempt)
-            .await
-            .map_err(|error| error.to_string())?;
-        cooled.push(result);
-    }
-    Ok(cooled)
-}
-
-async fn active_cooldowns(
-    service: &CooldownPolicyService<RoutingStateStore>,
-    payload: &Payload,
-) -> Result<Vec<ActiveOutput>, String> {
-    let model_ids: Vec<String> = payload
-        .deployments
-        .iter()
-        .map(|deployment| deployment.id.clone())
-        .collect();
-    let mut batch = RoutingReadBatch::default();
-    let mut request = RequestReads::default();
-    let cooling = service
-        .cooldown_debug_info(&mut batch, &mut request, &model_ids)
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(cooling
-        .iter()
-        .map(|cooldown| {
-            active_output(
-                cooldown.model_id.clone(),
-                cooldown.record.status_code.clone(),
-                cooldown.record.timestamp,
-                cooldown.record.cooldown_time,
-            )
-        })
-        .collect())
+    let recorder = Arc::new(Recorder::default());
+    let observer: Arc<dyn CooldownObserver> = Arc::clone(&recorder);
+    let policy = CooldownPolicy {
+        allowed_fails: payload.router.allowed_fails,
+        default_allowed_fails: payload.router.default_allowed_fails,
+        cooldown_time: payload.router.cooldown_time,
+        disable_cooldowns: payload.router.disable_cooldowns,
+        allowed_fails_policy: None,
+        thresholds: FailureThresholds::default(),
+    };
+    let service = CooldownPolicyService::new(
+        policy,
+        cooldowns,
+        counters,
+        AllowedFailsStore {
+            local,
+            remote: None,
+        },
+        vec![observer],
+    );
+    Ok((service, recorder))
 }

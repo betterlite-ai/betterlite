@@ -22,11 +22,8 @@ pub struct Payload {
     pub router: RouterInput,
     pub deployments: Vec<DeploymentInput>,
     pub target: String,
-    #[serde(default)]
-    pub requested_model_group: Option<String>,
     pub failures: u32,
     pub failure: FailureFacts,
-    pub exception: String,
     pub minute: MinuteInput,
 }
 
@@ -47,28 +44,12 @@ pub struct DeploymentInput {
     pub model: String,
     #[serde(default)]
     pub api_base: Option<String>,
-    #[serde(default)]
-    pub custom_llm_provider: Option<String>,
-    #[serde(default)]
-    pub cooldown_time: Option<Seconds>,
-    #[serde(default)]
-    pub model_info: ModelInfoInput,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModelInfoInput {
-    #[serde(default)]
-    pub allowed_fails: Option<u32>,
-    #[serde(default)]
-    pub cooldown_time: Option<Seconds>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MinuteInput {
     pub successes: u64,
-    pub failures: u64,
 }
 
 // the reply buffer hands a JSON float to serde as a map under arbitrary_precision, so every float travels as fixed-point text
@@ -77,7 +58,6 @@ pub struct MinuteInput {
 pub struct Output {
     pub cooled: Vec<bool>,
     pub events: Vec<EventOutput>,
-    pub outages: Vec<OutageOutput>,
     pub active: Vec<ActiveOutput>,
     pub failures_for_minute: i64,
 }
@@ -94,19 +74,9 @@ pub struct EventOutput {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct OutageOutput {
-    pub model_name: String,
-    pub model_id: String,
-    pub api_base: String,
-    pub provider: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ActiveOutput {
     pub model_id: String,
     pub status_code: String,
-    pub timestamp: String,
     pub cooldown_time: String,
 }
 

@@ -15,6 +15,5 @@ probes:
         target: a
         failures: 2
         failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
-        exception: probe failure
-        minute: {successes: 0, failures: 0}
+        minute: {successes: 0}
 compare: {ignore: []}

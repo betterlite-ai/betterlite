@@ -11,9 +11,7 @@ use crate::cooldown_decisions::failure::{ErrorStatus, FailureClass, FailureFacts
 use crate::cooldown_decisions::policy::{CooldownPolicy, FailureThresholds};
 use crate::cooldown_policy::counter::AllowedFailsStore;
 use crate::cooldown_policy::event::{CooldownEvent, CooldownObservationError, CooldownObserver};
-use crate::cooldown_policy::service::{
-    CooldownAttempt, CooldownCall, CooldownPolicyService, FallbackFailure,
-};
+use crate::cooldown_policy::service::{CooldownAttempt, CooldownPolicyService, FallbackFailure};
 use crate::cooldown_state::cooldown::CooldownCache;
 use crate::cooldown_state::record::CooldownRecord;
 use crate::cooldown_state::settings::Settings as CacheSettings;
@@ -269,7 +267,7 @@ fn harness_built(
         policy,
         cooldowns,
         counters,
-        AllowedFailsStore::new(local, remote),
+        AllowedFailsStore { local, remote },
         observers,
     );
     Harness {
@@ -350,19 +348,6 @@ pub(super) const fn attempt_with<'case>(
         exception: "probe failure",
         header_retry_after,
         requested_model_group,
-    }
-}
-
-pub(super) const fn call<'case>(
-    deployment_id: &'case str,
-    failure: &'case FailureFacts,
-) -> CooldownCall<'case> {
-    CooldownCall {
-        deployment_id,
-        failure,
-        exception: "probe failure",
-        time_to_cooldown: None,
-        requested_model_group: None,
     }
 }
 

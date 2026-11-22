@@ -9,9 +9,9 @@ use crate::cooldown_decisions::policy::CooldownPolicy;
 use crate::cooldown_policy::counter::AllowedFailsStore;
 use crate::cooldown_policy::error::CooldownPolicyError;
 use crate::cooldown_policy::event::{CooldownEvent, CooldownObserver, notify};
-use crate::cooldown_policy::facts::error_status_code;
+use crate::cooldown_policy::facts::{deployment_facts, error_status_code};
 use crate::cooldown_policy::prepared::{
-    PreparedCooldown, prepare_callback, prepare_fallback, prepare_set,
+    PreparedCooldown, prepare_callback, prepare_cooldown, prepare_fallback,
 };
 use crate::cooldown_state::cooldown::{ActiveCooldown, CooldownCache};
 use crate::cooldown_state::record::CooldownRecord;
@@ -47,12 +47,18 @@ pub struct CooldownCall<'failure> {
     pub requested_model_group: Option<&'failure str>,
 }
 
-// Router's cooldown services: the cache B307 keeps entries in, the minute counters B304 keeps, the shared
-// allowed-fails counters and the observers a cooldown event reaches
+// the two production entries that share the Router callback's pipeline: a failed attempt and the direct set call
+#[derive(Clone, Copy)]
+pub enum CooldownSource<'failure> {
+    Callback(&'failure CooldownAttempt<'failure>),
+    Direct(&'failure CooldownCall<'failure>),
+}
+
+// Router's cooldown services: the cache B307 keeps entries in, the minute counters B304 keeps, the shared allowed-fails counters and the observers
 pub struct CooldownPolicyService<S: DeltaStore + 'static> {
     settings: CooldownPolicy,
+    pub counters: RouterCounters<S>,
     cooldowns: CooldownCache,
-    counters: RouterCounters<S>,
     fails: AllowedFailsStore,
     observers: Vec<Arc<dyn CooldownObserver>>,
 }
@@ -75,24 +81,18 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
         }
     }
 
-    // the minute counters the decision reads, so a test or caller can record a success the success callback would
-    #[must_use]
-    pub const fn counters(&self) -> &RouterCounters<S> {
-        &self.counters
-    }
-
-    // Router.deployment_callback_on_failure: the minute failure lands first, then the cooldown decision runs
-    pub fn deployment_callback_on_failure<'call>(
+    // Router.deployment_callback_on_failure and _set_cooldown_deployments: the guards, the minute failure and the decision
+    pub fn cool_deployment<'call>(
         &'call self,
         lookup: &CatalogLookup<'_>,
-        attempt: &CooldownAttempt<'_>,
+        source: CooldownSource<'_>,
     ) -> impl Future<Output = Result<bool, CooldownPolicyError>> + Send + 'call {
-        let prepared = prepare_callback(&self.counters, &self.settings, lookup, attempt);
+        let prepared = prepare(&self.counters, &self.settings, lookup, source);
         async move {
-            match prepared? {
-                Some(prepared) => self.finish_cooldown(&prepared).await,
-                None => Ok(false),
-            }
+            let Some(prepared) = prepared? else {
+                return Ok(false);
+            };
+            self.finish_cooldown(&prepared).await
         }
     }
 
@@ -104,13 +104,18 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
     ) -> impl Future<Output = bool> + Send + 'call {
         let prepared = prepare_fallback(&self.counters, &self.settings, lookup, failure);
         async move {
-            let cooled = match prepared {
-                Ok(Some(prepared)) => self.finish_cooldown(&prepared).await,
-                Ok(None) => return false,
-                Err(error) => Err(error),
-            };
-            match cooled {
-                Ok(cooled) => cooled,
+            match prepared {
+                Ok(Some(prepared)) => {
+                    self.finish_cooldown(&prepared)
+                        .await
+                        .unwrap_or_else(|error| {
+                            tracing::debug!(
+                                "Error triggering cooldown for fallback deployment: {error}"
+                            );
+                            false
+                        })
+                }
+                Ok(None) => false,
                 Err(error) => {
                     tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
                     false
@@ -119,21 +124,7 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
         }
     }
 
-    // _set_cooldown_deployments: B369 decides, the entry lands in B307's cache, and the event fires once per cooldown
-    pub fn set_cooldown_deployments<'call>(
-        &'call self,
-        lookup: &CatalogLookup<'_>,
-        call: &CooldownCall<'_>,
-    ) -> impl Future<Output = Result<bool, CooldownPolicyError>> + Send + 'call {
-        let prepared = prepare_set(&self.counters, lookup, call);
-        async move {
-            match prepared? {
-                Some(prepared) => self.finish_cooldown(&prepared).await,
-                None => Ok(false),
-            }
-        }
-    }
-
+    // the sync prelude names the counter, the store counts, and the second decide applies B369's thresholds to that count
     async fn finish_cooldown(
         &self,
         prepared: &PreparedCooldown,
@@ -171,8 +162,6 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
         Ok(true)
     }
 
-    // should_cooldown_based_on_allowed_fails_policy reads the counter only after _should_run_cooldown_logic passed,
-    // and the first decide call is what names that counter, so the count is read between two decisions
     async fn decide_with_counter(
         &self,
         facts: &DeploymentFacts,
@@ -209,29 +198,58 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
         decide(&counted)
     }
 
-    // _async_get_cooldown_deployments_with_debug_info: today's ids and the entries behind them
+    // _async_get_cooldown_deployments and _get_cooldown_deployments: the same read reduced to the cooling ids
+    pub async fn cooling_deployment_ids(
+        &self,
+        batch: &mut RoutingReadBatch<CooldownRecord>,
+        request: &mut RequestReads<CooldownRecord>,
+        model_ids: &[String],
+    ) -> Result<Vec<String>, CooldownPolicyError> {
+        let mut ids = Vec::new();
+        for cooldown in self.cooldown_debug_info(batch, request, model_ids).await? {
+            ids.push(cooldown.model_id);
+        }
+        Ok(ids)
+    }
+
+    // _async_get_cooldown_deployments_with_debug_info: today's entries that are still cooling
     pub async fn cooldown_debug_info(
         &self,
         batch: &mut RoutingReadBatch<CooldownRecord>,
         request: &mut RequestReads<CooldownRecord>,
         model_ids: &[String],
     ) -> Result<Vec<ActiveCooldown>, CooldownPolicyError> {
-        let results = self.cooldowns.read(batch, request, model_ids).await?;
-        let active = self.cooldowns.active_from_results(model_ids, &results)?;
-        Ok(active)
+        self.cooldowns
+            .read(batch, request, model_ids)
+            .await
+            .map_err(CooldownPolicyError::from)
+            .and_then(|results| {
+                self.cooldowns
+                    .active_from_results(model_ids, &results)
+                    .map_err(CooldownPolicyError::from)
+            })
     }
+}
 
-    // _async_get_cooldown_deployments: the same read, reduced to the deployment ids still cooling down
-    pub async fn cooldown_ids(
-        &self,
-        batch: &mut RoutingReadBatch<CooldownRecord>,
-        request: &mut RequestReads<CooldownRecord>,
-        model_ids: &[String],
-    ) -> Result<Vec<String>, CooldownPolicyError> {
-        let cooling = self.cooldown_debug_info(batch, request, model_ids).await?;
-        Ok(cooling
-            .into_iter()
-            .map(|cooldown| cooldown.model_id)
-            .collect())
+fn prepare<S: DeltaStore + 'static>(
+    counters: &RouterCounters<S>,
+    settings: &CooldownPolicy,
+    lookup: &CatalogLookup<'_>,
+    source: CooldownSource<'_>,
+) -> Result<Option<PreparedCooldown>, CooldownPolicyError> {
+    match source {
+        CooldownSource::Callback(attempt) => prepare_callback(counters, settings, lookup, attempt),
+        CooldownSource::Direct(call) => {
+            let Some(deployment) = lookup.get_deployment(call.deployment_id)? else {
+                return Ok(None);
+            };
+            let facts = deployment_facts(
+                lookup,
+                deployment,
+                call.deployment_id,
+                call.requested_model_group,
+            )?;
+            prepare_cooldown(counters, deployment, call, facts).map(Some)
+        }
     }
 }

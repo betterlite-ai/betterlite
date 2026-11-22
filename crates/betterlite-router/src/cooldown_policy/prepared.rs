@@ -114,33 +114,15 @@ pub(super) fn prepare_fallback<S: DeltaStore + 'static>(
     prepare_cooldown(counters, deployment, &call, facts).map(Some)
 }
 
-// _set_cooldown_deployments' sync half: the deployment facts B369 decides on and the samples it reads
-pub(super) fn prepare_set<S: DeltaStore + 'static>(
-    counters: &RouterCounters<S>,
-    lookup: &CatalogLookup<'_>,
-    call: &CooldownCall<'_>,
-) -> Result<Option<PreparedCooldown>, CooldownPolicyError> {
-    let Some(deployment) = lookup.get_deployment(call.deployment_id)? else {
-        return Ok(None);
-    };
-    let facts = deployment_facts(
-        lookup,
-        deployment,
-        call.deployment_id,
-        call.requested_model_group,
-    )?;
-    prepare_cooldown(counters, deployment, call, facts).map(Some)
-}
-
-fn prepare_cooldown<S: DeltaStore + 'static>(
+pub(super) fn prepare_cooldown<S: DeltaStore + 'static>(
     counters: &RouterCounters<S>,
     deployment: &DeploymentSpec,
     call: &CooldownCall<'_>,
     facts: DeploymentFacts,
 ) -> Result<PreparedCooldown, CooldownPolicyError> {
     let minute = MinuteSamples {
-        successes: minute_count(counters.successes_for_minute(call.deployment_id)),
-        failures: minute_count(counters.failures_for_minute(call.deployment_id)),
+        successes: u64::try_from(counters.successes_for_minute(call.deployment_id)).unwrap_or(0),
+        failures: u64::try_from(counters.failures_for_minute(call.deployment_id)).unwrap_or(0),
     };
     let status_text = error_status_text(&call.failure.status);
     let event = cooldown_event(deployment, call.deployment_id, &status_text);
@@ -171,8 +153,4 @@ fn increment_failures<S: DeltaStore + 'static>(
             model_id: deployment_id.to_owned(),
             source,
         })
-}
-
-fn minute_count(value: i64) -> u64 {
-    u64::try_from(value).unwrap_or(0)
 }

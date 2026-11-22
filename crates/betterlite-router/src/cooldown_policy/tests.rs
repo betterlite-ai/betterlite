@@ -22,18 +22,14 @@ mod support;
 #[case::generic_404_and_caller_timeout_never_cool(
     behaviors::generic_404_and_caller_timeout_never_cool()
 )]
-#[case::deployment_cooldown_time_beats_the_header(
-    behaviors::deployment_cooldown_time_beats_the_header()
-)]
-#[case::params_cooldown_time_beats_the_header(behaviors::params_cooldown_time_beats_the_header())]
+#[case::deployment_times_beat_the_header(behaviors::deployment_cooldown_times_beat_the_header())]
 #[case::event_fields_come_from_the_deployment(behaviors::event_fields_come_from_the_deployment())]
 #[case::base_url_alias_and_openai_default_feed_the_event(
     behaviors::base_url_alias_and_openai_default_feed_the_event()
 )]
-#[case::routing_group_alternatives_lift_the_net(
-    behaviors::routing_group_alternatives_lift_the_single_deployment_net()
+#[case::alternatives_lift_the_single_deployment_net(
+    behaviors::alternatives_lift_the_single_deployment_net()
 )]
-#[case::team_siblings_lift_the_net(behaviors::team_siblings_lift_the_single_deployment_net())]
 #[case::provider_default_deployments_never_cool(
     behaviors::provider_default_deployments_never_cool()
 )]
@@ -77,16 +73,7 @@ where
     boundaries::a_negative_model_info_value_hides_a_positive_params_value()
 )]
 #[case::text_status_is_cast_and_stored(boundaries::a_text_status_is_cast_and_stored())]
-#[case::wrong_allowed_fails_type_names_the_field(
-    boundaries::a_wrong_allowed_fails_type_names_the_field()
-)]
-#[case::wrong_policy_value_type_names_the_key(
-    boundaries::a_wrong_policy_value_type_names_the_policy_key()
-)]
-#[case::wrong_cooldown_time_type_names_the_field(
-    boundaries::a_wrong_cooldown_time_type_names_the_field()
-)]
-#[case::non_policy_value_reads_as_no_policy(boundaries::a_non_policy_value_reads_as_no_policy())]
+#[case::value_types_are_classified(boundaries::deployment_value_types_are_classified())]
 #[case::ratio_minimum_requests_sits_at_five(
     boundaries::the_ratio_minimum_requests_boundary_sits_at_five()
 )]

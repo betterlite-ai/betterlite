@@ -10,22 +10,13 @@ pub struct CounterObservation {
     pub local_only: bool,
 }
 
-// DualCache.increment_cache for the allowed-fails counters: the worker's tier first, then the shared one,
-// and a shared failure degrades to this worker's own count instead of failing the cooldown check
+// DualCache.increment_cache for the allowed-fails counters: the worker's tier first, then the shared one
 pub struct AllowedFailsStore {
     pub local: Arc<RoutingValueStore>,
     pub remote: Option<Arc<RoutingStateStore>>,
 }
 
 impl AllowedFailsStore {
-    #[must_use]
-    pub const fn new(
-        local: Arc<RoutingValueStore>,
-        remote: Option<Arc<RoutingStateStore>>,
-    ) -> Self {
-        Self { local, remote }
-    }
-
     // _increment_allowed_fails: RedisCache.increment_cache raises after bumping the local tier, and the handler then reads that tier
     pub async fn increment(&self, key: &str, ttl_seconds: f64) -> CounterObservation {
         let Some(local) = self.local_count(key, ttl_seconds) else {
@@ -52,7 +43,7 @@ impl AllowedFailsStore {
         {
             Ok(observed) => match observed.value {
                 RouteValue::Counter(value) => CounterObservation {
-                    fails: count(value),
+                    fails: u64::try_from(value).unwrap_or(0),
                     local_only: false,
                 },
                 RouteValue::Spend(_)
@@ -86,7 +77,7 @@ impl AllowedFailsStore {
             .local
             .increment(&route, &RouteIncrement::Counter(1), Some(ttl_seconds))
         {
-            Ok(RouteValue::Counter(value)) => Some(count(value)),
+            Ok(RouteValue::Counter(value)) => Some(u64::try_from(value).unwrap_or(0)),
             Ok(
                 RouteValue::Spend(_)
                 | RouteValue::Pin(_)
@@ -102,8 +93,4 @@ impl AllowedFailsStore {
             }
         }
     }
-}
-
-fn count(value: i64) -> u64 {
-    u64::try_from(value).unwrap_or(0)
 }

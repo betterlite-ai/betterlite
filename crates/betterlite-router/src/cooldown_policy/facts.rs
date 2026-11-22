@@ -37,13 +37,13 @@ pub(crate) fn deployment_facts(
             .iter()
             .any(|candidate| candidate == deployment_id),
         allowed_fails_policy: allowed_fails_policy(deployment, deployment_id)?,
-        allowed_fails: u32_fact(&deployment.model_info, "allowed_fails", deployment_id)?,
-        model_info_cooldown_time: seconds_fact(
+        allowed_fails: number_fact(&deployment.model_info, "allowed_fails", deployment_id)?,
+        model_info_cooldown_time: number_fact(
             &deployment.model_info,
             "cooldown_time",
             deployment_id,
         )?,
-        litellm_params_cooldown_time: seconds_fact(
+        litellm_params_cooldown_time: number_fact(
             &deployment.litellm_params,
             "cooldown_time",
             deployment_id,
@@ -51,17 +51,19 @@ pub(crate) fn deployment_facts(
     })
 }
 
-// deployment_callback_on_failure: deployment config first, the response header second, the router default last,
-// and a negative value at either earlier step falls through
+// deployment_callback_on_failure: deployment config first, then the header, then the router default, and a negative earlier value falls through
 pub(crate) fn resolve_time_to_cooldown(
     deployment: &DeploymentSpec,
     header_retry_after: Option<Seconds>,
     router_default: Seconds,
 ) -> Result<Seconds, CooldownPolicyError> {
     let model_id = deployment.id().unwrap_or_default();
-    let configured = seconds_fact(&deployment.model_info, "cooldown_time", model_id)?.or(
-        seconds_fact(&deployment.litellm_params, "cooldown_time", model_id)?,
-    );
+    let configured: Option<Seconds> =
+        number_fact(&deployment.model_info, "cooldown_time", model_id)?.or(number_fact(
+            &deployment.litellm_params,
+            "cooldown_time",
+            model_id,
+        )?);
     if let Some(time) = configured.filter(|value| value.0 >= 0.0_f64) {
         return Ok(time);
     }
@@ -148,50 +150,58 @@ fn allowed_fails_policy(
         return Ok(None);
     };
     Ok(Some(AllowedFailsPolicy {
-        content_policy_violation_error: policy_int(
+        content_policy_violation_error: number_fact(
             policy,
             "ContentPolicyViolationErrorAllowedFails",
             model_id,
         )?,
-        bad_request_error: policy_int(policy, "BadRequestErrorAllowedFails", model_id)?,
-        authentication_error: policy_int(policy, "AuthenticationErrorAllowedFails", model_id)?,
-        timeout_error: policy_int(policy, "TimeoutErrorAllowedFails", model_id)?,
-        rate_limit_error: policy_int(policy, "RateLimitErrorAllowedFails", model_id)?,
-        internal_server_error: policy_int(policy, "InternalServerErrorAllowedFails", model_id)?,
-        service_unavailable_error: policy_int(
+        bad_request_error: number_fact(policy, "BadRequestErrorAllowedFails", model_id)?,
+        authentication_error: number_fact(policy, "AuthenticationErrorAllowedFails", model_id)?,
+        timeout_error: number_fact(policy, "TimeoutErrorAllowedFails", model_id)?,
+        rate_limit_error: number_fact(policy, "RateLimitErrorAllowedFails", model_id)?,
+        internal_server_error: number_fact(policy, "InternalServerErrorAllowedFails", model_id)?,
+        service_unavailable_error: number_fact(
             policy,
             "ServiceUnavailableErrorAllowedFails",
             model_id,
         )?,
-        bad_gateway_error: policy_int(policy, "BadGatewayErrorAllowedFails", model_id)?,
-        not_found_error: policy_int(policy, "NotFoundErrorAllowedFails", model_id)?,
+        bad_gateway_error: number_fact(policy, "BadGatewayErrorAllowedFails", model_id)?,
+        not_found_error: number_fact(policy, "NotFoundErrorAllowedFails", model_id)?,
     }))
 }
 
-fn policy_int(
-    policy: &JsonObject,
-    field: &'static str,
-    model_id: &str,
-) -> Result<Option<u32>, CooldownPolicyError> {
-    u32_value(policy.get(field), field, model_id)
+trait FactValue: Sized {
+    fn read(number: &Number) -> Option<Self>;
 }
 
-fn u32_fact(
+impl FactValue for u32 {
+    fn read(number: &Number) -> Option<Self> {
+        number.as_u64().and_then(|count| u32::try_from(count).ok())
+    }
+}
+
+impl FactValue for Seconds {
+    fn read(number: &Number) -> Option<Self> {
+        Some(Seconds(number.as_f64().unwrap_or(0.0_f64)))
+    }
+}
+
+// a numeric fact's value or the type error that names the deployment and field
+fn number_fact<T: FactValue>(
     info: &JsonObject,
     field: &'static str,
     model_id: &str,
-) -> Result<Option<u32>, CooldownPolicyError> {
-    u32_value(info.get(field), field, model_id)
-}
-
-fn seconds_fact(
-    info: &JsonObject,
-    field: &'static str,
-    model_id: &str,
-) -> Result<Option<Seconds>, CooldownPolicyError> {
+) -> Result<Option<T>, CooldownPolicyError> {
     match info.get(field) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => Ok(Some(Seconds(number_float(number)))),
+        Some(Json::Number(number)) => {
+            T::read(number)
+                .map(Some)
+                .ok_or_else(|| CooldownPolicyError::DeploymentFact {
+                    model_id: model_id.to_owned(),
+                    field,
+                })
+        }
         Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             Err(CooldownPolicyError::DeploymentFact {
                 model_id: model_id.to_owned(),
@@ -199,32 +209,4 @@ fn seconds_fact(
             })
         }
     }
-}
-
-fn u32_value(
-    value: Option<&Json>,
-    field: &'static str,
-    model_id: &str,
-) -> Result<Option<u32>, CooldownPolicyError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => number
-            .as_u64()
-            .and_then(|count| u32::try_from(count).ok())
-            .map(Some)
-            .ok_or_else(|| CooldownPolicyError::DeploymentFact {
-                model_id: model_id.to_owned(),
-                field,
-            }),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(CooldownPolicyError::DeploymentFact {
-                model_id: model_id.to_owned(),
-                field,
-            })
-        }
-    }
-}
-
-fn number_float(number: &Number) -> f64 {
-    number.as_f64().unwrap_or(0.0_f64)
 }
