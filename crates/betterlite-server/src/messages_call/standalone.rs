@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_config::sections::settings::JsonValue;
@@ -7,14 +7,12 @@ use betterlite_error::proxy_model_not_found::{ProxyModelNotFoundError, route_end
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::openai_base_config::Object as JsonMap;
-use betterlite_router::simple_shuffle::error::ShuffleError;
-use betterlite_router::simple_shuffle::{Candidate, pick};
 use secrecy::ExposeSecret as _;
 
 use super::outcome::{MessagesDispatch, MessagesOutcome, MessagesRouting};
 use super::{MessagesCallError, ROUTE_TYPE};
 use crate::keepalive_interval::DeploymentLookup;
-use crate::routing::simple_shuffle::pick_deployment;
+use crate::routing::simple_shuffle::{pick_deployment, pick_matching};
 
 struct StandaloneRouting {
     executor: Arc<ChatExecutor>,
@@ -129,52 +127,18 @@ impl MessagesRouting for StandaloneRouting {
     }
 }
 
-// Router._get_deployment_by_litellm_model narrows the candidates before the same weighted shuffle
-fn pick_specific_deployment<'executor>(
-    executor: &'executor ChatExecutor,
-    model: &str,
-) -> Result<&'executor ChatDeployment, ChatError> {
-    let matching: Vec<&ChatDeployment> = executor
-        .deployments
-        .iter()
-        .filter(|deployment| deployment.litellm_model == model)
-        .collect();
-    let candidates: Vec<Candidate> = matching
-        .iter()
-        .map(|deployment| Candidate {
-            weight: deployment.weight,
-            rpm: deployment.rpm,
-            tpm: deployment.tpm,
-        })
-        .collect();
-    let unknown = || ChatError::UnknownModel {
-        model: model.to_owned(),
-    };
-    let picked = {
-        let mut random = executor
-            .random
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        pick(&candidates, &mut *random)
-    };
-    let index = match picked {
-        Ok(index) => index,
-        Err(ShuffleError::NoCandidates) => return Err(unknown()),
-        Err(error @ ShuffleError::Weights { .. }) => {
-            tracing::error!(%error, model, "the deployments of a deployment name could not be weighed");
-            return Err(unknown());
-        }
-    };
-    matching.get(index).copied().ok_or_else(unknown)
-}
-
 fn choose_deployment<'executor>(
     executor: &'executor ChatExecutor,
     model: &str,
     specific_deployment: bool,
 ) -> Result<&'executor ChatDeployment, ChatError> {
     if specific_deployment {
-        return pick_specific_deployment(executor, model);
+        let matching: Vec<&ChatDeployment> = executor
+            .deployments
+            .iter()
+            .filter(|deployment| deployment.litellm_model == model)
+            .collect();
+        return pick_matching(executor, model, &matching, "a deployment name");
     }
     pick_deployment(executor, model)
 }

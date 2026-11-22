@@ -19,15 +19,19 @@ fn dispatch_port(dispatch: &Arc<FakeDispatch>) -> Arc<dyn MessagesDispatch> {
     Arc::clone(dispatch)
 }
 
-fn standalone_executor(params: &str) -> Arc<ChatExecutor> {
-    let yaml =
-        format!("model_list:\n  - model_name: messages-model\n    litellm_params: {params}\n");
+fn config_executor(yaml: &str) -> Arc<ChatExecutor> {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
-    .load(&yaml)
+    .load(yaml)
     .unwrap();
     Arc::new(chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(7)).unwrap())
+}
+
+fn standalone_executor(params: &str) -> Arc<ChatExecutor> {
+    let yaml =
+        format!("model_list:\n  - model_name: messages-model\n    litellm_params: {params}\n");
+    config_executor(&yaml)
 }
 
 const DEPLOYMENT: &str =
@@ -138,6 +142,23 @@ async fn standalone_specific_deployment_picks_the_named_litellm_model() {
         .unwrap();
     let sent = dispatch.calls.lock().unwrap()[0].clone();
     assert_eq!(sent.get("model"), Some(&text("openai/messages-model")));
+}
+
+const TWO_DEPLOYMENTS: &str = "model_list:\n  - model_name: first\n    litellm_params: {model: openai/first-model, api_base: 'http://127.0.0.1:1', api_key: sk-first}\n  - model_name: second\n    litellm_params: {model: openai/second-model, api_base: 'http://127.0.0.1:2', api_key: sk-second}\n";
+
+#[tokio::test]
+async fn standalone_specific_deployment_skips_the_other_litellm_models() {
+    let executor = config_executor(TWO_DEPLOYMENTS);
+    let dispatch = Arc::new(FakeDispatch::default());
+    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(&dispatch));
+    routing
+        .anthropic_messages(object(&[("model", text("openai/second-model"))]), true)
+        .await
+        .unwrap();
+    let sent = dispatch.calls.lock().unwrap()[0].clone();
+    assert_eq!(sent.get("model"), Some(&text("openai/second-model")));
+    assert_eq!(sent.get("api_base"), Some(&text("http://127.0.0.1:2")));
+    assert_eq!(sent.get("api_key"), Some(&text("sk-second")));
 }
 
 #[tokio::test]
