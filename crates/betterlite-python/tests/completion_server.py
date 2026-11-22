@@ -1,7 +1,7 @@
 import importlib
 import json
 import threading
-from collections.abc import AsyncIterator, Awaitable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Generator, Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -407,7 +407,7 @@ class FakeAdapter:
 
 
 @contextmanager
-def config_seam(config_file: Path) -> Iterator[None]:
+def config_seam(config_file: Path) -> Generator[None, None, None]:
     arguments.config_path = str(config_file)
     try:
         yield
@@ -416,7 +416,7 @@ def config_seam(config_file: Path) -> Iterator[None]:
 
 
 @contextmanager
-def adapter_seam(adapter: FakeAdapter, adapter_id: str) -> Iterator[None]:
+def adapter_seam(adapter: FakeAdapter, adapter_id: str) -> Generator[None, None, None]:
     entries: list[AdapterEntry] = [{"id": adapter_id, "adapter": adapter}]
     adapters.adapter_entries = entries
     try:
