@@ -44,10 +44,11 @@ async fn direct_agents_are_restricted() {
 #[tokio::test]
 async fn declared_groups_add_matching_db_agents() {
     let world = world(true);
-    let mut state = world.lock();
-    state.rows.push((String::from("alpha"), strings(&["g1"])));
-    state.rows.push((String::from("beta"), strings(&["g2"])));
-    drop(state);
+    {
+        let mut state = world.lock();
+        state.rows.push((String::from("alpha"), strings(&["g1"])));
+        state.rows.push((String::from("beta"), strings(&["g2"])));
+    };
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(None, Some((&[], &["g1"])), &[]);
     let access = grants
@@ -102,14 +103,15 @@ async fn a_strict_unified_lookup_failure_is_policy_unavailable() {
 #[tokio::test]
 async fn all_three_sources_union() {
     let world = world(true);
-    let mut state = world.lock();
-    state
-        .rows
-        .push((String::from("db-agent"), strings(&["g1"])));
-    state
-        .groups
-        .insert(String::from("u1"), group_row("u1", &["unified-agent"]));
-    drop(state);
+    {
+        let mut state = world.lock();
+        state
+            .rows
+            .push((String::from("db-agent"), strings(&["g1"])));
+        state
+            .groups
+            .insert(String::from("u1"), group_row("u1", &["unified-agent"]));
+    };
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(None, Some((&["direct-agent"], &["g1"])), &["u1"]);
     let access = grants

@@ -55,10 +55,11 @@ async fn a_team_without_grants_is_unrestricted() {
 #[tokio::test]
 async fn team_declared_groups_add_db_agents() {
     let world = world(true);
-    let mut state = world.lock();
-    state.team = Some(team_row(&[], &["g1"], &[]));
-    state.rows.push((String::from("alpha"), strings(&["g1"])));
-    drop(state);
+    {
+        let mut state = world.lock();
+        state.team = Some(team_row(&[], &["g1"], &[]));
+        state.rows.push((String::from("alpha"), strings(&["g1"])));
+    };
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(Some("t1"), None, &[]);
     let access = grants
@@ -71,12 +72,13 @@ async fn team_declared_groups_add_db_agents() {
 #[tokio::test]
 async fn team_unified_groups_add_their_agents() {
     let world = world(true);
-    let mut state = world.lock();
-    state.team = Some(team_row(&[], &[], &["u1"]));
-    state
-        .groups
-        .insert(String::from("u1"), group_row("u1", &["beta"]));
-    drop(state);
+    {
+        let mut state = world.lock();
+        state.team = Some(team_row(&[], &[], &["u1"]));
+        state
+            .groups
+            .insert(String::from("u1"), group_row("u1", &["beta"]));
+    };
     let grants = handler(&world, &registry(&[]));
     let auth = key_auth(Some("t1"), None, &[]);
     let access = grants

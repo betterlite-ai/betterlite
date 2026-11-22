@@ -189,11 +189,11 @@ fn team_row(team: &GroupSpec) -> Result<JsonData, Box<HelperError>> {
 }
 
 fn key_auth(spec: Option<&KeySpec>) -> Result<Option<UserAPIKeyAuth>, Box<HelperError>> {
-    let Some(spec) = spec else {
+    let Some(key) = spec else {
         return Ok(None);
     };
     let mut fields = BTreeMap::new();
-    if let Some(team_id) = spec.team_id.as_deref() {
+    if let Some(team_id) = key.team_id.as_deref() {
         fields.insert(
             String::from("team_id"),
             JsonData::String(team_id.to_owned()),
@@ -201,16 +201,16 @@ fn key_auth(spec: Option<&KeySpec>) -> Result<Option<UserAPIKeyAuth>, Box<Helper
     }
     let permission = json!({
         "object_permission_id": "key-permission",
-        "agents": spec.agents,
-        "agent_access_groups": spec.agent_access_groups,
+        "agents": key.agents,
+        "agent_access_groups": key.agent_access_groups,
     });
     fields.insert(
         String::from("object_permission"),
         serde_json::from_value(permission).or_value_error()?,
     );
-    if !spec.access_group_ids.is_empty() {
+    if !key.access_group_ids.is_empty() {
         let unified: JsonData =
-            serde_json::from_value(json!(spec.access_group_ids)).or_value_error()?;
+            serde_json::from_value(json!(key.access_group_ids)).or_value_error()?;
         fields.insert(String::from("access_group_ids"), unified);
     }
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).or_value_error()?;
