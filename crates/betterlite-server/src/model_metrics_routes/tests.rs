@@ -8,7 +8,6 @@ use std::sync::Arc;
 use axum::http::StatusCode;
 use betterlite_db::gateway_request_tracking::GatewayRequestClock;
 use chrono::DateTime;
-use chrono::TimeDelta;
 use chrono::Utc;
 use rstest::rstest;
 
@@ -31,9 +30,11 @@ use support::FakeStore;
 use support::app;
 use support::caller;
 use support::clock;
+use support::days_before;
 use support::fixed_now;
 use support::get;
 use support::instant;
+use support::named_latency_series;
 
 const UNAUTHORIZED_BODY: &str = r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":"None","code":"401"}}"#;
 
@@ -144,7 +145,7 @@ async fn oneshot_streaming_metrics_defaults_to_the_last_week_without_a_model_gro
         store.calls(),
         vec![Call::Daily(StreamingWindow {
             model_group: None,
-            start: fixed_now() - TimeDelta::days(7),
+            start: days_before(fixed_now(), 7),
             end: fixed_now(),
         })]
     );
@@ -183,8 +184,8 @@ async fn oneshot_streaming_metrics_a_single_day_lists_each_request() {
         store.calls(),
         vec![Call::SameDay(StreamingWindow {
             model_group: Some("prod".to_owned()),
-            start: instant(2026, 3, 15, 0, 0, 0),
-            end: instant(2026, 3, 15, 23, 59, 59),
+            start: instant("2026-03-15 00:00:00"),
+            end: instant("2026-03-15 23:59:59"),
         })]
     );
 }
@@ -222,8 +223,8 @@ async fn oneshot_streaming_metrics_several_days_averages_per_day() {
         store.calls(),
         vec![Call::Daily(StreamingWindow {
             model_group: None,
-            start: instant(2026, 3, 1, 0, 0, 0),
-            end: instant(2026, 3, 10, 0, 0, 0),
+            start: instant("2026-03-01 00:00:00"),
+            end: instant("2026-03-10 00:00:00"),
         })]
     );
 }
@@ -242,7 +243,7 @@ async fn oneshot_streaming_metrics_takes_the_end_from_the_clock_when_only_the_st
         store.calls(),
         vec![Call::Daily(StreamingWindow {
             model_group: None,
-            start: instant(2026, 3, 1, 0, 0, 0),
+            start: instant("2026-03-01 00:00:00"),
             end: fixed_now(),
         })]
     );
@@ -262,8 +263,8 @@ async fn oneshot_streaming_metrics_takes_the_start_from_the_clock_when_only_the_
         store.calls(),
         vec![Call::Daily(StreamingWindow {
             model_group: None,
-            start: fixed_now() - TimeDelta::days(7),
-            end: instant(2026, 3, 10, 0, 0, 0),
+            start: days_before(fixed_now(), 7),
+            end: instant("2026-03-10 00:00:00"),
         })]
     );
 }
@@ -283,7 +284,7 @@ async fn oneshot_model_metrics_defaults_to_the_configured_group_and_month() {
         store.calls(),
         vec![Call::Latency(SpendFilters {
             model_group: "gpt-4-32k".to_owned(),
-            start: fixed_now() - TimeDelta::days(28),
+            start: days_before(fixed_now(), 28),
             end: fixed_now(),
             api_key: "null".to_owned(),
             customer: "null".to_owned(),
@@ -294,26 +295,7 @@ async fn oneshot_model_metrics_defaults_to_the_configured_group_and_month() {
 #[tokio::test]
 async fn oneshot_model_metrics_sends_the_filters_and_names_bases() {
     let mut fake = FakeStore::default();
-    fake.rows.latency = vec![
-        SeriesValue {
-            key: "2026-03-11".to_owned(),
-            api_base: Some("http://plain.example.com".to_owned()),
-            model: "claude".to_owned(),
-            value: 0.008,
-        },
-        SeriesValue {
-            key: "2026-03-10".to_owned(),
-            api_base: Some("https://api.example.com/openai/v1".to_owned()),
-            model: "gpt-4".to_owned(),
-            value: 0.002,
-        },
-        SeriesValue {
-            key: "2026-03-10".to_owned(),
-            api_base: None,
-            model: "claude".to_owned(),
-            value: 0.004,
-        },
-    ];
+    fake.rows.latency = named_latency_series();
     let store = Arc::new(fake);
     let reply = get(
         app(Some(Arc::<FakeStore>::clone(&store)), DEFAULT_THRESHOLD),
@@ -330,7 +312,7 @@ async fn oneshot_model_metrics_sends_the_filters_and_names_bases() {
         store.calls(),
         vec![Call::Latency(SpendFilters {
             model_group: "chat".to_owned(),
-            start: fixed_now() - TimeDelta::days(28),
+            start: days_before(fixed_now(), 28),
             end: fixed_now(),
             api_key: "sk-1".to_owned(),
             customer: "alice".to_owned(),
@@ -352,7 +334,7 @@ async fn oneshot_model_metrics_treats_undefined_as_no_filter() {
         store.calls(),
         vec![Call::Latency(SpendFilters {
             model_group: "gpt-4-32k".to_owned(),
-            start: fixed_now() - TimeDelta::days(28),
+            start: days_before(fixed_now(), 28),
             end: fixed_now(),
             api_key: "null".to_owned(),
             customer: "null".to_owned(),
@@ -384,7 +366,7 @@ async fn oneshot_slow_responses_truncates_the_threshold(
         vec![Call::Slow(SlowRequest {
             filters: SpendFilters {
                 model_group: "gpt-4-32k".to_owned(),
-                start: fixed_now() - TimeDelta::days(28),
+                start: days_before(fixed_now(), 28),
                 end: fixed_now(),
                 api_key: "null".to_owned(),
                 customer: "null".to_owned(),
@@ -444,7 +426,7 @@ async fn oneshot_slow_responses_sends_the_filters_and_names_bases() {
         vec![Call::Slow(SlowRequest {
             filters: SpendFilters {
                 model_group: "chat".to_owned(),
-                start: fixed_now() - TimeDelta::days(28),
+                start: days_before(fixed_now(), 28),
                 end: fixed_now(),
                 api_key: "sk-1".to_owned(),
                 customer: "alice".to_owned(),
@@ -490,7 +472,7 @@ async fn oneshot_exceptions_pivots_counts_by_type() {
         store.calls(),
         vec![Call::Exceptions(ExceptionWindow {
             model_group: None,
-            start: fixed_now() - TimeDelta::days(28),
+            start: days_before(fixed_now(), 28),
             end: fixed_now(),
         })]
     );
@@ -511,7 +493,7 @@ async fn oneshot_exceptions_sends_the_model_group() {
         store.calls(),
         vec![Call::Exceptions(ExceptionWindow {
             model_group: Some("chat".to_owned()),
-            start: fixed_now() - TimeDelta::days(28),
+            start: days_before(fixed_now(), 28),
             end: fixed_now(),
         })]
     );
@@ -579,7 +561,7 @@ fn query_an_offset_datetime_is_read_in_utc() {
         "startTime=2026-03-15T02:00:00%2B02:00&endTime=2026-03-15T23:30:00Z",
     ));
     let window = request.window(clock().as_ref(), 7).expect("the window");
-    assert_eq!(window.start, instant(2026, 3, 15, 0, 0, 0));
+    assert_eq!(window.start, instant("2026-03-15 00:00:00"));
     assert_eq!(window.end, fixed_now());
     assert_eq!(window.start.date_naive(), window.end.date_naive());
 }
@@ -588,8 +570,8 @@ fn query_an_offset_datetime_is_read_in_utc() {
 fn query_a_date_only_value_is_midnight_utc() {
     let request = MetricsQuery::decode(Some("startTime=2026-03-15&endTime=2026-03-15T12:00:00"));
     let window = request.window(clock().as_ref(), 7).expect("the window");
-    assert_eq!(window.start, instant(2026, 3, 15, 0, 0, 0));
-    assert_eq!(window.end, instant(2026, 3, 15, 12, 0, 0));
+    assert_eq!(window.start, instant("2026-03-15 00:00:00"));
+    assert_eq!(window.end, instant("2026-03-15 12:00:00"));
     assert_eq!(window.start.date_naive(), window.end.date_naive());
 }
 
@@ -597,7 +579,7 @@ fn query_a_date_only_value_is_midnight_utc() {
 fn query_a_space_separated_datetime_is_read() {
     let request = MetricsQuery::decode(Some("startTime=2026-03-15%2012:00:00"));
     let window = request.window(clock().as_ref(), 7).expect("the window");
-    assert_eq!(window.start, instant(2026, 3, 15, 12, 0, 0));
+    assert_eq!(window.start, instant("2026-03-15 12:00:00"));
     assert_eq!(window.end, fixed_now());
 }
 
@@ -605,7 +587,7 @@ fn query_a_space_separated_datetime_is_read() {
 fn query_without_times_uses_the_clock_and_the_lookback() {
     let request = MetricsQuery::decode(None);
     let window = request.window(clock().as_ref(), 7).expect("the window");
-    assert_eq!(window.start, fixed_now() - TimeDelta::days(7));
+    assert_eq!(window.start, days_before(fixed_now(), 7));
     assert_eq!(window.end, fixed_now());
     assert_ne!(window.start.date_naive(), window.end.date_naive());
 }
@@ -642,8 +624,8 @@ fn query_a_missing_or_undefined_key_and_customer_are_null() {
 fn debug_spend_filters_redacts_the_key() {
     let filters = SpendFilters {
         model_group: "chat".to_owned(),
-        start: instant(2026, 3, 1, 0, 0, 0),
-        end: instant(2026, 3, 10, 0, 0, 0),
+        start: instant("2026-03-01 00:00:00"),
+        end: instant("2026-03-10 00:00:00"),
         api_key: "sk-secret".to_owned(),
         customer: "alice".to_owned(),
     };

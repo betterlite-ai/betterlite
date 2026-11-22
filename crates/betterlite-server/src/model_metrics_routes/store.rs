@@ -31,9 +31,8 @@ pub struct SpendFilters {
 }
 
 impl fmt::Debug for SpendFilters {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("SpendFilters")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SpendFilters")
             .field("model_group", &self.model_group)
             .field("start", &self.start)
             .field("end", &self.end)

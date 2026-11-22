@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::PoisonError;
 
 use async_trait::async_trait;
 use axum::Router;
@@ -15,6 +16,8 @@ use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::DateTime;
+use chrono::NaiveDateTime;
+use chrono::TimeDelta;
 use chrono::TimeZone as _;
 use chrono::Utc;
 use clap::Parser;
@@ -93,7 +96,10 @@ pub(crate) struct FakeStore {
 
 impl FakeStore {
     fn record(&self, call: Call) -> Result<(), DbError> {
-        self.calls.lock().expect("the call log").push(call);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
         if self.failure {
             return Err(DbError::NoDbConnected);
         }
@@ -101,7 +107,10 @@ impl FakeStore {
     }
 
     pub(crate) fn calls(&self) -> Vec<Call> {
-        self.calls.lock().expect("the call log").clone()
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -240,15 +249,36 @@ pub(crate) fn postgres_store(pool: &Pool) -> PostgresModelMetricsStore {
     }
 }
 
-pub(crate) fn instant(
-    year: i32,
-    month: u32,
-    day: u32,
-    hour: u32,
-    minute: u32,
-    second: u32,
-) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(year, month, day, hour, minute, second)
-        .single()
+pub(crate) fn instant(text: &str) -> DateTime<Utc> {
+    NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S")
         .expect("the calendar instant")
+        .and_utc()
+}
+
+pub(crate) fn days_before(now: DateTime<Utc>, days: i64) -> DateTime<Utc> {
+    now.checked_sub_signed(TimeDelta::days(days))
+        .expect("the window start")
+}
+
+pub(crate) fn named_latency_series() -> Vec<SeriesValue> {
+    vec![
+        SeriesValue {
+            key: "2026-03-11".to_owned(),
+            api_base: Some("http://plain.example.com".to_owned()),
+            model: "claude".to_owned(),
+            value: 0.008,
+        },
+        SeriesValue {
+            key: "2026-03-10".to_owned(),
+            api_base: Some("https://api.example.com/openai/v1".to_owned()),
+            model: "gpt-4".to_owned(),
+            value: 0.002,
+        },
+        SeriesValue {
+            key: "2026-03-10".to_owned(),
+            api_base: None,
+            model: "claude".to_owned(),
+            value: 0.004,
+        },
+    ]
 }

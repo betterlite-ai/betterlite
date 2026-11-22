@@ -5,7 +5,7 @@ use super::support::execute;
 use super::support::instant;
 use super::support::postgres_store;
 use crate::model_metrics_routes::store::ExceptionWindow;
-use crate::model_metrics_routes::store::ModelMetricsStore;
+use crate::model_metrics_routes::store::ModelMetricsStore as _;
 use crate::model_metrics_routes::store::SlowRequest;
 use crate::model_metrics_routes::store::SpendFilters;
 use crate::model_metrics_routes::store::StreamingWindow;
@@ -89,8 +89,8 @@ async fn query_same_day_lists_one_row_per_request_and_skips_excluded_rows() {
     let rows = postgres_store(&pool)
         .streaming_same_day(&StreamingWindow {
             model_group: Some("g".to_owned()),
-            start: instant(2026, 3, 15, 0, 0, 0),
-            end: instant(2026, 3, 15, 23, 59, 59),
+            start: instant("2026-03-15 00:00:00"),
+            end: instant("2026-03-15 23:59:59"),
         })
         .await
         .expect("the same-day rows");
@@ -114,8 +114,8 @@ async fn query_daily_averages_the_first_token_per_day_inside_the_window() {
     let rows = postgres_store(&pool)
         .streaming_daily(&StreamingWindow {
             model_group: Some("g".to_owned()),
-            start: instant(2026, 3, 1, 0, 0, 0),
-            end: instant(2026, 3, 2, 23, 59, 59),
+            start: instant("2026-03-01 00:00:00"),
+            end: instant("2026-03-02 23:59:59"),
         })
         .await
         .expect("the daily rows");
@@ -137,8 +137,8 @@ async fn query_latency_divides_seconds_by_completion_tokens_and_filters() {
     let filtered = store
         .latency(&SpendFilters {
             model_group: "g".to_owned(),
-            start: instant(2026, 3, 1, 0, 0, 0),
-            end: instant(2026, 3, 10, 23, 59, 59),
+            start: instant("2026-03-01 00:00:00"),
+            end: instant("2026-03-10 23:59:59"),
             api_key: "k1".to_owned(),
             customer: "u1".to_owned(),
         })
@@ -152,8 +152,8 @@ async fn query_latency_divides_seconds_by_completion_tokens_and_filters() {
     let unfiltered = store
         .latency(&SpendFilters {
             model_group: "g".to_owned(),
-            start: instant(2026, 3, 1, 0, 0, 0),
-            end: instant(2026, 3, 10, 23, 59, 59),
+            start: instant("2026-03-01 00:00:00"),
+            end: instant("2026-03-10 23:59:59"),
             api_key: "null".to_owned(),
             customer: "null".to_owned(),
         })
@@ -176,8 +176,8 @@ async fn query_slow_responses_counts_at_the_threshold_and_orders_by_slow_count()
         .slow_responses(&SlowRequest {
             filters: SpendFilters {
                 model_group: "g".to_owned(),
-                start: instant(2026, 3, 1, 0, 0, 0),
-                end: instant(2026, 3, 10, 23, 59, 59),
+                start: instant("2026-03-01 00:00:00"),
+                end: instant("2026-03-10 23:59:59"),
                 api_key: "k1".to_owned(),
                 customer: "u1".to_owned(),
             },
@@ -206,8 +206,8 @@ async fn query_exceptions_joins_the_model_and_api_base_and_compares_end_time() {
     let store = postgres_store(&pool);
     let window = ExceptionWindow {
         model_group: Some("g".to_owned()),
-        start: instant(2026, 3, 1, 0, 0, 0),
-        end: instant(2026, 3, 10, 12, 0, 0),
+        start: instant("2026-03-01 00:00:00"),
+        end: instant("2026-03-10 12:00:00"),
     };
     let rows = store.exceptions(&window).await.expect("the exception rows");
     assert_eq!(rows.len(), 4);
@@ -226,8 +226,8 @@ async fn query_exceptions_joins_the_model_and_api_base_and_compares_end_time() {
     let unselected = store
         .exceptions(&ExceptionWindow {
             model_group: None,
-            start: instant(2026, 3, 1, 0, 0, 0),
-            end: instant(2026, 3, 10, 12, 0, 0),
+            start: instant("2026-03-01 00:00:00"),
+            end: instant("2026-03-10 12:00:00"),
         })
         .await
         .expect("the unselected exception rows");
@@ -243,8 +243,8 @@ async fn query_exceptions_caps_the_models_at_two_hundred() {
     let rows = postgres_store(&pool)
         .exceptions(&ExceptionWindow {
             model_group: Some("g".to_owned()),
-            start: instant(2026, 3, 1, 0, 0, 0),
-            end: instant(2026, 3, 10, 12, 0, 0),
+            start: instant("2026-03-01 00:00:00"),
+            end: instant("2026-03-10 12:00:00"),
         })
         .await
         .expect("the capped exception rows");

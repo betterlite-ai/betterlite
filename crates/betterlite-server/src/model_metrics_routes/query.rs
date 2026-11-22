@@ -36,10 +36,10 @@ pub(super) struct Window {
 impl MetricsQuery {
     pub(super) fn decode(raw: Option<&str>) -> Self {
         let mut query = Self::default();
-        let Some(raw) = raw else {
+        let Some(query_string) = raw else {
             return query;
         };
-        for (name, value) in form_urlencoded::parse(raw.as_bytes()) {
+        for (name, value) in form_urlencoded::parse(query_string.as_bytes()) {
             match name.as_ref() {
                 MODEL_GROUP_PARAM => query.model_group = Some(value.into_owned()),
                 START_TIME_PARAM => query.start_time = Some(value.into_owned()),
@@ -72,10 +72,9 @@ impl MetricsQuery {
     }
 
     pub(super) fn model_group_or(&self, default: &str) -> String {
-        match &self.model_group {
-            Some(group) => group.clone(),
-            None => default.to_owned(),
-        }
+        self.model_group
+            .as_ref()
+            .map_or_else(|| default.to_owned(), String::clone)
     }
 }
 
