@@ -294,45 +294,36 @@ async fn assert_stream_error() {
     );
 }
 
-async fn assert_no_double_report() {
-    let hook = RecordingHook::default();
+async fn relay_outcome(
+    upstream_status: u16,
+    hook: &RecordingHook,
+) -> Vec<Result<Vec<u8>, HttpError>> {
     let details = PassthroughLoggingObj::default();
     let principal = PrincipalFacts::default();
-    let relayed: Vec<_> = relay_reporting_failures(
+    relay_reporting_failures(
         chunks(vec![Err(HttpError::Timeout)]),
-        500,
+        upstream_status,
         FailureReporting {
             user_api_key_dict: &principal,
             request_payload: data("{}"),
             logging_obj: &details,
-            hook: &hook,
+            hook,
             redaction: &FixedRedaction(false),
         },
     )
     .collect()
-    .await;
-    assert_eq!(outcomes(relayed), (Vec::new(), 1));
+    .await
+}
+
+async fn assert_no_double_report() {
+    let hook = RecordingHook::default();
+    assert_eq!(outcomes(relay_outcome(500, &hook).await), (Vec::new(), 1));
     assert!(hook.calls.lock().unwrap().is_empty());
 }
 
 async fn assert_broken_stream_hook() {
     let hook = RecordingHook::failing();
-    let details = PassthroughLoggingObj::default();
-    let principal = PrincipalFacts::default();
-    let relayed: Vec<_> = relay_reporting_failures(
-        chunks(vec![Err(HttpError::Timeout)]),
-        200,
-        FailureReporting {
-            user_api_key_dict: &principal,
-            request_payload: data("{}"),
-            logging_obj: &details,
-            hook: &hook,
-            redaction: &FixedRedaction(false),
-        },
-    )
-    .collect()
-    .await;
-    assert_eq!(outcomes(relayed), (Vec::new(), 1));
+    assert_eq!(outcomes(relay_outcome(200, &hook).await), (Vec::new(), 1));
 }
 
 #[test]
