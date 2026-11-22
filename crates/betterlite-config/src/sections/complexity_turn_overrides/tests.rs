@@ -161,6 +161,23 @@ fn a_rule_without_a_tier_is_rejected() {
 }
 
 #[test]
+fn a_keyword_tier_resolves_an_environment_reference() {
+    let fields = "        keyword_tier_rules:\n          - keywords: [invoice]\n            tier: os.environ/TIER\n";
+    let found = configured(fields, &[("TIER", " COMPLEX ")]).unwrap();
+    assert_eq!(
+        found.keyword_tier_rules,
+        Some(vec![KeywordTierRule {
+            keywords: vec!["invoice".to_owned()],
+            tier: "COMPLEX".to_owned(),
+        }])
+    );
+    let empty = configured(fields, &[("TIER", "")]).unwrap_err();
+    assert!(empty.contains("tier"), "{empty}");
+    let missing = configured(fields, &[]).unwrap_err();
+    assert!(missing.contains("TIER"), "{missing}");
+}
+
+#[test]
 fn a_zero_stall_window_is_rejected() {
     let fields = "        stall_escalation_window: 0\n";
     let error = configured(fields, &[]).unwrap_err();

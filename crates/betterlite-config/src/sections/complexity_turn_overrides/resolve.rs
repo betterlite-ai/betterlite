@@ -26,7 +26,7 @@ where
     L: EnvironmentLookup,
 {
     let prefix = format!("model_list.{index}.{PATH_ROOT}");
-    let keyword_tier_rules = keyword_rules(raw.keyword_tier_rules, &prefix)?;
+    let keyword_tier_rules = keyword_rules(raw.keyword_tier_rules, &prefix, lookup)?;
     let (stall_enabled, stall_window, stall_repeat) = stall(
         raw.stall_escalation_enabled,
         raw.stall_escalation_window,
@@ -125,10 +125,14 @@ where
     })
 }
 
-pub(super) fn keyword_rules(
+pub(super) fn keyword_rules<L>(
     raw: Option<Vec<RawKeywordTierRule>>,
     prefix: &str,
-) -> Result<Option<Vec<KeywordTierRule>>, ConfigError> {
+    lookup: &L,
+) -> Result<Option<Vec<KeywordTierRule>>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let Some(rules) = raw else {
         return Ok(None);
     };
@@ -137,13 +141,22 @@ pub(super) fn keyword_rules(
         compiled.push(normalize_rule(
             rule,
             &format!("{prefix}.keyword_tier_rules.{index}"),
+            lookup,
         )?);
     }
     Ok(Some(compiled))
 }
 
-// KeywordTierRule._normalize_keywords and _coerce_tier: strip, drop blanks, require one keyword and a tier
-fn normalize_rule(raw: RawKeywordTierRule, path: &str) -> Result<KeywordTierRule, ConfigError> {
+// KeywordTierRule._normalize_keywords and _coerce_tier: the proxy resolves an os.environ tier before
+// pydantic reads it, then the rule strips it, drops blanks and requires one keyword and a tier
+fn normalize_rule<L>(
+    raw: RawKeywordTierRule,
+    path: &str,
+    lookup: &L,
+) -> Result<KeywordTierRule, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let Some(keywords) = raw.keywords else {
         return Err(invalid(path));
     };
@@ -160,7 +173,8 @@ fn normalize_rule(raw: RawKeywordTierRule, path: &str) -> Result<KeywordTierRule
     let Some(decorated) = raw.tier else {
         return Err(invalid(&format!("{path}.tier")));
     };
-    let tier = decorated.trim();
+    let resolved = resolve_string(decorated, &format!("{path}.tier"), lookup)?;
+    let tier = resolved.trim();
     if tier.is_empty() {
         return Err(invalid(&format!("{path}.tier")));
     }
