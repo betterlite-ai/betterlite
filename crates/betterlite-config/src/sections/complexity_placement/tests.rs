@@ -42,7 +42,7 @@ fn the_defaults_are_the_pinned_litellm_values() {
         Config {
             return_raw_model_name: false,
             max_tokens_from_tier_model: true,
-            deployment_pin: DeploymentPin::Unused,
+            deployment_pin: DeploymentPin::InUse,
         }
     );
 }
@@ -64,7 +64,7 @@ fn declared_values_replace_the_defaults() {
         vec![Some(Config {
             return_raw_model_name: true,
             max_tokens_from_tier_model: false,
-            deployment_pin: DeploymentPin::Unused,
+            ..Config::default()
         })]
     );
 }
@@ -194,7 +194,7 @@ fn an_empty_plugin_list_keeps_the_marker() {
 
 #[test]
 fn a_router_configuring_no_pin_keeps_the_marker_off() {
-    let source = router("        return_raw_model_name: true\n");
+    let source = router("        deployment_affinity: false\n");
     let resolved = settings(&source, &[]).unwrap();
     assert!(!resolved.stamps_session_marker());
 }
