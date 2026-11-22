@@ -115,9 +115,23 @@ class Answer:
     async def __call__(self, **_kwargs: object) -> ModelResponse:
         self.calls += 1
         return ModelResponse(id="probe", created=0, model=_MODEL, choices=[])
+# the scheduler reads the probe needs, typed around the pin's unparameterized list signatures
+class QueueReader(Protocol):
+    async def get_queue(self, model_name: str) -> list[tuple[int, str]]: ...
+class HealthWatch(Protocol):
+    async def poll(
+        self, id: str, model_name: str, health_deployments: list[dict[str, str]]
+    ) -> bool: ...
+    async def peek(
+        self, id: str, model_name: str, health_deployments: list[dict[str, str]]
+    ) -> bool: ...
 class SchedulerCall(Protocol):
     async def schedule_acompletion(
-        self, *, model: str, messages: list[AllMessageValues], priority: int, stream: bool
+        self,
+        model: str,
+        messages: list[AllMessageValues],
+        priority: int,
+        stream: Literal[False] = False,
     ) -> ModelResponse: ...
 def entry(model: str) -> dict[str, object]:
     return {
@@ -141,6 +155,7 @@ async def schedule_step(step: ScheduleStep, router: SchedulerCall, answer: Answe
     return (Scheduled(prioritized=used["x-litellm-request-prioritization-used"], priority=step.priority), None)
 async def apply_step(step: Step, router: Router, answer: Answer) -> tuple[Outcome, Failure | None]:
     scheduler: Scheduler = router.scheduler
+    watch: HealthWatch = router.scheduler
     error: Failure | None = None
     outcome: Outcome
     if isinstance(step, AddStep):
@@ -150,7 +165,7 @@ async def apply_step(step: Step, router: Router, answer: Answer) -> tuple[Outcom
         outcome = Added()
     elif isinstance(step, PollStep):
         outcome = Polled(
-            allowed=await scheduler.poll(
+            allowed=await watch.poll(
                 id=step.request_id,
                 model_name=step.model,
                 health_deployments=[{}] * step.healthy,
@@ -158,7 +173,7 @@ async def apply_step(step: Step, router: Router, answer: Answer) -> tuple[Outcom
         )
     elif isinstance(step, PeekStep):
         outcome = Peeked(
-            head=await scheduler.peek(
+            head=await watch.peek(
                 id=step.request_id,
                 model_name=step.model,
                 health_deployments=[],
@@ -171,10 +186,10 @@ async def apply_step(step: Step, router: Router, answer: Answer) -> tuple[Outcom
     else:
         outcome = Interval(interval=f"{scheduler.polling_interval:.6f}")
     return (outcome, error)
-async def read_queue(router: Router, model: str) -> list[Entry]:
+async def read_queue(reader: QueueReader, model: str) -> list[Entry]:
     return [
         Entry(priority=priority, request_id=request_id)
-        for priority, request_id in sorted(_QUEUE.validate_python(await router.scheduler.get_queue(model_name=model)))
+        for priority, request_id in sorted(_QUEUE.validate_python(await reader.get_queue(model_name=model)))
     ]
 class RequestScheduler(Operation):
     polling_interval: str | None = None
@@ -202,7 +217,7 @@ class RequestScheduler(Operation):
             outputs: list[StepOutput] = []
             for step in self.steps:
                 outcome, error = await apply_step(step, router, answer)
-                queue = await read_queue(router, step.model)
+                queue = await read_queue(router.scheduler, step.model)
                 outputs.append(StepOutput(outcome=outcome, queue=queue, depth=len(queue), error=error))
             return Output(steps=outputs, calls=answer.calls)
     def router(self) -> Router:
