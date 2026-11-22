@@ -116,7 +116,8 @@ def zeroed_answer(call: ZeroedCall) -> JsonValue:
     except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L849-L855
         failed: JsonValue = {"status": error.status_code, "type": None, "param": None, "code": None}
         return {"pricing": None, "error": failed}
-    return {"pricing": JSON.validate_json(to_json(dict(pricing))), "error": None}
+    written = dict(pricing)
+    return {"pricing": JSON.validate_json(to_json(written)), "error": None}
 
 
 def delta_answer(call: DeltaCall) -> JsonValue:
@@ -130,10 +131,11 @@ def delta_answer(call: DeltaCall) -> JsonValue:
     except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L849-L855
         failed: JsonValue = {"status": error.status_code, "type": None, "param": None, "code": None}
         return {"written": None, "released": None, "error": failed}
+    written = dict(pricing)
     dropped: list[JsonValue] = []
     dropped.extend(sorted(released))
     return {
-        "written": JSON.validate_json(to_json(dict(pricing))),
+        "written": JSON.validate_json(to_json(written)),
         "released": dropped,
         "error": None,
     }
@@ -162,7 +164,7 @@ def catalog_answer(call: CatalogCall) -> JsonValue:
         model_name="ptu", litellm_params=LiteLLM_Params(model=call["model"]), model_info=ModelInfo()
     )
     catalog = LoadedCatalog(call["catalog"])
-    runtime_map = litellm.model_cost
+    runtime_map = litellm.model_cost  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L563
     litellm.model_cost = call["cost_map"]
     try:
         cost_entry = model_management_endpoints._cost_map_entry(stored, call["incoming"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L953-L960
@@ -171,9 +173,10 @@ def catalog_answer(call: CatalogCall) -> JsonValue:
     catalog_entry = model_management_endpoints._loaded_catalog_entry(call["incoming"], catalog.load)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L966-L972
     echoed: list[JsonValue] = []
     echoed.extend(echoed_cost_map_fields(call["incoming"], cost_entry, catalog_entry))
+    entry = dict(catalog_entry)
     return {
         "echoed": echoed,
-        "catalog_entry": JSON.validate_json(to_json(dict(catalog_entry))),
+        "catalog_entry": JSON.validate_json(to_json(entry)),
         "catalog_loaded": catalog.loads > 0,
     }
 

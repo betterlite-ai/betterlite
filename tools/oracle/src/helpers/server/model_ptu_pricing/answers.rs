@@ -7,8 +7,9 @@ use betterlite_db::stored_cipher::DbCipher;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_models::ptu_pricing::zeroed::PtuZeroedPricing;
 use betterlite_models::request_pricing::fields::echoed_cost_map_fields;
-use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_router::deployment_model_info::metadata::ModelMetadataSource;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
@@ -127,18 +128,21 @@ fn refusal(error: &PtuPricingError) -> Value {
     })
 }
 
+fn written_pricing(pricing: &PtuZeroedPricing) -> Result<JsonObject, Box<HelperError>> {
+    let mut blob = JsonObject::new();
+    write_ptu_pricing(pricing, &mut blob).or_value_error()?;
+    Ok(blob)
+}
+
 fn zeroed_answer(call: &ZeroedCall, attribution: &Attribution) -> HelperResult {
     let blobs = DeploymentBlobs {
         model_info: &call.model_info,
         litellm_params: &call.litellm_params,
     };
-    let pricing = match ptu_zeroed_pricing(blobs, &call.supplied, attribution) {
-        Ok(pricing) => pricing,
-        Err(error) => return Ok(json!({ "pricing": null, "error": refusal(&error) })),
-    };
-    let mut written = JsonObject::new();
-    write_ptu_pricing(&pricing, &mut written).or_value_error()?;
-    Ok(json!({ "pricing": written, "error": null }))
+    match ptu_zeroed_pricing(blobs, &call.supplied, attribution) {
+        Ok(pricing) => Ok(json!({ "pricing": written_pricing(&pricing)?, "error": null })),
+        Err(error) => Ok(json!({ "pricing": null, "error": refusal(&error) })),
+    }
 }
 
 fn delta_answer(call: &DeltaCall, attribution: &Attribution) -> HelperResult {
@@ -156,9 +160,11 @@ fn delta_answer(call: &DeltaCall, attribution: &Attribution) -> HelperResult {
             return Ok(json!({ "written": null, "released": null, "error": refusal(&error) }));
         }
     };
-    let mut written = JsonObject::new();
-    write_ptu_pricing(&delta.written, &mut written).or_value_error()?;
-    Ok(json!({ "written": written, "released": delta.released, "error": null }))
+    Ok(json!({
+        "written": written_pricing(&delta.written)?,
+        "released": delta.released,
+        "error": null,
+    }))
 }
 
 fn deployment_answer(call: &DeploymentCall, attribution: &Attribution) -> Value {
