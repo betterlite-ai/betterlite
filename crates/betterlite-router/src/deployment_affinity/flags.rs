@@ -22,7 +22,7 @@ impl UnknownFlags {
     #[must_use]
     pub fn message(&self) -> String {
         format!(
-            "model_group_affinity_config: unknown flag(s) {} for model group '{}'; will be ignored. Valid flags: frozenset({{{}}})",
+            "model_group_affinity_config: unknown flag(s) {{{}}} for model group '{}'; will be ignored. Valid flags: frozenset({{{}}})",
             braced_set(self.unknown.iter().map(String::as_str)),
             self.group,
             braced_set(VALID_FLAGS.into_iter()),

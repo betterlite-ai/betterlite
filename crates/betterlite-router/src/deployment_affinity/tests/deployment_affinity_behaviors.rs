@@ -228,7 +228,7 @@ pub(super) fn unknown_flags_warn() {
     assert_eq!(warnings[0].unknown, ["typo", "wrong"]);
     assert_eq!(
         warnings[0].message(),
-        "model_group_affinity_config: unknown flag(s) 'typo', 'wrong' for model group 'gpt-4o'; will be ignored. Valid flags: frozenset({'deployment_affinity', 'encrypted_content_affinity', 'responses_api_deployment_check', 'session_affinity'})"
+        "model_group_affinity_config: unknown flag(s) {'typo', 'wrong'} for model group 'gpt-4o'; will be ignored. Valid flags: frozenset({'deployment_affinity', 'encrypted_content_affinity', 'responses_api_deployment_check', 'session_affinity'})"
     );
     assert!(warn_unknown_affinity_flags(None).is_empty());
     let known = groups(&[(MODEL_GROUP, &["encrypted_content_affinity"])]);
