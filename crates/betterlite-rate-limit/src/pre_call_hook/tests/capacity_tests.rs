@@ -8,6 +8,7 @@ use tokio::sync::Semaphore;
 
 use super::support::{
     self, Fixture, Parts, count, entries, occupied_registry, parallel_key, request_window,
+    token_window,
 };
 use crate::pre_call_hook::{PreCallHookError, PreCallHookRejection};
 
@@ -34,6 +35,24 @@ async fn capacity_charges_one_request() {
             .counter(&support::requests_key("api_key", "key-1")),
         Some(count(1))
     );
+}
+
+#[tokio::test]
+async fn capacity_skips_the_token_check() {
+    let fixture = Fixture::new(&Parts::new(
+        entries([token_window("api_key", "key-1", 5)]),
+        Vec::new(),
+        None,
+    ));
+    let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 5}"#);
+
+    let guard = fixture
+        .hook
+        .request_capacity(&auth, "gpt4", None)
+        .await
+        .expect("the capacity admission skips the token counter");
+    drop(guard);
+    fixture.settle().await;
 }
 
 #[tokio::test]

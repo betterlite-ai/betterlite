@@ -526,6 +526,23 @@ async fn hook_stays_quiet_at_the_smallest_limit() {
 }
 
 #[tokio::test]
+async fn hook_reserves_one_token_for_a_request_without_any_content() {
+    let fixture = Fixture::plain();
+    let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 5}"#);
+    let mut data = support::data(r#"{"model": "gpt4"}"#);
+    let slot = RequestStashSlot::default();
+
+    fixture
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
+        .await
+        .expect("the reservation floors at one token");
+
+    let state = snapshot(&slot);
+    assert_eq!(state.reserved_tokens, 1);
+    assert_eq!(state.reserved_scopes, scopes(&[("api_key", "key-1")]));
+}
+
+#[tokio::test]
 async fn hook_applies_the_responses_output_cap_field_for_its_call_type() {
     let fixture = Fixture::plain();
     let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 1000}"#);
