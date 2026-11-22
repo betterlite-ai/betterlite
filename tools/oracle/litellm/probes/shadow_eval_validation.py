@@ -156,12 +156,14 @@ class ProxyModule(ModuleType):
     llm_router: Router | None
     prisma_client: FakePrisma
 
+    def __init__(self, name: str, router: Router | None, rows: Targets) -> None:
+        super().__init__(name)
+        self.llm_router = router
+        self.prisma_client = FakePrisma(rows)
+
 
 def install_proxy(router: Router | None, rows: Targets) -> None:
-    module = ProxyModule(PROXY_MODULE)
-    module.llm_router = router
-    module.prisma_client = FakePrisma(rows)
-    sys.modules[PROXY_MODULE] = module
+    sys.modules[PROXY_MODULE] = ProxyModule(PROXY_MODULE, router, rows)
 
 
 def unconfigured() -> None:
