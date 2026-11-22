@@ -60,6 +60,33 @@ pub(crate) struct Case<'case> {
     granted: &'case [String],
 }
 
+impl<'case> Case<'case> {
+    fn of(input: &'case Input) -> Self {
+        let (auth, registry, store, granted) = match input {
+            Input::Admit {
+                auth,
+                registry,
+                store,
+                granted,
+                ..
+            }
+            | Input::Invoke {
+                auth,
+                registry,
+                store,
+                granted,
+                ..
+            } => (auth, registry, store, granted),
+        };
+        Self {
+            auth,
+            registry: registry.as_slice(),
+            store: store.as_deref(),
+            granted: granted.as_slice(),
+        }
+    }
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -70,46 +97,19 @@ impl Helper for Op {
             .enable_all()
             .build()
             .or_value_error()?;
+        let case = Case::of(input);
         match input {
-            Input::Admit {
-                auth,
-                registry,
-                store,
-                retired,
-                granted,
-            } => admit(
-                &runtime,
-                &Case {
-                    auth,
-                    registry,
-                    store: store.as_deref(),
-                    granted,
-                },
-                *retired,
-            ),
+            Input::Admit { retired, .. } => admit_case(&runtime, &case, *retired),
             Input::Invoke {
-                auth,
                 target_name,
-                registry,
-                store,
-                granted,
                 billable,
-            } => invoke_case(
-                &runtime,
-                &Case {
-                    auth,
-                    registry,
-                    store: store.as_deref(),
-                    granted,
-                },
-                target_name,
-                *billable,
-            ),
+                ..
+            } => invoke_case(&runtime, &case, target_name, *billable),
         }
     }
 }
 
-fn admit(runtime: &Runtime, case: &Case<'_>, retired: bool) -> HelperResult {
+fn admit_case(runtime: &Runtime, case: &Case<'_>, retired: bool) -> HelperResult {
     let registry = registry(case.registry)?;
     let rows = store_rows(case.store)?;
     let store = rows.map(|agents| CaseStore { agents, retired });

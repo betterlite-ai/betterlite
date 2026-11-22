@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from decimal import Decimal
 from types import ModuleType
 from typing import Literal, TypeAlias, TypedDict
 
@@ -19,6 +20,7 @@ PERMISSIONS_MODULE = "litellm.proxy.agent_endpoints.auth.agent_permission_handle
 READ_THROUGH_MODULE = "litellm.proxy.common_utils.registry_read_through"
 AGENT: TypeAdapter[AgentResponse] = TypeAdapter(AgentResponse)
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+DETAIL: TypeAdapter[str] = TypeAdapter(str)
 
 
 class ContextFields(TypedDict):
@@ -70,7 +72,7 @@ class Answer(TypedDict):
     requires_fresh_policy: bool
     invoked_agent_id: str | None
     invoked_agent_policy: str | None
-    agent_invocation_cost: float | None
+    agent_invocation_cost: str | None
 
 
 class CaseAgentTable:
@@ -187,27 +189,29 @@ def store_of(rows: list[str] | None, *, retired: bool) -> AgentIdentityStore | N
 
 
 def token_of(fields: AuthFields) -> UserAPIKeyAuth:
-    context = fields["context"]
-    return UserAPIKeyAuth(
+    auth = UserAPIKeyAuth(
         user_id=fields["user_id"],
         team_id=fields["team_id"],
         agent_id=fields["agent_id"],
-        managed_agent_context=None
-        if context is None
-        else ManagedAgentContext(
+    )
+    context = fields["context"]
+    if context is not None:
+        # the constructor strips this field, so the case assigns it afterwards
+        auth.managed_agent_context = ManagedAgentContext(
             agent_id=context["agent_id"],
             binding_revision=context["binding_revision"],
             mode=context["mode"],
             user_id=context["user_id"],
             subject_oid=context["subject_oid"],
-        ),
-    )
+        )
+    return auth
 
 
 def answer(auth: UserAPIKeyAuth, verdict: Literal["ok"] | Denial) -> JsonValue:
     managed = auth.managed_agent_policy
     billing = auth.billing_agent_policy
     invoked = auth.invoked_agent_policy
+    cost = auth.agent_invocation_cost
     result = Answer(
         outcome=verdict,
         managed_agent_policy=None if managed is None else managed.agent_id,
@@ -215,7 +219,9 @@ def answer(auth: UserAPIKeyAuth, verdict: Literal["ok"] | Denial) -> JsonValue:
         requires_fresh_policy=auth.requires_fresh_policy,
         invoked_agent_id=auth.invoked_agent_id,
         invoked_agent_policy=None if invoked is None else invoked.agent_id,
-        agent_invocation_cost=auth.agent_invocation_cost,
+        agent_invocation_cost=None
+        if cost is None
+        else format(Decimal(repr(cost)).normalize(), "f"),
     )
     return JSON.validate_python(result)
 
@@ -241,5 +247,11 @@ def run(input_value: Input) -> JsonValue:
                 )
             )
     except HTTPException as error:
-        return answer(auth, Denial(status=error.status_code, detail=error.detail))
+        return answer(
+            auth,
+            Denial(
+                status=error.status_code,
+                detail=DETAIL.validate_python(error.detail),
+            ),
+        )
     return answer(auth, "ok")
