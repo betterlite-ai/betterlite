@@ -142,8 +142,7 @@ fn mode_error(step: &ModeStep, error: &HealthProbeError) -> Value {
                 .map_or("", |failure| failure.class_name.as_str());
             json!({"error": {"kind": "backend", "detail": class}})
         }
-        HealthProbeError::ParameterType { .. }
-        | HealthProbeError::ParameterValue { .. }
+        HealthProbeError::ParameterValue { .. }
         | HealthProbeError::NoCheapModel { .. }
         | HealthProbeError::OcrDocumentUnavailable { .. }
         | HealthProbeError::HealthImage { .. }

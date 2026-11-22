@@ -372,7 +372,7 @@ async fn mode_typed_parameters_with_a_wrong_type_are_rejected(
     };
     assert!(matches!(
         error,
-        HealthProbeError::ParameterType { key: reported } if reported == key
+        HealthProbeError::ParameterValue { key: reported, .. } if reported == key
     ));
 }
 

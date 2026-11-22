@@ -7,8 +7,6 @@ use std::error::Error;
 use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum HealthProbeError {
-    #[error("the health check parameter {key} must be a string")]
-    ParameterType { key: &'static str },
     #[error("the health check parameter {key} cannot be converted into the call JSON")]
     ParameterValue {
         key: String,

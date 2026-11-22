@@ -7,6 +7,7 @@ use super::logging::HealthProbeLogging;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::sync::Arc;
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,20 +62,20 @@ impl Default for HealthProbeParams {
 }
 impl HealthProbeParams {
     pub fn from_map(mut parameters: IndexMap<String, Value>) -> Result<Self, HealthProbeError> {
-        let model = take_text(&mut parameters, "model")?;
-        let api_base = take_text(&mut parameters, "api_base")?;
-        let api_version = take_text(&mut parameters, "api_version")?;
-        let custom_llm_provider = take_text(&mut parameters, "custom_llm_provider")?;
-        let api_key = take_text(&mut parameters, "api_key")?
+        let model = take::<String>(&mut parameters, "model")?;
+        let api_base = take::<String>(&mut parameters, "api_base")?;
+        let api_version = take::<String>(&mut parameters, "api_version")?;
+        let custom_llm_provider = take::<String>(&mut parameters, "custom_llm_provider")?;
+        let api_key = take::<String>(&mut parameters, "api_key")?
             .as_option()
             .cloned()
             .map(SecretString::from);
-        let max_tokens = take_json(&mut parameters, "max_tokens")?;
-        let voice = take_json(&mut parameters, "voice")?;
-        let messages = take_json(&mut parameters, "messages")?;
-        let fallbacks = take_json(&mut parameters, "fallbacks")?;
-        let litellm_metadata = take_json(&mut parameters, "litellm_metadata")?;
-        let cache = take_json(&mut parameters, "cache")?;
+        let max_tokens = take::<Json>(&mut parameters, "max_tokens")?;
+        let voice = take::<Json>(&mut parameters, "voice")?;
+        let messages = take::<Json>(&mut parameters, "messages")?;
+        let fallbacks = take::<Json>(&mut parameters, "fallbacks")?;
+        let litellm_metadata = take::<Json>(&mut parameters, "litellm_metadata")?;
+        let cache = take::<Json>(&mut parameters, "cache")?;
         let params = Self {
             model,
             api_base,
@@ -128,33 +129,25 @@ impl HealthProbeParams {
         Ok(parameters)
     }
 }
-fn take_text(
+fn take<T>(
     parameters: &mut IndexMap<String, Value>,
     key: &'static str,
-) -> Result<Param<String>, HealthProbeError> {
-    match parameters.shift_remove(key) {
-        None => Ok(Param::Absent),
-        Some(Value::Null) => Ok(Param::Null),
-        Some(Value::String(text)) => Ok(Param::Value(text)),
-        Some(_) => Err(HealthProbeError::ParameterType { key }),
+) -> Result<Param<T>, HealthProbeError>
+where
+    T: DeserializeOwned,
+{
+    let Some(value) = parameters.shift_remove(key) else {
+        return Ok(Param::Absent);
+    };
+    if value.is_null() {
+        return Ok(Param::Null);
     }
-}
-fn take_json(
-    parameters: &mut IndexMap<String, Value>,
-    key: &'static str,
-) -> Result<Param<Json>, HealthProbeError> {
-    match parameters.shift_remove(key) {
-        None => Ok(Param::Absent),
-        Some(value) => {
-            let typed = serde_json::from_value(value).map_err(|source| {
-                HealthProbeError::ParameterValue {
-                    key: key.to_owned(),
-                    source,
-                }
-            })?;
-            Ok(Param::Value(typed))
-        }
-    }
+    let typed =
+        serde_json::from_value(value).map_err(|source| HealthProbeError::ParameterValue {
+            key: key.to_owned(),
+            source,
+        })?;
+    Ok(Param::Value(typed))
 }
 trait ParameterJson {
     fn parameter_json(&self) -> Json;

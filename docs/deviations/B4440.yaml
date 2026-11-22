@@ -15,7 +15,7 @@ deviations:
   - what: A mode whose call would repeat a key already in the model parameters fails with the typed RepeatedParameter error before any provider call; LiteLLM builds the same call and Python raises TypeError for the duplicate keyword.
     why: The call is refused either way, and betterlite names the key and the mode in an error its health endpoint can report; a Python TypeError carries no mode and cannot be mapped to a typed error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L224-L247
-  - what: A model parameter of the wrong type, such as a numeric api_base, fails with the typed ParameterType error; LiteLLM passes the value through to the provider call and lets the provider or LiteLLM's own validation fail.
+  - what: A model parameter of the wrong type, such as a numeric api_base, fails with the typed ParameterValue error naming the key; LiteLLM passes the value through to the provider call and lets the provider or LiteLLM's own validation fail.
     why: betterlite reads model, api_base, api_version, custom_llm_provider, max_tokens, voice, messages, fallbacks, litellm_metadata and cache into typed fields, so a value of the wrong type is named at the health check boundary; LiteLLM's handlers treat model_params as an untyped dict.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L165-L173
 kept_bugs:
