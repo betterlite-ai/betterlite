@@ -84,7 +84,7 @@ fn the_first_settings_change_adds_the_staggered_interval_job() {
     let trigger = scheduler.jobs.get(SPEND_LOG_CLEANUP_JOB_ID).unwrap();
     assert_eq!(
         period_of(trigger.as_ref(), origin()),
-        Some(TimeDelta::seconds(2_592_000))
+        Some(TimeDelta::seconds(86_400))
     );
     assert_eq!(state.last_attempt, Some(cleanup_schedule_of(&settings)));
     assert!(

@@ -52,7 +52,10 @@ fn startup_interval_carries_the_random_offset_and_records_the_attempt(
     #[case] offset: u32,
 ) {
     let fixture = fixture();
-    let settings = retained("90d");
+    let settings = store(&[
+        (RETENTION_PERIOD_KEY, JsonValue::from("30d")),
+        (RETENTION_INTERVAL_KEY, JsonValue::from("90d")),
+    ]);
     let mut scheduler = proxy_scheduler();
     let mut state = CleanupScheduleState::default();
     register(
