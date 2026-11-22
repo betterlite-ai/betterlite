@@ -1,321 +1,26 @@
 #![cfg(test)]
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+mod support;
 
-use async_trait::async_trait;
+use std::sync::{Arc, PoisonError};
+
 use betterlite_config::api::realtime_connect::RealtimeConnectionSettings;
 use betterlite_context::resource_config_selection::realtime::RealtimeConfigTag;
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
-};
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
-use betterlite_models::catalog::ModelCatalog;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
-use betterlite_models::json_provider_registry::JSONProviderRegistry;
-use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
-use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::ResolutionContext;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
-use crate::api::realtime_contracts::config::{BaseRealtimeConfig, Environment};
-use crate::api::realtime_contracts::error::{HeaderMap, WebSocketError};
-use crate::api::realtime_contracts::events::{
-    RealtimeResponseTransformInput, RealtimeResponseTypedDict,
-};
-use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
+use crate::api::realtime_contracts::error::HeaderMap;
 use crate::api::vertex_chirp::target::AccessTokenResolver;
-use crate::dispatch::error::DispatchError;
 
-use super::dispatch::arealtime;
-use super::token::{
-    VertexAccessTokenSource, VertexTokenError, VertexTokenFuture, resolve_vertex_token,
-};
+use super::token::{VertexTokenError, resolve_vertex_token};
 use super::{
-    AzureAdTokenRequest, Branch, ConnectionQuery, RealtimeConnectCall, RealtimeConnectDispatch,
-    RealtimeConnectError, RealtimeConnectParams, RealtimeConnection,
+    AzureAdTokenRequest, Branch, ConnectionQuery, RealtimeConnectDispatch, RealtimeConnectError,
+    RealtimeConnectParams, RealtimeConnection,
 };
-
-type TestError = std::io::Error;
-
-struct TestBackend;
-
-#[async_trait]
-impl RealtimeBackend for TestBackend {
-    async fn send(&mut self, _message: RealtimeMessage) -> Result<(), WebSocketError> {
-        Ok(())
-    }
-
-    async fn recv(&mut self, _decode: Option<bool>) -> Result<RealtimeMessage, WebSocketError> {
-        Ok(RealtimeMessage::Text(String::new()))
-    }
-
-    async fn close(&mut self) -> Result<(), WebSocketError> {
-        Ok(())
-    }
-}
-
-struct TestConfig;
-
-#[async_trait]
-impl BaseRealtimeConfig for TestConfig {
-    type Error = TestError;
-    type Backend = TestBackend;
-
-    fn validate_environment(
-        &self,
-        environment: &Environment<'_>,
-    ) -> Result<HeaderMap, Self::Error> {
-        Ok(environment.headers.clone())
-    }
-
-    fn transform_realtime_request(
-        &self,
-        _message: &str,
-        _model: &str,
-        _session_configuration_request: Option<&str>,
-    ) -> Result<Vec<RealtimeMessage>, Self::Error> {
-        Ok(Vec::new())
-    }
-
-    fn transform_realtime_response(
-        &self,
-        _message: &RealtimeMessage,
-        _model: &str,
-        _input: &RealtimeResponseTransformInput,
-    ) -> Result<RealtimeResponseTypedDict, Self::Error> {
-        Ok(RealtimeResponseTypedDict {
-            response: Json::Null,
-            current_output_item_id: None,
-            current_response_id: None,
-            current_delta_chunks: None,
-            current_conversation_id: None,
-            current_item_chunks: None,
-            current_delta_type: None,
-            session_configuration_request: None,
-        })
-    }
-}
-
-type TokenAnswer = Result<(SecretString, String), VertexTokenError>;
-
-#[derive(Default)]
-struct ScriptedTokens {
-    answers: Mutex<VecDeque<TokenAnswer>>,
-    calls: Mutex<Vec<(Option<Json>, Option<String>)>>,
-}
-
-impl ScriptedTokens {
-    fn with(answers: Vec<TokenAnswer>) -> Arc<Self> {
-        let tokens = Self::default();
-        *tokens
-            .answers
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = VecDeque::from(answers);
-        Arc::new(tokens)
-    }
-}
-
-impl VertexAccessTokenSource for ScriptedTokens {
-    type Error = TestError;
-
-    fn resolve<'source>(
-        &'source self,
-        credentials: Option<&'source Json>,
-        project_id: Option<&'source str>,
-    ) -> VertexTokenFuture<'source> {
-        Box::pin(async move {
-            self.calls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push((credentials.cloned(), project_id.map(str::to_owned)));
-            self.answers
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .pop_front()
-                .unwrap_or_else(|| {
-                    Err(VertexTokenError {
-                        message: String::from("no answer"),
-                    })
-                })
-        })
-    }
-}
-
-#[derive(Default)]
-struct Recorder {
-    tags: Mutex<Vec<RealtimeConfigTag>>,
-    ad_requests: Mutex<Vec<(Option<String>, Option<String>)>>,
-    ad_reply: Mutex<Option<Option<SecretString>>>,
-    tokens: Mutex<Option<Arc<ScriptedTokens>>>,
-}
-
-impl Recorder {
-    fn with_tokens(tokens: Arc<ScriptedTokens>) -> Self {
-        let recorder = Self::default();
-        *recorder
-            .tokens
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(tokens);
-        recorder
-    }
-
-    fn with_ad_token(reply: Option<SecretString>) -> Self {
-        let recorder = Self::default();
-        *recorder
-            .ad_reply
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(reply);
-        recorder
-    }
-
-    fn tags(&self) -> Vec<RealtimeConfigTag> {
-        self.tags
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-impl RealtimeConnectDispatch for Recorder {
-    type Error = TestError;
-    type ProviderConfig = TestConfig;
-
-    fn provider_config(
-        &self,
-        tag: RealtimeConfigTag,
-    ) -> Result<Arc<Self::ProviderConfig>, RealtimeConnectError<Self::Error>> {
-        self.tags
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(tag);
-        Ok(Arc::new(TestConfig))
-    }
-
-    fn vertex_access_tokens(
-        &self,
-    ) -> Result<
-        Arc<dyn VertexAccessTokenSource<Error = Self::Error>>,
-        RealtimeConnectError<Self::Error>,
-    > {
-        match self
-            .tokens
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        {
-            Some(tokens) => Ok(tokens),
-            None => Err(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
-                entry: "vertex_access_token_resolver",
-            })),
-        }
-    }
-
-    fn azure_ad_token(
-        &self,
-        request: AzureAdTokenRequest<'_>,
-    ) -> Result<Option<SecretString>, RealtimeConnectError<Self::Error>> {
-        self.ad_requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((
-                request
-                    .azure_ad_token
-                    .map(|token| token.expose_secret().to_owned()),
-                request.params.tenant_id.clone(),
-            ));
-        match self
-            .ad_reply
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-        {
-            Some(reply) => Ok(reply),
-            None => Err(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
-                entry: "azure_ad_token_credentials",
-            })),
-        }
-    }
-}
-
-fn logging_state() -> LoggingState {
-    let init: LoggingInit = serde_json::from_str(
-        r#"{"model":"realtime","call_type":"realtime","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
-    )
-    .unwrap();
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    LoggingState::new(
-        init,
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        &redactor,
-        || String::from("generated"),
-        Duration::default,
-    )
-    .unwrap()
-}
-
-async fn run(
-    dispatch: &Recorder,
-    settings: &RealtimeConnectionSettings,
-    call: &RealtimeConnectCall<'_>,
-) -> (
-    LoggingState,
-    Result<RealtimeConnection<TestConfig>, RealtimeConnectError<TestError>>,
-) {
-    let catalog = ModelCatalog::default();
-    let names = BTreeSet::new();
-    let environment = BTreeMap::new();
-    let resolution = ResolutionContext {
-        catalog: &catalog,
-        known_model_names: &names,
-        custom_providers: &names,
-        environment: &environment,
-        registry: JSONProviderRegistry::default(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    };
-    let mut logging = logging_state();
-    let result = arealtime(dispatch, settings, &mut logging, &resolution, call).await;
-    (logging, result)
-}
-
-fn secret(value: &str) -> SecretString {
-    SecretString::from(value)
-}
-
-fn text(value: &str) -> Json {
-    Json::Text(String::from(value))
-}
-
-fn params() -> RealtimeConnectParams {
-    RealtimeConnectParams::default()
-}
-
-fn settings() -> RealtimeConnectionSettings {
-    RealtimeConnectionSettings::default()
-}
-
-fn call<'call>(
-    model: &'call str,
-    connect: &'call RealtimeConnectParams,
-    query: Option<&'call IndexMap<String, String>>,
-    litellm_params: &'call IndexMap<String, Json>,
-    client_sent_beta: bool,
-) -> RealtimeConnectCall<'call> {
-    RealtimeConnectCall {
-        model,
-        params: connect,
-        query_params: query,
-        client: None,
-        client_sent_beta,
-        litellm_params,
-    }
-}
+use support::{
+    BareDispatch, Recorder, ScriptedTokens, TestConfig, call, params, run, secret, settings, text,
+};
 
 #[tokio::test]
 async fn realtime_generic_dispatch() {
@@ -459,6 +164,27 @@ async fn realtime_generic_dispatch_rejects_an_unsupported_model() {
     let error = result.unwrap_err();
     assert_eq!(error.to_string(), "Unsupported model: claude-x");
     assert!(dispatch.tags().is_empty());
+}
+
+#[test]
+fn realtime_connect_dispatch_defaults_report_not_built() {
+    let dispatch = BareDispatch;
+    assert!(matches!(
+        dispatch.provider_config(RealtimeConfigTag::Gemini),
+        Err(RealtimeConnectError::NotBuilt(_))
+    ));
+    assert!(matches!(
+        dispatch.vertex_access_tokens(),
+        Err(RealtimeConnectError::NotBuilt(_))
+    ));
+    let connect = params();
+    assert!(matches!(
+        dispatch.azure_ad_token(AzureAdTokenRequest {
+            azure_ad_token: None,
+            params: &connect,
+        }),
+        Err(RealtimeConnectError::NotBuilt(_))
+    ));
 }
 
 #[tokio::test]
@@ -850,6 +576,37 @@ async fn realtime_vertex_credentials_and_refresh() {
     let connection = vertex_connection(&dispatch, &settings, &connect, &query).await;
     assert_vertex_connection(&settings, &connection, tokens.as_ref(), &named_credentials).await;
     assert_vertex_token_failures(tokens.as_ref()).await;
+    vertex_settings_credentials().await;
+}
+
+async fn vertex_settings_credentials() {
+    let tokens = ScriptedTokens::with(vec![Ok((
+        secret("token-a"),
+        String::from("resolved-project"),
+    ))]);
+    let dispatch = Recorder::with_tokens(Arc::clone(&tokens));
+    let mut settings = settings();
+    settings.vertexai_credentials = Some(text("env-credentials"));
+    let mut connect = params();
+    connect.vertex_credentials = Some(Json::Text(String::new()));
+    connect.vertex_project = Some(String::from("named-project"));
+    let litellm_params = IndexMap::new();
+    let call = call(
+        "vertex_ai/gemini-live",
+        &connect,
+        None,
+        &litellm_params,
+        false,
+    );
+    let (_, result) = run(&dispatch, &settings, &call).await;
+    assert!(matches!(result.unwrap().branch, Branch::Vertex { .. }));
+    assert_eq!(
+        *tokens.calls.lock().unwrap_or_else(PoisonError::into_inner),
+        vec![(
+            Some(text("env-credentials")),
+            Some(String::from("named-project"))
+        )]
+    );
 }
 
 fn vertex_setup() -> (
