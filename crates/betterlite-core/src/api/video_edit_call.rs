@@ -80,7 +80,7 @@ where
         Prepared::Call(ready) if ready.is_async => {
             Ok(Handled::Pending(into_pending(ready, deps.handler)))
         }
-        Prepared::Call(ready) => hand_off(deps, ready),
+        Prepared::Call(ready) => hand_off(deps, &ready).map(Handled::Done),
     }
 }
 

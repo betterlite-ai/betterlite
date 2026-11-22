@@ -170,7 +170,7 @@ pub(crate) struct FakeClient {
     pub(crate) name: &'static str,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RecordedExtension {
     pub(crate) prompt: String,
     pub(crate) video_id: String,

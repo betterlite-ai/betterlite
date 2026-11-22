@@ -7,6 +7,7 @@ use crate::api::vector_store_http_write::service::SuppliedClient;
 use crate::api::video_edit_transport::calls::{Handled, VideoEditRequest, VideoPending};
 use crate::api::video_edit_transport::config::{BaseVideoConfig, Headers, Params};
 use crate::api::video_edit_transport::edits::VideoEditHandlers;
+use crate::api::video_records::VideoObject;
 
 // Everything the handler call needs, owned so the pending future can outlive the caller's borrows
 pub(crate) struct Ready<'run, Client> {
@@ -46,16 +47,16 @@ impl<Client> Ready<'_, Client> {
 }
 
 // the sync hand-off: the handler's answer turned into the call's result, with model "" on every failure
-pub(crate) fn hand_off<'run, Configs, Handler>(
-    deps: &'run VideoEditDeps<'run, Configs, Handler>,
-    ready: Ready<'run, Handler::Client>,
-) -> Result<Handled<'run>, VideoEditFailure>
+pub(crate) fn hand_off<'call, Configs, Handler>(
+    deps: &'call VideoEditDeps<'_, Configs, Handler>,
+    ready: &'call Ready<'_, Handler::Client>,
+) -> Result<Box<VideoObject>, VideoEditFailure>
 where
     Configs: ?Sized,
     Handler: VideoEditHandlers + ?Sized,
 {
     match deps.handler.video_edit(ready.request(), ready.config) {
-        Ok(Handled::Done(object)) => Ok(Handled::Done(object)),
+        Ok(Handled::Done(object)) => Ok(object),
         // the transport never answers Pending on its sync path, and a future borrowed from this call cannot leave it
         Ok(Handled::Pending(_pending)) => Err(failure(
             VideoEditCallError::SyncPending,
