@@ -24,6 +24,30 @@ pub(super) enum ReloadedFlavor {
     Linkup,
     Searxng,
 }
+enum LoadedSearch {
+    Linkup(LinkupSearchConfig),
+    Searxng(SearxngSearchConfig),
+}
+impl ReloadedProvider<'_> {
+    fn reload(
+        &self,
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
+    ) -> Result<LoadedSearch, SearchConfigError> {
+        match self.flavor {
+            ReloadedFlavor::Linkup => {
+                LinkupSearchConfig::load(api_key.cloned(), api_base, self.environment)
+                    .map(LoadedSearch::Linkup)
+                    .map_err(|source| SearchConfigError::Provider(Box::new(source)))
+            }
+            ReloadedFlavor::Searxng => {
+                SearxngSearchConfig::load(api_key.cloned(), api_base, self.environment)
+                    .map(LoadedSearch::Searxng)
+                    .map_err(|source| SearchConfigError::Provider(Box::new(source)))
+            }
+        }
+    }
+}
 impl SearchHooks for ReloadedProvider<'_> {
     fn http_method(&self) -> HttpMethod {
         match self.flavor {
@@ -37,21 +61,12 @@ impl SearchHooks for ReloadedProvider<'_> {
         api_key: Option<&SecretString>,
         api_base: Option<&str>,
     ) -> Headers {
-        match self.flavor {
-            ReloadedFlavor::Linkup => {
-                let Ok(config) =
-                    LinkupSearchConfig::load(api_key.cloned(), api_base, self.environment)
-                else {
-                    return headers;
-                };
-                config.validate_environment(headers, api_key, api_base)
-            }
-            ReloadedFlavor::Searxng => {
-                let Ok(config) =
-                    SearxngSearchConfig::load(api_key.cloned(), api_base, self.environment)
-                else {
-                    return headers;
-                };
+        let Ok(loaded) = self.reload(api_key, api_base) else {
+            return headers;
+        };
+        match loaded {
+            LoadedSearch::Linkup(config) => config.validate_environment(headers, api_key, api_base),
+            LoadedSearch::Searxng(config) => {
                 config.validate_environment(headers, api_key, api_base)
             }
         }
@@ -63,50 +78,32 @@ impl SearchHooks for ReloadedProvider<'_> {
         _body: Option<&SearchBody>,
         api_key: Option<&SecretString>,
     ) -> Result<String, SearchConfigError> {
-        match self.flavor {
-            ReloadedFlavor::Linkup => {
-                let config = LinkupSearchConfig::load(api_key.cloned(), api_base, self.environment)
-                    .map_err(|source| SearchConfigError::Provider(Box::new(source)))?;
-                config
-                    .complete_url(api_base, optional_params, None, api_key)
-                    .map_err(|source| SearchConfigError::Provider(Box::new(source)))
-            }
-            ReloadedFlavor::Searxng => {
-                let config =
-                    SearxngSearchConfig::load(api_key.cloned(), api_base, self.environment)
-                        .map_err(|source| SearchConfigError::Provider(Box::new(source)))?;
-                let stored = self.body.lock().unwrap_or_else(PoisonError::into_inner);
-                config
-                    .complete_url(api_base, optional_params, stored.as_ref(), api_key)
-                    .map_err(|source| SearchConfigError::Provider(Box::new(source)))
-            }
+        let loaded = self.reload(api_key, api_base)?;
+        let stored = self.body.lock().unwrap_or_else(PoisonError::into_inner);
+        match loaded {
+            LoadedSearch::Linkup(config) => config
+                .complete_url(api_base, optional_params, None, api_key)
+                .map_err(|source| SearchConfigError::Provider(Box::new(source))),
+            LoadedSearch::Searxng(config) => config
+                .complete_url(api_base, optional_params, stored.as_ref(), api_key)
+                .map_err(|source| SearchConfigError::Provider(Box::new(source))),
         }
     }
     fn transform_search_request(
         &self,
         input: &RequestInput<'_>,
     ) -> Result<SearchBody, SearchConfigError> {
-        match self.flavor {
-            ReloadedFlavor::Linkup => {
-                let typed = LinkupSearchConfig::load(
-                    input.api_key.cloned(),
-                    input.api_base,
-                    self.environment,
-                )
-                .map_err(|source| SearchConfigError::Provider(Box::new(source)))?
-                .transform_search_request(input)
-                .map_err(|source| SearchConfigError::Provider(Box::new(source)))?;
+        match self.reload(input.api_key, input.api_base)? {
+            LoadedSearch::Linkup(config) => {
+                let typed = config
+                    .transform_search_request(input)
+                    .map_err(|source| SearchConfigError::Provider(Box::new(source)))?;
                 encoded_body(&typed)
             }
-            ReloadedFlavor::Searxng => {
-                let typed = SearxngSearchConfig::load(
-                    input.api_key.cloned(),
-                    input.api_base,
-                    self.environment,
-                )
-                .map_err(|source| SearchConfigError::Provider(Box::new(source)))?
-                .transform_search_request(input)
-                .map_err(|source| SearchConfigError::Provider(Box::new(source)))?;
+            LoadedSearch::Searxng(config) => {
+                let typed = config
+                    .transform_search_request(input)
+                    .map_err(|source| SearchConfigError::Provider(Box::new(source)))?;
                 let body = encoded_body(&typed)?;
                 *self.body.lock().unwrap_or_else(PoisonError::into_inner) = Some(typed);
                 Ok(body)
@@ -117,10 +114,11 @@ impl SearchHooks for ReloadedProvider<'_> {
         &self,
         response: &ProviderResponse<'_>,
     ) -> Result<SearchResponse, SearchConfigError> {
+        let text = response.text.as_bytes();
         match self.flavor {
-            ReloadedFlavor::Linkup => decode_linkup_reply(response.text.as_bytes())
+            ReloadedFlavor::Linkup => decode_linkup_reply(text)
                 .map_err(|source| SearchConfigError::Provider(Box::new(source))),
-            ReloadedFlavor::Searxng => decode_searxng_reply(response.text.as_bytes())
+            ReloadedFlavor::Searxng => decode_searxng_reply(text)
                 .map_err(|source| SearchConfigError::Provider(Box::new(source))),
         }
     }
