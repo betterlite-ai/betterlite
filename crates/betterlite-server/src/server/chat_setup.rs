@@ -32,7 +32,8 @@ use anthropic_defaults::apply_anthropic_defaults;
 use mock::mock_settings;
 use uuid::Uuid;
 
-pub use crate::server::error::ChatSetupError;
+// the error lives in server/error.rs to keep this file under the line limit; the alias keeps the name here
+pub type ChatSetupError = crate::server::error::ChatSetupError;
 
 // reads certificate files, so it runs before the async runtime starts
 pub fn chat_executor(

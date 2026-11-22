@@ -14,9 +14,15 @@ use url::ParseError;
 #[derive(Debug, Error)]
 pub enum ChatCallsError {
     #[error("the token counter limits are invalid: {source}")]
-    Counter(#[from] CountError),
+    Counter {
+        #[from]
+        source: CountError,
+    },
     #[error("the Anthropic runtime could not be built: {source}")]
-    Runtime(#[from] Arc<RuntimeError>),
+    Runtime {
+        #[from]
+        source: Arc<RuntimeError>,
+    },
 }
 
 #[derive(Debug, Error)]

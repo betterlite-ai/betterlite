@@ -23,7 +23,9 @@ use betterlite_openai::completion_chat_bridge::{
 };
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
-use betterlite_openai::text_completion_execution::{CompletionExecutor, CompletionSend};
+use betterlite_openai::text_completion_execution::{
+    CompletionCallAnswer, CompletionExecutor, CompletionSend,
+};
 use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use betterlite_provider::operation::OperationResult;
 use betterlite_tokenizer::count::Counter;
@@ -38,9 +40,7 @@ use crate::server::error::ChatCallsError;
 use crate::state::anthropic_runtime::Slot;
 
 use self::mock::mock_stream;
-use self::relay::{
-    AnthropicAnswer, answered_result, anthropic_answer, relay_bytes, streamed_result,
-};
+use self::relay::{AnthropicAnswer, answered_result, anthropic_answer, relay_bytes};
 
 // the existing chat implementation, reached through the dispatch pipeline's port
 pub(crate) struct ChatCalls {
