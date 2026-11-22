@@ -333,10 +333,7 @@ fn the_async_entry_maps_every_failure_with_the_callers_provider() {
         panic!("mistral has no video config");
     };
     let ErrorClass::BadRequest(mapped_details) = &mapped.class else {
-        panic!(
-            "the remapped provider mistake answers 400, got {:?}",
-            mapped.class
-        );
+        panic!("the remapped provider mistake answers 400, got {mapped:?}");
     };
     assert_eq!(mapped.class.metadata().status_code, 400);
     assert_eq!(
@@ -344,11 +341,7 @@ fn the_async_entry_maps_every_failure_with_the_callers_provider() {
         "video edit is not supported for mistral"
     );
     assert_eq!(mapped_details.provider.as_deref(), Some("mistral"));
-    assert_eq!(
-        mapped_details.model.as_deref(),
-        Some(""),
-        "model is the empty string"
-    );
+    assert_eq!(mapped_details.model.as_deref(), Some(""), "model is empty");
     let failed_rig = Rig::new(
         Reply::Failed {
             status_code: 500,
