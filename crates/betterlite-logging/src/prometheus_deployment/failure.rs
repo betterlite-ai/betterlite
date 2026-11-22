@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
+use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues};
 
 use crate::prometheus::failure::text_field;
 use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
@@ -10,26 +10,20 @@ use super::metric::DeploymentMetric;
 use super::metrics::{DeploymentMetrics, DeploymentResult};
 use super::requests::{DeploymentLabels, FailureRequest};
 use super::state::set_deployment_partial_outage;
-use super::values::{failure_exception_status, object_field, tags_from_json, truthy};
+use super::values::{
+    failure_exception_status, model_group_field, object_field, push_identity, push_text,
+    tags_from_json,
+};
 
 mod identity;
 
-const PROXY_REJECTED_BEFORE_ROUTING_KEY: &str = "proxy_rejected_before_routing";
+const PROXY_REJECTED_KEY: &str = "proxy_rejected_before_routing";
 
 struct FailureFields {
     model_id: Option<String>,
     model_group: Option<String>,
     api_provider: Option<String>,
     selected: bool,
-}
-
-struct DeploymentFields {
-    litellm_model_name: Option<String>,
-    model_id: Option<String>,
-    api_base: Option<String>,
-    api_provider: Option<String>,
-    requested_model: Option<String>,
-    model_group: Option<String>,
 }
 
 // ast-grep-ignore: no-long-names
@@ -91,17 +85,15 @@ fn failure_fields(request: &FailureRequest<'_>) -> FailureFields {
     let model_group = payload
         .and_then(|payload| payload.model_group.clone())
         .or_else(|| params_model_group(request.litellm_params));
-    let selected = model_id.as_deref().is_some_and(|id| !id.is_empty())
-        && !truthy(
-            request
-                .litellm_params
-                .get(PROXY_REJECTED_BEFORE_ROUTING_KEY),
-        );
+    let rejected = matches!(
+        request.litellm_params.get(PROXY_REJECTED_KEY),
+        Some(Json::Bool(true))
+    );
     FailureFields {
+        selected: model_id.as_deref().is_some_and(|id| !id.is_empty()) && !rejected,
         model_id,
         model_group,
         api_provider: text_field(request.litellm_params, "custom_llm_provider").map(str::to_owned),
-        selected,
     }
 }
 
@@ -118,14 +110,11 @@ fn params_model_id(params: &JsonObject) -> Option<String> {
 fn params_model_group(params: &JsonObject) -> Option<String> {
     let internal = object_field(params, "litellm_metadata")
         .and_then(|metadata| metadata.get("model_group"))
-        .filter(|value| truthy(Some(*value)));
+        .and_then(model_group_field);
     let caller = object_field(params, "metadata")
         .and_then(|metadata| metadata.get("model_group"))
-        .filter(|value| truthy(Some(*value)));
-    match internal.or(caller)? {
-        Json::Text(text) => Some(text.clone()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
-    }
+        .and_then(model_group_field);
+    internal.or(caller)
 }
 
 fn failure_values<G: DeploymentMetrics>(
@@ -134,77 +123,84 @@ fn failure_values<G: DeploymentMetrics>(
     fields: &FailureFields,
 ) -> UserApiKeyLabelValues {
     let identity = identity::failure_identity(metrics, request);
-    let deployment = if fields.selected {
-        selected_fields(request, fields)
-    } else {
-        rejected_fields(metrics, request, fields)
-    };
-    UserApiKeyLabelValues {
-        litellm_model_name: deployment.litellm_model_name,
-        model_id: deployment.model_id,
-        api_base: deployment.api_base,
-        api_provider: deployment.api_provider,
-        requested_model: deployment.requested_model,
-        model_group: deployment.model_group,
-        exception_status: request.exception.map(failure_exception_status),
-        exception_class: request
-            .exception
-            .map(|exception| metrics.exception_class(exception)),
-        hashed_api_key: identity.hashed_api_key,
-        api_key_alias: identity.api_key_alias,
-        user_email: identity.user_email,
-        team: identity.team,
-        team_alias: identity.team_alias,
-        client_ip: identity.client_ip,
-        user_agent: identity.user_agent,
-        tags: tags_from_json(
-            request
-                .payload
-                .map_or(&[], |payload| payload.request_tags.as_slice()),
-        ),
-        ..UserApiKeyLabelValues::default()
-    }
+    let mut entries: Vec<(String, LabelDumpValue)> = Vec::new();
+    deployment_values(metrics, request, fields, &mut entries);
+    let status = request.exception.map(failure_exception_status);
+    push_text(&mut entries, "exception_status", status.as_deref());
+    let class = request
+        .exception
+        .map(|exception| metrics.exception_class(exception));
+    push_text(&mut entries, "exception_class", class.as_deref());
+    push_identity(
+        &mut entries,
+        identity.hashed_api_key.as_deref(),
+        identity.api_key_alias.as_deref(),
+        identity.team.as_deref(),
+        identity.team_alias.as_deref(),
+    );
+    push_text(&mut entries, "user_email", identity.user_email.as_deref());
+    push_text(&mut entries, "client_ip", identity.client_ip.as_deref());
+    push_text(&mut entries, "user_agent", identity.user_agent.as_deref());
+    let tags = tags_from_json(
+        request
+            .payload
+            .map_or(&[], |payload| payload.request_tags.as_slice()),
+    );
+    entries.push(("tags".to_owned(), LabelDumpValue::Strings(tags)));
+    UserApiKeyLabelValues::from_entries(&entries)
 }
 
-fn selected_fields(request: &FailureRequest<'_>, fields: &FailureFields) -> DeploymentFields {
-    DeploymentFields {
-        litellm_model_name: request.model.map(str::to_owned),
-        model_id: fields.model_id.clone(),
-        api_base: request.payload.map(|payload| payload.api_base.clone()),
-        api_provider: fields.api_provider.clone(),
-        requested_model: fields
-            .model_group
-            .clone()
-            .filter(|group| !group.is_empty())
-            .or_else(|| request.model.map(str::to_owned)),
-        model_group: fields.model_group.clone(),
-    }
-}
-
-fn rejected_fields<G: DeploymentMetrics>(
+fn deployment_values<G: DeploymentMetrics>(
     metrics: &G,
     request: &FailureRequest<'_>,
     fields: &FailureFields,
-) -> DeploymentFields {
+    entries: &mut Vec<(String, LabelDumpValue)>,
+) {
+    if fields.selected {
+        push_text(entries, "litellm_model_name", request.model);
+        push_text(entries, "model_id", fields.model_id.as_deref());
+        push_text(
+            entries,
+            "api_base",
+            request.payload.map(|payload| payload.api_base.as_str()),
+        );
+        push_text(entries, "api_provider", fields.api_provider.as_deref());
+        let requested = fields
+            .model_group
+            .as_deref()
+            .filter(|group| !group.is_empty());
+        push_text(entries, "requested_model", requested.or(request.model));
+        push_text(entries, "model_group", fields.model_group.as_deref());
+    } else {
+        rejected_values(metrics, request, fields, entries);
+    }
+}
+
+// a LiteLLM-side reject has no deployment, so only the bounded caller names label the request
+fn rejected_values<G: DeploymentMetrics>(
+    metrics: &G,
+    request: &FailureRequest<'_>,
+    fields: &FailureFields,
+    entries: &mut Vec<(String, LabelDumpValue)>,
+) {
+    for name in ["litellm_model_name", "model_id", "api_base", "api_provider"] {
+        push_text(entries, name, Some(""));
+    }
     let source = request
         .model
         .filter(|name| !name.is_empty())
         .or(fields.model_group.as_deref())
         .map(|name| Json::Text(name.to_owned()));
+    let bounded = metrics.bounded_model_label(source.as_ref(), true, request.catalog);
+    push_text(
+        entries,
+        "requested_model",
+        Some(bounded.as_deref().unwrap_or_default()),
+    );
     let group = fields
         .model_group
         .as_deref()
-        .map(|group| Json::Text(group.to_owned()));
-    DeploymentFields {
-        litellm_model_name: Some(String::new()),
-        model_id: Some(String::new()),
-        api_base: Some(String::new()),
-        api_provider: Some(String::new()),
-        requested_model: Some(
-            metrics
-                .bounded_model_label(source.as_ref(), true, request.catalog)
-                .unwrap_or_default(),
-        ),
-        model_group: metrics.bounded_model_label(group.as_ref(), true, request.catalog),
-    }
+        .map(|name| Json::Text(name.to_owned()));
+    let bounded_group = metrics.bounded_model_label(group.as_ref(), true, request.catalog);
+    push_text(entries, "model_group", bounded_group.as_deref());
 }

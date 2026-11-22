@@ -89,8 +89,9 @@ pub trait DeploymentMetrics: RateLimitGauges {
         source: LabelSource<'_>,
         now: Instant,
     ) -> DeploymentResult<Self> {
+        let counter = self.metric(metric);
         let emission = CounterEmission {
-            counter: &self.metric(metric),
+            counter: &counter,
             metric_name: metric.name(),
             supported_labels: self.labels_for(metric),
             tracker: self.tracker(),

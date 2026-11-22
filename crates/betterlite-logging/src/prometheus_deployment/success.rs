@@ -21,7 +21,7 @@ use crate::prometheus_rate_limits::deployment::set_deployment_tpm_rpm_limit_metr
 
 use super::error::{HeaderValueError, PrometheusDeploymentError};
 use super::metric::DeploymentMetric;
-use super::metrics::{DeploymentMetrics, DeploymentResult, DeploymentValueResult};
+use super::metrics::{DeploymentMetrics, DeploymentResult};
 use super::requests::{DeploymentLabels, SuccessRequest};
 use super::state::set_deployment_healthy;
 use super::values::object_field;
@@ -30,7 +30,7 @@ const REMAINING_REQUESTS_HEADER: &str = "x_ratelimit_remaining_requests";
 const REMAINING_TOKENS_HEADER: &str = "x_ratelimit_remaining_tokens";
 const MILLIS_PER_SECOND: Decimal = Decimal::ONE_THOUSAND;
 
-struct SuccessSettings {
+struct SuccessFields {
     model_info: JsonObject,
     model_id: Option<String>,
     llm_provider: Option<String>,
@@ -58,15 +58,44 @@ fn record_success<G: DeploymentMetrics>(
     if metrics.skip_invalid_key(None, None, request.exception) {
         return Ok(());
     }
-    let settings = success_settings(request);
-    let model_id = record_limits(metrics, request, payload, &settings)?;
+    let fields = success_fields(request);
+    record_limits(metrics, request, payload, &fields)?;
     record_overhead(metrics, request, payload)?;
     record_remaining(metrics, request, payload)?;
+    record_success_totals(metrics, request, payload, &fields)
+}
+
+fn success_fields(request: &SuccessRequest<'_>) -> SuccessFields {
+    let call_params = CallParams {
+        metadata: object_field(request.litellm_params, "metadata").cloned(),
+        litellm_metadata: object_field(request.litellm_params, "litellm_metadata").map(|entries| {
+            InternalMetadata {
+                entries: entries.clone(),
+            }
+        }),
+    };
+    let metadata = litellm_metadata_from_params(Some(&call_params));
+    let model_info = object_field(&metadata, "model_info")
+        .cloned()
+        .unwrap_or_default();
+    SuccessFields {
+        model_id: text_field(&model_info, "id").map(str::to_owned),
+        llm_provider: text_field(request.litellm_params, "custom_llm_provider").map(str::to_owned),
+        model_info,
+    }
+}
+
+fn record_success_totals<G: DeploymentMetrics>(
+    metrics: &G,
+    request: &SuccessRequest<'_>,
+    payload: &StandardLoggingPayload,
+    fields: &SuccessFields,
+) -> DeploymentResult<G> {
     let outage = DeploymentLabels {
         litellm_model_name: request.model.unwrap_or_default(),
-        model_id: model_id.as_deref(),
+        model_id: Some(fields.model_id.as_deref().unwrap_or_default()),
         api_base: Some(payload.api_base.as_str()),
-        api_provider: settings.llm_provider.as_deref().unwrap_or_default(),
+        api_provider: fields.llm_provider.as_deref().unwrap_or_default(),
     };
     set_deployment_healthy(metrics, outage)?;
     let source = metrics.label_source(request.context);
@@ -85,49 +114,30 @@ fn record_success<G: DeploymentMetrics>(
     record_latency(metrics, request)
 }
 
-fn success_settings(request: &SuccessRequest<'_>) -> SuccessSettings {
-    let call_params = CallParams {
-        metadata: object_field(request.litellm_params, "metadata").cloned(),
-        litellm_metadata: object_field(request.litellm_params, "litellm_metadata").map(|entries| {
-            InternalMetadata {
-                entries: entries.clone(),
-            }
-        }),
-    };
-    let metadata = litellm_metadata_from_params(Some(&call_params));
-    let model_info = object_field(&metadata, "model_info")
-        .cloned()
-        .unwrap_or_default();
-    SuccessSettings {
-        model_id: text_field(&model_info, "id").map(str::to_owned),
-        llm_provider: text_field(request.litellm_params, "custom_llm_provider").map(str::to_owned),
-        model_info,
-    }
-}
-
 fn record_limits<G: DeploymentMetrics>(
     metrics: &G,
     request: &SuccessRequest<'_>,
     payload: &StandardLoggingPayload,
-    settings: &SuccessSettings,
-) -> DeploymentValueResult<Option<String>, G> {
-    if !settings.model_info.is_empty() || !request.litellm_params.is_empty() {
-        set_deployment_limit_metrics(
-            metrics,
-            DeploymentLimitInputs {
-                model_info: &settings.model_info,
-                litellm_params: request.litellm_params,
-                litellm_model_name: request.model,
-                model_id: settings.model_id.as_deref(),
-                api_base: Some(payload.api_base.as_str()),
-                api_provider: settings.llm_provider.as_deref(),
-                model_group: request.values.model_group.as_deref(),
-                settings: metrics.settings(),
-                end_user_settings: metrics.end_user_settings(),
-            },
-        )?;
+    fields: &SuccessFields,
+) -> DeploymentResult<G> {
+    if fields.model_info.is_empty() && request.litellm_params.is_empty() {
+        return Ok(());
     }
-    Ok(settings.model_id.clone())
+    set_deployment_limit_metrics(
+        metrics,
+        DeploymentLimitInputs {
+            model_info: &fields.model_info,
+            litellm_params: request.litellm_params,
+            litellm_model_name: request.model,
+            model_id: fields.model_id.as_deref(),
+            api_base: Some(payload.api_base.as_str()),
+            api_provider: fields.llm_provider.as_deref(),
+            model_group: request.values.model_group.as_deref(),
+            settings: metrics.settings(),
+            end_user_settings: metrics.end_user_settings(),
+        },
+    )?;
+    Ok(())
 }
 
 fn record_overhead<G: DeploymentMetrics>(
@@ -140,17 +150,7 @@ fn record_overhead<G: DeploymentMetrics>(
         .litellm_overhead_time_ms
         .as_ref()
         .map(|value| value.0);
-    if let Some(milliseconds) = overhead_ms.filter(|amount| *amount != Decimal::ZERO) {
-        let seconds = milliseconds
-            .checked_div(MILLIS_PER_SECOND)
-            .ok_or(PrometheusDeploymentError::Overflow)?;
-        let labels = prometheus_label_factory(
-            metrics.labels_for(DeploymentMetric::OverheadLatency),
-            request.values,
-            metrics.label_source(request.context),
-        )?;
-        metrics.observe_histogram(DeploymentMetric::OverheadLatency, &labels, seconds);
-    }
+    record_overhead_latency(metrics, request, overhead_ms)?;
     let records = match payload.guardrail_information.as_deref() {
         Some(records) => GuardrailRecords::Multiple(records),
         None => GuardrailRecords::Absent,
@@ -171,6 +171,25 @@ fn record_overhead<G: DeploymentMetrics>(
         supported_labels: metrics.labels_for(DeploymentMetric::OverheadWithGuardrails),
     };
     set_guardrail_overhead_metric(&handle, &observation, &inputs)?;
+    Ok(())
+}
+
+fn record_overhead_latency<G: DeploymentMetrics>(
+    metrics: &G,
+    request: &SuccessRequest<'_>,
+    overhead_ms: Option<Decimal>,
+) -> DeploymentResult<G> {
+    if let Some(milliseconds) = overhead_ms.filter(|amount| *amount != Decimal::ZERO) {
+        let seconds = milliseconds
+            .checked_div(MILLIS_PER_SECOND)
+            .ok_or(PrometheusDeploymentError::Overflow)?;
+        let labels = prometheus_label_factory(
+            metrics.labels_for(DeploymentMetric::OverheadLatency),
+            request.values,
+            metrics.label_source(request.context),
+        )?;
+        metrics.observe_histogram(DeploymentMetric::OverheadLatency, &labels, seconds);
+    }
     Ok(())
 }
 
@@ -209,7 +228,11 @@ fn header_amount(value: Option<&Json>, field: &str) -> Result<Option<Decimal>, H
         None | Some(Json::Null) => return Ok(None),
         Some(Json::Number(number)) => decimal_text(&number.to_string()),
         Some(Json::Text(text)) => decimal_text(text),
-        Some(Json::Bool(_) | Json::List(_) | Json::Object(_)) => None,
+        Some(Json::Bool(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(HeaderValueError::NotANumber {
+                field: field.to_owned(),
+            });
+        }
     };
     match parsed {
         Some(amount) if amount != Decimal::ZERO => Ok(Some(amount)),

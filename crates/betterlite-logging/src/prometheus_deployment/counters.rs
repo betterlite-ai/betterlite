@@ -30,12 +30,15 @@ pub fn increment_deployment_cooled_down<G: DeploymentMetrics>(
         labels.api_provider,
         labels.exception_status,
     ];
+    let sanitized: Vec<String> = values
+        .into_iter()
+        .map(|value| sanitize_label_value(Some(value)).unwrap_or_default())
+        .collect();
     let supported = metrics.labels_for(DeploymentMetric::CooledDown);
     let mut pairs: Vec<(&str, &str)> = Vec::with_capacity(COOLED_DOWN_LABELS.len());
-    for (name, value) in COOLED_DOWN_LABELS.into_iter().zip(values) {
-        let sanitized = sanitize_label_value(Some(value)).unwrap_or_default();
+    for (name, value) in COOLED_DOWN_LABELS.into_iter().zip(&sanitized) {
         if supported.iter().any(|label| label.as_str() == name) {
-            pairs.push((name, sanitized));
+            pairs.push((name, value.as_str()));
         }
     }
     metrics.increment_plain(DeploymentMetric::CooledDown, &pairs);
@@ -68,11 +71,11 @@ pub fn record_managed_batch_created<G: DeploymentMetrics>(
 }
 
 impl CallbackFailureCounter for PrometheusCollectors {
+    // ast-grep-ignore: no-long-names
     fn increment_callback_logging_failure(&self, callback_name: &str) {
         // ast-grep-ignore: no-long-names
-        increment_callback_logging_failure(
-            &self.litellm_callback_logging_failures_metric,
-            callback_name,
-        );
+        let counter = &self.litellm_callback_logging_failures_metric;
+        // ast-grep-ignore: no-long-names
+        increment_callback_logging_failure(counter, callback_name);
     }
 }

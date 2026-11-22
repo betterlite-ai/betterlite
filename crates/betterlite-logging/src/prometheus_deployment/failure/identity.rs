@@ -2,7 +2,8 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::prometheus::failure::deployment_labels::{
-    DeploymentFailureSources, PayloadMetadata, PayloadMetadataRecord, UserApiKeyFacts,
+    DeploymentFailureLabels, DeploymentFailureSources, PayloadMetadata, PayloadMetadataRecord,
+    UserApiKeyFacts,
 };
 use crate::prometheus::failure::text_field;
 
@@ -35,46 +36,53 @@ where
         litellm_params_metadata: params_metadata,
         user_api_key_auth: facts.as_ref(),
     };
-    let labels = metrics.failure_labels(&sources);
-    let metadata = record.as_ref();
+    merge_labels(metrics.failure_labels(&sources), record.as_ref())
+}
+
+// LiteLLM's `fallback or payload`: the label the B3880 sources found wins unless it is empty
+fn merge_labels(
+    found: DeploymentFailureLabels,
+    recorded: Option<&PayloadMetadataRecord>,
+) -> IdentityLabels {
     IdentityLabels {
-        api_key_alias: label_fallback(
-            labels.api_key_alias,
-            metadata.and_then(|record| record.user_api_key_alias.as_ref()),
+        api_key_alias: merge(
+            found.api_key_alias,
+            recorded.and_then(|p| p.user_api_key_alias.as_ref()),
         ),
-        user_email: labels.user_email,
-        team: label_fallback(
-            labels.team,
-            metadata.and_then(|record| record.user_api_key_team_id.as_ref()),
+        user_email: found.user_email,
+        team: merge(
+            found.team,
+            recorded.and_then(|p| p.user_api_key_team_id.as_ref()),
         ),
-        team_alias: label_fallback(
-            labels.team_alias,
-            metadata.and_then(|record| record.user_api_key_team_alias.as_ref()),
+        team_alias: merge(
+            found.team_alias,
+            recorded.and_then(|p| p.user_api_key_team_alias.as_ref()),
         ),
-        hashed_api_key: label_fallback(
-            labels.hashed_api_key,
-            metadata.and_then(|record| record.user_api_key_hash.as_ref()),
+        hashed_api_key: merge(
+            found.hashed_api_key,
+            recorded.and_then(|p| p.user_api_key_hash.as_ref()),
         ),
-        client_ip: label_fallback(
-            labels.client_ip,
-            metadata.and_then(|record| record.requester_ip_address.as_ref()),
+        client_ip: merge(
+            found.client_ip,
+            recorded.and_then(|p| p.requester_ip_address.as_ref()),
         ),
-        user_agent: label_fallback(
-            labels.user_agent,
-            metadata.and_then(|record| record.user_agent.as_ref()),
+        user_agent: merge(
+            found.user_agent,
+            recorded.and_then(|p| p.user_agent.as_ref()),
         ),
     }
 }
 
 fn payload_record(payload: &StandardLoggingPayload) -> PayloadMetadataRecord {
+    let metadata = &payload.metadata;
     PayloadMetadataRecord {
-        user_api_key_alias: payload.metadata.user_api_key_alias.clone(),
-        user_api_key_user_email: payload.metadata.user_api_key_user_email.clone(),
-        user_api_key_team_id: payload.metadata.user_api_key_team_id.clone(),
-        user_api_key_team_alias: payload.metadata.user_api_key_team_alias.clone(),
-        user_api_key_hash: payload.metadata.user_api_key_hash.clone(),
-        requester_ip_address: payload.metadata.requester_ip_address.clone(),
-        user_agent: payload.metadata.user_agent.clone(),
+        user_api_key_alias: metadata.user_api_key_alias.clone(),
+        user_api_key_user_email: metadata.user_api_key_user_email.clone(),
+        user_api_key_team_id: metadata.user_api_key_team_id.clone(),
+        user_api_key_team_alias: metadata.user_api_key_team_alias.clone(),
+        user_api_key_hash: metadata.user_api_key_hash.clone(),
+        requester_ip_address: metadata.requester_ip_address.clone(),
+        user_agent: metadata.user_agent.clone(),
     }
 }
 
@@ -91,7 +99,7 @@ fn api_key_facts(metadata: Option<&JsonObject>) -> Option<UserApiKeyFacts> {
 }
 
 // the outer `or` in LiteLLM's label merge, which skips a falsy value from the B3880 result
-fn label_fallback(value: Option<String>, payload_value: Option<&String>) -> Option<String> {
+fn merge(value: Option<String>, payload_value: Option<&String>) -> Option<String> {
     match value {
         Some(text) if !text.is_empty() => Some(text),
         Some(_) | None => payload_value.cloned(),

@@ -4,24 +4,27 @@ use rust_decimal::Decimal;
 use super::metric::{DeploymentMetric, DeploymentState};
 use super::metrics::{DeploymentMetrics, DeploymentResult};
 use super::requests::DeploymentLabels;
+use super::values::push_text;
 
 pub fn set_litellm_deployment_state<G: DeploymentMetrics>(
     metrics: &G,
     state: DeploymentState,
     labels: DeploymentLabels<'_>,
 ) -> DeploymentResult<G> {
-    let values = UserApiKeyLabelValues {
-        litellm_model_name: Some(labels.litellm_model_name.to_owned()),
-        model_id: labels.model_id.map(str::to_owned),
-        api_base: labels.api_base.map(str::to_owned),
-        api_provider: Some(labels.api_provider.to_owned()),
-        ..UserApiKeyLabelValues::default()
-    };
-    let source = metrics.label_source(None);
+    let mut entries = Vec::new();
+    push_text(
+        &mut entries,
+        "litellm_model_name",
+        Some(labels.litellm_model_name),
+    );
+    push_text(&mut entries, "model_id", labels.model_id);
+    push_text(&mut entries, "api_base", labels.api_base);
+    push_text(&mut entries, "api_provider", Some(labels.api_provider));
+    let values = UserApiKeyLabelValues::from_entries(&entries);
     metrics.set_gauge(
         DeploymentMetric::DeploymentState,
         &values,
-        source,
+        metrics.label_source(None),
         Decimal::from(state.number()),
     )
 }

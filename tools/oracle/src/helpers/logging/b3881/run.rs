@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::str::FromStr as _;
 use std::time::Instant;
 
+use betterlite_error::normalize::class::Class;
 use betterlite_logging::prometheus::failure::exception::LabelException;
 use betterlite_logging::prometheus_deployment::failure::{
     // ast-grep-ignore: no-long-names
@@ -41,7 +42,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
 
 fn failure(probe: &Probe, input: &Input) {
     let model = text(&input.kwargs, "model");
-    let params = object(&input.kwargs, "litellm_params");
+    let params = object_field(&input.kwargs, "litellm_params").unwrap_or_default();
     let exception = input.exception.as_ref().map(probe_exception);
     record_failure_metrics(
         probe,
@@ -82,48 +83,62 @@ fn fallback(probe: &Probe, input: &Input, success: bool) {
 
 fn success(probe: &Probe, input: &Input) {
     let model = text(&input.kwargs, "model");
-    let params = object(&input.kwargs, "litellm_params");
-    let stream = match input.kwargs.get("stream") {
-        Some(Json::Bool(flag)) => Some(*flag),
-        Some(Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    };
+    let params = object_field(&input.kwargs, "litellm_params").unwrap_or_default();
+    let stream = stream_flag(&input.kwargs);
     let exception = input.exception.as_ref().map(probe_exception);
-    let values = values(input);
+    let label_values = values(input);
     record_success_metrics(
         probe,
         &SuccessRequest {
             model: model.as_deref(),
             stream,
-            completion_start_time: input.completion_start_time.as_deref().and_then(decimal),
+            completion_start_time: input
+                .completion_start_time
+                .as_deref()
+                .and_then(|text| Decimal::from_str(text).ok()),
             litellm_params: &params,
             payload: input.payload.as_ref(),
             exception: exception.as_ref(),
-            values: &values,
+            values: &label_values,
             context: None,
             start_time: input
                 .start_time
                 .as_deref()
-                .and_then(decimal)
+                .and_then(|text| Decimal::from_str(text).ok())
                 .unwrap_or_default(),
             end_time: input
                 .end_time
                 .as_deref()
-                .and_then(decimal)
+                .and_then(|text| Decimal::from_str(text).ok())
                 .unwrap_or_default(),
-            output_tokens: input.output_tokens.as_deref().and_then(decimal),
+            output_tokens: input
+                .output_tokens
+                .as_deref()
+                .and_then(|text| Decimal::from_str(text).ok()),
             now: Instant::now(),
         },
     );
 }
 
+fn stream_flag(kwargs: &JsonObject) -> Option<bool> {
+    match kwargs.get("stream") {
+        Some(Json::Bool(flag)) => Some(*flag),
+        Some(Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    }
+}
+
 fn probe_exception(fields: &BTreeMap<String, String>) -> LabelException {
     LabelException {
-        class_name: "ProbeException".to_owned(),
+        class_name: "ProbeError".to_owned(),
+        class: Class::Other,
+        message: None,
         status_code: fields.get("status_code").cloned(),
         code: fields.get("code").cloned(),
         llm_provider: fields.get("llm_provider").cloned(),
-        ..LabelException::default()
+        category: None,
+        rate_limit_type: None,
+        legacy_class_name: None,
     }
 }
 
@@ -142,10 +157,6 @@ fn text(kwargs: &JsonObject, key: &str) -> Option<String> {
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
     }
-}
-
-fn object(kwargs: &JsonObject, key: &str) -> JsonObject {
-    object_field(kwargs, key).unwrap_or_default()
 }
 
 fn object_field(kwargs: &JsonObject, key: &str) -> Option<JsonObject> {
@@ -170,8 +181,4 @@ fn tags(kwargs: &JsonObject) -> Vec<String> {
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_))
         | None => Vec::new(),
     }
-}
-
-fn decimal(text: &str) -> Option<Decimal> {
-    Decimal::from_str(text).ok()
 }

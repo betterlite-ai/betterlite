@@ -1,8 +1,6 @@
-use betterlite_models::call_helpers::metadata::{
-    MetadataBucket, MetadataMap, MetadataSlots, metadata_variable_name,
-};
+use betterlite_models::call_helpers::metadata::{MetadataBucket, metadata_variable_name};
 use betterlite_models::decisions::Json;
-use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
+use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues};
 
 use crate::fields::payload::records::StandardLoggingMetadata;
 use crate::logging_metadata::metadata::get_standard_logging_metadata;
@@ -12,7 +10,7 @@ use crate::prometheus_label_projection::prometheus_label_factory::LabelSource;
 use super::metric::DeploymentMetric;
 use super::metrics::{DeploymentMetrics, DeploymentResult};
 use super::requests::FallbackRequest;
-use super::values::fallback_exception_status;
+use super::values::{fallback_exception_status, push_identity, push_text};
 
 pub fn log_success_fallback_event<G: DeploymentMetrics>(
     metrics: &G,
@@ -61,20 +59,25 @@ fn fallback_values<G: DeploymentMetrics>(
     request: &FallbackRequest<'_>,
     standard: &StandardLoggingMetadata,
 ) -> UserApiKeyLabelValues {
-    UserApiKeyLabelValues {
-        requested_model: metrics.bounded_model_label(
-            Some(&Json::Text(request.original_model_group.to_owned())),
-            true,
-            request.catalog,
-        ),
-        fallback_model: request.model.map(str::to_owned),
-        hashed_api_key: standard.user_api_key_hash.clone(),
-        api_key_alias: standard.user_api_key_alias.clone(),
-        team: standard.user_api_key_team_id.clone(),
-        team_alias: standard.user_api_key_team_alias.clone(),
-        exception_status: Some(fallback_exception_status(request.exception)),
-        exception_class: Some(metrics.exception_class(request.exception)),
-        tags: request.tags.to_vec(),
-        ..UserApiKeyLabelValues::default()
-    }
+    let mut entries: Vec<(String, LabelDumpValue)> = Vec::new();
+    let requested = Json::Text(request.original_model_group.to_owned());
+    let requested = metrics.bounded_model_label(Some(&requested), true, request.catalog);
+    push_text(&mut entries, "requested_model", requested.as_deref());
+    push_text(&mut entries, "fallback_model", request.model);
+    push_identity(
+        &mut entries,
+        standard.user_api_key_hash.as_deref(),
+        standard.user_api_key_alias.as_deref(),
+        standard.user_api_key_team_id.as_deref(),
+        standard.user_api_key_team_alias.as_deref(),
+    );
+    let status = fallback_exception_status(request.exception);
+    push_text(&mut entries, "exception_status", Some(&status));
+    let class = metrics.exception_class(request.exception);
+    push_text(&mut entries, "exception_class", Some(&class));
+    entries.push((
+        "tags".to_owned(),
+        LabelDumpValue::Strings(request.tags.to_vec()),
+    ));
+    UserApiKeyLabelValues::from_entries(&entries)
 }

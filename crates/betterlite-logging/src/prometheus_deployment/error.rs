@@ -7,20 +7,20 @@ use crate::prometheus_label_projection::tag_wildcard_matching::TagPatternError;
 use crate::prometheus_latency::error::OverheadRecordingError;
 use crate::prometheus_rate_limits::error::PrometheusRateLimitError;
 
-// what LiteLLM's prometheus_client call raises as a ValueError when the metric was declared with other labels
-#[derive(Debug, thiserror::Error, Eq, PartialEq)]
-pub enum SchemaError {
-    #[error("the {metric} metric has no label named {label}")]
-    Unsupported { metric: &'static str, label: String },
-    #[error("the {metric} metric also declares the label {label}, which the write did not supply")]
-    Missing { metric: &'static str, label: String },
-}
-
 // a remaining-requests or remaining-tokens header the declared type cannot hold as a number
 #[derive(Debug, thiserror::Error, Eq, PartialEq)]
 pub enum HeaderValueError {
     #[error("the {field} header value must be a number")]
     NotANumber { field: String },
+}
+
+// prometheus_client refuses a keyword call whose names differ from the declared ones
+#[derive(Debug, thiserror::Error, Eq, PartialEq)]
+pub enum SchemaError {
+    #[error("the {metric} metric has no label {label}")]
+    Unsupported { metric: &'static str, label: String },
+    #[error("the {metric} metric needs a value for label {label}")]
+    Missing { metric: &'static str, label: String },
 }
 
 #[derive(Debug, thiserror::Error)]

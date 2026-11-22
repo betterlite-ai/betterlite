@@ -1,4 +1,3 @@
-// the PrometheusLogger collectors these outcomes are written to, named after their attributes
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeploymentMetric {
     CallbackLoggingFailures,
