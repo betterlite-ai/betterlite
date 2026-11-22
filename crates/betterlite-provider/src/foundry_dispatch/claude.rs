@@ -1,10 +1,9 @@
 use std::error::Error as StdError;
 use std::time::Duration;
 
-use betterlite_anthropic::chat_call::ChatDeps;
-use betterlite_anthropic::chat_call::ChatOutcome;
 use betterlite_anthropic::chat_call::config::ChatConfig;
 use betterlite_anthropic::chat_call::transport::ChatTransport;
+use betterlite_anthropic::chat_call::{ChatDeps, ChatOutcome};
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_foundry::anthropic::error::ChatError;

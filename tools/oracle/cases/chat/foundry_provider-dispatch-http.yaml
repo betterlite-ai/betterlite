@@ -29,7 +29,7 @@ upstream:
       model: gpt-dispatch-upstream-2024
       choices:
         - index: 0
-          message: {role: assistant, content: hello over http}
+          message: {role: assistant, content: hello over http, refusal: null}
           logprobs: null
           finish_reason: stop
       usage:

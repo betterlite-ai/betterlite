@@ -247,7 +247,8 @@ pub(super) fn text_header<'headers>(
     headers: &'headers HeaderMap,
     name: &str,
 ) -> Option<&'headers str> {
-    headers.get(name).and_then(|value| value.to_str().ok())
+    let value = headers.get(name)?;
+    value.to_str().ok()
 }
 
 // The content of the first message in a sent body
@@ -294,13 +295,17 @@ impl ClaudeInputs {
     }
 
     pub(super) fn call(&self, style: Style, stream: bool) -> claude::Call<'_> {
+        let mut optional_params = IndexMap::from([(
+            String::from("temperature"),
+            Json::Text(String::from("warm")),
+        )]);
+        if stream {
+            optional_params.insert(String::from("stream"), Json::Bool(true));
+        }
         claude::Call {
             model: "claude-sonnet-4-5",
             messages: &self.messages,
-            optional_params: IndexMap::from([(
-                String::from("temperature"),
-                Json::Text(String::from("warm")),
-            )]),
+            optional_params,
             litellm_params: &self.params,
             caller_headers: IndexMap::new(),
             api_base: Some(HOST),
@@ -386,9 +391,13 @@ pub(super) struct Posted {
 pub(super) fn first_post(wire: &Wire) -> Posted {
     let posts = wire.recorded();
     let first = posts.first().expect("the wire saw a request");
+    let url = first.url.as_str().to_owned();
+    let api_key = text_header(&first.headers, "api-key").map(str::to_owned);
+    let body = first.body.clone();
+    drop(posts);
     Posted {
-        url: first.url.as_str().to_owned(),
-        api_key: text_header(&first.headers, "api-key").map(str::to_owned),
-        body: serde_json::from_slice(&first.body).expect("the request body"),
+        url,
+        api_key,
+        body: serde_json::from_slice(&body).expect("the request body"),
     }
 }

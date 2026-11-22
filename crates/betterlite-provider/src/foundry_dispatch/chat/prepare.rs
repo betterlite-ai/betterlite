@@ -1,5 +1,4 @@
-use std::error::Error as StdError;
-use std::io::Error as IoError;
+use std::{error::Error as StdError, io::Error as IoError};
 
 use betterlite_foundry::chat::environment::{EnvironmentRequest, TokenSource};
 use betterlite_foundry::chat::error::ChatError;
@@ -236,7 +235,7 @@ fn assembled(
         http,
         // AzureAIStudioConfig.max_retry_on_unprocessable_entity_error is 2 whatever the drop policy says
         retry: TransformRetry::bounded(2).map_err(encode)?,
-        client_model: Some(call.model.to_owned()),
+        client_model: call.request.model.clone(),
     })
 }
 

@@ -130,7 +130,7 @@ fn check_alpha_dispatch_after_beta(party: &Party, plan: &Plan) {
     let OperationResult::Chat(ChatCompletion::OpenAi(reply)) = outcome.result else {
         panic!("the alpha dispatch replies with a chat completion");
     };
-    assert_eq!(reply.model, "azure_ai/provider-model");
+    assert_eq!(reply.model, "alpha-model");
     assert!(logger.calls.is_empty());
     assert!(
         !plan

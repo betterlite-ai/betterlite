@@ -1,15 +1,13 @@
-use betterlite_http::proxy::ProxiedClient;
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::ChatRequest;
-use betterlite_openai::openai_base_config::Headers;
+use betterlite_openai::{chat::ChatRequest, openai_base_config::Headers};
 use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use super::AzureAi;
 use super::credentials::Globals;
-use super::post_call::{self, FoundryLogger};
+use super::post_call::FoundryLogger;
 use crate::openai_dispatch::logging::{LoggedCall, logged_json};
 use crate::operation::{OperationError, OperationResult};
 use crate::prepared::deployment::Deployment;

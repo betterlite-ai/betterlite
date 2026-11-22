@@ -41,7 +41,10 @@ impl Rig {
                 ),
                 sent: Arc::new(Mutex::new(Vec::new())),
             },
-            input: [String::from("aGVsbG8="), String::from("plain text")],
+            input: [
+                String::from("data:image/png;base64,aGVsbG8="),
+                String::from("plain text"),
+            ],
             params: PromptObject::new(),
         }
     }
@@ -128,7 +131,7 @@ fn image_and_text_halves_share_base_and_key() {
     };
     assert_eq!(
         field(image_input.first().expect("one image"), "image"),
-        &JsonValue::Text(String::from("aGVsbG8="))
+        &JsonValue::Text(String::from("data:image/png;base64,aGVsbG8="))
     );
 
     let texts = rig.texts();

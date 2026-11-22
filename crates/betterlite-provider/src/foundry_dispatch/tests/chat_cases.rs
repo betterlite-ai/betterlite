@@ -41,7 +41,8 @@ fn deployment_key_reply() {
     let OperationResult::Chat(ChatCompletion::OpenAi(completion)) = outcome.result else {
         panic!("the chat dispatch returns a chat reply");
     };
-    assert_eq!(completion.model, "azure_ai/provider-model");
+    // the proxy answers the model the client asked for, not the azure_ai-prefixed provider model
+    assert_eq!(completion.model, "mistral-large");
     assert_eq!(
         completion.choices[0].message.content.as_deref(),
         Some("hello")
@@ -162,15 +163,21 @@ fn supplied_extra_headers_replace() {
 }
 
 pub(super) fn post_call_case() {
-    dispatch_logging_nothing("mistral-large").expect("the chat dispatch runs");
+    let (result, success_logger) = dispatch_logging_nothing("mistral-large");
+    result.expect("the chat dispatch runs");
+    assert!(success_logger.calls.is_empty());
     stream_success_logs_report();
     failure_logs_text_and_headers();
     // a claude model is not a chat call
-    assert!(dispatch_logging_nothing("claude-sonnet").is_err());
+    let (refused, refused_logger) = dispatch_logging_nothing("claude-sonnet");
+    assert!(refused.is_err());
+    assert!(refused_logger.calls.is_empty());
 }
 
 // a non-stream success and a preparation failure both log nothing
-fn dispatch_logging_nothing(model: &str) -> Result<chat::Outcome, OperationError> {
+fn dispatch_logging_nothing(
+    model: &str,
+) -> (Result<chat::Outcome, OperationError>, RecordingLogger) {
     let env = Env::with_header("x-logged", "1");
     let deployment = support::deployment(BASE, Some(KEY));
     let request = support::simple_request(model);
@@ -178,9 +185,7 @@ fn dispatch_logging_nothing(model: &str) -> Result<chat::Outcome, OperationError
         headers: env.headers.as_ref(),
         ..chat_call(&request, &deployment, model, false)
     };
-    let (result, logger) = run_chat(call, &env, support::supplied(200, REPLY));
-    assert!(logger.calls.is_empty());
-    result
+    run_chat(call, &env, support::supplied(200, REPLY))
 }
 
 // Runs the streamed call against a loopback server and returns what the logger saw

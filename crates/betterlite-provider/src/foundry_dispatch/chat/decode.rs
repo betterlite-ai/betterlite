@@ -20,8 +20,9 @@ pub fn decode(
                 })?;
             let model = chat.client_model.as_deref().unwrap_or_default();
             let completion = transform_response(model, body).map_err(decode_error)?;
+            // the proxy stamps the client-requested model over the provider's azure_ai-prefixed one
             Ok(OperationResult::Chat(ChatCompletion::OpenAi(Box::new(
-                completion,
+                completion.for_client(chat.client_model.as_deref()),
             ))))
         }
         (PreparedKind::Stream(_), Upstream::Streaming(response)) => {
