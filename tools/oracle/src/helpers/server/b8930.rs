@@ -81,51 +81,34 @@ fn chunk_result(
     input: &Input,
     log: Option<&mut LoggingState>,
 ) -> Result<Json, Box<HelperError>> {
-    match input.chunk.kind {
-        ChunkKind::Object => object_result(injector, input, log),
-        ChunkKind::Text => text_result(injector, input, log),
-        ChunkKind::Bytes => bytes_result(injector, input, log),
-    }
-}
-
-fn object_result(
-    injector: StreamCostInjector<'_>,
-    input: &Input,
-    log: Option<&mut LoggingState>,
-) -> Result<Json, Box<HelperError>> {
-    let Some(value) = &input.chunk.value else {
-        return Err(failure("the object chunk needs a value".to_owned()));
+    let result = match input.chunk.kind {
+        ChunkKind::Object => {
+            let Some(value) = &input.chunk.value else {
+                return Err(failure("the object chunk needs a value".to_owned()));
+            };
+            let object = Json::Object(value.clone());
+            injector
+                .process_object(&object, &input.model_name, log)
+                .into_owned()
+        }
+        ChunkKind::Text => {
+            let Some(text) = &input.chunk.text else {
+                return Err(failure("the text chunk needs a text".to_owned()));
+            };
+            Json::Text(
+                injector
+                    .process_text(text, &input.model_name, log)
+                    .into_owned(),
+            )
+        }
+        ChunkKind::Bytes => {
+            let Some(text) = &input.chunk.text else {
+                return Err(failure("the bytes chunk needs a text".to_owned()));
+            };
+            let output = injector.process_bytes(text.as_bytes(), &input.model_name, log);
+            let decoded = from_utf8(&output).map_err(|error| failure(error.to_string()))?;
+            Json::Text(decoded.to_owned())
+        }
     };
-    let object = Json::Object(value.clone());
-    Ok(injector
-        .process_object(&object, &input.model_name, log)
-        .into_owned())
-}
-
-fn text_result(
-    injector: StreamCostInjector<'_>,
-    input: &Input,
-    log: Option<&mut LoggingState>,
-) -> Result<Json, Box<HelperError>> {
-    let Some(text) = &input.chunk.text else {
-        return Err(failure("the text chunk needs a text".to_owned()));
-    };
-    Ok(Json::Text(
-        injector
-            .process_text(text, &input.model_name, log)
-            .into_owned(),
-    ))
-}
-
-fn bytes_result(
-    injector: StreamCostInjector<'_>,
-    input: &Input,
-    log: Option<&mut LoggingState>,
-) -> Result<Json, Box<HelperError>> {
-    let Some(text) = &input.chunk.text else {
-        return Err(failure("the bytes chunk needs a text".to_owned()));
-    };
-    let output = injector.process_bytes(text.as_bytes(), &input.model_name, log);
-    let decoded = from_utf8(&output).map_err(|error| failure(error.to_string()))?;
-    Ok(Json::Text(decoded.to_owned()))
+    Ok(result)
 }
