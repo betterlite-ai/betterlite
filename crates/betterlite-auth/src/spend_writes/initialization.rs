@@ -3,8 +3,8 @@ use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 
 use crate::model_budget_values::amount_text::amount_from_text;
-use crate::spend_reseed::cache::ReseedCache;
 use crate::spend_reseed::cache::dual::ReseedCacheError;
+use crate::spend_reseed::cache::{ReseedCache, WindowReseedCache};
 use crate::spend_reseed::rows::SpendCounterRows;
 use crate::spend_reseed::values::{ReseedCacheValue, cache_amount};
 use crate::spend_reseed::windows::WindowReseed;
@@ -48,7 +48,7 @@ where
 
 impl<Layers, Rows> SpendCounterWrites<Layers, Rows>
 where
-    Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers,
+    Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + WindowReseedCache,
     Rows: SpendCounterRows,
 {
     pub async fn ensure_window_spend_counter_initialized(
