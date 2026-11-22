@@ -1,0 +1,51 @@
+kind: sdk_http
+name: file-provider-write-upload-optional-fields
+env:
+  OPENAI_API_KEY: sk-env
+call:
+  file_provider_write:
+    steps:
+      - create_file:
+          file: {filename: notes.jsonl, content_type: application/jsonl, content: "{\"a\": 1}"}
+          purpose: batch
+          custom_llm_provider: openai
+      - acreate_file:
+          file: {filename: tune.jsonl, content_type: application/jsonl, content: "{\"b\": 2}"}
+          purpose: fine-tune
+          expires_after: {anchor: created_at, seconds: 3600}
+          extra_headers: {X-Trace: t1}
+          extra_body: {note: kept}
+      - create_file:
+          file: {filename: notes.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: batch
+      - create_file:
+          file: {filename: notes.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: assistants
+          custom_llm_provider: null
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: file-abc
+      object: file
+      bytes: 8
+      created_at: 1700000000
+      filename: notes.jsonl
+      purpose: batch
+      status: processed
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: file-def
+      object: file
+      bytes: 8
+      created_at: 1700000001
+      filename: tune.jsonl
+      purpose: fine-tune
+      status: uploaded
+      expires_at: 1700003601
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, x-trace]
+  ignore: []

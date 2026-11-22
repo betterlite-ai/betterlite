@@ -1,0 +1,89 @@
+kind: sdk_http
+name: file-provider-write-write-provider-dispatch
+env:
+  OPENAI_API_KEY: sk-env
+  OPENAI_ORGANIZATION: org-env
+call:
+  file_provider_write:
+    steps:
+      - create_file:
+          file: {filename: a.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: batch
+          custom_llm_provider: openai
+          params: {organization: org-request, max_retries: 0}
+      - create_file:
+          file: {filename: a.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: batch
+          custom_llm_provider: hosted_vllm
+      - acreate_file:
+          file: {filename: a.jsonl, content_type: application/jsonl, content: "{}"}
+          purpose: batch
+          custom_llm_provider: litellm_proxy
+          params: {api_key: sk-request}
+      - file_delete:
+          file_id: file-abc
+          custom_llm_provider: hosted_vllm
+      - afile_delete:
+          file_id: file-abc
+          custom_llm_provider: litellm_proxy
+          params: {api_key: sk-request, organization: org-request}
+      - create_file:
+          file: {filename: notes.txt, content_type: text/plain, content: "hello"}
+          purpose: messages
+          custom_llm_provider: anthropic
+          extra_headers: {X-Trace: t1}
+          extra_body: {ignored: x}
+          params: {api_key: sk-ant}
+      - afile_delete:
+          file_id: file_011
+          custom_llm_provider: anthropic
+          extra_headers: {X-Trace: t2}
+          extra_body: {ignored: x}
+          params: {api_key: sk-ant}
+      - file_delete:
+          file_id: file-missing
+          params: {max_retries: 0}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-abc, object: file, bytes: 2, created_at: 1700000000, filename: a.jsonl, purpose: batch, status: processed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-abc, object: file, bytes: 2, created_at: 1700000000, filename: a.jsonl, purpose: batch, status: processed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-abc, object: file, bytes: 2, created_at: 1700000000, filename: a.jsonl, purpose: batch, status: processed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-abc, object: file, deleted: true}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-abc, object: file, deleted: true}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: file_011
+      type: file
+      filename: notes.txt
+      mime_type: text/plain
+      size_bytes: 5
+      created_at: "2025-01-01T00:00:00Z"
+      downloadable: false
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_011, type: file_deleted}
+  - status: 404
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: No such File object
+        type: invalid_request_error
+        param: id
+        code: null
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-organization, x-api-key, anthropic-version, anthropic-beta, x-trace]
+  ignore:
+    - pointer: /file_provider_write/value/steps/7/failure/message
+      why: the openai client prints the error body as a Python dict, betterlite's status error prints it as JSON
