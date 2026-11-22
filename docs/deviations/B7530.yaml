@@ -1,0 +1,27 @@
+task: B7530
+deviations:
+  - what: Sealed codes and the OAuth state are encrypted by betterlite's own cipher, so a value sealed by LiteLLM does not open in betterlite and the other way round.
+    why: Each side derives its key from its own master secret, so in-flight flows have to restart across a switch. The oracle cases cover only the helpers that do no encryption.
+    link: ""
+  - what: decode_state parses the decrypted JSON into the typed OauthState, so a payload that is not a JSON object, lacks base_url or original_state, has a field of the wrong type, or names a dcr_token_endpoint_auth_method outside the two literals is StateError::Malformed.
+    why: decode_state_hash returns whatever json.loads produced and the caller fails later with an AttributeError and a 500; betterlite rejects the state so the callback can answer with a 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L250-L268
+  - what: A rule value or a token value that is a JSON array or object is compared by its compact JSON text, so two objects with the same keys in a different order match here and mismatch in LiteLLM.
+    why: LiteLLM compares str() of each side, and str() of a container is Python's repr with single quotes and insertion order. betterlite keeps standard JSON instead of porting repr, and identical containers still compare equal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L606
+  - what: Rules are held in a BTreeMap, so when several rules fail the reported field is the alphabetically first key.
+    why: LiteLLM iterates the admin config dict in its insertion order and a sorted JSON object cannot keep that order. A config whose rules all pass or whose first rule fails reports the same field on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L583-L584
+  - what: append_query_params returns the URL unchanged when the authority is an unbalanced or non-IP bracketed host, which CPython's urlsplit rejects with a ValueError.
+    why: LiteLLM lets the ValueError out of the authorize helper and the route answers 500; betterlite's shared URL parser reports the same inputs as an error and the helper hands back the URL it was given.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L518-L522
+  - what: cookie_path_and_secure falls back to ("/", false) for a base URL whose authority CPython's urlsplit rejects.
+    why: LiteLLM raises the same ValueError out of the callback; betterlite sets the state cookie for the root path without the secure flag so the flow still completes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L457-L459
+  - what: validate_token_response with a token_response that is not a JSON object reports every rule as absent instead of raising.
+    why: LiteLLM calls token_response.get and raises AttributeError, which the token endpoint answers with a 500. The task makes a non-object response mean every key is absent, which answers 403.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L584
+kept_bugs:
+  - what: The rule comparison lowercases a JSON boolean to "true" or "false", while the mismatch message prints Python's "True" or "False", so a rule "True" fails against JSON true with a message that shows 'True' on both sides.
+    why: A working setup writes boolean rules as "true" or "false" in its config and relies on them matching a JSON true, and nothing depends on a rule "True" matching.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L557-L565

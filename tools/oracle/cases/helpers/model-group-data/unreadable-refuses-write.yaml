@@ -1,0 +1,25 @@
+kind: helper
+name: model-group-data-unreadable-refuses-write
+call:
+  model_group_data:
+    calls:
+      - function: readable_model_info_or_raise
+        model_id: d1
+        model_info: not json
+calls:
+  - model_group_data:
+      calls:
+        - function: readable_model_info_or_raise
+          model_id: d2
+          model_info: []
+        - function: readable_model_info_or_raise
+          model_id: d3
+          model_info: '[1, 2]'
+        - function: readable_model_info_or_raise
+          model_id: d4
+          model_info: 5
+        - function: readable_model_info_or_raise
+          model_id: d5
+          model_info: true
+env: {}
+compare: {ignore: []}

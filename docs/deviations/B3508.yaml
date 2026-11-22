@@ -1,0 +1,9 @@
+task: B3508
+deviations:
+  - what: "Query-parameter litellm_params_template on the collection and item routes is read and JSON-decoded; if malformed, it becomes an empty dict rather than propagating a JSON error."
+    why: "This matches LiteLLM's agents_endpoints.py _merge_query_params_into_data at lines 99-107, which catches json.JSONDecodeError and ValueError and sets the template to an empty dict."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L99-L107
+  - what: "A non-dict litellm_params_template, after JSON decode or in the POST body, is treated as no template; only dict templates are merged."
+    why: "LiteLLM's _merge_query_params_into_data checks isinstance(template, dict) at line 105 before merging, and create_gemini_agent checks the same at line 178 after popping the body field."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/agents_endpoints.py#L105
+kept_bugs: []

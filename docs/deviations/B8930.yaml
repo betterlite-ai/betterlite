@@ -1,0 +1,6 @@
+task: B8930
+deviations:
+  - what: An SSE buffer larger than 1 MiB passes through without optional usage.cost insertion, untouched and unparsed.
+    why: Optional inspection must have a fixed allocation bound, while the pin parses buffers of any size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L4134-L4152
+kept_bugs: []
