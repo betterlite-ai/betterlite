@@ -12,9 +12,9 @@ pub struct CleanupScheduleState {
     pub reschedule_failed: bool,
 }
 
-pub struct ScheduleChange<'a> {
-    pub previous: &'a CleanupSchedule,
-    pub context: &'a ScheduleContext<'a>,
+pub struct ScheduleChange<'change> {
+    pub previous: &'change CleanupSchedule,
+    pub context: &'change ScheduleContext<'change>,
 }
 
 pub fn on_settings_changed(
@@ -26,7 +26,7 @@ pub fn on_settings_changed(
 ) {
     if scheduler
         .as_ref()
-        .is_some_and(|scheduler| scheduler.scheduler_state() == SchedulerState::Stopped)
+        .is_some_and(|live| live.scheduler_state() == SchedulerState::Stopped)
     {
         return;
     }
@@ -34,7 +34,7 @@ pub fn on_settings_changed(
     let wanted = wants_cleanup_job(&current);
     let has_job = scheduler
         .as_ref()
-        .is_some_and(|scheduler| scheduler.has_job(SPEND_LOG_CLEANUP_JOB_ID));
+        .is_some_and(|live| live.has_job(SPEND_LOG_CLEANUP_JOB_ID));
     let baseline = if has_job {
         state.last_attempt.as_ref().unwrap_or(change.previous)
     } else {
@@ -67,12 +67,12 @@ fn reschedule(
     context: &ScheduleContext<'_>,
     job: JobFn,
 ) -> Result<(), CleanupScheduleError> {
-    let Some(scheduler) = scheduler else {
+    let Some(live) = scheduler else {
         return Ok(());
     };
     if !wants_cleanup_job(current) {
-        if scheduler.has_job(SPEND_LOG_CLEANUP_JOB_ID) {
-            scheduler.remove_existing_job(SPEND_LOG_CLEANUP_JOB_ID)?;
+        if live.has_job(SPEND_LOG_CLEANUP_JOB_ID) {
+            live.remove_existing_job(SPEND_LOG_CLEANUP_JOB_ID)?;
             tracing::info!("Removed existing spend log cleanup job");
         }
         return Ok(());
@@ -80,7 +80,7 @@ fn reschedule(
     let Some(trigger) = cleanup_trigger(current_settings, context) else {
         return Ok(());
     };
-    scheduler.insert_job(cleanup_job_spec(trigger, job))?;
+    live.insert_job(cleanup_job_spec(trigger, job))?;
     tracing::info!(
         "Spend log cleanup rescheduled with trigger: {}",
         trigger_text(current)

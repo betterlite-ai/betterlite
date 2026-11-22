@@ -67,7 +67,7 @@ fn startup_interval_carries_the_random_offset_and_records_the_attempt(
     )
     .unwrap();
     let job = scheduler.get_job(SPEND_LOG_CLEANUP_JOB_ID).unwrap();
-    assert_eq!(job.period_seconds, Some(7_776_000 + offset));
+    assert_eq!(job.period_seconds, 7_776_000_u32.checked_add(offset));
     assert_eq!(state.last_attempt, Some(cleanup_schedule_of(&settings)));
 }
 
@@ -165,18 +165,21 @@ fn a_startup_offset_past_python_datetime_adds_no_job() {
     let job = scheduler.get_job(SPEND_LOG_CLEANUP_JOB_ID).unwrap();
     assert_eq!(job.period_seconds, None);
     let (buffer, _guard) = capture_logs();
-    let mut scheduler = proxy_scheduler();
-    let mut state = CleanupScheduleState::default();
+    let mut offset_scheduler = proxy_scheduler();
+    let mut offset_state = CleanupScheduleState::default();
     register(
-        &mut scheduler,
+        &mut offset_scheduler,
         &settings,
         &fixture.context(),
         u64::MAX,
-        &mut state,
+        &mut offset_state,
     )
     .unwrap();
-    assert!(scheduler.get_job(SPEND_LOG_CLEANUP_JOB_ID).is_none());
-    assert_eq!(state.last_attempt, Some(cleanup_schedule_of(&settings)));
+    assert!(offset_scheduler.get_job(SPEND_LOG_CLEANUP_JOB_ID).is_none());
+    assert_eq!(
+        offset_state.last_attempt,
+        Some(cleanup_schedule_of(&settings))
+    );
     assert!(
         buffer
             .contents()

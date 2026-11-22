@@ -9,6 +9,8 @@ use super::ports::{CacheMaxSize, GeneralSettingsView};
 
 pub(super) const CACHE_MAX_SIZE_KEY: &str = "user_api_key_cache_max_size";
 
+const GENERAL_SETTINGS_SECTION: &str = "general_settings";
+
 pub fn on_cache_size_changed(
     db_values: &BTreeMap<String, JsonValue>,
     cache_size_was_db: bool,
@@ -56,10 +58,12 @@ enum CacheSizeValue {
 
 // The maximum size goes through the same auth cache section the config file uses, so both agree on what is valid.
 fn cache_max_size(value: Option<&JsonValue>) -> CacheSizeValue {
-    let document = serde_json::json!({
-        "general_settings": { "user_api_key_cache_max_size": value },
-    });
-    let Ok(raw) = serde_json::from_value::<auth_cache::Raw>(document) else {
+    let fields = BTreeMap::from([(CACHE_MAX_SIZE_KEY, value)]);
+    let wrapped = BTreeMap::from([(GENERAL_SETTINGS_SECTION, fields)]);
+    let Ok(serialized) = serde_json::to_value(wrapped) else {
+        return CacheSizeValue::Invalid;
+    };
+    let Ok(raw) = serde_json::from_value::<auth_cache::Raw>(serialized) else {
         return CacheSizeValue::Invalid;
     };
     let lookup = BTreeMap::<String, String>::new();

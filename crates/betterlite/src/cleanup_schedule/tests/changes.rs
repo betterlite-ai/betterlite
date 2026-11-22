@@ -81,7 +81,7 @@ fn the_first_settings_change_adds_the_staggered_interval_job() {
         &mut state,
     );
     assert_eq!(scheduler.inserted, 1);
-    let trigger = scheduler.jobs.get(SPEND_LOG_CLEANUP_JOB_ID).unwrap();
+    let trigger = &scheduler.jobs[SPEND_LOG_CLEANUP_JOB_ID];
     assert_eq!(
         period_of(trigger.as_ref(), origin()),
         Some(TimeDelta::seconds(86_400))
@@ -148,7 +148,7 @@ fn the_baseline_is_the_last_attempt_while_the_job_exists() {
     let settings = retained("30d");
     let mut scheduler = with_job(recording(SchedulerState::Paused));
     let mut state = CleanupScheduleState {
-        last_attempt: Some(current.clone()),
+        last_attempt: Some(current),
         reschedule_failed: false,
     };
     apply(

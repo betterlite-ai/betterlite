@@ -16,16 +16,16 @@ use super::schedule::{CleanupSchedule, cleanup_schedule_of, value_text};
 const PYTHON_DATETIME_MAX_SECONDS: i64 = 253_402_300_799;
 
 #[derive(Clone, Copy)]
-pub struct ScheduleContext<'a> {
-    pub stagger: &'a StaggerSettings,
-    pub identity: &'a str,
+pub struct ScheduleContext<'context> {
+    pub stagger: &'context StaggerSettings,
+    pub identity: &'context str,
     pub now: DateTime<Utc>,
-    pub timezone: Option<&'a str>,
-    pub database: &'a TimeZoneDatabase,
+    pub timezone: Option<&'context str>,
+    pub database: &'context TimeZoneDatabase,
 }
 
-pub(super) struct ParsedInterval<'a> {
-    pub(super) text: &'a str,
+pub(super) struct ParsedInterval<'schedule> {
+    pub(super) text: &'schedule str,
     pub(super) seconds: u64,
     pub(super) period_seconds: Option<u32>,
 }
@@ -89,20 +89,20 @@ pub(super) fn trigger_text(schedule: &CleanupSchedule) -> String {
 // APScheduler's IntervalTrigger raises OverflowError at construction for a first fire past datetime.max
 #[must_use]
 pub(super) fn interval_past_datetime_max(now: DateTime<Utc>, seconds: u64) -> bool {
-    let Ok(seconds) = i64::try_from(seconds) else {
+    let Ok(signed_seconds) = i64::try_from(seconds) else {
         return true;
     };
-    let Some(delta) = TimeDelta::try_seconds(seconds) else {
+    let Some(delta) = TimeDelta::try_seconds(signed_seconds) else {
         return true;
     };
     now.checked_add_signed(delta)
         .is_none_or(|fire| fire.timestamp() > PYTHON_DATETIME_MAX_SECONDS)
 }
 
-pub(super) fn parsed_interval<'a>(
-    schedule: &'a CleanupSchedule,
+pub(super) fn parsed_interval<'schedule>(
+    schedule: &'schedule CleanupSchedule,
     context: &ScheduleContext<'_>,
-) -> Option<ParsedInterval<'a>> {
+) -> Option<ParsedInterval<'schedule>> {
     let text = match schedule.cleanup_interval.as_ref() {
         None => "1d",
         Some(JsonValue::String(text)) => text.as_str(),

@@ -18,7 +18,7 @@ pub trait CleanupScheduler {
 
 impl CleanupScheduler for ProxyScheduler {
     fn scheduler_state(&self) -> SchedulerState {
-        ProxyScheduler::state(self)
+        Self::state(self)
     }
 
     fn has_job(&self, id: &str) -> bool {
@@ -26,11 +26,11 @@ impl CleanupScheduler for ProxyScheduler {
     }
 
     fn insert_job(&mut self, spec: JobSpec) -> Result<(), SchedulerError> {
-        ProxyScheduler::add_job(self, spec)
+        Self::add_job(self, spec)
     }
 
     fn remove_existing_job(&mut self, id: &str) -> Result<(), SchedulerError> {
-        ProxyScheduler::remove_job(self, id)
+        Self::remove_job(self, id)
     }
 }
 
@@ -44,7 +44,7 @@ pub trait GeneralSettingsView {
 
 impl GeneralSettingsView for SettingsStore {
     fn get(&self, key: &str) -> Option<&JsonValue> {
-        SettingsStore::get(self, key)
+        Self::get(self, key)
     }
 
     fn owned_by_config(&self, key: &str) -> bool {
@@ -66,7 +66,7 @@ pub trait CacheMaxSize {
 
 impl<T: AuthCacheTier> CacheMaxSize for AuthCache<T> {
     fn resize(&self, max_size: Option<usize>) {
-        AuthCache::update_in_memory_max_size(self, max_size);
+        Self::update_in_memory_max_size(self, max_size);
     }
 }
 

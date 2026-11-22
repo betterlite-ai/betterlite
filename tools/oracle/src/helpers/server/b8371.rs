@@ -94,10 +94,10 @@ impl Helper for Op {
     }
 }
 
-struct RetentionSetup<'a> {
-    settings: &'a BTreeMap<String, JsonValue>,
-    previous: &'a BTreeMap<String, JsonValue>,
-    last_attempt: Option<&'a BTreeMap<String, JsonValue>>,
+struct RetentionSetup<'setup> {
+    settings: &'setup BTreeMap<String, JsonValue>,
+    previous: &'setup BTreeMap<String, JsonValue>,
+    last_attempt: Option<&'setup BTreeMap<String, JsonValue>>,
     reschedule_failed: bool,
     scheduler: SchedulerChoice,
     presence: JobPresence,

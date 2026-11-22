@@ -16,10 +16,10 @@ use super::trigger::{
     ParsedInterval, ScheduleContext, interval_past_datetime_max, parsed_interval,
 };
 
-pub struct CleanupRegistration<'a> {
-    pub scheduler: &'a mut dyn CleanupScheduler,
-    pub settings: &'a dyn GeneralSettingsView,
-    pub context: ScheduleContext<'a>,
+pub struct CleanupRegistration<'registration> {
+    pub scheduler: &'registration mut dyn CleanupScheduler,
+    pub settings: &'registration dyn GeneralSettingsView,
+    pub context: ScheduleContext<'registration>,
     pub job: JobFn,
 }
 

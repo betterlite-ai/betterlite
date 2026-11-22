@@ -6,7 +6,7 @@ use super::{
     RETENTION_PERIOD_KEY, TAG_SPEND_RETENTION_KEY,
 };
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CleanupSchedule {
     pub spend_logs_retention: Option<JsonValue>,
     pub autorouter_sessions_retention: Option<JsonValue>,
