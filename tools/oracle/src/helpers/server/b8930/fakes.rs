@@ -1,5 +1,5 @@
 use std::str::FromStr as _;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_core::cost::recording::{RecordInput, RecordResponse};
 use betterlite_core::cost::usage::BillingUsage;
@@ -27,14 +27,11 @@ impl StreamCostRecorder for FakeRecorder {
             &self.observed,
             call_json("recorder", &log.model, None, &usage),
         );
-        match self.cost {
-            Some(cost) => Some(cost),
-            None => {
-                log.model_call_details
-                    .insert(DEBUG_KEY.to_owned(), failure_debug());
-                None
-            }
+        if self.cost.is_none() {
+            log.model_call_details
+                .insert(DEBUG_KEY.to_owned(), failure_debug());
         }
+        self.cost
     }
 }
 
@@ -76,20 +73,11 @@ pub(super) fn price(value: Option<&Json>) -> Option<Decimal> {
     }
 }
 
-pub(super) fn take(observed: &Mutex<Vec<Json>>) -> Vec<Json> {
-    let mut entries = match observed.lock() {
-        Ok(found) => found,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    entries.split_off(0)
-}
-
 fn push(observed: &Mutex<Vec<Json>>, call: Json) {
-    let mut entries = match observed.lock() {
-        Ok(found) => found,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    entries.push(call);
+    observed
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(call);
 }
 
 fn call_json(service: &str, model: &str, service_tier: Option<&str>, usage: &Usage) -> Json {
@@ -98,10 +86,7 @@ fn call_json(service: &str, model: &str, service_tier: Option<&str>, usage: &Usa
     fields.insert("model".to_owned(), Json::Text(model.to_owned()));
     fields.insert(
         "service_tier".to_owned(),
-        match service_tier {
-            Some(tier) => Json::Text(tier.to_owned()),
-            None => Json::Null,
-        },
+        service_tier.map_or(Json::Null, |tier| Json::Text(tier.to_owned())),
     );
     fields.insert("usage".to_owned(), usage_json(usage));
     Json::Object(fields)
@@ -133,10 +118,9 @@ fn usage_json(usage: &Usage) -> Json {
 }
 
 fn details_json(details: Option<&IndexMap<String, Json>>) -> Json {
-    match details {
-        Some(fields) => drop_nulls(Json::Object(fields.clone())),
-        None => Json::Null,
-    }
+    details.map_or(Json::Null, |fields| {
+        drop_nulls(Json::Object(fields.clone()))
+    })
 }
 
 // LiteLLM dumps its detail models with exclude_none, so both sides compare only the reported counts.
