@@ -81,4 +81,13 @@ deviations:
       betterlite parses the first two as u32 and the priorities as u64 while loading the config, so a
       negative or wider value is a load error rather than a running router with that value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L772-L830
+  - what: >-
+      A request with no API key to GET /router/settings or GET /router/fields gets the shared stage failure
+      (500 Internal Server Error) rather than LiteLLM's user_api_key_auth 401 auth_error envelope, while a
+      request with an invalid key gets the same 400 no_db_connection envelope as LiteLLM.
+    why: >-
+      the missing-key reply is chosen once by the shared authentication stage for every protected route and is
+      pinned by the auth tests; these two routes sit behind that middleware unchanged, and forking the reply for
+      them would change the auth stack this task does not own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1884
 kept_bugs: []
