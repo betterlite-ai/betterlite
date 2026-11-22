@@ -1,4 +1,6 @@
 import asyncio
+import contextlib
+import io
 import logging
 import sys
 from types import ModuleType
@@ -132,7 +134,10 @@ def run(input_value: Input) -> JsonValue:
                 recorder.addFilter(check)
         proxy_logger.addHandler(recorder)
         try:
-            outcome = answer(row, recorder)
+            # LiteLLM's console handler routes the quiet malformed-key warning to stdout,
+            # which carries only the protocol JSON
+            with contextlib.redirect_stdout(io.StringIO()):
+                outcome = answer(row, recorder)
         finally:
             proxy_logger.removeHandler(recorder)
         answers.append({"outcome": outcome, "events": recorder.events})
