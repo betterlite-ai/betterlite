@@ -104,14 +104,16 @@ fn streamed_total(
     prompt: i64,
     completion: i64,
 ) -> Result<i64, StreamCostError> {
-    match integer(counts.get("total_tokens"), "total_tokens")? {
-        Some(total) => Ok(total),
-        None => prompt
-            .checked_add(completion)
-            .ok_or(StreamCostError::Overflow {
-                field: "total_tokens",
-            }),
-    }
+    integer(counts.get("total_tokens"), "total_tokens")?.map_or_else(
+        || {
+            prompt
+                .checked_add(completion)
+                .ok_or(StreamCostError::Overflow {
+                    field: "total_tokens",
+                })
+        },
+        Ok,
+    )
 }
 
 fn json_object<T>(value: &T) -> Result<IndexMap<String, Json>, StreamCostError>
@@ -221,7 +223,7 @@ pub(super) struct UnusedReasoningCounter;
 
 #[derive(Debug, thiserror::Error)]
 #[error("the stream usage event carries no reasoning content to count")]
-struct NoReasoningContent;
+pub(super) struct NoReasoningContent;
 
 impl ReasoningTokenCounter for UnusedReasoningCounter {
     type Failure = NoReasoningContent;

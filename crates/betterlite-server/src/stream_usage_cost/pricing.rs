@@ -32,7 +32,7 @@ pub(super) fn streamed_cost(
 }
 
 // LiteLLM prices the frame through ModelResponse(usage=...), which is B1717's typed chat record.
-fn stream_record(usage: &Usage) -> RecordInput<'_> {
+const fn stream_record(usage: &Usage) -> RecordInput<'_> {
     RecordInput {
         response: RecordResponse::Typed {
             response: TypedResponse {

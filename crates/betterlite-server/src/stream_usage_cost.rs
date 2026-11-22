@@ -103,10 +103,10 @@ pub fn decode_cost_frame<'bytes>(
     if !(text.ends_with("\n\n") || text.ends_with("\r\n\r\n")) {
         return Cow::Borrowed(frame);
     }
-    match frame::inject_into_frame(text, model_name, injector, log) {
-        Some(rewritten) => Cow::Owned(rewritten.into_bytes()),
-        None => Cow::Borrowed(frame),
-    }
+    frame::inject_into_frame(text, model_name, injector, log)
+        .map_or(Cow::Borrowed(frame), |rewritten| {
+            Cow::Owned(rewritten.into_bytes())
+        })
 }
 
 #[cfg(any(test, feature = "testing"))]

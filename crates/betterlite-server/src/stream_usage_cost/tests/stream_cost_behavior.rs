@@ -32,12 +32,11 @@ fn byte_frames_need_a_complete_terminator(#[case] terminator: &str, #[case] rewr
         let text = from_utf8(&output).unwrap();
         assert!(text.ends_with(terminator), "the separator is preserved");
         assert!(text.contains("\"cost\":0.5"));
-        assert!(take_calls(&calculator.observed).is_empty());
     } else {
         assert!(matches!(output, Cow::Borrowed(_)));
         assert_eq!(output.as_ref(), frame.as_bytes());
-        assert!(take_calls(&calculator.observed).is_empty());
     }
+    assert!(take_calls(&calculator.observed).is_empty());
 }
 
 #[test]
@@ -421,6 +420,18 @@ fn a_byte_frame_of_exactly_the_bound_is_decoded() {
 }
 
 #[test]
+fn the_decoder_refuses_a_disabled_injector() {
+    let recorder = recorder(Some("0.5"));
+    let calculator = calculator(None);
+    let injector = injector(&recorder, &calculator, false);
+    let source = format!("data: {CHAT_EVENT}\n\n");
+    let output = decode_cost_frame(injector, source.as_bytes(), "gpt-4o", None);
+    assert!(matches!(output, Cow::Borrowed(_)));
+    assert_eq!(output.as_ref(), source.as_bytes());
+    assert!(take_calls(&recorder.observed).is_empty());
+}
+
+#[test]
 fn the_decoder_skips_a_frame_past_the_bound() {
     let recorder = recorder(None);
     let calculator = calculator(Some("0.5"));
@@ -461,7 +472,13 @@ fn the_fixed_helpers_price_a_frame_with_a_nonzero_cost() {
 #[test]
 fn the_anthropic_counter_refuses_reasoning_text() {
     let counter = UnusedReasoningCounter;
-    assert!(counter.count_reasoning_tokens("thinking about it").is_err());
+    let refusal = counter
+        .count_reasoning_tokens("thinking about it")
+        .unwrap_err();
+    assert_eq!(
+        refusal.to_string(),
+        "the stream usage event carries no reasoning content to count"
+    );
 }
 
 #[test]

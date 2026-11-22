@@ -26,13 +26,13 @@ pub(super) fn inject_into_frame(
         if !matches!(parsed, Json::Object(_)) {
             return None;
         }
-        let state = log.as_mut().map(|state| &mut **state);
+        let state = log.as_deref_mut();
         match projection::inject_into_object(&parsed, model_name, injector, state) {
             Ok(Some(modified)) => {
                 found = Some((position, data_line(&modified, line.ends_with('\r'))?));
                 break;
             }
-            Ok(None) => continue,
+            Ok(None) => {}
             Err(_) => return None,
         }
     }
