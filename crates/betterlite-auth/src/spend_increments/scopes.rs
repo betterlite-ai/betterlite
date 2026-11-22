@@ -19,7 +19,7 @@ use crate::spend_writes::initialization::ensure_counter_seeded;
 use crate::spend_writes::layers::CounterLayers;
 
 use super::error::SpendIncrementError;
-use super::key_team::{key_scope, team_scope};
+use super::key_team::{WindowScopeKind, window_scope};
 use super::{SpendIncrementInput, SpendIncrementServices};
 
 // the cost one fan-out pass charges, with the counters the reservation already settled so the direct increment skips them
@@ -38,6 +38,9 @@ pub(super) struct ScopeOutcome {
 
 pub(super) type ScopeFuture<'scope> = Pin<Box<dyn Future<Output = ScopeOutcome> + Send + 'scope>>;
 
+// one direct counter with the source cache keys its floor falls back to, in the order LiteLLM reads them
+pub(super) type CounterItem = (String, Vec<String>);
+
 // asyncio.gather of the scope coroutines: every scope settles, and the first failure in request order is the one the caller sees
 pub(super) async fn run_scopes<Counters, Layers, Rows>(
     input: &SpendIncrementInput<'_>,
@@ -51,48 +54,29 @@ where
 {
     let mut scopes: Vec<ScopeFuture<'_>> = Vec::new();
     if let Some(token) = input.token {
-        scopes.push(Box::pin(key_scope(token, charge, services)));
+        scopes.push(Box::pin(window_scope(
+            WindowScopeKind::Key(token),
+            charge,
+            services,
+        )));
     }
     if let Some(team_id) = input.team_id {
-        scopes.push(Box::pin(team_scope(team_id, charge, services)));
-    }
-    if let Some(user_id) = input.user_id {
-        scopes.push(Box::pin(identity_scope(
-            user_id,
-            input.team_id,
+        scopes.push(Box::pin(window_scope(
+            WindowScopeKind::Team(team_id),
             charge,
             services,
         )));
     }
-    if input.end_user_id.is_some() || input.tags.is_some() {
-        scopes.push(Box::pin(end_user_and_tag_scope(
-            input.end_user_id,
-            input.tags.unwrap_or_default(),
-            charge,
-            services,
-        )));
-    }
-    if let Some(groups) = input
-        .model_access_groups
-        .filter(|groups| !groups.is_empty())
-    {
-        scopes.push(Box::pin(model_access_group_scope(groups, charge, services)));
-    }
-    if input.org_id.is_some() || input.project_id.is_some() {
-        scopes.push(Box::pin(org_project_scope(
-            input.org_id,
-            input.project_id,
-            charge,
-            services,
-        )));
+    let items = counter_items(input);
+    if !items.is_empty() {
+        scopes.push(Box::pin(prepare_items(&items, charge, services)));
     }
     combine(join_all(scopes).await)
 }
 
-// _prepare_spend_counter_increment behind the reserved check: the warm check settles, and the increment waits for the one apply
-pub(super) async fn prepare_entity<Counters, Layers, Rows>(
-    counter_key: &str,
-    source_cache_keys: &[&str],
+// _prepare_spend_counter_increment for every item of a scope: the reserved counters are skipped, the warm checks settle, and the increments wait for the one apply
+pub(super) async fn prepare_items<Counters, Layers, Rows>(
+    items: &[CounterItem],
     charge: &ScopeCharge,
     services: &SpendIncrementServices<'_, Counters, Layers, Rows>,
 ) -> ScopeOutcome
@@ -101,123 +85,79 @@ where
     Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + WindowReseedCache + 'static,
     Rows: SpendCounterRows + DbSpendCounterRows,
 {
-    if charge.reserved.contains(counter_key) {
-        return ScopeOutcome::default();
-    }
-    let prepared = ensure_counter_seeded(services.writes, counter_key, source_cache_keys)
-        .await
-        .map(|()| {
-            Some(PendingSpendIncrement {
-                counter_key: counter_key.to_owned(),
-                increment: charge.cost,
+    let mut outcomes = Vec::with_capacity(items.len());
+    for (counter_key, source_keys) in items {
+        if charge.reserved.contains(counter_key) {
+            continue;
+        }
+        let sources: Vec<&str> = source_keys.iter().map(String::as_str).collect();
+        let prepared = ensure_counter_seeded(services.writes, counter_key, &sources)
+            .await
+            .map(|()| {
+                Some(PendingSpendIncrement {
+                    counter_key: counter_key.clone(),
+                    increment: charge.cost,
+                })
             })
-        })
-        .map_err(SpendIncrementError::from);
-    scope_outcome(prepared)
-}
-
-// _team_member_scope then _user_scope: the membership counter needs both ids, and the user counter needs only the user
-pub(super) async fn identity_scope<Counters, Layers, Rows>(
-    user_id: &str,
-    team_id: Option<&str>,
-    charge: &ScopeCharge,
-    services: &SpendIncrementServices<'_, Counters, Layers, Rows>,
-) -> ScopeOutcome
-where
-    Counters: SettlementCounters,
-    Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + WindowReseedCache + 'static,
-    Rows: SpendCounterRows + DbSpendCounterRows,
-{
-    let mut outcomes = Vec::with_capacity(2);
-    if let Some(team_id) = team_id {
-        let counter_key = format!("spend:team_member:{user_id}:{team_id}");
-        let source_key = CacheKey::TeamMembershipReservation { user_id, team_id }.render();
-        outcomes.push(prepare_entity(&counter_key, &[source_key.as_str()], charge, services).await);
+            .map_err(SpendIncrementError::from);
+        outcomes.push(scope_outcome(prepared));
     }
-    let counter_key = format!("spend:user:{user_id}");
-    outcomes.push(prepare_entity(&counter_key, &[user_id], charge, services).await);
     combine(outcomes)
 }
 
-// _prepare_end_user_and_tag_spend_increments: the end user first, then every tag once in first-seen order, each with its own outcome
-pub(super) async fn end_user_and_tag_scope<Counters, Layers, Rows>(
-    end_user_id: Option<&str>,
-    tags: &[JsonData],
-    charge: &ScopeCharge,
-    services: &SpendIncrementServices<'_, Counters, Layers, Rows>,
-) -> ScopeOutcome
-where
-    Counters: SettlementCounters,
-    Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + WindowReseedCache + 'static,
-    Rows: SpendCounterRows + DbSpendCounterRows,
-{
-    let mut outcomes = Vec::new();
-    if let Some(end_user_id) = end_user_id {
+// every direct scope's counters in LiteLLM's request order: team member, user, end user, tags, access groups, org, project
+pub(super) fn counter_items(input: &SpendIncrementInput<'_>) -> Vec<CounterItem> {
+    let mut items = Vec::new();
+    if let Some(user_id) = input.user_id {
+        if let Some(team_id) = input.team_id {
+            let counter_key = format!("spend:team_member:{user_id}:{team_id}");
+            let source_key = CacheKey::TeamMembershipReservation { user_id, team_id }.render();
+            items.push((counter_key, vec![source_key]));
+        }
+        items.push((format!("spend:user:{user_id}"), vec![user_id.to_owned()]));
+    }
+    if let Some(end_user_id) = input.end_user_id {
         let counter_key = format!("spend:end_user:{end_user_id}");
         let source_key = CacheKey::EndUserId(end_user_id).render();
-        outcomes.push(prepare_entity(&counter_key, &[source_key.as_str()], charge, services).await);
+        items.push((counter_key, vec![source_key]));
     }
-    for tag in distinct_texts(tags) {
-        let counter_key = format!("spend:tag:{tag}");
-        let source_key = CacheKey::Tag(&tag).render();
-        outcomes.push(prepare_entity(&counter_key, &[source_key.as_str()], charge, services).await);
+    for tag in distinct_texts(input.tags.unwrap_or_default()) {
+        items.push(text_item(TextScope::Tag, &tag));
     }
-    combine(outcomes)
-}
-
-// _prepare_model_access_group_spend_increments: every group that authorized the request charges its own spend counter
-pub(super) async fn model_access_group_scope<Counters, Layers, Rows>(
-    groups: &[JsonData],
-    charge: &ScopeCharge,
-    services: &SpendIncrementServices<'_, Counters, Layers, Rows>,
-) -> ScopeOutcome
-where
-    Counters: SettlementCounters,
-    Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + WindowReseedCache + 'static,
-    Rows: SpendCounterRows + DbSpendCounterRows,
-{
-    let mut outcomes = Vec::new();
-    for group in distinct_texts(groups) {
-        let counter_key = CacheKey::ModelAccessGroupSpend(&group).render();
-        let source_key = CacheKey::ModelAccessGroup(&group).render();
-        outcomes.push(prepare_entity(&counter_key, &[source_key.as_str()], charge, services).await);
+    for group in distinct_texts(input.model_access_groups.unwrap_or_default()) {
+        items.push(text_item(TextScope::AccessGroup, &group));
     }
-    combine(outcomes)
-}
-
-// _prepare_org_spend_increment then _prepare_project_spend_increment: the budgeted org row is read first, and the project row is its own only floor
-pub(super) async fn org_project_scope<Counters, Layers, Rows>(
-    org_id: Option<&str>,
-    project_id: Option<&str>,
-    charge: &ScopeCharge,
-    services: &SpendIncrementServices<'_, Counters, Layers, Rows>,
-) -> ScopeOutcome
-where
-    Counters: SettlementCounters,
-    Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + WindowReseedCache + 'static,
-    Rows: SpendCounterRows + DbSpendCounterRows,
-{
-    let mut outcomes = Vec::with_capacity(2);
-    if let Some(org_id) = org_id {
+    if let Some(org_id) = input.org_id {
         let counter_key = format!("spend:org:{org_id}");
         let with_budget = format!("org_id:{org_id}:with_budget");
         let plain = format!("org_id:{org_id}");
-        outcomes.push(
-            prepare_entity(
-                &counter_key,
-                &[with_budget.as_str(), plain.as_str()],
-                charge,
-                services,
-            )
-            .await,
-        );
+        items.push((counter_key, vec![with_budget, plain]));
     }
-    if let Some(project_id) = project_id {
+    if let Some(project_id) = input.project_id {
         let counter_key = CacheKey::ProjectSpend(project_id).render();
         let source_key = CacheKey::ProjectId(project_id).render();
-        outcomes.push(prepare_entity(&counter_key, &[source_key.as_str()], charge, services).await);
+        items.push((counter_key, vec![source_key]));
     }
-    combine(outcomes)
+    items
+}
+
+// the two list scopes: a tag or an access group charges its own counter, and its source key is the auth cache key it came from
+enum TextScope {
+    Tag,
+    AccessGroup,
+}
+
+fn text_item(kind: TextScope, text: &str) -> CounterItem {
+    match kind {
+        TextScope::Tag => (
+            format!("spend:tag:{text}"),
+            vec![CacheKey::Tag(text).render()],
+        ),
+        TextScope::AccessGroup => (
+            CacheKey::ModelAccessGroupSpend(text).render(),
+            vec![CacheKey::ModelAccessGroup(text).render()],
+        ),
+    }
 }
 
 // dict.fromkeys of the nonempty strings: a tag or access group charges once, in first-seen order
