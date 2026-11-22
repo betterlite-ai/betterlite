@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_auth::auth_identity::records::Principal;
-use betterlite_core::api::responses_id_security::error::{Error, Forbidden};
+use betterlite_core::api::responses_id_security::error::{Forbidden, ResponsesIdSecurityError};
 use betterlite_core::api::responses_id_security::{
     ADDRESSED_RESPONSE_ID_FIELD, CallOutcome, ResponsesCall,
 };
@@ -44,10 +44,11 @@ pub(crate) fn success(
         .policy()
         .encrypt_response(&mut response, &caller)
         .map_err(|error| internal_failure(&error))?;
-    let nested = match response.extra.get("response") {
-        Some(value) => Some(project(nested_id(value), &state.cipher)?),
-        None => None,
-    };
+    let nested = response
+        .extra
+        .get("response")
+        .map(|value| project(nested_id(value), &state.cipher))
+        .transpose()?;
     let id = project_text(&response.id, &state.cipher);
     Ok(json!({ "response": { "id": id, "nested": nested } }))
 }
@@ -122,14 +123,14 @@ fn shared_advertisement(advertised: &[Option<String>]) -> bool {
 fn call_answer(
     data: &IndexMap<String, Json>,
     field_name: Option<&str>,
-    outcome: &Result<CallOutcome, Error>,
+    outcome: &Result<CallOutcome, ResponsesIdSecurityError>,
     cipher: &Cipher,
 ) -> Result<Value, Box<HelperError>> {
     let (kind, detail, status, class) = match outcome {
         Ok(CallOutcome::NotResponsesCall) => ("not_responses_call", None, None, None),
         Ok(CallOutcome::Unchanged) => ("unchanged", None, None, None),
         Ok(CallOutcome::Authorized { .. }) => ("authorized", None, None, None),
-        Err(Error::Forbidden(forbidden)) => (
+        Err(ResponsesIdSecurityError::Forbidden(forbidden)) => (
             forbidden_kind(*forbidden),
             Some(forbidden.detail()),
             Some(403_i64),
@@ -184,17 +185,17 @@ const fn forbidden_kind(forbidden: Forbidden) -> &'static str {
     }
 }
 
-fn internal_class(error: &Error) -> &'static str {
+fn internal_class(error: &ResponsesIdSecurityError) -> &'static str {
     match error {
-        Error::Forbidden(_) => "Forbidden",
-        Error::NotUtf8 => "NotUtf8",
-        Error::MalformedOwnedPayload { .. } => "MalformedOwnedPayload",
-        Error::NonTextCiphertext => "NonTextCiphertext",
-        Error::Encrypt { .. } => "EncryptFailed",
+        ResponsesIdSecurityError::Forbidden(_) => "Forbidden",
+        ResponsesIdSecurityError::NotUtf8 => "NotUtf8",
+        ResponsesIdSecurityError::MalformedOwnedPayload { .. } => "MalformedOwnedPayload",
+        ResponsesIdSecurityError::NonTextCiphertext => "NonTextCiphertext",
+        ResponsesIdSecurityError::Encrypt { .. } => "EncryptFailed",
     }
 }
 
-fn internal_failure(error: &Error) -> Box<HelperError> {
+fn internal_failure(error: &ResponsesIdSecurityError) -> Box<HelperError> {
     Box::new(HelperError {
         class: internal_class(error).to_owned(),
         status: Some(error.status_code()),

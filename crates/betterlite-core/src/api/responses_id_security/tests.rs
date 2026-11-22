@@ -12,10 +12,10 @@ use rstest::rstest;
 use crate::api::api_boundaries::ApiLimits;
 
 use self::support::{
-    FUZZ_SALT, SALT, advertised, at, capture, data, fixture, json_of, lifecycle_event, managed_id,
-    principal, response, stream_event, text_of, unsealed,
+    FUZZ_SALT, SALT, Switches, advertised, at, capture, data, fixture, json_of, lifecycle_event,
+    managed_id, principal, response, stream_event, text_of, unsealed,
 };
-use super::error::{Error, Forbidden};
+use super::error::{Forbidden, ResponsesIdSecurityError};
 use super::owned_id::{
     DecodedResponseId, OwnedIdCipher, decode_owned_response_id, decode_owned_response_id_text,
 };
@@ -31,7 +31,7 @@ const NO_SIGNING_KEY: &str = "Response ID encryption is enabled but no signing k
 
 #[test]
 fn same_user_team() {
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -70,7 +70,7 @@ fn same_user_team() {
 #[case::other_user(Some("bob"), Some("team-b"))]
 #[case::missing_user(None, Some("team-a"))]
 fn cross_user_forbidden(#[case] user: Option<&str>, #[case] team: Option<&str>) {
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -83,28 +83,34 @@ fn cross_user_forbidden(#[case] user: Option<&str>, #[case] team: Option<&str>) 
     let error = policy
         .authorize_call(Some(ResponsesCall::Get), &mut payload, &caller)
         .unwrap_err();
-    assert!(matches!(error, Error::Forbidden(Forbidden::User)));
+    assert!(matches!(
+        error,
+        ResponsesIdSecurityError::Forbidden(Forbidden::User)
+    ));
     assert_eq!(error.status_code(), 403);
     assert_eq!(error.to_string(), USER_DETAIL);
     assert_eq!(payload, before);
 
     // the user check runs before the team check, so a wrong team alone gives the user detail
     let alice_wrong_team = principal(Some("alice"), Some("team-b"), &[]);
-    let error = policy
+    let wrong_team_error = policy
         .authorize_call(
             Some(ResponsesCall::Delete),
             &mut data(vec![("response_id", advertised_id.as_str())]),
             &alice_wrong_team,
         )
         .unwrap_err();
-    assert!(matches!(error, Error::Forbidden(Forbidden::User)));
+    assert!(matches!(
+        wrong_team_error,
+        ResponsesIdSecurityError::Forbidden(Forbidden::User)
+    ));
 }
 
 #[rstest]
 #[case::other_team(Some("team-b"))]
 #[case::missing_team(None)]
 fn cross_team_forbidden(#[case] team: Option<&str>) {
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -118,7 +124,10 @@ fn cross_team_forbidden(#[case] team: Option<&str>) {
     let error = policy
         .authorize_call(Some(ResponsesCall::Cancel), &mut payload, &caller)
         .unwrap_err();
-    assert!(matches!(error, Error::Forbidden(Forbidden::Team)));
+    assert!(matches!(
+        error,
+        ResponsesIdSecurityError::Forbidden(Forbidden::Team)
+    ));
     assert_eq!(error.status_code(), 403);
     assert_eq!(error.to_string(), TEAM_DETAIL);
     assert_eq!(payload, before);
@@ -136,7 +145,7 @@ fn cross_team_forbidden(#[case] team: Option<&str>) {
         outcome,
         CallOutcome::Authorized {
             routing_id: "resp_original".to_owned(),
-            addressed_id: no_team_owner.clone(),
+            addressed_id: no_team_owner,
         }
     );
 }
@@ -145,7 +154,7 @@ fn cross_team_forbidden(#[case] team: Option<&str>) {
 #[case::foreign("resp_foreign")]
 #[case::chatcmpl("chatcmpl-1")]
 fn proxy_admin_unmanaged(#[case] unmanaged_id: &str) {
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -172,7 +181,7 @@ fn proxy_admin_unmanaged(#[case] unmanaged_id: &str) {
 
     // an admin also reaches a managed id owned by someone else
     let advertised_id = managed_id(&cipher, "resp_original", "alice", "team-a");
-    let outcome = policy
+    let admin_outcome = policy
         .authorize_call(
             Some(ResponsesCall::Get),
             &mut data(vec![("response_id", advertised_id.as_str())]),
@@ -180,7 +189,7 @@ fn proxy_admin_unmanaged(#[case] unmanaged_id: &str) {
         )
         .unwrap();
     assert_eq!(
-        outcome,
+        admin_outcome,
         CallOutcome::Authorized {
             routing_id: "resp_original".to_owned(),
             addressed_id: advertised_id,
@@ -195,12 +204,15 @@ fn proxy_admin_unmanaged(#[case] unmanaged_id: &str) {
             &viewer,
         )
         .unwrap_err();
-    assert!(matches!(error, Error::Forbidden(Forbidden::Unmanaged)));
+    assert!(matches!(
+        error,
+        ResponsesIdSecurityError::Forbidden(Forbidden::Unmanaged)
+    ));
 }
 
 #[test]
 fn no_signing_key_debug_fallback() {
-    let (settings, cipher) = fixture(false, false, None, 0);
+    let (settings, cipher) = fixture(Switches::None, None, 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -226,30 +238,29 @@ fn no_signing_key_debug_fallback() {
 
     // encrypting a nonstream response logs the exact fallback and leaves the id alone
     let mut body = response(r#"{"id":"resp_plain","created_at":0,"output":[]}"#);
-    let (result, logs) = capture(|| policy.encrypt_response(&mut body, &alice));
+    let (result, fallback_logs) = capture(|| policy.encrypt_response(&mut body, &alice));
     result.unwrap();
     assert_eq!(body.id, "resp_plain");
-    assert_eq!(logs, vec![NO_SIGNING_KEY.to_owned()]);
+    assert_eq!(fallback_logs, vec![NO_SIGNING_KEY.to_owned()]);
 
     // a stream chunk on a create route logs it too and leaves the cache empty
     let mut event = lifecycle_event("resp_plain");
     let mut cache = BTreeMap::new();
-    let (result, logs) = capture(|| {
-        policy
-            .rewrite_stream_chunk(Some("/v1/responses"), &mut event, &alice, &mut cache)
-            .unwrap()
+    let (result, chunk_logs) = capture(|| {
+        policy.rewrite_stream_chunk(Some("/v1/responses"), &mut event, &alice, &mut cache)
     });
+    result.unwrap();
     assert_eq!(
         text_of(at(&json_of(&event), &["response", "id"])),
         "resp_plain"
     );
-    assert_eq!(logs, vec![NO_SIGNING_KEY.to_owned()]);
+    assert_eq!(chunk_logs, vec![NO_SIGNING_KEY.to_owned()]);
     assert!(cache.is_empty());
 }
 
 #[test]
 fn stream_id_consistency() {
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -276,7 +287,7 @@ fn stream_id_consistency() {
     assert_eq!(unsealed(&cipher, &first_id), payload);
 
     // a second request starts a fresh cipher and cache: new nonces, same payload
-    let (fresh_settings, fresh_cipher) = fixture(false, false, Some(SALT), 1_000);
+    let (fresh_settings, fresh_cipher) = fixture(Switches::None, Some(SALT), 1_000);
     let fresh_policy = ResponsesIdSecurity {
         settings: &fresh_settings,
         cipher: &fresh_cipher,
@@ -320,7 +331,7 @@ impl OwnedIdCipher for NullCipher {
 #[case::decrypted_without_managed_prefix(IdShape::DecryptedWithoutManagedPrefix)]
 #[case::decryption_returns_null(IdShape::DecryptionReturnsNull)]
 fn malformed_owned_id_payload(#[case] shape: IdShape) {
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -344,7 +355,7 @@ fn malformed_owned_id_payload(#[case] shape: IdShape) {
         }
         IdShape::DecryptionReturnsNull => "resp_whatever".to_owned(),
     };
-    if let IdShape::DecryptionReturnsNull = shape {
+    if matches!(shape, IdShape::DecryptionReturnsNull) {
         // a decryptor that answers null is unmanaged, as the Python None return is
         let decoded =
             decode_owned_response_id_text(&wire, &NullCipher, ApiLimits::default()).unwrap();
@@ -362,7 +373,7 @@ fn malformed_owned_id_payload(#[case] shape: IdShape) {
                 outcome.unwrap(),
                 CallOutcome::Authorized {
                     routing_id: "resp_test".to_owned(),
-                    addressed_id: wire.clone(),
+                    addressed_id: wire,
                 }
             );
             assert_eq!(
@@ -376,13 +387,16 @@ fn malformed_owned_id_payload(#[case] shape: IdShape) {
                 outcome.unwrap(),
                 CallOutcome::Authorized {
                     routing_id: wire.clone(),
-                    addressed_id: wire.clone(),
+                    addressed_id: wire,
                 }
             );
         }
         IdShape::TwoFields => {
             let error = outcome.unwrap_err();
-            assert!(matches!(error, Error::MalformedOwnedPayload { fields: 2 }));
+            assert!(matches!(
+                error,
+                ResponsesIdSecurityError::MalformedOwnedPayload { fields: 2 }
+            ));
             assert_eq!(error.status_code(), 500);
             assert_eq!(
                 error.to_string(),
@@ -394,7 +408,10 @@ fn malformed_owned_id_payload(#[case] shape: IdShape) {
         | IdShape::DecryptedWithoutManagedPrefix
         | IdShape::DecryptionReturnsNull => {
             let error = outcome.unwrap_err();
-            assert!(matches!(error, Error::Forbidden(Forbidden::Unmanaged)));
+            assert!(matches!(
+                error,
+                ResponsesIdSecurityError::Forbidden(Forbidden::Unmanaged)
+            ));
             assert_eq!(error.status_code(), 403);
             assert_eq!(payload, before);
         }
@@ -413,7 +430,7 @@ fn default_unmanaged_denial(#[case] unmanaged_id: &str) {
             opt_in: false,
         }]
     );
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     assert!(!settings.disable_responses_id_security);
     assert!(!settings.allow_unmanaged_response_ids);
     let policy = ResponsesIdSecurity {
@@ -428,7 +445,10 @@ fn default_unmanaged_denial(#[case] unmanaged_id: &str) {
     let error = policy
         .authorize_call(Some(ResponsesCall::Get), &mut payload, &alice)
         .unwrap_err();
-    assert!(matches!(error, Error::Forbidden(Forbidden::Unmanaged)));
+    assert!(matches!(
+        error,
+        ResponsesIdSecurityError::Forbidden(Forbidden::Unmanaged)
+    ));
     assert_eq!(error.status_code(), 403);
     assert_eq!(error.to_string(), UNMANAGED_DETAIL);
     assert_eq!(payload, before);
@@ -436,16 +456,21 @@ fn default_unmanaged_denial(#[case] unmanaged_id: &str) {
 
 #[test]
 fn setting_overrides() {
-    let bob = principal(Some("bob"), Some("team-b"), &[]);
+    allow_only_opens_the_unmanaged_path();
+    disable_permits_the_owner_mismatch();
+    disable_logs_the_team_mismatch();
+    disable_skips_the_advertised_id_rewrite();
+}
 
-    // allow_unmanaged_response_ids only opens the unmanaged path
-    let (allow_settings, allow_cipher) = fixture(false, true, Some(SALT), 0);
-    let allow = ResponsesIdSecurity {
-        settings: &allow_settings,
-        cipher: &allow_cipher,
+fn allow_only_opens_the_unmanaged_path() {
+    let bob = principal(Some("bob"), Some("team-b"), &[]);
+    let (settings, cipher) = fixture(Switches::Allow, Some(SALT), 0);
+    let policy = ResponsesIdSecurity {
+        settings: &settings,
+        cipher: &cipher,
         limits: ApiLimits::default(),
     };
-    let outcome = allow
+    let outcome = policy
         .authorize_call(
             Some(ResponsesCall::Get),
             &mut data(vec![("response_id", "chatcmpl-1")]),
@@ -459,41 +484,32 @@ fn setting_overrides() {
             addressed_id: "chatcmpl-1".to_owned(),
         }
     );
-    let owned = managed_id(&allow_cipher, "resp_original", "alice", "team-a");
-    let error = allow
+    let owned = managed_id(&cipher, "resp_original", "alice", "team-a");
+    let error = policy
         .authorize_call(
             Some(ResponsesCall::Get),
             &mut data(vec![("response_id", owned.as_str())]),
             &bob,
         )
         .unwrap_err();
-    assert!(matches!(error, Error::Forbidden(Forbidden::User)));
+    assert!(matches!(
+        error,
+        ResponsesIdSecurityError::Forbidden(Forbidden::User)
+    ));
+}
 
-    // disable_responses_id_security opens both paths and logs instead of failing
-    let (disable_settings, disable_cipher) = fixture(true, false, Some(SALT), 0);
-    let disable = ResponsesIdSecurity {
-        settings: &disable_settings,
-        cipher: &disable_cipher,
+fn disable_permits_the_owner_mismatch() {
+    let bob = principal(Some("bob"), Some("team-b"), &[]);
+    let (settings, cipher) = fixture(Switches::Disable, Some(SALT), 0);
+    let policy = ResponsesIdSecurity {
+        settings: &settings,
+        cipher: &cipher,
         limits: ApiLimits::default(),
     };
-    let outcome = disable
-        .authorize_call(
-            Some(ResponsesCall::Get),
-            &mut data(vec![("response_id", "chatcmpl-1")]),
-            &bob,
-        )
-        .unwrap();
-    assert_eq!(
-        outcome,
-        CallOutcome::Authorized {
-            routing_id: "chatcmpl-1".to_owned(),
-            addressed_id: "chatcmpl-1".to_owned(),
-        }
-    );
-    let owned = managed_id(&disable_cipher, "resp_original", "alice", "team-a");
+    let owned = managed_id(&cipher, "resp_original", "alice", "team-a");
     let mut payload = data(vec![("response_id", owned.as_str())]);
     let (outcome, logs) = capture(|| {
-        disable
+        policy
             .authorize_call(Some(ResponsesCall::Get), &mut payload, &bob)
             .unwrap()
     });
@@ -501,7 +517,7 @@ fn setting_overrides() {
         outcome,
         CallOutcome::Authorized {
             routing_id: "resp_original".to_owned(),
-            addressed_id: owned.clone(),
+            addressed_id: owned,
         }
     );
     assert_eq!(
@@ -511,31 +527,49 @@ fn setting_overrides() {
                 .to_owned()
         ]
     );
+}
 
-    // the same user in another team takes the team branch of the disabled log
+// the same user in another team takes the team branch of the disabled log
+fn disable_logs_the_team_mismatch() {
     let alice_other_team = principal(Some("alice"), Some("team-b"), &[]);
-    let (_, logs) = capture(|| {
-        disable
+    let (settings, cipher) = fixture(Switches::Disable, Some(SALT), 0);
+    let policy = ResponsesIdSecurity {
+        settings: &settings,
+        cipher: &cipher,
+        limits: ApiLimits::default(),
+    };
+    let ((), team_logs) = capture(|| {
+        policy
             .check_access("alice", "team-a", &alice_other_team)
-            .unwrap()
+            .unwrap();
     });
     assert_eq!(
-        logs,
+        team_logs,
         vec![
             "Responses ID Security is disabled. Response belongs to team team-a but user alice is accessing it with team id team-b."
                 .to_owned()
         ]
     );
+}
 
-    // disabling also skips the advertised id rewrite, without logging the missing-key note
+fn disable_skips_the_advertised_id_rewrite() {
+    let bob = principal(Some("bob"), Some("team-b"), &[]);
+    let (settings, cipher) = fixture(Switches::Disable, Some(SALT), 0);
+    let policy = ResponsesIdSecurity {
+        settings: &settings,
+        cipher: &cipher,
+        limits: ApiLimits::default(),
+    };
+
+    // disabling skips the advertised id rewrite, without logging the missing-key note
     let mut body = response(r#"{"id":"resp_plain","created_at":0,"output":[]}"#);
-    let (result, logs) = capture(|| disable.encrypt_response(&mut body, &bob));
+    let (result, logs) = capture(|| policy.encrypt_response(&mut body, &bob));
     result.unwrap();
     assert_eq!(body.id, "resp_plain");
     assert!(logs.is_empty());
     let mut event = lifecycle_event("resp_plain");
     let mut cache = BTreeMap::new();
-    disable
+    policy
         .rewrite_stream_chunk(Some("/responses"), &mut event, &bob, &mut cache)
         .unwrap();
     assert_eq!(
@@ -547,7 +581,7 @@ fn setting_overrides() {
 
 #[test]
 fn empty_owners() {
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -574,6 +608,17 @@ fn empty_owners() {
             addressed_id: no_owners,
         }
     );
+    one_field_owned_id_falls_back();
+}
+
+fn one_field_owned_id_falls_back() {
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
+    let policy = ResponsesIdSecurity {
+        settings: &settings,
+        cipher: &cipher,
+        limits: ApiLimits::default(),
+    };
+    let stranger = principal(Some("mallory"), Some("team-z"), &[]);
 
     // a payload with fewer than two fields keeps the whole advertised id as the routing id
     let one_field = advertised(
@@ -603,7 +648,7 @@ fn empty_owners() {
 #[case::cancel(ResponsesCall::Cancel, "response_id")]
 #[case::list_input_items(ResponsesCall::ListInputItems, "response_id")]
 fn retained_addressed_id(#[case] call: ResponsesCall, #[case] field: &str) {
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -638,24 +683,24 @@ fn retained_addressed_id(#[case] call: ResponsesCall, #[case] field: &str) {
 
     // an empty or non-string retained id falls back to the body field
     for retained_value in [Json::Text(String::new()), Json::Null, Json::Bool(true)] {
-        let mut payload = data(vec![(field, body_id.as_str())]);
-        payload.insert(ADDRESSED_RESPONSE_ID_FIELD.to_owned(), retained_value);
-        let outcome = policy
-            .authorize_call(Some(call), &mut payload, &alice)
+        let mut retained_payload = data(vec![(field, body_id.as_str())]);
+        retained_payload.insert(ADDRESSED_RESPONSE_ID_FIELD.to_owned(), retained_value);
+        let retained_outcome = policy
+            .authorize_call(Some(call), &mut retained_payload, &alice)
             .unwrap();
         assert_eq!(
-            outcome,
+            retained_outcome,
             CallOutcome::Authorized {
                 routing_id: "resp_body".to_owned(),
                 addressed_id: body_id.clone(),
             }
         );
         assert_eq!(
-            payload.get(field),
+            retained_payload.get(field),
             Some(&Json::Text("resp_body".to_owned()))
         );
         assert_eq!(
-            payload.get(ADDRESSED_RESPONSE_ID_FIELD),
+            retained_payload.get(ADDRESSED_RESPONSE_ID_FIELD),
             Some(&Json::Text(body_id.clone()))
         );
     }
@@ -666,32 +711,34 @@ fn retained_addressed_id(#[case] call: ResponsesCall, #[case] field: &str) {
         Json::Null,
         Json::Number(serde_json::Number::from(7_i32)),
     ] {
-        let mut payload = data(vec![]);
-        payload.insert(field.to_owned(), empty);
-        let before = payload.clone();
-        let outcome = policy
-            .authorize_call(Some(call), &mut payload, &alice)
+        let mut empty_payload = data(vec![]);
+        empty_payload.insert(field.to_owned(), empty);
+        let before = empty_payload.clone();
+        let empty_outcome = policy
+            .authorize_call(Some(call), &mut empty_payload, &alice)
             .unwrap();
-        assert_eq!(outcome, CallOutcome::Unchanged);
-        assert_eq!(payload, before);
+        assert_eq!(empty_outcome, CallOutcome::Unchanged);
+        assert_eq!(empty_payload, before);
     }
-    let mut payload = data(vec![]);
+    let mut missing_payload = data(vec![]);
     assert_eq!(
         policy
-            .authorize_call(Some(call), &mut payload, &alice)
+            .authorize_call(Some(call), &mut missing_payload, &alice)
             .unwrap(),
         CallOutcome::Unchanged
     );
-    assert!(payload.is_empty());
+    assert!(missing_payload.is_empty());
 
     // a call type that is not a responses call returns nothing
-    let mut payload = data(vec![(field, body_id.as_str())]);
-    let before = payload.clone();
+    let mut other_payload = data(vec![(field, body_id.as_str())]);
+    let before_other = other_payload.clone();
     assert_eq!(
-        policy.authorize_call(None, &mut payload, &alice).unwrap(),
+        policy
+            .authorize_call(None, &mut other_payload, &alice)
+            .unwrap(),
         CallOutcome::NotResponsesCall
     );
-    assert_eq!(payload, before);
+    assert_eq!(other_payload, before_other);
 }
 
 #[rstest]
@@ -711,7 +758,7 @@ fn retained_addressed_id(#[case] call: ResponsesCall, #[case] field: &str) {
 #[case::leading_space(Some(" /v1/responses"), false)]
 #[case::trailing_space(Some("/v1/responses "), false)]
 fn response_rewrite_routes(#[case] route: Option<&str>, #[case] rewritten: bool) {
-    let (settings, cipher) = fixture(false, false, Some(SALT), 0);
+    let (settings, cipher) = fixture(Switches::None, Some(SALT), 0);
     let policy = ResponsesIdSecurity {
         settings: &settings,
         cipher: &cipher,
@@ -762,29 +809,31 @@ fn response_rewrite_routes(#[case] route: Option<&str>, #[case] rewritten: bool)
 
     // no nested mapping, a non-mapping response, or a non-string nested id leaves the object alone
     let no_nested = r#"{"id":"chat-1","created_at":0,"output":[]}"#;
-    let mut body = response(no_nested);
-    policy.encrypt_response(&mut body, &alice).unwrap();
-    assert_eq!(json_of(&body), json_of(&response(no_nested)));
+    let mut no_nested_body = response(no_nested);
+    policy
+        .encrypt_response(&mut no_nested_body, &alice)
+        .unwrap();
+    assert_eq!(json_of(&no_nested_body), json_of(&response(no_nested)));
     let text_nested = r#"{"id":"chat-1","created_at":0,"output":[],"response":"text"}"#;
-    let mut body = response(text_nested);
-    policy.encrypt_response(&mut body, &alice).unwrap();
-    assert_eq!(json_of(&body), json_of(&response(text_nested)));
+    let mut text_body = response(text_nested);
+    policy.encrypt_response(&mut text_body, &alice).unwrap();
+    assert_eq!(json_of(&text_body), json_of(&response(text_nested)));
     let number_nested = r#"{"id":"chat-1","created_at":0,"output":[],"response":{"id":7}}"#;
-    let mut body = response(number_nested);
-    policy.encrypt_response(&mut body, &alice).unwrap();
-    assert_eq!(json_of(&body), json_of(&response(number_nested)));
+    let mut number_body = response(number_nested);
+    policy.encrypt_response(&mut number_body, &alice).unwrap();
+    assert_eq!(json_of(&number_body), json_of(&response(number_nested)));
     let null_nested = r#"{"id":"chat-1","created_at":0,"output":[],"response":null}"#;
-    let mut body = response(null_nested);
-    policy.encrypt_response(&mut body, &alice).unwrap();
-    assert_eq!(json_of(&body), json_of(&response(null_nested)));
+    let mut null_body = response(null_nested);
+    policy.encrypt_response(&mut null_body, &alice).unwrap();
+    assert_eq!(json_of(&null_body), json_of(&response(null_nested)));
 
     // a lifecycle event rewrites the typed response, with no prefix check
     let mut typed = stream_event(
         r#"{"type":"response.completed","response":{"id":"chat-1","created_at":0,"output":[]}}"#,
     );
-    let mut cache = BTreeMap::new();
+    let mut typed_cache = BTreeMap::new();
     policy
-        .rewrite_stream_chunk(Some("/responses"), &mut typed, &alice, &mut cache)
+        .rewrite_stream_chunk(Some("/responses"), &mut typed, &alice, &mut typed_cache)
         .unwrap();
     let typed_id = text_of(at(&json_of(&typed), &["response", "id"])).to_owned();
     assert_eq!(
@@ -796,9 +845,9 @@ fn response_rewrite_routes(#[case] route: Option<&str>, #[case] rewritten: bool)
     let mut both = stream_event(
         r#"{"type":"response.completed","response":{"id":"resp_typed","created_at":0,"output":[]},"id":"resp_extra"}"#,
     );
-    let mut cache = BTreeMap::new();
+    let mut both_cache = BTreeMap::new();
     policy
-        .rewrite_stream_chunk(Some("/responses"), &mut both, &alice, &mut cache)
+        .rewrite_stream_chunk(Some("/responses"), &mut both, &alice, &mut both_cache)
         .unwrap();
     let both_json = json_of(&both);
     assert_eq!(text_of(at(&both_json, &["response", "id"])), "resp_typed");
@@ -810,9 +859,14 @@ fn response_rewrite_routes(#[case] route: Option<&str>, #[case] rewritten: bool)
 
     // a generic event rewrites its top-level extra id, then falls back to a nested mapping
     let mut generic = stream_event(r#"{"type":"response.custom_thing","id":"resp_custom"}"#);
-    let mut cache = BTreeMap::new();
+    let mut generic_cache = BTreeMap::new();
     policy
-        .rewrite_stream_chunk(Some("/v1/responses"), &mut generic, &alice, &mut cache)
+        .rewrite_stream_chunk(
+            Some("/v1/responses"),
+            &mut generic,
+            &alice,
+            &mut generic_cache,
+        )
         .unwrap();
     let generic_id = text_of(at(&json_of(&generic), &["id"])).to_owned();
     assert_eq!(
@@ -822,13 +876,13 @@ fn response_rewrite_routes(#[case] route: Option<&str>, #[case] rewritten: bool)
     let mut generic_nested = stream_event(
         r#"{"type":"response.custom_thing","id":"custom","response":{"id":"resp_custom"}}"#,
     );
-    let mut cache = BTreeMap::new();
+    let mut nested_cache = BTreeMap::new();
     policy
         .rewrite_stream_chunk(
             Some("/v1/responses"),
             &mut generic_nested,
             &alice,
-            &mut cache,
+            &mut nested_cache,
         )
         .unwrap();
     let generic_json = json_of(&generic_nested);
@@ -843,9 +897,9 @@ fn response_rewrite_routes(#[case] route: Option<&str>, #[case] rewritten: bool)
     let mut delta = stream_event(
         r#"{"type":"response.output_text.delta","item_id":"item","output_index":0,"content_index":0,"delta":"x","response":{"id":"resp_delta"}}"#,
     );
-    let mut cache = BTreeMap::new();
+    let mut delta_cache = BTreeMap::new();
     policy
-        .rewrite_stream_chunk(Some("/responses"), &mut delta, &alice, &mut cache)
+        .rewrite_stream_chunk(Some("/responses"), &mut delta, &alice, &mut delta_cache)
         .unwrap();
     let delta_json = json_of(&delta);
     assert_eq!(text_of(at(&delta_json, &["delta"])), "x");
@@ -858,7 +912,7 @@ fn response_rewrite_routes(#[case] route: Option<&str>, #[case] rewritten: bool)
 
 #[test]
 fn id_at_the_size_limit_still_decodes() {
-    let (_, cipher) = fixture(false, false, Some(FUZZ_SALT), 0);
+    let (_, cipher) = fixture(Switches::None, Some(FUZZ_SALT), 0);
     let limits = ApiLimits::default();
     let owned = managed_id(&cipher, "resp_test", "alice", "team-a");
     let padding = limits.max_json_bytes - owned.len() - "resp_".len();
@@ -883,12 +937,14 @@ fn id_at_the_size_limit_still_decodes() {
 
 #[rstest]
 fn replays_corpus() {
-    let (_, cipher) = fixture(false, false, Some(FUZZ_SALT), 0);
+    let (_, cipher) = fixture(Switches::None, Some(FUZZ_SALT), 0);
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/owned_response_id");
-    let mut replayed = 0;
-    for entry in fs::read_dir(corpus).unwrap() {
-        let path = entry.unwrap().path();
-        let bytes = fs::read(&path).unwrap();
+    let paths: Vec<_> = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    for path in &paths {
+        let bytes = fs::read(path).unwrap();
         let decoded = decode_owned_response_id(&bytes, &cipher, ApiLimits::default());
         let name = path
             .file_name()
@@ -905,18 +961,17 @@ fn replays_corpus() {
             ),
             "managed-two-fields" => assert!(matches!(
                 decoded,
-                Err(Error::MalformedOwnedPayload { fields: 2 })
+                Err(ResponsesIdSecurityError::MalformedOwnedPayload { fields: 2 })
             )),
             "managed-one-field" => {
-                assert_eq!(decoded.unwrap(), DecodedResponseId::Fallback)
+                assert_eq!(decoded.unwrap(), DecodedResponseId::Fallback);
             }
-            "non-utf8" => assert!(matches!(decoded, Err(Error::NotUtf8))),
+            "non-utf8" => assert!(matches!(decoded, Err(ResponsesIdSecurityError::NotUtf8))),
             "wrong-key" | "not-managed-payload" => {
-                assert_eq!(decoded.unwrap(), DecodedResponseId::Unmanaged)
+                assert_eq!(decoded.unwrap(), DecodedResponseId::Unmanaged);
             }
             _ => drop(decoded),
         }
-        replayed += 1;
     }
-    assert!(replayed >= 10);
+    assert!(paths.len() >= 10);
 }

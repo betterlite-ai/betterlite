@@ -81,13 +81,8 @@ fn loads_settings(
     let (disable, allow, signing_key) = expected;
     assert_eq!(loaded.disable_responses_id_security, disable);
     assert_eq!(loaded.allow_unmanaged_response_ids, allow);
-    assert_eq!(
-        loaded
-            .signing_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        signing_key
-    );
+    let loaded_key = loaded.signing_key.as_ref().map(|key| key.expose_secret());
+    assert_eq!(loaded_key, signing_key);
 }
 
 #[test]

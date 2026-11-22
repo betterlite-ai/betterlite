@@ -18,8 +18,8 @@ pub mod owned_id;
 mod rewrite;
 mod tests;
 
-use self::error::{Error, Forbidden};
-use self::owned_id::{DecodedResponseId, OwnedIdCipher};
+use self::error::{Forbidden, ResponsesIdSecurityError};
+use self::owned_id::DecodedResponseId;
 
 pub const ADDRESSED_RESPONSE_ID_FIELD: &str = "_litellm_addressed_response_id";
 const RESPONSE_ID_FIELD: &str = "response_id";
@@ -96,11 +96,11 @@ where
         call: Option<ResponsesCall>,
         data: &mut IndexMap<String, Json>,
         principal: &Principal,
-    ) -> Result<CallOutcome, Error> {
-        let Some(call) = call else {
+    ) -> Result<CallOutcome, ResponsesIdSecurityError> {
+        let Some(responses_call) = call else {
             return Ok(CallOutcome::NotResponsesCall);
         };
-        let field = call.addressed_field();
+        let field = responses_call.addressed_field();
         let retained = data
             .get(ADDRESSED_RESPONSE_ID_FIELD)
             .and_then(as_nonempty_text);
@@ -121,7 +121,11 @@ where
         })
     }
 
-    fn authorize_id(&self, response_id: &str, principal: &Principal) -> Result<String, Error> {
+    fn authorize_id(
+        &self,
+        response_id: &str,
+        principal: &Principal,
+    ) -> Result<String, ResponsesIdSecurityError> {
         let decoded =
             owned_id::decode_owned_response_id_text(response_id, self.cipher, self.limits)?;
         match decoded {
@@ -137,7 +141,7 @@ where
                 if self.unmanaged_allowed(principal) {
                     Ok(response_id.to_owned())
                 } else {
-                    Err(Error::Forbidden(Forbidden::Unmanaged))
+                    Err(ResponsesIdSecurityError::Forbidden(Forbidden::Unmanaged))
                 }
             }
             // the managed prefix still holds, but there is no owner to check
@@ -159,7 +163,7 @@ where
         user_id: &str,
         team_id: &str,
         principal: &Principal,
-    ) -> Result<(), Error> {
+    ) -> Result<(), ResponsesIdSecurityError> {
         if principal.roles.contains(&Role::PlatformAdmin) {
             return Ok(());
         }
@@ -173,7 +177,7 @@ where
                 );
                 return Ok(());
             }
-            return Err(Error::Forbidden(Forbidden::User));
+            return Err(ResponsesIdSecurityError::Forbidden(Forbidden::User));
         }
         let caller_team = principal.teams.first().map(|team| team.id.as_str());
         if !team_id.is_empty() && caller_team != Some(team_id) {
@@ -186,7 +190,7 @@ where
                 );
                 return Ok(());
             }
-            return Err(Error::Forbidden(Forbidden::Team));
+            return Err(ResponsesIdSecurityError::Forbidden(Forbidden::Team));
         }
         Ok(())
     }
@@ -196,7 +200,7 @@ where
         &self,
         response: &mut ResponsesApiResponse,
         principal: &Principal,
-    ) -> Result<(), Error> {
+    ) -> Result<(), ResponsesIdSecurityError> {
         if self.settings.disable_responses_id_security {
             return Ok(());
         }
@@ -216,7 +220,7 @@ where
         event: &mut ResponsesAPIStreamingResponse,
         principal: &Principal,
         cache: &mut BTreeMap<String, String>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), ResponsesIdSecurityError> {
         if self.settings.disable_responses_id_security || !rewrite::is_create_route(request_route) {
             return Ok(());
         }
@@ -233,7 +237,7 @@ where
         original_id: &str,
         principal: &Principal,
         cache: &mut BTreeMap<String, String>,
-    ) -> Result<String, Error> {
+    ) -> Result<String, ResponsesIdSecurityError> {
         if let Some(cached) = cache.get(original_id) {
             return Ok(cached.clone());
         }
@@ -245,11 +249,11 @@ where
         let sealed: StoredValue<()> = self
             .cipher
             .encrypt_value(StoredValue::Text(SecretString::from(payload)), None)
-            .map_err(|source| Error::Encrypt { source })?;
-        let StoredValue::Text(sealed) = sealed else {
-            return Err(Error::NonTextCiphertext);
+            .map_err(|source| ResponsesIdSecurityError::Encrypt { source })?;
+        let StoredValue::Text(sealed_text) = sealed else {
+            return Err(ResponsesIdSecurityError::NonTextCiphertext);
         };
-        let advertised = format!("{ADVERTISED_ID_PREFIX}{}", sealed.expose_secret());
+        let advertised = format!("{ADVERTISED_ID_PREFIX}{}", sealed_text.expose_secret());
         cache.insert(original_id.to_owned(), advertised.clone());
         Ok(advertised)
     }

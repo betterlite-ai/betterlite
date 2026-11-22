@@ -6,9 +6,10 @@ use betterlite_openai::api::responses_event_records::records::{
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 
 use super::ADVERTISED_ID_PREFIX;
-use super::error::Error;
+use super::error::ResponsesIdSecurityError;
 
-pub(super) type Rewrite<'call> = &'call mut dyn FnMut(&str) -> Result<String, Error>;
+pub(super) type Rewrite<'call> =
+    &'call mut dyn FnMut(&str) -> Result<String, ResponsesIdSecurityError>;
 
 pub(super) fn is_create_route(request_route: Option<&str>) -> bool {
     let Some(route) = request_route else {
@@ -27,7 +28,7 @@ pub(super) fn is_create_route(request_route: Option<&str>) -> bool {
 pub(super) fn rewrite_response(
     response: &mut ResponsesApiResponse,
     rewrite: Rewrite<'_>,
-) -> Result<(), Error> {
+) -> Result<(), ResponsesIdSecurityError> {
     if !response.id.starts_with(ADVERTISED_ID_PREFIX) {
         return rewrite_nested_mapping(&mut response.extra, rewrite);
     }
@@ -38,7 +39,7 @@ pub(super) fn rewrite_response(
 pub(super) fn rewrite_event(
     event: &mut ResponsesAPIStreamingResponse,
     rewrite: Rewrite<'_>,
-) -> Result<(), Error> {
+) -> Result<(), ResponsesIdSecurityError> {
     match event {
         ResponsesAPIStreamingResponse::Known(known) => rewrite_known(known, rewrite),
         ResponsesAPIStreamingResponse::Generic(generic) => {
@@ -47,7 +48,11 @@ pub(super) fn rewrite_event(
     }
 }
 
-fn rewrite_known(event: &mut KnownResponseEvent, rewrite: Rewrite<'_>) -> Result<(), Error> {
+#[expect(clippy::too_many_lines, reason = "one arm per typed event variant")]
+fn rewrite_known(
+    event: &mut KnownResponseEvent,
+    rewrite: Rewrite<'_>,
+) -> Result<(), ResponsesIdSecurityError> {
     match event {
         KnownResponseEvent::ResponseCreated(record)
         | KnownResponseEvent::ResponseInProgress(record)
@@ -111,7 +116,10 @@ fn rewrite_known(event: &mut KnownResponseEvent, rewrite: Rewrite<'_>) -> Result
 }
 
 // getattr(event, "response") on a lifecycle event is its typed response, rewritten without a prefix check
-fn rewrite_lifecycle(record: &mut ResponseEvent, rewrite: Rewrite<'_>) -> Result<(), Error> {
+fn rewrite_lifecycle(
+    record: &mut ResponseEvent,
+    rewrite: Rewrite<'_>,
+) -> Result<(), ResponsesIdSecurityError> {
     if rewrite_top_level_id(&mut record.extra, rewrite)? {
         return Ok(());
     }
@@ -120,14 +128,17 @@ fn rewrite_lifecycle(record: &mut ResponseEvent, rewrite: Rewrite<'_>) -> Result
 }
 
 // a pydantic event model answers getattr("response") from its allowed extras
-fn rewrite_extra(extra: &mut Extra, rewrite: Rewrite<'_>) -> Result<(), Error> {
+fn rewrite_extra(extra: &mut Extra, rewrite: Rewrite<'_>) -> Result<(), ResponsesIdSecurityError> {
     if rewrite_top_level_id(extra, rewrite)? {
         return Ok(());
     }
     rewrite_nested_mapping(extra, rewrite)
 }
 
-fn rewrite_top_level_id(extra: &mut Extra, rewrite: Rewrite<'_>) -> Result<bool, Error> {
+fn rewrite_top_level_id(
+    extra: &mut Extra,
+    rewrite: Rewrite<'_>,
+) -> Result<bool, ResponsesIdSecurityError> {
     let Some(Json::Text(id)) = extra.get("id") else {
         return Ok(false);
     };
@@ -140,7 +151,10 @@ fn rewrite_top_level_id(extra: &mut Extra, rewrite: Rewrite<'_>) -> Result<bool,
 }
 
 // a nested pydantic model or mapping whose id is a string is rewritten, without a prefix check
-fn rewrite_nested_mapping(extra: &mut Extra, rewrite: Rewrite<'_>) -> Result<(), Error> {
+fn rewrite_nested_mapping(
+    extra: &mut Extra,
+    rewrite: Rewrite<'_>,
+) -> Result<(), ResponsesIdSecurityError> {
     let Some(Json::Object(fields)) = extra.get_mut("response") else {
         return Ok(());
     };

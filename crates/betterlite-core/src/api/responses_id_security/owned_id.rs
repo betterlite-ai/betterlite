@@ -1,10 +1,12 @@
+use std::str;
+
 use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
 use betterlite_secrets::secret_codec::{
     DecryptPolicy, FailureLog, FailureValue, StoredCipher, StoredValue,
 };
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::error::Error;
+use super::error::ResponsesIdSecurityError;
 use crate::api::api_boundaries::ApiLimits;
 
 const SPLIT_TOKEN: &str = "resp_";
@@ -51,9 +53,9 @@ pub fn decode_owned_response_id(
     bytes: &[u8],
     cipher: &dyn OwnedIdCipher,
     limits: ApiLimits,
-) -> Result<DecodedResponseId, Error> {
-    let Ok(text) = std::str::from_utf8(bytes) else {
-        return Err(Error::NotUtf8);
+) -> Result<DecodedResponseId, ResponsesIdSecurityError> {
+    let Ok(text) = str::from_utf8(bytes) else {
+        return Err(ResponsesIdSecurityError::NotUtf8);
     };
     decode_owned_response_id_text(text, cipher, limits)
 }
@@ -63,7 +65,7 @@ pub(super) fn decode_owned_response_id_text(
     text: &str,
     cipher: &dyn OwnedIdCipher,
     limits: ApiLimits,
-) -> Result<DecodedResponseId, Error> {
+) -> Result<DecodedResponseId, ResponsesIdSecurityError> {
     if text.len() > limits.max_json_bytes {
         return Ok(DecodedResponseId::Unmanaged);
     }
@@ -79,7 +81,7 @@ pub(super) fn decode_owned_response_id_text(
     let parts: Vec<&str> = decrypted.split(';').collect();
     match parts.as_slice() {
         [] | [_] => Ok(DecodedResponseId::Fallback),
-        [_, _] => Err(Error::MalformedOwnedPayload { fields: 2 }),
+        [_, _] => Err(ResponsesIdSecurityError::MalformedOwnedPayload { fields: 2 }),
         [response_part, user_part, team_part, ..] => Ok(DecodedResponseId::Managed {
             original_id: response_part
                 .rsplit_once(RESPONSE_MARKER)

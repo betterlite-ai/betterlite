@@ -27,7 +27,7 @@ impl Forbidden {
 }
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum ResponsesIdSecurityError {
     #[error(transparent)]
     Forbidden(Forbidden),
     #[error("the response id is not valid UTF-8")]
@@ -43,7 +43,7 @@ pub enum Error {
     },
 }
 
-impl Error {
+impl ResponsesIdSecurityError {
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {

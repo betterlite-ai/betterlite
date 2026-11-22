@@ -44,16 +44,23 @@ impl NonceSource for CountingNonces {
     }
 }
 
+// the two security flags, so a fixture call names the setting it exercises
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Switches {
+    None,
+    Disable,
+    Allow,
+}
+
 pub(super) fn fixture(
-    disable: bool,
-    allow: bool,
+    switches: Switches,
     key: Option<&str>,
     nonce_start: u64,
 ) -> (Settings, TestCipher) {
     let signing_key = key.map(SecretString::from);
     let settings = Settings {
-        disable_responses_id_security: disable,
-        allow_unmanaged_response_ids: allow,
+        disable_responses_id_security: matches!(switches, Switches::Disable),
+        allow_unmanaged_response_ids: matches!(switches, Switches::Allow),
         signing_key: signing_key.clone(),
     };
     let cipher = StoredCipher {
@@ -68,15 +75,15 @@ pub(super) fn fixture(
 }
 
 pub(super) fn principal(user: Option<&str>, team: Option<&str>, roles: &[&str]) -> Principal {
-    let user = user.map_or_else(|| "null".to_owned(), |id| format!(r#"{{"id":"{id}"}}"#));
+    let user_json = user.map_or_else(|| "null".to_owned(), |id| format!(r#"{{"id":"{id}"}}"#));
     let teams = team.map_or_else(|| "[]".to_owned(), |id| format!(r#"[{{"id":"{id}"}}]"#));
-    let roles = roles
+    let roles_json = roles
         .iter()
         .map(|role| format!(r#""{role}""#))
         .collect::<Vec<String>>()
         .join(",");
     let source = format!(
-        r#"{{"principal_type":"human","subject":"subject","auth_method":"api_key","user":{user},"teams":{teams},"roles":[{roles}]}}"#
+        r#"{{"principal_type":"human","subject":"subject","auth_method":"api_key","user":{user_json},"teams":{teams},"roles":[{roles_json}]}}"#
     );
     serde_json::from_str(&source).unwrap()
 }

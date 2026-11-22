@@ -34,7 +34,8 @@ pub(crate) enum Input {
     Success {
         settings: SettingsInput,
         principal: PrincipalInput,
-        response: ResponsesApiResponse,
+        // boxed so the response stays out of the enum's other variants
+        response: Box<ResponsesApiResponse>,
         // the success hook takes no route; the case records one to show it stays unused
         #[serde(rename = "route")]
         _route: Option<String>,
