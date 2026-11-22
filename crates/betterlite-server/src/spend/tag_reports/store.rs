@@ -22,8 +22,8 @@ const USERS_SQL: &str = "SELECT row_to_json(x)::text FROM (SELECT u.*, json_agg(
 const USER_SQL: &str = "SELECT row_to_json(x)::text FROM (SELECT u.*, COALESCE((SELECT json_agg(m.*) FROM \"LiteLLM_OrganizationMembership\" m WHERE m.\"user_id\" = u.\"user_id\"), '[]'::json) AS organization_memberships FROM \"LiteLLM_UserTable\" u WHERE u.\"user_id\" = $1) x";
 const RAW_TAGS_SQL: &str = "SELECT jsonb_array_elements_text(request_tags) AS individual_request_tag, COUNT(*) AS log_count, SUM(spend)::text AS spend_text FROM \"LiteLLM_SpendLogs\" GROUP BY individual_request_tag";
 const TAG_NAMES_SQL: &str = "SELECT DISTINCT jsonb_array_elements_text(request_tags) AS individual_request_tag FROM \"LiteLLM_SpendLogs\"";
-const DAILY_ALL_TAGS_SQL: &str = "SELECT individual_request_tag, spend_date, log_count::bigint AS log_count, total_spend::text AS spend_text FROM \"DailyTagSpend\" WHERE spend_date >= $1::date AND spend_date <= $2::date ORDER BY total_spend DESC";
-const DAILY_TAGS_SQL: &str = "SELECT individual_request_tag, SUM(log_count)::bigint AS log_count, SUM(total_spend)::text AS spend_text FROM \"DailyTagSpend\" WHERE spend_date >= $1::date AND spend_date <= $2::date AND individual_request_tag = ANY($3::text[]) GROUP BY individual_request_tag ORDER BY SUM(total_spend) DESC";
+const DAILY_ALL_TAGS_SQL: &str = "SELECT individual_request_tag, spend_date, log_count::bigint AS log_count, total_spend::text AS spend_text FROM \"DailyTagSpend\" WHERE spend_date >= $1::text::date AND spend_date <= $2::text::date ORDER BY total_spend DESC";
+const DAILY_TAGS_SQL: &str = "SELECT individual_request_tag, SUM(log_count)::bigint AS log_count, SUM(total_spend)::text AS spend_text FROM \"DailyTagSpend\" WHERE spend_date >= $1::text::date AND spend_date <= $2::text::date AND individual_request_tag = ANY($3::text[]) GROUP BY individual_request_tag ORDER BY SUM(total_spend) DESC";
 const SPEND_TEXT_COLUMN: &str = "spend_text";
 // get_data passes limit=None and offset=None, which PostgreSQL reads as LIMIT ALL OFFSET 0
 const NO_LIMIT: Option<i64> = None;
