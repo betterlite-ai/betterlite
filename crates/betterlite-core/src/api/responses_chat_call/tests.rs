@@ -29,6 +29,7 @@ use crate::api::chat_response_stream::driver::ChatResponseStream;
 use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::chat_response_stream_items::snapshot::StreamAssembly;
 use crate::api::chat_response_stream_items::sources::EventSources;
+use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::responses_chat_output::records::AssembledResponse;
 use crate::api::responses_session_history::{
     ColdStorageReader, SessionHistory, SessionLog, SpendLogQuery,
@@ -663,6 +664,18 @@ async fn source_stops_reading_after_done() {
     let mut source = chunk_source(frames);
     let chunks = drained(&mut source).await;
     assert!(chunks.iter().any(|chunk| !chunk["usage"].is_null()));
+}
+
+#[tokio::test]
+async fn malformed_chunks_become_a_stream_failure() {
+    let mut source = chunk_source(vec![b"data: {broken\n\n".to_vec()]);
+    let Err(error) = source.next_chunk().await else {
+        panic!("a payload that is not JSON fails the stream");
+    };
+    let StreamFailure::Unclassified { text } = error else {
+        panic!("a decode failure is unclassified");
+    };
+    assert!(text.contains("line 1"));
 }
 
 #[rstest]
