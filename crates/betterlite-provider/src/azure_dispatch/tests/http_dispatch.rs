@@ -1,13 +1,16 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::str;
 use std::sync::Arc;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_openai::chat::ChatRequest;
+use betterlite_openai::openai_base_config::CatalogCapabilities;
 use indexmap::IndexMap;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
@@ -16,7 +19,10 @@ use super::support;
 use crate::azure_dispatch::Azure;
 use crate::azure_dispatch::call::{ChatCall, Credentials, Request};
 use crate::azure_dispatch::compose::{prepare, prepared_request};
-use crate::operation::{ChatCompletion, OperationError, OperationResult};
+use crate::operation::{
+    ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult,
+};
+use crate::prepared::PreparedRequest;
 use crate::prepared::deployment::Deployment;
 use crate::provider::Adapter as _;
 
@@ -163,7 +169,49 @@ pub(super) async fn check_failure() {
     assert_eq!(support::text_at(failure, "code"), Some("unsupported_value"));
 }
 
+fn catalog() -> CatalogCapabilities {
+    CatalogCapabilities {
+        chat_models: BTreeSet::new(),
+        text_models: BTreeSet::new(),
+    }
+}
+
+fn adapter_request() -> OperationRequest {
+    OperationRequest::Chat(Box::new(ChatOperation {
+        model: String::from("gpt-http-upstream"),
+        request: ChatRequest::parse(
+            br#"{"model":"gpt-http-upstream","messages":[{"role":"user","content":"hi"}]}"#,
+        )
+        .expect("the chat request"),
+        control: ControlOptions::default(),
+    }))
+}
+
+// The adapter's own prepare composes the deployment's base and key through the production path.
+fn check_adapter_prepare() {
+    let target = deployment("https://deployment.test");
+    let prepared = Azure
+        .prepare(&adapter_request(), &target, &catalog())
+        .expect("the adapter request");
+    let PreparedRequest::Chat(chat) = prepared else {
+        panic!("a chat request");
+    };
+    assert_eq!(chat.http.url.host_str(), Some("deployment.test"));
+    assert_eq!(
+        chat.http.url.path(),
+        "/openai/deployments/gpt-http-upstream/chat/completions"
+    );
+    assert_eq!(
+        chat.http
+            .headers
+            .get("api-key")
+            .and_then(|value| value.to_str().ok()),
+        Some("http-key")
+    );
+}
+
 pub(super) async fn check_all() {
     check_round_trip().await;
     check_failure().await;
+    check_adapter_prepare();
 }

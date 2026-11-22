@@ -78,6 +78,7 @@ pub(super) async fn chat_dispatch() {
     let result = dispatch(&composition, Request::Chat(Box::new(call)), &answer);
     chat_request_shape(&answer, &result);
     chat_stream_and_supplied(&composition);
+    deployment_route_base();
 }
 
 fn chat_request_shape(answer: &Fixture, result: &AzureResult) {
@@ -151,6 +152,23 @@ fn chat_stream_and_supplied(composition: &Composition) {
     assert!(!retained.discarded(None));
     assert!(retained.discarded(Some("2025-01-01")));
     assert!(SuppliedClient { api_version: None }.discarded(Some("2024-10-21")));
+}
+
+// a base that already ends in the chat route is passed through instead of gaining a deployment prefix
+fn deployment_route_base() {
+    let credentials = Credentials {
+        api_base: Some(String::from("https://proxy.test/chat/completions")),
+        api_version: Some(String::from("2024-10-21")),
+        api_key: Some(support::key("call-key")),
+        ..support::credentials()
+    };
+    let call = support::chat("gpt-4o", Object::new(), credentials);
+    let prepared = prepare(&support::composition(&[]), Request::Chat(Box::new(call)))
+        .expect("the deployment route base");
+    assert_eq!(
+        prepared.http.url.as_str(),
+        "https://proxy.test/chat/completions?api-version=2024-10-21"
+    );
 }
 
 // Embeddings keep their own endpoint, key rank and SDK defaults: no chat token pop, no config merge.

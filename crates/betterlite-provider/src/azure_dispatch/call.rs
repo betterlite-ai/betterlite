@@ -36,6 +36,8 @@ impl Composition {
             openai_system_messages_first: false,
         }
     }
+    // the process environment is not a test's to set, so no test can change what this reads
+    #[cfg_attr(test, mutants::skip)]
     #[must_use]
     pub fn process() -> Self {
         let azure = process_environment()

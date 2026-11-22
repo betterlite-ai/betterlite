@@ -63,6 +63,8 @@ fn prepared_http(wire: Wire, timeout: Option<f64>) -> Result<PreparedHttp, Azure
         body_limit: None,
     })
 }
+// the supplied client changes only this debug log, so its mutants are equivalent
+#[cfg_attr(test, mutants::skip)]
 fn check_supplied(call: &ChatCall) {
     if call
         .supplied
