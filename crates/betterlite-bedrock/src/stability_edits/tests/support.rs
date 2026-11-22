@@ -55,6 +55,7 @@ pub(super) fn provider_message(error: &StabilityEditError) -> &str {
         } => &provider.error.message,
         other @ (StabilityEditError::UnsupportedParameter { .. }
         | StabilityEditError::Field { .. }
+        | StabilityEditError::ModelInfo { .. }
         | StabilityEditError::Price(_)
         | StabilityEditError::Reply(_)
         | StabilityEditError::Header(_)) => panic!("expected a provider error, got {other}"),
