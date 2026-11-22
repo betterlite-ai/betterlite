@@ -1,0 +1,18 @@
+task: B1749
+deviations:
+  - what: Only SQLSTATE class 22 counts as a per-row data rejection; LiteLLM bisects only an exact base prisma DataError and lets every subclass (UniqueViolation, MissingRequiredValue, ...) raise and requeue the statement.
+    why: betterlite maps the database's own data-exception class to the single poison candidate instead of porting prisma's Python exception hierarchy, so a value prisma maps to a P-code subclass is isolated and dropped here where LiteLLM keeps the whole batch failing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L152-L172
+  - what: The queue's byte total belongs to each SpendLogQueue; LiteLLM keeps one spend_log_queue_bytes counter on the PrismaClient class, shared by every queue in the process.
+    why: With one shared counter a client's backlog trims another client's rows in the same process; per-queue accounting bounds each queue by the same 64 MB without losing one queue's rows to another queue's bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4396-L4399
+  - what: The failure event's diagnostic is the error and its source chain after the fixed prefix; LiteLLM's traceback_str is a formatted Python traceback.
+    why: betterlite has no Python stack to print, so the event keeps the source's [Non-Blocking] prefix, call_type and duration while the traceback tail becomes the Rust error chain.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7915-L7916
+kept_bugs:
+  - what: A non-200 answer from the external spend writer is ignored and the popped rows are gone.
+    why: The source acts only on status 200 and otherwise falls through to a completed pass, so betterlite copies the silent loss rather than adding a requeue no working external writer asked for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7346-L7348
+  - what: A non-database write error, an encoding failure or the external writer raising, drops the popped batch without a replay.
+    why: The source requeues only a prisma error and retries only a transient one, so a transport or encoding failure loses the rows; betterlite keeps that boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7376-L7382

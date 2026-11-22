@@ -1,0 +1,296 @@
+#![cfg(test)]
+
+use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Instant;
+
+use crate::redis_spend::buffer::RedisUpdateBuffer;
+use crate::redis_spend::events::NoRedisBufferEventSink;
+use crate::redis_spend::log_row::SpendLogRow;
+use crate::spend_batches::StatementLimits;
+use crate::spend_log_storage::postgres::{PostgresSpendLogsWriter, SpendLogStoreError};
+use crate::spend_log_storage::rows::SpendLogQueue;
+use crate::spend_log_storage::rows::writer::{FlushPolicy, NoSpendLogFailureSink, SpendLogFlush};
+use crate::spend_log_storage::tests::support::{
+    NoClient, RecordingPause, ScriptedFailure, SpendLogCase, SteppingClock, ids, ordinary_row,
+    text, unreachable_store,
+};
+use crate::spend_log_storage::{SpendLogFuture, SpendLogWriteError, SpendLogsWriter};
+
+use super::{MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH, create_spend_logs_with_poison_isolation};
+
+#[derive(Default)]
+struct ScriptedWriter {
+    poison: BTreeSet<String>,
+    failure: Option<ScriptedFailure>,
+    attempts: Mutex<Vec<Vec<String>>>,
+    persisted: Mutex<Vec<String>>,
+}
+
+impl ScriptedWriter {
+    fn attempt(&self, rows: &[SpendLogRow]) -> Result<usize, ScriptedFailure> {
+        let attempted = ids(rows);
+        self.attempts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(attempted.clone());
+        if let Some(failure) = self.failure {
+            return Err(failure);
+        }
+        if attempted.iter().any(|id| self.poison.contains(id)) {
+            return Err(ScriptedFailure::data());
+        }
+        self.persisted
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(attempted);
+        Ok(rows.len())
+    }
+
+    fn attempted(&self) -> Vec<String> {
+        self.attempts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(|batch| batch.join(","))
+            .collect()
+    }
+
+    fn attempted_count(&self) -> usize {
+        self.attempts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
+
+    fn persisted(&self) -> Vec<String> {
+        self.persisted
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl SpendLogsWriter for ScriptedWriter {
+    type Error = ScriptedFailure;
+
+    fn insert_rows<'call>(
+        &'call self,
+        rows: &'call [SpendLogRow],
+    ) -> SpendLogFuture<'call, Result<usize, ScriptedFailure>> {
+        Box::pin(async move { self.attempt(rows) })
+    }
+}
+
+struct CountingWriter {
+    inner: PostgresSpendLogsWriter,
+    attempts: AtomicUsize,
+}
+
+impl SpendLogsWriter for CountingWriter {
+    type Error = SpendLogStoreError;
+
+    fn insert_rows<'call>(
+        &'call self,
+        rows: &'call [SpendLogRow],
+    ) -> SpendLogFuture<'call, Result<usize, SpendLogStoreError>> {
+        Box::pin(async move {
+            let _attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+            self.inner.insert_rows(rows).await
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_poison_row_is_isolated_and_its_neighbours_persist() {
+    let writer = ScriptedWriter {
+        poison: BTreeSet::from(["b".to_owned()]),
+        ..ScriptedWriter::default()
+    };
+    let rows = [ordinary_row("a"), ordinary_row("b"), ordinary_row("c")];
+    let budget = create_spend_logs_with_poison_isolation(
+        &writer,
+        &rows,
+        MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH,
+    )
+    .await
+    .expect("the isolation settles");
+    assert_eq!(writer.attempted(), ["a,b,c", "a", "b,c", "b", "c"]);
+    assert_eq!(writer.persisted(), ["a", "c"]);
+    assert_eq!(budget, 253);
+}
+
+#[tokio::test]
+async fn an_outage_is_never_bisected() {
+    let writer = ScriptedWriter {
+        failure: Some(ScriptedFailure::outage()),
+        ..ScriptedWriter::default()
+    };
+    let rows = [
+        ordinary_row("a"),
+        ordinary_row("b"),
+        ordinary_row("c"),
+        ordinary_row("d"),
+    ];
+    let error = create_spend_logs_with_poison_isolation(&writer, &rows, 256)
+        .await
+        .expect_err("the outage propagates");
+    assert_eq!(writer.attempted_count(), 1);
+    assert!(error.is_service_unavailable());
+    assert!(error.is_transient());
+    assert!(!error.is_data_rejection());
+}
+
+#[rstest::rstest]
+#[case::an_outage(ScriptedFailure::mislabelled_outage())]
+#[case::a_deadlock(ScriptedFailure::mislabelled_deadlock())]
+#[tokio::test]
+async fn a_data_error_that_is_an_outage_is_not_bisected(#[case] failure: ScriptedFailure) {
+    let writer = ScriptedWriter {
+        failure: Some(failure),
+        ..ScriptedWriter::default()
+    };
+    let rows = [ordinary_row("a"), ordinary_row("b")];
+    let error = create_spend_logs_with_poison_isolation(&writer, &rows, 256)
+        .await
+        .expect_err("the outage propagates");
+    assert_eq!(writer.attempted_count(), 1);
+    assert!(error.is_database());
+    assert!(writer.persisted().is_empty());
+}
+
+#[tokio::test]
+async fn a_clean_statement_keeps_the_whole_budget() {
+    let writer = ScriptedWriter::default();
+    let rows = [ordinary_row("a"), ordinary_row("b")];
+    let budget = create_spend_logs_with_poison_isolation(&writer, &rows, 7)
+        .await
+        .expect("the statement lands");
+    assert_eq!(budget, 7);
+    assert_eq!(writer.attempted(), ["a,b"]);
+}
+
+#[tokio::test]
+async fn a_singleton_poison_row_costs_one_attempt() {
+    let writer = ScriptedWriter {
+        poison: BTreeSet::from(["b".to_owned()]),
+        ..ScriptedWriter::default()
+    };
+    let budget = create_spend_logs_with_poison_isolation(&writer, &[ordinary_row("b")], 5)
+        .await
+        .expect("the singleton is dropped");
+    assert_eq!(budget, 4);
+    assert_eq!(writer.attempted(), ["b"]);
+    assert!(writer.persisted().is_empty());
+}
+
+#[tokio::test]
+async fn an_exhausted_budget_drops_the_remainder_without_more_attempts() {
+    let writer = ScriptedWriter {
+        poison: BTreeSet::from(["a".to_owned()]),
+        ..ScriptedWriter::default()
+    };
+    let rows = [
+        ordinary_row("a"),
+        ordinary_row("b"),
+        ordinary_row("c"),
+        ordinary_row("d"),
+    ];
+    let budget = create_spend_logs_with_poison_isolation(&writer, &rows, 0)
+        .await
+        .expect("the remainder is dropped");
+    assert_eq!(budget, 0);
+    assert_eq!(writer.attempted(), ["a,b,c,d"]);
+    assert!(writer.persisted().is_empty());
+}
+
+#[tokio::test]
+async fn a_healthy_group_after_an_exhausted_group_still_persists() {
+    let poison: BTreeSet<String> = (0..1000).map(|index| format!("poison-{index}")).collect();
+    let mut rows: Vec<SpendLogRow> = poison.iter().map(|id| ordinary_row(id)).collect();
+    rows.push(ordinary_row("healthy"));
+    let writer = ScriptedWriter {
+        poison,
+        ..ScriptedWriter::default()
+    };
+    let queue = SpendLogQueue::new(usize::MAX);
+    let redis = RedisUpdateBuffer {
+        lists: None,
+        enabled: false,
+        dequeue_count: 10,
+        events: Arc::new(NoRedisBufferEventSink),
+    };
+    let pause = RecordingPause::default();
+    let clock = SteppingClock {
+        start: Instant::now(),
+        steps: AtomicU32::new(0),
+    };
+    let flush = SpendLogFlush {
+        writer: &writer,
+        external: None::<&NoClient>,
+        queue: &queue,
+        redis: &redis,
+        failures: &NoSpendLogFailureSink,
+        pause: &pause,
+        clock: &clock,
+        policy: FlushPolicy {
+            retries: 0,
+            limits: StatementLimits {
+                max_bytes: usize::MAX,
+                max_rows: 1000,
+            },
+            spend_logs_url: None,
+        },
+    };
+    flush.run(Some(&rows)).await.expect("the pass settles");
+    assert_eq!(writer.attempted_count(), 257);
+    assert_eq!(writer.persisted(), ["healthy"]);
+    assert!(queue.is_empty());
+}
+
+#[tokio::test]
+async fn a_data_rejection_is_isolated_and_the_good_rows_persist() {
+    let case = SpendLogCase::new().await;
+    let table = PostgresSpendLogsWriter {
+        store: case.store.clone(),
+    };
+    let mut poison = ordinary_row("poison-1");
+    let _replaced = poison.insert("model".to_owned(), text("gpt-4o\u{0}"));
+    let rows = [ordinary_row("good-1"), poison, ordinary_row("good-2")];
+    let budget = create_spend_logs_with_poison_isolation(
+        &table,
+        &rows,
+        MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH,
+    )
+    .await
+    .expect("the isolation settles");
+    assert_eq!(budget, 253);
+    let persisted: Vec<String> = case
+        .rows()
+        .await
+        .into_iter()
+        .map(|(request_id, _, _, _)| request_id)
+        .collect();
+    assert_eq!(persisted, ["good-1", "good-2"]);
+    case.close().await;
+}
+
+#[tokio::test]
+async fn an_outage_is_not_mistaken_for_a_poison_row() {
+    let writer = CountingWriter {
+        inner: PostgresSpendLogsWriter {
+            store: unreachable_store(),
+        },
+        attempts: AtomicUsize::new(0),
+    };
+    let rows = [ordinary_row("a"), ordinary_row("b")];
+    let error = create_spend_logs_with_poison_isolation(&writer, &rows, 256)
+        .await
+        .expect_err("the outage propagates");
+    assert_eq!(writer.attempts.load(Ordering::SeqCst), 1);
+    assert!(error.is_service_unavailable());
+    assert!(error.is_transient());
+    assert!(!error.is_data_rejection());
+    assert!(error.is_database());
+}
