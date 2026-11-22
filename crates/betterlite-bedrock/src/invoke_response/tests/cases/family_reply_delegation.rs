@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use crate::invoke_response::tests::support::{decode, fixture, headers};
+use crate::invoke_response::error::InvokeReplyError;
+use crate::invoke_response::tests::support::{decode, fixture, headers, json};
 
 const CLAUDE_MODEL: &str = "anthropic.claude-3-5-sonnet-20240620-v1:0";
 const NOVA_MODEL: &str = "amazon.nova-pro-v1:0";
@@ -20,12 +21,15 @@ const CLAUDE_REPLY: &str = r#"{
     }
 }"#;
 const NOVA_REPLY: &str = r#"{"output": {"message": {"role": "assistant", "content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}"#;
+const PREFIX_REPLY: &str = r#"{"id": "msg_prefix", "model": "claude-plain", "type": "message", "role": "assistant", "content": [{"type": "text", "text": "fix"}], "stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1}}"#;
 
 pub(in crate::invoke_response::tests) fn family_reply_delegation() {
     anthropic_reply();
     nova_reply();
     pegasus_reply();
     delegated_errors_become_processing_errors();
+    request_messages_feed_the_prefix_prompt();
+    invalid_response_header_names_are_rejected();
 }
 
 fn anthropic_reply() {
@@ -104,4 +108,26 @@ fn delegated_errors_become_processing_errors() {
         );
         assert_eq!(run.response_headers(), case.headers.as_slice(), "{model}");
     }
+}
+
+fn request_messages_feed_the_prefix_prompt() {
+    let mut case = fixture();
+    case.model = CLAUDE_MODEL.to_owned();
+    case.messages = json(r#"[{"role": "assistant", "content": "pre", "prefix": true}]"#);
+    let run = decode(&case, PREFIX_REPLY);
+    assert_eq!(
+        run.envelope().choices[0].message.content.as_deref(),
+        Some("prefix")
+    );
+}
+
+fn invalid_response_header_names_are_rejected() {
+    let mut case = fixture();
+    case.model = CLAUDE_MODEL.to_owned();
+    case.headers = vec![(String::from("bad header"), String::from("x"))];
+    let run = decode(&case, CLAUDE_REPLY);
+    assert!(matches!(
+        run.failure(),
+        InvokeReplyError::InvalidHeader { name } if name == "bad header"
+    ));
 }
