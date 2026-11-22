@@ -9,7 +9,7 @@ use betterlite_secret_managers::secret_contracts::{
     BaseSecretManager, RotationError, SecretFuture,
 };
 use betterlite_server::key_event_sinks::team_params::TeamSecretSettings;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use super::board::Board;

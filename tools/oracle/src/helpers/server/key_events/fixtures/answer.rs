@@ -235,11 +235,11 @@ fn decoded<T>(value: Option<&JsonValue>, name: &str) -> Reply<T>
 where
     T: DeserializeOwned,
 {
-    let Some(value) = value else {
+    let Some(raw) = value else {
         return Err(failure(
             "InvalidInput",
             format!("the {name} field is required"),
         ));
     };
-    serde_json::from_value(value.clone()).map_err(|error| failure("InvalidInput", error))
+    serde_json::from_value(raw.clone()).map_err(|error| failure("InvalidInput", error))
 }
