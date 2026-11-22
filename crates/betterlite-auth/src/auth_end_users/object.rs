@@ -7,7 +7,7 @@ use crate::auth_cache::payload::PayloadError;
 use crate::end_user_registry::errors::RegistryError;
 use crate::end_user_registry::{EndUserRegistry, RegistryGuards};
 
-use super::apply::apply_default_budget_to_end_user;
+use super::apply::apply_default_budget;
 use super::cache::EndUserCache;
 use super::defaults::DefaultBudgetLookup;
 use super::rows::{BudgetRows, EndUserRows};
@@ -67,18 +67,14 @@ where
         let cache_key = CacheKey::EndUserId(end_user_id).render();
         if let Some(cached) = self
             .cache
-            .read_end_user(&cache_key)
+            .read_row::<LiteLLMEndUserTable>(&cache_key)
             .await
             .map_err(EndUserObjectError::CacheRead)?
         {
-            return apply_default_budget_to_end_user(
-                &cached,
-                &self.defaults(),
-                request.key_end_user_budget_id,
-            )
-            .await
-            .map(Some)
-            .map_err(EndUserObjectError::Defaults);
+            return apply_default_budget(&cached, &self.defaults(), request.key_end_user_budget_id)
+                .await
+                .map(Some)
+                .map_err(EndUserObjectError::Defaults);
         }
         let guards = RegistryGuards {
             token_end_user_max_budget: request.token_end_user_max_budget,
@@ -114,17 +110,17 @@ where
     ) -> Option<LiteLLMEndUserTable> {
         let cache_key = CacheKey::EndUserId(end_user_id).render();
         let fetched = rows.find_end_user(end_user_id).await.ok()??;
-        let stored = apply_default_budget_to_end_user(&fetched, &self.defaults(), None)
+        let stored = apply_default_budget(&fetched, &self.defaults(), None)
             .await
             .ok()?;
         self.cache
-            .write_end_user(&cache_key, &stored, self.cache.management_ttl())
+            .write_row(&cache_key, &stored, self.cache.management_ttl())
             .await
             .ok()?;
         if key_end_user_budget_id.is_none() {
             return Some(stored);
         }
-        apply_default_budget_to_end_user(&stored, &self.defaults(), key_end_user_budget_id)
+        apply_default_budget(&stored, &self.defaults(), key_end_user_budget_id)
             .await
             .ok()
     }

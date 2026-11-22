@@ -6,8 +6,8 @@ use super::cache::EndUserCache;
 use super::defaults::DefaultBudgetLookup;
 use super::rows::BudgetRows;
 
-// LiteLLM's _apply_default_budget_to_end_user: the row keeps its own budget_id, only a copy changes
-pub async fn apply_default_budget_to_end_user<Rows, Cache>(
+// LiteLLM's _apply_default_budget: the row keeps its own budget_id, only a copy changes
+pub async fn apply_default_budget<Rows, Cache>(
     end_user: &LiteLLMEndUserTable,
     lookup: &DefaultBudgetLookup<'_, Rows, Cache>,
     key_end_user_budget_id: Option<&str>,
@@ -23,7 +23,7 @@ where
         return Ok(end_user.clone());
     }
     let Some(default_budget) = lookup
-        .resolve_default_end_user_budget(key_end_user_budget_id)
+        .resolve_default_budget(key_end_user_budget_id)
         .await?
     else {
         return Ok(end_user.clone());

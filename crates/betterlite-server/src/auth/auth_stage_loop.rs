@@ -6,7 +6,7 @@ use axum::middleware::Next;
 use axum::response::Response;
 use secrecy::SecretString;
 
-use super::{prefetch_end_users, prefetch_tag_budgets, resolver_for, stage_input};
+use super::{prefetch_stage, resolver_for, stage_input};
 use crate::auth::auth_errors::FailureContext;
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, dispatch,
@@ -45,7 +45,7 @@ pub(crate) async fn run_stages(
             &resolver,
             body.as_ref(),
         );
-        let prefetched = prefetch_end_users(prefetch_tag_budgets(staged?).await?).await?;
+        let prefetched = prefetch_stage(staged?).await?;
         match dispatch(*backend, &prefetched, master_key) {
             Ok(context) => authenticated = Some(context),
             Err(failure) => {

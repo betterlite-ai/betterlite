@@ -35,7 +35,12 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-use super::super::cache::EndUserCache;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+
+use super::super::cache::{
+    DEFAULT_END_USER_BUDGET_PREFIX, EndUserCache, TEAM_MEMBER_BUDGET_PREFIX,
+};
 use super::super::rows::{BudgetFetchError, BudgetRows, EndUserFetchError, EndUserRows};
 use crate::auth_cache::payload::PayloadError;
 use crate::auth_cache::{AuthCache, AuthCacheError, gateway_cache};
@@ -146,8 +151,8 @@ pub(super) enum Surface {
 
 pub(super) struct ScriptedCache {
     pub(super) registry: Mutex<Option<Json>>,
-    pub(super) budgets: Mutex<BTreeMap<String, LiteLLMBudgetTable>>,
-    pub(super) end_users: Mutex<BTreeMap<String, LiteLLMEndUserTable>>,
+    pub(super) budgets: Mutex<BTreeMap<String, Json>>,
+    pub(super) end_users: Mutex<BTreeMap<String, Json>>,
     pub(super) reads: Journal,
     pub(super) writes: Journal,
     pub(super) fail_reads: Option<Surface>,
@@ -182,17 +187,21 @@ impl ScriptedCache {
     }
 
     pub(super) fn put_budget(&self, cache_key: &str, budget: LiteLLMBudgetTable) {
-        self.budgets
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(cache_key.to_owned(), budget);
+        let mut budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
+        budgets.insert(
+            cache_key.to_owned(),
+            serde_json::to_value(budget).expect("the budget fixture serializes"),
+        );
     }
 
     pub(super) fn put_end_user(&self, cache_key: &str, end_user: LiteLLMEndUserTable) {
-        self.end_users
+        let encoded = serde_json::to_value(end_user).expect("the end-user fixture serializes");
+        let seeded = self
+            .end_users
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(cache_key.to_owned(), end_user);
+            .insert(cache_key.to_owned(), encoded);
+        assert!(seeded.is_none(), "an end-user fixture is seeded once");
     }
 
     pub(super) fn put_registry(&self, ids: &[&str]) {
@@ -201,11 +210,13 @@ impl ScriptedCache {
     }
 
     pub(super) fn stored_end_user(&self, cache_key: &str) -> Option<LiteLLMEndUserTable> {
-        self.end_users
+        let stored = self
+            .end_users
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(cache_key)
-            .cloned()
+            .cloned();
+        stored.map(|row| serde_json::from_value(row).expect("the stored end-user row decodes"))
     }
 
     pub(super) fn reads(&self) -> Vec<String> {
@@ -243,58 +254,71 @@ impl RegistryCache for ScriptedCache {
 
 #[async_trait]
 impl EndUserCache for ScriptedCache {
-    async fn read_budget(
-        &self,
-        cache_key: &str,
-    ) -> Result<Option<LiteLLMBudgetTable>, PayloadError> {
-        push(&self.reads, format!("budget:{cache_key}"));
-        if self.fail_reads == Some(Surface::Budget) {
+    async fn read_row<Row>(&self, cache_key: &str) -> Result<Option<Row>, PayloadError>
+    where
+        Row: DeserializeOwned + Send + 'static,
+    {
+        let budget = cache_key.starts_with(DEFAULT_END_USER_BUDGET_PREFIX)
+            || cache_key.starts_with(TEAM_MEMBER_BUDGET_PREFIX);
+        let (surface, stored) = if budget {
+            push(&self.reads, format!("budget:{cache_key}"));
+            let stored = self
+                .budgets
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(cache_key)
+                .cloned();
+            (Surface::Budget, stored)
+        } else {
+            push(&self.reads, format!("end_user:{cache_key}"));
+            let stored = self
+                .end_users
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(cache_key)
+                .cloned();
+            (Surface::EndUser, stored)
+        };
+        if self.fail_reads == Some(surface) {
             return Err(payload_error());
         }
-        let budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(budgets.get(cache_key).cloned())
+        stored
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(PayloadError::Json)
     }
 
-    async fn write_budget(
+    async fn write_row<Row>(
         &self,
         cache_key: &str,
-        budget: &LiteLLMBudgetTable,
+        row: &Row,
         ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        push(&self.writes, format!("budget:{cache_key}:{ttl}"));
-        if self.fail_writes == Some(Surface::Budget) {
+    ) -> Result<(), AuthCacheError>
+    where
+        Row: Serialize + Sync,
+    {
+        let encoded = serde_json::to_value(row)
+            .map_err(|source| AuthCacheError::from(PayloadError::Json(source)))?;
+        let budget = cache_key.starts_with(DEFAULT_END_USER_BUDGET_PREFIX)
+            || cache_key.starts_with(TEAM_MEMBER_BUDGET_PREFIX);
+        let surface = if budget {
+            Surface::Budget
+        } else {
+            Surface::EndUser
+        };
+        let table = if budget { "budget" } else { "end_user" };
+        push(&self.writes, format!("{table}:{cache_key}:{ttl}"));
+        if self.fail_writes == Some(surface) {
             return Err(cache_error());
         }
-        self.put_budget(cache_key, budget.clone());
-        Ok(())
-    }
-
-    async fn read_end_user(
-        &self,
-        cache_key: &str,
-    ) -> Result<Option<LiteLLMEndUserTable>, PayloadError> {
-        push(&self.reads, format!("end_user:{cache_key}"));
-        if self.fail_reads == Some(Surface::EndUser) {
-            return Err(payload_error());
-        }
-        let end_users = self
-            .end_users
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        Ok(end_users.get(cache_key).cloned())
-    }
-
-    async fn write_end_user(
-        &self,
-        cache_key: &str,
-        end_user: &LiteLLMEndUserTable,
-        ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        push(&self.writes, format!("end_user:{cache_key}:{ttl}"));
-        if self.fail_writes == Some(Surface::EndUser) {
-            return Err(cache_error());
-        }
-        self.put_end_user(cache_key, end_user.clone());
+        let mut rows = if budget {
+            self.budgets.lock().unwrap_or_else(PoisonError::into_inner)
+        } else {
+            self.end_users
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+        };
+        rows.insert(cache_key.to_owned(), encoded);
         Ok(())
     }
 }
@@ -402,11 +426,14 @@ impl EndUserRows for ScriptedEndUserRows {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(end_user_id)
-            .cloned()
-            .unwrap_or_else(|| self.fallback.clone());
+            .cloned();
         match answer {
-            EndUserAnswer::Row(row) => Ok(row),
-            EndUserAnswer::Failure => Err(EndUserFetchError::Read(Box::new(query_failure()))),
+            Some(EndUserAnswer::Row(row)) => Ok(row),
+            Some(EndUserAnswer::Failure) => Err(EndUserFetchError::Read(Box::new(query_failure()))),
+            None => match self.fallback.clone() {
+                EndUserAnswer::Row(row) => Ok(row),
+                EndUserAnswer::Failure => Err(EndUserFetchError::Read(Box::new(query_failure()))),
+            },
         }
     }
 }
@@ -463,10 +490,9 @@ impl ReseedCache for SpendCache {
         counter_key: &str,
         value: Decimal,
     ) -> impl Future<Output = Result<(), SpendFailure>> + Send {
-        self.memory
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(counter_key.to_owned(), ReseedCacheValue::Number(value));
+        let mut memory = self.memory.lock().unwrap_or_else(PoisonError::into_inner);
+        memory.insert(counter_key.to_owned(), ReseedCacheValue::Number(value));
+        drop(memory);
         ready(Ok(()))
     }
 

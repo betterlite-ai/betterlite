@@ -340,7 +340,7 @@ async fn key_before_proxy_default() {
     );
     let cache = ScriptedCache::new();
     let found = lookup(Some(&rows), &cache, Some("proxy"))
-        .resolve_default_end_user_budget(Some("key"))
+        .resolve_default_budget(Some("key"))
         .await
         .expect("the key budget resolves");
     assert_eq!(
@@ -363,7 +363,7 @@ async fn missing_key_budget_uses_proxy() {
     rows.set("key", BudgetAnswer::Row(None));
     let cache = ScriptedCache::new();
     let found = lookup(Some(&rows), &cache, Some("proxy"))
-        .resolve_default_end_user_budget(Some("key"))
+        .resolve_default_budget(Some("key"))
         .await
         .expect("the proxy default resolves");
     assert_eq!(

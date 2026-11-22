@@ -193,8 +193,8 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
         .map_or_else(default_resolver, Arc::clone)
 }
 
-// stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the prefetch on the owned stage
-async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFailure> {
+// stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
+pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthTagBudgets(stage) => {
             auth_tag_budgets::prefetch(&stage)
@@ -202,17 +202,6 @@ async fn prefetch_tag_budgets(input: StageInput) -> Result<StageInput, StageFail
                 .map_err(StageFailure::TagBudgets)?;
             Ok(StageInput::AuthTagBudgets(stage))
         }
-        other @ (StageInput::MasterKey(_)
-        | StageInput::AuthRequestPolicy(_)
-        | StageInput::RequestBodySafety(_)
-        | StageInput::AuthRequestModels(_)
-        | StageInput::AuthModelPatterns(_)
-        | StageInput::AuthResourceGrants(_)) => Ok(other),
-    }
-}
-
-async fn prefetch_end_users(input: StageInput) -> Result<StageInput, StageFailure> {
-    match input {
         StageInput::AuthEndUsers(stage) => {
             auth_end_users::prefetch(&stage)
                 .await
@@ -224,8 +213,7 @@ async fn prefetch_end_users(input: StageInput) -> Result<StageInput, StageFailur
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
-        | StageInput::AuthResourceGrants(_)
-        | StageInput::AuthTagBudgets(_)) => Ok(other),
+        | StageInput::AuthResourceGrants(_)) => Ok(other),
     }
 }
 

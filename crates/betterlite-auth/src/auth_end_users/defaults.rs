@@ -11,13 +11,13 @@ use crate::resolved_key::auth::UserAPIKeyAuth;
 use super::cache::{EndUserCache, EndUserCacheKey};
 use super::rows::{BudgetFetchError, BudgetRows};
 
-// LiteLLM's KEY_END_USER_BUDGET_ID_METADATA_FIELD, the key metadata a default budget is named in
-pub const KEY_END_USER_BUDGET_ID_METADATA_FIELD: &str = "end_user_budget_id";
+// LiteLLM's END_USER_BUDGET_ID_FIELD, the key metadata a default budget is named in
+pub const END_USER_BUDGET_ID_FIELD: &str = "end_user_budget_id";
 
 // key_metadata.get(field), kept only when it is a nonempty string: whitespace is a real id
 #[must_use]
 pub fn key_end_user_budget_id(metadata: Option<&Payload>) -> Option<&str> {
-    match metadata?.0.get(KEY_END_USER_BUDGET_ID_METADATA_FIELD)? {
+    match metadata?.0.get(END_USER_BUDGET_ID_FIELD)? {
         JsonData::String(id) if !id.is_empty() => Some(id),
         JsonData::Null
         | JsonData::Bool(_)
@@ -85,7 +85,11 @@ where
             return Ok(None);
         };
         let cache_key = EndUserCacheKey::DefaultEndUserBudget(id).render();
-        if let Some(cached) = self.cache.read_budget(&cache_key).await? {
+        if let Some(cached) = self
+            .cache
+            .read_row::<LiteLLMBudgetTable>(&cache_key)
+            .await?
+        {
             return Ok(Some(cached));
         }
         let fetched = match rows.find_budget(id).await {
@@ -104,7 +108,7 @@ where
         };
         match self
             .cache
-            .write_budget(&cache_key, &fetched, self.cache.management_ttl())
+            .write_row(&cache_key, &fetched, self.cache.management_ttl())
             .await
         {
             Ok(()) => Ok(Some(fetched)),
@@ -124,7 +128,11 @@ where
             return Ok(None);
         };
         let cache_key = EndUserCacheKey::TeamMemberDefaultBudget(budget_id).render();
-        if let Some(cached) = self.cache.read_budget(&cache_key).await? {
+        if let Some(cached) = self
+            .cache
+            .read_row::<LiteLLMBudgetTable>(&cache_key)
+            .await?
+        {
             return Ok(Some(cached));
         }
         let fetched = match rows.find_budget(budget_id).await {
@@ -148,13 +156,13 @@ where
             return Ok(None);
         };
         self.cache
-            .write_budget(&cache_key, &budget, self.cache.management_ttl())
+            .write_row(&cache_key, &budget, self.cache.management_ttl())
             .await?;
         Ok(Some(budget))
     }
 
-    // LiteLLM's resolve_default_end_user_budget: the key's budget first, the proxy default second
-    pub async fn resolve_default_end_user_budget(
+    // LiteLLM's resolve_default_budget: the key's budget first, the proxy default second
+    pub async fn resolve_default_budget(
         &self,
         key_end_user_budget_id: Option<&str>,
     ) -> Result<Option<LiteLLMBudgetTable>, PayloadError> {
