@@ -196,6 +196,37 @@ impl BatchClaimTable for ScriptedTable {
     }
 }
 
+// A table whose duplicate insert skips the row and whose lookup then finds nothing to read.
+struct VanishedRowTable;
+
+impl SpendLogsWriter for VanishedRowTable {
+    type Error = TableFailure;
+
+    fn insert_rows<'call>(
+        &'call self,
+        _rows: &'call [SpendLogRow],
+    ) -> SpendLogFuture<'call, Result<usize, TableFailure>> {
+        Box::pin(async { Ok(0) })
+    }
+}
+
+impl BatchClaimTable for VanishedRowTable {
+    fn find_batch_row<'call>(
+        &'call self,
+        _request_id: &'call str,
+    ) -> SpendLogFuture<'call, Result<Option<BatchChargeRow>, TableFailure>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn take_over<'call>(
+        &'call self,
+        _data: &'call SpendLogRow,
+        _request_id: &'call str,
+    ) -> SpendLogFuture<'call, Result<usize, TableFailure>> {
+        Box::pin(async { Ok(0) })
+    }
+}
+
 async fn record(
     table: &ScriptedTable,
     queue: &SpendLogQueue,
@@ -292,6 +323,19 @@ async fn a_row_of_another_call_type_leaves_the_charge_without_replacing_it() {
     assert_eq!(decimal_of(&rows[0], "spend"), Some(Decimal::new(10, 2)));
     assert!(queue.is_empty());
     assert!(table.take_overs().is_empty());
+}
+
+#[tokio::test]
+async fn a_claim_whose_row_vanishes_still_charges() {
+    let table = VanishedRowTable;
+    let queue = SpendLogQueue::new(usize::MAX);
+    let payload = batch_cost_row("batch-1", SUCCESS, Decimal::new(40, 2));
+    let attachment = SpendLogAttachment {
+        table: &table,
+        queue: &queue,
+    };
+    assert!(record_spend_log(Some(attachment), &payload, false).await);
+    assert!(queue.is_empty());
 }
 
 #[tokio::test]
