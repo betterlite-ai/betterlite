@@ -37,7 +37,7 @@ use crate::api::responses_tool_repair::value::Value as RepairValue;
 use crate::shadow_requests::surfaces::environment::{NoBridge, NoParameters, empty_cache};
 
 use super::completions::{CompletionBody, CompletionClient, CompletionOutput};
-use super::error::CallError;
+use super::error::{AsyncCallError, CallError};
 use super::handler::{async_response_handler, response_handler};
 use super::records::{CallOutcome, CompletionArguments, ResponseCall, ResponseChatCall};
 use super::source::{ChunkSourceConfig, ResponsesChunkSource};
@@ -755,6 +755,30 @@ async fn wrong_kwarg_types_are_refused(#[case] source: &str, #[case] field: &str
     };
     assert!(matches!(error, CallError::Preparation(_)));
     assert!(error.to_string().contains(field));
+    assert!(completions.calls().is_empty());
+}
+
+#[tokio::test]
+async fn async_preparation_error_is_a_call_error() {
+    let completions = FakeCompletions::chat(chat_response("chat_a", "hi"));
+    let world = World::new();
+    let deps = world.deps(&completions);
+    let query = ScriptedQuery::with_history("[]");
+    let sleeper = NoSleep;
+    let tool_calls = IndexMap::new();
+    let session = history(&query, &sleeper, &world.cache, &tool_calls);
+    let request = params(r#"{"model":"gpt-4o-mini","input":"hello"}"#);
+    let caller = kwargs(r#"{"service_tier":5}"#);
+    let call = call("gpt-4o-mini", &request, &caller);
+    let Err(error) = async_response_handler(&deps, &session, call).await else {
+        panic!("the async entry refuses a wrongly typed kwarg before the completion call");
+    };
+    assert!(matches!(
+        error,
+        AsyncCallError::Call(CallError::Preparation(_))
+    ));
+    assert!(error.to_string().contains("service_tier"));
+    assert!(query.lookups().is_empty());
     assert!(completions.calls().is_empty());
 }
 
