@@ -77,7 +77,10 @@ impl Recorder {
             .clone()
     }
 
-    fn record<T: Serialize>(&self, entity: &'static str, lookup: &T) {
+    fn record<T>(&self, entity: &'static str, lookup: &T)
+    where
+        T: Serialize,
+    {
         let recorded = to_value(lookup).unwrap();
         self.inner
             .calls

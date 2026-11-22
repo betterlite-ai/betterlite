@@ -178,7 +178,10 @@ fn budget_gauges(noop_groups: &[GaugeGroup]) -> BudgetGauges<MetricLike<StandIn>
 }
 
 impl Recorder {
-    fn record<T: Serialize>(&self, entity: &'static str, lookup: &T) -> Result<(), LookupError> {
+    fn record<T>(&self, entity: &'static str, lookup: &T) -> Result<(), LookupError>
+    where
+        T: Serialize,
+    {
         let recorded = to_value(lookup).map_err(|error| LookupError {
             message: error.to_string(),
         })?;

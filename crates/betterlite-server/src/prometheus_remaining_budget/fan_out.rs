@@ -45,6 +45,16 @@ struct BudgetLookups<'request> {
     customer: CustomerBudgetLookup<'request>,
 }
 
+type LookupOutcome = Result<(), LookupError>;
+
+type LookupOutcomes = (
+    LookupOutcome,
+    LookupOutcome,
+    LookupOutcome,
+    LookupOutcome,
+    LookupOutcome,
+);
+
 impl<L: RequestBudgetLookups> RemainingBudgetFanOut<L> {
     // the gauges never change after registration, so LiteLLM's per-call no-op check runs once here
     #[must_use]
@@ -72,21 +82,20 @@ impl<L: RequestBudgetLookups> RemainingBudgetFanOut<L> {
         }
         let lookups = lookups_for(request);
         match timeout(self.timeout, self.dispatch(lookups)).await {
-            Ok(results) => log_failures(results),
+            Ok(outcomes) => log_failures(outcomes),
             Err(_) => log_timeout(self.timeout),
         }
     }
 
-    async fn dispatch(&self, lookups: BudgetLookups<'_>) -> [Result<(), LookupError>; 5] {
-        let (key, team, user, org, customer) = join5(
+    async fn dispatch(&self, lookups: BudgetLookups<'_>) -> LookupOutcomes {
+        join5(
             self.lookups.key(lookups.key),
             self.lookups.team(lookups.team),
             self.lookups.user(lookups.user),
             self.lookups.org(lookups.org),
             self.lookups.customer(lookups.customer),
         )
-        .await;
-        [key, team, user, org, customer]
+        .await
     }
 }
 
@@ -114,28 +123,24 @@ fn lookups_for(request: RemainingBudgetRequest<'_>) -> BudgetLookups<'_> {
             user_max_budget: metadata_decimal(request.metadata, "user_api_key_user_max_budget"),
             response_cost: request.response_cost,
             carried: UserBudgetSnapshot::from_metadata(request.metadata),
-            user_email: metadata_text(request.metadata, "user_api_key_user_email"),
+            user_email: request
+                .metadata
+                .get("user_api_key_user_email")
+                .and_then(AgentJson::as_str),
         },
         org: OrgBudgetLookup {
             org_id: request.org_id,
             response_cost: request.response_cost,
             carried: OrgBudgetSnapshot::from_metadata(request.metadata),
-            org_alias: metadata_text(request.metadata, "user_api_key_org_alias"),
+            org_alias: request
+                .metadata
+                .get("user_api_key_org_alias")
+                .and_then(AgentJson::as_str),
         },
         customer: CustomerBudgetLookup {
             end_user_id: request.end_user_id,
             response_cost: request.response_cost,
         },
-    }
-}
-
-fn metadata_text<'metadata>(
-    metadata: &'metadata BTreeMap<String, AgentJson>,
-    name: &str,
-) -> Option<&'metadata str> {
-    match metadata.get(name) {
-        Some(value) => value.as_str(),
-        None => None,
     }
 }
 
@@ -159,13 +164,16 @@ fn log_timeout(limit: Duration) {
     );
 }
 
-fn log_failures(results: [Result<(), LookupError>; 5]) {
-    let names = ["key", "team", "user", "org", "customer"];
-    for (name, result) in names.into_iter().zip(results) {
-        if let Err(error) = result {
-            tracing::debug!(
-                "[Non-Blocking] Prometheus: Budget metric lookup {name} failed: {error}"
-            );
-        }
+fn log_failures(outcomes: LookupOutcomes) {
+    log_failure("key", outcomes.0);
+    log_failure("team", outcomes.1);
+    log_failure("user", outcomes.2);
+    log_failure("org", outcomes.3);
+    log_failure("customer", outcomes.4);
+}
+
+fn log_failure(name: &str, outcome: LookupOutcome) {
+    if let Err(error) = outcome {
+        tracing::debug!("[Non-Blocking] Prometheus: Budget metric lookup {name} failed: {error}");
     }
 }
