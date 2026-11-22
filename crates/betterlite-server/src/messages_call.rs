@@ -233,7 +233,7 @@ pub enum MessagesCallError {
     Context(#[from] Context),
     #[error("litellm.PermissionDeniedError: Model is blocked")]
     Blocked,
-    #[error("'model'")]
+    #[error("model is a required field")]
     MissingModel,
     #[error(transparent)]
     NotFound(#[from] ProxyModelNotFoundError),
@@ -253,8 +253,7 @@ impl MessagesCallError {
             Self::Call(failure) => failure.status.unwrap_or(500),
             Self::Context(context) => context.status,
             Self::Blocked => 403,
-            Self::MissingModel => 500,
-            Self::NotFound(_) | Self::UserConfig => 400,
+            Self::MissingModel | Self::NotFound(_) | Self::UserConfig => 400,
         }
     }
 

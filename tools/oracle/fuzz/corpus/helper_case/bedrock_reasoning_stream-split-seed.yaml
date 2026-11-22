@@ -1,0 +1,5 @@
+kind: helper
+name: split-seed
+call: {"bedrock_reasoning_stream": {"step": {"split": {"fragments": ["<reasoning>a</rea", "soning> b"], "messages": ["<reasoning>a</reasoning> b"]}}}}
+env: {}
+compare: {ignore: []}
