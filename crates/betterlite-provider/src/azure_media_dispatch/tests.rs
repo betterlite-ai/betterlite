@@ -1,8 +1,16 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_azure::endpoints::projection::{LiteLlmParams, SessionKind};
+use betterlite_azure::credentials::source::CredentialSources;
+use betterlite_azure::endpoints::get_client::ClientCache;
+use betterlite_azure::endpoints::projection::{
+    ClientIdentity, ClientKind, LiteLlmParams, SessionKind,
+};
+use betterlite_azure::image_transport::ImageClock;
 use betterlite_azure::images::generation::GeneratedImage;
+use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::image_edits::file::ImageEditFile;
@@ -19,9 +27,10 @@ use super::call::{
 };
 use super::error::AzureMediaError;
 use super::parts::{form_parts, header_map};
-use super::test_support::{Inputs, Outcome, Reply, exchange, exchange_request};
-use super::{AzureMediaResult, ImageEditOutcome, MediaPart};
-use crate::operation::{OpenAiMediaRequest, OperationRequest, OperationResult};
+use super::test_support::{Cache, Clock, NoSources, Outcome, Reply, exchange, exchange_request};
+use super::{AzureMediaResult, ImageEditOutcome};
+use crate::openai_media_dispatch::OpenAiMediaRequest;
+use crate::operation::{OperationRequest, OperationResult};
 
 mod transcription;
 
@@ -59,7 +68,6 @@ async fn azure_media_dispatch_cases(#[case] family: Family) {
 #[tokio::test]
 async fn azure_media_dispatch_unsupported_operation() {
     let outcome = exchange_request(
-        &Inputs::default(),
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
         AzureMediaOperation::OpenAiSpeech,
         Vec::new(),
@@ -128,7 +136,6 @@ async fn image_generation() {
 // the sync leg sends the deployment-scoped body without the model and decodes the reply
 async fn sync_generation() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageGeneration(Box::new(generation(
             "dall-e-3",
             "2025-02-01-preview",
@@ -167,7 +174,6 @@ async fn sync_generation() {
 async fn polling_generation() {
     let terminal = r#"{"status":"succeeded","result":{"created":1700000000,"data":[{"b64_json":"aW1hZ2U="}]}}"#;
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageGeneration(Box::new(generation(
             "dall-e-2",
             "2023-06-01-preview",
@@ -201,7 +207,6 @@ async fn polling_generation() {
 // a delegated call takes the async leg and applies the family's reply defaults
 async fn async_generation() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageGeneration(Box::new(generation(
             "gpt-image-1",
             "2025-04-01-preview",
@@ -219,7 +224,6 @@ async fn async_generation() {
 
 async fn generation_failure() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageGeneration(Box::new(generation(
             "dall-e-3",
             "2025-02-01-preview",
@@ -268,16 +272,8 @@ async fn image_edit() {
     edit_bad_headers().await;
 }
 
-fn part<'list>(parts: &'list [MediaPart], field: &str) -> &'list MediaPart {
-    parts
-        .iter()
-        .find(|part| part.field == field)
-        .expect("the edit sends this part")
-}
-
 async fn edit_success() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageEdit(Box::new(edit_operation())),
         vec![Reply::json(200, DALL_E_BODY)],
     )
@@ -285,21 +281,20 @@ async fn edit_success() {
     let edit = edit_result(&outcome);
     assert_eq!(edit.reply.data.len(), 1);
     assert_eq!(
-        edit.request.url,
+        edit.url,
         format!(
             "{AZURE}/openai/deployments/gpt-image-1/images/edits?api-version=2025-04-01-preview"
         )
     );
+    assert_eq!(edit.headers.get("api-key"), Some(&API_KEY.to_owned()));
     assert_eq!(
-        edit.request.headers.get("api-key"),
-        Some(&API_KEY.to_owned())
+        edit.data.get("prompt"),
+        Some(&Json::Text(String::from("make it blue")))
     );
-    assert_eq!(part(&edit.request.parts, "prompt").body, b"make it blue");
-    assert_eq!(part(&edit.request.parts, "n").body, b"2");
-    assert_eq!(
-        part(&edit.request.parts, "image[]").filename.as_deref(),
-        Some("cat.png")
-    );
+    assert_eq!(edit.data.get("n"), Some(&Json::Number(Number::from(2))));
+    let (field, file) = &edit.files[0];
+    assert_eq!(field, "image[]");
+    assert_eq!(file.filename.as_deref(), Some("cat.png"));
     let sent = &outcome.fixture.images()[0];
     let body = String::from_utf8_lossy(&sent.body);
     assert!(body.contains("name=\"image[]\""));
@@ -314,14 +309,13 @@ async fn edit_extra_headers() {
         ..edit_operation()
     };
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageEdit(Box::new(operation)),
         vec![Reply::json(200, DALL_E_BODY)],
     )
     .await;
     let edit = edit_result(&outcome);
     assert_eq!(
-        edit.request.headers.get("api-key").map(String::as_str),
+        edit.headers.get("api-key").map(String::as_str),
         Some("caller-key")
     );
     assert_eq!(
@@ -333,7 +327,6 @@ async fn edit_extra_headers() {
 // a non-2xx reply raises the upstream status with the reply text before any transform reads the body
 async fn edit_failure() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageEdit(Box::new(edit_operation())),
         vec![Reply::json(400, "bad edit")],
     )
@@ -344,7 +337,6 @@ async fn edit_failure() {
     assert_eq!(error.to_string(), "bad edit");
 
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageEdit(Box::new(edit_operation())),
         vec![Reply {
             status: 502,
@@ -367,7 +359,6 @@ async fn edit_bad_field() {
         ..edit_operation()
     };
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageEdit(Box::new(operation)),
         Vec::new(),
     )
@@ -383,13 +374,13 @@ async fn edit_bad_field() {
 
 // a form value that carries the boundary cannot be encoded, and the send never happens
 async fn edit_boundary_collision() {
+    let boundary = Uuid::from_u128(7);
     let operation = ImageEditOperation {
-        prompt: Some(String::from("--7")),
-        boundary: Uuid::from_u128(7),
+        prompt: Some(format!("--{boundary}")),
+        boundary,
         ..edit_operation()
     };
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::ImageEdit(Box::new(operation)),
         Vec::new(),
     )
@@ -411,7 +402,6 @@ async fn edit_bad_headers() {
             ..edit_operation()
         };
         let outcome = exchange(
-            &Inputs::default(),
             AzureMediaOperation::ImageEdit(Box::new(operation)),
             Vec::new(),
         )
@@ -427,12 +417,7 @@ async fn edit_bad_headers() {
 }
 
 async fn openai_speech() {
-    let outcome = exchange(
-        &Inputs::default(),
-        AzureMediaOperation::OpenAiSpeech,
-        Vec::new(),
-    )
-    .await;
+    let outcome = exchange(AzureMediaOperation::OpenAiSpeech, Vec::new()).await;
     let error = error_of(&outcome);
     assert!(matches!(
         error,
@@ -447,12 +432,7 @@ async fn openai_speech() {
 }
 
 async fn native_ssml() {
-    let outcome = exchange(
-        &Inputs::default(),
-        AzureMediaOperation::NativeSsml,
-        Vec::new(),
-    )
-    .await;
+    let outcome = exchange(AzureMediaOperation::NativeSsml, Vec::new()).await;
     let error = error_of(&outcome);
     assert!(matches!(
         error,
@@ -512,7 +492,7 @@ fn header_map_rejects_unusable_names_and_values() {
         String::from("api-key"),
         String::from("secret"),
     )]));
-    assert!(good.is_ok());
+    good.expect("a valid header name and value are accepted");
 }
 
 fn header(headers: &HeaderMap, name: &str) -> Option<&str> {
@@ -564,4 +544,39 @@ fn native_operation() -> NativeTranscriptionOperation {
         environment_base: None,
         timeout: Duration::from_secs(30),
     }
+}
+
+// the fixture clock stays at one fixed instant, so polling sees no elapsed time
+#[test]
+fn fixture_clock_is_pinned() {
+    assert_eq!(Clock.now(), Duration::from_secs(1));
+}
+
+#[test]
+fn fixture_cache_round_trips() {
+    let mut cache = Cache::default();
+    let identity = ClientIdentity {
+        is_async: true,
+        hashed_api_key: Some(String::from("key")),
+        hashed_ad_token: None,
+        provider_identity: String::from("provider"),
+    };
+    assert_eq!(cache.get(&identity), None);
+    cache.set(identity.clone(), ClientKind::AsyncAzureOpenAi, false);
+    assert_eq!(cache.get(&identity), Some(ClientKind::AsyncAzureOpenAi));
+}
+
+#[test]
+fn no_sources_resolve_nothing() {
+    let input = OidcExchangeInput {
+        azure_ad_token: SecretString::from("assertion"),
+        azure_client_id: None,
+        azure_tenant_id: None,
+        scope: None,
+    };
+    let error = NoSources
+        .oidc(&input)
+        .expect_err("the fixture resolves no credential source");
+    assert_eq!(error.class, "RuntimeError");
+    assert_eq!(error.message, "no credential source in this fixture");
 }

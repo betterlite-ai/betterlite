@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_azure::images::generation::GeneratedImage;
 use betterlite_azure::transcription::call::reply::TranscriptionReply;
 use betterlite_azure::transcription::native::reply::NativeTranscriptionReply;
+use betterlite_openai::api::image_contracts::records::{ImageFiles, ImageParams};
 use betterlite_openai::image_generation::reply::ImageGenerationReply;
-use http::Method;
 
 pub mod call;
 pub mod error;
@@ -31,27 +31,12 @@ pub enum AzureMediaResult {
     NativeTranscription(Box<NativeTranscriptionReply>),
 }
 
-// The edit's multipart request beside the reply its response transform reads
+// The edit's resolved request and form beside the reply its response transform reads
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageEditOutcome {
-    pub request: AzureMediaPrepared,
-    pub reply: ImageGenerationReply,
-}
-
-// The multipart request the edit sends through B535's transport
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AzureMediaPrepared {
-    pub method: Method,
     pub url: String,
     pub headers: BTreeMap<String, String>,
-    pub parts: Vec<MediaPart>,
-}
-
-// One multipart entry in wire order: a form field or an uploaded file
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MediaPart {
-    pub field: String,
-    pub filename: Option<String>,
-    pub content_type: Option<String>,
-    pub body: Vec<u8>,
+    pub data: ImageParams,
+    pub files: ImageFiles,
+    pub reply: ImageGenerationReply,
 }

@@ -148,7 +148,7 @@ pub struct Clock;
 
 impl ImageClock for Clock {
     fn now(&self) -> Duration {
-        Duration::ZERO
+        Duration::from_secs(1)
     }
 
     fn pause(&self, _seconds: i64) -> impl Future<Output = ()> + Send {
@@ -239,43 +239,23 @@ pub struct Recorder {
 
 impl ImageGenerationLogger for Recorder {
     fn pre_call(&mut self, _record: PreCallRecord) -> Result<(), PrePostError> {
-        self.image_pre += 1;
+        self.image_pre = self.image_pre.saturating_add(1);
         Ok(())
     }
 
     fn post_call(&mut self, _record: PostCallRecord) {
-        self.image_post += 1;
+        self.image_post = self.image_post.saturating_add(1);
     }
 }
 
 impl AzureTranscriptionLogger for Recorder {
     fn pre_call(&mut self, _record: AzureTranscriptionPreCall<'_>) -> Result<(), PrePostError> {
-        self.audio_pre += 1;
+        self.audio_pre = self.audio_pre.saturating_add(1);
         Ok(())
     }
 
     fn post_call(&mut self, _record: AzureTranscriptionPostCall<'_>) {
-        self.audio_post += 1;
-    }
-}
-
-pub struct Inputs {
-    pub endpoints: EndpointSettings,
-    pub credentials: AzureCredentials,
-    pub environment: BTreeMap<String, String>,
-    pub refresh_enabled: bool,
-    pub polling_timeout: Duration,
-}
-
-impl Default for Inputs {
-    fn default() -> Self {
-        Self {
-            endpoints: EndpointSettings::default(),
-            credentials: AzureCredentials::default(),
-            environment: BTreeMap::new(),
-            refresh_enabled: false,
-            polling_timeout: Duration::from_secs(600),
-        }
+        self.audio_post = self.audio_post.saturating_add(1);
     }
 }
 
@@ -285,13 +265,8 @@ pub struct Outcome {
     pub logger: Recorder,
 }
 
-pub async fn exchange(
-    inputs: &Inputs,
-    operation: AzureMediaOperation,
-    replies: Vec<Reply>,
-) -> Outcome {
+pub async fn exchange(operation: AzureMediaOperation, replies: Vec<Reply>) -> Outcome {
     exchange_request(
-        inputs,
         OperationRequest::AzureMedia(AzureMediaRequest),
         operation,
         replies,
@@ -300,7 +275,6 @@ pub async fn exchange(
 }
 
 pub async fn exchange_request(
-    inputs: &Inputs,
     request: OperationRequest,
     operation: AzureMediaOperation,
     replies: Vec<Reply>,
@@ -311,16 +285,19 @@ pub async fn exchange_request(
     };
     let clock = Clock;
     let sources = NoSources;
+    let endpoints = EndpointSettings::default();
+    let credentials = AzureCredentials::default();
+    let environment: BTreeMap<String, String> = BTreeMap::new();
     let mut cache = Cache::default();
     let mut logger = Recorder::default();
     let result = {
         let mut runtime = MediaRuntime {
-            endpoints: &inputs.endpoints,
-            credentials: &inputs.credentials,
-            environment: &inputs.environment,
+            endpoints: &endpoints,
+            credentials: &credentials,
+            environment: &environment,
             sources: &sources,
-            refresh_enabled: inputs.refresh_enabled,
-            polling_timeout: inputs.polling_timeout,
+            refresh_enabled: false,
+            polling_timeout: Duration::from_secs(600),
             constructor: &constructor,
             clock: &clock,
             transport: &fixture,

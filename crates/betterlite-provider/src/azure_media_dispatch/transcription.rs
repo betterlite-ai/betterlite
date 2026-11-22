@@ -42,44 +42,36 @@ where
     T: TranscriptionTransport,
     L: AzureTranscriptionLogger,
 {
-    let TranscriptionOperation {
-        input,
-        file,
-        boundary,
-        model,
-        optional_params,
-        atranscription,
-        api_version,
-        api_key,
-        api_base,
-        azure_ad_token,
-        max_retries,
-        timeout,
-        params,
-        provider,
-        supplied,
-        session,
-        refresh_enabled,
-    } = operation;
     let call = AzureTranscriptionCall {
-        input,
-        file: &file,
-        boundary,
-        model: &model,
-        optional_params,
-        atranscription,
-        api_version,
-        api_key,
-        api_base,
-        azure_ad_token,
-        max_retries,
-        timeout,
-        params,
-        provider,
-        supplied,
-        session,
-        refresh_enabled,
+        input: operation.input,
+        file: &operation.file,
+        boundary: operation.boundary,
+        model: &operation.model,
+        optional_params: operation.optional_params,
+        atranscription: operation.atranscription,
+        api_version: operation.api_version,
+        api_key: operation.api_key,
+        api_base: operation.api_base,
+        azure_ad_token: operation.azure_ad_token,
+        max_retries: operation.max_retries,
+        timeout: operation.timeout,
+        params: operation.params,
+        provider: operation.provider,
+        supplied: operation.supplied,
+        session: operation.session,
+        refresh_enabled: operation.refresh_enabled,
     };
+    exchange_call(&call, runtime).await
+}
+
+async fn exchange_call<C, K, T, L>(
+    call: &AzureTranscriptionCall<'_>,
+    runtime: &mut MediaRuntime<'_, C, K, T, L>,
+) -> Result<TranscriptionReply, AzureMediaError>
+where
+    T: TranscriptionTransport,
+    L: AzureTranscriptionLogger,
+{
     let mut refresh = RefreshProviderCache::new(runtime.sources);
     let mut wiring = ClientWiring {
         settings: runtime.endpoints,
@@ -88,65 +80,20 @@ where
         cache: &mut *runtime.cache,
         refresh: &mut refresh,
     };
-    let (outbound, pending) = audio_transcriptions(&call, &mut wiring, &mut *runtime.logger)?;
+    let (outbound, pending) = audio_transcriptions(call, &mut wiring, &mut *runtime.logger)?;
     let sent = runtime.transport.send(outbound).await;
     Ok(finish_transcription(pending, sent, &mut *runtime.logger)?)
 }
 
 // AzureSpeechAudioTranscriptionConfig: validate the Speech auth, then send the raw audio to the short-audio endpoint.
 pub(super) async fn native<C, K, T, L>(
-    operation: NativeTranscriptionOperation,
+    operation: &NativeTranscriptionOperation,
     runtime: &MediaRuntime<'_, C, K, T, L>,
 ) -> Result<NativeTranscriptionReply, AzureMediaError>
 where
     T: TranscriptionTransport,
 {
-    let NativeTranscriptionOperation {
-        filename,
-        content,
-        optional_params,
-        headers,
-        api_key,
-        environment_key,
-        api_base,
-        environment_base,
-        timeout,
-    } = operation;
-    let validated = validate_environment(&headers, api_key.as_ref(), environment_key.as_ref())?;
-    let endpoint = complete_url(
-        api_base.as_deref(),
-        environment_base.as_deref(),
-        &optional_params,
-    )?;
-    let audio = AudioFile::Tuple(AudioTuple {
-        filename: &filename,
-        content: Some(TupleContent::Bytes(&content)),
-    });
-    let transformed = transform_request(audio, &NoFiles)?;
-    let payload = native_bytes(transformed.data)?;
-    // the provider config's content type replaces the validated one, as the HTTP handler does after validate_environment
-    let content_type_text = transformed
-        .content_type
-        .unwrap_or_else(|| String::from(DEFAULT_CONTENT_TYPE));
-    let content_type = HeaderValue::from_str(&content_type_text).map_err(|source| {
-        AzureMediaError::HeaderValue {
-            name: String::from("Content-Type"),
-            source,
-        }
-    })?;
-    let mut request_headers = header_map(&validated)?;
-    request_headers.insert(CONTENT_TYPE, content_type.clone());
-    let outbound = OutboundRequest {
-        method: Method::POST,
-        url: Url::parse(&endpoint).map_err(AzureMediaError::Url)?,
-        query: Vec::new(),
-        headers: request_headers,
-        body: RequestBody::Bytes {
-            content_type,
-            data: payload,
-        },
-        deadline: timeout,
-    };
+    let outbound = native_request(operation)?;
     let sent = runtime
         .transport
         .send(outbound)
@@ -168,6 +115,50 @@ where
     )?)
 }
 
+fn native_request(
+    operation: &NativeTranscriptionOperation,
+) -> Result<OutboundRequest, AzureMediaError> {
+    let validated = validate_environment(
+        &operation.headers,
+        operation.api_key.as_ref(),
+        operation.environment_key.as_ref(),
+    )?;
+    let endpoint = complete_url(
+        operation.api_base.as_deref(),
+        operation.environment_base.as_deref(),
+        &operation.optional_params,
+    )?;
+    let audio = AudioFile::Tuple(AudioTuple {
+        filename: &operation.filename,
+        content: Some(TupleContent::Bytes(&operation.content)),
+    });
+    let transformed = transform_request(audio, &NoFiles)?;
+    let payload = native_bytes(transformed.data)?;
+    // the provider config's content type replaces the validated one, as the HTTP handler does after validate_environment
+    let content_type_text = transformed
+        .content_type
+        .unwrap_or_else(|| String::from(DEFAULT_CONTENT_TYPE));
+    let content_type = HeaderValue::from_str(&content_type_text).map_err(|source| {
+        AzureMediaError::HeaderValue {
+            name: String::from("Content-Type"),
+            source,
+        }
+    })?;
+    let mut request_headers = header_map(&validated)?;
+    request_headers.insert(CONTENT_TYPE, content_type.clone());
+    Ok(OutboundRequest {
+        method: Method::POST,
+        url: Url::parse(&endpoint).map_err(AzureMediaError::Url)?,
+        query: Vec::new(),
+        headers: request_headers,
+        body: RequestBody::Bytes {
+            content_type,
+            data: payload,
+        },
+        deadline: operation.timeout,
+    })
+}
+
 // the native transform always produces the audio bytes; the other variant cannot come out of process_audio_file
 pub(super) fn native_bytes(data: AudioTranscriptionData) -> Result<Vec<u8>, AzureMediaError> {
     match data {
@@ -177,7 +168,7 @@ pub(super) fn native_bytes(data: AudioTranscriptionData) -> Result<Vec<u8>, Azur
 }
 
 // the native transform reads no path, and a path arriving here is a caller error rather than a filesystem read
-struct NoFiles;
+pub(super) struct NoFiles;
 
 impl AuthorizedAudioFiles for NoFiles {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {

@@ -23,21 +23,8 @@ pub enum AzureMediaOperation {
     NativeTranscription(Box<NativeTranscriptionOperation>),
 }
 
-impl AzureMediaOperation {
-    #[must_use]
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::ImageGeneration(_) => "image_generation",
-            Self::ImageEdit(_) => "image_edit",
-            Self::OpenAiSpeech => "openai_speech",
-            Self::NativeSsml => "native_ssml",
-            Self::Transcription(_) => "transcription",
-            Self::NativeTranscription(_) => "native_transcription",
-        }
-    }
-}
-
 // AzureChatCompletion.image_generation's arguments as the caller resolved them
+#[derive(Default)]
 pub struct ImageGenerationOperation {
     pub model: Option<String>,
     pub prompt: String,
@@ -56,6 +43,7 @@ pub struct ImageGenerationOperation {
 }
 
 // AzureImageEditConfig's inputs: the edit form fields, the auth values and the caller's boundary
+#[derive(Default)]
 pub struct ImageEditOperation {
     pub model: String,
     pub prompt: Option<String>,

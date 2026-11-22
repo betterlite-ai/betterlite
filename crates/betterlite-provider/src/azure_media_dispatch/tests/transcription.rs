@@ -1,7 +1,11 @@
+use std::io;
+use std::path::Path;
+
 use betterlite_azure::transcription::native::NativeError;
 use betterlite_azure::transcription::native::reply::NativeTranscriptionReply;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles;
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
@@ -39,7 +43,6 @@ fn native_result(outcome: &Outcome) -> &NativeTranscriptionReply {
 
 async fn openai_sync() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::Transcription(Box::new(transcription_operation(false))),
         vec![
             Reply::json(200, r#"{"text":"hello"}"#).with_header("content-type", "application/json"),
@@ -58,12 +61,12 @@ async fn openai_sync() {
     assert_eq!(sent.method, Method::POST);
     assert_eq!(
         sent.url.as_str(),
-        format!("{AZURE}/openai/audio/transcriptions?api-version=2024-06-01")
+        format!("{AZURE}/openai/deployments/whisper/audio/transcriptions?api-version=2024-06-01")
     );
     let RequestBody::Multipart { parts, boundary } = &sent.body else {
         panic!("the transcription request is multipart");
     };
-    assert_eq!(boundary, "11");
+    assert_eq!(boundary, "00000000-0000-0000-0000-00000000000b");
     let model = parts
         .iter()
         .find(|part| part.name == "model")
@@ -75,15 +78,11 @@ async fn openai_sync() {
         .expect("the request carries the audio");
     assert_eq!(file.data, b"abc");
     assert_eq!(file.file_name.as_deref(), Some("a.wav"));
-    assert_eq!(
-        header(&sent.headers, "authorization"),
-        Some("Bearer sk-azure-fixture")
-    );
+    assert_eq!(header(&sent.headers, "api-key"), Some("sk-azure-fixture"));
 }
 
 async fn openai_async() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::Transcription(Box::new(transcription_operation(true))),
         vec![
             Reply::json(200, r#"{"text":"hello"}"#).with_header("content-type", "application/json"),
@@ -102,7 +101,6 @@ async fn openai_failure() {
     let body =
         r#"{"error":{"message":"slow down","type":"rate_limit_error","param":null,"code":"429"}}"#;
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::Transcription(Box::new(transcription_operation(false))),
         vec![Reply::json(429, body).with_header("content-type", "application/json")],
     )
@@ -115,7 +113,6 @@ async fn openai_failure() {
 
 async fn native_success() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::NativeTranscription(Box::new(native_operation())),
         vec![Reply::json(
             200,
@@ -162,7 +159,6 @@ async fn native_content_type() {
         ..native_operation()
     };
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::NativeTranscription(Box::new(operation)),
         vec![Reply::json(
             200,
@@ -183,7 +179,6 @@ async fn native_content_type() {
 
 async fn native_recognition_failure() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::NativeTranscription(Box::new(native_operation())),
         vec![Reply::json(200, r#"{"RecognitionStatus":"Error"}"#)],
     )
@@ -199,7 +194,6 @@ async fn native_recognition_failure() {
 
 async fn native_http_failure() {
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::NativeTranscription(Box::new(native_operation())),
         vec![Reply::json(401, "denied").with_header("x-request-id", "req-1")],
     )
@@ -226,7 +220,6 @@ async fn native_missing_key() {
         ..native_operation()
     };
     let outcome = exchange(
-        &Inputs::default(),
         AzureMediaOperation::NativeTranscription(Box::new(operation)),
         Vec::new(),
     )
@@ -247,4 +240,20 @@ fn native_bytes_guard() {
             .expect_err("an object cannot be the native request body");
     assert!(matches!(error, AzureMediaError::NativeRequest));
     assert_eq!(error.status(), None);
+}
+
+// the native transform reads no path, and a path reaching it is a caller error rather than a filesystem read
+#[test]
+fn native_files_reject_any_path() {
+    let path = Path::new("a.wav");
+    let read = super::super::transcription::NoFiles
+        .read(path)
+        .expect_err("the native transform reads no path");
+    assert_eq!(read.kind(), io::ErrorKind::NotFound);
+    assert_eq!(read.to_string(), "a.wav");
+    let open = super::super::transcription::NoFiles
+        .open(path)
+        .err()
+        .expect("the native transform opens no path");
+    assert_eq!(open.kind(), io::ErrorKind::NotFound);
 }

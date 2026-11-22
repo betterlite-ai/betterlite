@@ -27,7 +27,6 @@ where
     let OperationRequest::AzureMedia(AzureMediaRequest) = request else {
         return Err(AzureMediaError::UnsupportedOperation);
     };
-    let operation_name = operation.name();
     let result = match operation {
         AzureMediaOperation::ImageGeneration(call) => {
             AzureMediaResult::ImageGeneration(Box::new(image::generation(*call, runtime).await?))
@@ -36,16 +35,21 @@ where
             AzureMediaResult::ImageEdit(Box::new(edit::image_edit(*call, runtime).await?))
         }
         // B537 replaces both arms with the speech leaves; until then the composition fails instead of sending anything
-        AzureMediaOperation::OpenAiSpeech | AzureMediaOperation::NativeSsml => {
+        AzureMediaOperation::OpenAiSpeech => {
             return Err(AzureMediaError::Unavailable {
-                operation: operation_name,
+                operation: "openai_speech",
+            });
+        }
+        AzureMediaOperation::NativeSsml => {
+            return Err(AzureMediaError::Unavailable {
+                operation: "native_ssml",
             });
         }
         AzureMediaOperation::Transcription(call) => {
             AzureMediaResult::Transcription(Box::new(transcription::openai(*call, runtime).await?))
         }
         AzureMediaOperation::NativeTranscription(call) => AzureMediaResult::NativeTranscription(
-            Box::new(transcription::native(*call, runtime).await?),
+            Box::new(transcription::native(&call, runtime).await?),
         ),
     };
     Ok(OperationResult::AzureMedia(result))
