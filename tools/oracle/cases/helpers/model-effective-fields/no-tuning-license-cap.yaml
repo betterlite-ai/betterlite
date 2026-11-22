@@ -1,0 +1,52 @@
+kind: helper
+name: model-effective-fields-no-tuning-license-cap
+call:
+  model_effective_fields:
+    salt_key: b1213-salt
+    ptu_enabled: false
+    calls:
+      - function: tuning_write
+        incoming: {complexity_router_config: {classifier_type: heuristic, code_keywords: [driver]}}
+        existing: {model: auto_router/complexity_router, complexity_router_default_model: gpt-4o, complexity_router_config: {classifier_type: heuristic, code_keywords: [kernel]}}
+      - function: tuning_write
+        incoming: {model: auto_router/complexity_router, complexity_router_default_model: gpt-4o, complexity_router_config: {classifier_type: heuristic, code_keywords: [kernel]}}
+        existing: null
+      - function: strategy_router_write
+        incoming: {complexity_router_config: {classifier_type: heuristic}}
+        existing: {model: -eJlSAaF7mB3qQYOFQtKB1704NdBclX4Jqs0Oh0BFCHJbkm5c4hskLnBXUAOjg==}
+      - function: strategy_router_write
+        incoming: {complexity_router_config: {classifier_type: heuristic}, complexity_router_default_model: gpt-4o}
+        existing: {model: dpoheJoC1tsLKBOn-0AUhHlb9U9fnIQsHkI2imebPPl1ClGTK5JQzijag_JSMWpjXPBPaOVFqD4y7mgLqNjXP2sqN1d_}
+      - function: strategy_router_write
+        incoming: {model: auto_router/complexity_router, complexity_router_default_model: gpt-4o, tiers: {SIMPLE: gpt-4o}}
+        existing: null
+      - function: strategy_router_write
+        incoming: {complexity_router_config: {classifier_type: unknown}}
+        existing: null
+      - function: strategy_router_write
+        incoming: {model: auto_router/}
+        existing: null
+      - function: strategy_router_write
+        incoming: {tpm: 5}
+        existing: {model: gpt-4o}
+      - function: effective_params
+        incoming: {complexity_router_config: {classifier_type: jev, jev_classifier_config: {model: m2}}}
+        existing: {model: gpt-4o, complexity_router_config: {classifier_type: jev, jev_classifier_config: {api_key: k, api_base: b, model: m1}}}
+      - function: effective_params
+        incoming: {model: auto_router/complexity_router, complexity_router_config: {classifier_type: jev, jev_classifier_config: {api_base: other}}}
+        existing: {model: gpt-4o, complexity_router_config: {classifier_type: jev, jev_classifier_config: {api_key: k, api_base: b}}}
+      - function: member_marker
+        incoming: {model: auto_router/complexity_router_b}
+        existing_params: {model: dpoheJoC1tsLKBOn-0AUhHlb9U9fnIQsHkI2imebPPl1ClGTK5JQzijag_JSMWpjXPBPaOVFqD4y7mgLqNjXP2sqN1d_}
+        existing_model_info: {id: r1, member_auto_router: true}
+      - function: member_marker
+        incoming: {model: auto_router/complexity_router}
+        existing_params: {model: dpoheJoC1tsLKBOn-0AUhHlb9U9fnIQsHkI2imebPPl1ClGTK5JQzijag_JSMWpjXPBPaOVFqD4y7mgLqNjXP2sqN1d_}
+        existing_model_info: {id: r1, member_auto_router: true}
+      - function: member_marker
+        incoming: null
+        existing_params: {model: gpt-4o}
+        existing_model_info: {id: r1}
+env:
+  LITELLM_SALT_KEY: b1213-salt
+compare: {ignore: []}

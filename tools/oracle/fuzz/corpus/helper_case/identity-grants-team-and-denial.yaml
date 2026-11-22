@@ -1,0 +1,25 @@
+kind: helper
+name: identity-grants-team-and-denial-seed
+call:
+  identity_grants:
+    users:
+      - user: {user_id: legacy-id, models: [gpt-4o]}
+        user_id: new-id
+    denials:
+      - kind: not_a_member
+        user_id: user-1
+        team_id: team-1
+    teams:
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: '{"fast": "gpt-4o"}'
+          members_with_roles:
+            - {user_id: user-1, role: admin}
+        membership: {user_id: user-1, team_id: team-1, spend: 1.5}
+        user_id: user-1
+env: {}
+compare: {ignore: []}
