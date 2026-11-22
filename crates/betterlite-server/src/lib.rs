@@ -64,6 +64,7 @@ pub mod coordination_redis_settings;
 pub mod cost_estimate_route;
 pub mod cost_service;
 pub mod cost_settings_routes;
+pub mod credential_headers;
 pub mod credentials;
 pub mod custom_auth;
 pub mod custom_headers;

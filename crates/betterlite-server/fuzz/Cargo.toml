@@ -460,3 +460,17 @@ path = "fuzz_targets/search_tool_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "coordination_settings"
+path = "fuzz_targets/coordination_settings.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "router_read"
+path = "fuzz_targets/router_read.rs"
+test = false
+doc = false
+bench = false
