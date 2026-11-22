@@ -121,9 +121,7 @@ class CaseWriter(DBSpendUpdateWriter):
 
 
 def row_view(row: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
-    view: dict[str, JsonValue] = {}
-    for field, value in row.items():
-        view[field] = value
+    view: dict[str, JsonValue] = dict(row)
     spend = row.get("spend")
     if spend is not None:
         view["spend"] = f"{NUMBER.validate_python(spend):.10f}"
