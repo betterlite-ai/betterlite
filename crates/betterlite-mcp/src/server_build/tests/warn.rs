@@ -32,6 +32,21 @@ fn warn_shared_identifier_prefixes_logs_once_per_group() {
 }
 
 #[test]
+fn warn_shared_server_name_logs_once() {
+    let first = server(
+        r#"{"server_id":"srv-1","name":"test-one","transport":"http","server_name":"Same"}"#,
+    );
+    let second = server(
+        r#"{"server_id":"srv-2","name":"test-two","transport":"http","server_name":"same"}"#,
+    );
+    let (captured, _guard) = capture();
+    warn_on_shared_identifier_prefixes(&[first, second]);
+    let text = captured.text();
+    assert!(text.contains("MCP servers ['srv-1', 'srv-2'] share the identifier 'same';"));
+    assert_eq!(text.matches("share the identifier").count(), 1);
+}
+
+#[test]
 fn warn_legacy_delegate_auth_needs_no_client_credentials() {
     let legacy = server(
         r#"{"server_id":"srv-1","name":"test-server","transport":"http","auth_type":"oauth2","delegate_auth_to_upstream":true}"#,

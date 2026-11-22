@@ -82,8 +82,12 @@ fn json_cost_info_drops_uncoercible_values_with_a_warning() {
         r#"{"mcp_server_cost_info":{"tool_name_to_cost_per_query":{}},"server_name":"test-name"}"#
     );
     let logged = captured.text();
-    assert!(logged.contains("has non-numeric default_cost_per_query 'free'; ignoring it"));
-    assert!(logged.contains("has non-numeric cost True for tool 'tool_a'; ignoring it"));
+    assert!(logged.contains(
+        "MCP server 'test-name' has non-numeric default_cost_per_query 'free'; ignoring it"
+    ));
+    assert!(logged.contains(
+        "MCP server 'test-name' has non-numeric cost True for tool 'tool_a'; ignoring it"
+    ));
 }
 
 #[test]

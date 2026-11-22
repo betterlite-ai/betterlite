@@ -187,3 +187,70 @@ async fn fields_oauth2_flow_is_explicit_only() {
         Some(OAuth2Flow::ClientCredentials)
     );
 }
+
+#[tokio::test]
+async fn fields_deferred_slot_store_records_the_build_flag() {
+    let registry = Arc::new(RwLock::new(ServerRegistry::new(
+        RegistrySettings {
+            public_mcp_servers: Vec::new(),
+            public_hub_strict: false,
+            internal_ip_ranges: None,
+        },
+        Vec::new(),
+        Vec::new(),
+    )));
+    let slots = DiscoverySlots::new(
+        registry,
+        FakeFetcher::default(),
+        TokioClock,
+        settings_with_startup(false),
+        TaskTracker::new(),
+    );
+    tokio::task::yield_now().await;
+    DeferredSlots::record_deferred(&slots, "srv-1", true);
+    assert!(slots.slot_exists("srv-1"));
+    DeferredSlots::record_deferred(&slots, "srv-1", false);
+    assert!(!slots.slot_exists("srv-1"));
+}
+
+#[tokio::test]
+async fn fields_tool_name_maps_drop_empty_ones() {
+    let named = r#"{"server_id":"srv-1","transport":"http","tool_name_to_display_name":{"tool-a":"Display A"},"tool_name_to_description":{"tool-a":"Description A"}}"#;
+    let server = built(named).await;
+    let display = BTreeMap::from([(String::from("tool-a"), String::from("Display A"))]);
+    assert_eq!(server.fields.tool_name_to_display_name, Some(display));
+    let description = BTreeMap::from([(String::from("tool-a"), String::from("Description A"))]);
+    assert_eq!(server.fields.tool_name_to_description, Some(description));
+    let empty = r#"{"server_id":"srv-1","transport":"http","tool_name_to_display_name":{},"tool_name_to_description":{}}"#;
+    let bare = built(empty).await;
+    assert!(bare.fields.tool_name_to_display_name.is_none());
+    assert!(bare.fields.tool_name_to_description.is_none());
+}
+
+#[tokio::test]
+async fn fields_empty_column_falls_back_to_the_blob() {
+    let source = r#"{"server_id":"srv-1","transport":"http","auth_type":"oauth2_token_exchange","token_exchange_endpoint":"","audience":"","subject_token_type":"","token_exchange_profile":"","credentials":{"token_exchange_endpoint":"https://blob.test/token","audience":"blob-audience","subject_token_type":"blob-subject","token_exchange_profile":"blob-profile"}}"#;
+    let server = built(source).await;
+    let endpoint = server.fields.token_exchange_endpoint.as_deref();
+    assert_eq!(endpoint, Some("https://blob.test/token"));
+    assert_eq!(server.fields.audience.as_deref(), Some("blob-audience"));
+    assert_eq!(server.fields.subject_token_type, "blob-subject");
+    assert_eq!(server.fields.token_exchange_profile, "blob-profile");
+}
+
+#[tokio::test]
+async fn fields_empty_blob_values_fall_back_to_the_defaults() {
+    let source = r#"{"server_id":"srv-1","transport":"http","auth_type":"oauth2_token_exchange","credentials":{"subject_token_type":"","token_exchange_profile":"","client_assertion_signing_alg":""}}"#;
+    let server = built(source).await;
+    assert_eq!(server.fields.subject_token_type, DEFAULT_SUBJECT_TOKEN_TYPE);
+    assert_eq!(server.fields.token_exchange_profile, "rfc8693");
+    assert_eq!(server.fields.client_assertion_signing_alg, "RS256");
+}
+
+#[tokio::test]
+async fn fields_empty_secret_maps_become_absent() {
+    let source = r#"{"server_id":"srv-1","transport":"http","env":{},"static_headers":{}}"#;
+    let server = built(source).await;
+    assert!(server.fields.env.is_none());
+    assert!(server.fields.static_headers.is_none());
+}

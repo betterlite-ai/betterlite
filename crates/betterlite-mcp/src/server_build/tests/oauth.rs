@@ -95,6 +95,7 @@ async fn oauth_gate_drops_uncorroborated_endpoints() {
     assert!(server.fields.registration_url.is_none());
     let text = captured.text();
     assert!(text.contains("does not match the manually configured authorization_url"));
+    assert!(!text.contains("dcr_bridge"));
     assert_eq!(harness.slots.entries(), vec![(String::from("srv-1"), true)]);
 }
 
@@ -179,4 +180,63 @@ async fn oauth_warns_without_a_discovery_source() {
     let text = captured.text();
     assert!(text.contains("has no discovery source"));
     assert!(text.contains("authorization_url and token_url are not set manually"));
+}
+
+#[tokio::test]
+async fn oauth_plain_row_does_not_warn_about_missing_endpoints() {
+    let harness = harness();
+    let (captured, _guard) = capture();
+    let source = r#"{"server_id":"srv-1","transport":"http"}"#;
+    harness.build(&row(source)).await.unwrap();
+    assert!(captured.text().is_empty());
+}
+
+#[tokio::test]
+async fn oauth_complete_manual_configuration_makes_no_fetch() {
+    let mut harness = harness();
+    let document = metadata_document("https://issuer.test");
+    harness.fetcher = FakeFetcher::answering(&document);
+    harness.settings = settings_with_startup(true);
+    let (captured, _guard) = capture();
+    let source = r#"{"server_id":"srv-1","transport":"http","auth_type":"oauth2","url":"https://mcp.test/mcp","authorization_url":"https://manual.test/authorize","token_url":"https://manual.test/token","credentials":{"scopes":["read"]}}"#;
+    let server = harness.build(&row(source)).await.unwrap();
+    assert!(harness.fetcher.urls().is_empty());
+    assert!(server.fields.registration_url.is_none());
+    assert!(captured.text().is_empty());
+}
+
+#[tokio::test]
+async fn oauth_scopes_and_authorization_url_without_a_token_url_still_discover() {
+    let mut harness = harness();
+    let document = metadata_document("https://issuer.test");
+    harness.fetcher = FakeFetcher::answering(&document);
+    harness.settings = settings_with_startup(true);
+    let source = r#"{"server_id":"srv-1","transport":"http","auth_type":"oauth2","url":"https://mcp.test/mcp","authorization_url":"https://issuer.test/authorize","credentials":{"scopes":["read"]}}"#;
+    let server = harness.build(&row(source)).await.unwrap();
+    assert!(!harness.fetcher.urls().is_empty());
+    assert_eq!(
+        server.fields.token_url.as_deref(),
+        Some("https://issuer.test/token")
+    );
+}
+
+#[tokio::test]
+async fn oauth_fetch_ignores_the_issuer_when_the_anchor_is_off() {
+    let mut harness = harness();
+    let document = metadata_document("https://issuer.test");
+    harness.fetcher = FakeFetcher::answering(&document);
+    harness.settings = settings_with_startup(true);
+    let mut request = oauth_request();
+    request.server_url = Some("https://mcp.test/mcp");
+    request.auth_type = Some(MCPAuth::Oauth2);
+    request.is_discovery_auth_type = true;
+    request.manual_issuer = Some("https://issuer.test");
+    let (metadata, deferred) = harness
+        .builder()
+        .resolve_table_oauth_metadata(&request)
+        .await;
+    assert!(metadata.is_some());
+    assert!(!deferred);
+    let urls = harness.fetcher.urls();
+    assert!(urls[0].starts_with("https://mcp.test/mcp"));
 }

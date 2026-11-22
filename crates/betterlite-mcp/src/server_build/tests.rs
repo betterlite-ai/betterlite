@@ -1,11 +1,12 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use betterlite_config::sections::mcp_env_values::StdioPolicy as ConfigStdioPolicy;
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_db::mcp_stored_contracts::{JsonValue, MCPAuth, MCPUpstreamProtocol};
 use betterlite_db::stored_cipher::DbCipher;
@@ -15,6 +16,8 @@ use betterlite_secrets::secret_codec::{
 };
 use http::{HeaderMap, StatusCode};
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::sync::RwLock;
+use tokio_util::task::TaskTracker;
 use tracing::Level;
 use tracing::subscriber::DefaultGuard;
 use tracing::subscriber::set_default;
@@ -27,8 +30,11 @@ use super::warnings::{
 };
 use super::{BuildError, BuildOptions, Decryptor, DeferredSlots, ServerBuilder, StdioPolicy};
 use crate::credential_contracts::auth_config::oauth::DEFAULT_SUBJECT_TOKEN_TYPE;
+use crate::discovery_slots::DiscoverySlots;
+use crate::discovery_slots::clock::TokioClock;
 use crate::discovery_slots::settings::DiscoverySettings;
 use crate::oauth_discovery::fetch::{FetchError, FetchedDocument, MetadataFetcher};
+use crate::registry::servers::{RegistrySettings, ServerRegistry};
 use crate::server_payload::rules::MCP_STDIO_DISABLED_MESSAGE;
 use crate::server_record::{MCPServer, OAuth2Flow, SecretCredential};
 use crate::server_utils::prefixes::{PrefixPolicy, compute_short_server_prefix};

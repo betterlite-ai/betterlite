@@ -9,12 +9,25 @@ fn prefix_assigns_the_natural_hash_when_free() {
     let harness = enabled_harness();
     let mut subject = server(r#"{"server_id":"srv-1","name":"srv-1","transport":"http"}"#);
     let taken = BTreeMap::new();
+    let (captured, _guard) = capture_at(Level::INFO);
     let result = harness
         .builder()
         .assign_unique_short_prefix(&mut subject, &taken);
     result.unwrap();
     let expected = compute_short_server_prefix("srv-1", 0).unwrap();
     assert_eq!(subject.fields.short_prefix, Some(expected));
+    assert!(!captured.text().contains("collision resolved"));
+}
+
+#[test]
+fn prefix_config_stdio_policy_mirrors_the_enabled_flag() {
+    let mut policy = ConfigStdioPolicy {
+        enabled: false,
+        allowed_commands: BTreeSet::new(),
+    };
+    assert!(<ConfigStdioPolicy as StdioPolicy>::is_blocked(&policy));
+    policy.enabled = true;
+    assert!(!<ConfigStdioPolicy as StdioPolicy>::is_blocked(&policy));
 }
 
 #[test]
