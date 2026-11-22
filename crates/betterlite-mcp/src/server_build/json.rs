@@ -80,9 +80,8 @@ fn normalized_cost(
 ) -> Option<JsonValue> {
     let Some(number) = cost_number(stored) else {
         tracing::warn!(
-            "MCP server '{}' has non-numeric {}; ignoring it",
-            display_text(server_name),
-            described
+            "MCP server '{}' has non-numeric {described}; ignoring it",
+            display_text(server_name)
         );
         return None;
     };
