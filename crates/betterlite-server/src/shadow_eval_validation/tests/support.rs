@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use async_trait::async_trait;
-use betterlite_anthropic::credentials::AnthropicSettings;
+use betterlite_anthropic::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use betterlite_config::sections::anthropic_credentials::DEFAULT_API_BASE;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
@@ -143,7 +144,10 @@ fn credential_state(credentials: &Credentials) -> (AnthropicSettings, SecretMana
         Credentials::ApiKey(key) => (
             AnthropicSettings {
                 api_key: Some(SecretString::from(key.as_str())),
-                ..AnthropicSettings::default()
+                auth_token: None,
+                api_base: DEFAULT_API_BASE.to_owned(),
+                use_bearer_for_custom_base: false,
+                anthropic_version: ANTHROPIC_VERSION.to_owned(),
             },
             unconsulted_manager(),
         ),
