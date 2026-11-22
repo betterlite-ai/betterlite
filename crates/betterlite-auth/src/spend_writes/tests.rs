@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod refusing;
 mod support;
 
 mod spend_writes_apply;

@@ -7,9 +7,9 @@ use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
 use crate::spend_writes::layers::CounterLayers;
 
+use super::refusing::refusing_redis_cache;
 use super::support::{
-    Failure, FakeBatch, Fault, Journal, KEY, decimal, dual_cache, fixture, refusing_redis_cache,
-    writes_over,
+    Failure, FakeBatch, Fault, Journal, KEY, decimal, dual_cache, fixture, writes_over,
 };
 
 #[tokio::test]

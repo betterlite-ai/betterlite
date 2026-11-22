@@ -8,9 +8,8 @@ use betterlite_redis::request_batch::scope::{
 
 use crate::spend_writes::layers::CounterLayers;
 
-use super::support::{
-    FakePostCall, KEY, OTHER_KEY, dual_cache, fixture, increment, refusing_redis_cache,
-};
+use super::refusing::refusing_redis_cache;
+use super::support::{FakePostCall, KEY, OTHER_KEY, dual_cache, fixture, increment};
 
 #[tokio::test]
 async fn defer_queues_every_increment_on_the_post_call_batch() {

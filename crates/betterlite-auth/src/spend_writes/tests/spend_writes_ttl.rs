@@ -1,7 +1,8 @@
 use crate::spend_writes::error::LayersError;
 use crate::spend_writes::layers::CounterLayers;
 
-use super::support::{Fault, KEY, Logs, dual_cache, fixture, refusing_redis_cache};
+use super::refusing::refusing_redis_cache;
+use super::support::{Fault, KEY, Logs, dual_cache, fixture};
 
 #[tokio::test]
 async fn a_successful_refresh_reports_true() {

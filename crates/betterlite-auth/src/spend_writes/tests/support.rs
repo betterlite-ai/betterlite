@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
 use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::io::{Error as IoError, ErrorKind};
@@ -21,17 +20,9 @@ use betterlite_db::spend_rows::rows::{
 use betterlite_models::decisions::Json;
 use betterlite_redis::batch::result::{Settled, SettledHook};
 use betterlite_redis::redis_cache::RedisCache;
-use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
 use betterlite_redis::redis_cache::error::RedisCacheError;
-use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
-use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
-use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
-use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
-use betterlite_redis::redis_client_reuse::store::RedisClientStore;
-use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
-use betterlite_redis::redis_connection_settings::model::scalars::IntOrText;
-use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
-use betterlite_redis::redis_live_client::{LiveClientError, LiveClientFactory};
+use betterlite_redis::redis_client_reuse::breaker::BreakerOpen;
+use betterlite_redis::redis_live_client::LiveClientError;
 use chrono::{DateTime, FixedOffset, TimeZone as _, Utc};
 use redis::RedisError;
 use rust_decimal::Decimal;
@@ -365,22 +356,48 @@ impl FakeLayers {
             .expect("the fake post-call lock") = Some(batch);
     }
 
-    fn fatal(&self, fault: Fault) -> Option<LayersError> {
-        if self.faults.has(fault) {
-            return Some(layers_failure(
-                *self.failure.lock().expect("the fake failure lock"),
-            ));
+    fn failure_now(&self) -> Failure {
+        *self.failure.lock().expect("the fake failure lock")
+    }
+
+    fn faulted<Wrapped>(&self, fault: Fault, wrap: fn(Failure) -> Wrapped) -> Option<Wrapped> {
+        if !self.faults.has(fault) {
+            return None;
         }
-        None
+        Some(wrap(self.failure_now()))
+    }
+
+    fn fatal(&self, fault: Fault) -> Option<LayersError> {
+        self.faulted(fault, layers_failure)
     }
 
     fn cache_fatal(&self, fault: Fault) -> Option<ReseedCacheError> {
-        if self.faults.has(fault) {
-            return Some(reseed_failure(
-                *self.failure.lock().expect("the fake failure lock"),
-            ));
-        }
-        None
+        self.faulted(fault, reseed_failure)
+    }
+
+    fn begin(&self, event: String, fault: Fault) -> Result<(), LayersError> {
+        self.journal.push(event);
+        self.fatal(fault).map_or(Ok(()), Err)
+    }
+
+    fn begin_cache(&self, event: String, fault: Fault) -> Result<(), ReseedCacheError> {
+        self.journal.push(event);
+        self.cache_fatal(fault).map_or(Ok(()), Err)
+    }
+
+    // the journal notes the attempt before the fault fires, so a failed call still shows in it
+    fn cache_op<Output, Action>(
+        &self,
+        counter_key: &str,
+        event: &str,
+        fault: Fault,
+        op: Action,
+    ) -> Result<Output, ReseedCacheError>
+    where
+        Action: FnOnce() -> Output,
+    {
+        self.begin_cache(format!("{event}:{counter_key}"), fault)?;
+        Ok(op())
     }
 
     // the increment maps hold this pod's running totals, the way the memory tier would
@@ -407,53 +424,35 @@ impl ReseedCache for FakeLayers {
         &self,
         counter_key: &str,
     ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
-        self.journal.push(format!("redis_get:{counter_key}"));
-        if let Some(error) = self.cache_fatal(Fault::RedisGet) {
-            return ready(Err(error));
-        }
-        let value = self.redis.lock().expect("the fake redis lock").clone();
-        ready(Ok(value))
+        ready(
+            self.cache_op(counter_key, "redis_get", Fault::RedisGet, || {
+                self.redis_value()
+            }),
+        )
     }
 
-    fn redis_set_nx(
+    async fn redis_set_nx(
         &self,
         counter_key: &str,
         value: Decimal,
-    ) -> impl Future<Output = Result<Option<bool>, ReseedCacheError>> + Send {
+    ) -> Result<Option<bool>, ReseedCacheError> {
         self.journal.push(format!("redis_set_nx:{counter_key}"));
-        *self.redis.lock().expect("the fake redis lock") = Some(ReseedCacheValue::Number(value));
-        ready(Ok(Some(true)))
+        self.put_redis(ReseedCacheValue::Number(value));
+        Ok(Some(true))
     }
 
-    fn memory_get(
+    async fn memory_get(
         &self,
         counter_key: &str,
-    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
-        self.journal.push(format!("memory_get:{counter_key}"));
-        if let Some(error) = self.cache_fatal(Fault::MemoryGet) {
-            return ready(Err(error));
-        }
-        let value = self
-            .memory
-            .lock()
-            .expect("the fake memory lock")
-            .get(counter_key)
-            .cloned();
-        ready(Ok(value))
+    ) -> Result<Option<ReseedCacheValue>, ReseedCacheError> {
+        self.begin_cache(format!("memory_get:{counter_key}"), Fault::MemoryGet)?;
+        Ok(self.memory_value(counter_key))
     }
 
-    fn memory_set(
-        &self,
-        counter_key: &str,
-        value: Decimal,
-    ) -> impl Future<Output = Result<(), ReseedCacheError>> + Send {
-        self.journal.push(format!("memory_set:{counter_key}"));
-        if let Some(error) = self.cache_fatal(Fault::MemorySet) {
-            return ready(Err(error));
-        }
-        let mut memory = self.memory.lock().expect("the fake memory lock");
-        memory.insert(counter_key.to_owned(), ReseedCacheValue::Number(value));
-        ready(Ok(()))
+    async fn memory_set(&self, counter_key: &str, value: Decimal) -> Result<(), ReseedCacheError> {
+        self.begin_cache(format!("memory_set:{counter_key}"), Fault::MemorySet)?;
+        self.put_memory(counter_key, ReseedCacheValue::Number(value));
+        Ok(())
     }
 
     async fn increment_local(
@@ -461,29 +460,30 @@ impl ReseedCache for FakeLayers {
         counter_key: &str,
         increment: Decimal,
     ) -> Result<Option<Decimal>, ReseedCacheError> {
-        self.journal.push(format!("increment_local:{counter_key}"));
-        if let Some(error) = self.cache_fatal(Fault::IncrementLocal) {
-            return Err(error);
-        }
-        let next = self.bump(counter_key, increment);
-        Ok(Some(next))
+        let counted = self.cache_op(
+            counter_key,
+            "increment_local",
+            Fault::IncrementLocal,
+            || self.bump(counter_key, increment),
+        )?;
+        Ok(Some(counted))
     }
 }
 
 impl WindowReseedCache for FakeLayers {
-    fn redis_increment(
+    async fn redis_increment(
         &self,
         counter_key: &str,
         amount: Decimal,
-    ) -> impl Future<Output = Result<Decimal, ReseedCacheError>> + Send {
+    ) -> Result<Decimal, ReseedCacheError> {
         self.journal.push(format!("redis_increment:{counter_key}"));
         let base = match self.redis.lock().expect("the fake redis lock").clone() {
             Some(ReseedCacheValue::Number(value)) => value,
             Some(_) | None => Decimal::ZERO,
         };
         let next = base.checked_add(amount).unwrap_or(Decimal::MAX);
-        *self.redis.lock().expect("the fake redis lock") = Some(ReseedCacheValue::Number(next));
-        ready(Ok(next))
+        self.put_redis(ReseedCacheValue::Number(next));
+        Ok(next)
     }
 }
 
@@ -502,27 +502,18 @@ impl CounterLayers for FakeLayers {
     }
 
     async fn refresh_redis_ttl(&self, counter_key: &str) -> Result<bool, LayersError> {
-        self.journal.push(format!("refresh_ttl:{counter_key}"));
-        if let Some(error) = self.fatal(Fault::RefreshTtl) {
-            return Err(error);
-        }
+        self.begin(format!("refresh_ttl:{counter_key}"), Fault::RefreshTtl)?;
         Ok(*self.refresh_answer.lock().expect("the fake refresh lock"))
     }
 
     async fn delete_redis(&self, counter_key: &str) -> Result<(), LayersError> {
-        self.journal.push(format!("delete_redis:{counter_key}"));
-        if let Some(error) = self.fatal(Fault::DeleteRedis) {
-            return Err(error);
-        }
+        self.begin(format!("delete_redis:{counter_key}"), Fault::DeleteRedis)?;
         *self.redis.lock().expect("the fake redis lock") = None;
         Ok(())
     }
 
     async fn delete_memory(&self, counter_key: &str) -> Result<(), LayersError> {
-        self.journal.push(format!("delete_memory:{counter_key}"));
-        if let Some(error) = self.fatal(Fault::DeleteMemory) {
-            return Err(error);
-        }
+        self.begin(format!("delete_memory:{counter_key}"), Fault::DeleteMemory)?;
         self.memory
             .lock()
             .expect("the fake memory lock")
@@ -535,10 +526,10 @@ impl CounterLayers for FakeLayers {
         counter_key: &str,
         value: ReseedCacheValue,
     ) -> Result<(), LayersError> {
-        self.journal.push(format!("set_memory_value:{counter_key}"));
-        if let Some(error) = self.fatal(Fault::SetMemoryValue) {
-            return Err(error);
-        }
+        self.begin(
+            format!("set_memory_value:{counter_key}"),
+            Fault::SetMemoryValue,
+        )?;
         if value != ReseedCacheValue::Unreadable {
             self.put_memory(counter_key, value);
         }
@@ -549,10 +540,7 @@ impl CounterLayers for FakeLayers {
         &self,
         pending: &[PendingSpendIncrement],
     ) -> Result<Vec<Decimal>, LayersError> {
-        self.journal.push(format!("pipeline:{}", pending.len()));
-        if let Some(error) = self.fatal(Fault::Pipeline) {
-            return Err(error);
-        }
+        self.begin(format!("pipeline:{}", pending.len()), Fault::Pipeline)?;
         let scripted = self
             .pipeline_answer
             .lock()
@@ -863,54 +851,6 @@ where
         reseed: Arc::new(reseed_of(rows)),
         sources,
     }
-}
-
-struct SilentHooks;
-
-impl ServiceHooks for SilentHooks {
-    fn success(&self, _event: &ServiceEvent) {}
-
-    fn failure(&self, _event: &ServiceEvent, _error: &(dyn Error + Send + Sync)) {}
-}
-
-// a gate that refuses every call, so the Redis tier fails before any socket is opened
-struct RefusingGate;
-
-impl BreakerGate for RefusingGate {
-    fn enter(&self, name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
-        Err(BreakerOpen { name })
-    }
-
-    fn exit(&self, _admission: BreakerAdmission) {}
-
-    fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {}
-
-    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
-}
-
-pub(crate) async fn refusing_redis_cache() -> Arc<RedisCache> {
-    let overrides = RedisOverrides {
-        host: Some("127.0.0.1".to_owned()),
-        port: Some(IntOrText::Value(1)),
-        ..RedisOverrides::default()
-    };
-    let options = RedisCacheOptions {
-        overrides,
-        family: RedisCacheFamily::Standalone,
-        namespace: None,
-        default_ttl: 60,
-        redis_flush_size: None,
-        default_major_version: 7,
-        factory: Arc::new(LiveClientFactory::new(None)),
-        store: Arc::new(RedisClientStore::new()),
-        hooks: Arc::new(SilentHooks),
-        gate: Arc::new(RefusingGate),
-    };
-    let env = BTreeMap::<String, String>::new();
-    let cache = connect(options, &env)
-        .await
-        .expect("the refused Redis still builds a cache");
-    Arc::new(cache)
 }
 
 #[derive(Default)]

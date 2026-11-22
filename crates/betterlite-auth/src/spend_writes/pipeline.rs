@@ -16,7 +16,7 @@ where
     Rows: SpendCounterRows,
 {
     // increment_spend_counters_pipeline: the validating pipeline admission takes, clearing every counter first
-    pub async fn increment_spend_counters_pipeline(
+    pub async fn increment_counters_pipeline(
         &self,
         pending: &[PendingSpendIncrement],
     ) -> Result<Vec<Option<Decimal>>, SpendWriteError> {

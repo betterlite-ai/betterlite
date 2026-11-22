@@ -7,9 +7,8 @@ use crate::spend_writes::error::LayersError;
 use crate::spend_writes::invalidation::invalidate_spend_counter;
 use crate::spend_writes::layers::CounterLayers;
 
-use super::support::{
-    Failure, Fault, KEY, Logs, decimal, dual_cache, fixture, refusing_redis_cache,
-};
+use super::refusing::refusing_redis_cache;
+use super::support::{Failure, Fault, KEY, Logs, decimal, dual_cache, fixture};
 
 #[tokio::test]
 async fn invalidation_clears_the_batch_memory_and_redis() {

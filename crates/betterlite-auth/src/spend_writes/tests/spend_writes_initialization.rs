@@ -9,7 +9,7 @@ async fn a_warm_batch_counter_skips_the_database() {
     let fx = fixture(true);
     fx.batch.answer_with(CounterValue::Amount(decimal("3")));
     fx.writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect("the warm counter initializes");
     assert_eq!(
@@ -26,7 +26,7 @@ async fn a_batched_miss_reads_the_database_floor() {
     fx.batch.answer_with(CounterValue::Missing);
     fx.rows.hold_spend(decimal("6"));
     fx.writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect("the cold counter reseeds");
     assert_eq!(fx.rows.spend_reads(), 1);
@@ -41,7 +41,7 @@ async fn a_redis_hit_warms_the_counter() {
     let fx = fixture(true);
     fx.layers.put_redis(ReseedCacheValue::Number(decimal("5")));
     fx.writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect("the redis counter is already warm");
     assert_eq!(fx.rows.spend_reads(), 0);
@@ -57,7 +57,7 @@ async fn a_cold_counter_seeds_from_its_database_row() {
     fx.rows.hold_spend(decimal("12.5"));
     fx.sources.put(KEY, source_json("{\"spend\": 4}"));
     fx.writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect("the database floor seeds the counter");
     assert_eq!(
@@ -72,7 +72,7 @@ async fn a_cold_counter_with_redis_seeds_redis_from_the_database_row() {
     let fx = fixture(true);
     fx.rows.hold_spend(decimal("6"));
     fx.writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect("the database floor seeds the Redis counter");
     assert_eq!(fx.rows.spend_reads(), 1);
@@ -92,7 +92,7 @@ async fn a_missing_database_row_seeds_the_source_cache_spend() {
     let fx = fixture(false);
     fx.sources.put(KEY, source_json("{\"spend\": 7}"));
     fx.writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect("the source cache supplies the floor");
     assert_eq!(fx.layers.increment_total(KEY), Some(decimal("7")));
@@ -104,7 +104,7 @@ async fn a_zero_source_spend_leaves_the_counter_alone() {
     let fx = fixture(false);
     fx.sources.put(KEY, source_json("{\"spend\": 0}"));
     fx.writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect("a zero floor needs no increment");
     assert_eq!(fx.layers.increment_total(KEY), None);
@@ -116,7 +116,7 @@ async fn the_first_source_cache_key_with_a_value_wins() {
     let fx = fixture(false);
     fx.sources.put(OTHER_KEY, source_json("{\"spend\": 3}"));
     fx.writes
-        .ensure_spend_counter_initialized(KEY, &[KEY, OTHER_KEY])
+        .ensure_counter_seeded(KEY, &[KEY, OTHER_KEY])
         .await
         .expect("the second source key supplies the floor");
     assert_eq!(fx.layers.increment_total(KEY), Some(decimal("3")));
@@ -128,7 +128,7 @@ async fn an_unreachable_database_falls_back_to_the_source_cache() {
     fx.rows.fail();
     fx.sources.put(KEY, source_json("{\"spend\": 4}"));
     fx.writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect("the source cache covers an unreachable database");
     assert_eq!(fx.layers.increment_total(KEY), Some(decimal("4")));
@@ -140,7 +140,7 @@ async fn an_unreadable_source_spend_propagates() {
     fx.sources.put(KEY, source_json("{\"spend\": [1]}"));
     let error = fx
         .writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect_err("the unreadable source spend fails the seed");
     assert!(matches!(error, SpendWriteError::Value(_)));
@@ -153,7 +153,7 @@ async fn a_seed_write_failure_propagates() {
     fx.layers.faults.add(Fault::MemorySet);
     let error = fx
         .writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect_err("the seed write failure surfaces");
     assert!(matches!(error, SpendWriteError::Reseed(_)));
@@ -165,7 +165,7 @@ async fn a_batch_read_failure_propagates() {
     fx.batch.fail();
     let error = fx
         .writes
-        .ensure_spend_counter_initialized(KEY, &[KEY])
+        .ensure_counter_seeded(KEY, &[KEY])
         .await
         .expect_err("the batch failure surfaces");
     assert!(matches!(

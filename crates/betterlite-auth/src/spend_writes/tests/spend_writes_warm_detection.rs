@@ -14,9 +14,8 @@ use crate::spend_writes::batch::CounterBatch;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
 use crate::spend_writes::layers::CounterLayers;
 
-use super::support::{
-    Failure, Fault, KEY, Logs, decimal, dual_cache, fixture, refusing_redis_cache,
-};
+use super::refusing::refusing_redis_cache;
+use super::support::{Failure, Fault, KEY, Logs, decimal, dual_cache, fixture};
 
 #[tokio::test]
 async fn a_batched_amount_is_warm_and_lands_in_memory() {

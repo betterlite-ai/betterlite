@@ -56,66 +56,33 @@ impl SpendWriteError {
     pub fn is_transient(&self) -> bool {
         match self {
             Self::Layers(error) => error.is_transient(),
-            Self::Cache(error) => cache_transient(error),
-            Self::Batch(_) | Self::Reseed(_) | Self::Value(_) => false,
+            Self::Cache(ReseedCacheError::Redis(error)) => redis_transient(error),
+            Self::Cache(_) | Self::Batch(_) | Self::Reseed(_) | Self::Value(_) => false,
         }
     }
 }
 
-fn cache_transient(error: &ReseedCacheError) -> bool {
-    match error {
-        ReseedCacheError::Redis(error) => redis_transient(error),
-        ReseedCacheError::Values(_)
-        | ReseedCacheError::Memory(_)
-        | ReseedCacheError::OutOfRange(_)
-        | ReseedCacheError::Unavailable => false,
-    }
-}
-
+// LiteLLM's is_redis_timeout_failure walks the chain, so a timed-out Redis io error counts under any wrapper, and an open breaker counts too
 fn redis_transient(error: &RedisCacheError) -> bool {
     match error {
-        RedisCacheError::Breaker(_) => true,
-        RedisCacheError::ClientReuse(error) => reuse_transient(error),
-        RedisCacheError::LiveClient(error) => live_transient(error),
-        RedisCacheError::Counters(error) => counters_transient(error),
-        RedisCacheError::Settings(_)
+        RedisCacheError::Breaker(_)
+        | RedisCacheError::ClientReuse(ClientReuseError::Timeout(_))
+        | RedisCacheError::Counters(
+            RedisCountersError::Breaker(_)
+            | RedisCountersError::Reuse(ClientReuseError::Timeout(_)),
+        ) => true,
+        RedisCacheError::ClientReuse(ClientReuseError::Live(LiveClientError::Redis(error)))
+        | RedisCacheError::LiveClient(LiveClientError::Redis(error))
+        | RedisCacheError::Counters(
+            RedisCountersError::Client(LiveClientError::Redis(error))
+            | RedisCountersError::Reuse(ClientReuseError::Live(LiveClientError::Redis(error))),
+        ) => error.is_timeout(),
+        RedisCacheError::ClientReuse(_)
+        | RedisCacheError::Counters(_)
+        | RedisCacheError::LiveClient(_)
+        | RedisCacheError::Settings(_)
         | RedisCacheError::Factory(_)
         | RedisCacheError::Decode(_)
         | RedisCacheError::Join(_) => false,
-    }
-}
-
-fn counters_transient(error: &RedisCountersError) -> bool {
-    match error {
-        RedisCountersError::Client(error) => live_transient(error),
-        RedisCountersError::Reuse(error) => reuse_transient(error),
-        RedisCountersError::Breaker(_) => true,
-        RedisCountersError::Decode(_)
-        | RedisCountersError::UnexpectedReply { .. }
-        | RedisCountersError::InvalidTtl
-        | RedisCountersError::NonFiniteValue => false,
-    }
-}
-
-fn reuse_transient(error: &ClientReuseError) -> bool {
-    match error {
-        ClientReuseError::Timeout(_) => true,
-        ClientReuseError::Live(error) => live_transient(error),
-        ClientReuseError::Factory(_)
-        | ClientReuseError::NoPubSubNode
-        | ClientReuseError::ClusterPubSub => false,
-    }
-}
-
-// redis-py reports a pool wait timeout as a connection error chained from a timeout, so a Redis io timeout counts
-fn live_transient(error: &LiveClientError) -> bool {
-    match error {
-        LiveClientError::Redis(error) => error.is_timeout(),
-        LiveClientError::InvalidSetting { .. }
-        | LiveClientError::CredentialSourceMissing
-        | LiveClientError::Credential(_)
-        | LiveClientError::TlsFile { .. }
-        | LiveClientError::NoSentinelMaster { .. }
-        | LiveClientError::Join(_) => false,
     }
 }

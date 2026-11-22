@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::Arc;
 
 use betterlite_redis::batch::error::BatchError;
@@ -28,80 +29,100 @@ where
         let item = item.clone();
         let layers = Arc::clone(&layers);
         let batch = Arc::clone(&batch);
-        let follow: SettledFollowUp =
-            Box::pin(async move { settle_spend_counter(&layers, &*batch, &item, settled).await });
+        let follow: SettledFollowUp = Box::pin(async move {
+            let settlement = Settlement {
+                layers: &*layers,
+                batch: &*batch,
+                item: &item,
+            };
+            settlement.settle(settled).await;
+        });
         Some(follow)
     })
 }
 
-async fn settle_spend_counter<Layers>(
-    layers: &Layers,
-    batch: &dyn CounterBatch,
-    item: &PendingSpendIncrement,
-    settled: Settled<f64>,
-) where
+struct Settlement<'a, Layers> {
+    layers: &'a Layers,
+    batch: &'a dyn CounterBatch,
+    item: &'a PendingSpendIncrement,
+}
+
+impl<Layers> Settlement<'_, Layers>
+where
     Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers,
 {
-    match settled {
-        Ok(value) => {
-            let Some(amount) = Decimal::from_f64(value) else {
-                tracing::debug!(
-                    counter_key = %item.counter_key,
-                    value,
-                    "Settled spend counter has no decimal form"
-                );
-                return;
-            };
-            if let Err(error) = layers
-                .set_memory_value(&item.counter_key, ReseedCacheValue::Number(amount))
-                .await
-            {
-                tracing::debug!(
-                    %error,
-                    counter_key = %item.counter_key,
-                    "Unable to store the settled spend counter in memory"
-                );
-            }
-            batch.record(&item.counter_key, amount);
+    async fn settle(&self, settled: Settled<f64>) {
+        match settled {
+            Ok(value) => self.store(value).await,
+            Err(error) => self.failed(&error).await,
         }
-        Err(error) => {
-            if matches!(*error, BatchError::Cancelled) {
-                settle_cancelled(layers, item).await;
-                return;
-            }
-            tracing::warn!(
-                %error,
-                counter_key = %item.counter_key,
-                "Spend counter increment did not land in the post-call pipeline; invalidating it"
+    }
+
+    async fn store(&self, value: f64) {
+        let Some(amount) = Decimal::from_f64(value) else {
+            tracing::debug!(
+                counter_key = %self.item.counter_key,
+                value,
+                "Settled spend counter has no decimal form"
             );
-            invalidate_spend_counter(layers, batch, &item.counter_key).await;
+            return;
+        };
+        if let Err(error) = self
+            .layers
+            .set_memory_value(&self.item.counter_key, ReseedCacheValue::Number(amount))
+            .await
+        {
+            debug_failure(
+                &error,
+                &self.item.counter_key,
+                "Unable to store the settled spend counter in memory",
+            );
+        }
+        self.batch.record(&self.item.counter_key, amount);
+    }
+
+    async fn failed(&self, error: &BatchError) {
+        if matches!(error, BatchError::Cancelled) {
+            return self.cancelled().await;
+        }
+        tracing::warn!(
+            %error,
+            counter_key = %self.item.counter_key,
+            "Spend counter increment did not land in the post-call pipeline; invalidating it"
+        );
+        invalidate_spend_counter(self.layers, self.batch, &self.item.counter_key).await;
+    }
+
+    // a cancelled pipeline never applied the increment, so the value already in memory keeps its own count
+    async fn cancelled(&self) {
+        match self.layers.memory_get(&self.item.counter_key).await {
+            Ok(Some(_present)) => {
+                if let Err(error) = self
+                    .layers
+                    .increment_local(&self.item.counter_key, self.item.increment)
+                    .await
+                {
+                    debug_failure(
+                        &error,
+                        &self.item.counter_key,
+                        "Unable to apply the cancelled spend counter increment in memory",
+                    );
+                }
+            }
+            Ok(None) => {}
+            Err(error) => debug_failure(
+                &error,
+                &self.item.counter_key,
+                "Unable to read the in-memory spend counter after a cancelled increment",
+            ),
         }
     }
 }
 
-// a cancelled pipeline never applied the increment, so the value already in memory keeps its own count
-async fn settle_cancelled<Layers>(layers: &Layers, item: &PendingSpendIncrement)
-where
-    Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers,
-{
-    match layers.memory_get(&item.counter_key).await {
-        Ok(Some(_present)) => {
-            if let Err(error) = layers
-                .increment_local(&item.counter_key, item.increment)
-                .await
-            {
-                tracing::debug!(
-                    %error,
-                    counter_key = %item.counter_key,
-                    "Unable to apply the cancelled spend counter increment in memory"
-                );
-            }
-        }
-        Ok(None) => {}
-        Err(error) => tracing::debug!(
-            %error,
-            counter_key = %item.counter_key,
-            "Unable to read the in-memory spend counter after a cancelled increment"
-        ),
-    }
+fn debug_failure<T: Display>(error: &T, counter_key: &str, message: &str) {
+    tracing::debug!(
+        %error,
+        counter_key = %counter_key,
+        message = %message,
+    );
 }

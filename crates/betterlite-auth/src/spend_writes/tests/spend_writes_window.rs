@@ -12,7 +12,7 @@ async fn a_warm_window_counter_answers_before_the_database() {
     fx.batch.answer_with(CounterValue::Amount(decimal("2")));
     let warm = fx
         .writes
-        .ensure_window_spend_counter_initialized(&request)
+        .ensure_window_seeded(&request)
         .await
         .expect("the warm counter initializes");
     assert!(warm);
@@ -33,7 +33,7 @@ async fn a_batched_miss_does_not_count_as_warm() {
         .hold_window(window_row(aware("2026-11-18T12:00:00+00:00"), "8"));
     let warm = fx
         .writes
-        .ensure_window_spend_counter_initialized(&request)
+        .ensure_window_seeded(&request)
         .await
         .expect("the batched miss reseeds the counter");
     assert!(warm);
@@ -49,7 +49,7 @@ async fn a_window_row_warms_the_counter() {
         .hold_window(window_row(aware("2026-11-18T12:00:00+00:00"), "8"));
     let warm = fx
         .writes
-        .ensure_window_spend_counter_initialized(&request)
+        .ensure_window_seeded(&request)
         .await
         .expect("the window row warms the counter");
     assert!(warm);
@@ -68,7 +68,7 @@ async fn an_entity_without_window_rows_returns_false_and_warns() {
     let request = window_request(&entity, "u1");
     let warm = fx
         .writes
-        .ensure_window_spend_counter_initialized(&request)
+        .ensure_window_seeded(&request)
         .await
         .expect("the missing window spend is an answer, not an error");
     assert!(!warm);

@@ -1,3 +1,4 @@
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::auth_cache::WriteOptions;
@@ -56,14 +57,18 @@ async fn a_source_without_the_spend_field_answers_zero() {
     assert_eq!(base_of(&fx, &[KEY, OTHER_KEY]).await, decimal("0"));
 }
 
+#[rstest]
+#[case::null("null")]
+#[case::false_("false")]
+#[case::empty_text("\"\"")]
+#[case::empty_list("[]")]
+#[case::empty_object("{}")]
 #[tokio::test]
-async fn empty_source_values_answer_zero() {
-    for spend in ["null", "false", "\"\"", "[]", "{}"] {
-        let fx = fixture(false);
-        let source = format!("{{\"spend\": {spend}}}");
-        fx.sources.put(KEY, source_json(&source));
-        assert_eq!(base_of(&fx, &[KEY]).await, decimal("0"));
-    }
+async fn empty_source_values_answer_zero(#[case] spend: &str) {
+    let fx = fixture(false);
+    let source = format!("{{\"spend\": {spend}}}");
+    fx.sources.put(KEY, source_json(&source));
+    assert_eq!(base_of(&fx, &[KEY]).await, decimal("0"));
 }
 
 #[tokio::test]
@@ -80,24 +85,25 @@ async fn a_numeric_text_spend_is_read() {
     assert_eq!(base_of(&fx, &[KEY]).await, decimal("2.75"));
 }
 
+#[rstest]
+#[case::one_item_list("[1]")]
+#[case::object("{\"amount\": 1}")]
 #[tokio::test]
-async fn a_non_empty_list_or_object_spend_is_unreadable() {
-    for spend in ["[1]", "{\"amount\": 1}"] {
-        let fx = fixture(false);
-        let source = format!("{{\"spend\": {spend}}}");
-        fx.sources.put(KEY, source_json(&source));
-        let error = fx
-            .writes
-            .get_source_cache_base_spend(&[KEY])
-            .await
-            .expect_err("an unreadable spend surfaces");
-        assert!(matches!(
-            error,
-            SpendWriteError::Value(SpendValueError::NotNumeric {
-                kind: "an unreadable cache value",
-            })
-        ));
-    }
+async fn a_non_empty_list_or_object_spend_is_unreadable(#[case] spend: &str) {
+    let fx = fixture(false);
+    let source = format!("{{\"spend\": {spend}}}");
+    fx.sources.put(KEY, source_json(&source));
+    let error = fx
+        .writes
+        .get_source_cache_base_spend(&[KEY])
+        .await
+        .expect_err("an unreadable spend surfaces");
+    assert!(matches!(
+        error,
+        SpendWriteError::Value(SpendValueError::NotNumeric {
+            kind: "an unreadable cache value",
+        })
+    ));
 }
 
 #[tokio::test]

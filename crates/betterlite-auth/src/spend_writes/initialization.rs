@@ -20,7 +20,7 @@ where
     Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers,
     Rows: SpendCounterRows + DbSpendCounterRows,
 {
-    pub async fn ensure_spend_counter_initialized(
+    pub async fn ensure_counter_seeded(
         &self,
         counter_key: &str,
         source_cache_keys: &[&str],
@@ -51,7 +51,7 @@ where
     Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + WindowReseedCache,
     Rows: SpendCounterRows,
 {
-    pub async fn ensure_window_spend_counter_initialized(
+    pub async fn ensure_window_seeded(
         &self,
         request: &WindowReseed<'_>,
     ) -> Result<bool, SpendWriteError> {

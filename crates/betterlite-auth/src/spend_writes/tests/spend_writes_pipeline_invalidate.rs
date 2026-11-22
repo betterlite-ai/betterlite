@@ -5,9 +5,8 @@ use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
 use crate::spend_writes::layers::CounterLayers;
 
-use super::support::{
-    Failure, Fault, KEY, OTHER_KEY, decimal, dual_cache, fixture, increment, refusing_redis_cache,
-};
+use super::refusing::refusing_redis_cache;
+use super::support::{Failure, Fault, KEY, OTHER_KEY, decimal, dual_cache, fixture, increment};
 
 fn pending_pair() -> [PendingSpendIncrement; 2] {
     [increment(KEY, "2"), increment(OTHER_KEY, "3")]
@@ -18,7 +17,7 @@ async fn the_pipeline_answers_each_counter_in_order() {
     let fx = fixture(true);
     let counted = fx
         .writes
-        .increment_spend_counters_pipeline(&pending_pair())
+        .increment_counters_pipeline(&pending_pair())
         .await
         .expect("the pipeline answers");
     assert_eq!(counted, vec![Some(decimal("2")), Some(decimal("3"))]);
@@ -57,7 +56,7 @@ async fn the_pipeline_invalidates_every_counter_before_raising() {
     fx.layers.faults.add(Fault::Pipeline);
     let error = fx
         .writes
-        .increment_spend_counters_pipeline(&pending_pair())
+        .increment_counters_pipeline(&pending_pair())
         .await
         .expect_err("the pipeline failure surfaces");
     assert!(matches!(
@@ -84,7 +83,7 @@ async fn the_pipeline_without_redis_increments_each_counter_locally() {
     let fx = fixture(false);
     let counted = fx
         .writes
-        .increment_spend_counters_pipeline(&pending_pair())
+        .increment_counters_pipeline(&pending_pair())
         .await
         .expect("the memory pipeline answers");
     assert_eq!(counted, vec![Some(decimal("2")), Some(decimal("3"))]);
@@ -103,7 +102,7 @@ async fn an_empty_pipeline_answers_empty_without_touching_a_layer() {
     let fx = fixture(true);
     let counted = fx
         .writes
-        .increment_spend_counters_pipeline(&[])
+        .increment_counters_pipeline(&[])
         .await
         .expect("an empty pipeline answers");
     assert!(counted.is_empty());
@@ -117,7 +116,7 @@ async fn a_non_transient_pipeline_failure_still_invalidates() {
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Unavailable;
     let error = fx
         .writes
-        .increment_spend_counters_pipeline(&pending_pair())
+        .increment_counters_pipeline(&pending_pair())
         .await
         .expect_err("the pipeline failure surfaces");
     assert!(matches!(

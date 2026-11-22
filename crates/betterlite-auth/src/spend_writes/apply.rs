@@ -23,7 +23,7 @@ where
         if self.defer_spend_counter_increments(pending) {
             return Ok(());
         }
-        match self.increment_spend_counters_pipeline(pending).await {
+        match self.increment_counters_pipeline(pending).await {
             Ok(_counted) => Ok(()),
             Err(error) => {
                 if error.is_transient() {
