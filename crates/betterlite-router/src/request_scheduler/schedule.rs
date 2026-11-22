@@ -42,7 +42,8 @@ impl RequestScheduler {
         C: ScheduledCall,
     {
         self.add_request(item).await?;
-        let polls = self.wait_for_turn(item, call, plan).await?;
+        // the poll loop nests more generator states than rustc lays out by default, so its future lives on the heap
+        let polls = Box::pin(self.wait_for_turn(item, call, plan)).await?;
         let answered = call.call().await;
         self.remove_request(item).await?;
         finish(item, polls, answered)
@@ -70,9 +71,9 @@ impl RequestScheduler {
                     });
                 }
             }
-            let allowed = self
-                .poll(&item.request_id, &item.model, call.healthy_deployments())
-                .await?;
+            let allowed =
+                Box::pin(self.poll(&item.request_id, &item.model, call.healthy_deployments()))
+                    .await?;
             if allowed.value {
                 return Ok(polls);
             }
