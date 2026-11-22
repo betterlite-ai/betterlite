@@ -31,7 +31,8 @@ pub struct TinyfishSearch<'env> {
     caller_max_results: Mutex<Option<usize>>,
 }
 impl<'env> TinyfishSearch<'env> {
-    pub fn load(lookup: &'env dyn EnvironmentLookup) -> Self {
+    #[must_use]
+    pub const fn load(lookup: &'env dyn EnvironmentLookup) -> Self {
         Self {
             lookup,
             caller_max_results: Mutex::new(None),

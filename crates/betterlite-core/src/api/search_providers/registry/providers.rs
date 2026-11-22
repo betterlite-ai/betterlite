@@ -39,32 +39,18 @@ pub(super) fn build<'env>(
         SearchProviderName::Brave => {
             Box::new(Adapter::new(BraveSearchConfig::load(environment, None)))
         }
-        SearchProviderName::GooglePse => Box::new(UrlKeyedProvider {
-            environment,
-            flavor: Mutex::new(UrlKeyedFlavor::GooglePse(None)),
-        }),
+        SearchProviderName::GooglePse => url_keyed(environment, UrlKeyedFlavor::GooglePse(None)),
         SearchProviderName::DataForSeo => Box::new(Adapter::new(DataForSeoSearchConfig {
             settings: DataForSeoSearchSettings::load(environment),
         })),
         SearchProviderName::Firecrawl => Box::new(Adapter::new(FirecrawlSearch::load(environment))),
         SearchProviderName::Fastcrw => Box::new(Adapter::new(FastcrwSearch::load(environment))),
-        SearchProviderName::Searxng => Box::new(ReloadedProvider {
-            environment,
-            flavor: ReloadedFlavor::Searxng,
-            body: Mutex::new(None),
-        }),
-        SearchProviderName::Linkup => Box::new(ReloadedProvider {
-            environment,
-            flavor: ReloadedFlavor::Linkup,
-            body: Mutex::new(None),
-        }),
+        SearchProviderName::Searxng => reloaded(environment, ReloadedFlavor::Searxng),
+        SearchProviderName::Linkup => reloaded(environment, ReloadedFlavor::Linkup),
         SearchProviderName::DuckDuckGo => {
             Box::new(Adapter::new(DuckDuckGoSearchConfig::load(environment)))
         }
-        SearchProviderName::SearchApi => Box::new(UrlKeyedProvider {
-            environment,
-            flavor: Mutex::new(UrlKeyedFlavor::SearchApi(None)),
-        }),
+        SearchProviderName::SearchApi => url_keyed(environment, UrlKeyedFlavor::SearchApi(None)),
         SearchProviderName::Serper => Box::new(Adapter::new(SerperSearchConfig {
             settings: SerperSearchSettings::load(environment),
         })),
@@ -76,4 +62,23 @@ pub(super) fn build<'env>(
         SearchProviderName::Nimble => Box::new(Adapter::new(NimbleSearch::load(environment))),
     };
     SearchConfig { name, hooks }
+}
+fn url_keyed<'env>(
+    environment: &'env dyn EnvironmentLookup,
+    flavor: UrlKeyedFlavor,
+) -> Box<dyn SearchHooks + 'env> {
+    Box::new(UrlKeyedProvider {
+        environment,
+        flavor: Mutex::new(flavor),
+    })
+}
+fn reloaded<'env>(
+    environment: &'env dyn EnvironmentLookup,
+    flavor: ReloadedFlavor,
+) -> Box<dyn SearchHooks + 'env> {
+    Box::new(ReloadedProvider {
+        environment,
+        flavor,
+        body: Mutex::new(None),
+    })
 }

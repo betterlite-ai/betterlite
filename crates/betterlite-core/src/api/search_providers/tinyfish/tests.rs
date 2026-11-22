@@ -87,6 +87,19 @@ fn limit_of(optional_params: &Object) -> CallerLimit {
     limit
 }
 
+fn hidden_params_for(headers: &Headers) -> Object {
+    let environment = environment(&[]);
+    let search = TinyfishSearch::load(&environment);
+    let reply = search
+        .transform_search_response(&ProviderResponse {
+            status_code: 200,
+            headers,
+            text: r#"{"results":[]}"#,
+        })
+        .unwrap();
+    reply.hidden_params
+}
+
 #[test]
 fn tinyfish_reports_its_display_name_and_get_method() {
     assert_eq!(TinyfishSearch::ui_friendly_name(), "TinyFish");
@@ -775,20 +788,12 @@ fn tinyfish_reply_logs_well_formed_parameter_warnings() {
 
 #[test]
 fn tinyfish_reply_keeps_the_raw_and_sanitized_headers() {
-    let environment = environment(&[]);
-    let search = TinyfishSearch::load(&environment);
     let mut headers = Headers::new();
     headers.insert("x-request-id".to_owned(), "req-1".to_owned());
     headers.insert("x-ratelimit-remaining-requests".to_owned(), "9".to_owned());
     headers.insert("content-type".to_owned(), "application/json".to_owned());
-    let reply = search
-        .transform_search_response(&ProviderResponse {
-            status_code: 200,
-            headers: &headers,
-            text: r#"{"results":[]}"#,
-        })
-        .unwrap();
-    let raw = reply.hidden_params.get("headers").unwrap();
+    let hidden = hidden_params_for(&headers);
+    let raw = hidden.get("headers").unwrap();
     assert_eq!(
         raw.get("x-request-id").and_then(JsonValue::as_str),
         Some("req-1")
@@ -797,7 +802,7 @@ fn tinyfish_reply_keeps_the_raw_and_sanitized_headers() {
         raw.get("content-type").and_then(JsonValue::as_str),
         Some("application/json")
     );
-    let additional = reply.hidden_params.get("additional_headers").unwrap();
+    let additional = hidden.get("additional_headers").unwrap();
     assert_eq!(
         additional
             .get("llm_provider-x-request-id")

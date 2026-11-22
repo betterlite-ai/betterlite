@@ -11,7 +11,7 @@ use betterlite_openai::search::provider::{
 use rstest::rstest;
 
 use super::SearchRegistry;
-use super::config::SearchBody;
+use super::config::{SearchBody, SearchConfig};
 use super::error::SearchConfigError;
 use super::names::SearchProviderName;
 use crate::api::search_providers::tinyfish::TINYFISH_RESULT_CAP;
@@ -65,6 +65,26 @@ fn reply_with_results(count: usize) -> String {
         })
         .collect();
     format!(r#"{{"results":[{}]}}"#, items.join(","))
+}
+fn signed_headers(
+    config: &SearchConfig<'_>,
+    api_base: &str,
+    optional_params: &Object,
+    body: &SearchBody,
+) -> (Headers, Option<Vec<u8>>) {
+    let mut passed = Headers::new();
+    passed.insert("X-Trace".to_owned(), "abc".to_owned());
+    config
+        .sign_request(
+            passed,
+            &OutboundSearch {
+                api_base,
+                api_key: None,
+                optional_params,
+                body,
+            },
+        )
+        .unwrap()
 }
 
 // each case is one row of what LiteLLM's ProviderConfigManager reports for a SearchProviders value
@@ -336,6 +356,19 @@ fn registry_forwards_the_linkup_hooks() {
         .complete_url(None, &optional_params, Some(&body), None)
         .unwrap();
     assert_eq!(url, "https://api.linkup.so/v1/search");
+}
+#[test]
+fn registry_forwards_the_linkup_reply_hooks() {
+    let environment = environment(&[("LINKUP_API_KEY", "key")]);
+    let registry = SearchRegistry {
+        environment: &environment,
+    };
+    let config = registry.search_config("linkup").unwrap();
+    let headers = config.validate_environment(Headers::new(), None, None);
+    let optional_params = params(r#"{"depth":"deep"}"#);
+    let body = config
+        .transform_search_request(&input(&single("q"), &optional_params, &headers))
+        .unwrap();
     let reply = config
         .transform_search_response(&response(
             200,
@@ -345,19 +378,8 @@ fn registry_forwards_the_linkup_hooks() {
         .unwrap();
     assert_eq!(reply.results.len(), 1);
     assert_eq!(reply.results[0].title, "t");
-    let mut passed = Headers::new();
-    passed.insert("X-Trace".to_owned(), "abc".to_owned());
-    let (signed, encoded) = config
-        .sign_request(
-            passed,
-            &OutboundSearch {
-                api_base: "https://api.linkup.so/v1",
-                api_key: None,
-                optional_params: &optional_params,
-                body: &body,
-            },
-        )
-        .unwrap();
+    let (signed, encoded) =
+        signed_headers(&config, "https://api.linkup.so/v1", &optional_params, &body);
     assert_eq!(signed.get("X-Trace").map(String::as_str), Some("abc"));
     assert!(encoded.is_none());
 }
@@ -427,6 +449,22 @@ fn registry_forwards_the_google_pse_hooks() {
         .unwrap();
     assert!(url.starts_with("https://www.googleapis.com/customsearch/v1?"));
     assert!(url.contains("cx=engine"));
+}
+#[test]
+fn registry_forwards_the_google_pse_reply_hooks() {
+    let environment = environment(&[
+        ("GOOGLE_PSE_API_KEY", "key"),
+        ("GOOGLE_PSE_ENGINE_ID", "engine"),
+    ]);
+    let registry = SearchRegistry {
+        environment: &environment,
+    };
+    let config = registry.search_config("google_pse").unwrap();
+    let headers = config.validate_environment(Headers::new(), None, None);
+    let optional_params = Object::new();
+    let body = config
+        .transform_search_request(&input(&single("q"), &optional_params, &headers))
+        .unwrap();
     let reply = config
         .transform_search_response(&response(
             200,
@@ -436,19 +474,12 @@ fn registry_forwards_the_google_pse_hooks() {
         .unwrap();
     assert_eq!(reply.results.len(), 1);
     assert_eq!(reply.results[0].url, "https://example.test/1");
-    let mut outgoing = Headers::new();
-    outgoing.insert("X-Trace".to_owned(), "abc".to_owned());
-    let (signed, encoded) = config
-        .sign_request(
-            outgoing,
-            &OutboundSearch {
-                api_base: "https://www.googleapis.com/customsearch/v1",
-                api_key: None,
-                optional_params: &optional_params,
-                body: &body,
-            },
-        )
-        .unwrap();
+    let (signed, encoded) = signed_headers(
+        &config,
+        "https://www.googleapis.com/customsearch/v1",
+        &optional_params,
+        &body,
+    );
     assert_eq!(signed.get("X-Trace").map(String::as_str), Some("abc"));
     assert!(encoded.is_none());
 }
@@ -481,6 +512,19 @@ fn registry_forwards_the_searchapi_hooks() {
         .unwrap();
     assert!(url.starts_with("https://www.searchapi.io/api/v1/search?"));
     assert!(url.contains("engine=google"));
+}
+#[test]
+fn registry_forwards_the_searchapi_reply_hooks() {
+    let environment = environment(&[("SEARCHAPI_API_KEY", "key")]);
+    let registry = SearchRegistry {
+        environment: &environment,
+    };
+    let config = registry.search_config("searchapi").unwrap();
+    let headers = config.validate_environment(Headers::new(), None, None);
+    let optional_params = Object::new();
+    let body = config
+        .transform_search_request(&input(&single("q"), &optional_params, &headers))
+        .unwrap();
     let reply = config
         .transform_search_response(&response(
             200,
@@ -490,19 +534,12 @@ fn registry_forwards_the_searchapi_hooks() {
         .unwrap();
     assert_eq!(reply.results.len(), 1);
     assert_eq!(reply.results[0].url, "https://example.test/1");
-    let mut passed = Headers::new();
-    passed.insert("X-Trace".to_owned(), "abc".to_owned());
-    let (signed, encoded) = config
-        .sign_request(
-            passed,
-            &OutboundSearch {
-                api_base: "https://www.searchapi.io/api/v1/search",
-                api_key: None,
-                optional_params: &optional_params,
-                body: &body,
-            },
-        )
-        .unwrap();
+    let (signed, encoded) = signed_headers(
+        &config,
+        "https://www.searchapi.io/api/v1/search",
+        &optional_params,
+        &body,
+    );
     assert_eq!(signed.get("X-Trace").map(String::as_str), Some("abc"));
     assert!(encoded.is_none());
 }

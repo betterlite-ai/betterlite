@@ -14,7 +14,7 @@ pub(super) struct Adapter<P: SearchProvider> {
     body: Mutex<Option<P::Body>>,
 }
 impl<P: SearchProvider> Adapter<P> {
-    pub(super) fn new(provider: P) -> Self {
+    pub(super) const fn new(provider: P) -> Self {
         Self {
             provider,
             body: Mutex::new(None),

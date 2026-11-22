@@ -19,75 +19,74 @@ pub(crate) struct ReplyCall {
     body: String,
 }
 #[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RequestCall {
+    query: SearchQuery,
+    #[serde(default)]
+    optional_params: Object,
+    #[serde(default)]
+    api_key: Option<String>,
+    #[serde(default)]
+    api_base: Option<String>,
+    #[serde(default)]
+    environment: BTreeMap<String, String>,
+    #[serde(default)]
+    headers: Headers,
+    #[serde(default)]
+    reply: Option<ReplyCall>,
+}
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RegistryCall {
+    providers: Vec<String>,
+}
+#[derive(Debug, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
 pub(crate) enum Input {
-    Request {
-        query: SearchQuery,
-        #[serde(default)]
-        optional_params: Object,
-        #[serde(default)]
-        api_key: Option<String>,
-        #[serde(default)]
-        api_base: Option<String>,
-        #[serde(default)]
-        environment: BTreeMap<String, String>,
-        #[serde(default)]
-        headers: Headers,
-        #[serde(default)]
-        reply: Option<ReplyCall>,
-    },
-    Registry {
-        providers: Vec<String>,
-    },
+    Request(RequestCall),
+    Registry(RegistryCall),
 }
 pub(crate) struct Op;
 impl Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Request {
-                query,
-                optional_params,
-                api_key,
-                api_base,
-                environment,
-                headers,
-                reply,
-            } => {
-                let config = TinyfishSearch::load(environment);
-                let key = api_key.as_deref().map(SecretString::from);
-                let validated = config
-                    .validated_headers(headers.clone(), key.as_ref(), api_base.as_deref())
-                    .or_value_error()?;
-                let body = config
-                    .transform_search_request(&RequestInput {
-                        query,
-                        optional_params,
-                        api_key: key.as_ref(),
-                        api_base: api_base.as_deref(),
-                        headers: &validated,
-                    })
-                    .or_value_error()?;
-                let url = config
-                    .complete_url(
-                        api_base.as_deref(),
-                        optional_params,
-                        Some(&body),
-                        key.as_ref(),
-                    )
-                    .or_value_error()?;
-                let params = serde_json::to_value(&body).or_value_error()?;
-                let response = reply_answer(&config, reply.as_ref())?;
-                Ok(json!({
-                    "headers": validated,
-                    "params": params,
-                    "url": url,
-                    "response": response,
-                }))
-            }
-            Input::Registry { providers } => Ok(registry_answer(providers)),
+            Input::Request(call) => request_answer(call),
+            Input::Registry(call) => Ok(registry_answer(&call.providers)),
         }
     }
+}
+fn request_answer(call: &RequestCall) -> HelperResult {
+    let config = TinyfishSearch::load(&call.environment);
+    let key = call.api_key.as_deref().map(SecretString::from);
+    let validated = config
+        .validated_headers(call.headers.clone(), key.as_ref(), call.api_base.as_deref())
+        .or_value_error()?;
+    let body = config
+        .transform_search_request(&RequestInput {
+            query: &call.query,
+            optional_params: &call.optional_params,
+            api_key: key.as_ref(),
+            api_base: call.api_base.as_deref(),
+            headers: &validated,
+        })
+        .or_value_error()?;
+    let url = config
+        .complete_url(
+            call.api_base.as_deref(),
+            &call.optional_params,
+            Some(&body),
+            key.as_ref(),
+        )
+        .or_value_error()?;
+    let params = serde_json::to_value(&body).or_value_error()?;
+    let response = reply_answer(&config, call.reply.as_ref())?;
+    Ok(json!({
+        "headers": validated,
+        "params": params,
+        "url": url,
+        "response": response,
+    }))
 }
 fn reply_answer(config: &TinyfishSearch<'_>, reply: Option<&ReplyCall>) -> HelperResult {
     let Some(reply) = reply else {

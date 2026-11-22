@@ -138,7 +138,7 @@ fn clamped(value: i128) -> usize {
     limit.clamp(RESULT_FLOOR, TINYFISH_RESULT_CAP)
 }
 fn clamped_float(value: f64) -> usize {
-    let bounded = value.trunc().max(RESULT_FLOOR_FLOAT).min(RESULT_CAP_FLOAT);
+    let bounded = value.trunc().clamp(RESULT_FLOOR_FLOAT, RESULT_CAP_FLOAT);
     let raw = bounded.to_string();
     raw.parse::<usize>().unwrap_or(TINYFISH_RESULT_CAP)
 }
