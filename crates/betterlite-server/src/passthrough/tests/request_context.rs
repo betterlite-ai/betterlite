@@ -6,6 +6,7 @@ use betterlite_core::api::request_principal_metadata::{Metadata, PrincipalFacts}
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use http::header::HeaderValue;
+use rstest::rstest;
 
 use crate::failure_hook::lift::PASS_THROUGH_CALL_TYPE;
 use crate::passthrough::PassthroughLogPayload;
@@ -74,6 +75,13 @@ fn headers() -> HeaderMap {
     headers.insert("x-litellm-tags", HeaderValue::from_static("three"));
     headers.insert("x-custom", HeaderValue::from_static("first"));
     headers.append("x-custom", HeaderValue::from_static("second"));
+    headers.insert(
+        "authorization",
+        HeaderValue::from_static("Bearer sk-secret"),
+    );
+    headers.insert("x-litellm-api-key", HeaderValue::from_static("sk-litellm"));
+    headers.insert("cookie", HeaderValue::from_static("session=abc"));
+    headers.append("cookie", HeaderValue::from_static("theme=dark"));
     headers.insert("x-binary", HeaderValue::from_bytes(b"\xff").unwrap());
     headers
 }
@@ -123,6 +131,31 @@ fn initialized(
     })
     .unwrap();
     (kwargs, logging_obj)
+}
+
+fn kwargs_with_headers(headers: &HeaderMap) -> PassThroughKwargs {
+    let paths = BTreeSet::new();
+    let dispatch = DispatchContext {
+        endpoint_marker: None,
+        path_params: &paths,
+    };
+    let user_api_key_dict = key();
+    let mut logging_obj = PassthroughLoggingObj::default();
+    init_pass_through_kwargs(PassThroughInit {
+        request: PassThroughRequest {
+            url: "https://upstream.example/v1",
+            method: "POST",
+            headers,
+            deployment_model_info: None,
+        },
+        user_api_key_dict: &user_api_key_dict,
+        passthrough_logging_payload: payload(),
+        logging_obj: &mut logging_obj,
+        parsed_body: None,
+        litellm_call_id: None,
+        dispatch: &dispatch,
+    })
+    .unwrap()
 }
 
 fn assert_forwarded(kwargs: &PassThroughKwargs, logging_obj: &PassthroughLoggingObj) {
@@ -191,6 +224,12 @@ fn assert_proxy_request(kwargs: &PassThroughKwargs) {
     let sent_headers = object(&proxy_request["headers"]);
     assert_eq!(text(&sent_headers["x-custom"]), "first, second");
     assert_eq!(text(&sent_headers["tags"]), "one, two");
+    // every credential header keeps its name but loses its value
+    assert_eq!(text(&sent_headers["authorization"]), "***REDACTED***");
+    assert_eq!(text(&sent_headers["x-litellm-api-key"]), "***REDACTED***");
+    // a repeated credential header is one redacted value, not a joined list of them
+    assert_eq!(text(&sent_headers["cookie"]), "***REDACTED***");
+    assert_eq!(sent_headers.len(), 6);
     // a header value that is not UTF-8 has no place in the logged request
     assert!(sent_headers.get("x-binary").is_none());
 }
@@ -260,6 +299,28 @@ fn passthrough_init_kwargs() {
     assert_no_budgets(&user_defined);
 
     assert_metadata_type_error(&user_api_key_dict);
+}
+
+#[rstest]
+#[case::authorization("authorization")]
+#[case::api_key("api-key")]
+#[case::x_api_key("x-api-key")]
+#[case::x_goog_api_key("x-goog-api-key")]
+#[case::ocp_apim_subscription_key("ocp-apim-subscription-key")]
+#[case::x_litellm_api_key("x-litellm-api-key")]
+#[case::cookie("cookie")]
+#[case::proxy_authorization("proxy-authorization")]
+fn passthrough_credential_header_names_are_redacted(#[case] header: &'static str) {
+    let mut headers = HeaderMap::new();
+    headers.insert(header, HeaderValue::from_static("secret"));
+    headers.insert("x-custom", HeaderValue::from_static("visible"));
+    let kwargs = kwargs_with_headers(&headers);
+    let data = kwargs.to_data();
+    let params = object(&data["litellm_params"]);
+    let proxy_request = object(&params["proxy_server_request"]);
+    let sent_headers = object(&proxy_request["headers"]);
+    assert_eq!(text(&sent_headers[header]), "***REDACTED***");
+    assert_eq!(text(&sent_headers["x-custom"]), "visible");
 }
 
 #[test]

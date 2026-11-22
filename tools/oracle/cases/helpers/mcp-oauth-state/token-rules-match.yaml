@@ -1,0 +1,36 @@
+kind: helper
+name: mcp-oauth-state-token-rules-match
+call:
+  b7530:
+    function: validate_token_response
+    token_response: {expires_in: 300.0, org_id: 12345, scope: read, verified: true}
+    rules: {expires_in: "300.0", org_id: "12345", scope: read, verified: "true"}
+    server_id: srv-1
+calls:
+  - b7530:
+      function: validate_token_response
+      token_response: {access_token: token}
+      rules: {}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {verified: true}
+      rules: {verified: true}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {n: 1e-7}
+      rules: {n: "1e-07"}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {n: 1e20}
+      rules: {n: "1e+20"}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {scopes: [a, b]}
+      rules: {scopes: [a, b]}
+      server_id: srv-1
+env: {}
+compare: {ignore: []}

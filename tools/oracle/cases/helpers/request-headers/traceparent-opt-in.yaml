@@ -1,0 +1,118 @@
+kind: helper
+name: request-headers-traceparent-opt-in
+call:
+  request_headers:
+    clean: []
+    backend: []
+    model_group: []
+    metadata:
+      - headers:
+          - [traceparent, 00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0c9902b7-01]
+          - [baggage, "user.id=42, session.id = abc-123"]
+        data: {model: gpt-4o, metadata: {}}
+        slot: metadata
+      - headers:
+          - [x-litellm-trace-id, chain-trace-1]
+          - [traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]
+          - [baggage, session.id=from-baggage]
+        data: {model: gpt-4o, litellm_metadata: {team: a}}
+        slot: litellm_metadata
+      - headers:
+          - [traceparent, 00-00000000000000000000000000000000-00f067aa0c9902b7-01]
+          - [baggage, "session.id=, user.id=1"]
+        data: {metadata: {}}
+        slot: metadata
+      - headers:
+          - [traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7]
+        data: {litellm_trace_id: caller-trace, metadata: {}}
+        slot: metadata
+      - headers:
+          - [Traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]
+          - [x-litellm-spend-logs-metadata, '{"team": "search", "run": 3}']
+          - [x-litellm-agent-id, agent-7]
+        data: {metadata: {spend_logs_metadata: {old: true}}}
+        slot: metadata
+      - headers:
+          - [x-litellm-spend-logs-metadata, "not json"]
+          - [x-litellm-agent-id, ""]
+        data: {metadata: {}}
+        slot: metadata
+      - headers:
+          - [x-litellm-spend-logs-metadata, "null"]
+        data: {metadata: {}}
+        slot: metadata
+      - headers: [[baggage, session.id=from-baggage]]
+        data:
+          metadata:
+            user_id: {device_id: d1, session_id: 3f0c8a4e-1b2d-4c5e-9f6a-7b8c9d0e1f2a}
+        slot: metadata
+      - headers: []
+        data:
+          metadata:
+            user_id: user_abc_account_def_session_9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d
+        slot: metadata
+      - headers: []
+        data: {metadata: "not an object"}
+        slot: metadata
+    otel_trace_id:
+      - data: {model: gpt-4o, metadata: {}}
+        slot: metadata
+        span: [1311768467294899695, 255]
+      - data: {model: gpt-4o, litellm_metadata: {}, metadata: {}}
+        slot: litellm_metadata
+        span: [42, 7]
+      - data: {model: gpt-4o, litellm_trace_id: caller-trace, metadata: {}}
+        slot: metadata
+        span: [42, 7]
+      - data: {model: gpt-4o, litellm_metadata: {}, metadata: {trace_id: requester-trace}}
+        slot: litellm_metadata
+        span: [42, 7]
+      - data: {model: gpt-4o, metadata: {trace_id: null}}
+        slot: metadata
+        span: [42, 7]
+      - data: {model: gpt-4o, metadata: {}}
+        slot: metadata
+        span: [42, 0]
+      - data: {model: gpt-4o, metadata: {}}
+        slot: metadata
+        span: [0, 7]
+      - data: {model: gpt-4o, metadata: {}}
+        slot: metadata
+        span: null
+      - data: {model: gpt-4o}
+        slot: metadata
+        span: [42, 7]
+    traceparent:
+      - data: {model: gpt-4o}
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
+        forward: true
+        otel_enabled: true
+      - data: {model: gpt-4o}
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
+        forward: false
+        otel_enabled: true
+      - data: {model: gpt-4o}
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
+        forward: true
+        otel_enabled: false
+      - data: {model: gpt-4o, extra_headers: {traceparent: caller-set, x-other: one}}
+        headers: [[traceparent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
+        forward: true
+        otel_enabled: true
+      - data: {model: gpt-4o, extra_headers: {x-other: one}}
+        headers: [[TraceParent, 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9902b7-01]]
+        forward: true
+        otel_enabled: true
+      - data: {model: gpt-4o}
+        headers: [[x-other, one]]
+        forward: true
+        otel_enabled: true
+      - data: {model: gpt-4o}
+        headers: []
+        forward: true
+        otel_enabled: true
+    user: []
+    provider: []
+    cache_control: []
+env: {}
+compare: {ignore: []}

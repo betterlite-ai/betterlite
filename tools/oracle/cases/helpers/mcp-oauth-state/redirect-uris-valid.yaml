@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-oauth-state-redirect-uris-valid
+call:
+  b7530:
+    function: client_supplied_redirect_uris
+    value: ["https://client.example/cb", "http://127.0.0.1:8080/cb"]
+calls:
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: ["https://client.example/cb"]
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: ["urn:ietf:wg:oauth:2.0:oob", "https://client.example/cb?x=1"]
+  - b7530:
+      function: client_supplied_redirect_uris
+      value:
+        - "https://client.example/cb"
+        - "http://localhost:3000/callback"
+        - "https://client.example/another"
+env: {}
+compare: {ignore: []}
