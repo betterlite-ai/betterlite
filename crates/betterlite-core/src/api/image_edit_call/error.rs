@@ -67,14 +67,10 @@ impl ImageEditException {
             // Invalid is a request value the declared type can't hold: docs/compatibility.md's 400 that names the field
             ImageEditError::Invalid(_)
             | ImageEditError::Resolution(_)
-            | ImageEditError::UnknownProvider { .. } => {
-                let message = error.to_string();
-                project(
-                    raw_exception(&message, Some(400), false, model, provider),
-                    &message,
-                    redactor,
-                )
-            }
+            | ImageEditError::UnknownProvider { .. } => project(
+                raw_exception(&error.to_string(), Some(400), false, model, provider),
+                redactor,
+            ),
             // str() of the provider config's BaseLLMException is the reply text itself
             ImageEditError::Provider(source) => project(
                 raw_exception(
@@ -84,24 +80,11 @@ impl ImageEditException {
                     model,
                     provider,
                 ),
-                &source.message,
                 redactor,
             ),
             // LiteLLM raises UnsupportedParamsError itself and exception_type passes it through: 400, no type, param null, no code
             ImageEditError::Options(ImageInputOptionsError::UnsupportedParams { .. }) => {
-                ImageEditException {
-                    class: ErrorClass::UnsupportedParams(Box::new(ErrorContext {
-                        message: error.to_string(),
-                        model: model.map(str::to_owned),
-                        provider: Some(provider.to_owned()),
-                        max_retries: None,
-                        num_retries: None,
-                        body_type: None,
-                        body_param: None,
-                        body_code: None,
-                    })),
-                    message: error.to_string(),
-                }
+                unsupported_params(error, model, provider)
             }
             ImageEditError::UnsupportedConfig { .. }
             | ImageEditError::FormField(_)
@@ -109,14 +92,26 @@ impl ImageEditException {
             | ImageEditError::HeaderText { .. }
             | ImageEditError::InvalidTimeout { .. }
             | ImageEditError::Transport { .. }
-            | ImageEditError::Logging(_) => {
-                let message = error.to_string();
-                project(
-                    raw_exception(&message, None, false, model, provider),
-                    &message,
-                    redactor,
-                )
-            }
+            | ImageEditError::Logging(_) => project(
+                raw_exception(&error.to_string(), None, false, model, provider),
+                redactor,
+            ),
+        }
+    }
+
+    fn unsupported_params(error: &ImageEditError, model: Option<&str>, provider: &str) -> Self {
+        Self {
+            class: ErrorClass::UnsupportedParams(Box::new(ErrorContext {
+                message: error.to_string(),
+                model: model.map(str::to_owned),
+                provider: Some(provider.to_owned()),
+                max_retries: None,
+                num_retries: None,
+                body_type: None,
+                body_param: None,
+                body_code: None,
+            })),
+            message: error.to_string(),
         }
     }
 }
@@ -144,9 +139,10 @@ pub(crate) fn raw_exception(
 
 // exception_type's full dispatch: the timeout preamble, every provider family, then _map_exception_by_status
 #[must_use]
-pub(crate) fn project(raw: RawException, message: &str, redactor: &Redactor) -> ImageEditException {
+pub(crate) fn project(raw: RawException, redactor: &Redactor) -> ImageEditException {
+    let message = raw.error_str.clone();
     ImageEditException {
         class: dispatch(&DispatchInput::Raw(Box::new(raw)), redactor),
-        message: message.to_owned(),
+        message,
     }
 }

@@ -34,7 +34,7 @@ pub(crate) fn form_fields(
     call: &ImageEditCall,
     non_default: &Params,
 ) -> Result<Vec<FormField>, ImageEditError> {
-    let source = JsonValue::Object(non_default.to_owned().into_iter().collect());
+    let source = JsonValue::Object(non_default.clone().into_iter().collect());
     let body = call.extra_body.as_ref().map(|params| {
         JsonValue::Object(
             params

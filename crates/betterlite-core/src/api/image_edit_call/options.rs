@@ -43,7 +43,10 @@ pub(crate) fn requested_options(
 }
 
 // a declared field a kwarg fills: JSON null counts as absent, and a value the declared type can't hold names the field
-fn typed_kwarg<T: DeserializeOwned>(name: &str, value: &Json) -> Result<Option<T>, ImageEditError> {
+fn typed_kwarg<T>(name: &str, value: &Json) -> Result<Option<T>, ImageEditError>
+where
+    T: DeserializeOwned,
+{
     match value {
         Json::Null => Ok(None),
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
