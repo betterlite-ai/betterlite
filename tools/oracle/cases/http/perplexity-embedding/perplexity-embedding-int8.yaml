@@ -12,7 +12,7 @@ request:
   method: POST
   path: /v1/embeddings
   headers: {content-type: application/json, authorization: Bearer oracle-master}
-  body: {model: pplx-embed, input: hello, encoding_format: float, foo: bar}
+  body: {model: pplx-embed, input: hello, encoding_format: float, foo: bar, extra_body: {baz: 1, model: other}}
 upstream:
   - status: 200
     headers: {content-type: application/json}
