@@ -43,7 +43,7 @@ pub(crate) fn decode(
         (PreparedKind::Chat(chat), Upstream::Buffered(response)) => Ok(OperationResult::Chat(
             ChatCompletion::OpenAi(Box::new(project(
                 response,
-                Projection::Chat {
+                &Projection::Chat {
                     json_mode: false,
                     provider: reply_provider(chat.client_model.as_deref()),
                 },
