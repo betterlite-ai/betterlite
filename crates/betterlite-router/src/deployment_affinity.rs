@@ -4,7 +4,7 @@ pub mod flags;
 mod hook;
 pub mod json;
 mod read;
-mod tests;
+pub(crate) mod tests;
 
 use std::collections::BTreeSet;
 use std::sync::Arc;

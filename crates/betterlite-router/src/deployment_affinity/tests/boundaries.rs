@@ -24,6 +24,17 @@ pub(super) async fn empty_pool() {
     assert!(fixture.filter(&[], Some(&kwargs)).await.is_empty());
 }
 
+// without the responses flag a previous_response_id selects nothing
+pub(super) async fn response_without_flag_ignored() {
+    let fixture = fixture(&[AffinityFlag::Deployment]);
+    let healthy = pool(&["a", "b"]);
+    let kwargs = request(&[(
+        "previous_response_id",
+        text(&encoded_previous_response_id("b")),
+    )]);
+    assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["a", "b"]);
+}
+
 // an empty previous_response_id is present but decodes to no model id
 pub(super) async fn empty_previous_response_id() {
     let fixture = Fixture::new(settings(&[AffinityFlag::ResponsesApi]), &[]);

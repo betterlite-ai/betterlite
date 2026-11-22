@@ -2,7 +2,7 @@
 
 mod behaviors;
 mod boundaries;
-mod support;
+pub(crate) mod support;
 
 use std::future::{Future, ready};
 
@@ -51,6 +51,7 @@ where
 
 #[rstest]
 #[case::empty_pool(boundaries::empty_pool())]
+#[case::response_without_flag_ignored(boundaries::response_without_flag_ignored())]
 #[case::empty_previous_response_id(boundaries::empty_previous_response_id())]
 #[case::non_text_previous_response_id(boundaries::non_text_previous_response_id())]
 #[case::null_previous_response_id(boundaries::null_previous_response_id())]
