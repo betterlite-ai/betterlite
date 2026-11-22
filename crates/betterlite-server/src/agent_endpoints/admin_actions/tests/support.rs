@@ -390,6 +390,10 @@ pub(super) fn key(role: &str) -> UserAPIKeyAuth {
 pub(super) fn key_with_user(role: &str, user_id: Option<&str>) -> UserAPIKeyAuth {
     let mut fields: BTreeMap<String, JsonData> = BTreeMap::new();
     fields.insert(String::from("user_role"), JsonData::String(role.to_owned()));
+    fields.insert(
+        String::from("api_key"),
+        JsonData::String(String::from("sk-test")),
+    );
     if let Some(id) = user_id {
         fields.insert(String::from("user_id"), JsonData::String(id.to_owned()));
     }

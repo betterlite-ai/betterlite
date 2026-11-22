@@ -1,17 +1,32 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use axum::http::StatusCode;
 use betterlite_auth::agent_policy::AgentResponse as PolicyAgent;
 use betterlite_auth::agent_registry::{AgentRegistry, AgentRegistryApi as _};
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::agents::{AgentKillSwitchAuth, AgentKillSwitchConfig, AgentKillSwitchMethod};
+use chrono::DateTime;
 use secrecy::ExposeSecret as _;
 use thiserror::Error;
 
-use super::support::{ADMIN, Fixture, caller, kill_switch_path, post};
-use crate::agent_endpoints::admin_actions::ports::{DeliveringTrigger, KillSwitchTrigger};
+use super::support::{ADMIN, Fixture, caller, kill_switch_path, lock, post};
+use crate::agent_endpoints::admin_actions::ports::{
+    AgentRegistryLookup, DeliveringTrigger, KillSwitchAuditWriter, KillSwitchTrigger,
+};
+use crate::audit_events::callbacks::{
+    AuditCallbackConfig, AuditCallbackDispatcher, AuditCallbackError, AuditCallbackFuture,
+    AuditCallbackRegistry, AuditLogCallback, AuditTaskSpawner,
+};
+use crate::audit_events::enums::{AuditAction, AuditTable};
+use crate::audit_events::record::AuditLogRecord;
+use crate::audit_events::settings::AuditSettings;
+use crate::audit_events::sink::{
+    AuditEventSink, AuditLogRepository, AuditRepositoryError, SystemAuditClock,
+};
 use crate::kill_switch_management::client::{
     KillSwitchHttpClient, KillSwitchResponse, KillSwitchSendOptions,
 };
@@ -37,6 +52,16 @@ async fn the_registry_adapter_keeps_the_stored_kill_switch() {
         panic!("the bearer auth survives the serde round trip");
     };
     assert_eq!(token.expose_secret(), "sk-live");
+}
+
+#[test]
+fn the_registry_adapter_forwards_ids_for_agent() {
+    let registry = AgentRegistry::default();
+    let agent: PolicyAgent = serde_json::from_str(POLICY_AGENT).unwrap();
+    registry.register_agent(agent);
+    let ids = AgentRegistryLookup::ids_for_agent(&registry, "agent-1");
+    assert!(ids.contains("agent-1"));
+    assert_eq!(ids.len(), 1);
 }
 
 #[derive(Debug, Error)]
@@ -111,4 +136,90 @@ async fn the_delivering_trigger_reports_the_client_failure() {
         result.error.as_deref(),
         Some("the client cannot build requests")
     );
+}
+
+struct RecordingRepository {
+    records: Arc<Mutex<Vec<AuditLogRecord>>>,
+}
+
+#[async_trait]
+impl AuditLogRepository for RecordingRepository {
+    fn available(&self) -> bool {
+        true
+    }
+
+    async fn insert_audit_log(&self, record: &AuditLogRecord) -> Result<(), AuditRepositoryError> {
+        lock(&self.records).push(record.clone());
+        Ok(())
+    }
+}
+
+struct NoCallbackRegistry;
+
+impl AuditCallbackRegistry for NoCallbackRegistry {
+    fn resolve(&self, _name: &str) -> Option<Arc<dyn AuditLogCallback>> {
+        None
+    }
+
+    fn build_dedicated_s3_logger(
+        &self,
+        _params: &JsonValue,
+    ) -> Result<Arc<dyn AuditLogCallback>, AuditCallbackError> {
+        Err(AuditCallbackError::Failed)
+    }
+}
+
+struct NoSpawner;
+
+impl AuditTaskSpawner for NoSpawner {
+    fn spawn(&self, _task: AuditCallbackFuture) {}
+}
+
+struct EnabledSettings;
+
+impl AuditSettings for EnabledSettings {
+    fn is_audit_logging_enabled(&self, _explicit: Option<bool>) -> bool {
+        true
+    }
+
+    fn audit_log_callbacks(&self) -> &[AuditCallbackConfig] {
+        &[]
+    }
+
+    fn s3_audit_callback_params(&self) -> Option<&JsonValue> {
+        None
+    }
+}
+
+#[tokio::test]
+async fn the_sink_writer_records_the_kill_switch_row() {
+    let records: Arc<Mutex<Vec<AuditLogRecord>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = AuditEventSink {
+        settings: Arc::new(EnabledSettings),
+        callbacks: Arc::new(AuditCallbackDispatcher::new(
+            Arc::new(NoCallbackRegistry),
+            Arc::new(NoSpawner),
+        )),
+        repository: Arc::new(RecordingRepository {
+            records: Arc::clone(&records),
+        }),
+        clock: Arc::new(SystemAuditClock),
+        new_id: Arc::new(|| String::from("audit-1")),
+    };
+    let record = AuditLogRecord {
+        id: String::from("audit-1"),
+        updated_at: DateTime::parse_from_rfc3339("2026-01-02T03:04:05+00:00").unwrap(),
+        changed_by: Some(String::from("user-1")),
+        changed_by_api_key: None,
+        action: AuditAction::KillSwitchFired,
+        table_name: AuditTable::Agent,
+        object_id: String::from("agent-1"),
+        before_value: None,
+        updated_values: None,
+    };
+    KillSwitchAuditWriter::write(&sink, record).await;
+    let stored = lock(&records);
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].id, "audit-1");
+    assert_eq!(stored[0].object_id, "agent-1");
 }

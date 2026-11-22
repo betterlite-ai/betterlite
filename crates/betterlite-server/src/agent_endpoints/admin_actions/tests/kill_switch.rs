@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::agents::{AgentKillSwitchMethod, AgentKillSwitchResult};
+use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 
 use super::support::{
@@ -83,6 +84,10 @@ async fn success_returns_200_and_writes_the_audit() {
     assert_eq!(records[0].table_name, AuditTable::Agent);
     assert_eq!(records[0].object_id, "agent-1");
     assert_eq!(records[0].changed_by.as_deref(), Some("user-1"));
+    let Some(provenance) = records[0].changed_by_api_key.as_ref() else {
+        panic!("the audit row names the key that fired the switch");
+    };
+    assert_ne!(provenance.expose_secret(), "sk-test");
     assert_eq!(
         records[0].updated_at.to_rfc3339(),
         "2026-01-02T03:04:05+00:00"
