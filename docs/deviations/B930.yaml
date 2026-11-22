@@ -21,6 +21,15 @@ deviations:
       object.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L322
   - what: >-
+      model_info.id is matched by string conversion only for text and numeric ids. A boolean, list or
+      object id is treated as no id, while LiteLLM str()-converts any non-None id and could match a
+      marker to it.
+    why: >-
+      docs/compatibility.md stops parity at the types LiteLLM declares: ModelInfo declares id as
+      text, and str() of other Python values is duck typing. A working deployment carries a string id
+      or the numeric id the task ports, so the narrowed match cannot drop a live pin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L186-L188
+  - what: >-
       The decryptability cache lasts one filter call: strip_for_targets resolves every distinct origin
       once into a local map. LiteLLM's functools.cache on target_can_decrypt keeps each answer for the
       life of the process, so a later request reuses a boundary lookup taken before the catalog or its
