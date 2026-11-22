@@ -79,14 +79,18 @@ fn connect(runtime: &Runtime, input: &Input, step: &QuerySetup) -> Result<Value,
         Some(value) => usize::try_from(value).map_err(failure)?,
         None => 0_usize,
     };
+    let base = step.api_base.as_deref();
+    let version = step.api_version.as_deref();
+    let protocol = step.realtime_protocol.as_deref();
+    let params = step.query_params.as_ref();
     let settings = RealtimeConnectSettings {
-        api_base: step.api_base.as_deref(),
+        api_base: base,
         api_key: key.as_ref(),
         azure_ad_token: token.as_ref(),
         model: &input.model,
-        api_version: step.api_version.as_deref(),
-        realtime_protocol: step.realtime_protocol.as_deref(),
-        query_params: step.query_params.as_ref(),
+        api_version: version,
+        realtime_protocol: protocol,
+        query_params: params,
         ssl_verification: &verification,
         max_message_size_bytes: max_size,
     };
