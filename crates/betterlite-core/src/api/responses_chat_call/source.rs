@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 
 use async_trait::async_trait;
-use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::stream::SseParser;
 use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
@@ -53,6 +52,13 @@ enum Phase {
     Failed,
 }
 
+// One step of the source: a shaped chunk, the closing chunks, or another look at the queue.
+enum Step {
+    Chunk(Json),
+    Close,
+    More,
+}
+
 impl ResponsesChunkSource {
     #[must_use]
     pub fn new(config: ChunkSourceConfig, body: CompletionBody) -> Self {
@@ -80,35 +86,37 @@ impl ResponsesChunkSource {
 
     async fn advance(&mut self) -> Result<Option<Json>, StreamFailure> {
         loop {
-            if self.pending.is_empty()
-                && (self.phase == Phase::Done || self.phase == Phase::Exhausted)
-            {
-                return self.closing();
-            }
-            let Some(payload) = self.pending.pop_front() else {
-                let read = self.body.0.next().await;
-                self.queue_item(read)?;
-                continue;
-            };
-            if payload.trim_ascii() == DONE_SENTINEL {
-                self.phase = Phase::Done;
-                continue;
-            }
-            if let Some(chunk) = self.shape(&payload)? {
-                return Ok(Some(chunk));
+            match self.step().await? {
+                Step::Chunk(chunk) => return Ok(Some(chunk)),
+                Step::Close => return self.closing(),
+                Step::More => {}
             }
         }
     }
 
-    // One body item into the queue, or the parsed tail of the stream when the bytes end.
-    fn queue_item(
-        &mut self,
-        item: Option<Result<Vec<u8>, HttpError>>,
-    ) -> Result<(), StreamFailure> {
-        let Some(read) = item else {
+    // Pops one queued payload, reads one body item, or reports that only the closing chunks are left.
+    async fn step(&mut self) -> Result<Step, StreamFailure> {
+        if let Some(payload) = self.pending.pop_front() {
+            if payload.trim_ascii() == DONE_SENTINEL {
+                self.phase = Phase::Done;
+                return Ok(Step::More);
+            }
+            if let Some(chunk) = self.shape(&payload)? {
+                return Ok(Step::Chunk(chunk));
+            }
+            return Ok(Step::More);
+        }
+        if self.phase != Phase::Reading {
+            return Ok(Step::Close);
+        }
+        let Some(read) = self.body.0.next().await else {
             self.pending.extend(self.parser.finish());
             self.phase = Phase::Exhausted;
-            return Ok(());
+            return Ok(if self.pending.is_empty() {
+                Step::Close
+            } else {
+                Step::More
+            });
         };
         let bytes = read.map_err(|error| unclassified(&error))?;
         let events = self
@@ -116,7 +124,7 @@ impl ResponsesChunkSource {
             .push(&bytes)
             .map_err(|error| unclassified(&error))?;
         self.pending.extend(events);
-        Ok(())
+        Ok(Step::More)
     }
 
     // None means the payload shaped no chunk, after the wrapper stripped a usage-only one.
