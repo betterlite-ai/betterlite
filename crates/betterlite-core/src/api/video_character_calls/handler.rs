@@ -60,7 +60,7 @@ enum TransportCall<'call> {
 }
 
 impl HandlerCall {
-    const fn transport_call<'call>(&'call self, is_async: bool) -> TransportCall<'call> {
+    const fn transport_call(&self, is_async: bool) -> TransportCall<'_> {
         match &self.arguments {
             HandlerArguments::Create { name, video } => {
                 TransportCall::Create(CharacterCreateCall {
@@ -123,8 +123,8 @@ where
     C::Error: CharacterProviderFailure,
 {
     match call {
-        TransportCall::Create(call) => transport.video_create_character_handler(call),
-        TransportCall::Get(call) => transport.video_get_character_handler(call),
+        TransportCall::Create(create_call) => transport.video_create_character_handler(create_call),
+        TransportCall::Get(get_call) => transport.video_get_character_handler(get_call),
     }
 }
 

@@ -186,7 +186,7 @@ fn resolved_timeout(
     request_timeout_seconds: f64,
 ) -> Result<Duration, CharacterCallError> {
     let seconds = timeout
-        .filter(|seconds| *seconds != 0.0)
+        .filter(|seconds| *seconds != 0.0_f64)
         .unwrap_or(request_timeout_seconds);
     Duration::try_from_secs_f64(seconds)
         .map_err(|source| CharacterCallError::Timeout { seconds, source })

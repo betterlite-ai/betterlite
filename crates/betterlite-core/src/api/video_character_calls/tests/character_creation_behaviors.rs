@@ -9,11 +9,10 @@ use betterlite_openai::video_edits::response::CharacterKind;
 use rstest::rstest;
 
 use super::support::{
-    CALL_ID, Fixture, INITIAL_CALL_TYPE, MOCK_JSON, REQUEST_TIMEOUT_SECONDS, Reply,
-    full_create_call, headers, json, video,
+    CALL_ID, Fixture, INITIAL_CALL_TYPE, MOCK_JSON, Reply, full_create_call, headers, json, video,
 };
 use crate::api::bfl::edit::media::SuppliedMedia;
-use crate::api::video_character_calls::{CharacterOutcome, DEFAULT_TIMEOUT_SECONDS};
+use crate::api::video_character_calls::CharacterOutcome;
 
 fn name_params(name: &str) -> indexmap::IndexMap<String, Json> {
     indexmap::IndexMap::from([("name".to_owned(), Json::Text(name.to_owned()))])
@@ -73,7 +72,6 @@ fn video_create_character_carries_the_callers_provider() {
     assert_eq!(seen.video, video());
     assert!(!seen.is_async);
     assert_eq!(seen.timeout, Duration::from_secs(600));
-    assert_eq!(DEFAULT_TIMEOUT_SECONDS, 600.0_f64);
 }
 
 #[tokio::test]
@@ -241,9 +239,8 @@ fn create_falsey_timeout_falls_back_to_the_request_timeout(#[case] timeout: Opti
 
     assert_eq!(
         fixture.handler.creates[0].timeout,
-        Duration::from_millis(1_234_000)
+        Duration::from_secs(1_234)
     );
-    assert_eq!(REQUEST_TIMEOUT_SECONDS, 1234.0_f64);
 }
 
 #[test]

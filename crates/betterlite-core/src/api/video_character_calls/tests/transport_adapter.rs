@@ -214,11 +214,7 @@ impl Wire {
         }
     }
 
-    fn record(
-        &self,
-        mode: Mode,
-        request: CharacterRequest,
-    ) -> Result<UpstreamResponse, RequestFailure> {
+    fn record(&self, mode: Mode, request: &CharacterRequest) -> UpstreamResponse {
         self.sent
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -226,17 +222,17 @@ impl Wire {
                 mode,
                 timeout: request.timeout,
             });
-        Ok(UpstreamResponse {
+        UpstreamResponse {
             status: 200,
             headers: HeaderMap::new(),
             body: b"{}".to_vec(),
-        })
+        }
     }
 }
 
 impl CharacterSyncClient for Wire {
     fn send_blocking(&self, request: CharacterRequest) -> Result<UpstreamResponse, RequestFailure> {
-        self.record(Mode::Sync, request)
+        Ok(self.record(Mode::Sync, &request))
     }
 }
 
@@ -245,7 +241,7 @@ impl CharacterAsyncClient for Wire {
         &self,
         request: CharacterRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, RequestFailure>> + Send {
-        ready(self.record(Mode::Asynchronous, request))
+        ready(Ok(self.record(Mode::Asynchronous, &request)))
     }
 }
 
@@ -401,7 +397,6 @@ fn transport_adapter_create_answers_in_place() {
             CharacterOutcome::Pending(_) => panic!("a blocking transport answers directly"),
         };
     assert_eq!(object, character());
-    drop(transport);
     assert_eq!(
         fixture.sent(),
         vec![Sent {
@@ -430,7 +425,6 @@ async fn transport_adapter_create_awaits_the_async_client() {
         .expect("the transport answers");
 
     assert_eq!(object, character());
-    drop(transport);
     assert_eq!(
         fixture.sent(),
         vec![Sent {
@@ -459,7 +453,6 @@ async fn transport_adapter_get_awaits_the_async_client() {
         .expect("the transport answers");
 
     assert_eq!(object, character());
-    drop(transport);
     assert_eq!(
         fixture.sent(),
         vec![Sent {
@@ -489,7 +482,6 @@ fn transport_adapter_get_answers_in_place() {
             CharacterOutcome::Pending(_) => panic!("a blocking transport answers directly"),
         };
     assert_eq!(object, character());
-    drop(transport);
     assert_eq!(
         fixture.sent(),
         vec![Sent {
@@ -523,7 +515,6 @@ fn transport_adapter_maps_a_provider_fault() {
     assert_eq!(details.provider.as_deref(), Some("openai"));
     assert_eq!(details.model.as_deref(), Some(""));
     assert!(details.message.contains("the video is unreadable"));
-    drop(transport);
     assert!(fixture.sent().is_empty());
 }
 
@@ -553,7 +544,6 @@ fn transport_adapter_maps_a_client_fault_without_a_status() {
     };
     assert_eq!(context.provider.as_deref(), Some("openai"));
     assert!(context.message.contains("api_key"));
-    drop(transport);
     assert!(fixture.sent().is_empty());
 }
 
@@ -578,12 +568,11 @@ fn transport_adapter_passes_the_resolved_fallback_timeout() {
             CharacterOutcome::Pending(_) => panic!("a blocking transport answers directly"),
         };
     assert_eq!(object, character());
-    drop(transport);
     assert_eq!(
         fixture.sent(),
         vec![Sent {
             mode: Mode::Sync,
-            timeout: Some(Duration::from_millis(1_234_000)),
+            timeout: Some(Duration::from_secs(1_234)),
         }]
     );
 }

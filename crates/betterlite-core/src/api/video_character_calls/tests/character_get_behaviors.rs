@@ -9,8 +9,7 @@ use betterlite_openai::video_edits::response::CharacterKind;
 use rstest::rstest;
 
 use super::support::{
-    CALL_ID, Fixture, INITIAL_CALL_TYPE, MOCK_JSON, REQUEST_TIMEOUT_SECONDS, Reply, full_get_call,
-    headers, json,
+    CALL_ID, Fixture, INITIAL_CALL_TYPE, MOCK_JSON, Reply, full_get_call, headers, json,
 };
 use crate::api::video_character_calls::CharacterOutcome;
 
@@ -228,11 +227,7 @@ fn get_falsey_timeout_falls_back_to_the_request_timeout(#[case] timeout: Option<
 
     fixture.get(&call).expect("the handler answers");
 
-    assert_eq!(
-        fixture.handler.gets[0].timeout,
-        Duration::from_millis(1_234_000)
-    );
-    assert_eq!(REQUEST_TIMEOUT_SECONDS, 1234.0_f64);
+    assert_eq!(fixture.handler.gets[0].timeout, Duration::from_secs(1_234));
 }
 
 #[test]

@@ -16,6 +16,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use thiserror::Error;
+use tokio::task::yield_now;
 
 use super::super::error::{CharacterCallFailure, CharacterHandlerFailure};
 use super::super::handler::{CharacterAnswered, CharacterHandler, HandlerArguments, HandlerCall};
@@ -189,7 +190,7 @@ fn handler_failure(status_code: Option<u16>, message: &str) -> CharacterHandlerF
 }
 
 async fn deferred_answer() -> Result<CharacterObject, CharacterHandlerFailure> {
-    tokio::task::yield_now().await;
+    yield_now().await;
     Ok(character())
 }
 
@@ -197,7 +198,7 @@ async fn deferred_failure(
     status_code: Option<u16>,
     message: &'static str,
 ) -> Result<CharacterObject, CharacterHandlerFailure> {
-    tokio::task::yield_now().await;
+    yield_now().await;
     Err(handler_failure(status_code, message))
 }
 

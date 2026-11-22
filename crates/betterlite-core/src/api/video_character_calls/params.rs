@@ -42,7 +42,7 @@ fn json_value(value: &Json) -> JsonValue {
         Json::Object(object) => JsonValue::Object(
             object
                 .iter()
-                .map(|(name, value)| (name.clone(), json_value(value)))
+                .map(|(name, nested)| (name.clone(), json_value(nested)))
                 .collect(),
         ),
     }

@@ -121,10 +121,10 @@ pub enum CharacterOutcome<'call> {
 }
 
 impl fmt::Debug for CharacterOutcome<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Done(character) => formatter.debug_tuple("Done").field(character).finish(),
-            Self::Pending(_) => formatter.write_str("Pending(<future>)"),
+            Self::Done(character) => f.debug_tuple("Done").field(character).finish(),
+            Self::Pending(_) => f.write_str("Pending(<future>)"),
         }
     }
 }
@@ -183,7 +183,7 @@ fn character_call<'call>(
     let answer = handler
         .handle(call.handler_call(ready, provider.clone(), asynchronous))
         .map_err(|error| failure(CharacterCallError::Handler(error), &provider, deps.redactor))?;
-    answered(answer, provider, deps.redactor)
+    Ok(answered(answer, provider, deps.redactor))
 }
 
 // the async entry resolves whatever form the handler answered in
@@ -204,15 +204,13 @@ fn answered<'call>(
     answer: CharacterAnswered<'call>,
     provider: String,
     redactor: &'call Redactor,
-) -> Result<CharacterOutcome<'call>, CharacterCallFailure> {
+) -> CharacterOutcome<'call> {
     match answer {
-        CharacterAnswered::Done(character) => Ok(CharacterOutcome::Done(character)),
-        CharacterAnswered::Pending(pending) => {
-            Ok(CharacterOutcome::Pending(Box::pin(async move {
-                pending.await.map_err(|error| {
-                    failure(CharacterCallError::Handler(error), &provider, redactor)
-                })
-            })))
-        }
+        CharacterAnswered::Done(character) => CharacterOutcome::Done(character),
+        CharacterAnswered::Pending(pending) => CharacterOutcome::Pending(Box::pin(async move {
+            pending
+                .await
+                .map_err(|error| failure(CharacterCallError::Handler(error), &provider, redactor))
+        })),
     }
 }
