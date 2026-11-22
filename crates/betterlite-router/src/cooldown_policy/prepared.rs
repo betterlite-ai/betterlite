@@ -5,8 +5,7 @@ use crate::cooldown_decisions::failure::{
 use crate::cooldown_decisions::policy::CooldownPolicy;
 use crate::cooldown_policy::error::CooldownPolicyError;
 use crate::cooldown_policy::facts::{
-    cooldown_event, deployment_facts, error_status_code, error_status_text,
-    resolve_time_to_cooldown,
+    cooldown_event, deployment_facts, error_status_text, resolve_time_to_cooldown,
 };
 use crate::cooldown_policy::service::{CooldownAttempt, CooldownCall, FallbackFailure};
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -91,7 +90,7 @@ where
         return Ok(None);
     }
     // a generic API call's caller-supplied id can 404 on its own, so that status is not a health signal
-    if failure.original_generic_function && error_status_code(&failure_facts.status) == 404 {
+    if failure.original_generic_function && failure_facts.status.cast_code() == 404 {
         return Ok(None);
     }
     if is_caller_timeout_408(&failure_facts.status, failure_facts.caller_timeout.as_ref()) {

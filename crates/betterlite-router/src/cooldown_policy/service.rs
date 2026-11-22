@@ -9,7 +9,7 @@ use crate::cooldown_decisions::policy::CooldownPolicy;
 use crate::cooldown_policy::counter::AllowedFailsStore;
 use crate::cooldown_policy::error::CooldownPolicyError;
 use crate::cooldown_policy::event::{CooldownEvent, CooldownObserver, notify};
-use crate::cooldown_policy::facts::{deployment_facts, error_status_code};
+use crate::cooldown_policy::facts::deployment_facts;
 use crate::cooldown_policy::prepared::{
     PreparedCooldown, prepare_callback, prepare_cooldown, prepare_fallback,
 };
@@ -135,7 +135,7 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
             .add(
                 &prepared.deployment_id,
                 &prepared.exception,
-                error_status_code(&prepared.failure.status),
+                prepared.failure.status.cast_code(),
                 prepared.time_to_cooldown.map(|seconds| seconds.0),
             )
             .map_err(|source| CooldownPolicyError::Cooldown {

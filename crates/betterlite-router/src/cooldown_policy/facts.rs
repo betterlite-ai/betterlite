@@ -72,14 +72,6 @@ pub(crate) fn resolve_time_to_cooldown(
         .unwrap_or(router_default))
 }
 
-// cast_exception_status_to_int, which the stored record and the fallback's 404 guard both read
-pub(crate) fn error_status_code(status: &ErrorStatus) -> i64 {
-    match status {
-        ErrorStatus::Code(code) => *code,
-        ErrorStatus::Text(text) => text.trim().parse().unwrap_or(500),
-    }
-}
-
 // router_cooldown_event_callback builds the values from the deployment and passes exception_status on untouched
 pub(crate) fn cooldown_event<'deployment>(
     deployment: &'deployment DeploymentSpec,
