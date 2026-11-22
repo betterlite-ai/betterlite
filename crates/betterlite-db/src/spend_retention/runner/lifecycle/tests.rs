@@ -559,7 +559,8 @@ async fn cancellation_records_aborted_with_the_progress_so_far() {
     assert_eq!(runs(&registry, "completed"), None);
     let contents = logs.contents();
     assert!(contents.contains("Spend log cleanup cancelled after"));
-    assert!(!contents.contains("rows_deleted=0, batches=0"));
+    assert!(!contents.contains("rows_deleted=0,"));
+    assert!(!contents.contains("batches=0)"));
     let lock = cleanup.pod_lock.as_ref().expect("the lock manager");
     assert_eq!(lock.calls(), vec!["acquire"]);
     case.close().await;
