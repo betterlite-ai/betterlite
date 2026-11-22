@@ -1,0 +1,13 @@
+id: B10035
+milestone: R2 bug fixes
+title: A tool policy client whose statement passed its deadline leaves the pool
+status: todo
+depends_on: []
+file: tasks/B10035-expired-tool-policy-client-leaves-pool.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

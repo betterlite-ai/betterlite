@@ -1,0 +1,14 @@
+kind: helper
+name: openrouter-chat-headers
+call:
+  b8311:
+    op: chat
+    provider: openrouter
+    model: anthropic/claude-3.5-sonnet
+    messages: [{role: user, content: hi}]
+    api_base: "{{upstream}}/passed"
+    api_key: "sk-passed"
+    headers: {HTTP-Referer: "https://caller.example"}
+    env: {OR_SITE_URL: "https://env.example", OR_APP_NAME: "env-app"}
+env: {}
+compare: {ignore: []}

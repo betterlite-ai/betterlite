@@ -1,0 +1,6 @@
+task: B1210
+deviations: []
+kept_bugs:
+  - what: The team-callback audit row takes a non-empty litellm-changed-by header as changed_by without the allow_litellm_changed_by_header opt-in that B065's other audit rows require, so a caller who may change a team's callbacks can name anyone as the author of that change.
+    why: The task text and LiteLLM agree on this order, and a UI or script that sends the header today expects its value in the audit row; gating it would silently change who the row names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L212

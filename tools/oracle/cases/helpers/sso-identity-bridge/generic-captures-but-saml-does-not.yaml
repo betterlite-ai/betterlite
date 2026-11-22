@@ -1,0 +1,32 @@
+kind: helper
+name: sso-identity-bridge-generic-captures-but-saml-does-not
+call:
+  sso_identity_bridge:
+    function: gap
+    environment:
+      GENERIC_CLIENT_ID: generic-client-id
+calls:
+  - sso_identity_bridge:
+      function: gap
+      environment:
+        SAML_IDP_METADATA_URL: https://idp.example/metadata
+  - sso_identity_bridge:
+      function: gap
+      environment:
+        SAML_IDP_METADATA_XML: "<xml/>"
+  - sso_identity_bridge:
+      function: startup_gap
+      environment:
+        SAML_IDP_METADATA_URL: https://idp.example/metadata
+  - sso_identity_bridge:
+      function: provider
+      environment:
+        SAML_IDP_METADATA_URL: https://idp.example/metadata
+        SAML_IDP_METADATA_XML: "<xml/>"
+  - sso_identity_bridge:
+      function: gap
+      environment:
+        SAML_IDP_METADATA_URL: ""
+env: {}
+compare:
+  ignore: []

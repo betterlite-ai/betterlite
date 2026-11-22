@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-s3-signing-sign-seed
+call:
+  bedrock_services_s3_signing:
+    operation: sign
+    signings:
+      - content: x
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/k"
+        optional_params: {s3_access_key_id: S3K, s3_secret_access_key: S3S}
+        encryption_key_id: key-1
+env: {}
+compare: {ignore: []}

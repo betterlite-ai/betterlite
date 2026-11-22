@@ -1,0 +1,36 @@
+kind: helper
+name: summary-history-summary-metadata-allowlist
+call:
+  summary_history:
+    action: metadata
+    parent:
+      client_key: dropped
+      allowed_model_region: eu
+      litellm_parent_otel_span: {span: s}
+      litellm_call_id: call-1
+      user_api_key_end_user_model_max_budget: {gpt-4o: 1.5}
+      user_api_key_user_model_max_budget: {gpt-4o: 2}
+      user_api_key_team_model_max_budget: {gpt-4o: 3}
+      user_api_key_model_max_budget: {gpt-4o: 4}
+      user_api_end_user_max_budget: 5.5
+      user_api_key_end_user_id: end-user
+      user_api_key_project_id: project
+      user_api_key_org_id: org
+      user_api_key_user_email: user@example.com
+      user_api_key_user_id: user
+      user_api_key_team_alias: null
+      user_api_key_team_id: team
+      user_api_key_alias: alias
+      user_api_key: hashed-key
+calls:
+- summary_history:
+    action: metadata
+    parent: {client_key: dropped, user_api_key_user_id: null}
+- summary_history:
+    action: metadata
+    parent: {}
+- summary_history:
+    action: metadata
+    parent: null
+env: {}
+compare: {ignore: []}
