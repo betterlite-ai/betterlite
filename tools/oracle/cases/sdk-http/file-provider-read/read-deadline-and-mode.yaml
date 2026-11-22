@@ -56,6 +56,12 @@ call:
         is_async: true
       - function: afile_list
         is_async: false
+      - function: file_retrieve
+        file_id: file_az
+        custom_llm_provider: azure
+        api_key: az-key
+        api_version: "2024-10-21"
+        timeout: 2
 upstream:
   - status: 200
     headers: {content-type: application/json}
@@ -99,10 +105,13 @@ upstream:
   - status: 200
     headers: {content-type: application/json}
     body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_az, object: file, bytes: 5, created_at: 1700000005, filename: az.jsonl, purpose: batch, status: processed}
 compare:
   headers: []
   headers_present: []
-  upstream_headers: [authorization, x-api-key, x-supplied-client]
+  upstream_headers: [authorization, api-key, x-api-key, x-supplied-client]
   ignore:
     - pointer: /file_provider_read/value/steps/5/failure/message
       why: Python's float() text and betterlite's field-naming text differ
