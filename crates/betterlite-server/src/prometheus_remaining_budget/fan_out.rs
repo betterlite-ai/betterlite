@@ -42,6 +42,7 @@ struct BudgetLookups<'request> {
     team: TeamBudgetLookup<'request>,
     user: UserBudgetLookup<'request>,
     org: OrgBudgetLookup<'request>,
+    customer: CustomerBudgetLookup<'request>,
 }
 
 type LookupOutcome = Result<(), LookupError>;
@@ -79,65 +80,89 @@ impl<L: RequestBudgetLookups> RemainingBudgetFanOut<L> {
         if !self.enabled {
             return;
         }
-        match timeout(self.timeout, self.dispatch(request)).await {
+        let lookups = lookups_for(request);
+        match timeout(self.timeout, self.dispatch(lookups)).await {
             Ok(outcomes) => log_failures(outcomes),
             Err(_) => log_timeout(self.timeout),
         }
     }
 
-    async fn dispatch(&self, request: RemainingBudgetRequest<'_>) -> LookupOutcomes {
-        let lookups = lookups_for(request);
+    async fn dispatch(&self, lookups: BudgetLookups<'_>) -> LookupOutcomes {
         join5(
             self.lookups.key(lookups.key),
             self.lookups.team(lookups.team),
             self.lookups.user(lookups.user),
             self.lookups.org(lookups.org),
-            self.lookups.customer(CustomerBudgetLookup {
-                end_user_id: request.end_user_id,
-                response_cost: request.response_cost,
-            }),
+            self.lookups.customer(lookups.customer),
         )
         .await
     }
 }
 
+struct MetadataReads<'meta> {
+    key_spend: Option<Decimal>,
+    key_max_budget: Option<Decimal>,
+    team_spend: Option<Decimal>,
+    team_max_budget: Option<Decimal>,
+    user_spend: Option<Decimal>,
+    user_max_budget: Option<Decimal>,
+    user_email: Option<&'meta str>,
+    org_alias: Option<&'meta str>,
+}
+
+fn metadata_reads(metadata: &BTreeMap<String, AgentJson>) -> MetadataReads<'_> {
+    MetadataReads {
+        key_spend: metadata_decimal(metadata, "user_api_key_spend"),
+        key_max_budget: metadata_decimal(metadata, "user_api_key_max_budget"),
+        team_spend: metadata_decimal(metadata, "user_api_key_team_spend"),
+        team_max_budget: metadata_decimal(metadata, "user_api_key_team_max_budget"),
+        user_spend: metadata_decimal(metadata, "user_api_key_user_spend"),
+        user_max_budget: metadata_decimal(metadata, "user_api_key_user_max_budget"),
+        user_email: metadata
+            .get("user_api_key_user_email")
+            .and_then(AgentJson::as_str),
+        org_alias: metadata
+            .get("user_api_key_org_alias")
+            .and_then(AgentJson::as_str),
+    }
+}
+
 fn lookups_for(request: RemainingBudgetRequest<'_>) -> BudgetLookups<'_> {
+    let reads = metadata_reads(request.metadata);
     BudgetLookups {
         key: KeyBudgetLookup {
             user_api_key: request.key,
             user_api_key_alias: request.key_alias,
             response_cost: request.response_cost,
-            key_max_budget: metadata_decimal(request.metadata, "user_api_key_max_budget"),
-            key_spend: metadata_decimal(request.metadata, "user_api_key_spend"),
+            key_max_budget: reads.key_max_budget,
+            key_spend: reads.key_spend,
             carried: KeyBudgetSnapshot::from_metadata(request.metadata),
         },
         team: TeamBudgetLookup {
             user_api_team: request.team,
             user_api_team_alias: request.team_alias,
-            team_spend: metadata_decimal(request.metadata, "user_api_key_team_spend"),
-            team_max_budget: metadata_decimal(request.metadata, "user_api_key_team_max_budget"),
+            team_spend: reads.team_spend,
+            team_max_budget: reads.team_max_budget,
             response_cost: request.response_cost,
             carried: TeamBudgetSnapshot::from_metadata(request.metadata),
         },
         user: UserBudgetLookup {
             user_id: request.user_id,
-            user_spend: metadata_decimal(request.metadata, "user_api_key_user_spend"),
-            user_max_budget: metadata_decimal(request.metadata, "user_api_key_user_max_budget"),
+            user_spend: reads.user_spend,
+            user_max_budget: reads.user_max_budget,
             response_cost: request.response_cost,
             carried: UserBudgetSnapshot::from_metadata(request.metadata),
-            user_email: request
-                .metadata
-                .get("user_api_key_user_email")
-                .and_then(AgentJson::as_str),
+            user_email: reads.user_email,
         },
         org: OrgBudgetLookup {
             org_id: request.org_id,
             response_cost: request.response_cost,
             carried: OrgBudgetSnapshot::from_metadata(request.metadata),
-            org_alias: request
-                .metadata
-                .get("user_api_key_org_alias")
-                .and_then(AgentJson::as_str),
+            org_alias: reads.org_alias,
+        },
+        customer: CustomerBudgetLookup {
+            end_user_id: request.end_user_id,
+            response_cost: request.response_cost,
         },
     }
 }
