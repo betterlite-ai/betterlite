@@ -1,0 +1,29 @@
+kind: helper
+name: realtime-generic-dispatch
+call:
+  realtime_connect_websocket:
+    scenarios:
+      - model: gemini/gemini-2.0-flash-live-001
+        params:
+          api_base: https://named.example/v1
+          api_key: sk-named
+          headers: {x: old}
+          extra_headers: {x: new, y: test}
+          metadata: {guardrails: [first]}
+          guardrails: [second]
+          litellm_metadata: {guardrails: [third], trace: t1}
+          user: u-1
+          user_api_key_dict: {key: k1}
+          timeout: 12.0
+        query_params: {model: alias, intent: transcription}
+      - model: meta/muse-1
+        params:
+          api_base: https://named.example/v1
+          api_key: sk-named
+          metadata: {guardrails: []}
+          guardrails: []
+          litellm_metadata: {guardrails: [third]}
+        query_params: {model: alias}
+      - model: anthropic/claude-x
+env: {}
+compare: {ignore: []}

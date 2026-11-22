@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::error::Error as StdError;
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -49,7 +50,7 @@ impl fmt::Display for TestError {
     }
 }
 
-impl std::error::Error for TestError {}
+impl StdError for TestError {}
 
 struct TestBackend;
 
@@ -75,7 +76,10 @@ impl BaseRealtimeConfig for TestConfig {
     type Error = TestError;
     type Backend = TestBackend;
 
-    fn validate_environment(&self, environment: &Environment<'_>) -> Result<HeaderMap, Self::Error> {
+    fn validate_environment(
+        &self,
+        environment: &Environment<'_>,
+    ) -> Result<HeaderMap, Self::Error> {
         Ok(environment.headers.clone())
     }
 
@@ -109,8 +113,10 @@ struct ScriptedTokens {
 impl ScriptedTokens {
     fn with(answers: Vec<TokenAnswer>) -> Arc<Self> {
         let tokens = Self::default();
-        *tokens.answers.lock().unwrap_or_else(PoisonError::into_inner) =
-            VecDeque::from(answers);
+        *tokens
+            .answers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = VecDeque::from(answers);
         Arc::new(tokens)
     }
 }
@@ -132,7 +138,11 @@ impl VertexAccessTokenSource for ScriptedTokens {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .pop_front()
-                .unwrap_or_else(|| Err(VertexTokenError { message: String::from("no answer") }))
+                .unwrap_or_else(|| {
+                    Err(VertexTokenError {
+                        message: String::from("no answer"),
+                    })
+                })
         })
     }
 }
@@ -148,13 +158,19 @@ struct Recorder {
 impl Recorder {
     fn with_tokens(tokens: Arc<ScriptedTokens>) -> Self {
         let recorder = Self::default();
-        *recorder.tokens.lock().unwrap_or_else(PoisonError::into_inner) = Some(tokens);
+        *recorder
+            .tokens
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(tokens);
         recorder
     }
 
     fn with_ad_token(reply: Option<SecretString>) -> Self {
         let recorder = Self::default();
-        *recorder.ad_reply.lock().unwrap_or_else(PoisonError::into_inner) = Some(reply);
+        *recorder
+            .ad_reply
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(reply);
         recorder
     }
 
@@ -256,7 +272,10 @@ async fn run(
     dispatch: &Recorder,
     settings: &RealtimeConnectionSettings,
     call: &RealtimeConnectCall<'_>,
-) -> (LoggingState, Result<RealtimeConnection<TestConfig>, RealtimeConnectError<TestError>>) {
+) -> (
+    LoggingState,
+    Result<RealtimeConnection<TestConfig>, RealtimeConnectError<TestError>>,
+) {
     let catalog = ModelCatalog::default();
     let names = BTreeSet::new();
     let environment = BTreeMap::new();
@@ -303,10 +322,7 @@ async fn realtime_generic_dispatch() {
     )]));
     connect.guardrails = Some(Json::List(vec![text("second")]));
     connect.litellm_metadata = Some(IndexMap::from([
-        (
-            String::from("guardrails"),
-            Json::List(vec![text("third")]),
-        ),
+        (String::from("guardrails"), Json::List(vec![text("third")])),
         (String::from("trace"), text("t1")),
     ]));
     let litellm_params = empty_litellm_params();
@@ -327,9 +343,15 @@ async fn realtime_generic_dispatch() {
         panic!("a gemini model must take the generic provider-config branch");
     };
     assert_eq!(dispatch.tags(), vec![RealtimeConfigTag::Gemini]);
-    assert_eq!(plan.transport.api_base.as_deref(), Some("https://named.example/v1"));
     assert_eq!(
-        plan.transport.api_key.as_ref().map(|key| key.expose_secret().as_str()),
+        plan.transport.api_base.as_deref(),
+        Some("https://named.example/v1")
+    );
+    assert_eq!(
+        plan.transport
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
         Some("sk-named")
     );
     assert_eq!(
@@ -340,11 +362,17 @@ async fn realtime_generic_dispatch() {
         ])
     );
     assert_eq!(
-        plan.transport.query_params.as_ref().and_then(|query| query.get("model")),
+        plan.transport
+            .query_params
+            .as_ref()
+            .and_then(|query| query.get("model")),
         Some(&String::from("gemini-2.0-flash-live-001"))
     );
     assert_eq!(
-        plan.transport.query_params.as_ref().and_then(|query| query.get("intent")),
+        plan.transport
+            .query_params
+            .as_ref()
+            .and_then(|query| query.get("intent")),
         Some(&String::from("transcription"))
     );
     assert_eq!(query.get("model").map(String::as_str), Some("alias"));
@@ -352,7 +380,10 @@ async fn realtime_generic_dispatch() {
         plan.transport.litellm_metadata.get("guardrails"),
         Some(&Json::List(vec![text("first")]))
     );
-    assert_eq!(plan.transport.litellm_metadata.get("trace"), Some(&text("t1")));
+    assert_eq!(
+        plan.transport.litellm_metadata.get("trace"),
+        Some(&text("t1"))
+    );
     assert_eq!(logging.model, "gemini-2.0-flash-live-001");
     assert_eq!(
         logging.litellm_params.get("_arealtime"),
@@ -443,13 +474,26 @@ async fn realtime_openai_and_azure_credentials() {
         panic!("an azure model must take the azure branch");
     };
     assert_eq!(plan.api_base.as_deref(), Some("https://global.example"));
-    assert_eq!(plan.api_key.as_ref().map(|key| key.expose_secret().as_str()), Some("sk-global"));
+    assert_eq!(
+        plan.api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("sk-global")
+    );
     assert_eq!(plan.api_version, "2024-10-01-preview");
     assert_eq!(plan.protocol, "GA");
     assert_eq!(plan.azure_ad_token, None);
-    assert!(dispatch.ad_requests.lock().unwrap_or_else(PoisonError::into_inner).is_empty());
+    assert!(
+        dispatch
+            .ad_requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_empty()
+    );
     assert_eq!(
-        plan.query_params.as_ref().and_then(|query| query.get("intent")),
+        plan.query_params
+            .as_ref()
+            .and_then(|query| query.get("intent")),
         Some(&Some(String::from("transcription")))
     );
 
@@ -500,12 +544,20 @@ async fn realtime_openai_and_azure_credentials() {
     assert_eq!(plan.api_base.as_deref(), Some("https://azure.example"));
     assert_eq!(plan.api_key, None);
     assert_eq!(
-        plan.azure_ad_token.as_ref().map(|token| token.expose_secret().as_str()),
+        plan.azure_ad_token
+            .as_ref()
+            .map(|token| token.expose_secret().as_str()),
         Some("resolved-ad")
     );
     assert_eq!(
-        *dispatch.ad_requests.lock().unwrap_or_else(PoisonError::into_inner),
-        vec![(Some(String::from("named-ad")), Some(String::from("tenant-1")))]
+        *dispatch
+            .ad_requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+        vec![(
+            Some(String::from("named-ad")),
+            Some(String::from("tenant-1"))
+        )]
     );
 
     let openai = RealtimeConnectionSettings {
@@ -528,7 +580,9 @@ async fn realtime_openai_and_azure_credentials() {
     };
     assert_eq!(plan.api_base, "https://api.openai.com/");
     assert_eq!(
-        plan.api_key.as_ref().map(|key| key.expose_secret().as_str()),
+        plan.api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
         Some("sk-openai-global")
     );
 }
@@ -568,24 +622,49 @@ async fn realtime_bedrock_and_xai_arguments() {
         panic!("a bedrock model must take the bedrock branch");
     };
     assert_eq!(plan.api_base.as_deref(), Some("https://bedrock.example"));
-    assert_eq!(plan.api_key.as_ref().map(|key| key.expose_secret().as_str()), Some("bedrock-key"));
+    assert_eq!(
+        plan.api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("bedrock-key")
+    );
     assert_eq!(plan.timeout, Some(30.0_f64));
     assert_eq!(plan.aws_region_name.as_deref(), Some("us-east-1"));
-    assert_eq!(plan.aws_access_key_id.as_ref().map(|key| key.expose_secret().as_str()), Some("access"));
     assert_eq!(
-        plan.aws_secret_access_key.as_ref().map(|key| key.expose_secret().as_str()),
+        plan.aws_access_key_id
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("access")
+    );
+    assert_eq!(
+        plan.aws_secret_access_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
         Some("secret-access")
     );
-    assert_eq!(plan.aws_session_token.as_ref().map(|key| key.expose_secret().as_str()), Some("session"));
+    assert_eq!(
+        plan.aws_session_token
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("session")
+    );
     assert_eq!(plan.aws_role_name.as_deref(), Some("role"));
     assert_eq!(plan.aws_session_name.as_deref(), Some("session-name"));
     assert_eq!(plan.aws_profile_name.as_deref(), Some("profile"));
     assert_eq!(
-        plan.aws_web_identity_token.as_ref().map(|key| key.expose_secret().as_str()),
+        plan.aws_web_identity_token
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
         Some("web-identity")
     );
-    assert_eq!(plan.aws_sts_endpoint.as_deref(), Some("https://sts.example"));
-    assert_eq!(plan.aws_bedrock_runtime_endpoint.as_deref(), Some("https://runtime.example"));
+    assert_eq!(
+        plan.aws_sts_endpoint.as_deref(),
+        Some("https://sts.example")
+    );
+    assert_eq!(
+        plan.aws_bedrock_runtime_endpoint.as_deref(),
+        Some("https://runtime.example")
+    );
     assert_eq!(plan.aws_external_id.as_deref(), Some("external"));
     assert_eq!(plan.aws_session_tags, Some(text("tags")));
 
@@ -638,7 +717,12 @@ async fn realtime_bedrock_and_xai_arguments() {
         panic!("an xai model must take the xai branch");
     };
     assert_eq!(plan.api_base, "https://named.example");
-    assert_eq!(plan.api_key.as_ref().map(|key| key.expose_secret().as_str()), Some("xai-key"));
+    assert_eq!(
+        plan.api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("xai-key")
+    );
 
     let connect = params();
     let call = RealtimeConnectCall {
@@ -705,7 +789,10 @@ async fn realtime_vertex_credentials_and_refresh() {
     assert_eq!(plan.transport.api_key, None);
     assert_eq!(plan.transport.timeout, Some(4.0_f64));
     assert_eq!(
-        plan.transport.query_params.as_ref().and_then(|query| query.get("model")),
+        plan.transport
+            .query_params
+            .as_ref()
+            .and_then(|query| query.get("model")),
         Some(&String::from("gemini-live"))
     );
     assert_eq!(
@@ -714,18 +801,17 @@ async fn realtime_vertex_credentials_and_refresh() {
     );
     let refreshed = plan.refresh.resolve_access_token().await.unwrap();
     assert_eq!(refreshed.expose_secret(), "token-b");
-    let calls = tokens.calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    let calls = tokens
+        .calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[1].1.as_deref(), Some("resolved-project"));
 
-    let timed_out = resolve_vertex_access_token_bounded(
-        tokens.as_ref(),
-        None,
-        None,
-        0.0_f64,
-    )
-    .await
-    .unwrap_err();
+    let timed_out = resolve_vertex_access_token_bounded(tokens.as_ref(), None, None, 0.0_f64)
+        .await
+        .unwrap_err();
     assert_eq!(
         timed_out.to_string(),
         "Vertex AI realtime: timed out fetching Google OAuth access token after 0.0s; check network egress from the proxy to the OAuth token endpoint (oauth2.googleapis.com)"

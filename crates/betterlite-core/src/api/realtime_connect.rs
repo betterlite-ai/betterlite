@@ -1,7 +1,6 @@
 mod tests;
 mod token;
 
-use std::convert::Infallible;
 use std::error::Error;
 use std::sync::Arc;
 
@@ -11,13 +10,12 @@ use betterlite_config::sections::xai_identity::Settings as XaiIdentitySettings;
 use betterlite_context::resource_config_selection::realtime::{
     RealtimeConfigTag, select_realtime_config,
 };
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs};
+use betterlite_logging::logging_state::{LoggingState, LoggingStateError};
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{
-    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel,
-    resolve,
+    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel, resolve,
 };
 use betterlite_openai::realtime::connect::DEFAULT_API_BASE;
 use betterlite_openai::realtime::url::QueryParams;
@@ -253,7 +251,7 @@ where
     #[error("the realtime logging update failed")]
     Logging {
         #[from]
-        source: betterlite_logging::logging_state::LoggingStateError,
+        source: LoggingStateError,
     },
 }
 
@@ -617,10 +615,7 @@ fn xai_connection(
     }
 }
 
-fn bedrock_connection(
-    call: &RealtimeConnectCall<'_>,
-    prepared: &Prepared,
-) -> BedrockConnection {
+fn bedrock_connection(call: &RealtimeConnectCall<'_>, prepared: &Prepared) -> BedrockConnection {
     let params = call.params;
     // bedrock reads the named api_base and api_key, with no generic or global fallback
     BedrockConnection {
