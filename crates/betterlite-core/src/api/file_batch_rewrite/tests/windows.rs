@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::io::SeekFrom;
+use std::iter::once;
 use std::sync::atomic::Ordering;
 
 use tokio::sync::Barrier;
@@ -109,8 +110,5 @@ fn expected_reads() -> Vec<usize> {
 fn reverse_completion() -> Vec<String> {
     let first = (1_usize..=32).rev().map(|line| format!("r{line}"));
     let second = (33_usize..=64).rev().map(|line| format!("r{line}"));
-    first
-        .chain(second)
-        .chain(std::iter::once("r65".to_owned()))
-        .collect()
+    first.chain(second).chain(once("r65".to_owned())).collect()
 }

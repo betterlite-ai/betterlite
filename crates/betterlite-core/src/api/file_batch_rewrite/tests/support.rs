@@ -8,8 +8,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use futures_util::future::pending;
 use indexmap::IndexMap;
 use tokio::sync::{Barrier, Notify};
+use tokio::task::yield_now;
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
@@ -474,7 +476,7 @@ impl GuardrailsOnlyPreCall for ReverseHook {
         let call = self.probe.begin(&input.data);
         let ordinal = ordinal_of(&call.marker);
         while !self.later_rows_done(ordinal) {
-            tokio::task::yield_now().await;
+            yield_now().await;
         }
         self.done.lock().unwrap().insert(ordinal);
         let mut data = input.data;
@@ -518,7 +520,7 @@ impl GuardrailsOnlyPreCall for CancellingHook {
         if self.probe.started.lock().unwrap().len() == SCAN_WINDOW {
             self.reached.notify_one();
         }
-        futures_util::future::pending::<()>().await;
+        pending::<()>().await;
         Ok(input.data)
     }
 }
