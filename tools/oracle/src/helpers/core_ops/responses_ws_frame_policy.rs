@@ -124,7 +124,7 @@ impl Probe {
     fn report<GuardError>(
         &self,
         outcome: Result<Cow<'_, str>, FramePolicyError<GuardError>>,
-    ) -> HelperResult
+    ) -> Value
     where
         GuardError: Error + 'static,
     {
@@ -170,7 +170,7 @@ async fn create_view(step: &Step) -> HelperResult {
         message,
     )
     .await;
-    probe.report(outcome)
+    Ok(probe.report(outcome))
 }
 
 fn unmask_view(step: &Step) -> HelperResult {
@@ -201,7 +201,7 @@ fn unmask_view(step: &Step) -> HelperResult {
         .collect();
     let policy = frame_policy(&inputs, &[], None, None);
     let outcome = unmask_response_event(&policy, &probe.data, message);
-    probe.report(outcome)
+    Ok(probe.report(outcome))
 }
 
 async fn completed_view(step: &Step) -> HelperResult {
@@ -224,7 +224,7 @@ async fn completed_view(step: &Step) -> HelperResult {
     }
     let policy = frame_policy(&[], &outputs, None, None);
     let outcome = mask_response_completed(&policy, &probe.data, message).await;
-    probe.report(outcome)
+    Ok(probe.report(outcome))
 }
 
 fn wrong_step(expected: &str) -> Box<HelperError> {
