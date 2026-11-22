@@ -38,11 +38,15 @@ async fn capacity_charges_one_request() {
 
 #[tokio::test]
 async fn capacity_checks_the_model_limit_from_its_argument() {
-    let mut parts = Parts::new(Vec::new(), Vec::new(), None);
+    let mut parts = Parts::new(
+        entries([request_window("model_per_key", "key-1:gpt-4", 1)]),
+        Vec::new(),
+        None,
+    );
     parts.groups = vec![(String::from("gpt4"), String::from("gpt-4"))];
     let fixture = Fixture::new(&parts);
     let auth =
-        support::auth(r#"{"api_key": "key-1", "metadata": {"model_rpm_limit": {"gpt-4": 0}}}"#);
+        support::auth(r#"{"api_key": "key-1", "metadata": {"model_rpm_limit": {"gpt-4": 1}}}"#);
 
     let Err(error) = fixture.hook.request_capacity(&auth, "gpt4", None).await else {
         panic!("the model limit rejects the capacity admission");

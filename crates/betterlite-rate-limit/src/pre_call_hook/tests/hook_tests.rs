@@ -481,6 +481,50 @@ async fn hook_caps_the_output_tokens_from_the_smallest_configured_limit() {
 }
 
 #[tokio::test]
+async fn hook_logs_an_estimate_over_the_smallest_limit() {
+    let (_guard, captured) = support::Captured::recording();
+    let fixture = Fixture::plain();
+    let auth = support::auth(
+        r#"{"api_key": "key-1", "tpm_limit": 6,
+            "metadata": {"default_estimated_output_tokens": 5}}"#,
+    );
+    let mut data = support::data(r#"{"model": "gpt4", "max_tokens": 10}"#);
+
+    fixture
+        .run(None, &auth, &mut data, CallType::Acompletion)
+        .await
+        .expect_err("the reservation is over the smallest TPM limit");
+
+    assert!(
+        captured
+            .text()
+            .contains("cannot fit the smallest TPM limit")
+    );
+}
+
+#[tokio::test]
+async fn hook_stays_quiet_at_the_smallest_limit() {
+    let (_guard, captured) = support::Captured::recording();
+    let fixture = Fixture::plain();
+    let auth = support::auth(
+        r#"{"api_key": "key-1", "tpm_limit": 5,
+            "metadata": {"default_estimated_output_tokens": 5}}"#,
+    );
+    let mut data = support::data(r#"{"model": "gpt4", "max_tokens": 5}"#);
+
+    fixture
+        .run(None, &auth, &mut data, CallType::Acompletion)
+        .await
+        .expect("the reservation fits exactly");
+
+    assert!(
+        !captured
+            .text()
+            .contains("cannot fit the smallest TPM limit")
+    );
+}
+
+#[tokio::test]
 async fn hook_applies_the_responses_output_cap_field_for_its_call_type() {
     let fixture = Fixture::plain();
     let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 1000}"#);

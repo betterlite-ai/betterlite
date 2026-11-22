@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{self, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -15,6 +16,9 @@ use betterlite_redact::structured::Payload;
 use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use tokio_util::task::TaskTracker;
+use tracing::Level;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt;
 
 use crate::concurrency_gauges::ConcurrencyGauges;
 use crate::concurrency_gauges::cache::{GaugeCache, GaugeCacheValue};
@@ -689,4 +693,45 @@ pub(crate) fn proxy_rate_limit(message: &str) -> ProxyRateLimitError {
         llm_provider: None,
     })
     .expect("the test rate limit error is valid")
+}
+
+// a test's own tracing sink, so a debug line is asserted like any other output
+#[derive(Clone, Default)]
+pub(crate) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    pub(crate) fn recording() -> (DefaultGuard, Self) {
+        let captured = Self::default();
+        let guard = set_default(captured.subscriber());
+        (guard, captured)
+    }
+
+    fn subscriber(&self) -> impl tracing::Subscriber + Send + Sync + 'static {
+        let sink = self.clone();
+        fmt()
+            .with_max_level(Level::DEBUG)
+            .with_ansi(false)
+            .with_writer(move || sink.clone())
+            .finish()
+    }
+
+    pub(crate) fn text(&self) -> String {
+        let bytes = self.0.lock().map(|bytes| bytes.clone());
+        String::from_utf8_lossy(&bytes.unwrap_or_default()).into_owned()
+    }
+}
+
+impl Write for Captured {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let mut bytes = self
+            .0
+            .lock()
+            .map_err(|poisoned| io::Error::other(poisoned.to_string()))?;
+        bytes.extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }

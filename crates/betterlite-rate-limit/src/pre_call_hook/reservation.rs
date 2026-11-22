@@ -39,6 +39,15 @@ pub(super) async fn reserve_tokens(
         context.endpoint,
     );
     let estimate = estimate_tokens(context, smallest, configured_output_tokens);
+    if configured_output_tokens.is_some() && estimate > smallest {
+        tracing::debug!(
+            estimate,
+            smallest,
+            configured_output_tokens,
+            model = context.requested_model,
+            "the reservation cannot fit the smallest TPM limit"
+        );
+    }
     let reservations = token_reservations(context.hook, context.model, context.requested_model);
     let response = reservations
         .reserve_tpm_tokens(context.descriptors, estimate)
