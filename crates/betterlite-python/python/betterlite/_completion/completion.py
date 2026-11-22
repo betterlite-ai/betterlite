@@ -26,8 +26,9 @@ from betterlite._completion.mock import (
 from betterlite._completion.stream import (
     CompletionOutcome,
     CustomStreamWrapper,
-    response_from_text,
+    response_from_wire,
 )
+from betterlite._completion.wire import RESPONSE
 from betterlite._native import NativeChatStream, NativeError, NativeSession
 from betterlite.llms.base_llm.base_utils import ResponseFormatModel
 from betterlite.types.utils import Message, ModelResponse
@@ -47,13 +48,14 @@ async def settle_outcome(
     match outcome:
         case ModelResponse() | CustomStreamWrapper():
             return outcome
-    return await outcome
+        case Awaitable():
+            return await outcome
 
 
 def outcome_from_native(answer: str | NativeChatStream) -> CompletionOutcome:
     match answer:
         case str():
-            return response_from_text(answer)
+            return response_from_wire(RESPONSE.validate_json(answer))
         case NativeChatStream():
             return CustomStreamWrapper(answer)
 
@@ -80,10 +82,8 @@ def call_arguments_from(
     args: tuple[JsonValue, ...], kwargs: dict[str, CallValue]
 ) -> dict[str, CallValue]:
     # litellm.utils.acreate and the retry loop hand positional arguments to completion by name
-    arguments: dict[str, CallValue] = dict(kwargs)
-    for name, value in zip(("model", "messages", "timeout"), args, strict=False):
-        arguments[name] = value
-    return arguments
+    positional = dict(zip(("model", "messages", "timeout"), args, strict=False))
+    return {**kwargs, **positional}
 
 
 def completion_from_arguments(
@@ -125,7 +125,8 @@ def completion_from_arguments(
         for name, value in values.items()
         if value is not None and name not in SKIPPED_KWARGS
     }
-    text = json.dumps({"arguments": forwarded, "settings": settings_snapshot()})
+    payload: dict[str, JsonValue] = {"arguments": forwarded, "settings": settings_snapshot()}
+    text = json.dumps(payload)
     if acompletion_flag is True:
         return call_async(text)
     return call_sync(text)

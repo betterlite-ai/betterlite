@@ -151,7 +151,8 @@ def mock_response_value(value: CallValue, model: str, provider: str) -> JsonValu
         case str():
             raise_text_mock(value, model, provider)
             return value
-    return JSON.validate_python(value)
+        case object():
+            return JSON.validate_python(value)
 
 
 def _connect_seconds(timeout: JsonValue) -> float | None:
@@ -164,7 +165,10 @@ def _connect_seconds(timeout: JsonValue) -> float | None:
             match connect:
                 case int() | float():
                     return float(connect)
-    return None
+                case object():
+                    return None
+        case object():
+            return None
 
 
 def raise_mock_timeout(timeout: JsonValue, model: str) -> NoReturn:

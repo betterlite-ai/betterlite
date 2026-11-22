@@ -1,6 +1,6 @@
 from collections.abc import Awaitable
 from pathlib import Path
-from typing import NoReturn, Protocol, TypedDict, runtime_checkable
+from typing import Protocol, TypedDict, runtime_checkable
 
 from pydantic import JsonValue
 
@@ -35,14 +35,6 @@ class AdapterEntry(TypedDict):
 adapter_entries: list[AdapterEntry] | None = None
 
 
-def _missing_adapter(adapter_id: str) -> NoReturn:
-    configured = betterlite.adapters
-    raise ValueError(
-        f"No matching adapter given. Received 'adapter_id'={adapter_id}, "
-        f"litellm.adapters={configured}"
-    )
-
-
 def _find_adapter(adapter_id: str) -> CompletionAdapter:
     # litellm.adapters holds {"id": ..., "adapter": ...} entries; the last match wins as in LiteLLM
     entries = adapter_entries
@@ -53,7 +45,11 @@ def _find_adapter(adapter_id: str) -> CompletionAdapter:
         if entry["id"] == adapter_id:
             found = entry["adapter"]
     if found is None:
-        _missing_adapter(adapter_id)
+        configured = betterlite.adapters
+        raise ValueError(
+            f"No matching adapter given. Received 'adapter_id'={adapter_id}, "
+            f"litellm.adapters={configured}"
+        )
     return found
 
 
@@ -73,7 +69,8 @@ def _translated(
             return adapter.translate_completion_output_params_streaming(
                 completion_stream=response
             )
-    return None
+        case Awaitable():
+            return None
 
 
 def adapter_completion(
@@ -113,4 +110,5 @@ def config_completion(
             return completion_from_arguments({**supplied, **config})
         case dict():
             return completion_from_arguments({**supplied, **configured})
-    raise ValueError("betterlite.config_path must be a string")
+        case object():
+            raise ValueError("betterlite.config_path must be a string")

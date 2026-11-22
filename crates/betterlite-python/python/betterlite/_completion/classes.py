@@ -35,7 +35,8 @@ def _selected_model(model: str | None, params: dict[str, JsonValue]) -> str | No
     match configured:
         case str():
             return configured
-    return None
+        case object():
+            return None
 
 
 class Completions:

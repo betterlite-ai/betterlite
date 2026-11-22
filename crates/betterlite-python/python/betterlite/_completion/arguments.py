@@ -48,7 +48,8 @@ def _proxy_auth_headers() -> dict[str, JsonValue] | None:
     if provider is None:
         return None
     try:
-        return JSON_OBJECT.validate_python(dict(provider.get_auth_headers()))
+        headers: dict[str, str] = dict(provider.get_auth_headers())
+        return JSON_OBJECT.validate_python(headers)
     except Exception as error:
         LOGGER.warning("Failed to get proxy auth headers: %s", error)
         return None
@@ -69,9 +70,7 @@ def messages_value(messages: list[dict[str, JsonValue] | Message]) -> JsonValue:
 
 def timeout_value(value: CallValue | TimeoutValues) -> JsonValue:
     match value:
-        case float():
-            return value
-        case int():
+        case float() | int():
             return value
         case str():
             return float(value)
@@ -83,7 +82,8 @@ def timeout_value(value: CallValue | TimeoutValues) -> JsonValue:
                 "pool": value.pool,
             }
             return phases
-    raise UnsupportedCallArgument("timeout")
+        case object():
+            raise UnsupportedCallArgument("timeout")
 
 
 def response_format_value(value: JsonValue | type[ResponseFormatModel]) -> JsonValue:

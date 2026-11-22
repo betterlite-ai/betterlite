@@ -143,7 +143,8 @@ def _build_error(payload: ErrorPayload) -> BaseException:
             return exceptions.MidStreamFallbackError(message, model, provider)
         case "Exception":
             return Exception(message)
-    raise UnknownNativeError(payload["type"])
+        case _:
+            raise UnknownNativeError(payload["type"])
 
 
 def raise_native_error(error: NativeError) -> NoReturn:

@@ -3,7 +3,6 @@ from typing import Protocol, TypeAlias
 
 from betterlite._completion.wire import (
     CHUNK,
-    RESPONSE,
     WireChoice,
     WireChunk,
     WireDelta,
@@ -76,11 +75,6 @@ def response_from_wire(wire: WireResponse) -> ModelResponse:
         choices=[choice_from_wire(choice) for choice in wire["choices"]],
         moderation=wire.get("moderation"), service_tier=wire.get("service_tier"),
     )
-
-
-# ast-grep-ignore: no-one-line-functions
-def response_from_text(text: str) -> ModelResponse:
-    return response_from_wire(RESPONSE.validate_json(text))
 
 
 def delta_from_wire(delta: WireDelta, first: bool) -> Delta:
