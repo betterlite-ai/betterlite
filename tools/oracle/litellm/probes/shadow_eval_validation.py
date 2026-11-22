@@ -124,7 +124,7 @@ class Table:
         return self.rows
 
 
-class Sentinel(Exception):
+class SentinelError(Exception):
     pass
 
 
@@ -139,10 +139,10 @@ class FakeDb:
         self.litellm_usertable = Table([UserRow(user_id=user) for user in rows.users])
 
     async def query_raw(self, _query: str, *_args: object) -> Sequence[Mapping[str, object]]:
-        raise Sentinel
+        raise SentinelError
 
     async def execute_raw(self, _query: str, *_args: object) -> int:
-        raise Sentinel
+        raise SentinelError
 
 
 class FakePrisma:
@@ -248,7 +248,7 @@ def verdict(auth: UserAPIKeyAuth, *, writer: bool) -> bool:
         if writer and error.status_code == BAD_REQUEST:
             return True
         raise ProbeError("invalid_request", f"{action} answered {error.status_code}") from error
-    except Sentinel:
+    except SentinelError:
         return True
     return True
 
@@ -265,7 +265,7 @@ def start_result(body: Body, router: Router, rows: Targets) -> Validated | Start
         asyncio.run(call(request, auth, router, rows))
     except HTTPException as error:
         return StartRejected(status=error.status_code)
-    except Sentinel:
+    except SentinelError:
         return Validated()
     return Validated()
 

@@ -422,7 +422,7 @@ async fn the_validation_router_refuses_to_dispatch_a_judge_call() {
 
 #[rstest]
 #[case("ANTHROPIC_API_KEY", true)]
-#[case("os.environ/ANTHROPIC_AUTH_TOKEN", true)]
+#[case("ANTHROPIC_AUTH_TOKEN", true)]
 #[case("OPENAI_API_KEY", false)]
 fn a_hosted_manager_holding_either_anthropic_secret_is_consulted(
     #[case] hosted: &str,
