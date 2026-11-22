@@ -1,0 +1,72 @@
+kind: helper
+name: summary-history-effective-token-components
+call:
+  summary_history:
+    action: count
+    model: claude-sonnet-4-5
+    messages:
+    - role: assistant
+      content:
+      - {type: compaction, content: prior}
+      - {type: text, text: kept}
+    - {role: user, content: next}
+    compaction_block: {type: compaction, content: prior}
+    tools:
+    - name: lookup
+      description: Find a record
+      input_schema:
+        type: object
+        properties:
+          id: {type: string}
+    system: be brief
+    counter: {mode: scripted, values: [100, 7, 3]}
+    translation: translated
+calls:
+- summary_history:
+    action: count
+    model: claude-sonnet-4-5
+    messages:
+    - {role: user, content: q}
+    compaction_block: {type: compaction, content: ""}
+    tools: []
+    system: ""
+    counter: {mode: scripted, values: [5]}
+    translation: translated
+- summary_history:
+    action: count
+    model: claude-sonnet-4-5
+    messages:
+    - {role: user, content: q}
+    compaction_block: {type: compaction, content: null}
+    tools: null
+    system: null
+    counter: {mode: scripted, values: [6]}
+    translation: translated
+- summary_history:
+    action: count
+    model: claude-sonnet-4-5
+    messages:
+    - role: user
+      content:
+      - {type: compaction, content: prior}
+    - {role: user, content: q}
+    compaction_block: null
+    tools:
+    - name: lookup
+      input_schema: {type: object}
+    system: null
+    counter: {mode: scripted, values: [9]}
+    translation: broken
+- summary_history:
+    action: count
+    model: gpt-3.5-turbo
+    messages:
+    - {role: user, content: hello there, how are you}
+    - {role: assistant, content: fine thanks}
+    compaction_block: {type: compaction, content: earlier summary of the chat}
+    tools: null
+    system: be brief
+    counter: {mode: real}
+    translation: translated
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

@@ -1,14 +1,14 @@
 id: B8311
 milestone: M3 providers
 title: OpenRouter, Vercel AI Gateway and Eden AI dispatch
-status: todo
+status: done
 depends_on: [B2230, B5360, B1084, B5830, B5835, B6080]
 file: tasks/B8311-gateway-provider-dispatch.yaml
 covers:
   - "litellm/main.py"
 parent: B041
 split_from: B041
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2908

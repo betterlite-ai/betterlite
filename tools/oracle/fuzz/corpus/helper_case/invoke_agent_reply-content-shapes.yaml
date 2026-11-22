@@ -1,0 +1,21 @@
+kind: helper
+name: invoke_agent_reply-content-shapes
+call:
+  invoke_agent_reply:
+    content:
+      - events:
+          - event_type: chunk
+            content_type: application/json
+            message_type: event
+            payload: {"bytes": "aGk="}
+          - event_type: chunk
+            content_type: application/json
+            message_type: event
+            payload: {}
+      - events:
+          - event_type: chunk
+            content_type: application/json
+            message_type: event
+            payload: [1]
+env: {}
+compare: {ignore: []}

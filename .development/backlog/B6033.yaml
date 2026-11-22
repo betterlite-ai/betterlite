@@ -1,7 +1,7 @@
 id: B6033
 milestone: M12 python
 title: Python CustomPromptManagement, CustomSecretManager and BaseSecretManager
-status: todo
+status: done
 depends_on: [B6030]
 file: tasks/B6033-python-prompt-secret-bases.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/integrations/custom_sso_handler.py"
 parent: B164
 split_from: B164
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2898

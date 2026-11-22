@@ -1,0 +1,13 @@
+kind: helper
+name: openrouter-embedding
+call:
+  b8311:
+    op: embedding
+    provider: openrouter
+    model: google/gemini-embedding-001
+    input: hello
+    api_base: "{{upstream}}/passed"
+    api_key: "sk-passed"
+    env: {OR_SITE_URL: "https://env.example", OR_APP_NAME: "env-app"}
+env: {}
+compare: {ignore: []}
