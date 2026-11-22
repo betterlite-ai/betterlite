@@ -149,7 +149,7 @@ fn complete<R>(
         )),
         Which::Vercel => headers_or_global(context.headers.cloned(), context.settings.headers),
     };
-    if let Which::Openrouter = gateway.which {
+    if matches!(gateway.which, Which::Openrouter) {
         merge_config(
             &mut call.optional_params,
             context.class_config,

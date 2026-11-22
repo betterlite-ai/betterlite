@@ -4,7 +4,6 @@ use std::time::Duration;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::embedding::EmbeddingInput;
 use rstest::rstest;
-use serde_json::json;
 
 use crate::gateway_provider_dispatch::call::EmbeddingCall;
 use crate::gateway_provider_dispatch::chat::OPENROUTER_DEFAULT_API_BASE;
@@ -17,8 +16,8 @@ fn call() -> EmbeddingCall {
     EmbeddingCall {
         model: String::from("text-embedding-3-small"),
         input: EmbeddingInput::Text(String::from("hello")),
-        optional_params: object(json!({"dimensions": 8})),
-        litellm_params: object(json!({"custom_llm_provider": "openrouter"})),
+        optional_params: object(r#"{"dimensions": 8}"#),
+        litellm_params: object(r#"{"custom_llm_provider": "openrouter"}"#),
         api_key: None,
         api_base: None,
         headers: None,

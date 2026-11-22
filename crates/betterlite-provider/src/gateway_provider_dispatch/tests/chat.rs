@@ -6,7 +6,6 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json as LogJson;
 use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
-use serde_json::json;
 
 use crate::gateway_provider_dispatch::call::CompletionCall;
 use crate::gateway_provider_dispatch::chat::{
@@ -383,43 +382,39 @@ fn global_headers_are_laid_on_only_when_the_request_has_none() {
 #[test]
 fn the_class_config_adds_only_the_keys_the_request_lacks() {
     let mut fixture = Fixture::new();
-    fixture.optional_params = object(json!({"temperature": 0.5}));
-    fixture.class_config = object(json!({"temperature": 2, "stop": ["END"]}));
+    fixture.optional_params = object(r#"{"temperature": 0.5}"#);
+    fixture.class_config = object(r#"{"temperature": 2, "stop": ["END"]}"#);
     let call = openrouter(&fixture);
     assert_eq!(
         call.optional_params,
-        object(json!({"temperature": 0.5, "stop": ["END"]}))
+        object(r#"{"temperature": 0.5, "stop": ["END"]}"#)
     );
 }
 
 #[test]
 fn the_class_config_updates_an_existing_extra_body_key_by_key() {
     let mut fixture = Fixture::new();
-    fixture.optional_params = object(json!({
-        "extra_body": {"transforms": ["caller"], "models": ["m"]}
-    }));
-    fixture.class_config = object(json!({
-        "extra_body": {"transforms": ["config"], "route": "fallback"}
-    }));
+    fixture.optional_params =
+        object(r#"{"extra_body": {"transforms": ["caller"], "models": ["m"]}}"#);
+    fixture.class_config =
+        object(r#"{"extra_body": {"transforms": ["config"], "route": "fallback"}}"#);
     let call = openrouter(&fixture);
     assert_eq!(
         call.optional_params.get("extra_body"),
-        Some(&Json::Object(object(json!({
-            "transforms": ["config"],
-            "models": ["m"],
-            "route": "fallback"
-        }))))
+        Some(&Json::Object(object(
+            r#"{"transforms": ["config"], "models": ["m"], "route": "fallback"}"#
+        )))
     );
 }
 
 #[test]
 fn the_class_config_sets_extra_body_when_the_request_has_none() {
     let mut fixture = Fixture::new();
-    fixture.class_config = object(json!({"extra_body": {"route": "fallback"}}));
+    fixture.class_config = object(r#"{"extra_body": {"route": "fallback"}}"#);
     let call = openrouter(&fixture);
     assert_eq!(
         call.optional_params.get("extra_body"),
-        Some(&Json::Object(object(json!({"route": "fallback"}))))
+        Some(&Json::Object(object(r#"{"route": "fallback"}"#)))
     );
 }
 
@@ -461,10 +456,10 @@ fn an_extra_body_that_is_not_an_object_is_refused(
 fn the_vercel_arm_ignores_the_class_config() {
     let mut fixture = Fixture::new();
     fixture.provider = String::from(VERCEL_PROVIDER);
-    fixture.optional_params = object(json!({"temperature": 1}));
-    fixture.class_config = object(json!({"temperature": 2, "top_p": 1, "extra_body": 1}));
+    fixture.optional_params = object(r#"{"temperature": 1}"#);
+    fixture.class_config = object(r#"{"temperature": 2, "top_p": 1, "extra_body": 1}"#);
     let call = vercel(&fixture);
-    assert_eq!(call.optional_params, object(json!({"temperature": 1})));
+    assert_eq!(call.optional_params, object(r#"{"temperature": 1}"#));
 }
 
 #[test]
@@ -507,14 +502,14 @@ fn both_arms_hand_the_request_fields_through_unchanged() {
     fixture.model = String::from("anthropic/claude-3.5-sonnet");
     fixture.stream = Some(true);
     fixture.timeout = Some(Duration::from_secs(30));
-    fixture.litellm_params = object(json!({"custom": "value"}));
-    fixture.optional_params = object(json!({"top_p": 1}));
+    fixture.litellm_params = object(r#"{"custom": "value"}"#);
+    fixture.optional_params = object(r#"{"top_p": 1}"#);
     let call = openrouter(&fixture);
     assert_eq!(call.model, "anthropic/claude-3.5-sonnet");
     assert_eq!(call.stream, Some(true));
     assert_eq!(call.timeout, Some(Duration::from_secs(30)));
-    assert_eq!(call.litellm_params, object(json!({"custom": "value"})));
-    assert_eq!(call.optional_params, object(json!({"top_p": 1})));
+    assert_eq!(call.litellm_params, object(r#"{"custom": "value"}"#));
+    assert_eq!(call.optional_params, object(r#"{"top_p": 1}"#));
     assert_eq!(call.messages.len(), 1);
     assert!(!call.acompletion);
 }

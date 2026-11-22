@@ -199,8 +199,8 @@ fn a_transport_failure_names_the_underlying_message() {
     let error = get_models(&transport, None, DispatchSettings::from(&fixture.settings))
         .expect_err("the listing surfaces the transport error");
     assert!(matches!(
-        error,
-        ModelsError::Request { ref message } if message == "connection refused"
+        &error,
+        ModelsError::Request { message } if message.as_str() == "connection refused"
     ));
     assert_eq!(
         error.to_string(),
