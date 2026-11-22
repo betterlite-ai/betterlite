@@ -41,7 +41,7 @@ pub fn metadata_model_info(kwargs: &JsonObject) -> Option<&JsonObject> {
         .find_map(|metadata| metadata.get(MODEL_INFO).and_then(json_object))
 }
 
-fn json_object(slot: &Json) -> Option<&JsonObject> {
+const fn json_object(slot: &Json) -> Option<&JsonObject> {
     match slot {
         Json::Object(value) => Some(value),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
