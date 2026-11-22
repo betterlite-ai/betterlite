@@ -4,7 +4,6 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-use super::aggregation::round_to;
 use super::error::ShadowResultsError;
 use super::legs::LegRow;
 use super::results::JobResults;
@@ -18,7 +17,7 @@ use crate::shadow_eval_models::leg::ShadowLeg;
 pub struct LegAttemptCount {
     pub job_id: String,
     pub attempt_count: i64,
-    pub spend: f64,
+    pub spend: Decimal,
 }
 
 pub type LegCounts = BTreeMap<String, LegAttemptCount>;
@@ -29,7 +28,7 @@ pub type LegCounts = BTreeMap<String, LegAttemptCount>;
 pub struct AttemptTotals {
     pub judged_count: i64,
     pub error_count: i64,
-    pub judge_spend: f64,
+    pub judge_spend: Decimal,
 }
 
 // one errored attempt, as the latest-error read considers it
@@ -113,7 +112,7 @@ pub fn detail_response(
         targets,
         judged_count: Some(totals.judged_count),
         error_count: Some(totals.error_count),
-        judge_spend: Some(round_to(totals.judge_spend, 6, "judge_spend")?),
+        judge_spend: Some(totals.judge_spend.round_dp(6)),
         last_error,
         results: results.results.clone(),
         ..job.clone()
@@ -131,7 +130,7 @@ fn target(leg: &LegRow, counts: &LegCounts) -> Result<ShadowLeg, ShadowResultsEr
         stopped_at: leg.stopped_at,
         attempt_count: Some(count.map_or(0, |found| found.attempt_count)),
         spend: Some(match count {
-            Some(found) => round_to(found.spend, 6, "spend")?,
+            Some(found) => found.spend.round_dp(6),
             None => Decimal::ZERO,
         }),
         verdicts: None,

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use num_traits::ToPrimitive as _;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
@@ -103,19 +104,24 @@ impl OverallTotals {
             turns,
             shadow_wins,
             ties,
-            real_spend: sampled_spend(rows, |row| row.real_spend, "sampled_real_spend")?,
-            shadow_spend: sampled_spend(rows, |row| row.shadow_spend, "sampled_shadow_spend")?,
+            real_spend: summed_spend(rows, |row| row.real_spend, "sampled_real_spend")?,
+            shadow_spend: summed_spend(rows, |row| row.shadow_spend, "sampled_shadow_spend")?,
         })
     }
 }
 
-fn sampled_spend(
+// LiteLLM adds these doubles in order; the response serializes that sum, so f64 does the adding
+fn summed_spend(
     rows: &[AttemptAggRow],
-    of: fn(&AttemptAggRow) -> f64,
+    of: fn(&AttemptAggRow) -> Decimal,
     name: &'static str,
 ) -> Result<Decimal, ShadowResultsError> {
-    let total = rows.iter().map(of).sum::<f64>();
-    Decimal::from_f64_retain(total).ok_or(ShadowResultsError::Unrepresentable { name })
+    let total = rows
+        .iter()
+        .map(|row| of(row).to_f64().unwrap_or(f64::NAN))
+        .sum::<f64>();
+    let exact = Decimal::from_f64_retain(total);
+    exact.ok_or(ShadowResultsError::Unrepresentable { name })
 }
 
 // each leg's slice, keyed by the (target_type, target_id) pair so same-id targets never collapse

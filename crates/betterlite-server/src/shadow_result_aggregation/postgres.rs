@@ -142,8 +142,8 @@ fn attempt_agg_row(row: &Row) -> RepositoryResult<AttemptAggRow> {
         shadow_wins: i64::from(column::<i32>(row, "shadow_wins")?),
         ties: i64::from(column::<i32>(row, "ties")?),
         avg_confidence: column(row, "avg_confidence")?,
-        real_spend: column(row, "real_spend")?,
-        shadow_spend: column(row, "shadow_spend")?,
+        real_spend: money(row, "real_spend")?,
+        shadow_spend: money(row, "shadow_spend")?,
         cache_hit_turns: i64::from(column::<i32>(row, "cache_hit_turns")?),
     })
 }
@@ -152,7 +152,7 @@ fn attempt_totals_row(row: &Row) -> RepositoryResult<AttemptTotals> {
     Ok(AttemptTotals {
         judged_count: i64::from(column::<i32>(row, "judged_count")?),
         error_count: i64::from(column::<i32>(row, "error_count")?),
-        judge_spend: column(row, "judge_spend")?,
+        judge_spend: money(row, "judge_spend")?,
     })
 }
 
@@ -160,7 +160,7 @@ fn attempt_count_row(row: &Row) -> RepositoryResult<LegAttemptCount> {
     Ok(LegAttemptCount {
         job_id: column(row, "job_id")?,
         attempt_count: i64::from(column::<i32>(row, "attempt_count")?),
-        spend: column(row, "spend")?,
+        spend: money(row, "spend")?,
     })
 }
 
@@ -208,6 +208,13 @@ fn user_label_row(row: &Row) -> RepositoryResult<LabelRow> {
         target_alias: column(row, "user_email")?,
         key_name: None,
     })
+}
+
+// the column holds the SQL sum's double; retaining that exact value keeps Python's round of it
+fn money(row: &Row, name: &'static str) -> RepositoryResult<Decimal> {
+    let value: f64 = column(row, name)?;
+    let exact = Decimal::from_f64_retain(value);
+    exact.ok_or(ShadowResultsError::Unrepresentable { name })
 }
 
 fn column<T>(row: &Row, name: &'static str) -> RepositoryResult<T>

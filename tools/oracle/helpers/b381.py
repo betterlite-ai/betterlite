@@ -4,8 +4,9 @@ from typing import Literal, TypedDict
 
 import litellm
 from litellm.proxy.db.prisma_client import PrismaWrapper
-from litellm.proxy.management_endpoints.auto_router_endpoints import _ATTEMPT_AGG_BY_LEG_SQL, _ATTEMPT_AGG_BY_MODEL_SQL, _ATTEMPT_AGG_BY_ROUTER_SQL, _ATTEMPT_AGG_BY_TIER_SQL, _ATTEMPT_COUNTS_SQL, _ATTEMPT_TOTALS_ROWS, _ATTEMPT_TOTALS_SQL, _FUNNEL_TOTALS_SQL, _LEG_ROWS, _group_response, _leg_attempt_counts, _query_raw, _shadow_eval_attempts, _shadow_eval_results, _with_target_labels  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1176-L1578
+from litellm.proxy.management_endpoints.auto_router_endpoints import _ATTEMPT_AGG_BY_LEG_SQL, _ATTEMPT_AGG_BY_MODEL_SQL, _ATTEMPT_AGG_BY_ROUTER_SQL, _ATTEMPT_AGG_BY_TIER_SQL, _ATTEMPT_COUNTS_SQL, _ATTEMPT_TOTALS_ROWS, _ATTEMPT_TOTALS_SQL, _FUNNEL_TOTALS_SQL, _LEG_ROWS, _group_response, _leg_attempt_counts, _query_raw, _shadow_eval_attempts, _shadow_eval_results, _with_target_labels  # noqa: E501  # isort: skip  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1176-L1578
 from litellm.proxy.utils import PrismaClient
+from litellm.types.management_endpoints.auto_router_endpoints import ShadowEvalJobResponse
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
@@ -126,7 +127,8 @@ class FakeDb(PrismaWrapper):
     async def query_raw(self, query: str, *args: JsonValue) -> list[dict[str, JsonValue]]:
         ids = TypeAdapter(list[str]).validate_python(args[0])
         if query == _ATTEMPT_COUNTS_SQL:
-            return [row for row in self.call["counts"] if CountRow.model_validate(row).job_id in ids]
+            counts = self.call["counts"]
+            return [row for row in counts if CountRow.model_validate(row).job_id in ids]
         rows = {
             _ATTEMPT_TOTALS_SQL: [self.call["totals"]],
             _FUNNEL_TOTALS_SQL: [self.call["funnel"]],
@@ -145,7 +147,7 @@ class FakePrismaClient(PrismaClient):
         self.db = FakeDb(call)
 
 
-async def answer(call: Input) -> dict[str, JsonValue]:
+async def answer(call: Input) -> ShadowEvalJobResponse:
     legs = _LEG_ROWS.validate_python(call["legs"])
     client = FakePrismaClient(call)
     leg_ids = [leg.id for leg in legs]
@@ -159,23 +161,18 @@ async def answer(call: Input) -> dict[str, JsonValue]:
     )
     labeled = await _with_target_labels(client, (_group_response(call["group_id"], legs, counts),))
     results, verdicts = await _shadow_eval_results(client, legs)
-    response = labeled[0].model_copy(
-        update={
-            "judged_count": totals.judged_count,
-            "error_count": totals.error_count,
-            "judge_spend": round(totals.judge_spend, 6),
-            "last_error": latest.error if latest is not None else None,
-            "results": results,
-            "targets": tuple(
-                target.model_copy(update={"verdicts": verdicts.get((target.target_type, target.target_id))})
-                for target in labeled[0].targets
-            ),
-        }
-    )
-    return {
-        "response": DUMP.validate_json(response.model_dump_json(exclude={"router_name", "status"})),
-    }
+    response = labeled[0].model_copy()
+    response.judged_count = totals.judged_count
+    response.error_count = totals.error_count
+    response.judge_spend = round(totals.judge_spend, 6)
+    response.last_error = latest.error if latest is not None else None
+    response.results = results
+    for target in response.targets:
+        target.verdicts = verdicts.get((target.target_type, target.target_id))
+    return response
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
-    return asyncio.run(answer(input_value))
+    response = asyncio.run(answer(input_value))
+    dumped = DUMP.validate_json(response.model_dump_json(exclude={"router_name", "status"}))
+    return {"response": dumped}

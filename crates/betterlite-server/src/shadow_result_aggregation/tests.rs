@@ -62,7 +62,7 @@ fn count(job_id: &str, attempt_count: i64, spend: f64) -> LegAttemptCount {
     LegAttemptCount {
         job_id: job_id.to_owned(),
         attempt_count,
-        spend,
+        spend: money(spend),
     }
 }
 
@@ -81,8 +81,8 @@ fn agg(
         shadow_wins: wins.1,
         ties: wins.2,
         avg_confidence: confidence,
-        real_spend: spends.0,
-        shadow_spend: spends.1,
+        real_spend: money(spends.0),
+        shadow_spend: money(spends.1),
         cache_hit_turns: cache_hits,
     }
 }
@@ -195,8 +195,8 @@ struct ResultsExpectation {
     router_groups: Vec<&'static str>,
     overall_shadow_win: f64,
     overall_tie: f64,
-    real_spend: f64,
-    shadow_spend: f64,
+    real_spend: Decimal,
+    shadow_spend: Decimal,
     funnel: Option<(i64, i64, i64, i64)>,
     verdicts: Vec<(ShadowEvalTargetType, &'static str, &'static str)>,
 }
@@ -319,8 +319,8 @@ enum Behavior {
         router_groups: vec!["router-a"],
         overall_shadow_win: 40.0,
         overall_tie: 20.0,
-        real_spend: 0.4,
-        shadow_spend: 0.30000000000000004,
+        real_spend: money(0.4),
+        shadow_spend: money(0.30000000000000004),
         funnel: None,
         verdicts: vec![(Key, "k1", "k1"), (Team, "t1", "t1")],
     },
@@ -344,8 +344,8 @@ enum Behavior {
         router_groups: Vec::new(),
         overall_shadow_win: 50.0,
         overall_tie: 0.0,
-        real_spend: 0.0,
-        shadow_spend: 0.0,
+        real_spend: money(0.0),
+        shadow_spend: money(0.0),
         funnel: Some((7, 3, 2, 1)),
         verdicts: Vec::new(),
     },
@@ -387,7 +387,7 @@ enum Behavior {
     totals: AttemptTotals {
         judged_count: 7,
         error_count: 2,
-        judge_spend: 0.1234567,
+        judge_spend: money(0.1234567),
     },
     last_error: Some("judge timed out"),
     by_tier: vec![agg("simple", 5, (2, 2, 1), Some(0.9), (0.4, 0.3), 0)],
@@ -490,8 +490,8 @@ fn assert_result_totals(result: &ShadowEvalResult, expected: &ResultsExpectation
         expected.overall_shadow_win
     );
     assert_eq!(result.overall_tie_rate_pct, expected.overall_tie);
-    assert_eq!(result.sampled_real_spend, money(expected.real_spend));
-    assert_eq!(result.sampled_shadow_spend, money(expected.shadow_spend));
+    assert_eq!(result.sampled_real_spend, expected.real_spend);
+    assert_eq!(result.sampled_shadow_spend, expected.shadow_spend);
     let funnel = expected.funnel;
     assert_eq!(result.not_sampled_count, funnel.map(|counts| counts.0));
     assert_eq!(result.unjudgeable_count, funnel.map(|counts| counts.1));
@@ -619,6 +619,7 @@ enum Boundary {
     },
     SliceUnrepresentable {
         row: AttemptAggRow,
+        name: &'static str,
     },
     NoLegs,
     UnknownLeg {
@@ -661,8 +662,9 @@ enum Boundary {
 #[case::round_zero_places_ties_up_to_even(Boundary::Round { value: 3.5, places: 0, expected: spelled("4.0") })]
 #[case::round_six_places_carries(Boundary::Round { value: 0.9999995, places: 6, expected: spelled("1.0") })]
 #[case::round_nan_is_unrepresentable(Boundary::RoundUnrepresentable { value: f64::NAN })]
-#[case::slice_nan_spend_is_unrepresentable(Boundary::SliceUnrepresentable {
-    row: agg("tier", 1, (1, 0, 0), Some(0.5), (f64::NAN, 0.0), 0),
+#[case::slice_nan_confidence_is_unrepresentable(Boundary::SliceUnrepresentable {
+    row: agg("tier", 1, (1, 0, 0), Some(f64::NAN), (0.5, 0.0), 0),
+    name: "avg_judge_confidence",
 })]
 #[case::group_response_needs_a_leg(Boundary::NoLegs)]
 #[case::verdicts_name_an_attempt_for_an_unknown_leg(Boundary::UnknownLeg {
@@ -720,8 +722,8 @@ fn shadow_result_aggregation_boundaries(#[case] boundary: Boundary) {
         Boundary::RoundUnrepresentable { value } => {
             assert_unrepresentable(round_to(value, 1, "rate"), "rate")
         }
-        Boundary::SliceUnrepresentable { row } => {
-            assert_unrepresentable(slices(&[row]), "real_spend")
+        Boundary::SliceUnrepresentable { row, name } => {
+            assert_unrepresentable(slices(&[row]), name)
         }
         Boundary::NoLegs => assert_no_legs(),
         Boundary::UnknownLeg {

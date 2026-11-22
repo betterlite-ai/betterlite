@@ -19,7 +19,7 @@ use super::super::repository::ShadowResultsRepository as _;
 use super::super::responses::{LegCounts, group_response};
 use super::super::results::{FunnelTotals, TargetVerdicts};
 use super::super::targets::TargetKey;
-use super::agg;
+use super::{agg, assert_unrepresentable, money};
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_models::ShadowEvalTargetType;
 use crate::shadow_eval_models::ShadowEvalTargetType::{Key as KeyTarget, Team as TeamTarget};
@@ -225,9 +225,27 @@ async fn leg_slices_count_only_the_requested_legs() {
     fixture.close_async().await.unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(row(&rows, "leg-a").turn_count, 2);
-    assert_eq!(row(&rows, "leg-a").real_spend, 0.375);
+    assert_eq!(row(&rows, "leg-a").real_spend, money(0.375));
     assert_eq!(row(&rows, "leg-a").avg_confidence, Some(0.75));
     assert_eq!(row(&rows, "leg-b").turn_count, 1);
+}
+
+#[tokio::test]
+async fn a_non_finite_spend_names_the_column_it_cannot_represent() {
+    let (fixture, pool) = database().await;
+    execute(&pool, JOBS).await;
+    execute(&pool, ATTEMPTS).await;
+    execute(
+        &pool,
+        r#"UPDATE "LiteLLM_ShadowEvalAttempt" SET "real_cost" = 'Infinity' WHERE "id" = 'a1'"#,
+    )
+    .await;
+    let aggregates = repository(&pool)
+        .attempt_aggregates(&["leg-a".to_owned()], GroupBy::Tier)
+        .await;
+    pool.close();
+    fixture.close_async().await.unwrap();
+    assert_unrepresentable(aggregates, "real_spend");
 }
 
 #[tokio::test]
@@ -277,10 +295,10 @@ async fn totals_count_judged_and_errored_attempts_with_judge_spend() {
     fixture.close_async().await.unwrap();
     assert_eq!(totals.judged_count, 2);
     assert_eq!(totals.error_count, 1);
-    assert_eq!(totals.judge_spend, 0.875);
+    assert_eq!(totals.judge_spend, money(0.875));
     assert_eq!(empty.judged_count, 0);
     assert_eq!(empty.error_count, 0);
-    assert_eq!(empty.judge_spend, 0.0);
+    assert_eq!(empty.judge_spend, money(0.0));
 }
 
 #[tokio::test]
@@ -319,9 +337,9 @@ async fn attempt_counts_freeze_each_leg_at_its_stopped_at() {
     let leg_a = rows.iter().find(|row| row.job_id == "leg-a").unwrap();
     let leg_b = rows.iter().find(|row| row.job_id == "leg-b").unwrap();
     assert_eq!(leg_a.attempt_count, 1);
-    assert_eq!(leg_a.spend, 0.875);
+    assert_eq!(leg_a.spend, money(0.875));
     assert_eq!(leg_b.attempt_count, 2);
-    assert_eq!(leg_b.spend, 0.75);
+    assert_eq!(leg_b.spend, money(0.75));
     assert_eq!(counts.len(), 2);
     assert_eq!(counts.get("leg-a").unwrap().attempt_count, 1);
     assert!(empty.is_empty());

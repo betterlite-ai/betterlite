@@ -1,4 +1,3 @@
-// the judged attempts of the job's legs, grouped by the tier that classified each real request
 pub(crate) const ATTEMPT_AGG_BY_TIER_SQL: &str = r#"SELECT COALESCE("tier", 'UNCLASSIFIED') AS "grp",
     COUNT(*)::int AS "turn_count",
     COUNT(*) FILTER (WHERE "outcome" = 'real')::int AS "real_wins",

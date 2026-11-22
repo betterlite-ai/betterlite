@@ -19,8 +19,8 @@ pub struct AttemptAggRow {
     pub shadow_wins: i64,
     pub ties: i64,
     pub avg_confidence: Option<f64>,
-    pub real_spend: f64,
-    pub shadow_spend: f64,
+    pub real_spend: Decimal,
+    pub shadow_spend: Decimal,
     pub cache_hit_turns: i64,
 }
 
@@ -80,13 +80,8 @@ fn slice(row: &AttemptAggRow) -> Result<ShadowEvalSlice, ShadowResultsError> {
             "avg_judge_confidence",
         )?
         .as_f64(),
-        real_spend: Decimal::from_f64_retain(row.real_spend)
-            .ok_or(ShadowResultsError::Unrepresentable { name: "real_spend" })?,
-        shadow_spend: Decimal::from_f64_retain(row.shadow_spend).ok_or(
-            ShadowResultsError::Unrepresentable {
-                name: "shadow_spend",
-            },
-        )?,
+        real_spend: row.real_spend,
+        shadow_spend: row.shadow_spend,
         cache_hit_turns: row.cache_hit_turns,
     })
 }
