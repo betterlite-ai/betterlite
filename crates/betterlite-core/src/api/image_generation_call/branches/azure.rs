@@ -36,7 +36,8 @@ where
     let token_provider = entra_provider(plan, prepared);
     let mut headers = mapped.headers.clone();
     insert_default_headers(&mut headers, credentials.api_key.as_ref());
-    plan.operations
+    let mut answer = plan
+        .operations
         .send(
             Branch::Azure(AzureRequest {
                 model: prepared.model.as_deref(),
@@ -57,7 +58,12 @@ where
             logging,
         )
         .await
-        .map_err(|failure| raise(plan.redactor, *failure))
+        .map_err(|failure| raise(plan.redactor, *failure))?;
+    // LiteLLM's Azure execution overwrites the hidden model with base_model when the caller set one
+    if let Some(base_model) = prepared.generic.base_model.as_deref() {
+        answer.hidden_model = Some(base_model.to_owned());
+    }
+    Ok(answer)
 }
 
 fn credentials<Identity, Operations>(

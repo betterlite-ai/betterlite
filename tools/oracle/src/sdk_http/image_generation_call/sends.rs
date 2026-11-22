@@ -85,13 +85,6 @@ async fn post(
     Ok(response)
 }
 
-pub(super) fn prompt_body(prompt: &str, optional_params: &IndexMap<String, Json>) -> Json {
-    let mut body = IndexMap::new();
-    body.insert(String::from("prompt"), Json::Text(prompt.to_owned()));
-    body.extend(optional_params.clone());
-    Json::Object(body)
-}
-
 pub(super) fn model_prompt_body(
     model: &str,
     prompt: &str,

@@ -5,7 +5,7 @@ use betterlite_core::api::image_generation_call::operations::{
 use betterlite_error::dispatch::RawException;
 use betterlite_http::proxy::ProxiedClient;
 
-use super::{Post, answer, has_auth, inserts_bearer, plain, prompt_body};
+use super::{Post, answer, has_auth, inserts_bearer, model_prompt_body, plain};
 
 pub(in crate::sdk_http::image_generation_call) async fn azure(
     request: AzureRequest<'_>,
@@ -19,7 +19,11 @@ pub(in crate::sdk_http::image_generation_call) async fn azure(
     if request.api_key.is_none() && !has_auth(&headers) {
         token_headers(&request, model, &mut headers)?;
     }
-    let body = prompt_body(request.prompt, request.optional_params);
+    let body = model_prompt_body(
+        request.base_model.unwrap_or(model),
+        request.prompt,
+        request.optional_params,
+    );
     answer(
         client,
         Post {

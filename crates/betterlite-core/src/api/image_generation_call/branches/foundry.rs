@@ -29,7 +29,8 @@ where
     let credentials = credentials(plan, prepared, call);
     let optional_params = optional_params(prepared, mapped);
     let headers = request_headers(plan, mapped, credentials.api_key.as_ref())?;
-    plan.operations
+    let mut answer = plan
+        .operations
         .send(
             Branch::Foundry(FoundryRequest {
                 model: prepared.model.as_deref(),
@@ -43,12 +44,18 @@ where
                 optional_params: &optional_params,
                 headers: &headers,
                 litellm_params: &mapped.litellm_params,
+                base_model: prepared.generic.base_model.as_deref(),
                 asynchronous: prepared.generic.aimg_generation,
             }),
             logging,
         )
         .await
-        .map_err(|failure| raise(plan.redactor, *failure))
+        .map_err(|failure| raise(plan.redactor, *failure))?;
+    // LiteLLM's Azure execution overwrites the hidden model with base_model when the caller set one
+    if let Some(base_model) = prepared.generic.base_model.as_deref() {
+        answer.hidden_model = Some(base_model.to_owned());
+    }
+    Ok(answer)
 }
 
 fn credentials<Identity, Operations>(

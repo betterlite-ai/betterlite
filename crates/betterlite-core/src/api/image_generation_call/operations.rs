@@ -77,6 +77,7 @@ pub struct FoundryRequest<'request> {
     pub optional_params: &'request Params,
     pub headers: &'request Headers,
     pub litellm_params: &'request Params,
+    pub base_model: Option<&'request str>,
     pub asynchronous: bool,
 }
 
