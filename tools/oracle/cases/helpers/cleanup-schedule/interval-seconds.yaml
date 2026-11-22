@@ -1,0 +1,12 @@
+kind: helper
+name: cleanup-interval-seconds-drive-the-period
+call:
+  b8371:
+    operation: cleanup_trigger
+    settings:
+      maximum_spend_logs_retention_period: "30d"
+      maximum_spend_logs_retention_interval: "2h"
+    start: "2026-01-01T00:00:00Z"
+env: {}
+compare:
+  ignore: []

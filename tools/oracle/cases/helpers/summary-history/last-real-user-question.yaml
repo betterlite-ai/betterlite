@@ -1,0 +1,50 @@
+kind: helper
+name: summary-history-last-real-user-question
+call:
+  summary_history:
+    action: slicing
+    messages:
+    - {role: user, content: first question}
+    - role: assistant
+      content:
+      - {type: tool_use, id: t1, name: lookup, input: {}}
+    - role: user
+      content:
+      - {type: tool_result, tool_use_id: t1, content: done}
+calls:
+- summary_history:
+    action: slicing
+    messages:
+    - role: user
+      id: u
+      content:
+      - {type: tool_result, tool_use_id: t1, content: done}
+      - {type: text, text: and then}
+    - {role: assistant, content: a}
+- summary_history:
+    action: slicing
+    messages:
+    - role: user
+      content:
+      - {type: tool_result, tool_use_id: t1, content: done}
+    - {role: assistant, content: a}
+- summary_history:
+    action: slicing
+    messages:
+    - {role: assistant, content: a}
+    - role: user
+      content:
+      - {type: text, text: plain}
+      - {type: image, source: {type: url, url: "https://example.com/a.png"}}
+- summary_history:
+    action: slicing
+    messages:
+    - {role: user, content: older}
+    - {role: user, content: []}
+- summary_history:
+    action: slicing
+    messages:
+    - {role: user, content: ""}
+    - {role: assistant, content: a}
+env: {}
+compare: {ignore: []}
