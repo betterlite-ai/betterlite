@@ -87,6 +87,10 @@ fn assert_precedence(key: &str, read: fn(&NovaChatValues) -> Option<i64>) {
         Some(128),
         "{key} global"
     );
+    assert_both_configured(key, read);
+}
+
+fn assert_both_configured(key: &str, read: fn(&NovaChatValues) -> Option<i64>) {
     let configured = load(&format!(
         "{}{}",
         deployment(&format!("{key}: 64")),

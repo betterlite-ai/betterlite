@@ -14,7 +14,7 @@ const API_BASE_VARIABLE: &str = "AMAZON_NOVA_API_BASE";
 const API_KEY_VARIABLE: &str = "AMAZON_NOVA_API_KEY";
 
 // AmazonNovaChatConfig's six constructor fields, then the metadata class field the constructor cannot set.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NovaChatValues {
     pub max_completion_tokens: Option<i64>,
     pub max_tokens: Option<i64>,
