@@ -1,7 +1,7 @@
 id: B158
 milestone: M12 python
 title: Python completion and acompletion, streaming iterators and response objects
-status: todo
+status: done
 depends_on: [B157, B163, B5650, B5651, B5652, B5653, B5654, B5655, B5656, B5657, B5658, B5659, B7840, B9951]
 file: tasks/B158-python-completion.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/litellm_core_utils/streaming_handler.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2971
