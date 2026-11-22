@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provider;
 
 use super::support::{Bench, Case, Plan, VIDEO_BODY, json, remix_call};
 use crate::api::video_remix_call::error::VideoCallError;
@@ -59,7 +60,10 @@ fn mock_response_null_is_no_mock_response() {
     let video = bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect("the provider answers");
-    assert_eq!(video.id, "video_123");
+    assert_eq!(
+        video.id,
+        encode_video_id_with_provider("video_123", "openai", None)
+    );
     assert_eq!(bench.requests().len(), 1);
 }
 
@@ -67,6 +71,7 @@ fn mock_response_null_is_no_mock_response() {
 async fn mock_response_answers_the_async_entry() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let mut call = remix_call();
+    call.custom_llm_provider = Some("groq".to_owned());
     call.mock_response = Some(json(
         r#"{"id":"video_4","object":"video","status":"queued"}"#,
     ));
@@ -75,6 +80,7 @@ async fn mock_response_answers_the_async_entry() {
         .await
         .expect("the mock answers the async entry");
     assert_eq!(video.id, "video_4");
+    assert_eq!(bench.fixture.state.call_type, "");
     assert!(bench.requests().is_empty());
     assert!(bench.source.async_calls().is_empty());
 }
