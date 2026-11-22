@@ -173,6 +173,20 @@ pub(super) fn collectors_with(real: &[RealGauge]) -> BudgetGauges<MetricLike<Ena
     }
 }
 
+// the gate reads the four remaining gauges only, so every max and hours gauge real must still skip
+pub(super) fn collectors_without_remaining_gauges() -> BudgetGauges<MetricLike<EnabledGauge>> {
+    let mut collectors = collectors_with(&[]);
+    collectors.team.max = field(true, "litellm_team_max_budget_metric");
+    collectors.team.remaining_hours = field(true, "litellm_team_budget_remaining_hours_metric");
+    collectors.key.max = field(true, "litellm_max_budget_metric");
+    collectors.key.remaining_hours = field(true, "litellm_budget_remaining_hours_metric");
+    collectors.user.max = field(true, "litellm_user_max_budget_metric");
+    collectors.user.remaining_hours = field(true, "litellm_user_budget_remaining_hours_metric");
+    collectors.org.max = field(true, "litellm_org_max_budget_metric");
+    collectors.org.remaining_hours = field(true, "litellm_org_budget_remaining_hours_metric");
+    collectors
+}
+
 fn entity_gauges(real: &[RealGauge]) -> [EntityBudgetGauges<MetricLike<EnabledGauge>>; 5] {
     let [team, org, key, user, customer] = gauge_names();
     let [customer_remaining, customer_max, customer_hours] = customer;
