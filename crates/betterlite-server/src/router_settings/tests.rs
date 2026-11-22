@@ -78,6 +78,12 @@ fn value(document: &str, key: &str) -> JsonValue {
     json!([{"gpt-4": ["gpt-3.5-turbo"]}]),
     FieldSource::Config
 )]
+#[case::content_policy_default(
+    "router_settings: {}",
+    "content_policy_fallbacks",
+    json!(null),
+    FieldSource::Default
+)]
 #[case::content_policy_configured(
     "router_settings: {content_policy_fallbacks: [{gpt-4: [gpt-3.5-turbo]}]}",
     "content_policy_fallbacks",
