@@ -47,14 +47,13 @@ pub struct PersistedDcrCredentials {
 #[must_use]
 pub fn parse_persisted_credentials(blob: &JsonValue) -> Option<PersistedDcrCredentials> {
     match blob {
-        JsonValue::Null => None,
         JsonValue::Object(fields) if fields.is_empty() => None,
         JsonValue::Object(_) => {
             let text = serde_json::to_string(blob).ok()?;
             serde_json::from_str(&text).ok()
         }
         JsonValue::String(text) => parse_credentials_text(text),
-        JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) => None,
+        JsonValue::Null | JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) => None,
     }
 }
 
