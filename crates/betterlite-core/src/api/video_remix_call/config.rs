@@ -26,6 +26,11 @@ impl VideoOperation {
             Self::List => "video_list",
         }
     }
+
+    // the failure a sync handler's future turns into
+    pub(crate) const fn pending(self) -> VideoCallError {
+        VideoCallError::UnexpectedPending { operation: self }
+    }
 }
 
 // Which B3331 config a provider tag resolves to: B3332 names the class, and the caller installs the adapters it has

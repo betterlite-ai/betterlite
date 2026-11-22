@@ -26,6 +26,9 @@ use crate::api::video_remix_list_transport::{
     Handled, ListCall, LogContext, VideoRemixListTransport,
 };
 
+// both video_list entries' answer: LiteLLM's page or the list of objects it returns
+type ListAnswer = Result<VideoListReply, VideoCallFailure>;
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(untagged)]
 pub enum VideoListReply {
@@ -91,22 +94,26 @@ impl<Source: VideoClientSource> ListRequest<'_, '_, '_, Source> {
         if let Some(objects) = list_mock(self.call, self.deps.redactor)? {
             return Ok(VideoListReply::Objects(objects));
         }
-        list_ready(sync_provider(self.call), self)?.direct()
+        ListReady::ready(sync_provider(self.call), self)?.direct()
     }
 }
 
 // ast-grep-ignore: no-one-line-functions - B3340 exposes LiteLLM's video_list under this public name
-pub fn video_list<Source: VideoClientSource>(
-    request: ListRequest<'_, '_, '_, Source>,
-) -> Result<VideoListReply, VideoCallFailure> {
+pub fn video_list<Source>(request: ListRequest<'_, '_, '_, Source>) -> ListAnswer
+where
+    Source: VideoClientSource,
+{
     request.direct()
 }
 
 // avideo_list: get_llm_provider(model="") before the mock, then the async handler awaited here
-pub async fn avideo_list<Source: VideoClientSource>(
+pub async fn avideo_list<Source>(
     request: ListRequest<'_, '_, '_, Source>,
     resolution: &ResolutionContext<'_>,
-) -> Result<VideoListReply, VideoCallFailure> {
+) -> ListAnswer
+where
+    Source: VideoClientSource,
+{
     let provider = match &request.call.custom_llm_provider {
         Some(data) => data.clone(),
         None => inferred_provider(resolution)
@@ -115,7 +122,7 @@ pub async fn avideo_list<Source: VideoClientSource>(
     if let Some(objects) = list_mock(request.call, request.deps.redactor)? {
         return Ok(VideoListReply::Objects(objects));
     }
-    list_ready(provider, request)?.awaited().await
+    ListReady::ready(provider, request)?.awaited().await
 }
 
 // The provider and the prepared call, with every collaborator the handler borrows, held by the entry that awaits it
@@ -131,7 +138,42 @@ struct ListReady<'call, 'deps, 'env, Source: VideoClientSource> {
     prepared: PreparedList,
 }
 
-impl<Source: VideoClientSource> ListReady<'_, '_, '_, Source> {
+impl<'call, 'deps, 'env, Source: VideoClientSource> ListReady<'call, 'deps, 'env, Source> {
+    // the provider's config and the call's preparation, kept together for the handler
+    fn ready(
+        provider: String,
+        request: ListRequest<'call, 'deps, 'env, Source>,
+    ) -> Result<ListReady<'call, 'deps, 'env, Source>, VideoCallFailure> {
+        let ListRequest {
+            transport,
+            deps,
+            call,
+            client,
+        } = request;
+        let VideoCallDeps {
+            configs,
+            logging,
+            env,
+            redactor,
+            request_timeout_seconds,
+        } = deps;
+        let config = provider_config(configs, &provider, VideoOperation::List)
+            .map_err(|error| failure(error, &provider, redactor))?;
+        let prepared = prepare_list(logging, call, &provider, request_timeout_seconds)
+            .map_err(|error| failure(error, &provider, redactor))?;
+        Ok(ListReady {
+            transport,
+            config,
+            logging,
+            env,
+            redactor,
+            call,
+            client,
+            provider,
+            prepared,
+        })
+    }
+
     // the handler's answer: the params page, or a future that borrows this ready call
     fn run(
         &mut self,
@@ -155,13 +197,14 @@ impl<Source: VideoClientSource> ListReady<'_, '_, '_, Source> {
         };
         self.transport
             .list(self.config, call, log, is_async)
-            .map_err(|error| failure(error, &self.provider, self.redactor))
+            .map_err(|error| failure(VideoCallError::from(error), &self.provider, self.redactor))
     }
 
     // a sync handler must answer directly; a future in its place is the UnexpectedPending failure
     fn direct(mut self) -> Result<VideoListReply, VideoCallFailure> {
+        let operation = VideoOperation::List;
         let Handled::Done(params) = self.run(false)? else {
-            return Err(list_pending(&self.provider, self.redactor));
+            return Err(failure(operation.pending(), &self.provider, self.redactor));
         };
         Ok(VideoListReply::Page(params))
     }
@@ -190,49 +233,6 @@ fn list_mock(
         .map_err(|error| failure(VideoCallError::Mock(error), mock_provider, redactor))
 }
 
-// the provider's config and the call's preparation, kept together for the handler
-fn list_ready<'call, 'deps, 'env, Source: VideoClientSource>(
-    provider: String,
-    request: ListRequest<'call, 'deps, 'env, Source>,
-) -> Result<ListReady<'call, 'deps, 'env, Source>, VideoCallFailure> {
-    let ListRequest {
-        transport,
-        deps,
-        call,
-        client,
-    } = request;
-    let VideoCallDeps {
-        configs,
-        logging,
-        env,
-        redactor,
-        request_timeout_seconds,
-    } = deps;
-    let config = provider_config(configs, &provider, VideoOperation::List)
-        .map_err(|error| failure(error, &provider, redactor))?;
-    let prepared = prepare_list(logging, call, &provider, request_timeout_seconds)
-        .map_err(|error| failure(error, &provider, redactor))?;
-    Ok(ListReady {
-        transport,
-        config,
-        logging,
-        env,
-        redactor,
-        call,
-        client,
-        provider,
-        prepared,
-    })
-}
-
-// a sync handler that answered with a future where the entry expected a direct answer
-fn list_pending(provider: &str, redactor: &Redactor) -> VideoCallFailure {
-    let error = VideoCallError::UnexpectedPending {
-        operation: VideoOperation::List,
-    };
-    failure(error, provider, redactor)
-}
-
 // video_list defaults to openai and never infers from the model; an explicit provider is kept as given
 fn sync_provider(call: &VideoListCall) -> String {
     call.custom_llm_provider
@@ -248,9 +248,7 @@ fn inferred_provider(resolution: &ResolutionContext<'_>) -> Result<String, Video
         api_base: None,
         api_key: None,
     };
-    let resolved = resolve(&request, resolution)?;
-    let provider = resolved.provider.slug().to_owned();
-    Ok(provider)
+    Ok(resolve(&request, resolution)?.provider.slug().to_owned())
 }
 
 // video_list passes no api_key to the handler: validate_environment there sees only the params' key

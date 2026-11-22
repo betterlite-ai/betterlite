@@ -11,7 +11,7 @@ use thiserror::Error;
 use super::config::VideoOperation;
 use super::shared::MockDecodeError;
 use crate::api::video_remix_list_transport::error::{FieldError, VideoRemixListTransportError};
-use crate::api::video_selection::VideoSelectionError;
+use crate::api::video_selection::error::VideoSelectionError;
 
 // exception_type() maps every video failure with model "" and the provider the call reached
 const MODEL: &str = "";
