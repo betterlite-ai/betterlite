@@ -78,8 +78,10 @@ class FakeRouter:
 
 
 class ProxyModule(ModuleType):
-    llm_router: FakeRouter
-    prisma_client: FakePrisma
+    def __init__(self, name: str, llm_router: FakeRouter, prisma_client: FakePrisma) -> None:
+        super().__init__(name)
+        self.llm_router: FakeRouter = llm_router
+        self.prisma_client: FakePrisma = prisma_client
 
 
 def deployment_entry(deployment: Deployment) -> dict[str, object]:
@@ -112,9 +114,11 @@ class BenchmarkAggregates(Operation):
     def run(self) -> Output:
         end_date = self.end_date if self.end_date is not None else utc_day(self.now_unix_millis)
         db = FakeDb(self.rows)
-        module = ProxyModule(PROXY_MODULE)
-        module.llm_router = FakeRouter([deployment_entry(deployment) for deployment in self.deployments])
-        module.prisma_client = FakePrisma(db)
+        module = ProxyModule(
+            PROXY_MODULE,
+            FakeRouter([deployment_entry(deployment) for deployment in self.deployments]),
+            FakePrisma(db),
+        )
         previous = sys.modules.get(PROXY_MODULE)
         sys.modules[PROXY_MODULE] = module
         try:
