@@ -9,6 +9,9 @@ deviations:
   - what: check_health takes the mode as an Option with no default, where LiteLLM's ahealth_check defaults the argument to "chat".
     why: The only caller, B4443, always passes the mode it resolved, and None has to stay distinguishable so that the missing-mode failure text is produced only when no mode was known.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8725-L8729
+  - what: The raw request record carries the four RawRequestTypedDict fields as typed values, with the two text fields read as strings and unknown keys dropped, where LiteLLM copies the whole model_call_details entry through.
+    why: The record is a typed struct in betterlite, and RawRequestTypedDict declares exactly those four fields, so a field of another type is not carried into a typed record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8825-L8830
 kept_bugs:
   - what: A resolved model containing "*" takes the wildcard branch before the mode is looked up, so a wildcard health check with an unsupported mode still succeeds.
     why: LiteLLM returns the wildcard result before it checks the mode against its handlers, and a proxy config can rely on a wildcard deployment passing its health check whatever mode the deployment names, so the order is copied.
