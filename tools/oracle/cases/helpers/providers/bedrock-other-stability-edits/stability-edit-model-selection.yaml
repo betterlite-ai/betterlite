@@ -1,0 +1,26 @@
+kind: helper
+name: bedrock-other-stability-edit-model-selection
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: model_selection
+        models:
+          - stability.stable-image-inpaint-v1:0
+          - STABILITY.STABLE-STYLE-TRANSFER-V1:0
+          - us.stability.stable-outpaint-v1:0
+          - stability.stable-image-erase-object-v1:0
+          - stability.stable-image-remove-background-v1:0
+          - stability.stable-image-search-recolor-v1:0
+          - stability.stable-image-search-replace-v1:0
+          - stability.stable-image-control-sketch-v1:0
+          - stability.stable-image-control-structure-v1:0
+          - stability.stable-image-style-guide-v1:0
+          - stability.stable-conservative-upscale-v1:0
+          - stability.stable-diffusion-xl-v1
+          - stable-diffusion-xl
+          - anthropic.claude-3-haiku-20240307-v1:0
+          - ''
+          - amazon.titan-text-express-v1
+          - stability.stable-image-core-v1:1
+env: {}
+compare: {ignore: []}

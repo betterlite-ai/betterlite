@@ -1,0 +1,25 @@
+kind: helper
+name: plain-text-prefix
+call:
+  bedrock_reasoning_stream:
+    step:
+      split:
+        fragments: ["", " ", "x", "<", "t", "hink>", "<reasoning>a</reasoning>"]
+        messages:
+          - "  <reasoning>a</reasoning>"
+          - "before<reasoning>a</reasoning>"
+          - "<think>a</think>"
+calls:
+  - bedrock_reasoning_stream:
+      step:
+        split:
+          fragments: ["<reas", "", "oning>ok</reasoning> after"]
+          messages: []
+  - bedrock_reasoning_stream:
+      step:
+        chunks:
+          chunks:
+            - {id: c1, created: 10, model: m, choices: [{index: 0, delta: {role: assistant, content: "  hello"}}]}
+            - {id: c1, created: 10, model: m, choices: [{index: 0, delta: {content: ""}}]}
+env: {}
+compare: {ignore: []}

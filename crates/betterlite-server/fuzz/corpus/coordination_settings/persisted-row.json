@@ -1,0 +1,1 @@
+{"general_settings": {"coordination_redis": {"url": "redis://:secret@cache.internal:6379/1"}, "master_key": "sk-x"}}
