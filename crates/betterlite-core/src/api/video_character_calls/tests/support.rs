@@ -71,7 +71,12 @@ fn extra_map() -> IndexMap<String, Json> {
 }
 
 // both fixture calls: the create one adds api_base to the keyword entries the get one carries
-fn calls() -> (CreateCharacterCall, GetCharacterCall) {
+struct Calls {
+    create: CreateCharacterCall,
+    get: GetCharacterCall,
+}
+
+fn calls() -> Calls {
     let mut extra = extra_map();
     extra.insert(
         "api_base".to_owned(),
@@ -102,16 +107,16 @@ fn calls() -> (CreateCharacterCall, GetCharacterCall) {
         extra: extra_map(),
         is_async: false,
     };
-    (create, get)
+    Calls { create, get }
 }
 
 // the call with every keyword a case cares about
 pub(crate) fn create_call() -> CreateCharacterCall {
-    calls().0
+    calls().create
 }
 
 pub(crate) fn get_call() -> GetCharacterCall {
-    calls().1
+    calls().get
 }
 
 // what the fake handler answers with
