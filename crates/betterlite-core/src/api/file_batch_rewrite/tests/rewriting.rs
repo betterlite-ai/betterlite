@@ -102,22 +102,24 @@ async fn a_failing_rewind_replaces_the_rewritten_file() {
     }
 }
 
-// A file larger than one window keeps reading past the first window; the blank line between them is skipped and every kept row is copied in order
+// A blank inside the first window shifts every later physical line, so the first record of the second window is line 34 and only a reader that keeps counting it drops the right row
 #[tokio::test]
-async fn rewrite_copies_every_window() {
+async fn rewrite_matches_physical_lines_across_windows() {
     let tasks = TaskTracker::new();
     let expected = lines_of(65);
-    let mut lines: Vec<String> = expected.split('\n').map(str::to_owned).collect();
-    lines.insert(SCAN_WINDOW, String::new());
+    let mut rows: Vec<String> = expected.split('\n').map(str::to_owned).collect();
+    let mut lines = rows.clone();
+    lines.insert(19, String::new());
     let source = CountedBody::new(lines.join("\n"));
-    let result = scan_result(Vec::new(), 65, Spool::default());
+    rows.remove(SCAN_WINDOW);
+    let result = scan_result(vec![dropped_change(SCAN_WINDOW + 2)], 65, Spool::default());
     let output = Spool::default();
     let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output)
         .await
         .expect("the rewrite succeeds");
     assert_eq!(
         rewritten.read_to_end(&tasks).await.unwrap(),
-        expected.into_bytes()
+        rows.join("\n").into_bytes()
     );
 }
 

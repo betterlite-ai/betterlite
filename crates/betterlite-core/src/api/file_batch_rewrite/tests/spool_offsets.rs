@@ -121,11 +121,12 @@ fn accented() -> RecordObject {
     data
 }
 
-// The scan's RecordRedacted carries the record's custom_id and the span of the rewritten record's UTF-8 bytes, and the rewrite copies exactly those bytes back
+// The scan's RecordRedacted carries the record's physical line, custom_id and the span of the rewritten record's UTF-8 bytes, and the rewrite copies exactly those bytes back
 #[tokio::test]
 async fn scan_spools_the_rewritten_bytes_and_their_span() {
     let tasks = TaskTracker::new();
-    let source = CountedBody::new(format!("{ACCENTED_ROW}\n{KEPT_ROW}"));
+    // the blank first line is never a record, but it still makes the rewritten record line 2
+    let source = CountedBody::new(format!("\n{ACCENTED_ROW}\n{KEPT_ROW}"));
     let hook = ScriptedHook::with(
         vec![("r1", Answer::Replace(accented()))],
         Probe::new(Arc::clone(&source.reads)),
@@ -144,7 +145,7 @@ async fn scan_spools_the_rewritten_bytes_and_their_span() {
             result.changes[0]
         );
     };
-    assert_eq!(change.line_number, 1);
+    assert_eq!(change.line_number, 2);
     assert_eq!(change.custom_id.as_deref(), Some("c1"));
     assert_eq!(change.offset, 0);
     assert_eq!(
