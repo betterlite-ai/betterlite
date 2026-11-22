@@ -4,7 +4,7 @@ env: {}
 request:
   method: POST
   path: /v1beta/models/gemini-2.0-flash:generateContent
-  headers: {content-type: application/json}
+  headers: {content-type: application/json, authorization: 'Bearer oracle-key'}
   body:
     contents:
       - role: user
@@ -13,7 +13,7 @@ request:
     generationConfig: {temperature: 0.2}
 upstream:
   - status: 200
-    headers: {content-type: application/json}
+    headers: {content-type: application/json, x-litellm-call-id: call-1, x-litellm-model-id: model-1}
     body:
       candidates:
         - content: {role: model, parts: [{text: Hi}]}

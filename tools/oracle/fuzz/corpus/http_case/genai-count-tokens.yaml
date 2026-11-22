@@ -4,7 +4,7 @@ env: {}
 request:
   method: POST
   path: /v1beta/models/gemini-2.0-flash:countTokens
-  headers: {content-type: application/json}
+  headers: {content-type: application/json, authorization: 'Bearer oracle-key'}
   body:
     contents:
       - role: user

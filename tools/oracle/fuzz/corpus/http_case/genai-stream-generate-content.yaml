@@ -4,7 +4,7 @@ env: {}
 request:
   method: POST
   path: /models/gemini-2.0-flash:streamGenerateContent
-  headers: {content-type: application/json}
+  headers: {content-type: application/json, authorization: 'Bearer oracle-key'}
   body:
     contents:
       - role: user
@@ -12,7 +12,7 @@ request:
           - text: Hello
 upstream:
   - status: 200
-    headers: {content-type: text/event-stream}
+    headers: {content-type: text/event-stream, x-litellm-call-id: call-2}
     body: null
     events:
       - "data: {\"candidates\": [{\"content\": {\"role\": \"model\", \"parts\": [{\"text\": \"Hi\"}]}}]}\n\n"

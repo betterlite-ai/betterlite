@@ -1,0 +1,23 @@
+name: genai-generate-content-body-model
+config: 'general_settings: {}'
+env: {}
+request:
+  method: POST
+  path: /models/gemini-2.0-flash:generateContent
+  headers: {content-type: application/json, authorization: 'Bearer oracle-key'}
+  body:
+    model: body-model
+    contents:
+      - role: user
+        parts:
+          - text: Hello
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      candidates:
+        - content: {role: model, parts: [{text: Hi}]}
+          finishReason: STOP
+      usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+    events: null
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
