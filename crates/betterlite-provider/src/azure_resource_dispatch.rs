@@ -105,54 +105,65 @@ pub enum AzureResourceError {
 #[must_use]
 pub fn dispatch(resource: AzureResourceOperation<'_>) -> DispatchFuture<'_> {
     match resource {
-        AzureResourceOperation::Files(future) => {
-            Box::pin(async move { Ok(AzureResourceResult::Files(future.await?)) })
-        }
-        AzureResourceOperation::Batches(future) => {
-            Box::pin(async move { Ok(AzureResourceResult::Batches(future.await?)) })
-        }
+        AzureResourceOperation::Files(future) => map_future(future, AzureResourceResult::Files),
+        AzureResourceOperation::Batches(future) => map_future(future, AzureResourceResult::Batches),
         AzureResourceOperation::FineTuning(future) => {
-            Box::pin(async move { Ok(AzureResourceResult::FineTuning(future.await?)) })
+            map_future(future, AzureResourceResult::FineTuning)
         }
         AzureResourceOperation::AssistantDefinitions(future) => {
-            Box::pin(async move { Ok(AzureResourceResult::AssistantDefinitions(future.await?)) })
+            map_future(future, AzureResourceResult::AssistantDefinitions)
         }
         AzureResourceOperation::AssistantThreads(future) => {
-            Box::pin(async move { Ok(AzureResourceResult::AssistantThreads(future.await?)) })
+            map_future(future, AzureResourceResult::AssistantThreads)
         }
         AzureResourceOperation::AssistantMessages(future) => {
-            Box::pin(async move { Ok(AzureResourceResult::AssistantMessages(future.await?)) })
+            map_future(future, AzureResourceResult::AssistantMessages)
         }
         AzureResourceOperation::AssistantRuns(future) => {
-            Box::pin(async move { Ok(AzureResourceResult::AssistantRuns(future.await?)) })
+            map_future(future, AzureResourceResult::AssistantRuns)
         }
-        AzureResourceOperation::Responses(leaf) => Box::pin(ready(
-            leaf.run()
-                .map(AzureResourceResult::Responses)
-                .map_err(AzureResourceError::Responses),
-        )),
-        AzureResourceOperation::Realtime(leaf) => Box::pin(ready(
-            leaf.run()
-                .map(AzureResourceResult::Realtime)
-                .map_err(AzureResourceError::Realtime),
-        )),
-        AzureResourceOperation::Search(leaf) => Box::pin(ready(
-            leaf.run()
-                .map(AzureResourceResult::Search)
-                .map_err(AzureResourceError::Search),
-        )),
-        AzureResourceOperation::ResourceUrls(leaf) => Box::pin(ready(
-            leaf.run()
-                .map(AzureResourceResult::ResourceUrls)
-                .map_err(AzureResourceError::ResourceUrls),
-        )),
-        AzureResourceOperation::Passthrough(leaf) => Box::pin(ready(
-            leaf.run()
-                .map(AzureResourceResult::Passthrough)
-                .map_err(AzureResourceError::Passthrough),
-        )),
+        AzureResourceOperation::Responses(leaf) => {
+            map_ready(leaf.run(), AzureResourceResult::Responses)
+        }
+        AzureResourceOperation::Realtime(leaf) => {
+            map_ready(leaf.run(), AzureResourceResult::Realtime)
+        }
+        AzureResourceOperation::Search(leaf) => map_ready(leaf.run(), AzureResourceResult::Search),
+        AzureResourceOperation::ResourceUrls(leaf) => {
+            map_ready(leaf.run(), AzureResourceResult::ResourceUrls)
+        }
+        AzureResourceOperation::Passthrough(leaf) => {
+            map_ready(leaf.run(), AzureResourceResult::Passthrough)
+        }
         AzureResourceOperation::Unsupported { operation } => {
             Box::pin(ready(Err(AzureResourceError::Unsupported { operation })))
         }
+    }
+}
+
+fn map_future<'call, F, T, E>(
+    future: F,
+    wrap: fn(T) -> AzureResourceResult,
+) -> DispatchFuture<'call>
+where
+    F: Future<Output = Result<T, E>> + Send + 'call,
+    AzureResourceError: From<E>,
+{
+    Box::pin(async move {
+        let outcome = future.await?;
+        Ok(wrap(outcome))
+    })
+}
+
+fn map_ready<T, E>(
+    result: Result<T, E>,
+    wrap: fn(T) -> AzureResourceResult,
+) -> DispatchFuture<'static>
+where
+    AzureResourceError: From<E>,
+{
+    match result {
+        Ok(outcome) => Box::pin(ready(Ok(wrap(outcome)))),
+        Err(error) => Box::pin(ready(Err(AzureResourceError::from(error)))),
     }
 }

@@ -83,6 +83,11 @@ fn streaming_rows() {
         panic!("the streaming call returns its flag");
     };
     assert!(!not_streaming);
+}
+
+fn streaming_missing_row() {
+    let config = config(Some("https://res.test"));
+    let mut logging = RecordingPassthrough::default();
     let absent: Object = parse("{}");
     let Outcome::Streaming(missing) = through(
         &config,
@@ -137,7 +142,7 @@ fn url_rows() {
     ));
 }
 
-fn logging_rows() {
+fn reply_logging_row() {
     let config = config(Some("https://res.test"));
     let mut logging = RecordingPassthrough::default();
     let request: Object = parse("{}");
@@ -162,7 +167,11 @@ fn logging_rows() {
     };
     assert!(matches!(*logged, AzureRelayedLog::Relay(_)));
     assert_eq!(logging.call_types, vec![String::from("aembedding")]);
+}
 
+fn chunk_logging_row() {
+    let config = config(Some("https://res.test"));
+    let mut logging = RecordingPassthrough::default();
     let chunks = vec![String::from(TERMINAL_CHUNK)];
     let Outcome::Logged(terminal) = through(
         &config,
@@ -179,14 +188,13 @@ fn logging_rows() {
         panic!("a response.completed chunk is logged as its terminal event");
     };
     assert!(matches!(*terminal, AzureRelayedLog::Terminal(_)));
-    assert_eq!(
-        logging.call_types,
-        vec![String::from("aembedding"), String::from("aresponses")]
-    );
+    assert_eq!(logging.call_types, vec![String::from("aresponses")]);
 }
 
 pub(super) fn check() {
     streaming_rows();
+    streaming_missing_row();
     url_rows();
-    logging_rows();
+    reply_logging_row();
+    chunk_logging_row();
 }

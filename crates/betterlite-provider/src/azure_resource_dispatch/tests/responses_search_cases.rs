@@ -5,11 +5,12 @@ use betterlite_azure::search::AzureSearchConfig;
 use betterlite_azure::search::error::AzureSearchError;
 use betterlite_azure::search::reply::AzureSearchReply;
 use betterlite_config::sections::azure_search::Settings;
-use betterlite_openai::openai_base_config::Headers;
+use betterlite_openai::openai_base_config::{Headers, Object as SearchParams};
 use betterlite_openai::response_input::ResponsesInput;
 use betterlite_openai::response_resources::request::{ListInputItemsQuery, ResourceOperation};
 use betterlite_openai::search::provider::SearchQuery;
 use betterlite_prompts::arguments::json::{Json, Object};
+use secrecy::SecretString;
 
 use super::fixture::leaf_error;
 use crate::azure_resource_dispatch::responses::{self, Call as ResponsesCall};
@@ -41,10 +42,10 @@ fn responses_outcome(
         responses::Dispatch { environment, call },
     ))))
     .expect("the responses call reaches its leaf");
-    match result {
-        AzureResourceResult::Responses(outcome) => outcome,
-        _ => panic!("the responses dispatch returns its outcome"),
-    }
+    let AzureResourceResult::Responses(outcome) = result else {
+        panic!("the responses dispatch returns its outcome");
+    };
+    outcome
 }
 
 fn search_outcome(settings: &Settings, call: SearchCall<'_>) -> SearchOutcome {
@@ -59,13 +60,13 @@ fn search_outcome(settings: &Settings, call: SearchCall<'_>) -> SearchOutcome {
         },
     ))))
     .expect("the search call reaches its leaf");
-    match result {
-        AzureResourceResult::Search(outcome) => outcome,
-        _ => panic!("the search dispatch returns its outcome"),
-    }
+    let AzureResourceResult::Search(outcome) = result else {
+        panic!("the search dispatch returns its outcome");
+    };
+    outcome
 }
 
-fn responses_rows() {
+fn responses_transform_row() {
     let environment: BTreeMap<String, String> = BTreeMap::new();
     let input = ResponsesInput::Text(String::from("hello"));
     let options = Object::new();
@@ -85,7 +86,10 @@ fn responses_rows() {
         Some(&Json::Text(String::from("gpt-4o")))
     );
     assert!(transformed.contains_key("input"));
+}
 
+fn responses_url_rows() {
+    let environment: BTreeMap<String, String> = BTreeMap::new();
     let responses::Outcome::Url(url) = responses_outcome(
         &environment,
         ResponsesCall::CompleteUrl {
@@ -109,7 +113,10 @@ fn responses_rows() {
         panic!("the websocket call returns its endpoint");
     };
     assert_eq!(websocket, "https://res.test/openai/v1/responses");
+}
 
+fn responses_resource_rows() {
+    let environment: BTreeMap<String, String> = BTreeMap::new();
     let responses::Outcome::Resource(resource) = responses_outcome(
         &environment,
         ResponsesCall::Resource {
@@ -134,7 +141,10 @@ fn responses_rows() {
         panic!("the input items call returns its request");
     };
     assert!(items.url.contains("/openai/responses/resp_1/input_items"));
+}
 
+fn responses_failure_row() {
+    let environment: BTreeMap<String, String> = BTreeMap::new();
     let error = leaf_error(super::block_on(dispatch(
         AzureResourceOperation::Responses(Box::new(responses::Dispatch {
             environment: &environment,
@@ -147,14 +157,13 @@ fn responses_rows() {
     ));
 }
 
-fn search_rows() {
+fn search_environment_row() {
     let settings = search_settings();
-
     let SearchOutcome::Headers(headers) = search_outcome(
         &settings,
         SearchCall::ValidateEnvironment {
             headers: Headers::new(),
-            api_key: Some(&secrecy::SecretString::from("key-1")),
+            api_key: Some(&SecretString::from("key-1")),
             api_base: None,
         },
     ) else {
@@ -165,16 +174,22 @@ fn search_rows() {
         headers.get("Content-Type"),
         Some(&String::from("application/json"))
     );
+}
 
+fn search_url_row() {
+    let settings = search_settings();
     let SearchOutcome::Url(url) =
         search_outcome(&settings, SearchCall::CompleteUrl(Some("https://res.test")))
     else {
         panic!("the url call returns its endpoint");
     };
     assert_eq!(url, "https://res.test/openai/v1/responses");
+}
 
+fn search_request_row() {
+    let settings = search_settings();
     let query = SearchQuery::Single(String::from("azure grounding"));
-    let params = Object::new();
+    let params = SearchParams::new();
     let SearchOutcome::Request(request) = search_outcome(
         &settings,
         SearchCall::TransformRequest {
@@ -187,7 +202,10 @@ fn search_rows() {
     assert_eq!(request.model, "gpt-4o-mini");
     assert_eq!(request.input, "azure grounding");
     assert_eq!(request.tools.len(), 1);
+}
 
+fn search_response_row() {
+    let settings = search_settings();
     let reply = AzureSearchReply {
         status_code: 200,
         headers: &[],
@@ -205,7 +223,9 @@ fn search_rows() {
     assert_eq!(response.object.0, "search");
     assert_eq!(response.results.len(), 2_usize);
     assert!(response.hidden_params.is_empty());
+}
 
+fn search_failure_row() {
     let bare = Settings {
         project_endpoint: None,
         model: Some(String::from("gpt-4o-mini")),
@@ -229,6 +249,13 @@ fn search_rows() {
 }
 
 pub(super) fn check() {
-    responses_rows();
-    search_rows();
+    responses_transform_row();
+    responses_url_rows();
+    responses_resource_rows();
+    responses_failure_row();
+    search_environment_row();
+    search_url_row();
+    search_request_row();
+    search_response_row();
+    search_failure_row();
 }

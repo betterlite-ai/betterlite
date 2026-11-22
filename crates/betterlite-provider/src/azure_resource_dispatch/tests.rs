@@ -48,7 +48,7 @@ where
 #[case::case_7_passthrough(Family::Passthrough)]
 fn azure_resource_dispatch_cases(#[case] family: Family) {
     match family {
-        Family::FilesBatches => block_on(files_batches_cases::check()),
+        Family::FilesBatches => files_batches_cases::check(),
         Family::FineTuning => fine_tuning_cases::check(),
         Family::AssistantThreadRun => block_on(assistant_thread_run_cases::check()),
         Family::ResponsesSearch => responses_search_cases::check(),

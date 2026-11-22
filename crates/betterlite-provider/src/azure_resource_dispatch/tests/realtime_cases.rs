@@ -52,7 +52,7 @@ fn session(call: Call<'_>) -> Outcome {
     }
 }
 
-fn connection_rows() {
+fn connection_plan_row() {
     let key = SecretString::from("key-1");
     let settings = connect_settings(&key, Some("https://res.test"), None, None);
     let Outcome::Connection(plan) = connect(&settings).expect("the plan builds") else {
@@ -69,7 +69,10 @@ fn connection_rows() {
     assert_eq!(plan.max_message_size_bytes, 4096_usize);
     assert!(!plan.backend_uses_beta_protocol);
     assert!(plan.force_transcription_model.is_none());
+}
 
+fn connection_beta_rows() {
+    let key = SecretString::from("key-1");
     let beta = connect_settings(
         &key,
         Some("https://res.test"),
@@ -96,14 +99,18 @@ fn connection_rows() {
     ));
 }
 
-fn session_rows() {
-    let settings = RealtimeHttpSettings {
+fn session_settings() -> RealtimeHttpSettings {
+    RealtimeHttpSettings {
         litellm_api_base: None,
         litellm_api_key: None,
         azure_api_base: Some(String::from("https://res.test")),
         azure_api_key: Some(SecretString::from("key-1")),
         azure_api_version: None,
-    };
+    }
+}
+
+fn session_client_url_row() {
+    let settings = session_settings();
     let Outcome::Url(secrets) = session(Call::SessionUrl {
         route: SessionRoute::ClientSecrets,
         settings: &settings,
@@ -116,6 +123,10 @@ fn session_rows() {
         secrets,
         "https://res.test/openai/realtime/client_secrets?api-version=2024-12-17"
     );
+}
+
+fn session_other_url_rows() {
+    let settings = session_settings();
     let Outcome::Url(calls) = session(Call::SessionUrl {
         route: SessionRoute::Calls,
         settings: &settings,
@@ -140,7 +151,9 @@ fn session_rows() {
         transcription,
         "https://res.test/openai/realtime/transcription_sessions?api-version=2024-12-17"
     );
+}
 
+fn session_header_rows() {
     let key = SecretString::from("key-1");
     let Outcome::Headers(headers) = session(Call::SessionHeaders {
         headers: &Headers::new(),
@@ -161,6 +174,9 @@ fn session_rows() {
 }
 
 pub(super) fn check() {
-    connection_rows();
-    session_rows();
+    connection_plan_row();
+    connection_beta_rows();
+    session_client_url_row();
+    session_other_url_rows();
+    session_header_rows();
 }

@@ -1,6 +1,5 @@
 use std::future::{Future, ready};
 use std::sync::Mutex;
-use std::time::Duration;
 
 use betterlite_azure::azure_files::client::Opened;
 use betterlite_azure::azure_files::client::SelectedClient;
@@ -18,7 +17,7 @@ use betterlite_openai::batches::error::SdkError;
 use betterlite_openai::batches::records::{BatchCreate, BatchPage, BatchQuery, BatchStatus};
 use betterlite_openai::batches::sdk::{BatchesSdk, ClientKind as SdkKind};
 use betterlite_openai::files::error::FilesError;
-use betterlite_openai::files::records::{FileCreate, FileUpload};
+use betterlite_openai::files::records::{CreatePurpose, FileCreate, FileUpload};
 use betterlite_openai::files::{DEFAULT_TIMEOUT, FilesClient};
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -74,7 +73,7 @@ fn upload() -> FileCreate {
             content_type: None,
             data: b"plain".to_vec(),
         },
-        purpose: betterlite_openai::files::records::CreatePurpose::Batch,
+        purpose: CreatePurpose::Batch,
         expires_after: None,
         extra_headers: IndexMap::new(),
         extra_body: IndexMap::new(),

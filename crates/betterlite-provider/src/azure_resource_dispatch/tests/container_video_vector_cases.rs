@@ -66,7 +66,7 @@ fn resource_url(
     })
 }
 
-fn url_rows() {
+fn container_url_rows() {
     let Outcome::Url(container) = resource_url(
         Some("https://res.test"),
         Some("2024-10-21"),
@@ -91,6 +91,9 @@ fn url_rows() {
         embedded,
         "https://res.test/openai/containers?api-version=2024-10-21"
     );
+}
+
+fn video_vector_url_rows() {
     let Outcome::Url(video) = resource_url(Some("https://res.test"), None, AzureResource::Video)
         .expect("the video url builds")
     else {
@@ -111,7 +114,7 @@ fn url_rows() {
     );
 }
 
-fn environment_rows() {
+fn environment_headers_row() {
     let fixtures = Fixtures::new();
     let key = SecretString::from("key-1");
     let Outcome::Headers(headers) = outcome(Call::Environment {
@@ -122,7 +125,11 @@ fn environment_rows() {
         panic!("the environment call returns headers");
     };
     assert_eq!(headers.get("api-key").map(String::as_str), Some("key-1"));
+}
 
+fn video_environment_rows() {
+    let fixtures = Fixtures::new();
+    let key = SecretString::from("key-1");
     let mut params_key: Option<SecretString> = None;
     let Outcome::VideoHeaders {
         headers,
@@ -211,8 +218,10 @@ fn failure_rows() {
 }
 
 pub(super) fn check() {
-    url_rows();
-    environment_rows();
+    container_url_rows();
+    video_vector_url_rows();
+    environment_headers_row();
+    video_environment_rows();
     video_rows();
     failure_rows();
 }

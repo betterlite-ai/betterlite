@@ -17,7 +17,7 @@ use secrecy::SecretString;
 use super::fixture::{NoSources, leaf_error, parse};
 use crate::azure_resource_dispatch::fine_tuning::{Call, Dispatch, Outcome};
 use crate::azure_resource_dispatch::{
-    AzureResourceError, AzureResourceOperation, AzureResourceResult,
+    AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
 };
 
 const JOB_JSON: &str = r#"{"id":"ft_1","created_at":1,"error":null,"fine_tuned_model":null,"finished_at":null,"estimated_finish":null,"integrations":null,"metadata":null,"hyperparameters":{"batch_size":null,"learning_rate_multiplier":null,"n_epochs":3},"method":null,"model":"gpt-4o-mini","object":"fine_tuning.job","organization_id":"org-x","result_files":[],"seed":5,"status":"running","trained_tokens":null,"training_file":"file_a","validation_file":null}"#;
@@ -135,9 +135,9 @@ fn through(answer: Answer, call: Call<'_>) -> Result<AzureResourceResult, AzureR
         refresh: &mut refresh,
         materializer: &materializer,
     };
-    super::block_on(super::dispatch(AzureResourceOperation::FineTuning(
-        Box::pin(ready(Dispatch { connection, call }.run())),
-    )))
+    super::block_on(dispatch(AzureResourceOperation::FineTuning(Box::pin(
+        ready(Dispatch { connection, call }.run()),
+    ))))
 }
 
 fn create_rows() {

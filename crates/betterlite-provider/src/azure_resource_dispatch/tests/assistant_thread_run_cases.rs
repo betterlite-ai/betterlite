@@ -12,12 +12,13 @@ use betterlite_azure::azure_thread_messages::operations::{ThreadMessagesApi, Thr
 use betterlite_azure::azure_urls::AuthParams;
 use betterlite_azure::endpoints::projection::{LiteLlmParams, SessionKind};
 use betterlite_config::sections::azure_endpoints::Settings;
+use betterlite_openai::assistants::records::AssistantCreate;
 use betterlite_openai::thread_runs::records::RunRequest;
 use betterlite_openai::threads::records::{ThreadCreate, ThreadMessageData};
 use futures_util::StreamExt as _;
 use secrecy::SecretString;
 
-use super::fixture::{AssistantsFake, NoSources, Planned, parse};
+use super::fixture::{AssistantsFake, NoSources, Planned, Seen, leaf_error, parse};
 use crate::azure_resource_dispatch::assistants::{
     DefinitionsDispatch, MessagesDispatch, RunOutcome, RunsDispatch, ThreadsDispatch,
 };
@@ -126,17 +127,20 @@ async fn definitions_rows() {
         fake.requests()[0].url,
         "https://example.test/openai/assistants?api-version=2024-02-01"
     );
+}
 
-    let create: betterlite_openai::assistants::records::AssistantCreate =
-        parse(r#"{"model":"gpt-4o"}"#);
-    let failed = AssistantsFake::new(vec![Planned::json(404, ERROR_BODY)]);
-    let failing_api = AssistantsApi {
-        transport: Arc::new(failed),
+async fn definitions_failure_row() {
+    let failed = Arc::new(AssistantsFake::new(vec![Planned::json(404, ERROR_BODY)]));
+    let fixture = Fixture::new();
+    let request = fixture.request();
+    let api = AssistantsApi {
+        transport: Arc::clone(&failed),
     };
-    let error = super::fixture::leaf_error(
+    let create: AssistantCreate = parse(r#"{"model":"gpt-4o"}"#);
+    let error = leaf_error(
         dispatch(AzureResourceOperation::AssistantDefinitions(Box::pin(
             DefinitionsDispatch {
-                api: &failing_api,
+                api: &api,
                 request: &request,
                 supplied: None,
                 flag: None,
@@ -225,7 +229,7 @@ fn run_request() -> RunRequest {
     )
 }
 
-async fn runs_rows() {
+async fn runs_polled_row() {
     let fake = Arc::new(AssistantsFake::new(vec![
         Planned::polled(QUEUED),
         Planned::json(200, COMPLETED),
@@ -256,7 +260,10 @@ async fn runs_rows() {
     };
     assert_eq!(reply.id, "run_1");
     assert_eq!(reply.status, "completed");
-    let seen = fake.requests();
+    polled_urls(&fake.requests());
+}
+
+fn polled_urls(seen: &[Seen]) {
     assert_eq!(seen.len(), 2);
     assert!(
         seen[0]
@@ -268,14 +275,19 @@ async fn runs_rows() {
             .url
             .contains("/openai/threads/thread_1/runs/run_1?api-version=")
     );
+}
 
+async fn runs_streaming_row() {
     let streaming = Arc::new(AssistantsFake::new(vec![Planned::json(200, STREAM_BODY)]));
-    let streaming_api = AssistantsRunsApi {
+    let fixture = Fixture::new();
+    let request = fixture.request();
+    let api = AssistantsRunsApi {
         transport: Arc::clone(&streaming),
     };
+    let run = run_request();
     let streamed = dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
         RunsDispatch {
-            api: &streaming_api,
+            api: &api,
             request: &request,
             supplied: None,
             call: RunCall {
@@ -300,15 +312,20 @@ async fn runs_rows() {
         names.push(event.expect("the fixture events decode").name().to_owned());
     }
     assert_eq!(names, vec!["thread.run.created", "thread.run.completed"]);
+}
 
+async fn runs_failure_row() {
     let failing = Arc::new(AssistantsFake::new(vec![Planned::json(400, ERROR_BODY)]));
-    let failing_api = AssistantsRunsApi {
+    let fixture = Fixture::new();
+    let request = fixture.request();
+    let api = AssistantsRunsApi {
         transport: Arc::clone(&failing),
     };
-    let error = super::fixture::leaf_error(
+    let run = run_request();
+    let error = leaf_error(
         dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
             RunsDispatch {
-                api: &failing_api,
+                api: &api,
                 request: &request,
                 supplied: None,
                 call: RunCall {
@@ -326,7 +343,10 @@ async fn runs_rows() {
 
 pub(super) async fn check() {
     definitions_rows().await;
+    definitions_failure_row().await;
     threads_rows().await;
     messages_rows().await;
-    runs_rows().await;
+    runs_polled_row().await;
+    runs_streaming_row().await;
+    runs_failure_row().await;
 }
