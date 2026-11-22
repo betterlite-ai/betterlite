@@ -17,7 +17,7 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
-use super::calls::{HealthCheckDocuments, ProbeRecord, ProbeRecorder, ScriptedCheapest};
+use super::calls::{HealthCheckDocuments, ProbeRecorder, ScriptedCheapest};
 use super::{Resolution, Step};
 
 const NOW: &str = "2026-01-02T03:04:05+00:00";
@@ -162,10 +162,9 @@ fn resolution_view(resolver: &ScriptedResolver) -> Value {
 
 fn probe_view(recorder: &ProbeRecorder) -> Value {
     let call = recorder.call.lock().unwrap_or_else(PoisonError::into_inner);
-    call.as_ref().map_or(Value::Null, probe_record)
-}
-
-fn probe_record(record: &ProbeRecord) -> Value {
+    let Some(record) = call.as_ref() else {
+        return Value::Null;
+    };
     json!({"name": record.name, "arguments": without_metadata(record.arguments.clone())})
 }
 
