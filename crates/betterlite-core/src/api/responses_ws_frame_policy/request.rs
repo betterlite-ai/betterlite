@@ -90,13 +90,15 @@ pub fn restore_wrapped_ids(frame: &IndexMap<String, Json>) -> Option<IndexMap<St
     }
     let mut restored = frame.clone();
     restored.extend(top_fields);
-    if let Some(container) = nested
-        && !nested_fields.is_empty()
-    {
-        let mut response = container.clone();
-        response.extend(nested_fields);
-        restored.insert("response".to_owned(), Json::Object(response));
+    let Some(container) = nested else {
+        return Some(restored);
+    };
+    if nested_fields.is_empty() {
+        return Some(restored);
     }
+    let mut response = container.clone();
+    response.extend(nested_fields);
+    restored.insert("response".to_owned(), Json::Object(response));
     Some(restored)
 }
 

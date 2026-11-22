@@ -24,7 +24,7 @@ struct RejectionFrame {
 }
 
 #[derive(Serialize)]
-struct RejectionError {
+struct RejectionBody {
     #[serde(rename = "type")]
     kind: &'static str,
     message: String,
@@ -137,7 +137,7 @@ where
     }
     let rejection = RejectionFrame {
         kind: "error",
-        error: RejectionError {
+        error: RejectionBody {
             kind: "rate_limit_exceeded",
             message: class_message(&error),
         },
