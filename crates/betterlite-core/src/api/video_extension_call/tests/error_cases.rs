@@ -322,6 +322,48 @@ fn the_async_entry_maps_a_pending_error_with_the_caller_provider() {
     assert_eq!(rig.handler.calls().len(), 1);
 }
 
+fn the_async_entry_keeps_the_sync_error_mapping() {
+    let rig = Rig::new(Reply::Done(video("video_1")), &[VideoConfigTag::OpenAi]);
+    let kwargs = base_kwargs();
+    let mut request = call("video_1", "extend it", "8", &kwargs);
+    request.custom_llm_provider = Some("mistral");
+    let deps = rig.deps(None);
+    let Err(failure) = block_on(avideo_extension(&deps, &request)) else {
+        panic!("mistral has no video config");
+    };
+    let context = connection(&failure.class);
+    assert_eq!(
+        context.message,
+        "APIConnectionError: MistralException - video extension is not supported for mistral",
+        "the async wrap remaps the already mapped error without changing it"
+    );
+    assert_eq!(context.provider.as_deref(), Some("mistral"));
+}
+
+fn the_async_entry_uses_the_callers_provider() {
+    let rig = Rig::new(
+        Reply::Failed {
+            status_code: 500,
+            message: "boom".to_owned(),
+        },
+        &[VideoConfigTag::RunwayMl],
+    );
+    let kwargs = base_kwargs();
+    let mut request = call("video_1", "extend it", "8", &kwargs);
+    request.custom_llm_provider = Some("runwayml");
+    let deps = rig.deps(None);
+    let Err(failure) = block_on(avideo_extension(&deps, &request)) else {
+        panic!("the pending call fails");
+    };
+    let context = internal(&failure.class);
+    assert_eq!(
+        context.message, "InternalServerError: RunwaymlException - boom",
+        "the wrapper maps with the provider its caller passed"
+    );
+    assert_eq!(context.provider.as_deref(), Some("runwayml"));
+    assert_eq!(rig.handler.calls().len(), 1);
+}
+
 #[rstest]
 #[case::a_missing_logging_object_fails(a_missing_logging_object_fails)]
 #[case::a_null_logging_object_fails(a_null_logging_object_fails)]
@@ -339,6 +381,8 @@ fn the_async_entry_maps_a_pending_error_with_the_caller_provider() {
 #[case::the_async_entry_maps_a_pending_error_with_the_caller_provider(
     the_async_entry_maps_a_pending_error_with_the_caller_provider
 )]
+#[case::the_async_entry_keeps_the_sync_error_mapping(the_async_entry_keeps_the_sync_error_mapping)]
+#[case::the_async_entry_uses_the_callers_provider(the_async_entry_uses_the_callers_provider)]
 fn call_error_behavior(#[case] check: fn()) {
     check();
 }
