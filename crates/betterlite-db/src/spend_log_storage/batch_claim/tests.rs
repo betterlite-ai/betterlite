@@ -477,7 +477,7 @@ async fn a_take_over_without_a_numeric_spend_still_charges() {
 fn the_take_over_statement_matches_only_the_uncharged_success_row() {
     let mut data = batch_cost_row("batch-1", SUCCESS, Decimal::new(40, 2));
     let _replaced = data.remove("request_id");
-    let _replaced = data.insert("private_note".to_owned(), text("not a column"));
+    let _inserted = data.insert("private_note".to_owned(), text("not a column"));
     let statement = takeover_statement(&data);
     assert!(!statement.contains(r#""request_id" = src."#));
     assert!(!statement.contains(r#""api_key" = src."api_key""#));

@@ -17,7 +17,7 @@ use crate::spend_log_storage::tests::support::{
     NoClient, RecordingPause, ScriptedFailure, SpendLogCase, SteppingClock, ids, ordinary_row,
     text, unreachable_store,
 };
-use crate::spend_log_storage::{SpendLogFuture, SpendLogWriteError, SpendLogsWriter};
+use crate::spend_log_storage::{SpendLogFuture, SpendLogWriteError as _, SpendLogsWriter};
 
 use super::{MAX_ISOLATION_FAILURES, create_logs_isolating_poison};
 

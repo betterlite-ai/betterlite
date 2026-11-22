@@ -99,13 +99,6 @@ impl SpendLogCase {
             })
             .collect()
     }
-
-    pub(crate) async fn execute(&self, sql: &str) {
-        self.client
-            .batch_execute(sql)
-            .await
-            .expect("a fixture statement");
-    }
 }
 
 fn pooled_store(fixture: &PostgresFixture) -> PostgresStore {
@@ -299,6 +292,8 @@ impl WriteClock for SteppingClock {
 
     fn instant(&self) -> Instant {
         let step = self.steps.fetch_add(1, Ordering::SeqCst);
-        self.start + Duration::from_secs(u64::from(step).saturating_mul(5))
+        self.start
+            .checked_add(Duration::from_secs(u64::from(step).saturating_mul(5)))
+            .expect("an instant after the first step")
     }
 }
