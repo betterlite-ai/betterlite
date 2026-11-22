@@ -203,5 +203,5 @@ pitfalls:
   - In the HTTP case, a mock base that already ends in /v1 tests a different URL, since the embedding rule appends /v1/embeddings without trimming.
 review_level: standard
 budget:
-  max_changed_lines: 1800
+  max_changed_lines: 2100
   max_new_expects: 0
