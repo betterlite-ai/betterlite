@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
 use std::str::FromStr as _;
 
 use betterlite_anthropic::usage::{ReasoningTokenCounter, calculate_usage};
@@ -75,10 +74,10 @@ fn service_tier(fields: &IndexMap<String, Json>) -> Option<&str> {
 
 fn anthropic_usage(usage: &IndexMap<String, Json>) -> Result<Usage, StreamCostError> {
     let object = Json::Object(usage.clone());
-    let calculated =
-        calculate_usage(&object, None, None, None, &UnusedReasoningCounter).map_err(usage_error)?;
+    let calculated = calculate_usage(&object, None, None, None, &UnusedReasoningCounter)
+        .map_err(|source| StreamCostError::Anthropic { source })?;
     let mapping = json_object(&calculated)?;
-    usage_from_mapping(&mapping).map_err(usage_error)
+    usage_from_mapping(&mapping).map_err(|source| StreamCostError::Usage { source })
 }
 
 fn openai_usage(counts: &IndexMap<String, Json>) -> Result<Usage, StreamCostError> {
@@ -120,11 +119,17 @@ fn json_object<T>(value: &T) -> Result<IndexMap<String, Json>, StreamCostError>
 where
     T: Serialize,
 {
-    let text = serde_json::to_string(value).map_err(|_error| StreamCostError::Serialize)?;
+    let text = serde_json::to_string(value).map_err(|source| StreamCostError::Convert {
+        field: "usage",
+        source,
+    })?;
     let decoded =
-        serde_json::from_str::<Json>(&text).map_err(|_error| StreamCostError::Serialize)?;
+        serde_json::from_str::<Json>(&text).map_err(|source| StreamCostError::Convert {
+            field: "usage",
+            source,
+        })?;
     let Json::Object(mapping) = decoded else {
-        return Err(StreamCostError::Serialize);
+        return Err(StreamCostError::UsageNotAnObject);
     };
     Ok(mapping)
 }
@@ -136,11 +141,10 @@ where
 {
     match value {
         Some(Json::Object(object)) => {
-            let text =
-                serde_json::to_string(object).map_err(|_error| StreamCostError::Serialize)?;
-            let decoded = serde_json::from_str(&text).map_err(|_error| StreamCostError::Usage {
-                reason: format!("the {field} field is not a token details object"),
-            })?;
+            let text = serde_json::to_string(object)
+                .map_err(|source| StreamCostError::Convert { field, source })?;
+            let decoded = serde_json::from_str(&text)
+                .map_err(|source| StreamCostError::Convert { field, source })?;
             Ok(Some(decoded))
         }
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
@@ -208,15 +212,6 @@ fn with_cost(
     let mut updated = fields.clone();
     updated.insert("usage".to_owned(), Json::Object(updated_usage));
     Json::Object(updated)
-}
-
-fn usage_error<E>(error: E) -> StreamCostError
-where
-    E: Display,
-{
-    StreamCostError::Usage {
-        reason: error.to_string(),
-    }
 }
 
 pub(super) struct UnusedReasoningCounter;
