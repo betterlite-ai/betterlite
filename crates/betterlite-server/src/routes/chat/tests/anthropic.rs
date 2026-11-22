@@ -31,6 +31,9 @@ const STREAM_CHAT: &str =
     r#"{"model":"g","messages":[{"role":"user","content":"hi"}],"stream":true}"#;
 const REPLY: &str = r#"{"id":"msg_route","type":"message","role":"assistant","model":"claude-3-haiku-20240307","content":[{"type":"text","text":"hello over anthropic"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":2}}"#;
 const ERROR: &str = r#"{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"#;
+const TOOL_CHAT: &str =
+    r#"{"model":"g","messages":[{"role":"user","content":"use a tool"}],"max_tokens":20}"#;
+const TOOL_REPLY: &str = r#"{"id":"msg_tool","type":"message","role":"assistant","model":"claude-3-haiku-20240307","content":[{"type":"tool_use","id":"toolu_route","name":"lookup","input":{"a":1}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":5,"output_tokens":3}}"#;
 const JSON_HEADERS: &str = "content-type: application/json\r\nrequest-id: req-route\r\nanthropic-ratelimit-requests-limit: 50\r\n";
 const STREAM_HEADERS: &str = "content-type: text/event-stream\r\nrequest-id: req-stream\r\n";
 const EVENTS: [&str; 6] = [
@@ -179,12 +182,17 @@ async fn exchange(
         headers,
         body,
         sent,
+        base,
     }
 }
 
 async fn buffered_reply() {
-    let answered = exchange("", &local_environment(), CHAT, reply()).await;
+    let answered = exchange(", api_key: route-key", &local_environment(), CHAT, reply()).await;
     assert_eq!(answered.status, 200);
+    assert_eq!(
+        header(&answered.headers, "x-litellm-model-api-base"),
+        Some(answered.base.as_str())
+    );
     let body: Reply = serde_json::from_slice(&answered.body).unwrap();
     assert_eq!(body.object, "chat.completion");
     assert_eq!(body.model, "g");
@@ -221,7 +229,13 @@ async fn stream_frames() {
         headers: STREAM_HEADERS,
         body: &events,
     };
-    let answered = exchange("", &local_environment(), STREAM_CHAT, answer).await;
+    let answered = exchange(
+        ", api_key: route-key",
+        &local_environment(),
+        STREAM_CHAT,
+        answer,
+    )
+    .await;
     assert_eq!(answered.status, 200);
     assert_eq!(
         header(&answered.headers, "content-type"),
@@ -239,10 +253,30 @@ async fn upstream_error() {
         headers: JSON_HEADERS,
         body: ERROR,
     };
-    let answered = exchange("", &local_environment(), CHAT, answer).await;
+    let answered = exchange(", api_key: route-key", &local_environment(), CHAT, answer).await;
     assert_eq!(answered.status, 429);
     let body: ErrorReply = serde_json::from_slice(&answered.body).unwrap();
     assert_eq!(body.error.code, "429");
+}
+
+// LiteLLM's dump restores a null content beside the tool calls, as OpenAI's message shape requires it
+async fn tool_call_reply() {
+    let answer = Answer {
+        status: 200,
+        headers: JSON_HEADERS,
+        body: TOOL_REPLY,
+    };
+    let answered = exchange(
+        ", api_key: route-key",
+        &local_environment(),
+        TOOL_CHAT,
+        answer,
+    )
+    .await;
+    assert_eq!(answered.status, 200);
+    let text = String::from_utf8(answered.body).unwrap();
+    assert!(text.contains("\"content\":null"), "{text}");
+    assert!(text.contains("\"tool_calls\":[{"), "{text}");
 }
 
 async fn own_key_only() {
@@ -286,6 +320,7 @@ enum Scenario {
     StreamFrames,
     UpstreamError,
     OwnKeyOnly,
+    ToolCallReply,
 }
 
 #[rstest]
@@ -293,6 +328,7 @@ enum Scenario {
 #[case::stream_frames(Scenario::StreamFrames)]
 #[case::upstream_error(Scenario::UpstreamError)]
 #[case::own_key_only(Scenario::OwnKeyOnly)]
+#[case::tool_call_reply(Scenario::ToolCallReply)]
 #[tokio::test]
 async fn anthropic_route_cases(#[case] scenario: Scenario) {
     match scenario {
@@ -300,5 +336,6 @@ async fn anthropic_route_cases(#[case] scenario: Scenario) {
         Scenario::StreamFrames => stream_frames().await,
         Scenario::UpstreamError => upstream_error().await,
         Scenario::OwnKeyOnly => own_key_only().await,
+        Scenario::ToolCallReply => tool_call_reply().await,
     }
 }

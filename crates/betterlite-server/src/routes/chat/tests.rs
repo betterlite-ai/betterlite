@@ -41,6 +41,7 @@ struct Exchange {
     headers: HeaderMap,
     body: Vec<u8>,
     sent: String,
+    base: String,
 }
 
 #[derive(Deserialize)]
@@ -125,6 +126,7 @@ async fn exchange(
         headers,
         body,
         sent,
+        base,
     }
 }
 

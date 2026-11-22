@@ -9,6 +9,8 @@ use betterlite_core::operation::chat::{
     ChatCompletionAnswer, ChatFailure, ChatResult, ChatStreamAnswer, TextCallMode,
 };
 use betterlite_http::error::HttpError;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::completion_chat_bridge::answer;
@@ -20,11 +22,15 @@ use betterlite_openai::text_completion_execution::{
 use betterlite_openai::text_completion_stream::chat_chunk;
 use betterlite_openai::text_completion_transport::stream::CompletionStream;
 use betterlite_provider::anthropic_dispatch::AnthropicResult;
+use betterlite_provider::anthropic_dispatch::gateway::reply::AnthropicReply;
 use betterlite_provider::operation::OperationResult;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
 
+use crate::model_listing::response::model_dump_with_preserved_fields;
 use crate::routes::completions::streaming::pump::{FrameSource, Pump, next_frame};
+use crate::stream_chunks::serialize::serialize_chunk;
+use crate::stream_chunks::{ChunkKind, StreamChunk};
 
 pub(super) struct RelaySource {
     pub(super) upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
@@ -201,8 +207,7 @@ pub(super) fn anthropic_answer(
     };
     match shape {
         AnthropicResult::Reply(reply) => {
-            let body = serde_json::to_vec(&reply)
-                .map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
+            let body = reply_body(&reply)?;
             Ok(AnthropicAnswer::Reply(ChatCompletionAnswer {
                 body,
                 upstream_headers,
@@ -215,4 +220,44 @@ pub(super) fn anthropic_answer(
             upstream_time,
         })),
     }
+}
+
+// LiteLLM's chat route dumps the ModelResponse with exclude_none and restores the nulls OpenAI still requires
+fn reply_body(reply: &AnthropicReply) -> Result<Vec<u8>, ChatFailure> {
+    let original: JsonObject = serde_json::to_value(reply)
+        .and_then(serde_json::from_value::<JsonObject>)
+        .map_err(encode_failure)?;
+    let dumped = model_dump(&original)?;
+    let body = model_dump_with_preserved_fields(dumped, &choice_objects(&original));
+    serde_json::to_vec(&body).map_err(encode_failure)
+}
+
+// the model's own null fields go, a null inside a dictionary entry stays
+fn model_dump(body: &JsonObject) -> Result<JsonObject, ChatFailure> {
+    let chunk = StreamChunk {
+        body: body.clone(),
+        kind: ChunkKind::ModelFull,
+        hidden: JsonObject::new(),
+    };
+    serde_json::from_str::<JsonObject>(&serialize_chunk(&chunk)).map_err(encode_failure)
+}
+
+// the original choices line up by index, so a choice that is not an object still leaves an empty slot
+fn choice_objects(body: &JsonObject) -> Vec<JsonObject> {
+    let Some(Json::List(choices)) = body.get("choices") else {
+        return Vec::new();
+    };
+    choices
+        .iter()
+        .map(|choice| match choice {
+            Json::Object(fields) => fields.clone(),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                JsonObject::new()
+            }
+        })
+        .collect()
+}
+
+fn encode_failure(source: serde_json::Error) -> ChatFailure {
+    ChatFailure::Route(ChatError::Encode { source })
 }
