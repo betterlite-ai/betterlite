@@ -4,7 +4,6 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::Role;
 use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
-use tokio::time::pause;
 
 use super::support::{
     FakeEmbedder, base_settings, catalog, custom_catalog, json_list, json_object, json_text, parts,
@@ -181,7 +180,7 @@ fn a_semantic_score_must_reach_the_threshold() {
     let embedder = Arc::new(FakeEmbedder::new(&[
         ("test", vec![1.0_f64, 0.0_f64]),
         ("invoice", vec![1.0_f64, 0.0_f64]),
-        ("exact", vec![0.7_f64, 0.7_f64]),
+        ("exact", vec![2.0_f64, 0.0_f64]),
         ("orthogonal", vec![0.0_f64, 1.0_f64]),
     ]));
     let index = SemanticKeywordIndex::new(
@@ -275,12 +274,12 @@ fn a_cancelled_query_embedding_falls_back_to_no_override() {
         embedder,
     )
     .unwrap();
-    let found = runtime().block_on(async {
-        pause();
-        index
-            .tier_override("invoice", &CallerContext::default())
-            .await
-    });
+    let paused = Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .expect("the paused test runtime starts");
+    let found = paused.block_on(index.tier_override("invoice", &CallerContext::default()));
     assert_eq!(found, None);
 }
 

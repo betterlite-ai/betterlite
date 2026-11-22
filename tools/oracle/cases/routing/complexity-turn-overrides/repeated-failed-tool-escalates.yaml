@@ -6,6 +6,8 @@ probes:
     operation:
       complexity_turn_overrides:
         tiers: {SIMPLE: [s], MEDIUM: [m], COMPLEX: [c], REASONING: [r]}
+        user_message: run the search again
+        newest_ask: this is stuck, LITELLM ESCALATE
         stall_escalation_enabled: true
         stall_escalation_window: 6
         stall_escalation_repeat_threshold: 3

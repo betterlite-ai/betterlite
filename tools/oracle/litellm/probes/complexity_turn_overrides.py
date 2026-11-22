@@ -14,7 +14,7 @@ from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnknownMemberType=false
 
 MODEL_NAME: Final = "complexity-turn-overrides"
 
@@ -141,8 +141,10 @@ class ProbeRouter(ComplexityRouter):
         tier = decided if self.config.has_custom_tiers else ComplexityTier(decided)
         return tier_name(self._apply_plan_mode_floor(tier))
 
-    def escalation(self, user_message: str) -> str | None:
-        return self._matched_escalation_keyword(user_message)
+    def escalation(self, newest_ask: str | None) -> str | None:
+        if newest_ask is None:
+            return None
+        return self._matched_escalation_keyword(newest_ask)
 
 
 class ComplexityTurnOverrides(Operation):
@@ -201,7 +203,7 @@ class ComplexityTurnOverrides(Operation):
             plan_mode_floor=router.floor(),
             plan_mode_floor_is_top_tier=router.floor_is_top(),
             applied_plan_mode_floor=router.applied_tier(self.decided_tier),
-            escalation_keyword=router.escalation(self.user_message),
+            escalation_keyword=router.escalation(self.newest_ask),
             stalled=stalled,
             housekeeping_sentinel=sentinel,
             housekeeping_tier=housekeeping_tier,
@@ -224,7 +226,7 @@ class ComplexityTurnOverrides(Operation):
             complexity_router_config=self.config(),
         )
 
-    def config(self) -> dict[str, JsonValue]:
+    def config(self) -> Mapping[str, object]:
         return {
             "tiers": {name: list(models) for name, models in self.tiers.items()},
             "tier_definitions": self.tier_definitions_config(),

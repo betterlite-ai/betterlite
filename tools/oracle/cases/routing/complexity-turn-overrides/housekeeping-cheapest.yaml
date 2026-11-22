@@ -6,5 +6,6 @@ probes:
     operation:
       complexity_turn_overrides:
         tiers: {SIMPLE: [], MEDIUM: [m], COMPLEX: [c], REASONING: [r]}
+        user_message: carry on, LITELLM ESCALATE
         newest_ask: You are coming up with a succinct title for a coding session
 compare: {ignore: []}

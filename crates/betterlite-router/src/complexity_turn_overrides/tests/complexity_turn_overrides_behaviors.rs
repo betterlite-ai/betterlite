@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_config::sections::classifier_message_text::MarkerPair;
 use betterlite_config::sections::complexity_turn_overrides::{
     Config as SectionConfig, KeywordMatching,
 };
@@ -28,7 +29,7 @@ use crate::complexity_turn_overrides::turn::{TurnRequest, resolve_turn};
 use crate::custom_dimensions::Validated;
 use crate::semantic_router::service::CallerContext;
 use crate::tier_definitions::checks::ClassifierKind;
-use crate::tier_definitions::model::TierSet;
+use crate::tier_definitions::model::{TierPool, TierSet};
 
 fn all_pools() -> TierSet {
     catalog(&[
@@ -61,16 +62,21 @@ fn the_plan_mode_floor_raises_only_a_lower_tier(
 }
 
 #[rstest]
-#[case(&["SIMPLE", "MEDIUM", "COMPLEX"], true)]
-#[case(&["SIMPLE", "MEDIUM", "COMPLEX", "REASONING"], false)]
-#[case(&["SIMPLE", "MEDIUM"], false)]
+#[case(&["SIMPLE", "MEDIUM", "COMPLEX"], false, true)]
+#[case(&["SIMPLE", "MEDIUM", "COMPLEX", "REASONING"], false, false)]
+#[case(&["SIMPLE", "MEDIUM", "COMPLEX", "REASONING"], true, false)]
 fn the_top_tier_shortcut_counts_the_configured_pools(
     #[case] configured: &[&str],
+    #[case] empty_highest: bool,
     #[case] expected: bool,
 ) {
     let mut set = all_pools();
     set.pools
         .retain(|name, _pool| configured.contains(&name.as_str()));
+    if empty_highest {
+        set.pools
+            .insert("REASONING".to_owned(), TierPool::Pool(Vec::new()));
+    }
     let found = plan_mode_floor_is_top_tier(&floor_settings("COMPLEX"), &set).unwrap();
     assert_eq!(found, expected);
 }
@@ -104,6 +110,59 @@ fn a_plan_mode_tool_or_sentinel_is_recognized() {
 }
 
 #[test]
+fn a_configured_plan_mode_pattern_is_a_sentinel() {
+    let mut settings = floor_settings("COMPLEX");
+    settings.plan_mode_patterns = vec!["Custom plan banner".to_owned()];
+    let body = json_object(&[("system", json_text("the client says: Custom plan banner"))]);
+    let kwargs = request_kwargs(body);
+    assert_eq!(
+        matched_plan_mode_signal(&settings, Some(&kwargs), None)
+            .unwrap()
+            .as_deref(),
+        Some("Custom plan banner")
+    );
+    settings.plan_mode_patterns = Vec::new();
+    assert_eq!(
+        matched_plan_mode_signal(&settings, Some(&kwargs), None).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn a_configured_reminder_envelope_decides_the_ask_scan() {
+    let mut settings = floor_settings("COMPLEX");
+    settings.reminder_markers = Some(vec![MarkerPair {
+        open: "<ctx>".to_owned(),
+        close: "</ctx>".to_owned(),
+    }]);
+    let envelope_only = vec![
+        chat(Role::User, "Plan mode is active"),
+        chat(Role::User, "<ctx>carry on</ctx>"),
+    ];
+    // the configured envelope makes the newest turn plumbing, so the sentinel before it still counts
+    assert_eq!(
+        matched_plan_mode_signal(&settings, None, Some(&envelope_only))
+            .unwrap()
+            .as_deref(),
+        Some("Plan mode is active")
+    );
+    let mut built_in = settings.clone();
+    built_in.reminder_markers = None;
+    assert_eq!(
+        matched_plan_mode_signal(&built_in, None, Some(&envelope_only)).unwrap(),
+        None
+    );
+    let stale = vec![
+        chat(Role::User, "<ctx>Plan mode is active</ctx>"),
+        chat(Role::User, "newer ask"),
+    ];
+    assert_eq!(
+        matched_plan_mode_signal(&settings, None, Some(&stale)).unwrap(),
+        None
+    );
+}
+
+#[test]
 fn the_client_marker_set_decides_where_the_newest_ask_starts() {
     let messages = vec![
         chat(Role::User, "Plan mode is active"),
@@ -119,6 +178,13 @@ fn the_client_marker_set_decides_where_the_newest_ask_starts() {
     )]);
     let codex_signal = matched_plan_mode_signal(&settings, Some(&codex), Some(&messages)).unwrap();
     assert_eq!(codex_signal.as_deref(), Some("Plan mode is active"));
+    let codex_metadata = IndexMap::from([(
+        "litellm_metadata".to_owned(),
+        json_object(&[("user_agent", json_text("codex-cli/0.20"))]),
+    )]);
+    let metadata_signal =
+        matched_plan_mode_signal(&settings, Some(&codex_metadata), Some(&messages)).unwrap();
+    assert_eq!(metadata_signal.as_deref(), Some("Plan mode is active"));
     let plain_signal = matched_plan_mode_signal(&settings, None, Some(&messages)).unwrap();
     assert_eq!(plain_signal, None);
 }
@@ -143,6 +209,35 @@ fn a_housekeeping_ask_routes_to_the_cheapest_tier_with_models() {
     let mut plugin = base_settings();
     plugin.classifier_type = ClassifierKind::Custom;
     assert_eq!(matched_housekeeping_sentinel(&plugin, Some(ask)), None);
+}
+
+#[test]
+fn a_configured_housekeeping_pattern_routes_to_the_cheapest_tier() {
+    let mut settings = base_settings();
+    settings.housekeeping_patterns = vec!["summarize the session".to_owned()];
+    let ask = "please summarize the session before the handoff";
+    assert_eq!(
+        matched_housekeeping_sentinel(&settings, Some(ask)).as_deref(),
+        Some("summarize the session")
+    );
+    let pools = all_pools();
+    let lexical = LexicalRules::compile(&pools, &[]).unwrap();
+    let caller = CallerContext::default();
+    let request = turn(&caller, "", Some(ask), None);
+    let found = runtime()
+        .block_on(resolve_turn(
+            &settings,
+            &pools,
+            &lexical,
+            None::<&SemanticKeywordIndex<FakeEmbedder>>,
+            &request,
+        ))
+        .unwrap();
+    assert_eq!(
+        found.housekeeping_sentinel.as_deref(),
+        Some("summarize the session")
+    );
+    assert_eq!(found.housekeeping_tier, Some(tier("SIMPLE")));
 }
 
 #[test]
@@ -468,8 +563,10 @@ fn the_turn_carries_every_observation_together() {
         request_kwargs: Some(&kwargs),
         resolved_messages: None,
         messages: Some(&messages),
-        user_message: "carry on LITELLM ESCALATE",
-        newest_ask: Some("Write the title in the predominant language of the session"),
+        user_message: "carry on",
+        newest_ask: Some(
+            "carry on LITELLM ESCALATE. Write the title in the predominant language of the session",
+        ),
         caller: &CallerContext::default(),
     };
     let pools = all_pools();
@@ -490,6 +587,86 @@ fn the_turn_carries_every_observation_together() {
     assert!(found.housekeeping_sentinel.is_some());
     assert_eq!(found.housekeeping_tier, Some(tier("SIMPLE")));
     assert_eq!(found.keyword_override, None);
+}
+
+#[test]
+fn only_the_newest_ask_can_escalate() {
+    let settings = base_settings();
+    let pools = all_pools();
+    let lexical = LexicalRules::compile(&pools, &[]).unwrap();
+    let caller = CallerContext::default();
+    let older_ask = turn(
+        &caller,
+        "please LITELLM ESCALATE",
+        Some("write the release notes"),
+        None,
+    );
+    let older_found = runtime()
+        .block_on(resolve_turn(
+            &settings,
+            &pools,
+            &lexical,
+            None::<&SemanticKeywordIndex<FakeEmbedder>>,
+            &older_ask,
+        ))
+        .unwrap();
+    assert_eq!(older_found.escalation_keyword, None);
+    let plumbing_only = turn(&caller, "please LITELLM ESCALATE", None, None);
+    let plumbing_found = runtime()
+        .block_on(resolve_turn(
+            &settings,
+            &pools,
+            &lexical,
+            None::<&SemanticKeywordIndex<FakeEmbedder>>,
+            &plumbing_only,
+        ))
+        .unwrap();
+    assert_eq!(plumbing_found.escalation_keyword, None);
+    let newest = turn(&caller, "carry on", Some("please LITELLM ESCALATE"), None);
+    let newest_found = runtime()
+        .block_on(resolve_turn(
+            &settings,
+            &pools,
+            &lexical,
+            None::<&SemanticKeywordIndex<FakeEmbedder>>,
+            &newest,
+        ))
+        .unwrap();
+    assert_eq!(
+        newest_found.escalation_keyword.as_deref(),
+        Some("LITELLM ESCALATE")
+    );
+}
+
+#[test]
+fn the_stall_flag_gates_detection() {
+    let messages = stalled_repeats(Json::Null);
+    let pools = all_pools();
+    let lexical = LexicalRules::compile(&pools, &[]).unwrap();
+    let caller = CallerContext::default();
+    let request = turn(&caller, "", None, Some(&messages));
+    let off = runtime()
+        .block_on(resolve_turn(
+            &base_settings(),
+            &pools,
+            &lexical,
+            None::<&SemanticKeywordIndex<FakeEmbedder>>,
+            &request,
+        ))
+        .unwrap();
+    assert!(!off.stalled);
+    let mut enabled = base_settings();
+    enabled.stall_escalation_enabled = true;
+    let on = runtime()
+        .block_on(resolve_turn(
+            &enabled,
+            &pools,
+            &lexical,
+            None::<&SemanticKeywordIndex<FakeEmbedder>>,
+            &request,
+        ))
+        .unwrap();
+    assert!(on.stalled);
 }
 
 #[test]
@@ -540,6 +717,22 @@ fn runtime() -> Runtime {
         .enable_all()
         .build()
         .expect("the test runtime starts")
+}
+
+fn turn<'request>(
+    caller: &'request CallerContext,
+    user_message: &'request str,
+    newest_ask: Option<&'request str>,
+    messages: Option<&'request [Json]>,
+) -> TurnRequest<'request> {
+    TurnRequest {
+        request_kwargs: None,
+        resolved_messages: None,
+        messages,
+        user_message,
+        newest_ask,
+        caller,
+    }
 }
 
 fn assistant_tool_use(id: &str, name: &str, input: Json) -> Json {
