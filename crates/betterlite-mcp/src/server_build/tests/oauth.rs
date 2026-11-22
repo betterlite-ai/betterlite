@@ -151,12 +151,12 @@ async fn oauth_resolve_step_reports_deferred_without_fetching() {
     assert!(deferred);
     assert!(harness.fetcher.urls().is_empty());
     harness.settings = settings_with_startup(true);
-    let (metadata, deferred) = harness
+    let (startup_metadata, startup_deferred) = harness
         .builder()
         .resolve_table_oauth_metadata(&request)
         .await;
-    assert!(metadata.is_some());
-    assert!(!deferred);
+    assert!(startup_metadata.is_some());
+    assert!(!startup_deferred);
 }
 
 #[tokio::test]

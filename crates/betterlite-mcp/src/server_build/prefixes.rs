@@ -66,7 +66,7 @@ where
             .alias
             .as_deref()
             .filter(|text| !text.is_empty())
-            .or(row.server_name.as_deref().filter(|text| !text.is_empty()));
+            .or_else(|| row.server_name.as_deref().filter(|text| !text.is_empty()));
         tracing::warn!(
             "MCP server '{}' will not start: {MCP_STDIO_DISABLED_MESSAGE}",
             name.unwrap_or("None")

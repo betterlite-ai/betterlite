@@ -19,6 +19,7 @@ use betterlite_secrets::secret_codec::{
 use http::{HeaderMap, StatusCode};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::RwLock;
+use tokio::task::yield_now;
 use tokio_util::task::TaskTracker;
 use tracing::Level;
 use tracing::subscriber::DefaultGuard;

@@ -167,10 +167,8 @@ fn json(text: &str) -> JsonValue {
     serde_json::from_str(text).unwrap()
 }
 
-fn secret_text(credential: &Option<SecretCredential>) -> Option<String> {
-    credential
-        .as_ref()
-        .map(|secret| secret.0.0.expose_secret().to_owned())
+fn secret_text(credential: Option<&SecretCredential>) -> Option<String> {
+    credential.map(|secret| secret.0.0.expose_secret().to_owned())
 }
 
 fn row(source: &str) -> McpServerTable {
@@ -219,7 +217,10 @@ impl Captured {
 
 impl io::Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        let Ok(mut captured) = self.0.lock() else {
+            return Err(io::Error::other("the capture buffer lock is poisoned"));
+        };
+        captured.extend_from_slice(buf);
         Ok(buf.len())
     }
 

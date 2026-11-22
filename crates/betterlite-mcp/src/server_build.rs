@@ -99,7 +99,7 @@ where
     C: Clock + Send + Sync + 'static,
 {
     fn record_deferred(&self, server_id: &str, discovery_deferred: bool) {
-        DiscoverySlots::set_deferred(self, server_id, discovery_deferred);
+        Self::set_deferred(self, server_id, discovery_deferred);
     }
 }
 

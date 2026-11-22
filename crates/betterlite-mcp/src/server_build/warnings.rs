@@ -12,10 +12,10 @@ pub fn warn_on_server_name_fields(server_id: &str, alias: Option<&str>, server_n
 }
 
 fn warn_about_field(server_id: &str, field_name: &str, value: Option<&str>) {
-    let Some(value) = value.filter(|text| !text.is_empty()) else {
+    let Some(text) = value.filter(|candidate| !candidate.is_empty()) else {
         return;
     };
-    let result = validate_tool_name(value);
+    let result = validate_tool_name(text);
     if result.is_valid {
         return;
     }
@@ -24,7 +24,7 @@ fn warn_about_field(server_id: &str, field_name: &str, value: Option<&str>) {
     } else {
         result.warnings.join("; ")
     };
-    tracing::warn!("MCP server '{server_id}' has invalid {field_name} '{value}': {warning_text}");
+    tracing::warn!("MCP server '{server_id}' has invalid {field_name} '{text}': {warning_text}");
 }
 
 // ast-grep-ignore: no-long-names
@@ -104,12 +104,12 @@ pub fn warn_config_id_jag_server_outruns_sso(
     if server.fields.auth_type != Some(MCPAuth::Oauth2IdJag) {
         return;
     }
-    let Some(gap) = gap else {
+    let Some(detail) = gap else {
         return;
     };
     let label = get_server_prefix(server, policy);
     tracing::warn!(
-        "MCP server '{label}' (id={}, source=config) is declared with auth_type=oauth2_id_jag, but {gap}.",
+        "MCP server '{label}' (id={}, source=config) is declared with auth_type=oauth2_id_jag, but {detail}.",
         server.fields.server_id
     );
 }

@@ -166,8 +166,7 @@ fn apply_blob_credentials(fields: &mut ServerFields, credentials: &ResolvedCrede
         .client_assertion_signing_alg
         .as_deref()
         .filter(|text| !text.is_empty())
-        .unwrap_or("RS256")
-        .to_owned();
+        .map_or_else(|| String::from("RS256"), str::to_owned);
     let aws = &credentials.aws;
     fields.aws_access_key_id.clone_from(&aws.access_key_id);
     fields
@@ -181,22 +180,25 @@ fn apply_blob_credentials(fields: &mut ServerFields, credentials: &ResolvedCrede
 }
 
 pub(super) fn first_non_empty(first: Option<&str>, second: Option<&str>) -> Option<String> {
-    match first.filter(|text| !text.is_empty()) {
-        Some(text) => Some(text.to_owned()),
-        None => second.map(str::to_owned),
-    }
+    first
+        .filter(|text| !text.is_empty())
+        .map_or_else(|| second.map(str::to_owned), |text| Some(text.to_owned()))
 }
 
 pub(super) fn name_for_prefix(row: &McpServerTable) -> String {
-    match row.alias.as_deref().filter(|text| !text.is_empty()) {
-        Some(alias) => alias.to_owned(),
-        None => row
-            .server_name
-            .as_deref()
-            .filter(|text| !text.is_empty())
-            .unwrap_or(&row.server_id)
-            .to_owned(),
-    }
+    row.alias
+        .as_deref()
+        .filter(|text| !text.is_empty())
+        .map_or_else(
+            || {
+                row.server_name
+                    .as_deref()
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or(&row.server_id)
+                    .to_owned()
+            },
+            str::to_owned,
+        )
 }
 
 pub(super) fn record_mcp_info(row: &McpServerTable) -> Result<MCPInfo, BuildError> {

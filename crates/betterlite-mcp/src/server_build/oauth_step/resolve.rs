@@ -31,9 +31,9 @@ pub(super) fn resolve_oauth_fields(
     row: &McpServerTable,
     credentials: &ResolvedCredentials,
     request: &TableOAuthRequest<'_>,
-    metadata: Option<MCPOAuthMetadata>,
+    metadata: Option<&MCPOAuthMetadata>,
 ) -> OAuthResolution {
-    let discovered = discovered_oauth(metadata.as_ref());
+    let discovered = discovered_oauth(metadata);
     let configured = manual_endpoints(row);
     OAuthResolution {
         oauth2_flow: explicit_oauth2_flow(row.oauth2_flow.map(flow_name)),

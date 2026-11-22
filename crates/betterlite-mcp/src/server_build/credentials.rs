@@ -67,29 +67,32 @@ where
         credentials: Option<&MCPCredentials>,
         encrypted: bool,
     ) -> AwsCredentials {
-        let Some(credentials) = credentials else {
+        let Some(stored) = credentials else {
             return AwsCredentials::default();
         };
         AwsCredentials {
             access_key_id: self.credential(
-                &credentials.aws_access_key_id,
+                stored.aws_access_key_id.as_ref().and_then(Option::as_ref),
                 "aws_access_key_id",
                 encrypted,
             ),
             secret_access_key: self.credential(
-                &credentials.aws_secret_access_key,
+                stored
+                    .aws_secret_access_key
+                    .as_ref()
+                    .and_then(Option::as_ref),
                 "aws_secret_access_key",
                 encrypted,
             ),
             session_token: self.credential(
-                &credentials.aws_session_token,
+                stored.aws_session_token.as_ref().and_then(Option::as_ref),
                 "aws_session_token",
                 encrypted,
             ),
-            region_name: plain_credential_value(&credentials.aws_region_name),
-            service_name: plain_credential_value(&credentials.aws_service_name),
-            role_name: plain_credential_value(&credentials.aws_role_name),
-            session_name: plain_credential_value(&credentials.aws_session_name),
+            region_name: stored.aws_region_name.clone().flatten(),
+            service_name: stored.aws_service_name.clone().flatten(),
+            role_name: stored.aws_role_name.clone().flatten(),
+            session_name: stored.aws_session_name.clone().flatten(),
         }
     }
 
@@ -115,11 +118,11 @@ where
 
     fn credential(
         &self,
-        stored: &Option<Option<StoredSecret>>,
+        stored: Option<&StoredSecret>,
         key: &str,
         encrypted: bool,
     ) -> Option<SecretCredential> {
-        let secret = stored.as_ref()?.as_ref()?;
+        let secret = stored?;
         let text = self.decrypt_credential_field(Some(secret.0.expose_secret()), key, encrypted)?;
         Some(SecretCredential(StoredSecret(SecretString::from(text))))
     }
@@ -133,14 +136,14 @@ pub(super) fn resolved_credentials<D, F, S, R>(
 where
     D: Decryptor,
 {
-    let Some(credentials) = credentials else {
+    let Some(stored) = credentials else {
         return ResolvedCredentials::default();
     };
     let mut resolved = ResolvedCredentials::default();
-    apply_secret_fields(builder, &mut resolved, credentials, encrypted);
-    apply_scope_fields(&mut resolved, credentials);
-    apply_token_fields(&mut resolved, credentials);
-    resolved.aws = builder.extract_aws_credentials(Some(credentials), encrypted);
+    apply_secret_fields(builder, &mut resolved, stored, encrypted);
+    apply_scope_fields(&mut resolved, stored);
+    apply_token_fields(&mut resolved, stored);
+    resolved.aws = builder.extract_aws_credentials(Some(stored), encrypted);
     resolved
 }
 
@@ -152,15 +155,17 @@ fn apply_secret_fields<D, F, S, R>(
 ) where
     D: Decryptor,
 {
-    resolved.authentication_token =
-        builder.credential(&credentials.auth_value, "auth_value", encrypted);
-    resolved.client_id = builder.decrypt_credential_field(
-        plain_credential_value(&credentials.client_id).as_deref(),
-        "client_id",
+    resolved.authentication_token = builder.credential(
+        credentials.auth_value.as_ref().and_then(Option::as_ref),
+        "auth_value",
         encrypted,
     );
-    resolved.client_secret =
-        builder.credential(&credentials.client_secret, "client_secret", encrypted);
+    resolved.client_id = credentials.client_id.clone().flatten();
+    resolved.client_secret = builder.credential(
+        credentials.client_secret.as_ref().and_then(Option::as_ref),
+        "client_secret",
+        encrypted,
+    );
     resolved.client_private_key = builder
         .decrypt_credential_field(
             credentials
@@ -188,23 +193,16 @@ fn apply_scope_fields(resolved: &mut ResolvedCredentials, credentials: &MCPCrede
 }
 
 fn apply_token_fields(resolved: &mut ResolvedCredentials, credentials: &MCPCredentials) {
-    resolved.token_exchange_endpoint = plain_credential_value(&credentials.token_exchange_endpoint);
-    resolved.audience = plain_credential_value(&credentials.audience);
-    resolved.subject_token_type = plain_credential_value(&credentials.subject_token_type);
-    resolved.upstream_resource = plain_credential_value(&credentials.upstream_resource);
-    resolved.upstream_token_header = plain_credential_value(&credentials.upstream_token_header);
+    resolved.token_exchange_endpoint = credentials.token_exchange_endpoint.clone().flatten();
+    resolved.audience = credentials.audience.clone().flatten();
+    resolved.subject_token_type = credentials.subject_token_type.clone().flatten();
+    resolved.upstream_resource = credentials.upstream_resource.clone().flatten();
+    resolved.upstream_token_header = credentials.upstream_token_header.clone().flatten();
     resolved.id_jag_resource_token_endpoint =
-        plain_credential_value(&credentials.id_jag_resource_token_endpoint);
-    resolved.id_jag_resource = plain_credential_value(&credentials.id_jag_resource);
-    resolved.client_private_key_id = plain_credential_value(&credentials.client_private_key_id);
+        credentials.id_jag_resource_token_endpoint.clone().flatten();
+    resolved.id_jag_resource = credentials.id_jag_resource.clone().flatten();
+    resolved.client_private_key_id = credentials.client_private_key_id.clone().flatten();
     resolved.client_assertion_signing_alg =
-        plain_credential_value(&credentials.client_assertion_signing_alg);
-    resolved.token_exchange_profile = plain_credential_value(&credentials.token_exchange_profile);
-}
-
-fn plain_credential_value(stored: &Option<Option<String>>) -> Option<String> {
-    match stored {
-        Some(Some(value)) => Some(value.clone()),
-        Some(None) | None => None,
-    }
+        credentials.client_assertion_signing_alg.clone().flatten();
+    resolved.token_exchange_profile = credentials.token_exchange_profile.clone().flatten();
 }

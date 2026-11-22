@@ -168,7 +168,7 @@ async fn fields_timestamps_are_normalized_to_utc() {
 async fn fields_timeout_and_lists_carry_over() {
     let source = r#"{"server_id":"srv-1","transport":"http","timeout":12.5,"max_concurrent_requests":4,"args":["--port","8080"],"extra_headers":["x-test"],"mcp_access_groups":["group-a"],"allowed_tools":["tool-a"]}"#;
     let server = built(source).await;
-    assert_eq!(server.fields.timeout, Some(12.5));
+    assert_eq!(server.fields.timeout, Some(12.5_f64));
     assert_eq!(server.fields.max_concurrent_requests, Some(4));
     assert_eq!(server.fields.args, Some(strings(&["--port", "8080"])));
     assert_eq!(server.fields.extra_headers, Some(strings(&["x-test"])));
@@ -206,7 +206,7 @@ async fn fields_deferred_slot_store_records_the_build_flag() {
         settings_with_startup(false),
         TaskTracker::new(),
     );
-    tokio::task::yield_now().await;
+    yield_now().await;
     DeferredSlots::record_deferred(&slots, "srv-1", true);
     assert!(slots.slot_exists("srv-1"));
     DeferredSlots::record_deferred(&slots, "srv-1", false);

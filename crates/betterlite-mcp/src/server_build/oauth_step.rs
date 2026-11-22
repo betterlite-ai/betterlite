@@ -58,7 +58,10 @@ struct TableNeeds {
 
 impl<D, F, S, R> ServerBuilder<'_, D, F, S, R>
 where
+    D: Sync,
     F: MetadataFetcher,
+    S: Sync,
+    R: Sync,
 {
     #[must_use]
     pub async fn resolve_table_oauth_metadata(
@@ -66,16 +69,17 @@ where
         request: &TableOAuthRequest<'_>,
     ) -> (Option<MCPOAuthMetadata>, bool) {
         let needs = self.table_needs(request);
-        let mut metadata = None;
-        if needs.needs_discovery && !needs.deferred {
-            metadata = fetch_table_metadata(
+        let metadata = if needs.needs_discovery && !needs.deferred {
+            fetch_table_metadata(
                 self.fetcher,
                 self.settings.fetch,
                 request,
                 needs.warn_on_empty,
             )
-            .await;
-        }
+            .await
+        } else {
+            None
+        };
         if request.use_issuer_anchor {
             return (metadata, needs.deferred);
         }
@@ -92,7 +96,7 @@ where
     ) -> OAuthResolution {
         let request = table_oauth_request(row, credentials, name);
         let (metadata, _deferred) = self.resolve_table_oauth_metadata(&request).await;
-        resolve_oauth_fields(row, credentials, &request, metadata)
+        resolve_oauth_fields(row, credentials, &request, metadata.as_ref())
     }
 
     fn table_needs(&self, request: &TableOAuthRequest<'_>) -> TableNeeds {
