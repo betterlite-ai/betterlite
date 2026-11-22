@@ -1,16 +1,15 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 use std::time::Duration;
 
-use betterlite_azure::credentials::source::CredentialSources;
 use betterlite_azure::endpoints::get_client::ClientCache;
 use betterlite_azure::endpoints::projection::{
     ClientIdentity, ClientKind, LiteLlmParams, SessionKind,
 };
 use betterlite_azure::image_transport::ImageClock;
 use betterlite_azure::images::generation::GeneratedImage;
-use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::image_edits::file::ImageEditFile;
@@ -27,7 +26,6 @@ use super::call::{
 };
 use super::error::AzureMediaError;
 use super::parts::{form_parts, header_map};
-use super::test_support::no_sources::NoSources;
 use super::test_support::{Cache, Clock, Outcome, Reply, exchange, exchange_request};
 use super::{AzureMediaResult, ImageEditOutcome};
 use crate::openai_media_dispatch::OpenAiMediaRequest;
@@ -197,7 +195,7 @@ async fn polling_generation() {
         images[0].url,
         format!("{AZURE}/openai/images/generations:submit?api-version=2023-06-01-preview")
     );
-    assert_eq!(images[1].method, http::Method::GET);
+    assert_eq!(images[1].method, Method::GET);
     assert_eq!(
         images[1].url,
         "https://example.openai.azure.com/operations/7"
@@ -295,7 +293,7 @@ async fn edit_success() {
     assert_eq!(field, "image[]");
     assert_eq!(file.filename.as_deref(), Some("cat.png"));
     let sent = &outcome.fixture.images()[0];
-    let body = String::from_utf8_lossy(&sent.body);
+    let body = from_utf8(&sent.body).expect("the edit form body is UTF-8");
     assert!(body.contains("name=\"image[]\""));
     assert!(body.contains("filename=\"cat.png\""));
     assert!(!body.contains("name=\"model\""));
@@ -365,7 +363,7 @@ async fn edit_bad_field() {
     let error = error_of(&outcome);
     assert!(matches!(
         error,
-        AzureMediaError::FormField { ref field } if field == "size"
+        AzureMediaError::FormField { field } if field == "size"
     ));
     assert_eq!(error.status(), None);
     assert!(outcome.fixture.images().is_empty());
@@ -456,9 +454,9 @@ fn form_parts_render_the_httpx_field_text() {
     let field = |name: &str| {
         parts
             .iter()
-            .find(|part| part.field == name)
+            .find(|part| part.name == name)
             .expect("the form field is present")
-            .body
+            .data
             .clone()
     };
     assert_eq!(field("null"), b"");
@@ -496,7 +494,7 @@ fn header_map_rejects_unusable_names_and_values() {
     good.expect("a valid header name and value are accepted");
 }
 
-fn header(headers: &HeaderMap, name: &str) -> Option<&str> {
+fn header<'value>(headers: &'value HeaderMap, name: &str) -> Option<&'value str> {
     headers.get(name).and_then(|value| value.to_str().ok())
 }
 
@@ -563,19 +561,4 @@ fn fixture_cache_round_trips() {
     assert_eq!(cache.get(&identity), None);
     cache.set(identity.clone(), ClientKind::AsyncAzureOpenAi, false);
     assert_eq!(cache.get(&identity), Some(ClientKind::AsyncAzureOpenAi));
-}
-
-#[test]
-fn no_sources_resolve_nothing() {
-    let input = OidcExchangeInput {
-        azure_ad_token: SecretString::from("assertion"),
-        azure_client_id: None,
-        azure_tenant_id: None,
-        scope: None,
-    };
-    let error = NoSources
-        .oidc(&input)
-        .expect_err("the fixture resolves no credential source");
-    assert_eq!(error.class, "RuntimeError");
-    assert_eq!(error.message, "no credential source in this fixture");
 }

@@ -135,15 +135,7 @@ fn native_request(
     let transformed = transform_request(audio, &NoFiles)?;
     let payload = native_bytes(transformed.data)?;
     // the provider config's content type replaces the validated one, as the HTTP handler does after validate_environment
-    let content_type_text = transformed
-        .content_type
-        .unwrap_or_else(|| String::from(DEFAULT_CONTENT_TYPE));
-    let content_type = HeaderValue::from_str(&content_type_text).map_err(|source| {
-        AzureMediaError::HeaderValue {
-            name: String::from("Content-Type"),
-            source,
-        }
-    })?;
+    let content_type = content_type_header(transformed.content_type)?;
     let mut request_headers = header_map(&validated)?;
     request_headers.insert(CONTENT_TYPE, content_type.clone());
     Ok(OutboundRequest {
@@ -156,6 +148,14 @@ fn native_request(
             data: payload,
         },
         deadline: operation.timeout,
+    })
+}
+
+fn content_type_header(text: Option<String>) -> Result<HeaderValue, AzureMediaError> {
+    let content_type_text = text.unwrap_or_else(|| String::from(DEFAULT_CONTENT_TYPE));
+    HeaderValue::from_str(&content_type_text).map_err(|source| AzureMediaError::HeaderValue {
+        name: String::from("Content-Type"),
+        source,
     })
 }
 

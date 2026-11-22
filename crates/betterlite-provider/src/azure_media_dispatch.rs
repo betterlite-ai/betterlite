@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use betterlite_azure::images::generation::GeneratedImage;
-use betterlite_azure::transcription::call::reply::TranscriptionReply;
 use betterlite_azure::transcription::native::reply::NativeTranscriptionReply;
 use betterlite_openai::api::image_contracts::records::{ImageFiles, ImageParams};
 use betterlite_openai::image_generation::reply::ImageGenerationReply;
+use betterlite_openai::transcription::reply::TranscriptionReply;
 
 pub mod call;
 pub mod error;
@@ -30,6 +30,9 @@ pub enum AzureMediaResult {
     Transcription(Box<TranscriptionReply>),
     NativeTranscription(Box<NativeTranscriptionReply>),
 }
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AzureMediaPrepared;
 
 // The edit's resolved request and form beside the reply its response transform reads
 #[derive(Debug, Clone, PartialEq, Eq)]

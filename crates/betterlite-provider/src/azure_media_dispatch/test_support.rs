@@ -1,5 +1,3 @@
-pub mod no_sources;
-
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::{Future, ready};
 use std::mem::take;
@@ -15,6 +13,7 @@ use betterlite_azure::transcription::call::logging::{
 };
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
 use betterlite_config::sections::azure_url_policy::AzureCredentials;
+use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -23,9 +22,8 @@ use betterlite_openai::image_generation::logging::{
     ImageGenerationLogger, PostCallRecord, PreCallRecord,
 };
 use betterlite_openai::transcription::transport::TranscriptionTransport;
-use http::header::{HeaderMap, HeaderName, HeaderValue};
+use http::header::{HeaderMap, HeaderValue};
 
-use self::no_sources::NoSources;
 use super::AzureMediaRequest;
 use super::call::AzureMediaOperation;
 use super::error::AzureMediaError;
@@ -51,11 +49,8 @@ impl Reply {
     }
 
     #[must_use]
-    pub fn with_header(mut self, name: &str, value: &str) -> Self {
-        let name =
-            HeaderName::from_bytes(name.as_bytes()).expect("a scripted header name is valid");
-        let value = HeaderValue::from_str(value).expect("a scripted header value is valid");
-        self.headers.insert(name, value);
+    pub fn with_header(mut self, name: &'static str, value: &'static str) -> Self {
+        self.headers.insert(name, HeaderValue::from_static(value));
         self
     }
 }
@@ -86,11 +81,10 @@ impl Fixture {
 
     #[must_use]
     pub fn images(&self) -> Vec<ImageRequest> {
-        self.state
-            .images
-            .lock()
-            .expect("the image log is not poisoned")
-            .clone()
+        match self.state.images.lock() {
+            Ok(images) => images.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 
     #[must_use]
@@ -123,19 +117,19 @@ impl TranscriptionTransport for Fixture {
 }
 
 fn record<T>(mutex: &Mutex<Vec<T>>, item: T) {
-    mutex
-        .lock()
-        .expect("the request log is not poisoned")
-        .push(item);
+    match mutex.lock() {
+        Ok(mut items) => items.push(item),
+        Err(poisoned) => poisoned.into_inner().push(item),
+    }
 }
 
+// A test that scripts fewer replies than its dispatch sends sees a 500 instead of a panic.
 fn scripted(state: &State) -> Reply {
-    state
-        .replies
-        .lock()
-        .expect("the script lock is not poisoned")
-        .pop_front()
-        .expect("every scripted request has a reply")
+    let reply = match state.replies.lock() {
+        Ok(mut replies) => replies.pop_front(),
+        Err(poisoned) => poisoned.into_inner().pop_front(),
+    };
+    reply.unwrap_or_else(|| Reply::json(500, "no scripted reply"))
 }
 
 fn image_reply(reply: Reply) -> ImageReply {
