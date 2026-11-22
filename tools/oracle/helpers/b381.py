@@ -33,18 +33,6 @@ class InIds(BaseModel):
     in_ids: list[str] = Field(alias="in")
 
 
-class TokenWhere(BaseModel):
-    token: InIds
-
-
-class TeamWhere(BaseModel):
-    team_id: InIds
-
-
-class UserWhere(BaseModel):
-    user_id: InIds
-
-
 class ErrorWhere(BaseModel):
     job_id: InIds
     outcome: Literal["error"]
@@ -87,7 +75,7 @@ class KeyTable:
         self.rows = [KeyRow.model_validate(row) for row in rows]
 
     async def find_many(self, *, where: JsonValue) -> list[KeyRow]:
-        ids = TokenWhere.model_validate(where).token.in_ids
+        ids = TypeAdapter(dict[str, InIds]).validate_python(where)["token"].in_ids
         return [row for row in self.rows if row.token in ids]
 
 
@@ -96,7 +84,7 @@ class TeamTable:
         self.rows = [TeamRow.model_validate(row) for row in rows]
 
     async def find_many(self, *, where: JsonValue) -> list[TeamRow]:
-        ids = TeamWhere.model_validate(where).team_id.in_ids
+        ids = TypeAdapter(dict[str, InIds]).validate_python(where)["team_id"].in_ids
         return [row for row in self.rows if row.team_id in ids]
 
 
@@ -105,7 +93,7 @@ class UserTable:
         self.rows = [UserRow.model_validate(row) for row in rows]
 
     async def find_many(self, *, where: JsonValue) -> list[UserRow]:
-        ids = UserWhere.model_validate(where).user_id.in_ids
+        ids = TypeAdapter(dict[str, InIds]).validate_python(where)["user_id"].in_ids
         return [row for row in self.rows if row.user_id in ids]
 
 

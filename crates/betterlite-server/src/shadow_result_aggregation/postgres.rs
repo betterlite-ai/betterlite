@@ -153,55 +153,42 @@ pub fn leg_row(row: &Row) -> RepositoryResult<LegRow> {
 }
 
 fn attempt_agg_row(row: &Row) -> RepositoryResult<AttemptAggRow> {
-    let turn_count: i32 = column(row, "turn_count")?;
-    let real_wins: i32 = column(row, "real_wins")?;
-    let shadow_wins: i32 = column(row, "shadow_wins")?;
-    let ties: i32 = column(row, "ties")?;
-    let cache_hit_turns: i32 = column(row, "cache_hit_turns")?;
     Ok(AttemptAggRow {
         group: column(row, "grp")?,
-        turn_count: i64::from(turn_count),
-        real_wins: i64::from(real_wins),
-        shadow_wins: i64::from(shadow_wins),
-        ties: i64::from(ties),
+        turn_count: i64::from(column::<i32>(row, "turn_count")?),
+        real_wins: i64::from(column::<i32>(row, "real_wins")?),
+        shadow_wins: i64::from(column::<i32>(row, "shadow_wins")?),
+        ties: i64::from(column::<i32>(row, "ties")?),
         avg_confidence: column(row, "avg_confidence")?,
         real_spend: column(row, "real_spend")?,
         shadow_spend: column(row, "shadow_spend")?,
-        cache_hit_turns: i64::from(cache_hit_turns),
+        cache_hit_turns: i64::from(column::<i32>(row, "cache_hit_turns")?),
     })
 }
 
 fn attempt_totals_row(row: &Row) -> RepositoryResult<AttemptTotals> {
-    let judged_count: i32 = column(row, "judged_count")?;
-    let error_count: i32 = column(row, "error_count")?;
     Ok(AttemptTotals {
-        judged_count: i64::from(judged_count),
-        error_count: i64::from(error_count),
+        judged_count: i64::from(column::<i32>(row, "judged_count")?),
+        error_count: i64::from(column::<i32>(row, "error_count")?),
         judge_spend: column(row, "judge_spend")?,
     })
 }
 
 fn attempt_count_row(row: &Row) -> RepositoryResult<LegAttemptCount> {
-    let attempt_count: i32 = column(row, "attempt_count")?;
     Ok(LegAttemptCount {
         job_id: column(row, "job_id")?,
-        attempt_count: i64::from(attempt_count),
+        attempt_count: i64::from(column::<i32>(row, "attempt_count")?),
         spend: column(row, "spend")?,
     })
 }
 
 fn funnel_row(row: &Row) -> RepositoryResult<FunnelTotals> {
-    let legs_with_rows: i32 = column(row, "legs_with_rows")?;
-    let not_sampled: i32 = column(row, "not_sampled")?;
-    let unjudgeable: i32 = column(row, "unjudgeable")?;
-    let shed: i32 = column(row, "shed")?;
-    let withheld: i32 = column(row, "withheld")?;
     Ok(FunnelTotals {
-        legs_with_rows: i64::from(legs_with_rows),
-        not_sampled: i64::from(not_sampled),
-        unjudgeable: i64::from(unjudgeable),
-        shed: i64::from(shed),
-        withheld: i64::from(withheld),
+        legs_with_rows: i64::from(column::<i32>(row, "legs_with_rows")?),
+        not_sampled: i64::from(column::<i32>(row, "not_sampled")?),
+        unjudgeable: i64::from(column::<i32>(row, "unjudgeable")?),
+        shed: i64::from(column::<i32>(row, "shed")?),
+        withheld: i64::from(column::<i32>(row, "withheld")?),
     })
 }
 

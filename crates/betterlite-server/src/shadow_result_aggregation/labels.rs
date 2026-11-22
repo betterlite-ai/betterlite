@@ -26,15 +26,13 @@ pub enum LabelKind {
     User,
 }
 
-pub type TargetLabels = BTreeMap<TargetKey, (Option<String>, Option<String>)>;
-
 // _target_labels: a key's (alias, masked name), a team's (alias, None), a user's (email, None)
 #[must_use]
 pub fn target_labels(
     key_rows: &[LabelRow],
     team_rows: &[LabelRow],
     user_rows: &[LabelRow],
-) -> TargetLabels {
+) -> BTreeMap<TargetKey, (Option<String>, Option<String>)> {
     let entries = key_rows
         .iter()
         .map(|row| (ShadowEvalTargetType::Key, row))
@@ -48,7 +46,7 @@ pub fn target_labels(
                 .iter()
                 .map(|row| (ShadowEvalTargetType::User, row)),
         );
-    let mut labels = TargetLabels::new();
+    let mut labels = BTreeMap::new();
     for (target_type, row) in entries {
         let key = TargetKey {
             target_type,
@@ -84,29 +82,23 @@ pub fn label_responses(
     let labels = target_labels(key_rows, team_rows, user_rows);
     responses
         .iter()
-        .map(|job| label_response(job, &labels))
-        .collect()
-}
-
-#[must_use]
-fn label_response(job: &ShadowJob, labels: &TargetLabels) -> ShadowJob {
-    let targets = job
-        .targets
-        .iter()
-        .map(|target| {
-            let label = labels.get(&TargetKey {
-                target_type: target.target_type,
-                target_id: target.target_id.clone(),
-            });
-            ShadowLeg {
-                target_alias: label.and_then(|pair| pair.0.clone()),
-                key_name: label.and_then(|pair| pair.1.clone()),
-                ..target.clone()
-            }
+        .map(|job| ShadowJob {
+            targets: job
+                .targets
+                .iter()
+                .map(|target| {
+                    let label = labels.get(&TargetKey {
+                        target_type: target.target_type,
+                        target_id: target.target_id.clone(),
+                    });
+                    ShadowLeg {
+                        target_alias: label.and_then(|pair| pair.0.clone()),
+                        key_name: label.and_then(|pair| pair.1.clone()),
+                        ..target.clone()
+                    }
+                })
+                .collect(),
+            ..job.clone()
         })
-        .collect();
-    ShadowJob {
-        targets,
-        ..job.clone()
-    }
+        .collect()
 }
