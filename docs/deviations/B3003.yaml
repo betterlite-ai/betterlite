@@ -1,0 +1,47 @@
+task: B3003
+deviations:
+  - what: >-
+      A failed cleanup is logged through tracing::error, not through LiteLLM's
+      verbose_proxy_logger.exception. The fallback itself is unchanged: a failed release still
+      invalidates every reserved counter, and a failed invalidation still leaves the
+      reservation finalized.
+    why: >-
+      betterlite's observability is tracing, and its invalidation path returns nothing to raise,
+      so the two exception guards around the invalidation log have nothing to catch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L458-L465
+  - what: >-
+      The shielded cleanup does not shield itself. release_reservation_on_cancel returns the
+      reconcile's error instead of swallowing it, and both it and release_or_invalidate are
+      plain futures, so the caller spawns them on a server-owned task and logs the error. A
+      request task that is cancelled never owns them, so it cannot drop them.
+    why: >-
+      asyncio.shield keeps a coroutine running inside a cancelled task; a Rust future is
+      cancelled by being dropped, so the only way for the settle to outlive the request is a
+      task the server owns. Returning the error instead of swallowing it keeps the failure
+      visible in the caller's log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L418-L426
+  - what: >-
+      An unreadable spend counter value reaches the settlement port as a typed CounterReadError
+      and makes the counter inconsistent, where LiteLLM catches TypeError or ValueError from
+      read_spend_counter_cache_value inside _counter_can_apply_adjustment.
+    why: >-
+      betterlite's spend counter read answers a Decimal or nothing, so a value Python's float()
+      would reject cannot exist; the port still models the failure so a reader that can fail
+      resolves the same way, by reseeding the counter instead of applying the delta.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1196-L1201
+  - what: >-
+      Settlement arithmetic is rust_decimal with checked operations, so a cost outside the
+      decimal range is SettlementError::Overflow, where LiteLLM's float arithmetic would carry
+      an infinity forward.
+    why: >-
+      betterlite keeps money as Decimal everywhere, and a value no field's type can hold is an
+      error that names the failure; no working setup reaches this range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1119-L1124
+  - what: >-
+      The -1e-12 float rounding tolerance of _counter_can_apply_adjustment is kept as an exact
+      decimal floor: a negative adjustment may take a counter to -0.000000000001 but no lower.
+    why: >-
+      The tolerance exists so a floated estimate and its settle cancel exactly; the decimal
+      floor keeps the same accept and reject boundary for every decimal input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1200-L1203
+kept_bugs: []
