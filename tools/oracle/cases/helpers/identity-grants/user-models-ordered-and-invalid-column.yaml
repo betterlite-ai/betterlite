@@ -1,0 +1,27 @@
+kind: helper
+name: identity-grants-user-models-ordered-and-invalid-column
+call:
+  identity_grants:
+    users:
+      - user: {user_id: ordered, models: [o3, gpt-4o, o3]}
+        user_id: ordered
+      - user: {user_id: empty, models: []}
+        user_id: empty
+      - user: {user_id: null-column, models: null}
+        user_id: null-column
+      - user: {user_id: absent-column}
+        user_id: absent-column
+      - user: {user_id: one-number, models: [gpt-4o, 7]}
+        user_id: one-number
+      - user: {user_id: one-null, models: [gpt-4o, null]}
+        user_id: one-null
+      - user: {user_id: one-bool, models: [true, gpt-4o]}
+        user_id: one-bool
+      - user: {user_id: nested, models: [[gpt-4o], {model: o3}]}
+        user_id: nested
+      - user: {user_id: blank-name, models: ["", gpt-4o]}
+        user_id: blank-name
+    denials: []
+    teams: []
+env: {}
+compare: {ignore: []}

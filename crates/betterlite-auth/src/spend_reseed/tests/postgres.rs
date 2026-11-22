@@ -1,5 +1,6 @@
 use betterlite_db::budget_permission_rows::Timestamp;
 use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::spend_rows::rows::{SpendCounterRows as _, SpendRowLookup};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::NaiveDateTime;
 use clap::Parser;
@@ -10,7 +11,7 @@ use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
 use super::support::{decimal, utc};
-use crate::spend_reseed::rows::{SpendCounterRows as _, SpendRowLookup, WindowEntity};
+use crate::spend_reseed::rows::{SpendCounterRows as _, WindowEntity};
 use crate::spend_reseed::sql::SqlSpendCounterRows;
 use crate::spend_reseed::values::{aggregate_amount, stored_amount};
 
@@ -208,12 +209,12 @@ async fn primary_rows_from_the_database(
     let rows = rows_of(&pool);
     let stored = rows.spend_row(lookup).await.expect("the spend row");
     let found = stored.expect("a stored row");
-    assert_eq!(stored_amount(found.spend.as_ref()), Ok(decimal(expected)));
+    assert_eq!(found.spend, Some(decimal(expected)));
     let absent = rows.spend_row(SpendRowLookup::Key("other")).await;
     assert_eq!(absent.expect("the spend row"), None);
     let null_spend = rows.spend_row(SpendRowLookup::Key("null-spend")).await;
     let null_row = null_spend.expect("the spend row").expect("a stored row");
-    assert_eq!(stored_amount(null_row.spend.as_ref()), Ok(decimal("0")));
+    assert_eq!(null_row.spend, Some(decimal("0")));
     let member = rows.spend_row(SpendRowLookup::TeamMember {
         user_id: "u2",
         team_id: "t1",
