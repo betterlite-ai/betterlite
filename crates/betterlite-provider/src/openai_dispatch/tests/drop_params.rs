@@ -192,6 +192,18 @@ pub(super) async fn deployment_additional_drop_params() {
         body.get("x_custom").is_none(),
         "a provider-specific name the list names is not sent either"
     );
+    // docs/deviations/B9992.yaml: the shared mapping refuses a nested path instead of deleting the nested key
+    let nested = format!(
+        r#"{{"model":"{MODEL}","messages":{MESSAGES},"additional_drop_params":["metadata.trace_id"]}}"#
+    );
+    let error = refused(DeploymentDropPolicy::default(), &nested).await;
+    let OperationError::Parameters {
+        source: ParameterError::NestedDropPath { path },
+    } = error
+    else {
+        panic!("a nested drop path is a Parameters error");
+    };
+    assert_eq!(path, "metadata.trace_id");
 }
 
 pub(super) async fn openai_unsupported_param() {
