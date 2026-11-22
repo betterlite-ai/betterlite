@@ -4,6 +4,8 @@ use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_models::resolution::ResolutionError;
 use thiserror::Error;
 
+use crate::decisions::transformation::requests::RequestConversionError;
+
 // prepare_call's failures, each carrying the text and the llm_provider LiteLLM's exception carries
 #[derive(Debug, Error)]
 pub enum PrepareError {
@@ -40,11 +42,12 @@ pub enum PrepareError {
         "{provider} does not support parameters: ['safety_identifier'], for model={model}. To drop these, set `litellm.drop_params=True` or for proxy:\n\n`litellm_settings:\n drop_params: true`\n"
     )]
     UnsupportedSafetyIdentifier { model: String, provider: String },
-    #[error("Decisions provider '{provider}' cannot serve this request: {reason}")]
+    #[error("Decisions provider '{provider}' cannot serve this request: {source}")]
     UnsupportedRequest {
         model: String,
         provider: String,
-        reason: String,
+        #[source]
+        source: RequestConversionError,
     },
     #[error("Requests with '{field}' go through litellm.{other_function}")]
     OtherFormat {

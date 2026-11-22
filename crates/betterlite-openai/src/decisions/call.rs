@@ -89,7 +89,6 @@ impl fmt::Debug for DecisionsCall<'_> {
             .field("api_key", &self.api_key.as_ref().map(|_key| "<redacted>"))
             .field("headers", &self.headers)
             .field("timeout", &self.timeout)
-            .field("litellm_params", &self.litellm_params)
             .finish_non_exhaustive()
     }
 }

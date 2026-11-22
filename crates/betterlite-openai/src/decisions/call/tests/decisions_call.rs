@@ -20,6 +20,7 @@ use crate::decisions::call::{CredentialInput, Selection};
 use crate::decisions::openai::config::Credential;
 use crate::decisions::openai::request::wire::{InputWire, QuestionWire};
 use crate::decisions::providers::DecisionsProvider;
+use crate::decisions::transformation::requests::RequestConversionError;
 use crate::decisions::transformation::wire::ProviderRequestWire;
 use crate::openai_base_config::Headers;
 
@@ -567,6 +568,8 @@ fn errors_image_input_is_refused_by_a_systemone_provider() {
         error.to_string(),
         "Decisions provider 'perplexity' cannot serve this request: input_image content parts are not supported because System One providers accept text input only"
     );
+    let cause = std::error::Error::source(&error).expect("the conversion error stays the source");
+    assert!(cause.downcast_ref::<RequestConversionError>().is_some());
     let class = error.class();
     let ErrorClass::BadRequest(details) = &class else {
         panic!("expected a bad request, got {class:?}");
@@ -960,16 +963,30 @@ fn fields_debug_never_prints_the_api_key() {
     let mut builder =
         CallBuilder::new("openai/gpt-4o-mini", openai_predicate_fields("Is it true?"));
     builder.api_key = Some(&key);
+    builder.kwargs.insert(
+        "aws_secret_access_key".to_owned(),
+        Json::Text("aws-secret-key".to_owned()),
+    );
     let prepare_debug = fixture.debug_prepare_call(builder);
     assert!(prepare_debug.contains("PrepareCall"));
     assert!(!prepare_debug.contains("sk-debug"));
+    assert!(!prepare_debug.contains("aws-secret-key"));
     let mut call_builder =
         CallBuilder::new("openai/gpt-4o-mini", openai_predicate_fields("Is it true?"));
     call_builder.api_key = Some(&key);
+    call_builder.kwargs.insert(
+        "aws_secret_access_key".to_owned(),
+        Json::Text("aws-secret-key".to_owned()),
+    );
     let call = fixture.prepare(call_builder, None).unwrap();
+    assert_eq!(
+        call.litellm_params.get("aws_secret_access_key"),
+        Some(&Json::Text("aws-secret-key".to_owned()))
+    );
     let call_debug = format!("{call:?}");
     assert!(call_debug.contains("DecisionsCall"));
     assert!(call_debug.contains("<redacted>"));
     assert!(!call_debug.contains("sk-debug"));
+    assert!(!call_debug.contains("aws-secret-key"));
     assert!(format!("{:?}", azure_ai()).contains("AzureAiConfig"));
 }

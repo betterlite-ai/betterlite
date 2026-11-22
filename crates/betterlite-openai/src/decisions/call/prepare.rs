@@ -98,7 +98,7 @@ pub(super) fn transform_body(
         .map_err(|source| PrepareError::UnsupportedRequest {
             model: selection.model.to_owned(),
             provider: selection.provider.as_str().to_owned(),
-            reason: source.to_string(),
+            source,
         })
 }
 
