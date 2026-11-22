@@ -1,0 +1,14 @@
+id: B10037
+milestone: R2 bug fixes
+title: A /v1/messages body with no model answers 400 naming the field
+status: done
+depends_on:
+- B9800
+file: tasks/B10037-messages-missing-model-400.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 2937

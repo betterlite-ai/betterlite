@@ -462,6 +462,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "coordination_settings"
+path = "fuzz_targets/coordination_settings.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "stored_ui_settings"
 path = "fuzz_targets/stored_ui_settings.rs"
 test = false

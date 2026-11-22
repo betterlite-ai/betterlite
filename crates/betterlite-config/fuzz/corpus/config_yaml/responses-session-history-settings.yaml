@@ -1,0 +1,5 @@
+# both lookup settings travel through environment_variables and the shared decoder
+environment_variables:
+  RESPONSES_SESSION_LOOKUP_MAX_ATTEMPTS: "5"
+  RESPONSES_SESSION_LOOKUP_RETRY_INTERVAL: "0.5"
+model_list: []

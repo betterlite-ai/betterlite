@@ -1,0 +1,58 @@
+id: B10037
+title: A /v1/messages body with no model answers 400 naming the field
+description: >-
+  Fix a 500 that B9800 ports from LiteLLM. MessagesCallSteps::call in crates/betterlite-server/src/messages_call.rs
+  plans a body with no model key as MessagesRoute::MissingModel, and MessagesCallError::MissingModel answers status
+  500 with the text "'model'". That is LiteLLM's unhandled KeyError on data["model"] in route_request, copied as is.
+  A request that leaves out a required field gets a 4xx, docs/compatibility.md says a bad request value is a 400
+  with an error that names the field, and no working setup can rely on the 500. B9800's reviewer found it and the
+  architect decided to fix it.
+
+
+  MessagesCallError::MissingModel answers 400 with the message "model is a required field". Its http_detail stays
+  None, so the route renders it the way it renders the other 400 that is not an HTTPException, UserConfig. The
+  plan and every other MessagesCallError arm stay as B9800 built them. a_missing_model_answers_the_key_error_text in
+  messages_call/tests.rs is renamed for the new answer and asserts the 400 and the message.
+scope:
+  paths:
+  - crates/betterlite-server/src/messages_call.rs
+  - crates/betterlite-server/src/messages_call/tests.rs
+  - docs/deviations/B10037.yaml
+  lint_tables: false
+references:
+- why: LiteLLM reads data["model"] with no check, so a body without model raises KeyError and answers 500.
+  url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L638-L647
+dod:
+- text: >-
+    MessagesCallError::MissingModel has status 400 and the message "model is a required field", and a test calls
+    MessagesCallSteps::call with a body that has max_tokens and no model and asserts both.
+  proof: [messages-call]
+- text: >-
+    docs/deviations/B10037.yaml has one row: a /v1/messages body with no model answers 400 naming the field, where
+    LiteLLM answers 500 with "'model'", linking the reference above.
+  proof: [messages-call]
+checks:
+  optional: []
+  commands:
+  - id: messages-call
+    why: The messages call tests are missing or fail.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^messages_call::/)'
+oracle_cases: []
+deviations:
+- what: >-
+    A /v1/messages body with no model answers 400 with "model is a required field". LiteLLM answers 500 with the
+    KeyError text "'model'".
+  why: >-
+    A missing required field is the caller's error, and no working setup can rely on a 500 for it.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L638-L647
+out_of_scope:
+- The other routes that read data["model"] through route_request. Each route's own task decides its answer.
+- An empty or non-string model. The plan already handles those as B9800 built it.
+- Oracle cases. B9800's cases never send a body without model, and an oracle case on that input can't match LiteLLM.
+pitfalls:
+- The response type and code come from the status the route already maps, so check how UserConfig's 400 renders before adding anything.
+review_level: standard
+budget:
+  max_changed_lines: 60
+  max_new_expects: 0
