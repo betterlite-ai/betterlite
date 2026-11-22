@@ -2,13 +2,12 @@ import asyncio
 import logging
 from collections.abc import Coroutine
 from datetime import datetime, timezone
-from typing import Final, Literal, TypeAlias, TypedDict
+from typing import Final, Literal, NamedTuple, TypeAlias, TypedDict
 from uuid import UUID
 
 import litellm
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.proxy import proxy_server
-from litellm.proxy.management_helpers import audit_logs
 from litellm.proxy._types import (
     GenerateKeyRequest,
     GenerateKeyResponse,
@@ -23,13 +22,13 @@ from litellm.proxy._types import (
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.hooks import key_management_event_hooks as hooks
 from litellm.proxy.hooks.key_management_event_hooks import KeyManagementEventHooks as Hooks
+from litellm.proxy.management_helpers import audit_logs
 from litellm.proxy.utils import PrismaClient
 from litellm.secret_managers.base_secret_manager import BaseSecretManager
 from litellm.types.secret_managers.main import KeyManagementSettings
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-PROXY_LOGGER: Final = "LiteLLM Proxy"
 HOOKS_MODULE: Final = "key_management_event_hooks.py"
 JSON: Final = TypeAdapter(JsonValue)
 GENERATE_REQUEST: Final = TypeAdapter(GenerateKeyRequest)
@@ -78,11 +77,6 @@ class Call(TypedDict):
     alerting: list[str]
 
 
-class Answer(TypedDict):
-    raised: bool
-    trace: list[JsonValue]
-
-
 class AuditFields(TypedDict):
     id: str
     updated_at: str
@@ -108,7 +102,7 @@ class Board(logging.Handler):
         if record.levelno == logging.WARNING and record.pathname.endswith(HOOKS_MODULE):
             self.effects.append(["warn"])
 
-    def email(self, webhook_event: WebhookEvent) -> Coroutine[None, None, None]:
+    def email(self, webhook_event: WebhookEvent) -> Coroutine[None, None, bool]:
         view: dict[str, JsonValue] = {
             "event": webhook_event.event,
             "event_group": webhook_event.event_group.value,
@@ -121,6 +115,10 @@ class Board(logging.Handler):
             "key_alias": webhook_event.key_alias,
         }
         self.effects.append(["email", view])
+        return asyncio.sleep(0, result=True)
+
+    def audit(self, request_data: LiteLLM_AuditLogs) -> Coroutine[None, None, None]:
+        self.effects.append(["audit", audit_view(request_data)])
         return asyncio.sleep(0)
 
 
@@ -130,10 +128,7 @@ class Manager(BaseSecretManager):
         self.secrets = call["secrets"]
         self.failing = call["failing"]
 
-    def answer(
-        self, effect: list[JsonValue], name: str, timeout: float | None
-    ) -> dict[str, JsonValue]:
-        del timeout
+    def answer(self, effect: list[JsonValue], name: str) -> dict[str, JsonValue]:
         self.board.effects.append(effect)
         if name in self.failing:
             raise RuntimeError(name)
@@ -141,44 +136,41 @@ class Manager(BaseSecretManager):
 
     @override
     async def async_read_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L30-L35
-        self, secret_name: str, optional_params: Params = None, timeout: float | None = None
+        self, secret_name: str, optional_params: Params = None, _timeout: float | None = None
     ) -> str | None:
-        return self.sync_read_secret(secret_name, optional_params, timeout)
+        self.answer(["read", secret_name, optional_params], secret_name)
+        return self.secrets.get(secret_name)
 
     @override
-    def sync_read_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L49-L54
-        self, secret_name: str, optional_params: Params = None, timeout: float | None = None
-    ) -> str | None:
-        self.answer(["read", secret_name, optional_params], secret_name, timeout)
+    def sync_read_secret(self, secret_name: str, optional_params: Params = None, _timeout: float | None = None) -> str | None:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L48-L54
+        self.answer(["read", secret_name, optional_params], secret_name)
         return self.secrets.get(secret_name)
 
     @override
     async def async_write_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L68-L76
         self, secret_name: str, secret_value: str, description: str | None = None,
-        optional_params: Params = None, timeout: float | None = None, tags: Params = None,
+        optional_params: Params = None, _timeout: float | None = None, tags: Params = None,
     ) -> dict[str, JsonValue]:
         effect: list[JsonValue] = ["write", secret_name, secret_value, description, tags]
-        return self.answer([*effect, optional_params], secret_name, timeout)
+        return self.answer([*effect, optional_params], secret_name)
 
     @override
     async def async_delete_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L94-L100
         self, secret_name: str, recovery_window_in_days: int | None = 7,
-        optional_params: Params = None, timeout: float | None = None,
+        optional_params: Params = None, _timeout: float | None = None,
     ) -> dict[str, JsonValue]:
         effect: list[JsonValue] = ["delete", secret_name, recovery_window_in_days, optional_params]
-        return self.answer(effect, secret_name, timeout)
+        return self.answer(effect, secret_name)
 
-    # one rotate effect keeps the base class's read, write and delete steps out of these cases
     @override
     async def async_rotate_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L114-L120
         self, current_secret_name: str, new_secret_name: str, new_secret_value: str,
-        optional_params: Params = None, timeout: float | None = None,
+        optional_params: Params = None, _timeout: float | None = None,
     ) -> dict[str, JsonValue]:
         effect: list[JsonValue] = ["rotate", current_secret_name, new_secret_name, new_secret_value]
-        return self.answer([*effect, optional_params], current_secret_name, timeout)
+        return self.answer([*effect, optional_params], current_secret_name)
 
 
-# a team read from the cache never reaches the database, and a missing one fails on the stub below
 class Teams(InMemoryCache):
     def __init__(self, board: Board, call: Call) -> None:
         super().__init__()
@@ -189,44 +181,28 @@ class Teams(InMemoryCache):
     def get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
         team_id = key.removeprefix("team_id:")
         self.board.effects.append(["lookup", team_id])
-        if team_id not in self.metadata:
-            return None
-        return {"team_id": team_id, "metadata": self.metadata[team_id]}
+        team = self.metadata.get(team_id)
+        return None if team is None else {"team_id": team_id, "metadata": team}
 
 
 class Database(PrismaClient):
-    def __init__(self) -> None:
-        self.connected = True
+    def __init__(self) -> None: ...
 
 
-# the hook reads datetime.now(timezone.utc) and str(uuid.uuid4()) through its module globals
-class Clock:
-    def __init__(self, moment: str) -> None:
-        self.moment = datetime.fromisoformat(moment)
+class Stubs(NamedTuple):
+    moment: datetime
+    identifier: UUID
 
     def now(self, tz: timezone | None = None) -> datetime:
-        if tz is None:
-            return self.moment
-        return self.moment.astimezone(tz)
+        return self.moment if tz is None else self.moment.astimezone(tz)
 
-
-class Uuids:
-    def __init__(self, value: str) -> None:
-        self.value = value
-
-    def uuid4(self) -> UUID:
-        issued = UUID(self.value)
-        return issued
-
-
-def parsed(text: str | None) -> JsonValue:
-    if text is None:
-        return None
-    return JSON.validate_json(text)
+    def uuid4(self) -> UUID: return self.identifier
 
 
 def audit_view(record: LiteLLM_AuditLogs) -> JsonValue:
     fields = AUDIT.validate_json(record.model_dump_json())
+    before = fields["before_value"]
+    updated = fields["updated_values"]
     return {
         "id": fields["id"],
         "updated_at": fields["updated_at"],
@@ -235,21 +211,9 @@ def audit_view(record: LiteLLM_AuditLogs) -> JsonValue:
         "action": fields["action"],
         "table_name": fields["table_name"],
         "object_id": fields["object_id"],
-        "before_value": parsed(fields["before_value"]),
-        "updated_values": parsed(fields["updated_values"]),
+        "before_value": JSON.validate_json(before if before is not None else "null"),
+        "updated_values": JSON.validate_json(updated if updated is not None else "null"),
     }
-
-
-# the audit writer is a plain callable, so the record is seen where the hook schedules it, before the secret-manager effect the hook awaits next
-class Recorder:
-    def __init__(self, board: Board) -> None:
-        self.board = board
-
-    def __call__(
-        self, request_data: LiteLLM_AuditLogs
-    ) -> Coroutine[None, None, None]:
-        self.board.effects.append(["audit", audit_view(request_data)])
-        return asyncio.sleep(0)
 
 
 def caller(identity: Caller) -> UserAPIKeyAuth:
@@ -262,70 +226,34 @@ def caller(identity: Caller) -> UserAPIKeyAuth:
     )
 
 
-def run(input_value: Call) -> Answer:
+def run(input_value: Call) -> dict[str, JsonValue]:
     board = Board()
-    logger = logging.getLogger(PROXY_LOGGER)
-    level = logger.level
-    handlers = logger.handlers
-    cache = proxy_server.user_api_key_cache
-    prisma = proxy_server.prisma_client
-    general = proxy_server.general_settings
-    admin = proxy_server.litellm_proxy_admin_name
-    clock = hooks.datetime
-    uuid = hooks.uuid
-    create = audit_logs.create_audit_log_for_update
-    settings = litellm._key_management_settings  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1309
-    store = litellm.store_audit_logs
-    client = litellm.secret_manager_client
-    alerting = proxy_server.proxy_logging_obj.slack_alerting_instance
-    sender = alerting.send_key_created_or_user_invited_email
+    logger = logging.getLogger("LiteLLM Proxy")
     logger.setLevel(logging.DEBUG)
     logger.handlers = [board]
+    settings = input_value["settings"]
     litellm._key_management_settings = KeyManagementSettings(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1309
-        store_virtual_keys=input_value["settings"]["store_virtual_keys"],
-        prefix_for_stored_virtual_keys=input_value["settings"][
-            "prefix_for_stored_virtual_keys"
-        ],
-        description=input_value["settings"]["description"],
-        tags=input_value["settings"]["tags"],
+        store_virtual_keys=settings["store_virtual_keys"],
+        prefix_for_stored_virtual_keys=settings["prefix_for_stored_virtual_keys"],
+        description=settings["description"],
+        tags=settings["tags"],
     )
     litellm.store_audit_logs = input_value["audit"]
     litellm.secret_manager_client = Manager(board, input_value) if input_value["client"] else None
-    proxy_server.prisma_client = (
-        Database() if input_value["runtime"] == "ready" else None
-    )
-    proxy_server.user_api_key_cache = UserApiKeyCache(
-        in_memory_cache=Teams(board, input_value)
-    )
+    proxy_server.prisma_client = Database() if input_value["runtime"] == "ready" else None
+    proxy_server.user_api_key_cache = UserApiKeyCache(in_memory_cache=Teams(board, input_value))
     proxy_server.general_settings = {"alerting": input_value["alerting"]}
     proxy_server.litellm_proxy_admin_name = input_value["admin_name"]
-    hooks.datetime = Clock(  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L71
-        input_value["now"]
-    )
-    hooks.uuid = Uuids(  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L69
-        input_value["id"]
-    )
-    audit_logs.create_audit_log_for_update = Recorder(board)
+    stubs = Stubs(datetime.fromisoformat(input_value["now"]), UUID(input_value["id"]))
+    hooks.datetime = stubs  # type: ignore[attr-defined, assignment]  # pyright: ignore[reportPrivateImportUsage, reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L71
+    hooks.uuid = stubs  # type: ignore[attr-defined, assignment]  # pyright: ignore[reportPrivateImportUsage, reportAssignmentType, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L69
+    audit_logs.create_audit_log_for_update = board.audit
+    alerting = proxy_server.proxy_logging_obj.slack_alerting_instance
     alerting.send_key_created_or_user_invited_email = board.email  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1274
-    try:
-        return asyncio.run(answer(input_value, board))
-    finally:
-        alerting.send_key_created_or_user_invited_email = sender  # type: ignore[method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1274
-        audit_logs.create_audit_log_for_update = create
-        hooks.datetime = clock
-        hooks.uuid = uuid
-        proxy_server.litellm_proxy_admin_name = admin
-        proxy_server.general_settings = general
-        proxy_server.user_api_key_cache = cache
-        proxy_server.prisma_client = prisma
-        litellm.secret_manager_client = client
-        litellm.store_audit_logs = store
-        litellm._key_management_settings = settings  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1309
-        logger.handlers = handlers
-        logger.setLevel(level)
+    return asyncio.run(answer(input_value, board))
 
 
-async def answer(call: Call, board: Board) -> Answer:
+async def answer(call: Call, board: Board) -> dict[str, JsonValue]:
     raised = False
     try:
         await perform(call)
@@ -339,14 +267,14 @@ async def answer(call: Call, board: Board) -> Answer:
 async def perform(call: Call) -> None:
     match call["event"]:
         case "generated":
-            await Hooks.async_key_generated_hook(
+            await Hooks.async_key_generated_hook(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L36-L94
                 data=GENERATE_REQUEST.validate_python(call["data"]),
                 response=GENERATE_RESPONSE.validate_python(call["response"]),
                 user_api_key_dict=caller(call["caller"]),
                 litellm_changed_by=call["changed_by"],
             )
         case "updated":
-            await Hooks.async_key_updated_hook(
+            await Hooks.async_key_updated_hook(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L97-L154
                 data=UPDATE_REQUEST.validate_python(call["data"]),
                 existing_key_row=KEY.validate_python(call["row"]),
                 response=call["response"],
@@ -354,19 +282,16 @@ async def perform(call: Call) -> None:
                 litellm_changed_by=call["changed_by"],
             )
         case "rotated":
-            await Hooks.async_key_rotated_hook(
-                data=(
-                    REGENERATE_REQUEST.validate_python(call["data"])
-                    if call["data"] is not None
-                    else None
-                ),
+            raw = call["data"]
+            await Hooks.async_key_rotated_hook(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L157-L224
+                data=REGENERATE_REQUEST.validate_python(raw) if raw is not None else None,
                 existing_key_row=KEY.validate_python(call["row"]),
                 response=GENERATE_RESPONSE.validate_python(call["response"]),
                 user_api_key_dict=caller(call["caller"]),
                 litellm_changed_by=call["changed_by"],
             )
         case "deleted":
-            await Hooks.async_key_deleted_hook(
+            await Hooks.async_key_deleted_hook(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L227-L245
                 data=KEY_REQUEST.validate_python(call["data"]),
                 keys_being_deleted=KEYS.validate_python(call["rows"]),
                 response=call["response"],
