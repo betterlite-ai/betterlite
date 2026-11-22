@@ -287,8 +287,7 @@ fn a_group_carries_the_router_and_its_totals() {
     assert_eq!(group.cache.return_to_tier.hit_rate_pct, dec("20"));
 }
 
-#[test]
-fn the_summed_row_adds_every_measure() {
+fn two_rows_to_sum() -> [SessionAggRow; 2] {
     let mut second = complexity_row();
     second.turns = 2;
     second.sessions = 1;
@@ -302,7 +301,12 @@ fn the_summed_row_adds_every_measure() {
     second.classifier_cost = dec("0.25");
     second.classifier_cost_recorded_turns = 2;
     second.session_seconds = dec("3600.0");
-    let summed = summed_agg_row(&[complexity_row(), second]);
+    [complexity_row(), second]
+}
+
+#[test]
+fn the_summed_row_adds_every_measure() {
+    let summed = summed_agg_row(&two_rows_to_sum());
     assert_eq!(
         (summed.router_name.as_str(), summed.router_type.as_str()),
         ("", "")
