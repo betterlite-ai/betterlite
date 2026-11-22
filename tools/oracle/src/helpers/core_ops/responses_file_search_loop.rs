@@ -158,8 +158,10 @@ impl ResponsesFollowUp for ScriptedResponses {
     }
 }
 
+type ScriptedResult = (String, String, Result<VectorStoreSearchResponse, String>);
+
 struct ScriptedSearches {
-    scripted: Vec<(String, String, Result<VectorStoreSearchResponse, String>)>,
+    scripted: Vec<ScriptedResult>,
     requests: Mutex<Vec<(String, String)>>,
 }
 

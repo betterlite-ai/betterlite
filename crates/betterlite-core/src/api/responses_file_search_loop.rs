@@ -190,7 +190,7 @@ where
             .call(call.request())
             .await
             .map_err(FileSearchLoopError::FollowUp)?;
-        let outputs = self.final_outputs(
+        let outputs = Self::final_outputs(
             input,
             &executed,
             &final_response,
@@ -250,7 +250,6 @@ where
     }
 
     fn final_outputs(
-        &self,
         input: &ResponsesFileSearchLoopInput,
         executed: &ExecutedToolCalls,
         final_response: &ResponsesApiResponse,
@@ -285,10 +284,9 @@ fn original_response(response: &ResponsesApiResponse) -> OriginalResponse {
     OriginalResponse {
         id: Some(response.id.clone()),
         created_at: Some(response.created_at),
-        model: match &response.model {
-            Some(text) => OriginalModel::Text(text.clone()),
-            None => OriginalModel::Null,
-        },
+        model: response.model.as_ref().map_or(OriginalModel::Null, |text| {
+            OriginalModel::Text(text.clone())
+        }),
         usage: response.usage.clone(),
         hidden_params: None,
     }

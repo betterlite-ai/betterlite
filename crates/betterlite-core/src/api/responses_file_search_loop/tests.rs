@@ -68,7 +68,7 @@ fn field<'value>(value: &'value Json, key: &str) -> &'value Json {
     &Json::Null
 }
 
-fn nth<'value>(list: &'value Json, index: usize) -> &'value Json {
+fn nth(list: &Json, index: usize) -> &Json {
     if let Json::List(items) = list {
         return &items[index];
     }
@@ -125,7 +125,7 @@ fn file_search_loop<'deps>(
 }
 
 fn file_search_tool(ids: &[&str]) -> Json {
-    let listed = ids.iter().map(|id| text(*id)).collect();
+    let listed = ids.iter().map(|id| text(id)).collect();
     Json::Object(IndexMap::from([
         (String::from("type"), text("file_search")),
         (String::from("vector_store_ids"), Json::List(listed)),
@@ -219,6 +219,12 @@ struct RecordedSearch {
     authorization: SearchAuthorization,
 }
 
+type ScriptedSearch<'script> = (
+    &'script str,
+    &'script str,
+    Result<Vec<VectorStoreSearchResult>, FakeError>,
+);
+
 struct FakeSearches {
     scripted: Vec<(
         String,
@@ -229,9 +235,7 @@ struct FakeSearches {
 }
 
 impl FakeSearches {
-    fn scripted(
-        scripted: Vec<(&str, &str, Result<Vec<VectorStoreSearchResult>, FakeError>)>,
-    ) -> Self {
+    fn scripted(scripted: Vec<ScriptedSearch<'_>>) -> Self {
         let entries = scripted
             .into_iter()
             .map(|(store, query, found)| (String::from(store), String::from(query), found))

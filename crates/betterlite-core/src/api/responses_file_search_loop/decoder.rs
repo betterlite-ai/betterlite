@@ -16,7 +16,7 @@ const NAME_FIELD: &str = "name";
 const TYPE_FIELD: &str = "type";
 
 // json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-pub fn tool_call_arguments(
+pub(super) fn tool_call_arguments(
     raw: &Json,
     limits: &ApiLimits,
 ) -> Result<Fields, FileSearchLoopError<Infallible>> {
@@ -44,7 +44,7 @@ fn arguments_from_text(
 }
 
 // the first response's output items whose type is function_call and whose name is the file search function
-pub fn file_search_calls(
+pub(super) fn file_search_calls(
     output: &[ResponseOutputItem],
 ) -> Result<Vec<Fields>, FileSearchLoopError<Infallible>> {
     let mut calls = Vec::new();

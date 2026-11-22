@@ -147,17 +147,16 @@ where
 fn vector_stores_for_call<'all>(call: &Fields, all: &'all [String]) -> &'all [String] {
     let taken = field(call, VECTOR_STORE_ID_FIELD, &NO_DEFAULT);
     let wanted = string_value(&taken);
-    match all.iter().find(|known| **known == wanted) {
-        Some(known) => from_ref(known),
-        None => all,
-    }
+    all.iter()
+        .find(|known| **known == wanted)
+        .map_or(all, from_ref)
 }
 
 // the warning when the model names a vector store the request did not (L461-L468)
 fn store_outside(round: &mut SearchRound, all: &[String], call: &Fields) {
     let taken = field(call, VECTOR_STORE_ID_FIELD, &NO_DEFAULT);
     let wanted = string_value(&taken);
-    if taken == Json::Null || all.iter().any(|known| *known == wanted) {
+    if taken == Json::Null || all.contains(&wanted) {
         return;
     }
     let message = DiagnosticMessage::StoreOutside {

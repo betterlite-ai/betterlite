@@ -35,8 +35,9 @@ pub fn widen<FollowUpError>(
     match error {
         FileSearchLoopError::Tools(source) => FileSearchLoopError::Tools(source),
         FileSearchLoopError::Limit(source) => FileSearchLoopError::Limit(source),
-        FileSearchLoopError::FirstCall(never) => match never {},
-        FileSearchLoopError::FollowUp(never) => match never {},
+        FileSearchLoopError::FirstCall(never) | FileSearchLoopError::FollowUp(never) => {
+            match never {}
+        }
         FileSearchLoopError::ArgumentsNotObject => FileSearchLoopError::ArgumentsNotObject,
         FileSearchLoopError::Wire { source } => FileSearchLoopError::Wire { source },
     }
