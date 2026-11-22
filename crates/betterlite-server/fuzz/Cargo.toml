@@ -453,3 +453,10 @@ path = "fuzz_targets/object_permissions.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "search_tool_body"
+path = "fuzz_targets/search_tool_body.rs"
+test = false
+doc = false
+bench = false
