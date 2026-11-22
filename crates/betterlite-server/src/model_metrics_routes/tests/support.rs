@@ -12,6 +12,7 @@ use axum::http::Request;
 use axum::http::StatusCode;
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_db::gateway_request_tracking::GatewayRequestClock;
+use betterlite_db::postgres_store::diagnostics::PoolFailure;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -23,6 +24,7 @@ use chrono::Utc;
 use clap::Parser;
 use deadpool_postgres::Manager;
 use deadpool_postgres::Pool;
+use deadpool_postgres::PoolError;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use tokio_postgres::NoTls;
@@ -87,10 +89,16 @@ pub(crate) struct Rows {
     pub(crate) exceptions: Vec<ExceptionRow>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Fault {
+    CreateNull,
+    PoolClosed,
+}
+
 #[derive(Default)]
 pub(crate) struct FakeStore {
     pub(crate) rows: Rows,
-    pub(crate) failure: bool,
+    pub(crate) fault: Option<Fault>,
     calls: Mutex<Vec<Call>>,
 }
 
@@ -100,10 +108,15 @@ impl FakeStore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
-        if self.failure {
-            return Err(DbError::NoDbConnected);
+        match self.fault {
+            None => Ok(()),
+            Some(Fault::CreateNull) => Err(DbError::CreateNull),
+            Some(Fault::PoolClosed) => Err(DbError::Pool {
+                source: PoolFailure {
+                    driver: PoolError::Closed,
+                },
+            }),
         }
-        Ok(())
     }
 
     pub(crate) fn calls(&self) -> Vec<Call> {

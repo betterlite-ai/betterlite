@@ -27,6 +27,7 @@ use super::store::StreamingWindow;
 use support::Call;
 use support::DEFAULT_THRESHOLD;
 use support::FakeStore;
+use support::Fault;
 use support::app;
 use support::caller;
 use support::clock;
@@ -42,7 +43,10 @@ const DB_NOT_CONNECTED_BODY: &str = r#"{"error":{"message":"DB not connected. Th
 
 const PRISMA_BODY: &str = r#"{"error":{"message":"Prisma Client is not initialized","type":"internal_error","param":"None","code":"500"}}"#;
 
-const INTERNAL_BODY: &str = r#"{"error":{"message":"Internal server error","type":"internal_server_error","param":null,"code":"500"}}"#;
+const INTERNAL_BODY: &str =
+    r#"{"error":{"message":"Internal server error","type":"internal_server_error"}}"#;
+
+const NO_DB_CONNECTION_BODY: &str = r#"{"error":{"message":"the model metrics database is unavailable","type":"no_db_connection","param":"None","code":"503"}}"#;
 
 const EMPTY_SERIES: &str = r#"{"data":[],"all_api_bases":[]}"#;
 
@@ -536,7 +540,7 @@ async fn oneshot_a_bad_end_time_names_the_end_time() {
 #[tokio::test]
 async fn oneshot_store_failures_reach_the_generic_internal_error() {
     let mut fake = FakeStore::default();
-    fake.failure = true;
+    fake.fault = Some(Fault::CreateNull);
     let reply = get(
         app(Some(Arc::new(fake)), DEFAULT_THRESHOLD),
         Some(&caller()),
@@ -545,6 +549,20 @@ async fn oneshot_store_failures_reach_the_generic_internal_error() {
     .await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(reply.body, INTERNAL_BODY);
+}
+
+#[tokio::test]
+async fn oneshot_a_database_outage_answers_no_db_connection() {
+    let mut fake = FakeStore::default();
+    fake.fault = Some(Fault::PoolClosed);
+    let reply = get(
+        app(Some(Arc::new(fake)), DEFAULT_THRESHOLD),
+        Some(&caller()),
+        STREAMING_METRICS_PATH,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(reply.body, NO_DB_CONNECTION_BODY);
 }
 
 struct EarliestClock;
@@ -581,6 +599,24 @@ fn query_a_space_separated_datetime_is_read() {
     let window = request.window(clock().as_ref(), 7).expect("the window");
     assert_eq!(window.start, instant("2026-03-15 12:00:00"));
     assert_eq!(window.end, fixed_now());
+}
+
+#[rstest]
+#[case::minutes_after_t("2026-03-15T12:00", instant("2026-03-15 12:00:00"))]
+#[case::minutes_after_a_space("2026-03-15%2012:00", instant("2026-03-15 12:00:00"))]
+#[case::underscore_separator("2026-03-15_12:00:00", instant("2026-03-15 12:00:00"))]
+#[case::minutes_with_an_offset("2026-03-15T14:00%2B02:00", instant("2026-03-15 12:00:00"))]
+#[case::unix_timestamp("20260315", instant("1970-08-23 11:51:55"))]
+#[case::nine_fractional_digits(
+    "2026-03-15T12:00:00.123456789",
+    DateTime::parse_from_rfc3339("2026-03-15T12:00:00.123456Z")
+        .expect("the expected instant")
+        .with_timezone(&Utc)
+)]
+fn query_a_pydantic_datetime_form_is_read(#[case] text: &str, #[case] expected: DateTime<Utc>) {
+    let request = MetricsQuery::decode(Some(&format!("startTime={text}")));
+    let window = request.window(clock().as_ref(), 7).expect("the window");
+    assert_eq!(window.start, expected, "{text}");
 }
 
 #[test]

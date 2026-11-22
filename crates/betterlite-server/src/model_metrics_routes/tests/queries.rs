@@ -30,7 +30,10 @@ INSERT INTO "LiteLLM_SpendLogs" (request_id, model, model_group, api_base, "star
     ('d5', 'm', 'g', 'https://a', '2026-03-01 13:00:00', '2026-03-01 13:00:09', '2026-03-01 13:00:01', 'True'),
     ('d6', 'm', 'g', 'https://a', '2026-03-01 14:00:00', '2026-03-01 14:00:09', '2026-03-01 14:00:09', 'False'),
     ('d7', 'm', 'g', 'https://a', '2026-03-02 23:59:59', '2026-03-03 00:00:09', '2026-03-03 00:00:04', 'False'),
-    ('d8', 'm', 'g', 'https://a', '2026-03-03 00:00:00', '2026-03-03 00:00:08', '2026-03-03 00:00:08', 'False');
+    ('d8', 'm', 'g', 'https://a', '2026-03-03 00:00:00', '2026-03-03 00:00:08', '2026-03-03 00:00:08', 'False'),
+    ('d9', 'm', 'other', 'https://a', '2026-03-01 15:00:00', '2026-03-01 15:00:09', '2026-03-01 15:00:08', 'False'),
+    ('d10', 'm', 'g', 'https://b', '2026-03-02 08:00:00', '2026-03-02 08:00:09', NULL, 'False'),
+    ('d11', 'm', 'g', 'https://a', '2026-03-03 10:00:00', '2026-03-03 10:00:09', '2026-03-03 10:00:02', 'False');
 "#;
 
 const LATENCY_SEED: &str = r#"
@@ -46,7 +49,8 @@ INSERT INTO "LiteLLM_SpendLogs" (request_id, model, model_group, api_base, "star
     ('l9', 'm', 'g', 'https://a', '2026-03-01 00:00:00', '2026-03-01 00:00:10', 'False', 2, 'k1', 'u1'),
     ('l10', 'm', 'g', 'https://a', '2026-03-10 23:59:59', '2026-03-11 00:00:09', 'False', 4, 'k1', 'u3'),
     ('l11', 'm', 'g', 'https://a', '2026-03-11 00:00:00', '2026-03-11 00:00:10', 'False', 5, 'k1', 'u1'),
-    ('z1', 'm', 'g', 'https://a', '2026-03-10 17:00:00', '2026-03-10 17:00:02', 'False', 0, 'k1', 'u1');
+    ('z1', 'm', 'g', 'https://a', '2026-03-10 17:00:00', '2026-03-10 17:00:02', 'False', 0, 'k1', 'u1'),
+    ('z2', 'm', 'g', 'https://a', '2026-03-05 10:00:00', '2026-03-05 10:00:10', 'False', 0, 'k1', 'u1');
 "#;
 
 const SLOW_SEED: &str = r#"
@@ -61,7 +65,8 @@ INSERT INTO "LiteLLM_SpendLogs" (request_id, model, model_group, api_base, "star
     ('s8', 'm', 'other', 'https://a', '2026-03-10 17:00:00', '2026-03-10 17:00:20', 'False', 'k1', 'u1'),
     ('s9', 'm', 'g', 'https://a', '2026-03-01 00:00:00', '2026-03-01 00:00:10', 'False', 'k1', 'u1'),
     ('s10', 'm', 'g', 'https://a', '2026-03-10 23:59:59', '2026-03-11 00:00:04', 'False', 'k1', 'u1'),
-    ('s11', 'm', 'g', 'https://d', '2026-02-28 23:59:59', '2026-03-01 00:00:09', 'False', 'k1', 'u1');
+    ('s11', 'm', 'g', 'https://d', '2026-02-28 23:59:59', '2026-03-01 00:00:09', 'False', 'k1', 'u1'),
+    ('s12', 'm', 'g', 'https://e', '2026-03-11 00:00:00', '2026-03-11 00:00:20', 'False', 'k1', 'u1');
 "#;
 
 const EXCEPTIONS_SEED: &str = r#"
@@ -189,6 +194,37 @@ async fn query_slow_responses_counts_at_the_threshold_and_orders_by_slow_count()
     assert_eq!(rows[0].api_base.as_deref(), Some("https://a"));
     assert_eq!(rows[0].total_count, 4);
     assert_eq!(rows[0].slow_count, 4);
+    assert_eq!(rows[1].api_base.as_deref(), None);
+    assert_eq!(rows[1].total_count, 1);
+    assert_eq!(rows[1].slow_count, 1);
+    assert_eq!(rows[2].api_base.as_deref(), Some("https://b"));
+    assert_eq!(rows[2].total_count, 1);
+    assert_eq!(rows[2].slow_count, 0);
+    pool.close();
+    fixture.close_async().await.expect("the fixture close");
+}
+
+#[tokio::test]
+async fn query_slow_responses_with_null_filters_counts_every_base() {
+    let (fixture, pool) = database().await;
+    execute(&pool, SLOW_SEED).await;
+    let rows = postgres_store(&pool)
+        .slow_responses(&SlowRequest {
+            filters: SpendFilters {
+                model_group: "g".to_owned(),
+                start: instant("2026-03-01 00:00:00"),
+                end: instant("2026-03-10 23:59:59"),
+                api_key: "null".to_owned(),
+                customer: "null".to_owned(),
+            },
+            threshold_seconds: 5,
+        })
+        .await
+        .expect("the unfiltered slow rows");
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].api_base.as_deref(), Some("https://a"));
+    assert_eq!(rows[0].total_count, 6);
+    assert_eq!(rows[0].slow_count, 6);
     assert_eq!(rows[1].api_base.as_deref(), None);
     assert_eq!(rows[1].total_count, 1);
     assert_eq!(rows[1].slow_count, 1);

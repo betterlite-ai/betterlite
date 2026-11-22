@@ -1,10 +1,12 @@
 use betterlite_db::gateway_request_tracking::GatewayRequestClock;
 use chrono::DateTime;
 use chrono::Days;
-use chrono::NaiveDate;
-use chrono::NaiveDateTime;
-use chrono::NaiveTime;
+use chrono::TimeZone as _;
 use chrono::Utc;
+use speedate::Date as SpeedateDate;
+use speedate::DateTime as SpeedateDateTime;
+use speedate::DateTimeConfig;
+use speedate::TimeConfig;
 
 use super::error::ModelMetricsError;
 
@@ -15,8 +17,6 @@ const API_KEY_PARAM: &str = "api_key";
 const CUSTOMER_PARAM: &str = "customer";
 const UNDEFINED: &str = "undefined";
 const NO_FILTER: &str = "null";
-const DATE_FORMAT: &str = "%Y-%m-%d";
-const DATETIME_FORMATS: [&str; 2] = ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"];
 
 #[derive(Default)]
 pub(super) struct MetricsQuery {
@@ -86,19 +86,27 @@ pub(super) fn normalized(value: Option<&str>) -> String {
     text.to_owned()
 }
 
+fn to_utc(parsed: &SpeedateDateTime) -> Option<DateTime<Utc>> {
+    let nanoseconds = parsed.time.microsecond.checked_mul(1_000)?;
+    Utc.timestamp_opt(parsed.timestamp_tz(), nanoseconds)
+        .single()
+}
+
+fn read_datetime(text: &str) -> Option<DateTime<Utc>> {
+    // pydantic cuts a fraction longer than a microsecond, so the parser does too.
+    let time = TimeConfig::builder()
+        .microseconds_precision_overflow_behavior("truncate".parse().ok()?)
+        .build();
+    let config = DateTimeConfig::builder().time_config(time).build();
+    let parsed = SpeedateDateTime::parse_str_with_config(text, &config).or_else(|_error| {
+        let date = SpeedateDate::parse_str(text)?;
+        SpeedateDateTime::parse_str(&format!("{date}T00:00:00"))
+    });
+    to_utc(&parsed.ok()?)
+}
+
 fn parse_datetime(parameter: &'static str, text: &str) -> Result<DateTime<Utc>, ModelMetricsError> {
-    if let Ok(datetime) = DateTime::parse_from_rfc3339(text) {
-        return Ok(datetime.with_timezone(&Utc));
-    }
-    if let Ok(date) = NaiveDate::parse_from_str(text, DATE_FORMAT) {
-        return Ok(date.and_time(NaiveTime::MIN).and_utc());
-    }
-    for format in DATETIME_FORMATS {
-        if let Ok(datetime) = NaiveDateTime::parse_from_str(text, format) {
-            return Ok(datetime.and_utc());
-        }
-    }
-    Err(ModelMetricsError::InvalidDatetime {
+    read_datetime(text).ok_or_else(|| ModelMetricsError::InvalidDatetime {
         parameter,
         value: text.to_owned(),
     })
