@@ -1,0 +1,15 @@
+task: B771
+deviations:
+  - what: A model access group on a wildcard route never gets the premium-user 403 from _check_model_access_group, so common_key_access_checks accepts it for every caller.
+    why: Architect no-paid-tier decision; model_access_group_without_license proves a non-admin caller's wildcard access group passes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4494-L4513
+  - what: common_key_access_checks takes no llm_router or premium_user argument.
+    why: Both only fed the dropped premium check above, so the typed call leaves them out instead of accepting and ignoring them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L814-L846
+  - what: general_settings.disable_custom_api_keys set to an os.environ/ reference whose variable is missing fails the config load with an error naming the variable and the key; LiteLLM's get_secret returns None and custom keys stay allowed.
+    why: Every config section treats a missing environment reference as a load error, so a typo in the variable name can't silently leave custom keys enabled.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5772-L5787
+  - what: A key metadata logging entry whose callback variable is a list or an object is rejected with a 400 whose detail is an error object; LiteLLM str()-converts the value and only rejects it when that variable has its own rule.
+    why: B246's logging metadata decoder accepts only text, numbers, booleans and null as callback variables, and key metadata goes through the same decoder as the team callback route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L803-L811
+kept_bugs: []

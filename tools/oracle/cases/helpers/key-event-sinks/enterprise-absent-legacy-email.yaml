@@ -1,0 +1,39 @@
+kind: helper
+name: key-event-sinks-enterprise-absent-legacy-email
+call:
+  key_event_sinks:
+    settings: {store_virtual_keys: true, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+    client: true
+    runtime: ready
+    teams: {}
+    secrets: {}
+    failing: []
+    alerting: [email]
+    steps:
+      - {action: key_rotated_email}
+      - action: key_created_email
+        response: {key: sk-plain-new-key, token: hashed-token, spend: 0.5, max_budget: 10.5, team_id: team-eu, key_alias: rotated-key}
+      - {action: key_rotated_email}
+calls:
+  - key_event_sinks:
+      settings: {store_virtual_keys: true, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+      client: true
+      runtime: ready
+      teams: {}
+      secrets: {}
+      failing: []
+      alerting: [slack]
+      steps:
+        - {action: key_rotated_email}
+  - key_event_sinks:
+      settings: {store_virtual_keys: true, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+      client: true
+      runtime: ready
+      teams: {}
+      secrets: {}
+      failing: []
+      alerting: []
+      steps:
+        - {action: key_rotated_email}
+env: {}
+compare: {ignore: []}
