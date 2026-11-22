@@ -77,6 +77,12 @@ fn forwarded_arguments_content_transport_reaches_the_provider() {
     assert_eq!(environments.len(), 1);
     assert_eq!(environments[0].model, "");
     assert_eq!(environments[0].api_key, None);
+    assert!(
+        environments[0]
+            .litellm_params
+            .as_ref()
+            .is_some_and(|params| params.is_empty())
+    );
     assert_eq!(
         environments[0].headers.get("x-extra").map(String::as_str),
         Some("one")

@@ -617,17 +617,6 @@ pub(crate) async fn async_call(
         .await
 }
 
-pub(crate) async fn async_call_with(
-    bench: &mut Bench,
-    request: VideoContentRequest,
-    client: SuppliedClient<'_, Wire>,
-) -> Result<Vec<u8>, VideoContentCallError> {
-    bench
-        .caller
-        .avideo_content(request, Some(client), &mut bench.fixture.state)
-        .await
-}
-
 pub(crate) fn ready(work: Result<VideoContentWork<'_>, VideoContentCallError>) -> Vec<u8> {
     let Ok(VideoContentWork::Ready(bytes)) = work else {
         panic!("the call answers with the content");

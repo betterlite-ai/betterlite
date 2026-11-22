@@ -17,7 +17,16 @@ fn logging_update_payload_matches_litellm() {
         ("api_base", text("http://mock.test/v1")),
     ]);
     ready(call(&mut bench, request));
-    let logged = handled(&bench.journal).logged;
+    let handling = handled(&bench.journal);
+    assert_eq!(
+        handling.litellm_params,
+        kwargs(&[
+            ("litellm_call_id", text("call-9")),
+            ("user", text("erik")),
+            ("api_base", text("http://mock.test/v1")),
+        ])
+    );
+    let logged = handling.logged;
     assert_eq!(logged.model, "");
     assert_eq!(logged.user.as_deref(), Some("erik"));
     assert_eq!(

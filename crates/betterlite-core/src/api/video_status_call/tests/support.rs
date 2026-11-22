@@ -733,7 +733,6 @@ impl Wiring {
 pub(crate) struct Production<'deps> {
     pub(crate) caller: VideoStatusCaller<FakeProviders, VideoStatusHandler<'deps, FakeFactories>>,
     pub(crate) fixture: Fixture,
-    pub(crate) journal: Journal,
 }
 
 impl<'deps> Production<'deps> {
@@ -756,7 +755,6 @@ impl<'deps> Production<'deps> {
                 request_timeout: REQUEST_TIMEOUT,
             },
             fixture: Fixture::new(),
-            journal: journal.clone(),
         }
     }
 }
