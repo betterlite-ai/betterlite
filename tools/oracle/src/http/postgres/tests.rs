@@ -30,7 +30,7 @@ use betterlite_server::api::genai_routes::ports::{
 };
 use betterlite_server::api::genai_routes::routes;
 use betterlite_server::auth::auth_identity::AuthContext;
-use futures_util::stream;
+use futures_util::stream::{self, StreamExt as _};
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
@@ -160,12 +160,14 @@ async fn replays_the_http_case_corpus() {
         .filter(|path| path.is_file())
         .collect::<Vec<_>>();
     paths.sort();
-    for path in paths {
-        let bytes = fs::read(path.as_path()).unwrap();
-        let result = decode_case(Path::new("<bytes>"), &bytes);
-        let name = path.file_name().and_then(|value| value.to_str()).unwrap();
-        replay_seed(name, result).await;
-    }
+    stream::iter(paths)
+        .for_each(|path| async move {
+            let bytes = fs::read(path.as_path()).unwrap();
+            let result = decode_case(Path::new("<bytes>"), &bytes);
+            let name = path.file_name().and_then(|value| value.to_str()).unwrap();
+            replay_seed(name, result).await;
+        })
+        .await;
 }
 
 // the seed's file name names the fixture extension that replays it, and an unknown name must not decode
