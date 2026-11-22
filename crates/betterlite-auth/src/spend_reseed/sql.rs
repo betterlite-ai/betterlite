@@ -3,15 +3,18 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::spend_rows::rows::{
+    SpendCounterRows as DbSpendCounterRows, SpendRow as DbSpendRow,
+    SpendRowLookup as DbSpendRowLookup,
+};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 use tokio_postgres::types::ToSql;
 
-use super::rows::{
-    SpendAggregateRow, SpendCounterRows, SpendRow, SpendRowLookup, WindowEntity, WindowSpendRow,
-};
+use super::rows::{SpendAggregateRow, SpendCounterRows, SpendRow, WindowEntity, WindowSpendRow};
+use super::values::{SpendValueError, stored_amount};
 
 // the tables and unique keys each repository B722/B724/B726/B723 owns, read as raw stored rows
 const KEY_SPEND_SQL: &str =
@@ -45,6 +48,8 @@ pub enum SpendRowsError {
     Database(#[from] DbError),
     #[error("the stored spend row is not readable JSON")]
     Row(#[source] serde_json::Error),
+    #[error(transparent)]
+    Spend(#[from] SpendValueError),
 }
 
 pub struct SqlSpendCounterRows {
@@ -57,32 +62,42 @@ impl From<PostgresStore> for SqlSpendCounterRows {
     }
 }
 
-impl SpendCounterRows for SqlSpendCounterRows {
+// B1735's reader owns the primary and end-user reads; the row arrives as JSON and converts here
+impl DbSpendCounterRows for SqlSpendCounterRows {
     type Error = SpendRowsError;
 
     async fn spend_row(
         &self,
-        lookup: SpendRowLookup<'_>,
-    ) -> Result<Option<SpendRow>, SpendRowsError> {
+        lookup: DbSpendRowLookup<'_>,
+    ) -> Result<Option<DbSpendRow>, SpendRowsError> {
         let store = &self.store;
-        match lookup {
-            SpendRowLookup::Key(token) => json_row(store, KEY_SPEND_SQL, &[&token]).await,
-            SpendRowLookup::TeamMember { user_id, team_id } => {
-                json_row(store, TEAM_MEMBER_SPEND_SQL, &[&user_id, &team_id]).await
+        let found: Option<SpendRow> = match lookup {
+            DbSpendRowLookup::Key(token) => json_row(store, KEY_SPEND_SQL, &[&token]).await?,
+            DbSpendRowLookup::TeamMember { user_id, team_id } => {
+                json_row(store, TEAM_MEMBER_SPEND_SQL, &[&user_id, &team_id]).await?
             }
-            SpendRowLookup::Team(team_id) => json_row(store, TEAM_SPEND_SQL, &[&team_id]).await,
-            SpendRowLookup::User(user_id) => json_row(store, USER_SPEND_SQL, &[&user_id]).await,
-            SpendRowLookup::Organization(organization_id) => {
-                json_row(store, ORGANIZATION_SPEND_SQL, &[&organization_id]).await
+            DbSpendRowLookup::Team(team_id) => json_row(store, TEAM_SPEND_SQL, &[&team_id]).await?,
+            DbSpendRowLookup::User(user_id) => json_row(store, USER_SPEND_SQL, &[&user_id]).await?,
+            DbSpendRowLookup::Organization(organization_id) => {
+                json_row(store, ORGANIZATION_SPEND_SQL, &[&organization_id]).await?
             }
-            SpendRowLookup::Project(project_id) => {
-                json_row(store, PROJECT_SPEND_SQL, &[&project_id]).await
+            DbSpendRowLookup::Project(project_id) => {
+                json_row(store, PROJECT_SPEND_SQL, &[&project_id]).await?
             }
-            SpendRowLookup::EndUser(user_id) => {
-                json_row(store, END_USER_SPEND_SQL, &[&user_id]).await
+            DbSpendRowLookup::EndUser(user_id) => {
+                json_row(store, END_USER_SPEND_SQL, &[&user_id]).await?
             }
-        }
+        };
+        let Some(stored) = found else {
+            return Ok(None);
+        };
+        let spend = stored_amount(stored.spend.as_ref())?;
+        Ok(Some(DbSpendRow { spend: Some(spend) }))
     }
+}
+
+impl SpendCounterRows for SqlSpendCounterRows {
+    type Error = SpendRowsError;
 
     async fn window_row(
         &self,
