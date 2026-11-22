@@ -1,0 +1,12 @@
+task: B6260
+deviations:
+  - what: The guardrail to apply is the typed guardrail field of the hook params, not the "guardrail_to_apply" key that LiteLLM pops from the request data when the argument is missing.
+    why: The same choice as B3680; clients see no difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L995-L996
+  - what: A streaming flag of the wrong type, or a sampling rate below 1, ends a stream the gate admits with an error item before the first chunk. LiteLLM fails on the first chunk with ZeroDivisionError or a type error.
+    why: Rust types are checked up front; the declared flag types are the only supported input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L1001-L1019
+  - what: An empty call type list for a route counts as unresolved and falls back to inferring the call type from the first chunk. LiteLLM would raise IndexError on call_types[0].
+    why: The same rule as B3679's resolve_endpoint_translation; the route table never maps a route to an empty list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L1101-L1108
+kept_bugs: []
