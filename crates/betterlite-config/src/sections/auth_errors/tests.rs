@@ -69,7 +69,8 @@ fn forwarded_for_requires_exact_true(#[case] setting: &str, #[case] expected: bo
         config.sections.auth_request_policy.use_x_forwarded_for,
         expected
     );
-    let text = load("general_settings:\n  use_x_forwarded_for: 'true'\n");
+    // text that is no switch at all is a load error rather than a silent true
+    let text = load("general_settings:\n  use_x_forwarded_for: sometimes\n");
     assert!(matches!(text, Err(ConfigError::Yaml { .. })));
 }
 
