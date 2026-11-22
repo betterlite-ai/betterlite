@@ -14,10 +14,10 @@ use betterlite_router::deployment_affinity::{
     DeploymentAffinity, PreCallRequest, PriorityGroups, Settings,
 };
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::routing_value_store::StoreSettings;
 
 use crate::cost_estimate_route::deployments::routing_groups;
 use crate::routing::least_busy::{shared_store, wall_clock};
-use crate::routing::routing_value_store::settings;
 
 mod tests;
 
@@ -82,7 +82,14 @@ pub fn from_config(config: &Config) -> Option<DeploymentAffinity> {
 
 // DualCache's two tiers: this worker's pins from the local ttl cache settings, the shared pins when Redis is configured
 fn claims(config: &Config) -> Option<AffinityClaims> {
-    let local = match LocalPins::new(settings(&config.sections.local_ttl_cache), wall_clock()) {
+    let cached = &config.sections.local_ttl_cache;
+    let store_settings = StoreSettings {
+        max_size_in_memory: None,
+        default_ttl_seconds: None,
+        max_size_per_item: Some(1024),
+        loaded_max_size_per_item_kib: cached.global_max_item_kib,
+    };
+    let local = match LocalPins::new(store_settings, wall_clock()) {
         Ok(local) => local,
         Err(error) => {
             tracing::error!(

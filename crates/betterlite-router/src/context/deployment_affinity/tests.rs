@@ -39,8 +39,15 @@ async fn selected(
     candidates: CandidateSet,
 ) -> Vec<String> {
     let facts = RequestFacts {
+        messages: None,
+        input: None,
+        instructions: None,
+        system: None,
+        tools: Vec::new(),
+        response_format: false,
         target_order,
-        ..RequestFacts::default()
+        input_token_count: None,
+        compaction_pending: false,
     };
     let request = route_request(model, &facts);
     let (limits, params) = (NoLimits, Providers::Unknown);
