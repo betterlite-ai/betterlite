@@ -1,0 +1,20 @@
+kind: helper
+name: otpm_reserved
+# an uncapped empty completion reserves one OTPM token and gets the cap from the smallest OTPM limit
+call:
+  b3043:
+    requested_model: "gpt-3.5-turbo-instruct"
+    call_type: "atext_completion"
+    tpm_reservation_scopes: []
+    tpm_reservation_amount: 0
+    window_size: 60
+    now: 1700000000
+    cache: {"{model_per_project_otpm:p1:gpt-3.5-turbo-instruct}:window": "1699999970", "{model_per_project_otpm:p1:gpt-3.5-turbo-instruct}:tokens": 0, "{model_per_project_otpm:p2:gpt-3.5-turbo-instruct}:window": "1699999970", "{model_per_project_otpm:p2:gpt-3.5-turbo-instruct}:tokens": 0}
+    parallel_slot: null
+    rate_limit_response: null
+    descriptors: [{"key": "model_per_project_otpm", "value": "p1:gpt-3.5-turbo-instruct", "rate_limit": {"requests_per_unit": null, "tokens_per_unit": 1000, "window_size": 60}}, {"key": "model_per_project_otpm", "value": "p2:gpt-3.5-turbo-instruct", "rate_limit": {"requests_per_unit": null, "tokens_per_unit": 400, "window_size": 60}}]
+    data: {"model": "gpt-3.5-turbo-instruct", "prompt": "", "litellm_call_id": "call-1"}
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"
+compare:
+  ignore: []

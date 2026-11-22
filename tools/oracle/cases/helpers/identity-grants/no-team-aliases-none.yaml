@@ -1,0 +1,39 @@
+kind: helper
+name: identity-grants-no-team-aliases-none
+call:
+  identity_grants:
+    users: []
+    denials: []
+    teams:
+      - team: null
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table: null
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: null
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+        membership: null
+        user_id: null
+env: {}
+compare: {ignore: []}

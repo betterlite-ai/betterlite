@@ -1,0 +1,13 @@
+kind: helper
+name: team-callback-policy-unknown-team-role
+call:
+  team_callback_policy:
+    steps:
+      - {"function": "unknown_team", "team_id": "team-9", "user_role": "proxy_admin", "status": 404}
+      - {"function": "unknown_team", "team_id": "team-9", "user_role": "proxy_admin", "status": 400}
+      - {"function": "unknown_team", "team_id": "team-9", "user_role": "proxy_admin_viewer", "status": 404}
+      - {"function": "unknown_team", "team_id": "team-9", "user_role": "org_admin", "status": 404}
+      - {"function": "unknown_team", "team_id": "team-9", "user_role": "internal_user", "status": 400}
+      - {"function": "unknown_team", "team_id": "team-9", "user_role": null, "status": 404}
+env: {}
+compare: {ignore: []}
