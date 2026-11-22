@@ -543,3 +543,10 @@ path = "fuzz_targets/owned_response_id.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "responses_poll_state"
+path = "fuzz_targets/responses_poll_state.rs"
+test = false
+doc = false
+bench = false
