@@ -122,13 +122,9 @@ struct ScriptedResponses {
 
 impl ScriptedResponses {
     fn new(payloads: &[Json]) -> Result<Self, Failure> {
-        let mut responses = VecDeque::new();
-        for payload in payloads {
-            let value = serde_json::to_value(payload)?;
-            let response: ResponsesApiResponse = serde_json::from_value(value)
-                .map_err(|error| failure("ValidationError", error.to_string()))?;
-            responses.push_back(response);
-        }
+        let wire = serde_json::to_value(payloads)?;
+        let responses: VecDeque<ResponsesApiResponse> = serde_json::from_value(wire)
+            .map_err(|error| failure("ValidationError", error.to_string()))?;
         Ok(Self {
             responses: Mutex::new(responses),
             calls: Mutex::new(Vec::new()),
@@ -197,6 +193,16 @@ impl ScriptedSearches {
         })
     }
 
+    fn record(&self, request: &SearchRequest<'_>) {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((
+                String::from(request.vector_store_id),
+                String::from(request.query),
+            ));
+    }
+
     fn scripted_result(
         &self,
         vector_store_id: &str,
@@ -221,13 +227,7 @@ impl VectorStoreSearches for ScriptedSearches {
         &self,
         request: SearchRequest<'_>,
     ) -> Result<VectorStoreSearchResponse, ScriptedError> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((
-                String::from(request.vector_store_id),
-                String::from(request.query),
-            ));
+        self.record(&request);
         self.scripted_result(request.vector_store_id, request.query)
     }
 }
