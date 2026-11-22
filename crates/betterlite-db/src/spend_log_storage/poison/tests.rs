@@ -198,7 +198,9 @@ async fn an_exhausted_budget_drops_the_remainder_without_more_attempts() {
 
 #[tokio::test]
 async fn a_healthy_group_after_an_exhausted_group_still_persists() {
-    let poison: BTreeSet<String> = (0..1000).map(|index| format!("poison-{index}")).collect();
+    let poison: BTreeSet<String> = (0..1000_u32)
+        .map(|index| format!("poison-{index}"))
+        .collect();
     let mut rows: Vec<SpendLogRow> = poison.iter().map(|id| ordinary_row(id)).collect();
     rows.push(ordinary_row("healthy"));
     let writer = ScriptedWriter::new(poison, None);

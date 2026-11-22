@@ -105,6 +105,7 @@ impl ScriptedTable {
             stored.push(row.clone());
             inserted = inserted.saturating_add(1);
         }
+        drop(stored);
         inserted
     }
 
@@ -128,6 +129,7 @@ impl ScriptedTable {
             }
             updated = updated.saturating_add(1);
         }
+        drop(stored);
         updated
     }
 }

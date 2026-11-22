@@ -194,8 +194,8 @@ impl SpendBufferLists for ScriptedLists {
             if self.fail_read {
                 return Err(list_failure());
             }
-            let take = count.map_or(usize::MAX, |count| {
-                usize::try_from(count).unwrap_or(usize::MAX)
+            let take = count.map_or(usize::MAX, |limit| {
+                usize::try_from(limit).unwrap_or(usize::MAX)
             });
             let mut parked = self.parked.lock().unwrap_or_else(PoisonError::into_inner);
             let taken = take.min(parked.len());
@@ -252,7 +252,8 @@ async fn a_replayed_batch_goes_back_to_the_head_when_redis_is_unavailable() {
 async fn a_replayed_batch_parked_in_redis_stays_out_of_memory() {
     let queue = SpendLogQueue::new(usize::MAX);
     let lists = Arc::new(ScriptedLists::default());
-    let redis = buffer(Some(Arc::clone(&lists)));
+    let shared: Arc<dyn SpendBufferLists> = Arc::<ScriptedLists>::clone(&lists);
+    let redis = buffer(Some(shared));
     requeue_spend_logs(&queue, &redis, &[ordinary_row("failed")]).await;
     assert!(queue.is_empty());
     let pushes = lists.pushes();
@@ -268,7 +269,8 @@ async fn recovery_replays_parked_rows_before_the_memory_queue() {
         ordinary_row("a"),
         ordinary_row("b"),
     ]));
-    let redis = buffer(Some(Arc::clone(&lists)));
+    let shared: Arc<dyn SpendBufferLists> = Arc::<ScriptedLists>::clone(&lists);
+    let redis = buffer(Some(shared));
     assert_eq!(recover_parked_spend_logs(&queue, &redis).await, 2);
     assert_eq!(ids(&queue.dequeue(10)), ["a", "b", "new"]);
     assert_eq!(
@@ -282,7 +284,8 @@ async fn an_unreadable_parked_buffer_leaves_the_memory_queue_alone() {
     let queue = SpendLogQueue::new(usize::MAX);
     queue.enqueue(&[ordinary_row("new")], QueuePosition::Tail);
     let lists = Arc::new(ScriptedLists::unreadable());
-    let redis = buffer(Some(Arc::clone(&lists)));
+    let shared: Arc<dyn SpendBufferLists> = Arc::<ScriptedLists>::clone(&lists);
+    let redis = buffer(Some(shared));
     assert_eq!(recover_parked_spend_logs(&queue, &redis).await, 0);
     assert_eq!(ids(&queue.dequeue(10)), ["new"]);
 }
@@ -291,7 +294,8 @@ async fn an_unreadable_parked_buffer_leaves_the_memory_queue_alone() {
 async fn an_empty_parked_buffer_recovers_nothing() {
     let queue = SpendLogQueue::new(usize::MAX);
     let lists = Arc::new(ScriptedLists::default());
-    let redis = buffer(Some(Arc::clone(&lists)));
+    let shared: Arc<dyn SpendBufferLists> = Arc::<ScriptedLists>::clone(&lists);
+    let redis = buffer(Some(shared));
     assert_eq!(recover_parked_spend_logs(&queue, &redis).await, 0);
     assert_eq!(lists.pops().len(), 1);
 }

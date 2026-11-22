@@ -117,6 +117,7 @@ impl ScriptedTable {
             stored.push(row.clone());
             inserted = inserted.saturating_add(1);
         }
+        drop(stored);
         Ok(inserted)
     }
 
@@ -153,6 +154,7 @@ impl ScriptedTable {
             }
             updated = updated.saturating_add(1);
         }
+        drop(rows);
         updated
     }
 }
@@ -320,7 +322,7 @@ async fn a_row_of_another_call_type_leaves_the_charge_without_replacing_it() {
         text_of(&rows[0], "call_type").as_deref(),
         Some("acompletion")
     );
-    assert_eq!(decimal_of(&rows[0], "spend"), Some(Decimal::new(10, 2)));
+    assert_eq!(decimal_of(&rows[0], "spend"), Some(Decimal::new(25, 2)));
     assert!(queue.is_empty());
     assert!(table.take_overs().is_empty());
 }

@@ -376,7 +376,7 @@ async fn an_unrelated_error_propagates_without_a_database_replay() {
 #[tokio::test]
 async fn a_pass_writes_groups_of_a_thousand_rows() {
     let harness = Harness::new();
-    let rows: Vec<SpendLogRow> = (0..2500)
+    let rows: Vec<SpendLogRow> = (0..2500_u32)
         .map(|index| ordinary_row(&format!("request-{index}")))
         .collect();
     harness
@@ -394,7 +394,7 @@ async fn a_group_is_split_by_the_statement_row_limit() {
         max_bytes: usize::MAX,
         max_rows: 3,
     };
-    let rows: Vec<SpendLogRow> = (0..5)
+    let rows: Vec<SpendLogRow> = (0..5_u32)
         .map(|index| ordinary_row(&format!("request-{index}")))
         .collect();
     harness
@@ -407,7 +407,7 @@ async fn a_group_is_split_by_the_statement_row_limit() {
 #[tokio::test]
 async fn a_pass_pops_at_most_ten_thousand_rows() {
     let harness = Harness::new();
-    let rows: Vec<SpendLogRow> = (0..10_001)
+    let rows: Vec<SpendLogRow> = (0..10_001_u32)
         .map(|index| ordinary_row(&format!("request-{index}")))
         .collect();
     harness.queue.enqueue(&rows, QueuePosition::Tail);

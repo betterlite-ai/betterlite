@@ -216,7 +216,7 @@ impl ScriptedFailure {
 
     pub(crate) const NON_DATABASE: Self = Self { flags: 0 };
 
-    const fn set(&self, flag: u8) -> bool {
+    const fn set(self, flag: u8) -> bool {
         (self.flags & flag) != 0
     }
 }
