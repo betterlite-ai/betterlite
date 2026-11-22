@@ -51,4 +51,7 @@ deviations:
   - what: "`config_completion` merges the config over the supplied arguments, where LiteLLM's `completion(**kwargs, **config_args)` raises `TypeError` on a key both carry."
     why: The merge keeps LiteLLM's stated intent that config args overwrite supplied ones, and a config that works against LiteLLM passes each key only once.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8845-L8853
+  - what: A mock exception maps by LiteLLM's OpenAI status table whatever the provider, so status 403, 413 or 529 raises APIError on an anthropic model, and `llm_provider` stays the requested provider (custom_llm_provider, else openai) rather than the model prefix's provider.
+    why: The mock answer is built before any provider call, so LiteLLM's per-provider exception mappers and prefix resolution never run; the Python mock path keeps the OpenAI table the task describes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2486-L2495
 kept_bugs: []
