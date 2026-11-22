@@ -50,7 +50,7 @@ impl Section for Raw {
             environment_number("DEFAULT_POLLING_INTERVAL", DEFAULT_POLLING_INTERVAL, lookup)?;
         let polling_interval = match configured {
             Some(seconds) if seconds != 0.0 => seconds,
-            Some(_zero) | None => fallback,
+            Some(_) | None => fallback,
         };
         let default_priority = resolve_number(
             self.router_settings.default_priority,
