@@ -77,7 +77,7 @@ def response_from_wire(wire: WireResponse) -> ModelResponse:
     )
 
 
-def delta_from_wire(delta: WireDelta, first: bool) -> Delta:
+def delta_from_wire(delta: WireDelta, *, first: bool) -> Delta:
     # LiteLLM writes the role on the first chunk and lets later chunks keep what the provider sent
     role: str | None = "assistant" if first else delta.get("role")
     return Delta(
@@ -91,14 +91,14 @@ def delta_from_wire(delta: WireDelta, first: bool) -> Delta:
     )
 
 
-def streaming_choice(choice: WireStreamChoice, first: bool) -> StreamingChoices:
+def streaming_choice(choice: WireStreamChoice, *, first: bool) -> StreamingChoices:
     return StreamingChoices(
         finish_reason=choice.get("finish_reason"), index=choice["index"],
-        delta=delta_from_wire(choice["delta"], first), logprobs=choice.get("logprobs"),
+        delta=delta_from_wire(choice["delta"], first=first), logprobs=choice.get("logprobs"),
     )
 
 
-def chunk_from_wire(wire: WireChunk, first: bool) -> ModelResponseStream:
+def chunk_from_wire(wire: WireChunk, *, first: bool) -> ModelResponseStream:
     extras: dict[str, InitValue] = {
         "model": wire["model"], "system_fingerprint": wire.get("system_fingerprint"),
         "moderation": None, "service_tier": None,
@@ -107,9 +107,9 @@ def chunk_from_wire(wire: WireChunk, first: bool) -> ModelResponseStream:
     if usage is not None:
         extras["usage"] = usage_from_wire(usage)
     raw_choices = wire.get("choices")
-    choices: list[StreamingChoices] = (
-        [] if raw_choices is None else [streaming_choice(choice, first) for choice in raw_choices]
-    )
+    choices: list[StreamingChoices] = []
+    if raw_choices is not None:
+        choices = [streaming_choice(choice, first=first) for choice in raw_choices]
     return ModelResponseStream(
         choices=choices, id=wire["id"], created=wire["created"],
         provider_specific_fields=wire.get("provider_specific_fields"), **extras,
@@ -133,7 +133,7 @@ class CustomStreamWrapper:
         # only the first chunk carries the assistant role LiteLLM writes
         first = not self.sent_first
         self.sent_first = True
-        return chunk_from_wire(CHUNK.validate_json(text), first)
+        return chunk_from_wire(CHUNK.validate_json(text), first=first)
 
     def __next__(self) -> ModelResponseStream:
         if self.closed:
