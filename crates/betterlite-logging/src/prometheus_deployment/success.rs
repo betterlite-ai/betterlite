@@ -1,0 +1,272 @@
+use std::str::FromStr as _;
+
+use betterlite_models::call_helpers::metadata::{
+    CallParams, InternalMetadata, litellm_metadata_from_params,
+};
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use rust_decimal::Decimal;
+
+use crate::fields::payload::StandardLoggingPayload;
+use crate::prometheus::failure::text_field;
+use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
+use crate::prometheus_label_projection::prometheus_label_factory::prometheus_label_factory;
+use crate::prometheus_latency::guardrail_overhead::{GuardrailRecords, OverheadObservation};
+use crate::prometheus_latency::labels::LabelInputs;
+use crate::prometheus_rate_limits::deployment::DeploymentLimitInputs;
+
+use super::error::{HeaderValueError, PrometheusDeploymentError};
+use super::metric::DeploymentMetric;
+use super::metrics::DeploymentMetrics;
+use super::requests::{DeploymentLabels, SuccessRequest};
+use super::state::set_deployment_healthy;
+use super::values::object_field;
+
+const REMAINING_REQUESTS_HEADER: &str = "x_ratelimit_remaining_requests";
+const REMAINING_TOKENS_HEADER: &str = "x_ratelimit_remaining_tokens";
+const MILLIS_PER_SECOND: Decimal = Decimal::ONE_THOUSAND;
+
+struct SuccessSettings {
+    model_info: JsonObject,
+    model_id: Option<String>,
+    llm_provider: Option<String>,
+}
+
+// ast-grep-ignore: no-long-names
+pub fn set_llm_deployment_success_metrics<Gauges>(metrics: &Gauges, request: &SuccessRequest<'_>)
+where
+    Gauges: DeploymentMetrics,
+{
+    if let Err(error) = record_success(metrics, request) {
+        tracing::error!(
+            "Prometheus Error: set_llm_deployment_success_metrics. Exception occured - {error}"
+        );
+    }
+}
+
+fn record_success<Gauges>(
+    metrics: &Gauges,
+    request: &SuccessRequest<'_>,
+) -> Result<(), PrometheusDeploymentError<<Gauges::Gauge as RemovableMetric>::Error>>
+where
+    Gauges: DeploymentMetrics,
+{
+    let Some(payload) = request.payload else {
+        return Ok(());
+    };
+    if metrics.skip_invalid_key(None, None, request.exception) {
+        return Ok(());
+    }
+    let settings = success_settings(request);
+    let model_id = record_limits(metrics, request, payload, &settings)?;
+    record_overhead(metrics, request, payload)?;
+    record_remaining(metrics, request, payload)?;
+    let outage = DeploymentLabels {
+        litellm_model_name: request.model.unwrap_or_default(),
+        model_id: model_id.as_deref(),
+        api_base: Some(payload.api_base.as_str()),
+        api_provider: settings.llm_provider.as_deref().unwrap_or_default(),
+    };
+    set_deployment_healthy(metrics, outage)?;
+    let source = metrics.label_source(request.context);
+    metrics.increment_counter(
+        DeploymentMetric::SuccessResponses,
+        request.values,
+        source,
+        request.now,
+    )?;
+    metrics.increment_counter(
+        DeploymentMetric::TotalRequests,
+        request.values,
+        source,
+        request.now,
+    )?;
+    record_latency(metrics, request)
+}
+
+fn success_settings(request: &SuccessRequest<'_>) -> SuccessSettings {
+    let call_params = CallParams {
+        metadata: object_field(request.litellm_params, "metadata").cloned(),
+        litellm_metadata: object_field(request.litellm_params, "litellm_metadata").map(|entries| {
+            InternalMetadata {
+                entries: entries.clone(),
+            }
+        }),
+    };
+    let metadata = litellm_metadata_from_params(Some(&call_params));
+    let model_info = object_field(&metadata, "model_info")
+        .cloned()
+        .unwrap_or_default();
+    SuccessSettings {
+        model_id: text_field(&model_info, "id").map(str::to_owned),
+        llm_provider: text_field(request.litellm_params, "custom_llm_provider").map(str::to_owned),
+        model_info,
+    }
+}
+
+fn record_limits<Gauges>(
+    metrics: &Gauges,
+    request: &SuccessRequest<'_>,
+    payload: &StandardLoggingPayload,
+    settings: &SuccessSettings,
+) -> Result<Option<String>, PrometheusDeploymentError<<Gauges::Gauge as RemovableMetric>::Error>>
+where
+    Gauges: DeploymentMetrics,
+{
+    if !settings.model_info.is_empty() || !request.litellm_params.is_empty() {
+        metrics.set_deployment_limits(DeploymentLimitInputs {
+            model_info: &settings.model_info,
+            litellm_params: request.litellm_params,
+            litellm_model_name: request.model,
+            model_id: settings.model_id.as_deref(),
+            api_base: Some(payload.api_base.as_str()),
+            api_provider: settings.llm_provider.as_deref(),
+            model_group: request.values.model_group.as_deref(),
+            settings: metrics.settings(),
+            end_user_settings: metrics.end_user_settings(),
+        })?;
+    }
+    Ok(settings.model_id.clone())
+}
+
+fn record_overhead<Gauges>(
+    metrics: &Gauges,
+    request: &SuccessRequest<'_>,
+    payload: &StandardLoggingPayload,
+) -> Result<(), PrometheusDeploymentError<<Gauges::Gauge as RemovableMetric>::Error>>
+where
+    Gauges: DeploymentMetrics,
+{
+    let overhead_ms = payload
+        .hidden_params
+        .litellm_overhead_time_ms
+        .as_ref()
+        .map(|value| value.0);
+    if let Some(milliseconds) = overhead_ms.filter(|amount| *amount != Decimal::ZERO) {
+        let seconds = milliseconds
+            .checked_div(MILLIS_PER_SECOND)
+            .ok_or(PrometheusDeploymentError::Overflow)?;
+        let labels = prometheus_label_factory(
+            metrics.labels_for(DeploymentMetric::OverheadLatency),
+            request.values,
+            metrics.label_source(request.context),
+        )?;
+        metrics.observe_histogram(DeploymentMetric::OverheadLatency, &labels, seconds);
+    }
+    let observation = OverheadObservation {
+        overhead_ms,
+        guardrail_records: guardrail_records(payload),
+    };
+    let inputs = LabelInputs {
+        values: request.values,
+        settings: metrics.settings(),
+        end_user_settings: metrics.end_user_settings(),
+        context: request.context,
+    };
+    metrics.set_overhead(&observation, &inputs)
+}
+
+fn guardrail_records(payload: &StandardLoggingPayload) -> GuardrailRecords<'_> {
+    match payload.guardrail_information.as_deref() {
+        Some(records) => GuardrailRecords::Multiple(records),
+        None => GuardrailRecords::Absent,
+    }
+}
+
+fn record_remaining<Gauges>(
+    metrics: &Gauges,
+    request: &SuccessRequest<'_>,
+    payload: &StandardLoggingPayload,
+) -> Result<(), PrometheusDeploymentError<<Gauges::Gauge as RemovableMetric>::Error>>
+where
+    Gauges: DeploymentMetrics,
+{
+    let Some(headers) = payload
+        .hidden_params
+        .additional_headers
+        .as_ref()
+        .filter(|headers| !headers.is_empty())
+    else {
+        return Ok(());
+    };
+    let source = metrics.label_source(request.context);
+    for (header, metric) in [
+        (
+            REMAINING_REQUESTS_HEADER,
+            DeploymentMetric::RemainingRequests,
+        ),
+        (REMAINING_TOKENS_HEADER, DeploymentMetric::RemainingTokens),
+    ] {
+        let Some(amount) = header_amount(headers.get(header), header)? else {
+            continue;
+        };
+        metrics.set_gauge(metric, request.values, source, amount)?;
+    }
+    Ok(())
+}
+
+// a header value may be a number or a numeric string, and prometheus_client sets only a nonzero one
+fn header_amount(value: Option<&Json>, field: &str) -> Result<Option<Decimal>, HeaderValueError> {
+    let amount = match value {
+        None | Some(Json::Null) => return Ok(None),
+        Some(Json::Number(number)) => decimal_text(&number.to_string()),
+        Some(Json::Text(text)) => decimal_text(text),
+        Some(Json::Bool(_) | Json::List(_) | Json::Object(_)) => None,
+    };
+    match amount {
+        Some(amount) if amount != Decimal::ZERO => Ok(Some(amount)),
+        Some(_) => Ok(None),
+        None => Err(HeaderValueError::NotANumber {
+            field: field.to_owned(),
+        }),
+    }
+}
+
+fn decimal_text(text: &str) -> Option<Decimal> {
+    if text.contains(['e', 'E']) {
+        Decimal::from_scientific(text).ok()
+    } else {
+        Decimal::from_str(text).ok()
+    }
+}
+
+fn record_latency<Gauges>(
+    metrics: &Gauges,
+    request: &SuccessRequest<'_>,
+) -> Result<(), PrometheusDeploymentError<<Gauges::Gauge as RemovableMetric>::Error>>
+where
+    Gauges: DeploymentMetrics,
+{
+    let response = request
+        .end_time
+        .checked_sub(request.start_time)
+        .ok_or(PrometheusDeploymentError::Overflow)?;
+    let first_token = match request.stream {
+        Some(true) => Some(
+            request
+                .completion_start_time
+                .unwrap_or(request.end_time)
+                .checked_sub(request.start_time)
+                .ok_or(PrometheusDeploymentError::Overflow)?,
+        ),
+        Some(false) | None => None,
+    };
+    let latency = match first_token {
+        Some(seconds) if seconds != Decimal::ZERO => seconds,
+        Some(_) | None => response,
+    };
+    let output_tokens = request.output_tokens.unwrap_or(Decimal::ONE);
+    if output_tokens <= Decimal::ZERO {
+        return Ok(());
+    }
+    let per_token = latency
+        .checked_div(output_tokens)
+        .ok_or(PrometheusDeploymentError::Overflow)?;
+    let labels = prometheus_label_factory(
+        metrics.labels_for(DeploymentMetric::LatencyPerOutputToken),
+        request.values,
+        metrics.label_source(request.context),
+    )?;
+    metrics.observe_histogram(DeploymentMetric::LatencyPerOutputToken, &labels, per_token);
+    Ok(())
+}
