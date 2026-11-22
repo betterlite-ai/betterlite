@@ -440,20 +440,20 @@ fn parse_failures() {
 }
 
 fn record_failures() {
-    for body in [
-        "null",
-        "[]",
-        r#""hello""#,
-        r#"{"images":[5]}"#,
-        r#"{"images":[{"a":1}]}"#,
-        r#"{"images":"x"}"#,
-        r#"{"finish_reasons":{"a":1}}"#,
-    ] {
-        let error =
-            edit_reply(INPAINT, 200, body).expect_err("a parsed record of the wrong shape fails");
-        assert_eq!(error.status(), None, "{body}");
-        assert!(matches!(&error, StabilityEditError::Reply(_)), "{body}");
-    }
+    assert_record_failure("null");
+    assert_record_failure("[]");
+    assert_record_failure(r#""hello""#);
+    assert_record_failure(r#"{"images":[5]}"#);
+    assert_record_failure(r#"{"images":[{"a":1}]}"#);
+    assert_record_failure(r#"{"images":"x"}"#);
+    assert_record_failure(r#"{"finish_reasons":{"a":1}}"#);
+}
+
+fn assert_record_failure(body: &str) {
+    let error =
+        edit_reply(INPAINT, 200, body).expect_err("a parsed record of the wrong shape fails");
+    assert_eq!(error.status(), None, "{body}");
+    assert!(matches!(&error, StabilityEditError::Reply(_)), "{body}");
 }
 
 fn price_failures() {
