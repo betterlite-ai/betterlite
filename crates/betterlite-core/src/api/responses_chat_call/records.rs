@@ -23,7 +23,7 @@ pub struct ResponseChatCall<'deps, Completions> {
     pub limits: ApiLimits,
     pub cache: &'deps DualLocalCache,
     pub parameters: &'deps dyn SupportedParameterSource<Error = Infallible>,
-    pub probe: &'deps dyn CompletionBridgeProbe,
+    pub probe: &'deps (dyn CompletionBridgeProbe + Sync),
     pub route_all_openai_to_responses: bool,
 }
 
@@ -35,7 +35,8 @@ pub struct ResponseCall<'call, Context> {
     pub stream: Option<bool>,
     pub extra_headers: Option<&'call Json>,
     pub kwargs: &'call IndexMap<String, Json>,
-    pub logging: Option<&'call mut dyn StreamOptionsSink>,
+    // the handler's future is Send and holds the call across the completion await, so the sink is Send too
+    pub logging: Option<&'call mut (dyn StreamOptionsSink + Send)>,
     pub sources: EventSources,
     pub context: Context,
 }

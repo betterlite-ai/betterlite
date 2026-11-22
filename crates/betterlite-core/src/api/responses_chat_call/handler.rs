@@ -31,8 +31,8 @@ pub async fn response_handler<Completions, Context>(
     call: ResponseCall<'_, Context>,
 ) -> Result<CallOutcome<Context>, CallError<Completions::Error>>
 where
-    Completions: CompletionClient,
-    Context: StreamAssembly,
+    Completions: CompletionClient + Sync,
+    Context: StreamAssembly + Send,
 {
     let mut request = call;
     let prepared = prepare(deps, &mut request)?;
@@ -51,11 +51,11 @@ pub async fn async_response_handler<Completions, Query, Cold, Sleep, Context>(
     call: ResponseCall<'_, Context>,
 ) -> Result<CallOutcome<Context>, AsyncCallError<Completions::Error, Cold::Error>>
 where
-    Completions: CompletionClient,
+    Completions: CompletionClient + Sync,
     Query: SpendLogQuery + Sync,
     Cold: ColdStorageReader + Sync,
     Sleep: PollSleeper + Sync,
-    Context: StreamAssembly,
+    Context: StreamAssembly + Send,
 {
     let mut request = call;
     let mut prepared = prepare(deps, &mut request)?;
@@ -80,8 +80,8 @@ async fn execute<Completions, Context>(
     identity: StreamIdentity,
 ) -> Result<CallOutcome<Context>, CallError<Completions::Error>>
 where
-    Completions: CompletionClient,
-    Context: StreamAssembly,
+    Completions: CompletionClient + Sync,
+    Context: StreamAssembly + Send,
 {
     let metadata = litellm_metadata(call.kwargs)?;
     let output = deps

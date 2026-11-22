@@ -27,7 +27,7 @@ use uuid::Uuid;
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::bfl::poll::PollSleeper;
 use crate::api::chat_response_stream::driver::ChatResponseStream;
-use crate::api::chat_response_stream::source::AsyncChunkStream;
+use crate::api::chat_response_stream::source::AsyncChunkStream as _;
 use crate::api::chat_response_stream_items::snapshot::StreamAssembly;
 use crate::api::chat_response_stream_items::sources::EventSources;
 use crate::api::messages_stream_split::errors::StreamFailure;

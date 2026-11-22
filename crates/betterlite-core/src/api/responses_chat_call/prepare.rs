@@ -40,7 +40,7 @@ pub fn prepare<Completions, Context>(
 
 // The bridged request keeps LiteLLM's cleaned input and, only when something was hoisted, the extended tools
 fn hoisted_request<Context>(
-    call: &mut ResponseCall<'_, Context>,
+    call: &ResponseCall<'_, Context>,
 ) -> Result<(ResponsesApiRequestParams, Json), PreparationError> {
     let mut request_value =
         serde_json::to_value(call.request).map_err(|source| PreparationError::Encode {
@@ -70,17 +70,17 @@ fn hoisted_request<Context>(
             field: "request",
             source,
         })?;
-    let input: Json =
+    let cleaned_input: Json =
         serde_json::from_value(bridged_input).map_err(|source| PreparationError::Encode {
             field: "input",
             source,
         })?;
-    Ok((bridged, input))
+    Ok((bridged, cleaned_input))
 }
 
 // the assembly takes one lifetime for its references, so the call's sink is reborrowed through this wrapper
 struct ReborrowedSink<'sink, 'object> {
-    sink: Option<&'sink mut (dyn StreamOptionsSink + 'object)>,
+    sink: Option<&'sink mut (dyn StreamOptionsSink + Send + 'object)>,
 }
 
 impl StreamOptionsSink for ReborrowedSink<'_, '_> {
