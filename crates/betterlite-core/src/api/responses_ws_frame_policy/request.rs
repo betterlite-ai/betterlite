@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use serde_json::value::RawValue;
 
 use super::request_masking::mask_create_frame;
-use super::{FramePolicy, FramePolicyError, PiiCall, RequestData, decode_object, encode};
+use super::{FramePolicy, FramePolicyError, PiiCall, RequestData, decode_object};
 use crate::api::response_id_codecs::response::decode_previous_response_id;
 use crate::api::response_id_traversal::record::Record;
 use crate::api::response_id_traversal::restore::restore_encrypted_item_ids;
@@ -143,7 +143,7 @@ where
     let mut frame = restored.unwrap_or(authorized);
     let masked = mask_with_guardrails(policy, request_data, &mut frame).await?;
     if frame_modified || masked {
-        Ok(encode(frame)?)
+        Ok(serde_json::to_string(&Json::Object(frame)).map(Cow::Owned)?)
     } else {
         Ok(Cow::Borrowed(message))
     }

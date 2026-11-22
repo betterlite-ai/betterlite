@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -135,10 +134,4 @@ where
         }
         Err(_invalid) => Ok(None),
     }
-}
-
-pub(crate) fn encode(
-    fields: IndexMap<String, Json>,
-) -> Result<Cow<'static, str>, serde_json::Error> {
-    serde_json::to_string(&Json::Object(fields)).map(Cow::Owned)
 }

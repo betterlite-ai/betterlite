@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 
 use super::{
     DELTA_EVENT_TYPES, FramePolicy, FramePolicyError, PiiCall, RequestData, UnmaskPiiText,
-    decode_object, encode,
+    decode_object,
 };
 use crate::api::responses_stream_events::JsonShape;
 
@@ -40,7 +40,7 @@ where
             pii_tokens: &pii_tokens,
         };
         return if unmasking.completed(&mut event) {
-            Ok(encode(event)?)
+            Ok(serde_json::to_string(&Json::Object(event)).map(Cow::Owned)?)
         } else {
             Ok(Cow::Borrowed(message))
         };
@@ -49,7 +49,7 @@ where
         let unmasked = unmask(delta, &pii_tokens);
         if unmasked != *delta {
             *delta = unmasked;
-            return Ok(encode(event)?);
+            return Ok(serde_json::to_string(&Json::Object(event)).map(Cow::Owned)?);
         }
     }
     Ok(Cow::Borrowed(message))
@@ -181,7 +181,7 @@ where
         }
     }
     if modified {
-        Ok(encode(event)?)
+        Ok(serde_json::to_string(&Json::Object(event)).map(Cow::Owned)?)
     } else {
         Ok(Cow::Borrowed(message))
     }
