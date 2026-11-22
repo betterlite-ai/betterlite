@@ -500,42 +500,37 @@ fn refused_while_reasoning_elsewhere() {
 
 fn model_refused_fields() {
     refused_fields_by_model();
-    refused_efforts_by_model();
     dropped_params();
 }
 
 fn refused_fields_by_model() {
-    let fields: [(&str, &[&str]); 7] = [
-        ("openai.gpt-oss-20b-1:0", &["logit_bias"]),
-        ("us-east-1/openai.gpt-oss-20b-1:0", &["logit_bias"]),
-        ("xai.grok-4", &["frequency_penalty", "presence_penalty"]),
+    let table: [(&str, &[&str], &[&str]); 7] = [
+        ("openai.gpt-oss-20b-1:0", &["logit_bias"], &[]),
+        ("us-east-1/openai.gpt-oss-20b-1:0", &["logit_bias"], &[]),
+        (
+            "xai.grok-4",
+            &["frequency_penalty", "presence_penalty"],
+            &["none"],
+        ),
         (
             "us-east-1/xai.grok-4",
             &["frequency_penalty", "presence_penalty"],
+            &["none"],
         ),
         (
             "openai.gpt-oss-xai.grok",
             &["frequency_penalty", "logit_bias", "presence_penalty"],
+            &["none"],
         ),
-        ("OpenAI.GPT-OSS-20b", &[]),
-        ("anthropic.claude-3-5-sonnet", &[]),
+        ("OpenAI.GPT-OSS-20b", &[], &[]),
+        ("anthropic.claude-3-5-sonnet", &[], &[]),
     ];
-    for (model, expected) in fields {
-        assert_eq!(params_refused_for(model), set(expected), "model {model}");
-    }
-}
-
-fn refused_efforts_by_model() {
-    let efforts: [(&str, &[&str]); 3] = [
-        ("xai.grok-4", &["none"]),
-        ("us-east-1/xai.grok-4", &["none"]),
-        ("openai.gpt-oss-20b-1:0", &[]),
-    ];
-    for (model, expected) in efforts {
+    for (model, fields, efforts) in table {
+        assert_eq!(params_refused_for(model), set(fields), "fields {model}");
         assert_eq!(
             reasoning_efforts_refused_for(model),
-            set(expected),
-            "model {model}"
+            set(efforts),
+            "efforts {model}"
         );
     }
 }
