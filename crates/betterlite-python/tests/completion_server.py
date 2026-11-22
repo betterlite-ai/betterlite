@@ -114,10 +114,6 @@ class CompletionServer(ThreadingHTTPServer):
 class _Handler(BaseHTTPRequestHandler):
     owner: ClassVar["CompletionServer"]
 
-    @override
-    def log_message(self, _format: str, *_args: str) -> None:
-        return
-
     def do_GET(self) -> None:
         self.owner.record(self.path, dict(self.headers.items()), {})
         if self.headers.get("Authorization") != f"Bearer {GOOD_KEY}":
