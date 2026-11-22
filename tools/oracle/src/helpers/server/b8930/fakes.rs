@@ -20,9 +20,7 @@ pub(super) struct FakeRecorder {
 
 impl StreamCostRecorder for FakeRecorder {
     fn response_cost(&self, log: &mut LoggingState, input: RecordInput<'_>) -> Option<Decimal> {
-        let Some(usage) = chat_usage(&input) else {
-            return None;
-        };
+        let usage = chat_usage(&input)?;
         push(
             &self.observed,
             call_json("recorder", &log.model, None, &usage),
