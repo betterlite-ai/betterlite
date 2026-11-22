@@ -25,7 +25,7 @@ use super::error::SdkHttpError;
 use super::result::kinds::SdkResult;
 
 mod fixtures;
-mod outcome;
+pub mod outcome;
 mod wire;
 
 // the header a supplied HTTPHandler's own client adds, so the wire shows whether the handler was used
