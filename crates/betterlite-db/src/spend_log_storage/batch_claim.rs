@@ -132,12 +132,12 @@ where
         Ok(1) => return true,
         Ok(_) => table.find_batch_row(request_id).await,
         Err(error) => Err(error),
+    };
+    if let Err(error) = &found {
+        queue_after_claim_failure(queue, request_id, &row, error);
+        return true;
     }
-    .unwrap_or_else(|error| {
-        queue_after_claim_failure(queue, request_id, &row, &error);
-        None
-    });
-    let Some(existing) = found else {
+    let Some(existing) = found.ok().flatten() else {
         tracing::warn!(
             "Spend row {request_id} belongs to a None request, so this batch's cost is charged without a row of its own"
         );
