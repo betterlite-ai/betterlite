@@ -1,0 +1,58 @@
+task: B4789
+deviations:
+  - what: >-
+      The A2A SDK check of _handle_stream_message, which answers "Server error: 'a2a' package not installed", is dropped.
+    why: >-
+      betterlite has no optional SDK, so that state cannot exist.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L439-L453
+  - what: >-
+      The tasks/resubscribe request to the agent has a total deadline of 24 hours. LiteLLM's client sets no total deadline, only httpx's per-read timeout.
+    why: >-
+      OutboundRequest needs a deadline and reqwest applies it to the whole body, so an unbounded stream is not expressible. A subscription older than a day is cut.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L291-L297
+  - what: >-
+      The connect timeout and the wait for the response head are the shared client's (10 seconds and 100 minutes) instead of the 5 and 600 seconds of httpx.Timeout(600, connect=5) that LiteLLM's timeout=None falls back to. A body read that waits 600 seconds does end the stream, as in LiteLLM.
+    why: >-
+      Both are settings of the shared ProxiedClient, which this task does not own and cannot change per request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
+  - what: >-
+      An extra header replaces an earlier header of the same name ignoring case. LiteLLM merges dict keys by exact name, so "accept" and "Accept" would both be sent.
+    why: >-
+      HTTP header names are case-insensitive, and sending both is a bug nobody relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L286-L290
+  - what: >-
+      The fallback error message for a non-2xx status is the canonical reason text of the status code. LiteLLM uses the server's reason phrase, which is empty over HTTP/2.
+    why: >-
+      The response type carries no reason phrase; the canonical text matches it for common codes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L311
+  - what: >-
+      Failures are typed values (StreamError, StreamFailure, StreamAbort), and the route layer decides how a Rejected failure or an abort reaches the client. LiteLLM re-raises HTTPException from inside the generator.
+    why: >-
+      This task has no HTTP framework, and the status line is already sent once the first byte went out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L535-L551
+  - what: >-
+      Agent response lines end only at LF, CRLF and a lone CR. httpx's aiter_lines also splits at \v, \f, \x1c to \x1e, \x85, U+2028 and U+2029, so LiteLLM drops a data line whose JSON string holds one of them raw, and reads "data: 1\x0bdata: 2" as two events where betterlite skips the line.
+    why: >-
+      The SSE format ends lines only at CR, LF and CRLF, and the extra breaks lose events that carry those characters in a string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L314
+  - what: >-
+      A line from the agent longer than the client's body limit (16 MiB by default) ends the stream with an error, and an error answer's body is read up to that same limit. LiteLLM buffers both without a bound.
+    why: >-
+      An agent that never sends a line break would otherwise grow the proxy's memory without end (rule bounded-inputs).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L300
+  - what: >-
+      There is no sse_event function; each relay writes the "data: <json>" frame and its blank line where it builds it.
+    why: >-
+      The function's body is one expression, and rule no-one-line-functions (.ast-grep/rules/no-one-line-functions.yml) rejects it. The frame text is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L81-L83
+  - what: >-
+      The upstream A2A request follows at most 10 redirects, the shared client's limit. LiteLLM's httpx client follows up to 20 before it raises TooManyRedirects.
+    why: >-
+      The limit belongs to the shared ProxiedClient, which this task does not own; an agent reachable only through 11 to 20 redirects is refused here where LiteLLM reaches it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
+  - what: >-
+      Event lines are decoded as UTF-8 with invalid bytes replaced. LiteLLM's httpx reader decodes with the charset the agent's Content-Type declares, and as UTF-8 when it declares none.
+    why: >-
+      The SSE spec fixes an event stream's encoding at UTF-8 and gives no way to name another, so an agent that declares a different charset in its Content-Type has its non-ASCII bytes replaced where LiteLLM would convert them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L314
+kept_bugs: []

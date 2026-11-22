@@ -1,0 +1,13 @@
+task: B1213
+deviations:
+  - what: >-
+      A complexity router write is never refused for a tuning quota. LiteLLM's MIT build sets the auto router capability limit to 1 without a signed license, so a second router that customizes the same classifier or tuning capability gets a 403.
+    why: >-
+      The limit only exists to sell a LiteLLM enterprise license and betterlite has no license tier, so every capability is unlimited. The oracle case runs LiteLLM's quota check with no limit so both sides agree, and the Rust test no_tuning_license_cap proves the write passes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L508-L517
+  - what: >-
+      A stored model row whose model_info is null reads as an empty model_info map. LiteLLM builds Deployment(model_info=None), and ModelInfo() then fills a fresh random id and its defaults.
+    why: >-
+      The random id belongs to no stored row and differs on every read, so no setup can rely on it; the row's model_id column stays the deployment's id. The Rust test get_db_model_mirrors_custom_prices_onto_model_info reads such a row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L661-L662
+kept_bugs: []
