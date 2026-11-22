@@ -14,6 +14,15 @@ pub struct UrlParts {
     pub fragment: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SplitUrl {
+    pub scheme: String,
+    pub netloc: String,
+    pub path: String,
+    pub query: String,
+    pub fragment: String,
+}
+
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum UrlError {
     #[error("invalid IPv6 URL")]
@@ -61,6 +70,22 @@ pub fn parse(url: &str) -> Result<UrlParts, UrlError> {
         params: params.to_owned(),
         query: query.to_owned(),
         fragment: fragment.to_owned(),
+    })
+}
+
+// Ports urllib.parse.urlsplit: urlparse's components with the last segment's params left on the path.
+pub fn urlsplit(url: &str) -> Result<SplitUrl, UrlError> {
+    let parts = parse(url)?;
+    let mut path = parts.path;
+    if !parts.params.is_empty() {
+        path = format!("{path};{}", parts.params);
+    }
+    Ok(SplitUrl {
+        scheme: parts.scheme,
+        netloc: parts.netloc,
+        path,
+        query: parts.query,
+        fragment: parts.fragment,
     })
 }
 
@@ -162,7 +187,13 @@ fn check_brackets(netloc: &str) -> Result<(), UrlError> {
     }
     let hostinfo = netloc.rsplit_once('@').map_or(netloc, |(_, after)| after);
     let Some((before, bracketed)) = hostinfo.split_once('[') else {
-        return Ok(());
+        // a bracket in the userinfo still leaves the host after it to the bracketed-host check
+        let host = hostinfo.split_once(':').map_or(hostinfo, |(name, _)| name);
+        return if is_bracketed_host(host) {
+            Ok(())
+        } else {
+            Err(UrlError::InvalidIpv6)
+        };
     };
     if !before.is_empty() {
         return Err(UrlError::InvalidIpv6);

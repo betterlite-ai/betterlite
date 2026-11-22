@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use crate::provider_defaults_a::url::{UrlError, UrlParts, parse, unparse};
+use crate::provider_defaults_a::url::{SplitUrl, UrlError, UrlParts, parse, unparse, urlsplit};
 
 fn parts([scheme, netloc, path, params, query, fragment]: [&str; 6]) -> UrlParts {
     UrlParts {
@@ -10,6 +10,16 @@ fn parts([scheme, netloc, path, params, query, fragment]: [&str; 6]) -> UrlParts
         netloc: netloc.to_owned(),
         path: path.to_owned(),
         params: params.to_owned(),
+        query: query.to_owned(),
+        fragment: fragment.to_owned(),
+    }
+}
+
+fn split([scheme, netloc, path, query, fragment]: [&str; 5]) -> SplitUrl {
+    SplitUrl {
+        scheme: scheme.to_owned(),
+        netloc: netloc.to_owned(),
+        path: path.to_owned(),
         query: query.to_owned(),
         fragment: fragment.to_owned(),
     }
@@ -126,6 +136,7 @@ fn hostname_matches_urllib_parse(#[case] source: &str, #[case] expected: Option<
 #[case::close_without_open("https://host]/api")]
 #[case::data_before_bracket("https://user@host[::1]/api")]
 #[case::data_after_bracket("https://[::1]x/api")]
+#[case::brackets_only_in_userinfo("https://[a]@host/api")]
 #[case::not_an_address("https://[abc]/api")]
 #[case::empty_scope_id("https://[fe80::1%]/api")]
 #[case::second_percent_in_scope_id("https://[fe80::1%a%b]/api")]
@@ -163,4 +174,72 @@ fn parse_accepts_a_netloc_whose_nfkc_form_stays_a_host(
 ) {
     let parsed = parse(source).unwrap();
     assert_eq!(parsed.hostname(), Some(expected_host.to_owned()));
+}
+
+#[rstest]
+#[case::params_stay_on_the_path(
+    "https://h.example/api/v2;param?q=1#frag",
+    split(["https", "h.example", "/api/v2;param", "q=1", "frag"])
+)]
+#[case::semicolon_before_the_last_slash_is_path_text(
+    "https://h.example/a;b/c",
+    split(["https", "h.example", "/a;b/c", "", ""])
+)]
+#[case::scheme_is_lowercased_and_the_query_kept(
+    "HTTPS://Tenant.DataRobot.com/api/v2?x=1",
+    split(["https", "Tenant.DataRobot.com", "/api/v2", "x=1", ""])
+)]
+#[case::authority_only("https://host", split(["https", "host", "", "", ""]))]
+#[case::relative_path("app.example/api/v2", split(["", "", "app.example/api/v2", "", ""]))]
+#[case::empty("", split(["", "", "", "", ""]))]
+fn urlsplit_keeps_the_params_on_the_path(#[case] source: &str, #[case] expected: SplitUrl) {
+    assert_eq!(urlsplit(source), Ok(expected));
+}
+
+#[rstest]
+#[case::network_path("//host/a", Some("/a"))]
+#[case::authority_then_query("https://host?x=/a", Some(""))]
+#[case::digit_first_scheme("1a:/b", Some("1a:/b"))]
+#[case::odd_scheme_character("a_b:/c", Some("a_b:/c"))]
+#[case::scheme_characters("a+b-c.d:/e", Some("/e"))]
+#[case::removes_newlines("/a\r\n/b", Some("/a/b"))]
+#[case::keeps_trailing_space("/a ", Some("/a "))]
+#[case::port_after_bracket("http://[::1]:80/a", Some("/a"))]
+#[case::user_before_bracket("http://u:p@[::1]/a", Some("/a"))]
+#[case::malformed("http://[::1/a", None)]
+fn urlsplit_reduces_a_url_to_its_path(#[case] url: &str, #[case] expected: Option<&str>) {
+    let path = urlsplit(url).ok().map(|parsed| parsed.path);
+    assert_eq!(path, expected.map(str::to_owned));
+}
+
+#[rstest]
+#[case::brackets_only_in_userinfo("https://[a]@host/api")]
+#[case::userinfo_brackets_before_an_unbracketed_host("https://user[::1]@host/api")]
+fn urlsplit_rejects_userinfo_brackets_over_a_host_ipaddress_refuses(#[case] source: &str) {
+    assert_eq!(urlsplit(source).unwrap_err(), UrlError::InvalidIpv6);
+}
+
+#[rstest]
+#[case::userinfo_brackets_before_an_ipvfuture_host("https://user[x]@v1.fe/api")]
+#[case::userinfo_brackets_before_an_ipvfuture_host_and_port("https://user[x]@v1.fe:80/api")]
+fn urlsplit_accepts_userinfo_brackets_over_a_bracketed_literal_host(#[case] source: &str) {
+    assert_eq!(
+        urlsplit(source).map(|parsed| parsed.path),
+        Ok("/api".to_owned())
+    );
+}
+
+#[rstest]
+#[case::uppercase_ipvfuture_version("https://[V1.x]/api")]
+#[case::ipv4_in_brackets("https://[127.0.0.1]/api")]
+fn urlsplit_rejects_a_bracketed_host_ipaddress_refuses(#[case] source: &str) {
+    assert_eq!(urlsplit(source).unwrap_err(), UrlError::InvalidIpv6);
+}
+
+#[test]
+fn urlsplit_rejects_a_netloc_whose_nfkc_form_readds_a_delimiter() {
+    assert_eq!(
+        urlsplit("https://a\u{2100}b.example/v1").unwrap_err(),
+        UrlError::InvalidNetloc
+    );
 }
