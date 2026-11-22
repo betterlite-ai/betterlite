@@ -1,0 +1,32 @@
+task: B3043
+deviations:
+  - what: >-
+      reserve_project_io_tokens takes the request body as a typed RequestData map, so a body that is not a dict
+      can't reach it. LiteLLM's isinstance(data, dict) guard returns before it claims the stash; in betterlite
+      that state is unrepresentable, and the oracle helper answers a non-dict body without calling the function.
+    why: >-
+      The proxy parses every request body into a map before any pre-call hook runs, so no working setup hands
+      the limiter anything else.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3760-L3761
+  - what: >-
+      The function takes no UserAPIKeyAuth. LiteLLM reads it only for parent_otel_span, which it threads into
+      the refund, the slot release and reserve_io_tokens.
+    why: >-
+      betterlite's store, gauge and reservation calls take no span (B3042 and B3035 dropped it the same way),
+      so the key would be an unused argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3802-L3807
+  - what: >-
+      The success line is a tracing debug event with itpm, otpm and model fields and the message "ITPM/OTPM
+      tokens reserved", where LiteLLM formats "ITPM/OTPM tokens reserved: itpm=%s, otpm=%s for model %s". A
+      request with no model leaves the model field out instead of printing None.
+    why: Structured fields are how every betterlite log line carries its values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3858-L3863
+kept_bugs:
+  - what: >-
+      A request with no explicit output cap reserves at least one OTPM token, embeddings included, even though
+      an embedding never produces output.
+    why: >-
+      LiteLLM floors every uncapped output estimate at 1 so the OTPM bucket always sees the request, and
+      post-call reconciliation refunds the token. OTPM counters in a working setup already count it, so the
+      floor is copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3785-L3790

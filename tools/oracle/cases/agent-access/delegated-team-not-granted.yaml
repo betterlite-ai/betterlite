@@ -1,0 +1,34 @@
+kind: helper
+name: delegated-team-not-granted
+call:
+  b4780:
+    operation: delegated_team
+    user_id: human
+    team_id: team-1
+    sources:
+      - {team_id: null, agent_ids: [own]}
+      - {team_id: team-1, agent_ids: [a]}
+      - {team_id: team-2, agent_ids: [b]}
+    agent_id: b
+    explicit_team: true
+    allowed_team_ids: null
+calls:
+  - b4780:
+      operation: delegated_team
+      user_id: human
+      team_id: null
+      sources: [{team_id: null, agent_ids: [own]}]
+      agent_id: missing
+      explicit_team: false
+      allowed_team_ids: null
+  - b4780:
+      operation: delegated_team
+      user_id: null
+      team_id: team-1
+      sources: []
+      agent_id: a
+      explicit_team: false
+      allowed_team_ids: null
+env: {}
+compare:
+  ignore: []
