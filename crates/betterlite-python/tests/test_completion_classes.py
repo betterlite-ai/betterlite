@@ -49,6 +49,7 @@ FAILURE_TEXT: Final = "attempt failed"
 SYNC_RETRIES: Final = 2
 ASYNC_RETRIES: Final = 2
 DEFAULT_ATTEMPTS: Final = 3
+CONFIGURED_RETRIES: Final = 5
 MIN_ATTEMPTS: Final = 1
 FIRST_BACKOFF: Final = 1.0
 FOUR_SECONDS: Final = 4.0
@@ -158,9 +159,9 @@ def test_completion_client_plain_matches_litellm() -> None:
 def test_completion_client_reads_num_retries_at_construction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(betterlite, "num_retries", 5)
+    monkeypatch.setattr(betterlite, "num_retries", CONFIGURED_RETRIES)
     client = LiteLLM(api_key=GOOD_KEY)
-    assert client.params["max_retries"] == 5
+    assert client.params["max_retries"] == CONFIGURED_RETRIES
 
 
 def test_completion_client_async_branch_matches_litellm() -> None:

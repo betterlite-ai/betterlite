@@ -36,7 +36,7 @@ deviations:
   - what: The probes `check_valid_key`, `valid_model` and `acount_tokens` send their own native call without the proxy auth headers a completion call adds.
     why: The proxy auth provider is a Python object that only the completion path reads; the probes call a separate native method.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7156-L7171
-  - what: `LiteLLM(default_headers=...)` is passed into the call but reaches no request, because the Rust request builder reads `headers` and `extra_headers` only.
+  - what: "`LiteLLM(default_headers=...)` is passed into the call but reaches no request, because the Rust request builder reads `headers` and `extra_headers` only."
     why: default_headers is a client default LiteLLM applies in its provider client; the Rust call has no client default slot for it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L363-L375
   - what: "`betterlite.proxy_auth` and `betterlite.config_path` are typed None in the wheel's globals, so this module reads its own typed `proxy_auth` and `config_path` seams when the globals are unset."

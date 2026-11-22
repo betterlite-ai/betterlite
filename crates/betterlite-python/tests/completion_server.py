@@ -32,7 +32,7 @@ UNKNOWN_MODEL = "bad-model"
 BROKEN_MODEL = "broken"
 CREATED = 1700000000
 COMPLETION_ID = "chatcmpl-1"
-TOKEN_COUNT_PATH = "/v1/responses/input_tokens"
+USAGE_PATH = "/v1/responses/input_tokens"
 MODELS_PATH = "/v1/models/"
 CHAT_PATH = "/v1/chat/completions"
 USAGE: dict[str, JsonValue] = {
@@ -141,7 +141,7 @@ class _Handler(BaseHTTPRequestHandler):
         raw = b"{}" if declared is None else self.rfile.read(int(declared))
         body = REQUEST.validate_json(raw)
         self.owner.record(self.path, dict(self.headers.items()), body)
-        if self.path == TOKEN_COUNT_PATH:
+        if self.path == USAGE_PATH:
             self.reply(NOT_FOUND, error_payload("no token counting endpoint"))
             return
         authorized = self.headers.get("Authorization")

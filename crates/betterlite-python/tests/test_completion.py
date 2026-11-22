@@ -46,6 +46,7 @@ from betterlite.exceptions import (
 )
 from betterlite.main import (
     TokenCountResponse,
+    UnknownNativeError,
     UnsupportedCallArgument,
     acompletion,
     acount_tokens,
@@ -57,7 +58,7 @@ from betterlite.main import (
 from betterlite.types.utils import Message, ModelResponse
 
 MESSAGES: Final[list[dict[str, JsonValue]]] = [{"role": "user", "content": "hi"}]
-TOKEN_MODEL: Final = "gpt-3.5-turbo"
+COUNTED_MODEL: Final = "gpt-3.5-turbo"
 TOKEN_MESSAGES: Final[list[dict[str, JsonValue]]] = [{"role": "user", "content": "hello world"}]
 NATIVE_MESSAGE: Final = "provider said no"
 NATIVE_PROVIDER: Final = "openai"
@@ -434,11 +435,11 @@ def test_completion_probe_key_and_model(monkeypatch: pytest.MonkeyPatch) -> None
 def test_completion_probe_token_count_matches_litellm() -> None:
     with CompletionServer() as server:
         ours: TokenCountResponse = asyncio.run(
-            acount_tokens(model=TOKEN_MODEL, messages=TOKEN_MESSAGES)
+            acount_tokens(model=COUNTED_MODEL, messages=TOKEN_MESSAGES)
         )
         reference = asyncio.run(
             litellm_main().acount_tokens(
-                model=TOKEN_MODEL, messages=TOKEN_MESSAGES, api_base=server.url,
+                model=COUNTED_MODEL, messages=TOKEN_MESSAGES, api_base=server.url,
                 api_key=GOOD_KEY,
             )
         )
