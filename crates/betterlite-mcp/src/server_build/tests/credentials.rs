@@ -5,12 +5,12 @@ async fn credentials_decrypt_the_four_secret_fields() {
         r#"{"server_id":"srv-1","transport":"http","credentials":{"auth_value":"enc:test-token","client_id":"enc:test-client-id","client_secret":"enc:test-client-secret","client_private_key":"enc:test-private-key","client_private_key_id":"test-private-key-id"}}"#,
     );
     let server = harness.build(&table).await.unwrap();
-    let token = secret_text(server.fields.authentication_token.as_ref());
+    let token = server.fields.authentication_token.as_ref().map(secret_text);
     assert_eq!(token.as_deref(), Some("test-token"));
     assert_eq!(server.fields.client_id.as_deref(), Some("test-client-id"));
-    let secret = secret_text(server.fields.client_secret.as_ref());
+    let secret = server.fields.client_secret.as_ref().map(secret_text);
     assert_eq!(secret.as_deref(), Some("test-client-secret"));
-    let private_key = secret_text(server.fields.client_private_key.as_ref());
+    let private_key = server.fields.client_private_key.as_ref().map(secret_text);
     assert_eq!(private_key.as_deref(), Some("test-private-key"));
     assert_eq!(
         server.fields.client_private_key_id.as_deref(),
@@ -36,13 +36,13 @@ async fn credentials_use_stored_values_when_not_encrypted() {
         r#"{"server_id":"srv-1","transport":"http","credentials":{"auth_value":"enc:test-token","client_id":"enc:test-client-id","client_secret":"enc:test-client-secret"}}"#,
     );
     let server = harness.build_with(&table, options).await.unwrap();
-    let token = secret_text(server.fields.authentication_token.as_ref());
+    let token = server.fields.authentication_token.as_ref().map(secret_text);
     assert_eq!(token.as_deref(), Some("enc:test-token"));
     assert_eq!(
         server.fields.client_id.as_deref(),
         Some("enc:test-client-id")
     );
-    let secret = secret_text(server.fields.client_secret.as_ref());
+    let secret = server.fields.client_secret.as_ref().map(secret_text);
     assert_eq!(secret.as_deref(), Some("enc:test-client-secret"));
     assert!(harness.decryptor.keys().is_empty());
 }
@@ -54,7 +54,7 @@ async fn credentials_keep_the_original_when_decryption_fails() {
         r#"{"server_id":"srv-1","transport":"http","credentials":{"client_secret":"not-decryptable"}}"#,
     );
     let server = harness.build(&table).await.unwrap();
-    let secret = secret_text(server.fields.client_secret.as_ref());
+    let secret = server.fields.client_secret.as_ref().map(secret_text);
     assert_eq!(secret.as_deref(), Some("not-decryptable"));
     assert_eq!(harness.decryptor.keys(), strings(&["client_secret"]));
 }
@@ -79,11 +79,15 @@ async fn credentials_decrypt_aws_secrets_only() {
         r#"{"server_id":"srv-1","transport":"http","credentials":{"aws_access_key_id":"enc:AKIATEST","aws_secret_access_key":"enc:test-aws-secret","aws_session_token":"enc:test-session-token","aws_region_name":"us-east-1","aws_service_name":"bedrock","aws_role_name":"test-role","aws_session_name":"test-session"}}"#,
     );
     let server = harness.build(&table).await.unwrap();
-    let access_key = secret_text(server.fields.aws_access_key_id.as_ref());
+    let access_key = server.fields.aws_access_key_id.as_ref().map(secret_text);
     assert_eq!(access_key.as_deref(), Some("AKIATEST"));
-    let secret_key = secret_text(server.fields.aws_secret_access_key.as_ref());
+    let secret_key = server
+        .fields
+        .aws_secret_access_key
+        .as_ref()
+        .map(secret_text);
     assert_eq!(secret_key.as_deref(), Some("test-aws-secret"));
-    let session = secret_text(server.fields.aws_session_token.as_ref());
+    let session = server.fields.aws_session_token.as_ref().map(secret_text);
     assert_eq!(session.as_deref(), Some("test-session-token"));
     assert_eq!(server.fields.aws_region_name.as_deref(), Some("us-east-1"));
     assert_eq!(server.fields.aws_service_name.as_deref(), Some("bedrock"));
@@ -122,9 +126,9 @@ async fn credentials_decrypt_through_the_stored_cipher() {
     };
     let options = BuildOptions::default();
     let server = builder.build_from_table(&table, options).await.unwrap();
-    let secret = secret_text(server.fields.client_secret.as_ref());
+    let secret = server.fields.client_secret.as_ref().map(secret_text);
     assert_eq!(secret.as_deref(), Some("test-client-secret"));
-    let token = secret_text(server.fields.authentication_token.as_ref());
+    let token = server.fields.authentication_token.as_ref().map(secret_text);
     assert_eq!(token.as_deref(), Some("not-sealed"));
 }
 

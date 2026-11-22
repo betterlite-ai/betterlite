@@ -167,8 +167,8 @@ fn json(text: &str) -> JsonValue {
     serde_json::from_str(text).unwrap()
 }
 
-fn secret_text(credential: Option<&SecretCredential>) -> Option<String> {
-    credential.map(|secret| secret.0.0.expose_secret().to_owned())
+fn secret_text(credential: &SecretCredential) -> String {
+    credential.0.0.expose_secret().to_owned()
 }
 
 fn row(source: &str) -> McpServerTable {
