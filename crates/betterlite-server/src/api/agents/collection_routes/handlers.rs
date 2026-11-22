@@ -13,10 +13,9 @@ use crate::auth::body_buffering::{BufferError, read_body};
 use crate::auth::failures::{body_too_large_response, unreadable_body_response};
 use crate::pre_call::key::PreCallKey;
 use crate::pre_call::route_type::RouteType;
-use crate::pre_call_step::PreCall as _;
 use crate::pre_call_step::{PreCallInput, PreCallOutput};
 
-use super::processing::{AgentCall, AgentRequestProcessing as _};
+use super::processing::AgentCall;
 use super::{AGENT_VERSIONS_PATH, AgentCollectionState, body, guards, merge};
 
 // which LiteLLM handler a request reached; the fixed provider and the path name are the only per-route data
@@ -65,15 +64,15 @@ where
         (None, _) if request.method() == Method::POST => AgentRoute::Create,
         (None, _) => AgentRoute::List,
     };
-    serve(state, context, key, route, request).await
+    serve(&state, &context, &key, &route, request).await
 }
 
 // the shared tail of every route: read the body the create route carries, build the data, then guard and process
 async fn serve<K>(
-    state: AgentCollectionState<K>,
-    context: AuthContext,
-    key: K,
-    route: AgentRoute,
+    state: &AgentCollectionState<K>,
+    context: &AuthContext,
+    key: &K,
+    route: &AgentRoute,
     request: Request,
 ) -> Response
 where
@@ -81,18 +80,18 @@ where
 {
     let (parts, request_body) = request.into_parts();
     let query_params = merge::query_values(parts.uri.query());
-    let data = if matches!(&route, AgentRoute::Create) {
-        match create_data(request_body, &parts, &query_params, &state).await {
+    let data = if matches!(route, AgentRoute::Create) {
+        match create_data(request_body, &parts, &query_params, state).await {
             Ok(data) => data,
             Err(response) => return response,
         }
     } else {
-        route_data(&route, &query_params)
+        route_data(route, &query_params)
     };
     let call = Guarded {
-        state: &state,
-        context: &context,
-        key: &key,
+        state,
+        context,
+        key,
         parts: &parts,
         route_type: route.route_type(),
     };
@@ -148,7 +147,7 @@ fn route_data(route: &AgentRoute, query_params: &BTreeMap<String, String>) -> Js
 }
 
 // everything the guarded part of a route reads once its data is built
-struct Guarded<'call, K> {
+struct Guarded<'call, K: PreCallKey> {
     state: &'call AgentCollectionState<K>,
     context: &'call AuthContext,
     key: &'call K,
