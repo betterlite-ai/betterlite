@@ -16,7 +16,7 @@ pub enum ColumnJson {
     Object(JsonObject),
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct SubmissionRow {
     pub guardrail_id: String,
     pub guardrail_name: String,

@@ -54,10 +54,11 @@ pub(super) fn caller(principal: &Principal) -> Result<Caller, SubmissionError> {
     let identity =
         caller_identity(principal).map_err(|source| SubmissionError::Identity { source })?;
     let scope = key_scope(principal).map_err(|source| SubmissionError::Identity { source })?;
-    let user_email = principal.user.as_ref().map_or_else(
-        || scope.as_ref().and_then(|key| key.user_email.clone()),
-        |user| user.email.clone(),
-    );
+    let key_email = scope.as_ref().and_then(|key| key.user_email.clone());
+    let user_email = principal
+        .user
+        .as_ref()
+        .map_or(key_email, |user| user.email.clone());
     Ok(Caller {
         user_id: identity.user_id,
         user_email,
