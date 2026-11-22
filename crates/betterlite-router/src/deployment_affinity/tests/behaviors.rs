@@ -202,6 +202,7 @@ pub(super) async fn hook_needs_a_flag() {
     let fixture = fixture(&[]);
     let kwargs = hook_kwargs(("user_api_key_hash", "key"), "a");
     fixture.hook(&kwargs, None).await.unwrap();
+    assert_eq!(fixture.expiry(&user_pin("key")), None);
     assert_eq!(fixture.selected(&kwargs).await, ["a", "b"]);
 }
 

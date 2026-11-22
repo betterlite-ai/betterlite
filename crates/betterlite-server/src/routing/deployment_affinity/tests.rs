@@ -170,23 +170,43 @@ async fn the_authenticated_context_pins_the_selected_deployment() {
 #[tokio::test]
 async fn an_unusable_request_keeps_the_response() {
     let affinity = build(&section(Some(&["deployment_affinity"]), None), inputs(&[])).unwrap();
-    let metadata = Json::Object(IndexMap::from([(
-        "deployment_model_name".to_owned(),
-        Json::Bool(true),
+    let metadata = Json::Object(IndexMap::from([
+        (
+            "deployment_model_name".to_owned(),
+            Json::Text("gpt-4o".to_owned()),
+        ),
+        ("user_api_key_hash".to_owned(), Json::Bool(true)),
+    ]));
+    let model_info = Json::Object(IndexMap::from([(
+        "id".to_owned(),
+        Json::Text("dep-a".to_owned()),
     )]));
-    let empty_info = Json::Object(JsonObject::new());
     record_selection(
         &affinity,
         &AuthenticatedRequest {
             metadata: Some(&metadata),
             litellm_metadata: None,
-            model_info: Some(&empty_info),
+            model_info: Some(&model_info),
         },
     )
     .await;
-    assert!(
-        affinity
-            .flags_for("gpt-4o")
-            .contains(&AffinityFlag::Deployment)
-    );
+    let pool = vec![deployment("gpt-4o", "dep-a"), deployment("gpt-4o", "dep-b")];
+    let request_kwargs = IndexMap::from([(
+        "metadata".to_owned(),
+        Json::Object(IndexMap::from([(
+            "user_api_key_hash".to_owned(),
+            Json::Text("key".to_owned()),
+        )])),
+    )]);
+    let selected = affinity
+        .filter_deployments(&FilterRequest {
+            model: "gpt-4o",
+            deployments: &pool,
+            request_kwargs: Some(&request_kwargs),
+            target_order: None,
+        })
+        .await
+        .unwrap();
+    let ids: Vec<Option<&str>> = selected.iter().map(DeploymentSpec::id).collect();
+    assert_eq!(ids, [Some("dep-a"), Some("dep-b")]);
 }
