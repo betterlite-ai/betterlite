@@ -30,6 +30,7 @@ description: 'Build a typed per-turn override result for B335''s session lifecyc
   Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B335 calls this service.'
 scope:
   paths:
+  - "tools/oracle/src/routing_component_oracle/tests/routing_component_oracle_boundaries.rs"
   - crates/betterlite-router/src/complexity_turn_overrides.rs
   - crates/betterlite-router/src/complexity_turn_overrides/**
   - crates/betterlite-server/src/routing/complexity_turn_overrides.rs
