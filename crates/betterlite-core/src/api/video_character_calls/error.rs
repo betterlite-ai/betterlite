@@ -96,10 +96,13 @@ pub fn failure(
             named_field_class(error.to_string(), field, provider)
         }
         CharacterCallError::Handler(handler) => handler_class(handler, provider, redactor),
-        CharacterCallError::Mock(_)
-        | CharacterCallError::UnknownProvider { .. }
+        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+        CharacterCallError::UnknownProvider { .. }
         | CharacterCallError::CreateUnsupported { .. }
-        | CharacterCallError::GetUnsupported { .. }
+        | CharacterCallError::GetUnsupported { .. } => ErrorClass::BadRequest(Box::new(
+            ResponseDetails::for_provider(error.to_string(), Some(MODEL.to_owned()), provider),
+        )),
+        CharacterCallError::Mock(_)
         | CharacterCallError::Selection(_)
         | CharacterCallError::Timeout { .. }
         | CharacterCallError::Logging(_) => value_error(error.to_string(), provider, redactor),

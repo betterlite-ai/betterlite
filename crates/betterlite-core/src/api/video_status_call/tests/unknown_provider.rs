@@ -10,19 +10,16 @@ fn unknown_provider_name_fails_before_the_selector() {
     request.custom_llm_provider = Some("videoprov".to_owned());
     let error = failed(call(&mut bench, request));
     assert_eq!(error.to_string(), "'videoprov' is not a valid LlmProviders");
-    let VideoStatusCallError::Mapped {
-        class: ErrorClass::ApiConnection(context),
-        ..
-    } = &error
-    else {
-        panic!("an unknown provider is an api connection error");
+    let VideoStatusCallError::Mapped { class, .. } = &error else {
+        panic!("an unknown provider is mapped, got {error:?}");
     };
-    assert_eq!(
-        context.message,
-        "VideoprovException - 'videoprov' is not a valid LlmProviders"
-    );
-    assert_eq!(context.model.as_deref(), Some(""));
-    assert_eq!(context.provider.as_deref(), Some("videoprov"));
+    let ErrorClass::BadRequest(details) = class else {
+        panic!("an unknown provider answers 400, got {class:?}");
+    };
+    assert_eq!(class.metadata().status_code, 400);
+    assert_eq!(details.message, "'videoprov' is not a valid LlmProviders");
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("videoprov"));
     assert!(lookups(&bench.journal).is_empty());
     assert!(handles(&bench.journal).is_empty());
 }
@@ -34,17 +31,15 @@ fn unknown_provider_empty_explicit_provider_is_kept_and_fails() {
     request.custom_llm_provider = Some(String::new());
     let error = failed(call(&mut bench, request));
     assert_eq!(error.to_string(), "'' is not a valid LlmProviders");
-    let VideoStatusCallError::Mapped {
-        class: ErrorClass::ApiConnection(context),
-        ..
-    } = &error
-    else {
-        panic!("an empty provider is an api connection error");
+    let VideoStatusCallError::Mapped { class, .. } = &error else {
+        panic!("an empty provider is mapped, got {error:?}");
     };
-    assert_eq!(
-        context.message,
-        "Exception - '' is not a valid LlmProviders"
-    );
-    assert_eq!(context.provider.as_deref(), Some(""));
+    let ErrorClass::BadRequest(details) = class else {
+        panic!("an empty provider answers 400, got {class:?}");
+    };
+    assert_eq!(class.metadata().status_code, 400);
+    assert_eq!(details.message, "'' is not a valid LlmProviders");
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some(""));
     assert!(lookups(&bench.journal).is_empty());
 }
