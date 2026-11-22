@@ -8,8 +8,12 @@ from litellm.exceptions import RateLimitError
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.responses.streaming_iterator import (
-    RESPONSES_WS_LOGGED_EVENT_TYPES,
-    RESPONSES_WS_MASKABLE_TEXT_BLOCK_TYPES,
+    RESPONSES_WS_LOGGED_EVENT_TYPES as LOGGED,
+)
+from litellm.responses.streaming_iterator import (
+    RESPONSES_WS_MASKABLE_TEXT_BLOCK_TYPES as MASKABLE,
+)
+from litellm.responses.streaming_iterator import (
     ProjectQuotaCallback,
     ResponsesWebSocketStreaming,
 )
@@ -60,7 +64,7 @@ class Quota(ProjectQuotaCallback):
         self.calls = calls
 
     @override
-    async def enforce_project_io_token_quota_for_frame(
+    async def enforce_project_io_token_quota_for_frame(  # ast-grep-ignore: no-long-names
         self,
         user_api_key_dict: UserAPIKeyAuth | None,
         requested_model: str | None,
@@ -106,7 +110,7 @@ class Guard(PresidioGuardrailCallback):
         self._unmask_pii_text = Unmask(index, calls)
 
     @override
-    def get_presidio_settings_from_request_data(
+    def get_presidio_settings_from_request_data(  # ast-grep-ignore: no-long-names
         self, data: Container[str]
     ) -> PresidioPerRequestConfig | None:
         return None
@@ -233,12 +237,18 @@ class Probe(ResponsesWebSocketStreaming):
             kind for kind in candidates if self.wrap_view({"type": kind, "item": item}) is not None
         ]
         frame: dict[str, JsonValue] = {
-            "logged": RESPONSES_WS_LOGGED_EVENT_TYPES,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1817
-            "maskable": sorted(RESPONSES_WS_MASKABLE_TEXT_BLOCK_TYPES),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1825
-            "failure": failure,
-            "output_item": output_item,
-            "delta": sorted(self._DELTA_EVENT_TYPES),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2241
-            "done": sorted(self._OUTPUT_DONE_EVENT_TYPES),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2254
+            "logged": JSON.validate_python(LOGGED),
+            "maskable": JSON.validate_python(
+                sorted(MASKABLE)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1825
+            ),
+            "failure": JSON.validate_python(failure),
+            "output_item": JSON.validate_python(output_item),
+            "delta": JSON.validate_python(
+                sorted(self._DELTA_EVENT_TYPES)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2241
+            ),
+            "done": JSON.validate_python(
+                sorted(self._OUTPUT_DONE_EVENT_TYPES)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2254
+            ),
         }
         return JSON.validate_python(frame)
 
@@ -270,7 +280,7 @@ def connect(
 
 def request_defaults(
     fill_missing: dict[str, JsonValue], overrides: dict[str, JsonValue]
-) -> ResponsesWebSocketRequestDefaults:
+) -> ResponsesWebSocketRequestDefaults:  # ast-grep-ignore: no-long-names
     return ResponsesWebSocketRequestDefaults(
         fill_missing=OBJECTS.validate_python(fill_missing),
         overrides=OBJECTS.validate_python(overrides),

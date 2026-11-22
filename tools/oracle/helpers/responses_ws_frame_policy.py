@@ -107,7 +107,7 @@ class Probe(Protocol):
     user_api_key_dict: UserAPIKeyAuth | None
     quota_callbacks: tuple[ProjectQuotaCallback, ...]
     output_guardrail_callbacks: list[PresidioGuardrailCallback]
-    request_defaults: ResponsesWebSocketRequestDefaults | None
+    request_defaults: ResponsesWebSocketRequestDefaults | None  # ast-grep-ignore: no-long-names
 
     async def quota_view(
         self, socket: Socket, calls: list[JsonValue], message: str
@@ -134,7 +134,7 @@ class Runtime(Protocol):
     ) -> Probe: ...
     def request_defaults(
         self, fill_missing: dict[str, JsonValue], overrides: dict[str, JsonValue]
-    ) -> ResponsesWebSocketRequestDefaults: ...
+    ) -> ResponsesWebSocketRequestDefaults: ...  # ast-grep-ignore: no-long-names
 
 
 __path__ = [str(Path(__file__).with_suffix(""))]
