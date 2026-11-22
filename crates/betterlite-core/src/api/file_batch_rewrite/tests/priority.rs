@@ -101,7 +101,7 @@ async fn content_blocks_are_changes_not_problems() {
             ("r2", Answer::Block(blocked("g"))),
             ("r3", Answer::Block(blocked("g"))),
         ],
-        Probe::new(Arc::clone(&source.reads)),
+        Probe::new(Arc::clone(&source.traces.reads)),
     );
     let spool = Spool::default();
     let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
@@ -135,7 +135,7 @@ fn shape_failure(line: usize) -> ScanProblem<FakeFailure> {
 async fn scan_file(rows: &[&str], answers: Vec<(&str, Answer)>) -> ScanFile<Spool, FakeFailure> {
     let tasks = TaskTracker::new();
     let source = CountedBody::new(rows.join("\n"));
-    let hook = ScriptedHook::with(answers, Probe::new(Arc::clone(&source.reads)));
+    let hook = ScriptedHook::with(answers, Probe::new(Arc::clone(&source.traces.reads)));
     let spool = Spool::default();
     timed_scan(&source.body, &hook, &spool, &tasks)
         .await

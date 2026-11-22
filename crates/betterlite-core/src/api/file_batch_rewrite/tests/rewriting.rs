@@ -51,7 +51,7 @@ async fn rewrite_preserves_unedited() {
     );
     assert_eq!(offset, 0);
     assert_eq!(length, u64::try_from(REWRITE.len()).unwrap());
-    let seeks = source.seeks.lock().unwrap();
+    let seeks = source.traces.seeks.lock().unwrap();
     assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
     assert!(!rewritten.is_closed());
 }
@@ -70,7 +70,7 @@ async fn rewrite_of_dropped_rows_is_empty() {
         .await
         .expect("the rewrite succeeds");
     assert!(rewritten.read_to_end(&tasks).await.unwrap().is_empty());
-    let seeks = source.seeks.lock().unwrap();
+    let seeks = source.traces.seeks.lock().unwrap();
     assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
 }
 
@@ -139,7 +139,7 @@ async fn rewrite_reads_run_on_the_blocking_port() {
         rewritten.read_to_end(&tasks).await.unwrap(),
         lines_of(3).into_bytes()
     );
-    let reads = source.threads.lock().unwrap();
+    let reads = source.traces.threads.lock().unwrap();
     assert!(!reads.is_empty());
     assert!(
         reads.iter().all(|read| *read != caller),

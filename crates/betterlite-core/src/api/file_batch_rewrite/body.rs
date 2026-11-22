@@ -6,7 +6,8 @@ use tokio::task::JoinError;
 use tokio_util::task::TaskTracker;
 
 use crate::api::file_batch_guardrails::error::BatchGuardrailError;
-use crate::api::file_batch_guardrails::lines::{RawLine, iter_lines, iter_records};
+use crate::api::file_batch_guardrails::lines::iter_lines;
+use crate::api::file_batch_guardrails::record_json::load_record;
 use crate::api::file_batch_guardrails::records::ParsedRecord;
 
 // What a blocking read ends with besides its window: the source's own refusal, or a blocking task the runtime cancelled
@@ -35,6 +36,21 @@ impl<Source> Clone for UploadBody<Source> {
     }
 }
 
+// One non-blank line as the record it must hold, under its physical line number
+pub(super) fn record_of(
+    line_number: usize,
+    bytes: Vec<u8>,
+) -> Result<ParsedRecord, BatchGuardrailError> {
+    let payload = load_record(&bytes).map_err(|source| BatchGuardrailError::Record {
+        line_number,
+        source,
+    })?;
+    Ok(ParsedRecord {
+        line_number,
+        payload,
+    })
+}
+
 impl<Source> UploadBody<Source>
 where
     Source: Send + 'static,
@@ -46,40 +62,48 @@ where
         }
     }
 
-    // Up to limit records numbered from first, with the physical lines this request consumed
-    pub(super) async fn records(
+    // Up to limit items numbered from first, read on the blocking port, with the physical lines this request consumed
+    pub(super) async fn window<Item, Parse>(
         &self,
         tasks: &TaskTracker,
         first: usize,
         limit: usize,
-    ) -> Result<(Vec<ParsedRecord>, usize), BodyError>
+        parse: Parse,
+    ) -> Result<(Vec<Item>, usize), BodyError>
     where
         Source: BufRead,
+        Item: Send + 'static,
+        Parse: Fn(usize, Vec<u8>) -> Result<Item, BatchGuardrailError> + Send + 'static,
     {
         let body = self.clone();
         tasks
-            .spawn_blocking(move || body.read_records(first, limit))
+            .spawn_blocking(move || body.read_window(first, limit, parse))
             .await
             .map_err(|source| BodyError::Task { source })?
             .map_err(BodyError::from)
     }
 
-    // Up to limit raw lines numbered from first, with the physical lines this request consumed
-    pub(super) async fn lines(
+    fn read_window<Item, Parse>(
         &self,
-        tasks: &TaskTracker,
         first: usize,
         limit: usize,
-    ) -> Result<(Vec<RawLine>, usize), BodyError>
+        parse: Parse,
+    ) -> Result<(Vec<Item>, usize), BatchGuardrailError>
     where
         Source: BufRead,
+        Parse: Fn(usize, Vec<u8>) -> Result<Item, BatchGuardrailError>,
     {
-        let body = self.clone();
-        tasks
-            .spawn_blocking(move || body.read_lines(first, limit))
-            .await
-            .map_err(|source| BodyError::Task { source })?
-            .map_err(BodyError::from)
+        let mut state = self.lock();
+        let base = first.saturating_sub(1);
+        let mut kept = Vec::new();
+        let mut consumed = 0_usize;
+        for line in iter_lines(&mut *state).take(limit) {
+            let line = line?;
+            consumed = line.line_number;
+            kept.push(parse(line.line_number.saturating_add(base), line.bytes)?);
+        }
+        drop(state);
+        Ok((kept, consumed))
     }
 
     // Offset 0 on the blocking port, so a disk-backed body never seeks on a runtime worker
@@ -95,66 +119,6 @@ where
             Ok(sought) => sought,
             Err(source) => Err(io::Error::other(source)),
         }
-    }
-
-    // The request stops right after its last record, so that record's line number is how many lines the file has moved on
-    fn read_records(
-        &self,
-        first: usize,
-        limit: usize,
-    ) -> Result<(Vec<ParsedRecord>, usize), BatchGuardrailError>
-    where
-        Source: BufRead,
-    {
-        let mut state = self.lock();
-        let base = first.saturating_sub(1);
-        let mut records = Vec::new();
-        for record in iter_records(&mut *state).take(limit) {
-            match record {
-                Ok(mut record) => {
-                    record.line_number = record.line_number.saturating_add(base);
-                    records.push(record);
-                }
-                Err(BatchGuardrailError::Record {
-                    line_number,
-                    source,
-                }) => {
-                    return Err(BatchGuardrailError::Record {
-                        line_number: line_number.saturating_add(base),
-                        source,
-                    });
-                }
-                Err(read @ BatchGuardrailError::Read { .. }) => return Err(read),
-            }
-        }
-        let consumed = records
-            .last()
-            .map_or(0, |record| record.line_number.saturating_sub(base));
-        drop(state);
-        Ok((records, consumed))
-    }
-
-    fn read_lines(
-        &self,
-        first: usize,
-        limit: usize,
-    ) -> Result<(Vec<RawLine>, usize), BatchGuardrailError>
-    where
-        Source: BufRead,
-    {
-        let mut state = self.lock();
-        let base = first.saturating_sub(1);
-        let mut lines = Vec::new();
-        for line in iter_lines(&mut *state).take(limit) {
-            let mut line = line?;
-            line.line_number = line.line_number.saturating_add(base);
-            lines.push(line);
-        }
-        let consumed = lines
-            .last()
-            .map_or(0, |line| line.line_number.saturating_sub(base));
-        drop(state);
-        Ok((lines, consumed))
     }
 
     pub(super) fn lock(&self) -> MutexGuard<'_, Source> {

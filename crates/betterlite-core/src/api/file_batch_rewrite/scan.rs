@@ -6,7 +6,7 @@ use futures_util::future::join_all;
 use indexmap::IndexMap;
 use tokio_util::task::TaskTracker;
 
-use super::body::UploadBody;
+use super::body::{UploadBody, record_of};
 use super::error::ScanFileError;
 use super::rewind::{RewindOnDrop, settle_spool};
 use super::spool::{OwnedSpool, Spool};
@@ -119,7 +119,7 @@ where
     };
     let mut first = 1_usize;
     loop {
-        let (window, consumed) = body.records(tasks, first, SCAN_WINDOW).await?;
+        let (window, consumed) = body.window(tasks, first, SCAN_WINDOW, record_of).await?;
         first = first.saturating_add(consumed);
         if window.is_empty() {
             break;

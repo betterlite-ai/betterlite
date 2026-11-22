@@ -129,7 +129,7 @@ async fn scan_spools_the_rewritten_bytes_and_their_span() {
     let source = CountedBody::new(format!("\n{ACCENTED_ROW}\n{KEPT_ROW}"));
     let hook = ScriptedHook::with(
         vec![("r1", Answer::Replace(accented()))],
-        Probe::new(Arc::clone(&source.reads)),
+        Probe::new(Arc::clone(&source.traces.reads)),
     );
     let spool = Spool::default();
     let outcome = timed_scan(&source.body, &hook, &spool, &tasks)

@@ -76,7 +76,11 @@ where
     let mut wrote_any = false;
     let mut first = 1_usize;
     loop {
-        let (lines, consumed) = body.lines(tasks, first, SCAN_WINDOW).await?;
+        let (lines, consumed) = body
+            .window(tasks, first, SCAN_WINDOW, |line_number, bytes| {
+                Ok(RawLine { line_number, bytes })
+            })
+            .await?;
         first = first.saturating_add(consumed);
         if lines.is_empty() {
             break;

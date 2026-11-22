@@ -26,7 +26,7 @@ async fn window_failure_barrier() {
     let failure = raised("r2", 503);
     let hook = ScriptedHook::with(
         vec![("r2", Answer::Raise(failure.clone()))],
-        Probe::new(Arc::clone(&source.reads)),
+        Probe::new(Arc::clone(&source.traces.reads)),
     )
     .behind_gate(Barrier::new(SCAN_WINDOW));
     let spool = Spool::default();
@@ -49,8 +49,8 @@ async fn window_failure_barrier() {
     drop(started);
     assert_eq!(hook.probe.completed.lock().unwrap().len(), 32);
     assert_eq!(hook.probe.finished.lock().unwrap().len(), 32);
-    assert_eq!(source.reads.load(Ordering::SeqCst), 32);
-    let seeks = source.seeks.lock().unwrap();
+    assert_eq!(source.traces.reads.load(Ordering::SeqCst), 32);
+    let seeks = source.traces.seeks.lock().unwrap();
     assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
     assert!(spool.is_closed());
 }
@@ -60,7 +60,7 @@ async fn window_failure_barrier() {
 async fn windows_scan_without_failure() {
     let tasks = TaskTracker::new();
     let source = CountedBody::new(lines_of(65));
-    let hook = ScriptedHook::reversing(Probe::new(Arc::clone(&source.reads)), 65);
+    let hook = ScriptedHook::reversing(Probe::new(Arc::clone(&source.traces.reads)), 65);
     let spool = Spool::default();
     let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
         .await
@@ -78,8 +78,8 @@ async fn windows_scan_without_failure() {
         hook.probe.finished.lock().unwrap().clone(),
         reverse_completion()
     );
-    assert_eq!(source.reads.load(Ordering::SeqCst), 66);
-    let seeks = source.seeks.lock().unwrap();
+    assert_eq!(source.traces.reads.load(Ordering::SeqCst), 66);
+    let seeks = source.traces.seeks.lock().unwrap();
     assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
     assert!(!result.redactions.is_closed());
     assert!(!spool.is_closed());
@@ -91,13 +91,13 @@ async fn upload_reads_run_on_the_blocking_port() {
     let tasks = TaskTracker::new();
     let caller = thread::current().id();
     let source = CountedBody::new(lines_of(3));
-    let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.reads)));
+    let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.traces.reads)));
     let spool = Spool::default();
     let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
         .await
         .expect("a scan answers");
     assert!(matches!(outcome, ScanFile::Scanned(_)));
-    let reads = source.threads.lock().unwrap();
+    let reads = source.traces.threads.lock().unwrap();
     assert!(!reads.is_empty());
     assert!(
         reads.iter().all(|read| *read != caller),

@@ -97,21 +97,25 @@ where
         .expect("the scan did not finish in time")
 }
 
+// What a counting source records: the block reads it served, and every seek and reading thread it was asked for
+#[derive(Default)]
+pub(super) struct Traces {
+    pub(super) reads: Arc<AtomicUsize>,
+    pub(super) seeks: Mutex<Vec<SeekFrom>>,
+    pub(super) threads: Mutex<Vec<ThreadId>>,
+}
+
 // A seekable upload body that counts the block reads the scan makes and records every seek and reading thread it asks for
 pub(super) struct CountingSource {
     inner: Cursor<Vec<u8>>,
-    pub(super) reads: Arc<AtomicUsize>,
-    pub(super) seeks: Arc<Mutex<Vec<SeekFrom>>>,
-    pub(super) threads: Arc<Mutex<Vec<ThreadId>>>,
+    pub(super) traces: Arc<Traces>,
 }
 
 impl CountingSource {
     pub(super) fn new(text: String) -> Self {
         Self {
             inner: Cursor::new(text.into_bytes()),
-            reads: Arc::new(AtomicUsize::new(0)),
-            seeks: Arc::new(Mutex::new(Vec::new())),
-            threads: Arc::new(Mutex::new(Vec::new())),
+            traces: Arc::new(Traces::default()),
         }
     }
 }
@@ -132,8 +136,9 @@ impl BufRead for CountingSource {
     }
 
     fn read_until(&mut self, byte: u8, buf: &mut Vec<u8>) -> io::Result<usize> {
-        self.reads.fetch_add(1, Ordering::SeqCst);
-        self.threads
+        self.traces.reads.fetch_add(1, Ordering::SeqCst);
+        self.traces
+            .threads
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(ThreadId::current());
@@ -143,7 +148,8 @@ impl BufRead for CountingSource {
 
 impl Seek for CountingSource {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.seeks
+        self.traces
+            .seeks
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(pos);
@@ -154,22 +160,16 @@ impl Seek for CountingSource {
 // A counting source already handed to the blocking port, with its read, seek and thread tallies kept reachable
 pub(super) struct CountedBody {
     pub(super) body: UploadBody<CountingSource>,
-    pub(super) reads: Arc<AtomicUsize>,
-    pub(super) seeks: Arc<Mutex<Vec<SeekFrom>>>,
-    pub(super) threads: Arc<Mutex<Vec<ThreadId>>>,
+    pub(super) traces: Arc<Traces>,
 }
 
 impl CountedBody {
     pub(super) fn new(text: String) -> Self {
         let source = CountingSource::new(text);
-        let reads = Arc::clone(&source.reads);
-        let seeks = Arc::clone(&source.seeks);
-        let threads = Arc::clone(&source.threads);
+        let traces = Arc::clone(&source.traces);
         Self {
             body: UploadBody::new(source),
-            reads,
-            seeks,
-            threads,
+            traces,
         }
     }
 }

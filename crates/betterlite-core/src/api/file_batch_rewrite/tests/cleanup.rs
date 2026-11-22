@@ -26,7 +26,7 @@ use crate::api::file_batch_rewrite::spool::{Spool, SpoolError};
 async fn scan_and_spool_cleanup() {
     let tasks = TaskTracker::new();
     let source = CountedBody::new(lines_of(3));
-    let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.reads)));
+    let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.traces.reads)));
     let spool = Spool::default();
     let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
         .await
@@ -39,14 +39,14 @@ async fn scan_and_spool_cleanup() {
     assert!(result.redactions.is_closed());
     assert!(spool.is_closed());
     assert_eq!(
-        source.seeks.lock().unwrap().last(),
+        source.traces.seeks.lock().unwrap().last(),
         Some(&SeekFrom::Start(0))
     );
 
     let changed_source = CountedBody::new(lines_of(2));
     let changed_hook = ScriptedHook::with(
         vec![("r1", Answer::Rewrite)],
-        Probe::new(Arc::clone(&changed_source.reads)),
+        Probe::new(Arc::clone(&changed_source.traces.reads)),
     );
     let changed_spool = Spool::default();
     let changed = timed_scan(&changed_source.body, &changed_hook, &changed_spool, &tasks)
@@ -59,7 +59,7 @@ async fn scan_and_spool_cleanup() {
     assert_eq!(changed_result.changes.len(), 1);
     assert!(!changed_result.redactions.is_closed());
     assert!(!changed_spool.is_closed());
-    let changed_seeks = changed_source.seeks.lock().unwrap();
+    let changed_seeks = changed_source.traces.seeks.lock().unwrap();
     assert_eq!(changed_seeks.last(), Some(&SeekFrom::Start(0)));
 }
 
@@ -67,7 +67,7 @@ async fn scan_and_spool_cleanup() {
 async fn a_parse_failure_closes_the_spool_and_rewinds() {
     let tasks = TaskTracker::new();
     let source = CountedBody::new("not json\n{\"body\":{\"messages\":[]}}".to_owned());
-    let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.reads)));
+    let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.traces.reads)));
     let spool = Spool::default();
     let outcome = timed_scan(&source.body, &hook, &spool, &tasks).await;
     match outcome {
@@ -75,8 +75,8 @@ async fn a_parse_failure_closes_the_spool_and_rewinds() {
         other => panic!("the first line is not a record, got {other:?}"),
     }
     assert!(spool.is_closed());
-    assert_eq!(source.reads.load(Ordering::SeqCst), 1);
-    let seeks = source.seeks.lock().unwrap();
+    assert_eq!(source.traces.reads.load(Ordering::SeqCst), 1);
+    let seeks = source.traces.seeks.lock().unwrap();
     assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
 }
 
@@ -87,7 +87,7 @@ async fn a_hook_failure_closes_the_spool_and_rewinds() {
     let failure = raised("r1", 502);
     let hook = ScriptedHook::with(
         vec![("r1", Answer::Raise(failure.clone()))],
-        Probe::new(Arc::clone(&source.reads)),
+        Probe::new(Arc::clone(&source.traces.reads)),
     );
     let spool = Spool::default();
     let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
@@ -100,7 +100,7 @@ async fn a_hook_failure_closes_the_spool_and_rewinds() {
         }
     }
     assert!(spool.is_closed());
-    let seeks = source.seeks.lock().unwrap();
+    let seeks = source.traces.seeks.lock().unwrap();
     assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
 }
 
@@ -111,7 +111,7 @@ async fn a_write_failure_rewinds_the_source() {
     let source = CountedBody::new(lines_of(2));
     let hook = ScriptedHook::with(
         vec![("r1", Answer::Rewrite)],
-        Probe::new(Arc::clone(&source.reads)),
+        Probe::new(Arc::clone(&source.traces.reads)),
     );
     let spool = Spool::default();
     spool.close();
@@ -120,7 +120,7 @@ async fn a_write_failure_rewinds_the_source() {
         Err(ScanFileError::Spool(SpoolError::Closed)) => (),
         other => panic!("a closed spool cannot take a rewrite, got {other:?}"),
     }
-    let seeks = source.seeks.lock().unwrap();
+    let seeks = source.traces.seeks.lock().unwrap();
     assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
 }
 
@@ -155,10 +155,10 @@ async fn scan_and_spool_cleanup_cancellation() {
     let reached = Arc::new(Notify::new());
     let cancelled = Arc::new(AtomicUsize::new(0));
     let source = CountedBody::new(lines_of(65));
-    let seeks = Arc::clone(&source.seeks);
+    let traces = Arc::clone(&source.traces);
     let body = source.body.clone();
     let hook = ScriptedHook::cancelling(
-        Probe::new(Arc::clone(&source.reads)),
+        Probe::new(Arc::clone(&source.traces.reads)),
         Arc::clone(&reached),
         Arc::clone(&cancelled),
     );
@@ -176,7 +176,7 @@ async fn scan_and_spool_cleanup_cancellation() {
     waiting.wait().await;
     assert_eq!(cancelled.load(Ordering::SeqCst), 32);
     assert!(observed.is_closed());
-    let recorded = seeks.lock().unwrap();
+    let recorded = traces.seeks.lock().unwrap();
     assert_eq!(recorded.last(), Some(&SeekFrom::Start(0)));
 }
 
