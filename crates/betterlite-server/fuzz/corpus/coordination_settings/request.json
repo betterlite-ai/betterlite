@@ -1,0 +1,1 @@
+{"settings": {"host": "cache.internal", "port": 6379, "password": "os.environ/REDIS_PASSWORD", "ssl": false, "startup_nodes": [{"host": "127.0.0.1", "port": 7001}]}}

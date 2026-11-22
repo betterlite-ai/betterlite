@@ -1,0 +1,32 @@
+kind: helper
+name: buffered-thinking-split
+call:
+  bedrock_reasoning_stream:
+    step:
+      buffered:
+        reply:
+          id: chatcmpl-1
+          created: 1700000000
+          model: "openai.gpt-oss-20b-1:0"
+          object: chat.completion
+          choices:
+            - {index: 0, finish_reason: stop, message: {role: assistant, content: "<reasoning>thin</reasoning>\n\nbody", reasoning_content: "pre "}}
+            - {index: 1, finish_reason: stop, message: {role: assistant, content: "<reasoning></reasoning>  hi"}}
+            - {index: 2, finish_reason: length, message: {role: assistant, content: null}}
+          usage: {prompt_tokens: 3, completion_tokens: 4, total_tokens: 7}
+        headers: {x-request-id: r1, x-ratelimit-remaining-requests: "9"}
+calls:
+  - bedrock_reasoning_stream:
+      step:
+        buffered:
+          reply:
+            id: chatcmpl-2
+            created: 1700000001
+            model: "m"
+            object: chat.completion
+            choices:
+              - {index: 0, finish_reason: stop, message: {role: assistant, content: "<reasoning>only</reasoning>", reasoning_content: ""}}
+              - {index: 1, finish_reason: stop, message: {role: assistant, content: "hello", reasoning_content: "raw "}}
+          headers: {x-request-id: r2}
+env: {}
+compare: {ignore: []}

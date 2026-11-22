@@ -1,0 +1,30 @@
+kind: sdk_http
+name: sdk-http-speech-call-plan-async-speech-error-attribution
+env: {}
+call:
+  speech_call_plan:
+    steps:
+      - {}
+      - speech:
+          model: not-a-model
+          voice: alloy
+          api_key: sk-oracle
+      - speech:
+          model: openai/tts-1
+          voice: alloy
+          api_key: sk-oracle
+          api_base: '$API_BASE'
+upstream:
+  - status: 429
+    headers: {content-type: application/json}
+    body:
+      error: {message: slow down, type: rate_limit_error, param: model, code: rate_limit}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, accept, content-type]
+  ignore:
+    - {pointer: /speech_call_plan/value/steps/1/failure/message, why: LiteLLM prefixes a raised litellm.BadRequestError with its class name and betterlite reports the source message}
+    - {pointer: /speech_call_plan/value/steps/2/failure/type, why: "betterlite's B011 envelope names a 429 throttling_error, where LiteLLM keeps the type its exception class sets"}
+    - {pointer: /speech_call_plan/value/steps/2/failure/code, why: "betterlite's B011 envelope reports the status string as the openai code, where LiteLLM keeps the provider body's code"}
+    - {pointer: /speech_call_plan/value/steps/2/failure/message, why: LiteLLM's message names its exception class and renders the error body with Python's dict repr}

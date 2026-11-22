@@ -517,6 +517,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "session_log_json"
+path = "fuzz_targets/session_log_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "owned_response_id"
 path = "fuzz_targets/owned_response_id.rs"
 test = false
