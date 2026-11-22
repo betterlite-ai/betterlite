@@ -2,15 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_anthropic::files::api::FilesApi as AnthropicApi;
-use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
-use betterlite_core::api::assistant_threads::error::sdk_class;
-use betterlite_core::api::file_provider_read::error::{
-    FileReadError, UNSUPPORTED_BODY, UNSUPPORTED_MODEL, UNSUPPORTED_URL,
-};
-use betterlite_core::api::file_provider_read::target::FileListing;
+use betterlite_core::api::file_provider_read::target::{FileListing, ReadAnswer, ReadOperation};
 use betterlite_core::api::file_provider_read::{
     CallerClient, FileProviderRead, Kwarg, ReadContext, ReadEntry, ReadKwargs, ReadProvider,
 };
@@ -18,20 +13,19 @@ use betterlite_core::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
 use betterlite_core::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::files::FilesApi;
-use betterlite_openai::files::error::{FilesError, StatusError};
 use chrono::Utc;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
-use self::wire::{Handler, HttpDispatch, ReadWireError};
+use self::outcome::StepOutcome;
+use self::wire::{Handler, HttpDispatch};
 use super::OracleLimits;
 use super::call_kind::CallKind;
 use super::error::SdkHttpError;
-use super::result::Failure;
 use super::result::kinds::SdkResult;
 
+mod outcome;
 mod wire;
 
 // the header a supplied HTTPHandler's own client adds, so the wire shows whether the handler was used
@@ -99,30 +93,6 @@ pub struct Step {
 #[serde(deny_unknown_fields)]
 pub struct Call {
     pub steps: Vec<Step>,
-}
-
-// the placeholder response LiteLLM attaches to its unsupported-provider 400
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Placeholder {
-    pub body: String,
-    pub method: String,
-    pub url: String,
-    pub model: String,
-    pub provider: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StepOutcome {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub file: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub listing: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub failure: Option<Failure>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub placeholder: Option<Placeholder>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -222,23 +192,24 @@ async fn run_step(
         Function::FileRetrieve | Function::FileList => ReadEntry::Sync,
         Function::AfileRetrieve | Function::AfileList => ReadEntry::Async,
     };
+    let operation = match step.function {
+        Function::FileRetrieve | Function::AfileRetrieve => ReadOperation::Retrieve {
+            file_id: step.file_id.as_str(),
+        },
+        Function::FileList | Function::AfileList => ReadOperation::List {
+            purpose: step.purpose.as_deref(),
+        },
+    };
     let supplied = context(step, handler);
-    let purpose = step.purpose.as_deref();
+    let answer = match read.run(mode, operation, &call, supplied).await {
+        Ok(answer) => answer,
+        Err(error) => return StepOutcome::failed(&error),
+    };
     // the branch's own list shape comes back as it is: a page from the SDK, a bare list from a provider config
-    let (file, listing) = match step.function {
-        Function::FileRetrieve | Function::AfileRetrieve => {
-            match read.retrieve(mode, &step.file_id, &call, supplied).await {
-                Ok(file) => (Some(serde_json::to_value(file)), None),
-                Err(error) => return failure(&error),
-            }
-        }
-        Function::FileList | Function::AfileList => {
-            match read.list(mode, purpose, &call, supplied).await {
-                Ok(FileListing::Page(page)) => (None, Some(serde_json::to_value(page))),
-                Ok(FileListing::Files(files)) => (None, Some(serde_json::to_value(files))),
-                Err(error) => return failure(&error),
-            }
-        }
+    let (file, listing) = match answer {
+        ReadAnswer::File(file) => (Some(serde_json::to_value(file)), None),
+        ReadAnswer::Listing(FileListing::Page(page)) => (None, Some(serde_json::to_value(page))),
+        ReadAnswer::Listing(FileListing::Files(files)) => (None, Some(serde_json::to_value(files))),
     };
     Ok(StepOutcome {
         file: file.transpose().map_err(SdkHttpError::Serialize)?,
@@ -262,70 +233,4 @@ const fn context<'call>(step: &Step, handler: &'call Handler) -> ReadContext<'ca
         },
         logger: None,
     }
-}
-
-// LiteLLM's own 400 and its ValueErrors are what both sides raise; a provider status error keeps the SDK's fields
-fn failure(error: &FileReadError<ReadWireError>) -> Result<StepOutcome, SdkHttpError> {
-    let (failure, placeholder) = match error {
-        FileReadError::Unsupported { provider, function } => (
-            Failure {
-                class: "BadRequestError".to_owned(),
-                status: 400,
-                kind: Some(None),
-                param: Some(None),
-                code: Some(None),
-                message: format!("litellm.BadRequestError: {error}"),
-            },
-            Some(Placeholder {
-                body: UNSUPPORTED_BODY.to_owned(),
-                method: function.request_method().to_owned(),
-                url: UNSUPPORTED_URL.to_owned(),
-                model: UNSUPPORTED_MODEL.to_owned(),
-                provider: provider.clone(),
-            }),
-        ),
-        FileReadError::Timeout(_) | FileReadError::UnknownProvider { .. } => (
-            Failure {
-                class: "ValueError".to_owned(),
-                status: 0,
-                kind: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            },
-            None,
-        ),
-        FileReadError::Dispatch(wire) => (status_failure(wire)?, None),
-    };
-    Ok(StepOutcome {
-        file: None,
-        listing: None,
-        failure: Some(failure),
-        placeholder,
-    })
-}
-
-fn status_failure(error: &ReadWireError) -> Result<Failure, SdkHttpError> {
-    let status: &StatusError = match error {
-        ReadWireError::OpenAi(FilesError::Status(status))
-        | ReadWireError::Azure(AzureFilesError::Files {
-            source: FilesError::Status(status),
-        }) => status.as_ref(),
-        ReadWireError::OpenAi(_)
-        | ReadWireError::Azure(_)
-        | ReadWireError::Anthropic(_)
-        | ReadWireError::Unbuilt { .. }
-        | ReadWireError::Reply
-        | ReadWireError::Header { .. } => {
-            return Err(SdkHttpError::Invalid(error.to_string()));
-        }
-    };
-    Ok(Failure {
-        class: sdk_class(status.status).to_owned(),
-        status: status.status,
-        kind: Some(status.error_type.clone()),
-        param: Some(status.param.clone()),
-        code: Some(status.code.clone()),
-        message: status.message.clone(),
-    })
 }

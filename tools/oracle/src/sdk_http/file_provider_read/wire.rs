@@ -8,18 +8,19 @@ use betterlite_anthropic::files::request::{FileCall, FilesClient as AnthropicCli
 use betterlite_azure::azure_files::client::auth::FileAuth;
 use betterlite_azure::azure_files::client::{Opened, SelectedClient};
 use betterlite_azure::azure_files::error::AzureFilesError;
-use betterlite_azure::azure_files::{Operation, Reply, call};
+use betterlite_azure::azure_files::{Operation as AzureOperation, Reply, call};
 use betterlite_azure::endpoints::projection::ClientKind as AzureKind;
 use betterlite_config::sections::anthropic_credentials::Settings as AnthropicCredentials;
 use betterlite_core::api::file_provider_read::target::{
-    AzureRead, CompatibleRead, FileListing, FileReadDispatch, GenericRead, ReadMode, ReadTarget,
+    AzureRead, CompatibleRead, FileListing, FileReadDispatch, GenericRead, ReadAnswer, ReadMode,
+    ReadOperation, ReadTarget,
 };
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use betterlite_core::api::vector_store_http_write::service::ClientKind;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::files::error::FilesError;
-use betterlite_openai::files::records::{FileObject, FileQuery};
+use betterlite_openai::files::records::{FileObject, FilePage, FileQuery};
 use betterlite_openai::files::{
     ClientArgs, DEFAULT_TIMEOUT, FilesApi, FilesClient, get_openai_client, select_client,
 };
@@ -68,79 +69,67 @@ impl FileReadDispatch for HttpDispatch {
         file_config_selection("", provider)
     }
 
-    async fn retrieve(&self, target: Target<'_>, file_id: &str) -> Result<FileObject, Self::Error> {
-        match target {
-            ReadTarget::Compatible(read) => Ok(self
-                .openai
-                .retrieve_file(&compatible_client(&read)?, file_id)
-                .await?),
-            ReadTarget::Azure(read) => {
-                match call(
-                    &azure_client(&read)?,
-                    &self.openai.transport,
-                    Operation::Retrieve(file_id),
-                )
-                .await?
-                {
-                    Reply::Object(object) => Ok(object),
-                    Reply::Content(_) | Reply::Page(_) | Reply::Deleted(_) => {
-                        Err(ReadWireError::Reply)
-                    }
-                }
+    async fn read(
+        &self,
+        target: Target<'_>,
+        operation: ReadOperation<'_>,
+    ) -> Result<ReadAnswer, Self::Error> {
+        match (target, operation) {
+            (ReadTarget::Compatible(read), ReadOperation::Retrieve { file_id }) => {
+                let client = compatible_client(&read)?;
+                let object = self.openai.retrieve_file(&client, file_id).await?;
+                Ok(ReadAnswer::File(Box::new(object)))
             }
-            ReadTarget::Generic(read) => {
+            (ReadTarget::Compatible(read), ReadOperation::List { purpose }) => {
+                let client = compatible_client(&read)?;
+                let query = FileQuery {
+                    purpose: purpose.map(str::to_owned),
+                };
+                let page = self.openai.list_files(&client, &query).await?;
+                Ok(ReadAnswer::Listing(FileListing::Page(Box::new(page))))
+            }
+            (ReadTarget::Azure(read), asked) => self.azure_answer(&read, asked).await,
+            (ReadTarget::Generic(read), ReadOperation::Retrieve { file_id }) => {
                 let (client, headers) = self.anthropic_client(&read)?;
                 let file = FileCall {
                     file_id,
                     headers: &headers,
                 };
-                Ok(self.anthropic.retrieve_file(&client, &file).await?)
+                let object = self.anthropic.retrieve_file(&client, &file).await?;
+                Ok(ReadAnswer::File(Box::new(object)))
             }
-        }
-    }
-
-    async fn list(
-        &self,
-        target: Target<'_>,
-        purpose: Option<&str>,
-    ) -> Result<FileListing, Self::Error> {
-        let query = FileQuery {
-            purpose: purpose.map(str::to_owned),
-        };
-        match target {
-            ReadTarget::Compatible(read) => {
-                let client = compatible_client(&read)?;
-                let page = self.openai.list_files(&client, &query).await?;
-                Ok(FileListing::Page(Box::new(page)))
-            }
-            ReadTarget::Azure(read) => {
-                match call(
-                    &azure_client(&read)?,
-                    &self.openai.transport,
-                    Operation::List(purpose),
-                )
-                .await?
-                {
-                    Reply::Page(page) => Ok(FileListing::Page(Box::new(page))),
-                    Reply::Object(_) | Reply::Content(_) | Reply::Deleted(_) => {
-                        Err(ReadWireError::Reply)
-                    }
-                }
-            }
-            ReadTarget::Generic(read) => {
+            (ReadTarget::Generic(read), ReadOperation::List { purpose }) => {
                 let (client, headers) = self.anthropic_client(&read)?;
                 let listed = ListCall {
                     purpose,
                     headers: &headers,
                 };
                 let files = self.anthropic.list_files(&client, &listed).await?;
-                Ok(FileListing::Files(files))
+                Ok(ReadAnswer::Listing(FileListing::Files(files)))
             }
         }
     }
 }
 
 impl HttpDispatch {
+    // the azure call both operations share, whose reply kind must be the one the operation asks for
+    async fn azure_answer(
+        &self,
+        read: &AzureRead,
+        operation: ReadOperation<'_>,
+    ) -> Result<ReadAnswer, ReadWireError> {
+        let asked = match operation {
+            ReadOperation::Retrieve { file_id } => AzureOperation::Retrieve(file_id),
+            ReadOperation::List { purpose } => AzureOperation::List(purpose),
+        };
+        let client = azure_client(read)?;
+        match call(&client, &self.openai.transport, asked).await? {
+            Reply::Object(object) => azure_file(operation, object),
+            Reply::Page(page) => azure_page(operation, page),
+            Reply::Content(_) | Reply::Deleted(_) => Err(ReadWireError::Reply),
+        }
+    }
+
     // only the anthropic config is sent; a supplied handler of the call's own mode lends its headers
     fn anthropic_client(
         &self,
@@ -183,6 +172,25 @@ impl HttpDispatch {
             timeout: deadline(read.mode),
         };
         Ok((client, headers))
+    }
+}
+
+// a reply carrying one file, which only a retrieve operation asked for
+fn azure_file(
+    operation: ReadOperation<'_>,
+    object: FileObject,
+) -> Result<ReadAnswer, ReadWireError> {
+    match operation {
+        ReadOperation::Retrieve { .. } => Ok(ReadAnswer::File(Box::new(object))),
+        ReadOperation::List { .. } => Err(ReadWireError::Reply),
+    }
+}
+
+// a reply carrying one page, which only a list operation asked for
+fn azure_page(operation: ReadOperation<'_>, page: FilePage) -> Result<ReadAnswer, ReadWireError> {
+    match operation {
+        ReadOperation::List { .. } => Ok(ReadAnswer::Listing(FileListing::Page(Box::new(page)))),
+        ReadOperation::Retrieve { .. } => Err(ReadWireError::Reply),
     }
 }
 

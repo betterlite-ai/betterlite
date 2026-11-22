@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Coroutine
-from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, runtime_checkable
 
 import httpx
 import litellm
@@ -170,6 +170,11 @@ def call_litellm(function: Function, values: ReadValues) -> ReadResult:
             return API.afile_list(**values)
 
 
+@runtime_checkable
+class HasDump(Protocol):
+    def model_dump_json(self, *, exclude_none: bool = False) -> str: ...
+
+
 def settle(result: ReadResult) -> JsonValue:
     match result:
         case Coroutine():
@@ -177,7 +182,7 @@ def settle(result: ReadResult) -> JsonValue:
                 return settle(runner.run(result))
         case list():
             return [JSON.validate_json(file.model_dump_json(exclude_none=True)) for file in result]
-        case BaseModel():
+        case HasDump():
             return JSON.validate_json(result.model_dump_json(exclude_none=True))
 
 
@@ -196,7 +201,7 @@ def placeholder(error: BadRequestError) -> Placeholder:
 def run_step(step: Step, api_base: str) -> StepOutcome:
     try:
         settled = settle(call_litellm(step.function, read_values(step, api_base)))
-    except BadRequestError as error:
+    except BadRequestError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219
         return StepOutcome(failure=api_failure(error), placeholder=placeholder(error))
     except openai.APIStatusError as error:
         return StepOutcome(failure=api_failure(error))
