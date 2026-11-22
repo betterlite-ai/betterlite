@@ -1,0 +1,13 @@
+kind: helper
+name: file-batch-rewrite-worst-priority-seed
+call:
+  file_batch_rewrite:
+    scenarios:
+      - problems:
+          - {"line_number": 1, "kind": "unroutable", "custom_id": "a", "url": null, "guardrail_name": null, "status": 0}
+          - {"line_number": 4, "kind": "raised", "custom_id": null, "url": null, "guardrail_name": null, "status": 503}
+      - problems:
+          - {"line_number": 9, "kind": "unscannable", "custom_id": null, "url": "/v1/embeddings", "guardrail_name": null, "status": 0}
+          - {"line_number": 3, "kind": "unparseable", "custom_id": null, "url": null, "guardrail_name": null, "status": 0}
+env: {}
+compare: {ignore: []}
