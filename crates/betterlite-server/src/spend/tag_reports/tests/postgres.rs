@@ -345,7 +345,7 @@ async fn keeps_an_unparsable_date_as_a_database_error() {
     ));
     let tags = ["a".to_owned()];
     let filtered = store
-        .daily_tag_spend("2024-01-01", "2024-01-01", Some(&tags[..]))
+        .daily_tag_spend("2024-01-01", "not-a-date", Some(&tags[..]))
         .await
         .unwrap_err();
     assert!(matches!(
