@@ -7,3 +7,4 @@ src = ["python"]
 "tests/*" = ["INP001", "S101"] # pytest finds test_package.py by path and checks with assert
 "python/betterlite/_custom_llm/*" = ["A002", "ARG002", "ASYNC109", "FBT001", "PLE0302", "PLR0913", "PLR0917", "PYI036"] # user subclasses override LiteLLM's handler signatures, so these parameters stay as LiteLLM has them
 "python/betterlite/_completion/*" = ["B006", "BLE001", "PLR0913", "PLR0917"] # LiteLLM's 44-parameter completion, its messages: list = [] defaults, the 6-parameter acount_tokens and keyword-only LiteLLM(), and its broad proxy-auth catch stay as LiteLLM has them
+"python/betterlite/_completion/acompletion.py" = ["ASYNC109"] # LiteLLM's acompletion is async and keeps the timeout parameter its signature carries
