@@ -1,5 +1,6 @@
 use betterlite_cache::backend::memory::MemoryCacheOps as _;
 use betterlite_context::local_ttl_cache::CacheValue;
+use betterlite_redis::redis_cache_admin::RedisAdminError;
 
 use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::batch::CounterBatch;
@@ -116,5 +117,8 @@ async fn the_real_redis_delete_reports_a_refused_delete() {
         .delete_redis(KEY)
         .await
         .expect_err("the breaker refuses the delete");
-    assert!(matches!(error, LayersError::Redis(_)));
+    assert!(matches!(
+        error,
+        LayersError::Admin(RedisAdminError::Breaker(_))
+    ));
 }
