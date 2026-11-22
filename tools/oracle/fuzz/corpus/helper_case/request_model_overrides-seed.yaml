@@ -1,0 +1,32 @@
+kind: helper
+name: request-model-overrides-seed
+call:
+  request_model_overrides:
+    settings:
+      credential_overrides: true
+      enforced_params: [user]
+      service_account_params: null
+      team_stale_alias_bypass: false
+    deployments:
+      - model_name: team-target
+        model: azure/gpt-4o
+        custom_llm_provider: null
+        team_id: null
+        team_public_model_name: null
+    credentials:
+      - name: pre-cred
+        values: {api_key: sk-pre}
+    calls:
+      - data: {model: public, user: u}
+        principal:
+          team_id: team-1
+          team_model_aliases: {public: team-target}
+          aliases: {}
+          metadata: null
+          team_metadata:
+            model_config:
+              public: {azure: {litellm_credentials: pre-cred}}
+          project_metadata: null
+        premium_user: true
+env: {}
+compare: {ignore: []}

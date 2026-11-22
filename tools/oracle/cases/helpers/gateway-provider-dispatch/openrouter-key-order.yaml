@@ -1,0 +1,50 @@
+kind: helper
+name: openrouter-key-order
+call:
+  b8311:
+    op: chat
+    provider: openrouter
+    model: anthropic/claude-3.5-sonnet
+    messages: [{role: user, content: hi}]
+    api_base: "{{upstream}}/passed"
+    api_key: "sk-passed"
+    globals: {api_base: "{{upstream}}/global", api_key: "sk-global", openrouter_key: "sk-litellm"}
+    env: {OPENROUTER_API_BASE: "{{upstream}}/env", OPENROUTER_API_KEY: "sk-env", OR_API_KEY: "sk-or"}
+calls:
+  - b8311:
+      op: chat
+      provider: openrouter
+      model: anthropic/claude-3.5-sonnet
+      messages: [{role: user, content: hi}]
+      api_base: "{{upstream}}/passed"
+      globals: {api_key: "sk-global", openrouter_key: "sk-litellm"}
+      env: {OPENROUTER_API_BASE: "{{upstream}}/env", OPENROUTER_API_KEY: "sk-env", OR_API_KEY: "sk-or"}
+  - b8311:
+      op: chat
+      provider: openrouter
+      model: anthropic/claude-3.5-sonnet
+      messages: [{role: user, content: hi}]
+      api_base: "{{upstream}}/passed"
+      globals: {openrouter_key: "sk-litellm"}
+      env: {OPENROUTER_API_BASE: "{{upstream}}/env", OPENROUTER_API_KEY: "sk-env", OR_API_KEY: "sk-or"}
+  - b8311:
+      op: chat
+      provider: openrouter
+      model: anthropic/claude-3.5-sonnet
+      messages: [{role: user, content: hi}]
+      env: {OPENROUTER_API_BASE: "{{upstream}}/env", OPENROUTER_API_KEY: "sk-env", OR_API_KEY: "sk-or"}
+  - b8311:
+      op: chat
+      provider: openrouter
+      model: anthropic/claude-3.5-sonnet
+      messages: [{role: user, content: hi}]
+      env: {OPENROUTER_API_BASE: "{{upstream}}/env", OR_API_KEY: "sk-or"}
+  - b8311:
+      op: chat
+      provider: openrouter
+      model: anthropic/claude-3.5-sonnet
+      messages: [{role: user, content: hi}]
+      globals: {api_base: "{{upstream}}/global"}
+      env: {OPENROUTER_API_BASE: "{{upstream}}/env", OR_API_KEY: "sk-or"}
+env: {}
+compare: {ignore: []}
