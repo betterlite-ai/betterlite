@@ -8,9 +8,8 @@ use betterlite_azure::credentials::source::{
 };
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
-use betterlite_config::sections::settings::JsonValue;
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
+use betterlite_http::proxy::outbound::{OutboundRequest, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use betterlite_openai::files::transport::{FileTransport, StreamReply};
@@ -46,21 +45,15 @@ pub(super) fn leaf_error(
 pub(super) struct Seen {
     pub(super) method: String,
     pub(super) url: String,
-    pub(super) body: Option<JsonValue>,
 }
 
 impl Seen {
     fn of(request: &OutboundRequest) -> Self {
         let mut url = request.url.clone();
         merge_query(&mut url, &request.query);
-        let body = match &request.body {
-            RequestBody::Json(bytes) => Some(serde_json::from_slice(bytes).expect("a json body")),
-            RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => None,
-        };
         Self {
             method: request.method.as_str().to_owned(),
             url: url.as_str().to_owned(),
-            body,
         }
     }
 }

@@ -147,6 +147,7 @@ fn map_future<'call, F, T, E>(
 ) -> DispatchFuture<'call>
 where
     F: Future<Output = Result<T, E>> + Send + 'call,
+    T: 'call,
     AzureResourceError: From<E>,
 {
     Box::pin(async move {

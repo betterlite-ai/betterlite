@@ -107,12 +107,12 @@ fn responses_url_rows() {
     let responses::Outcome::Url(websocket) = responses_outcome(
         &environment,
         ResponsesCall::WebsocketUrl {
-            api_base: Some("https://res.test/openai"),
+            api_base: Some("https://res.test"),
         },
     ) else {
         panic!("the websocket call returns its endpoint");
     };
-    assert_eq!(websocket, "https://res.test/openai/v1/responses");
+    assert_eq!(websocket, "wss://res.test/openai/v1/responses");
 }
 
 fn responses_resource_rows() {
