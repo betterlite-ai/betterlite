@@ -155,16 +155,16 @@ impl ReseedCache for ScriptedCache {
 impl SpendReadCache for ScriptedCache {
     fn memory_set_ttl(
         &self,
-        key: &str,
+        counter_key: &str,
         value: Decimal,
         ttl_seconds: Option<f64>,
     ) -> Result<(), ScriptFailure> {
-        self.put(key, value);
+        self.put(counter_key, value);
         let ttl = ttl_seconds
             .and_then(Decimal::from_f64_retain)
             .and_then(|seconds| u32::try_from(seconds).ok());
         let mut expiring = self.expiring.lock().unwrap_or_else(PoisonError::into_inner);
-        expiring.push((key.to_owned(), ttl));
+        expiring.push((counter_key.to_owned(), ttl));
         drop(expiring);
         Ok(())
     }

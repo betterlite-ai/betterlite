@@ -136,7 +136,7 @@ impl ReseedCache for ScriptedCache<'_> {
 impl SpendReadCache for ScriptedCache<'_> {
     fn memory_set_ttl(
         &self,
-        key: &str,
+        counter_key: &str,
         value: Decimal,
         ttl_seconds: Option<f64>,
     ) -> Result<(), ScriptedFailure> {
@@ -144,7 +144,7 @@ impl SpendReadCache for ScriptedCache<'_> {
             .and_then(Decimal::from_f64_retain)
             .and_then(|seconds| u32::try_from(seconds).ok());
         let entry = (ReseedCacheValue::Number(value), ttl);
-        self.store(key, entry);
+        self.store(counter_key, entry);
         Ok(())
     }
 
