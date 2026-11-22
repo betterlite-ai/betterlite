@@ -211,6 +211,20 @@ fn fixed_now() -> DateTime<Utc> {
         .expect("the fixed instant")
 }
 
+// deadpool builds its pool lazily, so a well-formed URL proves the store without a connection
+#[tokio::test]
+async fn database_store_resolves_the_configured_url() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(
+        "general_settings:\n  master_key: oracle-master\n  database_url: postgresql://plugin:secret@127.0.0.1:5432/plugins\n",
+    )
+    .expect("the test config");
+    let state = state_for(&config);
+    assert!(super::database_store(&state).is_some());
+}
+
 fn caller_from(identity: &str) -> AuthContext {
     let principal: Principal = serde_json::from_str(identity).expect("the test principal");
     AuthContext { principal }
