@@ -110,34 +110,29 @@ impl FileWriteProviders for OracleProviders {
             }
         }
     }
-    fn delete(
-        &self,
-        target: DeleteTarget<'_, Self>,
-    ) -> impl Future<Output = Result<FileDeleted, WireError>> + Send {
-        async move {
-            match target {
-                DeleteTarget::Config(delete) => {
-                    let (client, headers) = anthropic_transport(
-                        delete.config,
-                        delete.params.api_key,
-                        delete.params.api_base,
-                        delete.timeout,
-                        &delete.headers,
-                    )?;
-                    let call = FileCall {
-                        file_id: delete.file_id,
-                        headers: &headers,
-                    };
-                    let deleted = self.anthropic.delete_file(&client, &call).await;
-                    deleted.map_err(WireError::from)
-                }
-                DeleteTarget::OpenAi { call, file_id } => {
-                    let client = openai_client(&call)?;
-                    let deleted = self.openai.delete_file(&client, file_id).await;
-                    deleted.map_err(WireError::from)
-                }
-                DeleteTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
+    async fn delete(&self, target: DeleteTarget<'_, Self>) -> Result<FileDeleted, WireError> {
+        match target {
+            DeleteTarget::Config(delete) => {
+                let (client, headers) = anthropic_transport(
+                    delete.config,
+                    delete.params.api_key,
+                    delete.params.api_base,
+                    delete.timeout,
+                    &delete.headers,
+                )?;
+                let call = FileCall {
+                    file_id: delete.file_id,
+                    headers: &headers,
+                };
+                let deleted = self.anthropic.delete_file(&client, &call).await;
+                deleted.map_err(WireError::from)
             }
+            DeleteTarget::OpenAi { call, file_id } => {
+                let client = openai_client(&call)?;
+                let deleted = self.openai.delete_file(&client, file_id).await;
+                deleted.map_err(WireError::from)
+            }
+            DeleteTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
         }
     }
 }

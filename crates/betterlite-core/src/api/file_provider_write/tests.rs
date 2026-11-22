@@ -461,32 +461,29 @@ fn delete(mode: Mode, input: DeleteRequest) -> (Outcome<FileDeleted>, Vec<Seen>)
 }
 
 fn sent_data(seen: &[Seen]) -> FileCreate {
-    match seen {
-        [
-            Seen::OpenAiUpload(_, data)
-            | Seen::AzureUpload(_, data)
-            | Seen::ConfigUpload { data, .. },
-        ] => data.clone(),
-        other => panic!("expected one upload, saw {other:?}"),
-    }
-}
-
-fn sent_call(seen: &[Seen]) -> Credentials {
-    match seen {
-        [
-            Seen::OpenAiUpload(call, _)
-            | Seen::AzureUpload(call, _)
-            | Seen::OpenAiDelete(call, _)
-            | Seen::AzureDelete { call, .. },
-        ] => call.clone(),
-        other => panic!("expected one sdk call, saw {other:?}"),
+    let [single] = seen else {
+        panic!("expected one upload, saw {seen:?}");
+    };
+    match single {
+        Seen::OpenAiUpload(_, data)
+        | Seen::AzureUpload(_, data)
+        | Seen::ConfigUpload { data, .. } => data.clone(),
+        Seen::OpenAiDelete(..) | Seen::AzureDelete { .. } | Seen::ConfigDelete { .. } => {
+            panic!("expected an upload, saw {single:?}")
+        }
     }
 }
 
 fn sent_timeout(seen: &[Seen]) -> FineTuningTimeout {
     match seen {
         [Seen::ConfigUpload { timeout, .. } | Seen::ConfigDelete { timeout, .. }] => *timeout,
-        calls => sent_call(calls).timeout,
+        [
+            Seen::OpenAiUpload(call, _)
+            | Seen::AzureUpload(call, _)
+            | Seen::OpenAiDelete(call, _)
+            | Seen::AzureDelete { call, .. },
+        ] => call.timeout,
+        other => panic!("expected one sdk call, saw {other:?}"),
     }
 }
 
