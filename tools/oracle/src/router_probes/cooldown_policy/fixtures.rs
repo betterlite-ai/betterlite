@@ -1,20 +1,29 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_router::cooldown_decisions::policy::{CooldownPolicy, FailureThresholds};
+use betterlite_router::cooldown_policy::counter::AllowedFailsStore;
 use betterlite_router::cooldown_policy::event::{
     CooldownEvent, CooldownObservationError, CooldownObserver,
 };
+use betterlite_router::cooldown_policy::service::CooldownPolicyService;
+use betterlite_router::cooldown_state::cooldown::CooldownCache;
 use betterlite_router::cooldown_state::record::CooldownRecord;
+use betterlite_router::cooldown_state::settings::Settings as CooldownSettings;
 use betterlite_router::cooldown_state::shared::SharedCooldowns;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::routing_read_batch::store::{BatchRead, BatchReadFuture};
-use betterlite_router::routing_value_store::RouteKey;
+use betterlite_router::routing_state::Settings as CounterSettings;
+use betterlite_router::routing_state::counter::RouterCounters;
+use betterlite_router::routing_state_store::RoutingStateStore;
+use betterlite_router::routing_value_store::{Clock, RouteKey, RoutingValueStore, StoreSettings};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 
-use super::{DeploymentInput, EventOutput};
+use super::{DeploymentInput, EventOutput, Payload};
 
 pub(super) fn seconds(millis: u64) -> Result<f64, String> {
     Decimal::from(millis)
@@ -101,5 +110,72 @@ impl SharedCooldowns for FakeCooldowns {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(key.clone(), record.clone());
+    }
+}
+
+pub(super) struct ProbeFixture {
+    pub(super) service: CooldownPolicyService<RoutingStateStore>,
+    pub(super) minute_counters: RouterCounters<RoutingStateStore>,
+    pub(super) recorder: Arc<Recorder>,
+}
+
+impl ProbeFixture {
+    pub(super) fn build(payload: &Payload, clock: &Clock) -> Result<Self, String> {
+        let store_settings = StoreSettings {
+            max_size_in_memory: None,
+            default_ttl_seconds: None,
+            max_size_per_item: None,
+            loaded_max_size_per_item_kib: 1024,
+        };
+        let store = Arc::new(
+            RoutingValueStore::new(store_settings, Arc::clone(clock))
+                .map_err(|error| error.to_string())?,
+        );
+        let counters = ProbeCounters::build(Arc::clone(&store));
+        let shared: Arc<dyn SharedCooldowns> = Arc::new(FakeCooldowns::default());
+        let cooldowns = CooldownCache::new(&CooldownSettings::default(), shared, Arc::clone(clock));
+        let recorder = Arc::new(Recorder::default());
+        let observer: Arc<dyn CooldownObserver> = Arc::<Recorder>::clone(&recorder);
+        let service = CooldownPolicyService::new(
+            CooldownPolicy {
+                allowed_fails: payload.router.allowed_fails,
+                default_allowed_fails: payload.router.default_allowed_fails,
+                cooldown_time: payload.router.cooldown_time,
+                disable_cooldowns: payload.router.disable_cooldowns,
+                allowed_fails_policy: None,
+                thresholds: FailureThresholds::default(),
+            },
+            cooldowns,
+            counters.service,
+            AllowedFailsStore {
+                local: store,
+                remote: None,
+            },
+            vec![observer],
+        );
+        Ok(Self {
+            service,
+            minute_counters: counters.minute,
+            recorder,
+        })
+    }
+}
+
+struct ProbeCounters {
+    service: RouterCounters<RoutingStateStore>,
+    minute: RouterCounters<RoutingStateStore>,
+}
+
+impl ProbeCounters {
+    fn build(store: Arc<RoutingValueStore>) -> Self {
+        let counter_settings = CounterSettings {
+            sync_interval: None,
+            default_sync_interval: Duration::from_secs(60),
+            should_batch_redis_writes: false,
+        };
+        Self {
+            service: RouterCounters::new(counter_settings.clone(), Arc::clone(&store), None),
+            minute: RouterCounters::new(counter_settings, store, None),
+        }
     }
 }
