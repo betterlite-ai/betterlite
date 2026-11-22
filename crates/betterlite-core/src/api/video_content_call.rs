@@ -150,32 +150,7 @@ where
             Some(provider) => provider,
             None => decoded_provider(&request.video_id),
         };
-        let provider_id = ProviderId::from_str(&provider).map_err(|source| {
-            failure(
-                VideoContentCallError::UnknownProvider {
-                    provider: provider.clone(),
-                    source,
-                },
-                &provider,
-                &self.redactor,
-            )
-        })?;
-        let selected = self.providers.video_config(provider_id).map_err(|source| {
-            failure(
-                VideoContentCallError::Selection(source),
-                &provider,
-                &self.redactor,
-            )
-        })?;
-        let Some((config, source)) = selected else {
-            return Err(failure(
-                VideoContentCallError::Unsupported {
-                    provider: provider.clone(),
-                },
-                &provider,
-                &self.redactor,
-            ));
-        };
+        let (config, source) = self.select(&provider)?;
         log_call(logging, &kwargs, &request.video_id, &provider)
             .map_err(|error| failure(error, &provider, &self.redactor))?;
         Ok(Prepared {
@@ -189,6 +164,40 @@ where
             variant: request.variant,
             timeout: content_timeout(request.timeout, self.request_timeout),
         })
+    }
+
+    // litellm.LlmProviders(custom_llm_provider), then B3332's get_provider_video_config(model=None, provider)
+    fn select(
+        &self,
+        provider: &str,
+    ) -> Result<(&Providers::Config, &Providers::Source), VideoContentCallError> {
+        let provider_id = ProviderId::from_str(provider).map_err(|source| {
+            failure(
+                VideoContentCallError::UnknownProvider {
+                    provider: provider.to_owned(),
+                    source,
+                },
+                provider,
+                &self.redactor,
+            )
+        })?;
+        let selected = self.providers.video_config(provider_id).map_err(|source| {
+            failure(
+                VideoContentCallError::Selection(source),
+                provider,
+                &self.redactor,
+            )
+        })?;
+        let Some(found) = selected else {
+            return Err(failure(
+                VideoContentCallError::Unsupported {
+                    provider: provider.to_owned(),
+                },
+                provider,
+                &self.redactor,
+            ));
+        };
+        Ok(found)
     }
 }
 

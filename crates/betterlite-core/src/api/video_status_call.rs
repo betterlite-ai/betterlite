@@ -168,37 +168,9 @@ where
     ) -> Result<Prepared<'call, Providers>, VideoStatusCallError> {
         let provider = match request.custom_llm_provider {
             Some(provider) => provider,
-            None => decode_video_id_with_provider(&request.video_id)
-                .custom_llm_provider
-                .filter(|provider| !provider.is_empty())
-                .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned()),
+            None => decoded_provider(&request.video_id),
         };
-        let provider_id = ProviderId::from_str(&provider).map_err(|source| {
-            failure(
-                VideoStatusCallError::UnknownProvider {
-                    provider: provider.clone(),
-                    source,
-                },
-                &provider,
-                &self.redactor,
-            )
-        })?;
-        let selected = self.providers.video_config(provider_id).map_err(|source| {
-            failure(
-                VideoStatusCallError::Selection(source),
-                &provider,
-                &self.redactor,
-            )
-        })?;
-        let Some(config) = selected else {
-            return Err(failure(
-                VideoStatusCallError::Unsupported {
-                    provider: provider.clone(),
-                },
-                &provider,
-                &self.redactor,
-            ));
-        };
+        let config = self.select(&provider)?;
         log_call(logging, &request.kwargs, &request.video_id, &provider)
             .map_err(|error| failure(error, &provider, &self.redactor))?;
         CALL_TYPE.clone_into(&mut logging.call_type);
@@ -212,6 +184,48 @@ where
             timeout: status_timeout(request.timeout, self.request_timeout),
         })
     }
+
+    // litellm.LlmProviders(custom_llm_provider), then B3332's get_provider_video_config(model=None, provider)
+    fn select<'call>(
+        &'call self,
+        provider: &str,
+    ) -> Result<&'call StatusConfig<'call, Providers::Factories>, VideoStatusCallError> {
+        let provider_id = ProviderId::from_str(provider).map_err(|source| {
+            failure(
+                VideoStatusCallError::UnknownProvider {
+                    provider: provider.to_owned(),
+                    source,
+                },
+                provider,
+                &self.redactor,
+            )
+        })?;
+        let selected = self.providers.video_config(provider_id).map_err(|source| {
+            failure(
+                VideoStatusCallError::Selection(source),
+                provider,
+                &self.redactor,
+            )
+        })?;
+        let Some(config) = selected else {
+            return Err(failure(
+                VideoStatusCallError::Unsupported {
+                    provider: provider.to_owned(),
+                },
+                provider,
+                &self.redactor,
+            ));
+        };
+        Ok(config)
+    }
+}
+
+// decode_video_id_with_provider(video_id)'s provider, or "openai" when the decode gives none or an empty one
+fn decoded_provider(video_id: &str) -> String {
+    decode_video_id_with_provider(video_id)
+        .custom_llm_provider
+        .filter(|provider| !provider.is_empty())
+        .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned())
 }
 
 // `timeout or REQUEST_TIMEOUT`: the declared default is 600, an explicit zero is falsey, and none is the default
