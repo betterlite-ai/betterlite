@@ -70,14 +70,10 @@ impl ScriptedCache<'_> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(json!([counter_key, amount_json(value)]));
-        self.redis_answer(self.input.set_max_fails.0, self.input.set_max)
-    }
-
-    fn redis_answer<Answer>(&self, fails: bool, answer: Answer) -> Result<Answer, ScriptedFailure> {
-        if fails {
+        if self.input.set_max_fails.0 {
             return Err(ScriptedFailure);
         }
-        Ok(answer)
+        Ok(self.input.set_max)
     }
 }
 
@@ -92,8 +88,11 @@ impl ReseedCache for ScriptedCache<'_> {
         &self,
         _counter_key: &str,
     ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ScriptedFailure>> + Send {
+        if self.input.redis_fails.0 {
+            return ready(Err(ScriptedFailure));
+        }
         let stored = self.input.redis_get.clone().map(ReseedCacheValue::Text);
-        ready(self.redis_answer(self.input.redis_fails.0, stored))
+        ready(Ok(stored))
     }
 
     fn redis_set_nx(
@@ -160,7 +159,7 @@ enum BatchState {
 pub(crate) struct ScriptedBatch(Mutex<BatchState>);
 
 impl ScriptedBatch {
-    pub(crate) fn open(input: &Input) -> Self {
+    pub(crate) const fn open(input: &Input) -> Self {
         let state = match (input.redis.0, input.batch) {
             (true, BatchMode::Amount) => BatchState::Loaded(Some(input.batch_amount)),
             (true, BatchMode::Miss) => BatchState::Loaded(None),
@@ -172,7 +171,8 @@ impl ScriptedBatch {
     }
 
     pub(crate) fn after(&self) -> Value {
-        match *self.0.lock().unwrap_or_else(PoisonError::into_inner) {
+        let state = *self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        match state {
             BatchState::Loaded(value) => json!({"value": value.map_or(Value::Null, amount_json)}),
             BatchState::Absent | BatchState::Forgotten => Value::Null,
         }
@@ -184,7 +184,8 @@ impl ActiveSpendBatch for ScriptedBatch {
         &self,
         _counter_key: &str,
     ) -> impl Future<Output = Result<Option<CounterValue>, SpendCounterBatchError>> + Send {
-        let answer = match *self.0.lock().unwrap_or_else(PoisonError::into_inner) {
+        let state = *self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let answer = match state {
             BatchState::Loaded(Some(amount)) => Some(CounterValue::Amount(amount)),
             BatchState::Loaded(None) => Some(CounterValue::Missing),
             BatchState::Absent | BatchState::Forgotten => None,

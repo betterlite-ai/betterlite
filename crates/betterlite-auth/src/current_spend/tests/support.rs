@@ -108,10 +108,10 @@ impl ReseedCache for ScriptedCache {
         &self,
         _counter_key: &str,
     ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ScriptFailure>> + Send {
-        let outcome = match self.redis.as_ref() {
-            Some(redis) => redis.get.play(),
-            None => Ok(None),
-        };
+        let outcome = self
+            .redis
+            .as_ref()
+            .map_or(Ok(None), |redis| redis.get.play());
         ready(outcome)
     }
 

@@ -78,6 +78,23 @@ fn reseed_without_database() -> SpendCounterReseed<SqlSpendCounterRows> {
     }
 }
 
+async fn seeded_cache() -> DualCache<LocalMemoryOps> {
+    let memory = LocalMemoryOps::new(1024, Arc::new(|| 0.0_f64)).expect("the memory tier");
+    let settings = DualCacheSettings {
+        default_in_memory_ttl: None,
+        default_redis_ttl: None,
+        batch_cache_expiry: None,
+        max_redis_batch_cache_size: 1_000,
+        redis_delete_chunk_size: 1_000,
+    };
+    let cache = DualCache::new(Arc::new(memory), None, settings);
+    cache
+        .memory_set(COUNTER, Decimal::from(5_i32))
+        .await
+        .expect("the per-pod counter");
+    cache
+}
+
 async fn body_text(response: Response) -> String {
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
@@ -91,19 +108,7 @@ async fn production_service_and_http503() {
     assert!(strict.fail_closed_budget_enforcement);
     assert!(!slot("model_list: []").fail_closed_budget_enforcement);
 
-    let memory = LocalMemoryOps::new(1024, Arc::new(|| 0.0_f64)).expect("the memory tier");
-    let settings = DualCacheSettings {
-        default_in_memory_ttl: None,
-        default_redis_ttl: None,
-        batch_cache_expiry: None,
-        max_redis_batch_cache_size: 1_000,
-        redis_delete_chunk_size: 1_000,
-    };
-    let cache = DualCache::new(Arc::new(memory), None, settings);
-    cache
-        .memory_set(COUNTER, Decimal::from(5))
-        .await
-        .expect("the per-pod counter");
+    let cache = seeded_cache().await;
     let batch = SpendCounterScope::default();
     let reseed = reseed_without_database();
     let service = CurrentSpend {
