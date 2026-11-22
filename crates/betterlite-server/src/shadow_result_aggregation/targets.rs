@@ -18,12 +18,6 @@ impl Ord for TargetKey {
     }
 }
 
-impl PartialOrd for TargetKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 // the Literal spelling LiteLLM sorts and serializes targets by
 #[must_use]
 pub const fn target_type_name(target_type: ShadowEvalTargetType) -> &'static str {

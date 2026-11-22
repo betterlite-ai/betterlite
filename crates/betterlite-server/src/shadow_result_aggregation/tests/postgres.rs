@@ -16,6 +16,7 @@ use super::super::labels::{LabelKind, LabelRow};
 use super::super::legs::LegRow;
 use super::super::postgres::{PgShadowResults, leg_row};
 use super::super::repository::ShadowResultsRepository as _;
+use super::super::responses::{LegCounts, group_response};
 use super::super::results::{FunnelTotals, TargetVerdicts};
 use super::super::targets::TargetKey;
 use crate::shadow_eval_models::ShadowEvalTargetType;
@@ -469,6 +470,35 @@ async fn labels_read_each_kind_and_ignore_unknown_ids() {
         users.first().unwrap().target_alias.as_deref(),
         Some("user@example.com")
     );
+    assert!(empty.is_empty());
+}
+
+#[tokio::test]
+async fn labeled_responses_read_each_kind_and_keep_its_label() {
+    let (fixture, pool) = database().await;
+    execute(&pool, JOBS).await;
+    execute(
+        &pool,
+        r#"INSERT INTO "LiteLLM_VerificationToken" ("token", "key_alias", "key_name")
+               VALUES ('k1', 'key alias', 'sk-...abcd');
+           INSERT INTO "LiteLLM_TeamTable" ("team_id", "team_alias") VALUES ('t1', 'team alias')"#,
+    )
+    .await;
+    let both = legs(&pool, &["leg-a", "leg-b"]).await;
+    let group = group_response("job-1", &both, &LegCounts::new()).unwrap();
+    let labeled = repository(&pool).labeled_responses(&[group]).await.unwrap();
+    let empty = repository(&pool).labeled_responses(&[]).await.unwrap();
+    pool.close();
+    fixture.close_async().await.unwrap();
+    let targets = &labeled.first().unwrap().targets;
+    let key = targets.first().unwrap();
+    assert_eq!(key.target_type, KeyTarget);
+    assert_eq!(key.target_alias.as_deref(), Some("key alias"));
+    assert_eq!(key.key_name.as_deref(), Some("sk-...abcd"));
+    let team = targets.last().unwrap();
+    assert_eq!(team.target_type, TeamTarget);
+    assert_eq!(team.target_alias.as_deref(), Some("team alias"));
+    assert_eq!(team.key_name, None);
     assert!(empty.is_empty());
 }
 

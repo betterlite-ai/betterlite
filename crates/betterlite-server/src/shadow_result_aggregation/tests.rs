@@ -273,6 +273,19 @@ enum Behavior {
         ],
     },
 }))]
+#[case::group_response_orders_targets_by_kind_before_id(Behavior::Group(GroupCase {
+    legs: vec![leg("leg-user", User, "a"), leg("leg-key", Key, "z")],
+    counts: Vec::new(),
+    expected: GroupExpectation {
+        job_id: "job-9",
+        router_names: vec!["router-a"],
+        stopped_by: None,
+        targets: vec![
+            (Key, "z", 0, Decimal::ZERO),
+            (User, "a", 0, Decimal::ZERO),
+        ],
+    },
+}))]
 #[case::slices_rank_the_busiest_group_first(Behavior::Slices(SlicesCase {
     rows: vec![
         agg("simple", 4, (3, 1, 0), Some(0.8751), (0.1, 0.2), 1),
