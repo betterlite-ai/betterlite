@@ -1,0 +1,47 @@
+kind: helper
+name: agent-input-text
+call:
+  bedrock_services_invoke_agent:
+    scenario: agent_input_text
+    runs:
+      - messages:
+          - {role: user, content: hello}
+      - messages:
+          - {role: user, content: first}
+          - {role: assistant, content: second}
+      - messages:
+          - {role: system, content: earlier}
+          - {role: user, content: before}
+          - {role: assistant, content: last}
+      - messages:
+          - role: user
+            content:
+              - {type: text, text: 'first.'}
+              - type: image_url
+                image_url: {url: 'https://example.test/image.png'}
+              - {type: text, text: ' second.'}
+      - messages:
+          - role: user
+            content: base
+            search_results:
+              - source: s
+                title: t
+                content:
+                  - {type: text, text: c}
+                citations: {a: 1}
+      - messages:
+          - {role: user, content: ignored}
+        optional_params: {inputText: override, enableTrace: false, sessionID: s, aws_access_key_id: AKID, nested: {b: 1, a: 2}}
+      - messages: []
+      - messages:
+          - {role: user}
+      - messages:
+          - {role: user, content: []}
+      - messages:
+          - {role: user, content: null}
+      - messages:
+          - {role: user, content: ''}
+      - messages:
+          - {role: tool, content: 'looked up', search_results: []}
+env: {}
+compare: {ignore: []}

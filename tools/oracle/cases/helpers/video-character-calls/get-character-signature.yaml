@@ -1,0 +1,15 @@
+kind: helper
+name: get-character-signature
+call:
+  b3341:
+    function: get
+    asynchronous: false
+    litellm_call_id: call-1
+    character_id: char-1
+    extra_headers:
+      X-Test: "1"
+    extra:
+      api_key: key-1
+      user: max
+env: {}
+compare: {ignore: []}

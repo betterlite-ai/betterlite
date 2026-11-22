@@ -1,0 +1,106 @@
+id: B10039
+title: An unknown or unconfigured video edit or extension provider answers 400, not 500
+description: >-
+  LiteLLM bug found in B3342's review (https://github.com/betterlite-ai/betterlite/pull/2961), decided "fix it".
+  B3342 was already landing, so the fix is this task. A video_edit or video_extension call whose
+  custom_llm_provider is unknown ("bogus") or known without a video config ("mistral") fails with
+  VideoEditCallError::UnknownProvider or ::ProviderConfigMissing, and the matching VideoExtensionCallError arms.
+  failure() in crates/betterlite-core/src/api/video_edit_call/error.rs and
+  crates/betterlite-core/src/api/video_extension_call/error.rs sends both through plain(..., "ValueError"), so they
+  come out as ErrorClass::ApiConnection with status 500, the way LiteLLM's ValueError goes through exception_type.
+  The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server broke
+  when its own request was wrong. B10034 made the same fix for search and B1037 for an unknown custom_llm_provider.
+
+
+  Both arms answer ErrorClass::BadRequest (status 400) with the message they have today, model "" and the caller's
+  provider. Every other arm keeps its class. Build the details through one new constructor instead of a third and
+  fourth copy of the ErrorContext literal search/error.rs writes today: add
+  pub fn for_provider(message: String, model: Option<String>, provider: &str) -> Self to ResponseDetails in
+  crates/betterlite-error/src/error/details.rs, with every retry and body field None and the variant's default
+  status, and call it from the two video failure() functions and from search's existing BadRequest arm in
+  crates/betterlite-core/src/search/error.rs. Search's answer does not change.
+
+
+  The tests in video_edit_call/tests/error_cases.rs and video_extension_call/tests/error_cases.rs that assert the
+  500 today (an_unknown_provider_fails, an_unsupported_provider_keeps_litellms_message,
+  a_missing_caller_config_is_unsupported and the_async_entry_maps_every_failure_with_the_callers_provider) assert
+  ErrorClass::BadRequest, status 400, the unchanged message, model "" and the provider after this task. Their
+  rstest list call_error_behavior keeps every case.
+scope:
+  paths:
+  - crates/betterlite-error/src/error/details.rs
+  - crates/betterlite-core/src/search/error.rs
+  - crates/betterlite-core/src/api/video_edit_call/error.rs
+  - crates/betterlite-core/src/api/video_extension_call/error.rs
+  - crates/betterlite-core/src/api/video_edit_call/tests/error_cases.rs
+  - crates/betterlite-core/src/api/video_extension_call/tests/error_cases.rs
+  - crates/betterlite-core/src/api/video_edit_call/tests/support.rs
+  - crates/betterlite-core/src/api/video_extension_call/tests/support.rs
+  - docs/deviations/B3342.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1430-L1436
+  why: video_edit raises a ValueError for a provider with no video config, and exception_type maps it to APIConnectionError (500).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1564-L1570
+  why: video_extension raises the same ValueError for a provider with no video config.
+dod:
+- text: >-
+    A video_edit and a video_extension call with custom_llm_provider "bogus" or "mistral" fail with the
+    UnknownProvider or ProviderConfigMissing error and ErrorClass::BadRequest, status 400, the unchanged message,
+    model "" and the caller's provider; every other arm keeps its class.
+  proof: [call-error-tests, call-tests]
+- text: >-
+    ResponseDetails::for_provider builds the details for both video arms and for search's BadRequest arm, and a
+    search call with an unknown provider still answers 400 with model "<provider>/search".
+  proof: [one-constructor, search-tests]
+- text: >-
+    docs/deviations/B3342.yaml records both calls answering 400 where LiteLLM answers 500, each with its pinned
+    LiteLLM link.
+  proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: call-error-tests
+    why: An unknown or unconfigured video provider still answers 500, or another error case broke.
+    run: >-
+      grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/video_edit_call/tests/error_cases.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/video_extension_call/tests/error_cases.rs
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(edit|extension)_call::(.*::)?call_error_behavior::/)'
+  - id: call-tests
+    why: The change broke another video edit or extension behavior.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(edit|extension)_call::/)'
+  - id: one-constructor
+    why: A failure() still writes its own ErrorContext literal for the provider mistake instead of the shared constructor.
+    run: >-
+      grep -q -F 'pub fn for_provider(' crates/betterlite-error/src/error/details.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/search/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/video_edit_call/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/video_extension_call/error.rs
+  - id: search-tests
+    why: Search's unknown provider answer changed, or another search error changed its class.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^search::(provider_lookup|search_config|exception_handling|search_error)/)'
+  - id: deviation-rows
+    why: A deviation row for the 400 is missing its pinned link.
+    run: >-
+      perl -0ne 'exit !(m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?videos/main[.]py[#]L1430-L1436}s
+      && m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?videos/main[.]py[#]L1564-L1570}s)' docs/deviations/B3342.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    A video_edit or video_extension call whose provider is unknown or has no video config answers BadRequestError
+    (400) with model "" and the provider set.
+  why: >-
+    LiteLLM's ValueError goes through exception_type and comes out as an APIConnectionError (500), though the
+    provider name is the caller's input and the call can never succeed.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1430-L1436
+out_of_scope:
+- The other video, container, agents and interactions calls that map an unknown provider the same way; they get their own task.
+- Every other video edit and extension error keeps its class.
+pitfalls:
+- Put UnknownProvider and ProviderConfigMissing in one BadRequest arm per failure(); keep SyncPending, Mock, Selection and Logging on the ValueError arm.
+- connection() in each tests/support.rs may lose its last caller; remove it only if nothing calls it any more.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

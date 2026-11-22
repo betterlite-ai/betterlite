@@ -1,14 +1,14 @@
 id: B1023
 milestone: M5 api families
 title: File batch guardrails
-status: todo
+status: done
 depends_on: [B5471, B171, B207, B1022, B732]
 file: tasks/B1023-file-batch-guardrails.yaml
 covers:
   - "litellm/proxy/openai_files_endpoints/batch_guardrails.py"
 parent: B087
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2904

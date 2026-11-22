@@ -1,0 +1,39 @@
+kind: helper
+name: summary-history-latest-compaction-boundary
+call:
+  summary_history:
+    action: slicing
+    messages:
+    - role: assistant
+      content:
+      - {type: compaction, content: old}
+    - role: user
+      id: m
+      content:
+      - {type: text, text: a}
+      - {type: compaction, content: first}
+      - {type: text, text: b}
+      - {type: compaction, content: latest}
+      - {type: text, text: c}
+    - {role: assistant, content: tail}
+    - {role: user, content: []}
+calls:
+- summary_history:
+    action: slicing
+    messages:
+    - role: user
+      content:
+      - {type: text, text: q}
+    - {role: user, content: null}
+- summary_history:
+    action: slicing
+    messages:
+    - role: assistant
+      content:
+      - {type: compaction, content: s}
+    - {role: user, content: q, name: n}
+- summary_history:
+    action: slicing
+    messages: []
+env: {}
+compare: {ignore: []}

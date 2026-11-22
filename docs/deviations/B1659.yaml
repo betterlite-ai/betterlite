@@ -1,0 +1,13 @@
+task: B1659
+deviations:
+  - what: >-
+      A stored ui_settings row is decoded strictly: null reads as an empty dict, an object as its
+      keys, and the JSON text of an object as its keys, while any other stored JSON (an empty
+      string, 0, false, an array) is a decode error that propagates.
+    why: >-
+      LiteLLM reaches the same column through Python truthiness (`if db_record and
+      db_record.ui_settings` and `... or "{}"`), so a falsy stored value silently reads as {}.
+      docs/compatibility.md keeps Python truthiness out of the contract, and the task requires a
+      malformed stored row to propagate instead of being swallowed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1693-L1697
+kept_bugs: []

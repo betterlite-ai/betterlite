@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-responses-preset-body
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "responses", "headers": [], "urls": [], "requests": [{"model": "preset/pro-search", "input": [{"role": "user", "content": "hi"}], "params": {"max_output_tokens": 20}}, {"model": "preset/fast-search", "input": "what is rust", "params": {}}, {"model": "preset/pro-search", "input": [{"role": "user", "content": "hi"}], "params": {"input": "replaced", "preset": "other"}}], "replies": []}

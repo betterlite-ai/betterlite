@@ -1,0 +1,24 @@
+kind: helper
+name: admit-delegated-grant-missing
+call:
+  b4781:
+    operation: admit
+    auth:
+      user_id: human
+      team_id: team-1
+      agent_id: agent-1
+      context:
+        agent_id: agent-1
+        binding_revision: rev-1
+        mode: delegated
+        user_id: human
+        subject_oid: null
+    registry:
+      - '{"agent_id":"agent-1","agent_name":"managed-agent","agent_card_params":{},"identity_managed":true,"execution_mode":"delegated","identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}'
+    store:
+      - '{"agent_id":"agent-1","agent_name":"managed-agent","agent_card_params":{},"identity_managed":true,"execution_mode":"delegated","identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}'
+    retired: false
+    granted: []
+env: {}
+compare:
+  ignore: []

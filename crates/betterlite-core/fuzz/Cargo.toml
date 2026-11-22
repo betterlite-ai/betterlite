@@ -214,6 +214,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "file_batch_guardrails"
+path = "fuzz_targets/file_batch_guardrails.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "file_routing_ids"
 path = "fuzz_targets/file_routing_ids.rs"
 test = false
@@ -510,6 +517,20 @@ bench = false
 [[bin]]
 name = "create_timeout_text"
 path = "fuzz_targets/create_timeout_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_log_json"
+path = "fuzz_targets/session_log_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses_file_search_loop"
+path = "fuzz_targets/responses_file_search_loop.rs"
 test = false
 doc = false
 bench = false

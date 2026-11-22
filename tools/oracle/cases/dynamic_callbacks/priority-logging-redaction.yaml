@@ -1,0 +1,15 @@
+kind: helper
+name: dynamic-callbacks-priority-logging-redaction
+call:
+  b3053:
+    function: log_success
+    auth_metadata:
+      priority: internal-team
+    model_group: gpt-4
+    usage: {prompt_tokens: 4, completion_tokens: 5, total_tokens: 9}
+    rate_limit_type: total
+    window_size: 60
+    priority_reservation:
+      high: 1.0
+env: {}
+compare: {ignore: []}

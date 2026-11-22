@@ -1,0 +1,6 @@
+{
+  "include": ["../b8371.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}
