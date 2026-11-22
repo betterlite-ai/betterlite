@@ -153,7 +153,7 @@ class EditConfig(Protocol):
             GenericLiteLLMParams,
             dict[str, JsonValue],
         ],
-        tuple[dict[str, JsonValue], dict[str, JsonValue]],
+        tuple[dict[str, JsonValue], object],
     ]: ...
 
     @property
@@ -242,11 +242,9 @@ def response_answer(config: EditConfig, call: ResponseCall) -> JsonValue:
     except BedrockError as error:
         return {"ok": False, "status": error.status_code}
     hidden = HIDDEN.validate_python(get_hidden_params_dict(response))
-    return {
-        "ok": True,
-        "images": image_entries(response),
-        "cost": hidden["additional_headers"].get(COST_HEADER),
-    }
+    images = image_entries(response)
+    cost = hidden["additional_headers"].get(COST_HEADER)
+    return {"ok": True, "images": images, "cost": cost}
 
 
 def environment_answer(config: EditConfig, call: EnvironmentCall) -> JsonValue:
@@ -266,11 +264,10 @@ def error_class_answer(config: EditConfig, call: ErrorClassCall) -> JsonValue:
 
 def call_value(call: Call) -> JsonValue:
     config: EditConfig = edit_config_for(MODEL)
+    answer: JsonValue = None
     match call["function"]:
         case "model_selection":
-            answer: JsonValue = [
-                stability_edit_model(model) for model in call["models"]
-            ]
+            answer = [stability_edit_model(model) for model in call["models"]]
         case "supported_params":
             supported = SUPPORTED.validate_python(
                 config.get_supported_openai_params(MODEL)
