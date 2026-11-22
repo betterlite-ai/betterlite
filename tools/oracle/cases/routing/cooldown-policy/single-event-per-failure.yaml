@@ -1,0 +1,34 @@
+kind: probe
+name: single-event-per-failure
+probes:
+  - clock: {unix_millis: 1000, monotonic_millis: 1000}
+    samples: []
+    operation:
+      cooldown_policy:
+        now_millis: 1000
+        router: {allowed_fails: 1, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployments:
+          - id: a
+            model_name: probe-group
+            model: openai/gpt-4o
+            api_base: https://probe.example/v1
+        target: a
+        failures: 2
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0}
+  - clock: {unix_millis: 1000, monotonic_millis: 1000}
+    samples: []
+    operation:
+      cooldown_policy:
+        now_millis: 1000
+        router: {allowed_fails: 2, default_allowed_fails: 3, cooldown_time: 8.5, disable_cooldowns: false}
+        deployments:
+          - id: a
+            model_name: probe-group
+            model: openai/gpt-4o
+            api_base: https://probe.example/v1
+        target: a
+        failures: 3
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 2}
+compare: {ignore: []}
