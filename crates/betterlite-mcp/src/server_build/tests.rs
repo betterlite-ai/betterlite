@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use betterlite_config::sections::mcp_env_values::StdioPolicy as ConfigStdioPolicy;
 use betterlite_db::managed_resource_rows::mcp::McpServerTable;
-use betterlite_db::mcp_stored_contracts::{JsonValue, MCPAuth, MCPUpstreamProtocol};
+use betterlite_db::mcp_stored_contracts::{
+    JsonValue, MCPAuth, MCPTokenEndpointAuthMethod, MCPUpstreamProtocol,
+};
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{

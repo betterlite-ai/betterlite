@@ -254,3 +254,33 @@ async fn fields_empty_secret_maps_become_absent() {
     assert!(server.fields.env.is_none());
     assert!(server.fields.static_headers.is_none());
 }
+
+#[tokio::test]
+async fn fields_identity_and_blob_fields_carry_over() {
+    let source = r#"{"server_id":"srv-1","transport":"http","alias":"test-alias","server_name":"test-name","url":"https://mcp.test/mcp","spec_path":"/test/spec.json","instructions":"test instructions","source_url":"https://source.test","byok_api_key_help_url":"https://help.test","byok_description":["test byok"],"credentials":{"upstream_resource":"https://resource.test","upstream_token_header":"X-Upstream","id_jag_resource_token_endpoint":"https://idjag.test/token","id_jag_resource":"test-resource","token_endpoint_auth_method":"client_secret_basic"}}"#;
+    let server = built(source).await;
+    assert_eq!(server.fields.alias.as_deref(), Some("test-alias"));
+    assert_eq!(server.fields.server_name.as_deref(), Some("test-name"));
+    assert_eq!(server.fields.url.as_deref(), Some("https://mcp.test/mcp"));
+    assert_eq!(server.fields.spec_path.as_deref(), Some("/test/spec.json"));
+    let instructions = server.fields.instructions.as_deref();
+    assert_eq!(instructions, Some("test instructions"));
+    let source_url = server.fields.source_url.as_deref();
+    assert_eq!(source_url, Some("https://source.test"));
+    let help = server.fields.byok_api_key_help_url.as_deref();
+    assert_eq!(help, Some("https://help.test"));
+    assert_eq!(server.fields.byok_description, strings(&["test byok"]));
+    let resource = server.fields.upstream_resource.as_deref();
+    assert_eq!(resource, Some("https://resource.test"));
+    let header = server.fields.upstream_token_header.as_deref();
+    assert_eq!(header, Some("X-Upstream"));
+    let id_jag_endpoint = server.fields.id_jag_resource_token_endpoint.as_deref();
+    assert_eq!(id_jag_endpoint, Some("https://idjag.test/token"));
+    let id_jag = server.fields.id_jag_resource.as_deref();
+    assert_eq!(id_jag, Some("test-resource"));
+    let auth_method = server.fields.token_endpoint_auth_method;
+    assert_eq!(
+        auth_method,
+        Some(MCPTokenEndpointAuthMethod::ClientSecretBasic)
+    );
+}
