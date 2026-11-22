@@ -121,7 +121,10 @@ impl JudgeSdk for NoSdk {
         })
     }
 }
-fn invalid<E: Display>(error: E) -> OperationError {
+fn invalid<E>(error: E) -> OperationError
+where
+    E: Display,
+{
     OperationError::InvalidRequest {
         message: error.to_string(),
     }
@@ -224,7 +227,7 @@ fn probe_records(input: &Input) -> (Vec<TargetKey<'_>>, Vec<&str>, Vec<&str>) {
     let users = input.rows.users.iter().map(String::as_str).collect();
     (keys, teams, users)
 }
-fn probe_credentials(settings: &AnthropicSettings) -> AnthropicCredentials<'_> {
+const fn probe_credentials(settings: &AnthropicSettings) -> AnthropicCredentials<'_> {
     AnthropicCredentials {
         anthropic_key: None,
         api_key: None,
