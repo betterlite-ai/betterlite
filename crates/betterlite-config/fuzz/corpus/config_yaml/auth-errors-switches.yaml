@@ -1,0 +1,14 @@
+# log_auth_failure_key_identity names the rejected key's owner in the failure log line, and
+# log_client_error_tracebacks logs every auth rejection at error level with its traceback.
+litellm_settings:
+  log_auth_failure_key_identity: true
+  log_client_error_tracebacks: false
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  use_x_forwarded_for: true
+  allow_requests_on_db_unavailable: true
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY

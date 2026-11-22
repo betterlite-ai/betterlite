@@ -1,0 +1,1 @@
+{"search_tool":{"search_tool_name":"tavily-main","litellm_params":{"search_provider":"tavily","api_key":"tvly-secret"},"search_tool_info":{"description":"docs"}}}

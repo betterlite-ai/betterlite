@@ -1,0 +1,22 @@
+kind: helper
+name: accessible-unrestricted-sees-none
+call:
+  b4780:
+    operation: accessible
+    agents:
+      - {agent_id: a, identity_managed: false}
+      - {agent_id: b, identity_managed: false}
+    user_role: internal_user
+    contexts: [{user_id: lister}]
+    access: {lister: unrestricted}
+calls:
+  - b4780:
+      operation: accessible
+      agents:
+        - {agent_id: a, identity_managed: false}
+      user_role: null
+      contexts: []
+      access: {}
+env: {}
+compare:
+  ignore: []

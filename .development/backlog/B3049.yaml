@@ -1,14 +1,14 @@
 id: B3049
 milestone: M4 keys, spend and management
 title: Legacy key user and team admission
-status: todo
+status: done
 depends_on: [B745, B1106, B2314, B2325, B3047]
 file: tasks/B3049-legacy-admission.yaml
 covers:
   - "litellm/proxy/hooks/parallel_request_limiter.py"
 parent: B072
 split_from: B072
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2869
