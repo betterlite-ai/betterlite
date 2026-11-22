@@ -118,9 +118,9 @@ impl CooldownObserver for FailingObserver {
 type ProviderFn = Box<dyn Fn(&str) -> Option<String>>;
 
 pub(super) struct Fixture {
-    pub catalog: DeploymentCatalog,
-    pub aliases: AliasMap,
-    pub groups: RoutingGroupIndex,
+    catalog: DeploymentCatalog,
+    aliases: AliasMap,
+    groups: RoutingGroupIndex,
     provider: ProviderFn,
 }
 
@@ -229,38 +229,18 @@ fn harness_built(
     remote: Option<Arc<RoutingStateStore>>,
 ) -> Harness {
     let clock: SharedClock = Arc::new(Mutex::new(1000.0_f64));
-    let handle = Arc::clone(&clock);
-    let clock_fn: Clock = Arc::new(move || *handle.lock().unwrap_or_else(PoisonError::into_inner));
+    let clock_fn = clock_reader(&clock);
     let shared = Arc::new(FakeCooldowns::default());
-    let shared_cooldowns: Arc<dyn SharedCooldowns> = Arc::clone(&shared);
+    let shared_cooldowns: Arc<dyn SharedCooldowns> = Arc::<FakeCooldowns>::clone(&shared);
     let cooldowns = CooldownCache::new(
         &CacheSettings::default(),
         shared_cooldowns,
         Arc::clone(&clock_fn),
     );
-    let local = Arc::new(
-        RoutingValueStore::new(
-            StoreSettings {
-                max_size_in_memory: None,
-                default_ttl_seconds: None,
-                max_size_per_item: None,
-                loaded_max_size_per_item_kib: 1024,
-            },
-            clock_fn,
-        )
-        .unwrap(),
-    );
-    let counters = RouterCounters::<RoutingStateStore>::new(
-        CounterSettings {
-            sync_interval: None,
-            default_sync_interval: Duration::from_secs(60),
-            should_batch_redis_writes: false,
-        },
-        Arc::clone(&local),
-        None,
-    );
+    let local = Arc::new(RoutingValueStore::new(store_settings(), clock_fn).unwrap());
+    let counters = counters_for(&local);
     let events = Arc::new(RecordingObserver::default());
-    let observer: Arc<dyn CooldownObserver> = Arc::clone(&events);
+    let observer: Arc<dyn CooldownObserver> = Arc::<RecordingObserver>::clone(&events);
     let mut observers: Vec<Arc<dyn CooldownObserver>> = vec![observer];
     observers.extend(extras);
     let service = CooldownPolicyService::new(
@@ -276,6 +256,32 @@ fn harness_built(
         clock,
         events,
         shared,
+    }
+}
+
+fn clock_reader(clock: &SharedClock) -> Clock {
+    let handle = Arc::clone(clock);
+    Arc::new(move || *handle.lock().unwrap_or_else(PoisonError::into_inner))
+}
+
+const fn store_settings() -> StoreSettings {
+    StoreSettings {
+        max_size_in_memory: None,
+        default_ttl_seconds: None,
+        max_size_per_item: None,
+        loaded_max_size_per_item_kib: 1024,
+    }
+}
+
+fn counters_for(local: &Arc<RoutingValueStore>) -> RouterCounters<RoutingStateStore> {
+    RouterCounters::<RoutingStateStore>::new(counter_settings(), Arc::clone(local), None)
+}
+
+const fn counter_settings() -> CounterSettings {
+    CounterSettings {
+        sync_interval: None,
+        default_sync_interval: Duration::from_secs(60),
+        should_batch_redis_writes: false,
     }
 }
 

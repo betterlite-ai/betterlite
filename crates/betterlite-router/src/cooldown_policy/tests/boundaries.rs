@@ -3,9 +3,10 @@ use betterlite_models::decisions::Json;
 use crate::cooldown_decisions::failure::{ErrorStatus, Seconds};
 use crate::cooldown_policy::error::CooldownPolicyError;
 use crate::cooldown_policy::service::CooldownSource;
+use crate::deployment_identity::spec::DeploymentSpec;
 
 use super::support::{
-    Fixture, attempt, attempt_with, deployment, deployment_with, float, harness, policy,
+    self, Fixture, attempt, attempt_with, deployment, deployment_with, float, harness, policy,
     rate_limit, ratio_policy, stored_record, text,
 };
 
@@ -127,27 +128,64 @@ pub(super) async fn a_text_status_is_cast_and_stored() {
     );
     let mut unreadable = rate_limit(429);
     unreadable.status = ErrorStatus::Text("oops".to_owned());
-    let harness = harness(Fixture::new(vec![deployment("gpt", "b")]), policy(0_u32));
-    let lookup = harness.fixture.lookup();
+    let unreadable_harness =
+        support::harness(Fixture::new(vec![deployment("gpt", "b")]), policy(0_u32));
+    let unreadable_lookup = unreadable_harness.fixture.lookup();
     assert!(
-        harness
+        unreadable_harness
             .service
             .cool_deployment(
-                &lookup,
+                &unreadable_lookup,
                 CooldownSource::Callback(&attempt("b", &unreadable)),
             )
             .await
             .unwrap()
     );
     assert_eq!(
-        stored_record(&harness.shared, "b").unwrap().status_code,
+        stored_record(&unreadable_harness.shared, "b")
+            .unwrap()
+            .status_code,
         "500"
     );
 }
 
 pub(super) async fn deployment_value_types_are_classified() {
     let failure = rate_limit(429);
-    let typed = [
+    for (deployment_id, deployment, field) in typed_deployments() {
+        let harness = harness(Fixture::new(vec![deployment]), policy(1_u32));
+        let lookup = harness.fixture.lookup();
+        let error = harness
+            .service
+            .cool_deployment(
+                &lookup,
+                CooldownSource::Callback(&attempt(deployment_id, &failure)),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            CooldownPolicyError::DeploymentFact { field: named, .. } if named == field
+        ));
+    }
+    let non_policy = deployment_with(
+        "gpt",
+        "a",
+        Vec::new(),
+        vec![("allowed_fails_policy", text("nope"))],
+    );
+    let harness = harness(Fixture::new(vec![non_policy]), policy(1_u32));
+    let lookup = harness.fixture.lookup();
+    assert!(
+        !harness
+            .service
+            .cool_deployment(&lookup, CooldownSource::Callback(&attempt("a", &failure)),)
+            .await
+            .unwrap()
+    );
+}
+
+fn typed_deployments() -> [(&'static str, DeploymentSpec, &'static str); 3] {
+    [
         (
             "a",
             deployment_with("gpt", "a", Vec::new(), vec![("allowed_fails", text("2"))]),
@@ -180,38 +218,7 @@ pub(super) async fn deployment_value_types_are_classified() {
             ),
             "cooldown_time",
         ),
-    ];
-    for (deployment_id, deployment, field) in typed {
-        let harness = harness(Fixture::new(vec![deployment]), policy(1_u32));
-        let lookup = harness.fixture.lookup();
-        let error = harness
-            .service
-            .cool_deployment(
-                &lookup,
-                CooldownSource::Callback(&attempt(deployment_id, &failure)),
-            )
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            CooldownPolicyError::DeploymentFact { field: named, .. } if named == field
-        ));
-    }
-    let non_policy = deployment_with(
-        "gpt",
-        "a",
-        Vec::new(),
-        vec![("allowed_fails_policy", text("nope"))],
-    );
-    let harness = harness(Fixture::new(vec![non_policy]), policy(1_u32));
-    let lookup = harness.fixture.lookup();
-    assert!(
-        !harness
-            .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt("a", &failure)),)
-            .await
-            .unwrap()
-    );
+    ]
 }
 
 pub(super) async fn the_ratio_minimum_requests_boundary_sits_at_five() {

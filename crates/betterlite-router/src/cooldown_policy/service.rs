@@ -56,11 +56,11 @@ pub enum CooldownSource<'failure> {
 
 // Router's cooldown services: the cache B307 keeps entries in, the minute counters B304 keeps, the shared allowed-fails counters and the observers
 pub struct CooldownPolicyService<S: DeltaStore + 'static> {
-    settings: CooldownPolicy,
-    pub counters: RouterCounters<S>,
-    cooldowns: CooldownCache,
-    fails: AllowedFailsStore,
-    observers: Vec<Arc<dyn CooldownObserver>>,
+    pub(super) settings: CooldownPolicy,
+    pub(super) counters: RouterCounters<S>,
+    pub(super) cooldowns: CooldownCache,
+    pub(super) fails: AllowedFailsStore,
+    pub(super) observers: Vec<Arc<dyn CooldownObserver>>,
 }
 
 impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
@@ -74,8 +74,8 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
     ) -> Self {
         Self {
             settings,
-            cooldowns,
             counters,
+            cooldowns,
             fails,
             observers,
         }
@@ -87,9 +87,9 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
         lookup: &CatalogLookup<'_>,
         source: CooldownSource<'_>,
     ) -> impl Future<Output = Result<bool, CooldownPolicyError>> + Send + 'call {
-        let prepared = prepare(&self.counters, &self.settings, lookup, source);
+        let resolution = prepare(&self.counters, &self.settings, lookup, source);
         async move {
-            let Some(prepared) = prepared? else {
+            let Some(prepared) = resolution? else {
                 return Ok(false);
             };
             self.finish_cooldown(&prepared).await
@@ -102,24 +102,15 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
         lookup: &CatalogLookup<'_>,
         failure: &FallbackFailure<'_>,
     ) -> impl Future<Output = bool> + Send + 'call {
-        let prepared = prepare_fallback(&self.counters, &self.settings, lookup, failure);
+        let resolution = prepare_fallback(&self.counters, &self.settings, lookup, failure);
         async move {
-            match prepared {
-                Ok(Some(prepared)) => {
-                    self.finish_cooldown(&prepared)
-                        .await
-                        .unwrap_or_else(|error| {
-                            tracing::debug!(
-                                "Error triggering cooldown for fallback deployment: {error}"
-                            );
-                            false
-                        })
-                }
+            match resolution {
+                Ok(Some(prepared)) => match self.finish_cooldown(&prepared).await {
+                    Ok(cooled) => cooled,
+                    Err(error) => skip_cooldown(&error),
+                },
                 Ok(None) => false,
-                Err(error) => {
-                    tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
-                    false
-                }
+                Err(error) => skip_cooldown(&error),
             }
         }
     }
@@ -186,7 +177,7 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
             .fails
             .increment(&counter.key, counter.ttl_seconds.0)
             .await;
-        let counted = CooldownRequest {
+        let second = CooldownRequest {
             policy: request.policy,
             deployment: request.deployment,
             failure: request.failure,
@@ -195,7 +186,7 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
             local_fails: observed.local_only.then_some(observed.fails),
             time_to_cooldown: request.time_to_cooldown,
         };
-        decide(&counted)
+        decide(&second)
     }
 
     // _async_get_cooldown_deployments and _get_cooldown_deployments: the same read reduced to the cooling ids
@@ -231,12 +222,21 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
     }
 }
 
-fn prepare<S: DeltaStore + 'static>(
+// the fallback path never surfaces a cooldown failure: it logs the reason and keeps the provider error
+fn skip_cooldown(error: &CooldownPolicyError) -> bool {
+    tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
+    false
+}
+
+fn prepare<S>(
     counters: &RouterCounters<S>,
     settings: &CooldownPolicy,
     lookup: &CatalogLookup<'_>,
     source: CooldownSource<'_>,
-) -> Result<Option<PreparedCooldown>, CooldownPolicyError> {
+) -> Result<Option<PreparedCooldown>, CooldownPolicyError>
+where
+    S: DeltaStore + 'static,
+{
     match source {
         CooldownSource::Callback(attempt) => prepare_callback(counters, settings, lookup, attempt),
         CooldownSource::Direct(call) => {
@@ -249,7 +249,7 @@ fn prepare<S: DeltaStore + 'static>(
                 call.deployment_id,
                 call.requested_model_group,
             )?;
-            prepare_cooldown(counters, deployment, call, facts).map(Some)
+            Ok(Some(prepare_cooldown(counters, deployment, call, facts)))
         }
     }
 }

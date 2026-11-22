@@ -35,12 +35,15 @@ pub(super) struct EventFields {
 }
 
 // Router.deployment_callback_on_failure's sync half: the guards, the cooldown time and the minute failure
-pub(super) fn prepare_callback<S: DeltaStore + 'static>(
+pub(super) fn prepare_callback<S>(
     counters: &RouterCounters<S>,
     settings: &CooldownPolicy,
     lookup: &CatalogLookup<'_>,
     attempt: &CooldownAttempt<'_>,
-) -> Result<Option<PreparedCooldown>, CooldownPolicyError> {
+) -> Result<Option<PreparedCooldown>, CooldownPolicyError>
+where
+    S: DeltaStore + 'static,
+{
     let Some(deployment) = lookup.get_deployment(attempt.deployment_id)? else {
         return Ok(None);
     };
@@ -70,16 +73,19 @@ pub(super) fn prepare_callback<S: DeltaStore + 'static>(
         time_to_cooldown: Some(time_to_cooldown),
         requested_model_group: attempt.requested_model_group,
     };
-    prepare_cooldown(counters, deployment, &call, facts).map(Some)
+    Ok(Some(prepare_cooldown(counters, deployment, &call, facts)))
 }
 
 // _trigger_cooldown_for_failed_deployment's sync half: the guards, the stamped id and the same precedence
-pub(super) fn prepare_fallback<S: DeltaStore + 'static>(
+pub(super) fn prepare_fallback<S>(
     counters: &RouterCounters<S>,
     settings: &CooldownPolicy,
     lookup: &CatalogLookup<'_>,
     failure: &FallbackFailure<'_>,
-) -> Result<Option<PreparedCooldown>, CooldownPolicyError> {
+) -> Result<Option<PreparedCooldown>, CooldownPolicyError>
+where
+    S: DeltaStore + 'static,
+{
     let failure_facts = failure.failure;
     if failure_facts.advisor_orchestration {
         return Ok(None);
@@ -111,22 +117,25 @@ pub(super) fn prepare_fallback<S: DeltaStore + 'static>(
         time_to_cooldown: Some(time_to_cooldown),
         requested_model_group: None,
     };
-    prepare_cooldown(counters, deployment, &call, facts).map(Some)
+    Ok(Some(prepare_cooldown(counters, deployment, &call, facts)))
 }
 
-pub(super) fn prepare_cooldown<S: DeltaStore + 'static>(
+pub(super) fn prepare_cooldown<S>(
     counters: &RouterCounters<S>,
     deployment: &DeploymentSpec,
     call: &CooldownCall<'_>,
     facts: DeploymentFacts,
-) -> Result<PreparedCooldown, CooldownPolicyError> {
+) -> PreparedCooldown
+where
+    S: DeltaStore + 'static,
+{
     let minute = MinuteSamples {
         successes: u64::try_from(counters.successes_for_minute(call.deployment_id)).unwrap_or(0),
         failures: u64::try_from(counters.failures_for_minute(call.deployment_id)).unwrap_or(0),
     };
     let status_text = error_status_text(&call.failure.status);
     let event = cooldown_event(deployment, call.deployment_id, &status_text);
-    Ok(PreparedCooldown {
+    PreparedCooldown {
         deployment_id: call.deployment_id.to_owned(),
         facts,
         failure: call.failure.clone(),
@@ -140,13 +149,16 @@ pub(super) fn prepare_cooldown<S: DeltaStore + 'static>(
             provider: event.provider.to_owned(),
             exception_status: event.exception_status.to_owned(),
         },
-    })
+    }
 }
 
-fn increment_failures<S: DeltaStore + 'static>(
+fn increment_failures<S>(
     counters: &RouterCounters<S>,
     deployment_id: &str,
-) -> Result<(), CooldownPolicyError> {
+) -> Result<(), CooldownPolicyError>
+where
+    S: DeltaStore + 'static,
+{
     counters
         .increment_failures_for_minute(deployment_id)
         .map_err(|source| CooldownPolicyError::Counter {

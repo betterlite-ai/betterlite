@@ -104,7 +104,7 @@ pub(crate) fn error_status_text(status: &ErrorStatus) -> String {
 }
 
 // get_llm_provider's answer for the declaration the deployment carries: the custom provider, else the model prefix
-fn provider<'deployment>(deployment: &'deployment DeploymentSpec) -> &'deployment str {
+fn provider(deployment: &DeploymentSpec) -> &str {
     if let Some(declared) = params_text(&deployment.litellm_params, "custom_llm_provider") {
         return declared;
     }
@@ -176,22 +176,26 @@ trait FactValue: Sized {
 
 impl FactValue for u32 {
     fn read(number: &Number) -> Option<Self> {
-        number.as_u64().and_then(|count| u32::try_from(count).ok())
+        let count = number.as_u64()?;
+        Self::try_from(count).ok()
     }
 }
 
 impl FactValue for Seconds {
     fn read(number: &Number) -> Option<Self> {
-        Some(Seconds(number.as_f64().unwrap_or(0.0_f64)))
+        Some(Self(number.as_f64().unwrap_or(0.0_f64)))
     }
 }
 
 // a numeric fact's value or the type error that names the deployment and field
-fn number_fact<T: FactValue>(
+fn number_fact<T>(
     info: &JsonObject,
     field: &'static str,
     model_id: &str,
-) -> Result<Option<T>, CooldownPolicyError> {
+) -> Result<Option<T>, CooldownPolicyError>
+where
+    T: FactValue,
+{
     match info.get(field) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Number(number)) => {
