@@ -60,7 +60,7 @@ enum Route {
     Family(body::Family),
 }
 
-fn route(provider: Option<BedrockInvokeProvider>) -> Route {
+const fn route(provider: Option<BedrockInvokeProvider>) -> Route {
     match provider {
         Some(BedrockInvokeProvider::Anthropic) => Route::Anthropic,
         Some(BedrockInvokeProvider::Nova) => Route::Nova,

@@ -26,7 +26,7 @@ pub(super) struct FixtureCounter {
 }
 
 impl FixtureCounter {
-    pub(super) fn counting(text: i64, messages: i64) -> Self {
+    pub(super) const fn counting(text: i64, messages: i64) -> Self {
         Self {
             text: Some(text),
             messages: Some(messages),
@@ -34,7 +34,7 @@ impl FixtureCounter {
         }
     }
 
-    pub(super) fn failing() -> Self {
+    pub(super) const fn failing() -> Self {
         Self {
             text: None,
             messages: None,
