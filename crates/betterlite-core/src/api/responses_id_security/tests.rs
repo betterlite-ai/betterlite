@@ -249,10 +249,10 @@ fn no_signing_key_debug_fallback() {
     // a stream chunk on a create route logs it too and leaves the cache empty
     let mut event = lifecycle_event("resp_plain");
     let mut cache = BTreeMap::new();
-    let (result, chunk_logs) = capture(|| {
+    let (chunk_result, chunk_logs) = capture(|| {
         policy.rewrite_stream_chunk(Some("/v1/responses"), &mut event, &alice, &mut cache)
     });
-    result.unwrap();
+    chunk_result.unwrap();
     assert_eq!(
         text_of(at(&json_of(&event), &["response", "id"])),
         "resp_plain"
