@@ -20,11 +20,13 @@ use crate::spend_retention::batches::{SpendLogCleanup, StopReason, TableCleanupR
 use crate::spend_retention::runner::clock::{CleanupClock, SystemCleanupClock};
 use crate::spend_retention::runner::error::{LockReleaseError, RunError};
 use crate::spend_retention::runner::job::SpendLogCleanupJob;
+use crate::spend_retention::runner::lock::CleanupLock;
 use crate::spend_retention::runner::support::{
-    FakeLock, FakePartitions, FixedCleanupClock, HEALTH_IDS, SESSION_COUNT, SESSION_IDS,
-    SPEND_COUNT, SPEND_IDS, SlowLock, StepCleanupClock, TAG_IDS, TestDurations, count_rows,
-    install_logs, moment, naive, observer, provision, retention_settings, runs, seed_daily_tag,
-    seed_health_check, seed_session, seed_sessions, seed_spend_logs, text_join,
+    FakeLock, FakePartitions, FixedCleanupClock, HEALTH_IDS, LeaseCache, SESSION_COUNT,
+    SESSION_IDS, SPEND_COUNT, SPEND_IDS, SlowLock, StepCleanupClock, TAG_IDS, TestDurations,
+    count_rows, install_logs, lease_manager, moment, naive, observer, provision,
+    retention_settings, runs, seed_daily_tag, seed_health_check, seed_session, seed_sessions,
+    seed_spend_logs, text_join,
 };
 
 use super::{log_run_summary, run_outcome};
@@ -562,6 +564,23 @@ fn the_system_clock_reads_the_wall_and_monotonic_clocks() {
     assert!(clock.utc_now() > moment(2024, 1, 1));
     assert!(clock.now() >= before);
     assert!(clock.now() <= Instant::now());
+}
+
+#[tokio::test]
+async fn the_pod_lock_without_a_cache_never_takes_a_lease() {
+    let lock = lease_manager(None);
+    assert!(!lock.redis_backed());
+    assert_eq!(lock.acquire("job").await, None);
+}
+
+#[tokio::test]
+async fn the_pod_lock_with_a_cache_takes_and_releases_the_lease() {
+    let cache = Arc::new(LeaseCache::default());
+    let lock = lease_manager(Some(Arc::clone(&cache)));
+    assert!(lock.redis_backed());
+    assert_eq!(lock.acquire("job").await, Some(true));
+    lock.release("job").await.expect("a released lease");
+    assert_eq!(cache.deleted(), vec!["cronjob_lock:job"]);
 }
 
 #[tokio::test]

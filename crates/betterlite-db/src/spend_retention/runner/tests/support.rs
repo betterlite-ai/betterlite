@@ -15,8 +15,13 @@ use tokio::time::Instant;
 use tokio_postgres::{Client, NoTls};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
+use uuid::Uuid;
 
 use crate::cleanup_metrics::CleanupMetrics;
+use crate::queues::pod_lock::owner::PodId;
+use crate::queues::pod_lock::{
+    LockCache, LockCacheError, LockScript, NoPodLockEventSink, PodLockManager,
+};
 use crate::spend_partitions::catalog::{BoundedTransactionError, RemainingBudget};
 use crate::spend_partitions::fixtures::SpendPartitionCase;
 use crate::spend_partitions::manager::PartitionMaintenanceError;
@@ -515,4 +520,66 @@ pub(crate) fn install_logs() -> (LogCapture, DefaultGuard) {
         .finish();
     let guard = set_default(subscriber);
     (logs, guard)
+}
+
+// a lease cache that stores the owner it was given and records every delete, so a release leaves a trace
+#[derive(Default)]
+pub(crate) struct LeaseCache {
+    owner: Mutex<Option<String>>,
+    deleted: Mutex<Vec<String>>,
+}
+
+impl LeaseCache {
+    pub(crate) fn deleted(&self) -> Vec<String> {
+        self.deleted
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl LockCache for LeaseCache {
+    async fn get_owner(&self, _key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
+        yield_now().await;
+        let owner = self
+            .owner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        Ok(owner.map(String::into_bytes))
+    }
+
+    async fn set_owner_if_absent(
+        &self,
+        _key: &str,
+        owner: &str,
+        _ttl_seconds: i64,
+    ) -> Result<bool, LockCacheError> {
+        yield_now().await;
+        *self.owner.lock().unwrap_or_else(PoisonError::into_inner) = Some(owner.to_owned());
+        Ok(true)
+    }
+
+    async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
+        yield_now().await;
+        self.deleted
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(key.to_owned());
+        Ok(1)
+    }
+
+    fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
+        None
+    }
+}
+
+// B1690's manager over a cache that always grants, which is the lease the runner's lock seam wraps
+pub(crate) fn lease_manager(cache: Option<Arc<LeaseCache>>) -> PodLockManager<LeaseCache> {
+    PodLockManager::new(
+        cache,
+        60,
+        Arc::new(NoPodLockEventSink),
+        PodId::try_from(Uuid::new_v4()).expect("a v4 pod id"),
+    )
 }
