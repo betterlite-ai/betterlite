@@ -7,6 +7,7 @@ use tracing::debug;
 
 use super::errors::{GroupDataError, HttpFailure};
 use super::ports::GroupDatabase;
+use super::types::DeploymentRow;
 use crate::model_reload::model_info::model_info_as_mapping;
 
 // access_groups as stored: absent starts empty, and a value of another type makes the write refuse instead of repairing it.
@@ -153,20 +154,7 @@ where
         model_names = ?model_names,
         "Found deployments for model names"
     );
-    let found: BTreeSet<&str> = deployments
-        .iter()
-        .map(|deployment| deployment.model_name.as_str())
-        .collect();
-    for model_name in model_names {
-        if !found.contains(model_name.as_str()) {
-            return Err(GroupDataError::Http(HttpFailure {
-                status: StatusCode::BAD_REQUEST,
-                message: format!(
-                    "Can't find model '{model_name}' in Database. Access group management is only supported for database models."
-                ),
-            }));
-        }
-    }
+    ensure_names_found(&deployments, model_names)?;
     let mut tagged = Vec::new();
     for deployment in &deployments {
         let pair = tag_deployment_with_group(
@@ -181,6 +169,28 @@ where
         }
     }
     Ok(tagged)
+}
+
+// The 400 for a missing model name, checked over every requested name before the first write.
+fn ensure_names_found(
+    deployments: &[DeploymentRow],
+    model_names: &[String],
+) -> Result<(), GroupDataError> {
+    let found: BTreeSet<&str> = deployments
+        .iter()
+        .map(|deployment| deployment.model_name.as_str())
+        .collect();
+    for model_name in model_names {
+        if !found.contains(model_name.as_str()) {
+            return Err(GroupDataError::Http(HttpFailure {
+                status: StatusCode::BAD_REQUEST,
+                message: format!(
+                    "Can't find model '{model_name}' in Database. Access group management is only supported for database models."
+                ),
+            }));
+        }
+    }
+    Ok(())
 }
 
 // update_specific_deployments_with_access_group: look each id up again just before its write, because an earlier duplicate may have changed the row.

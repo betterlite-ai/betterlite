@@ -7,7 +7,7 @@ use super::errors::GroupDataError;
 use super::ports::{BudgetInclude, GroupDatabase, ModelAccessGroupCache};
 use super::types::{AccessGroupBudget, AccessGroupBudgetResponse, AccessGroupInfo, GroupBudgetRow};
 
-fn joined_budget() -> BudgetInclude {
+const fn joined_budget() -> BudgetInclude {
     BudgetInclude {
         litellm_budget_table: true,
     }
