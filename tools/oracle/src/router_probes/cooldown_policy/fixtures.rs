@@ -14,7 +14,7 @@ use betterlite_router::routing_value_store::RouteKey;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 
-use super::{ActiveOutput, DeploymentInput, EventOutput};
+use super::{DeploymentInput, EventOutput};
 
 pub(super) fn seconds(millis: u64) -> Result<f64, String> {
     Decimal::from(millis)
@@ -73,18 +73,6 @@ impl CooldownObserver for Recorder {
                 exception_status: event.exception_status.to_owned(),
             });
         Ok(())
-    }
-}
-
-pub(super) fn active_output(
-    model_id: String,
-    status_code: String,
-    cooldown_time: f64,
-) -> ActiveOutput {
-    ActiveOutput {
-        model_id,
-        status_code,
-        cooldown_time: format!("{cooldown_time:.6}"),
     }
 }
 

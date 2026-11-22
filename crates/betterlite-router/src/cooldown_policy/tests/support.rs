@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -10,8 +11,11 @@ use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::cooldown_decisions::failure::{ErrorStatus, FailureClass, FailureFacts, Seconds};
 use crate::cooldown_decisions::policy::{CooldownPolicy, FailureThresholds};
 use crate::cooldown_policy::counter::AllowedFailsStore;
+use crate::cooldown_policy::error::CooldownPolicyError;
 use crate::cooldown_policy::event::{CooldownEvent, CooldownObservationError, CooldownObserver};
-use crate::cooldown_policy::service::{CooldownAttempt, CooldownPolicyService, FallbackFailure};
+use crate::cooldown_policy::service::{
+    CooldownAttempt, CooldownPolicyService, CooldownSource, FallbackFailure,
+};
 use crate::cooldown_state::cooldown::CooldownCache;
 use crate::cooldown_state::record::CooldownRecord;
 use crate::cooldown_state::settings::Settings as CacheSettings;
@@ -115,7 +119,7 @@ impl CooldownObserver for FailingObserver {
     }
 }
 
-type ProviderFn = Box<dyn Fn(&str) -> Option<String>>;
+type ProviderFn = Box<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
 pub(super) struct Fixture {
     catalog: DeploymentCatalog,
@@ -171,9 +175,27 @@ impl Fixture {
 pub(super) struct Harness {
     pub service: CooldownPolicyService<RoutingStateStore>,
     pub fixture: Fixture,
-    pub clock: SharedClock,
     pub events: Arc<RecordingObserver>,
     pub shared: Arc<FakeCooldowns>,
+}
+
+impl Harness {
+    // the lookup's dyn Fn provider is not Sync, so it stays inside this sync call and never reaches the future's await
+    pub(super) fn cooling<'call>(
+        &'call self,
+        source: CooldownSource<'_>,
+    ) -> impl Future<Output = Result<bool, CooldownPolicyError>> + Send + 'call {
+        let lookup = self.fixture.lookup();
+        self.service.cool_deployment(&lookup, source)
+    }
+
+    pub(super) fn fallback_trigger<'call>(
+        &'call self,
+        failure: &FallbackFailure<'_>,
+    ) -> impl Future<Output = bool> + Send + 'call {
+        let lookup = self.fixture.lookup();
+        self.service.trigger_for_failed_deployment(&lookup, failure)
+    }
 }
 
 pub(super) fn harness(fixture: Fixture, policy: CooldownPolicy) -> Harness {
@@ -253,7 +275,6 @@ fn harness_built(
     Harness {
         service,
         fixture,
-        clock,
         events,
         shared,
     }

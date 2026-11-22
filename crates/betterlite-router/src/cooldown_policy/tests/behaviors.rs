@@ -1,3 +1,4 @@
+use std::iter::once;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
@@ -20,27 +21,24 @@ use super::support::{
 pub(super) async fn strict_threshold_and_one_event() {
     let failure = rate_limit(429);
     let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(1_u32));
-    let lookup = harness.fixture.lookup();
     let attempt = attempt("a", &failure);
     assert!(
         !harness
-            .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt))
+            .cooling(CooldownSource::Callback(&attempt))
             .await
             .unwrap()
     );
     assert!(
         harness
-            .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt))
+            .cooling(CooldownSource::Callback(&attempt))
             .await
             .unwrap()
     );
     let record = stored_record(&harness.shared, "a").unwrap();
     assert_eq!(record.status_code, "429");
     assert_eq!(record.exception_received, "probe failure");
-    assert_eq!(record.timestamp, 1000.0_f64);
-    assert_eq!(record.cooldown_time, 5.0_f64);
+    assert_eq!(record.timestamp.to_bits(), 1000.0_f64.to_bits());
+    assert_eq!(record.cooldown_time.to_bits(), 5.0_f64.to_bits());
     assert_eq!(harness.events.recorded().len(), 1);
 }
 
@@ -49,12 +47,10 @@ pub(super) async fn disabled_cooldowns_count_the_failure_but_never_cool() {
     settings.disable_cooldowns = true;
     let failure = rate_limit(429);
     let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), settings);
-    let lookup = harness.fixture.lookup();
     let attempt = attempt("a", &failure);
     assert!(
         !harness
-            .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt))
+            .cooling(CooldownSource::Callback(&attempt))
             .await
             .unwrap()
     );
@@ -70,10 +66,8 @@ pub(super) async fn a_failing_observer_does_not_mask_the_cooldown() {
         policy(0_u32),
         vec![Arc::new(FailingObserver)],
     );
-    let lookup = harness.fixture.lookup();
     let cooled = harness
-        .service
-        .cool_deployment(&lookup, CooldownSource::Callback(&attempt("a", &failure)))
+        .cooling(CooldownSource::Callback(&attempt("a", &failure)))
         .await
         .unwrap();
     assert!(cooled);
@@ -84,11 +78,9 @@ pub(super) async fn a_failing_observer_does_not_mask_the_cooldown() {
 pub(super) async fn fallback_cools_the_server_stamped_deployment() {
     let failure = rate_limit(429);
     let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
-    let lookup = harness.fixture.lookup();
     assert!(
         harness
-            .service
-            .trigger_for_failed_deployment(&lookup, &fallback(Some("a"), &failure))
+            .fallback_trigger(&fallback(Some("a"), &failure))
             .await
     );
     assert_eq!(harness.events.recorded().len(), 1);
@@ -137,10 +129,8 @@ pub(super) async fn deployment_cooldown_times_beat_the_header() {
     );
     let harness = harness(Fixture::new(vec![both]), policy(0_u32));
     assert!(callback_cools(&harness, "a", &failure, Some(Seconds(9.0_f64))).await);
-    assert_eq!(
-        stored_record(&harness.shared, "a").unwrap().cooldown_time,
-        3.0_f64
-    );
+    let record = stored_record(&harness.shared, "a").unwrap();
+    assert_eq!(record.cooldown_time.to_bits(), 3.0_f64.to_bits());
     let params = deployment_with(
         "gpt",
         "b",
@@ -149,12 +139,8 @@ pub(super) async fn deployment_cooldown_times_beat_the_header() {
     );
     let params_harness = support::harness(Fixture::new(vec![params]), policy(0_u32));
     assert!(callback_cools(&params_harness, "b", &failure, Some(Seconds(9.0_f64))).await);
-    assert_eq!(
-        stored_record(&params_harness.shared, "b")
-            .unwrap()
-            .cooldown_time,
-        4.0_f64
-    );
+    let record = stored_record(&params_harness.shared, "b").unwrap();
+    assert_eq!(record.cooldown_time.to_bits(), 4.0_f64.to_bits());
 }
 
 pub(super) async fn event_fields_come_from_the_deployment() {
@@ -169,11 +155,9 @@ pub(super) async fn event_fields_come_from_the_deployment() {
         Vec::new(),
     );
     let harness = harness(Fixture::new(vec![deployment]), policy(0_u32));
-    let lookup = harness.fixture.lookup();
     assert!(
         harness
-            .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt("a", &failure)))
+            .cooling(CooldownSource::Callback(&attempt("a", &failure)))
             .await
             .unwrap()
     );
@@ -251,11 +235,9 @@ pub(super) async fn debug_info_lists_only_the_cooling_deployment() {
         Fixture::new(vec![deployment("gpt", "a"), deployment("gpt", "b")]),
         policy(0_u32),
     );
-    let lookup = harness.fixture.lookup();
     assert!(
         harness
-            .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt("a", &failure)))
+            .cooling(CooldownSource::Callback(&attempt("a", &failure)))
             .await
             .unwrap()
     );
@@ -284,17 +266,14 @@ pub(super) async fn advisor_failures_skip_both_paths() {
     let mut failure = rate_limit(429);
     failure.advisor_orchestration = true;
     let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
-    let lookup = harness.fixture.lookup();
     assert!(
         !harness
-            .service
-            .trigger_for_failed_deployment(&lookup, &fallback(Some("a"), &failure))
+            .fallback_trigger(&fallback(Some("a"), &failure))
             .await
     );
     assert!(
         !harness
-            .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt("a", &failure)))
+            .cooling(CooldownSource::Callback(&attempt("a", &failure)))
             .await
             .unwrap()
     );
@@ -339,11 +318,9 @@ pub(super) async fn a_team_id_without_a_public_name_does_not_lift_the_net() {
         deployment("other", "b"),
     ]);
     let harness = harness(fixture, ratio_policy());
-    let lookup = harness.fixture.lookup();
     assert!(
         !harness
-            .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt("a", &failure)))
+            .cooling(CooldownSource::Callback(&attempt("a", &failure)))
             .await
             .unwrap()
     );
@@ -357,11 +334,9 @@ pub(super) async fn shared_fail_counts_answer_across_workers() {
         policy(1_u32),
         &server,
     );
-    let lookup_a = worker_a.fixture.lookup();
     assert!(
         !worker_a
-            .service
-            .cool_deployment(&lookup_a, CooldownSource::Callback(&attempt("a", &failure)))
+            .cooling(CooldownSource::Callback(&attempt("a", &failure)))
             .await
             .unwrap()
     );
@@ -371,11 +346,9 @@ pub(super) async fn shared_fail_counts_answer_across_workers() {
         policy(1_u32),
         &server,
     );
-    let lookup_b = worker_b.fixture.lookup();
     assert!(
         worker_b
-            .service
-            .cool_deployment(&lookup_b, CooldownSource::Callback(&attempt("a", &failure)))
+            .cooling(CooldownSource::Callback(&attempt("a", &failure)))
             .await
             .unwrap()
     );
@@ -385,7 +358,6 @@ pub(super) async fn shared_fail_counts_answer_across_workers() {
 pub(super) async fn unknown_deployments_never_cool() {
     let failure = rate_limit(429);
     let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
-    let lookup = harness.fixture.lookup();
     let missing = CooldownCall {
         deployment_id: "missing",
         failure: &failure,
@@ -394,16 +366,11 @@ pub(super) async fn unknown_deployments_never_cool() {
         requested_model_group: None,
     };
     let direct = harness
-        .service
-        .cool_deployment(&lookup, CooldownSource::Direct(&missing))
+        .cooling(CooldownSource::Direct(&missing))
         .await
         .unwrap();
     let callback = harness
-        .service
-        .cool_deployment(
-            &lookup,
-            CooldownSource::Callback(&attempt("missing", &failure)),
-        )
+        .cooling(CooldownSource::Callback(&attempt("missing", &failure)))
         .await
         .unwrap();
     let mut batch = RoutingReadBatch::default();
@@ -421,7 +388,6 @@ pub(super) async fn unknown_deployments_never_cool() {
 pub(super) async fn set_cools_a_known_deployment() {
     let failure = rate_limit(429);
     let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
-    let lookup = harness.fixture.lookup();
     let direct = CooldownCall {
         deployment_id: "a",
         failure: &failure,
@@ -431,8 +397,7 @@ pub(super) async fn set_cools_a_known_deployment() {
     };
     assert!(
         harness
-            .service
-            .cool_deployment(&lookup, CooldownSource::Direct(&direct))
+            .cooling(CooldownSource::Direct(&direct))
             .await
             .unwrap()
     );
@@ -458,18 +423,12 @@ async fn ratio_cools(fixture: Fixture, attempt: &CooldownAttempt<'_>) -> bool {
 
 // _trigger_cooldown_for_failed_deployment with the server-stamped failed_deployment_id
 async fn fallback_cools(harness: &Harness, failure: &FallbackFailure<'_>) -> bool {
-    let lookup = harness.fixture.lookup();
-    harness
-        .service
-        .trigger_for_failed_deployment(&lookup, failure)
-        .await
+    harness.fallback_trigger(failure).await
 }
 
 async fn cooldown_result(harness: &Harness, attempt: &CooldownAttempt<'_>) -> bool {
-    let lookup = harness.fixture.lookup();
     harness
-        .service
-        .cool_deployment(&lookup, CooldownSource::Callback(attempt))
+        .cooling(CooldownSource::Callback(attempt))
         .await
         .unwrap()
 }
@@ -477,11 +436,10 @@ async fn cooldown_result(harness: &Harness, attempt: &CooldownAttempt<'_>) -> bo
 // the allowed_fails_policy entries a deployment declares
 fn policy_json(allowed_fails: u32) -> Json {
     Json::Object(
-        [(
+        once((
             "RateLimitErrorAllowedFails".to_owned(),
             number(allowed_fails),
-        )]
-        .into_iter()
+        ))
         .collect(),
     )
 }

@@ -87,7 +87,8 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
         &'call self,
         lookup: &CatalogLookup<'_>,
         source: CooldownSource<'_>,
-    ) -> impl Future<Output = Result<bool, CooldownPolicyError>> + Send + 'call {
+    ) -> impl Future<Output = Result<bool, CooldownPolicyError>> + Send + 'call + use<'call, S>
+    {
         let resolution = prepare(&self.counters, &self.settings, lookup, source);
         async move {
             let Some(prepared) = resolution? else {
@@ -102,7 +103,7 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
         &'call self,
         lookup: &CatalogLookup<'_>,
         failure: &FallbackFailure<'_>,
-    ) -> impl Future<Output = bool> + Send + 'call {
+    ) -> impl Future<Output = bool> + Send + 'call + use<'call, S> {
         let triggered = self.cool_deployment(lookup, CooldownSource::Fallback(failure));
         async move {
             match triggered.await {
