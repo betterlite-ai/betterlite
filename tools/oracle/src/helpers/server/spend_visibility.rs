@@ -12,7 +12,7 @@ use betterlite_server::team_access::caller::TeamCaller;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Builder;
 
-use self::fakes::{CaseStore, Read, case_store, user_lookup};
+use self::fakes::{CaseStore, RecordedRead, case_store, user_lookup};
 
 mod fakes;
 
@@ -68,7 +68,7 @@ struct RowInput {
 
 #[derive(Debug, Serialize)]
 struct StepAnswer {
-    reads: Vec<Read>,
+    reads: Vec<RecordedRead>,
     storage_key: Option<String>,
     outcome: &'static str,
     status: Option<u16>,
@@ -110,8 +110,22 @@ async fn run_step(step: &Step) -> Result<StepAnswer, Box<HelperError>> {
         .lock()
         .await
         .drain(..)
-        .collect::<Result<Vec<Read>, _>>()?;
-    let (outcome, status, detail) = match viewed {
+        .collect::<Result<Vec<RecordedRead>, _>>()?;
+    let (outcome, status, detail) = classify(viewed);
+    Ok(StepAnswer {
+        reads,
+        storage_key,
+        outcome,
+        status,
+        detail,
+    })
+}
+
+// the step's answer: a served row or payload, the source's 403, or a read failure the source never handles
+fn classify(
+    viewed: Result<&'static str, VisibilityError>,
+) -> (&'static str, Option<u16>, Option<Detail>) {
+    match viewed {
         Ok(served) => (served, None, None),
         Err(denied @ VisibilityError::Forbidden { .. }) => (
             "http",
@@ -127,14 +141,7 @@ async fn run_step(step: &Step) -> Result<StepAnswer, Box<HelperError>> {
             | VisibilityError::TeamRecord(_)
             | VisibilityError::Users(_),
         ) => ("error", None, None),
-    };
-    Ok(StepAnswer {
-        reads,
-        storage_key,
-        outcome,
-        status,
-        detail,
-    })
+    }
 }
 
 // the order ui_view_request_response_for_request_id runs the checks in, with one cold-storage logger

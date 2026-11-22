@@ -23,7 +23,7 @@ use tokio_util::task::TaskTracker;
 use super::{Step, UserInput};
 
 #[derive(Debug, Serialize)]
-pub(super) struct Read {
+pub(super) struct RecordedRead {
     read: &'static str,
     sql: Option<String>,
     binds: serde_json::Value,
@@ -35,7 +35,7 @@ pub(super) struct CaseStore {
     rows: Vec<PayloadRow>,
     teams: Vec<LiteLLMTeamTable>,
     fail_teams: bool,
-    pub(super) reads: Mutex<Vec<Result<Read, serde_json::Error>>>,
+    pub(super) reads: Mutex<Vec<Result<RecordedRead, serde_json::Error>>>,
 }
 
 impl CaseStore {
@@ -47,11 +47,14 @@ impl CaseStore {
         binds: Result<serde_json::Value, serde_json::Error>,
     ) -> Result<(), VisibilityError> {
         let sql = statement.map(|text| text.split_whitespace().collect::<Vec<&str>>().join(" "));
-        self.reads.lock().await.push(binds.map(|bound| Read {
-            read,
-            sql,
-            binds: bound,
-        }));
+        self.reads
+            .lock()
+            .await
+            .push(binds.map(|bound| RecordedRead {
+                read,
+                sql,
+                binds: bound,
+            }));
         if self.fail_teams && read != "query" {
             return Err(VisibilityError::Database(Box::new(DbError::NoDbConnected)));
         }
