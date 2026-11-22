@@ -1,11 +1,9 @@
 use std::collections::BTreeSet;
-use std::future::Future;
-use std::pin::Pin;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::spend_rows::rows::SpendCounterRows as DbSpendCounterRows;
 use chrono::{DateTime, Utc};
-use futures_util::future::join_all;
+use futures_util::future::join3;
 use rust_decimal::Decimal;
 
 use crate::auth_cache::keys::CacheKey;
@@ -36,8 +34,6 @@ pub(super) struct ScopeOutcome {
     pub(super) error: Option<SpendIncrementError>,
 }
 
-pub(super) type ScopeFuture<'scope> = Pin<Box<dyn Future<Output = ScopeOutcome> + Send + 'scope>>;
-
 // one direct counter with the source cache keys its floor falls back to, in the order LiteLLM reads them
 pub(super) type CounterItem = (String, Vec<String>);
 
@@ -52,26 +48,22 @@ where
     Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers + WindowReseedCache + 'static,
     Rows: SpendCounterRows + DbSpendCounterRows,
 {
-    let mut scopes: Vec<ScopeFuture<'_>> = Vec::new();
-    if let Some(token) = input.token {
-        scopes.push(Box::pin(window_scope(
-            WindowScopeKind::Key(token),
-            charge,
-            services,
-        )));
-    }
-    if let Some(team_id) = input.team_id {
-        scopes.push(Box::pin(window_scope(
-            WindowScopeKind::Team(team_id),
-            charge,
-            services,
-        )));
-    }
+    let key_scope = async {
+        match input.token {
+            Some(token) => window_scope(WindowScopeKind::Key(token), charge, services).await,
+            None => ScopeOutcome::default(),
+        }
+    };
+    let team_scope = async {
+        match input.team_id {
+            Some(team_id) => window_scope(WindowScopeKind::Team(team_id), charge, services).await,
+            None => ScopeOutcome::default(),
+        }
+    };
     let items = counter_items(input);
-    if !items.is_empty() {
-        scopes.push(Box::pin(prepare_items(&items, charge, services)));
-    }
-    combine(join_all(scopes).await)
+    let item_scope = prepare_items(&items, charge, services);
+    let (key_outcome, team_outcome, item_outcome) = join3(key_scope, team_scope, item_scope).await;
+    combine(vec![key_outcome, team_outcome, item_outcome])
 }
 
 // _prepare_spend_counter_increment for every item of a scope: the reserved counters are skipped, the warm checks settle, and the increments wait for the one apply

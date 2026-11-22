@@ -582,14 +582,16 @@ impl Fixture {
         let rows = Arc::new(FakeRows::default());
         let sources = Arc::new(FakeSources::default());
         let layers = Arc::new(SpyLayers::new(redis));
-        let counted: Arc<dyn CounterBatch> = Arc::clone(&batch);
-        let source_tier: Arc<dyn SourceSpendCache> = Arc::clone(&sources);
+        let batch_handle = Arc::clone(&batch);
+        let batch_tier: Arc<dyn CounterBatch> = batch_handle;
+        let sources_handle = Arc::clone(&sources);
+        let sources_tier: Arc<dyn SourceSpendCache> = sources_handle;
         Self {
             writes: SpendCounterWrites {
                 layers: Arc::clone(&layers),
-                batch: counted,
+                batch: batch_tier,
                 reseed: Arc::new(reseed_of(Arc::clone(&rows))),
-                sources: source_tier,
+                sources: sources_tier,
             },
             counters: FakeCounters::new(Arc::clone(&layers)),
             batch,
@@ -614,12 +616,14 @@ impl Fixture {
     pub(crate) async fn counter(&self, counter_key: &str) -> Option<Decimal> {
         match ReseedCache::memory_get(&*self.layers, counter_key).await {
             Ok(Some(ReseedCacheValue::Number(amount))) => Some(amount),
-            Ok(Some(
-                ReseedCacheValue::Text(_)
-                | ReseedCacheValue::Boolean(_)
-                | ReseedCacheValue::Unreadable,
-            ))
-            | Ok(None) => None,
+            Ok(
+                Some(
+                    ReseedCacheValue::Text(_)
+                    | ReseedCacheValue::Boolean(_)
+                    | ReseedCacheValue::Unreadable,
+                )
+                | None,
+            ) => None,
             Err(error) => panic!("the fake cache read failed: {error}"),
         }
     }
