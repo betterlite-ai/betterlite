@@ -53,7 +53,9 @@ fn treats_a_null_tag_as_one_bucket() {
 
 #[test]
 fn returns_every_tag_past_ten() {
-    let names: Vec<String> = (0_i32..12).map(|index| format!("tag-{index}")).collect();
+    let names: Vec<String> = (0_i32..12_i32)
+        .map(|index| format!("tag-{index}"))
+        .collect();
     let rows: Vec<_> = names
         .iter()
         .zip(1_i64..)

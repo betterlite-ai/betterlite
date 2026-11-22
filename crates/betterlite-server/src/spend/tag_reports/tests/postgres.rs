@@ -309,7 +309,7 @@ async fn filters_the_daily_range_by_tag_list() {
 #[tokio::test]
 async fn returns_every_daily_tag_past_ten() {
     let (fixture, pool) = database().await;
-    let values: Vec<String> = (0_i64..12)
+    let values: Vec<String> = (0_i64..12_i64)
         .zip(1_i64..)
         .map(|(index, spend)| {
             format!("('r{index}', {spend}, '[\"tag-{index}\"]', '2024-01-01 10:00:00')")

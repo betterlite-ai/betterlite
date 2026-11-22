@@ -259,7 +259,9 @@ async fn rounds_the_daily_tag_spend_to_four_places() {
 
 #[tokio::test]
 async fn keeps_every_tag_past_the_top_ten() {
-    let names: Vec<String> = (0_i32..12).map(|index| format!("tag-{index}")).collect();
+    let names: Vec<String> = (0_i32..12_i32)
+        .map(|index| format!("tag-{index}"))
+        .collect();
     let mut fake = tag_store();
     fake.daily = names
         .iter()
