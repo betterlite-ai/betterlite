@@ -1,11 +1,11 @@
 task: B9990
 deviations:
   - what: >-
-      A chat deployment whose api_base is absent or empty answers with an empty x-litellm-model-api-base header,
-      while LiteLLM leaves the header out: get_api_base returns no api_base for an anthropic deployment without one,
-      and get_custom_headers drops empty values.
+      x-litellm-model-api-base is not shaped exactly like LiteLLM's: a deployment whose api_base is absent or empty
+      answers with an empty header value where LiteLLM omits the header, and a configured api_base keeps its query
+      string where LiteLLM cuts it off at the first "?".
     why: >-
       routes/chat/headers.rs writes the header from ChatDeployment.api_base on every success and is outside B9990's
-      scope, and an empty value is the closest the route gets to the omitted header.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1851
+      scope; keeping the configured base itself is what makes the value match LiteLLM's in the common case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1782-L1784
 kept_bugs: []
