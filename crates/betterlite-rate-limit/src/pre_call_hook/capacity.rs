@@ -1,7 +1,7 @@
 use std::sync::{Arc, PoisonError};
 
 use betterlite_models::decisions::Json;
-use tokio::sync::{oneshot, watch};
+use tokio::sync::oneshot;
 
 use crate::concurrency_gauges::ConcurrencyGauges;
 use crate::limiter_records::{ParallelSlotAcquisition, RateLimitDescriptor, RateLimitResponse};
@@ -48,9 +48,9 @@ fn start_tasks(hook: &RateLimitPreCallHook, descriptors: &[RateLimitDescriptor])
     };
     let (result_tx, result_rx) = oneshot::channel();
     let (finish_tx, finish_rx) = oneshot::channel();
-    let (status_tx, status_rx) = watch::channel(AdmissionStatus::Pending);
-    spawn_admission(hook, admission_request, result_tx, status_tx);
-    spawn_release(hook, finish_rx, status_rx, acquisition);
+    let (admitted_tx, admitted_rx) = oneshot::channel();
+    spawn_admission(hook, admission_request, result_tx, admitted_tx);
+    spawn_release(hook, finish_rx, admitted_rx, acquisition);
     CapacityTasks {
         guard: RequestCapacityGuard {
             finish: Some(finish_tx),
@@ -63,7 +63,7 @@ fn spawn_admission(
     hook: &RateLimitPreCallHook,
     request: AdmissionRequest,
     result: oneshot::Sender<Result<RateLimitResponse, WindowedAdmissionError>>,
-    status: watch::Sender<AdmissionStatus>,
+    admitted: oneshot::Sender<bool>,
 ) {
     let admission = Arc::clone(&hook.assembly.admission);
     hook.tasks.spawn(
@@ -71,7 +71,7 @@ fn spawn_admission(
             admission,
             request,
             result,
-            status,
+            admitted,
         }
         .run(),
     );
@@ -80,14 +80,14 @@ fn spawn_admission(
 fn spawn_release(
     hook: &RateLimitPreCallHook,
     finish: oneshot::Receiver<()>,
-    status: watch::Receiver<AdmissionStatus>,
+    admitted: oneshot::Receiver<bool>,
     acquisition: ParallelSlotAcquisition,
 ) {
     let gauges = Arc::clone(&hook.assembly.gauges);
     hook.tasks.spawn(
         ReleaseTask {
             finish,
-            status,
+            admitted,
             gauges,
             acquisition,
         }
@@ -120,17 +120,11 @@ pub(super) fn request_data_with_model(
     data
 }
 
-#[derive(Clone, Copy)]
-enum AdmissionStatus {
-    Pending,
-    Finished { admitted: bool },
-}
-
 struct AdmissionTask {
     admission: Arc<WindowedAdmission>,
     request: AdmissionRequest,
     result: oneshot::Sender<Result<RateLimitResponse, WindowedAdmissionError>>,
-    status: watch::Sender<AdmissionStatus>,
+    admitted: oneshot::Sender<bool>,
 }
 
 impl AdmissionTask {
@@ -139,11 +133,7 @@ impl AdmissionTask {
         let admitted = outcome
             .as_ref()
             .is_ok_and(|response| response.overall_code == OK_CODE);
-        if self
-            .status
-            .send(AdmissionStatus::Finished { admitted })
-            .is_err()
-        {
+        if self.admitted.send(admitted).is_err() {
             tracing::debug!("the request capacity release task ended before the admission");
         }
         if self.result.send(outcome).is_err() {
@@ -154,37 +144,33 @@ impl AdmissionTask {
 
 struct ReleaseTask {
     finish: oneshot::Receiver<()>,
-    status: watch::Receiver<AdmissionStatus>,
+    admitted: oneshot::Receiver<bool>,
     gauges: Arc<ConcurrencyGauges>,
     acquisition: ParallelSlotAcquisition,
 }
 
 impl ReleaseTask {
-    async fn run(mut self) {
+    async fn run(self) {
         // the guard sends this signal as it drops; one that ended without sending still holds its slot
         if self.finish.await.is_err() {
             tracing::debug!("the request capacity guard ended without its finish signal");
             return;
         }
-        if admitted(&mut self.status).await {
+        // a lost verdict means the admission ended without one, so the slot is not released
+        if self.admitted.await.unwrap_or(false) {
             release_capacity_slot(&self.gauges, &self.acquisition).await;
         }
     }
 }
 
-async fn admitted(status: &mut watch::Receiver<AdmissionStatus>) -> bool {
-    status
-        .wait_for(|value| !matches!(value, AdmissionStatus::Pending))
-        .await
-        .is_ok_and(|value| matches!(*value, AdmissionStatus::Finished { admitted: true }))
-}
-
 async fn release_capacity_slot(gauges: &ConcurrencyGauges, acquisition: &ParallelSlotAcquisition) {
     let slot = RequestStashSlot::default();
     let stash = slot.get_or_create();
-    let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
-    state.parallel_slot = Some(acquisition.clone());
-    drop(state);
+    stash
+        .state
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .parallel_slot = Some(acquisition.clone());
     gauges
         .release_stashed_parallel_slot(Some(&stash), false)
         .await;
