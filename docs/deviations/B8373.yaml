@@ -1,0 +1,33 @@
+task: B8373
+deviations:
+  - what: >-
+      litellm_settings.default_internal_user_params.teams must be a JSON array of objects, each team_id must be a string, and each max_budget_in_team a JSON number or null. Any other shape is a StartupCheckError naming the entry index and the field; a numeric string such as "10" is not coerced to a number.
+    why: >-
+      LiteLLM reads the slot with `or []` and `all(isinstance(team, dict) for team in _teams)`, so a wrong-typed list is silently skipped (a non-iterable value raises TypeError from the comprehension), and an entry is handed to NewUserRequestTeam(**team), where pydantic either fails startup with a ValidationError or coerces the value under its lax rules. docs/compatibility.md makes a wrong-typed value an error that names the field, with no coercion past the declared type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10469-L10484
+  - what: >-
+      When the proxy budget row upsert fails, betterlite logs "Failed to upsert the proxy budget row: {error}" as a warning and skips the reset-time backfill. LiteLLM raises inside the background asyncio task, so the failure surfaces as an unretrieved task exception on stderr instead of a proxy log line.
+    why: >-
+      Startup continues and the backfill is skipped in both, but a write failure the proxy-wide budget depends on should be visible in the proxy's own log, and asyncio's task-exception reporting has no counterpart in a Rust task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10413-L10430
+  - what: >-
+      The tuning fingerprint's config validity is decided by betterlite's config write model (validate_config_write), not by ComplexityRouterConfig.model_validate. betterlite accepts a classifier_type of "llm" without a classifier_llm_config, where LiteLLM returns no fingerprint, so that router enters the tuning gate; betterlite rejects a keyword-tier rule whose tier text is not exactly a known tier (for example " MEDIUM "), where LiteLLM validates it, so that router is left out of the gate.
+    why: >-
+      betterlite has one validity model for complexity-router configs, shared with the admin API and the router, so a startup cannot disagree with a config write; the two models differ only on values a working setup does not carry, and each difference moves one router in or out of the baseline comparison, never the recorded fingerprint of a valid config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_tuning_baseline.py#L43-L49
+  - what: >-
+      A complexity_router_config whose classifier_type is present but not a string is treated as not heuristic-v1, so that router is left out of the tuning gate and the other routers are still checked. LiteLLM tests membership in a frozenset, which raises TypeError for a list or object; the baseline loader catches it and skips the gate for the whole boot.
+    why: >-
+      classifier_type is declared as a string; a container is a config error for the write path, and at startup the safe reading is that the router is not on the heuristic-v1 path rather than silently disabling the license gate for every router on the proxy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_tuning_baseline.py#L72-L74
+  - what: >-
+      A recorded baseline row that is a string but not JSON warns "Heuristic-v1 tuning baseline unavailable, gate not enforced this boot: the recorded heuristic-v1 tuning baseline row is not JSON: {serde error}". LiteLLM appends Python's json decoder message to the same prefix.
+    why: >-
+      Both log the same prefix and skip the gate; only the trailing decoder message is the runtime's own, and docs/compatibility.md keeps a runtime's text out of parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10502-L10507
+kept_bugs:
+  - what: >-
+      A failed per-team member-budget update is logged at info level with ", skipping.." and startup continues to the next team.
+    why: >-
+      Operators tailing startup at warning level never see the failure, but a working setup can rely on one bad team not stopping the proxy, and the message and level are how LiteLLM's startup reports it, so the log line is copied as it stands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L991-L998
