@@ -23,11 +23,10 @@ mod adapter;
 mod loaded;
 mod shared;
 mod url;
-pub(super) fn build<'env>(
-    name: SearchProviderName,
-    environment: &'env dyn EnvironmentLookup,
-) -> SearchConfig<'env> {
-    let hooks: Box<dyn SearchHooks + 'env> = match name {
+type Lookup<'env> = &'env dyn EnvironmentLookup;
+type Hooks<'env> = Box<dyn SearchHooks + 'env>;
+pub(super) fn build(name: SearchProviderName, environment: Lookup<'_>) -> SearchConfig<'_> {
+    let hooks: Hooks<'_> = match name {
         SearchProviderName::Perplexity => Box::new(Adapter::new(PerplexitySearch { environment })),
         SearchProviderName::Tavily => Box::new(Adapter::new(TavilySearch::load(environment))),
         SearchProviderName::ParallelAi => {
@@ -63,19 +62,13 @@ pub(super) fn build<'env>(
     };
     SearchConfig { name, hooks }
 }
-fn url_keyed<'env>(
-    environment: &'env dyn EnvironmentLookup,
-    flavor: UrlKeyedFlavor,
-) -> Box<dyn SearchHooks + 'env> {
+fn url_keyed(environment: Lookup<'_>, flavor: UrlKeyedFlavor) -> Hooks<'_> {
     Box::new(UrlKeyedProvider {
         environment,
         flavor: Mutex::new(flavor),
     })
 }
-fn reloaded<'env>(
-    environment: &'env dyn EnvironmentLookup,
-    flavor: ReloadedFlavor,
-) -> Box<dyn SearchHooks + 'env> {
+fn reloaded(environment: Lookup<'_>, flavor: ReloadedFlavor) -> Hooks<'_> {
     Box::new(ReloadedProvider {
         environment,
         flavor,
