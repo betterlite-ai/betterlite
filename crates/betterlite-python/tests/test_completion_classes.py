@@ -152,6 +152,15 @@ def test_completion_client_plain_matches_litellm() -> None:
     assert client.params["base_url"] == server.url
     assert client.params["timeout"] == CLIENT_TIMEOUT
     assert client.params["max_retries"] is None
+    assert "self" not in client.params
+
+
+def test_completion_client_reads_num_retries_at_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(betterlite, "num_retries", 5)
+    client = LiteLLM(api_key=GOOD_KEY)
+    assert client.params["max_retries"] == 5
 
 
 def test_completion_client_async_branch_matches_litellm() -> None:
