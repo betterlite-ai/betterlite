@@ -3,6 +3,7 @@
 mod call_failure_logging;
 mod chat;
 mod credential_identity_isolation;
+mod drop_params;
 mod embeddings;
 mod experimental_handler;
 mod explicit_param_before_config;
@@ -27,6 +28,10 @@ enum Family {
     TextDefaults,
     TextChatProjection,
     CallFailureLogging,
+    DeploymentAdditionalDropParams,
+    OpenaiUnsupportedParam,
+    OpenaiUnsupportedParamDropped,
+    OpenaiAllowedParam,
 }
 
 // One row per openai-provider oracle case file, each driving the production dispatcher.
@@ -40,6 +45,10 @@ enum Family {
 #[case::text_defaults(Family::TextDefaults)]
 #[case::text_chat_projection(Family::TextChatProjection)]
 #[case::call_failure_logging(Family::CallFailureLogging)]
+#[case::deployment_additional_drop_params(Family::DeploymentAdditionalDropParams)]
+#[case::openai_unsupported_param(Family::OpenaiUnsupportedParam)]
+#[case::openai_unsupported_param_dropped(Family::OpenaiUnsupportedParamDropped)]
+#[case::openai_allowed_param(Family::OpenaiAllowedParam)]
 #[tokio::test]
 async fn openai_dispatch_cases(#[case] family: Family) {
     match family {
@@ -52,5 +61,13 @@ async fn openai_dispatch_cases(#[case] family: Family) {
         Family::TextDefaults => text_defaults::check_all().await,
         Family::TextChatProjection => text_chat_projection::check_all().await,
         Family::CallFailureLogging => call_failure_logging::check_all().await,
+        Family::DeploymentAdditionalDropParams => {
+            drop_params::deployment_additional_drop_params().await;
+        }
+        Family::OpenaiUnsupportedParam => drop_params::openai_unsupported_param().await,
+        Family::OpenaiUnsupportedParamDropped => {
+            drop_params::openai_unsupported_param_dropped().await;
+        }
+        Family::OpenaiAllowedParam => drop_params::openai_allowed_param().await,
     }
 }
