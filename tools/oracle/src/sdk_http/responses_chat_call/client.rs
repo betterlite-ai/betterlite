@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_core::api::responses_chat_call::completions::{
@@ -98,7 +97,9 @@ impl HttpCompletions {
                 "the provider answered an error the client did not record".to_owned(),
             ));
         };
-        native::failure(model, response)
+        let projected = native::failure(model, response);
+        drop(recorded);
+        projected
     }
 
     fn outbound_request(
@@ -195,32 +196,30 @@ fn provider_body(arguments: &CompletionArguments) -> Map<String, Value> {
 impl CompletionClient for HttpCompletions {
     type Error = CompletionsError;
 
-    fn completion(
+    async fn completion(
         &self,
         arguments: &CompletionArguments,
-    ) -> impl Future<Output = Result<CompletionOutput, Self::Error>> + Send {
-        async move {
-            let (outbound, stream) = self.outbound_request(arguments)?;
-            let response = self
-                .client
-                .send_following(outbound)
-                .await
-                .map_err(|source| CompletionsError::Transport(source.to_string()))?;
-            if !response.response.status().is_success() {
-                return Err(self.capture_failure(response).await);
-            }
-            if stream {
-                return Ok(CompletionOutput::Stream(CompletionBody(
-                    response.body_stream(),
-                )));
-            }
-            let upstream = response
-                .buffered(self.client.limits.body_bytes)
-                .await
-                .map_err(|source| CompletionsError::Transport(source.to_string()))?;
-            let chat: ChatCompletionResponse = serde_json::from_slice(&upstream.body)
-                .map_err(|source| CompletionsError::Decode(source.to_string()))?;
-            Ok(CompletionOutput::Response(Box::new(chat)))
+    ) -> Result<CompletionOutput, Self::Error> {
+        let (outbound, stream) = self.outbound_request(arguments)?;
+        let response = self
+            .client
+            .send_following(outbound)
+            .await
+            .map_err(|source| CompletionsError::Transport(source.to_string()))?;
+        if !response.response.status().is_success() {
+            return Err(self.capture_failure(response).await);
         }
+        if stream {
+            return Ok(CompletionOutput::Stream(CompletionBody(
+                response.body_stream(),
+            )));
+        }
+        let upstream = response
+            .buffered(self.client.limits.body_bytes)
+            .await
+            .map_err(|source| CompletionsError::Transport(source.to_string()))?;
+        let chat: ChatCompletionResponse = serde_json::from_slice(&upstream.body)
+            .map_err(|source| CompletionsError::Decode(source.to_string()))?;
+        Ok(CompletionOutput::Response(Box::new(chat)))
     }
 }

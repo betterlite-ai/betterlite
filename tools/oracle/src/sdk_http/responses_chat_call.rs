@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_config::api::responses_session_history::SessionLookupSettings;
@@ -44,7 +43,7 @@ use client::{CompletionsError, HttpCompletions};
 use session::{NoCold, NoSleep, RecordedQuery};
 
 mod assembly;
-mod call;
+pub mod call;
 mod client;
 mod session;
 
@@ -55,17 +54,15 @@ impl CallKind for Call {
         validate_timeout(self.timeout_seconds, limits)
     }
 
-    fn send(
+    async fn send(
         &self,
         api_base: &str,
         env: &BTreeMap<String, String>,
-    ) -> impl Future<Output = Result<SdkResult, SdkHttpError>> {
-        async move {
-            let outcome = run(self, api_base, env).await?;
-            Ok(SdkResult::ResponsesChatCall {
-                value: Box::new(outcome),
-            })
-        }
+    ) -> Result<SdkResult, SdkHttpError> {
+        let outcome = run(self, api_base, env).await?;
+        Ok(SdkResult::ResponsesChatCall {
+            value: Box::new(outcome),
+        })
     }
 }
 
@@ -185,14 +182,14 @@ fn failed_call(
                 "the completion call failed: {other}"
             )));
         }
-        CallError::Preparation(error) => {
+        CallError::Preparation(preparation) => {
             return Err(SdkHttpError::Invalid(format!(
-                "the case request was refused: {error}"
+                "the case request was refused: {preparation}"
             )));
         }
-        CallError::Conversion(error) => {
+        CallError::Conversion(conversion) => {
             return Err(SdkHttpError::Invalid(format!(
-                "the chat answer did not convert: {error}"
+                "the chat answer did not convert: {conversion}"
             )));
         }
     };
@@ -211,9 +208,9 @@ fn failed_async_call(
     lookups: Vec<String>,
 ) -> Result<Outcome, SdkHttpError> {
     match error {
-        AsyncCallError::Call(error) => failed_call(error, completions, call, lookups),
-        AsyncCallError::Session(error) => Err(SdkHttpError::Invalid(format!(
-            "the session lookup failed: {error}"
+        AsyncCallError::Call(call_error) => failed_call(call_error, completions, call, lookups),
+        AsyncCallError::Session(session_error) => Err(SdkHttpError::Invalid(format!(
+            "the session lookup failed: {session_error}"
         ))),
     }
 }
@@ -271,8 +268,8 @@ fn as_json<T>(value: &T) -> Result<Json, SdkHttpError>
 where
     T: Serialize,
 {
-    let value = serde_json::to_value(value).map_err(SdkHttpError::Serialize)?;
-    serde_json::from_value(value)
+    let encoded = serde_json::to_value(value).map_err(SdkHttpError::Serialize)?;
+    serde_json::from_value(encoded)
         .map_err(|source| SdkHttpError::Invalid(format!("a captured answer is not JSON: {source}")))
 }
 
