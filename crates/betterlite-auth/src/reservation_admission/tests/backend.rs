@@ -124,7 +124,10 @@ impl CounterBatch for RecordingBatch {
         &self,
         counter_key: &str,
     ) -> Result<Option<CounterValue>, SpendCounterBatchError> {
-        Ok(lock(&self.0).get(counter_key).copied())
+        Ok(lock(&self.0)
+            .get(counter_key)
+            .copied()
+            .map(CounterValue::Amount))
     }
 
     fn record(&self, counter_key: &str, value: Decimal) {
