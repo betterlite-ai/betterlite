@@ -133,7 +133,7 @@ fn file_reply(params: &Map<String, Value>, headers: &[(String, String)], now: i6
 fn converted(url: &str) -> HelperResult {
     let mut params = Map::new();
     params.insert(UPLOAD_URL_PARAM.to_owned(), Value::String(url.to_owned()));
-    params.insert(UPLOAD_CONTENT_LENGTH_PARAM.to_owned(), json!(0));
+    params.insert(UPLOAD_CONTENT_LENGTH_PARAM.to_owned(), json!(0_i32));
     file_reply(&params, &[], 0)
 }
 
