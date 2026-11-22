@@ -34,7 +34,7 @@ async fn window_failure_barrier() {
         .expect("a scan answers");
     match outcome {
         ScanFile::Raised(returned) => assert_eq!(returned, failure),
-        other @ ScanFile::Scanned(_) | other @ ScanFile::Rejected(_) => {
+        other @ (ScanFile::Scanned(_) | ScanFile::Rejected(_)) => {
             panic!("the exception at line 2 wins, got {other:?}")
         }
     }

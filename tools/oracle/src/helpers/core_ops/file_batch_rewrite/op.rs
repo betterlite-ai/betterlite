@@ -59,13 +59,11 @@ impl Helper for Op {
 fn chosen(scenario: &Scenario) -> Value {
     let mut problems: Vec<(usize, ScanProblem<Raised>)> =
         scenario.problems.iter().map(problem).collect();
-    match worst_problem(&problems) {
-        Some(index) => {
-            let (line_number, problem) = problems.swap_remove(index);
-            describe(line_number, &problem)
-        }
-        None => Value::Null,
-    }
+    let position = worst_problem(&problems);
+    position.map_or(Value::Null, |index| {
+        let (line_number, problem) = problems.swap_remove(index);
+        describe(line_number, &problem)
+    })
 }
 
 fn problem(item: &Problem) -> (usize, ScanProblem<Raised>) {

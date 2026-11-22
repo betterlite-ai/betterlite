@@ -46,7 +46,7 @@ async fn worst_problem_priority() {
             assert_eq!(returned, raised("r3", 429));
             assert_eq!(returned.status, 429);
         }
-        other @ ScanFile::Scanned(_) | other @ ScanFile::Rejected(_) => {
+        other @ (ScanFile::Scanned(_) | ScanFile::Rejected(_)) => {
             panic!("the exception at line 3 wins, got {other:?}")
         }
     }
@@ -55,7 +55,7 @@ async fn worst_problem_priority() {
             failure,
             BatchScanFailure::Unparseable(UnparseableRecord { line_number: 2 })
         ),
-        other @ ScanFile::Scanned(_) | other @ ScanFile::Raised(_) => {
+        other @ (ScanFile::Scanned(_) | ScanFile::Raised(_)) => {
             panic!("the refusal at line 2 wins, got {other:?}")
         }
     }

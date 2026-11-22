@@ -94,7 +94,7 @@ async fn a_hook_failure_closes_the_spool_and_rewinds() {
         .expect("a scan answers");
     match outcome {
         ScanFile::Raised(returned) => assert_eq!(returned, failure),
-        other @ ScanFile::Scanned(_) | other @ ScanFile::Rejected(_) => {
+        other @ (ScanFile::Scanned(_) | ScanFile::Rejected(_)) => {
             panic!("the hook's exception aborts the scan, got {other:?}")
         }
     }
