@@ -513,3 +513,10 @@ path = "fuzz_targets/create_timeout_text.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "session_log_json"
+path = "fuzz_targets/session_log_json.rs"
+test = false
+doc = false
+bench = false

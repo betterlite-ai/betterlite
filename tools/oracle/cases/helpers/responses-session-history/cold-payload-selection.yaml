@@ -1,0 +1,65 @@
+kind: helper
+name: responses-session-history-cold-payload-selection
+call:
+  responses_session_history:
+    previous_response_id: chatcmpl-turn-1
+    database: true
+    disable_spend_logs: false
+    replies:
+    - - request_id: r1
+        session_id: cold-1
+        proxy_server_request: '{"input": "x litellm_truncated"}'
+        metadata: '{"cold_storage_object_key": "key-1"}'
+        response:
+          id: chatcmpl-x
+          object: chat.completion
+          created: 1
+          model: gpt-4o
+          choices:
+          - index: 0
+            finish_reason: stop
+            message:
+              role: assistant
+              content: one
+      - request_id: r2
+        session_id: cold-1
+        proxy_server_request: ''
+        metadata:
+          cold_storage_object_key: key-empty
+        response: {}
+      - request_id: r3
+        session_id: cold-1
+        proxy_server_request: {}
+        metadata: '{broken'
+        response: {}
+      - request_id: r4
+        session_id: cold-1
+        proxy_server_request:
+          input: kept as logged
+        metadata:
+          cold_storage_object_key: key-unread
+        response: {}
+      - request_id: r5
+        session_id: cold-1
+        proxy_server_request:
+          litellm_truncated: true
+          input: short
+        metadata:
+          cold_storage_object_key: key-null
+        response: {}
+    cold_storage: true
+    cold_objects:
+      key-1:
+        input: restored from the bucket
+      key-empty: {}
+      key-null: null
+    cold_failures: []
+    request:
+      messages:
+      - role: user
+        content: and now?
+      model: gpt-4o
+      custom_llm_provider: openai
+env: {}
+compare:
+  ignore: []

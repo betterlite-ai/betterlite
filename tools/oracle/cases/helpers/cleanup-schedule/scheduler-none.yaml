@@ -1,0 +1,17 @@
+kind: helper
+name: cleanup-records-the-attempt-without-a-scheduler
+call:
+  b8371:
+    operation: apply_retention
+    settings:
+      maximum_spend_logs_retention_period: "30d"
+    previous: {}
+    last_attempt: null
+    reschedule_failed: false
+    scheduler: none
+    job_present: true
+    add_fails: false
+    start: "2026-01-01T00:00:00Z"
+env: {}
+compare:
+  ignore: []

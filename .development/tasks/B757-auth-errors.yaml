@@ -135,8 +135,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/auth-errors/**
     - tools/oracle/fuzz/corpus/helper_case/auth-errors-*
-    - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/auth/**
+    - crates/betterlite-server/src/auth/auth_stage_loop.rs
     - crates/betterlite-server/src/state/auth_errors.rs
     - crates/betterlite-server/src/state/auth_errors/**
     - tools/oracle/cases/auth/auth-errors/**
@@ -322,6 +321,6 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as auth_errors in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_errors.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_errors.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An enabled DB-outage fallback uses sentinel __db_unavailable_fallback__, never the proxy-admin role.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2100
   max_new_expects: 0
 review_level: security

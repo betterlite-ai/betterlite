@@ -1,0 +1,16 @@
+kind: helper
+name: missing-session-id
+call:
+  b3054:
+    agents:
+      - agent_id: agent-1
+        agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+        litellm_params: {max_iterations: 1}
+    calls:
+      - agent_id: agent-1
+        data: {model: gpt-4o, metadata: {other: true}}
+      - agent_id: agent-1
+        data: {model: gpt-4o}
+env: {}
+compare: {ignore: []}

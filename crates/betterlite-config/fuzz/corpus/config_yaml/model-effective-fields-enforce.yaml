@@ -1,0 +1,9 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+      rpm: 60
+      tpm: 100000
+general_settings:
+  enforce_rpm_tpm_on_model_add: os.environ/ENFORCE_RPM_TPM_ON_MODEL_ADD

@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-s3-signing-destination-seed
+call:
+  bedrock_services_s3_signing:
+    operation: destination
+    uploads:
+      - model: bedrock/m
+        litellm_params: {s3_bucket_name: bkt/prefix, s3_region_name: eu-west-1}
+        optional_params: {}
+        environment: {}
+        file: {filename: f.txt, content: hi}
+        purpose: assistants
+env: {}
+compare: {ignore: []}

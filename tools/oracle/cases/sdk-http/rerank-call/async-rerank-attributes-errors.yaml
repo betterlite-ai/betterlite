@@ -1,0 +1,35 @@
+kind: sdk_http
+name: async-rerank-attributes-errors
+env: {}
+call:
+  rerank_call:
+    runs:
+      - model: unknown-provider/some-model
+        query: q
+        documents: [a]
+      - model: cohere/rerank-english-v3.0
+        query: q
+        documents: [a]
+        custom_llm_provider: cohere
+        kwargs:
+          api_key: sk-call
+          api_base: "{mock}"
+upstream:
+  - status: 429
+    headers: {content-type: text/plain, retry-after: "2"}
+    body: slow
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, accept, content-type]
+  ignore:
+    - pointer: /rerank_call/value/runs/0/failure/message
+      why: >-
+        LiteLLM prefixes get_llm_provider's text with the exception class and
+        appends a provider-list hint, while betterlite carries the resolver's
+        own error text, so only the message wording differs.
+    - pointer: /rerank_call/value/runs/1/failure/message
+      why: >-
+        LiteLLM prefixes the provider's response text with the exception class,
+        and betterlite carries the provider body, so only the message wording
+        differs.

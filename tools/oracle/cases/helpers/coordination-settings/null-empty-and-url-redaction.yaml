@@ -1,0 +1,14 @@
+kind: helper
+name: coordination-settings-null-empty-and-url-redaction
+call:
+  coordination_settings:
+    function: redact
+    settings:
+      host: cache.internal
+      port: 6379
+      password: null
+      sentinel_password: ""
+      url: "redis://:hunter2@cache.internal:6379/0"
+      ssl: null
+env: {}
+compare: {ignore: []}
