@@ -25,7 +25,6 @@ PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 FORBIDDEN: Final = 403
 BAD_REQUEST: Final = 400
 Role = Literal["absent", "proxy_admin", "proxy_admin_viewer", "internal_user", "customer"]
-Verdict = Literal["allowed", "denied"]
 
 
 class Deployment(Strict):
@@ -93,8 +92,8 @@ class ParseOverLimit(Strict):
 
 
 class AccessResult(Strict):
-    writer: Verdict
-    viewer: Verdict
+    writer: bool
+    viewer: bool
 
 
 class Validated(Strict):
@@ -231,7 +230,7 @@ async def call(
         _ = await start_shadow_eval(request, auth)
 
 
-def verdict(auth: UserAPIKeyAuth, *, writer: bool) -> Verdict:
+def verdict(auth: UserAPIKeyAuth, *, writer: bool) -> bool:
     action = "start a shadow eval" if writer else "view shadow evals"
     request = (
         StartShadowEvalRequest(
@@ -244,13 +243,13 @@ def verdict(auth: UserAPIKeyAuth, *, writer: bool) -> Verdict:
         asyncio.run(call(request, auth, Router(model_list=[]) if writer else None, Targets()))
     except HTTPException as error:
         if error.status_code == FORBIDDEN:
-            return "denied"
+            return False
         if writer and error.status_code == BAD_REQUEST:
-            return "allowed"
+            return True
         raise ProbeError("invalid_request", f"{action} answered {error.status_code}") from error
     except Sentinel:
-        return "allowed"
-    return "allowed"
+        return True
+    return True
 
 
 def access(role: Role) -> AccessResult:

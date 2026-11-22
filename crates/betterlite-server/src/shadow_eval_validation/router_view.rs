@@ -40,7 +40,7 @@ impl ShadowEvalRouter<'_> {
 
     // _is_configured_pre_routing_strategy: a registry holds a deployment whose model names one of the four routers.
     #[must_use]
-    pub fn is_configured_pre_routing_strategy(&self, name: &str) -> bool {
+    pub fn has_strategy_deployment(&self, name: &str) -> bool {
         self.with_lookup(|lookup| {
             // a stale index or a malformed alias reads as empty, which rejects the start
             lookup

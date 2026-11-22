@@ -11,6 +11,14 @@ fn refused(body: &str) -> bool {
     parse_shadow_eval_request(body.as_bytes()).is_err()
 }
 
+fn assert_bounded(body: &str, rejected: bool, field: &str) {
+    let parsed = parse_shadow_eval_request(body.as_bytes());
+    assert_eq!(parsed.is_err(), rejected);
+    if rejected {
+        assert_eq!(validation_field(parsed.unwrap_err()), field);
+    }
+}
+
 #[rstest]
 #[case(0_usize, true)]
 #[case(1_usize, false)]
@@ -52,11 +60,7 @@ fn the_target_ceiling_counts_every_kind_together() {
 #[case("100.1", true)]
 fn the_percentage_is_bounded(#[case] value: &str, #[case] rejected: bool) {
     let body = format!(r#"{{"team_ids":["t"],"router_names":["r"],"shadow_percentage":{value}}}"#);
-    assert_eq!(refused(&body), rejected);
-    if rejected {
-        let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-        assert_eq!(validation_field(error), "shadow_percentage");
-    }
+    assert_bounded(&body, rejected, "shadow_percentage");
 }
 
 #[rstest]
@@ -68,11 +72,7 @@ fn the_duration_is_bounded(#[case] days: u32, #[case] rejected: bool) {
     let body = format!(
         r#"{{"team_ids":["t"],"router_names":["r"],"shadow_percentage":50,"duration_days":{days}}}"#
     );
-    assert_eq!(refused(&body), rejected);
-    if rejected {
-        let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-        assert_eq!(validation_field(error), "duration_days");
-    }
+    assert_bounded(&body, rejected, "duration_days");
 }
 
 #[test]
@@ -94,11 +94,7 @@ fn the_budget_is_bounded(#[case] value: &str, #[case] rejected: bool) {
     let body = format!(
         r#"{{"team_ids":["t"],"router_names":["r"],"shadow_percentage":50,"max_budget":{value}}}"#
     );
-    assert_eq!(refused(&body), rejected);
-    if rejected {
-        let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-        assert_eq!(validation_field(error), "max_budget");
-    }
+    assert_bounded(&body, rejected, "max_budget");
 }
 
 #[test]
@@ -113,16 +109,9 @@ fn keeps_the_budget_decimal_as_written() {
 #[case(4_usize, false)]
 #[case(5_usize, true)]
 fn router_names_are_bounded_before_dedup(#[case] count: usize, #[case] rejected: bool) {
-    let names = vec!["r"; count];
-    let body = format!(
-        r#"{{"team_ids":["t"],"router_names":{},"shadow_percentage":50}}"#,
-        serde_json::to_string(&names).unwrap()
-    );
-    assert_eq!(refused(&body), rejected);
-    if rejected {
-        let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-        assert_eq!(validation_field(error), "router_names");
-    }
+    let names = serde_json::to_string(&vec!["r"; count]).unwrap();
+    let body = format!(r#"{{"team_ids":["t"],"router_names":{names},"shadow_percentage":50}}"#);
+    assert_bounded(&body, rejected, "router_names");
 }
 
 #[test]
@@ -132,20 +121,21 @@ fn four_duplicate_router_names_dedupe_to_one() {
     assert_eq!(parsed.router_names, ["r"]);
 }
 
+#[test]
+fn a_reverse_job_accepts_one_router_with_a_baseline() {
+    let body = r#"{"team_ids":["t"],"router_names":["r"],"direction":"reverse","baseline_model":"b","shadow_percentage":50}"#;
+    assert_eq!(parse(body).router_names, ["r"]);
+}
+
 #[rstest]
 #[case(100_usize, false)]
 #[case(101_usize, true)]
 fn models_are_bounded_before_dedup(#[case] count: usize, #[case] rejected: bool) {
-    let models = vec!["m"; count];
+    let models = serde_json::to_string(&vec!["m"; count]).unwrap();
     let body = format!(
-        r#"{{"team_ids":["t"],"router_names":["r"],"models":{},"shadow_percentage":50}}"#,
-        serde_json::to_string(&models).unwrap()
+        r#"{{"team_ids":["t"],"router_names":["r"],"models":{models},"shadow_percentage":50}}"#
     );
-    assert_eq!(refused(&body), rejected);
-    if rejected {
-        let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-        assert_eq!(validation_field(error), "models");
-    }
+    assert_bounded(&body, rejected, "models");
 }
 
 #[rstest]

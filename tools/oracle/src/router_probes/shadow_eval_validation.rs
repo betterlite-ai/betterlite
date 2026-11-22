@@ -21,10 +21,8 @@ use betterlite_server::judge_targets::call::JudgeCall;
 use betterlite_server::judge_targets::error::JudgeDispatchError;
 use betterlite_server::judge_targets::sdk::JudgeSdk;
 use betterlite_server::model_visibility::testing::{Row, Snapshot};
-use betterlite_server::shadow_eval_validation::access::{
-    require_admin_viewer, require_admin_writer,
-};
-use betterlite_server::shadow_eval_validation::error::{AccessError, ShadowEvalRequestError};
+use betterlite_server::shadow_eval_validation::access::{AdminRole, require_admin};
+use betterlite_server::shadow_eval_validation::error::ShadowEvalRequestError;
 use betterlite_server::shadow_eval_validation::request::{
     ShadowEvalDirection, StartShadowEvalRequest, parse_shadow_eval_request,
 };
@@ -93,7 +91,7 @@ pub struct Output {
 #[serde(tag = "step", content = "result", rename_all = "snake_case")]
 pub enum StepOutput {
     Parse(ParseResult),
-    Access { writer: Verdict, viewer: Verdict },
+    Access { writer: bool, viewer: bool },
     ValidateStart(StartResult),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,12 +100,6 @@ pub enum ParseResult {
     Accepted { request: RequestView },
     Rejected,
     OverLimit { bytes: usize, limit: usize },
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Verdict {
-    Allowed,
-    Denied,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
@@ -147,27 +139,18 @@ where
     }
 }
 fn auth(role: Role) -> Result<UserAPIKeyAuth, OperationError> {
-    let name = match role {
+    let declared = match role {
         Role::Absent => None,
         Role::ProxyAdmin => Some("proxy_admin"),
         Role::ProxyAdminViewer => Some("proxy_admin_viewer"),
         Role::InternalUser => Some("internal_user"),
         Role::Customer => Some("customer"),
     };
-    let mut fields = BTreeMap::new();
-    if let Some(declared) = name {
-        fields.insert(
-            "user_role".to_owned(),
-            JsonData::String(declared.to_owned()),
-        );
-    }
+    let fields: BTreeMap<String, JsonData> = declared
+        .map(|name| ("user_role".to_owned(), JsonData::String(name.to_owned())))
+        .into_iter()
+        .collect();
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).map_err(invalid)
-}
-fn verdict<T>(result: Result<T, AccessError>) -> Verdict {
-    match result {
-        Ok(_allowed) => Verdict::Allowed,
-        Err(_denied) => Verdict::Denied,
-    }
 }
 fn body_bytes(body: &Body) -> Result<Vec<u8>, OperationError> {
     let mut bytes = body.text.clone().into_bytes();
@@ -202,11 +185,8 @@ fn parse_result(body: &Body) -> Result<ParseResult, OperationError> {
         Err(ShadowEvalRequestError::Bounded(PrivateJsonError::TooLarge(bytes, limit))) => {
             Ok(ParseResult::OverLimit { bytes, limit })
         }
-        Err(ShadowEvalRequestError::Bounded(..))
-        | Err(ShadowEvalRequestError::Decode(..))
-        | Err(ShadowEvalRequestError::Field { .. })
-        | Err(ShadowEvalRequestError::NotAnObject)
-        | Err(ShadowEvalRequestError::Validation { .. }) => Ok(ParseResult::Rejected),
+        // every other rejection reads the same to a caller: no job starts
+        Err(_rejected) => Ok(ParseResult::Rejected),
     }
 }
 fn start_result(body: &Body, context: &StartContext<'_>) -> Result<StartResult, OperationError> {
@@ -224,8 +204,8 @@ fn step_output(step: &Step, context: &StartContext<'_>) -> Result<StepOutput, Op
         Step::Access(role) => {
             let caller = auth(*role)?;
             Ok(StepOutput::Access {
-                writer: verdict(require_admin_writer(&caller, "start a shadow eval")),
-                viewer: verdict(require_admin_viewer(&caller, "view shadow evals")),
+                writer: require_admin(&caller, "start a shadow eval", AdminRole::Writer).is_ok(),
+                viewer: require_admin(&caller, "view shadow evals", AdminRole::Viewer).is_ok(),
             })
         }
         Step::ValidateStart(body) => Ok(StepOutput::ValidateStart(start_result(body, context)?)),
@@ -235,8 +215,7 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    let mut bundled = BundledCatalog::default();
-    let catalog = bundled.get();
+    let catalog = BundledCatalog::default().get();
     let known = BTreeSet::new();
     let custom = BTreeSet::new();
     let environment = BTreeMap::new();

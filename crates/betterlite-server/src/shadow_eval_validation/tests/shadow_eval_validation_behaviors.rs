@@ -6,17 +6,17 @@ use rstest::rstest;
 use crate::judge_targets::call::JudgeCall;
 use crate::judge_targets::router::JudgeRouter as _;
 use crate::model_visibility::testing::{Row, Snapshot};
-use crate::shadow_eval_validation::access::{require_admin_viewer, require_admin_writer};
+use crate::shadow_eval_validation::access::{AdminRole, require_admin};
 use crate::shadow_eval_validation::error::AccessError;
 use crate::shadow_eval_validation::request::{
-    DEFAULT_SHADOW_EVAL_JUDGE_MODEL, ShadowEvalDirection, parse_shadow_eval_request,
+    DEFAULT_JUDGE_MODEL, ShadowEvalDirection, parse_shadow_eval_request,
 };
 use crate::shadow_eval_validation::router_view::ShadowEvalRouter;
 use crate::shadow_eval_validation::start::{TargetKey, TargetRecords};
 
 use super::support::{
-    JUDGE, JUDGE_MODEL, ROUTER, TIER, TIER_MODEL, auth, deployments, params, parse, records,
-    router_params, validate, validate_with_api_key, validate_with_hosted_keys, validation_field,
+    Credentials, JUDGE, JUDGE_MODEL, ROUTER, TIER, TIER_MODEL, auth, deployments, params, parse,
+    records, router_params, validate, validate_with, validation_field,
 };
 
 #[test]
@@ -24,7 +24,7 @@ fn defaults_fill_every_optional_field() {
     let parsed = parse(
         r#"{"api_key_ids":["key-1"],"router_names":["shadow-router"],"shadow_percentage":50}"#,
     );
-    assert_eq!(parsed.judge_model, DEFAULT_SHADOW_EVAL_JUDGE_MODEL);
+    assert_eq!(parsed.judge_model, DEFAULT_JUDGE_MODEL);
     assert_eq!(parsed.direction, ShadowEvalDirection::Forward);
     assert_eq!(parsed.duration_days, 7);
     assert_eq!(parsed.max_budget, rust_decimal::Decimal::new(100, 1));
@@ -121,8 +121,8 @@ fn admin_roles_are_the_only_callers_that_pass(
     #[case] viewer: bool,
 ) {
     let caller = auth(role);
-    let writer_allowed = require_admin_writer(&caller, "start").is_ok();
-    let viewer_allowed = require_admin_viewer(&caller, "view").is_ok();
+    let writer_allowed = require_admin(&caller, "start", AdminRole::Writer).is_ok();
+    let viewer_allowed = require_admin(&caller, "view", AdminRole::Viewer).is_ok();
     assert_eq!(writer_allowed, writer);
     assert_eq!(viewer_allowed, viewer);
 }
@@ -130,8 +130,8 @@ fn admin_roles_are_the_only_callers_that_pass(
 #[test]
 fn access_errors_carry_the_endpoint_status_codes_and_wording() {
     let caller = auth(Some("internal_user"));
-    let writer = require_admin_writer(&caller, "start a shadow eval").unwrap_err();
-    let viewer = require_admin_viewer(&caller, "view shadow evals").unwrap_err();
+    let writer = require_admin(&caller, "start a shadow eval", AdminRole::Writer).unwrap_err();
+    let viewer = require_admin(&caller, "view shadow evals", AdminRole::Viewer).unwrap_err();
     assert_eq!(writer.status_code(), 403);
     assert_eq!(viewer.status_code(), 403);
     assert_eq!(
@@ -285,7 +285,13 @@ fn accepts_an_sdk_judge_once_a_key_is_configured() {
     let parsed = parse(
         r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"anthropic/claude-sonnet-5","shadow_percentage":50}"#,
     );
-    validate_with_api_key(&parsed, &rows, &records(), "sk-ant-test").unwrap();
+    validate_with(
+        &parsed,
+        &rows,
+        &records(),
+        &Credentials::ApiKey("sk-ant-test".to_owned()),
+    )
+    .unwrap();
 }
 
 fn tiered_deployments() -> Vec<(&'static str, JsonObject)> {
@@ -364,7 +370,7 @@ fn a_hosted_manager_holding_either_anthropic_secret_is_consulted(
     let parsed = parse(
         r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"anthropic/claude-sonnet-5","shadow_percentage":50}"#,
     );
-    let keys = [hosted.to_owned()];
-    let result = validate_with_hosted_keys(&parsed, &rows, &records(), &keys);
+    let keys = Credentials::Hosted(vec![hosted.to_owned()]);
+    let result = validate_with(&parsed, &rows, &records(), &keys);
     assert_eq!(result.is_ok(), accepted);
 }

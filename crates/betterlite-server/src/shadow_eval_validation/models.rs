@@ -42,7 +42,7 @@ pub fn validate_plain_model(
     let configured_router = context
         .router
         .as_ref()
-        .is_some_and(|router| router.is_configured_pre_routing_strategy(model));
+        .is_some_and(|router| router.has_strategy_deployment(model));
     if configured_router {
         return Err(ShadowEvalValidationError::AutoRouterModel {
             field,
@@ -66,7 +66,7 @@ pub fn validate_plain_model(
             ),
         });
     }
-    if sdk_teams.is_empty() || !sdk_model_is_missing_anthropic_credentials(model, context) {
+    if sdk_teams.is_empty() || !missing_anthropic_credentials(model, context) {
         return Ok(());
     }
     let teams = for_teams(&sdk_teams);
@@ -86,7 +86,7 @@ fn for_teams(team_ids: &[Option<String>]) -> String {
     format!(" for team {}", named.join(", "))
 }
 
-fn sdk_model_is_missing_anthropic_credentials(model: &str, context: &StartContext<'_>) -> bool {
+fn missing_anthropic_credentials(model: &str, context: &StartContext<'_>) -> bool {
     let request = ResolutionRequest {
         model,
         custom_llm_provider: None,
@@ -167,28 +167,28 @@ pub fn router_arm_models(
         .collect()
 }
 
-// _validate_judge_is_not_a_candidate: a judge scoring its own arm measures the judge, not the models.
-pub fn validate_judge_is_not_a_candidate(
+// _reject_judge_collision: a judge scoring its own arm measures the judge, not the models.
+pub fn reject_judge_collision(
     context: &StartContext<'_>,
     request: &StartShadowEvalRequest,
     team_ids: &[Option<String>],
 ) -> Result<(), ShadowEvalValidationError> {
+    let mut arms: Vec<(String, String)> = Vec::new();
+    for name in &request.router_names {
+        for (role, model) in router_arm_models(context, name) {
+            arms.push((role.name().to_owned(), model));
+        }
+    }
+    if let Some(baseline) = &request.baseline_model {
+        arms.push(("baseline".to_owned(), baseline.clone()));
+    }
     let mut seen = BTreeSet::new();
     let mut collisions: Vec<(String, String)> = Vec::new();
     for team_id in team_ids {
         let judge = model_target(context, &request.judge_model, team_id.as_deref()).models;
-        let mut arms: Vec<(String, String)> = Vec::new();
-        for name in &request.router_names {
-            for (role, model) in router_arm_models(context, name) {
-                arms.push((role.name().to_owned(), model));
-            }
-        }
-        if let Some(baseline) = &request.baseline_model {
-            arms.push(("baseline".to_owned(), baseline.clone()));
-        }
-        for (role, model) in arms {
-            let candidate = model_target(context, &model, team_id.as_deref());
-            let collision = (role, model);
+        for (role, model) in &arms {
+            let candidate = model_target(context, model, team_id.as_deref());
+            let collision = (role.clone(), model.clone());
             if !judge.is_disjoint(&candidate.models) && seen.insert(collision.clone()) {
                 collisions.push(collision);
             }

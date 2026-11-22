@@ -41,16 +41,6 @@ impl AccessError {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TargetFault {
-    #[error("api_key_ids not on this proxy: {ids}")]
-    UnknownKeys { ids: String },
-    #[error("team_ids not on this proxy: {ids}")]
-    UnknownTeams { ids: String },
-    #[error("user_ids not on this proxy: {ids}")]
-    UnknownUsers { ids: String },
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum ShadowEvalValidationError {
     #[error("Not a configured auto-router: {names}")]

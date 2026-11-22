@@ -101,18 +101,27 @@ pub fn auth(role: Option<&str>) -> UserAPIKeyAuth {
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap()
 }
 
+pub enum Credentials {
+    None,
+    Hosted(Vec<String>),
+    ApiKey(String),
+}
+
 pub fn validate(
     request: &StartShadowEvalRequest,
     deployments: &[(&str, JsonObject)],
     records: &TargetRecords<'_>,
 ) -> Result<(), ShadowEvalValidationError> {
-    run_validation(
-        request,
-        deployments,
-        records,
-        AnthropicSettings::default(),
-        unconsulted_manager(),
-    )
+    validate_with(request, deployments, records, &Credentials::None)
+}
+
+pub fn validate_with(
+    request: &StartShadowEvalRequest,
+    deployments: &[(&str, JsonObject)],
+    records: &TargetRecords<'_>,
+    credentials: &Credentials,
+) -> Result<(), ShadowEvalValidationError> {
+    run_validation(request, deployments, records, credentials)
 }
 
 fn unconsulted_manager() -> SecretManagerReadState<'static> {
@@ -124,53 +133,29 @@ fn unconsulted_manager() -> SecretManagerReadState<'static> {
     }
 }
 
-pub fn validate_with_hosted_keys(
-    request: &StartShadowEvalRequest,
-    deployments: &[(&str, JsonObject)],
-    records: &TargetRecords<'_>,
-    hosted_keys: &[String],
-) -> Result<(), ShadowEvalValidationError> {
-    let manager = SecretManagerReadState {
-        client_exists: true,
-        settings_exist: true,
-        access_mode: SecretAccessMode::ReadOnly,
-        hosted_keys: Some(hosted_keys),
-    };
-    run_validation(
-        request,
-        deployments,
-        records,
-        AnthropicSettings::default(),
-        manager,
-    )
-}
-
-pub fn validate_with_api_key(
-    request: &StartShadowEvalRequest,
-    deployments: &[(&str, JsonObject)],
-    records: &TargetRecords<'_>,
-    api_key: &str,
-) -> Result<(), ShadowEvalValidationError> {
-    let settings = AnthropicSettings {
-        api_key: Some(SecretString::from(api_key)),
-        ..AnthropicSettings::default()
-    };
-    run_validation(
-        request,
-        deployments,
-        records,
-        settings,
-        unconsulted_manager(),
-    )
-}
-
 fn run_validation(
     request: &StartShadowEvalRequest,
     deployments: &[(&str, JsonObject)],
     records: &TargetRecords<'_>,
-    settings: AnthropicSettings,
-    manager: SecretManagerReadState<'_>,
+    credentials: &Credentials,
 ) -> Result<(), ShadowEvalValidationError> {
+    let (settings, manager) = match credentials {
+        Credentials::None => (AnthropicSettings::default(), unconsulted_manager()),
+        Credentials::Hosted(keys) => (
+            AnthropicSettings::default(),
+            SecretManagerReadState {
+                client_exists: true,
+                settings_exist: true,
+                access_mode: SecretAccessMode::ReadOnly,
+                hosted_keys: Some(keys),
+            },
+        ),
+        Credentials::ApiKey(key) => {
+            let mut settings = AnthropicSettings::default();
+            settings.api_key = Some(SecretString::from(key.as_str()));
+            (settings, unconsulted_manager())
+        }
+    };
     let mut bundled = BundledCatalog::default();
     let catalog = bundled.get();
     let known = BTreeSet::new();

@@ -4,9 +4,9 @@ use betterlite_models::judge_primitives::provider_qualified::ProviderCache;
 use betterlite_models::resolution::ResolutionContext;
 
 use crate::judge_targets::sdk::JudgeSdk;
-use crate::shadow_eval_validation::error::{ShadowEvalValidationError, TargetFault};
+use crate::shadow_eval_validation::error::ShadowEvalValidationError;
 use crate::shadow_eval_validation::models::{
-    validate_judge_is_not_a_candidate, validate_model_scope, validate_plain_model,
+    reject_judge_collision, validate_model_scope, validate_plain_model,
 };
 use crate::shadow_eval_validation::request::StartShadowEvalRequest;
 use crate::shadow_eval_validation::router_view::{AnthropicCredentials, ShadowEvalRouter};
@@ -42,7 +42,7 @@ pub fn validate_start(
     if let Some(baseline) = request.baseline_model.as_deref() {
         validate_plain_model(context, baseline, "baseline_model", &team_ids)?;
     }
-    validate_judge_is_not_a_candidate(context, request, &team_ids)?;
+    reject_judge_collision(context, request, &team_ids)?;
     validate_model_scope(context, &request.models)
 }
 
@@ -57,7 +57,7 @@ fn reject_unconfigured_routers(
             !context
                 .router
                 .as_ref()
-                .is_some_and(|router| router.is_configured_pre_routing_strategy(name.as_str()))
+                .is_some_and(|router| router.has_strategy_deployment(name.as_str()))
         })
         .collect();
     if unconfigured.is_empty() {
@@ -78,13 +78,16 @@ fn reject_unknown_targets(
     let known_keys: BTreeSet<&str> = records.keys.iter().map(|key| key.token).collect();
     let known_teams: BTreeSet<&str> = records.teams.iter().copied().collect();
     let known_users: BTreeSet<&str> = records.users.iter().copied().collect();
-    let faults: Vec<TargetFault> = [
-        unknown_ids(&request.api_key_ids, &known_keys).map(|ids| TargetFault::UnknownKeys { ids }),
-        unknown_ids(&request.team_ids, &known_teams).map(|ids| TargetFault::UnknownTeams { ids }),
-        unknown_ids(&request.user_ids, &known_users).map(|ids| TargetFault::UnknownUsers { ids }),
+    let faults: Vec<String> = [
+        (
+            "api_key_ids",
+            unknown_ids(&request.api_key_ids, &known_keys),
+        ),
+        ("team_ids", unknown_ids(&request.team_ids, &known_teams)),
+        ("user_ids", unknown_ids(&request.user_ids, &known_users)),
     ]
     .into_iter()
-    .flatten()
+    .filter_map(|(field, ids)| ids.map(|missing| format!("{field} not on this proxy: {missing}")))
     .collect();
     if faults.is_empty() {
         return Ok(());
