@@ -63,19 +63,6 @@ where
         session: operation.session,
         refresh_enabled: operation.refresh_enabled,
     };
-    exchange_call(&call, runtime).await
-}
-
-async fn exchange_call<C, K, T, L>(
-    call: &AzureTranscriptionCall<'_>,
-    runtime: &mut MediaRuntime<'_, C, K, T, L>,
-) -> Result<TranscriptionReply, AzureMediaError>
-where
-    C: Sync,
-    K: Sync,
-    T: TranscriptionTransport,
-    L: AzureTranscriptionLogger + Send,
-{
     // the refresh cache holds credential sources the future cannot carry across the send
     let (outbound, pending) = {
         let mut refresh = RefreshProviderCache::new(runtime.sources);
@@ -86,26 +73,22 @@ where
             cache: &mut *runtime.cache,
             refresh: &mut refresh,
         };
-        audio_transcriptions(call, &mut wiring, &mut *runtime.logger)?
+        audio_transcriptions(&call, &mut wiring, &mut *runtime.logger)?
     };
     let sent = runtime.transport.send(outbound).await;
     Ok(finish_transcription(pending, sent, &mut *runtime.logger)?)
 }
 
 // AzureSpeechAudioTranscriptionConfig: validate the Speech auth, then send the raw audio to the short-audio endpoint.
-pub(super) async fn native<C, K, T, L>(
+pub(super) async fn native<T>(
     operation: &NativeTranscriptionOperation,
-    runtime: &MediaRuntime<'_, C, K, T, L>,
+    transport: &T,
 ) -> Result<NativeTranscriptionReply, AzureMediaError>
 where
-    C: Sync,
-    K: Sync,
     T: TranscriptionTransport,
-    L: Sync,
 {
     let outbound = native_request(operation)?;
-    let sent = runtime
-        .transport
+    let sent = transport
         .send(outbound)
         .await
         .map_err(|source| AzureTranscriptionError::Transport { source })?;

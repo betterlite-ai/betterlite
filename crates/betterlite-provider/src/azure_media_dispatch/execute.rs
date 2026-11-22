@@ -49,7 +49,7 @@ where
             AzureMediaResult::Transcription(Box::new(transcription::openai(*call, runtime).await?))
         }
         AzureMediaOperation::NativeTranscription(call) => AzureMediaResult::NativeTranscription(
-            Box::new(transcription::native(&call, runtime).await?),
+            Box::new(transcription::native(&call, runtime.transport).await?),
         ),
     };
     Ok(OperationResult::AzureMedia(result))
