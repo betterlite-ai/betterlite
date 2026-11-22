@@ -283,7 +283,12 @@ fn success_images() {
 }
 
 fn empty_images() {
-    for body in ["{}", r#"{"images":[]}"#, r#"{"images":["",null,false,0]}"#] {
+    for body in [
+        "{}",
+        r#"{"images":[]}"#,
+        r#"{"images":["",null,false,0]}"#,
+        r#"{"images":[{}]}"#,
+    ] {
         let reply = edit_reply(INPAINT, 200, body).expect("no images is allowed");
         assert_eq!(reply.response.data, Some(Vec::new()), "{body}");
         assert_eq!(
