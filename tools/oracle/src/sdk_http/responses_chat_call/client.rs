@@ -57,8 +57,7 @@ pub(crate) enum CompletionsError {
     Decode(String),
 }
 
-// B916's completion seam against the mock provider: the body names the mapped chat request, the headers
-// carry the case's api key and extra headers, and a non-2xx answer is kept for B011's projection
+// B916's completion seam: the mapped chat body, the case's headers, and B011's failure projection
 pub(crate) struct HttpCompletions {
     client: ProxiedClient,
     deployment: ChatDeployment,
@@ -106,7 +105,7 @@ impl HttpCompletions {
         &self,
         arguments: &CompletionArguments,
     ) -> Result<(OutboundRequest, bool), CompletionsError> {
-        let stream = streaming(arguments);
+        let stream = matches!(arguments.fields.get("stream"), Some(Value::Bool(true)));
         let body = serde_json::to_vec(&provider_body(arguments))
             .map_err(|source| CompletionsError::Decode(source.to_string()))?;
         let request = OutboundRequest {
@@ -192,10 +191,6 @@ fn provider_body(arguments: &CompletionArguments) -> Map<String, Value> {
         }
     }
     body
-}
-
-fn streaming(arguments: &CompletionArguments) -> bool {
-    matches!(arguments.fields.get("stream"), Some(Value::Bool(true)))
 }
 
 impl CompletionClient for HttpCompletions {

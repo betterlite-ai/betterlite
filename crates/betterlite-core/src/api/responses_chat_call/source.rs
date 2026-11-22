@@ -8,7 +8,9 @@ use betterlite_streaming::provider_chunk_decode::wrapper::{
     StreamSetup as WrapperSetup, StreamWrapper,
 };
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
-use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamOptions};
+use betterlite_streaming::stream_chunk_shaping::records::{
+    JsonObject, JsonValue, StreamChunk, StreamOptions,
+};
 use futures_util::StreamExt as _;
 use uuid::Uuid;
 
@@ -122,11 +124,7 @@ impl ResponsesChunkSource {
         let Some(chunk) = shaped else {
             return Ok(None);
         };
-        wrapper_view(&chunk)
-            .map(Some)
-            .map_err(|error| StreamFailure::Unclassified {
-                text: error.to_string(),
-            })
+        view_chunk(&chunk)
     }
 
     // The wrapper's closing chunks: the finish reason when none went out, then the usage chunk it was asked for.
@@ -137,12 +135,16 @@ impl ResponsesChunkSource {
         let chunk = closing.map_err(|error| StreamFailure::Unclassified {
             text: error.to_string(),
         })?;
-        wrapper_view(&chunk)
-            .map(Some)
-            .map_err(|error| StreamFailure::Unclassified {
-                text: error.to_string(),
-            })
+        view_chunk(&chunk)
     }
+}
+
+fn view_chunk(chunk: &StreamChunk) -> Result<Option<Json>, StreamFailure> {
+    wrapper_view(chunk)
+        .map(Some)
+        .map_err(|error| StreamFailure::Unclassified {
+            text: error.to_string(),
+        })
 }
 
 #[async_trait]

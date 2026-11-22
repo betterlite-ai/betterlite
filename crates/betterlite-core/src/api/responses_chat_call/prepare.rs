@@ -1,8 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use indexmap::IndexMap;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::api::codex_history_tools::hoist_additional_tools;
@@ -22,7 +20,10 @@ pub fn prepare<Completions, Context>(
     call: &mut ResponseCall<'_, Context>,
 ) -> Result<Prepared, PreparationError> {
     let (bridged, input) = hoisted_request(call)?;
-    let request = encode(&bridged, "request")?;
+    let request = serde_json::to_value(&bridged).map_err(|source| PreparationError::Encode {
+        field: "request",
+        source,
+    })?;
     let (mapped, mapped_json) = mapped_request(deps, call, &bridged)?;
     Ok(Prepared {
         input,
@@ -36,7 +37,11 @@ pub fn prepare<Completions, Context>(
 fn hoisted_request<Context>(
     call: &mut ResponseCall<'_, Context>,
 ) -> Result<(ResponsesApiRequestParams, Json), PreparationError> {
-    let mut request_value = encode(call.request, "request")?;
+    let mut request_value =
+        serde_json::to_value(call.request).map_err(|source| PreparationError::Encode {
+            field: "request",
+            source,
+        })?;
     // ResponsesApiRequestParams always carries input, so the value is present after its own serialization
     let input = request_value.get("input").cloned().unwrap_or(Value::Null);
     let tools = tools_argument(request_value.get("tools"))?;
@@ -55,23 +60,17 @@ fn hoisted_request<Context>(
     if !hoisted.hoisted.is_empty() {
         fields.insert("tools".to_owned(), Value::Array(hoisted.tools));
     }
-    let bridged: ResponsesApiRequestParams = decode(request_value, "request")?;
-    let input: Json = decode(bridged_input, "input")?;
+    let bridged: ResponsesApiRequestParams =
+        serde_json::from_value(request_value).map_err(|source| PreparationError::Encode {
+            field: "request",
+            source,
+        })?;
+    let input: Json =
+        serde_json::from_value(bridged_input).map_err(|source| PreparationError::Encode {
+            field: "input",
+            source,
+        })?;
     Ok((bridged, input))
-}
-
-fn encode<T>(value: &T, field: &'static str) -> Result<Value, PreparationError>
-where
-    T: Serialize,
-{
-    serde_json::to_value(value).map_err(|source| PreparationError::Encode { field, source })
-}
-
-fn decode<T>(value: Value, field: &'static str) -> Result<T, PreparationError>
-where
-    T: DeserializeOwned,
-{
-    serde_json::from_value(value).map_err(|source| PreparationError::Encode { field, source })
 }
 
 fn mapped_request<Completions, Context>(
@@ -97,7 +96,11 @@ fn mapped_request<Completions, Context>(
         api_base: text_argument(call.kwargs, "api_base")?,
     };
     let mapped = chat_completion_request(&context, &mut assembly)?;
-    let mapped_value = encode(&mapped, "mapped")?;
+    let mapped_value =
+        serde_json::to_value(&mapped).map_err(|source| PreparationError::Encode {
+            field: "mapped",
+            source,
+        })?;
     let Value::Object(mapped_json) = mapped_value else {
         return Err(PreparationError::FieldType {
             field: "mapped",

@@ -51,7 +51,10 @@ impl StreamAssembly for StreamContext {
     ) -> Result<Option<Response>, AssemblyError> {
         let decoded = chunks
             .iter()
-            .map(chunk_record)
+            .map(|chunk| {
+                let value = serde_json::to_value(chunk)?;
+                serde_json::from_value(value).map_err(AssemblyError::from)
+            })
             .collect::<Result<Vec<Chunk>, AssemblyError>>()?;
         let costs = NoCost;
         let counter = ZeroTokens;
@@ -75,11 +78,6 @@ impl StreamAssembly for StreamContext {
             }
         }
     }
-}
-
-fn chunk_record(chunk: &IndexMap<String, Json>) -> Result<Chunk, AssemblyError> {
-    let value = serde_json::to_value(chunk)?;
-    serde_json::from_value(value).map_err(AssemblyError::from)
 }
 
 struct SilentHooks;
