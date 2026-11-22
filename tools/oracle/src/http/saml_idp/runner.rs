@@ -21,6 +21,11 @@ pub(crate) fn run_fixture_script(script: &str, input: &[u8]) -> Result<Vec<u8>, 
     let root = Path::new(ROOT).join("../..");
     let python = root.join("tools/oracle/litellm/.venv/bin/python");
     let script_path = root.join("tools/oracle/fixtures/saml-idp").join(script);
+    let mut command = fixture_command(&python, &script_path);
+    run_bounded(&mut command, input.to_vec(), TIMEOUT)
+}
+
+pub(crate) fn fixture_command(python: &Path, script_path: &Path) -> Command {
     let mut command = Command::new("setpriv");
     command
         .args(["--pdeathsig", "KILL", "--"])
@@ -30,9 +35,10 @@ pub(crate) fn run_fixture_script(script: &str, input: &[u8]) -> Result<Vec<u8>, 
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .env("PYTHONNOUSERSITE", "1")
         .env("LITELLM_LOCAL_MODEL_COST_MAP", "True");
-    run_bounded(&mut command, input.to_vec(), TIMEOUT)
+    command
 }
 
+// betterlite-oracle-runner's bounded runner is pub(super) in a private module, so this module carries its own.
 fn run_bounded(
     command: &mut Command,
     input: Vec<u8>,

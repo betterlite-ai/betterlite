@@ -3,7 +3,11 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write as _;
+use std::os::unix::process::ExitStatusExt as _;
 use std::path::Path;
+use std::process::Child;
+use std::sync::Mutex;
+use std::thread;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -16,7 +20,7 @@ use url::form_urlencoded;
 use super::SamlIdpError;
 use super::authn_request::{MAX_REQUEST_BYTES, decode_authn_request_id};
 use super::driver::{SamlSigner, ensure_keypair};
-use super::runner::run_fixture_script;
+use super::runner::{fixture_command, run_fixture_script};
 use crate::case::browser_flow::{Capture, CaptureSource, Step, validate_steps};
 use crate::case::decode_case;
 use crate::case::saml_assertion::{Mutation, SamlAssertion};
@@ -269,6 +273,32 @@ fn rejects_saml_steps_that_cannot_be_bound_before_proxies_start() {
     let body_error =
         validate_steps(Path::new("<case>"), &body_steps).expect_err("a request body is rejected");
     assert!(body_error.to_string().contains("cannot be combined"));
+}
+
+// setpriv installs the pdeathsig that kills the fixture once the thread that spawned it ends.
+#[test]
+fn kills_the_fixture_process_when_its_owner_thread_ends() {
+    let mut command = fixture_command(Path::new("/bin/sleep"), Path::new("30"));
+    let slot: Mutex<Option<Child>> = Mutex::new(None);
+    thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let child = command.spawn().expect("the sleeper starts");
+                *slot.lock().expect("the sleeper slot lock") = Some(child);
+            })
+            .join()
+            .expect("the owner thread ends");
+    });
+    let mut child = slot
+        .lock()
+        .expect("the sleeper slot lock")
+        .take()
+        .expect("the sleeper started");
+    let pid = child.id();
+    assert!(Path::new("/proc").join(pid.to_string()).exists());
+    let status = child.wait().expect("the sleeper is reaped");
+    assert_eq!(status.signal(), Some(9_i32));
+    assert!(!Path::new("/proc").join(pid.to_string()).exists());
 }
 
 #[test]
