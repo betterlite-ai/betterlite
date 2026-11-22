@@ -78,8 +78,7 @@ fn a_ttl_that_is_not_a_number_stops_the_load() {
     let lookup: BTreeMap<String, String> = BTreeMap::new();
     let error = ConfigLoader { lookup }
         .load("router_settings:\n  deployment_affinity_ttl_seconds: soon\n")
-        .err()
-        .expect("the load fails");
+        .expect_err("the load fails");
     assert!(
         error
             .to_string()
@@ -93,8 +92,7 @@ fn a_negative_ttl_stops_the_load() {
     let lookup: BTreeMap<String, String> = BTreeMap::new();
     let error = ConfigLoader { lookup }
         .load("router_settings:\n  deployment_affinity_ttl_seconds: -1\n")
-        .err()
-        .expect("the load fails");
+        .expect_err("the load fails");
     assert!(
         error
             .to_string()
