@@ -22,9 +22,9 @@ use tracing_subscriber::fmt;
 
 use crate::concurrency_gauges::ConcurrencyGauges;
 use crate::concurrency_gauges::cache::{GaugeCache, GaugeCacheValue};
-use crate::fail_closed::FailClosedPolicy;
+use crate::fail_closed::{FailClosedPolicy, RateLimitUnverifiableError};
 use crate::identity_descriptors::agent_registry::AgentPolicyRegistry;
-use crate::limiter_assembly::{CallTypeRateLimiter, RateLimiterAssembly};
+use crate::limiter_assembly::{CallTypeRateLimitError, CallTypeRateLimiter, RateLimiterAssembly};
 use crate::limiter_records::{
     CacheCounterValue, LimiterClock, ModelGroupResolver, ParallelSlotAcquisition,
     RateLimitResponse, RateLimitType, RateLimitedModel, TagRateLimitResolver,
@@ -635,23 +635,35 @@ pub(crate) fn occupied_registry(slots: &[&str]) -> GaugeCacheValue {
     )
 }
 
+enum BatchFailure {
+    RateLimited(ProxyRateLimitError),
+    Unverifiable(RateLimitUnverifiableError),
+}
+
 pub(crate) struct BatchLimiter {
     seen: Mutex<Vec<CallType>>,
-    error: Option<ProxyRateLimitError>,
+    failure: Option<BatchFailure>,
 }
 
 impl BatchLimiter {
     pub(crate) fn succeeding() -> Arc<Self> {
         Arc::new(Self {
             seen: Mutex::new(Vec::new()),
-            error: None,
+            failure: None,
         })
     }
 
     pub(crate) fn failing(error: ProxyRateLimitError) -> Arc<Self> {
         Arc::new(Self {
             seen: Mutex::new(Vec::new()),
-            error: Some(error),
+            failure: Some(BatchFailure::RateLimited(error)),
+        })
+    }
+
+    pub(crate) fn unverifiable(error: RateLimitUnverifiableError) -> Arc<Self> {
+        Arc::new(Self {
+            seen: Mutex::new(Vec::new()),
+            failure: Some(BatchFailure::Unverifiable(error)),
         })
     }
 
@@ -671,15 +683,20 @@ impl CallTypeRateLimiter for BatchLimiter {
         _data: &RequestData,
         call_type: CallType,
         _stash: &RequestStashSlot,
-    ) -> Result<(), ProxyRateLimitError> {
+    ) -> Result<(), CallTypeRateLimitError> {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call_type);
-        if let Some(error) = &self.error {
-            return Err(error.clone());
+        match &self.failure {
+            Some(BatchFailure::RateLimited(error)) => {
+                Err(CallTypeRateLimitError::RateLimited(error.clone()))
+            }
+            Some(BatchFailure::Unverifiable(error)) => {
+                Err(CallTypeRateLimitError::Unverifiable(error.clone()))
+            }
+            None => Ok(()),
         }
-        Ok(())
     }
 }
 

@@ -5,10 +5,7 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_core::routes::CallType;
 use betterlite_error::proxy_rate_limit_error::ProxyRateLimitProjectionError;
-use betterlite_error::rate_limit::{
-    PROXY_LLM_PROVIDER_FALLBACK, ProxyRateLimitError, RateLimitCategory,
-};
-use betterlite_redact::structured::Payload;
+use betterlite_error::rate_limit::ProxyRateLimitError;
 use tokio::sync::oneshot;
 use tokio_util::task::TaskTracker;
 
@@ -16,7 +13,9 @@ use crate::concurrency_gauges::GaugeError;
 use crate::fail_closed::RateLimitUnverifiableError;
 use crate::identity_descriptors::agent_descriptor::AgentDescriptorBuilder;
 use crate::identity_descriptors::agent_registry::AgentPolicyRegistry;
-use crate::limiter_assembly::{CallTypeRateLimiter, RateLimitCallData, RateLimiterAssembly};
+use crate::limiter_assembly::{
+    CallTypeRateLimitError, CallTypeRateLimiter, RateLimitCallData, RateLimiterAssembly,
+};
 use crate::limiter_records::{ModelGroupResolver, RateLimitDescriptor, TagRateLimitResolver};
 use crate::model_descriptors::ModelDescriptorBuilder;
 use crate::project_admission::ProjectAdmissionError;
@@ -159,7 +158,7 @@ impl CallTypeRateLimiter for RateLimitPreCallHook {
         data: &RateLimitCallData,
         call_type: CallType,
         stash: &RequestStashSlot,
-    ) -> Result<(), ProxyRateLimitError> {
+    ) -> Result<(), CallTypeRateLimitError> {
         let mut owned = data.clone();
         let request = PreCallHookRequest {
             auth: user_api_key_dict,
@@ -170,7 +169,7 @@ impl CallTypeRateLimiter for RateLimitPreCallHook {
         };
         self.pre_call_hook(request)
             .await
-            .map_err(PreCallHookError::into_proxy_rate_limit_error)
+            .map_err(PreCallHookError::into_limiter_error)
     }
 }
 
@@ -181,12 +180,29 @@ pub enum PreCallHookRejection<'error> {
 }
 
 impl PreCallHookError {
-    fn into_proxy_rate_limit_error(self) -> ProxyRateLimitError {
-        match self {
-            Self::RateLimited(error) => *error,
-            Self::Reservation(TokenReservationError::RateLimited(error)) => *error,
-            Self::Project(ProjectAdmissionError::RateLimited(error)) => *error,
-            other => fallback_proxy_error(&other),
+    // the 429 and the fail-closed 503 keep their own rejection; every other failure stays this error for the limiter to carry
+    fn into_limiter_error(self) -> CallTypeRateLimitError {
+        if let Some(rejection) = self.rejection() {
+            return match rejection {
+                PreCallHookRejection::RateLimited(rate_limited) => {
+                    CallTypeRateLimitError::RateLimited(rate_limited.clone())
+                }
+                PreCallHookRejection::Unverifiable(unverifiable) => {
+                    CallTypeRateLimitError::Unverifiable(unverifiable.clone())
+                }
+            };
+        }
+        CallTypeRateLimitError::Hook(self)
+    }
+
+    // a batch limiter reports through the same rejection types this hook raises
+    fn from_limiter_error(error: CallTypeRateLimitError) -> Self {
+        match error {
+            CallTypeRateLimitError::RateLimited(error) => Self::RateLimited(Box::new(error)),
+            CallTypeRateLimitError::Unverifiable(error) => {
+                Self::Admission(WindowedAdmissionError::Unverifiable(error))
+            }
+            CallTypeRateLimitError::Hook(error) => error,
         }
     }
 
@@ -217,20 +233,6 @@ impl PreCallHookError {
             | Self::MissingBatchLimiter { .. }
             | Self::AdmissionTaskLost => None,
         }
-    }
-}
-
-// LiteLLM raises its fail-closed error and other internal failures outside the 429 type; this path keeps the message
-fn fallback_proxy_error(error: &PreCallHookError) -> ProxyRateLimitError {
-    let message = error.to_string();
-    ProxyRateLimitError {
-        detail: Payload::String(message.clone()),
-        message,
-        headers: None,
-        category: RateLimitCategory::LitellmRateLimit,
-        rate_limit_type: None,
-        model: String::new(),
-        llm_provider: String::from(PROXY_LLM_PROVIDER_FALLBACK),
     }
 }
 

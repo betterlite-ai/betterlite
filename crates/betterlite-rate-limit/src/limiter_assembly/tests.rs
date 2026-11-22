@@ -18,7 +18,7 @@ use rstest::rstest;
 
 use super::router_model_groups::RouterModelGroupResolver;
 use super::selection::{LimiterChoice, select_call_type_limiter};
-use super::{CallTypeRateLimiter, LimiterAssemblyError, RateLimitCallData};
+use super::{CallTypeRateLimitError, CallTypeRateLimiter, LimiterAssemblyError, RateLimitCallData};
 use crate::atomic_counter::response::ResponseDecodeError;
 use crate::atomic_counter::value::CounterValueError as AtomicCounterValueError;
 use crate::concurrency_gauges::GaugeError;
@@ -41,8 +41,10 @@ impl CallTypeRateLimiter for FailingLimiter {
         _data: &RateLimitCallData,
         _call_type: CallType,
         _stash: &RequestStashSlot,
-    ) -> Result<(), ProxyRateLimitError> {
-        Err(ProxyRateLimitError::new(ProxyRateLimitErrorInit::default()).unwrap())
+    ) -> Result<(), CallTypeRateLimitError> {
+        Err(CallTypeRateLimitError::RateLimited(
+            ProxyRateLimitError::new(ProxyRateLimitErrorInit::default()).unwrap(),
+        ))
     }
 }
 
@@ -118,6 +120,9 @@ async fn assembly_batch_limiter_returns_the_proxy_rate_limit_error() {
         .async_pre_call_hook(&user, &RequestData::new(), CallType::AcreateBatch, &stash)
         .await
         .unwrap_err();
+    let CallTypeRateLimitError::RateLimited(error) = error else {
+        panic!("the fake limiter reports the rate-limited rejection");
+    };
     assert_eq!(error.category, RateLimitCategory::LitellmRateLimit);
 }
 

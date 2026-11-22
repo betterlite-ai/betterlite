@@ -87,7 +87,7 @@ async fn batch_pre_call(
     limiter
         .async_pre_call_hook(auth, data, call_type, stash)
         .await
-        .map_err(|error| PreCallHookError::RateLimited(Box::new(error)))
+        .map_err(PreCallHookError::from_limiter_error)
 }
 
 async fn first_pass(

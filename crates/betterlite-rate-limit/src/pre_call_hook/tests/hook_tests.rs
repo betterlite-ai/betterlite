@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use betterlite_core::routes::CallType;
@@ -11,12 +11,14 @@ use super::support::{
     self, BatchLimiter, Fixture, Parts, StashSnapshot, count, entries, parallel_key,
     proxy_rate_limit, requests_key, scopes, snapshot, token_window,
 };
-use crate::limiter_assembly::CallTypeRateLimiter as _;
+use crate::fail_closed::RateLimitUnverifiableError;
+use crate::limiter_assembly::{CallTypeRateLimitError, CallTypeRateLimiter as _};
 use crate::limiter_records::{RateLimitResponse, RateLimitType, RateLimitedModel};
 use crate::pre_call_hook::{PreCallHookError, PreCallHookRejection};
 use crate::project_admission::ProjectAdmissionError;
 use crate::request_stash::RequestStashSlot;
 use crate::token_reservations::TokenReservationError;
+use crate::windowed_admission::WindowedAdmissionError;
 
 #[tokio::test]
 async fn hook_hands_a_batch_call_to_the_batch_limiter() {
@@ -56,6 +58,39 @@ async fn hook_returns_the_batch_limiter_error_unchanged() {
         panic!("the batch rejection is a 429");
     };
     assert_eq!(rate_limited.message, "batch is full");
+}
+
+#[tokio::test]
+async fn hook_keeps_a_batch_limiter_unverifiable_error_as_the_fail_closed_rejection() {
+    let batch = BatchLimiter::unverifiable(RateLimitUnverifiableError {
+        status_code: 503,
+        detail: BTreeMap::from([(String::from("error"), String::from("counters unavailable"))]),
+    });
+    let mut parts = Parts::new(Vec::new(), Vec::new(), None);
+    parts.batch_limiter = Some(batch);
+    let fixture = Fixture::new(&parts);
+    let auth = support::auth(r#"{"api_key": "key-1", "rpm_limit": 10}"#);
+    let mut data = support::data(r#"{"model": "gpt4"}"#);
+
+    let Err(error) = fixture
+        .run(None, &auth, &mut data, CallType::AcreateBatch)
+        .await
+    else {
+        panic!("the batch limiter's fail-closed rejection surfaces");
+    };
+
+    assert!(matches!(
+        &error,
+        PreCallHookError::Admission(WindowedAdmissionError::Unverifiable(_))
+    ));
+    let Some(PreCallHookRejection::Unverifiable(unverifiable)) = error.rejection() else {
+        panic!("the batch rejection is the fail-closed 503");
+    };
+    assert_eq!(unverifiable.status_code, 503);
+    assert_eq!(
+        unverifiable.detail.get("error").map(String::as_str),
+        Some("counters unavailable")
+    );
 }
 
 #[tokio::test]
@@ -412,6 +447,9 @@ async fn hook_trait_impl_returns_the_proxy_error_for_a_rejected_request() {
         .await
         .expect_err("the first pass is over the request limit");
 
+    let CallTypeRateLimitError::RateLimited(error) = error else {
+        panic!("the first pass rejection is the 429");
+    };
     assert!(
         error
             .message
@@ -420,7 +458,7 @@ async fn hook_trait_impl_returns_the_proxy_error_for_a_rejected_request() {
 }
 
 #[tokio::test]
-async fn hook_trait_impl_falls_back_for_a_missing_batch_limiter() {
+async fn hook_trait_impl_returns_the_missing_batch_limiter_error() {
     let fixture = Fixture::plain();
     let auth = support::auth(r#"{"api_key": "key-1", "rpm_limit": 10}"#);
     let data = support::data(r#"{"model": "gpt4"}"#);
@@ -432,11 +470,15 @@ async fn hook_trait_impl_falls_back_for_a_missing_batch_limiter() {
         .await
         .expect_err("the batch call needs a batch limiter");
 
-    assert!(
-        error
-            .message
-            .contains("the batch rate limiter is not registered")
-    );
+    let CallTypeRateLimitError::Hook(error) = error else {
+        panic!("the missing batch limiter is not a rate-limit rejection");
+    };
+    assert!(matches!(
+        error,
+        PreCallHookError::MissingBatchLimiter {
+            call_type: CallType::AcreateBatch
+        }
+    ));
 }
 
 #[tokio::test]
