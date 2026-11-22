@@ -4,12 +4,12 @@ import inspect
 from collections.abc import Awaitable
 from os import PathLike
 from pathlib import Path
-from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
-from unittest.mock import patch
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, Unpack, runtime_checkable
 
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.videos.transformation import BaseVideoConfig
+from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.videos.main import CharacterObject
 from litellm.videos import main as videos_main
@@ -18,29 +18,40 @@ from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 litellm.suppress_debug_info = True
 
 JSON: Final = TypeAdapter(JsonValue)
+CONFIG: Final = ConfigDict(arbitrary_types_allowed=True)
 START: Final = dt.datetime(2024, 1, 1, tzinfo=dt.UTC)
+CHARACTER_ID: Final = "char-1"
+CHARACTER_CREATED_AT: Final = 1_700_000_000
 
 
-class Input(TypedDict):
-    function: Literal["create", "get"]
+class SharedInput(TypedDict):
     asynchronous: bool
     litellm_call_id: str
-    name: NotRequired[str]
-    video: NotRequired[str]
-    character_id: NotRequired[str]
     timeout: NotRequired[float | None]
     custom_llm_provider: NotRequired[str | None]
     extra_headers: NotRequired[dict[str, str] | None]
     extra: NotRequired[dict[str, JsonValue]]
 
 
-Created: TypeAlias = CharacterObject | Awaitable[CharacterObject]
-Arg: TypeAlias = JsonValue | Logging
+class CreateInput(SharedInput):
+    function: Literal["create"]
+    name: str
+    video: str
 
 
+class GetInput(SharedInput):
+    function: Literal["get"]
+    character_id: str
+
+
+Input = CreateInput | GetInput
+Created = CharacterObject | Awaitable[CharacterObject]
+Arg = JsonValue | dict[str, str]
+
+
+@runtime_checkable
 class CharacterApi(Protocol):
-    # LiteLLM leaves **kwargs unannotated, so the view pins the positional arguments and their types;
-    # its video argument is FileTypes, which a file path satisfies and a plain string does not
+    # LiteLLM leaves **kwargs untyped here; this view pins the arguments the calls pass
     def video_create_character(
         self, name: str, video: PathLike[str], *, litellm_logging_obj: Logging, **kwargs: Arg
     ) -> Created: ...
@@ -55,7 +66,47 @@ class CharacterApi(Protocol):
     ) -> Created: ...
 
 
-CHARACTER_API: CharacterApi = videos_main
+class SharedHandlerArguments(TypedDict):
+    video_provider_config: BaseVideoConfig
+    client: HTTPHandler | AsyncHTTPHandler | None
+    custom_llm_provider: str
+    litellm_params: GenericLiteLLMParams
+    logging_obj: Logging
+    extra_headers: dict[str, str] | None
+    timeout: float | None
+    _is_async: bool
+
+
+class CreateHandlerArguments(SharedHandlerArguments):
+    name: str
+    video: PathLike[str]
+
+
+class GetHandlerArguments(SharedHandlerArguments):
+    character_id: str
+
+
+class CreateCharacterHandler(Protocol):
+    def __call__(self, **kwargs: Unpack[CreateHandlerArguments]) -> CharacterObject: ...
+
+
+class GetCharacterHandler(Protocol):
+    def __call__(self, **kwargs: Unpack[GetHandlerArguments]) -> CharacterObject: ...
+
+
+@runtime_checkable
+class HandlerFields(Protocol):
+    video_create_character_handler: CreateCharacterHandler
+    video_get_character_handler: GetCharacterHandler
+
+
+@runtime_checkable
+class VideosFields(Protocol):
+    base_llm_http_handler: HandlerFields
+
+
+API: Final = TypeAdapter(CharacterApi, config=CONFIG).validate_python(videos_main)
+VIDEOS: Final = TypeAdapter(VideosFields, config=CONFIG).validate_python(videos_main)
 
 
 class RecordedCall(BaseModel):
@@ -88,96 +139,61 @@ class Output(BaseModel):
 
 
 class Recorder:
-    def __init__(self, video: str | None) -> None:
-        self.video = video
+    def __init__(self) -> None:
         self.calls: list[RecordedCall] = []
         self.logging: RecordedLogging | None = None
 
-    def create_handler(  # noqa: E501, PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7736-L7749
-        self,
-        *,
-        name: str,
-        video: object,
-        video_provider_config: BaseVideoConfig,
-        custom_llm_provider: str,
-        litellm_params: GenericLiteLLMParams,
-        logging_obj: Logging,
-        extra_headers: dict[str, str] | None = None,
-        timeout: float | None = None,
-        _is_async: bool = False,
-        client: object | None = None,
-        api_key: str | None = None,
+    def video_create_character_handler(
+        self, **kwargs: Unpack[CreateHandlerArguments]
     ) -> CharacterObject:
-        del video, video_provider_config, client, api_key
-        self.record(
-            RecordedCall(
-                function="create",
-                provider=custom_llm_provider,
-                timeout=recorded_timeout(timeout),
-                asynchronous=_is_async,
-                api_base=litellm_params.api_base,
-                api_key=litellm_params.api_key,
-                extra_headers=extra_headers,
-                name=name,
-                video=self.video,
-                character_id=None,
-            ),
-            logging_obj,
-        )
-        return CharacterObject(
-            id="char-1", object="character", created_at=1700000000, name=name
-        )
+        recorded = recorded_call(kwargs, "create", kwargs["name"], str(kwargs["video"]))
+        return self.record(recorded, kwargs["logging_obj"])
 
-    def get_handler(  # noqa: E501, PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7892-L7905
-        self,
-        *,
-        character_id: str,
-        video_provider_config: BaseVideoConfig,
-        custom_llm_provider: str,
-        litellm_params: GenericLiteLLMParams,
-        logging_obj: Logging,
-        extra_headers: dict[str, str] | None = None,
-        timeout: float | None = None,
-        _is_async: bool = False,
-        client: object | None = None,
-        api_key: str | None = None,
+    def video_get_character_handler(
+        self, **kwargs: Unpack[GetHandlerArguments]
     ) -> CharacterObject:
-        del video_provider_config, client, api_key
-        self.record(
-            RecordedCall(
-                function="get",
-                provider=custom_llm_provider,
-                timeout=recorded_timeout(timeout),
-                asynchronous=_is_async,
-                api_base=litellm_params.api_base,
-                api_key=litellm_params.api_key,
-                extra_headers=extra_headers,
-                name=None,
-                video=None,
-                character_id=character_id,
-            ),
-            logging_obj,
-        )
-        return CharacterObject(
-            id="char-1", object="character", created_at=1700000000, name="Wren"
-        )
+        recorded = recorded_call(kwargs, "get", kwargs["character_id"])
+        return self.record(recorded, kwargs["logging_obj"])
 
-    def record(self, call: RecordedCall, logging_obj: Logging) -> None:
+    def record(self, call: RecordedCall, logging_obj: Logging) -> CharacterObject:
         self.calls.append(call)
         self.logging = RecordedLogging.model_validate(logging_obj)
+        return CharacterObject(
+            id=CHARACTER_ID,
+            object="character",
+            created_at=CHARACTER_CREATED_AT,
+            name="Wren" if call.name is None else call.name,
+        )
 
 
-def recorded_timeout(timeout: float | None) -> float:
-    return 0.0 if timeout is None else float(timeout)
+def recorded_call(
+    arguments: SharedHandlerArguments,
+    function: Literal["create", "get"],
+    primary: str,
+    media: str | None = None,
+) -> RecordedCall:
+    return RecordedCall(
+        function=function,
+        provider=arguments["custom_llm_provider"],
+        timeout=0.0 if arguments["timeout"] is None else float(arguments["timeout"]),
+        asynchronous=arguments["_is_async"],
+        api_base=arguments["litellm_params"].api_base,
+        api_key=arguments["litellm_params"].api_key,
+        extra_headers=arguments["extra_headers"],
+        name=primary if function == "create" else None,
+        video=media,
+        character_id=primary if function == "get" else None,
+    )
 
 
-def call_kwargs(call: Input) -> dict[str, Arg]:
-    kwargs: dict[str, Arg] = {
-        "litellm_call_id": call["litellm_call_id"],
-        "custom_llm_provider": call.get("custom_llm_provider"),
-        "extra_headers": call.get("extra_headers"),
-        **call.get("extra", {}),
-    }
+def call_kwargs(call: SharedInput) -> dict[str, Arg]:
+    kwargs: dict[str, Arg] = {"litellm_call_id": call["litellm_call_id"]}
+    if "custom_llm_provider" in call:
+        kwargs["custom_llm_provider"] = call["custom_llm_provider"]
+    if "extra_headers" in call:
+        kwargs["extra_headers"] = call["extra_headers"]
+    if "extra" in call:
+        kwargs.update(call["extra"])
     if "timeout" in call:
         kwargs["timeout"] = call["timeout"]
     return kwargs
@@ -189,32 +205,34 @@ async def resolved(created: Created) -> CharacterObject:
     return created
 
 
-def answer(call: Input, logging_obj: Logging) -> CharacterObject:
-    kwargs = call_kwargs(call)
-    if call["function"] == "create":
+def answer(input_value: Input, logging_obj: Logging) -> CharacterObject:
+    kwargs = call_kwargs(input_value)
+    if input_value["function"] == "create":
         creator = (
-            CHARACTER_API.avideo_create_character
-            if call["asynchronous"]
-            else CHARACTER_API.video_create_character
+            API.avideo_create_character
+            if input_value["asynchronous"]
+            else API.video_create_character
         )
         created = creator(
-            call["name"],
-            Path(call["video"]),
+            input_value["name"],
+            Path(input_value["video"]),
             litellm_logging_obj=logging_obj,
             **kwargs,
         )
     else:
         getter = (
-            CHARACTER_API.avideo_get_character
-            if call["asynchronous"]
-            else CHARACTER_API.video_get_character
+            API.avideo_get_character
+            if input_value["asynchronous"]
+            else API.video_get_character
         )
-        created = getter(call["character_id"], litellm_logging_obj=logging_obj, **kwargs)
+        created = getter(
+            input_value["character_id"], litellm_logging_obj=logging_obj, **kwargs
+        )
     return asyncio.run(resolved(created))
 
 
 def run(input_value: Input) -> JsonValue:
-    recorder = Recorder(input_value.get("video"))
+    recorder = Recorder()
     logging_obj = Logging(
         model="character",
         messages=None,
@@ -224,19 +242,16 @@ def run(input_value: Input) -> JsonValue:
         litellm_call_id="call-1",
         function_id="fn-1",
     )
-    with (
-        patch.object(
-            videos_main.base_llm_http_handler,
-            "video_create_character_handler",
-            recorder.create_handler,
-        ),
-        patch.object(
-            videos_main.base_llm_http_handler,
-            "video_get_character_handler",
-            recorder.get_handler,
-        ),
-    ):
+    handlers = VIDEOS.base_llm_http_handler
+    create_handler = handlers.video_create_character_handler
+    get_handler = handlers.video_get_character_handler
+    handlers.video_create_character_handler = recorder.video_create_character_handler
+    handlers.video_get_character_handler = recorder.video_get_character_handler
+    try:
         result = answer(input_value, logging_obj)
+    finally:
+        handlers.video_create_character_handler = create_handler
+        handlers.video_get_character_handler = get_handler
     logging = recorder.logging
     if logging is None:
         raise ValueError("the handler never answered")

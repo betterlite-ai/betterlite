@@ -8,7 +8,7 @@ use betterlite_core::api::video_records::CharacterObject;
 use betterlite_models::decisions::Json;
 use betterlite_openai::video_edits::response::CharacterKind;
 use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 const CHARACTER_ID: &str = "char-1";
 const CHARACTER_CREATED_AT: i64 = 1_700_000_000;
@@ -26,7 +26,7 @@ pub(crate) struct Input {
     #[serde(default)]
     character_id: Option<String>,
     // absent keeps the declared 600, null falls back to REQUEST_TIMEOUT and a number is the caller's
-    #[serde(default, deserialize_with = "declared_timeout")]
+    #[serde(default, with = "serde_with::rust::double_option")]
     timeout: Option<Option<f64>>,
     #[serde(default)]
     custom_llm_provider: Option<String>,
@@ -43,13 +43,6 @@ pub(super) enum Function {
     Get,
 }
 
-fn declared_timeout<'de, D>(deserializer: D) -> Result<Option<Option<f64>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Option::<f64>::deserialize(deserializer).map(Some)
-}
-
 impl Input {
     fn provider(&self) -> String {
         self.custom_llm_provider
@@ -64,23 +57,28 @@ impl Input {
             timeout: self.timeout.unwrap_or(Some(DEFAULT_TIMEOUT_SECONDS)),
             custom_llm_provider: self.provider(),
             extra_headers: self.extra_headers.clone(),
+            extra_query: None,
+            extra_body: None,
+            mock_response: None,
             litellm_call_id: Some(self.litellm_call_id.clone()),
             extra: self.extra.clone(),
-            ..CreateCharacterCall::default()
+            is_async: false,
         }
     }
 
     pub(super) fn get_call(&self) -> GetCharacterCall {
-        let mut call = GetCharacterCall {
+        GetCharacterCall {
             character_id: self.character_id.clone().unwrap_or_default(),
-            ..GetCharacterCall::default()
-        };
-        call.timeout = self.timeout.unwrap_or(Some(DEFAULT_TIMEOUT_SECONDS));
-        call.custom_llm_provider = self.provider();
-        call.extra_headers.clone_from(&self.extra_headers);
-        call.litellm_call_id = Some(self.litellm_call_id.clone());
-        call.extra.clone_from(&self.extra);
-        call
+            timeout: self.timeout.unwrap_or(Some(DEFAULT_TIMEOUT_SECONDS)),
+            custom_llm_provider: self.provider(),
+            extra_headers: self.extra_headers.clone(),
+            extra_query: None,
+            extra_body: None,
+            mock_response: None,
+            litellm_call_id: Some(self.litellm_call_id.clone()),
+            extra: self.extra.clone(),
+            is_async: false,
+        }
     }
 
     // the object the fixture handler answers with, named by the create call or the lookup's fixed name

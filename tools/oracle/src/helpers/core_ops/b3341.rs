@@ -49,14 +49,14 @@ async fn answer(input: &Input) -> HelperResult {
         (Function::Create, true) => {
             avideo_create_character(&mut recorder, deps, &input.create_call())
                 .await
-                .map_err(|error| failure(&error))?
+                .map_err(|error| helper_failure(error.to_string()))?
         }
         (Function::Get, false) => {
             direct(video_get_character(&mut recorder, deps, &input.get_call()))?
         }
         (Function::Get, true) => avideo_get_character(&mut recorder, deps, &input.get_call())
             .await
-            .map_err(|error| failure(&error))?,
+            .map_err(|error| helper_failure(error.to_string()))?,
     };
     let output = Output {
         result: character,
@@ -70,16 +70,12 @@ async fn answer(input: &Input) -> HelperResult {
 fn direct(
     outcome: Result<CharacterOutcome<'_>, CharacterCallFailure>,
 ) -> Result<CharacterObject, Box<HelperError>> {
-    match outcome.map_err(|error| failure(&error))? {
+    match outcome.map_err(|error| helper_failure(error.to_string()))? {
         CharacterOutcome::Done(character) => Ok(character),
         CharacterOutcome::Pending(_) => Err(helper_failure(
             "the blocking character handler answered with a pending future".to_owned(),
         )),
     }
-}
-
-fn failure(error: &CharacterCallFailure) -> Box<HelperError> {
-    helper_failure(error.to_string())
 }
 
 fn helper_failure(message: String) -> Box<HelperError> {
