@@ -63,8 +63,7 @@ where
     }
 }
 
-// aimage_generation(*args, **kwargs): the model is read before the try, the async flag is forced, the
-// provider only ever feeds exception attribution, and generation runs once inside the request's slot.
+// aimage_generation(*args, **kwargs): model before the try, the flag forced, one generation inside the slot
 pub async fn aimage_generation<Entry>(
     plan: &AimageGenerationPlan<'_, Entry>,
     mut invocation: Invocation,
@@ -98,9 +97,12 @@ where
             GenerationReturn::Coroutine(pending) => pending
                 .await
                 .map_err(|failure| error::raised(plan.redactor, failure)),
-            GenerationReturn::Unexpected => {
-                Err(error::invalid_response(plan.redactor, &model, &provider))
-            }
+            GenerationReturn::Unexpected => Err(error::refused(
+                plan.redactor,
+                error::INVALID_RESPONSE,
+                &model,
+                &provider,
+            )),
         }
     })
     .await

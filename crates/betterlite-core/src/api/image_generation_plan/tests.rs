@@ -55,7 +55,7 @@ use secrecy::SecretString;
 use serde_json::Number;
 use tokio::runtime::{Builder, Runtime};
 
-use super::error::{AimageGenerationError, invalid_response};
+use super::error::{AimageGenerationError, refused};
 use super::invocation::{GenerationReturn, Invocation, ModelPosition, PendingGeneration};
 use super::{AimageGenerationPlan, ImageGenerationEntry, PlanEntry, aimage_generation};
 use crate::api::image_generation_call::call::ImageGenerationCall;
@@ -423,7 +423,7 @@ fn unexpected_return_keeps_the_azure_provider() {
 }
 
 fn empty_provider_falls_back_to_openai() {
-    let fallback = invalid_response(&redactor(), "some-model", "");
+    let fallback = refused(&redactor(), INVALID_RESPONSE, "some-model", "");
     let (class, _) = raised_class(&fallback);
     assert_eq!(
         connection(class).provider.as_deref(),

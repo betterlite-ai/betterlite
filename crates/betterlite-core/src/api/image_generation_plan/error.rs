@@ -15,7 +15,8 @@ use crate::api::image_generation_call::error::{
 const FALLBACK_PROVIDER: &str = "openai";
 
 // the ValueError aimage_generation raises for a return value it does not accept
-const INVALID_RESPONSE: &str = "Unable to get Image Response. Please pass a valid llm_provider.";
+pub(super) const INVALID_RESPONSE: &str =
+    "Unable to get Image Response. Please pass a valid llm_provider.";
 
 // The exception aimage_generation raises: the KeyError before its try, or a litellm class after it.
 #[derive(Debug, Error)]
@@ -31,8 +32,7 @@ pub enum AimageGenerationError {
     UnknownProvider { message: String },
 }
 
-// get_llm_provider(model=model, api_base=kwargs.get("api_base")); its failure becomes the BadRequestError it
-// raises with llm_provider "", which exception_type returns unchanged.
+// get_llm_provider(model=model, api_base=kwargs.get("api_base")); its own BadRequestError is returned unchanged
 pub(super) fn attribution(
     resolution: &ResolutionContext<'_>,
     redactor: &Redactor,
@@ -85,15 +85,7 @@ pub(super) fn mapping(
         .map_err(|source| refused(redactor, &source.to_string(), model, provider))
 }
 
-pub(super) fn invalid_response(
-    redactor: &Redactor,
-    model: &str,
-    provider: &str,
-) -> AimageGenerationError {
-    refused(redactor, INVALID_RESPONSE, model, provider)
-}
-
-fn refused(
+pub(super) fn refused(
     redactor: &Redactor,
     message: &str,
     model: &str,
