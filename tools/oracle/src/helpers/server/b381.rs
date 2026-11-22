@@ -95,7 +95,7 @@ async fn answer(input: &Input) -> Result<Value, ShadowResultsError> {
         .next()
         .ok_or(ShadowResultsError::NoLegs)?;
     Ok(json!({
-        "response": detail_response(&job, totals, last_error, &results)?,
+        "response": detail_response(&job, totals, last_error, &results),
     }))
 }
 

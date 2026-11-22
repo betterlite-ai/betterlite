@@ -90,7 +90,7 @@ pub fn detail_response(
     totals: AttemptTotals,
     last_error: Option<String>,
     results: &JobResults,
-) -> Result<ShadowJob, ShadowResultsError> {
+) -> ShadowJob {
     let targets = job
         .targets
         .iter()
@@ -105,7 +105,7 @@ pub fn detail_response(
             ..target.clone()
         })
         .collect();
-    Ok(ShadowJob {
+    ShadowJob {
         targets,
         judged_count: Some(totals.judged_count),
         error_count: Some(totals.error_count),
@@ -113,7 +113,7 @@ pub fn detail_response(
         last_error,
         results: results.results.clone(),
         ..job.clone()
-    })
+    }
 }
 
 // one target entry; a leg with no counted attempt reads as zero attempts and zero spend

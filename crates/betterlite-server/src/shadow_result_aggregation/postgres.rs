@@ -90,9 +90,8 @@ impl ShadowResultsRepository for PgShadowResults {
 
 impl PgShadowResults {
     async fn rows(&self, sql: &str, leg_ids: &[String]) -> RepositoryResult<Vec<Row>> {
-        let ids = leg_ids.to_vec();
         let client = self.store.session().await?;
-        let params: [&(dyn ToSql + Sync); 1] = [&ids];
+        let params: [&(dyn ToSql + Sync); 1] = [&leg_ids];
         client
             .query(sql, &params)
             .await

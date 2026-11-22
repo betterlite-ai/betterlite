@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
+use std::ops::{Add as _, Sub as _};
 
-use num_traits::ToPrimitive as _;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
@@ -109,16 +109,27 @@ impl OverallTotals {
     }
 }
 
-// LiteLLM adds these doubles in order; the response serializes that sum, so f64 does the adding
+// CPython's sum over floats (3.12+) runs a Neumaier compensation in read order and adds it when finite
 fn summed_spend(
     rows: &[AttemptAggRow],
     of: fn(&AttemptAggRow) -> Decimal,
     name: &'static str,
 ) -> Result<Decimal, ShadowResultsError> {
-    let total = rows
-        .iter()
-        .map(|row| of(row).to_f64().unwrap_or(f64::NAN))
-        .sum::<f64>();
+    let mut total = 0.0_f64;
+    let mut compensation = 0.0_f64;
+    for row in rows {
+        let value = of(row).as_f64();
+        let next = total.add(value);
+        if total.abs() >= value.abs() {
+            compensation = compensation.add(total.sub(next).add(value));
+        } else {
+            compensation = compensation.add(value.sub(next).add(total));
+        }
+        total = next;
+    }
+    if compensation.is_finite() && compensation.abs() > 0.0_f64 {
+        total = total.add(compensation);
+    }
     let exact = Decimal::from_f64_retain(total);
     exact.ok_or(ShadowResultsError::Unrepresentable { name })
 }

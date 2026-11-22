@@ -385,6 +385,29 @@ enum Behavior {
         verdicts: Vec::new(),
     },
 }))]
+#[case::results_add_sampled_spends_the_way_python_sums_them(Behavior::Results(ResultsCase {
+    legs: Vec::new(),
+    by_tier: vec![
+        agg("simple", 1, (0, 1, 0, 0), None, (0.1_f64, 0.1_f64)),
+        agg("complex", 1, (0, 1, 0, 0), None, (0.2_f64, 0.2_f64)),
+        agg("medium", 1, (0, 1, 0, 0), None, (0.3_f64, 0.3_f64)),
+    ],
+    by_model: Vec::new(),
+    by_leg: Vec::new(),
+    by_router: Vec::new(),
+    funnel: None,
+    expected: ResultsExpectation {
+        tier_groups: vec!["simple", "complex", "medium"],
+        model_groups: Vec::new(),
+        router_groups: Vec::new(),
+        overall_shadow_win: 100.0_f64,
+        overall_tie: 0.0_f64,
+        real_spend: money(0.6),
+        shadow_spend: money(0.6),
+        funnel: None,
+        verdicts: Vec::new(),
+    },
+}))]
 #[case::labels_read_each_kind_and_keep_the_last_row(Behavior::Labels(LabelsCase {
     responses: vec![job(vec![
         target_leg(Key, "k1"),
@@ -601,8 +624,7 @@ fn assert_detail(case: &DetailCase) {
         case.totals,
         case.last_error.map(str::to_owned),
         &results,
-    )
-    .unwrap();
+    );
     assert_detail_totals(&detail, &case.expected);
     assert_detail_verdicts(&detail, &case.expected);
 }
