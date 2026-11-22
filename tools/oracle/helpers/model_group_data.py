@@ -165,14 +165,14 @@ def validate_answer(call: ValidateCall) -> JsonValue:
 
 def group_answer(call: GroupCall) -> JsonValue:
     if call["function"] == "add_access_group_to_deployment":
-        updated, modified = add_access_group_to_deployment(
+        updated, modified = add_access_group_to_deployment(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L315-L336
             call["model_info"], call["access_group"]
         )
     else:
-        updated, modified = remove_access_group_from_deployment(
+        updated, modified = remove_access_group_from_deployment(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L506-L527
             call["model_info"], call["access_group"]
         )
-    report = {"model_info": JSON.validate_python(updated), "modified": modified}
+    report = {"model_info": JSON.validate_python(updated), "modified": modified}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L315-L336
     return {"ok": True, "value": JSON.validate_python(report)}
 
 
@@ -183,7 +183,7 @@ def readable_answer(call: ReadableCall) -> JsonValue:
         )
     except ValueError:
         return {"ok": False, "status": None}
-    return {"ok": True, "value": JSON.validate_python(dict(mapping))}
+    return {"ok": True, "value": JSON.validate_python(dict(mapping))}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L396-L403
 
 
 def frozen(ids: list[str] | None) -> frozenset[str] | None:
@@ -202,7 +202,7 @@ def raise_answer(call: RaiseCall) -> JsonValue:
             still_desired=frozen(call["still_desired"]),
             live_after=frozenset(call["live_after"]),
         )
-    except HTTPException as error:
+    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L339-L370
         return {"ok": False, "status": error.status_code}
     return {"ok": True, "value": None}
 

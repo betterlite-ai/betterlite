@@ -145,7 +145,10 @@ async fn budget_rows_map_by_name_in_one_read() {
         .expect("the budget rows");
     assert_eq!(mapped.len(), 2);
     assert_eq!(mapped["group-a"].spend, Some(Decimal::new(35, 1)));
-    assert_eq!(mapped["group-a"].litellm_budget_table, Some(capped_budget()));
+    assert_eq!(
+        mapped["group-a"].litellm_budget_table,
+        Some(capped_budget())
+    );
     assert_eq!(mapped["group-b"].litellm_budget_table, None);
     assert_eq!(database.budget_reads(), 1);
     let include = BudgetInclude {
