@@ -42,6 +42,22 @@ async fn a_cold_window_is_skipped_without_invalidating() {
     assert_eq!(value_of(&fake, WINDOW), None);
 }
 
+// a window counter without a window start loads as it stands instead of asking the window rows
+async fn a_window_without_a_start_is_loaded() {
+    let mut counter = window(WINDOW, "5");
+    counter.window_start = None;
+    let counters = vec![counter];
+    let fake = seeded(&[(WINDOW, "1")], &[]);
+    let mut applied = Vec::new();
+    let admission = admit(&fake, &request(&counters, "4"), &mut applied)
+        .await
+        .expect("the admission");
+    assert_eq!(admission.reserved_cost, amount("4"));
+    assert_eq!(entry_keys(&applied), vec![WINDOW]);
+    assert_eq!(value_of(&fake, WINDOW), Some(amount("5")));
+    assert!(take_calls(&fake).windows.is_empty());
+}
+
 // a window whose seed failed is invalidated and skipped, and strict enforcement rejects the request
 async fn a_failed_window_seed_invalidates_and_rejects() {
     let counters = vec![window(WINDOW, "5")];
@@ -328,6 +344,7 @@ async fn a_lost_pre_read_does_not_stop_later_counters() {
 #[tokio::test]
 async fn reservation_admission_engine_boundaries() {
     a_cold_window_is_skipped_without_invalidating().await;
+    a_window_without_a_start_is_loaded().await;
     a_failed_window_seed_invalidates_and_rejects().await;
     a_rejection_stops_before_later_groups().await;
     a_failed_pipeline_rolls_back_only_its_group().await;

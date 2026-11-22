@@ -230,6 +230,13 @@ async fn a_reservation_inside_the_budget_charges_without_policy() {
     assert_eq!(value_of(&fake, KEY), Some(amount("10")));
     assert_eq!(applied[0].reserved_cost, Some(amount("4")));
     let calls = take_calls(&fake);
+    assert_eq!(
+        calls.reservations,
+        vec![vec![
+            (KEY.to_owned(), amount("4")),
+            (USER.to_owned(), amount("4")),
+        ]]
+    );
     assert!(calls.settlements.is_empty());
     assert!(calls.invalidations.is_empty());
     assert!(calls.cache_reads.is_empty());
