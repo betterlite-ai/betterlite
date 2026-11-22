@@ -216,3 +216,10 @@ path = "fuzz_targets/agentcore_search_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "invoke_agent_reply"
+path = "fuzz_targets/invoke_agent_reply.rs"
+test = false
+doc = false
+bench = false
