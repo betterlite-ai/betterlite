@@ -25,7 +25,7 @@ use crate::complexity_turn_overrides::plan::{
 use crate::complexity_turn_overrides::semantic::SemanticKeywordIndex;
 use crate::complexity_turn_overrides::settings::Settings;
 use crate::complexity_turn_overrides::stall::detect_stalled_task;
-use crate::complexity_turn_overrides::turn::{TurnRequest, resolve_turn};
+use crate::complexity_turn_overrides::turn::{TurnOverrides, TurnRequest, resolve_turn};
 use crate::custom_dimensions::Validated;
 use crate::semantic_router::service::CallerContext;
 use crate::tier_definitions::checks::ClassifierKind;
@@ -601,37 +601,13 @@ fn only_the_newest_ask_can_escalate() {
         Some("write the release notes"),
         None,
     );
-    let older_found = runtime()
-        .block_on(resolve_turn(
-            &settings,
-            &pools,
-            &lexical,
-            None::<&SemanticKeywordIndex<FakeEmbedder>>,
-            &older_ask,
-        ))
-        .unwrap();
+    let older_found = resolved(&settings, &pools, &lexical, &older_ask);
     assert_eq!(older_found.escalation_keyword, None);
     let plumbing_only = turn(&caller, "please LITELLM ESCALATE", None, None);
-    let plumbing_found = runtime()
-        .block_on(resolve_turn(
-            &settings,
-            &pools,
-            &lexical,
-            None::<&SemanticKeywordIndex<FakeEmbedder>>,
-            &plumbing_only,
-        ))
-        .unwrap();
+    let plumbing_found = resolved(&settings, &pools, &lexical, &plumbing_only);
     assert_eq!(plumbing_found.escalation_keyword, None);
     let newest = turn(&caller, "carry on", Some("please LITELLM ESCALATE"), None);
-    let newest_found = runtime()
-        .block_on(resolve_turn(
-            &settings,
-            &pools,
-            &lexical,
-            None::<&SemanticKeywordIndex<FakeEmbedder>>,
-            &newest,
-        ))
-        .unwrap();
+    let newest_found = resolved(&settings, &pools, &lexical, &newest);
     assert_eq!(
         newest_found.escalation_keyword.as_deref(),
         Some("LITELLM ESCALATE")
@@ -733,6 +709,23 @@ fn turn<'request>(
         newest_ask,
         caller,
     }
+}
+
+fn resolved(
+    settings: &Settings,
+    pools: &TierSet,
+    lexical: &LexicalRules,
+    request: &TurnRequest<'_>,
+) -> TurnOverrides {
+    runtime()
+        .block_on(resolve_turn(
+            settings,
+            pools,
+            lexical,
+            None::<&SemanticKeywordIndex<FakeEmbedder>>,
+            request,
+        ))
+        .unwrap()
 }
 
 fn assistant_tool_use(id: &str, name: &str, input: Json) -> Json {
