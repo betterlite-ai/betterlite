@@ -103,9 +103,9 @@ impl ResponsesChunkSource {
     // One body item into the queue, or the parsed tail of the stream when the bytes end.
     fn queue_item(
         &mut self,
-        read: Option<Result<Vec<u8>, HttpError>>,
+        item: Option<Result<Vec<u8>, HttpError>>,
     ) -> Result<(), StreamFailure> {
-        let Some(read) = read else {
+        let Some(read) = item else {
             self.pending.extend(self.parser.finish());
             self.phase = Phase::Exhausted;
             return Ok(());
