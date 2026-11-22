@@ -194,13 +194,14 @@ def reported_headers(call: PostCallJson, response: ProbeResponse) -> dict[str, J
 async def post_call_run(call: PostCallJson, handler: DynamicHandler) -> HeadersAnswer:
     stash: RequestRateLimiterStash = get_or_create_request_stash()
     stash.rate_limit_response = RateLimitResponse(overall_code="OK", statuses=call["statuses"])
-    stash.parallel_slot = ParallelSlotAcquisition(slot_id=SLOT_ID, counter_keys=[SLOT_COUNTER_KEY])
+    acquisition = ParallelSlotAcquisition(slot_id=SLOT_ID, counter_keys=[SLOT_COUNTER_KEY])
+    stash.parallel_slot = acquisition
     response = probe_response(call)
     auth = UserAPIKeyAuth(metadata=call["key_metadata"], team_metadata=call["team_metadata"])
     await handler.async_post_call_success_hook({"litellm_call_id": CALL_ID}, auth, response)
     return HeadersAnswer(
         headers=reported_headers(call, response),
-        released=stash.parallel_slot is None,
+        released=stash.parallel_slot is not acquisition,
     )
 
 
