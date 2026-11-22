@@ -1,0 +1,38 @@
+kind: helper
+name: identity-grants-membership-null-zero-negative-limits
+call:
+  identity_grants:
+    users: []
+    denials: []
+    teams:
+      - team: {team_id: team-1}
+        membership: null
+        user_id: user-1
+      - team: {team_id: team-1}
+        membership:
+          user_id: user-1
+          team_id: team-1
+          spend: 0.0
+          litellm_budget_table: {tpm_limit: 0, rpm_limit: -1}
+        user_id: user-1
+      - team: {team_id: team-1}
+        membership:
+          user_id: user-1
+          team_id: team-1
+          spend: null
+          litellm_budget_table: null
+        user_id: user-1
+      - team: {team_id: team-1}
+        membership:
+          user_id: user-1
+          team_id: team-1
+          spend: -2.5
+          litellm_budget_table: {tpm_limit: null, rpm_limit: 5}
+        user_id: user-1
+      - team: {team_id: team-1}
+        membership:
+          user_id: user-1
+          team_id: team-1
+        user_id: user-1
+env: {}
+compare: {ignore: []}

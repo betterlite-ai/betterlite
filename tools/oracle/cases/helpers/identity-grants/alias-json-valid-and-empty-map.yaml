@@ -1,0 +1,45 @@
+kind: helper
+name: identity-grants-alias-json-valid-and-empty-map
+call:
+  identity_grants:
+    users: []
+    denials: []
+    teams:
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: '{"fast": "gpt-4o", "smart": "o3"}'
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: '{}'
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: {}
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: '{"быстро": "gpt-4o", "fast": "o3", "fast": "gpt-4o-mini"}'
+        membership: null
+        user_id: null
+env: {}
+compare: {ignore: []}
