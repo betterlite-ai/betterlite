@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_core::routes::CallType;
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use tokio::runtime::Builder;
 
 use super::{ModelGroupInfoError, PreCallError};
@@ -420,49 +421,40 @@ fn hook_fail_closed_503_reaches_the_caller() {
     );
 }
 
-#[test]
-fn hook_fail_closed_503_reaches_the_caller_however_the_port_wraps_it() {
-    let wrapped = [
-        (
-            "settlement",
-            AdmissionLimiterError::Settlement(SettlementError::Unverifiable(unverifiable())),
-        ),
-        (
-            "windowed",
-            AdmissionLimiterError::Windowed(WindowedAdmissionError::Unverifiable(unverifiable())),
-        ),
-        (
-            "windowed settlement",
-            AdmissionLimiterError::Windowed(WindowedAdmissionError::Settlement(
-                SettlementError::Unverifiable(unverifiable()),
-            )),
-        ),
-    ];
-    for (shape, wrapped_error) in wrapped {
-        let harness = Harness::build(setup(
-            Some(group_present()),
-            seeded_requests(30),
-            Err(wrapped_error),
-            Ok(empty_tracking()),
-        ));
-        let key_metadata = metadata("default");
-        let admission_key = key(&key_metadata);
-        let stash = RequestStashSlot::default();
-        let (outcome, logs) = run_pre_call(&harness, &request(MODEL), &admission_key, &stash);
-        let Err(pre_call_failure) = outcome else {
-            panic!("the fail-closed 503 wrapped in {shape} is re-raised");
-        };
-        match pre_call_failure {
-            PreCallError::Unverifiable(error) => assert_eq!(error.status_code, 503),
-            other @ (PreCallError::ModelGroupInfo(_) | PreCallError::Rejection(_)) => {
-                panic!("the {shape} wrapping keeps the unverifiable variant, got {other:?}");
-            }
+#[rstest]
+#[case::settlement(AdmissionLimiterError::Settlement(SettlementError::Unverifiable(
+    unverifiable()
+)))]
+#[case::windowed(AdmissionLimiterError::Windowed(WindowedAdmissionError::Unverifiable(
+    unverifiable()
+)))]
+#[case::windowed_settlement(AdmissionLimiterError::Windowed(WindowedAdmissionError::Settlement(
+    SettlementError::Unverifiable(unverifiable())
+)))]
+fn hook_fail_closed_503_reaches_the_caller_however_the_port_wraps_it(
+    #[case] wrapped_error: AdmissionLimiterError,
+) {
+    let harness = Harness::build(setup(
+        Some(group_present()),
+        seeded_requests(30),
+        Err(wrapped_error),
+        Ok(empty_tracking()),
+    ));
+    let key_metadata = metadata("default");
+    let admission_key = key(&key_metadata);
+    let stash = RequestStashSlot::default();
+    let (outcome, logs) = run_pre_call(&harness, &request(MODEL), &admission_key, &stash);
+    let failure = outcome.expect_err("the fail-closed 503 is re-raised");
+    match failure {
+        PreCallError::Unverifiable(error) => assert_eq!(error.status_code, 503),
+        other @ (PreCallError::ModelGroupInfo(_) | PreCallError::Rejection(_)) => {
+            panic!("the wrapped unverifiable error keeps its variant, got {other:?}");
         }
-        assert!(
-            !logs.contains("Error in dynamic rate limiter"),
-            "logs for {shape}: {logs}"
-        );
     }
+    assert!(
+        !logs.contains("Error in dynamic rate limiter"),
+        "logs: {logs}"
+    );
 }
 
 #[test]
