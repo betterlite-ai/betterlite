@@ -199,6 +199,17 @@ async fn a_database_floor_is_reseeded_into_the_counter() {
 }
 
 #[tokio::test]
+async fn a_counter_without_a_database_floor_does_not_reseed() {
+    let (writes, scope) = backend_fixture(None);
+    let backend = SpendCounterBackend {
+        writes: &writes,
+        scope: scope.as_ref(),
+        redis: None,
+    };
+    assert!(!backend.reseed_from_db("spend:key:k1").await);
+}
+
+#[tokio::test]
 async fn invalidation_clears_the_counter_from_the_memory_tier() {
     let (writes, scope) = backend_fixture(None);
     let backend = SpendCounterBackend {
