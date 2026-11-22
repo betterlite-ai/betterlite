@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::PoisonError;
 use std::time::Duration;
 
@@ -7,11 +8,16 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
 
+use crate::credentials::LiteLlmGlobals;
 use crate::decisions::call::error::PrepareError;
 use crate::decisions::call::fields::{
     OpenAiDecisionRequestFields, RequestFields, RequestFormat, SystemOneRequestFields,
 };
+use crate::decisions::call::prepare::credentials;
+use crate::decisions::call::provider::ProviderConfig;
 use crate::decisions::call::reject_other_format;
+use crate::decisions::call::{CredentialInput, Selection};
+use crate::decisions::openai::config::Credential;
 use crate::decisions::openai::request::wire::{InputWire, QuestionWire};
 use crate::decisions::providers::DecisionsProvider;
 use crate::decisions::transformation::wire::ProviderRequestWire;
@@ -373,6 +379,7 @@ fn assert_invalid_request(fields: RequestFields, expected: &str) {
     let builder = CallBuilder::new("openai/gpt-4o-mini", fields);
     let error = fixture.prepare(builder, None).unwrap_err();
     assert!(matches!(&error, PrepareError::InvalidRequest { .. }));
+    assert!(matches!(error.class(), ErrorClass::BadRequest(_)));
     assert!(error.to_string().starts_with("Invalid Decisions request: "));
     assert!(error.to_string().contains(expected));
 }
@@ -396,6 +403,8 @@ fn validation_systemone_question_names_are_required() {
         }),
     );
     let error = fixture.prepare(builder, None).unwrap_err();
+    assert!(matches!(&error, PrepareError::InvalidRequest { .. }));
+    assert!(matches!(error.class(), ErrorClass::BadRequest(_)));
     assert!(error.to_string().contains("expected 1 to"));
 }
 
@@ -468,6 +477,83 @@ fn validation_empty_credentials_fall_through_to_the_environment() {
     let call = fixture.prepare(builder, None).unwrap();
     assert_eq!(call.api_base, "https://api.perplexity.ai");
     assert_eq!(exposed(call.api_key.as_ref()), Some("pplx-env"));
+}
+
+fn typesafe_selection(environment: &BTreeMap<String, String>) -> Selection<'_> {
+    Selection {
+        model: "typesafe/gpt-4o",
+        environment,
+        provider: DecisionsProvider::Typesafe,
+        config: ProviderConfig::select(
+            DecisionsProvider::Typesafe,
+            LiteLlmGlobals::default(),
+            environment,
+            azure_ai(),
+        ),
+    }
+}
+
+#[test]
+fn credentials_take_the_dynamic_values_before_the_explicit_ones() {
+    let variables = environment(&[]);
+    let selection = typesafe_selection(&variables);
+    let dynamic_key = secret("sk-dynamic");
+    let explicit_key = secret("sk-explicit");
+    let resolved = credentials(
+        &selection,
+        &CredentialInput {
+            api_base: Some("https://explicit.test"),
+            api_key: Some(&explicit_key),
+            dynamic_api_base: Some("https://dynamic.test"),
+            dynamic_api_key: Some(&dynamic_key),
+        },
+    )
+    .unwrap();
+    assert_eq!(resolved.api_base, "https://dynamic.test");
+    assert_eq!(exposed(resolved.api_key.as_ref()), Some("sk-dynamic"));
+}
+
+#[test]
+fn credentials_empty_dynamic_values_fall_through_to_the_explicit_ones() {
+    let variables = environment(&[]);
+    let selection = typesafe_selection(&variables);
+    let empty_base = String::new();
+    let empty_key = secret("");
+    let explicit_key = secret("sk-explicit");
+    let resolved = credentials(
+        &selection,
+        &CredentialInput {
+            api_base: Some("https://explicit.test"),
+            api_key: Some(&explicit_key),
+            dynamic_api_base: Some(&empty_base),
+            dynamic_api_key: Some(&empty_key),
+        },
+    )
+    .unwrap();
+    assert_eq!(resolved.api_base, "https://explicit.test");
+    assert_eq!(exposed(resolved.api_key.as_ref()), Some("sk-explicit"));
+}
+
+#[test]
+fn provider_config_resolve_reads_the_provider_env_names() {
+    let variables = environment(&[
+        ("AZURE_AI_API_BASE", "https://env.services.ai.azure.com"),
+        ("AZURE_AI_API_KEY", "azure-env-key"),
+    ]);
+    let config = ProviderConfig::select(
+        DecisionsProvider::AzureAi,
+        LiteLlmGlobals::default(),
+        &variables,
+        azure_ai(),
+    );
+    assert_eq!(
+        config.resolve(Credential::Base, None, &variables),
+        Some("https://env.services.ai.azure.com".to_owned())
+    );
+    assert_eq!(
+        config.resolve(Credential::Key, None, &variables),
+        Some("azure-env-key".to_owned())
+    );
 }
 
 #[test]
