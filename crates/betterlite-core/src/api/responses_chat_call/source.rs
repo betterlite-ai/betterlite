@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Display;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
@@ -129,7 +130,7 @@ impl ResponsesChunkSource {
     }
 }
 
-fn unclassified(error: &dyn std::fmt::Display) -> StreamFailure {
+fn unclassified(error: &dyn Display) -> StreamFailure {
     StreamFailure::Unclassified {
         text: error.to_string(),
     }
