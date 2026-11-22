@@ -1,5 +1,6 @@
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::ErrorClass;
+use betterlite_error::error::details::ResponseDetails;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_openai::error::ProviderError;
 use betterlite_redact::secret::Redactor;
@@ -79,10 +80,13 @@ pub fn failure(error: VideoEditCallError, provider: &str, redactor: &Redactor) -
         VideoEditCallError::MissingLoggingObject => {
             plain(&error.to_string(), provider, "KeyError", redactor)
         }
+        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+        VideoEditCallError::UnknownProvider(_)
+        | VideoEditCallError::ProviderConfigMissing { .. } => ErrorClass::BadRequest(Box::new(
+            ResponseDetails::for_provider(error.to_string(), Some(MODEL.to_owned()), provider),
+        )),
         VideoEditCallError::SyncPending
         | VideoEditCallError::Mock(_)
-        | VideoEditCallError::UnknownProvider(_)
-        | VideoEditCallError::ProviderConfigMissing { .. }
         | VideoEditCallError::Selection(_)
         | VideoEditCallError::Logging(_) => {
             plain(&error.to_string(), provider, "ValueError", redactor)

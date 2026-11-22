@@ -102,6 +102,21 @@ impl<const DEFAULT: u16> ResponseDetails<DEFAULT> {
             ..Self::from(context)
         }
     }
+
+    // the caller named a provider the call cannot use: no provider answered, so no retry or body field is set
+    pub fn for_provider(message: String, model: Option<String>, provider: &str) -> Self {
+        Self {
+            message,
+            model,
+            provider: Some(provider.to_owned()),
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+            status: ResponseStatus::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
