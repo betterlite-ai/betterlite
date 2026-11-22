@@ -1,0 +1,15 @@
+kind: helper
+name: identity-grants-no-team-empty-grants
+call:
+  identity_grants:
+    users: []
+    denials: []
+    teams:
+      - team: null
+        membership: {user_id: user-1, team_id: team-1, spend: 5.0, litellm_budget_table: {tpm_limit: 11, rpm_limit: 7}}
+        user_id: user-1
+      - team: null
+        membership: null
+        user_id: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,25 @@
+kind: helper
+name: identity-grants-canonical-user-id-truthy-fallback
+call:
+  identity_grants:
+    users:
+      - user: {user_id: legacy-id}
+        user_id: new-id
+      - user: {user_id: same-id}
+        user_id: same-id
+      - user: {user_id: ""}
+        user_id: new-id
+      - user: {user_id: ""}
+        user_id: null
+      - user: null
+        user_id: new-id
+      - user: null
+        user_id: ""
+      - user: null
+        user_id: null
+      - user: {user_id: legacy-id}
+        user_id: null
+    denials: []
+    teams: []
+env: {}
+compare: {ignore: []}
