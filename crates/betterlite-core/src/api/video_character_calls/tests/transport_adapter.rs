@@ -62,6 +62,9 @@ impl CharacterProviderFailure for TestError {
     }
 }
 
+// the endpoint both character calls address
+const CHARACTERS_URL: &str = "https://api.openai.com/v1/videos/characters";
+
 struct Config {
     request_error: Option<&'static str>,
 }
@@ -93,7 +96,7 @@ impl CharacterConfig for Config {
         _api_base: Option<&str>,
         _litellm_params: &Params,
     ) -> Result<String, Self::Error> {
-        Ok("https://api.openai.com/v1/videos/characters".to_owned())
+        Ok(CHARACTERS_URL.to_owned())
     }
 
     fn transform_create_request(
@@ -103,12 +106,7 @@ impl CharacterConfig for Config {
         _context: CharacterContext<'_>,
     ) -> Result<(String, Vec<MultipartPart>), Self::Error> {
         self.request_error.map_or_else(
-            || {
-                Ok((
-                    "https://api.openai.com/v1/videos/characters".to_owned(),
-                    Vec::new(),
-                ))
-            },
+            || Ok((CHARACTERS_URL.to_owned(), Vec::new())),
             |message| {
                 Err(TestError {
                     message: message.to_owned(),
@@ -123,10 +121,7 @@ impl CharacterConfig for Config {
         _character_id: &str,
         _context: CharacterContext<'_>,
     ) -> Result<(String, Vec<(String, String)>), Self::Error> {
-        Ok((
-            "https://api.openai.com/v1/videos/characters/char-1".to_owned(),
-            Vec::new(),
-        ))
+        Ok((format!("{CHARACTERS_URL}/char-1"), Vec::new()))
     }
 
     fn transform_create_response(

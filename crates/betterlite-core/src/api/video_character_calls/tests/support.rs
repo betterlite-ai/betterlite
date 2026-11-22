@@ -17,10 +17,8 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use thiserror::Error;
 
-use super::super::error::CharacterHandlerFailure;
-use super::super::handler::{
-    CharacterAnswered, CharacterHandler, CreateHandlerCall, GetHandlerCall,
-};
+use super::super::error::{CharacterCallFailure, CharacterHandlerFailure};
+use super::super::handler::{CharacterAnswered, CharacterHandler, HandlerArguments, HandlerCall};
 use super::super::{
     CharacterCallDeps, CharacterOutcome, CreateCharacterCall, GetCharacterCall,
     avideo_create_character, avideo_get_character, video_create_character, video_get_character,
@@ -55,34 +53,46 @@ pub(crate) fn headers() -> BTreeMap<String, String> {
     BTreeMap::from([("X-Test".to_owned(), "1".to_owned())])
 }
 
+// the collaborators every fixture call runs with: its redactor and B198's REQUEST_TIMEOUT seconds
+fn deps(redactor: &Redactor) -> CharacterCallDeps<'_> {
+    CharacterCallDeps {
+        redactor,
+        request_timeout_seconds: REQUEST_TIMEOUT_SECONDS,
+    }
+}
+
+// the keyword values both calls carry: the key and the user the logging update reads
+fn extra_map() -> IndexMap<String, Json> {
+    IndexMap::from([
+        ("api_key".to_owned(), Json::Text("sk-test".to_owned())),
+        ("user".to_owned(), Json::Text("max".to_owned())),
+    ])
+}
+
 // the call with every keyword a case cares about
 pub(crate) fn create_call() -> CreateCharacterCall {
+    let mut extra = extra_map();
+    extra.insert(
+        "api_base".to_owned(),
+        Json::Text("https://api.openai.com/v1".to_owned()),
+    );
     CreateCharacterCall {
         name: "Wren".to_owned(),
         video: video(),
         litellm_call_id: Some(CALL_ID.to_owned()),
-        extra: IndexMap::from([
-            ("api_key".to_owned(), Json::Text("sk-test".to_owned())),
-            (
-                "api_base".to_owned(),
-                Json::Text("https://api.openai.com/v1".to_owned()),
-            ),
-            ("user".to_owned(), Json::Text("max".to_owned())),
-        ]),
+        extra,
         ..CreateCharacterCall::default()
     }
 }
 
 pub(crate) fn get_call() -> GetCharacterCall {
-    GetCharacterCall {
+    let mut call = GetCharacterCall {
         character_id: "char-1".to_owned(),
-        litellm_call_id: Some(CALL_ID.to_owned()),
-        extra: IndexMap::from([
-            ("api_key".to_owned(), Json::Text("sk-test".to_owned())),
-            ("user".to_owned(), Json::Text("max".to_owned())),
-        ]),
         ..GetCharacterCall::default()
-    }
+    };
+    call.litellm_call_id = Some(CALL_ID.to_owned());
+    call.extra = extra_map();
+    call
 }
 
 // what the fake handler answers with
@@ -218,36 +228,40 @@ impl CharacterHandler for FakeHandler {
         &mut self.logging
     }
 
-    fn create(
+    fn handle(
         &mut self,
-        call: CreateHandlerCall,
+        call: HandlerCall,
     ) -> Result<CharacterAnswered<'_>, CharacterHandlerFailure> {
-        self.creates.push(SeenCreate {
-            name: call.name,
-            video: call.video,
-            provider: call.provider,
-            litellm_params: call.litellm_params,
-            extra_headers: call.extra_headers,
-            timeout: call.timeout,
-            is_async: call.is_async,
-            logged: snapshot(&self.logging),
-        });
-        answered(self.reply)
-    }
-
-    fn get(
-        &mut self,
-        call: GetHandlerCall,
-    ) -> Result<CharacterAnswered<'_>, CharacterHandlerFailure> {
-        self.gets.push(SeenGet {
-            character_id: call.character_id,
-            provider: call.provider,
-            litellm_params: call.litellm_params,
-            extra_headers: call.extra_headers,
-            timeout: call.timeout,
-            is_async: call.is_async,
-            logged: snapshot(&self.logging),
-        });
+        let HandlerCall {
+            arguments,
+            provider,
+            litellm_params,
+            extra_headers,
+            timeout,
+            is_async,
+        } = call;
+        let logged = snapshot(&self.logging);
+        match arguments {
+            HandlerArguments::Create { name, video } => self.creates.push(SeenCreate {
+                name,
+                video,
+                provider,
+                litellm_params,
+                extra_headers,
+                timeout,
+                is_async,
+                logged,
+            }),
+            HandlerArguments::Get { character_id } => self.gets.push(SeenGet {
+                character_id,
+                provider,
+                litellm_params,
+                extra_headers,
+                timeout,
+                is_async,
+                logged,
+            }),
+        }
         answered(self.reply)
     }
 }
@@ -276,67 +290,33 @@ impl Fixture {
     pub(crate) fn create(
         &mut self,
         call: &CreateCharacterCall,
-    ) -> Result<CharacterOutcome<'_>, super::super::error::CharacterCallFailure> {
+    ) -> Result<CharacterOutcome<'_>, CharacterCallFailure> {
         let handler = &mut self.handler;
-        let redactor = &self.redactor;
-        video_create_character(
-            handler,
-            CharacterCallDeps {
-                redactor,
-                request_timeout_seconds: REQUEST_TIMEOUT_SECONDS,
-            },
-            call,
-        )
+        video_create_character(handler, deps(&self.redactor), call)
     }
 
     pub(crate) async fn acreate(
         &mut self,
         call: &CreateCharacterCall,
-    ) -> Result<CharacterObject, super::super::error::CharacterCallFailure> {
+    ) -> Result<CharacterObject, CharacterCallFailure> {
         let handler = &mut self.handler;
-        let redactor = &self.redactor;
-        avideo_create_character(
-            handler,
-            CharacterCallDeps {
-                redactor,
-                request_timeout_seconds: REQUEST_TIMEOUT_SECONDS,
-            },
-            call,
-        )
-        .await
+        avideo_create_character(handler, deps(&self.redactor), call).await
     }
 
     pub(crate) fn get(
         &mut self,
         call: &GetCharacterCall,
-    ) -> Result<CharacterOutcome<'_>, super::super::error::CharacterCallFailure> {
+    ) -> Result<CharacterOutcome<'_>, CharacterCallFailure> {
         let handler = &mut self.handler;
-        let redactor = &self.redactor;
-        video_get_character(
-            handler,
-            CharacterCallDeps {
-                redactor,
-                request_timeout_seconds: REQUEST_TIMEOUT_SECONDS,
-            },
-            call,
-        )
+        video_get_character(handler, deps(&self.redactor), call)
     }
 
     pub(crate) async fn aget(
         &mut self,
         call: &GetCharacterCall,
-    ) -> Result<CharacterObject, super::super::error::CharacterCallFailure> {
+    ) -> Result<CharacterObject, CharacterCallFailure> {
         let handler = &mut self.handler;
-        let redactor = &self.redactor;
-        avideo_get_character(
-            handler,
-            CharacterCallDeps {
-                redactor,
-                request_timeout_seconds: REQUEST_TIMEOUT_SECONDS,
-            },
-            call,
-        )
-        .await
+        avideo_get_character(handler, deps(&self.redactor), call).await
     }
 }
 

@@ -16,8 +16,8 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use self::error::{CharacterCallError, CharacterCallFailure, failure};
-use self::handler::{CharacterAnswered, CharacterHandler, CreateHandlerCall, GetHandlerCall};
-use self::prepare::{Prepared, prepare_create, prepare_get};
+use self::handler::{CharacterAnswered, CharacterHandler};
+use self::prepare::{CharacterCall, Prepared};
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_records::CharacterObject;
 
@@ -130,95 +130,70 @@ impl fmt::Debug for CharacterOutcome<'_> {
 }
 
 // LiteLLM's video_create_character: mock first, then the handler of the form the call asks for
-pub fn video_create_character<'call, 'deps, H>(
+pub fn video_create_character<'call, H: CharacterHandler>(
     handler: &'call mut H,
-    deps: CharacterCallDeps<'deps>,
+    deps: CharacterCallDeps<'call>,
     call: &CreateCharacterCall,
-) -> Result<CharacterOutcome<'call>, CharacterCallFailure>
-where
-    H: CharacterHandler,
-    'deps: 'call,
-{
-    let prepared = prepare_create(handler.logging(), deps.request_timeout_seconds, call)
-        .map_err(|error| failure(error, &call.custom_llm_provider, deps.redactor))?;
-    let ready = match prepared {
-        Prepared::Mock(character) => return Ok(CharacterOutcome::Done(character)),
-        Prepared::Call(ready) => ready,
-    };
-    let provider = call.custom_llm_provider.clone();
-    let answer = handler
-        .create(CreateHandlerCall {
-            name: call.name.clone(),
-            video: call.video.clone(),
-            provider: call.custom_llm_provider.clone(),
-            litellm_params: ready.litellm_params,
-            extra_headers: call.extra_headers.clone(),
-            timeout: ready.timeout,
-            is_async: call.is_async,
-        })
-        .map_err(|error| failure(CharacterCallError::Handler(error), &provider, deps.redactor))?;
-    answered(answer, provider, deps.redactor)
+) -> Result<CharacterOutcome<'call>, CharacterCallFailure> {
+    character_call(handler, deps, CharacterCall::Create(call), false)
 }
 
 // LiteLLM's avideo_create_character: the sync function with the flag set, its future awaited
-pub async fn avideo_create_character<H>(
-    handler: &mut H,
-    deps: CharacterCallDeps<'_>,
+pub async fn avideo_create_character<'call, H: CharacterHandler>(
+    handler: &'call mut H,
+    deps: CharacterCallDeps<'call>,
     call: &CreateCharacterCall,
-) -> Result<CharacterObject, CharacterCallFailure>
-where
-    H: CharacterHandler,
-{
-    let mut asynchronous = call.clone();
-    asynchronous.is_async = true;
-    match video_create_character(handler, deps, &asynchronous)? {
-        CharacterOutcome::Done(character) => Ok(character),
-        CharacterOutcome::Pending(pending) => pending.await,
-    }
+) -> Result<CharacterObject, CharacterCallFailure> {
+    awaited(handler, deps, CharacterCall::Create(call), true).await
 }
 
 // LiteLLM's video_get_character: the same steps with the character id as the primary argument
-pub fn video_get_character<'call, 'deps, H>(
+pub fn video_get_character<'call, H: CharacterHandler>(
     handler: &'call mut H,
-    deps: CharacterCallDeps<'deps>,
+    deps: CharacterCallDeps<'call>,
     call: &GetCharacterCall,
-) -> Result<CharacterOutcome<'call>, CharacterCallFailure>
-where
-    H: CharacterHandler,
-    'deps: 'call,
-{
-    let prepared = prepare_get(handler.logging(), deps.request_timeout_seconds, call)
-        .map_err(|error| failure(error, &call.custom_llm_provider, deps.redactor))?;
+) -> Result<CharacterOutcome<'call>, CharacterCallFailure> {
+    character_call(handler, deps, CharacterCall::Get(call), false)
+}
+
+// LiteLLM's avideo_get_character: the sync function with the flag set, its future awaited
+pub async fn avideo_get_character<'call, H: CharacterHandler>(
+    handler: &'call mut H,
+    deps: CharacterCallDeps<'call>,
+    call: &GetCharacterCall,
+) -> Result<CharacterObject, CharacterCallFailure> {
+    awaited(handler, deps, CharacterCall::Get(call), true).await
+}
+
+// the steps both operations run, shared so the two entry points only name their call
+fn character_call<'call, H: CharacterHandler>(
+    handler: &'call mut H,
+    deps: CharacterCallDeps<'call>,
+    call: CharacterCall<'_>,
+    asynchronous: bool,
+) -> Result<CharacterOutcome<'call>, CharacterCallFailure> {
+    let prepared = call
+        .prepare(handler.logging(), deps.request_timeout_seconds)
+        .map_err(|error| failure(error, call.provider(), deps.redactor))?;
     let ready = match prepared {
         Prepared::Mock(character) => return Ok(CharacterOutcome::Done(character)),
         Prepared::Call(ready) => ready,
     };
-    let provider = call.custom_llm_provider.clone();
+    let provider = call.provider().to_owned();
     let answer = handler
-        .get(GetHandlerCall {
-            character_id: call.character_id.clone(),
-            provider: call.custom_llm_provider.clone(),
-            litellm_params: ready.litellm_params,
-            extra_headers: call.extra_headers.clone(),
-            timeout: ready.timeout,
-            is_async: call.is_async,
-        })
+        .handle(call.handler_call(ready, provider.clone(), asynchronous))
         .map_err(|error| failure(CharacterCallError::Handler(error), &provider, deps.redactor))?;
     answered(answer, provider, deps.redactor)
 }
 
-// LiteLLM's avideo_get_character: the sync function with the flag set, its future awaited
-pub async fn avideo_get_character<H>(
-    handler: &mut H,
-    deps: CharacterCallDeps<'_>,
-    call: &GetCharacterCall,
-) -> Result<CharacterObject, CharacterCallFailure>
-where
-    H: CharacterHandler,
-{
-    let mut asynchronous = call.clone();
-    asynchronous.is_async = true;
-    match video_get_character(handler, deps, &asynchronous)? {
+// the async entry resolves whatever form the handler answered in
+async fn awaited<'call, H: CharacterHandler>(
+    handler: &'call mut H,
+    deps: CharacterCallDeps<'call>,
+    call: CharacterCall<'_>,
+    asynchronous: bool,
+) -> Result<CharacterObject, CharacterCallFailure> {
+    match character_call(handler, deps, call, asynchronous)? {
         CharacterOutcome::Done(character) => Ok(character),
         CharacterOutcome::Pending(pending) => pending.await,
     }

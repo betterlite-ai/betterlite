@@ -7,6 +7,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use indexmap::IndexMap;
 
 use super::error::CharacterCallError;
+use super::handler::{HandlerArguments, HandlerCall};
 use super::logging::{LoggedCall, log_call};
 use super::mock::mock_response;
 use super::params;
@@ -23,6 +24,13 @@ pub(crate) enum Prepared {
 pub(crate) struct ReadyCall {
     pub(crate) litellm_params: Params,
     pub(crate) timeout: Duration,
+}
+
+// one of the two character operations, and the caller's call it runs
+#[derive(Clone, Copy)]
+pub(crate) enum CharacterCall<'call> {
+    Create(&'call CreateCharacterCall),
+    Get(&'call GetCharacterCall),
 }
 
 // which operation's wording and call type an unresolvable provider uses
@@ -57,48 +65,85 @@ struct CallParts<'call> {
     litellm_call_id: Option<&'call str>,
     extra: &'call IndexMap<String, Json>,
     timeout: Option<f64>,
+    mock: Option<&'call Json>,
 }
 
-// create_character's steps 1 to 8, before the handler call
-pub(crate) fn prepare_create(
-    logging: &mut LoggingState,
-    request_timeout_seconds: f64,
-    call: &CreateCharacterCall,
-) -> Result<Prepared, CharacterCallError> {
-    if let Some(character) = mock_response(call.mock_response.as_ref(), "a character object")? {
-        return Ok(Prepared::Mock(character));
+impl<'call> CharacterCall<'call> {
+    // the declared provider, which the call's own default made openai
+    pub(crate) fn provider(self) -> &'call str {
+        match self {
+            Self::Create(call) => &call.custom_llm_provider,
+            Self::Get(call) => &call.custom_llm_provider,
+        }
     }
-    let parts = CallParts {
-        operation: CharacterOperation::Create,
-        provider: &call.custom_llm_provider,
-        field: "name",
-        value: &call.name,
-        litellm_call_id: call.litellm_call_id.as_deref(),
-        extra: &call.extra,
-        timeout: call.timeout,
-    };
-    ready(logging, request_timeout_seconds, &parts).map(Prepared::Call)
-}
 
-// get_character's steps 1 to 8, before the handler call
-pub(crate) fn prepare_get(
-    logging: &mut LoggingState,
-    request_timeout_seconds: f64,
-    call: &GetCharacterCall,
-) -> Result<Prepared, CharacterCallError> {
-    if let Some(character) = mock_response(call.mock_response.as_ref(), "a character object")? {
-        return Ok(Prepared::Mock(character));
+    // LiteLLM's mock check first, then LlmProviders, B3332's selector, the logging update and the deadline
+    pub(crate) fn prepare(
+        self,
+        logging: &mut LoggingState,
+        request_timeout_seconds: f64,
+    ) -> Result<Prepared, CharacterCallError> {
+        let parts = match self {
+            Self::Create(call) => CallParts {
+                operation: CharacterOperation::Create,
+                provider: &call.custom_llm_provider,
+                field: "name",
+                value: &call.name,
+                litellm_call_id: call.litellm_call_id.as_deref(),
+                extra: &call.extra,
+                timeout: call.timeout,
+                mock: call.mock_response.as_ref(),
+            },
+            Self::Get(call) => CallParts {
+                operation: CharacterOperation::Get,
+                provider: &call.custom_llm_provider,
+                field: "character_id",
+                value: &call.character_id,
+                litellm_call_id: call.litellm_call_id.as_deref(),
+                extra: &call.extra,
+                timeout: call.timeout,
+                mock: call.mock_response.as_ref(),
+            },
+        };
+        if let Some(character) = mock_response(parts.mock, "a character object")? {
+            return Ok(Prepared::Mock(character));
+        }
+        ready(logging, request_timeout_seconds, &parts).map(Prepared::Call)
     }
-    let parts = CallParts {
-        operation: CharacterOperation::Get,
-        provider: &call.custom_llm_provider,
-        field: "character_id",
-        value: &call.character_id,
-        litellm_call_id: call.litellm_call_id.as_deref(),
-        extra: &call.extra,
-        timeout: call.timeout,
-    };
-    ready(logging, request_timeout_seconds, &parts).map(Prepared::Call)
+
+    // the handler's copy of the call, with the params and the deadline the steps resolved
+    pub(crate) fn handler_call(
+        self,
+        ready: ReadyCall,
+        provider: String,
+        asynchronous: bool,
+    ) -> HandlerCall {
+        let (arguments, extra_headers, pending) = match self {
+            Self::Create(call) => (
+                HandlerArguments::Create {
+                    name: call.name.clone(),
+                    video: call.video.clone(),
+                },
+                call.extra_headers.clone(),
+                call.is_async,
+            ),
+            Self::Get(call) => (
+                HandlerArguments::Get {
+                    character_id: call.character_id.clone(),
+                },
+                call.extra_headers.clone(),
+                call.is_async,
+            ),
+        };
+        HandlerCall {
+            arguments,
+            provider,
+            litellm_params: ready.litellm_params,
+            extra_headers,
+            timeout: ready.timeout,
+            is_async: pending || asynchronous,
+        }
+    }
 }
 
 // LiteLLM's LlmProviders(provider), B3332's selector, the logging update, then `timeout or DEFAULT_REQUEST_TIMEOUT`

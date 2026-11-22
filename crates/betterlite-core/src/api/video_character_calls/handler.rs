@@ -13,7 +13,7 @@ use crate::api::video_character_transport::clients::CharacterClients;
 use crate::api::video_character_transport::config::CharacterConfig;
 use crate::api::video_character_transport::error::{CharacterError, CharacterFault};
 use crate::api::video_character_transport::service::{
-    CharacterCreateCall, CharacterGetCall, CharacterHandled, CharacterTransport,
+    CharacterAnswer, CharacterCreateCall, CharacterGetCall, CharacterHandled, CharacterTransport,
 };
 use crate::api::video_records::CharacterObject;
 
@@ -27,10 +27,15 @@ pub enum CharacterAnswered<'call> {
     Pending(CharacterWork<'call>),
 }
 
-// what a create handler is handed: the primary argument, the provider, the params and the caller's keyword values
-pub struct CreateHandlerCall {
-    pub name: String,
-    pub video: SuppliedMedia,
+// the primary argument the call carries: the name and video of a creation, or the id of a lookup
+pub enum HandlerArguments {
+    Create { name: String, video: SuppliedMedia },
+    Get { character_id: String },
+}
+
+// what a handler is handed: the primary argument, the provider, the params and the caller's keyword values
+pub struct HandlerCall {
+    pub arguments: HandlerArguments,
     pub provider: String,
     pub litellm_params: Params,
     pub extra_headers: Option<BTreeMap<String, String>>,
@@ -38,29 +43,46 @@ pub struct CreateHandlerCall {
     pub is_async: bool,
 }
 
-// what a get handler is handed
-pub struct GetHandlerCall {
-    pub character_id: String,
-    pub provider: String,
-    pub litellm_params: Params,
-    pub extra_headers: Option<BTreeMap<String, String>>,
-    pub timeout: Duration,
-    pub is_async: bool,
-}
-
-// the two handler calls, owned so the async answer can outlive the operation that raised it
+// the handler both operations run: B3335's transport, or a fixture in tests and the oracle
 pub trait CharacterHandler: Send {
     fn logging(&mut self) -> &mut LoggingState;
 
-    fn create(
+    fn handle(
         &mut self,
-        call: CreateHandlerCall,
+        call: HandlerCall,
     ) -> Result<CharacterAnswered<'_>, CharacterHandlerFailure>;
+}
 
-    fn get(
-        &mut self,
-        call: GetHandlerCall,
-    ) -> Result<CharacterAnswered<'_>, CharacterHandlerFailure>;
+// the transport call either primary argument builds
+enum TransportCall<'call> {
+    Create(CharacterCreateCall<'call>),
+    Get(CharacterGetCall<'call>),
+}
+
+impl HandlerCall {
+    const fn transport_call<'call>(&'call self, is_async: bool) -> TransportCall<'call> {
+        match &self.arguments {
+            HandlerArguments::Create { name, video } => {
+                TransportCall::Create(CharacterCreateCall {
+                    name: name.as_str(),
+                    video,
+                    litellm_params: &self.litellm_params,
+                    extra_headers: self.extra_headers.as_ref(),
+                    timeout: Some(self.timeout),
+                    api_key: None,
+                    is_async,
+                })
+            }
+            HandlerArguments::Get { character_id } => TransportCall::Get(CharacterGetCall {
+                character_id: character_id.as_str(),
+                litellm_params: &self.litellm_params,
+                extra_headers: self.extra_headers.as_ref(),
+                timeout: Some(self.timeout),
+                api_key: None,
+                is_async,
+            }),
+        }
+    }
 }
 
 // B3335's transport as the handler both operations run
@@ -74,110 +96,48 @@ where
         self.logging
     }
 
-    fn create(
+    fn handle(
         &mut self,
-        call: CreateHandlerCall,
-    ) -> Result<CharacterAnswered<'_>, CharacterHandlerFailure> {
-        // the async answer outlives the transport call, so the call is built inside the future it returns
-        if call.is_async {
-            let work = Box::pin(async move {
-                let transport_call = create_transport_call(&call, true);
-                create_answered(self, &transport_call).await
-            });
-            return Ok(CharacterAnswered::Pending(work));
-        }
-        let transport_call = create_transport_call(&call, false);
-        let handled = self
-            .video_create_character_handler(&transport_call)
-            .map_err(fault_of::<C>)?;
-        match handled {
-            CharacterHandled::Done(character) => Ok(CharacterAnswered::Done(character)),
-            CharacterHandled::Pending(_pending) => Err(unexpected_pending()),
-        }
-    }
-
-    fn get(
-        &mut self,
-        call: GetHandlerCall,
+        call: HandlerCall,
     ) -> Result<CharacterAnswered<'_>, CharacterHandlerFailure> {
         if call.is_async {
-            let work = Box::pin(async move {
-                let transport_call = get_transport_call(&call, true);
-                get_answered(self, &transport_call).await
-            });
+            let work = Box::pin(async move { answered(self, &call.transport_call(true)).await });
             return Ok(CharacterAnswered::Pending(work));
         }
-        let transport_call = get_transport_call(&call, false);
-        let handled = self
-            .video_get_character_handler(&transport_call)
-            .map_err(fault_of::<C>)?;
-        match handled {
+        let transport_call = call.transport_call(false);
+        match ask(self, &transport_call).map_err(fault_of::<C>)? {
             CharacterHandled::Done(character) => Ok(CharacterAnswered::Done(character)),
             CharacterHandled::Pending(_pending) => Err(unexpected_pending()),
         }
     }
 }
 
-const fn create_transport_call<'call>(
-    call: &'call CreateHandlerCall,
-    is_async: bool,
-) -> CharacterCreateCall<'call> {
-    CharacterCreateCall {
-        name: &call.name,
-        video: &call.video,
-        litellm_params: &call.litellm_params,
-        extra_headers: call.extra_headers.as_ref(),
-        timeout: Some(call.timeout),
-        api_key: None,
-        is_async,
+// the transport's own handler for the call's kind
+fn ask<'call, C, S>(
+    transport: &'call mut CharacterTransport<'_, '_, C, S>,
+    call: &'call TransportCall<'_>,
+) -> CharacterAnswer<'call, C>
+where
+    C: CharacterConfig,
+    S: CharacterClients,
+    C::Error: CharacterProviderFailure,
+{
+    match call {
+        TransportCall::Create(call) => transport.video_create_character_handler(call),
+        TransportCall::Get(call) => transport.video_get_character_handler(call),
     }
 }
 
-const fn get_transport_call<'call>(
-    call: &'call GetHandlerCall,
-    is_async: bool,
-) -> CharacterGetCall<'call> {
-    CharacterGetCall {
-        character_id: &call.character_id,
-        litellm_params: &call.litellm_params,
-        extra_headers: call.extra_headers.as_ref(),
-        timeout: Some(call.timeout),
-        api_key: None,
-        is_async,
-    }
-}
-
-async fn create_answered<C, S>(
+async fn answered<C, S>(
     transport: &mut CharacterTransport<'_, '_, C, S>,
-    call: &CharacterCreateCall<'_>,
+    call: &TransportCall<'_>,
 ) -> Result<CharacterObject, CharacterHandlerFailure>
 where
     C: CharacterConfig,
     S: CharacterClients,
     C::Error: CharacterProviderFailure,
 {
-    let handled = transport
-        .video_create_character_handler(call)
-        .map_err(fault_of::<C>)?;
-    match handled {
-        CharacterHandled::Done(character) => Ok(character),
-        CharacterHandled::Pending(pending) => pending.await.map_err(fault_of::<C>),
-    }
-}
-
-async fn get_answered<C, S>(
-    transport: &mut CharacterTransport<'_, '_, C, S>,
-    call: &CharacterGetCall<'_>,
-) -> Result<CharacterObject, CharacterHandlerFailure>
-where
-    C: CharacterConfig,
-    S: CharacterClients,
-    C::Error: CharacterProviderFailure,
-{
-    let handled = transport
-        .video_get_character_handler(call)
-        .map_err(fault_of::<C>)?;
-    match handled {
+    match ask(transport, call).map_err(fault_of::<C>)? {
         CharacterHandled::Done(character) => Ok(character),
         CharacterHandled::Pending(pending) => pending.await.map_err(fault_of::<C>),
     }
