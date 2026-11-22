@@ -121,7 +121,7 @@ impl RequestScheduler {
             warning,
         })
     }
-    // save_queue against the tier that answered the read, retried while another writer wins the compare
+    // save_queue against the tier that answered the read
     pub(super) async fn change<F>(
         &self,
         model: &str,
@@ -150,8 +150,12 @@ impl RequestScheduler {
     where
         F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
     {
-        let ttl = Some(self.settings.local_ttl_seconds);
-        match cas(shared, key, model, change, ttl).await {
+        match cas(shared, key, model, change, self.local_ttl()).await {
+            Err(SharedChange::Refused(error)) => Err(error),
+            Err(SharedChange::Unavailable(warning)) => Ok(Observed {
+                value: self.change_local(key, model, change)?,
+                warning: Some(warning),
+            }),
             Ok(entries) => {
                 self.mirror_local(key, &entries)?;
                 Ok(Observed {
@@ -159,11 +163,6 @@ impl RequestScheduler {
                     warning: None,
                 })
             }
-            Err(SharedChange::Unavailable(warning)) => Ok(Observed {
-                value: self.change_local(key, model, change)?,
-                warning: Some(warning),
-            }),
-            Err(SharedChange::Refused(error)) => Err(error),
         }
     }
     // the fallback tier of a degraded shared read: one lock serializes this worker's read-modify-write

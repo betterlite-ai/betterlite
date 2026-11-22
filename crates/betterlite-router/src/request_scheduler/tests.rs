@@ -169,7 +169,8 @@ pub(super) struct ScriptedCall {
 }
 
 impl ScriptedCall {
-    pub(super) fn answered(healthy: usize) -> Self {
+    // the scripted provider before a test gives it an answer or a side effect
+    fn idle(healthy: usize) -> Self {
         Self {
             healthy,
             answer: Ok(headers::Response::Object(JsonObject::new())),
@@ -179,23 +180,21 @@ impl ScriptedCall {
         }
     }
 
+    pub(super) fn answered(healthy: usize) -> Self {
+        Self::idle(healthy)
+    }
+
     pub(super) fn unanswered(healthy: usize) -> Self {
         Self {
-            healthy,
             answer: Ok(headers::Response::Absent),
-            flip: None,
-            cancel: None,
-            calls: AtomicUsize::new(0),
+            ..Self::idle(healthy)
         }
     }
 
     pub(super) fn answered_flipping(healthy: usize, flip: Arc<AtomicBool>) -> Self {
         Self {
-            healthy,
-            answer: Ok(headers::Response::Object(JsonObject::new())),
             flip: Some(flip),
-            cancel: None,
-            calls: AtomicUsize::new(0),
+            ..Self::idle(healthy)
         }
     }
 
@@ -211,24 +210,18 @@ impl ScriptedCall {
             body_code: code.map(str::to_owned),
         };
         Self {
-            healthy,
             answer: Err(Box::new(ErrorClass::Api(Box::new(ApiDetails {
                 context,
                 status,
             })))),
-            flip: None,
-            cancel: None,
-            calls: AtomicUsize::new(0),
+            ..Self::idle(healthy)
         }
     }
 
     pub(super) fn cancelling(healthy: usize, cancel: CancellationToken) -> Self {
         Self {
-            healthy,
-            answer: Ok(headers::Response::Object(JsonObject::new())),
-            flip: None,
             cancel: Some(cancel),
-            calls: AtomicUsize::new(0),
+            ..Self::idle(healthy)
         }
     }
 
