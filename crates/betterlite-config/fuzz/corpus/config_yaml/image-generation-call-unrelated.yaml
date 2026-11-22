@@ -1,0 +1,4 @@
+litellm_settings:
+  num_retries: 2
+general_settings:
+  master_key: os.environ/MASTER_KEY

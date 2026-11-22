@@ -17,7 +17,7 @@ pub enum ErrorStatus {
 }
 
 impl ErrorStatus {
-    pub(super) fn cast_code(&self) -> i64 {
+    pub(crate) fn cast_code(&self) -> i64 {
         match self {
             Self::Code(code) => *code,
             Self::Text(text) => text.trim().parse().unwrap_or(500),

@@ -4,6 +4,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
@@ -252,6 +255,7 @@ async fn the_cost_resource_carries_the_savings_context() {
     let mut bundled = BundledCatalog::default();
     let shared = Shared {
         bundled_catalog: bundled.get(),
+        client: transport(),
     };
     let slot = Slot::new(&config, &shared);
     let context = slot
@@ -274,4 +278,9 @@ async fn the_cost_resource_carries_the_savings_context() {
     .await;
     assert_eq!(pricing.provider.as_deref(), Some("openai"));
     assert!(pricing.pricing.is_some());
+}
+
+fn transport() -> ProxiedClient {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    ProxiedClient::outbound(&Arc::new(policy)).unwrap()
 }

@@ -1,0 +1,73 @@
+kind: helper
+name: stream-usage-cost-fallback-zero-and-failure
+call:
+  b8930:
+    chunk:
+      kind: object
+      value:
+        object: chat.completion.chunk
+        usage:
+          prompt_tokens: 2
+          completion_tokens: 1
+      text: null
+    enabled: true
+    model_name: gpt-4o
+    prices:
+      recorder: 0.25
+      completion: 0.5
+    log: null
+calls:
+  - b8930:
+      chunk:
+        kind: object
+        value:
+          object: chat.completion.chunk
+          usage:
+            prompt_tokens: 2
+            completion_tokens: 1
+        text: null
+      enabled: true
+      model_name: gpt-4o
+      prices:
+        recorder: 0
+        completion: 0.5
+      log:
+        model: gpt-4o
+        call_type: acompletion
+        details: {}
+  - b8930:
+      chunk:
+        kind: object
+        value:
+          object: chat.completion.chunk
+          usage:
+            prompt_tokens: 2
+            completion_tokens: 1
+        text: null
+      enabled: true
+      model_name: gpt-4o
+      prices:
+        recorder: null
+        completion: null
+      log:
+        model: gpt-4o
+        call_type: acompletion
+        details: {}
+  - b8930:
+      chunk:
+        kind: object
+        value:
+          object: chat.completion.chunk
+          usage:
+            prompt_tokens: 2
+            completion_tokens: 1
+        text: null
+      enabled: true
+      model_name: gpt-4o
+      prices:
+        recorder: null
+        completion: null
+      log: null
+env: {}
+compare:
+  ignore: []

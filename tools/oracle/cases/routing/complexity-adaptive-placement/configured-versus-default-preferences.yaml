@@ -1,0 +1,37 @@
+kind: probe
+name: complexity-adaptive-placement-configured-versus-default-preferences
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_adaptive_placement:
+        adaptive: true
+        weights: null
+        tier_distance_penalty: null
+        adaptive_eligible: null
+        pools:
+          - {tier: SIMPLE, models: [mini]}
+          - {tier: MEDIUM, models: [mid]}
+          - {tier: COMPLEX, models: [big]}
+        deployments:
+          - {model_name: big, quality_tier: null, strengths: [], params_cost: null, info_cost: "0.3"}
+          - {model_name: mid, quality_tier: 1, strengths: [], params_cost: null, info_cost: "0.2"}
+          - {model_name: mini, quality_tier: 3, strengths: [general], params_cost: null, info_cost: "0.1"}
+        default_model: null
+        classified_tier: SIMPLE
+        user_message: hello there
+        hard_floor: null
+        hard_ceiling: null
+        fit_filter: null
+        observations:
+          - {request_type: general, model: mini, delta_alpha: "1", delta_beta: "0"}
+        samples: ["0.5", "0.5", "0.5"]
+        kwargs_present: null
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/complexity_adaptive_placement/decision/candidates/1/score
+      reference: "-0.000000"
+      rust: "0.000000"
+      why: betterlite's Decimal cost score is exactly 0.5 for this candidate, so its weighted sum lands on zero and prints 0.000000, where LiteLLM's float cost score is one ulp lower and its tiny negative score prints -0.000000; every other candidate field and the chosen model still match
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/adaptive_router/bandit.py#L84-L97

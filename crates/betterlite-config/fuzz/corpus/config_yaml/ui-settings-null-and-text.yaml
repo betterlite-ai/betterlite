@@ -1,0 +1,6 @@
+general_settings:
+  enable_chat_ui: null
+  forward_client_headers_to_llm_api: "yes"
+  enabled_ui_pages_internal_users: []
+  team_admin_editable_team_fields: "max_budget"
+  allow_public_health_readiness_details: 1

@@ -1,14 +1,14 @@
 id: B10038
 milestone: R2 bug fixes
 title: A Bedrock Stability edit for an unmapped model returns its image
-status: todo
+status: done
 depends_on:
 - B637
 file: tasks/B10038-bedrock-stability-edit-unmapped-model.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2957

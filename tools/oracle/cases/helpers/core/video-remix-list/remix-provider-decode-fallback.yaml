@@ -1,0 +1,15 @@
+kind: helper
+name: b3340-remix-provider-decode-fallback
+call:
+  b3340:
+    operation: avideo_remix
+    litellm_call_id: call-remix-decode
+    video_id: video_123
+    prompt: make it warmer
+    custom_llm_provider: null
+    api_base: https://api.openai.com/v1
+    api_key: test-key
+    status: 200
+    body: '{"id": "video_123", "object": "video", "status": "completed", "seconds": "4", "model": "sora-2"}'
+env: {}
+compare: {ignore: []}
