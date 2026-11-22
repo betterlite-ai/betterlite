@@ -7,6 +7,7 @@
 use std::sync::Arc;
 
 use betterlite_context::media_config_selection::image_edit::ImageEditConfigTag;
+use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
@@ -26,6 +27,9 @@ use super::service::{ImageEdits, branch_timeout};
 use crate::api::image_input_options::selection::OptionalParamsPolicy;
 
 mod support;
+
+// the typed options upload() carries, so a fixture provider that advertises them maps the call
+const UPLOAD_OPTIONS: [&str; 6] = ["mask", "n", "quality", "response_format", "size", "user"];
 
 #[tokio::test]
 async fn edit_openai_upload() {
@@ -369,7 +373,7 @@ async fn edit_option_merge_rejects_a_non_text_header() {
     let world = World::new();
     let context = world.context();
     let settings = settings(&[]);
-    let provider = Arc::new(Provider::new(&[], false));
+    let provider = Arc::new(Provider::new(&UPLOAD_OPTIONS, false));
     let source = Source::new(vec![(gpt_image_tag(), Arc::clone(&provider))]);
     let service = ImageEdits {
         settings: &settings,
@@ -412,9 +416,9 @@ async fn edit_dispatch_and_timeout(
     let world = World::new();
     let context = world.context();
     let settings = settings(&[("REQUEST_TIMEOUT", "7")]);
-    let stability = Arc::new(Provider::new(&[], false));
-    let bedrock = Arc::new(Provider::new(&[], false));
-    let bfl = Arc::new(Provider::new(&[], false));
+    let stability = Arc::new(Provider::new(&UPLOAD_OPTIONS, false));
+    let bedrock = Arc::new(Provider::new(&UPLOAD_OPTIONS, false));
+    let bfl = Arc::new(Provider::new(&UPLOAD_OPTIONS, false));
     let source = Source::new(vec![
         (
             ImageEditConfigTag::Stability(String::from("edit-model")),
@@ -460,7 +464,7 @@ async fn edit_dispatch_and_timeout_defaults_to_6000() {
     let world = World::new();
     let context = world.context();
     let settings = settings(&[]);
-    let stability = Arc::new(Provider::new(&[], false));
+    let stability = Arc::new(Provider::new(&UPLOAD_OPTIONS, false));
     let source = Source::new(vec![(
         ImageEditConfigTag::Stability(String::from("edit-model")),
         Arc::clone(&stability),
@@ -746,7 +750,7 @@ async fn image_edit_awaits_a_pending_provider() {
     let world = World::new();
     let context = world.context();
     let settings = settings(&[]);
-    let provider = Arc::new(Provider::new(&[], false).pending());
+    let provider = Arc::new(Provider::new(&UPLOAD_OPTIONS, false).pending());
     let source = Source::new(vec![(gpt_image_tag(), Arc::clone(&provider))]);
     let service = ImageEdits {
         settings: &settings,
@@ -772,7 +776,7 @@ async fn image_edit_reports_a_logger_failure() {
     let world = World::new();
     let context = world.context();
     let settings = settings(&[]);
-    let provider = Arc::new(Provider::new(&[], false));
+    let provider = Arc::new(Provider::new(&UPLOAD_OPTIONS, false));
     let source = Source::new(vec![(gpt_image_tag(), Arc::clone(&provider))]);
     let service = ImageEdits {
         settings: &settings,
@@ -894,7 +898,7 @@ async fn edit_option_merge_form_fields_need_an_openai_multipart_config(
     let world = World::new();
     let context = world.context();
     let settings = settings(&[]);
-    let provider = Arc::new(Provider::new(&[], multipart));
+    let provider = Arc::new(Provider::new(&UPLOAD_OPTIONS, multipart));
     let source = Source::new(vec![(tag, Arc::clone(&provider))]);
     let service = ImageEdits {
         settings: &settings,
@@ -951,4 +955,211 @@ async fn image_edit_attributes_an_unresolved_model_to_the_arguments() {
     let metadata = error.class.metadata();
     assert_eq!(metadata.model.as_deref(), Some("unlisted-edit-model"));
     assert_eq!(metadata.status_code, 400);
+}
+
+#[tokio::test]
+async fn edit_option_merge_takes_declared_kwargs() {
+    let world = World::new();
+    let context = world.context();
+    let settings = settings(&[]);
+    let supported = ["background", "input_fidelity", "imageConfig"];
+    let provider = Arc::new(Provider::new(&supported, false));
+    let source = Source::new(vec![(gpt_image_tag(), Arc::clone(&provider))]);
+    let service = ImageEdits {
+        settings: &settings,
+        resolution: &context,
+        providers: &source,
+        custom: &NoCustom,
+        global_drop_params: false,
+    };
+    let mut call = upload();
+    call.mask = None;
+    call.count = None;
+    call.quality = None;
+    call.response_format = None;
+    call.size = None;
+    call.user = None;
+    call.kwargs = ImageParams::from([
+        (
+            String::from("background"),
+            Json::Text(String::from("opaque")),
+        ),
+        (
+            String::from("input_fidelity"),
+            Json::Text(String::from("high")),
+        ),
+        (
+            String::from("imageConfig"),
+            Json::Object(IndexMap::from([(
+                String::from("seed"),
+                Json::Number(Number::from(7_u32)),
+            )])),
+        ),
+    ]);
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("a provider that advertises the declared kwargs takes them");
+    let recorded = provider.take();
+    let [sent] = recorded.as_slice() else {
+        panic!("exactly one send");
+    };
+    assert_eq!(
+        sent.optional_params,
+        ImageParams::from([
+            (
+                String::from("background"),
+                Json::Text(String::from("opaque"))
+            ),
+            (
+                String::from("input_fidelity"),
+                Json::Text(String::from("high"))
+            ),
+            (
+                String::from("imageConfig"),
+                Json::Object(IndexMap::from([(
+                    String::from("seed"),
+                    Json::Number(Number::from(7_u32)),
+                )])),
+            ),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn edit_option_merge_rejects_an_unsupported_background() {
+    let world = World::new();
+    let context = world.context();
+    let settings = settings(&[]);
+    let supported = [
+        "mask",
+        "n",
+        "quality",
+        "response_format",
+        "size",
+        "user",
+        "input_fidelity",
+    ];
+    let provider = Arc::new(Provider::new(&supported, true));
+    let source = Source::new(vec![(gpt_image_tag(), Arc::clone(&provider))]);
+    let service = ImageEdits {
+        settings: &settings,
+        resolution: &context,
+        providers: &source,
+        custom: &NoCustom,
+        global_drop_params: false,
+    };
+    let mut call = upload();
+    call.kwargs = ImageParams::from([(
+        String::from("background"),
+        Json::Text(String::from("transparent")),
+    )]);
+    let mut logger = RecordingLogger::new();
+    let error = ImageEditEntry {
+        operation: &service,
+        logger: &mut logger,
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect_err("a provider that does not advertise background refuses it");
+    assert_eq!(
+        error.message,
+        "The following parameters are not supported for model gpt-image-1: background"
+    );
+    assert!(matches!(error.class, ErrorClass::UnsupportedParams(_)));
+    let metadata = error.class.metadata();
+    assert_eq!(metadata.status_code, 400);
+    assert_eq!(metadata.error_type, WireField::MISSING);
+    assert_eq!(metadata.param, WireField::Null);
+    assert_eq!(metadata.openai_code, None);
+    assert!(logger.records.is_empty());
+    assert!(provider.take().is_empty());
+}
+
+#[tokio::test]
+async fn edit_option_merge_drops_a_null_background() {
+    let world = World::new();
+    let context = world.context();
+    let settings = settings(&[]);
+    let provider = Arc::new(Provider::new(&[], true));
+    let source = Source::new(vec![(gpt_image_tag(), Arc::clone(&provider))]);
+    let service = ImageEdits {
+        settings: &settings,
+        resolution: &context,
+        providers: &source,
+        custom: &NoCustom,
+        global_drop_params: false,
+    };
+    let mut call = upload();
+    call.mask = None;
+    call.count = None;
+    call.quality = None;
+    call.response_format = None;
+    call.size = None;
+    call.user = None;
+    call.kwargs = ImageParams::from([(String::from("background"), Json::Null)]);
+    ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect("a null background is absent, not unsupported");
+    let recorded = provider.take();
+    let [sent] = recorded.as_slice() else {
+        panic!("exactly one send");
+    };
+    assert!(
+        sent.optional_params.is_empty(),
+        "a null background is absent, so neither the options nor the form fields carry it"
+    );
+}
+
+#[tokio::test]
+async fn edit_option_merge_names_a_background_outside_its_literal() {
+    let world = World::new();
+    let context = world.context();
+    let settings = settings(&[]);
+    let provider = Arc::new(Provider::new(&["background"], false));
+    let source = Source::new(vec![(gpt_image_tag(), Arc::clone(&provider))]);
+    let service = ImageEdits {
+        settings: &settings,
+        resolution: &context,
+        providers: &source,
+        custom: &NoCustom,
+        global_drop_params: false,
+    };
+    let mut call = upload();
+    call.mask = None;
+    call.count = None;
+    call.quality = None;
+    call.response_format = None;
+    call.size = None;
+    call.user = None;
+    call.kwargs = ImageParams::from([(
+        String::from("background"),
+        Json::Text(String::from("purple")),
+    )]);
+    let error = ImageEditEntry {
+        operation: &service,
+        logger: &mut RecordingLogger::new(),
+        redactor: &redactor(),
+    }
+    .image_edit(&call)
+    .await
+    .expect_err("purple is not one of background's literals");
+    assert!(matches!(error.class, ErrorClass::BadRequest(_)));
+    assert_eq!(error.class.metadata().status_code, 400);
+    assert!(
+        error.message.contains("background"),
+        "a value outside the declared literal names the field: {}",
+        error.message
+    );
+    assert!(provider.take().is_empty());
 }

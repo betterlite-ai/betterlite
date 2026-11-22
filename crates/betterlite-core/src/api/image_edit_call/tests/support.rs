@@ -31,7 +31,9 @@ use crate::api::image_edit_call::send::{
 use crate::api::image_input_options::options::{
     ImageEditOptionalRequestParams, Quality, ResponseFormat,
 };
-use crate::api::image_input_options::selection::OptionalParamsPolicy;
+use crate::api::image_input_options::selection::{
+    ImageEditProviderConfig, OptionalParamsPolicy, optional_params_image_edit,
+};
 
 // what a configured provider's send received, in the shape the parity review reads
 #[derive(Debug)]
@@ -116,20 +118,39 @@ impl ImageEditProvider for Provider {
         self.multipart
     }
 
+    // the provider config's own mapping: B1120 rejects a declared field it does not support
     fn map_edit_options(
         &self,
         options: &ImageEditOptionalRequestParams,
-        _model: &str,
+        model: &str,
         policy: &OptionalParamsPolicy,
     ) -> Result<ImageParams, ImageEditError> {
         record(&self.policies, policy.clone());
-        // the OpenAI config's map_openai_params: a dict copy in the TypedDict's order
-        Ok(serde_json::from_slice(&serde_json::to_vec(options)?)?)
+        optional_params_image_edit(self, model, options, policy)
     }
 
     fn send(&self, request: ImageEditSendRequest<'_>) -> Result<ImageEditStep<'_>, ImageEditError> {
         record(&self.sends, Sent::of(&request));
         Ok(step(self.pending))
+    }
+}
+
+impl ImageEditProviderConfig for Provider {
+    type Error = ImageEditError;
+    type Mapped = ImageParams;
+
+    fn supported_openai_params(&self, _model: &str) -> Vec<String> {
+        self.supported.clone()
+    }
+
+    // the OpenAI config's map_openai_params: a dict copy in the TypedDict's order
+    fn map_openai_params(
+        &self,
+        options: &ImageEditOptionalRequestParams,
+        _model: &str,
+        _drop_params: bool,
+    ) -> Result<ImageParams, ImageEditError> {
+        Ok(serde_json::from_slice(&serde_json::to_vec(options)?)?)
     }
 }
 
