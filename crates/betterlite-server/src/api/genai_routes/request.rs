@@ -52,8 +52,17 @@ pub(super) fn contents(data: &Object) -> Result<Json, Box<ProxyException>> {
     match data.get(CONTENTS) {
         None | Some(Json::Null) => Ok(Json::List(Vec::new())),
         Some(Json::List(items)) => Ok(Json::List(items.clone())),
+        // TokenCountRequest.contents is list[dict] | None, so any other JSON type is a wrong type
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(Box::new(wrong_contents()))
+            Err(Box::new(ProxyException::new(ProxyExceptionInit {
+                message: format!("'{CONTENTS}' has the wrong type"),
+                error_type: "invalid_request_error".to_owned(),
+                param: Some(CONTENTS.to_owned()),
+                code: ExceptionCode::Status(400),
+                headers: BTreeMap::new(),
+                openai_code: None,
+                provider_specific_fields: BTreeMap::new(),
+            })))
         }
     }
 }
@@ -78,17 +87,4 @@ fn json(value: serde_json::Value) -> Json {
                 .collect(),
         ),
     }
-}
-
-// TokenCountRequest.contents is list[dict] | None, so a single content object is a wrong type
-fn wrong_contents() -> ProxyException {
-    ProxyException::new(ProxyExceptionInit {
-        message: format!("'{CONTENTS}' has the wrong type"),
-        error_type: "invalid_request_error".to_owned(),
-        param: Some(CONTENTS.to_owned()),
-        code: ExceptionCode::Status(400),
-        headers: BTreeMap::new(),
-        openai_code: None,
-        provider_specific_fields: BTreeMap::new(),
-    })
 }
