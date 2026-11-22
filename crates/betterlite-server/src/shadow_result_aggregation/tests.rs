@@ -31,7 +31,6 @@ fn money(value: f64) -> Decimal {
     Decimal::from_f64_retain(value).unwrap()
 }
 
-// a rounded figure spelled exactly as the decimal it rounds to, not as the binary double it came from
 fn spelled(text: &str) -> Decimal {
     text.parse().unwrap()
 }

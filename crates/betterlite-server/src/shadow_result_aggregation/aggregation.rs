@@ -8,7 +8,6 @@ use serde::Deserialize;
 use super::error::ShadowResultsError;
 use crate::shadow_eval_models::results::ShadowEvalSlice;
 
-// one row of LiteLLM's _ATTEMPT_AGG queries: the judged turns of one tier, model, leg or router
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AttemptAggRow {

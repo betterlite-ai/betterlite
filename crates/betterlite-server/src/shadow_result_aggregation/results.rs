@@ -23,7 +23,6 @@ pub struct FunnelTotals {
 
 pub type TargetVerdicts = BTreeMap<TargetKey, ShadowEvalSlice>;
 
-// the four grouped reads of one job's attempts, plus its funnel counts
 pub struct JobAggregates<'rows> {
     pub by_tier: &'rows [AttemptAggRow],
     pub by_model: &'rows [AttemptAggRow],

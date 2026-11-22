@@ -7,7 +7,6 @@ use crate::shadow_eval_models::ShadowEvalTargetType;
 use crate::shadow_eval_models::job::ShadowJob;
 use crate::shadow_eval_models::leg::ShadowLeg;
 
-// one row of a label table: a target id and the display strings read from it
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LabelRow {

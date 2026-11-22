@@ -31,7 +31,6 @@ pub struct AttemptTotals {
     pub judge_spend: Decimal,
 }
 
-// one errored attempt, as the latest-error read considers it
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ErrorAttempt {
