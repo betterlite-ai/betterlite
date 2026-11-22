@@ -50,7 +50,8 @@ pub(crate) async fn run_stages(
             Ok(context) => authenticated = Some(context),
             Err(failure) => {
                 let context = FailureContext::of(&request, body.as_ref());
-                return Err(Box::new(context.respond(&failure, failure_response).await));
+                let response = Box::pin(context.respond(&failure, failure_response)).await;
+                return Err(Box::new(response));
             }
         }
     }

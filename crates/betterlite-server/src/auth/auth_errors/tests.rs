@@ -91,10 +91,18 @@ async fn send(hook: Option<&Arc<Hook>>, key: &str) -> (StatusCode, String, bool)
 
 async fn send_with(hook: Option<&Arc<Hook>>, key: &str, extra: &str) -> (StatusCode, String, bool) {
     let state = state_for(&config(extra));
-    if let Some(installed) = hook
-        && state.auth_errors.hook.set(Arc::clone(installed)).is_err()
-    {
-        panic!("a fresh slot takes the hook");
+    if let Some(installed) = hook {
+        let installed: Arc<dyn AuthFailureHook> = Arc::clone(installed);
+        assert!(
+            state
+                .auth_errors
+                .hook
+                .lock()
+                .unwrap()
+                .replace(installed)
+                .is_none(),
+            "a fresh slot takes the hook"
+        );
     }
     let reached = Arc::new(AtomicBool::new(false));
     let application = routes::router(
@@ -135,7 +143,7 @@ fn stage_is_registered() {
     };
     assert_eq!(slot.settings, expected);
     assert!(slot.routes.is_some() && slot.redactor.is_some());
-    assert!(slot.hook.get().is_none());
+    assert!(slot.hook().is_none());
     let defaults = &state_for(&config("")).auth_errors.settings;
     assert_eq!(
         (defaults.log, defaults.allow_on_outage),

@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_errors::conversion::AuthFailure;
@@ -23,10 +23,19 @@ pub struct Slot {
     pub routes: Option<RouteNormalizer>,
     pub redactor: Option<Redactor>,
     // B012 installs the failure callbacks here; until then every rejection is answered as raised
-    pub hook: OnceLock<Arc<dyn AuthFailureHook>>,
+    pub hook: Mutex<Option<Arc<dyn AuthFailureHook>>>,
 }
 
 impl Slot {
+    #[must_use]
+    pub fn hook(&self) -> Option<Arc<dyn AuthFailureHook>> {
+        self.hook
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map(Arc::clone)
+    }
+
     #[must_use]
     pub fn new(config: &Config, _shared: &Shared) -> Self {
         let switches = &config.sections.auth_errors;
@@ -42,7 +51,7 @@ impl Slot {
             },
             routes: RouteNormalizer::new().ok(),
             redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).ok(),
-            hook: OnceLock::new(),
+            hook: Mutex::new(None),
         }
     }
 }

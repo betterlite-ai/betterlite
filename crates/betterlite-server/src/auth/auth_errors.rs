@@ -30,12 +30,12 @@ use crate::state::auth_errors::AuthFailureHook;
 
 mod tests;
 
-struct ServerPorts<'slot> {
-    hook: Option<&'slot Arc<dyn AuthFailureHook>>,
+struct ServerPorts {
+    hook: Option<Arc<dyn AuthFailureHook>>,
 }
 
 #[async_trait]
-impl AuthErrorPorts for ServerPorts<'_> {
+impl AuthErrorPorts for ServerPorts {
     // the gateway turns the outage bypass off, so nothing records a database failure here
     #[cfg_attr(test, mutants::skip)]
     fn record_service_failure(&self, failure: &ServiceFailure<'_>) {
@@ -78,7 +78,7 @@ impl AuthErrorPorts for ServerPorts<'_> {
         &self,
         call: FailureHookCall<'_>,
     ) -> Result<Option<AuthFailure>, HookError> {
-        match self.hook {
+        match &self.hook {
             Some(hook) => hook.transform(call).await,
             None => Ok(None),
         }
@@ -127,9 +127,7 @@ impl FailureContext {
             return failure_response(failure);
         };
         let handler = AuthErrorHandler {
-            ports: &ServerPorts {
-                hook: slot.hook.get(),
-            },
+            ports: &ServerPorts { hook: slot.hook() },
             // the gateway reads no key from a database, so a rejected key never earns the outage identity
             settings: AuthErrorSettings {
                 allow_on_outage: false,
