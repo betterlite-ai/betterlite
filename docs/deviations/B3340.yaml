@@ -1,0 +1,30 @@
+task: B3340
+deviations:
+  - what: "The 600-second default is a value on VideoRemixCall::default and VideoListCall::default, and a caller's explicit None or 0 falls back to B198's request timeout when the call prepares its deadline."
+    why: "LiteLLM spells the default `timeout=600` in the signature and resolves it as `timeout or DEFAULT_REQUEST_TIMEOUT` at the handler call; a struct field with a typed default carries the same value, and the falsey check becomes resolved_timeout's filter over the float."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L556-L651
+  - what: "avideo_list infers the provider from a typed resolution call before the mock short circuit and maps the failure to a 400 whose message is betterlite's own."
+    why: "LiteLLM calls get_llm_provider with an empty model, where local_vars never holds api_base, so an absent provider always raises BadRequestError before a mock is read; betterlite runs the same empty-model resolution, and its BadRequest carries the same opening text behind betterlite's `Exception - ` class prefix."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L688-L707
+  - what: "A mock video list is decoded from a JSON string or array into typed VideoObjects and returned as VideoListReply::Objects; an invalid mock is a ValueError-class error with betterlite's text."
+    why: "LiteLLM json.loads a string and builds [VideoObject(**item) for item in mock_response], so a malformed mock surfaces as Python's JSONDecodeError or TypeError text; betterlite reports its own MockDecodeError through the same ValueError-to-500 exception_type mapping."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L796-L803
+  - what: "after, limit and order are typed fields on VideoListCall and are written into the query params as given; they are never treated as video-ID lookup keys."
+    why: "LiteLLM builds video_list_request_params from after, limit and order and hands them to the list handler, which decodes only after; betterlite carries the same three values as typed call fields so no id lookup can reach them."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L816-L845
+  - what: "video_remix and video_list set the logging call type through one log_call step that writes the model_call_details update first and the call_type attribute second."
+    why: "LiteLLM calls update_from_kwargs and then assigns litellm_logging_obj.call_type; betterlite's shared log_call performs both in that order, and the oracle compares both the attribute and the model_call_details.call_type value."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L825-L865
+  - what: "The sync and async entry points are separate functions, video_remix/avideo_remix and video_list/avideo_list, with no avideo_remix or avideo_list dispatch flag and no Python overload declarations."
+    why: "LiteLLM's avideo_remix=True/False overloads annotate a single function whose runtime flag returns a Coroutine or the object; Rust cannot return either type, so each mode has its own signature and the async one returns a future."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L522-L551
+  - what: "avideo_remix and avideo_list await the async handler directly instead of running the sync function through partial, contextvars.copy_context and loop.run_in_executor."
+    why: "The request, transforms and result are the same; Rust has neither contextvars nor a GIL, and LiteLLM's executor hop exists only to reuse the sync function from its async wrapper."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L482-L500
+kept_bugs:
+  - what: "video_remix accepts extra_query and never forwards it, and video_list accepts extra_body and never forwards it."
+    why: "LiteLLM's remix handler takes extra_headers and extra_body only, and its list handler takes extra_headers and extra_query only; a working caller passes the parameter the handler reads, so betterlite keeps both keywords accepted and dropped rather than silently forwarding them."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L637-L651
+  - what: "The sync video_list entry keeps LiteLLM's provider asymmetry: no inference, and openai when custom_llm_provider is absent, while avideo_list's inference runs and fails on an empty model."
+    why: "A proxy or SDK setup that calls video_list without a provider relies on the openai default, and one that calls avideo_list without a provider relies on the 400; copying both keeps every working setup unchanged."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L688-L707

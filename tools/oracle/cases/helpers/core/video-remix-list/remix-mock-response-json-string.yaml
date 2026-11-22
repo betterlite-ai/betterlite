@@ -1,0 +1,13 @@
+kind: helper
+name: b3340-remix-mock-response-json-string
+call:
+  b3340:
+    operation: remix
+    litellm_call_id: call-remix-mock
+    video_id: video_123
+    prompt: mock the remix
+    mock_response: '{"id": "video_mock", "object": "video", "status": "completed", "seconds": "2"}'
+    status: 200
+    body: '{}'
+env: {}
+compare: {ignore: []}
