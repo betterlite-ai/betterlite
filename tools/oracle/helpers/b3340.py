@@ -200,7 +200,7 @@ def run(input_value: Input) -> JsonValue:
     try:
         if operation in ("remix", "avideo_remix"):
             if operation == "avideo_remix" and mock is None:
-                remixed = litellm.video_remix(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L519-L553
+                remixed = litellm.video_remix(
                     input_value["video_id"],
                     input_value["prompt"],
                     timeout=timeout_seconds(input_value),
@@ -219,7 +219,7 @@ def run(input_value: Input) -> JsonValue:
                 )
                 response = JSON.validate_json(asyncio.run(remixed).model_dump_json())
             else:
-                video = litellm.video_remix(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L519-L553
+                video = litellm.video_remix(
                     input_value["video_id"],
                     input_value["prompt"],
                     timeout=timeout_seconds(input_value),
@@ -239,7 +239,7 @@ def run(input_value: Input) -> JsonValue:
         else:
             provider = list_provider(input_value)
             if operation == "list" or mock is not None:
-                page = litellm.video_list(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L731-L767
+                page = litellm.video_list(
                     after=input_value.get("after"),
                     limit=input_value.get("limit"),
                     order=input_value.get("order"),
@@ -257,7 +257,7 @@ def run(input_value: Input) -> JsonValue:
                 )
                 response = page_view(page)
             else:
-                listed = litellm.video_list(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L731-L767
+                listed = litellm.video_list(
                     after=input_value.get("after"),
                     limit=input_value.get("limit"),
                     order=input_value.get("order"),
