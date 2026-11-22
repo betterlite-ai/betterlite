@@ -5,9 +5,8 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::image_generation_call::Settings;
 use betterlite_core::api::image_generation_call::call::{DEFAULT_TIMEOUT, ImageGenerationCall};
 use betterlite_core::api::image_generation_call::error::ImageGenerationException;
-use betterlite_core::api::image_generation_call::operations::ImageGenerationOperations;
 use betterlite_core::api::image_generation_call::plan::{
-    CatalogIdentity, ImageGenerationPlan, ImageIdentity, image_generation,
+    CatalogIdentity, ImageGenerationPlan, image_generation,
 };
 use betterlite_core::api::image_generation_plan::error::AimageGenerationError;
 use betterlite_core::api::image_generation_plan::invocation::{Invocation, ModelPosition};
@@ -15,13 +14,13 @@ use betterlite_core::api::image_generation_plan::{
     AimageGenerationPlan, PlanEntry, aimage_generation,
 };
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
+use betterlite_openai::api::image_contracts::records::ImageResponse;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -56,8 +55,19 @@ pub(super) async fn execute(
     };
     let mut state = logging_state(&world.redactor)?;
     let outcome = match call.sync_mode {
-        SyncMode::Sync => sync_outcome(&plan, &mut state, &call.call, api_base).await?,
-        SyncMode::Asynchronous => async_outcome(&facade, &mut state, &call.call, api_base).await?,
+        SyncMode::Sync => projected(
+            image_generation(&plan, core_call(&call.call, api_base), &mut state)
+                .await
+                .map_err(promoted),
+        )?,
+        SyncMode::Asynchronous => projected(
+            aimage_generation(
+                &facade,
+                keyword_invocation(&call.call, api_base),
+                &mut state,
+            )
+            .await,
+        )?,
     };
     Ok(SdkResult::ImageGenerationPlan {
         value: Box::new(outcome),
@@ -130,48 +140,37 @@ fn build_plan<'plan, Identity, Operations>(
     }
 }
 
-// the sync entry point, for cases that record the function the wrapper calls
-async fn sync_outcome<Identity, Operations>(
-    plan: &ImageGenerationPlan<'_, Identity, Operations>,
-    state: &mut LoggingState,
-    call: &ImageCall,
-    api_base: &str,
-) -> Result<Outcome, SdkHttpError>
-where
-    Identity: ImageIdentity + Sync,
-    Operations: ImageGenerationOperations + Sync,
-{
-    match image_generation(plan, core_call(call, api_base), state).await {
-        Ok(answer) => result_json(&answer.response),
-        Err(ImageGenerationException::Mapped { class, message }) => failure(&class, &message),
-        Err(ImageGenerationException::UnknownProvider { message }) => {
-            Ok(unknown_provider(&message))
+// the sync function's exceptions are the litellm ones the wrapper re-raises
+fn promoted(failure: ImageGenerationException) -> AimageGenerationError {
+    match failure {
+        ImageGenerationException::Mapped { class, message } => {
+            AimageGenerationError::Raised { class, message }
+        }
+        ImageGenerationException::UnknownProvider { message } => {
+            AimageGenerationError::UnknownProvider { message }
         }
     }
 }
 
-// the async wrapper this task owns, driven exactly as the SDK leaves it
-async fn async_outcome<Identity, Operations>(
-    facade: &AimageGenerationPlan<'_, PlanEntry<'_, Identity, Operations>>,
-    state: &mut LoggingState,
-    call: &ImageCall,
-    api_base: &str,
-) -> Result<Outcome, SdkHttpError>
-where
-    Identity: ImageIdentity + Sync,
-    Operations: ImageGenerationOperations + Sync,
-{
-    let invocation = Invocation {
-        call: core_call(call, api_base),
-        model_position: ModelPosition::Keyword,
-    };
-    match aimage_generation(facade, invocation, state).await {
+// the response or the SDK exception either entry point answers, as B998's own adapter encodes it
+fn projected(
+    result: Result<ImageResponse, AimageGenerationError>,
+) -> Result<Outcome, SdkHttpError> {
+    match result {
         Ok(response) => result_json(&response),
         Err(AimageGenerationError::Raised { class, message }) => failure(&class, &message),
         Err(AimageGenerationError::UnknownProvider { message }) => Ok(unknown_provider(&message)),
         Err(AimageGenerationError::MissingModel) => Err(SdkHttpError::Invalid(String::from(
             "the image_generation_plan call requires a model",
         ))),
+    }
+}
+
+// the wrapper's keyword selection, with no positional argument to read
+fn keyword_invocation(call: &ImageCall, api_base: &str) -> Invocation {
+    Invocation {
+        call: core_call(call, api_base),
+        model_position: ModelPosition::Keyword,
     }
 }
 
