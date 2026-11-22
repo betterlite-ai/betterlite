@@ -143,7 +143,7 @@ fn metadata_json_serialization() {
         Some(r#"{"count":true,"tags":["a",null]}"#)
     );
     let decoded: JsonData = serde_json::from_str(column.as_deref().unwrap()).unwrap();
-    assert_eq!(decoded, object_request.metadata.clone().unwrap());
+    assert_eq!(decoded, object_request.metadata.unwrap());
 
     let scalar_request = create_with_metadata(JsonData::String("hello".to_owned()));
     assert_eq!(
