@@ -72,6 +72,8 @@ description: >-
   server through `OPENAI_API_BASE`, with a 401 for a bad key.
 scope:
   paths:
+  - "crates/betterlite-python/src/completion/session.rs"
+  - "crates/betterlite-python/src/completion/deployments.rs"
   - crates/betterlite-python/ruff.toml
   - crates/betterlite-python/python/betterlite/_completion/**
   - crates/betterlite-python/python/betterlite/main.py
