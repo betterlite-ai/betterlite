@@ -63,8 +63,8 @@ impl SpendWriteError {
 }
 
 // LiteLLM's is_redis_timeout_failure walks the chain, so a timed-out Redis io error counts under any wrapper, and an open breaker counts too
-fn redis_transient(error: &RedisCacheError) -> bool {
-    match error {
+fn redis_transient(failure: &RedisCacheError) -> bool {
+    match failure {
         RedisCacheError::Breaker(_)
         | RedisCacheError::ClientReuse(ClientReuseError::Timeout(_))
         | RedisCacheError::Counters(

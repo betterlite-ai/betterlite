@@ -4,6 +4,7 @@ use crate::spend_counter_batch::batch::PendingSpendIncrement;
 use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
 use crate::spend_writes::layers::CounterLayers as _;
+use crate::spend_writes::pipeline::increment_counters_pipeline;
 
 use super::refusing::refusing_redis_cache;
 use super::support::{Failure, Fault, KEY, OTHER_KEY, decimal, dual_cache, fixture, increment};
@@ -15,9 +16,7 @@ fn pending_pair() -> [PendingSpendIncrement; 2] {
 #[tokio::test]
 async fn the_pipeline_answers_each_counter_in_order() {
     let fx = fixture(true);
-    let counted = fx
-        .writes
-        .increment_counters_pipeline(&pending_pair())
+    let counted = increment_counters_pipeline(&fx.writes, &pending_pair())
         .await
         .expect("the pipeline answers");
     assert_eq!(counted, vec![Some(decimal("2")), Some(decimal("3"))]);
@@ -54,9 +53,7 @@ async fn the_pipeline_invalidates_every_counter_before_raising() {
     fx.layers
         .put_memory(OTHER_KEY, ReseedCacheValue::Number(decimal("1")));
     fx.layers.faults.add(Fault::Pipeline);
-    let error = fx
-        .writes
-        .increment_counters_pipeline(&pending_pair())
+    let error = increment_counters_pipeline(&fx.writes, &pending_pair())
         .await
         .expect_err("the pipeline failure surfaces");
     assert!(matches!(
@@ -81,9 +78,7 @@ async fn the_pipeline_invalidates_every_counter_before_raising() {
 #[tokio::test]
 async fn the_pipeline_without_redis_increments_each_counter_locally() {
     let fx = fixture(false);
-    let counted = fx
-        .writes
-        .increment_counters_pipeline(&pending_pair())
+    let counted = increment_counters_pipeline(&fx.writes, &pending_pair())
         .await
         .expect("the memory pipeline answers");
     assert_eq!(counted, vec![Some(decimal("2")), Some(decimal("3"))]);
@@ -100,9 +95,7 @@ async fn the_pipeline_without_redis_increments_each_counter_locally() {
 #[tokio::test]
 async fn an_empty_pipeline_answers_empty_without_touching_a_layer() {
     let fx = fixture(true);
-    let counted = fx
-        .writes
-        .increment_counters_pipeline(&[])
+    let counted = increment_counters_pipeline(&fx.writes, &[])
         .await
         .expect("an empty pipeline answers");
     assert!(counted.is_empty());
@@ -114,9 +107,7 @@ async fn a_non_transient_pipeline_failure_still_invalidates() {
     let fx = fixture(true);
     fx.layers.faults.add(Fault::Pipeline);
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Unavailable;
-    let error = fx
-        .writes
-        .increment_counters_pipeline(&pending_pair())
+    let error = increment_counters_pipeline(&fx.writes, &pending_pair())
         .await
         .expect_err("the pipeline failure surfaces");
     assert!(matches!(

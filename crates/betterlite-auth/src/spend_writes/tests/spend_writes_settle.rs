@@ -3,6 +3,7 @@ use std::sync::Arc;
 use betterlite_redis::batch::error::BatchError;
 
 use crate::spend_reseed::values::ReseedCacheValue;
+use crate::spend_writes::apply::defer_spend_counter_increments;
 
 use super::support::{
     Failure, FakePostCall, Fault, Fixture, KEY, Logs, decimal, fixture, increment,
@@ -19,11 +20,11 @@ async fn a_settled_value_lands_in_memory_and_the_batch() {
     let logs = Logs::capture();
     let fx = fixture(true);
     let post = serve_post_call(&fx);
-    assert!(
-        fx.writes
-            .defer_spend_counter_increments(&[increment(KEY, "3")])
-    );
-    post.fire(0, Ok(6.5)).await;
+    assert!(defer_spend_counter_increments(
+        &fx.writes,
+        &[increment(KEY, "3")]
+    ));
+    post.fire(0, Ok(6.5_f64)).await;
     assert_eq!(
         fx.layers.memory_value(KEY),
         Some(ReseedCacheValue::Number(decimal("6.5")))
@@ -39,10 +40,10 @@ async fn a_cancelled_settlement_retries_the_in_memory_increment() {
     fx.layers
         .put_memory(KEY, ReseedCacheValue::Number(decimal("2")));
     let post = serve_post_call(&fx);
-    assert!(
-        fx.writes
-            .defer_spend_counter_increments(&[increment(KEY, "3")])
-    );
+    assert!(defer_spend_counter_increments(
+        &fx.writes,
+        &[increment(KEY, "3")]
+    ));
     post.fire(0, Err(Arc::new(BatchError::Cancelled))).await;
     assert_eq!(fx.layers.increment_total(KEY), Some(decimal("3")));
     assert!(fx.batch.recorded().is_empty());
@@ -53,10 +54,10 @@ async fn a_cancelled_settlement_retries_the_in_memory_increment() {
 async fn a_cancelled_settlement_leaves_a_missing_counter_missing() {
     let fx = fixture(true);
     let post = serve_post_call(&fx);
-    assert!(
-        fx.writes
-            .defer_spend_counter_increments(&[increment(KEY, "3")])
-    );
+    assert!(defer_spend_counter_increments(
+        &fx.writes,
+        &[increment(KEY, "3")]
+    ));
     post.fire(0, Err(Arc::new(BatchError::Cancelled))).await;
     assert_eq!(fx.layers.increment_total(KEY), None);
     assert_eq!(fx.layers.memory_value(KEY), None);
@@ -70,10 +71,10 @@ async fn a_failed_settlement_warns_and_invalidates() {
         .put_memory(KEY, ReseedCacheValue::Number(decimal("9")));
     fx.layers.put_redis(ReseedCacheValue::Number(decimal("9")));
     let post = serve_post_call(&fx);
-    assert!(
-        fx.writes
-            .defer_spend_counter_increments(&[increment(KEY, "3")])
-    );
+    assert!(defer_spend_counter_increments(
+        &fx.writes,
+        &[increment(KEY, "3")]
+    ));
     let cause = BatchError::MissingReply {
         operation: "INCRBYFLOAT",
     };
@@ -91,10 +92,10 @@ async fn a_settled_value_without_a_decimal_form_leaves_the_counter_alone() {
     let logs = Logs::capture();
     let fx = fixture(true);
     let post = serve_post_call(&fx);
-    assert!(
-        fx.writes
-            .defer_spend_counter_increments(&[increment(KEY, "3")])
-    );
+    assert!(defer_spend_counter_increments(
+        &fx.writes,
+        &[increment(KEY, "3")]
+    ));
     post.fire(0, Ok(f64::NAN)).await;
     assert_eq!(fx.layers.memory_value(KEY), None);
     assert!(fx.batch.recorded().is_empty());
@@ -109,11 +110,11 @@ async fn a_settlement_memory_failure_still_records_the_batch_value() {
     fx.layers.faults.add(Fault::SetMemoryValue);
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Memory;
     let post = serve_post_call(&fx);
-    assert!(
-        fx.writes
-            .defer_spend_counter_increments(&[increment(KEY, "3")])
-    );
-    post.fire(0, Ok(4.0)).await;
+    assert!(defer_spend_counter_increments(
+        &fx.writes,
+        &[increment(KEY, "3")]
+    ));
+    post.fire(0, Ok(4.0_f64)).await;
     assert_eq!(fx.batch.recorded(), vec![(KEY.to_owned(), decimal("4"))]);
     assert!(logs.contains("Unable to store the settled spend counter in memory"));
     assert!(logs.warnings().is_empty());
@@ -126,10 +127,10 @@ async fn a_cancelled_settlement_tolerates_an_unreadable_memory_tier() {
     fx.layers.faults.add(Fault::MemoryGet);
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Memory;
     let post = serve_post_call(&fx);
-    assert!(
-        fx.writes
-            .defer_spend_counter_increments(&[increment(KEY, "3")])
-    );
+    assert!(defer_spend_counter_increments(
+        &fx.writes,
+        &[increment(KEY, "3")]
+    ));
     post.fire(0, Err(Arc::new(BatchError::Cancelled))).await;
     assert_eq!(fx.layers.increment_total(KEY), None);
     assert!(logs.contains("after a cancelled increment"));
@@ -145,10 +146,10 @@ async fn a_cancelled_settlement_tolerates_a_failed_in_memory_increment() {
     fx.layers.faults.add(Fault::IncrementLocal);
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Memory;
     let post = serve_post_call(&fx);
-    assert!(
-        fx.writes
-            .defer_spend_counter_increments(&[increment(KEY, "3")])
-    );
+    assert!(defer_spend_counter_increments(
+        &fx.writes,
+        &[increment(KEY, "3")]
+    ));
     post.fire(0, Err(Arc::new(BatchError::Cancelled))).await;
     assert!(logs.contains("Unable to apply the cancelled spend counter increment"));
     assert!(logs.warnings().is_empty());

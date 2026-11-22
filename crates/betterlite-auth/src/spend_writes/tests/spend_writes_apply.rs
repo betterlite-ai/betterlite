@@ -19,6 +19,7 @@ use crate::spend_counter_batch::batch::SpendCounterBatchError;
 use crate::spend_reseed::cache::dual::ReseedCacheError;
 use crate::spend_reseed::reseed::CoalescedError;
 use crate::spend_reseed::values::SpendValueError;
+use crate::spend_writes::apply::apply_spend_counter_increments;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
 
 use super::support::{
@@ -31,8 +32,7 @@ async fn apply_uses_the_post_call_batch_when_one_is_served() {
     let fx = fixture(true);
     let post = Arc::new(FakePostCall::new(60, fx.journal.clone()));
     fx.layers.serve_post_call(Arc::clone(&post));
-    fx.writes
-        .apply_spend_counter_increments(&[increment(KEY, "2")])
+    apply_spend_counter_increments(&fx.writes, &[increment(KEY, "2")])
         .await
         .expect("the deferred apply succeeds");
     assert_eq!(post.queued(), vec![(KEY.to_owned(), 2.0_f64, 60_i64)]);
@@ -43,8 +43,7 @@ async fn apply_uses_the_post_call_batch_when_one_is_served() {
 #[tokio::test]
 async fn apply_runs_the_validating_pipeline_without_a_post_call_batch() {
     let fx = fixture(true);
-    fx.writes
-        .apply_spend_counter_increments(&[increment(KEY, "2")])
+    apply_spend_counter_increments(&fx.writes, &[increment(KEY, "2")])
         .await
         .expect("the pipeline applies the increment");
     assert_eq!(fx.layers.increment_total(KEY), Some(decimal("2")));
@@ -55,8 +54,7 @@ async fn apply_runs_the_validating_pipeline_without_a_post_call_batch() {
 async fn apply_swallows_a_breaker_failure() {
     let fx = fixture(true);
     fx.layers.faults.add(Fault::Pipeline);
-    fx.writes
-        .apply_spend_counter_increments(&[increment(KEY, "2")])
+    apply_spend_counter_increments(&fx.writes, &[increment(KEY, "2")])
         .await
         .expect("the breaker failure settles itself");
     assert_eq!(fx.journal.count("batch_forget:"), 1);
@@ -67,8 +65,7 @@ async fn apply_swallows_a_timeout_failure() {
     let fx = fixture(true);
     fx.layers.faults.add(Fault::Pipeline);
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Timeout;
-    fx.writes
-        .apply_spend_counter_increments(&[increment(KEY, "2")])
+    apply_spend_counter_increments(&fx.writes, &[increment(KEY, "2")])
         .await
         .expect("the timeout settles itself");
     assert_eq!(fx.journal.count("batch_forget:"), 1);
@@ -79,9 +76,7 @@ async fn apply_propagates_a_non_transient_failure() {
     let fx = fixture(true);
     fx.layers.faults.add(Fault::Pipeline);
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Unavailable;
-    let error = fx
-        .writes
-        .apply_spend_counter_increments(&[increment(KEY, "2")])
+    let error = apply_spend_counter_increments(&fx.writes, &[increment(KEY, "2")])
         .await
         .expect_err("the missing tier surfaces");
     assert!(matches!(
@@ -94,15 +89,14 @@ async fn apply_propagates_a_non_transient_failure() {
 #[tokio::test]
 async fn apply_with_nothing_pending_succeeds_silently() {
     let fx = fixture(true);
-    fx.writes
-        .apply_spend_counter_increments(&[])
+    apply_spend_counter_increments(&fx.writes, &[])
         .await
         .expect("an empty apply succeeds");
     assert!(fx.journal.events().is_empty());
 }
 
 #[test]
-fn transient_errors_are_the_ones_redis_clears_on_its_own() {
+fn layers_errors_are_transient_only_for_the_redis_ones() {
     assert!(LayersError::Redis(breaker_redis_error()).is_transient());
     assert!(LayersError::Redis(timeout_redis_error()).is_transient());
     assert!(!LayersError::Unavailable.is_transient());
@@ -111,11 +105,18 @@ fn transient_errors_are_the_ones_redis_clears_on_its_own() {
     assert!(
         !LayersError::Admin(RedisAdminError::Breaker(BreakerOpen { name: "admin" })).is_transient()
     );
+}
 
+#[test]
+fn write_errors_follow_their_layers_or_cache_redis_failure() {
     assert!(SpendWriteError::Layers(LayersError::Redis(breaker_redis_error())).is_transient());
     assert!(!SpendWriteError::Layers(LayersError::Unavailable).is_transient());
     assert!(SpendWriteError::Cache(ReseedCacheError::Redis(breaker_redis_error())).is_transient());
     assert!(!SpendWriteError::Cache(ReseedCacheError::Unavailable).is_transient());
+}
+
+#[test]
+fn write_errors_are_not_transient_for_every_other_failure() {
     assert!(
         !SpendWriteError::Cache(ReseedCacheError::Memory(BackendError::Unsupported(
             "a tier"
@@ -125,7 +126,7 @@ fn transient_errors_are_the_ones_redis_clears_on_its_own() {
     assert!(!SpendWriteError::Cache(ReseedCacheError::OutOfRange(Decimal::ONE)).is_transient());
     assert!(
         !SpendWriteError::Cache(ReseedCacheError::Values(
-            RedisCacheValuesError::TtlOutOfRange { seconds: 1.0 }
+            RedisCacheValuesError::TtlOutOfRange { seconds: 1.0_f64 }
         ))
         .is_transient()
     );

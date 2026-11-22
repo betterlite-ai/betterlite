@@ -6,6 +6,7 @@ use betterlite_redis::request_batch::scope::{
     active_post_call_redis_batch, request_redis_batch_scope,
 };
 
+use crate::spend_writes::apply::defer_spend_counter_increments;
 use crate::spend_writes::layers::CounterLayers as _;
 
 use super::refusing::refusing_redis_cache;
@@ -16,9 +17,10 @@ async fn defer_queues_every_increment_on_the_post_call_batch() {
     let fx = fixture(true);
     let post = Arc::new(FakePostCall::new(60, fx.journal.clone()));
     fx.layers.serve_post_call(Arc::clone(&post));
-    let deferred = fx
-        .writes
-        .defer_spend_counter_increments(&[increment(KEY, "2"), increment(OTHER_KEY, "3")]);
+    let deferred = defer_spend_counter_increments(
+        &fx.writes,
+        &[increment(KEY, "2"), increment(OTHER_KEY, "3")],
+    );
     assert!(deferred);
     assert_eq!(
         post.queued(),
@@ -38,9 +40,7 @@ async fn defer_queues_every_increment_on_the_post_call_batch() {
 #[tokio::test]
 async fn defer_without_a_post_call_batch_returns_false() {
     let fx = fixture(true);
-    let deferred = fx
-        .writes
-        .defer_spend_counter_increments(&[increment(KEY, "2")]);
+    let deferred = defer_spend_counter_increments(&fx.writes, &[increment(KEY, "2")]);
     assert!(!deferred);
     assert!(fx.journal.records("post_call"));
     assert_eq!(fx.journal.count("queue:"), 0);
@@ -51,7 +51,7 @@ async fn defer_does_not_defer_an_empty_list() {
     let fx = fixture(true);
     let post = Arc::new(FakePostCall::new(60, fx.journal.clone()));
     fx.layers.serve_post_call(Arc::clone(&post));
-    let deferred = fx.writes.defer_spend_counter_increments(&[]);
+    let deferred = defer_spend_counter_increments(&fx.writes, &[]);
     assert!(!deferred);
     assert!(post.queued().is_empty());
     assert!(fx.journal.events().is_empty());
@@ -62,9 +62,7 @@ async fn defer_returns_false_without_redis() {
     let fx = fixture(false);
     let post = Arc::new(FakePostCall::new(60, fx.journal.clone()));
     fx.layers.serve_post_call(Arc::clone(&post));
-    let deferred = fx
-        .writes
-        .defer_spend_counter_increments(&[increment(KEY, "2")]);
+    let deferred = defer_spend_counter_increments(&fx.writes, &[increment(KEY, "2")]);
     assert!(!deferred);
     assert!(post.queued().is_empty());
 }

@@ -5,6 +5,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 
 use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
+use crate::spend_writes::increment::increment_spend_counter;
 use crate::spend_writes::layers::CounterLayers as _;
 
 use super::refusing::refusing_redis_cache;
@@ -15,9 +16,7 @@ use super::support::{
 #[tokio::test]
 async fn increments_through_redis_and_records_the_new_value() {
     let fx = fixture(true);
-    let counted = fx
-        .writes
-        .increment_spend_counter(KEY, decimal("2.5"))
+    let counted = increment_spend_counter(&fx.writes, KEY, decimal("2.5"))
         .await
         .expect("the redis increment answers");
     assert_eq!(counted, Some(decimal("2.5")));
@@ -37,9 +36,7 @@ async fn increments_through_redis_and_records_the_new_value() {
 #[tokio::test]
 async fn increments_in_memory_without_a_redis_tier() {
     let fx = fixture(false);
-    let counted = fx
-        .writes
-        .increment_spend_counter(KEY, decimal("9"))
+    let counted = increment_spend_counter(&fx.writes, KEY, decimal("9"))
         .await
         .expect("the memory increment answers");
     assert_eq!(counted, Some(decimal("9")));
@@ -55,9 +52,7 @@ async fn a_failed_redis_increment_invalidates_before_returning() {
         .put_memory(KEY, ReseedCacheValue::Number(decimal("1")));
     fx.layers.put_redis(ReseedCacheValue::Number(decimal("1")));
     fx.layers.faults.add(Fault::IncrementRedis);
-    let error = fx
-        .writes
-        .increment_spend_counter(KEY, decimal("2"))
+    let error = increment_spend_counter(&fx.writes, KEY, decimal("2"))
         .await
         .expect_err("the refused increment surfaces");
     assert!(matches!(
@@ -81,9 +76,7 @@ async fn a_memory_write_failure_skips_the_record_and_the_invalidation() {
     let fx = fixture(true);
     fx.layers.faults.add(Fault::MemorySet);
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Memory;
-    let error = fx
-        .writes
-        .increment_spend_counter(KEY, decimal("2"))
+    let error = increment_spend_counter(&fx.writes, KEY, decimal("2"))
         .await
         .expect_err("the memory write failure surfaces");
     assert!(matches!(error, SpendWriteError::Cache(_)));
@@ -94,9 +87,7 @@ async fn a_memory_write_failure_skips_the_record_and_the_invalidation() {
 #[tokio::test]
 async fn a_negative_increment_reaches_the_redis_counter() {
     let fx = fixture(true);
-    let counted = fx
-        .writes
-        .increment_spend_counter(KEY, decimal("-2.5"))
+    let counted = increment_spend_counter(&fx.writes, KEY, decimal("-2.5"))
         .await
         .expect("the negative increment answers");
     assert_eq!(counted, Some(decimal("-2.5")));
@@ -108,8 +99,7 @@ async fn the_real_cache_increments_in_memory_without_a_redis_tier() {
     let layers = Arc::new(dual_cache(None));
     let batch = Arc::new(FakeBatch::new(Journal::default()));
     let writes = writes_over(Arc::clone(&layers), Arc::clone(&batch));
-    let counted = writes
-        .increment_spend_counter(KEY, decimal("4"))
+    let counted = increment_spend_counter(&writes, KEY, decimal("4"))
         .await
         .expect("the memory tier increments");
     assert_eq!(counted, Some(decimal("4")));
@@ -130,8 +120,7 @@ async fn a_refused_redis_increment_is_transient_and_clears_the_counter() {
         .expect("the memory tier stores the fixture");
     let batch = Arc::new(FakeBatch::new(Journal::default()));
     let writes = writes_over(Arc::clone(&layers), Arc::clone(&batch));
-    let error = writes
-        .increment_spend_counter(KEY, decimal("1"))
+    let error = increment_spend_counter(&writes, KEY, decimal("1"))
         .await
         .expect_err("the breaker refuses the increment");
     assert!(matches!(

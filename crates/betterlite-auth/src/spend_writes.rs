@@ -24,7 +24,7 @@ use self::batch::CounterBatch;
 use self::layers::CounterLayers;
 use self::source::SourceSpendCache;
 
-// LiteLLM's proxy_server spend counter write functions over the layers B1736 and B1718 build
+// LiteLLM's proxy_server spend counter writes over the layers B1736 and B1718 build, a free function per area since the workspace denies multiple_inherent_impl
 pub struct SpendCounterWrites<Layers, Rows>
 where
     Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers,

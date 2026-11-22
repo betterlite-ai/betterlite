@@ -8,41 +8,40 @@ use super::SpendCounterWrites;
 use super::error::SpendWriteError;
 use super::layers::CounterLayers;
 
-impl<Layers, Rows> SpendCounterWrites<Layers, Rows>
+pub async fn is_spend_counter_cache_warm<Layers, Rows>(
+    writes: &SpendCounterWrites<Layers, Rows>,
+    counter_key: &str,
+) -> Result<bool, SpendWriteError>
 where
     Layers: ReseedCache<Error = ReseedCacheError> + CounterLayers,
     Rows: SpendCounterRows,
 {
-    pub async fn is_spend_counter_cache_warm(
-        &self,
-        counter_key: &str,
-    ) -> Result<bool, SpendWriteError> {
-        match self.batch.read(counter_key).await? {
-            Some(CounterValue::Amount(amount)) => {
-                self.layers
-                    .set_memory_value(counter_key, ReseedCacheValue::Number(amount))
-                    .await?;
+    match writes.batch.read(counter_key).await? {
+        Some(CounterValue::Amount(amount)) => {
+            writes
+                .layers
+                .set_memory_value(counter_key, ReseedCacheValue::Number(amount))
+                .await?;
+            return Ok(true);
+        }
+        // a batched miss is Redis's own answer, so the per-pod memory tier cannot overrule it
+        Some(CounterValue::Missing) => return Ok(false),
+        None => {}
+    }
+    if writes.layers.redis_configured() {
+        match writes.layers.redis_get(counter_key).await {
+            Ok(Some(value)) => {
+                writes.layers.set_memory_value(counter_key, value).await?;
                 return Ok(true);
             }
-            // a batched miss is Redis's own answer, so the per-pod memory tier cannot overrule it
-            Some(CounterValue::Missing) => return Ok(false),
-            None => {}
+            // a clean Redis miss is Redis's own answer, so the per-pod memory tier cannot overrule it
+            Ok(None) => return Ok(false),
+            Err(error) => tracing::debug!(
+                %error,
+                counter_key,
+                "Unable to read the Redis spend counter before initialization, falling back to in-memory"
+            ),
         }
-        if self.layers.redis_configured() {
-            match self.layers.redis_get(counter_key).await {
-                Ok(Some(value)) => {
-                    self.layers.set_memory_value(counter_key, value).await?;
-                    return Ok(true);
-                }
-                // a clean Redis miss is Redis's own answer, so the per-pod memory tier cannot overrule it
-                Ok(None) => return Ok(false),
-                Err(error) => tracing::debug!(
-                    %error,
-                    counter_key,
-                    "Unable to read the Redis spend counter before initialization, falling back to in-memory"
-                ),
-            }
-        }
-        Ok(self.layers.memory_get(counter_key).await?.is_some())
     }
+    Ok(writes.layers.memory_get(counter_key).await?.is_some())
 }

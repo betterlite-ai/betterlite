@@ -1,6 +1,7 @@
 use crate::spend_counter_batch::batch::PendingSpendIncrement;
 use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
+use crate::spend_writes::pipeline::run_spend_counter_pipeline;
 
 use super::support::{Fault, KEY, OTHER_KEY, decimal, fixture, increment};
 
@@ -12,9 +13,7 @@ fn pending_pair() -> [PendingSpendIncrement; 2] {
 async fn the_raw_pipeline_returns_the_redis_values_in_order() {
     let fx = fixture(true);
     fx.layers.answer_pipeline(vec![decimal("5"), decimal("7")]);
-    let counted = fx
-        .writes
-        .run_spend_counter_pipeline(&pending_pair())
+    let counted = run_spend_counter_pipeline(&fx.writes, &pending_pair())
         .await
         .expect("the raw pipeline answers");
     assert_eq!(counted, vec![Some(decimal("5")), Some(decimal("7"))]);
@@ -33,9 +32,7 @@ async fn the_raw_pipeline_returns_the_redis_values_in_order() {
 async fn the_raw_pipeline_writes_only_the_counters_the_reply_covers() {
     let fx = fixture(true);
     fx.layers.answer_pipeline(vec![decimal("5")]);
-    let counted = fx
-        .writes
-        .run_spend_counter_pipeline(&pending_pair())
+    let counted = run_spend_counter_pipeline(&fx.writes, &pending_pair())
         .await
         .expect("a short reply answers");
     assert_eq!(counted, vec![Some(decimal("5"))]);
@@ -50,9 +47,7 @@ async fn the_raw_pipeline_writes_only_the_counters_the_reply_covers() {
 #[tokio::test]
 async fn the_raw_pipeline_records_every_counter_after_the_redis_reply() {
     let fx = fixture(true);
-    let counted = fx
-        .writes
-        .run_spend_counter_pipeline(&pending_pair())
+    let counted = run_spend_counter_pipeline(&fx.writes, &pending_pair())
         .await
         .expect("the raw pipeline answers");
     assert_eq!(counted, vec![Some(decimal("2")), Some(decimal("3"))]);
@@ -76,9 +71,7 @@ async fn the_raw_pipeline_records_every_counter_after_the_redis_reply() {
 #[tokio::test]
 async fn the_raw_pipeline_without_redis_increments_each_counter_locally() {
     let fx = fixture(false);
-    let counted = fx
-        .writes
-        .run_spend_counter_pipeline(&pending_pair())
+    let counted = run_spend_counter_pipeline(&fx.writes, &pending_pair())
         .await
         .expect("the memory pipeline answers");
     assert_eq!(counted, vec![Some(decimal("2")), Some(decimal("3"))]);
@@ -98,9 +91,7 @@ async fn the_raw_pipeline_leaves_cleanup_to_the_caller() {
     fx.layers
         .put_memory(KEY, ReseedCacheValue::Number(decimal("1")));
     fx.layers.faults.add(Fault::Pipeline);
-    let error = fx
-        .writes
-        .run_spend_counter_pipeline(&pending_pair())
+    let error = run_spend_counter_pipeline(&fx.writes, &pending_pair())
         .await
         .expect_err("the pipeline failure surfaces");
     assert!(matches!(
@@ -118,9 +109,7 @@ async fn the_raw_pipeline_leaves_cleanup_to_the_caller() {
 #[tokio::test]
 async fn an_empty_raw_pipeline_answers_empty_without_touching_a_layer() {
     let fx = fixture(true);
-    let counted = fx
-        .writes
-        .run_spend_counter_pipeline(&[])
+    let counted = run_spend_counter_pipeline(&fx.writes, &[])
         .await
         .expect("an empty pipeline answers");
     assert!(counted.is_empty());

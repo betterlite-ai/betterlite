@@ -13,6 +13,7 @@ use crate::spend_reseed::values::ReseedCacheValue;
 use crate::spend_writes::batch::CounterBatch;
 use crate::spend_writes::error::{LayersError, SpendWriteError};
 use crate::spend_writes::layers::CounterLayers as _;
+use crate::spend_writes::warm::is_spend_counter_cache_warm;
 
 use super::refusing::refusing_redis_cache;
 use super::support::{Failure, Fault, KEY, Logs, decimal, dual_cache, fixture};
@@ -21,9 +22,7 @@ use super::support::{Failure, Fault, KEY, Logs, decimal, dual_cache, fixture};
 async fn a_batched_amount_is_warm_and_lands_in_memory() {
     let fx = fixture(true);
     fx.batch.answer_with(CounterValue::Amount(decimal("1.5")));
-    let warm = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let warm = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect("the batched counter answers");
     assert!(warm);
@@ -41,9 +40,7 @@ async fn a_batched_miss_is_cold_even_when_memory_holds_a_value() {
     fx.batch.answer_with(CounterValue::Missing);
     fx.layers
         .put_memory(KEY, ReseedCacheValue::Number(decimal("9")));
-    let warm = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let warm = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect("the batched miss answers");
     assert!(!warm);
@@ -54,9 +51,7 @@ async fn a_batched_miss_is_cold_even_when_memory_holds_a_value() {
 async fn a_redis_value_is_warm_and_lands_in_memory() {
     let fx = fixture(true);
     fx.layers.put_redis(ReseedCacheValue::Number(decimal("2")));
-    let warm = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let warm = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect("the redis counter answers");
     assert!(warm);
@@ -73,9 +68,7 @@ async fn a_redis_read_failure_falls_back_to_memory() {
     fx.layers
         .put_memory(KEY, ReseedCacheValue::Number(decimal("3")));
     fx.layers.faults.add(Fault::RedisGet);
-    let warm = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let warm = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect("the memory tier answers after the redis failure");
     assert!(warm);
@@ -87,9 +80,7 @@ async fn a_memory_value_alone_is_warm_without_redis() {
     let fx = fixture(false);
     fx.layers
         .put_memory(KEY, ReseedCacheValue::Number(decimal("4")));
-    let warm = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let warm = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect("the memory counter answers");
     assert!(warm);
@@ -99,9 +90,7 @@ async fn a_memory_value_alone_is_warm_without_redis() {
 #[tokio::test]
 async fn nothing_anywhere_is_cold() {
     let fx = fixture(true);
-    let warm = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let warm = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect("an empty counter is cold");
     assert!(!warm);
@@ -114,9 +103,7 @@ async fn a_clean_redis_miss_is_cold_even_when_memory_holds_a_value() {
     let fx = fixture(true);
     fx.layers
         .put_memory(KEY, ReseedCacheValue::Number(decimal("9")));
-    let warm = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let warm = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect("the redis miss answers");
     assert!(!warm);
@@ -128,9 +115,7 @@ async fn a_clean_redis_miss_is_cold_even_when_memory_holds_a_value() {
 async fn a_batch_read_failure_propagates() {
     let fx = fixture(false);
     fx.batch.fail();
-    let error = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let error = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect_err("the batch failure surfaces");
     assert!(matches!(
@@ -144,9 +129,7 @@ async fn a_memory_read_failure_propagates() {
     let fx = fixture(false);
     fx.layers.faults.add(Fault::MemoryGet);
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Memory;
-    let error = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let error = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect_err("the memory failure surfaces");
     assert!(matches!(error, SpendWriteError::Cache(_)));
@@ -158,9 +141,7 @@ async fn a_memory_write_failure_propagates_on_a_batch_hit() {
     fx.batch.answer_with(CounterValue::Amount(decimal("1")));
     fx.layers.faults.add(Fault::SetMemoryValue);
     *fx.layers.failure.lock().expect("the fake failure lock") = Failure::Memory;
-    let error = fx
-        .writes
-        .is_spend_counter_cache_warm(KEY)
+    let error = is_spend_counter_cache_warm(&fx.writes, KEY)
         .await
         .expect_err("the memory write failure surfaces");
     assert!(matches!(

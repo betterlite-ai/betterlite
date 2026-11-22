@@ -4,13 +4,13 @@ use rust_decimal::Decimal;
 use crate::auth_cache::WriteOptions;
 use crate::spend_reseed::values::SpendValueError;
 use crate::spend_writes::error::SpendWriteError;
+use crate::spend_writes::initialization::get_source_cache_base_spend;
 use crate::spend_writes::source::SourceSpendCache;
 
 use super::support::{Fixture, KEY, OTHER_KEY, auth_cache, decimal, fixture, source_json};
 
 async fn base_of(fx: &Fixture, keys: &[&str]) -> Decimal {
-    fx.writes
-        .get_source_cache_base_spend(keys)
+    get_source_cache_base_spend(&fx.writes, keys)
         .await
         .expect("the source cache answers")
 }
@@ -93,9 +93,7 @@ async fn a_non_empty_list_or_object_spend_is_unreadable(#[case] spend: &str) {
     let fx = fixture(false);
     let source = format!("{{\"spend\": {spend}}}");
     fx.sources.put(KEY, source_json(&source));
-    let error = fx
-        .writes
-        .get_source_cache_base_spend(&[KEY])
+    let error = get_source_cache_base_spend(&fx.writes, &[KEY])
         .await
         .expect_err("an unreadable spend surfaces");
     assert!(matches!(

@@ -176,40 +176,40 @@ impl FakeRows {
 impl DbSpendCounterRows for FakeRows {
     type Error = FakeError;
 
-    async fn spend_row(
+    fn spend_row(
         &self,
         _lookup: SpendRowLookup<'_>,
-    ) -> Result<Option<DbSpendRow>, FakeError> {
+    ) -> impl Future<Output = Result<Option<DbSpendRow>, FakeError>> + Send {
         self.spend_reads.fetch_add(1, Ordering::Relaxed);
         if self.fails.load(Ordering::Relaxed) {
-            return Err(FakeError);
+            return ready(Err(FakeError));
         }
         let spend = *self.spend.lock().expect("the fake spend row lock");
-        Ok(spend.map(|amount| DbSpendRow {
+        ready(Ok(spend.map(|amount| DbSpendRow {
             spend: Some(amount),
-        }))
+        })))
     }
 }
 
 impl SpendCounterRows for FakeRows {
     type Error = FakeError;
 
-    async fn window_row(
+    fn window_row(
         &self,
         _entity: WindowEntity,
         _entity_id: &str,
         _window_duration: &str,
-    ) -> Result<Option<WindowSpendRow>, FakeError> {
+    ) -> impl Future<Output = Result<Option<WindowSpendRow>, FakeError>> + Send {
         self.window_reads.fetch_add(1, Ordering::Relaxed);
         if self.fails.load(Ordering::Relaxed) {
-            return Err(FakeError);
+            return ready(Err(FakeError));
         }
         let row = self
             .window
             .lock()
             .expect("the fake window row lock")
             .clone();
-        Ok(row)
+        ready(Ok(row))
     }
 
     fn window_log_rows(
@@ -431,59 +431,70 @@ impl ReseedCache for FakeLayers {
         )
     }
 
-    async fn redis_set_nx(
+    fn redis_set_nx(
         &self,
         counter_key: &str,
         value: Decimal,
-    ) -> Result<Option<bool>, ReseedCacheError> {
+    ) -> impl Future<Output = Result<Option<bool>, ReseedCacheError>> + Send {
         self.journal.push(format!("redis_set_nx:{counter_key}"));
         self.put_redis(ReseedCacheValue::Number(value));
-        Ok(Some(true))
+        ready(Ok(Some(true)))
     }
 
-    async fn memory_get(
+    fn memory_get(
         &self,
         counter_key: &str,
-    ) -> Result<Option<ReseedCacheValue>, ReseedCacheError> {
-        self.begin_cache(format!("memory_get:{counter_key}"), Fault::MemoryGet)?;
-        Ok(self.memory_value(counter_key))
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
+        if let Err(error) = self.begin_cache(format!("memory_get:{counter_key}"), Fault::MemoryGet)
+        {
+            return ready(Err(error));
+        }
+        ready(Ok(self.memory_value(counter_key)))
     }
 
-    async fn memory_set(&self, counter_key: &str, value: Decimal) -> Result<(), ReseedCacheError> {
-        self.begin_cache(format!("memory_set:{counter_key}"), Fault::MemorySet)?;
+    fn memory_set(
+        &self,
+        counter_key: &str,
+        value: Decimal,
+    ) -> impl Future<Output = Result<(), ReseedCacheError>> + Send {
+        if let Err(error) = self.begin_cache(format!("memory_set:{counter_key}"), Fault::MemorySet)
+        {
+            return ready(Err(error));
+        }
         self.put_memory(counter_key, ReseedCacheValue::Number(value));
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn increment_local(
+    fn increment_local(
         &self,
         counter_key: &str,
         increment: Decimal,
-    ) -> Result<Option<Decimal>, ReseedCacheError> {
+    ) -> impl Future<Output = Result<Option<Decimal>, ReseedCacheError>> + Send {
         let counted = self.cache_op(
             counter_key,
             "increment_local",
             Fault::IncrementLocal,
             || self.bump(counter_key, increment),
-        )?;
-        Ok(Some(counted))
+        );
+        ready(counted.map(Some))
     }
 }
 
 impl WindowReseedCache for FakeLayers {
-    async fn redis_increment(
+    fn redis_increment(
         &self,
         counter_key: &str,
         amount: Decimal,
-    ) -> Result<Decimal, ReseedCacheError> {
+    ) -> impl Future<Output = Result<Decimal, ReseedCacheError>> + Send {
         self.journal.push(format!("redis_increment:{counter_key}"));
-        let base = match self.redis.lock().expect("the fake redis lock").clone() {
+        let held = self.redis.lock().expect("the fake redis lock").clone();
+        let base = match held {
             Some(ReseedCacheValue::Number(value)) => value,
             Some(_) | None => Decimal::ZERO,
         };
         let next = base.checked_add(amount).unwrap_or(Decimal::MAX);
         self.put_redis(ReseedCacheValue::Number(next));
-        Ok(next)
+        ready(Ok(next))
     }
 }
 
@@ -726,8 +737,7 @@ pub(crate) struct FixedClock {
 
 impl BudgetClock for FixedClock {
     fn now(&self) -> DateTime<Utc> {
-        let now = self.now;
-        now
+        self.now
     }
 
     fn uptime(&self) -> Duration {
@@ -814,7 +824,7 @@ pub(crate) fn fixture(redis_configured: bool) -> Fixture {
 }
 
 pub(crate) fn local_memory() -> Arc<LocalMemoryOps> {
-    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 1_000.0);
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 1_000.0_f64);
     let memory = LocalMemoryOps::new(1024, clock).expect("the local memory tier builds");
     Arc::new(memory)
 }
