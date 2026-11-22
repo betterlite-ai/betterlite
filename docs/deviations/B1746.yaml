@@ -18,6 +18,9 @@ deviations:
   - what: An auto-router turn write is retried when the failure proves the statement never applied, which includes a pool wait timeout, a closed pool and a connection-class SQLSTATE; LiteLLM retries only an httpx.ConnectError.
     why: betterlite classifies database failures from the driver's SQLSTATE and pool state, so the same certainty rule covers the turn drain without porting prisma's exception tuple.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L425-L439
+  - what: A reported daily spend failure carries the non-blocking prefix and the error's cause chain as its diagnostic; LiteLLM passes the failure handler the same prefix followed by Python's formatted stack trace.
+    why: the failure event betterlite reports into declares a diagnostic string rather than a traceback, and stack frames have no cross-language equivalent, so the error's own source chain stands in for them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7915-L7925
 kept_bugs:
   - what: An exhausted retryable daily failure is reported twice, once by the retry rule and once by the outer handler, producing two failure events for one chunk.
     why: The report raises the same error the outer handler reports again, and callers and tests of a working setup observe the duplicate; betterlite keeps the count so the sink's event stream matches.

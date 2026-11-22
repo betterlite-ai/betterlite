@@ -348,6 +348,7 @@ async fn chunks_take_at_most_a_hundred_sorted_rows() {
 #[case::tag(DailySpendEntity::Tag, "tag")]
 #[case::end_user(DailySpendEntity::EndUser, "end_user_id")]
 #[case::agent(DailySpendEntity::Agent, "agent_id")]
+#[tokio::test]
 async fn each_adapter_sorts_by_its_entity_id(
     #[case] entity: DailySpendEntity,
     #[case] id_field: &str,

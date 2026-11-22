@@ -128,9 +128,15 @@ impl DailyChunkWriter for ScriptedWriter {
             let token = script.pop_front().unwrap_or(ScriptToken::Ok);
             match token {
                 ScriptToken::Ok => Ok(()),
-                failed => Err(ScriptedFailure {
-                    name: failed.name(),
-                    failure: failed.failure(),
+                ScriptToken::ConnectError
+                | ScriptToken::ReadTimeout
+                | ScriptToken::ReadError
+                | ScriptToken::DataRejected
+                | ScriptToken::Deadlock
+                | ScriptToken::UnknownSqlstate
+                | ScriptToken::OtherFailure => Err(ScriptedFailure {
+                    name: token.name(),
+                    failure: token.failure(),
                 }),
             }
         })

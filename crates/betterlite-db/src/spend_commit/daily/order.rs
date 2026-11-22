@@ -47,11 +47,13 @@ fn sort_text(value: Option<&SpendColumnValue>) -> String {
     match value {
         Some(SpendColumnValue::Text(text)) => text.clone(),
         None
-        | Some(SpendColumnValue::Null)
-        | Some(SpendColumnValue::Bool(_))
-        | Some(SpendColumnValue::Int(_))
-        | Some(SpendColumnValue::Decimal(_))
-        | Some(SpendColumnValue::Array(_))
-        | Some(SpendColumnValue::Object(_)) => String::new(),
+        | Some(
+            SpendColumnValue::Null
+            | SpendColumnValue::Bool(_)
+            | SpendColumnValue::Int(_)
+            | SpendColumnValue::Decimal(_)
+            | SpendColumnValue::Array(_)
+            | SpendColumnValue::Object(_),
+        ) => String::new(),
     }
 }

@@ -144,10 +144,13 @@ pub fn report_failed_update_spend(
     error: &dyn StdError,
     duration: Duration,
 ) {
-    let chain = std::iter::successors(Some(error), |cause| cause.source())
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\nCaused by: ");
+    let mut messages = vec![error.to_string()];
+    let mut cause = error.source();
+    while let Some(current) = cause {
+        messages.push(current.to_string());
+        cause = current.source();
+    }
+    let chain = messages.join("\nCaused by: ");
     let diagnostic = format!("{NON_BLOCKING_PREFIX} {chain}");
     tracing::error!("{diagnostic}");
     failures.emit(SpendLogFailureEvent {

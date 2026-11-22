@@ -317,9 +317,9 @@ async fn retryable_failure_sleeps_with_the_doubled_base() {
 
 #[test]
 fn retry_delay_covers_the_upper_second() {
-    let jitter = FixedJitter { nanos: 999_999_999 };
-    assert_eq!(retry_delay(&jitter, 0), Duration::from_millis(1_999));
-    assert_eq!(retry_delay(&jitter, 1), Duration::from_millis(3_999));
+    let jitter = FixedJitter { nanos: u64::MAX };
+    assert_eq!(retry_delay(&jitter, 0), Duration::from_nanos(1_999_999_999));
+    assert_eq!(retry_delay(&jitter, 1), Duration::from_nanos(3_999_999_999));
 }
 
 #[test]

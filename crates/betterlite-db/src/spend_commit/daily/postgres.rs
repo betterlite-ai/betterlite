@@ -85,7 +85,7 @@ impl DailyChunkWriter for PostgresDailyChunks {
                 .run(self.commit_transaction(entity, rows, phase))
                 .await
             {
-                Ok(outcome) => outcome,
+                Ok(()) => Ok(()),
                 Err(SpendTransactionError::Work(error)) => Err(error),
                 Err(SpendTransactionError::Timeout { .. }) => Err(DailyChunkError::Timeout),
             }
