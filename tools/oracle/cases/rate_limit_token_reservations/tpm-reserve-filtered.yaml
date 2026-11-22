@@ -1,0 +1,41 @@
+kind: helper
+name: tpm-reserve-filtered
+call:
+  b3042:
+    function: reserve_tpm_tokens
+    descriptors:
+      - key: model_per_key
+        value: "key1:gpt-4"
+        rate_limit:
+          requests_per_unit: 10
+          tokens_per_unit: 500
+          window_size: 60
+      - key: model_per_project_itpm
+        value: "p1:gpt-4"
+        rate_limit:
+          requests_per_unit: null
+          tokens_per_unit: 500
+          window_size: 60
+      - key: model_per_project_otpm
+        value: "p1:gpt-4"
+        rate_limit:
+          requests_per_unit: null
+          tokens_per_unit: 900
+          window_size: 60
+      - key: model_per_team
+        value: "team1:gpt-4"
+        rate_limit:
+          requests_per_unit: null
+          tokens_per_unit: null
+          window_size: 60
+    estimated_tokens: 120
+    window_size: 60
+    now: 1700000000
+    groups: {}
+    cache:
+      "{model_per_key:key1:gpt-4}:window": "1699999970"
+      "{model_per_key:key1:gpt-4}:tokens": 300
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"
+compare:
+  ignore: []

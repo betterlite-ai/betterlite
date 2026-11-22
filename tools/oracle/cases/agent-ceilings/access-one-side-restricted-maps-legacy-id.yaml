@@ -1,0 +1,40 @@
+kind: helper
+name: access-one-side-restricted-maps-legacy-id
+call:
+  b4778:
+    operation: intersect_access
+    config_agents:
+      - agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+    key_access:
+      kind: restricted
+      restricted_ids: [00afdb1e315efd7d8d96382f3925c7d46dee40711cffe80449b0dcb21f731322, db-agent]
+      restricted_by_legacy_name: []
+      restricted_by_stable_name: []
+    team_access: {kind: unrestricted}
+calls:
+  - b4778:
+      operation: intersect_access
+      config_agents:
+        - agent_name: alpha
+          agent_card_params: {model: gpt-4o}
+      key_access: {kind: unrestricted}
+      team_access:
+        kind: restricted
+        restricted_ids: [db-agent]
+        restricted_by_legacy_name: [alpha]
+        restricted_by_stable_name: []
+  - b4778:
+      operation: intersect_access
+      config_agents:
+        - agent_name: alpha
+          agent_card_params: {model: gpt-4o}
+      key_access: {kind: unrestricted}
+      team_access:
+        kind: restricted
+        restricted_ids: []
+        restricted_by_legacy_name: []
+        restricted_by_stable_name: []
+env: {}
+compare:
+  ignore: []

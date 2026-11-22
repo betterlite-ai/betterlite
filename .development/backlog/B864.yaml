@@ -1,14 +1,14 @@
 id: B864
 milestone: M4 keys, spend and management
 title: Feature access switches for agents and vector stores
-status: todo
+status: done
 depends_on: [B002, B003, B171, B732, B856, B863]
 file: tasks/B864-management-rbac.yaml
 covers:
   - "litellm/proxy/common_utils/rbac_utils.py"
 parent: B124
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2846

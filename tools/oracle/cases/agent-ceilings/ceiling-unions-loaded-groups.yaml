@@ -1,0 +1,13 @@
+kind: helper
+name: ceiling-unions-loaded-groups
+call:
+  b4778:
+    operation: ceiling
+    agent_id: agent-1
+    agent_access_group_ids: [g2, g1, g2]
+    groups:
+      g1: {access_model_names: [gpt-4o, claude], access_mcp_server_ids: [srv-b], access_agent_ids: [agent-x]}
+      g2: {access_model_names: [claude, gemini], access_mcp_server_ids: [srv-a], access_agent_ids: [agent-y]}
+env: {}
+compare:
+  ignore: []

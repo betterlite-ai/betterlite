@@ -38,6 +38,7 @@ description: >-
   `betterlite.custom_provider_map` exists and starts empty, and do not add it here if B157 already did.
 scope:
   paths:
+  - "crates/betterlite-python/ruff.toml"
   - crates/betterlite-python/python/betterlite/_custom_llm/**
   - crates/betterlite-python/python/betterlite/llms/custom_llm.py
   - crates/betterlite-python/python/betterlite/llms/base.py
