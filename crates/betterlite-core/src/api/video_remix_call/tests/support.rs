@@ -43,7 +43,7 @@ use crate::api::video_list_call::{
     ListRequest, VideoListCall, VideoListReply, avideo_list, video_list,
 };
 use crate::api::video_records::VideoObject;
-use crate::api::video_remix_call::config::VideoConfigLookup;
+use crate::api::video_remix_call::config::{DEFAULT_TIMEOUT_SECONDS, VideoConfigLookup};
 use crate::api::video_remix_call::error::VideoCallFailure;
 use crate::api::video_remix_call::shared::VideoCallDeps;
 use crate::api::video_remix_call::{RemixRequest, VideoRemixCall, avideo_remix, video_remix};
@@ -547,7 +547,19 @@ pub(crate) fn remix_call() -> VideoRemixCall {
     VideoRemixCall {
         video_id: "video_1".to_owned(),
         prompt: "make it better".to_owned(),
-        ..VideoRemixCall::default()
+        custom_llm_provider: None,
+        api_key: None,
+        api_base: None,
+        api_version: None,
+        extra_headers: None,
+        extra_query: None,
+        extra_body: None,
+        mock_response: None,
+        litellm_metadata: None,
+        litellm_call_id: None,
+        user: None,
+        timeout: Some(DEFAULT_TIMEOUT_SECONDS),
+        extra: IndexMap::new(),
     }
 }
 
