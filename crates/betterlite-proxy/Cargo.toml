@@ -6,10 +6,14 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-stream = "0.3.6"
 base64 = "0.23.1"
+betterlite-a2a = { path = "../betterlite-a2a" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
+betterlite-core = { path = "../betterlite-core" }
 betterlite-http = { path = "../betterlite-http" }
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true
 http = "1.5.0"
 rust_decimal.workspace = true
@@ -18,13 +22,13 @@ serde.workspace = true
 serde_json = "1.0.154"
 sha2.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 url = "2.5.8"
 
 [dev-dependencies]
 rstest = "=0.27.0"
-tokio.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

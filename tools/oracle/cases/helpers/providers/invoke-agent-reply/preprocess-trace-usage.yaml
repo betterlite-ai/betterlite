@@ -1,0 +1,172 @@
+kind: helper
+name: invoke-agent-reply-preprocess-trace-usage
+call:
+  invoke_agent_reply:
+    transform:
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000d80000004b3da973e90b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a207b2270726550726f63657373696e675472616365223a207b226d6f64656c496e766f636174696f6e4f7574707574223a207b226d65746164617461223a207b227573616765223a207b22696e707574546f6b656e73223a2031302c20226f7574707574546f6b656e73223a20357d7d7d7d7d7db0818f60'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000d70000004bbff9e4380b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a207b2270726550726f63657373696e675472616365223a207b226d6f64656c496e766f636174696f6e4f7574707574223a207b226d65746164617461223a207b227573616765223a207b22696e707574546f6b656e73223a20332c20226f7574707574546f6b656e73223a20317d7d7d7d7d7d4ee00083000000d70000004bbff9e4380b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a207b2270726550726f63657373696e675472616365223a207b226d6f64656c496e766f636174696f6e4f7574707574223a207b226d65746164617461223a207b227573616765223a207b22696e707574546f6b656e73223a20342c20226f7574707574546f6b656e73223a20327d7d7d7d7d7da7cb6138'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000c50000004ba5d920da0b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a207b2270726550726f63657373696e675472616365223a207b226d6f64656c496e766f636174696f6e4f7574707574223a207b226d65746164617461223a207b227573616765223a207b226f7574707574546f6b656e73223a20357d7d7d7d7d7d146219cd'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000b40000004b616be9a50b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a207b2270726550726f63657373696e675472616365223a207b226d6f64656c496e766f636174696f6e4f7574707574223a207b226d65746164617461223a207b227573616765223a207b7d7d7d7d7d7d22430921'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000a50000004b3ceb57970b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a7b2270726550726f63657373696e675472616365223a7b226d6f64656c496e766f636174696f6e4f7574707574223a7b226d65746164617461223a7b7d7d7d7d7dc7933913'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000980000004b655a2ba00b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a7b2270726550726f63657373696e675472616365223a7b226d6f64656c496e766f636174696f6e4f7574707574223a7b7d7d7d7d4aa24a31'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '0000007e0000004bc2ce19df0b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a7b2270726550726f63657373696e675472616365223a7b7d7d7d1940d654'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000670000004baf3eec2c0b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a7b7d7d008e78cc'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '0000005d0000004b44af4c0b0b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b7dd001b60f'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000cf0000004bef69387b0b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a7b226f726368657374726174696f6e5472616365223a7b226d6f64656c496e766f636174696f6e4f7574707574223a7b226d65746164617461223a7b227573616765223a7b22696e707574546f6b656e73223a382c226f7574707574546f6b656e73223a397d7d7d7d7d7d3f790507'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000c60000004be2795a0a0b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a207b2270726550726f63657373696e675472616365223a207b226d6f64656c496e766f636174696f6e4f7574707574223a207b226d65746164617461223a207b227573616765223a207b22696e707574546f6b656e73223a202235227d7d7d7d7d7debbd4eed'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000c70000004bdf1973ba0b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a207b2270726550726f63657373696e675472616365223a207b226d6f64656c496e766f636174696f6e4f7574707574223a207b226d65746164617461223a207b227573616765223a207b22696e707574546f6b656e73223a206e756c6c7d7d7d7d7d7d2e169a6a'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000b00000004b94eb4f650b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a7b2270726550726f63657373696e675472616365223a7b226d6f64656c496e766f636174696f6e4f7574707574223a7b226d65746164617461223a7b227573616765223a5b315d7d7d7d7d7d1b173f93'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000d90000004b00c95a590b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a207b2270726550726f63657373696e675472616365223a207b226d6f64656c496e766f636174696f6e4f7574707574223a207b226d65746164617461223a207b227573616765223a207b22696e707574546f6b656e73223a202d322c20226f7574707574546f6b656e73223a202d317d7d7d7d7d7d4493e2a1'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '000000e90000004ba1e8e2df0b3a6576656e742d7479706507000574726163650d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b227472616365223a207b2270726550726f63657373696e675472616365223a207b226d6f64656c496e766f636174696f6e4f7574707574223a207b226d65746164617461223a207b227573616765223a207b22696e707574546f6b656e73223a20393232333337323033363835343737353830372c20226f7574707574546f6b656e73223a20307d7d7d7d7d7d8ffc93ca'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+env: {}
+compare: {ignore: []}

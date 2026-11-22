@@ -1,0 +1,20 @@
+kind: helper
+name: responses-session-history-session-query-exhausted
+call:
+  responses_session_history:
+    previous_response_id: chatcmpl-turn-1
+    database: true
+    disable_spend_logs: false
+    replies: []
+    cold_storage: false
+    cold_objects: {}
+    cold_failures: []
+    request:
+      messages:
+      - role: user
+        content: and now?
+      model: gpt-4o
+      custom_llm_provider: openai
+env: {}
+compare:
+  ignore: []

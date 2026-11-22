@@ -1,0 +1,55 @@
+kind: helper
+name: summary-history-client-compaction-without-edit
+call:
+  summary_history:
+    action: client_history
+    messages:
+    - {role: user, content: start}
+    - role: assistant
+      content:
+      - {type: compaction, content: "résumé"}
+      - {type: text, text: after}
+    - {role: user, content: next}
+    system: sys
+calls:
+- summary_history:
+    action: client_history
+    messages:
+    - {role: user, content: start}
+    - {role: assistant, content: a}
+    system: sys
+- summary_history:
+    action: client_history
+    messages:
+    - role: assistant
+      content:
+      - {type: compaction, content: null}
+    - {role: user, content: next}
+    system:
+    - {type: text, text: base, cache_control: {type: ephemeral}}
+- summary_history:
+    action: client_history
+    messages:
+    - role: assistant
+      content:
+      - {type: compaction, content: ""}
+    system: null
+- summary_history:
+    action: client_history
+    messages:
+    - {role: user, content: start}
+    - role: assistant
+      content:
+      - {type: compaction, content: summary}
+    system:
+    - {type: text, text: base}
+- summary_history:
+    action: client_history
+    messages:
+    - {role: user, content: start}
+    - role: user
+      content:
+      - {type: compaction, content: summary}
+    system: null
+env: {}
+compare: {ignore: []}

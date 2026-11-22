@@ -1,0 +1,5 @@
+kind: helper
+name: refusals-seed
+call: {"bedrock_reasoning_stream": {"step": {"refusals": {"models": ["xai.grok-4", "openai.gpt-oss-20b-1:0"], "params": {"reasoning_effort": "none", "logit_bias": {}}}}}}
+env: {}
+compare: {ignore: []}
