@@ -96,12 +96,12 @@ where
         let mut kept = Vec::new();
         let mut consumed = 0_usize;
         for line in iter_lines(&mut *state).take(limit) {
-            let line = line?;
-            consumed = line.line_number;
-            let line_number = line.line_number.saturating_add(base);
+            let raw = line?;
+            consumed = raw.line_number;
+            let line_number = raw.line_number.saturating_add(base);
             kept.push(parse(RawLine {
                 line_number,
-                bytes: line.bytes,
+                bytes: raw.bytes,
             })?);
         }
         drop(state);

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, BufRead, Cursor, Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::thread::ThreadId;
+use std::thread::{self, ThreadId};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -141,7 +141,7 @@ impl BufRead for CountingSource {
             .threads
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(ThreadId::current());
+            .push(thread::current().id());
         self.inner.read_until(byte, buf)
     }
 }
