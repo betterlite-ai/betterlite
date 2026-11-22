@@ -64,7 +64,7 @@ impl ReasoningTagState {
             ReasoningPhase::Reasoning => {
                 let mut buffered = self.pending.clone();
                 buffered.push_str(text);
-                feed_reasoning(buffered)
+                feed_reasoning(&buffered)
             }
         }
     }
@@ -130,7 +130,7 @@ fn feed_start(buffered: String) -> (ReasoningTagState, String, String) {
     (content, String::new(), buffered)
 }
 
-fn feed_reasoning(buffered: String) -> (ReasoningTagState, String, String) {
+fn feed_reasoning(buffered: &str) -> (ReasoningTagState, String, String) {
     if let Some(at) = buffered.find(REASONING_CLOSE_TAG) {
         let (reasoning, closed) = buffered.split_at(at);
         let rest = closed.strip_prefix(REASONING_CLOSE_TAG).unwrap_or(closed);
@@ -141,7 +141,7 @@ fn feed_reasoning(buffered: String) -> (ReasoningTagState, String, String) {
         let (next, _, content) = after_close.feed(rest);
         return (next, reasoning.to_owned(), content);
     }
-    let (kept, held) = buffered.split_at(held_close_tag_start(&buffered));
+    let (kept, held) = buffered.split_at(held_close_tag_start(buffered));
     let state = ReasoningTagState {
         phase: ReasoningPhase::Reasoning,
         pending: held.to_owned(),
