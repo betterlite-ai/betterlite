@@ -77,7 +77,11 @@ async fn oauth_issuer_anchor_defers_without_startup_discovery() {
     assert!(server.fields.token_url.is_none());
     let configured_token = server.fields.configured_token_url.as_deref();
     assert_eq!(configured_token, Some("https://manual.test/token"));
-    assert_eq!(harness.slots.entries(), vec![(String::from("srv-1"), true)]);
+    // the effective URLs fall back to the configured manual ones, so no later discovery is needed
+    assert_eq!(
+        harness.slots.entries(),
+        vec![(String::from("srv-1"), false)]
+    );
 }
 
 #[tokio::test]
