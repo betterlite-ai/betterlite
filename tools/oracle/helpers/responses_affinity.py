@@ -36,7 +36,7 @@ class Input(TypedDict):
     enable_global_affinity: NotRequired[bool]
     model_group_affinity_config: NotRequired[dict[str, list[str]]]
     credentials: NotRequired[list[CredentialRow]]
-    messages: NotRequired[list[dict[str, JsonValue]]]
+    messages: NotRequired[list[JsonValue]]
     model_list: NotRequired[list[dict[str, JsonValue]]]
     router: NotRequired[bool]
 
@@ -116,27 +116,32 @@ def case_answer(router: Router, call: Input) -> JsonValue:
     )
     kwargs = dict(call["request_kwargs"])
     messages_arg = call.get("messages")
-    cast_messages = cast(list[AllMessageValues] | None, messages_arg)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L266-L273
+    cast_messages = cast(list[AllMessageValues] | None, messages_arg)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
     with CapturedLogs() as logs:
-        result = asyncio.run(  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
-            check.async_filter_deployments(  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
+        result = asyncio.run(  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
+            check.async_filter_deployments(  # type: ignore[misc]  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
                 model=call["model"],
                 healthy_deployments=call["healthy_deployments"],
-                messages=cast_messages,
+                messages=cast_messages,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
                 request_kwargs=kwargs,
             )
         )
         rows = cast(list[DeployView], result)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
-    carried: JsonValue = {
-        "ids": [row_id(row) for row in rows],
-        "input": kwargs.get("input"),
-        "messages": messages_arg,
-        "request_messages": kwargs.get("messages"),
-        "metadata": kwargs.get(METADATA_KEY),
-        "pinned": kwargs.get(PIN_FLAG) is True,
-        "logs": list(logs.capture.messages),
-        "group_affinity_enabled": EncryptedContentAffinityCheck.has_model_group_affinity_enabled(config),
-    }
+    carried = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L304-L311
+        JsonValue,
+        {
+            "ids": [row_id(row) for row in rows],
+            "input": kwargs.get("input"),
+            "messages": messages_arg,
+            "request_messages": kwargs.get("messages"),
+            "metadata": kwargs.get(METADATA_KEY),
+            "pinned": kwargs.get(PIN_FLAG) is True,
+            "logs": list(logs.capture.messages),
+            "group_affinity_enabled": (
+                EncryptedContentAffinityCheck.has_model_group_affinity_enabled(config)
+            ),
+        },
+    )
     return carried
 
 
