@@ -48,10 +48,8 @@ where
 fn kept_headers(case: &Case) -> BTreeSet<String> {
     let mut keep: BTreeSet<String> = KEPT_HEADERS.iter().map(|name| (*name).to_owned()).collect();
     for step in once(case).chain(case.second.as_deref()) {
-        for named in [&step.headers, &step.extra_headers] {
-            if let Some(map) = named {
-                keep.extend(map.keys().map(|name| name.to_ascii_lowercase()));
-            }
+        for map in [&step.headers, &step.extra_headers].into_iter().flatten() {
+            keep.extend(map.keys().map(|name| name.to_ascii_lowercase()));
         }
     }
     keep

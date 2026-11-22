@@ -93,5 +93,5 @@ pub(crate) struct Case {
     #[serde(default)]
     pub(crate) reply: Value,
     #[serde(default)]
-    pub(crate) second: Option<Box<Case>>,
+    pub(crate) second: Option<Box<Self>>,
 }
