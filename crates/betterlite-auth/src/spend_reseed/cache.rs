@@ -43,6 +43,15 @@ pub trait ReseedCache: Send + Sync {
     ) -> impl Future<Output = Result<Option<Decimal>, Self::Error>> + Send;
 }
 
+// INCRBYFLOAT after a lost SET NX is the one Redis operation only the window warm path needs
+pub trait WindowReseedCache: ReseedCache {
+    fn redis_increment(
+        &self,
+        counter_key: &str,
+        amount: Decimal,
+    ) -> impl Future<Output = Result<Decimal, Self::Error>> + Send;
+}
+
 // B2316's request-scoped batch: Some(Missing) is an authoritative Redis miss, None means no answer
 pub trait ActiveSpendBatch: Send + Sync {
     fn read(
