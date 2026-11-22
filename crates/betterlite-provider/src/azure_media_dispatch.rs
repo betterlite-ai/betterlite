@@ -34,8 +34,8 @@ pub enum AzureMediaResult {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AzureMediaPrepared;
 
-// The edit's resolved request and form beside the reply its response transform reads
-#[derive(Debug, Clone, PartialEq, Eq)]
+// The edit's resolved request and form beside the reply its response transform reads; no Debug, because the headers carry the auth value
+#[derive(Clone, PartialEq, Eq)]
 pub struct ImageEditOutcome {
     pub url: String,
     pub headers: BTreeMap<String, String>,

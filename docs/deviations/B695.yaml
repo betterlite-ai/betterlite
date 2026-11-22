@@ -1,0 +1,5 @@
+task: B695
+deviations:
+  - what: An Azure image generation or edit call without a timeout uses betterlite_azure's 5-second connect phase and 600-second read, write and pool phases, where LiteLLM gives every phase its 600-second generation default or 6000-second request default.
+    why: betterlite_azure's TimeoutPhases owns that mapping for both arms, and an explicit timeout maps to the same phases httpx gets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L948

@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
+use betterlite_azure::image_transport::ImageRequest;
 use betterlite_azure::image_transport::error::ImageTransportError;
-use betterlite_azure::image_transport::{ImageRequest, ImageTransport};
+use betterlite_azure::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use betterlite_azure::images::edit::{
     EditAuth, EditParams, EditUrl, finalize_edit_data, get_complete_url, validate_environment,
 };
@@ -28,21 +29,31 @@ pub(super) async fn image_edit<C, K, T, L>(
     runtime: &MediaRuntime<'_, C, K, T, L>,
 ) -> Result<ImageEditOutcome, AzureMediaError>
 where
-    C: Sync,
+    C: ImageClientConstructor,
     K: Sync,
-    T: ImageTransport,
+    T: Sync,
     L: Sync,
 {
     let boundary = operation.boundary;
     let now_seconds = operation.now_seconds;
+    let timeout = operation.timeout;
     let (url, headers, data, files) = prepared_edit(operation, runtime)?;
     let body = edit_body(boundary, &data, &files)?;
-    let sent = runtime
-        .transport
+    // httpx sets the multipart content type from files=, so the boundary reaches the endpoint here
+    let mut sent_headers = headers.clone();
+    sent_headers.insert(
+        String::from("content-type"),
+        format!("multipart/form-data; boundary={boundary}"),
+    );
+    let request_headers = header_map(&sent_headers)?;
+    let client = runtime
+        .constructor
+        .construct(TimeoutPhases::from_argument(timeout));
+    let sent = client
         .send(ImageRequest::new(
             Method::POST,
             url.clone(),
-            header_map(&headers)?,
+            request_headers,
             body,
         ))
         .await

@@ -56,6 +56,8 @@ pub struct ImageEditOperation {
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
     pub api_version: Option<String>,
+    // LiteLLM's timeout argument; None keeps the default connect and read phases
+    pub timeout: Option<f64>,
     pub provider: Option<Arc<dyn CallableTokenProvider>>,
     pub params: LiteLlmParams,
     pub boundary: Uuid,

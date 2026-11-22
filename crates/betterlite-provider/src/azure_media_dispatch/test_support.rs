@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::{Future, ready};
 use std::mem::take;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use betterlite_azure::endpoints::get_client::ClientCache;
@@ -59,6 +59,7 @@ struct State {
     replies: Mutex<VecDeque<Reply>>,
     images: Mutex<Vec<ImageRequest>>,
     outbound: Mutex<Vec<OutboundRequest>>,
+    timeouts: Mutex<Vec<TimeoutPhases>>,
 }
 
 // the image and transcription transports share one script, so a test names every wire call in order
@@ -75,24 +76,25 @@ impl Fixture {
                 replies: Mutex::new(VecDeque::from(replies)),
                 images: Mutex::new(Vec::new()),
                 outbound: Mutex::new(Vec::new()),
+                timeouts: Mutex::new(Vec::new()),
             }),
         }
     }
 
     #[must_use]
     pub fn images(&self) -> Vec<ImageRequest> {
-        match self.state.images.lock() {
-            Ok(images) => images.clone(),
-            Err(poisoned) => poisoned.into_inner().clone(),
-        }
+        locked(&self.state.images).clone()
     }
 
     #[must_use]
     pub fn outbound(&self) -> Vec<OutboundRequest> {
-        match self.state.outbound.lock() {
-            Ok(mut outbound) => take(&mut *outbound),
-            Err(poisoned) => take(&mut *poisoned.into_inner()),
-        }
+        take(&mut *locked(&self.state.outbound))
+    }
+
+    // the timeout phases every client the fixture constructed was built with
+    #[must_use]
+    pub fn timeouts(&self) -> Vec<TimeoutPhases> {
+        locked(&self.state.timeouts).clone()
     }
 }
 
@@ -117,19 +119,22 @@ impl TranscriptionTransport for Fixture {
 }
 
 fn record<T>(mutex: &Mutex<Vec<T>>, item: T) {
-    match mutex.lock() {
-        Ok(mut items) => items.push(item),
-        Err(poisoned) => poisoned.into_inner().push(item),
-    }
+    locked(mutex).push(item);
 }
 
 // A test that scripts fewer replies than its dispatch sends sees a 500 instead of a panic.
 fn scripted(state: &State) -> Reply {
-    let reply = match state.replies.lock() {
-        Ok(mut replies) => replies.pop_front(),
-        Err(poisoned) => poisoned.into_inner().pop_front(),
-    };
-    reply.unwrap_or_else(|| Reply::json(500, "no scripted reply"))
+    locked(&state.replies)
+        .pop_front()
+        .unwrap_or_else(|| Reply::json(500, "no scripted reply"))
+}
+
+// A fixture reads what earlier calls recorded even when a test panicked holding the lock.
+fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 fn image_reply(reply: Reply) -> ImageReply {
@@ -163,7 +168,8 @@ impl ImageClock for Clock {
 impl ImageClientConstructor for Fixture {
     type Client = Self;
 
-    fn construct(&self, _timeout: TimeoutPhases) -> Self {
+    fn construct(&self, timeout: TimeoutPhases) -> Self {
+        record(&self.state.timeouts, timeout);
         self.clone()
     }
 }

@@ -28,6 +28,7 @@ pub(super) async fn image_edit(input: &Input) -> HelperResult {
         api_key: Some(SecretString::from(input.api_key.clone())),
         api_base: Some(input.api_base.clone()),
         api_version: Some(input.api_version.clone()),
+        timeout: None,
         provider: None,
         params: LiteLlmParams::default(),
         boundary: Uuid::from_u128(7),

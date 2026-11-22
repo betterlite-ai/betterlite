@@ -9,6 +9,7 @@ use betterlite_azure::endpoints::projection::{
     ClientIdentity, ClientKind, LiteLlmParams, SessionKind,
 };
 use betterlite_azure::image_transport::ImageClock as _;
+use betterlite_azure::image_transport::request::TimeoutPhases;
 use betterlite_azure::images::generation::GeneratedImage;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
@@ -253,6 +254,7 @@ fn edit_operation() -> ImageEditOperation {
         api_key: Some(key()),
         api_base: Some(AZURE.to_owned()),
         api_version: Some(String::from("2025-04-01-preview")),
+        timeout: None,
         provider: None,
         params: LiteLlmParams::default(),
         boundary: Uuid::from_u128(7),
@@ -297,6 +299,47 @@ async fn edit_success() {
     assert!(body.contains("name=\"image[]\""));
     assert!(body.contains("filename=\"cat.png\""));
     assert!(!body.contains("name=\"model\""));
+    // httpx sets the multipart content type from files=, so the endpoint can split the parts
+    let content_type = format!("multipart/form-data; boundary={}", Uuid::from_u128(7));
+    assert_eq!(
+        header(&sent.headers, "content-type"),
+        Some(content_type.as_str())
+    );
+}
+
+// the edit builds its client from the call's timeout, so a stuck edits endpoint cannot hold the request
+#[tokio::test]
+async fn edit_constructs_a_client_with_the_call_timeout() {
+    let default_phases = TimeoutPhases {
+        connect: 5.0_f64,
+        read: 600.0_f64,
+        write: 600.0_f64,
+        pool: 600.0_f64,
+    };
+    let untimed = exchange(
+        AzureMediaOperation::ImageEdit(Box::new(edit_operation())),
+        vec![Reply::json(200, DALL_E_BODY)],
+    )
+    .await;
+    assert_eq!(untimed.fixture.timeouts(), vec![default_phases]);
+    let timed = ImageEditOperation {
+        timeout: Some(120.0_f64),
+        ..edit_operation()
+    };
+    let outcome = exchange(
+        AzureMediaOperation::ImageEdit(Box::new(timed)),
+        vec![Reply::json(200, DALL_E_BODY)],
+    )
+    .await;
+    assert_eq!(
+        outcome.fixture.timeouts(),
+        vec![TimeoutPhases {
+            connect: 120.0_f64,
+            read: 120.0_f64,
+            write: 120.0_f64,
+            pool: 120.0_f64,
+        }]
+    );
 }
 
 // the call's extra_headers update the validated headers after the auth header is set
@@ -345,6 +388,20 @@ async fn edit_failure() {
     let invalid_error = error_of(&invalid);
     assert_eq!(invalid_error.status(), Some(502));
     assert_eq!(invalid_error.to_string(), "\u{fffd}");
+
+    // each undecodable run in a mixed body becomes one replacement character
+    let mixed = exchange(
+        AzureMediaOperation::ImageEdit(Box::new(edit_operation())),
+        vec![Reply {
+            status: 503,
+            headers: HeaderMap::new(),
+            body: b"bad \xff edit".to_vec(),
+        }],
+    )
+    .await;
+    let mixed_error = error_of(&mixed);
+    assert_eq!(mixed_error.status(), Some(503));
+    assert_eq!(mixed_error.to_string(), "bad \u{fffd} edit");
 }
 
 async fn edit_bad_field() {
