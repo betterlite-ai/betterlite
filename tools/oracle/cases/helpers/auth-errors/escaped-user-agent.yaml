@@ -5,7 +5,7 @@ call:
     rows:
       # identity fields in the log line escape control and separator characters; the hook metadata keeps the agent as sent
       - step: handle
-        failure: {kind: http, message: Authentication Error, key expired, type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
+        failure: {kind: http, message: "Authentication Error, key expired", type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
         reply: original
         replacement: null
         switches: [log_auth_failure_key_identity]
@@ -16,7 +16,7 @@ call:
         client_host: 203.0.113.7
       # litellm_metadata wins by key presence, and a set user_agent is never overwritten
       - step: handle
-        failure: {kind: http, message: Authentication Error, key expired, type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
+        failure: {kind: http, message: "Authentication Error, key expired", type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
         reply: original
         replacement: null
         switches: []

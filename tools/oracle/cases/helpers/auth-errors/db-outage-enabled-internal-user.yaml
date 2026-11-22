@@ -27,7 +27,7 @@ call:
         client_host: 203.0.113.7
       # an ordinary 401 is rejected even with the bypass on
       - step: handle
-        failure: {kind: http, message: Authentication Error, key expired, type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
+        failure: {kind: http, message: "Authentication Error, key expired", type: auth_error, param: null, status_code: 401, marked: false, internal_message: ""}
         reply: original
         replacement: null
         switches: [allow_requests_on_db_unavailable]
