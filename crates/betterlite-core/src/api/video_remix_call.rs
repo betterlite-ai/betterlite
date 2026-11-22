@@ -15,7 +15,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use self::config::{DEFAULT_PROVIDER, DEFAULT_TIMEOUT_SECONDS, VideoOperation, provider_config};
-use self::error::{VideoCallError, VideoCallFailure, failure};
+use self::error::{REMIX_PENDING, VideoCallError, VideoCallFailure, failure};
 use self::prepare::{PreparedRemix, prepare_remix};
 use self::shared::{VideoCallDeps, mock_answer};
 use crate::api::video_records::VideoObject;
@@ -199,9 +199,8 @@ impl<'call, 'deps, 'env, Source: VideoClientSource> RemixReady<'call, 'deps, 'en
 
     // a sync handler must answer directly; a future in its place is the UnexpectedPending failure
     fn direct(mut self) -> Result<VideoObject, VideoCallFailure> {
-        let operation = VideoOperation::Remix;
         let Handled::Done(object) = self.run(false)? else {
-            return Err(failure(operation.pending(), &self.provider, self.redactor));
+            return Err(failure(REMIX_PENDING, &self.provider, self.redactor));
         };
         Ok(object)
     }

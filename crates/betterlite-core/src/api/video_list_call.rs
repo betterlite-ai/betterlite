@@ -16,7 +16,9 @@ use crate::api::video_records::VideoObject;
 use crate::api::video_remix_call::config::{
     DEFAULT_PROVIDER, DEFAULT_TIMEOUT_SECONDS, VideoOperation, provider_config,
 };
-use crate::api::video_remix_call::error::{VideoCallError, VideoCallFailure, failure};
+use crate::api::video_remix_call::error::{
+    LIST_PENDING, VideoCallError, VideoCallFailure, failure,
+};
 use crate::api::video_remix_call::shared::{VideoCallDeps, mock_answer};
 use crate::api::video_remix_list_transport::client::{VideoClient, VideoClientSource};
 use crate::api::video_remix_list_transport::config::VideoRemixListConfig;
@@ -202,9 +204,8 @@ impl<'call, 'deps, 'env, Source: VideoClientSource> ListReady<'call, 'deps, 'env
 
     // a sync handler must answer directly; a future in its place is the UnexpectedPending failure
     fn direct(mut self) -> Result<VideoListReply, VideoCallFailure> {
-        let operation = VideoOperation::List;
         let Handled::Done(params) = self.run(false)? else {
-            return Err(failure(operation.pending(), &self.provider, self.redactor));
+            return Err(failure(LIST_PENDING, &self.provider, self.redactor));
         };
         Ok(VideoListReply::Page(params))
     }

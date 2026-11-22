@@ -57,6 +57,14 @@ pub enum VideoCallError {
     UnexpectedPending { operation: VideoOperation },
 }
 
+// the failures a sync handler's future turns into
+pub(crate) const LIST_PENDING: VideoCallError = VideoCallError::UnexpectedPending {
+    operation: VideoOperation::List,
+};
+pub(crate) const REMIX_PENDING: VideoCallError = VideoCallError::UnexpectedPending {
+    operation: VideoOperation::Remix,
+};
+
 #[derive(Debug, Error)]
 #[error("{error}")]
 pub struct VideoCallFailure {
