@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from typing import Final, Literal, TypedDict
 
 import litellm
@@ -79,7 +78,7 @@ class LoadedCatalog:
         self.entries = entries
         self.loads = 0
 
-    def load(self) -> Mapping[str, Mapping[str, object]]:
+    def load(self) -> dict[str, dict[str, JsonValue]]:
         self.loads += 1
         return self.entries
 
