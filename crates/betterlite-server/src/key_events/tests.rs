@@ -26,7 +26,7 @@ use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
 use crate::audit_events::record::AuditRecordError;
 use crate::key_event_sinks::email::{CreatedKey, LegacyEmail, Reported};
-use crate::key_event_sinks::error::{EmailError, SecretSinkError};
+use crate::key_event_sinks::error::{EmailError, SecretSinkError, SinkError};
 use crate::key_event_sinks::ports::KeyCreatedMailer;
 use crate::key_events::effects::{KeyEmailError, KeyEventEmail};
 use crate::key_events::error::KeyEventError;
@@ -922,7 +922,7 @@ fn error_debug_names_the_variant() {
     let rowed = KeyEventError::<FakeManager>::Row(row_json);
     let event_json = serde_json::from_str::<u8>("\"x\"").unwrap_err();
     let evented = KeyEventError::<FakeManager>::EmailEvent(event_json);
-    let sink_error = SecretSinkError::Rotation {
+    let sink_error: SinkError<FakeManager> = SecretSinkError::Rotation {
         source: RotationError::SameName,
     };
     let sunk = KeyEventError::<FakeManager>::Sink { source: sink_error };
