@@ -116,6 +116,7 @@ fn the_targets_own_message_block_is_kept_without_input_markers() {
     ])]);
     let returned = request.filter(&check, "gpt-group", &deployments).unwrap();
     assert_eq!(ids(&returned), vec![Some("A".to_owned())]);
+    assert!(request.pinned);
     let expected = Some(vec![message(vec![
         thinking_part(Some("A")),
         text_part("keep"),
