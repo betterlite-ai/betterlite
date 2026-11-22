@@ -3,13 +3,11 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
 
 use crate::prometheus::failure::text_field;
-use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
 use crate::prometheus_label_projection::prometheus_label_factory::LabelSource;
 
-use super::error::PrometheusDeploymentError;
 use super::metric::DeploymentMetric;
-use super::metrics::DeploymentMetrics;
+use super::metrics::{DeploymentMetrics, DeploymentResult};
 use super::requests::{DeploymentLabels, FailureRequest};
 use super::state::set_deployment_partial_outage;
 use super::values::{failure_exception_status, object_field, tags_from_json, truthy};
@@ -35,10 +33,10 @@ struct DeploymentFields {
 }
 
 // ast-grep-ignore: no-long-names
-pub fn set_llm_deployment_failure_metrics<Gauges>(metrics: &Gauges, request: &FailureRequest<'_>)
-where
-    Gauges: DeploymentMetrics,
-{
+pub fn set_llm_deployment_failure_metrics<G: DeploymentMetrics>(
+    metrics: &G,
+    request: &FailureRequest<'_>,
+) {
     if let Err(error) = record_failure(metrics, request) {
         tracing::debug!(
             "Prometheus Error: set_llm_deployment_failure_metrics. Exception occured - {error}"
@@ -46,13 +44,10 @@ where
     }
 }
 
-fn record_failure<Gauges>(
-    metrics: &Gauges,
+fn record_failure<G: DeploymentMetrics>(
+    metrics: &G,
     request: &FailureRequest<'_>,
-) -> Result<(), PrometheusDeploymentError<<Gauges::Gauge as RemovableMetric>::Error>>
-where
-    Gauges: DeploymentMetrics,
-{
+) -> DeploymentResult<G> {
     let fields = failure_fields(request);
     if metrics.skip_invalid_key(None, None, request.exception) {
         return Ok(());
@@ -90,14 +85,12 @@ where
 
 fn failure_fields(request: &FailureRequest<'_>) -> FailureFields {
     let payload = request.payload;
-    let model_id = match payload.and_then(|payload| payload.model_id.as_deref()) {
-        Some(model_id) => Some(model_id.to_owned()),
-        None => params_model_id(request.litellm_params),
-    };
-    let model_group = match payload.and_then(|payload| payload.model_group.as_deref()) {
-        Some(model_group) => Some(model_group.to_owned()),
-        None => params_model_group(request.litellm_params),
-    };
+    let model_id = payload
+        .and_then(|payload| payload.model_id.clone())
+        .or_else(|| params_model_id(request.litellm_params));
+    let model_group = payload
+        .and_then(|payload| payload.model_group.clone())
+        .or_else(|| params_model_group(request.litellm_params));
     let selected = model_id.as_deref().is_some_and(|id| !id.is_empty())
         && !truthy(
             request
@@ -119,8 +112,7 @@ fn params_model_id(params: &JsonObject) -> Option<String> {
     let caller = object_field(params, "metadata")
         .and_then(|metadata| object_field(metadata, "model_info"))
         .filter(|info| !info.is_empty());
-    let info = internal.or(caller)?;
-    text_field(info, "id").map(str::to_owned)
+    text_field(internal.or(caller)?, "id").map(str::to_owned)
 }
 
 fn params_model_group(params: &JsonObject) -> Option<String> {
@@ -130,42 +122,30 @@ fn params_model_group(params: &JsonObject) -> Option<String> {
     let caller = object_field(params, "metadata")
         .and_then(|metadata| metadata.get("model_group"))
         .filter(|value| truthy(Some(*value)));
-    let value = internal.or(caller)?;
-    match value {
+    match internal.or(caller)? {
         Json::Text(text) => Some(text.clone()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 
-fn failure_values<Gauges>(
-    metrics: &Gauges,
+fn failure_values<G: DeploymentMetrics>(
+    metrics: &G,
     request: &FailureRequest<'_>,
     fields: &FailureFields,
-) -> UserApiKeyLabelValues
-where
-    Gauges: DeploymentMetrics,
-{
+) -> UserApiKeyLabelValues {
     let identity = identity::failure_identity(metrics, request);
     let deployment = if fields.selected {
         selected_fields(request, fields)
     } else {
         rejected_fields(metrics, request, fields)
     };
-    let DeploymentFields {
-        litellm_model_name,
-        model_id,
-        api_base,
-        api_provider,
-        requested_model,
-        model_group,
-    } = deployment;
     UserApiKeyLabelValues {
-        litellm_model_name,
-        model_id,
-        api_base,
-        api_provider,
-        requested_model,
-        model_group,
+        litellm_model_name: deployment.litellm_model_name,
+        model_id: deployment.model_id,
+        api_base: deployment.api_base,
+        api_provider: deployment.api_provider,
+        requested_model: deployment.requested_model,
+        model_group: deployment.model_group,
         exception_status: request.exception.map(failure_exception_status),
         exception_class: request
             .exception
@@ -201,18 +181,20 @@ fn selected_fields(request: &FailureRequest<'_>, fields: &FailureFields) -> Depl
     }
 }
 
-fn rejected_fields<Gauges>(
-    metrics: &Gauges,
+fn rejected_fields<G: DeploymentMetrics>(
+    metrics: &G,
     request: &FailureRequest<'_>,
     fields: &FailureFields,
-) -> DeploymentFields
-where
-    Gauges: DeploymentMetrics,
-{
+) -> DeploymentFields {
     let source = request
         .model
         .filter(|name| !name.is_empty())
-        .or(fields.model_group.as_deref());
+        .or(fields.model_group.as_deref())
+        .map(|name| Json::Text(name.to_owned()));
+    let group = fields
+        .model_group
+        .as_deref()
+        .map(|group| Json::Text(group.to_owned()));
     DeploymentFields {
         litellm_model_name: Some(String::new()),
         model_id: Some(String::new()),
@@ -220,9 +202,9 @@ where
         api_provider: Some(String::new()),
         requested_model: Some(
             metrics
-                .bounded_model_name(source, request.catalog)
+                .bounded_model_label(source.as_ref(), true, request.catalog)
                 .unwrap_or_default(),
         ),
-        model_group: metrics.bounded_model_name(fields.model_group.as_deref(), request.catalog),
+        model_group: metrics.bounded_model_label(group.as_ref(), true, request.catalog),
     }
 }

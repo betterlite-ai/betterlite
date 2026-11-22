@@ -4,7 +4,6 @@ use rust_decimal::Decimal;
 
 use crate::exporter_options::failure_counter::CallbackFailureCounter;
 use crate::prometheus_exporter::{Handle, PrometheusCollectors};
-use crate::prometheus_helpers::bounded_series_tracker::RemovableMetric;
 
 use super::metric::DeploymentMetric;
 use super::metrics::DeploymentMetrics;
@@ -20,10 +19,10 @@ const COOLED_DOWN_LABELS: [&str; 5] = [
 ];
 
 // ast-grep-ignore: no-long-names
-pub fn increment_deployment_cooled_down<Gauges>(metrics: &Gauges, labels: CooledDownLabels<'_>)
-where
-    Gauges: DeploymentMetrics,
-{
+pub fn increment_deployment_cooled_down<G: DeploymentMetrics>(
+    metrics: &G,
+    labels: CooledDownLabels<'_>,
+) {
     let values = [
         labels.litellm_model_name,
         labels.model_id,
@@ -31,15 +30,12 @@ where
         labels.api_provider,
         labels.exception_status,
     ];
-    let sanitized: Vec<String> = values
-        .into_iter()
-        .map(|value| sanitize_label_value(Some(value)).unwrap_or_default())
-        .collect();
     let supported = metrics.labels_for(DeploymentMetric::CooledDown);
     let mut pairs: Vec<(&str, &str)> = Vec::with_capacity(COOLED_DOWN_LABELS.len());
-    for (name, value) in COOLED_DOWN_LABELS.into_iter().zip(&sanitized) {
+    for (name, value) in COOLED_DOWN_LABELS.into_iter().zip(values) {
+        let sanitized = sanitize_label_value(Some(value)).unwrap_or_default();
         if supported.iter().any(|label| label.as_str() == name) {
-            pairs.push((name, value.as_str()));
+            pairs.push((name, sanitized));
         }
     }
     metrics.increment_plain(DeploymentMetric::CooledDown, &pairs);
@@ -47,16 +43,15 @@ where
 
 // ast-grep-ignore: no-long-names
 pub fn increment_callback_logging_failure(counter: &Handle, callback_name: &str) {
-    let labels = [("callback_name", callback_name)];
     counter
-        .labels(&labels)
+        .labels(&[("callback_name", callback_name)])
         .inc(MetricValue::Finite(Decimal::ONE));
 }
 
-pub fn record_managed_batch_created<Gauges>(metrics: &Gauges, labels: BatchCreatedLabels<'_>)
-where
-    Gauges: DeploymentMetrics,
-{
+pub fn record_managed_batch_created<G: DeploymentMetrics>(
+    metrics: &G,
+    labels: BatchCreatedLabels<'_>,
+) {
     let pairs: Vec<(&str, &str)> = [
         ("model", labels.model),
         ("api_provider", labels.api_provider),
@@ -75,7 +70,9 @@ where
 impl CallbackFailureCounter for PrometheusCollectors {
     fn increment_callback_logging_failure(&self, callback_name: &str) {
         // ast-grep-ignore: no-long-names
-        let counter = &self.litellm_callback_logging_failures_metric;
-        increment_callback_logging_failure(counter, callback_name);
+        increment_callback_logging_failure(
+            &self.litellm_callback_logging_failures_metric,
+            callback_name,
+        );
     }
 }

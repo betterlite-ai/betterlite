@@ -18,23 +18,6 @@ pub enum DeploymentMetric {
 }
 
 impl DeploymentMetric {
-    pub const ALL: [Self; 14] = [
-        Self::CallbackLoggingFailures,
-        Self::CooledDown,
-        Self::DeploymentState,
-        Self::FailedFallbacks,
-        Self::FailureResponses,
-        Self::LatencyPerOutputToken,
-        Self::ManagedBatchCreated,
-        Self::OverheadLatency,
-        Self::OverheadWithGuardrails,
-        Self::RemainingRequests,
-        Self::RemainingTokens,
-        Self::SuccessResponses,
-        Self::SuccessfulFallbacks,
-        Self::TotalRequests,
-    ];
-
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {

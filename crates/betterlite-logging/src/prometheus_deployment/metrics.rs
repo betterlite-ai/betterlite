@@ -23,19 +23,17 @@ use crate::prometheus_label_projection::prometheus_label_factory::{
     LabelSource, ProjectedLabels, prometheus_label_factory,
 };
 use crate::prometheus_label_schema::PrometheusLabelSettings;
-use crate::prometheus_latency::guardrail_overhead::{
-    OverheadObservation, set_guardrail_overhead_metric,
-};
-use crate::prometheus_latency::labels::LabelInputs;
-use crate::prometheus_latency::latency_histograms::MetricHandle;
-use crate::prometheus_rate_limits::deployment::DeploymentLimitInputs;
-// ast-grep-ignore: no-long-names
-use crate::prometheus_rate_limits::deployment::set_deployment_tpm_rpm_limit_metrics as set_deployment_limit_metrics;
 use crate::prometheus_rate_limits::gauge::RateLimitGauges;
 
 use super::error::PrometheusDeploymentError;
 use super::metric::DeploymentMetric;
 use super::values::check_labels;
+
+pub(super) type DeploymentValueResult<Value, Metrics> = Result<
+    Value,
+    PrometheusDeploymentError<<<Metrics as RateLimitGauges>::Gauge as RemovableMetric>::Error>,
+>;
+pub(super) type DeploymentResult<Metrics> = DeploymentValueResult<(), Metrics>;
 
 // the collectors plus the settings, end-user switches and series limits one request writes with
 pub trait DeploymentMetrics: RateLimitGauges {
@@ -45,20 +43,16 @@ pub trait DeploymentMetrics: RateLimitGauges {
     fn end_user_settings(&self) -> EndUserCostTrackingSettings;
     fn limits(&self) -> &SeriesLimits;
 
-    fn values_source(&self) -> LabelSource<'_> {
-        LabelSource::Values {
-            settings: self.settings(),
-            end_user_settings: self.end_user_settings(),
-        }
-    }
-
     fn label_source<'metrics>(
         &'metrics self,
         context: Option<&'metrics PrometheusLabelFactoryContext>,
     ) -> LabelSource<'metrics> {
         match context {
             Some(context) => LabelSource::Context(context),
-            None => self.values_source(),
+            None => LabelSource::Values {
+                settings: self.settings(),
+                end_user_settings: self.end_user_settings(),
+            },
         }
     }
 
@@ -79,21 +73,6 @@ pub trait DeploymentMetrics: RateLimitGauges {
         bounded_requested_model_label(requested_model, router_originated, catalog)
     }
 
-    // the two call sites that hold a group name rather than a payload value
-    fn bounded_model_name(
-        &self,
-        model: Option<&str>,
-        catalog: Option<&dyn RequestedModelCatalog>,
-    ) -> Option<String> {
-        match model {
-            Some(name) => {
-                let requested = Json::Text(name.to_owned());
-                self.bounded_model_label(Some(&requested), true, catalog)
-            }
-            None => self.bounded_model_label(None, true, catalog),
-        }
-    }
-
     fn skip_invalid_key(
         &self,
         enum_status_code: Option<&str>,
@@ -109,15 +88,13 @@ pub trait DeploymentMetrics: RateLimitGauges {
         values: &UserApiKeyLabelValues,
         source: LabelSource<'_>,
         now: Instant,
-    ) -> Result<(), PrometheusDeploymentError<<Self::Gauge as RemovableMetric>::Error>> {
-        let counter = self.metric(metric);
-        let limits = self.limits();
+    ) -> DeploymentResult<Self> {
         let emission = CounterEmission {
-            counter: &counter,
+            counter: &self.metric(metric),
             metric_name: metric.name(),
             supported_labels: self.labels_for(metric),
             tracker: self.tracker(),
-            limits,
+            limits: self.limits(),
         };
         emission.inc_labeled_counter(values, source, MetricValue::Finite(Decimal::ONE), now)?;
         Ok(())
@@ -129,11 +106,11 @@ pub trait DeploymentMetrics: RateLimitGauges {
         values: &UserApiKeyLabelValues,
         source: LabelSource<'_>,
         value: Decimal,
-    ) -> Result<(), PrometheusDeploymentError<<Self::Gauge as RemovableMetric>::Error>> {
+    ) -> DeploymentResult<Self> {
         let labels = prometheus_label_factory(self.labels_for(metric), values, source)?;
-        let gauge = self.metric(metric);
-        gauge
-            .labels(&label_pairs(&labels))
+        let pairs = label_pairs(&labels);
+        self.metric(metric)
+            .labels(&pairs)
             .set(MetricValue::Finite(value));
         Ok(())
     }
@@ -144,46 +121,25 @@ pub trait DeploymentMetrics: RateLimitGauges {
         labels: &ProjectedLabels,
         value: Decimal,
     ) {
-        let histogram = self.metric(metric);
-        histogram
-            .labels(&label_pairs(labels))
+        let pairs = label_pairs(labels);
+        self.metric(metric)
+            .labels(&pairs)
             .observe(MetricValue::Finite(value));
     }
 
     fn increment_plain(&self, metric: DeploymentMetric, pairs: &[(&str, &str)]) {
-        let counter = self.metric(metric);
-        counter.labels(pairs).inc(MetricValue::Finite(Decimal::ONE));
+        self.metric(metric)
+            .labels(pairs)
+            .inc(MetricValue::Finite(Decimal::ONE));
     }
 
     fn increment_fixed(
         &self,
         metric: DeploymentMetric,
         pairs: &[(&str, &str)],
-    ) -> Result<(), PrometheusDeploymentError<<Self::Gauge as RemovableMetric>::Error>> {
+    ) -> DeploymentResult<Self> {
         check_labels(metric.name(), self.labels_for(metric), pairs)?;
         self.increment_plain(metric, pairs);
-        Ok(())
-    }
-
-    fn set_deployment_limits(
-        &self,
-        inputs: DeploymentLimitInputs<'_>,
-    ) -> Result<(), PrometheusDeploymentError<<Self::Gauge as RemovableMetric>::Error>> {
-        set_deployment_limit_metrics(self, inputs)?;
-        Ok(())
-    }
-
-    fn set_overhead(
-        &self,
-        observation: &OverheadObservation<'_>,
-        labels: &LabelInputs<'_>,
-    ) -> Result<(), PrometheusDeploymentError<<Self::Gauge as RemovableMetric>::Error>> {
-        let histogram = self.metric(DeploymentMetric::OverheadWithGuardrails);
-        let handle = MetricHandle {
-            metric: &histogram,
-            supported_labels: self.labels_for(DeploymentMetric::OverheadWithGuardrails),
-        };
-        set_guardrail_overhead_metric(&handle, observation, labels)?;
         Ok(())
     }
 }

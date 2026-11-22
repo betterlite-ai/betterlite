@@ -1,4 +1,3 @@
-pub mod collectors;
 pub mod counters;
 pub mod error;
 pub mod failure;
@@ -17,11 +16,11 @@ mod callback_counters;
 #[path = "prometheus_deployment/tests/deployment_state.rs"]
 mod deployment_state;
 #[cfg(test)]
-#[path = "prometheus_deployment/tests/fallback_events.rs"]
-mod fallback_events;
-#[cfg(test)]
 #[path = "prometheus_deployment/tests/failure_outcome.rs"]
 mod failure_outcome;
+#[cfg(test)]
+#[path = "prometheus_deployment/tests/fallback_events.rs"]
+mod fallback_events;
 #[cfg(test)]
 #[path = "prometheus_deployment/tests/success_outcome.rs"]
 mod success_outcome;
