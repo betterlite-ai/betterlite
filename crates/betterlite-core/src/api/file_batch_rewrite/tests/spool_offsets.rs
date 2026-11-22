@@ -14,7 +14,7 @@ use crate::api::file_batch_rewrite::spool::Spool;
 async fn redaction_spool_offsets() {
     let tasks = TaskTracker::new();
     let spool = Spool::default();
-    let accented = "é".as_bytes().to_vec();
+    let accented = "\u{e9}".as_bytes().to_vec();
     let (offset, length) = append(&tasks, &spool, accented.clone()).await;
     assert_eq!((offset, length), (0, 2));
     let (later_offset, later_length) = append(&tasks, &spool, b"x".to_vec()).await;
@@ -31,7 +31,10 @@ async fn redaction_spool_offsets() {
         b"x"
     );
     assert!(!spool.is_rolled());
-    assert_eq!(spool.read_at(&tasks, 0, 3).await.unwrap(), "éx".as_bytes());
+    assert_eq!(
+        spool.read_at(&tasks, 0, 3).await.unwrap(),
+        "\u{e9}x".as_bytes()
+    );
 }
 
 #[tokio::test]

@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, BufRead, Cursor, Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -113,8 +113,8 @@ impl CountingSource {
 }
 
 impl Read for CountingSource {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        self.inner.read(buffer)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
     }
 }
 
@@ -127,16 +127,19 @@ impl BufRead for CountingSource {
         self.inner.consume(amount);
     }
 
-    fn read_until(&mut self, delimiter: u8, buffer: &mut Vec<u8>) -> io::Result<usize> {
+    fn read_until(&mut self, byte: u8, buf: &mut Vec<u8>) -> io::Result<usize> {
         self.reads.fetch_add(1, Ordering::SeqCst);
-        self.inner.read_until(delimiter, buffer)
+        self.inner.read_until(byte, buf)
     }
 }
 
 impl Seek for CountingSource {
-    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        self.seeks.lock().unwrap().push(position);
-        self.inner.seek(position)
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.seeks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(pos);
+        self.inner.seek(pos)
     }
 }
 
@@ -161,8 +164,11 @@ impl BufRead for FailingSource {
 }
 
 impl Seek for FailingSource {
-    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
-        self.seeks.lock().unwrap().push(position);
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.seeks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(pos);
         Ok(0)
     }
 }
@@ -181,8 +187,8 @@ impl UnrewindableSource {
 }
 
 impl Read for UnrewindableSource {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        self.inner.read(buffer)
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(buf)
     }
 }
 
@@ -280,7 +286,10 @@ pub(super) fn ordinal_of(marker: &str) -> usize {
 }
 
 fn window_end(ordinal: usize, rows: usize) -> usize {
-    (ordinal.div_ceil(SCAN_WINDOW) * SCAN_WINDOW).min(rows)
+    ordinal
+        .div_ceil(SCAN_WINDOW)
+        .saturating_mul(SCAN_WINDOW)
+        .min(rows)
 }
 
 #[derive(Debug)]
@@ -314,7 +323,7 @@ impl Probe {
     fn begin(&self, data: &RecordObject) -> ActiveCall<'_> {
         let active_before = self.active.fetch_add(1, Ordering::SeqCst);
         self.max_active
-            .fetch_max(active_before + 1, Ordering::SeqCst);
+            .fetch_max(active_before.saturating_add(1), Ordering::SeqCst);
         let marker = marker_of(data);
         let reads_before = self.reads.load(Ordering::SeqCst);
         self.started.lock().unwrap().push(Started {
@@ -374,7 +383,7 @@ impl Reverse {
     fn later_rows_done(&self, ordinal: usize) -> bool {
         let end = window_end(ordinal, self.rows);
         let done = self.done.lock().unwrap();
-        (ordinal + 1..=end).all(|later| done.contains(&later))
+        (ordinal.saturating_add(1)..=end).all(|later| done.contains(&later))
     }
 }
 

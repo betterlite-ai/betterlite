@@ -1,4 +1,4 @@
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read as _, Seek as _, SeekFrom, Write as _};
 use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -123,6 +123,7 @@ impl Spool {
             .map_err(|source| SpoolError::Write { source })?;
         file.write_all(bytes)
             .map_err(|source| SpoolError::Write { source })?;
+        drop(state);
         Ok(offset)
     }
 
@@ -135,6 +136,7 @@ impl Spool {
             .map_err(|source| SpoolError::Read { source })?;
         file.read_exact(&mut bytes)
             .map_err(|source| SpoolError::Read { source })?;
+        drop(state);
         Ok(bytes)
     }
 
@@ -144,15 +146,19 @@ impl Spool {
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
             .map_err(|source| SpoolError::Read { source })?;
+        drop(state);
         Ok(bytes)
     }
 
     fn seek_start(&self) -> Result<(), SpoolError> {
         let mut state = self.lock();
         let file = state.as_mut().ok_or(SpoolError::Closed)?;
-        file.seek(SeekFrom::Start(0))
+        let sought = file
+            .seek(SeekFrom::Start(0))
             .map(drop)
-            .map_err(|source| SpoolError::Write { source })
+            .map_err(|source| SpoolError::Write { source });
+        drop(state);
+        sought
     }
 
     fn lock(&self) -> MutexGuard<'_, Option<SpooledTempFile>> {

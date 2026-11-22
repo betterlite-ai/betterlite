@@ -14,7 +14,7 @@ use crate::api::file_batch_rewrite::spool::Spool;
 const KEPT: &str = r#"{"custom_id":"k","body":{"x": 1}}"#;
 const DROPPED: &str = r#"{"custom_id":"d","body":{"messages":[]}}"#;
 const REDACTED_ROW: &str = r#"{"custom_id":"r","body":{"messages":[]}}"#;
-const REWRITE: &str = r#"{"custom_id":"r","body":{"messages":[{"content":"é"}]}}"#;
+const REWRITE: &str = "{\"custom_id\":\"r\",\"body\":{\"messages\":[{\"content\":\"\u{e9}\"}]}}";
 
 // The untouched CRLF row keeps its space and its CR, the blank and dropped rows vanish, and the redacted row comes back from the spool
 #[tokio::test]

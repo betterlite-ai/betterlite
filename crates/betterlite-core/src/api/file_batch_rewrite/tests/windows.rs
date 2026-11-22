@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::io::SeekFrom;
 use std::iter::once;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use tokio::sync::Barrier;
@@ -24,7 +25,7 @@ async fn window_failure_barrier() {
     let failure = raised("r2", 503);
     let hook = ScriptedHook::with(
         vec![("r2", Answer::Raise(failure.clone()))],
-        Probe::new(source.reads.clone()),
+        Probe::new(Arc::clone(&source.reads)),
     )
     .behind_gate(Barrier::new(SCAN_WINDOW));
     let spool = Spool::default();
@@ -33,7 +34,9 @@ async fn window_failure_barrier() {
         .expect("a scan answers");
     match outcome {
         ScanFile::Raised(returned) => assert_eq!(returned, failure),
-        other => panic!("the exception at line 2 wins, got {other:?}"),
+        other @ ScanFile::Scanned(_) | other @ ScanFile::Rejected(_) => {
+            panic!("the exception at line 2 wins, got {other:?}")
+        }
     }
     let started = hook.probe.started.lock().unwrap();
     assert_eq!(started.len(), 32);
@@ -55,7 +58,7 @@ async fn window_failure_barrier() {
 async fn windows_scan_without_failure() {
     let tasks = TaskTracker::new();
     let mut source = CountingSource::new(lines_of(65));
-    let hook = ScriptedHook::reversing(Probe::new(source.reads.clone()), 65);
+    let hook = ScriptedHook::reversing(Probe::new(Arc::clone(&source.reads)), 65);
     let spool = Spool::default();
     let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
         .await

@@ -203,7 +203,7 @@ where
     for (record, answer) in window.iter().zip(answers) {
         match answer {
             Ok(Some(outcome)) => {
-                outcomes.push((record.line_number, WindowOutcome::Outcome(outcome)))
+                outcomes.push((record.line_number, WindowOutcome::Outcome(outcome)));
             }
             Ok(None) => (),
             Err(failure) => outcomes.push((record.line_number, WindowOutcome::Raised(failure))),

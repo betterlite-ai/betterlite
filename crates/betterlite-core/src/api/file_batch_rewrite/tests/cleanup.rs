@@ -25,7 +25,7 @@ use crate::api::file_batch_rewrite::spool::{Spool, SpoolError};
 async fn scan_and_spool_cleanup() {
     let tasks = TaskTracker::new();
     let mut source = CountingSource::new(lines_of(3));
-    let hook = ScriptedHook::new(Probe::new(source.reads.clone()));
+    let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.reads)));
     let spool = Spool::default();
     let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
         .await
@@ -37,14 +37,15 @@ async fn scan_and_spool_cleanup() {
     assert!(result.changes.is_empty());
     assert!(result.redactions.is_closed());
     assert!(spool.is_closed());
-    let seeks = source.seeks.lock().unwrap();
-    assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
-    drop(seeks);
+    assert_eq!(
+        source.seeks.lock().unwrap().last(),
+        Some(&SeekFrom::Start(0))
+    );
 
     let mut changed_source = CountingSource::new(lines_of(2));
     let changed_hook = ScriptedHook::with(
         vec![("r1", Answer::Rewrite)],
-        Probe::new(changed_source.reads.clone()),
+        Probe::new(Arc::clone(&changed_source.reads)),
     );
     let changed_spool = Spool::default();
     let changed = timed_scan(&mut changed_source, &changed_hook, &changed_spool, &tasks)
@@ -65,7 +66,7 @@ async fn scan_and_spool_cleanup() {
 async fn a_parse_failure_closes_the_spool_and_rewinds() {
     let tasks = TaskTracker::new();
     let mut source = CountingSource::new("not json\n{\"body\":{\"messages\":[]}}".to_owned());
-    let hook = ScriptedHook::new(Probe::new(source.reads.clone()));
+    let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.reads)));
     let spool = Spool::default();
     let outcome = timed_scan(&mut source, &hook, &spool, &tasks).await;
     match outcome {
@@ -85,7 +86,7 @@ async fn a_hook_failure_closes_the_spool_and_rewinds() {
     let failure = raised("r1", 502);
     let hook = ScriptedHook::with(
         vec![("r1", Answer::Raise(failure.clone()))],
-        Probe::new(source.reads.clone()),
+        Probe::new(Arc::clone(&source.reads)),
     );
     let spool = Spool::default();
     let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
@@ -93,7 +94,9 @@ async fn a_hook_failure_closes_the_spool_and_rewinds() {
         .expect("a scan answers");
     match outcome {
         ScanFile::Raised(returned) => assert_eq!(returned, failure),
-        other => panic!("the hook's exception aborts the scan, got {other:?}"),
+        other @ ScanFile::Scanned(_) | other @ ScanFile::Rejected(_) => {
+            panic!("the hook's exception aborts the scan, got {other:?}")
+        }
     }
     assert!(spool.is_closed());
     let seeks = source.seeks.lock().unwrap();
@@ -106,7 +109,7 @@ async fn a_write_failure_closes_the_spool_and_rewinds() {
     let mut source = CountingSource::new(lines_of(2));
     let hook = ScriptedHook::with(
         vec![("r1", Answer::Rewrite)],
-        Probe::new(source.reads.clone()),
+        Probe::new(Arc::clone(&source.reads)),
     );
     let spool = Spool::default();
     spool.close();
@@ -150,11 +153,11 @@ async fn scan_and_spool_cleanup_cancellation() {
     let reached = Arc::new(Notify::new());
     let cancelled = Arc::new(AtomicUsize::new(0));
     let mut source = CountingSource::new(lines_of(65));
-    let seeks = source.seeks.clone();
+    let seeks = Arc::clone(&source.seeks);
     let hook = ScriptedHook::cancelling(
-        Probe::new(source.reads.clone()),
-        reached.clone(),
-        cancelled.clone(),
+        Probe::new(Arc::clone(&source.reads)),
+        Arc::clone(&reached),
+        Arc::clone(&cancelled),
     );
     let mut scans = JoinSet::new();
     scans.spawn(async move {
