@@ -83,18 +83,26 @@ impl Fixture {
 
     #[must_use]
     pub fn images(&self) -> Vec<ImageRequest> {
-        locked(&self.state.images).clone()
+        match self.state.images.lock() {
+            Ok(images) => images.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 
     #[must_use]
     pub fn outbound(&self) -> Vec<OutboundRequest> {
-        take(&mut *locked(&self.state.outbound))
+        match self.state.outbound.lock() {
+            Ok(mut outbound) => take(&mut *outbound),
+            Err(poisoned) => take(&mut *poisoned.into_inner()),
+        }
     }
 
-    // the timeout phases every client the fixture constructed was built with
     #[must_use]
     pub fn timeouts(&self) -> Vec<TimeoutPhases> {
-        locked(&self.state.timeouts).clone()
+        match self.state.timeouts.lock() {
+            Ok(timeouts) => timeouts.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 }
 
@@ -103,7 +111,7 @@ impl ImageTransport for Fixture {
         &self,
         request: ImageRequest,
     ) -> impl Future<Output = Result<ImageReply, TransportError>> + Send {
-        record(&self.state.images, request);
+        locked(&self.state.images).push(request);
         ready(Ok(image_reply(scripted(&self.state))))
     }
 }
@@ -113,13 +121,9 @@ impl TranscriptionTransport for Fixture {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        record(&self.state.outbound, request);
+        locked(&self.state.outbound).push(request);
         ready(Ok(upstream_reply(scripted(&self.state))))
     }
-}
-
-fn record<T>(mutex: &Mutex<Vec<T>>, item: T) {
-    locked(mutex).push(item);
 }
 
 // A test that scripts fewer replies than its dispatch sends sees a 500 instead of a panic.
@@ -129,7 +133,6 @@ fn scripted(state: &State) -> Reply {
         .unwrap_or_else(|| Reply::json(500, "no scripted reply"))
 }
 
-// A fixture reads what earlier calls recorded even when a test panicked holding the lock.
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     match mutex.lock() {
         Ok(guard) => guard,
@@ -169,7 +172,7 @@ impl ImageClientConstructor for Fixture {
     type Client = Self;
 
     fn construct(&self, timeout: TimeoutPhases) -> Self {
-        record(&self.state.timeouts, timeout);
+        locked(&self.state.timeouts).push(timeout);
         self.clone()
     }
 }

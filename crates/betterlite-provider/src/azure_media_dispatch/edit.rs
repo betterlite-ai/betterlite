@@ -41,10 +41,8 @@ where
     let body = edit_body(boundary, &data, &files)?;
     // httpx sets the multipart content type from files=, so the boundary reaches the endpoint here
     let mut sent_headers = headers.clone();
-    sent_headers.insert(
-        String::from("content-type"),
-        format!("multipart/form-data; boundary={boundary}"),
-    );
+    let content_type = format!("multipart/form-data; boundary={boundary}");
+    sent_headers.insert(String::from("content-type"), content_type);
     let request_headers = header_map(&sent_headers)?;
     let client = runtime
         .constructor
