@@ -185,42 +185,34 @@ pub(super) fn streamed_result(
     })
 }
 
-// the adapter's client view of a Messages reply; a frame stream for a buffered call is the wrong shape
-pub(super) fn anthropic_completion(
-    result: OperationResult,
-    upstream_headers: HeaderMap,
-    upstream_time: Duration,
-) -> Result<ChatCompletionAnswer, ChatFailure> {
-    let OperationResult::Anthropic(shape) = result else {
-        return Err(ChatFailure::Mismatched);
-    };
-    let AnthropicResult::Reply(reply) = shape else {
-        return Err(ChatFailure::Mismatched);
-    };
-    let body = serde_json::to_vec(&reply)
-        .map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
-    Ok(ChatCompletionAnswer {
-        body,
-        upstream_headers,
-        upstream_time,
-    })
+// the adapter's answer in the shape the call asked for; the call rejects the other shape
+pub(super) enum AnthropicAnswer {
+    Reply(ChatCompletionAnswer),
+    Stream(ChatStreamAnswer),
 }
 
-// the adapter's frames as the route's stream; a reply for a stream call is the wrong shape
-pub(super) fn anthropic_stream(
+pub(super) fn anthropic_answer(
     result: OperationResult,
     upstream_headers: HeaderMap,
     upstream_time: Duration,
-) -> Result<ChatStreamAnswer, ChatFailure> {
+) -> Result<AnthropicAnswer, ChatFailure> {
     let OperationResult::Anthropic(shape) = result else {
         return Err(ChatFailure::Mismatched);
     };
-    let AnthropicResult::Stream(frames) = shape else {
-        return Err(ChatFailure::Mismatched);
-    };
-    Ok(ChatStreamAnswer {
-        body: frames,
-        upstream_headers,
-        upstream_time,
-    })
+    match shape {
+        AnthropicResult::Reply(reply) => {
+            let body = serde_json::to_vec(&reply)
+                .map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
+            Ok(AnthropicAnswer::Reply(ChatCompletionAnswer {
+                body,
+                upstream_headers,
+                upstream_time,
+            }))
+        }
+        AnthropicResult::Stream(frames) => Ok(AnthropicAnswer::Stream(ChatStreamAnswer {
+            body: frames,
+            upstream_headers,
+            upstream_time,
+        })),
+    }
 }

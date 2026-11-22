@@ -39,7 +39,7 @@ use crate::state::anthropic_runtime::Slot;
 
 use self::mock::mock_stream;
 use self::relay::{
-    answered_result, anthropic_completion, anthropic_stream, relay_bytes, streamed_result,
+    AnthropicAnswer, answered_result, anthropic_answer, relay_bytes, streamed_result,
 };
 
 // the existing chat implementation, reached through the dispatch pipeline's port
@@ -99,7 +99,12 @@ impl ChatCall for ChatCalls {
         .await
         .map_err(chat_failure)?;
         if matches!(result, OperationResult::Anthropic(_)) {
-            return anthropic_completion(result, upstream_headers, upstream_time);
+            let AnthropicAnswer::Reply(answer) =
+                anthropic_answer(result, upstream_headers, upstream_time)?
+            else {
+                return Err(ChatFailure::Mismatched);
+            };
+            return Ok(answer);
         }
         let (completion, recovered) = recovery::completed(
             self,
@@ -139,7 +144,12 @@ impl ChatCall for ChatCalls {
         .map_err(chat_failure)?;
         let upstream_time = started.elapsed();
         if matches!(result, OperationResult::Anthropic(_)) {
-            return anthropic_stream(result, upstream_headers, upstream_time);
+            let AnthropicAnswer::Stream(answer) =
+                anthropic_answer(result, upstream_headers, upstream_time)?
+            else {
+                return Err(ChatFailure::Mismatched);
+            };
+            return Ok(answer);
         }
         if let OperationResult::OutputLimit { sent } = &result {
             return recovery::stream(self, sent, upstream_headers, upstream_time).await;
