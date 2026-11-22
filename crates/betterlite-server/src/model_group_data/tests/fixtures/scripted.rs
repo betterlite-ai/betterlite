@@ -9,16 +9,6 @@ use crate::model_group_data::ports::{
 };
 use crate::model_group_data::types::{BudgetRow, DeploymentRow, GroupBudgetRow};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UpsertCall {
-    pub create_name: String,
-    pub create_budget_id: Option<String>,
-    pub create_created_by: String,
-    pub create_updated_by: String,
-    pub update_budget_id: Option<String>,
-    pub update_updated_by: String,
-}
-
 pub struct ScriptedState {
     pub deployments: Vec<DeploymentRow>,
     pub budget_rows: Vec<BudgetRow>,
@@ -26,7 +16,6 @@ pub struct ScriptedState {
     pub updates: Vec<(String, String)>,
     pub update_calls: usize,
     pub delete_calls: Vec<String>,
-    pub upserts: Vec<UpsertCall>,
     pub budget_reads: usize,
 }
 
@@ -51,7 +40,6 @@ impl ScriptedDatabase {
                 updates: Vec::new(),
                 update_calls: 0,
                 delete_calls: Vec::new(),
-                upserts: Vec::new(),
                 budget_reads: 0,
             }),
             fail_update_at: None,
@@ -67,11 +55,6 @@ impl ScriptedDatabase {
     pub fn delete_calls(&self) -> Vec<String> {
         let state = self.state.lock().expect("scripted database");
         state.delete_calls.clone()
-    }
-
-    pub fn upsert_calls(&self) -> Vec<UpsertCall> {
-        let state = self.state.lock().expect("scripted database");
-        state.upserts.clone()
     }
 
     pub fn budget(&self, access_group: &str) -> Option<GroupBudgetRow> {
@@ -204,14 +187,6 @@ impl GroupDatabase for ScriptedDatabase {
         include: BudgetInclude,
     ) -> Result<GroupBudgetRow, GroupDataError> {
         let mut state = self.state.lock().expect("scripted database");
-        state.upserts.push(UpsertCall {
-            create_name: create.access_group_name.clone(),
-            create_budget_id: create.budget_id.clone(),
-            create_created_by: create.created_by.clone(),
-            create_updated_by: create.updated_by.clone(),
-            update_budget_id: update.budget_id.clone(),
-            update_updated_by: update.updated_by.clone(),
-        });
         let existing = state
             .budgets
             .iter()
