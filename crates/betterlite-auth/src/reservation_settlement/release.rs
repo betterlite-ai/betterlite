@@ -13,19 +13,29 @@ use super::handle::{ReservationHandle, get_reserved_counter_keys};
 use super::reconcile::settle_reservation_to;
 
 // release_budget_reservation: the request settled no cost, so the reservation comes all the way off the counters
-pub async fn release_budget_reservation<C: SettlementCounters>(
+pub async fn release_budget_reservation<C>(
     counters: &C,
     handle: &ReservationHandle,
-) -> Result<(), SettlementError> {
+) -> Result<(), SettlementError>
+where
+    C: SettlementCounters,
+{
     settle_reservation_to(counters, handle, Decimal::ZERO).await?;
     Ok(())
 }
 
-// release_budget_reservation_on_cancel: a cancel settles at input_cost, on a server-owned task the caller spawns as asyncio.shield's stand-in
-pub async fn release_reservation_on_cancel<C: SettlementCounters>(
+// release_budget_reservation_on_cancel: a settle already in flight leaves the reservation alone, else a cancel settles at input_cost
+pub async fn release_reservation_on_cancel<C>(
     counters: &C,
     handle: &ReservationHandle,
-) -> Result<(), SettlementError> {
+) -> Result<(), SettlementError>
+where
+    C: SettlementCounters,
+{
+    let finalized = lock(&handle.0).finalized;
+    if finalized {
+        return Ok(());
+    }
     let input_cost = lock(&handle.0).input_cost;
     settle_reservation_to(counters, handle, input_cost).await?;
     Ok(())
