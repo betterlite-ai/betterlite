@@ -31,6 +31,8 @@ use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::chat_response_stream_items::snapshot::StreamAssembly;
 use crate::api::chat_response_stream_items::sources::EventSources;
 use crate::api::messages_stream_split::errors::StreamFailure;
+use crate::api::responses_chat_options::StreamOptionsSink;
+use crate::api::responses_chat_options::records::StreamOptions;
 use crate::api::responses_chat_output::records::AssembledResponse;
 use crate::api::responses_session_history::{
     ColdStorageReader, SessionHistory, SessionLog, SpendLogQuery,
@@ -617,6 +619,46 @@ async fn chat_stream_dispatch() {
         events += 1;
     }
     assert!(events > 0);
+}
+
+#[derive(Default)]
+struct RecordingSink {
+    options: Mutex<Vec<StreamOptions>>,
+}
+
+impl StreamOptionsSink for RecordingSink {
+    fn set_stream_options(&mut self, options: &StreamOptions) {
+        self.options
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(*options);
+    }
+}
+
+// B908 hands the derived stream options to the call's sink, which the wrapper must forward unchanged
+#[tokio::test]
+async fn stream_options_reach_the_callers_sink() {
+    let completions = FakeCompletions::stream(stream_chunks());
+    let world = World::new();
+    let deps = world.deps(&completions);
+    let request = params(r#"{"model":"gpt-4o-mini","input":"hi","stream":true}"#);
+    let caller = IndexMap::new();
+    let mut sink = RecordingSink::default();
+    let mut call = call("gpt-4o-mini", &request, &caller);
+    call.stream = Some(true);
+    call.logging = Some(&mut sink);
+    response_handler(&deps, call).await.unwrap();
+    let recorded = sink
+        .options
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    assert_eq!(
+        recorded,
+        vec![StreamOptions {
+            include_usage: true
+        }]
+    );
 }
 
 fn chunk_source(frames: Vec<Vec<u8>>) -> ResponsesChunkSource {
