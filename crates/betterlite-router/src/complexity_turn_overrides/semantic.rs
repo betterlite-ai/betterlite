@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -19,7 +20,10 @@ use super::settings::Settings;
 const DIMENSION_PROBE_TEXT: &str = "test";
 
 #[derive(Debug, thiserror::Error)]
-pub enum SemanticError {
+pub enum SemanticError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
     #[error("embedding_model is required for semantic keyword matching")]
     MissingModel,
     #[error("match_threshold must be between 0.0 and 1.0")]
@@ -28,8 +32,12 @@ pub enum SemanticError {
     Config(#[from] serde_json::Error),
     #[error("the semantic keyword route index is unusable: {0}")]
     Index(#[from] RouteIndexError),
-    #[error("the {stage} embedding call failed: {detail}")]
-    Embedding { stage: &'static str, detail: String },
+    #[error("the {stage} embedding call failed: {source}")]
+    Embedding {
+        stage: &'static str,
+        #[source]
+        source: E,
+    },
     #[error("the {stage} embedding call did not finish within {seconds} seconds")]
     Timeout { stage: &'static str, seconds: u64 },
     #[error("the {stage} embedding call returned {found} vectors for {expected} inputs")]
@@ -64,7 +72,7 @@ where
         settings: &Settings,
         catalog: &TierSet,
         embedder: Arc<E>,
-    ) -> Result<Self, SemanticError> {
+    ) -> Result<Self, SemanticError<E::Error>> {
         let model = settings
             .embedding_model
             .clone()
@@ -97,7 +105,7 @@ where
         &self,
         user_message: &str,
         caller: &CallerContext,
-    ) -> Result<Option<Tier>, SemanticError> {
+    ) -> Result<Option<Tier>, SemanticError<E::Error>> {
         let entries = self.built.get_or_try_init(|| self.build_entries()).await?;
         let vectors = self.query_batch(user_message, caller).await?;
         let Some(query) = vectors.into_iter().next() else {
@@ -108,7 +116,7 @@ where
     }
 
     // the build embeds the static utterances once, through the same document path the route sync uses
-    async fn build_entries(&self) -> Result<Arc<[BuiltEntry]>, SemanticError> {
+    async fn build_entries(&self) -> Result<Arc<[BuiltEntry]>, SemanticError<E::Error>> {
         let _probe = self
             .document_batch(vec![DIMENSION_PROBE_TEXT.to_owned()])
             .await?;
@@ -129,7 +137,10 @@ where
         Ok(Arc::from(entries))
     }
 
-    async fn document_batch(&self, texts: Vec<String>) -> Result<Vec<Vec<f64>>, SemanticError> {
+    async fn document_batch(
+        &self,
+        texts: Vec<String>,
+    ) -> Result<Vec<Vec<f64>>, SemanticError<E::Error>> {
         let expected = texts.len();
         let vectors = self
             .wait(
@@ -151,7 +162,7 @@ where
         &self,
         user_message: &str,
         caller: &CallerContext,
-    ) -> Result<Vec<Vec<f64>>, SemanticError> {
+    ) -> Result<Vec<Vec<f64>>, SemanticError<E::Error>> {
         self.wait(
             "query",
             self.embedder
@@ -160,16 +171,17 @@ where
         .await
     }
 
-    async fn wait<F>(&self, stage: &'static str, answer: F) -> Result<Vec<Vec<f64>>, SemanticError>
+    async fn wait<F>(
+        &self,
+        stage: &'static str,
+        answer: F,
+    ) -> Result<Vec<Vec<f64>>, SemanticError<E::Error>>
     where
         F: Future<Output = Result<Vec<Vec<f64>>, E::Error>>,
     {
         match timeout(EMBEDDING_TIMEOUT, answer).await {
             Ok(Ok(vectors)) => Ok(vectors),
-            Ok(Err(source)) => Err(SemanticError::Embedding {
-                stage,
-                detail: source.to_string(),
-            }),
+            Ok(Err(source)) => Err(SemanticError::Embedding { stage, source }),
             Err(_elapsed) => Err(SemanticError::Timeout {
                 stage,
                 seconds: EMBEDDING_TIMEOUT.as_secs(),
@@ -196,7 +208,10 @@ fn select_route(entries: &[BuiltEntry], query: &[f64]) -> Result<Option<String>,
 }
 
 // _get_or_create_semantic_routelayer's route list: the first tier each rule names, in rule order
-fn route_config(settings: &Settings) -> Result<String, SemanticError> {
+fn route_config<E>(settings: &Settings) -> Result<String, SemanticError<E>>
+where
+    E: Error + Send + Sync + 'static,
+{
     let threshold = settings.match_threshold;
     if !threshold.is_finite() || threshold < 0.0_f64 || threshold > 1.0_f64 {
         return Err(SemanticError::Threshold);
