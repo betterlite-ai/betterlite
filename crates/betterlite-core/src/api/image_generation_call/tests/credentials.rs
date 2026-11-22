@@ -98,8 +98,7 @@ fn azure_caller_headers() {
     assert_eq!(sent[0].header("Content-Type"), Some("custom"));
 }
 
-// the Azure configs never list azure_ad_token, so get_optional_params_image_gen folds it into
-// extra_body; the token still wins for auth and must leave the options before the body is built
+// no Azure config lists azure_ad_token, so it folds into extra_body yet still wins for auth and must leave the options
 fn azure_ad_tokens() {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
     let identity = azure_identity("dep");

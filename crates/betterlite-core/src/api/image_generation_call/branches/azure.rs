@@ -108,8 +108,7 @@ where
     }
 }
 
-// get_optional_params_image_gen folds an unsupported option into extra_body, and the Azure execution
-// flattens that object into the provider body, so the credential leaves both places
+// get_optional_params_image_gen folds azure_ad_token into extra_body, which Azure flattens into the body
 fn take_extra_body_token(optional_params: &mut Params) -> Option<Json> {
     let Some(Json::Object(fields)) = optional_params.get_mut("extra_body") else {
         return None;
