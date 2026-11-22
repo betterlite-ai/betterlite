@@ -165,6 +165,29 @@ pub(super) async fn hook_pins_session() {
     assert_eq!(fixture.selected(&filter_kwargs).await, ["b"]);
 }
 
+// the hook claims the caller pin and the caller-scoped session pin, so another caller's session misses
+pub(super) async fn hook_scopes_the_session_pin_by_caller() {
+    let fixture = fixture(&[AffinityFlag::Deployment, AffinityFlag::Session]);
+    let kwargs = hook_request(
+        &[
+            ("deployment_model_name", text(MODEL_GROUP)),
+            ("session_id", text("s1")),
+            ("user_api_key_hash", text("key")),
+        ],
+        Some("a"),
+    );
+    fixture.hook(&kwargs, None).await.unwrap();
+    assert_eq!(fixture.expiry(&user_pin("key")), Some(3600.0));
+    assert_eq!(
+        fixture.expiry(&scoped_session_pin("key", "s1")),
+        Some(3600.0)
+    );
+    let owner = caller_session_metadata("key", "s1");
+    assert_eq!(fixture.selected(&owner).await, ["a"]);
+    let other = caller_session_metadata("other", "s1");
+    assert_eq!(fixture.selected(&other).await, ["a", "b"]);
+}
+
 // without deployment_model_name the hook cannot resolve the group's flags, so it writes nothing
 pub(super) async fn hook_needs_deployment_model_name() {
     let fixture = Fixture::new(settings(&[AffinityFlag::Deployment]), &[]);

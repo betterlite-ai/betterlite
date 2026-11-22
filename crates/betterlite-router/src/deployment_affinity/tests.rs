@@ -31,6 +31,7 @@ fn runtime() -> Runtime {
 #[case::filtered_pin_not_revived(behaviors::filtered_pin_not_revived())]
 #[case::hook_pins_caller(behaviors::hook_pins_caller())]
 #[case::hook_pins_session(behaviors::hook_pins_session())]
+#[case::hook_scopes_the_session_pin_by_caller(behaviors::hook_scopes_the_session_pin_by_caller())]
 #[case::hook_needs_deployment_model_name(behaviors::hook_needs_deployment_model_name())]
 #[case::hook_needs_a_flag(behaviors::hook_needs_a_flag())]
 #[case::hook_first_writer_wins(behaviors::hook_first_writer_wins())]
