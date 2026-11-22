@@ -226,8 +226,7 @@ async fn postgres_pinned_rows() {
     pinned_deployments(&database).await;
     pinned_model_info_write(&pool, &database).await;
     pinned_budget_reads(&database).await;
-    pinned_budget_create(&pool, &database).await;
-    pinned_budget_rewrite(&database).await;
+    pinned_budget_upserts(&pool, &database).await;
     pinned_budget_actors(&pool).await;
     pinned_budget_delete(&pool, &database).await;
     pool.close();
@@ -365,7 +364,7 @@ async fn upsert_group_c(
         .expect("the upserted row")
 }
 
-async fn pinned_budget_create(pool: &Pool, database: &PostgresGroupData<'_>) {
+async fn pinned_budget_upserts(pool: &Pool, database: &PostgresGroupData<'_>) {
     let created = upsert_group_c(database, "budget-2", "creator").await;
     assert_eq!(created.spend, Some(Decimal::ZERO));
     assert_eq!(
@@ -377,9 +376,6 @@ async fn pinned_budget_create(pool: &Pool, database: &PostgresGroupData<'_>) {
         r#"UPDATE "LiteLLM_ModelAccessGroupBudgetTable" SET spend = 7 WHERE access_group_name = 'group-c'"#,
     )
     .await;
-}
-
-async fn pinned_budget_rewrite(database: &PostgresGroupData<'_>) {
     let rewritten = upsert_group_c(database, "budget-1", "editor").await;
     assert_eq!(rewritten.spend, Some(Decimal::new(70, 1)));
     assert_eq!(
@@ -406,20 +402,16 @@ async fn pinned_budget_actors(pool: &Pool) {
 }
 
 async fn pinned_budget_delete(pool: &Pool, database: &PostgresGroupData<'_>) {
-    let deleted = database
-        .budget_delete("group-a")
-        .await
-        .expect("the delete")
-        .expect("the seeded group");
-    assert_eq!(deleted.spend, Some(Decimal::new(35, 1)));
-    assert_eq!(deleted.litellm_budget_table, None);
-    assert!(
+    let mut deleted = vec![
         database
             .budget_delete("group-a")
             .await
-            .expect("the second delete")
-            .is_none()
-    );
+            .expect("the first delete"),
+        database
+            .budget_delete("group-a")
+            .await
+            .expect("the second delete"),
+    ];
     assert_eq!(
         scalar_text(
             pool,
@@ -429,6 +421,10 @@ async fn pinned_budget_delete(pool: &Pool, database: &PostgresGroupData<'_>) {
         .await,
         "1"
     );
+    let seeded = deleted.remove(0).expect("the seeded group");
+    assert_eq!(seeded.spend, Some(Decimal::new(35, 1)));
+    assert_eq!(seeded.litellm_budget_table, None);
+    assert!(deleted.remove(0).is_none());
 }
 
 const FAILURE_SEED: &str = r#"
