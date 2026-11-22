@@ -39,6 +39,8 @@ pub(crate) struct RequestCall {
 #[serde(deny_unknown_fields)]
 pub(crate) struct RegistryCall {
     providers: Vec<String>,
+    #[serde(default)]
+    environment: BTreeMap<String, String>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -52,7 +54,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Request(call) => request_answer(call),
-            Input::Registry(call) => Ok(registry_answer(&call.providers)),
+            Input::Registry(call) => Ok(registry_answer(&call.providers, &call.environment)),
         }
     }
 }
@@ -106,11 +108,8 @@ fn reply_answer(config: &TinyfishSearch<'_>, reply: Option<&ReplyCall>) -> Helpe
         Err(error) => Err(error).or_value_error(),
     }
 }
-fn registry_answer(providers: &[String]) -> Value {
-    let environment: BTreeMap<String, String> = BTreeMap::new();
-    let registry = SearchRegistry {
-        environment: &environment,
-    };
+fn registry_answer(providers: &[String], environment: &BTreeMap<String, String>) -> Value {
+    let registry = SearchRegistry { environment };
     let views: Vec<Value> = providers
         .iter()
         .map(|provider| registry_value(&registry, provider))
@@ -125,10 +124,12 @@ fn registry_value(registry: &SearchRegistry<'_>, provider: &str) -> Value {
         HttpMethod::Get => "GET",
         HttpMethod::Post => "POST",
     };
+    let endpoint = config.complete_url(None, &Object::new(), None, None).ok();
     json!({
         "display": config.name.display_name(),
         "method": method,
         "rich": config.supports_rich_search_input(),
+        "endpoint": endpoint,
     })
 }
 mod tests;

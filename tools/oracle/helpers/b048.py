@@ -44,6 +44,7 @@ class RequestCall(TypedDict):
 class RegistryCall(TypedDict):
     op: Literal["registry"]
     providers: list[str]
+    environment: Headers
 
 
 Input: TypeAlias = RequestCall | RegistryCall
@@ -125,12 +126,14 @@ def registry_value(provider: str) -> JsonValue:
         "display": found.ui_friendly_name(),
         "method": found.get_http_method(),
         "rich": found.supports_rich_search_input(),
+        "endpoint": found.get_complete_url(None, {}, None),
     }
     return JSON.validate_python(view)
 
 
 def run(input_value: Input) -> JsonValue:
     if input_value["op"] == "registry":
+        environment(input_value["environment"])
         views: list[JsonValue] = [registry_value(provider) for provider in input_value["providers"]]
         answer: dict[str, JsonValue] = {"providers": views}
         return answer

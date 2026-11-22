@@ -12,6 +12,7 @@ call:
       - bing
       - apiserpent_search
       - perplexity-ai
+    environment: {}
 calls:
   - b048:
       op: registry
@@ -21,5 +22,6 @@ calls:
         - brave
         - ""
         - serper
+      environment: {}
 env: {}
 compare: {ignore: []}

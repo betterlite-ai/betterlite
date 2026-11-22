@@ -88,50 +88,186 @@ fn signed_headers(
         .unwrap()
 }
 
-// each case is one row of what LiteLLM's ProviderConfigManager reports for a SearchProviders value
+// each case is one row of what LiteLLM's ProviderConfigManager and the provider's own config report
+struct ProviderCase {
+    position: usize,
+    name: &'static str,
+    display: &'static str,
+    method: HttpMethod,
+    rich: bool,
+    endpoint: &'static str,
+}
+
 #[rstest]
-#[case::perplexity(0, "perplexity", "Perplexity", HttpMethod::Post, false)]
-#[case::tavily(1, "tavily", "Tavily", HttpMethod::Post, false)]
-#[case::parallel_ai(2, "parallel_ai", "Parallel AI", HttpMethod::Post, true)]
-#[case::exa_ai(3, "exa_ai", "Exa AI", HttpMethod::Post, false)]
-#[case::brave(4, "brave", "Brave Search", HttpMethod::Get, false)]
-#[case::google_pse(5, "google_pse", "Google PSE", HttpMethod::Get, false)]
-#[case::dataforseo(6, "dataforseo", "DataForSEO", HttpMethod::Post, false)]
-#[case::firecrawl(7, "firecrawl", "Firecrawl", HttpMethod::Post, false)]
-#[case::fastcrw(8, "fastcrw", "fastCRW", HttpMethod::Post, false)]
-#[case::searxng(9, "searxng", "SearXNG", HttpMethod::Get, false)]
-#[case::linkup(10, "linkup", "Linkup", HttpMethod::Post, false)]
-#[case::duckduckgo(11, "duckduckgo", "DuckDuckGo", HttpMethod::Get, false)]
-#[case::searchapi(
-    12,
-    "searchapi",
-    "SearchAPI.io (Google Search)",
-    HttpMethod::Get,
-    false
-)]
-#[case::serper(13, "serper", "Serper", HttpMethod::Post, false)]
-#[case::you_com(14, "you_com", "You.com", HttpMethod::Post, false)]
-#[case::apiserpent(15, "apiserpent", "APISerpent", HttpMethod::Get, false)]
-#[case::tinyfish(16, "tinyfish", "TinyFish", HttpMethod::Get, false)]
-#[case::nimble(17, "nimble", "Nimble", HttpMethod::Post, false)]
-fn every_registered_name_maps_to_its_config(
-    #[case] position: usize,
-    #[case] name: &str,
-    #[case] display: &str,
-    #[case] method: HttpMethod,
-    #[case] rich: bool,
-) {
-    let environment = environment(&[]);
+#[case::perplexity(ProviderCase {
+    position: 0,
+    name: "perplexity",
+    display: "Perplexity",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://api.perplexity.ai/search",
+})]
+#[case::tavily(ProviderCase {
+    position: 1,
+    name: "tavily",
+    display: "Tavily",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://api.tavily.com/search",
+})]
+#[case::parallel_ai(ProviderCase {
+    position: 2,
+    name: "parallel_ai",
+    display: "Parallel AI",
+    method: HttpMethod::Post,
+    rich: true,
+    endpoint: "https://api.parallel.ai/v1/search",
+})]
+#[case::exa_ai(ProviderCase {
+    position: 3,
+    name: "exa_ai",
+    display: "Exa AI",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://api.exa.ai/search",
+})]
+#[case::brave(ProviderCase {
+    position: 4,
+    name: "brave",
+    display: "Brave Search",
+    method: HttpMethod::Get,
+    rich: false,
+    endpoint: "https://api.search.brave.com/res/v1/web/search",
+})]
+#[case::google_pse(ProviderCase {
+    position: 5,
+    name: "google_pse",
+    display: "Google PSE",
+    method: HttpMethod::Get,
+    rich: false,
+    endpoint: "https://www.googleapis.com/customsearch/v1",
+})]
+#[case::dataforseo(ProviderCase {
+    position: 6,
+    name: "dataforseo",
+    display: "DataForSEO",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
+})]
+#[case::firecrawl(ProviderCase {
+    position: 7,
+    name: "firecrawl",
+    display: "Firecrawl",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://api.firecrawl.dev/v2/search",
+})]
+#[case::fastcrw(ProviderCase {
+    position: 8,
+    name: "fastcrw",
+    display: "fastCRW",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://fastcrw.com/api/v1/search",
+})]
+#[case::searxng(ProviderCase {
+    position: 9,
+    name: "searxng",
+    display: "SearXNG",
+    method: HttpMethod::Get,
+    rich: false,
+    endpoint: "https://searx.test/search",
+})]
+#[case::linkup(ProviderCase {
+    position: 10,
+    name: "linkup",
+    display: "Linkup",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://api.linkup.so/v1/search",
+})]
+#[case::duckduckgo(ProviderCase {
+    position: 11,
+    name: "duckduckgo",
+    display: "DuckDuckGo",
+    method: HttpMethod::Get,
+    rich: false,
+    endpoint: "https://api.duckduckgo.com",
+})]
+#[case::searchapi(ProviderCase {
+    position: 12,
+    name: "searchapi",
+    display: "SearchAPI.io (Google Search)",
+    method: HttpMethod::Get,
+    rich: false,
+    endpoint: "https://www.searchapi.io/api/v1/search",
+})]
+#[case::serper(ProviderCase {
+    position: 13,
+    name: "serper",
+    display: "Serper",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://google.serper.dev/search",
+})]
+#[case::you_com(ProviderCase {
+    position: 14,
+    name: "you_com",
+    display: "You.com",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://api.you.com/v1/agents/search",
+})]
+#[case::apiserpent(ProviderCase {
+    position: 15,
+    name: "apiserpent",
+    display: "APISerpent",
+    method: HttpMethod::Get,
+    rich: false,
+    endpoint: "https://apiserpent.com/api/search/quick",
+})]
+#[case::tinyfish(ProviderCase {
+    position: 16,
+    name: "tinyfish",
+    display: "TinyFish",
+    method: HttpMethod::Get,
+    rich: false,
+    endpoint: "https://api.search.tinyfish.ai",
+})]
+#[case::nimble(ProviderCase {
+    position: 17,
+    name: "nimble",
+    display: "Nimble",
+    method: HttpMethod::Post,
+    rich: false,
+    endpoint: "https://sdk.nimbleway.com/v2/search",
+})]
+fn every_registered_name_maps_to_its_config(#[case] provider: ProviderCase) {
+    let environment = environment(&[
+        ("LINKUP_API_KEY", "key"),
+        ("SEARXNG_API_BASE", "https://searx.test"),
+    ]);
     let registry = SearchRegistry {
         environment: &environment,
     };
-    let known = SearchProviderName::from_str(name).unwrap();
-    assert_eq!(known, SearchProviderName::iter().nth(position).unwrap());
-    assert_eq!(known.display_name(), display);
-    let config = registry.search_config(name).unwrap();
-    assert_eq!(config.name.display_name(), display);
-    assert_eq!(config.http_method(), method);
-    assert_eq!(config.supports_rich_search_input(), rich);
+    let known = SearchProviderName::from_str(provider.name).unwrap();
+    assert_eq!(
+        known,
+        SearchProviderName::iter().nth(provider.position).unwrap()
+    );
+    assert_eq!(known.display_name(), provider.display);
+    let config = registry.search_config(provider.name).unwrap();
+    assert_eq!(config.name.display_name(), provider.display);
+    assert_eq!(config.http_method(), provider.method);
+    assert_eq!(config.supports_rich_search_input(), provider.rich);
+    // the endpoint only this provider's own config builds, so a swapped arm changes it
+    assert_eq!(
+        config
+            .complete_url(None, &Object::new(), None, None)
+            .unwrap(),
+        provider.endpoint
+    );
 }
 
 #[test]
@@ -194,10 +330,11 @@ fn registry_forwards_the_tinyfish_hooks() {
     };
     let config = registry.search_config("tinyfish").unwrap();
     let mut headers = Headers::new();
-    headers.insert("X-Trace".to_owned(), "abc".to_owned());
+    // the transport lowercases response header names before the reply hook sees them
+    headers.insert("x-trace".to_owned(), "abc".to_owned());
     let validated = config.validate_environment(headers.clone(), None, None);
     assert_eq!(validated.get("X-API-Key").map(String::as_str), Some("key"));
-    assert_eq!(validated.get("X-Trace").map(String::as_str), Some("abc"));
+    assert_eq!(validated.get("x-trace").map(String::as_str), Some("abc"));
     let optional_params = params(r#"{"country":"US"}"#);
     let body = config
         .transform_search_request(&input(&single("q"), &optional_params, &headers))

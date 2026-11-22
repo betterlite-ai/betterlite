@@ -22,5 +22,8 @@ call:
       - apiserpent
       - tinyfish
       - nimble
+    environment:
+      LINKUP_API_KEY: linkup-key
+      SEARXNG_API_BASE: https://searx.test
 env: {}
 compare: {ignore: []}
