@@ -101,9 +101,9 @@ def transaction_buffer(input_value: Input) -> JsonValue:
 
 def budget_warning(input_value: Input) -> JsonValue:
     capture = install_capture()
-    prisma_client = FakePrismaClient(ConfigTable(None)) if input_value["database_configured"] else None
+    client = FakePrismaClient(ConfigTable(None)) if input_value["database_configured"] else None
     ProxyStartupEvent._warn_budget_without_db(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10157-L10168
-        max_budget=input_value["max_budget"], prisma_client=prisma_client
+        max_budget=input_value["max_budget"], prisma_client=client
     )
     return warning_answer(capture)
 
