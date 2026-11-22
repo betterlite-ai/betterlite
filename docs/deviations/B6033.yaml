@@ -1,0 +1,44 @@
+task: B6033
+deviations:
+  - what: >-
+      The prompt management and secret manager classes are a Python port and don't call the Rust
+      prompt contracts (B4050) or the gateway's secret manager code (B4410, B4419).
+    why: >-
+      No native bridge for those modules is planned. The classes exist for users' own subclasses
+      and hold little logic, and the task file lists this deviation.
+    link: ""
+  - what: >-
+      BaseSecretManager.async_rotate_secret lets an httpx.HTTPStatusError or httpx.TimeoutException
+      raised by the subclass propagate as it is, after logging it. LiteLLM turns the first into
+      ValueError("HTTP error occurred: <response text>") and the second into
+      ValueError("Timeout error occurred") without a log line.
+    why: >-
+      The betterlite wheel doesn't depend on httpx and the task forbids adding a dependency, so the
+      port can't name those classes in an except clause. Every other error, the ValueErrors for a
+      missing or unverified secret included, is logged and raised the same way.
+      test_secret_deviation proves both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L179-L186
+  - what: >-
+      The error record async_rotate_secret logs reads "Error rotating secret in AWS Secrets
+      Manager" with the exception attached. LiteLLM appends ": <error text>" to the message too.
+    why: >-
+      The text is already in the attached exception, and ruff's TRY401 rejects logging the error
+      object again. Level, logger name and exc_info are the same, and test_secret_deviation
+      checks the message on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L188
+kept_bugs:
+  - what: >-
+      PromptManagementBase.get_chat_completion_prompt doesn't pass prompt_spec on to
+      compile_prompt, so a subclass's _compile_prompt_helper sees prompt_spec=None on the sync
+      path. The async path passes it.
+    why: >-
+      A subclass that works today gets None there and may rely on it. The ignore flags still read
+      prompt_spec, as in LiteLLM. The "seen" case of test_prompt_expected records it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L189-L196
+  - what: >-
+      _get_model_from_prompt removes every "<integration_name>/" in the model name, not only a
+      leading one, so "templ/templ/x" becomes "x".
+    why: >-
+      str.replace is what LiteLLM ships, and a model name a working setup routes today must keep
+      routing the same way. The model_from_prompt case of test_prompt_expected pins it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L139
