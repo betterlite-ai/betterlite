@@ -18,7 +18,7 @@ use crate::api::responses_file_search_tools::outputs::{
 };
 use crate::api::responses_file_search_tools::preparation::prepare_file_search_call;
 use crate::api::responses_file_search_tools::synthesis::{
-    OriginalModel, OriginalResponse, OutputItems, SynthesizedResponse, synthesize_response,
+    OriginalModel, OriginalResponse, OutputItems, synthesize_response,
 };
 use crate::api::responses_file_search_tools::tools::replace_file_search_tools;
 use crate::api::responses_tool_namespaces::values::Fields;
@@ -74,6 +74,13 @@ struct FirstRound {
     vector_store_ids: Vec<String>,
     call: FollowUpCall,
     response: ResponsesApiResponse,
+}
+
+// what the round reports next to the synthesized response
+struct RoundProgress {
+    calls: Vec<FollowUpCall>,
+    searches: Vec<UpstreamSearch>,
+    diagnostics: Vec<FileSearchDiagnostic>,
 }
 
 // ast-grep-ignore: no-long-names - json.loads raw_args at emulated_handler.py:455, name from the task
@@ -155,14 +162,12 @@ where
             )?,
             message: build_message_output(&text, &[]),
         };
-        let synthesized = self.synthesized(&round.response, &outputs)?;
-        Ok(ResponsesFileSearchLoopResult {
-            response: synthesized.response,
-            hidden_params: synthesized.hidden_params,
+        let progress = RoundProgress {
             calls: vec![round.call],
             searches: Vec::new(),
             diagnostics: Vec::new(),
-        })
+        };
+        self.finish(&round.response, &outputs, progress)
     }
 
     async fn answer_with_search(
@@ -172,9 +177,17 @@ where
         tool_calls: &[Fields],
     ) -> Result<ResponsesFileSearchLoopResult, FileSearchLoopError<FollowUp::Error>> {
         let call_id = self.next_call_id();
-        let executed = self
-            .execute_searches(input, &round, tool_calls, &call_id)
-            .await?;
+        let request = ToolCallRequest {
+            tool_calls,
+            vector_store_ids: &round.vector_store_ids,
+            input: &input.input,
+            fallback_call_id: &call_id,
+            limits: &self.limits,
+            authorization: &input.authorization,
+        };
+        let executed = execute_file_search_tool_calls(self.searches, &request)
+            .await
+            .map_err(widen)?;
         let call = self.follow_up_call(input, &round, &executed)?;
         let final_response = self
             .follow_up
@@ -187,35 +200,35 @@ where
             &final_response,
             round.include_search_results,
         )?;
-        let synthesized = self.synthesized(&final_response, &outputs)?;
-        Ok(ResponsesFileSearchLoopResult {
-            response: synthesized.response,
-            hidden_params: synthesized.hidden_params,
+        let progress = RoundProgress {
             calls: vec![round.call, call],
             searches: executed.searches,
             diagnostics: executed.diagnostics,
-        })
+        };
+        self.finish(&final_response, &outputs, progress)
     }
 
-    // _execute_file_search_tool_calls (L440-L486) with B1064's asearch behind the injected port
-    async fn execute_searches(
+    fn finish(
         &self,
-        input: &ResponsesFileSearchLoopInput,
-        round: &FirstRound,
-        tool_calls: &[Fields],
-        call_id: &str,
-    ) -> Result<ExecutedToolCalls, FileSearchLoopError<FollowUp::Error>> {
-        let request = ToolCallRequest {
-            tool_calls,
-            vector_store_ids: &round.vector_store_ids,
-            input: &input.input,
-            fallback_call_id: call_id,
-            limits: &self.limits,
-            authorization: &input.authorization,
-        };
-        execute_file_search_tool_calls(self.searches, &request)
-            .await
-            .map_err(widen)
+        provider_response: &ResponsesApiResponse,
+        outputs: &OutputItems,
+        progress: RoundProgress,
+    ) -> Result<ResponsesFileSearchLoopResult, FileSearchLoopError<FollowUp::Error>> {
+        let synthesized = synthesize_response(
+            &original_response(provider_response),
+            outputs,
+            None,
+            || (self.ids)(),
+            || (self.clock)(),
+        )
+        .map_err(widen)?;
+        Ok(ResponsesFileSearchLoopResult {
+            response: synthesized.response,
+            hidden_params: synthesized.hidden_params,
+            calls: progress.calls,
+            searches: progress.searches,
+            diagnostics: progress.diagnostics,
+        })
     }
 
     // _build_follow_up_input (L489-L512) and the second provider call
@@ -263,21 +276,6 @@ where
             )?,
             message: build_message_output(&text, &executed.results),
         })
-    }
-
-    fn synthesized(
-        &self,
-        response: &ResponsesApiResponse,
-        outputs: &OutputItems,
-    ) -> Result<SynthesizedResponse, FileSearchLoopError<FollowUp::Error>> {
-        synthesize_response(
-            &original_response(response),
-            outputs,
-            None,
-            || (self.ids)(),
-            || (self.clock)(),
-        )
-        .map_err(widen)
     }
 
     fn next_call_id(&self) -> String {

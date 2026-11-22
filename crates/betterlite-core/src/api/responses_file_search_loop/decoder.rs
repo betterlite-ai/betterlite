@@ -15,20 +15,21 @@ const FUNCTION_CALL_TYPE: &str = "function_call";
 const NAME_FIELD: &str = "name";
 const TYPE_FIELD: &str = "type";
 
-// json.loads(raw_args) if isinstance(raw_args, str) else raw_args, with JSONDecodeError read as empty arguments
+// json.loads(raw_args) if isinstance(raw_args, str) else raw_args
 pub fn tool_call_arguments(
     raw: &Json,
     limits: &ApiLimits,
 ) -> Result<Fields, FileSearchLoopError<Infallible>> {
-    match raw {
-        Json::Text(text) => arguments_from_text(text, limits),
-        Json::Object(fields) => Ok(fields.clone()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
-            Err(FileSearchLoopError::ArgumentsNotObject)
-        }
+    if let Json::Text(text) = raw {
+        return arguments_from_text(text, limits);
     }
+    if let Json::Object(fields) = raw {
+        return Ok(fields.clone());
+    }
+    Err(FileSearchLoopError::ArgumentsNotObject)
 }
 
+// a JSONDecodeError reads as empty arguments, and the other decode failures keep their error
 fn arguments_from_text(
     text: &str,
     limits: &ApiLimits,
