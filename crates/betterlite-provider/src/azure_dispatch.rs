@@ -8,6 +8,7 @@ use crate::prepared::{PreparedRequest, Upstream};
 use crate::provider::Adapter;
 use crate::transform_retry::{TransformOnUnprocessable, send_with_retry};
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_openai::embedding::EmbeddingRequest;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers};
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
@@ -120,7 +121,7 @@ fn embedding_call(
     embedding: &EmbeddingOperation,
     deployment: &Deployment,
 ) -> Result<call::EmbeddingCall, OperationError> {
-    let mut request: betterlite_openai::embedding::EmbeddingRequest = embedding.request.clone();
+    let mut request: EmbeddingRequest = embedding.request.clone();
     let mut passthrough = Object::new();
     for name in EMBEDDING_KEYS.split(' ') {
         if let Some(value) = request.passthrough.shift_remove(name) {

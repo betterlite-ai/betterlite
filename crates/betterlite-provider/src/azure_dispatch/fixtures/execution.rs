@@ -38,10 +38,7 @@ pub(crate) fn recorded(http: &PreparedHttp) -> Result<RecordedRequest, AzureProv
 fn status_json(status: Option<u16>) -> Json {
     Json::Object(Object::from_iter([(
         String::from("status"),
-        match status {
-            Some(code) => Json::Number(Number::from(code)),
-            None => Json::Null,
-        },
+        status.map_or_else(|| Json::Null, |code| Json::Number(Number::from(code))),
     )]))
 }
 
@@ -137,13 +134,13 @@ fn projected(prepared: &Prepared, upstream: UpstreamResponse) -> Result<Reply, O
     match prepared.mode {
         ReplyMode::Chat { json_mode } => project(
             upstream,
-            Projection::Chat {
+            &Projection::Chat {
                 json_mode,
                 provider: reply_provider(prepared.detection.as_deref()),
             },
         )
         .map(Reply::Chat),
-        ReplyMode::Text { .. } => project(upstream, Projection::Text).map(Reply::Chat),
+        ReplyMode::Text { .. } => project(upstream, &Projection::Text).map(Reply::Chat),
         ReplyMode::Embedding => embedding_response(upstream).map(Reply::Embedding),
     }
 }

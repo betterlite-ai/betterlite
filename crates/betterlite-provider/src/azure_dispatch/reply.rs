@@ -3,7 +3,7 @@ use super::error::AzureProviderError;
 use super::resolve::convert;
 use crate::operation::{ChatCompletion, OperationError, OperationResult, success};
 use crate::prepared::{PreparedKind, PreparedRequest, Upstream};
-use crate::provider::Adapter;
+use crate::provider::Adapter as _;
 use betterlite_azure::chat_call::response::project as chat_project;
 use betterlite_azure::completion::response::project as text_project;
 use betterlite_azure::embeddings::client::{Parsed, RawEmbedding};
@@ -75,14 +75,14 @@ pub(super) fn unsupported() -> OperationError {
 }
 pub(crate) fn project(
     response: UpstreamResponse,
-    projection: Projection<'_>,
+    projection: &Projection<'_>,
 ) -> Result<ChatResponse, OperationError> {
     let checked = success(response)?;
     match projection {
         Projection::Chat {
             json_mode,
             provider,
-        } => chat_reply(&checked, json_mode, provider),
+        } => chat_reply(&checked, *json_mode, *provider),
         Projection::Text => text_reply(&checked),
     }
 }

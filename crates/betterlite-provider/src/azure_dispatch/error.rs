@@ -90,8 +90,8 @@ fn provider_error(status: u16, kind: &str, message: String) -> OperationError {
         (String::from("message"), Json::Text(message)),
         (String::from("type"), Json::Text(kind.to_owned())),
     ]);
-    let body = Object::from_iter([(String::from("error"), Json::Object(error))]);
-    let body = serde_json::to_vec(&Json::Object(body)).unwrap_or_default();
+    let envelope = Object::from_iter([(String::from("error"), Json::Object(error))]);
+    let body = serde_json::to_vec(&Json::Object(envelope)).unwrap_or_default();
     OperationError::Provider {
         response: Box::new(UpstreamResponse {
             status,

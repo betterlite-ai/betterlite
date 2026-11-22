@@ -61,6 +61,25 @@ pub enum Operation {
     Text,
     Embedding,
 }
+// What the ranks resolve to for one call, so a second call cannot reuse the first call's identity.
+pub struct Resolved {
+    pub api_base: Option<String>,
+    pub api_version: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub api_type: String,
+    // the token the SDK authenticates with: only the call's own azure_ad_token parameter reaches it
+    pub auth_token: Option<SecretString>,
+    // main.py's resolved token: extra_body.azure_ad_token, then AZURE_AD_TOKEN
+    pub azure_ad_token: Option<SecretString>,
+    // the call's own headers and extra headers, and litellm.headers, each kept for its own merge
+    pub headers: Option<Headers>,
+    pub extra_headers: Option<Headers>,
+    pub globals_headers: Option<Headers>,
+    pub max_retries: Option<Json>,
+    pub extra_body: Object,
+    pub default_api_version: String,
+    pub o_series: bool,
+}
 #[derive(Clone, Default)]
 pub struct Credentials {
     pub api_base: Option<String>,
@@ -83,10 +102,7 @@ impl SuppliedClient {
     // _check_dynamic_azure_params: only a non-None version that differs from the client's discards it
     #[must_use]
     pub fn discarded(&self, api_version: Option<&str>) -> bool {
-        match api_version {
-            None => false,
-            Some(version) => self.api_version.as_deref() != Some(version),
-        }
+        api_version.is_some_and(|version| self.api_version.as_deref() != Some(version))
     }
 }
 #[derive(Clone)]

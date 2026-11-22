@@ -1,32 +1,13 @@
-use super::call::{Composition, Credentials, Operation};
+use super::call::{Composition, Credentials, Operation, Resolved};
 use super::error::AzureProviderError;
 use betterlite_config::loader::EnvironmentLookup as _;
 use betterlite_config::sections::azure_endpoints::AZURE_DEFAULT_API_VERSION;
 use betterlite_context::chat_config_selection::azure::is_o_series_model;
-use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 pub(crate) const DEFAULT_API_TYPE: &str = "azure";
-pub(crate) struct Resolved {
-    pub(crate) api_base: Option<String>,
-    pub(crate) api_version: Option<String>,
-    pub(crate) api_key: Option<SecretString>,
-    pub(crate) api_type: String,
-    // the token the SDK authenticates with: only the call's own azure_ad_token parameter reaches it
-    pub(crate) auth_token: Option<SecretString>,
-    // main.py's resolved token: extra_body.azure_ad_token, then AZURE_AD_TOKEN
-    pub(crate) azure_ad_token: Option<SecretString>,
-    // the call's own headers and extra headers, and litellm.headers, each kept for its own merge
-    pub(crate) headers: Option<Headers>,
-    pub(crate) extra_headers: Option<Headers>,
-    pub(crate) globals_headers: Option<Headers>,
-    pub(crate) max_retries: Option<Json>,
-    pub(crate) extra_body: Object,
-    pub(crate) default_api_version: String,
-    pub(crate) o_series: bool,
-}
 pub(crate) fn convert<A, B>(value: &A) -> Result<B, AzureProviderError>
 where
     A: Serialize + ?Sized,
@@ -66,7 +47,7 @@ fn take_extra_body(
     };
     let token = match fields.shift_remove("azure_ad_token") {
         None | Some(Json::Null) => None,
-        Some(Json::Text(text)) => Some(text).filter(|text| !text.is_empty()),
+        Some(Json::Text(text)) => Some(text).filter(|value| !value.is_empty()),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             return Err(AzureProviderError::ExtraBodyToken);
         }

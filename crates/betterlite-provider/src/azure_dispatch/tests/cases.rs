@@ -76,16 +76,17 @@ pub(super) fn chat_dispatch() {
     let optional = support::object(r#"{"temperature":1}"#);
     let call = support::chat("gpt-4o", optional, credentials);
     let result = dispatch(&composition, Request::Chat(Box::new(call)), &answer);
-    chat_request_shape(&answer, &result);
+    let sent = answer.sent();
+    assert_eq!(sent.len(), 1);
+    chat_request_line(&sent[0]);
+    chat_body_shape(&sent[0]);
+    chat_reply_shape(&result);
     chat_stream_and_supplied(&composition);
     deployment_route_base();
     upstream_refusal(&composition);
 }
 
-fn chat_request_shape(answer: &Fixture, result: &AzureResult) {
-    let sent = answer.sent();
-    assert_eq!(sent.len(), 1);
-    let request = &sent[0];
+fn chat_request_line(request: &RecordedRequest) {
     assert_eq!(request.method, "POST");
     assert_eq!(
         request.url,
@@ -101,11 +102,17 @@ fn chat_request_shape(answer: &Fixture, result: &AzureResult) {
         support::header(request, "content-type"),
         Some("application/json")
     );
+}
+
+fn chat_body_shape(request: &RecordedRequest) {
     assert_eq!(support::body_text(request, "model"), Some("gpt-4o"));
     assert_eq!(support::body_number(request, "temperature"), Some(1));
     assert_eq!(support::body_number(request, "x-extra"), Some(1));
     assert!(support::body_at(request, "azure_ad_token").is_none());
     assert!(support::body_at(request, "max_retries").is_none());
+}
+
+fn chat_reply_shape(result: &AzureResult) {
     assert_eq!(result.error, Json::Null);
     assert_eq!(support::reply_text(result, "id"), Some("chatcmpl-1"));
     assert_eq!(

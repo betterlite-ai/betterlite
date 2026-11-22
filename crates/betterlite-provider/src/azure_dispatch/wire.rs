@@ -1,7 +1,7 @@
 use super::EMBEDDING_KEYS;
-use super::call::{ChatCall, TextCall};
+use super::call::{ChatCall, Resolved, TextCall};
 use super::error::AzureProviderError;
-use super::resolve::{Resolved, convert};
+use super::resolve::convert;
 use betterlite_azure::azure_urls::{V1_API_VERSIONS, get_base_azure_url};
 use betterlite_azure::chat_call::request::{
     self, EXTRA_HEADERS_KEY, JSON_MODE_KEY, Retries, STREAM_KEY, build_data,

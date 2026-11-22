@@ -96,7 +96,8 @@ pub(crate) fn embedding(model: &str, body: &str, credentials: Credentials) -> Em
 }
 
 pub(crate) fn at<'value>(value: &'value Json, name: &str) -> Option<&'value Json> {
-    value.as_object().and_then(|fields| fields.get(name))
+    let fields = value.as_object()?;
+    fields.get(name)
 }
 
 pub(crate) fn text_at<'value>(value: &'value Json, name: &str) -> Option<&'value str> {
@@ -133,7 +134,8 @@ pub(crate) fn body_text<'request>(
 }
 
 pub(crate) fn body_number(request: &RecordedRequest, name: &str) -> Option<i64> {
-    number_at(&request.body, name).and_then(|value| i64::try_from(value).ok())
+    let value = number_at(&request.body, name)?;
+    i64::try_from(value).ok()
 }
 
 pub(crate) fn parse(body: &[u8]) -> Json {
@@ -196,15 +198,12 @@ impl Fixture {
 
 // A body the dispatch wrote is always JSON; a malformed one is recorded as null so the request still shows.
 fn entry(request: &PreparedHttp) -> RecordedRequest {
-    match recorded(request) {
-        Ok(record) => record,
-        Err(_) => RecordedRequest {
-            method: request.method.as_str().to_owned(),
-            url: request.url.to_string(),
-            headers: BTreeMap::new(),
-            body: Json::Null,
-        },
-    }
+    recorded(request).unwrap_or_else(|_error| RecordedRequest {
+        method: request.method.as_str().to_owned(),
+        url: request.url.to_string(),
+        headers: BTreeMap::new(),
+        body: Json::Null,
+    })
 }
 
 impl Answer for Fixture {
