@@ -1,14 +1,14 @@
 id: B380
 milestone: M2 routing
 title: Shadow evaluation lifecycle response models
-status: todo
+status: done
 depends_on: [B051, B301, B4083]
 file: tasks/B380-shadow-eval-models.yaml
 covers:
   - "litellm/types/management_endpoints/auto_router_endpoints.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2886
