@@ -15,8 +15,7 @@ use rust_decimal::Decimal;
 
 use super::super::invalid;
 
-// the helper's in-memory spend counter: the case seeds its values, names the keys whose reads raise,
-// and the recorded pipelines and invalidations come back out in the output
+// the helper's in-memory spend counter: the case seeds its values, names the keys whose reads raise, and the recorded pipelines and invalidations come back out in the output
 pub(crate) struct ScriptedMemory {
     values: Mutex<BTreeMap<String, Decimal>>,
     sources: BTreeMap<String, Decimal>,

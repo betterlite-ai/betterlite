@@ -43,8 +43,7 @@ impl Helper for Op {
     }
 }
 
-// reserve_budget_for_request's flow: build the counters, initialize and charge them, and release
-// every applied entry when the reservation is rejected before the error goes back out
+// reserve_budget_for_request's flow: build the counters, initialize and charge them, and release every applied entry when the reservation is rejected before the error goes back out
 async fn execute(input: &Input) -> HelperResult {
     let token = input.token.auth()?;
     let user = input.user.as_ref().map(User::row).transpose()?;

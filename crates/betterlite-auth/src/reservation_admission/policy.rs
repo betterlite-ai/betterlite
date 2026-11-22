@@ -31,8 +31,7 @@ struct Headroom {
     remaining: Decimal,
 }
 
-// _apply_over_budget_reservation_policy: a throttled key releases its own reservation, and every other over-budget
-// counter blocks when nothing is left, rejects an estimate strict enforcement cannot fit, or resizes to the headroom
+// _apply_over_budget_reservation_policy: a throttled key releases its own reservation, and every other over-budget counter blocks when nothing is left, rejects an estimate strict enforcement cannot fit, or resizes to the headroom
 pub(crate) async fn apply_over_budget<C>(
     counters: &C,
     request: &AdmissionRequest<'_>,
