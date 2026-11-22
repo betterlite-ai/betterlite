@@ -39,10 +39,10 @@ fn default_version(composition: &Composition) -> String {
 fn take_extra_body(
     credentials: &mut Credentials,
 ) -> Result<(Object, Option<String>), AzureProviderError> {
-    let Some(value) = credentials.extra_body.take() else {
+    let Some(body) = credentials.extra_body.take() else {
         return Ok((Object::new(), None));
     };
-    let Json::Object(mut fields) = value else {
+    let Json::Object(mut fields) = body else {
         return Err(AzureProviderError::ExtraBodyNotAnObject);
     };
     let token = match fields.shift_remove("azure_ad_token") {
