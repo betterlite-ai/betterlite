@@ -17,8 +17,8 @@ use betterlite_auth::auth_identity::records::{
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use betterlite_core::api::genai_chat_output::GenAiOutputError;
-use betterlite_error::proxy_exception::ProxyException;
-use betterlite_openai::chat::ChatMessage;
+use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
+use betterlite_openai::chat::{ChatMessage, MessageContent, Role as ChatRole};
 use betterlite_oracle_runner::case::UpstreamAnswer;
 use betterlite_postgres_fixture::connection::RandomDatabaseName;
 use betterlite_postgres_fixture::error::FixtureError;
@@ -31,6 +31,7 @@ use betterlite_server::api::genai_routes::ports::{
 use betterlite_server::api::genai_routes::routes;
 use betterlite_server::auth::auth_identity::AuthContext;
 use futures_util::stream::{self, StreamExt as _};
+use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
@@ -192,13 +193,30 @@ async fn replay_seed(name: &str, result: Result<HttpCase, OracleError>) {
             })
         )),
         "genai-generate-content.yaml"
+        | "genai-generate-content-body-model.yaml"
+        | "genai-generate-content-provider-error.yaml"
         | "genai-stream-generate-content.yaml"
-        | "genai-count-tokens.yaml" => {
-            let case = result.expect("a genai corpus seed decodes");
-            replay_genai_case(&case).await;
+        | "genai-count-tokens.yaml"
+        | "genai-count-tokens-unauthenticated.yaml" => {
+            replay_genai_seed(result, Counted::Original).await;
         }
+        "genai-count-tokens-total.yaml" => replay_genai_seed(result, Counted::Total(41)).await,
+        "genai-count-tokens-no-reply.yaml" => replay_genai_seed(result, Counted::None).await,
         _ => assert!(result.is_err(), "{name} should be rejected"),
     }
+}
+
+// which answer the internal counter gives on a count seed: the provider's own reply, a bare total, or nothing at all
+#[derive(Clone, Copy)]
+enum Counted {
+    Original,
+    Total(i64),
+    None,
+}
+
+async fn replay_genai_seed(result: Result<HttpCase, OracleError>, counted: Counted) {
+    let case = result.expect("a genai corpus seed decodes");
+    replay_genai_case(&case, counted).await;
 }
 
 #[test]
@@ -460,7 +478,7 @@ struct ReplayCall {
 }
 
 struct ReplayGeneration {
-    answer: Mutex<Option<GenerationAnswer>>,
+    answer: Mutex<Option<Result<GenerationAnswer, Box<ProxyException>>>>,
     calls: Mutex<Vec<ReplayCall>>,
 }
 
@@ -468,7 +486,7 @@ fn noted_generation(
     fake: &ReplayGeneration,
     call: &GenerateContentCall<'_>,
     streamed: bool,
-) -> GenerationAnswer {
+) -> Result<GenerationAnswer, Box<ProxyException>> {
     fake.calls
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -481,7 +499,7 @@ fn noted_generation(
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .take()
-        .expect("one scripted generation answer")
+        .unwrap_or_else(|| Err(Box::new(ProxyException::new(ProxyExceptionInit::default()))))
 }
 
 #[async_trait]
@@ -490,14 +508,14 @@ impl GenerateContentDispatch for ReplayGeneration {
         &self,
         call: GenerateContentCall<'_>,
     ) -> Result<GenerationAnswer, Box<ProxyException>> {
-        Ok(noted_generation(self, &call, false))
+        noted_generation(self, &call, false)
     }
 
     async fn stream(
         &self,
         call: GenerateContentCall<'_>,
     ) -> Result<GenerationAnswer, Box<ProxyException>> {
-        Ok(noted_generation(self, &call, true))
+        noted_generation(self, &call, true)
     }
 }
 
@@ -515,7 +533,19 @@ impl TranslateContents for ReplayTranslator {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((model.to_owned(), contents.clone()));
-        Ok(Vec::new())
+        Ok(vec![marker_message()])
+    }
+}
+
+// the one message the replay's adapter answers, so the count call's messages prove the translation result is wired through
+fn marker_message() -> ChatMessage {
+    ChatMessage {
+        role: ChatRole::User,
+        content: Some(MessageContent::Text("translated contents".to_owned())),
+        name: None,
+        tool_calls: None,
+        tool_call_id: None,
+        passthrough: IndexMap::new(),
     }
 }
 
@@ -544,14 +574,22 @@ impl TokenCounter for ReplayCounter {
     }
 }
 
-// one genai corpus seed drives the route the path names: the scripted provider answer goes through the same three ports B8774 wires
-async fn replay_genai_case(case: &HttpCase) {
-    let mut replay = scripted_replay(case);
+// one genai corpus seed drives the route the path names: the scripted pipeline answers go through the same three ports B8774 wires
+async fn replay_genai_case(case: &HttpCase, counted: Counted) {
+    let mut replay = scripted_replay(case, counted);
     route_genai_request(case, &mut replay).await;
+    if !carries_credential(case) {
+        assert_refused(&replay);
+        return;
+    }
+    if replay.failed {
+        assert_provider_error(&replay);
+        return;
+    }
     match replay.operation.as_str() {
         "generateContent" => assert_generated(&replay),
         "streamGenerateContent" => assert_streamed(&replay),
-        "countTokens" => assert_counted(&replay),
+        "countTokens" => assert_counted(&replay, counted),
         _ => panic!("an unknown genai operation reached the replay"),
     }
 }
@@ -559,7 +597,9 @@ async fn replay_genai_case(case: &HttpCase) {
 struct GenaiReplay {
     model: String,
     operation: String,
-    upstream: UpstreamAnswer,
+    upstream: Option<UpstreamAnswer>,
+    body_model: Option<String>,
+    failed: bool,
     contents: Json,
     generation: Arc<ReplayGeneration>,
     translator: Arc<ReplayTranslator>,
@@ -569,37 +609,47 @@ struct GenaiReplay {
     body: Bytes,
 }
 
-fn scripted_replay(case: &HttpCase) -> GenaiReplay {
-    let upstream = case.upstream.first().expect("one scripted upstream answer");
+fn scripted_replay(case: &HttpCase, counted: Counted) -> GenaiReplay {
+    let upstream = case.upstream.first().cloned();
     let (model, operation) = path_model_operation(&case.request.path);
-    let contents = serde_json::from_value::<Json>(
-        case.request
-            .body
-            .get("contents")
-            .cloned()
-            .expect("the seed names contents"),
-    )
-    .expect("the contents are JSON");
     GenaiReplay {
         model: model.to_owned(),
         operation: operation.to_owned(),
+        failed: upstream.as_ref().is_some_and(failed_answer),
+        body_model: case
+            .request
+            .body
+            .get("model")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
         generation: Arc::new(ReplayGeneration {
-            answer: Mutex::new(generation_answer(operation, upstream)),
+            answer: Mutex::new(generation_answer(operation, upstream.as_ref())),
             calls: Mutex::new(Vec::new()),
         }),
         translator: Arc::new(ReplayTranslator {
             calls: Mutex::new(Vec::new()),
         }),
         counter: Arc::new(ReplayCounter {
-            reply: Mutex::new(counter_reply(operation, upstream)),
+            reply: Mutex::new(counter_reply(operation, upstream.as_ref(), counted)),
             calls: Mutex::new(Vec::new()),
         }),
-        upstream: upstream.clone(),
-        contents,
+        upstream,
+        contents: seed_contents(case),
         status: StatusCode::OK,
         headers: HeaderMap::new(),
         body: Bytes::new(),
     }
+}
+
+fn seed_contents(case: &HttpCase) -> Json {
+    serde_json::from_value::<Json>(
+        case.request
+            .body
+            .get("contents")
+            .cloned()
+            .expect("the seed names contents"),
+    )
+    .expect("the contents are JSON")
 }
 
 fn path_model_operation(path: &str) -> (&str, &str) {
@@ -613,16 +663,51 @@ fn path_model_operation(path: &str) -> (&str, &str) {
     (model, operation)
 }
 
-fn generation_answer(operation: &str, upstream: &UpstreamAnswer) -> Option<GenerationAnswer> {
-    let headers = answer_headers(&upstream.headers);
+// a scripted answer outside 2xx is the exception the pipeline raises rather than a body it forwards
+fn failed_answer(upstream: &UpstreamAnswer) -> bool {
+    !(200..300).contains(&upstream.status)
+}
+
+fn generation_answer(
+    operation: &str,
+    upstream: Option<&UpstreamAnswer>,
+) -> Option<Result<GenerationAnswer, Box<ProxyException>>> {
+    let answer = upstream?;
+    let headers = answer_headers(&answer.headers);
+    if failed_answer(answer) {
+        return Some(Err(Box::new(provider_exception(answer))));
+    }
     match operation {
-        "generateContent" => Some(GenerationAnswer {
+        "generateContent" => Some(Ok(GenerationAnswer {
             headers,
-            body: GenerationBody::Json(json_answer(upstream)),
-        }),
-        "streamGenerateContent" => Some(streamed_answer(headers, upstream)),
+            body: GenerationBody::Json(json_answer(answer)),
+        })),
+        "streamGenerateContent" => Some(Ok(streamed_answer(headers, answer))),
         _ => None,
     }
+}
+
+fn provider_exception(upstream: &UpstreamAnswer) -> ProxyException {
+    let body = upstream.body.clone().expect("a provider error body");
+    ProxyException::new(ProxyExceptionInit {
+        message: error_field(&body, "message"),
+        error_type: error_field(&body, "type"),
+        param: body
+            .get("param")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        code: ExceptionCode::Status(i64::from(upstream.status)),
+        headers: upstream.headers.clone(),
+        openai_code: None,
+        provider_specific_fields: BTreeMap::new(),
+    })
+}
+
+fn error_field(body: &serde_json::Value, name: &str) -> String {
+    body.get(name)
+        .and_then(serde_json::Value::as_str)
+        .expect("the provider error carries its message and type")
+        .to_owned()
 }
 
 fn json_answer(upstream: &UpstreamAnswer) -> Json {
@@ -642,11 +727,22 @@ fn streamed_answer(headers: HeaderMap, upstream: &UpstreamAnswer) -> GenerationA
     }
 }
 
-fn counter_reply(operation: &str, upstream: &UpstreamAnswer) -> Option<TokenCountResponse> {
+fn counter_reply(
+    operation: &str,
+    upstream: Option<&UpstreamAnswer>,
+    counted: Counted,
+) -> Option<TokenCountResponse> {
     if operation != "countTokens" {
         return None;
     }
-    Some(counted_response(upstream))
+    match counted {
+        Counted::Original => Some(counted_response(upstream?)),
+        Counted::Total(total) => Some(TokenCountResponse {
+            total_tokens: total,
+            original_response: None,
+        }),
+        Counted::None => None,
+    }
 }
 
 fn counted_response(upstream: &UpstreamAnswer) -> TokenCountResponse {
@@ -700,6 +796,25 @@ fn genai_request(case: &HttpCase) -> Request<Body> {
     for (name, value) in &case.request.headers {
         builder = builder.header(name, value);
     }
+    if carries_credential(case) {
+        builder = builder.extension(auth_context());
+    }
+    builder
+        .body(Body::from(
+            serde_json::to_vec(&case.request.body).expect("the request body serializes"),
+        ))
+        .expect("the request builds")
+}
+
+// B003's key auth inserts the AuthContext for a request that carries a credential, and a seed without one reaches the route as an unauthenticated request
+fn carries_credential(case: &HttpCase) -> bool {
+    case.request
+        .headers
+        .keys()
+        .any(|name| name.eq_ignore_ascii_case("authorization"))
+}
+
+fn auth_context() -> AuthContext {
     let principal = Principal {
         principal_type: PrincipalType::ServiceAccount,
         subject: "oracle".to_owned(),
@@ -717,48 +832,96 @@ fn genai_request(case: &HttpCase) -> Request<Body> {
         network: NetworkContext::default(),
         source_key: SourceKey(None),
     };
-    builder
-        .extension(AuthContext { principal })
-        .body(Body::from(
-            serde_json::to_vec(&case.request.body).expect("the request body serializes"),
-        ))
-        .expect("the request builds")
+    AuthContext { principal }
 }
 
-fn recorded_generation(replay: &GenaiReplay) -> ReplayCall {
-    let recorded = replay
-        .generation
-        .calls
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(recorded.len(), 1);
-    recorded
-        .first()
-        .cloned()
-        .expect("one scripted generation call")
+fn single_call<T: Clone>(calls: &Mutex<Vec<T>>, what: &str) -> T {
+    let recorded = calls.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(recorded.len(), 1, "one {what}");
+    recorded.first().cloned().expect("one recorded call")
+}
+
+fn response_json(replay: &GenaiReplay) -> serde_json::Value {
+    serde_json::from_slice(&replay.body).expect("a JSON answer")
+}
+
+fn scripted_answer(replay: &GenaiReplay) -> &UpstreamAnswer {
+    replay.upstream.as_ref().expect("a provider answer")
+}
+
+fn call_count<T>(calls: &Mutex<Vec<T>>) -> usize {
+    calls.lock().unwrap_or_else(PoisonError::into_inner).len()
+}
+
+fn port_calls(replay: &GenaiReplay) -> usize {
+    call_count(&replay.generation.calls)
+        .saturating_add(call_count(&replay.translator.calls))
+        .saturating_add(call_count(&replay.counter.calls))
 }
 
 fn assert_generated(replay: &GenaiReplay) {
+    let upstream = scripted_answer(replay);
     assert_eq!(replay.status, StatusCode::OK);
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&replay.body).expect("a JSON answer"),
-        replay.upstream.body.clone().expect("the scripted body")
+        response_json(replay),
+        upstream.body.clone().expect("the scripted body")
     );
     assert_eq!(
         response_header(&replay.headers, "content-type"),
         Some("application/json")
     );
-    let call = recorded_generation(replay);
+    assert_pipeline_headers(replay, upstream);
+    let call = single_call(&replay.generation.calls, "generation call");
     assert_eq!(call.model, replay.model);
     assert!(!call.streamed);
-    assert_eq!(
-        call.data.get("model"),
-        Some(&Json::Text(replay.model.clone()))
-    );
+    let model = replay.body_model.as_deref().unwrap_or(&replay.model);
+    assert_eq!(call.data.get("model"), Some(&Json::Text(model.to_owned())));
     assert_eq!(call.data.get("contents"), Some(&replay.contents));
 }
 
+// every x-litellm-* header the pipeline answers with must reach the client with the same value
+fn assert_pipeline_headers(replay: &GenaiReplay, upstream: &UpstreamAnswer) {
+    let mut checked = 0_usize;
+    for (name, value) in &upstream.headers {
+        if name.starts_with("x-litellm-") {
+            assert_eq!(
+                response_header(&replay.headers, name),
+                Some(value.as_str()),
+                "{name}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "the seed scripts an x-litellm-* header");
+}
+
+// on a provider error the client reads the exception's status and the error envelope openai_exception_handler sends
+fn assert_provider_error(replay: &GenaiReplay) {
+    let upstream = scripted_answer(replay);
+    assert_eq!(
+        replay.status,
+        StatusCode::from_u16(upstream.status).expect("the scripted status")
+    );
+    let body = upstream.body.clone().expect("a provider error body");
+    assert_eq!(
+        response_json(replay),
+        serde_json::json!({"error": {
+            "message": error_field(&body, "message"),
+            "type": error_field(&body, "type"),
+            "param": body.get("param").and_then(serde_json::Value::as_str),
+            "code": upstream.status.to_string(),
+        }})
+    );
+    assert_pipeline_headers(replay, upstream);
+}
+
+fn assert_refused(replay: &GenaiReplay) {
+    assert_eq!(replay.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(port_calls(replay), 0);
+}
+
 fn assert_streamed(replay: &GenaiReplay) {
+    let upstream = scripted_answer(replay);
     assert_eq!(replay.status, StatusCode::OK);
     assert_eq!(
         response_header(&replay.headers, "content-type"),
@@ -772,17 +935,13 @@ fn assert_streamed(replay: &GenaiReplay) {
         response_header(&replay.headers, "x-accel-buffering"),
         Some("no")
     );
-    let expected = replay
-        .upstream
-        .events
-        .as_ref()
-        .expect("SSE events")
-        .concat();
+    let expected = upstream.events.as_ref().expect("SSE events").concat();
     assert_eq!(
         String::from_utf8(replay.body.to_vec()).expect("SSE bytes are UTF-8"),
         expected
     );
-    let call = recorded_generation(replay);
+    assert_pipeline_headers(replay, upstream);
+    let call = single_call(&replay.generation.calls, "stream call");
     assert_eq!(call.model, replay.model);
     assert!(call.streamed);
     assert_eq!(call.data.get("stream"), Some(&Json::Bool(true)));
@@ -796,36 +955,31 @@ fn assert_streamed(replay: &GenaiReplay) {
     );
 }
 
-fn assert_counted(replay: &GenaiReplay) {
+fn assert_counted(replay: &GenaiReplay, counted: Counted) {
     assert_eq!(replay.status, StatusCode::OK);
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&replay.body).expect("a JSON answer"),
-        replay.upstream.body.clone().expect("the scripted body")
-    );
-    let translation = {
-        let calls = replay
-            .translator
-            .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        assert_eq!(calls.len(), 1);
-        calls.first().cloned().expect("one translation call")
-    };
+    assert_eq!(response_json(replay), expected_count(replay, counted));
+    let translation = single_call(&replay.translator.calls, "translation call");
     assert_eq!(translation.0, replay.model);
     assert_eq!(translation.1, replay.contents);
-    let count = {
-        let calls = replay
-            .counter
-            .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        assert_eq!(calls.len(), 1);
-        calls.first().cloned().expect("one count call")
-    };
+    let count = single_call(&replay.counter.calls, "count call");
     assert_eq!(count.0.model, replay.model);
     assert_eq!(count.0.contents, replay.contents);
-    assert!(count.0.messages.is_empty());
+    assert_eq!(count.0.messages, vec![marker_message()]);
     assert!(count.1);
+}
+
+// TokenCountDetailsResponse for the count answer the seed scripts: the provider reply, its bare total, or the zero default
+fn expected_count(replay: &GenaiReplay, counted: Counted) -> serde_json::Value {
+    match counted {
+        Counted::Original => scripted_answer(replay)
+            .body
+            .clone()
+            .expect("the provider count body"),
+        Counted::Total(total) => {
+            serde_json::json!({"totalTokens": total, "promptTokensDetails": []})
+        }
+        Counted::None => serde_json::json!({"totalTokens": 0, "promptTokensDetails": []}),
+    }
 }
 
 fn response_header<'headers>(headers: &'headers HeaderMap, name: &str) -> Option<&'headers str> {
