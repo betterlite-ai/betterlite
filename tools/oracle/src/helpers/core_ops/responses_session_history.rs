@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -30,14 +31,19 @@ use tracing::subscriber::with_default;
 
 const MODULE: &str = "betterlite_core::api::responses_session_history";
 
+// a bool on the wire; the newtype keeps struct_excessive_bools off the case input
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(transparent)]
+struct Flag(bool);
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     previous_response_id: String,
-    database: bool,
-    disable_spend_logs: bool,
+    database: Flag,
+    disable_spend_logs: Flag,
     replies: Vec<Vec<SessionLog>>,
-    cold_storage: bool,
+    cold_storage: Flag,
     cold_objects: IndexMap<String, Option<IndexMap<String, Json>>>,
     cold_failures: Vec<String>,
     request: CompletionRequest,
@@ -76,13 +82,12 @@ impl SpendLogQuery for Script<'_> {
             .push(json!({"sql": flat_sql, "request_id": request_id}));
         let position = effects.queries.len().saturating_sub(1);
         drop(effects);
-        ready(
-            self.input
-                .replies
-                .get(position)
-                .cloned()
-                .unwrap_or_default(),
-        )
+        ready(Ok(self
+            .input
+            .replies
+            .get(position)
+            .cloned()
+            .unwrap_or_default()))
     }
 }
 
@@ -109,7 +114,12 @@ impl ColdStorageReader for Script<'_> {
                 object_key: object_key.to_owned(),
             }));
         }
-        ready(self.input.cold_objects.get(object_key).cloned().flatten())
+        ready(Ok(self
+            .input
+            .cold_objects
+            .get(object_key)
+            .cloned()
+            .flatten()))
     }
 }
 
@@ -151,12 +161,12 @@ impl Helper for Op {
             effects: Mutex::new(Effects::default()),
         };
         let service = SessionHistory {
-            repository: input.database.then_some(&script),
-            cold_storage: input.cold_storage.then_some(&script),
+            repository: input.database.0.then_some(&script),
+            cold_storage: input.cold_storage.0.then_some(&script),
             sleeper: &script,
             lookup: loads_session_lookup_settings(&BTreeMap::<String, String>::new())
                 .or_config_error()?,
-            disable_spend_logs: input.disable_spend_logs,
+            disable_spend_logs: input.disable_spend_logs.0,
             limits: ApiLimits::default(),
             input_cache: &cache,
             tool_calls: &tool_calls,
@@ -166,13 +176,32 @@ impl Helper for Op {
     }
 }
 
+// the fmt subscriber wants a writer it can clone per event, so the buffer sits behind this handle
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn traced(service: &Service<'_>, input: &Input) -> Result<(Outcome, String), Box<HelperError>> {
     let runtime = Builder::new_current_thread().build().or_value_error()?;
-    let written = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let written = Captured::default();
+    let writer = written.clone();
     let subscriber = tracing_subscriber::fmt()
         .json()
         .with_max_level(Level::DEBUG)
-        .with_writer(Arc::clone(&written))
+        .with_writer(move || writer.clone())
         .without_time()
         .finish();
     let outcome = with_default(subscriber, || {
@@ -183,6 +212,7 @@ fn traced(service: &Service<'_>, input: &Input) -> Result<(Outcome, String), Box
         ))
     });
     let bytes = written
+        .0
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
