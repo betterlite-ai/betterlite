@@ -33,6 +33,7 @@ async fn serves_raw_tag_counts_and_ignores_the_dates() {
     assert_eq!(rows[0].total_spend, decimal("3.5"));
     assert_eq!(rows[1].individual_request_tag, None);
     assert_eq!(rows[1].total_spend, decimal("0.25"));
+    assert!(reply.text().contains("\"total_spend\":3.5"));
     assert_eq!(store.calls(), vec!["raw_tag_spend".to_owned()]);
 }
 
@@ -219,6 +220,7 @@ async fn sums_and_ranks_the_daily_rows_for_the_ui() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
+    assert!(reply.text().contains("\"spend\":3.5"));
     let body: SpendPerTagBody = reply.decode();
     assert_eq!(body.spend_per_tag.len(), 3);
     assert_eq!(body.spend_per_tag[0].name.as_deref(), Some("a"));
@@ -243,6 +245,7 @@ async fn rounds_the_daily_tag_spend_to_four_places() {
         handle(Some(&store)),
     )
     .await;
+    assert!(reply.text().contains("\"spend\":0.0002"));
     let body: SpendPerTagBody = reply.decode();
     assert_eq!(body.spend_per_tag[0].name.as_deref(), Some("odd-tie"));
     assert_eq!(body.spend_per_tag[0].spend, decimal("0.0002"));
