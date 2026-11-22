@@ -7,10 +7,14 @@ use betterlite_core::api::responses_chat_call::completions::{
 use betterlite_core::api::responses_chat_call::records::CompletionArguments;
 use betterlite_core::api::responses_chat_output::records::ChatCompletionResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use http::Method;
-use http::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
+use http::header::{
+    ACCEPT, AUTHORIZATION, HeaderMap, HeaderName, HeaderValue, InvalidHeaderName,
+    InvalidHeaderValue,
+};
 use secrecy::ExposeSecret as _;
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -50,10 +54,24 @@ pub(crate) enum CompletionsError {
     Provider,
     #[error("the provider request could not be built: {0}")]
     Request(String),
-    #[error("the provider request failed: {0}")]
-    Transport(String),
-    #[error("the provider answer could not be read: {0}")]
-    Decode(String),
+    #[error("the provider request failed")]
+    Transport(#[source] TransportError),
+    #[error("the provider body could not be encoded")]
+    Encode(#[source] serde_json::Error),
+    #[error("the provider answer could not be read")]
+    Decode(#[source] serde_json::Error),
+    #[error("the header name {name} is invalid")]
+    HeaderName {
+        name: String,
+        #[source]
+        source: InvalidHeaderName,
+    },
+    #[error("the header {name} is invalid")]
+    HeaderValue {
+        name: String,
+        #[source]
+        source: InvalidHeaderValue,
+    },
 }
 
 // B916's completion seam: the mapped chat body, the case's headers, and B011's failure projection
@@ -107,8 +125,8 @@ impl HttpCompletions {
         arguments: &CompletionArguments,
     ) -> Result<(OutboundRequest, bool), CompletionsError> {
         let stream = matches!(arguments.fields.get("stream"), Some(Value::Bool(true)));
-        let body = serde_json::to_vec(&provider_body(arguments))
-            .map_err(|source| CompletionsError::Decode(source.to_string()))?;
+        let body =
+            serde_json::to_vec(&provider_body(arguments)).map_err(CompletionsError::Encode)?;
         let request = OutboundRequest {
             method: Method::POST,
             url: self.deployment.endpoint.clone(),
@@ -128,7 +146,7 @@ impl HttpCompletions {
                 *slot = Some(upstream);
                 CompletionsError::Provider
             }
-            Err(source) => CompletionsError::Transport(source.to_string()),
+            Err(source) => CompletionsError::Transport(source),
         }
     }
 
@@ -168,7 +186,10 @@ impl HttpCompletions {
                 )));
             };
             let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|source| {
-                CompletionsError::Request(format!("the header name {name} is invalid: {source}"))
+                CompletionsError::HeaderName {
+                    name: name.clone(),
+                    source,
+                }
             })?;
             headers.insert(header_name, header(text, name)?);
         }
@@ -177,8 +198,9 @@ impl HttpCompletions {
 }
 
 fn header(text: &str, name: &str) -> Result<HeaderValue, CompletionsError> {
-    HeaderValue::from_str(text).map_err(|source| {
-        CompletionsError::Request(format!("the header {name} is invalid: {source}"))
+    HeaderValue::from_str(text).map_err(|source| CompletionsError::HeaderValue {
+        name: name.to_owned(),
+        source,
     })
 }
 
@@ -205,7 +227,7 @@ impl CompletionClient for HttpCompletions {
             .client
             .send_following(outbound)
             .await
-            .map_err(|source| CompletionsError::Transport(source.to_string()))?;
+            .map_err(CompletionsError::Transport)?;
         if !response.response.status().is_success() {
             return Err(self.capture_failure(response).await);
         }
@@ -217,9 +239,9 @@ impl CompletionClient for HttpCompletions {
         let upstream = response
             .buffered(self.client.limits.body_bytes)
             .await
-            .map_err(|source| CompletionsError::Transport(source.to_string()))?;
-        let chat: ChatCompletionResponse = serde_json::from_slice(&upstream.body)
-            .map_err(|source| CompletionsError::Decode(source.to_string()))?;
+            .map_err(CompletionsError::Transport)?;
+        let chat: ChatCompletionResponse =
+            serde_json::from_slice(&upstream.body).map_err(CompletionsError::Decode)?;
         Ok(CompletionOutput::Response(Box::new(chat)))
     }
 }
