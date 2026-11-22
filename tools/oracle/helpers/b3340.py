@@ -1,7 +1,7 @@
 import asyncio
 import datetime as dt
 from collections.abc import Mapping
-from typing import Final, Literal, NotRequired, TypeVar, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict, TypeVar, cast
 
 import httpx
 import litellm
@@ -123,10 +123,11 @@ def request_view(responder: Responder, wanted: tuple[str, ...]) -> JsonValue:
     headers: dict[str, JsonValue] = {
         name: value for name, value in responder.headers.items() if name in wanted
     }
+    pairs: list[list[str]] = [[name, value] for name, value in responder.query]
     return {
         "method": responder.method,
         "url": responder.url,
-        "query": JSON.validate_python([[name, value] for name, value in responder.query]),
+        "query": JSON.validate_python(pairs),
         "headers": headers,
         "body": None if responder.body_text == "" else JSON.validate_json(responder.body_text),
         "timeout": responder.timeout,
@@ -190,16 +191,16 @@ def run(input_value: Input) -> JsonValue:
         if operation == "remix"
         else AsyncHTTPHandler(transport=transport, timeout=CLIENT_TIMEOUT_SECONDS)
     )
-    headers = as_dict(input_value.get("extra_headers"))
-    query = as_dict(input_value.get("extra_query"))
-    body = as_dict(input_value.get("extra_body"))
+    headers = cast("dict[str, object] | None", as_dict(input_value.get("extra_headers")))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L528
+    query = cast("dict[str, object] | None", as_dict(input_value.get("extra_query")))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L529
+    body = cast("dict[str, object] | None", as_dict(input_value.get("extra_body")))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L530
     mock = input_value.get("mock_response")
     response: JsonValue = None
     error: JsonValue = None
     try:
         if operation in ("remix", "avideo_remix"):
             if operation == "avideo_remix" and mock is None:
-                remixed = litellm.video_remix(
+                remixed = litellm.video_remix(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L519-L553
                     input_value["video_id"],
                     input_value["prompt"],
                     timeout=timeout_seconds(input_value),
@@ -218,7 +219,7 @@ def run(input_value: Input) -> JsonValue:
                 )
                 response = JSON.validate_json(asyncio.run(remixed).model_dump_json())
             else:
-                video = litellm.video_remix(
+                video = litellm.video_remix(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L519-L553
                     input_value["video_id"],
                     input_value["prompt"],
                     timeout=timeout_seconds(input_value),
@@ -238,7 +239,7 @@ def run(input_value: Input) -> JsonValue:
         else:
             provider = list_provider(input_value)
             if operation == "list" or mock is not None:
-                page = litellm.video_list(
+                page = litellm.video_list(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L731-L767
                     after=input_value.get("after"),
                     limit=input_value.get("limit"),
                     order=input_value.get("order"),
@@ -256,7 +257,7 @@ def run(input_value: Input) -> JsonValue:
                 )
                 response = page_view(page)
             else:
-                listed = litellm.video_list(
+                listed = litellm.video_list(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L731-L767
                     after=input_value.get("after"),
                     limit=input_value.get("limit"),
                     order=input_value.get("order"),
