@@ -20,6 +20,7 @@ pub(super) fn chat_case() {
     route_selection();
     deployment_key_reply();
     global_key_fallback();
+    stream_body_carries_stream();
     other_routes_skip_chat();
 }
 
@@ -77,6 +78,32 @@ fn global_key_fallback() {
         text_header(&chat_http(&outcome.prepared).headers, "api-key"),
         Some("global-key")
     );
+}
+
+// LiteLLM adds the stream parameter to the azure_ai body only for a streamed call, so a buffered one omits it
+fn stream_body_carries_stream() {
+    let env = Env::default();
+    let deployment = support::deployment(BASE, Some(KEY));
+    let request = support::simple_request("mistral-large");
+    let streaming = chat::prepare::prepare(
+        &chat_call(&request, &deployment, "mistral-large", true),
+        &env.globals(),
+    )
+    .expect("the stream plan");
+    let sent: JsonValue =
+        serde_json::from_slice(&stream_http(&streaming.prepared).body).expect("the stream body");
+    assert_eq!(field(&sent, "stream"), &JsonValue::Bool(true));
+    let buffered = chat::prepare::prepare(
+        &chat_call(&request, &deployment, "mistral-large", false),
+        &env.globals(),
+    )
+    .expect("the buffered plan");
+    let body: JsonValue =
+        serde_json::from_slice(&chat_http(&buffered.prepared).body).expect("the buffered body");
+    let JsonValue::Object(fields) = &body else {
+        panic!("the buffered body is an object");
+    };
+    assert!(!fields.contains_key("stream"));
 }
 
 // neither the agents nor the claude model reaches the chat leaf

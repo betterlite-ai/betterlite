@@ -138,6 +138,10 @@ fn wire_parts(call: &Call<'_>) -> Result<(Wire, Option<Headers>), PrepareError> 
         .map_err(|source| PrepareError::Encode { source })?;
     let messages = command_r::transform(&sent, call.model)?;
     let mut params = fields.params;
+    // LiteLLM's azure_ai config takes the stream parameter in the body, so a streamed call sends it
+    if call.stream {
+        params.insert(String::from("stream"), JsonValue::Bool(true));
+    }
     if let Some(extra) = call.extra_headers {
         params.insert(
             String::from(EXTRA_HEADERS_FIELD),

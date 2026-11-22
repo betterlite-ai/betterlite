@@ -14,6 +14,7 @@ use tokio::runtime::Builder;
 
 use crate::foundry_dispatch::chat::Answer;
 use crate::foundry_dispatch::credentials::{self, Globals};
+use crate::foundry_dispatch::fixtures::credentials::no_credentials;
 use crate::foundry_dispatch::fixtures::logger::RecordingLogger;
 use crate::foundry_dispatch::{agents, chat, claude, route};
 use crate::prepared::deployment::Deployment;
@@ -23,7 +24,7 @@ use super::{DispatchCase, EmbeddingCase, Observation, PostCall, RewriteCase};
 
 #[cfg_attr(test, mutants::skip)]
 pub(super) fn dispatch_case(case: &DispatchCase) -> Observation {
-    let settings = credentials::no_credentials();
+    let settings = no_credentials();
     let global_key = secret(case.globals.api_key.as_deref());
     let explicit_key = secret(case.api_key.as_deref());
     let environment_key = secret(case.environment.get("AZURE_AI_API_KEY").map(String::as_str));
@@ -227,7 +228,7 @@ fn agents_case(
 
 #[cfg_attr(test, mutants::skip)]
 pub(super) fn embedding_case(case: &EmbeddingCase) -> Observation {
-    let settings = credentials::no_credentials();
+    let settings = no_credentials();
     let global_key = secret(case.globals.api_key.as_deref());
     let explicit_key = secret(case.api_key.as_deref());
     let environment_key = secret(case.environment.get("AZURE_AI_API_KEY").map(String::as_str));

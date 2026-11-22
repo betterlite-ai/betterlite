@@ -23,8 +23,9 @@ use tokio::runtime::Builder;
 
 use crate::foundry_dispatch::chat::{self, Answer};
 use crate::foundry_dispatch::claude;
-use crate::foundry_dispatch::credentials::{Globals, no_credentials};
+use crate::foundry_dispatch::credentials::Globals;
 use crate::foundry_dispatch::fixtures::claude::{Harness, Mapper, NOW, TIMEOUT, Tally, Wire};
+use crate::foundry_dispatch::fixtures::credentials::no_credentials;
 use crate::foundry_dispatch::fixtures::logger::RecordingLogger;
 use crate::operation::OperationError;
 use crate::prepared::deployment::Deployment;

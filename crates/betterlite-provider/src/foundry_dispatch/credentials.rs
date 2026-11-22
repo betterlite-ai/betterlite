@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_azure::credentials::source::{CallableTokenProvider, CredentialSources};
-use betterlite_config::sections::azure_credentials::{DEFAULT_SCOPE, DeploymentSettings};
+use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_foundry::credentials::entra::{EntraTokenRequest, get_azure_ai_entra_token};
 use betterlite_foundry::credentials::error::CredentialsError;
 use betterlite_foundry::credentials::model_info::ModelInfoAccessors;
@@ -82,18 +82,4 @@ pub fn secret_headers(headers: Option<&Headers>) -> BTreeMap<String, SecretStrin
             .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
             .collect()
     })
-}
-
-// The azure_credentials identity of a deployment that configures no Azure AD values at all
-#[must_use]
-pub fn no_credentials() -> DeploymentSettings {
-    DeploymentSettings {
-        azure_ad_token: None,
-        tenant_id: None,
-        client_id: None,
-        client_secret: None,
-        azure_scope: String::from(DEFAULT_SCOPE),
-        azure_username: None,
-        azure_password: None,
-    }
 }
