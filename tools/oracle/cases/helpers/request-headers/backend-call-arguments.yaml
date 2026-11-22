@@ -1,0 +1,109 @@
+kind: helper
+name: request-headers-backend-call-arguments
+call:
+  request_headers:
+    clean: []
+    backend:
+      - headers:
+          - [x-litellm-timeout, "90"]
+          - [x-litellm-stream-timeout, " 30.5 "]
+          - [x-litellm-num-retries, "3"]
+          - [x-litellm-keepalive-seconds, "15"]
+          - [x-custom, one]
+        request_data: {model: gpt-4o}
+        principal: {spend: 2.5}
+        general_settings: {forward_client_headers_to_llm_api: false, forward_openai_org_id: false}
+        add_user_information: false
+      - headers:
+          - [x-custom, one]
+          - [X-Stainless-OS, Linux]
+          - [anthropic-beta, tools-2024-04-04]
+          - [content-type, application/json]
+          - [OpenAI-Organization, org-1]
+        request_data: {model: gpt-4o, timeout: null, request_timeout: null}
+        principal: {spend: 2.5}
+        general_settings: {forward_client_headers_to_llm_api: true, forward_openai_org_id: true}
+        add_user_information: false
+      - headers: [[content-type, application/json], [openai-organization, org-2]]
+        request_data: {model: gpt-4o, stream_timeout: 4}
+        principal: {spend: 2.5}
+        general_settings: {forward_client_headers_to_llm_api: true, forward_openai_org_id: false}
+        add_user_information: false
+      - headers: [[x-custom, one]]
+        request_data: {model: gpt-4o, request_timeout: 0}
+        principal:
+          api_key: hash-1
+          key_alias: search-key
+          spend: 2.5
+          user_id: user-1
+          team_id: team-1
+          team_alias: Search
+          user_email: ada@example.com
+          metadata: {}
+        general_settings: {forward_client_headers_to_llm_api: true, forward_openai_org_id: false}
+        add_user_information: true
+      - headers: [[x-litellm-timeout, soon]]
+        request_data: {}
+        principal: {spend: 2.5}
+        general_settings: {forward_client_headers_to_llm_api: false, forward_openai_org_id: false}
+        add_user_information: false
+      - headers: [[x-litellm-num-retries, "1.5"]]
+        request_data: {}
+        principal: {spend: 2.5}
+        general_settings: {forward_client_headers_to_llm_api: false, forward_openai_org_id: false}
+        add_user_information: false
+      - headers: [[X-LiteLLM-Timeout, "5"]]
+        request_data: {timeout: 2}
+        principal: {spend: 2.5}
+        general_settings: {forward_client_headers_to_llm_api: false, forward_openai_org_id: false}
+        add_user_information: false
+    model_group:
+      - data: {model: gpt-4o}
+        headers: [[x-custom, one], [content-type, application/json]]
+        principal: {spend: 2.5}
+        team_model_aliases: {}
+        models: [gpt-4o]
+        add_user_information: false
+      - data: {model: gpt-4o-mini}
+        headers: [[x-custom, one]]
+        principal: {spend: 2.5}
+        team_model_aliases: {}
+        models: [gpt-4o]
+        add_user_information: false
+      - data: {model: gpt-4o}
+        headers: [[x-custom, one]]
+        principal: {spend: 2.5}
+        team_model_aliases: {}
+        models: null
+        add_user_information: false
+      - data: {model: gpt-4o}
+        headers: [[content-type, application/json]]
+        principal: {spend: 2.5}
+        team_model_aliases: {}
+        models: [gpt-4o]
+        add_user_information: false
+      - data: {model: team-fast}
+        headers: [[x-custom, one]]
+        principal: {spend: 2.5, team_id: team-1}
+        team_model_aliases: {team-fast: gpt-4o}
+        models: [gpt-4o]
+        add_user_information: false
+      - data: {messages: []}
+        headers: [[x-custom, one]]
+        principal: {spend: 2.5}
+        team_model_aliases: {}
+        models: [gpt-4o]
+        add_user_information: false
+    metadata: []
+    otel_trace_id: []
+    traceparent: []
+    user: []
+    provider: []
+    cache_control:
+      - no-cache
+      - max-age=60, no-store
+      - "no-cache,no-store"
+      - s-maxage=5, private
+      - a=b=c
+env: {}
+compare: {ignore: []}

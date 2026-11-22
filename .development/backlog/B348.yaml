@@ -1,7 +1,7 @@
 id: B348
 milestone: M2 routing
 title: Router settings and field metadata endpoints
-status: todo
+status: done
 depends_on: [B016, B4140, B301]
 file: tasks/B348-router-settings.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/management_endpoints/router_settings_endpoints.py"
 parent: B023
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2911

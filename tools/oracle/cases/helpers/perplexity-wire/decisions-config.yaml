@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-decisions-config
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "decisions", "bases": ["https://api.perplexity.ai", "https://mock.example/", "https://mock.example/v1", "https://mock.example/v1/", "https://mock.example/api"]}

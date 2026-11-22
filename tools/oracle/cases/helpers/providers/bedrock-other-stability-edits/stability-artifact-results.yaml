@@ -1,0 +1,87 @@
+kind: helper
+name: bedrock-other-stability-artifact-results
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"images":["aGVsbG8=","d29ybGQ="],"finish_reasons":[null],"seeds":[1]}'
+      - function: response
+        model: stability.stable-style-transfer-v1:0
+        status: 200
+        body: '{"images":["c3R5bGU="]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"images":["aGVsbG8="]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 400
+        body: '{"errors":"bad","images":["eA=="]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"errors":null}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"errors":false}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"errors":[]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"finish_reasons":["E"]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"finish_reasons":["","E"],"images":["aGVsbG8="]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"finish_reasons":[null,"E"],"images":["aGVsbG8="]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"finish_reasons":{}}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"finish_reasons":"E"}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"finish_reasons":""}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"finish_reasons":0}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"finish_reasons":[false]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"images":[]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"images":[0,false,null,""]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 200
+        body: '{"images":[""]}'
+      - function: response
+        model: stability.stable-image-inpaint-v1:0
+        status: 500
+        body: '{"images":["aGVsbG8="]}'
+env: {}
+compare: {ignore: []}

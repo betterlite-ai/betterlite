@@ -1,0 +1,9 @@
+kind: helper
+name: memory_records-seed
+call:
+  b4530:
+    steps:
+      - {function: visibility, caller: {user_id: alice, user_role: internal_user, team_id: team-a, metadata: {service_account_id: null}}, row: {user_id: null, team_id: null}, request: null, model: null, body: null, search: null, key_prefix: null, key: null, requested_user_id: null, requested_team_id: null, code: null, message: "", log_message: "", detail: ""}
+      - {function: request, caller: {user_id: alice, user_role: internal_user, team_id: null, metadata: {service_account_id: null}}, row: {user_id: null, team_id: null}, request: create, model: null, body: {key: note, value: hello, metadata: {tag: memory_records}}, search: null, key_prefix: null, key: null, requested_user_id: null, requested_team_id: null, code: null, message: "", log_message: "", detail: ""}
+env: {}
+compare: {ignore: []}
