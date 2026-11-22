@@ -41,6 +41,9 @@ const DEFAULT_EMBEDDING_PARAMS: [&str; 6] = [
     "input",
 ];
 
+// LiteLLM's proxy pops both mock controls before litellm.embedding reads them, so the provider never sees them
+const MOCK_CONTROL_PARAMS: [&str; 2] = ["mock_response", "mock_tool_calls"];
+
 // serde_json carries the transform and reply failures, so each leaf error travels as the typed cause it wraps
 #[derive(Debug, Error)]
 enum LeafError {
@@ -201,8 +204,9 @@ fn embedding_extra_body(requested: &Object) -> Result<Object, OperationError> {
         }
     }
     for (name, value) in requested {
-        // LiteLLM drops a null extra and never collects a named embedding param into extra_body
+        // LiteLLM drops a null extra, never collects a named embedding param and reads the mock controls itself
         if name == "extra_body"
+            || MOCK_CONTROL_PARAMS.contains(&name.as_str())
             || *value == Json::Null
             || DEFAULT_EMBEDDING_PARAMS.contains(&name.as_str())
         {

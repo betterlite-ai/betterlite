@@ -271,6 +271,26 @@ fn reaches_config_embedding_extra_body_must_be_an_object() {
 }
 
 #[test]
+fn reaches_config_embedding_mock_controls_stay_out_of_the_body() {
+    let prepared = Perplexity
+        .prepare(
+            &embedding_operation(
+                r#"{"input":"hello","mock_response":[0.5,0.25],"mock_tool_calls":[{"id":"call-1"}]}"#,
+            ),
+            &perplexity_deployment(Some("sk-deployment")),
+            &catalog(),
+        )
+        .unwrap();
+    let PreparedRequest::Embedding(sent) = &prepared else {
+        panic!("an embedding request");
+    };
+    assert_eq!(
+        body(&sent.http.body),
+        json(r#"{"model":"pplx-embed-v1-0.6b","input":"hello"}"#)
+    );
+}
+
+#[test]
 fn reaches_config_embedding_without_a_key_sends_bearer_none() {
     let prepared = Perplexity
         .prepare(
