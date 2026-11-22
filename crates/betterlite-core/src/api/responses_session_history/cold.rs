@@ -9,7 +9,7 @@ use crate::api::responses_session_history::{ColdStorageReader, SessionHistory, S
 const TRUNCATED_MARKER: &str = "litellm_truncated";
 const OBJECT_KEY: &str = "cold_storage_object_key";
 
-// a missing, null or empty column and an empty cold-storage result all read as an empty request
+// a truncated, null or empty stored request is replaced by a non-empty cold-storage result
 pub async fn stored_request<Query, Cold, Sleep>(
     service: &SessionHistory<'_, Query, Cold, Sleep>,
     log: &SessionLog,
@@ -19,28 +19,7 @@ where
     Cold: ColdStorageReader + Sync,
     Sleep: Sync,
 {
-    let request = match &log.proxy_server_request {
-        None | Some(Json::Null) => IndexMap::new(),
-        Some(Json::Text(text)) => {
-            if text.is_empty() {
-                IndexMap::new()
-            } else {
-                decode_session_log_json(
-                    text.as_bytes(),
-                    SessionLogJsonKind::Request,
-                    service.limits,
-                )
-                .map_err(SessionHistoryError::StoredRequest)?
-                .unwrap_or_default()
-            }
-        }
-        Some(Json::Object(fields)) => fields.clone(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
-            return Err(SessionHistoryError::Column {
-                column: "proxy_server_request",
-            });
-        }
-    };
+    let request = request_column::<Cold>(log, service.limits)?;
     let Some(cold) = service.cold_storage else {
         return Ok(request);
     };
@@ -58,6 +37,35 @@ where
     Ok(restored
         .filter(|fields| !fields.is_empty())
         .unwrap_or(request))
+}
+
+// the proxy_server_request column decodes to the request; a JSON-null or empty column is empty
+fn request_column<Cold>(
+    log: &SessionLog,
+    limits: ApiLimits,
+) -> Result<IndexMap<String, Json>, SessionHistoryError<Cold::Error>>
+where
+    Cold: ColdStorageReader,
+{
+    let request = match &log.proxy_server_request {
+        None | Some(Json::Null) => IndexMap::new(),
+        Some(Json::Text(text)) => {
+            if text.is_empty() {
+                IndexMap::new()
+            } else {
+                decode_session_log_json(text.as_bytes(), SessionLogJsonKind::Request, limits)
+                    .map_err(SessionHistoryError::StoredRequest)?
+                    .unwrap_or_default()
+            }
+        }
+        Some(Json::Object(fields)) => fields.clone(),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
+            return Err(SessionHistoryError::Column {
+                column: "proxy_server_request",
+            });
+        }
+    };
+    Ok(request)
 }
 
 fn request_is_truncated(request: &IndexMap<String, Json>) -> bool {
