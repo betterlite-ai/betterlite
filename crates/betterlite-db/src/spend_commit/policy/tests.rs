@@ -163,6 +163,7 @@ fn failure_classes(
 
 #[rstest]
 #[case::check_violation("23514", SpendFailure::Rejected)]
+#[case::unique_violation("23505", SpendFailure::Rejected)]
 #[case::invalid_text("22021", SpendFailure::Rejected)]
 #[case::deadlock("40P01", SpendFailure::Deadlock)]
 #[case::serialization_failure("40001", SpendFailure::Deadlock)]

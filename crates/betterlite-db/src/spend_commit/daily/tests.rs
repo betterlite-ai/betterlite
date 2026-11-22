@@ -392,6 +392,20 @@ fn missing_sort_values_come_first() {
     assert_eq!(keys, vec!["row-undated".to_owned(), "row-dated".to_owned()]);
 }
 
+#[test]
+fn equal_sort_fields_keep_the_pending_key_order() {
+    let mut pending = DailySpendUpdate::new();
+    let row = daily_row("2026-01-02", "user_id", "user-a", 1);
+    pending.insert("row-b".to_owned(), row.clone());
+    pending.insert("row-a".to_owned(), row.clone());
+    pending.insert("row-c".to_owned(), row);
+    let keys = ordered_chunk_keys(DailySpendEntity::User, &pending);
+    assert_eq!(
+        keys,
+        vec!["row-a".to_owned(), "row-b".to_owned(), "row-c".to_owned()]
+    );
+}
+
 #[tokio::test]
 async fn unsafe_failure_drops_its_chunk_and_keeps_the_rest() {
     let writer = ScriptedWriter::new(vec![Step::Ok, Step::Rejected]);
