@@ -16,10 +16,12 @@ use crate::adaptive_classification::constants::DEFAULT_COST_WEIGHT as ROUTER_DEF
 use crate::adaptive_classification::request_type::RequestType;
 use crate::adaptive_selection::default_preferences;
 use crate::bandit_math::initial_cell;
+use crate::complexity_adaptive_placement::PlacementSnapshot;
 use crate::complexity_adaptive_placement::candidates::CandidateQuery;
 use crate::complexity_adaptive_placement::decision::{
-    AdaptiveDecision, ColdStartCandidate, ColdStartDecision,
+    AdaptiveChoice, AdaptiveDecision, CandidateScore, ColdStartCandidate, ColdStartDecision,
 };
+use crate::complexity_adaptive_placement::facts::ModelFacts;
 use crate::complexity_adaptive_placement::pick::Placed;
 use crate::complexity_adaptive_placement::settings::PlacementSettings;
 
@@ -43,32 +45,7 @@ fn the_construction_uses_the_pool_models_with_pinned_priors_and_costs() {
             ("big".to_owned(), vec!["COMPLEX".to_owned()]),
         ]
     );
-    assert_eq!(
-        snapshot.preferences,
-        vec![
-            (
-                "mini".to_owned(),
-                AdaptiveRouterPreferences {
-                    quality_tier: 2,
-                    strengths: Vec::new(),
-                },
-            ),
-            (
-                "mid".to_owned(),
-                AdaptiveRouterPreferences {
-                    quality_tier: 2,
-                    strengths: Vec::new(),
-                },
-            ),
-            (
-                "big".to_owned(),
-                AdaptiveRouterPreferences {
-                    quality_tier: 2,
-                    strengths: Vec::new(),
-                },
-            ),
-        ]
-    );
+    assert_eq!(snapshot.preferences, pinned_prior_preferences());
     assert_eq!(
         snapshot.costs,
         vec![
@@ -91,6 +68,18 @@ fn the_construction_uses_the_pool_models_with_pinned_priors_and_costs() {
     assert_eq!(cell.alpha.to_bits(), 5.0_f64.to_bits());
     assert_eq!(cell.beta.to_bits(), 5.0_f64.to_bits());
     assert_eq!(cell.samples, 0);
+}
+
+fn pinned_prior_preferences() -> Vec<(String, AdaptiveRouterPreferences)> {
+    let pinned = AdaptiveRouterPreferences {
+        quality_tier: 2,
+        strengths: Vec::new(),
+    };
+    vec![
+        ("mini".to_owned(), pinned.clone()),
+        ("mid".to_owned(), pinned.clone()),
+        ("big".to_owned(), pinned),
+    ]
 }
 
 #[test]
@@ -188,26 +177,7 @@ fn a_declared_empty_weights_object_takes_the_adaptive_router_defaults() {
 
 #[test]
 fn declared_preferences_shape_the_cold_start_priors() {
-    let facts = model_facts(&[
-        FactSpec {
-            model: "mini",
-            preferences: Some((3, &[])),
-            params_cost: Some(cost(1)),
-            info_cost: None,
-        },
-        FactSpec {
-            model: "mid",
-            preferences: Some((2, &[RequestType::General])),
-            params_cost: Some(cost(2)),
-            info_cost: None,
-        },
-        FactSpec {
-            model: "big",
-            preferences: None,
-            params_cost: None,
-            info_cost: None,
-        },
-    ]);
+    let facts = declared_preference_facts();
     let router =
         adaptive_service(adaptive_settings(true), POOLS, &facts, &[]).expect("the router builds");
     let snapshot = router.snapshot().expect("adaptive builds a snapshot");
@@ -231,7 +201,34 @@ fn declared_preferences_shape_the_cold_start_priors() {
             ("big".to_owned(), default_preferences()),
         ]
     );
-    let mini = cell_in(&snapshot, RequestType::General, "mini");
+    declared_prior_cells(&snapshot);
+}
+
+fn declared_preference_facts() -> ModelFacts {
+    model_facts(&[
+        FactSpec {
+            model: "mini",
+            preferences: Some((3, &[])),
+            params_cost: Some(cost(1)),
+            info_cost: None,
+        },
+        FactSpec {
+            model: "mid",
+            preferences: Some((2, &[RequestType::General])),
+            params_cost: Some(cost(2)),
+            info_cost: None,
+        },
+        FactSpec {
+            model: "big",
+            preferences: None,
+            params_cost: None,
+            info_cost: None,
+        },
+    ])
+}
+
+fn declared_prior_cells(snapshot: &PlacementSnapshot) {
+    let mini = cell_in(snapshot, RequestType::General, "mini");
     let mini_prior = initial_cell(
         &AdaptiveRouterPreferences {
             quality_tier: 3,
@@ -241,7 +238,7 @@ fn declared_preferences_shape_the_cold_start_priors() {
     )
     .expect("tier 3 has a prior");
     assert_eq!(mini.alpha.to_bits(), mini_prior.alpha.to_bits());
-    let mid = cell_in(&snapshot, RequestType::General, "mid");
+    let mid = cell_in(snapshot, RequestType::General, "mid");
     let mid_prior = initial_cell(
         &AdaptiveRouterPreferences {
             quality_tier: 2,
@@ -251,7 +248,7 @@ fn declared_preferences_shape_the_cold_start_priors() {
     )
     .expect("tier 2 has a prior");
     assert_eq!(mid.alpha.to_bits(), mid_prior.alpha.to_bits());
-    let mid_writing = cell_in(&snapshot, RequestType::Writing, "mid");
+    let mid_writing = cell_in(snapshot, RequestType::Writing, "mid");
     let writing_prior = initial_cell(&default_preferences(), RequestType::Writing)
         .expect("the default tier has a prior");
     assert_eq!(mid_writing.alpha.to_bits(), writing_prior.alpha.to_bits());
@@ -299,29 +296,35 @@ fn a_cold_classified_pool_places_from_that_pool_and_records_the_decision() {
     let placed = harness
         .pick(&request(&classified, "hello"))
         .expect("the pick succeeds");
-    assert_eq!(
-        placed,
-        Placed {
-            model: "mini".to_owned(),
-            decision: Some(AdaptiveDecision::ColdStart(ColdStartDecision {
-                classified_tier: "SIMPLE".to_owned(),
-                request_type: RequestType::General,
-                weights: AdaptiveRouterWeights {
-                    quality: 0.3,
-                    economy: 0.7,
-                },
-                tier_distance_penalty: 0.5,
-                chosen_model: "mini".to_owned(),
-                candidates: vec![ColdStartCandidate {
-                    model: "mini".to_owned(),
-                    total_samples: 0,
-                }],
-            })),
-        }
-    );
+    assert_eq!(placed, expected_cold_start_placement());
     let Some(Json::Object(decision)) = harness.decision() else {
         panic!("the decision is recorded as an object");
     };
+    assert_cold_start_fields(decision);
+    assert_cold_start_candidates(decision);
+}
+
+fn expected_cold_start_placement() -> Placed {
+    Placed {
+        model: "mini".to_owned(),
+        decision: Some(AdaptiveDecision::ColdStart(ColdStartDecision {
+            classified_tier: "SIMPLE".to_owned(),
+            request_type: RequestType::General,
+            weights: AdaptiveRouterWeights {
+                quality: 0.3,
+                economy: 0.7,
+            },
+            tier_distance_penalty: 0.5,
+            chosen_model: "mini".to_owned(),
+            candidates: vec![ColdStartCandidate {
+                model: "mini".to_owned(),
+                total_samples: 0,
+            }],
+        })),
+    }
+}
+
+fn assert_cold_start_fields(decision: &IndexMap<String, Json>) {
     assert_eq!(
         decision.get("phase"),
         Some(&Json::Text("cold_start".to_owned()))
@@ -354,6 +357,9 @@ fn a_cold_classified_pool_places_from_that_pool_and_records_the_decision() {
         decision.get("classified_tier"),
         Some(&Json::Text("SIMPLE".to_owned()))
     );
+}
+
+fn assert_cold_start_candidates(decision: &IndexMap<String, Json>) {
     let Some(Json::List(candidates)) = decision.get("candidates") else {
         panic!("the decision lists its candidates");
     };
@@ -442,7 +448,7 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
         adaptive_settings(true),
         POOLS,
         &facts,
-        &[0.9, 0.5, 0.95],
+        &[0.9_f64, 0.5_f64, 0.95_f64],
         None,
     )
     .expect("the router builds");
@@ -455,6 +461,38 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
     let Some(AdaptiveDecision::Adaptive(choice)) = &placed.decision else {
         panic!("the warm pool takes the adaptive phase");
     };
+    assert_distance_candidates(choice);
+    assert_distance_scores(choice);
+    let Some(Json::Object(decision)) = harness.decision() else {
+        panic!("the decision is recorded as an object");
+    };
+    assert_rendered_decision(decision);
+    assert_rendered_candidates(decision, choice);
+}
+
+fn candidate_rendering(candidate: &CandidateScore) -> Json {
+    Json::Object(IndexMap::from([
+        ("model".to_owned(), Json::Text(candidate.model.clone())),
+        (
+            "quality_sample".to_owned(),
+            Json::Number(Number::from_f64(candidate.quality_sample).expect("a finite sample")),
+        ),
+        (
+            "cost_score".to_owned(),
+            Json::Number(Number::from_f64(candidate.economy_score).expect("a finite score")),
+        ),
+        (
+            "tier_distance".to_owned(),
+            Json::Number(Number::from(candidate.tier_distance)),
+        ),
+        (
+            "score".to_owned(),
+            Json::Number(Number::from_f64(candidate.score).expect("a finite score")),
+        ),
+    ]))
+}
+
+fn assert_distance_candidates(choice: &AdaptiveChoice) {
     assert_eq!(choice.classified_tier, "MEDIUM");
     assert_eq!(choice.eligible, AdaptiveEligible::All);
     let models: Vec<&str> = choice
@@ -476,8 +514,11 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
         .collect();
     assert_eq!(
         samples,
-        vec![0.9_f64.to_bits(), 0.5_f64.to_bits(), 0.95_f64.to_bits(),]
+        vec![0.9_f64.to_bits(), 0.5_f64.to_bits(), 0.95_f64.to_bits()]
     );
+}
+
+fn assert_distance_scores(choice: &AdaptiveChoice) {
     let costs: Vec<u64> = choice
         .candidates
         .iter()
@@ -494,9 +535,9 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
         .collect();
     assert!(scores[1] > scores[0]);
     assert!(scores[1] > scores[2]);
-    let Some(Json::Object(decision)) = harness.decision() else {
-        panic!("the decision is recorded as an object");
-    };
+}
+
+fn assert_rendered_decision(decision: &IndexMap<String, Json>) {
     assert_eq!(
         decision.get("phase"),
         Some(&Json::Text("adaptive".to_owned()))
@@ -529,38 +570,13 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
         decision.get("chosen_model"),
         Some(&Json::Text("mid".to_owned()))
     );
+}
+
+fn assert_rendered_candidates(decision: &IndexMap<String, Json>, choice: &AdaptiveChoice) {
     let Some(Json::List(candidates)) = decision.get("candidates") else {
         panic!("the decision lists its candidates");
     };
-    let expected: Vec<Json> = choice
-        .candidates
-        .iter()
-        .map(|candidate| {
-            Json::Object(IndexMap::from([
-                ("model".to_owned(), Json::Text(candidate.model.clone())),
-                (
-                    "quality_sample".to_owned(),
-                    Json::Number(
-                        Number::from_f64(candidate.quality_sample).expect("a finite sample"),
-                    ),
-                ),
-                (
-                    "cost_score".to_owned(),
-                    Json::Number(
-                        Number::from_f64(candidate.economy_score).expect("a finite score"),
-                    ),
-                ),
-                (
-                    "tier_distance".to_owned(),
-                    Json::Number(Number::from(candidate.tier_distance)),
-                ),
-                (
-                    "score".to_owned(),
-                    Json::Number(Number::from_f64(candidate.score).expect("a finite score")),
-                ),
-            ]))
-        })
-        .collect();
+    let expected: Vec<Json> = choice.candidates.iter().map(candidate_rendering).collect();
     assert_eq!(candidates, &expected);
 }
 
@@ -568,18 +584,11 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
 #[test]
 fn declared_weights_decide_the_adaptive_pick() {
     let facts = priced(&[("mini", 1), ("mid", 5), ("big", 3)]);
-    let settings = PlacementSettings::resolve(&placement_section::Config {
-        adaptive: true,
-        weights: Some(Weights {
-            quality: Some(1.0),
-            economy: Some(0.0),
-        }),
-        tier_distance_penalty: placement_section::DEFAULT_TIER_DISTANCE_PENALTY,
-        eligible: AdaptiveEligible::All,
-    })
-    .expect("the declared weights are valid");
-    let mut configured =
-        Harness::new(settings, POOLS, &facts, &[0.5, 0.9, 0.0], None).expect("the router builds");
+    let mut configured = placement_harness(
+        quality_only_settings(),
+        &facts,
+        &[0.5_f64, 0.9_f64, 0.0_f64],
+    );
     warm(&mut configured.router, RequestType::General, &["mid"]);
     let classified = tier("MEDIUM");
     let placed = configured
@@ -600,19 +609,33 @@ fn declared_weights_decide_the_adaptive_pick() {
         choice.tier_distance_penalty.to_bits(),
         placement_section::DEFAULT_TIER_DISTANCE_PENALTY.to_bits()
     );
-    let mut defaults = Harness::new(
+    let mut defaults = placement_harness(
         adaptive_settings(true),
-        POOLS,
         &facts,
-        &[0.5, 0.9, 0.0],
-        None,
-    )
-    .expect("the router builds");
+        &[0.5_f64, 0.9_f64, 0.0_f64],
+    );
     warm(&mut defaults.router, RequestType::General, &["mid"]);
     let default_placed = defaults
         .pick(&request(&classified, "hello"))
         .expect("the pick succeeds");
     assert_eq!(default_placed.model, "mini");
+}
+
+fn quality_only_settings() -> PlacementSettings {
+    PlacementSettings::resolve(&placement_section::Config {
+        adaptive: true,
+        weights: Some(Weights {
+            quality: Some(1.0_f64),
+            economy: Some(0.0_f64),
+        }),
+        tier_distance_penalty: placement_section::DEFAULT_TIER_DISTANCE_PENALTY,
+        eligible: AdaptiveEligible::All,
+    })
+    .expect("the declared weights are valid")
+}
+
+fn placement_harness(settings: PlacementSettings, facts: &ModelFacts, samples: &[f64]) -> Harness {
+    Harness::new(settings, POOLS, facts, samples, None).expect("the router builds")
 }
 
 // the declared penalty reaches placement_score: the same samples under the pinned 0.5 keep mid
@@ -623,7 +646,7 @@ fn a_declared_distance_penalty_decides_the_adaptive_pick() {
         configured_settings(true, 0.0, AdaptiveEligible::All),
         POOLS,
         &facts,
-        &[0.0, 0.5, 0.0],
+        &[0.0_f64, 0.5_f64, 0.0_f64],
         None,
     )
     .expect("the router builds");
@@ -641,7 +664,7 @@ fn a_declared_distance_penalty_decides_the_adaptive_pick() {
         adaptive_settings(true),
         POOLS,
         &facts,
-        &[0.0, 0.5, 0.0],
+        &[0.0_f64, 0.5_f64, 0.0_f64],
         None,
     )
     .expect("the router builds");
@@ -659,7 +682,7 @@ fn classified_tier_mode_samples_only_its_pool_with_no_distance() {
         configured_settings(true, 0.5, AdaptiveEligible::ClassifiedTier),
         POOLS,
         &facts,
-        &[0.4],
+        &[0.4_f64],
         None,
     )
     .expect("the router builds");
@@ -685,8 +708,14 @@ fn classified_tier_mode_samples_only_its_pool_with_no_distance() {
 #[test]
 fn a_hard_floor_keeps_the_models_at_or_above_it() {
     let facts = priced(&[("mini", 1), ("mid", 2), ("big", 3)]);
-    let mut harness = Harness::new(adaptive_settings(true), POOLS, &facts, &[0.9, 0.1], None)
-        .expect("the router builds");
+    let mut harness = Harness::new(
+        adaptive_settings(true),
+        POOLS,
+        &facts,
+        &[0.9_f64, 0.1_f64],
+        None,
+    )
+    .expect("the router builds");
     warm(&mut harness.router, RequestType::General, &["mid"]);
     let classified = tier("MEDIUM");
     let floor = tier("MEDIUM");
@@ -708,7 +737,7 @@ fn a_hard_floor_keeps_the_models_at_or_above_it() {
 #[test]
 fn a_hard_ceiling_keeps_the_models_at_or_below_it() {
     let facts = priced(&[("mini", 1), ("mid", 2), ("big", 3)]);
-    let mut harness = Harness::new(adaptive_settings(true), POOLS, &facts, &[0.2], None)
+    let mut harness = Harness::new(adaptive_settings(true), POOLS, &facts, &[0.2_f64], None)
         .expect("the router builds");
     warm(&mut harness.router, RequestType::General, &["mid"]);
     let classified = tier("MEDIUM");
@@ -752,7 +781,7 @@ fn a_model_in_two_pools_passes_a_bound_through_either_membership() {
 #[test]
 fn normalization_uses_the_broader_candidate_set() {
     let facts = priced(&[("mini", 1), ("mid", 2), ("big", 3)]);
-    let mut harness = Harness::new(adaptive_settings(true), POOLS, &facts, &[0.5], None)
+    let mut harness = Harness::new(adaptive_settings(true), POOLS, &facts, &[0.5_f64], None)
         .expect("the router builds");
     warm(&mut harness.router, RequestType::General, &["mid"]);
     let classified = tier("MEDIUM");
@@ -863,7 +892,7 @@ fn an_observation_wakes_a_cold_cell_for_the_next_pick() {
         adaptive_settings(true),
         POOLS,
         &facts,
-        &[0.5, 0.5, 0.5],
+        &[0.5_f64, 0.5_f64, 0.5_f64],
         None,
     )
     .expect("the router builds");

@@ -78,8 +78,8 @@ impl AdaptiveDecision {
     }
 }
 
-fn decision_fields(decision: &AdaptiveDecision) -> DecisionFields<'_> {
-    match decision {
+fn decision_fields(recorded: &AdaptiveDecision) -> DecisionFields<'_> {
+    match recorded {
         AdaptiveDecision::ColdStart(decision) => DecisionFields {
             classified_tier: &decision.classified_tier,
             request_type: decision.request_type,

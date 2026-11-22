@@ -17,40 +17,43 @@ pub(super) struct Fallback<'request, 'tier, 'deps, R: Rng + ?Sized> {
     pub(super) random: &'request mut R,
 }
 
-impl AdaptivePlacement {
+// The type's one inherent impl is in the module root; multiple_inherent_impl keeps the fallback free here.
+pub(super) fn fitting_fallback<R>(
+    service: &AdaptivePlacement,
+    fallback: Fallback<'_, '_, '_, R>,
+) -> Result<Placed, AdaptivePlacementError>
+where
+    R: Rng + ?Sized,
+{
     // _fitting_tier_fallback: a context filter picks from the fitting names, else the tier does
-    pub(super) fn fitting_fallback<R>(
-        &self,
-        fallback: Fallback<'_, '_, '_, R>,
-    ) -> Result<Placed, AdaptivePlacementError>
-    where
-        R: Rng + ?Sized,
-    {
-        let Fallback {
-            request,
-            placement,
-            random,
-        } = fallback;
-        let fitting = self.fitting_models(request.classified_tier, request.fit_filter);
-        let model = if request.fit_filter.is_some() && !fitting.is_empty() {
-            pick_from_names(&fitting, request.classified_tier.name(), random)?
-        } else {
-            model_for_tier(placement, request.classified_tier, random)?
-        };
-        Ok(Placed {
-            model,
-            decision: None,
-        })
-    }
+    let Fallback {
+        request,
+        placement,
+        random,
+    } = fallback;
+    let fitting = fitting_models(service, request.classified_tier, request.fit_filter);
+    let model = if request.fit_filter.is_some() && !fitting.is_empty() {
+        pick_from_names(&fitting, request.classified_tier.name(), random)?
+    } else {
+        model_for_tier(placement, request.classified_tier, random)?
+    };
+    Ok(Placed {
+        model,
+        decision: None,
+    })
+}
 
-    fn fitting_models(&self, tier: &Tier, fit_filter: Option<&BTreeSet<String>>) -> Vec<String> {
-        let Some(models) = self.pools.get(tier.name()) else {
-            return Vec::new();
-        };
-        models
-            .iter()
-            .filter(|model| fit_filter.is_none_or(|fit| fit.contains(*model)))
-            .cloned()
-            .collect()
-    }
+fn fitting_models(
+    service: &AdaptivePlacement,
+    tier: &Tier,
+    fit_filter: Option<&BTreeSet<String>>,
+) -> Vec<String> {
+    let Some(models) = service.pools.get(tier.name()) else {
+        return Vec::new();
+    };
+    models
+        .iter()
+        .filter(|model| fit_filter.is_none_or(|fit| fit.contains(*model)))
+        .cloned()
+        .collect()
 }

@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::complexity_adaptive_placement::AdaptiveEligible;
 use indexmap::IndexSet;
+use rand::Rng;
 use rust_decimal::Decimal;
 
 use crate::adaptive_classification::config::{AdaptiveRouterPreferences, AdaptiveRouterWeights};
@@ -21,11 +22,18 @@ use crate::adaptive_classification::request_type::RequestType;
 use crate::adaptive_selection::SnapshotCell;
 use crate::bandit_math::apply_delta;
 use crate::bandit_math::sampler::QualitySampler;
+use crate::complexity_placement::TierPlacement;
 use crate::complexity_placement::pools::tier_pools;
+use crate::complexity_scoring::tier::Tier;
+use crate::router_predicates::JsonMap;
 use crate::tier_definitions::model::TierSet;
 
+use self::candidates::{CandidateQuery, severities, severity_name};
+use self::cold_start::cold_start_outcome;
 use self::error::AdaptivePlacementError;
 use self::facts::ModelFacts;
+use self::fallback::{Fallback, fitting_fallback};
+use self::pick::{PickRequest, Placed, Prepared, adaptive_outcome, prepare};
 use self::settings::PlacementSettings;
 use self::state::AdaptiveState;
 
@@ -51,6 +59,7 @@ pub struct PlacementSnapshot {
     pub cells: Vec<SnapshotCell>,
 }
 
+// The type's one inherent impl: multiple_inherent_impl keeps each area's logic free in its module.
 impl AdaptivePlacement {
     // _ensure_adaptive_router: one-shot state from the pools and their facts; adaptive=false builds none
     pub fn new(
@@ -149,6 +158,73 @@ impl AdaptivePlacement {
                 .collect(),
             cells,
         })
+    }
+
+    // _adaptive_candidate_models: the eligible pool, the context-fit filter, then the plan's bounds
+    pub fn candidate_models(
+        &self,
+        query: &CandidateQuery<'_>,
+    ) -> Result<Vec<String>, AdaptivePlacementError> {
+        let floor = query
+            .hard_floor
+            .map(|tier| severity_name(self, tier.name()))
+            .transpose()?;
+        let ceiling = query
+            .hard_ceiling
+            .map(|tier| severity_name(self, tier.name()))
+            .transpose()?;
+        let base = match self.settings.eligible {
+            AdaptiveEligible::ClassifiedTier => self
+                .pools
+                .get(query.classified_tier.name())
+                .cloned()
+                .unwrap_or_default(),
+            AdaptiveEligible::All => self.available_models.clone(),
+        };
+        let mut candidates = Vec::with_capacity(base.len());
+        for model in base {
+            if query.fit_filter.is_some_and(|fit| !fit.contains(&model)) {
+                continue;
+            }
+            let model_severities = severities(self, &model, query.classified_tier)?;
+            if floor.is_some_and(|bound| !model_severities.iter().any(|level| *level >= bound)) {
+                continue;
+            }
+            if ceiling.is_some_and(|bound| !model_severities.iter().any(|level| *level <= bound)) {
+                continue;
+            }
+            candidates.push(model);
+        }
+        Ok(candidates)
+    }
+
+    // _soft_floor_pick: the cold-start pool first, then the sampled candidates, else the tier fallback
+    pub fn pick<R>(
+        &mut self,
+        request: &PickRequest<'_>,
+        placement: &TierPlacement<'_>,
+        request_kwargs: Option<&mut JsonMap>,
+        random: &mut R,
+    ) -> Result<Placed, AdaptivePlacementError>
+    where
+        R: Rng + ?Sized,
+    {
+        let fallback = Fallback {
+            request,
+            placement,
+            random,
+        };
+        // a custom tier name has no severity index, and no adaptive state means adaptive is off
+        if self.state.is_none() || matches!(request.classified_tier, Tier::Named(_)) {
+            return fitting_fallback(self, fallback);
+        }
+        match prepare(self, request)? {
+            Prepared::ColdStart(plan) => {
+                cold_start_outcome(self, plan, request_kwargs, fallback.random)
+            }
+            Prepared::Adaptive(plan) => adaptive_outcome(self, plan, fallback, request_kwargs),
+            Prepared::Fallback => fitting_fallback(self, fallback),
+        }
     }
 }
 

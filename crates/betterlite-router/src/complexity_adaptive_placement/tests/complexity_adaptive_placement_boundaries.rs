@@ -48,7 +48,7 @@ fn an_empty_configured_pool_is_rejected() {
     ));
     assert!(matches!(
         error,
-        AdaptivePlacementError::EmptyTierPool { ref tier } if tier == "SIMPLE"
+        AdaptivePlacementError::EmptyTierPool { tier } if tier == "SIMPLE"
     ));
 }
 
@@ -91,7 +91,7 @@ fn observing_an_unknown_model_names_it() {
         error,
         AdaptivePlacementError::MissingCell {
             request_type: RequestType::General,
-            ref model,
+            model,
         } if model == "ghost"
     ));
 }
@@ -126,7 +126,7 @@ fn a_floor_tier_outside_the_router_is_named() {
         .expect_err("legacy has no severity");
     assert!(matches!(
         error,
-        AdaptivePlacementError::UnknownTier { ref tier } if tier == "legacy"
+        AdaptivePlacementError::UnknownTier { tier } if tier == "legacy"
     ));
 }
 
@@ -151,7 +151,7 @@ fn a_nonfinite_scripted_sample_is_rejected() {
 #[test]
 fn a_script_that_runs_out_is_reported() {
     let facts = priced(&[("mini", 1), ("mid", 2), ("big", 3)]);
-    let mut harness = Harness::new(adaptive_settings(true), POOLS, &facts, &[0.5], None)
+    let mut harness = Harness::new(adaptive_settings(true), POOLS, &facts, &[0.5_f64], None)
         .expect("the router builds");
     warm(&mut harness.router, RequestType::General, &["mid"]);
     let classified = tier("MEDIUM");
@@ -176,7 +176,7 @@ fn a_tie_keeps_the_first_candidate() {
         adaptive_settings(true),
         pools,
         &facts,
-        &[0.1, 0.5, 0.5, 0.1],
+        &[0.1_f64, 0.5_f64, 0.5_f64, 0.1_f64],
         None,
     )
     .expect("the router builds");
@@ -213,8 +213,14 @@ fn a_multi_pool_candidate_takes_its_nearest_membership_distance() {
     ];
     // equal prices leave only the distance to separate the two candidates
     let facts = priced(&[("mini", 1), ("mid", 1)]);
-    let mut harness = Harness::new(adaptive_settings(true), pools, &facts, &[0.9, 0.9], None)
-        .expect("the router builds");
+    let mut harness = Harness::new(
+        adaptive_settings(true),
+        pools,
+        &facts,
+        &[0.9_f64, 0.9_f64],
+        None,
+    )
+    .expect("the router builds");
     warm(&mut harness.router, RequestType::General, &["mini"]);
     let classified = tier("SIMPLE");
     let placed = harness
