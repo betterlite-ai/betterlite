@@ -32,10 +32,10 @@ pub(crate) fn project_text(text: &str, cipher: &Cipher) -> String {
             team_id,
         }) => format!("managed:{original_id}|{user_id}|{team_id}"),
         Ok(DecodedResponseId::Fallback) => "fallback".to_owned(),
-        Ok(DecodedResponseId::Unmanaged) => match decrypted_other(text, cipher) {
-            Some(plaintext) => format!("decrypted:{plaintext}"),
-            None => format!("plain:{text}"),
-        },
+        Ok(DecodedResponseId::Unmanaged) => decrypted_other(text, cipher).map_or_else(
+            || format!("plain:{text}"),
+            |plaintext| format!("decrypted:{plaintext}"),
+        ),
         Err(_) => "malformed".to_owned(),
     }
 }

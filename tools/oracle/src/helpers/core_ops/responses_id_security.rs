@@ -143,14 +143,14 @@ pub(crate) fn principal(input: &PrincipalInput) -> Result<Principal, Box<HelperE
         Some("PROXY_ADMIN_VIEW_ONLY") => vec![Role::PlatformViewer],
         Some(_) | None => Vec::new(),
     };
-    let user = match &input.user_id {
-        Some(id) => json!({ "id": id }),
-        None => Value::Null,
-    };
-    let teams = match &input.team_id {
-        Some(id) => json!([{ "id": id }]),
-        None => json!([]),
-    };
+    let user = input
+        .user_id
+        .as_ref()
+        .map_or(Value::Null, |id| json!({ "id": id }));
+    let teams = input
+        .team_id
+        .as_ref()
+        .map_or_else(|| json!([]), |id| json!([{ "id": id }]));
     let source = json!({
         "principal_type": "human",
         "subject": "subject",

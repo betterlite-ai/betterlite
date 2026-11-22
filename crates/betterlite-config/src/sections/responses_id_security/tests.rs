@@ -3,10 +3,10 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::Settings;
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
     let lookup: BTreeMap<String, String> = variables
@@ -81,7 +81,7 @@ fn loads_settings(
     let (disable, allow, signing_key) = expected;
     assert_eq!(loaded.disable_responses_id_security, disable);
     assert_eq!(loaded.allow_unmanaged_response_ids, allow);
-    let loaded_key = loaded.signing_key.as_ref().map(|key| key.expose_secret());
+    let loaded_key = loaded.signing_key.as_ref().map(ExposeSecret::expose_secret);
     assert_eq!(loaded_key, signing_key);
 }
 
@@ -92,8 +92,5 @@ fn rejects_a_non_boolean_flag() {
     }
     .load("general_settings:\n  disable_responses_id_security: 'true'")
     .expect_err("a string flag is not a bool");
-    assert!(
-        matches!(error, crate::loader::ConfigError::Yaml { .. }),
-        "{error}"
-    );
+    assert!(matches!(error, ConfigError::Yaml { .. }), "{error}");
 }

@@ -24,11 +24,11 @@ pub(crate) fn authorize(
 ) -> HelperResult {
     let state = session(settings);
     let caller = principal(principal_input)?;
-    let mut data = data.clone();
+    let mut payload = data.clone();
     let call = ResponsesCall::from_call_type(call_type);
-    let outcome = state.policy().authorize_call(call, &mut data, &caller);
+    let outcome = state.policy().authorize_call(call, &mut payload, &caller);
     let field_name = addressed_field(call_type);
-    let answer = call_answer(&data, field_name, &outcome, &state.cipher)?;
+    let answer = call_answer(&payload, field_name, &outcome, &state.cipher)?;
     Ok(json!({ "call": answer }))
 }
 
@@ -39,17 +39,17 @@ pub(crate) fn success(
 ) -> HelperResult {
     let state = session(settings);
     let caller = principal(principal_input)?;
-    let mut response = response.clone();
+    let mut body = response.clone();
     state
         .policy()
-        .encrypt_response(&mut response, &caller)
+        .encrypt_response(&mut body, &caller)
         .map_err(|error| internal_failure(&error))?;
-    let nested = response
+    let nested = body
         .extra
         .get("response")
         .map(|value| project(nested_id(value), &state.cipher))
         .transpose()?;
-    let id = project_text(&response.id, &state.cipher);
+    let id = project_text(&body.id, &state.cipher);
     Ok(json!({ "response": { "id": id, "nested": nested } }))
 }
 
@@ -88,11 +88,11 @@ fn run_stream(
     let mut raw = Vec::new();
     let mut advertised = Vec::new();
     for event in events {
-        let mut event = event.clone();
+        let mut chunk = event.clone();
         policy
-            .rewrite_stream_chunk(route, &mut event, caller, &mut cache)
+            .rewrite_stream_chunk(route, &mut chunk, caller, &mut cache)
             .map_err(|error| internal_failure(&error))?;
-        let serialized = serde_json::to_value(&event)
+        let serialized = serde_json::to_value(&chunk)
             .map_err(|error| failure("SerializeFailed", error.to_string()))?;
         let EventView {
             top,
@@ -185,7 +185,7 @@ const fn forbidden_kind(forbidden: Forbidden) -> &'static str {
     }
 }
 
-fn internal_class(error: &ResponsesIdSecurityError) -> &'static str {
+const fn internal_class(error: &ResponsesIdSecurityError) -> &'static str {
     match error {
         ResponsesIdSecurityError::Forbidden(_) => "Forbidden",
         ResponsesIdSecurityError::NotUtf8 => "NotUtf8",
