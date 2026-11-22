@@ -2,19 +2,23 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::sections::request_scheduler::Settings;
 use betterlite_config::sections::routing_state_store::connection::Connection;
+use betterlite_error::error::details::ApiDetails;
+use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_models::model_registration::JsonObject;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::redis_failure_policy::Settings as BreakerSettings;
 use crate::request_scheduler::flow::FlowItem;
-use crate::request_scheduler::schedule::{ScheduledCall, ScheduledFailure};
+use crate::request_scheduler::schedule::ScheduledCall;
 use crate::request_scheduler::service::{RequestIdSource, RequestScheduler};
+use crate::router_core::headers;
 use crate::routing_state_store::Settings as SharedSettings;
 use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_state_store::{RedisSettings, RoutingStateStore};
@@ -156,7 +160,9 @@ pub(super) fn plan(seconds: f64) -> TimeoutPlan {
 
 pub(super) struct ScriptedCall {
     healthy: usize,
-    answer: Result<(), ScheduledFailure>,
+    answer: Result<headers::Response, Box<ErrorClass>>,
+    // flipped as the call runs, so a test can make the removal after it fail
+    flip: Option<Arc<AtomicBool>>,
     // the caller going away while the request waits, cancelled at its first poll
     cancel: Option<CancellationToken>,
     calls: AtomicUsize,
@@ -166,20 +172,41 @@ impl ScriptedCall {
     pub(super) fn answered(healthy: usize) -> Self {
         Self {
             healthy,
-            answer: Ok(()),
+            answer: Ok(headers::Response::Object(JsonObject::new())),
+            flip: None,
+            cancel: None,
+            calls: AtomicUsize::new(0),
+        }
+    }
+
+    pub(super) fn answered_flipping(healthy: usize, flip: Arc<AtomicBool>) -> Self {
+        Self {
+            healthy,
+            answer: Ok(headers::Response::Object(JsonObject::new())),
+            flip: Some(flip),
             cancel: None,
             calls: AtomicUsize::new(0),
         }
     }
 
     pub(super) fn failed(healthy: usize, status: u16, code: Option<&str>) -> Self {
+        let context = ErrorContext {
+            message: "the provider refused the call".to_owned(),
+            model: None,
+            provider: None,
+            max_retries: None,
+            num_retries: None,
+            body_type: Some("invalid_request_error".to_owned()),
+            body_param: Some("model".to_owned()),
+            body_code: code.map(str::to_owned),
+        };
         Self {
             healthy,
-            answer: Err(ScheduledFailure {
+            answer: Err(Box::new(ErrorClass::Api(Box::new(ApiDetails {
+                context,
                 status,
-                code: code.map(str::to_owned),
-                priority: 0,
-            }),
+            })))),
+            flip: None,
             cancel: None,
             calls: AtomicUsize::new(0),
         }
@@ -188,7 +215,8 @@ impl ScriptedCall {
     pub(super) fn cancelling(healthy: usize, cancel: CancellationToken) -> Self {
         Self {
             healthy,
-            answer: Ok(()),
+            answer: Ok(headers::Response::Object(JsonObject::new())),
+            flip: None,
             cancel: Some(cancel),
             calls: AtomicUsize::new(0),
         }
@@ -208,8 +236,11 @@ impl ScheduledCall for ScriptedCall {
         self.healthy
     }
 
-    async fn call(&self) -> Result<(), ScheduledFailure> {
+    async fn call(&self) -> Result<headers::Response, Box<ErrorClass>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        if let Some(flip) = &self.flip {
+            flip.store(true, Ordering::SeqCst);
+        }
         self.answer.clone()
     }
 }

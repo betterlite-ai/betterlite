@@ -12,4 +12,13 @@ deviations:
   - what: A priority outside 0 to 255 is refused at the request and config boundaries with an error that names the field.
     why: FlowItem documents the range but LiteLLM stores the value unchecked, so an out-of-range priority silently orders the heap by a number the typed queue cannot carry.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L14-L18
+  - what: A shared queue update goes through a compare-and-set loop; a lost compare re-reads the queue and decides again, and eight lost compares answer an internal error naming the model and the attempt count.
+    why: LiteLLM's save_queue overwrites the cached list, so two workers adding at once lose one request; the atomic store operation is this task's declared requirement, and a hot queue must not spin forever.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L131-L137
+  - what: A queue read asks the shared store first and merges this worker's copy into an answered shared read, so a request accepted during an outage stays visible when the shared tier returns; a broken local copy never hides the shared answer.
+    why: DualCache.async_get_cache reads the in-memory copy first and only asks Redis when it misses, which hides another worker's update for the local TTL; reading the shared tier first keeps the queue's order current, and the merge keeps the entries an outage added.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L261-L297
+  - what: A scheduled call that answers with no response object returns it without the prioritization header.
+    why: Router.schedule_acompletion writes _response._hidden_params without a guard, so a None response raises AttributeError; no working setup relies on that crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4440-L4441
 kept_bugs: []

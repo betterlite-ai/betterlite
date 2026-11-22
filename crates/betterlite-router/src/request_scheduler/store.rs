@@ -22,6 +22,7 @@ async fn cas<F>(
     key: &RouteKey,
     model: &str,
     change: &F,
+    ttl: Option<f64>,
 ) -> Result<Vec<SchedulerTuple>, SharedChange>
 where
     F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
@@ -29,7 +30,7 @@ where
     let mut expected = shared_read(store, key).await?;
     for _attempt in 0..MAX_CAS_ATTEMPTS {
         let next = change(queue::members(&expected, model)?)?;
-        match swap(store, key, &expected, &next).await? {
+        match swap(store, key, &expected, &next, ttl).await? {
             CompareOutcome { swapped: true, .. } => return Ok(queue::scheduled(&next)),
             CompareOutcome {
                 swapped: false,
@@ -59,22 +60,22 @@ async fn shared_read(store: &RoutingStateStore, key: &RouteKey) -> Result<StoreR
         } => Err(SharedChange::Unavailable(warning)),
     }
 }
-// the compare-and-set: the outcome says whether this writer won or read the winner's value
 async fn swap(
     store: &RoutingStateStore,
     key: &RouteKey,
     expected: &StoreRead,
     next: &BTreeSet<String>,
+    ttl: Option<f64>,
 ) -> Result<CompareOutcome, SharedChange> {
     let written = store
-        .compare_and_set(key, expected, &RouteValue::Members(next.clone()), None)
+        .compare_and_set(key, expected, &RouteValue::Members(next.clone()), ttl)
         .await
         .map_err(|_error| SharedChange::Unavailable(unavailable("compare_and_set")))?;
     let Observed { value, warning } = written;
     warning.map_or(Ok(value), |reason| Err(SharedChange::Unavailable(reason)))
 }
 impl RequestScheduler {
-    // Scheduler.get_queue reads the shared tier first and this worker's copy when it cannot answer
+    // Scheduler.get_queue reads the shared tier first and merges this worker's copy when it answers
     pub(super) async fn queue_members(
         &self,
         model: &str,
@@ -87,10 +88,17 @@ impl RequestScheduler {
             Ok(Observed {
                 value,
                 warning: None,
-            }) => Ok(Observed {
-                value: queue::members(&value, model)?,
-                warning: None,
-            }),
+            }) => {
+                let mut members = queue::members(&value, model)?;
+                // a broken local copy cannot hide a shared answer, while a readable one adds the outage's entries
+                if let Ok(local) = self.local_members(&key, model, None) {
+                    members.extend(local.value);
+                }
+                Ok(Observed {
+                    value: members,
+                    warning: None,
+                })
+            }
             Ok(Observed {
                 warning: Some(warning),
                 ..
@@ -98,7 +106,6 @@ impl RequestScheduler {
             Err(_error) => self.local_members(&key, model, Some(unavailable("async_get_cache"))),
         }
     }
-    // this worker's copy answers when the shared tier is absent or could not be read
     fn local_members(
         &self,
         key: &RouteKey,
@@ -143,7 +150,8 @@ impl RequestScheduler {
     where
         F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
     {
-        match cas(shared, key, model, change).await {
+        let ttl = Some(self.settings.local_ttl_seconds);
+        match cas(shared, key, model, change, ttl).await {
             Ok(entries) => {
                 self.mirror_local(key, &entries)?;
                 Ok(Observed {

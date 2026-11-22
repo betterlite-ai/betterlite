@@ -4,11 +4,9 @@ use std::collections::BTreeSet;
 // SchedulerCacheKeys.queue: one cache entry per model group
 const PREFIX: &str = "scheduler:queue:";
 const SEPARATOR: char = ':';
-// the queue bound a request past it is refused with
 pub const MAX_PENDING_REQUESTS: usize = 1024;
 // a uuid4 id is 36 bytes, and the bound keeps an encoded member well inside the store's value limit
 pub const MAX_REQUEST_ID_BYTES: usize = 128;
-// Scheduler.get_queue's `scheduler:queue:{model_name}` key
 pub fn key(model: &str) -> Result<RouteKey, SchedulerError> {
     match RouteKey::parse(&format!("{PREFIX}{model}")) {
         Ok(key) => Ok(key),
@@ -35,7 +33,6 @@ pub fn decode(member: &str) -> Option<SchedulerTuple> {
         request_id: request_id.to_owned(),
     })
 }
-// `get_queue` as the queue's full order; the pin's heap holds only its head in order
 #[must_use]
 pub fn scheduled(members: &BTreeSet<String>) -> Vec<SchedulerTuple> {
     members
@@ -43,7 +40,6 @@ pub fn scheduled(members: &BTreeSet<String>) -> Vec<SchedulerTuple> {
         .filter_map(|member| decode(member.as_str()))
         .collect()
 }
-// `queue[0]`, the tuple a poll or peek compares the request id against
 #[must_use]
 pub fn head(members: &BTreeSet<String>) -> Option<SchedulerTuple> {
     members
@@ -51,7 +47,6 @@ pub fn head(members: &BTreeSet<String>) -> Option<SchedulerTuple> {
         .next()
         .and_then(|member| decode(member.as_str()))
 }
-// `get_queue`'s list, or the empty queue a missing entry means
 pub fn members(read: &StoreRead, model: &str) -> Result<BTreeSet<String>, SchedulerError> {
     match read {
         StoreRead::Missing => Ok(BTreeSet::new()),
@@ -66,7 +61,6 @@ pub fn members(read: &StoreRead, model: &str) -> Result<BTreeSet<String>, Schedu
         }),
     }
 }
-// remove_request's list comprehension: every entry whose request id differs survives
 #[must_use]
 pub fn without(members: &BTreeSet<String>, request_id: &str) -> BTreeSet<String> {
     members
@@ -78,7 +72,6 @@ pub fn without(members: &BTreeSet<String>, request_id: &str) -> BTreeSet<String>
         .cloned()
         .collect()
 }
-// an id must survive encoding and stay inside the store's member bound
 #[must_use]
 pub fn valid_request_id(request_id: &str) -> bool {
     !request_id.is_empty()

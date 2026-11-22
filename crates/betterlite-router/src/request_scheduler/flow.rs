@@ -15,7 +15,6 @@ impl Priority {
         }
     }
 }
-// Scheduler.add_request's FlowItem: the request's priority, its id and the model group whose queue it joins
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FlowItem {
     pub priority: u8,

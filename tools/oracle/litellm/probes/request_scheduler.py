@@ -109,7 +109,6 @@ class Healthy:
         self.count: int = count
     async def __call__(self, **_kwargs: object) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
         return ([{}] * self.count, [{}])
-# the provider the scheduled request reaches, counted so the case proves when it ran
 class Answer:
     def __init__(self) -> None:
         self.calls: int = 0
@@ -172,7 +171,6 @@ async def apply_step(step: Step, router: Router, answer: Answer) -> tuple[Outcom
     else:
         outcome = Interval(interval=f"{scheduler.polling_interval:.6f}")
     return (outcome, error)
-# get_queue returns the cached heap, so the case reads it in the order the heap serves it
 async def read_queue(router: Router, model: str) -> list[Entry]:
     return [
         Entry(priority=priority, request_id=request_id)

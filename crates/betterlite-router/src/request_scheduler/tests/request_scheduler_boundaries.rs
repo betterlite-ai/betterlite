@@ -1,8 +1,9 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use betterlite_config::sections::request_scheduler::Settings;
+use betterlite_error::envelope::WireField;
 use rstest::rstest;
 
 use crate::request_scheduler::error::SchedulerError;
@@ -253,13 +254,21 @@ async fn a_provider_failure_keeps_the_status_code_and_the_stamped_priority() {
         .await
         .expect_err("the provider refused the call");
     assert_eq!(error.status_code(), Some(429));
-    assert_eq!(error.code(), Some("429"));
+    assert_eq!(error.code(), Some("429".to_owned()));
     assert_eq!(error.priority(), Some(Priority::Low.value()));
     match error {
-        SchedulerError::Provider { failure } => {
-            assert_eq!(failure.status, 429);
-            assert_eq!(failure.code.as_deref(), Some("429"));
-            assert_eq!(failure.priority, Priority::Low.value());
+        SchedulerError::Provider {
+            error: cause,
+            priority,
+        } => {
+            let metadata = cause.metadata();
+            assert_eq!(metadata.status_code, 429);
+            assert_eq!(
+                metadata.error_type,
+                WireField::Text("invalid_request_error".to_owned())
+            );
+            assert_eq!(metadata.param, WireField::Text("model".to_owned()));
+            assert_eq!(priority, Priority::Low.value());
         }
         other => panic!("expected a provider failure, got {other:?}"),
     }
@@ -346,4 +355,67 @@ async fn the_local_queue_copy_expires_at_the_shared_ttl() {
             .is_empty(),
         "the copy is gone past the ttl"
     );
+}
+
+// a local store whose clock turns non-finite on demand, so its next write fails while earlier ones worked
+fn breakable_local_store(broken: &Arc<AtomicBool>) -> RoutingValueStore {
+    let reading = Arc::clone(broken);
+    RoutingValueStore::new(
+        StoreSettings {
+            max_size_in_memory: None,
+            default_ttl_seconds: None,
+            max_size_per_item: Some(1024),
+            loaded_max_size_per_item_kib: 1024,
+        },
+        Arc::new(move || {
+            if reading.load(Ordering::SeqCst) {
+                f64::NAN
+            } else {
+                0.0_f64
+            }
+        }),
+    )
+    .expect("the local store builds")
+}
+
+// a successful call whose queue entry cannot be removed answers its response instead of the cleanup error
+#[tokio::test(start_paused = true)]
+async fn a_completed_request_keeps_its_response_when_the_cleanup_fails() {
+    let broken = Arc::new(AtomicBool::new(false));
+    let (service, _server) = shared_scheduler_with(breakable_local_store(&broken)).await;
+    let call = ScriptedCall::answered_flipping(0, Arc::clone(&broken));
+    let outcome = service
+        .schedule(&item(0, "completed", MODEL), &call, &plan(0.5))
+        .await
+        .expect("the cleanup failure does not replace the response");
+    assert!(outcome.prioritized);
+    assert_eq!(call.calls(), 1);
+}
+
+// the deadline reports its timeout even when the queue entry cannot be removed
+#[tokio::test(start_paused = true)]
+async fn a_timed_out_request_answers_its_timeout_when_the_cleanup_fails() {
+    let broken = Arc::new(AtomicBool::new(false));
+    let (service, _server) = shared_scheduler_with(breakable_local_store(&broken)).await;
+    service
+        .add_request(&item(Priority::High.value(), "head", MODEL))
+        .await
+        .expect("the head queues");
+    let call = ScriptedCall::answered(0);
+    let flipping = Arc::clone(&broken);
+    let flip = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        flipping.store(true, Ordering::SeqCst);
+    });
+    let error = service
+        .schedule(
+            &item(Priority::Low.value(), "late", MODEL),
+            &call,
+            &plan(0.5),
+        )
+        .await
+        .expect_err("the deadline expires");
+    flip.await.expect("the clock flips");
+    assert!(matches!(error, SchedulerError::TimedOut { .. }));
+    assert_eq!(call.calls(), 0);
 }

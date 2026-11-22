@@ -3,10 +3,13 @@ use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 use async_trait::async_trait;
 use betterlite_config::sections::request_scheduler::Settings;
+use betterlite_error::error::ErrorClass;
+use betterlite_models::model_registration::JsonObject;
 use betterlite_router::request_scheduler::error::SchedulerError;
 use betterlite_router::request_scheduler::flow::FlowItem;
-use betterlite_router::request_scheduler::schedule::{ScheduledCall, ScheduledFailure};
+use betterlite_router::request_scheduler::schedule::ScheduledCall;
 use betterlite_router::request_scheduler::service::RequestScheduler;
+use betterlite_router::router_core::headers;
 use betterlite_router::routing_timeouts::global::GlobalRequestTimeout;
 use betterlite_router::routing_timeouts::plan::{
     DeploymentTimeouts, RequestTimeouts, RouterTimeoutSources, TimeoutPlan, resolve_router_timeouts,
@@ -19,7 +22,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::runtime::Builder;
 use tokio::time::Instant;
 mod wire;
-// the enum in mod.rs would otherwise carry every field of this payload inline in its largest variant
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Input(Box<wire::Payload>);
@@ -77,7 +79,6 @@ async fn scenario(payload: &wire::Payload) -> Result<wire::OutputFields, Operati
         calls: calls.load(Ordering::SeqCst),
     })
 }
-// what a step answered: the outcome, or the error's status, code and stamped priority
 type Reply = (wire::Outcome, Option<wire::Failure>);
 async fn apply(
     service: &RequestScheduler,
@@ -138,7 +139,6 @@ async fn peek(service: &RequestScheduler, model: &str, request_id: &str) -> Repl
         head: observed.value,
     }))
 }
-// the schedule step's own fields, gathered so the runner takes one value
 struct Queued<'a> {
     priority: u8,
     request_id: &'a str,
@@ -168,7 +168,6 @@ async fn run_scheduled(
         priority: outcome.priority,
     }))
 }
-// the service's answer as the case reads it: the outcome, or the error's status, code and stamped priority
 fn answer(result: Result<wire::Outcome, SchedulerError>) -> Reply {
     match result {
         Ok(outcome) => (outcome, None),
@@ -176,7 +175,7 @@ fn answer(result: Result<wire::Outcome, SchedulerError>) -> Reply {
             wire::Outcome::Error,
             Some(wire::Failure {
                 status: error.status_code(),
-                code: error.code().map(str::to_owned),
+                code: error.code(),
                 priority: error.priority(),
             }),
         ),
@@ -246,7 +245,6 @@ fn plan(timeout: &str) -> Result<TimeoutPlan, OperationError> {
     )
     .map_err(|error| invalid(&error.to_string()))
 }
-// the case scripts the answer, and the provider is only reached once the queue lets the request run
 struct Scripted {
     healthy: usize,
     calls: Arc<AtomicUsize>,
@@ -256,9 +254,9 @@ impl ScheduledCall for Scripted {
     fn healthy_deployments(&self) -> usize {
         self.healthy
     }
-    async fn call(&self) -> Result<(), ScheduledFailure> {
+    async fn call(&self) -> Result<headers::Response, Box<ErrorClass>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        Ok(())
+        Ok(headers::Response::Object(JsonObject::new()))
     }
 }
 fn invalid(message: &str) -> OperationError {

@@ -1,11 +1,14 @@
 use std::time::Duration;
 
 use betterlite_config::sections::request_scheduler::Settings;
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use crate::request_scheduler::error::SchedulerError;
 use crate::request_scheduler::flow::Priority;
+use crate::request_scheduler::queue;
 use crate::request_scheduler::schedule::PRIORITIZATION_HEADER;
+use crate::router_core::headers::Response;
 use crate::routing_state_store::error::StoreWarning;
 
 use super::{MODEL, ScriptedCall, entries, item, plan, queue_all, scheduler, shared_scheduler};
@@ -134,6 +137,16 @@ async fn a_scheduled_request_reports_the_prioritization_header() {
         .await
         .expect("the request is scheduled");
     assert!(outcome.prioritized);
+    let Response::Object(body) = &outcome.response else {
+        panic!("the scheduled call answered with a dict");
+    };
+    let Some(Json::Object(hidden)) = body.get("_hidden_params") else {
+        panic!("the scheduler stamped the hidden params");
+    };
+    let Some(Json::Object(headers)) = hidden.get("additional_headers") else {
+        panic!("the scheduler wrote the header map");
+    };
+    assert_eq!(headers.get(PRIORITIZATION_HEADER), Some(&Json::Bool(true)));
     assert_eq!(outcome.priority, 7);
     assert_eq!(outcome.polls, 0);
     assert_eq!(outcome.request_id, "scheduled");
@@ -240,6 +253,13 @@ async fn a_shared_queue_survives_an_unavailable_tier() {
         service.queue(MODEL).await.expect("the queue reads").value,
         entries(&[(128, "first")])
     );
+    assert_eq!(
+        server
+            .raw(queue::key(MODEL).expect("the queue key").as_ref())
+            .map(|entry| entry.1),
+        Some(5),
+        "the shared key uses the local ttl"
+    );
     server.set_down(true);
     let added = service
         .add_request(&item(0, "second", MODEL))
@@ -255,6 +275,26 @@ async fn a_shared_queue_survives_an_unavailable_tier() {
         "the read reports its warning"
     );
     assert_eq!(queued.value, entries(&[(0, "second"), (128, "first")]));
+}
+
+// a request accepted during an outage stays visible once the shared tier returns with its older queue
+#[tokio::test]
+async fn a_request_accepted_during_an_outage_survives_the_recovery() {
+    let (service, server) = shared_scheduler().await;
+    service
+        .add_request(&item(128, "first", MODEL))
+        .await
+        .expect("the request queues");
+    server.set_down(true);
+    service
+        .add_request(&item(0, "second", MODEL))
+        .await
+        .expect("the fallback queue accepts the request");
+    server.set_down(false);
+    assert_eq!(
+        service.queue(MODEL).await.expect("the queue reads").value,
+        entries(&[(0, "second"), (128, "first")])
+    );
 }
 
 // an empty queue is the setup error Scheduler.poll and Scheduler.peek raise, told apart from the wait

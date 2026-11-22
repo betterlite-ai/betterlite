@@ -35,7 +35,6 @@ impl RequestScheduler {
             request_ids,
         }
     }
-    // Scheduler.__init__'s polling interval; a value a duration cannot hold polls without waiting
     #[must_use]
     pub fn polling_interval(&self) -> Duration {
         if let Ok(interval) = Duration::try_from_secs_f64(self.settings.polling_interval) {
@@ -43,7 +42,6 @@ impl RequestScheduler {
         }
         Duration::ZERO
     }
-    // Router.acompletion's `kwargs.get("priority") or self.default_priority`: the request's own priority wins
     #[must_use]
     pub fn priority(&self, requested: Option<u8>) -> Option<u8> {
         if let Some(priority) = requested {
@@ -51,7 +49,6 @@ impl RequestScheduler {
         }
         self.settings.default_priority
     }
-    // Router.schedule_acompletion's `str(uuid.uuid4())`, refused when the queue could not hold it
     pub fn next_request_id(&self) -> Result<String, SchedulerError> {
         let generated = (self.request_ids)();
         if !queue::valid_request_id(&generated) {
@@ -89,7 +86,6 @@ impl RequestScheduler {
             warning: changed.warning,
         })
     }
-    // Scheduler.remove_request: every entry of the request id leaves the model's queue
     pub async fn remove_request(&self, item: &FlowItem) -> Result<Observed<()>, SchedulerError> {
         let changed = self
             .change(&item.model, |members| {
