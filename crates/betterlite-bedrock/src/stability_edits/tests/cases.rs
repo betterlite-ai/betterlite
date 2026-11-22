@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::error::ImageCostError;
 use betterlite_models::price_lookup::PriceRecord;
 use betterlite_models::tiered_pricing::Scalar;
-use betterlite_openai::api::image_contracts::records::ImageData;
+use betterlite_openai::api::image_contracts::records::{ImageData, ImageHttpResponse};
 use serde_json::from_str;
 
 use super::support::{
@@ -457,50 +457,64 @@ fn record_failures() {
 }
 
 fn price_failures() {
+    unmapped_model_price();
+    let upstream = upstream(200, r#"{"images":["x"]}"#);
+    text_price_failure(&upstream);
+    shape_price_failures();
+    price_header_cases(&upstream);
+}
+
+fn unmapped_model_price() {
     let unknown = edit_reply(UNKNOWN, 200, r#"{"images":["x"]}"#)
         .expect_err("an unmapped model has no price");
     assert_eq!(unknown.status(), None);
     assert!(matches!(unknown, StabilityEditError::ModelInfo { .. }));
+}
 
-    let upstream = upstream(200, r#"{"images":["x"]}"#);
+fn text_price_failure(upstream: &ImageHttpResponse) {
     let text_price = Prices::new(&[(
         INPAINT,
         price_record(&[("output_cost_per_image", Scalar::Text("nope".to_owned()))]),
     )]);
-    let error = transform_image_edit_response(INPAINT, &upstream, NOW, &text_price)
+    let error = transform_image_edit_response(INPAINT, upstream, NOW, &text_price)
         .expect_err("a non-numeric price fails");
     assert_eq!(error.status(), None);
     assert!(matches!(
         error,
         StabilityEditError::Price(ImageCostError::Rate(_))
     ));
+}
 
+fn shape_price_failures() {
     for body in [
         r#"{"output_cost_per_image":[1]}"#,
         r#"{"output_cost_per_image":{"amount":1}}"#,
     ] {
         let record: PriceRecord = from_str(body).expect("the fixture is a price record");
-        let error = priced_reply(record).expect_err("a list or object price is not a decimal");
+        let shape_error =
+            priced_reply(record).expect_err("a list or object price is not a decimal");
         assert!(
             matches!(
-                error,
+                shape_error,
                 StabilityEditError::Price(ImageCostError::WrongFieldType { .. })
             ),
             "{body}"
         );
     }
+}
 
+fn price_header_cases(upstream: &ImageHttpResponse) {
     let null_price = Prices::new(&[(
         INPAINT,
         price_record(&[("output_cost_per_image", Scalar::Null)]),
     )]);
-    let null_reply = transform_image_edit_response(INPAINT, &upstream, NOW, &null_price)
+    let null_reply = transform_image_edit_response(INPAINT, upstream, NOW, &null_price)
         .expect("a null price omits the header");
     assert_eq!(null_reply.additional_headers.get(COST_HEADER), None);
 
     // the declared default applies to an absent key, where LiteLLM's get_model_info has already filled a None
     let absent = Prices::new(&[(INPAINT, price_record(&[]))]);
-    let absent_reply = transform_image_edit_response(INPAINT, &upstream, NOW, &absent)
+    let absent_reply = transform_image_edit_response(INPAINT, upstream, NOW, &absent)
         .expect("an absent price is zero");
     assert_eq!(
         absent_reply.additional_headers.get(COST_HEADER),
