@@ -80,7 +80,7 @@ async fn unavailable_counters_skip_or_reject() {
         vec![vec![(KEY.to_owned(), amount("4"))]]
     );
     let mut strict = seeded(&[(KEY, "1")], &[]);
-    let _inserted = strict.failed_seeds.insert(USER.to_owned());
+    let _strict_inserted = strict.failed_seeds.insert(USER.to_owned());
     let mut rejected = Vec::new();
     let strict_request = AdmissionRequest {
         fail_closed_budget_enforcement: true,
@@ -108,7 +108,7 @@ async fn throttle_release_frees_only_the_key_counter() {
     let auth = token(true);
     let mut request_value = request(&counters, "4");
     request_value.token = Some(&auth);
-    request_value.throttle_percentage = Some(0.5);
+    request_value.throttle_percentage = Some(0.5_f64);
     let mut applied = Vec::new();
     let admission = admit(&fake, &request_value, &mut applied)
         .await
@@ -138,7 +138,7 @@ async fn a_throttled_token_still_blocks_a_user_cap() {
     let auth = token(true);
     let mut request_value = request(&counters, "4");
     request_value.token = Some(&auth);
-    request_value.throttle_percentage = Some(0.5);
+    request_value.throttle_percentage = Some(0.5_f64);
     let mut applied = Vec::new();
     let error = admit(&fake, &request_value, &mut applied)
         .await
@@ -224,7 +224,7 @@ async fn a_reservation_inside_the_budget_charges_without_policy() {
     let auth = token(true);
     let mut request_value = request(&counters, "4");
     request_value.token = Some(&auth);
-    request_value.throttle_percentage = Some(0.5);
+    request_value.throttle_percentage = Some(0.5_f64);
     let mut applied = Vec::new();
     let admission = admit(&fake, &request_value, &mut applied)
         .await

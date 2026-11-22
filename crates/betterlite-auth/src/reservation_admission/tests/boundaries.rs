@@ -71,7 +71,7 @@ async fn a_failed_window_seed_invalidates_and_rejects() {
     assert!(applied.is_empty());
     assert_eq!(take_calls(&fake).invalidations, vec![WINDOW.to_owned()]);
     let mut strict = seeded(&[], &[]);
-    let _inserted = strict.failed_seeds.insert(WINDOW.to_owned());
+    let _strict_inserted = strict.failed_seeds.insert(WINDOW.to_owned());
     let strict_request = AdmissionRequest {
         fail_closed_budget_enforcement: true,
         ..request(&counters, "4")
@@ -143,7 +143,7 @@ async fn a_failed_pipeline_rolls_back_only_its_group() {
     assert_eq!(value_of(&fake, TEAM), Some(amount("4")));
     assert_eq!(take_calls(&fake).invalidations, vec![USER.to_owned()]);
     let mut strict = seeded(&[(KEY, "0"), (USER, "5"), (TEAM, "0")], &[]);
-    let _inserted = strict.failed_pipelines.insert(USER.to_owned());
+    let _strict_inserted = strict.failed_pipelines.insert(USER.to_owned());
     let mut rejected = Vec::new();
     let strict_request = AdmissionRequest {
         fail_closed_budget_enforcement: true,
@@ -305,7 +305,7 @@ async fn an_empty_reservable_list_returns_the_estimate() {
     assert!(applied.is_empty());
 }
 
-// a counter whose entry the group lost, or whose pre-read the map lost, is passed over and the next one settles
+// a counter whose entry the group lost is passed over and the next counter still settles
 async fn lost_entries_do_not_stop_later_counters() {
     let counters = vec![
         entity(USER, "5", "9", CounterEntityType::User),
@@ -329,14 +329,23 @@ async fn lost_entries_do_not_stop_later_counters() {
         take_calls(&fake).settlements,
         vec![vec![(KEY.to_owned(), amount("-2"))]]
     );
+    lost_pre_read_does_not_stop_the_next_counter(&counters, &fake, &current_spend).await;
+}
+
+// a counter whose pre-read the map lost falls back to the pipeline value and still settles
+async fn lost_pre_read_does_not_stop_the_next_counter(
+    counters: &[BudgetCounter],
+    fake: &FakeMemory,
+    current_spend: &BTreeMap<String, Decimal>,
+) {
     let mut both_applied = vec![
         counter_to_reservation_entry(&counters[0], amount("4")),
         counter_to_reservation_entry(&counters[1], amount("4")),
     ];
     let both_cost = settle_charge(
-        &counters,
-        &fake,
-        &current_spend,
+        counters,
+        fake,
+        current_spend,
         vec![None, Some(amount("10"))],
         &mut both_applied,
     )
@@ -344,13 +353,13 @@ async fn lost_entries_do_not_stop_later_counters() {
     .expect("the settle");
     assert_eq!(both_cost, amount("2"));
     assert_eq!(
-        take_calls(&fake).settlements,
+        take_calls(fake).settlements,
         vec![vec![
             (USER.to_owned(), amount("-2")),
             (KEY.to_owned(), amount("-2")),
         ]]
     );
-    assert_eq!(value_of(&fake, USER), Some(amount("3")));
+    assert_eq!(value_of(fake, USER), Some(amount("3")));
 }
 
 // settle_group over a charge the test builds itself, with the reservation cost at the estimate

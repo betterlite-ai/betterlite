@@ -73,27 +73,28 @@ async fn execute(input: &Input) -> HelperResult {
     let outcome = admit(&memory, &request, &mut applied).await;
     let (reservation, error) =
         outcome_values(&outcome, &mut applied, &memory, reservation_cost).await?;
-    let values = lock(&memory.values);
-    let pipelines = lock(&memory.pipelines);
+    let memory_json = memory_value(&lock(&memory.values))?;
+    let pipelines_json = pipelines_value(&lock(&memory.pipelines)[..])?;
+    let invalidated = lock(&memory.invalidated).clone();
     Ok(json!({
         "reservation": reservation,
         "error": error,
-        "memory": memory_value(&values)?,
-        "pipelines": pipelines_value(&pipelines[..])?,
-        "invalidated": &*lock(&memory.invalidated),
+        "memory": memory_json,
+        "pipelines": pipelines_json,
+        "invalidated": invalidated,
     }))
 }
 
 // the reservation the caller settles against, or the error after every applied entry is released
 async fn outcome_values(
     outcome: &Result<Admission, AdmissionError>,
-    applied: &mut Vec<ReservationEntry>,
+    applied: &mut [ReservationEntry],
     memory: &ScriptedMemory,
     reservation_cost: Decimal,
 ) -> Result<(Value, Value), Box<HelperError>> {
     match outcome {
         Ok(admission) if !applied.is_empty() => Ok((
-            reservation_value(admission.reserved_cost, applied)?,
+            reservation_value(admission.reserved_cost, &*applied)?,
             Value::Null,
         )),
         Ok(_) => Ok((Value::Null, Value::Null)),

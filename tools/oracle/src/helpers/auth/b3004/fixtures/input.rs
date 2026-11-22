@@ -31,7 +31,8 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Token {
-    pub(crate) token: String,
+    #[serde(rename = "token")]
+    pub(crate) secret: String,
     #[serde(default)]
     pub(crate) max_budget: Option<serde_json::Number>,
     pub(crate) spend: serde_json::Number,
@@ -55,7 +56,8 @@ pub(crate) struct Limit {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct User {
-    pub(crate) user_id: String,
+    #[serde(rename = "user_id")]
+    pub(crate) id: String,
     pub(crate) max_budget: serde_json::Number,
     pub(crate) spend: serde_json::Number,
 }
@@ -69,7 +71,7 @@ impl Token {
             JsonData::Bool(self.throttle),
         );
         let mut fields = BTreeMap::from([
-            ("token".to_owned(), JsonData::String(self.token.clone())),
+            ("token".to_owned(), JsonData::String(self.secret.clone())),
             ("spend".to_owned(), JsonData::Number(self.spend.clone())),
             ("user_id".to_owned(), JsonData::String(self.user_id.clone())),
             ("metadata".to_owned(), JsonData::Object(metadata)),
@@ -125,7 +127,7 @@ impl Limit {
 impl User {
     pub(crate) fn row(&self) -> Result<LiteLLMUserTable, Box<HelperError>> {
         let value = serde_json::json!({
-            "user_id": &self.user_id,
+            "user_id": &self.id,
             "max_budget": &self.max_budget,
             "spend": &self.spend,
         });

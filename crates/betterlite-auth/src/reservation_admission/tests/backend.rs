@@ -30,7 +30,7 @@ use crate::spend_counter_batch::batch::CounterValue;
 use crate::spend_counter_batch::batch::PendingSpendIncrement;
 use crate::spend_counter_batch::batch::SpendCounterBatchError;
 use crate::spend_counter_batch::scope::SpendCounterScope;
-use crate::spend_reseed::cache::ActiveSpendBatch;
+use crate::spend_reseed::cache::ActiveSpendBatch as _;
 use crate::spend_reseed::locks::LockRegistry;
 use crate::spend_reseed::reseed::SpendCounterReseed;
 use crate::spend_reseed::rows::{
