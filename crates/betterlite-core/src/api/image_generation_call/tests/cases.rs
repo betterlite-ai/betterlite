@@ -62,11 +62,11 @@ fn assert_default_logging(logging: &LoggingState) {
         Some(&Json::Bool(false))
     );
     assert_eq!(
-        logging.model_call_details.get("preset_cache_key"),
+        logging.litellm_params.get("preset_cache_key"),
         Some(&Json::Null)
     );
     assert_eq!(
-        logging.model_call_details.get("stream_response"),
+        logging.litellm_params.get("stream_response"),
         Some(&Json::Object(IndexMap::new()))
     );
 }
@@ -101,6 +101,17 @@ fn explicit_options() {
     assert_eq!(sent[0].header("X-One"), Some("extra"));
     assert_eq!(sent[0].header("X-Two"), Some("extra"));
     assert_eq!(sent[0].header("X-Keep"), Some("kept"));
+    let extra = object(&[("X-One", "extra"), ("X-Two", "extra")]);
+    assert_eq!(sent[0].option("extra_headers"), Some(&extra));
+    assert_eq!(
+        sent[0].option("extra_body"),
+        Some(&Json::Object(IndexMap::from([(
+            String::from("extra_headers"),
+            extra,
+        )])))
+    );
+    // the OpenAI-only names stay out of the provider body and the organization reaches its own header
+    assert!(sent[0].option("organization").is_none());
 }
 
 fn explicit_call() -> ImageGenerationCall {
@@ -251,6 +262,24 @@ fn generation_provider_selection(
     assert!(missing.sends().is_empty());
 }
 
+// LiteLLM's openai branch also takes every openai_compatible_providers entry, not only openai and litellm_proxy
+#[test]
+fn openai_compatible_providers_take_the_openai_branch() {
+    let ops = FakeOps::new(Some(ImageGenerationConfigTag::OpenAi(String::from(
+        "dall-e-2",
+    ))));
+    let identity = FakeIdentity::new(
+        Some("llama-3"),
+        ProviderIdentity::Custom(String::from("groq")),
+    );
+    let case = Case::new(&ops, &identity, Settings::default());
+    case.run(call(Some("llama-3"), Some("groq"))).0.unwrap();
+    let sent = ops.sends();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].branch, "openai");
+    assert_eq!(sent[0].model.as_deref(), Some("llama-3"));
+}
+
 // a resolver that answers no model is impossible after normal resolution, so it is injected here
 #[rstest]
 #[case::black_forest_labs("black_forest_labs", ProviderId::BlackForestLabs, true)]
@@ -373,11 +402,11 @@ fn custom_handler_failures(identity: &FakeIdentity) {
         }
         other => panic!("expected the unknown provider error, got {other:?}"),
     }
-    let failing = FakeOps::failing(None, 429, "slow down");
+    let failing = FakeOps::new(None);
     let failing_case = custom_case(
         &failing,
         identity,
-        vec![Some(Arc::new(FixtureHandler::default()))],
+        vec![Some(Arc::new(FixtureHandler::failing(429, "slow down")))],
     );
     match failing_case
         .run(call(Some("custom-model"), Some("myprov")))
@@ -401,6 +430,7 @@ struct HandlerSeen {
 struct FixtureHandler {
     calls: Mutex<Vec<Option<CustomClientKind>>>,
     seen: Mutex<Vec<HandlerSeen>>,
+    failure: Option<(u16, String)>,
 }
 
 impl Default for FixtureHandler {
@@ -408,11 +438,20 @@ impl Default for FixtureHandler {
         Self {
             calls: Mutex::new(Vec::new()),
             seen: Mutex::new(Vec::new()),
+            failure: None,
         }
     }
 }
 
 impl FixtureHandler {
+    fn failing(status: u16, message: &str) -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+            seen: Mutex::new(Vec::new()),
+            failure: Some((status, message.to_owned())),
+        }
+    }
+
     fn calls(&self) -> Vec<Option<CustomClientKind>> {
         self.calls
             .lock()
@@ -447,15 +486,25 @@ impl CustomImageHandler for FixtureHandler {
                 model: request.model.map(str::to_owned),
                 asynchronous: request.asynchronous,
             });
+        let failure = self.failure.clone();
         Box::pin(async move {
-            Ok(BranchAnswer {
-                response: ImageResponse {
-                    created: NOW,
-                    data: Some(Vec::new()),
-                    usage: Some(ImageUsage::default()),
-                },
-                hidden_model: None,
-            })
+            match failure {
+                Some((status, message)) => Err(Box::new(provider_failure(
+                    status,
+                    &message,
+                    "custom-model",
+                    "myprov",
+                    "RateLimitError",
+                ))),
+                None => Ok(BranchAnswer {
+                    response: ImageResponse {
+                        created: NOW,
+                        data: Some(Vec::new()),
+                        usage: Some(ImageUsage::default()),
+                    },
+                    hidden_model: None,
+                }),
+            }
         })
     }
 }
@@ -512,7 +561,11 @@ fn mock_response_runs_after_logging() {
         logging.model_call_details.get("custom_llm_provider"),
         Some(&Json::Text(String::from("openai")))
     );
-    assert!(ops.configs().is_empty());
+    // LiteLLM maps the options before it checks mock_response, so the provider config is selected first
+    assert_eq!(
+        ops.configs(),
+        vec![(Some(String::from("dall-e-2")), String::from("openai"))]
+    );
     assert!(ops.sends().is_empty());
 }
 

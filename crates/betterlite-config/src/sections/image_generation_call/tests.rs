@@ -103,6 +103,14 @@ fn loads_foundry_environment() {
 }
 
 #[test]
+fn empty_foundry_environment_is_unset() {
+    let variables = [("AZURE_AI_API_BASE", ""), ("AZURE_AI_API_KEY", "")];
+    let settings = settings("litellm_settings: {}\n", &variables).expect("settings load");
+    assert!(settings.azure_ai_api_base.is_none());
+    assert!(settings.azure_ai_api_key.is_none());
+}
+
+#[test]
 fn the_shipped_seed_loads() {
     let source = include_str!("../../../fuzz/corpus/config_yaml/image-generation-call-valid.yaml");
     let settings = settings(source, &[]).expect("seed load");

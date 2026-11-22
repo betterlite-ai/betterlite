@@ -194,6 +194,47 @@ fn entra_kwargs(tenant: &str, extra: Vec<(&'static str, Json)>) -> IndexMap<Stri
     kwargs(entries)
 }
 
+// LiteLLM builds the Entra callback only when all three parts are non-empty strings
+#[rstest]
+#[case::empty_secret("tenant", "client", "")]
+#[case::empty_client("tenant", "", "secret")]
+fn entra_credentials_need_every_part(
+    #[case] tenant: &str,
+    #[case] client: &str,
+    #[case] secret: &str,
+) {
+    let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
+    let identity = azure_identity("dep");
+    let case = Case::new(&ops, &identity, Settings::default());
+    let mut azure_call = call(Some("dep"), Some("azure"));
+    azure_call.kwargs = kwargs(vec![
+        ("tenant_id", Json::Text(tenant.to_owned())),
+        ("client_id", Json::Text(client.to_owned())),
+        ("client_secret", Json::Text(secret.to_owned())),
+    ]);
+    case.run(azure_call).0.unwrap();
+    let sent = ops.sends();
+    assert_eq!(sent.len(), 1);
+    assert!(!sent[0].has_entra_provider);
+    assert!(ops.entra().is_empty());
+}
+
+// `litellm_params_dict.get("azure_scope") or <default>` treats an empty scope as unset
+#[test]
+fn empty_azure_scope_uses_the_default() {
+    let ops = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
+    let identity = azure_identity("dep");
+    let case = Case::new(&ops, &identity, Settings::default());
+    let mut azure_call = call(Some("dep"), Some("azure"));
+    azure_call.kwargs = entra_kwargs("tenant", vec![("azure_scope", Json::Text(String::new()))]);
+    case.run(azure_call).0.unwrap();
+    let sent = ops.sends();
+    assert!(sent[0].has_entra_provider);
+    let entra = ops.entra();
+    assert_eq!(entra.len(), 1);
+    assert_eq!(entra[0].3, "https://cognitiveservices.azure.com/.default");
+}
+
 #[test]
 fn foundry_caller_authorization() {
     let ops = FakeOps::new(Some(ImageGenerationConfigTag::AzureAi(String::from(

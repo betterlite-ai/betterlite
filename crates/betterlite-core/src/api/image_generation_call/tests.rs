@@ -181,7 +181,12 @@ impl ImageIdentity for FakeIdentity {
                 api_base: request.api_base.map(str::to_owned),
                 has_key: request.api_key.is_some(),
             });
-        self.result.clone()
+        // the real resolver answers the caller's api_base, so the fake echoes it too
+        let mut resolved = self.result.clone()?;
+        if let Some(api_base) = request.api_base {
+            resolved.api_base = Some(api_base.to_owned());
+        }
+        Ok(resolved)
     }
 }
 
@@ -592,27 +597,29 @@ type FoundrySeen = (Option<String>, Vec<(String, Json)>);
 struct FakeOps {
     config: Option<ImageGenerationConfigTag>,
     supported: Vec<String>,
+    bedrock: TestMapper,
     configs_seen: Mutex<Vec<(Option<String>, String)>>,
     entra_seen: Mutex<Vec<(String, String, String, String)>>,
     foundry_seen: Mutex<Vec<FoundrySeen>>,
     sends: Mutex<Vec<Sent>>,
     answer: BranchAnswer,
-    send_failure: Option<(u16, String)>,
 }
 
 impl FakeOps {
     fn new(config: Option<ImageGenerationConfigTag>) -> Self {
+        let supported = vec![
+            String::from("n"),
+            String::from("quality"),
+            String::from("response_format"),
+            String::from("size"),
+            String::from("style"),
+            String::from("user"),
+            String::from("azure_ad_token"),
+        ];
         Self {
             config,
-            supported: vec![
-                String::from("n"),
-                String::from("quality"),
-                String::from("response_format"),
-                String::from("size"),
-                String::from("style"),
-                String::from("user"),
-                String::from("azure_ad_token"),
-            ],
+            supported: supported.clone(),
+            bedrock: TestMapper { supported },
             configs_seen: Mutex::new(Vec::new()),
             entra_seen: Mutex::new(Vec::new()),
             foundry_seen: Mutex::new(Vec::new()),
@@ -629,14 +636,7 @@ impl FakeOps {
                 },
                 hidden_model: None,
             },
-            send_failure: None,
         }
-    }
-
-    fn failing(config: Option<ImageGenerationConfigTag>, status: u16, message: &str) -> Self {
-        let mut ops = Self::new(config);
-        ops.send_failure = Some((status, message.to_owned()));
-        ops
     }
 
     fn sends(&self) -> Vec<Sent> {
@@ -692,7 +692,8 @@ impl ImageGenerationOperations for FakeOps {
     }
 
     fn bedrock_mapper(&self) -> Option<&dyn OptionalParamsMapper> {
-        None
+        // B634 injects the bedrock config class through this seam; the fake supplies one so the branch is reachable
+        Some(&self.bedrock)
     }
 
     fn entra_token_provider(
@@ -741,20 +742,8 @@ impl ImageGenerationOperations for FakeOps {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(sent);
-        let failure = self.send_failure.clone();
         let answer = self.answer.clone();
-        async move {
-            match failure {
-                Some((status, message)) => Err(Box::new(provider_failure(
-                    status,
-                    &message,
-                    "image-model",
-                    "custom",
-                    "RateLimitError",
-                ))),
-                None => Ok(answer),
-            }
-        }
+        async move { Ok(answer) }
     }
 }
 
