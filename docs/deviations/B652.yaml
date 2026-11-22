@@ -1,5 +1,8 @@
 task: B652
-deviations: []
+deviations:
+  - what: An empty messages list returns a typed InvokeAgentRequestError instead of raising IndexError from messages[-1].
+    why: LiteLLM's unhandled IndexError surfaces as a 500; a typed request error keeps the same failure without an unhandled exception, and no working setup sends an empty message list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L148-L162
 kept_bugs:
   - what: The request body copies every optional parameter verbatim, so sessionID and the aws_* credential keys a caller merged into optional_params travel to the endpoint inside the JSON body.
     why: LiteLLM's transform_request ends with **optional_params, and a working setup can rely on arbitrary provider fields passing through to the agent; the overlay and its credential spill are kept as LiteLLM writes them, and the agent_input_text case pins the exact body.
