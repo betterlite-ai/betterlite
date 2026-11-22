@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod corpus;
 mod lines;
 mod parse;
 mod policy;
