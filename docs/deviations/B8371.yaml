@@ -1,0 +1,15 @@
+task: B8371
+deviations:
+  - what: >-
+      The settings-change retention interval is built and wrapped in the B4172 stagger, but
+      the stagger offset cancels: B8370's IntervalTrigger computes its next fire from the
+      now it receives, so the offset trigger hands it now minus the offset and then adds the
+      offset to the answer. LiteLLM's apscheduler IntervalTrigger fixes its start date at
+      construction, so the offset moves every fire later by up to the 300 second window.
+    why: >-
+      The interval trigger and its fire-time math belong to B8370 and are outside this
+      task's scope; here the built interval goes through stagger_trigger exactly as the task
+      text requires. The oracle cases compare the fire gap, which the offset does not
+      change, so they cannot show it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7823-L7828
+kept_bugs: []

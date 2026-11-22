@@ -469,6 +469,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "router_read"
+path = "fuzz_targets/router_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "stored_ui_settings"
 path = "fuzz_targets/stored_ui_settings.rs"
 test = false

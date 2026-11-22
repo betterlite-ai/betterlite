@@ -1,0 +1,299 @@
+use std::collections::BTreeMap;
+use std::future::{Future, ready};
+use std::sync::{Arc, Mutex, PoisonError};
+
+use betterlite_auth::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
+use betterlite_auth::spend_reads::batch::SpendBatch;
+use betterlite_auth::spend_reads::cache::SpendReadCache;
+use betterlite_auth::spend_reseed::cache::{ActiveSpendBatch, ReseedCache};
+use betterlite_auth::spend_reseed::rows::{
+    SpendAggregateRow, SpendCounterRows, WindowEntity, WindowSpendRow,
+};
+use betterlite_auth::spend_reseed::values::ReseedCacheValue;
+use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
+use betterlite_db::spend_rows::rows::{
+    SpendCounterRows as DbSpendCounterRows, SpendRow, SpendRowLookup,
+};
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
+use serde_json::{Number, Value, json};
+
+use super::input::{BatchMode, Input, RowsInput};
+
+#[derive(Debug, thiserror::Error)]
+#[error("the scripted store failed")]
+pub(crate) struct ScriptedFailure;
+
+// each entry keeps the ttl it was written with, the way LiteLLM's in-memory cache does
+pub(crate) type Memory = Arc<Mutex<BTreeMap<String, (ReseedCacheValue, Option<u32>)>>>;
+
+pub(crate) fn amount_json(amount: Decimal) -> Value {
+    amount
+        .to_f64()
+        .and_then(Number::from_f64)
+        .map_or(Value::Null, Value::Number)
+}
+
+pub(crate) fn stored_value(memory: &Memory, key: &str) -> Option<ReseedCacheValue> {
+    memory
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(key)
+        .map(|(value, _ttl)| value.clone())
+}
+
+pub(crate) fn memory_json(memory: &Memory, key: &str) -> Value {
+    match stored_value(memory, key) {
+        Some(ReseedCacheValue::Number(amount)) => amount_json(amount),
+        Some(ReseedCacheValue::Text(text)) => Value::String(text),
+        Some(ReseedCacheValue::Boolean(_) | ReseedCacheValue::Unreadable) | None => Value::Null,
+    }
+}
+
+pub(crate) struct ScriptedCache<'input> {
+    pub(crate) input: &'input Input,
+    pub(crate) memory: Memory,
+    pub(crate) set_max_calls: Mutex<Vec<Value>>,
+}
+
+impl ScriptedCache<'_> {
+    fn store(&self, key: &str, entry: (ReseedCacheValue, Option<u32>)) {
+        self.memory
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), entry);
+    }
+
+    fn record_set_max(
+        &self,
+        counter_key: &str,
+        value: Decimal,
+    ) -> Result<Option<Decimal>, ScriptedFailure> {
+        self.set_max_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(json!([counter_key, amount_json(value)]));
+        Self::redis_answer(self.input.set_max_fails.0, self.input.set_max)
+    }
+
+    fn redis_answer<Answer>(fails: bool, answer: Answer) -> Result<Answer, ScriptedFailure> {
+        if fails {
+            return Err(ScriptedFailure);
+        }
+        Ok(answer)
+    }
+}
+
+impl ReseedCache for ScriptedCache<'_> {
+    type Error = ScriptedFailure;
+
+    fn redis_configured(&self) -> bool {
+        self.input.redis.0
+    }
+
+    fn redis_get(
+        &self,
+        _counter_key: &str,
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ScriptedFailure>> + Send {
+        let stored = self.input.redis_get.clone().map(ReseedCacheValue::Text);
+        ready(Self::redis_answer(self.input.redis_fails.0, stored))
+    }
+
+    fn redis_set_nx(
+        &self,
+        _counter_key: &str,
+        _value: Decimal,
+    ) -> impl Future<Output = Result<Option<bool>, ScriptedFailure>> + Send {
+        ready(Ok(Some(true)))
+    }
+
+    fn memory_get(
+        &self,
+        counter_key: &str,
+    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ScriptedFailure>> + Send {
+        ready(Ok(stored_value(&self.memory, counter_key)))
+    }
+
+    fn memory_set(
+        &self,
+        counter_key: &str,
+        value: Decimal,
+    ) -> impl Future<Output = Result<(), ScriptedFailure>> + Send {
+        self.store(counter_key, (ReseedCacheValue::Number(value), None));
+        ready(Ok(()))
+    }
+
+    fn increment_local(
+        &self,
+        _counter_key: &str,
+        _increment: Decimal,
+    ) -> impl Future<Output = Result<Option<Decimal>, ScriptedFailure>> + Send {
+        ready(Ok(None))
+    }
+}
+
+impl SpendReadCache for ScriptedCache<'_> {
+    fn memory_set_ttl(
+        &self,
+        counter_key: &str,
+        value: Decimal,
+        ttl_seconds: Option<f64>,
+    ) -> Result<(), ScriptedFailure> {
+        let ttl = ttl_seconds
+            .and_then(Decimal::from_f64_retain)
+            .and_then(|seconds| u32::try_from(seconds).ok());
+        let entry = (ReseedCacheValue::Number(value), ttl);
+        self.store(counter_key, entry);
+        Ok(())
+    }
+
+    fn redis_set_max(
+        &self,
+        counter_key: &str,
+        value: Decimal,
+    ) -> impl Future<Output = Result<Option<Decimal>, ScriptedFailure>> + Send {
+        ready(self.record_set_max(counter_key, value))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum BatchState {
+    Absent,
+    Loaded(Option<Decimal>),
+    Forgotten,
+}
+
+pub(crate) struct ScriptedBatch(Mutex<BatchState>);
+
+impl ScriptedBatch {
+    pub(crate) const fn open(input: &Input) -> Self {
+        let state = match (input.redis.0, input.batch) {
+            (true, BatchMode::Amount) => BatchState::Loaded(Some(input.batch_amount)),
+            (true, BatchMode::Miss) => BatchState::Loaded(None),
+            (true | false, BatchMode::None) | (false, BatchMode::Miss | BatchMode::Amount) => {
+                BatchState::Absent
+            }
+        };
+        Self(Mutex::new(state))
+    }
+
+    fn state(&self) -> BatchState {
+        match self.0.lock() {
+            Ok(guard) => *guard,
+            Err(poisoned) => *poisoned.into_inner(),
+        }
+    }
+
+    pub(crate) fn after(&self) -> Value {
+        match self.state() {
+            BatchState::Loaded(value) => json!({"value": value.map_or(Value::Null, amount_json)}),
+            BatchState::Absent | BatchState::Forgotten => Value::Null,
+        }
+    }
+}
+
+impl ActiveSpendBatch for ScriptedBatch {
+    fn read(
+        &self,
+        _counter_key: &str,
+    ) -> impl Future<Output = Result<Option<CounterValue>, SpendCounterBatchError>> + Send {
+        let answer = match self.state() {
+            BatchState::Loaded(Some(amount)) => Some(CounterValue::Amount(amount)),
+            BatchState::Loaded(None) => Some(CounterValue::Missing),
+            BatchState::Absent | BatchState::Forgotten => None,
+        };
+        ready(Ok(answer))
+    }
+
+    fn record(&self, _counter_key: &str, value: Decimal) {
+        let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if !matches!(*state, BatchState::Absent) {
+            *state = BatchState::Loaded(Some(value));
+        }
+    }
+}
+
+impl SpendBatch for ScriptedBatch {
+    fn forget(&self, _counter_key: &str) {
+        let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if !matches!(*state, BatchState::Absent) {
+            *state = BatchState::Forgotten;
+        }
+    }
+}
+
+pub(crate) struct ScriptedRows {
+    pub(crate) rows: RowsInput,
+    pub(crate) memory: Memory,
+    pub(crate) marker_key: String,
+    pub(crate) window_start: Option<Timestamp>,
+}
+
+impl DbSpendCounterRows for ScriptedRows {
+    type Error = ScriptedFailure;
+
+    fn spend_row(
+        &self,
+        lookup: SpendRowLookup<'_>,
+    ) -> impl Future<Output = Result<Option<SpendRow>, ScriptedFailure>> + Send {
+        if self.rows.fails.0 {
+            return ready(Err(ScriptedFailure));
+        }
+        if let Some(marker) = self.rows.reset_marker {
+            let entry = (ReseedCacheValue::Number(marker), None);
+            self.memory
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(self.marker_key.clone(), entry);
+        }
+        let spend = match lookup {
+            SpendRowLookup::EndUser(_) => self.rows.end_user,
+            SpendRowLookup::Key(_)
+            | SpendRowLookup::TeamMember { .. }
+            | SpendRowLookup::Team(_)
+            | SpendRowLookup::User(_)
+            | SpendRowLookup::Organization(_)
+            | SpendRowLookup::Project(_) => self.rows.primary,
+        };
+        ready(Ok(spend.map(|amount| SpendRow {
+            spend: Some(amount),
+        })))
+    }
+}
+
+impl SpendCounterRows for ScriptedRows {
+    type Error = ScriptedFailure;
+
+    fn window_row(
+        &self,
+        _entity: WindowEntity,
+        _entity_id: &str,
+        _window_duration: &str,
+    ) -> impl Future<Output = Result<Option<WindowSpendRow>, ScriptedFailure>> + Send {
+        if self.rows.fails.0 {
+            return ready(Err(ScriptedFailure));
+        }
+        let row = self
+            .rows
+            .window
+            .zip(self.window_start)
+            .map(|(amount, window_start)| WindowSpendRow {
+                window_start,
+                spend: Some(JsonData::String(amount.to_string())),
+            });
+        ready(Ok(row))
+    }
+
+    fn window_log_rows(
+        &self,
+        _entity: WindowEntity,
+        _entity_id: &str,
+        _window_start: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Vec<SpendAggregateRow>, ScriptedFailure>> + Send {
+        if !self.rows.fails.0 {
+            return ready(Ok(Vec::new()));
+        }
+        ready(Err(ScriptedFailure))
+    }
+}
