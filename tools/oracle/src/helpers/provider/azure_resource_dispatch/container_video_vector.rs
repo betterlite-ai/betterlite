@@ -19,7 +19,18 @@ use super::support::{OTHER, failure, runtime};
 pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = runtime()?;
     let urls = url_steps(&runtime, &input.urls)?;
-    let video = video_steps(&runtime, &input.video)?;
+    let mut video = Vec::with_capacity(input.video.len());
+    for step in &input.video {
+        let options: VideoCreate =
+            serde_json::from_value(Value::Object(step.options.clone())).map_err(failure)?;
+        let Outcome::VideoParams(mapped) = through(&runtime, Call::VideoParams(&options))? else {
+            return Err(failure(OTHER));
+        };
+        let Outcome::VideoSupported(supported) = through(&runtime, Call::VideoSupported)? else {
+            return Err(failure(OTHER));
+        };
+        video.push(json!({"supported": supported, "mapped": *mapped}));
+    }
     Ok(json!({"urls": urls, "video": video}))
 }
 
@@ -50,22 +61,6 @@ fn url_steps(runtime: &Runtime, steps: &[UrlStep]) -> Result<Vec<Value>, Box<Hel
         urls.push(json!({"url": url, "params_api_version": step.api_version}));
     }
     Ok(urls)
-}
-
-fn video_steps(runtime: &Runtime, steps: &[VideoStep]) -> Result<Vec<Value>, Box<HelperError>> {
-    let mut video = Vec::with_capacity(steps.len());
-    for step in steps {
-        let options: VideoCreate =
-            serde_json::from_value(Value::Object(step.options.clone())).map_err(failure)?;
-        let Outcome::VideoParams(mapped) = through(runtime, Call::VideoParams(&options))? else {
-            return Err(failure(OTHER));
-        };
-        let Outcome::VideoSupported(supported) = through(runtime, Call::VideoSupported)? else {
-            return Err(failure(OTHER));
-        };
-        video.push(json!({"supported": supported, "mapped": *mapped}));
-    }
-    Ok(video)
 }
 
 #[derive(Debug, Deserialize)]
