@@ -8,7 +8,7 @@ use std::time::Duration;
 use betterlite_config::sections::model_visibility::Settings as ListingSettings;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_router::cooldown_decisions::failure::{ErrorStatus, Seconds};
+use betterlite_router::cooldown_decisions::failure::{ErrorStatus, FailureClass, Seconds};
 use betterlite_router::cooldown_state::health::{
     DeploymentHealthCache, HealthSnapshot, HealthSnapshotError,
 };
@@ -153,6 +153,7 @@ impl CounterSink for RecordingCounters {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct RecordedCooldown {
     deployment_id: String,
+    class: FailureClass,
     status: ErrorStatus,
     requested_model_group: Option<String>,
     time_to_cooldown: Seconds,
@@ -184,6 +185,7 @@ impl CooldownSink for RecordingCooldowns {
             .unwrap_or_else(PoisonError::into_inner)
             .push(RecordedCooldown {
                 deployment_id: observation.deployment_id.to_owned(),
+                class: observation.failure.class,
                 status: observation.failure.status.clone(),
                 requested_model_group: observation.requested_model_group.map(str::to_owned),
                 time_to_cooldown: observation.time_to_cooldown,
@@ -240,13 +242,23 @@ impl Fixture {
     }
 }
 
-fn settings(routing: bool, ignore: bool) -> RouterSettings {
+fn settings(routing: bool) -> RouterSettings {
     RouterSettings {
         default_cooldown_time: 12.5,
         redis_read_interval_seconds: 1.0,
         enable_health_check_routing: routing,
         staleness_threshold: 600.0,
-        ignore_transient_errors: ignore,
+        ignore_transient_errors: false,
+    }
+}
+
+fn ignoring_settings(routing: bool) -> RouterSettings {
+    RouterSettings {
+        default_cooldown_time: 12.5,
+        redis_read_interval_seconds: 1.0,
+        enable_health_check_routing: routing,
+        staleness_threshold: 600.0,
+        ignore_transient_errors: true,
     }
 }
 
@@ -356,7 +368,7 @@ fn no_router_writes_nothing() {
 
 #[test]
 fn both_switches_off_write_nothing() {
-    let fixture = Fixture::new(settings(false, false));
+    let fixture = Fixture::new(settings(false));
     let healthy = [object(vec![("model_id", text("a"))])];
     let unhealthy = [object(vec![("model_id", text("b"))])];
     let live = exceptions(&[("b", 500)]);
@@ -368,7 +380,7 @@ fn both_switches_off_write_nothing() {
 
 #[test]
 fn routing_alone_publishes_the_states_and_counts_the_failure() {
-    let fixture = Fixture::new(settings(true, false));
+    let fixture = Fixture::new(settings(true));
     let unhealthy = [object(vec![("model_id", text("b"))])];
     let live = exceptions(&[("b", 503)]);
     write_state(&fixture, listing(false), &[], &unhealthy, &live);
@@ -381,7 +393,7 @@ fn routing_alone_publishes_the_states_and_counts_the_failure() {
 
 #[test]
 fn listing_alone_publishes_the_states_without_counting() {
-    let fixture = Fixture::new(settings(false, false));
+    let fixture = Fixture::new(settings(false));
     let unhealthy = [object(vec![("model_id", text("b"))])];
     let live = exceptions(&[("b", 500)]);
     write_state(&fixture, listing(true), &[], &unhealthy, &live);
@@ -392,7 +404,7 @@ fn listing_alone_publishes_the_states_without_counting() {
 
 #[test]
 fn the_published_states_carry_each_verdict_and_the_clock_timestamp() {
-    let fixture = Fixture::new(settings(false, false));
+    let fixture = Fixture::new(settings(false));
     let healthy = [object(vec![("model_id", text("ok"))])];
     let unhealthy = [object(vec![
         ("model_id", text("down")),
@@ -414,7 +426,7 @@ fn the_published_states_carry_each_verdict_and_the_clock_timestamp() {
 
 #[test]
 fn ignored_transient_failures_stay_out_of_the_published_states() {
-    let fixture = Fixture::new(settings(false, true));
+    let fixture = Fixture::new(ignoring_settings(false));
     let unhealthy = [
         object(vec![
             ("model_id", text("live429")),
@@ -458,7 +470,7 @@ fn ignored_transient_failures_stay_out_of_the_published_states() {
 
 #[test]
 fn transient_failures_stay_unhealthy_without_the_ignore_flag() {
-    let fixture = Fixture::new(settings(false, false));
+    let fixture = Fixture::new(settings(false));
     let unhealthy = [object(vec![
         ("model_id", text("limited")),
         ("exception_status", number(429)),
@@ -472,7 +484,7 @@ fn transient_failures_stay_unhealthy_without_the_ignore_flag() {
 
 #[test]
 fn rows_without_an_id_publish_nothing() {
-    let fixture = Fixture::new(settings(false, false));
+    let fixture = Fixture::new(settings(false));
     let (logs, _guard) = capture_logs();
     let unhealthy = [object(vec![("model", text("openai/b"))])];
     write_state(&fixture, listing(true), &[], &unhealthy, &BTreeMap::new());
@@ -482,7 +494,7 @@ fn rows_without_an_id_publish_nothing() {
 
 #[test]
 fn the_debug_line_reports_each_verdict_count() {
-    let fixture = Fixture::new(settings(false, false));
+    let fixture = Fixture::new(settings(false));
     let (logs, _guard) = capture_logs();
     let healthy = [object(vec![("model_id", text("up"))])];
     let unhealthy = [
@@ -504,7 +516,7 @@ fn the_debug_line_reports_each_verdict_count() {
 
 #[test]
 fn a_live_failure_counts_a_failure_and_asks_for_a_cooldown() {
-    let fixture = Fixture::new(settings(true, false));
+    let fixture = Fixture::new(settings(true));
     fixture.counters.write("dep:successes", 3, None);
     let unhealthy = [object(vec![
         ("model_id", text("dep")),
@@ -521,6 +533,7 @@ fn a_live_failure_counts_a_failure_and_asks_for_a_cooldown() {
         fixture.cooldowns.recorded(),
         vec![RecordedCooldown {
             deployment_id: "dep".to_owned(),
+            class: FailureClass::Unclassified,
             status: ErrorStatus::Code(500),
             requested_model_group: None,
             time_to_cooldown: Seconds(12.5),
@@ -532,7 +545,7 @@ fn a_live_failure_counts_a_failure_and_asks_for_a_cooldown() {
 
 #[test]
 fn the_failure_loop_needs_an_id_and_a_live_exception() {
-    let fixture = Fixture::new(settings(true, false));
+    let fixture = Fixture::new(settings(true));
     let unhealthy = [
         object(vec![
             ("model_id", text("counted")),
@@ -557,7 +570,7 @@ fn the_failure_loop_needs_an_id_and_a_live_exception() {
 
 #[test]
 fn ignored_transients_are_not_counted() {
-    let fixture = Fixture::new(settings(true, true));
+    let fixture = Fixture::new(ignoring_settings(true));
     let unhealthy = [
         object(vec![
             ("model_id", text("limited")),
@@ -585,7 +598,7 @@ fn ignored_transients_are_not_counted() {
 
 #[test]
 fn transient_failures_are_counted_without_the_ignore_flag() {
-    let fixture = Fixture::new(settings(true, false));
+    let fixture = Fixture::new(settings(true));
     let unhealthy = [object(vec![
         ("model_id", text("limited")),
         ("exception_status", number(429)),
@@ -600,10 +613,8 @@ fn transient_failures_are_counted_without_the_ignore_flag() {
 
 #[test]
 fn a_count_failure_logs_the_warning_and_skips_the_rest() {
-    let fixture = Fixture::with_counters(
-        settings(true, false),
-        RecordingCounters::rejecting("first:fails"),
-    );
+    let fixture =
+        Fixture::with_counters(settings(true), RecordingCounters::rejecting("first:fails"));
     let (logs, _guard) = capture_logs();
     let unhealthy = [
         object(vec![
@@ -632,7 +643,7 @@ fn a_count_failure_logs_the_warning_and_skips_the_rest() {
 
 #[test]
 fn a_state_failure_logs_the_warning_and_skips_the_failure_loop() {
-    let fixture = Fixture::with_staleness(settings(true, false), f64::NAN);
+    let fixture = Fixture::with_staleness(settings(true), f64::NAN);
     let (logs, _guard) = capture_logs();
     let unhealthy = [object(vec![
         ("model_id", text("dep")),
