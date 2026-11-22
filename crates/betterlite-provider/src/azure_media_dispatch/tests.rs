@@ -27,7 +27,8 @@ use super::call::{
 };
 use super::error::AzureMediaError;
 use super::parts::{form_parts, header_map};
-use super::test_support::{Cache, Clock, NoSources, Outcome, Reply, exchange, exchange_request};
+use super::test_support::no_sources::NoSources;
+use super::test_support::{Cache, Clock, Outcome, Reply, exchange, exchange_request};
 use super::{AzureMediaResult, ImageEditOutcome};
 use crate::openai_media_dispatch::OpenAiMediaRequest;
 use crate::operation::{OperationRequest, OperationResult};

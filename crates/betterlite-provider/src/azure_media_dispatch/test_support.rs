@@ -1,18 +1,15 @@
+pub mod no_sources;
+
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::{Future, ready};
 use std::mem::take;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
-use betterlite_azure::credentials::source::{
-    CallableTokenProvider, CredentialSources, SourceFailure,
-};
 use betterlite_azure::endpoints::get_client::ClientCache;
 use betterlite_azure::endpoints::projection::{ClientIdentity, ClientKind};
 use betterlite_azure::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use betterlite_azure::image_transport::{ImageClock, ImageReply, ImageRequest, ImageTransport};
-use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_azure::transcription::call::logging::{
     AzureTranscriptionLogger, AzureTranscriptionPostCall, AzureTranscriptionPreCall,
 };
@@ -28,8 +25,8 @@ use betterlite_openai::image_generation::logging::{
 use betterlite_openai::transcription::transport::TranscriptionTransport;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
-use secrecy::SecretString;
 
+use self::no_sources::NoSources;
 use super::AzureMediaRequest;
 use super::call::AzureMediaOperation;
 use super::error::AzureMediaError;
@@ -180,52 +177,6 @@ impl ClientCache for Cache {
 
     fn set(&mut self, identity: ClientIdentity, kind: ClientKind, _owned: bool) {
         self.entries.insert(identity, kind);
-    }
-}
-
-// no credential source resolves anything: an owned call uses the values it carries itself
-#[derive(Default)]
-pub struct NoSources;
-
-fn no_source() -> SourceFailure {
-    SourceFailure {
-        class: String::from("RuntimeError"),
-        status: None,
-        message: String::from("no credential source in this fixture"),
-    }
-}
-
-impl CredentialSources for NoSources {
-    fn client_secret<'source>(
-        &'source self,
-        _record: &ClientSecretRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(no_source())
-    }
-
-    fn username_password<'source>(
-        &'source self,
-        _record: &UsernamePasswordRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(no_source())
-    }
-
-    fn sdk_refresh<'source>(
-        &'source self,
-        _scope: &str,
-    ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(no_source())
-    }
-
-    fn default_credential<'source>(
-        &'source self,
-        _scope: &'source str,
-    ) -> Option<Arc<dyn CallableTokenProvider + 'source>> {
-        None
-    }
-
-    fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(no_source())
     }
 }
 
