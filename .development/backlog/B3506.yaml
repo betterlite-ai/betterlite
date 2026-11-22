@@ -1,14 +1,14 @@
 id: B3506
 milestone: M5 api families
 title: Serve Google generation streaming and token-count routes
-status: todo
+status: done
 depends_on: [B003, B3484, B3489, B014, B1100]
 file: tasks/B3506-genai-routes.yaml
 covers:
   - "litellm/proxy/google_endpoints/endpoints.py"
 parent: B098
 split_from: B098
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2879

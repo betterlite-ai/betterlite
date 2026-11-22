@@ -1,0 +1,25 @@
+kind: helper
+name: model-group-data-exact-model-names
+call:
+  model_group_data:
+    calls:
+      - function: validate_models_exist
+        model_names: [gpt-4, gpt-4o]
+        router_names: [gpt-4, gpt-4o]
+calls:
+  - model_group_data:
+      calls:
+        - function: validate_models_exist
+          model_names: [gpt-4, x, gpt-4]
+          router_names: null
+        - function: validate_models_exist
+          model_names: [gpt-4o-mini, gpt-4, x, x]
+          router_names: [gpt-4, gpt-4o]
+        - function: validate_models_exist
+          model_names: [gpt-4]
+          router_names: []
+        - function: validate_models_exist
+          model_names: []
+          router_names: [gpt-4]
+env: {}
+compare: {ignore: []}
