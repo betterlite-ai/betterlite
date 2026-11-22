@@ -18,7 +18,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-use serde_json::{from_value, json};
+use serde_json::{Value, from_value, json};
 use uuid::Uuid;
 
 use super::input::{
@@ -150,7 +150,7 @@ fn endpoint(case: &EndpointInput) -> HelperResult {
     }))
 }
 
-fn converse(operation: &str, input: Json) -> Result<Json, Box<HelperError>> {
+fn converse(operation: &str, input: Value) -> Result<Value, Box<HelperError>> {
     let output = invoke(
         &[crate::GROUP],
         &HelperCall {
