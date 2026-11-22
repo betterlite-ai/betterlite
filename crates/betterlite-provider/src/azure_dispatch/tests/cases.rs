@@ -79,6 +79,7 @@ pub(super) async fn chat_dispatch() {
     chat_request_shape(&answer, &result);
     chat_stream_and_supplied(&composition);
     deployment_route_base();
+    upstream_refusal(&composition);
 }
 
 fn chat_request_shape(answer: &Fixture, result: &AzureResult) {
@@ -152,6 +153,15 @@ fn chat_stream_and_supplied(composition: &Composition) {
     assert!(!retained.discarded(None));
     assert!(retained.discarded(Some("2025-01-01")));
     assert!(SuppliedClient { api_version: None }.discarded(Some("2024-10-21")));
+}
+
+// a refusing upstream keeps its status in the observed error, with nothing projected
+fn upstream_refusal(composition: &Composition) {
+    let answer = Fixture::new(400, r#"{"error":{"message":"refused"}}"#);
+    let call = support::chat("gpt-4o", Object::new(), base_credentials());
+    let result = dispatch(composition, Request::Chat(Box::new(call)), &answer);
+    assert_eq!(support::error_status(&result), Some(400));
+    assert_eq!(result.reply, Json::Null);
 }
 
 // a base that already ends in the chat route is passed through instead of gaining a deployment prefix
