@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import pathlib
 import sys
 from xml.sax.saxutils import quoteattr
@@ -48,15 +48,15 @@ def main() -> None:
     document = KeypairInput.model_validate_json(raw)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, COMMON_NAME)])
-    now = datetime.datetime.now(datetime.UTC)
+    now = dt.datetime.now(dt.UTC)
     certificate = (
         x509.CertificateBuilder()
         .subject_name(name)
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(days=1))
-        .not_valid_after(now + datetime.timedelta(days=365))
+        .not_valid_before(now - dt.timedelta(days=1))
+        .not_valid_after(now + dt.timedelta(days=365))
         .sign(key, hashes.SHA256())
     )
     key_pem = key.private_bytes(
