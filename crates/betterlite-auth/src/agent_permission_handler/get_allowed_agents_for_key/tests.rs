@@ -59,6 +59,19 @@ async fn declared_groups_add_matching_db_agents() {
 }
 
 #[tokio::test]
+async fn strict_mode_reads_the_table_from_the_writer() {
+    let world = world(true);
+    let grants = handler(&world, &registry(&[]));
+    let auth = key_auth(None, Some((&[], &["g1"])), &[]);
+    let access = grants
+        .get_allowed_agents_for_key(Some(&auth), true)
+        .await
+        .unwrap();
+    assert_eq!(access, AgentAccess::Restricted(set(&[])));
+    assert_eq!(world.lock().table_reads, vec![(strings(&["g1"]), true)]);
+}
+
+#[tokio::test]
 async fn unified_groups_add_their_agents() {
     let world = world(true);
     world
@@ -72,6 +85,18 @@ async fn unified_groups_add_their_agents() {
         .await
         .unwrap();
     assert_eq!(access, AgentAccess::Restricted(set(&["beta"])));
+}
+
+#[tokio::test]
+async fn a_strict_unified_lookup_failure_is_policy_unavailable() {
+    let world = world(true);
+    let grants = handler(&world, &registry(&[]));
+    let auth = key_auth(None, None, &["gone"]);
+    let error = grants
+        .get_allowed_agents_for_key(Some(&auth), true)
+        .await
+        .unwrap_err();
+    assert_policy_unavailable(&error);
 }
 
 #[tokio::test]
