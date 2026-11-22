@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::Role;
 use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
+use tokio::time::pause;
 
 use super::support::{
     FakeEmbedder, base_settings, catalog, custom_catalog, json_list, json_object, json_text, parts,
@@ -71,17 +72,17 @@ fn an_unknown_tier_names_itself_in_the_error() {
     let floor_error = plan_mode_floor(&floor_settings("DEEP"), &all_pools()).unwrap_err();
     assert!(matches!(
         floor_error,
-        TurnOverrideError::UnknownTier { ref tier } if tier.as_str() == "DEEP"
+        TurnOverrideError::UnknownTier { tier } if tier.as_str() == "DEEP"
     ));
     assert!(matches!(
         LexicalRules::compile(&all_pools(), &[rule(&["x"], "DEEP")]),
-        Err(TurnOverrideError::UnknownTier { ref tier }) if tier.as_str() == "DEEP"
+        Err(TurnOverrideError::UnknownTier { tier }) if tier.as_str() == "DEEP"
     ));
     let custom = custom_catalog(&["cheap"], &[("cheap", &["a"])]);
     let custom_error = active_tier(&custom, "deep").unwrap_err();
     assert!(matches!(
         custom_error,
-        TurnOverrideError::UnknownTier { ref tier } if tier.as_str() == "deep"
+        TurnOverrideError::UnknownTier { tier } if tier.as_str() == "deep"
     ));
 }
 
@@ -178,10 +179,10 @@ fn only_the_last_result_for_a_call_id_binds() {
 #[test]
 fn a_semantic_score_must_reach_the_threshold() {
     let embedder = Arc::new(FakeEmbedder::new(&[
-        ("test", vec![1.0, 0.0]),
-        ("invoice", vec![1.0, 0.0]),
-        ("exact", vec![0.7, 0.7]),
-        ("orthogonal", vec![0.0, 1.0]),
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("invoice", vec![1.0_f64, 0.0_f64]),
+        ("exact", vec![0.7_f64, 0.7_f64]),
+        ("orthogonal", vec![0.0_f64, 1.0_f64]),
     ]));
     let index = SemanticKeywordIndex::new(
         &semantic_settings(&[(&["invoice"], "COMPLEX")], 1.0),
@@ -203,10 +204,10 @@ fn a_semantic_score_must_reach_the_threshold() {
 #[test]
 fn a_route_scores_by_its_best_utterance_not_the_mean() {
     let embedder = Arc::new(FakeEmbedder::new(&[
-        ("test", vec![1.0, 0.0]),
-        ("invoice", vec![1.0, 0.0]),
-        ("receipt", vec![0.0, 1.0]),
-        ("exact", vec![1.0, 0.0]),
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("invoice", vec![1.0_f64, 0.0_f64]),
+        ("receipt", vec![0.0_f64, 1.0_f64]),
+        ("exact", vec![1.0_f64, 0.0_f64]),
     ]));
     let index = SemanticKeywordIndex::new(
         &semantic_settings(&[(&["invoice", "receipt"], "COMPLEX")], 0.9),
@@ -223,10 +224,10 @@ fn a_route_scores_by_its_best_utterance_not_the_mean() {
 #[test]
 fn a_zero_threshold_passes_even_an_orthogonal_query() {
     let embedder = Arc::new(FakeEmbedder::new(&[
-        ("test", vec![1.0, 0.0]),
-        ("invoice", vec![1.0, 0.0]),
-        ("orthogonal", vec![0.0, 1.0]),
-        ("opposite", vec![-1.0, 0.0]),
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("invoice", vec![1.0_f64, 0.0_f64]),
+        ("orthogonal", vec![0.0_f64, 1.0_f64]),
+        ("opposite", vec![-1.0_f64, 0.0_f64]),
     ]));
     let index = SemanticKeywordIndex::new(
         &semantic_settings(&[(&["invoice"], "COMPLEX")], 0.0),
@@ -246,7 +247,7 @@ fn a_zero_threshold_passes_even_an_orthogonal_query() {
 
 #[test]
 fn an_out_of_range_threshold_fails_index_construction() {
-    let embedder = Arc::new(FakeEmbedder::new(&[("test", vec![1.0, 0.0])]));
+    let embedder = Arc::new(FakeEmbedder::new(&[("test", vec![1.0_f64, 0.0_f64])]));
     let low = semantic_settings(&[(&["invoice"], "COMPLEX")], -0.1);
     assert!(matches!(
         SemanticKeywordIndex::new(&low, &all_pools(), Arc::clone(&embedder)),
@@ -262,7 +263,11 @@ fn an_out_of_range_threshold_fails_index_construction() {
 #[test]
 fn a_cancelled_query_embedding_falls_back_to_no_override() {
     let embedder = Arc::new(
-        FakeEmbedder::new(&[("test", vec![1.0, 0.0]), ("invoice", vec![1.0, 0.0])]).stalled_query(),
+        FakeEmbedder::new(&[
+            ("test", vec![1.0_f64, 0.0_f64]),
+            ("invoice", vec![1.0_f64, 0.0_f64]),
+        ])
+        .stalled_query(),
     );
     let index = SemanticKeywordIndex::new(
         &semantic_settings(&[(&["invoice"], "COMPLEX")], 0.5),
@@ -271,7 +276,7 @@ fn a_cancelled_query_embedding_falls_back_to_no_override() {
     )
     .unwrap();
     let found = runtime().block_on(async {
-        tokio::time::pause();
+        pause();
         index
             .tier_override("invoice", &CallerContext::default())
             .await
@@ -283,7 +288,7 @@ fn a_cancelled_query_embedding_falls_back_to_no_override() {
 fn a_classifier_text_failure_names_the_offending_part() {
     let messages = vec![parts(
         Role::User,
-        vec![text_part(Json::Number(serde_json::Number::from(7)))],
+        vec![text_part(Json::Number(serde_json::Number::from(7_i32)))],
     )];
     let error =
         matched_plan_mode_signal(&floor_settings("COMPLEX"), None, Some(&messages)).unwrap_err();

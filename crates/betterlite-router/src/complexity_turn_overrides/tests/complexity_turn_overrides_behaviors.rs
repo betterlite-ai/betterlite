@@ -137,7 +137,7 @@ fn a_housekeeping_ask_routes_to_the_cheapest_tier_with_models() {
         cheapest.map(|found| found.name().to_owned()),
         Some("MEDIUM".to_owned())
     );
-    let mut without_ask = settings.clone();
+    let mut without_ask = settings;
     without_ask.housekeeping_cheapest = false;
     assert_eq!(matched_housekeeping_sentinel(&without_ask, Some(ask)), None);
     let mut plugin = base_settings();
@@ -203,14 +203,7 @@ fn the_most_severe_lexical_rule_wins_whatever_the_rule_order() {
 
 #[test]
 fn a_repeated_or_failed_tool_call_marks_the_task_stalled() {
-    let repeated = vec![
-        tool_result("a1", true),
-        assistant_tool_use("a1", "search", json_object(&[("q", json_text("x"))])),
-        tool_result("a2", true),
-        assistant_tool_use("a2", "search", json_object(&[("q", json_text("x"))])),
-        tool_result("a3", true),
-        assistant_tool_use("a3", "search", json_object(&[("q", json_text("x"))])),
-    ];
+    let repeated = stalled_repeats(json_object(&[("q", json_text("x"))]));
     assert!(detect_stalled_task(Some(&repeated), 6, 3));
 
     let chat_calls = vec![assistant_calls(&[
@@ -298,9 +291,9 @@ fn only_assistant_messages_contribute_tool_calls() {
 fn a_semantic_hit_selects_its_route_and_reports_no_keyword() {
     let settings = semantic_settings(&[(&["invoice"], "COMPLEX")], 0.5);
     let embedder = Arc::new(FakeEmbedder::new(&[
-        ("test", vec![1.0, 0.0]),
-        ("invoice", vec![1.0, 0.0]),
-        ("please send an invoice", vec![1.0, 0.0]),
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("invoice", vec![1.0_f64, 0.0_f64]),
+        ("please send an invoice", vec![1.0_f64, 0.0_f64]),
     ]));
     let index = SemanticKeywordIndex::new(&settings, &all_pools(), Arc::clone(&embedder)).unwrap();
     let caller = CallerContext {
@@ -334,10 +327,10 @@ fn a_semantic_hit_selects_its_route_and_reports_no_keyword() {
 fn a_tier_named_by_several_rules_gets_one_route() {
     let settings = semantic_settings(&[(&["invoice"], "COMPLEX"), (&["refund"], "COMPLEX")], 0.5);
     let embedder = Arc::new(FakeEmbedder::new(&[
-        ("test", vec![1.0, 0.0]),
-        ("invoice", vec![1.0, 0.0]),
-        ("refund", vec![0.0, 1.0]),
-        ("please invoice", vec![1.0, 0.0]),
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("invoice", vec![1.0_f64, 0.0_f64]),
+        ("refund", vec![0.0_f64, 1.0_f64]),
+        ("please invoice", vec![1.0_f64, 0.0_f64]),
     ]));
     let index = SemanticKeywordIndex::new(&settings, &all_pools(), Arc::clone(&embedder)).unwrap();
     let found =
@@ -355,15 +348,18 @@ fn a_tier_named_by_several_rules_gets_one_route() {
 #[test]
 fn a_semantic_failure_falls_back_to_no_override() {
     let settings = semantic_settings(&[(&["invoice"], "COMPLEX")], 0.5);
-    let failing_build = FakeEmbedder::new(&[("test", vec![1.0, 0.0])]).failing_documents();
+    let failing_build = FakeEmbedder::new(&[("test", vec![1.0_f64, 0.0_f64])]).failing_documents();
     let build_failure_index =
         SemanticKeywordIndex::new(&settings, &all_pools(), Arc::new(failing_build)).unwrap();
     assert_eq!(
         runtime().block_on(build_failure_index.tier_override("invoice", &CallerContext::default())),
         None
     );
-    let failing_query =
-        FakeEmbedder::new(&[("test", vec![1.0, 0.0]), ("invoice", vec![1.0, 0.0])]).failing_query();
+    let failing_query = FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("invoice", vec![1.0_f64, 0.0_f64]),
+    ])
+    .failing_query();
     let query_failure_index =
         SemanticKeywordIndex::new(&settings, &all_pools(), Arc::new(failing_query)).unwrap();
     assert_eq!(
@@ -376,8 +372,11 @@ fn a_semantic_failure_falls_back_to_no_override() {
 fn a_build_failure_is_retried_on_the_next_turn() {
     let settings = semantic_settings(&[(&["invoice"], "COMPLEX")], 0.5);
     let embedder = Arc::new(
-        FakeEmbedder::new(&[("test", vec![1.0, 0.0]), ("invoice", vec![1.0, 0.0])])
-            .failing_documents(),
+        FakeEmbedder::new(&[
+            ("test", vec![1.0_f64, 0.0_f64]),
+            ("invoice", vec![1.0_f64, 0.0_f64]),
+        ])
+        .failing_documents(),
     );
     let index = SemanticKeywordIndex::new(&settings, &all_pools(), Arc::clone(&embedder)).unwrap();
     let first = runtime().block_on(index.tier_override("invoice", &CallerContext::default()));
@@ -394,18 +393,7 @@ fn the_lexical_matcher_wins_while_semantic_matching_is_off() {
     let configured = rules(&[(&["invoice"], "COMPLEX"), (&["refund"], "SIMPLE")]);
     let lexical = LexicalRules::compile(&all_pools(), &configured).unwrap();
     let mut settings = base_settings();
-    settings.keyword_tier_rules = rules(&[(&["invoice"], "COMPLEX"), (&["refund"], "SIMPLE")]);
-    let embedder = Arc::new(FakeEmbedder::new(&[
-        ("test", vec![1.0, 0.0]),
-        ("invoice", vec![0.0, 1.0]),
-        ("refund", vec![1.0, 0.0]),
-        ("invoice and refund", vec![1.0, 0.0]),
-    ]));
-    let mut index_settings = settings.clone();
-    index_settings.keyword_matching = KeywordMatching::Semantic;
-    index_settings.embedding_model = Some("fake-embed".to_owned());
-    index_settings.match_threshold = 0.5;
-    let semantic = SemanticKeywordIndex::new(&index_settings, &all_pools(), embedder).unwrap();
+    settings.keyword_tier_rules = configured;
     let request = TurnRequest {
         request_kwargs: None,
         resolved_messages: None,
@@ -414,7 +402,7 @@ fn the_lexical_matcher_wins_while_semantic_matching_is_off() {
         newest_ask: None,
         caller: &CallerContext::default(),
     };
-    let lexical_outcome = runtime()
+    let outcome = runtime()
         .block_on(resolve_turn(
             &settings,
             &all_pools(),
@@ -423,40 +411,53 @@ fn the_lexical_matcher_wins_while_semantic_matching_is_off() {
             &request,
         ))
         .unwrap();
-    assert!(!lexical_outcome.stalled);
-    assert_eq!(
-        lexical_outcome.keyword_override.unwrap().tier.name(),
-        "COMPLEX"
-    );
-    let mut semantic_mode = settings;
-    semantic_mode.keyword_matching = KeywordMatching::Semantic;
-    let semantic_outcome = runtime()
+    assert!(!outcome.stalled);
+    assert_eq!(outcome.keyword_override.unwrap().tier.name(), "COMPLEX");
+}
+
+#[test]
+fn semantic_matching_chooses_the_route_by_similarity() {
+    let configured = rules(&[(&["invoice"], "COMPLEX"), (&["refund"], "SIMPLE")]);
+    let lexical = LexicalRules::compile(&all_pools(), &configured).unwrap();
+    let mut settings = base_settings();
+    settings.keyword_tier_rules = configured;
+    settings.keyword_matching = KeywordMatching::Semantic;
+    settings.embedding_model = Some("fake-embed".to_owned());
+    settings.match_threshold = 0.5_f64;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("invoice", vec![0.0_f64, 1.0_f64]),
+        ("refund", vec![1.0_f64, 0.0_f64]),
+        ("invoice and refund", vec![1.0_f64, 0.0_f64]),
+    ]));
+    let semantic = SemanticKeywordIndex::new(&settings, &all_pools(), embedder).unwrap();
+    let request = TurnRequest {
+        request_kwargs: None,
+        resolved_messages: None,
+        messages: None,
+        user_message: "invoice and refund",
+        newest_ask: None,
+        caller: &CallerContext::default(),
+    };
+    let outcome = runtime()
         .block_on(resolve_turn(
-            &semantic_mode,
+            &settings,
             &all_pools(),
             &lexical,
             Some(&semantic),
             &request,
         ))
         .unwrap();
-    let found = semantic_outcome.keyword_override.unwrap();
+    let found = outcome.keyword_override.unwrap();
     assert_eq!(found.tier.name(), "SIMPLE");
     assert_eq!(found.matched_keyword, None);
 }
 
 #[test]
 fn the_turn_carries_every_observation_together() {
-    let mut settings = base_settings();
-    settings.plan_mode_min_tier = Some("COMPLEX".to_owned());
+    let mut settings = floor_settings("COMPLEX");
     settings.stall_escalation_enabled = true;
-    let messages = vec![
-        tool_result("a1", true),
-        assistant_tool_use("a1", "search", Json::Null),
-        tool_result("a2", true),
-        assistant_tool_use("a2", "search", Json::Null),
-        tool_result("a3", true),
-        assistant_tool_use("a3", "search", Json::Null),
-    ];
+    let messages = stalled_repeats(Json::Null);
     let lexical = LexicalRules::compile(&all_pools(), &[]).unwrap();
     let body = json_object(&[(
         "tools",
@@ -471,13 +472,11 @@ fn the_turn_carries_every_observation_together() {
         newest_ask: Some("Write the title in the predominant language of the session"),
         caller: &CallerContext::default(),
     };
+    let pools = all_pools();
+    let semantic = None::<&SemanticKeywordIndex<FakeEmbedder>>;
     let found = runtime()
         .block_on(resolve_turn(
-            &settings,
-            &all_pools(),
-            &lexical,
-            None::<&SemanticKeywordIndex<FakeEmbedder>>,
-            &request,
+            &settings, &pools, &lexical, semantic, &request,
         ))
         .unwrap();
     assert_eq!(found.plan_mode_sentinel.as_deref(), Some("exit_plan_mode"));
@@ -507,10 +506,7 @@ fn from_config_reads_the_section_and_the_shared_settings() {
     };
     let resolved = Resolved {
         tiers: all_pools(),
-        dimensions: Validated {
-            dimensions: Vec::new(),
-            work: 0,
-        },
+        dimensions: Validated::default(),
         escalation_keywords: Some(vec!["help me".to_owned()]),
         plan_mode_min_tier: Some("COMPLEX".to_owned()),
         plan_mode_patterns: Some(vec!["plan".to_owned()]),
@@ -584,6 +580,17 @@ fn tool_results(results: &[(&str, bool)]) -> Json {
             ),
         ),
     ])
+}
+
+fn stalled_repeats(input: Json) -> Vec<Json> {
+    vec![
+        tool_result("a1", true),
+        assistant_tool_use("a1", "search", input.clone()),
+        tool_result("a2", true),
+        assistant_tool_use("a2", "search", input.clone()),
+        tool_result("a3", true),
+        assistant_tool_use("a3", "search", input),
+    ]
 }
 
 fn assistant_calls(calls: &[(&str, &str)]) -> Json {

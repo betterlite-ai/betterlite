@@ -79,16 +79,16 @@ impl Settings {
 
 // _active_tier_severity: the position of a tier in the active severity order
 pub fn tier_severity(catalog: &TierSet, tier: &Tier) -> Result<usize, TurnOverrideError> {
-    match catalog
+    let Some(rank) = catalog
         .tier_names()
         .iter()
         .position(|name| *name == tier.name())
-    {
-        Some(rank) => Ok(rank),
-        None => Err(TurnOverrideError::UnknownTier {
+    else {
+        return Err(TurnOverrideError::UnknownTier {
             tier: tier.name().to_owned(),
-        }),
-    }
+        });
+    };
+    Ok(rank)
 }
 
 // a configured tier name as the pipeline tier: a defined name for a custom set, else the built-in member

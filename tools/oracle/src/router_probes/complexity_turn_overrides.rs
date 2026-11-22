@@ -127,12 +127,12 @@ fn prepare(input: &Input) -> Result<Prepared, OperationError> {
     let settings = build_settings(input)?;
     let lexical = LexicalRules::compile(&catalog, &settings.keyword_tier_rules)
         .map_err(|error| invalid(&error.to_string()))?;
-    let decided = match input.decided_tier.as_deref() {
-        Some(name) => {
-            Some(active_tier(&catalog, name).map_err(|error| invalid(&error.to_string()))?)
-        }
-        None => None,
-    };
+    let decided = input
+        .decided_tier
+        .as_deref()
+        .map(|name| active_tier(&catalog, name))
+        .transpose()
+        .map_err(|error| invalid(&error.to_string()))?;
     let embedder = Arc::new(TableEmbedder::new(input)?);
     let semantic = semantic_index(input, &settings, &catalog, &embedder);
     Ok(Prepared {
@@ -190,15 +190,13 @@ fn fields(prepared: &Prepared, found: &TurnOverrides) -> Result<Fields, Operatio
         .map(|tier| tier.name().to_owned());
     let top = plan_mode_floor_is_top_tier(settings, catalog)
         .map_err(|error| invalid(&error.to_string()))?;
-    let applied = match &prepared.decided {
-        Some(tier) => Some(
-            apply_plan_mode_floor(settings, catalog, tier.clone())
-                .map_err(|error| invalid(&error.to_string()))?
-                .name()
-                .to_owned(),
-        ),
-        None => None,
-    };
+    let applied = prepared
+        .decided
+        .as_ref()
+        .map(|tier| apply_plan_mode_floor(settings, catalog, tier.clone()))
+        .transpose()
+        .map_err(|error| invalid(&error.to_string()))?
+        .map(|tier| tier.name().to_owned());
     Ok(Fields {
         plan_mode_sentinel: found.plan_mode_sentinel.clone(),
         plan_mode_floor: floor,

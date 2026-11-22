@@ -26,7 +26,7 @@ pub struct TurnRequest<'request> {
 }
 
 // the per-turn observations B335 applies around the classifier verdict; none of them touches a session pin
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnOverrides {
     pub plan_mode_sentinel: Option<String>,
     pub plan_mode_floor: Option<Tier>,

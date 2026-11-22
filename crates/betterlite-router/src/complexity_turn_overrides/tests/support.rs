@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, pending, ready};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 use betterlite_config::sections::complexity_turn_overrides::{KeywordMatching, KeywordTierRule};
 use betterlite_models::decisions::Json;
@@ -13,8 +13,6 @@ use crate::complexity_turn_overrides::settings::Settings;
 use crate::semantic_router::service::{CallerContext, RouteEmbedder};
 use crate::tier_definitions::checks::ClassifierKind;
 use crate::tier_definitions::model::{TierDefinition, TierModelEntry, TierPool, TierSet};
-
-pub(crate) const BUILT_IN: [&str; 4] = ["SIMPLE", "MEDIUM", "COMPLEX", "REASONING"];
 
 pub(crate) fn catalog(pools: &[(&str, &[&str])]) -> TierSet {
     let mut resolved = BTreeMap::new();
@@ -103,12 +101,6 @@ pub(crate) fn base_settings() -> Settings {
         reminder_markers: None,
         classifier_type: ClassifierKind::Heuristic,
     }
-}
-
-pub(crate) fn text_rule_settings(keywords: &[&str], tier: &str) -> Settings {
-    let mut settings = base_settings();
-    settings.keyword_tier_rules = vec![rule(keywords, tier)];
-    settings
 }
 
 pub(crate) fn semantic_settings(spec: &[(&[&str], &str)], threshold: f64) -> Settings {
@@ -233,15 +225,15 @@ impl FakeEmbedder {
     }
 
     pub(crate) fn documents(&self) -> Vec<DocumentCall> {
-        self.documents.lock().unwrap().clone()
+        lock(&self.documents).clone()
     }
 
     pub(crate) fn queries(&self) -> Vec<QueryCall> {
-        self.queries.lock().unwrap().clone()
+        lock(&self.queries).clone()
     }
 
     fn document_answer(&self, model: &str, texts: Vec<String>) -> Result<Vec<Vec<f64>>, FakeError> {
-        self.documents.lock().unwrap().push(DocumentCall {
+        lock(&self.documents).push(DocumentCall {
             model: model.to_owned(),
             texts: texts.clone(),
         });
@@ -257,7 +249,7 @@ impl FakeEmbedder {
         text: String,
         caller: &CallerContext,
     ) -> Result<Vec<Vec<f64>>, FakeError> {
-        self.queries.lock().unwrap().push(QueryCall {
+        lock(&self.queries).push(QueryCall {
             model: model.to_owned(),
             text: text.clone(),
             caller: caller.clone(),
@@ -307,6 +299,13 @@ fn answer(
         found.push(vector);
     }
     Ok(found)
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 fn take_failure(counter: &AtomicUsize) -> bool {

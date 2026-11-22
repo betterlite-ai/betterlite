@@ -79,15 +79,15 @@ pub fn matched_escalation_keyword(
     if catalog.definitions.is_some() {
         return None;
     }
-    match settings.escalation_keywords.as_deref() {
-        Some(keywords) => keywords
-            .iter()
-            .find(|keyword| user_message.contains(keyword.as_str()))
-            .cloned(),
-        None => DEFAULT_ESCALATION_KEYWORDS
+    let Some(keywords) = settings.escalation_keywords.as_deref() else {
+        return DEFAULT_ESCALATION_KEYWORDS
             .iter()
             .copied()
             .find(|keyword| user_message.contains(*keyword))
-            .map(str::to_owned),
-    }
+            .map(str::to_owned);
+    };
+    keywords
+        .iter()
+        .find(|keyword| user_message.contains(keyword.as_str()))
+        .cloned()
 }
