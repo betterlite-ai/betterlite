@@ -7,6 +7,7 @@ use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
+use betterlite_config::sections::drop_params::DeploymentDropPolicy;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
@@ -224,6 +225,7 @@ fn deployment(litellm_model: &str) -> ChatDeployment {
         rpm: 0,
         tpm: 0,
         global_drop_params: false,
+        drop_policy: DeploymentDropPolicy::default(),
     }
 }
 
