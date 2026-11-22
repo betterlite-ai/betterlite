@@ -2,17 +2,28 @@
 
 mod support;
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
+use betterlite_db::identity_rows::key::{Expiry, LiteLLMVerificationToken};
 use chrono::DateTime;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio_util::task::TaskTracker;
+use tracing::Level;
+use tracing::subscriber::set_default;
+use tracing_subscriber::layer::SubscriberExt as _;
 
-use self::support::{AUDIT, BOTH, Call, NOW, STORE, caller, harness, lock, sink_fixture, wired};
+use self::support::{
+    AUDIT, BOTH, Call, DebugLines, NOW, RecordingMailer, STORE, caller, harness, lock,
+    sink_fixture, wired,
+};
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
+use crate::key_event_sinks::email::{CreatedKey, LegacyEmail, Reported};
+use crate::key_event_sinks::error::EmailError;
+use crate::key_events::effects::{KeyEmailError, KeyEventEmail};
 use crate::key_events::error::KeyEventError;
 use crate::key_events::types::{
     DeletedEvent, GeneratedEvent, KeyEvent, KeyEventCaller, RotatedEvent, UpdatedEvent,
@@ -420,6 +431,10 @@ async fn rotation_name_precedence() {
             }],
             "{request:?} {response_alias:?}"
         );
+        assert!(
+            harness.records().is_empty(),
+            "{request:?} {response_alias:?}"
+        );
     }
 
     let harness = wired(STORE);
@@ -683,5 +698,140 @@ async fn audit_no_raw_key() {
     assert_eq!(
         created_values.get("token_id"),
         Some(&serde_json::json!("*****"))
+    );
+}
+
+#[tokio::test]
+async fn generated_nested_model_nulls_dropped() {
+    let harness = wired(AUDIT);
+    let event = generated(
+        r#"{"key_alias": "alias-a"}"#,
+        r#"{"key": "sk-new-key", "token_id": "tok-1", "object_permission": {"models": ["gpt-4"]}, "router_settings": {"num_retries": null}}"#,
+    );
+    harness.dispatch(&event, &caller()).await.unwrap();
+    let Some(JsonValue::Object(values)) = &harness.records()[0].updated_values else {
+        panic!("the created values are a masked object");
+    };
+    assert_eq!(
+        values.get("object_permission"),
+        Some(&serde_json::json!({"models": ["gpt-4"]}))
+    );
+    assert_eq!(
+        values.get("router_settings"),
+        Some(&serde_json::json!({"model_group_alias": {}}))
+    );
+}
+
+#[tokio::test]
+async fn update_budget_limit_window_rendering() {
+    let harness = wired(AUDIT);
+    let event = updated(
+        r#"{"key": "sk-1", "key_alias": "renamed", "budget_limits": [{"budget_duration": "1d", "max_budget": 10, "reset_at": "2026-01-02T03:04:05Z"}]}"#,
+        ROW,
+        "{}",
+    );
+    harness.dispatch(&event, &caller()).await.unwrap();
+    let Some(JsonValue::Object(values)) = &harness.records()[0].updated_values else {
+        panic!("the updated values are a masked object");
+    };
+    let Some(JsonValue::Array(limits)) = values.get("budget_limits") else {
+        panic!("the updated values carry the budget limits");
+    };
+    let Some(JsonValue::Object(first)) = limits.first() else {
+        panic!("the first budget limit is an object");
+    };
+    assert_eq!(
+        first.get("reset_at"),
+        Some(&serde_json::json!("2026-01-02 03:04:05+00:00"))
+    );
+}
+
+#[tokio::test]
+async fn naive_row_instants_render_in_both_forms() {
+    let row = r#"{"token": "sk-1", "key_alias": "old-alias", "created_at": "2026-01-02T03:04:05"}"#;
+    let updated_harness = wired(AUDIT);
+    let event = updated(r#"{"key": "sk-1", "key_alias": "renamed"}"#, row, "{}");
+    updated_harness.dispatch(&event, &caller()).await.unwrap();
+    let Some(JsonValue::Object(before_updated)) = &updated_harness.records()[0].before_value else {
+        panic!("the before values are a masked object");
+    };
+    assert_eq!(
+        before_updated.get("created_at"),
+        Some(&serde_json::json!("2026-01-02 03:04:05"))
+    );
+
+    let rotated_harness = wired(AUDIT);
+    rotated_harness
+        .dispatch(&rotated(None, row, RESPONSE), &caller())
+        .await
+        .unwrap();
+    let Some(JsonValue::Object(before_rotated)) = &rotated_harness.records()[0].before_value else {
+        panic!("the rotated before values are a masked object");
+    };
+    assert_eq!(
+        before_rotated.get("created_at"),
+        Some(&serde_json::json!("2026-01-02T03:04:05"))
+    );
+}
+
+#[tokio::test]
+async fn row_expiry_datetime_rendered() {
+    let mut row = key_row(ROW);
+    row.expires = Some(Expiry::DateTime(
+        DateTime::parse_from_rfc3339("2026-03-01T00:00:00+00:00").unwrap(),
+    ));
+    let event = KeyEvent::Updated(UpdatedEvent {
+        data: UpdateKeyRequest::read(&value(r#"{"key": "sk-1", "key_alias": "renamed"}"#))
+            .expect("an update request"),
+        row,
+        response: data("{}"),
+    });
+    let harness = wired(AUDIT);
+    harness.dispatch(&event, &caller()).await.unwrap();
+    let Some(JsonValue::Object(before)) = &harness.records()[0].before_value else {
+        panic!("the before values are a masked object");
+    };
+    assert_eq!(
+        before.get("expires"),
+        Some(&serde_json::json!("2026-03-01 00:00:00+00:00"))
+    );
+}
+
+#[tokio::test]
+async fn legacy_email_effects_created_and_rotated() {
+    let mailer = Arc::new(RecordingMailer::default());
+    let tasks = TaskTracker::new();
+    let alerting = vec!["email".to_owned()];
+    let email = LegacyEmail {
+        alerting: &alerting,
+        mailer: Arc::clone(&mailer),
+        tasks: &tasks,
+    };
+    let rejected = CreatedKey {
+        spend: Reported::Null(()),
+        ..CreatedKey::default()
+    };
+    assert!(matches!(
+        KeyEventEmail::send_created(&email, rejected).await,
+        Err(KeyEmailError::Rejected(EmailError::NullSpend))
+    ));
+    let created: CreatedKey =
+        serde_json::from_str(r#"{"spend": 1.5, "token": "hashed"}"#).expect("a created key");
+    KeyEventEmail::send_created(&email, created).await.unwrap();
+    tasks.close();
+    tasks.wait().await;
+    assert_eq!(lock(&mailer.events).len(), 1);
+
+    let logs = DebugLines::default();
+    let _logging = set_default(tracing_subscriber::registry().with(logs.clone()));
+    KeyEventEmail::send_rotated(&email, "sk-new", Some("old-alias"))
+        .await
+        .unwrap();
+    assert_eq!(
+        logs.lines(),
+        [(
+            Level::DEBUG,
+            "Enterprise package not installed, skipping key rotated email".to_owned(),
+        )]
     );
 }

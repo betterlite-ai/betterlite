@@ -8,6 +8,7 @@ use betterlite_auth::auth_team_lookup::error::TeamLookupError;
 use betterlite_config::sections::key_event_sinks::Settings;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
+use betterlite_logging::budget_email::event::WebhookEvent;
 use betterlite_secret_managers::secret_contracts::options::{
     DeleteOptions, SecretOptions, SecretRotation, SecretWrite,
 };
@@ -33,7 +34,7 @@ use crate::audit_events::sink::{
 };
 use crate::key_event_sinks::email::CreatedKey;
 use crate::key_event_sinks::error::EmailError;
-use crate::key_event_sinks::ports::TeamDirectory;
+use crate::key_event_sinks::ports::{KeyCreatedMailer, TeamDirectory};
 use crate::key_event_sinks::secrets::SecretSink;
 use crate::key_event_sinks::team_params::TeamSecretSettings;
 use crate::key_events::KeyEvents;
@@ -331,6 +332,18 @@ impl KeyEventEmail for RecordingEmail {
     }
 }
 
+#[derive(Default)]
+pub(super) struct RecordingMailer {
+    pub(super) events: Mutex<Vec<WebhookEvent>>,
+}
+
+#[async_trait]
+impl KeyCreatedMailer for RecordingMailer {
+    async fn send(&self, event: WebhookEvent) {
+        lock(&self.events).push(event);
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct Logs {
     pub(super) lines: Arc<Mutex<Vec<String>>>,
@@ -367,6 +380,33 @@ impl Visit for Message {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }
+    }
+}
+
+// the legacy email's skip decision is a debug line, so a test reads the level and text it wrote
+#[derive(Clone, Default)]
+pub(super) struct DebugLines {
+    pub(super) lines: Arc<Mutex<Vec<(Level, String)>>>,
+}
+
+impl DebugLines {
+    pub(super) fn lines(&self) -> Vec<(Level, String)> {
+        lock(&self.lines).clone()
+    }
+}
+
+impl<S: Subscriber> Layer<S> for DebugLines {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
+        if !event
+            .metadata()
+            .target()
+            .starts_with("betterlite_server::key_event_sinks::email")
+        {
+            return;
+        }
+        let mut message = Message(String::new());
+        event.record(&mut message);
+        lock(&self.lines).push((*event.metadata().level(), message.0));
     }
 }
 
