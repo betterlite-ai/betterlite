@@ -389,25 +389,26 @@ fn finish_reasons() {
 // The catalog round trip serializes a declared Decimal as text, which is the shape a real reply reads.
 fn price_values() {
     let text_price = price_record(&[("output_cost_per_image", Scalar::Text("0.07".to_owned()))]);
-    let reply = priced_reply(text_price).expect("a text price reads as a decimal");
+    let decimal_reply = priced_reply(text_price).expect("a text price reads as a decimal");
     assert_eq!(
-        reply.additional_headers.get(COST_HEADER),
+        decimal_reply.additional_headers.get(COST_HEADER),
         Some(&json("0.07"))
     );
-    for (text, expected) in [("  0.5  ", "0.5"), ("5E-2", "0.05")] {
-        let record = price_record(&[("output_cost_per_image", Scalar::Text(text.to_owned()))]);
-        let reply = priced_reply(record).expect("a text price reads as a decimal");
+    for (lexeme, expected) in [("  0.5  ", "0.5"), ("5E-2", "0.05")] {
+        let lexeme_price =
+            price_record(&[("output_cost_per_image", Scalar::Text(lexeme.to_owned()))]);
+        let lexeme_reply = priced_reply(lexeme_price).expect("a text price reads as a decimal");
         assert_eq!(
-            reply.additional_headers.get(COST_HEADER),
+            lexeme_reply.additional_headers.get(COST_HEADER),
             Some(&json(expected)),
-            "{text}"
+            "{lexeme}"
         );
     }
     for (flag, expected) in [(true, "1.0"), (false, "0.0")] {
-        let record = price_record(&[("output_cost_per_image", Scalar::Bool(flag))]);
-        let reply = priced_reply(record).expect("a bool price reads as a number");
+        let bool_price = price_record(&[("output_cost_per_image", Scalar::Bool(flag))]);
+        let bool_reply = priced_reply(bool_price).expect("a bool price reads as a number");
         assert_eq!(
-            reply.additional_headers.get(COST_HEADER),
+            bool_reply.additional_headers.get(COST_HEADER),
             Some(&json(expected)),
             "{flag}"
         );
