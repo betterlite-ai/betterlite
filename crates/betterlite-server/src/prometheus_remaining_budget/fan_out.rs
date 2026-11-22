@@ -101,10 +101,36 @@ impl<L: RequestBudgetLookups> RemainingBudgetFanOut<L> {
 
 fn lookups_for(request: RemainingBudgetRequest<'_>) -> BudgetLookups<'_> {
     BudgetLookups {
-        key: key_lookup(request),
-        team: team_lookup(request),
-        user: user_lookup(request),
-        org: org_lookup(request),
+        key: KeyBudgetLookup {
+            user_api_key: request.key,
+            user_api_key_alias: request.key_alias,
+            response_cost: request.response_cost,
+            key_max_budget: metadata_decimal(request.metadata, "user_api_key_max_budget"),
+            key_spend: metadata_decimal(request.metadata, "user_api_key_spend"),
+            carried: KeyBudgetSnapshot::from_metadata(request.metadata),
+        },
+        team: TeamBudgetLookup {
+            user_api_team: request.team,
+            user_api_team_alias: request.team_alias,
+            team_spend: metadata_decimal(request.metadata, "user_api_key_team_spend"),
+            team_max_budget: metadata_decimal(request.metadata, "user_api_key_team_max_budget"),
+            response_cost: request.response_cost,
+            carried: TeamBudgetSnapshot::from_metadata(request.metadata),
+        },
+        user: UserBudgetLookup {
+            user_id: request.user_id,
+            user_spend: metadata_decimal(request.metadata, "user_api_key_user_spend"),
+            user_max_budget: metadata_decimal(request.metadata, "user_api_key_user_max_budget"),
+            response_cost: request.response_cost,
+            carried: UserBudgetSnapshot::from_metadata(request.metadata),
+            user_email: metadata_text(request.metadata.get("user_api_key_user_email")),
+        },
+        org: OrgBudgetLookup {
+            org_id: request.org_id,
+            response_cost: request.response_cost,
+            carried: OrgBudgetSnapshot::from_metadata(request.metadata),
+            org_alias: metadata_text(request.metadata.get("user_api_key_org_alias")),
+        },
         customer: CustomerBudgetLookup {
             end_user_id: request.end_user_id,
             response_cost: request.response_cost,
@@ -112,51 +138,10 @@ fn lookups_for(request: RemainingBudgetRequest<'_>) -> BudgetLookups<'_> {
     }
 }
 
-fn key_lookup(request: RemainingBudgetRequest<'_>) -> KeyBudgetLookup<'_> {
-    KeyBudgetLookup {
-        user_api_key: request.key,
-        user_api_key_alias: request.key_alias,
-        response_cost: request.response_cost,
-        key_max_budget: metadata_decimal(request.metadata, "user_api_key_max_budget"),
-        key_spend: metadata_decimal(request.metadata, "user_api_key_spend"),
-        carried: KeyBudgetSnapshot::from_metadata(request.metadata),
-    }
-}
-
-fn team_lookup(request: RemainingBudgetRequest<'_>) -> TeamBudgetLookup<'_> {
-    TeamBudgetLookup {
-        user_api_team: request.team,
-        user_api_team_alias: request.team_alias,
-        team_spend: metadata_decimal(request.metadata, "user_api_key_team_spend"),
-        team_max_budget: metadata_decimal(request.metadata, "user_api_key_team_max_budget"),
-        response_cost: request.response_cost,
-        carried: TeamBudgetSnapshot::from_metadata(request.metadata),
-    }
-}
-
-fn user_lookup(request: RemainingBudgetRequest<'_>) -> UserBudgetLookup<'_> {
-    UserBudgetLookup {
-        user_id: request.user_id,
-        user_spend: metadata_decimal(request.metadata, "user_api_key_user_spend"),
-        user_max_budget: metadata_decimal(request.metadata, "user_api_key_user_max_budget"),
-        response_cost: request.response_cost,
-        carried: UserBudgetSnapshot::from_metadata(request.metadata),
-        user_email: request
-            .metadata
-            .get("user_api_key_user_email")
-            .and_then(AgentJson::as_str),
-    }
-}
-
-fn org_lookup(request: RemainingBudgetRequest<'_>) -> OrgBudgetLookup<'_> {
-    OrgBudgetLookup {
-        org_id: request.org_id,
-        response_cost: request.response_cost,
-        carried: OrgBudgetSnapshot::from_metadata(request.metadata),
-        org_alias: request
-            .metadata
-            .get("user_api_key_org_alias")
-            .and_then(AgentJson::as_str),
+fn metadata_text(json: Option<&AgentJson>) -> Option<&str> {
+    match json {
+        Some(value) => value.as_str(),
+        None => None,
     }
 }
 
