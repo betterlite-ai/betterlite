@@ -15,7 +15,7 @@ use super::metric::DeploymentMetric;
 use super::requests::FailureRequest;
 use super::support::{
     FakeCatalog, ProbeGauges, call, capture_logs, exception, expected_labels, inc_amount,
-    json_object, labels_of, metric_of, now, update_of,
+    json_object, labels_of, metric_of, now, payload_with, update_of,
 };
 
 fn params(entries: &[(&str, Json)]) -> JsonObject {
@@ -402,6 +402,155 @@ fn identity_labels_fall_through_a_falsy_b3880_result_to_the_payload_metadata() {
         Some("test-agent")
     );
     assert!(gauges.calls().contains(&call("failure_labels", "")));
+}
+
+#[test]
+fn the_shared_default_labels_read_the_auth_facts() {
+    let gauges = ProbeGauges::new();
+    let defaults = gauges.defaults();
+    let payload = selected_payload();
+    let status = exception(Some("400"), None);
+    let auth = Json::Object(json_object(&[
+        ("key_alias", Json::Text("auth-alias".to_owned())),
+        ("team_id", Json::Text("auth-team".to_owned())),
+        ("team_alias", Json::Text("auth-team-alias".to_owned())),
+        ("api_key", Json::Text("auth-hash".to_owned())),
+    ]));
+    let metadata = Json::Object(json_object(&[("user_api_key_auth", auth)]));
+    let litellm_params = params(&[("metadata", metadata)]);
+    set_llm_deployment_failure_metrics(
+        &defaults,
+        &FailureRequest {
+            model: Some("gpt-4o"),
+            exception: Some(&status),
+            litellm_params: &litellm_params,
+            payload: Some(&payload),
+            catalog: None,
+            now: now(),
+        },
+    );
+    let events = gauges.updates();
+    let labels = labels_of(&events[1]);
+    assert_eq!(
+        labels.get("api_key_alias").map(String::as_str),
+        Some("auth-alias")
+    );
+    assert_eq!(labels.get("team").map(String::as_str), Some("auth-team"));
+    assert_eq!(
+        labels.get("team_alias").map(String::as_str),
+        Some("auth-team-alias")
+    );
+    assert_eq!(
+        labels.get("hashed_api_key").map(String::as_str),
+        Some("auth-hash")
+    );
+    assert_eq!(
+        labels.get("exception_class").map(String::as_str),
+        Some("BadRequestError")
+    );
+}
+
+#[test]
+fn the_shared_default_labels_bound_the_rejected_models() {
+    let gauges = ProbeGauges::new();
+    let defaults = gauges.defaults();
+    let payload = payload_with(&[
+        ("model_group", Json::Text("group-a".to_owned())),
+        ("api_base", Json::Text(String::new())),
+    ]);
+    let litellm_params = params(&[]);
+    set_llm_deployment_failure_metrics(
+        &defaults,
+        &FailureRequest {
+            model: Some("gpt-4o"),
+            exception: None,
+            litellm_params: &litellm_params,
+            payload: Some(&payload),
+            catalog: None,
+            now: now(),
+        },
+    );
+    let events = gauges.updates();
+    let labels = labels_of(&events[0]);
+    assert_eq!(
+        labels.get("requested_model").map(String::as_str),
+        Some("gpt-4o")
+    );
+    assert_eq!(
+        labels.get("model_group").map(String::as_str),
+        Some("group-a")
+    );
+}
+
+#[test]
+fn the_shared_default_filter_skips_only_invalid_key_failures() {
+    let payload = selected_payload();
+    let litellm_params = params(&[]);
+    let unauthorized = exception(Some("401"), None);
+    let invalid = ProbeGauges::new();
+    let invalid_defaults = invalid.defaults();
+    set_llm_deployment_failure_metrics(
+        &invalid_defaults,
+        &FailureRequest {
+            model: Some("gpt-4o"),
+            exception: Some(&unauthorized),
+            litellm_params: &litellm_params,
+            payload: Some(&payload),
+            catalog: None,
+            now: now(),
+        },
+    );
+    assert!(invalid.updates().is_empty());
+
+    let bad_request = exception(Some("400"), None);
+    let ordinary = ProbeGauges::new();
+    let ordinary_defaults = ordinary.defaults();
+    set_llm_deployment_failure_metrics(
+        &ordinary_defaults,
+        &FailureRequest {
+            model: Some("gpt-4o"),
+            exception: Some(&bad_request),
+            litellm_params: &litellm_params,
+            payload: Some(&payload),
+            catalog: None,
+            now: now(),
+        },
+    );
+    assert_eq!(ordinary.updates().len(), 3);
+}
+
+#[test]
+fn configured_custom_tags_project_the_payload_tags() {
+    let gauges = ProbeGauges::new().with_custom_tags(&["prod"]);
+    let payload = payload_with(&[
+        ("model_id", Json::Text("model-1".to_owned())),
+        ("api_base", Json::Text(String::new())),
+        (
+            "request_tags",
+            Json::List(vec![Json::Text("prod".to_owned())]),
+        ),
+    ]);
+    let litellm_params = params(&[]);
+    set_llm_deployment_failure_metrics(
+        &gauges,
+        &FailureRequest {
+            model: Some("gpt-4o"),
+            exception: None,
+            litellm_params: &litellm_params,
+            payload: Some(&payload),
+            catalog: None,
+            now: now(),
+        },
+    );
+    let event = gauges
+        .updates()
+        .into_iter()
+        .find(|event| metric_of(event) == "litellm_deployment_total_requests")
+        .expect("the total counter is written");
+    assert_eq!(
+        labels_of(&event).get("tag_prod").map(String::as_str),
+        Some("true")
+    );
 }
 
 fn exception_status_label(status: Option<&str>, code: Option<&str>) -> Option<String> {

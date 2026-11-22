@@ -245,6 +245,32 @@ fn a_full_success_writes_every_metric_in_order() {
 }
 
 #[test]
+fn litellm_params_limits_are_written_without_model_info() {
+    let gauges = ProbeGauges::new();
+    let fixture = fixture();
+    let litellm_params = params(&[("tpm", number("42"))]);
+    let payload = success_payload(&[("api_base", Json::Text(String::new()))]);
+    set_llm_deployment_success_metrics(
+        &gauges,
+        &request(
+            &fixture.values,
+            &litellm_params,
+            Some(&payload),
+            Timing::default(),
+        ),
+    );
+    let event = gauges
+        .updates()
+        .into_iter()
+        .find(|event| metric_of(event) == "litellm_deployment_tpm_limit")
+        .expect("the params tpm limit is written");
+    assert_eq!(
+        update_of(&event),
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(42)))
+    );
+}
+
+#[test]
 fn absent_or_zero_values_skip_the_overhead_and_remaining_gauges() {
     let gauges = ProbeGauges::new();
     let fixture = fixture();
@@ -414,6 +440,20 @@ fn zero_output_tokens_skips_the_per_token_latency() {
             Decimal::ZERO,
             Decimal::from(2),
             Some(Decimal::ZERO)
+        ),
+        None
+    );
+}
+
+#[test]
+fn negative_output_tokens_skip_the_per_token_latency() {
+    assert_eq!(
+        latency_value(
+            None,
+            None,
+            Decimal::ZERO,
+            Decimal::from(2),
+            Some(Decimal::from(-1)),
         ),
         None
     );

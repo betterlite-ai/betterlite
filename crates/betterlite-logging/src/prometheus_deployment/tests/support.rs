@@ -169,18 +169,27 @@ const RATE_LIMIT_METRICS: [RateLimitMetric; 2] = [
     RateLimitMetric::DeploymentRpmLimit,
 ];
 
+fn supported_metrics(settings: &PrometheusLabelSettings) -> BTreeMap<String, Vec<String>> {
+    let mut supported = BTreeMap::new();
+    for metric in DEPLOYMENT_METRICS {
+        supported.insert(
+            metric.name().to_owned(),
+            get_labels(metric.name(), settings).unwrap(),
+        );
+    }
+    for metric in RATE_LIMIT_METRICS {
+        supported.insert(
+            metric.name().to_owned(),
+            get_labels(metric.name(), settings).unwrap(),
+        );
+    }
+    supported
+}
+
 impl ProbeGauges {
     pub(crate) fn new() -> Self {
         let settings = PrometheusLabelSettings::with_defaults();
-        let mut supported = BTreeMap::new();
-        for metric in DEPLOYMENT_METRICS {
-            let labels = get_labels(metric.name(), &settings).unwrap();
-            supported.insert(metric.name().to_owned(), labels);
-        }
-        for metric in RATE_LIMIT_METRICS {
-            let labels = get_labels(metric.name(), &settings).unwrap();
-            supported.insert(metric.name().to_owned(), labels);
-        }
+        let supported = supported_metrics(&settings);
         Self {
             events: Arc::new(Mutex::new(Vec::new())),
             supported,
@@ -220,6 +229,16 @@ impl ProbeGauges {
             labels.iter().map(|label| (*label).to_owned()).collect(),
         );
         self
+    }
+
+    pub(crate) fn with_custom_tags(mut self, tags: &[&str]) -> Self {
+        self.settings.custom_tags = tags.iter().map(|tag| (*tag).to_owned()).collect();
+        self.supported = supported_metrics(&self.settings);
+        self
+    }
+
+    pub(crate) fn defaults(&self) -> DefaultProbeGauges<'_> {
+        DefaultProbeGauges(self)
     }
 
     pub(crate) fn events(&self) -> Vec<Recorded> {
@@ -352,6 +371,47 @@ impl DeploymentMetrics for ProbeGauges {
             return Err(PrometheusDeploymentError::Overflow);
         }
         emit_labeled_counter(self, metric, values, source, now)
+    }
+}
+
+// the probe without its trait overrides, so a test runs the trait's default methods
+pub(crate) struct DefaultProbeGauges<'probe>(&'probe ProbeGauges);
+
+impl RateLimitGauges for DefaultProbeGauges<'_> {
+    type Gauge = ProbeMetric;
+
+    fn gauge(&self, metric: RateLimitMetric) -> ProbeMetric {
+        self.0.gauge(metric)
+    }
+
+    fn supported_labels(&self, metric: RateLimitMetric) -> &[String] {
+        self.0.supported_labels(metric)
+    }
+
+    fn tracker(&self) -> &BoundedPrometheusSeriesTracker {
+        self.0.tracker()
+    }
+}
+
+impl DeploymentMetrics for DefaultProbeGauges<'_> {
+    fn metric(&self, metric: DeploymentMetric) -> ProbeMetric {
+        self.0.metric(metric)
+    }
+
+    fn labels_for(&self, metric: DeploymentMetric) -> &[String] {
+        self.0.labels_for(metric)
+    }
+
+    fn settings(&self) -> &PrometheusLabelSettings {
+        self.0.settings()
+    }
+
+    fn end_user_settings(&self) -> EndUserCostTrackingSettings {
+        self.0.end_user_settings()
+    }
+
+    fn limits(&self) -> &SeriesLimits {
+        self.0.limits()
     }
 }
 
