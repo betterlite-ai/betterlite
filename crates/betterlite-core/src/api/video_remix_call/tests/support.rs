@@ -471,7 +471,7 @@ impl Bench {
     }
 
     // The one runner: the fixture's environment and collaborators, the pool, and the entry a mode names
-    async fn run<'call>(&mut self, plan: Plan<'call>, mode: Mode) -> Outcome {
+    async fn run(&mut self, plan: Plan<'_>, mode: Mode) -> Outcome {
         let env = self.fixture.env.pre_post();
         let deps = VideoCallDeps {
             configs: &self.configs,
