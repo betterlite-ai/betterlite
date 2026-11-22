@@ -95,15 +95,17 @@ fn slice(
     spends: (f64, f64),
     cache_hits: i64,
 ) -> ShadowEvalSlice {
+    let (real_win_rate_pct, shadow_win_rate_pct, tie_rate_pct) = rates;
+    let (real_spend, shadow_spend) = spends;
     ShadowEvalSlice {
         group: group.to_owned(),
         turn_count: turns,
-        real_win_rate_pct: rates.0,
-        shadow_win_rate_pct: rates.1,
-        tie_rate_pct: rates.2,
+        real_win_rate_pct,
+        shadow_win_rate_pct,
+        tie_rate_pct,
         avg_judge_confidence: confidence,
-        real_spend: money(spends.0),
-        shadow_spend: money(spends.1),
+        real_spend: money(real_spend),
+        shadow_spend: money(shadow_spend),
         cache_hit_turns: cache_hits,
     }
 }

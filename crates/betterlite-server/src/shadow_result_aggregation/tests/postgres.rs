@@ -19,6 +19,7 @@ use super::super::repository::ShadowResultsRepository as _;
 use super::super::responses::{LegCounts, group_response};
 use super::super::results::{FunnelTotals, TargetVerdicts};
 use super::super::targets::TargetKey;
+use super::agg;
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_models::ShadowEvalTargetType;
 use crate::shadow_eval_models::ShadowEvalTargetType::{Key as KeyTarget, Team as TeamTarget};
@@ -170,31 +171,11 @@ fn verdict_group(
 }
 
 fn simple_tier() -> AttemptAggRow {
-    AttemptAggRow {
-        group: "simple".to_owned(),
-        turn_count: 2,
-        real_wins: 1,
-        shadow_wins: 0,
-        ties: 1,
-        avg_confidence: Some(0.625),
-        real_spend: 0.375,
-        shadow_spend: 0.625,
-        cache_hit_turns: 0,
-    }
+    agg("simple", 2, (1, 0, 1), Some(0.625), (0.375, 0.625), 0)
 }
 
 fn unclassified_tier() -> AttemptAggRow {
-    AttemptAggRow {
-        group: "UNCLASSIFIED".to_owned(),
-        turn_count: 1,
-        real_wins: 0,
-        shadow_wins: 1,
-        ties: 0,
-        avg_confidence: None,
-        real_spend: 0.0,
-        shadow_spend: 0.0,
-        cache_hit_turns: 1,
-    }
+    agg("UNCLASSIFIED", 1, (0, 1, 0), None, (0.0, 0.0), 1)
 }
 
 #[tokio::test]

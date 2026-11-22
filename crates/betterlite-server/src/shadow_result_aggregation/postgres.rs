@@ -43,8 +43,9 @@ impl ShadowResultsRepository for PgShadowResults {
     }
 
     async fn attempt_totals(&self, leg_ids: &[String]) -> RepositoryResult<AttemptTotals> {
-        let row = self.one(ATTEMPT_TOTALS_SQL, leg_ids).await?;
-        attempt_totals_row(&row)
+        let rows = self.rows(ATTEMPT_TOTALS_SQL, leg_ids).await?;
+        let row = rows.first().ok_or(ShadowResultsError::NoTotalsRow)?;
+        attempt_totals_row(row)
     }
 
     async fn attempt_count_rows(
@@ -56,9 +57,10 @@ impl ShadowResultsRepository for PgShadowResults {
     }
 
     async fn funnel_totals(&self, leg_ids: &[String]) -> RepositoryResult<Option<FunnelTotals>> {
-        self.optional(FUNNEL_TOTALS_SQL, leg_ids)
+        self.rows(FUNNEL_TOTALS_SQL, leg_ids)
             .await?
-            .map(|row| funnel_row(&row))
+            .first()
+            .map(funnel_row)
             .transpose()
     }
 
@@ -93,26 +95,6 @@ impl PgShadowResults {
         let params: [&(dyn ToSql + Sync); 1] = [&ids];
         client
             .query(sql, &params)
-            .await
-            .map_err(|source| ShadowResultsError::Database(backend(source)))
-    }
-
-    async fn one(&self, sql: &str, leg_ids: &[String]) -> RepositoryResult<Row> {
-        let ids = leg_ids.to_vec();
-        let client = self.store.session().await?;
-        let params: [&(dyn ToSql + Sync); 1] = [&ids];
-        client
-            .query_one(sql, &params)
-            .await
-            .map_err(|source| ShadowResultsError::Database(backend(source)))
-    }
-
-    async fn optional(&self, sql: &str, leg_ids: &[String]) -> RepositoryResult<Option<Row>> {
-        let ids = leg_ids.to_vec();
-        let client = self.store.session().await?;
-        let params: [&(dyn ToSql + Sync); 1] = [&ids];
-        client
-            .query_opt(sql, &params)
             .await
             .map_err(|source| ShadowResultsError::Database(backend(source)))
     }
@@ -183,12 +165,17 @@ fn attempt_count_row(row: &Row) -> RepositoryResult<LegAttemptCount> {
 }
 
 fn funnel_row(row: &Row) -> RepositoryResult<FunnelTotals> {
+    let legs_with_rows = i64::from(column::<i32>(row, "legs_with_rows")?);
+    let not_sampled = i64::from(column::<i32>(row, "not_sampled")?);
+    let unjudgeable = i64::from(column::<i32>(row, "unjudgeable")?);
+    let shed = i64::from(column::<i32>(row, "shed")?);
+    let withheld = i64::from(column::<i32>(row, "withheld")?);
     Ok(FunnelTotals {
-        legs_with_rows: i64::from(column::<i32>(row, "legs_with_rows")?),
-        not_sampled: i64::from(column::<i32>(row, "not_sampled")?),
-        unjudgeable: i64::from(column::<i32>(row, "unjudgeable")?),
-        shed: i64::from(column::<i32>(row, "shed")?),
-        withheld: i64::from(column::<i32>(row, "withheld")?),
+        legs_with_rows,
+        not_sampled,
+        unjudgeable,
+        shed,
+        withheld,
     })
 }
 

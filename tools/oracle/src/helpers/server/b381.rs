@@ -127,13 +127,13 @@ impl ShadowResultsRepository for FakeRepo<'_> {
         &self,
         leg_ids: &[String],
     ) -> RepositoryResult<Vec<LegAttemptCount>> {
-        Ok(self
-            .input
-            .counts
-            .iter()
-            .filter(|row| leg_ids.contains(&row.job_id))
-            .cloned()
-            .collect())
+        let mut counts = Vec::new();
+        for row in &self.input.counts {
+            if leg_ids.contains(&row.job_id) {
+                counts.push(row.clone());
+            }
+        }
+        Ok(counts)
     }
 
     async fn funnel_totals(&self, _leg_ids: &[String]) -> RepositoryResult<Option<FunnelTotals>> {

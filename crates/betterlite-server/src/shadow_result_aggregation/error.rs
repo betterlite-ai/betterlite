@@ -15,6 +15,8 @@ pub enum ShadowResultsError {
     Unrepresentable { name: &'static str },
     #[error("a shadow eval job has at least one leg")]
     NoLegs,
+    #[error("the attempt totals read returned no row")]
+    NoTotalsRow,
     #[error("attempts name leg {leg_id}, which is not part of the job")]
     UnknownLeg { leg_id: String },
 }
