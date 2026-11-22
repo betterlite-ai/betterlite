@@ -163,15 +163,15 @@ fn resolution_view(resolver: &ScriptedResolver) -> Value {
 }
 
 fn probe_view(recorder: &ProbeRecorder) -> Value {
-    let recorded = recorder
+    let Some(call) = recorder
         .call
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    let Some(record) = recorded else {
+        .clone()
+    else {
         return Value::Null;
     };
-    json!({"name": record.name, "arguments": without_metadata(record.arguments)})
+    json!({"name": call.name, "arguments": without_metadata(call.arguments)})
 }
 
 fn without_metadata(mut arguments: Value) -> Value {
