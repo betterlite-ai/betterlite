@@ -10,7 +10,7 @@ use betterlite_config::types::Config;
 
 use self::strategy_arguments::strategy_args;
 use super::number;
-use crate::router_settings::catalog::strategy_name;
+use crate::routing::strategy_dispatch::strategy_from_config;
 
 mod strategy_arguments;
 
@@ -19,10 +19,12 @@ type Writer = fn(&Config) -> Option<(&'static str, JsonValue)>;
 // the router_settings keys the loaded config proves were written, in the shape the config merge reports
 static WRITERS: [Writer; 17] = [
     |config| {
-        config
-            .router_settings
-            .routing_strategy
-            .map(|strategy| ("routing_strategy", JsonValue::from(strategy_name(strategy))))
+        config.router_settings.routing_strategy.map(|strategy| {
+            (
+                "routing_strategy",
+                JsonValue::from(strategy_from_config(Some(strategy)).wire_name()),
+            )
+        })
     },
     |config| {
         config

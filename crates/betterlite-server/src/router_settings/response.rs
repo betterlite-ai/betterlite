@@ -6,8 +6,8 @@ use serde::Serialize;
 
 use super::catalog::{
     FIELDS, PRIORITY_GROUP_STRATEGY, STRATEGIES, STRATEGY_DESCRIPTIONS, field_default,
-    strategy_name,
 };
+use crate::routing::strategy_dispatch::strategy_from_config;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct RouterSettingsField {
@@ -112,7 +112,7 @@ fn strategy_options() -> Vec<&'static str> {
     STRATEGIES
         .iter()
         .copied()
-        .map(strategy_name)
+        .map(|strategy| strategy_from_config(Some(strategy)).wire_name())
         .collect::<Vec<_>>()
 }
 

@@ -259,18 +259,6 @@ pub(super) const STRATEGY_DESCRIPTIONS: [(&str, &str); 7] = [
     ),
 ];
 
-pub(super) const fn strategy_name(strategy: RoutingStrategy) -> &'static str {
-    match strategy {
-        RoutingStrategy::SimpleShuffle => "simple-shuffle",
-        RoutingStrategy::LeastBusy => "least-busy",
-        RoutingStrategy::UsageBasedRouting => "usage-based-routing",
-        RoutingStrategy::LatencyBasedRouting => "latency-based-routing",
-        RoutingStrategy::CostBasedRouting => "cost-based-routing",
-        RoutingStrategy::UsageBasedRoutingV2 => "usage-based-routing-v2",
-        RoutingStrategy::Lar1 => "lar1",
-    }
-}
-
 pub(super) fn field_default(name: &str) -> JsonValue {
     FIELDS
         .iter()

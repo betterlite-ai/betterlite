@@ -5,7 +5,7 @@ use betterlite_config::sections::settings::{JsonValue, Section, SettingsStore};
 use betterlite_config::types::Config;
 
 use self::configured::{configured_values, default_litellm_params};
-use super::catalog::strategy_name;
+use crate::routing::strategy_dispatch::strategy_from_config;
 
 mod configured;
 
@@ -16,7 +16,10 @@ static DEFAULTS: [Attribute; 22] = [
     |config| {
         (
             "routing_strategy",
-            JsonValue::from(strategy_name(config.sections.router_core.routing_strategy)),
+            JsonValue::from(
+                strategy_from_config(Some(config.sections.router_core.routing_strategy))
+                    .wire_name(),
+            ),
         )
     },
     |_| {
