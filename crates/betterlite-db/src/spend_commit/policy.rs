@@ -70,10 +70,7 @@ pub fn classify_spend_failure<E>(error: &DbError<E>) -> SpendFailure {
             SpendFailure::Ambiguous
         };
     }
-    match native_sqlstate(error) {
-        Some(code) => failure_for_sqlstate(&code),
-        None => SpendFailure::Other,
-    }
+    native_sqlstate(error).map_or(SpendFailure::Other, |code| failure_for_sqlstate(&code))
 }
 
 fn proven_not_sent<E>(error: &DbError<E>) -> bool {

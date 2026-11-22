@@ -33,9 +33,9 @@ pub fn partition_of(turn: &AutoRouterTurnTransaction) -> DrainPartition {
 }
 
 #[must_use]
-pub fn turn_micros(time: TurnTime) -> i64 {
-    match time {
-        TurnTime::Aware(time) => time.timestamp_micros(),
-        TurnTime::Naive(time) => time.and_utc().timestamp_micros(),
+pub const fn turn_micros(turn_time: TurnTime) -> i64 {
+    match turn_time {
+        TurnTime::Aware(aware) => aware.timestamp_micros(),
+        TurnTime::Naive(naive) => naive.and_utc().timestamp_micros(),
     }
 }

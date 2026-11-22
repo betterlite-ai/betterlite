@@ -80,5 +80,5 @@ pub fn spend_tables_left_to_send(
         any_left |= value.as_ref().is_some_and(|rows| !rows.is_empty());
         remaining.insert(*table, value);
     }
-    if any_left { Some(remaining) } else { None }
+    any_left.then_some(remaining)
 }

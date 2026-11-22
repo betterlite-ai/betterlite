@@ -5,7 +5,7 @@ use crate::spend_queues::daily::DailySpendUpdate;
 use super::DAILY_BATCH_SIZE;
 
 #[must_use]
-pub fn entity_id_field(entity: DailySpendEntity) -> &'static str {
+pub const fn entity_id_field(entity: DailySpendEntity) -> &'static str {
     match entity {
         DailySpendEntity::User => "user_id",
         DailySpendEntity::Team => "team_id",
