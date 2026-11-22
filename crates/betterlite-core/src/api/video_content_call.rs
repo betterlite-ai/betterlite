@@ -146,10 +146,9 @@ where
     ) -> Result<Prepared<'call, Providers>, VideoContentCallError> {
         let mut kwargs = request.kwargs;
         let is_async = matches!(kwargs.shift_remove(ASYNC_CALL), Some(Json::Bool(true)));
-        let provider = match request.custom_llm_provider {
-            Some(provider) => provider,
-            None => decoded_provider(&request.video_id),
-        };
+        let provider = request
+            .custom_llm_provider
+            .unwrap_or_else(|| decoded_provider(&request.video_id));
         let (config, source) = self.select(&provider)?;
         log_call(logging, &kwargs, &request.video_id, &provider)
             .map_err(|error| failure(error, &provider, &self.redactor))?;

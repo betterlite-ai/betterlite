@@ -166,10 +166,9 @@ where
         request: VideoStatusRequest,
         logging: &mut LoggingState,
     ) -> Result<Prepared<'call, Providers>, VideoStatusCallError> {
-        let provider = match request.custom_llm_provider {
-            Some(provider) => provider,
-            None => decoded_provider(&request.video_id),
-        };
+        let provider = request
+            .custom_llm_provider
+            .unwrap_or_else(|| decoded_provider(&request.video_id));
         let config = self.select(&provider)?;
         log_call(logging, &request.kwargs, &request.video_id, &provider)
             .map_err(|error| failure(error, &provider, &self.redactor))?;

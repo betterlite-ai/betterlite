@@ -418,11 +418,14 @@ impl ErrorConverter for Converter {
         failure: StatusFailure<'_>,
     ) -> BaseLlmException {
         match failure {
-            StatusFailure::Transform(provider) => config.get_error_class(
-                &provider.message,
-                provider.status_code.unwrap_or(500),
-                provider.headers.as_ref().unwrap_or(&Headers::new()),
-            ),
+            StatusFailure::Transform(provider) => {
+                let headers = provider.headers.unwrap_or_else(Headers::new);
+                config.get_error_class(
+                    &provider.message,
+                    provider.status_code.unwrap_or(500),
+                    &headers,
+                )
+            }
             StatusFailure::Send(error) => {
                 config.get_error_class(&error.to_string(), 500, &Headers::new())
             }
