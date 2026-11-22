@@ -105,7 +105,7 @@ impl ScriptedTable {
             });
         }
         let mut stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut inserted = 0;
+        let mut inserted = 0_usize;
         for row in rows {
             let request_id = text_of(row, "request_id");
             if stored
@@ -139,7 +139,7 @@ impl ScriptedTable {
 
     fn apply(&self, data: &SpendLogRow, request_id: &str) -> usize {
         let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut updated = 0;
+        let mut updated = 0_usize;
         for entry in &mut *rows {
             if text_of(entry, "request_id").as_deref() != Some(request_id)
                 || text_of(entry, "call_type").as_deref() != Some(ARETRIEVE_BATCH)

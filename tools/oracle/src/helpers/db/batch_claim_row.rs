@@ -91,7 +91,7 @@ impl ScriptedTable {
 
     fn insert(&self, rows: &[SpendLogRow]) -> usize {
         let mut stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut inserted = 0;
+        let mut inserted = 0_usize;
         for row in rows {
             let Some(request_id) = text_field(row, "request_id") else {
                 continue;
@@ -118,7 +118,7 @@ impl ScriptedTable {
 
     fn take(&self, data: &SpendLogRow, request_id: &str) -> usize {
         let mut stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut updated = 0;
+        let mut updated = 0_usize;
         for entry in stored
             .iter_mut()
             .filter(|entry| claimable(entry, request_id))

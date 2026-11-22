@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 use std::iter::repeat_n;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
