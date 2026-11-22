@@ -49,7 +49,7 @@ impl Section for Raw {
         let fallback =
             environment_number("DEFAULT_POLLING_INTERVAL", DEFAULT_POLLING_INTERVAL, lookup)?;
         let polling_interval = match configured {
-            Some(seconds) if seconds != 0.0 => seconds,
+            Some(seconds) if seconds != 0.0_f64 => seconds,
             Some(_) | None => fallback,
         };
         let default_priority = resolve_number(
