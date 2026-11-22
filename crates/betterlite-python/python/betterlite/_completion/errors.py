@@ -34,7 +34,7 @@ EXCEPTION_TYPES: Final[dict[str, type[BaseException]]] = {
         exceptions.APIConnectionError, exceptions.APIResponseValidationError,
         exceptions.JSONSchemaValidationError, exceptions.UnsupportedParamsError,
         exceptions.GuardrailRaisedException, exceptions.MidStreamFallbackError,
-        exceptions.Exception,
+        Exception,
     )
 }
 
@@ -142,7 +142,7 @@ def _build_error(payload: ErrorPayload) -> BaseException:
         case "MidStreamFallbackError":
             return exceptions.MidStreamFallbackError(message, model, provider)
         case "Exception":
-            return exceptions.Exception(message)
+            return Exception(message)
     raise UnknownNativeError(payload["type"])
 
 
