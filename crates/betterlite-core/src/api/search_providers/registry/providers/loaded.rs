@@ -8,7 +8,7 @@ use crate::api::search_providers::searxng::{
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::{
-    HttpMethod, ProviderResponse, RequestInput, SearchProvider,
+    HttpMethod, ProviderResponse, RequestInput, SearchProvider as _,
 };
 use betterlite_openai::search::records::SearchResponse;
 use secrecy::SecretString;

@@ -215,7 +215,7 @@ fn tinyfish_search_settings_refuse_the_server_key_for_an_untrusted_base() {
         TinyfishSearchError::Credential(CredentialError::UntrustedBase { .. })
     ));
     let body = body_of(&search, &single("q"), &Object::new());
-    let error = search
+    let signing_error = search
         .sign_request(
             Headers::new(),
             &OutboundSearch {
@@ -227,7 +227,7 @@ fn tinyfish_search_settings_refuse_the_server_key_for_an_untrusted_base() {
         )
         .unwrap_err();
     assert!(matches!(
-        error,
+        signing_error,
         TinyfishSearchError::Credential(CredentialError::UntrustedBase { .. })
     ));
 }
@@ -428,10 +428,10 @@ fn tinyfish_max_results_clamps_into_the_one_to_ten_range(
     #[case] raw: &str,
     #[case] expected: Option<usize>,
 ) {
-    let optional_params = match raw.strip_prefix("The string ") {
-        Some(text) => params(&format!(r#"{{"max_results":{text}}}"#)),
-        None => params(&format!(r#"{{"max_results":{raw}}}"#)),
-    };
+    let optional_params = raw.strip_prefix("The string ").map_or_else(
+        || params(&format!(r#"{{"max_results":{raw}}}"#)),
+        |text| params(&format!(r#"{{"max_results":{text}}}"#)),
+    );
     let limit = limit_of(&optional_params);
     match expected {
         Some(value) => assert_eq!(limit, CallerLimit::Set(value)),
@@ -466,9 +466,9 @@ fn tinyfish_max_results_rejects_non_finite_floats() {
         limit_of_float(None, "1e400"),
         CallerLimit::Ignored("1e400".to_owned())
     );
-    assert_eq!(limit_of_float(Some(2.9), "2.9"), CallerLimit::Set(2));
-    assert_eq!(limit_of_float(Some(0.5), "0.5"), CallerLimit::Set(1));
-    assert_eq!(limit_of_float(Some(10.9), "10.9"), CallerLimit::Set(10));
+    assert_eq!(limit_of_float(Some(2.9_f64), "2.9"), CallerLimit::Set(2));
+    assert_eq!(limit_of_float(Some(0.5_f64), "0.5"), CallerLimit::Set(1));
+    assert_eq!(limit_of_float(Some(10.9_f64), "10.9"), CallerLimit::Set(10));
 }
 
 #[test]

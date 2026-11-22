@@ -7,7 +7,7 @@ use crate::search::SearchConfigLookup;
 use betterlite_config::loader::EnvironmentLookup;
 use config::SearchConfig;
 use names::SearchProviderName;
-use std::str::FromStr;
+use std::str::FromStr as _;
 pub struct SearchRegistry<'env> {
     pub environment: &'env dyn EnvironmentLookup,
 }

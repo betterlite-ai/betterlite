@@ -17,12 +17,12 @@ const RESULT_FLOOR: usize = 1;
 // max_results is clamped as a truncated float, so the same bounds exist in both number types
 const RESULT_FLOOR_FLOAT: f64 = 1.0;
 const RESULT_CAP_FLOAT: f64 = 10.0;
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TinyfishBody {
     #[serde(rename = "_tinyfish_params")]
     pub params: IndexMap<String, TinyfishParam>,
 }
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum TinyfishParam {
     Text(String),
@@ -53,10 +53,10 @@ pub(super) fn build(query: &SearchQuery, optional_params: &Object) -> (TinyfishB
     let country = optional_params
         .get(COUNTRY_PARAM)
         .and_then(JsonValue::as_str);
-    if let Some(country) = country {
+    if let Some(caller_country) = country {
         params.insert(
             String::from(LOCATION_PARAM),
-            TinyfishParam::Text(country.to_owned()),
+            TinyfishParam::Text(caller_country.to_owned()),
         );
     }
     let limit = caller_limit(optional_params.get(MAX_RESULTS_PARAM));
@@ -116,10 +116,10 @@ fn limit_of_number(number: &Number) -> CallerLimit {
 }
 // Python's int(text): a numeric string is truncated by int() only when it holds no fractional part
 fn limit_of_text(text: &str) -> CallerLimit {
-    match parse_caller_int(text) {
-        Some(parsed) => CallerLimit::Set(clamped(parsed)),
-        None => CallerLimit::Ignored(python::repr(&text).unwrap_or_default()),
-    }
+    parse_caller_int(text).map_or_else(
+        || CallerLimit::Ignored(python::repr(&text).unwrap_or_default()),
+        |parsed| CallerLimit::Set(clamped(parsed)),
+    )
 }
 pub(super) fn limit_of_float(value: Option<f64>, raw: &str) -> CallerLimit {
     match value {
@@ -144,10 +144,10 @@ fn clamped_float(value: f64) -> usize {
 }
 fn parse_caller_int(text: &str) -> Option<i128> {
     let trimmed = text.trim();
-    let (negative, digits) = match trimmed.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-    };
+    let (negative, digits) = trimmed.strip_prefix('-').map_or_else(
+        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+        |rest| (true, rest),
+    );
     if digits.is_empty() {
         return None;
     }

@@ -10,7 +10,7 @@ use betterlite_openai::search::records::SearchResponse;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 // the one body type every provider's request becomes, so a caller can hold any of them
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SearchBody(pub JsonValue);
 pub struct SearchConfig<'env> {

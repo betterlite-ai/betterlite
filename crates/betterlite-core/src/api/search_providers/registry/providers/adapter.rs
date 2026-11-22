@@ -51,7 +51,8 @@ where
         let Some(body) = stored.as_ref() else {
             return Err(SearchConfigError::MissingBody);
         };
-        self.provider
+        let signed = self
+            .provider
             .sign_request(
                 headers,
                 &OutboundSearch {
@@ -61,7 +62,9 @@ where
                     body,
                 },
             )
-            .map_err(|source| SearchConfigError::Provider(Box::new(source)))
+            .map_err(|source| SearchConfigError::Provider(Box::new(source)));
+        drop(stored);
+        signed
     }
     fn complete_url(
         &self,

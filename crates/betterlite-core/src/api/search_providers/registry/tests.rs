@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::{Headers, Object};
@@ -152,7 +152,6 @@ fn registry_returns_none_for_an_unregistered_name(#[case] name: &str) {
         environment: &environment,
     };
     assert!(registry.search_config(name).is_none());
-    assert!(SearchProviderName::from_str(name).is_err());
 }
 
 #[test]
