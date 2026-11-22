@@ -1,0 +1,26 @@
+kind: helper
+name: summary-model-limits-parallel-gauge-filter
+call:
+  summary_model_limits:
+    summary_model: sum
+    scenarios:
+      - principal: {token: key-1}
+        spend: {}
+        offline: []
+        rate:
+          hook: limiter
+          missing: []
+          base:
+            - {key: api_key, value: no-limits, rate_limit: null}
+            - {key: api_key, value: no-gauge, rate_limit: {requests_per_unit: 3}}
+            - {key: user, value: null-gauge, rate_limit: {requests_per_unit: 3, max_parallel_requests: null}}
+            - {key: team, value: zero-gauge, rate_limit: {max_parallel_requests: 0, tokens_per_unit: 5}}
+            - {key: end_user, value: one-gauge, rate_limit: {max_parallel_requests: 1, requests_per_unit: 2, tokens_per_unit: 4, window_size: 60}}
+            - {key: customer, value: only-gauge, rate_limit: {max_parallel_requests: 2}}
+          team: [{key: model_per_team, value: team-gauge, rate_limit: {max_parallel_requests: 7, window_size: 30}}]
+          project: []
+          organization: [{key: organization, value: org-gauge, rate_limit: {max_parallel_requests: 0, requests_per_unit: 9}}]
+          overall_code: OK
+          failure: null
+env: {}
+compare: {ignore: []}

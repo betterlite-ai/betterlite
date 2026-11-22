@@ -84,24 +84,27 @@ impl Section for Raw {
     {
         let general = self.general_settings;
         let litellm = self.litellm_settings;
-        let configured_budget = litellm.max_budget.map(budget_number).transpose()?;
-        let budget = resolve_number(configured_budget, MAX_BUDGET_PATH, lookup, parse_money)?;
+        let budget = max_budget(litellm.max_budget, lookup)?;
         let use_redis = redis_transaction_buffer(&general.use_redis_transaction_buffer)?;
-        let dequeue_count = initial_dequeue_count(lookup.lookup(ENV_DEQUEUE_COUNT).as_deref())?;
+        let dequeue_count =
+            initial_environment_integer(lookup, ENV_DEQUEUE_COUNT, DEFAULT_DEQUEUE_COUNT)?;
         let interval = partition_interval(lookup.lookup(ENV_PARTITION_INTERVAL).as_deref());
-        let ahead = initial_precreate_ahead(lookup.lookup(ENV_PRECREATE_AHEAD).as_deref())?;
+        let ahead =
+            initial_environment_integer(lookup, ENV_PRECREATE_AHEAD, DEFAULT_PRECREATE_AHEAD)?;
         let retention_defaults = retention::cleanup_defaults(lookup)?;
         Ok(Settings {
             store_prompts_in_spend_logs: store_prompts(
                 &general.store_prompts_in_spend_logs,
                 lookup.lookup(ENV_STORE_PROMPTS).as_deref(),
             ),
-            max_string_length_prompt_in_db: initial_max_prompt_length(
-                lookup.lookup(ENV_MAX_PROMPT_LENGTH).as_deref(),
+            max_string_length_prompt_in_db: initial_environment_integer(
+                lookup,
+                ENV_MAX_PROMPT_LENGTH,
+                DEFAULT_MAX_PROMPT_LENGTH,
             )?,
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
-            max_budget: budget.unwrap_or(Decimal::ZERO),
+            max_budget: budget,
             disable_end_user_cost_tracking: optional_flag(
                 &litellm.disable_end_user_cost_tracking,
                 DISABLE_END_USER_PATH,
@@ -120,6 +123,19 @@ impl Section for Raw {
             },
         })
     }
+}
+// litellm takes max_budget as a number or an os.environ reference; an absent one leaves zero
+fn max_budget<L>(configured: Option<JsonValue>, lookup: &L) -> Result<Decimal, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let amount = resolve_number(
+        configured.map(budget_number).transpose()?,
+        MAX_BUDGET_PATH,
+        lookup,
+        parse_money,
+    )?;
+    Ok(amount.unwrap_or(Decimal::ZERO))
 }
 pub fn load_spend_storage_policy<L>(source: &str, lookup: &L) -> Result<Settings, ConfigError>
 where
@@ -155,11 +171,15 @@ fn store_prompts(configured: &JsonValue, environment: Option<&str>) -> bool {
         || matches!(configured, JsonValue::String(text) if text.to_lowercase() == "true");
     enabled || environment.and_then(text_to_bool).unwrap_or(false)
 }
-fn initial_max_prompt_length(value: Option<&str>) -> Result<i64, ConfigError> {
-    value.map_or(Ok(DEFAULT_MAX_PROMPT_LENGTH), |text| {
-        let length = betterlite_env::number::<i64>(ENV_MAX_PROMPT_LENGTH, text)
+// an empty value counts as unset, and the load fails on text that names this variable
+fn initial_environment_integer<L>(lookup: &L, name: &str, fallback: i64) -> Result<i64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    lookup.lookup(name).map_or(Ok(fallback), |text| {
+        let number = betterlite_env::number::<i64>(name, &text)
             .map_err(|source| ConfigError::Environment { source })?;
-        Ok(length.unwrap_or(DEFAULT_MAX_PROMPT_LENGTH))
+        Ok(number.unwrap_or(fallback))
     })
 }
 #[must_use]
@@ -184,13 +204,6 @@ fn redis_transaction_buffer(configured: &JsonValue) -> Result<bool, ConfigError>
             })
         }
     }
-}
-fn initial_dequeue_count(value: Option<&str>) -> Result<i64, ConfigError> {
-    value.map_or(Ok(DEFAULT_DEQUEUE_COUNT), |text| {
-        let count = betterlite_env::number::<i64>(ENV_DEQUEUE_COUNT, text)
-            .map_err(|source| ConfigError::Environment { source })?;
-        Ok(count.unwrap_or(DEFAULT_DEQUEUE_COUNT))
-    })
 }
 // Zero and negative counts reach Redis unchanged, so the server's own LPOP rules apply rather than a floor of ours.
 #[must_use]
@@ -251,14 +264,6 @@ fn partition_interval(value: Option<&str>) -> PartitionInterval {
         return PartitionInterval::Day;
     };
     interval
-}
-
-fn initial_precreate_ahead(value: Option<&str>) -> Result<i64, ConfigError> {
-    value.map_or(Ok(DEFAULT_PRECREATE_AHEAD), |text| {
-        let ahead = betterlite_env::number::<i64>(ENV_PRECREATE_AHEAD, text)
-            .map_err(|source| ConfigError::Environment { source })?;
-        Ok(ahead.unwrap_or(DEFAULT_PRECREATE_AHEAD))
-    })
 }
 
 fn budget_number(configured: JsonValue) -> Result<RawNumber, ConfigError> {
