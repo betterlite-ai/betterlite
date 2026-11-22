@@ -22,9 +22,9 @@ async fn the_override_is_not_merged_when_the_body_carries_an_api_key() {
         ),
     ]);
     steps.call(data, false).await.unwrap();
-    let calls = dispatch.calls.lock().unwrap();
-    assert!(calls[0].contains_key("router_settings_override"));
-    assert!(!calls[0].contains_key("num_retries"));
+    let sent = dispatch.calls.lock().unwrap()[0].clone();
+    assert!(sent.contains_key("router_settings_override"));
+    assert!(!sent.contains_key("num_retries"));
 }
 
 #[test]

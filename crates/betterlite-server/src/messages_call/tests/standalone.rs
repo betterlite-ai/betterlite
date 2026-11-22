@@ -113,6 +113,13 @@ async fn standalone_anthropic_messages_writes_the_picked_deployment() {
     let hidden = outcome.hidden_mut();
     assert_eq!(hidden.get("model_id"), Some(&text(&deployment.model_id)));
     assert_eq!(hidden.get("api_base"), Some(&text("http://127.0.0.1:1")));
+}
+
+#[tokio::test]
+async fn standalone_anthropic_messages_replaces_a_non_object_model_info() {
+    let executor = standalone_executor(DEPLOYMENT);
+    let dispatch = Arc::new(FakeDispatch::default());
+    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(Arc::clone(&dispatch)));
     let numeric = object(&[
         ("model", text("messages-model")),
         (
@@ -121,13 +128,12 @@ async fn standalone_anthropic_messages_writes_the_picked_deployment() {
         ),
     ]);
     routing.anthropic_messages(numeric, false).await.unwrap();
-    let second = dispatch.calls.lock().unwrap()[1].clone();
+    let sent = dispatch.calls.lock().unwrap()[0].clone();
     assert_eq!(
-        second
-            .get("litellm_metadata")
-            .and_then(|metadata| metadata.get("model_info"))
+        sent.get("litellm_metadata")
+            .and_then(|fields| fields.get("model_info"))
             .and_then(|info| info.get("id")),
-        Some(&text(&deployment.model_id))
+        Some(&text(&executor.deployments[0].model_id))
     );
 }
 

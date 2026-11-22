@@ -47,17 +47,8 @@ fn the_blocked_and_missing_model_checks_run_before_the_team_map() {
     assert!(routing.team_queries.lock().unwrap().is_empty());
 }
 
-#[tokio::test]
-async fn the_override_copies_only_the_keys_the_body_lacks() {
-    let routing = Arc::new(empty_routing());
-    let steps = call_steps(
-        Arc::new(FakeDispatch::default()),
-        Some(Arc::clone(&routing)),
-        None,
-        false,
-        None,
-    );
-    let overrides = object(&[
+fn overrides() -> JsonMap {
+    object(&[
         (
             "fallbacks",
             JsonValue::Array(vec![text("override-fallback")]),
@@ -78,47 +69,11 @@ async fn the_override_copies_only_the_keys_the_body_lacks() {
         ),
         ("routing_strategy", text("least-busy")),
         ("enable_tag_filtering", JsonValue::Bool(true)),
-    ]);
-    let data = object(&[
-        ("model", text("m")),
-        (
-            "router_settings_override",
-            JsonValue::Object(overrides.clone()),
-        ),
-    ]);
-    steps.call(data, false).await.unwrap();
-    {
-        let calls = routing.router_calls.lock().unwrap();
-        let sent = &calls[0].0;
-        assert!(!sent.contains_key("router_settings_override"));
-        assert_eq!(
-            sent.get("fallbacks"),
-            Some(&JsonValue::Array(vec![text("override-fallback")]))
-        );
-        assert_eq!(
-            sent.get("context_window_fallbacks"),
-            Some(&JsonValue::Array(vec![text("override-context")]))
-        );
-        assert_eq!(
-            sent.get("content_policy_fallbacks"),
-            Some(&JsonValue::Array(vec![text("override-policy")]))
-        );
-        assert_eq!(sent.get("num_retries"), Some(&JsonValue::from(2_i64)));
-        assert_eq!(sent.get("timeout"), Some(&JsonValue::from(5_i64)));
-        assert_eq!(
-            sent.get("model_group_retry_policy"),
-            Some(&JsonValue::Object(object(&[(
-                "retries",
-                JsonValue::from(1_i64)
-            )])))
-        );
-        assert_eq!(sent.get("routing_strategy"), Some(&text("least-busy")));
-        assert_eq!(
-            sent.get("enable_tag_filtering"),
-            Some(&JsonValue::Bool(true))
-        );
-    }
-    let body = object(&[
+    ])
+}
+
+fn body_values() -> JsonMap {
+    object(&[
         ("model", text("m")),
         ("fallbacks", JsonValue::Array(vec![text("body-fallback")])),
         (
@@ -137,11 +92,40 @@ async fn the_override_copies_only_the_keys_the_body_lacks() {
         ),
         ("routing_strategy", text("body-strategy")),
         ("enable_tag_filtering", JsonValue::Bool(false)),
-        ("router_settings_override", JsonValue::Object(overrides)),
-    ]);
-    steps.call(body, false).await.unwrap();
-    let calls = routing.router_calls.lock().unwrap();
-    let sent = &calls[1].0;
+    ])
+}
+
+fn assert_override_copied(sent: &JsonMap) {
+    assert!(!sent.contains_key("router_settings_override"));
+    assert_eq!(
+        sent.get("fallbacks"),
+        Some(&JsonValue::Array(vec![text("override-fallback")]))
+    );
+    assert_eq!(
+        sent.get("context_window_fallbacks"),
+        Some(&JsonValue::Array(vec![text("override-context")]))
+    );
+    assert_eq!(
+        sent.get("content_policy_fallbacks"),
+        Some(&JsonValue::Array(vec![text("override-policy")]))
+    );
+    assert_eq!(sent.get("num_retries"), Some(&JsonValue::from(2_i64)));
+    assert_eq!(sent.get("timeout"), Some(&JsonValue::from(5_i64)));
+    assert_eq!(
+        sent.get("model_group_retry_policy"),
+        Some(&JsonValue::Object(object(&[(
+            "retries",
+            JsonValue::from(1_i64)
+        )])))
+    );
+    assert_eq!(sent.get("routing_strategy"), Some(&text("least-busy")));
+    assert_eq!(
+        sent.get("enable_tag_filtering"),
+        Some(&JsonValue::Bool(true))
+    );
+}
+
+fn assert_body_values_kept(sent: &JsonMap) {
     assert_eq!(
         sent.get("fallbacks"),
         Some(&JsonValue::Array(vec![text("body-fallback")]))
@@ -172,6 +156,49 @@ async fn the_override_copies_only_the_keys_the_body_lacks() {
 }
 
 #[tokio::test]
+async fn the_override_copies_only_the_keys_the_body_lacks() {
+    let routing = Arc::new(empty_routing());
+    let steps = call_steps(
+        Arc::new(FakeDispatch::default()),
+        Some(Arc::clone(&routing)),
+        None,
+        false,
+        None,
+    );
+    let data = object(&[
+        ("model", text("m")),
+        ("router_settings_override", JsonValue::Object(overrides())),
+    ]);
+    steps.call(data, false).await.unwrap();
+    let sent = routing.router_calls.lock().unwrap()[0].0.clone();
+    assert_override_copied(&sent);
+}
+
+#[tokio::test]
+async fn the_body_values_keep_the_override_from_writing_them() {
+    let routing = Arc::new(empty_routing());
+    let steps = call_steps(
+        Arc::new(FakeDispatch::default()),
+        Some(Arc::clone(&routing)),
+        None,
+        false,
+        None,
+    );
+    let mut body = body_values();
+    body.insert(
+        "router_settings_override".to_owned(),
+        JsonValue::Object(overrides()),
+    );
+    steps.call(body, false).await.unwrap();
+    let sent = routing.router_calls.lock().unwrap()[0].0.clone();
+    assert_body_values_kept(&sent);
+}
+
+fn team_metadata() -> JsonValue {
+    JsonValue::Object(object(&[("user_api_key_team_id", text("team"))]))
+}
+
+#[tokio::test]
 async fn the_team_map_is_written_into_the_router_call_only_from_the_router_branch() {
     let mut fake = empty_routing();
     fake.team_model = Some("internal".to_owned());
@@ -183,48 +210,43 @@ async fn the_team_map_is_written_into_the_router_call_only_from_the_router_branc
         false,
         None,
     );
-    let data = object(&[
-        ("model", text("public")),
-        (
-            "metadata",
-            JsonValue::Object(object(&[("user_api_key_team_id", text("team"))])),
-        ),
-    ]);
+    let data = object(&[("model", text("public")), ("metadata", team_metadata())]);
     steps.call(data, false).await.unwrap();
-    {
-        let calls = routing.router_calls.lock().unwrap();
-        assert_eq!(calls[0].0.get("model"), Some(&text("internal")));
-    }
+    let sent = routing.router_calls.lock().unwrap()[0].0.clone();
+    assert_eq!(sent.get("model"), Some(&text("internal")));
     let keyed = object(&[
         ("model", text("public")),
         ("api_key", text("k")),
-        (
-            "metadata",
-            JsonValue::Object(object(&[("user_api_key_team_id", text("team"))])),
-        ),
+        ("metadata", team_metadata()),
     ]);
     steps.call(keyed, false).await.unwrap();
-    {
-        let calls = routing.router_calls.lock().unwrap();
-        assert_eq!(calls[1].0.get("model"), Some(&text("public")));
-    }
+    let keyed_sent = routing.router_calls.lock().unwrap()[1].0.clone();
+    assert_eq!(keyed_sent.get("model"), Some(&text("public")));
     assert_eq!(routing.team_queries.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn the_override_branch_does_not_ask_the_team_map() {
+    let mut fake = empty_routing();
+    fake.team_model = Some("internal".to_owned());
+    let routing = Arc::new(fake);
+    let steps = call_steps(
+        Arc::new(FakeDispatch::default()),
+        Some(Arc::clone(&routing)),
+        None,
+        false,
+        None,
+    );
     let overridden = object(&[
         ("model", text("public")),
         (
             "router_settings_override",
             JsonValue::Object(JsonMap::new()),
         ),
-        (
-            "metadata",
-            JsonValue::Object(object(&[("user_api_key_team_id", text("team"))])),
-        ),
+        ("metadata", team_metadata()),
     ]);
     steps.call(overridden, false).await.unwrap();
-    {
-        let calls = routing.router_calls.lock().unwrap();
-        assert_eq!(calls.len(), 3);
-        assert_eq!(calls[2].0.get("model"), Some(&text("public")));
-    }
-    assert_eq!(routing.team_queries.lock().unwrap().len(), 2);
+    let sent = routing.router_calls.lock().unwrap()[0].0.clone();
+    assert_eq!(sent.get("model"), Some(&text("public")));
+    assert!(routing.team_queries.lock().unwrap().is_empty());
 }

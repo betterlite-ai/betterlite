@@ -18,7 +18,7 @@ use super::steps::{
 };
 use super::{CallFailure, Context, MessagesCallError, MessagesCallSteps};
 use crate::keepalive_interval::DeploymentLookup;
-use crate::route_read_through::{ModelNotFoundCause, ModelReadThrough};
+use crate::route_read_through::{ModelNotFoundCause as _, ModelReadThrough};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct Flag(pub bool);
@@ -365,8 +365,8 @@ async fn tag_filtering_is_gone_from_the_data_the_callee_gets() {
         ("enable_tag_filtering", JsonValue::Bool(true)),
     ]);
     steps.call(data, false).await.unwrap();
-    let calls = dispatch.calls.lock().unwrap();
-    assert!(!calls[0].contains_key("enable_tag_filtering"));
+    let sent = dispatch.calls.lock().unwrap()[0].clone();
+    assert!(!sent.contains_key("enable_tag_filtering"));
 }
 
 #[test]
@@ -416,8 +416,7 @@ fn the_override_branch_runs_before_the_blocked_check() {
         plan_messages_route(&input, Some(&routing)),
         router_plan(false)
     );
-    let blocked_queries = routing.blocked_queries.lock().unwrap();
-    assert!(blocked_queries.is_empty());
+    assert!(routing.blocked_queries.lock().unwrap().is_empty());
 }
 
 #[test]
