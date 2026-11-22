@@ -1,4 +1,4 @@
-use std::io::{self, Read as _, Write as _};
+use std::io::{self, Read, Write as _};
 use std::num::NonZeroUsize;
 use std::panic;
 use std::path::Path;

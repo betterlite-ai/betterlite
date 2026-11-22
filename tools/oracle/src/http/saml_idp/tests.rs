@@ -326,43 +326,38 @@ fn transcript(assertions: &[SamlAssertion]) -> Vec<Step> {
     steps
 }
 
-fn redirect_step(capture_name: &str) -> Step {
+fn step(method: &str, capture: Option<&str>, assertion: Option<SamlAssertion>) -> Step {
     Step {
         request: Request {
-            method: "GET".to_owned(),
+            method: method.to_owned(),
             path: "/sso/key/generate".to_owned(),
             headers: BTreeMap::new(),
             body: Value::Null,
             body_kind: BodyKind::Json,
         },
         compare: Compare::default(),
-        captures: vec![Capture {
-            name: capture_name.to_owned(),
-            source: CaptureSource::LocationQuery {
-                name: "SAMLRequest".to_owned(),
-            },
-            secret: false,
-        }],
+        captures: capture
+            .map(|name| Capture {
+                name: name.to_owned(),
+                source: CaptureSource::LocationQuery {
+                    name: "SAMLRequest".to_owned(),
+                },
+                secret: false,
+            })
+            .into_iter()
+            .collect(),
         form: false,
-        saml_assertion: None,
+        saml_assertion: assertion,
     }
+}
+
+fn redirect_step(capture_name: &str) -> Step {
+    step("GET", Some(capture_name), None)
 }
 
 fn saml_step(mut assertion: SamlAssertion, capture_name: &str) -> Step {
     assertion.request_id_capture = capture_name.to_owned();
-    Step {
-        request: Request {
-            method: "POST".to_owned(),
-            path: "/sso/key/generate".to_owned(),
-            headers: BTreeMap::new(),
-            body: Value::Null,
-            body_kind: BodyKind::Json,
-        },
-        compare: Compare::default(),
-        captures: Vec::new(),
-        form: false,
-        saml_assertion: Some(assertion),
-    }
+    step("POST", None, Some(assertion))
 }
 
 fn redirect(encoded: &str) -> StubAnswer {

@@ -73,7 +73,7 @@ impl SamlSigner {
         let document = self.document(assertion, &in_response_to)?;
         let cached = self.cache.get(&document).cloned();
         let response = match cached {
-            Some(cached) => cached,
+            Some(signed) => signed,
             None => {
                 ensure_keypair(&self.directory)?;
                 let output = run_fixture_script(DRIVER_SCRIPT, &document)?;
@@ -103,8 +103,8 @@ impl SamlSigner {
             .checked_sub_signed(one_second)
             .ok_or(SamlIdpError::TimeRange)?;
         let issue_instant = issued_at.format(TIME_FORMAT).to_string();
-        let not_before = not_before.format(TIME_FORMAT).to_string();
-        let not_on_or_after = not_on_or_after.format(TIME_FORMAT).to_string();
+        let not_before_text = not_before.format(TIME_FORMAT).to_string();
+        let not_on_or_after_text = not_on_or_after.format(TIME_FORMAT).to_string();
         let key_directory = self.directory.to_str().ok_or(SamlIdpError::FixturePath)?;
         let input = SigningInput {
             key_directory,
@@ -116,8 +116,8 @@ impl SamlSigner {
             in_response_to,
             assertion_id: &assertion.assertion_id,
             issue_instant: &issue_instant,
-            not_before: &not_before,
-            not_on_or_after: &not_on_or_after,
+            not_before: &not_before_text,
+            not_on_or_after: &not_on_or_after_text,
             mutation: assertion.mutation,
         };
         serde_json::to_vec(&input).map_err(SamlIdpError::Json)
