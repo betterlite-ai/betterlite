@@ -71,29 +71,33 @@ impl Input {
     }
 
     pub(super) fn get_call(&self) -> GetCharacterCall {
-        GetCharacterCall {
+        let mut call = GetCharacterCall {
             character_id: self.character_id.clone().unwrap_or_default(),
-            timeout: self.timeout.unwrap_or(Some(DEFAULT_TIMEOUT_SECONDS)),
-            custom_llm_provider: self.provider(),
-            extra_headers: self.extra_headers.clone(),
-            litellm_call_id: Some(self.litellm_call_id.clone()),
-            extra: self.extra.clone(),
             ..GetCharacterCall::default()
-        }
+        };
+        call.timeout = self.timeout.unwrap_or(Some(DEFAULT_TIMEOUT_SECONDS));
+        call.custom_llm_provider = self.provider();
+        call.extra_headers.clone_from(&self.extra_headers);
+        call.litellm_call_id = Some(self.litellm_call_id.clone());
+        call.extra.clone_from(&self.extra);
+        call
     }
 
     // the object the fixture handler answers with, named by the create call or the lookup's fixed name
     pub(super) fn answered_object(&self) -> CharacterObject {
-        let name = match self.function {
-            Function::Create => self.name.clone().unwrap_or_default(),
-            Function::Get => "Wren".to_owned(),
-        };
         CharacterObject {
             id: CHARACTER_ID.to_owned(),
             object: CharacterKind::Character,
             created_at: CHARACTER_CREATED_AT,
-            name,
+            name: self.answered_name(),
             hidden_params: IndexMap::new(),
+        }
+    }
+
+    fn answered_name(&self) -> String {
+        match self.function {
+            Function::Create => self.name.clone().unwrap_or_default(),
+            Function::Get => "Wren".to_owned(),
         }
     }
 }

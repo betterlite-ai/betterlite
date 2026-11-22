@@ -4,7 +4,7 @@ use std::time::Duration;
 use betterlite_core::api::bfl::edit::media::SuppliedMedia;
 use betterlite_core::api::video_character_calls::error::CharacterHandlerFailure;
 use betterlite_core::api::video_character_calls::handler::{
-    CharacterAnswered, CharacterHandler, CreateHandlerCall, GetHandlerCall,
+    CharacterAnswered, CharacterHandler, HandlerArguments, HandlerCall,
 };
 use betterlite_core::api::video_records::CharacterObject;
 use betterlite_http::interactions::base::Params;
@@ -37,19 +37,6 @@ pub(super) struct RecordedCall {
     character_id: Option<String>,
 }
 
-// one handler call's parts, so the trait methods build the record once
-struct RecordedParts {
-    function: &'static str,
-    provider: String,
-    timeout: Duration,
-    asynchronous: bool,
-    params: Params,
-    extra_headers: Option<BTreeMap<String, String>>,
-    name: Option<String>,
-    video: Option<String>,
-    character_id: Option<String>,
-}
-
 pub(super) struct Recorder {
     pub(super) logging: LoggingState,
     pub(super) calls: Vec<RecordedCall>,
@@ -64,21 +51,6 @@ impl Recorder {
             result,
         })
     }
-
-    fn record(&mut self, parts: RecordedParts) {
-        self.calls.push(RecordedCall {
-            function: parts.function,
-            provider: parts.provider,
-            timeout: parts.timeout.as_secs_f64(),
-            asynchronous: parts.asynchronous,
-            api_base: parameter_text(&parts.params, "api_base"),
-            api_key: parameter_text(&parts.params, "api_key"),
-            extra_headers: parts.extra_headers,
-            name: parts.name,
-            video: parts.video,
-            character_id: parts.character_id,
-        });
-    }
 }
 
 impl CharacterHandler for Recorder {
@@ -86,38 +58,35 @@ impl CharacterHandler for Recorder {
         &mut self.logging
     }
 
-    fn create(
+    fn handle(
         &mut self,
-        call: CreateHandlerCall,
+        call: HandlerCall,
     ) -> Result<CharacterAnswered<'_>, CharacterHandlerFailure> {
-        self.record(RecordedParts {
-            function: "create",
-            provider: call.provider,
-            timeout: call.timeout,
-            asynchronous: call.is_async,
-            params: call.litellm_params,
-            extra_headers: call.extra_headers,
-            name: Some(call.name),
-            video: video_text(&call.video),
-            character_id: None,
-        });
-        Ok(CharacterAnswered::Done(self.result.clone()))
-    }
-
-    fn get(
-        &mut self,
-        call: GetHandlerCall,
-    ) -> Result<CharacterAnswered<'_>, CharacterHandlerFailure> {
-        self.record(RecordedParts {
-            function: "get",
-            provider: call.provider,
-            timeout: call.timeout,
-            asynchronous: call.is_async,
-            params: call.litellm_params,
-            extra_headers: call.extra_headers,
-            name: None,
-            video: None,
-            character_id: Some(call.character_id),
+        let HandlerCall {
+            arguments,
+            provider,
+            litellm_params,
+            extra_headers,
+            timeout,
+            is_async,
+        } = call;
+        let (function, name, video, character_id) = match arguments {
+            HandlerArguments::Create { name, video } => {
+                ("create", Some(name), video_text(&video), None)
+            }
+            HandlerArguments::Get { character_id } => ("get", None, None, Some(character_id)),
+        };
+        self.calls.push(RecordedCall {
+            function,
+            provider,
+            timeout: timeout.as_secs_f64(),
+            asynchronous: is_async,
+            api_base: parameter_text(&litellm_params, "api_base"),
+            api_key: parameter_text(&litellm_params, "api_key"),
+            extra_headers,
+            name,
+            video,
+            character_id,
         });
         Ok(CharacterAnswered::Done(self.result.clone()))
     }
@@ -161,17 +130,10 @@ fn video_text(video: &SuppliedMedia) -> Option<String> {
 }
 
 fn parameter_text(params: &Params, name: &str) -> Option<String> {
-    match params.get(name) {
-        Some(JsonValue::Text(value)) => Some(value.clone()),
-        None
-        | Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        ) => None,
-    }
+    let Some(JsonValue::Text(value)) = params.get(name) else {
+        return None;
+    };
+    Some(value.clone())
 }
 
 fn logging_state() -> Result<LoggingState, Box<HelperError>> {
