@@ -21,11 +21,13 @@ fn list_pagination_is_sent_as_query() {
         .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .expect("the list answers");
     let requests = bench.requests();
-    let request = &requests[0];
-    assert_eq!(request_query(request, "after").as_deref(), Some("video_7"));
-    assert_eq!(request_query(request, "limit").as_deref(), Some("5"));
-    assert_eq!(request_query(request, "order").as_deref(), Some("asc"));
-    assert_eq!(request_query(request, "extra").as_deref(), Some("yes"));
+    assert_eq!(
+        request_query(&requests[0], "after").as_deref(),
+        Some("video_7")
+    );
+    assert_eq!(request_query(&requests[0], "limit").as_deref(), Some("5"));
+    assert_eq!(request_query(&requests[0], "order").as_deref(), Some("asc"));
+    assert_eq!(request_query(&requests[0], "extra").as_deref(), Some("yes"));
 }
 
 #[test]

@@ -30,7 +30,10 @@ pub(crate) fn run(input: &Input, bench: &mut Bench) -> Result<Outcome, Box<Helpe
 }
 
 // What one entry answered: its JSON value, or the class of the failure it reported
-pub(super) fn outcome<T: Serialize>(result: Result<T, VideoCallFailure>) -> Outcome {
+pub(super) fn outcome<T>(result: Result<T, VideoCallFailure>) -> Outcome
+where
+    T: Serialize,
+{
     match result {
         Ok(value) => Outcome {
             response: serde_json::to_value(value).unwrap_or(Value::Null),
@@ -54,23 +57,22 @@ pub(super) fn current_runtime() -> Result<Runtime, Box<HelperError>> {
 pub(super) fn call_timeout(input: &Input) -> Option<f64> {
     match input.timeout.as_ref() {
         None => Some(DEFAULT_TIMEOUT_SECONDS),
-        Some(Value::Null) => None,
         Some(Value::Number(number)) => number.as_f64(),
-        Some(Value::Bool(_) | Value::String(_) | Value::Array(_) | Value::Object(_)) => None,
+        Some(
+            Value::Null | Value::Bool(_) | Value::String(_) | Value::Array(_) | Value::Object(_),
+        ) => None,
     }
 }
 
 pub(super) fn params(value: Option<&Value>) -> Result<Option<Params>, Box<HelperError>> {
     value
-        .map(|value| {
-            serde_json::from_value::<Params>(value.clone()).map_err(|error| failed(&error))
-        })
+        .map(|raw| serde_json::from_value::<Params>(raw.clone()).map_err(|error| failed(&error)))
         .transpose()
 }
 
 pub(super) fn mock(value: Option<&Value>) -> Result<Option<Json>, Box<HelperError>> {
     value
-        .map(|value| serde_json::from_value::<Json>(value.clone()).map_err(|error| failed(&error)))
+        .map(|raw| serde_json::from_value::<Json>(raw.clone()).map_err(|error| failed(&error)))
         .transpose()
 }
 

@@ -71,13 +71,15 @@ impl Helper for Op {
         let mut bench = harness::Bench::new(input.status, &input.body, &input.litellm_call_id)?;
         let outcome = call::run(input, &mut bench)?;
         let wanted = project::wanted_headers(&input.extra_headers);
-        let requests = bench
-            .source
-            .wire
-            .requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let request = project::request(requests.first(), &wanted);
+        let request = {
+            let requests = bench
+                .source
+                .wire
+                .requests
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            project::request(requests.first(), &wanted)
+        };
         let mut answer = Map::new();
         answer.insert("request".to_owned(), request);
         answer.insert("response".to_owned(), outcome.response);

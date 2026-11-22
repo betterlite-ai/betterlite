@@ -12,7 +12,6 @@ use betterlite_models::identity::provider_id::ProviderId;
 use http::HeaderMap;
 
 // The client's own read timeout: a request that carries it is one the caller named no timeout for
-pub(crate) const CLIENT_TIMEOUT_SECONDS: f64 = 123.0;
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(123);
 
 // One client that records every request and answers the same reply

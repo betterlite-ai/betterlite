@@ -284,9 +284,11 @@ fn params_from(options: VideoOptions) -> Params {
 }
 
 // B525's answer plus the serde round trip from its wire type to this crate's record
-fn core_response<T: DeserializeOwned, W: Serialize>(
-    wire: Result<W, VideoError>,
-) -> Result<T, ConfigFailure> {
+fn core_response<T, W>(wire: Result<W, VideoError>) -> Result<T, ConfigFailure>
+where
+    T: DeserializeOwned,
+    W: Serialize,
+{
     let value = wire.map_err(failed)?;
     let encoded = serde_json::to_value(&value).map_err(failed)?;
     serde_json::from_value(encoded).map_err(failed)
@@ -488,14 +490,11 @@ impl Bench {
                     call,
                     client: plan.client,
                 };
-                match mode {
-                    Mode::Sync => {
-                        video_remix(request).map(|object| Answer::Object(Box::new(object)))
-                    }
-                    Mode::Async => avideo_remix(request)
-                        .await
-                        .map(|object| Answer::Object(Box::new(object))),
-                }
+                let object = match mode {
+                    Mode::Sync => video_remix(request),
+                    Mode::Async => avideo_remix(request).await,
+                };
+                object.map(|video| Answer::Object(Box::new(video)))
             }
             Case::List(call) => {
                 let request = ListRequest {

@@ -15,7 +15,6 @@ use betterlite_openai::videos::VideoOptions;
 use betterlite_openai::videos::config::{VideoCredentials, complete_url, validate_environment};
 use betterlite_openai::videos::list::{list_request, list_response};
 use betterlite_openai::videos::remix::{remix_request, remix_response};
-use betterlite_openai::videos::reply::VideoObject as OpenAiVideoObject;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -55,6 +54,20 @@ fn input_headers(headers: &Headers) -> BTreeMap<String, SecretString> {
         .iter()
         .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
         .collect()
+}
+
+// The remix answer's wire object, decoded into this crate's video record
+fn remix_record(reply: &VideoReply<'_>) -> Result<VideoObject, ConfigFailure> {
+    let video =
+        remix_response(&reply.raw_response.body, reply.custom_llm_provider).map_err(failed)?;
+    decode::<VideoObject, _>(&video)
+}
+
+// The list answer's page, decoded into this crate's params
+fn list_records(reply: &VideoReply<'_>) -> Result<Params, ConfigFailure> {
+    let page =
+        list_response(&reply.raw_response.body, reply.custom_llm_provider).map_err(failed)?;
+    decode::<Params, _>(&page)
 }
 
 impl VideoRemixListConfig for OpenAiConfig {
@@ -106,9 +119,7 @@ impl VideoRemixListConfig for OpenAiConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, ConfigFailure> {
-        let body = &reply.raw_response.body;
-        let video = remix_response(body, reply.custom_llm_provider).map_err(failed)?;
-        decode::<VideoObject, _>(&video)
+        remix_record(&reply)
     }
 
     fn transform_video_list_request(
@@ -133,9 +144,7 @@ impl VideoRemixListConfig for OpenAiConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<Params, ConfigFailure> {
-        let list = list_response(&reply.raw_response.body, reply.custom_llm_provider);
-        list.map_err(failed)
-            .and_then(|list| decode::<Params, _>(&list))
+        list_records(&reply)
     }
 
     fn get_error_class(
@@ -162,7 +171,7 @@ pub(crate) struct Lookup {
 }
 
 impl Lookup {
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             openai: OpenAiConfig,
         }

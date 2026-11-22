@@ -4,8 +4,8 @@ use betterlite_oracle_helper_api::error::HelperError;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
+use super::super::Input;
 use super::super::harness::{Bench, base_env};
-use super::super::{Input, failed};
 use super::{Outcome, call_timeout, current_runtime, extra_headers, mock, outcome, params};
 
 pub(super) fn run(
@@ -20,7 +20,7 @@ pub(super) fn run(
         logging: &mut bench.state,
         env: &pre_post,
         redactor: &bench.env.redactor,
-        request_timeout_seconds: input.request_timeout_seconds.unwrap_or(6000.0),
+        request_timeout_seconds: input.request_timeout_seconds.unwrap_or(6_000.0_f64),
     };
     let request = ListRequest {
         transport: &bench.transport,
