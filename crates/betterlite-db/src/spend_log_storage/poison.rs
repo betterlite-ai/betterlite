@@ -23,7 +23,10 @@ where
     };
     let budget_left = failure_budget.saturating_sub(1);
     if rows.len() == 1 {
-        let poisoned = poisoned_request_id(rows);
+        let poisoned = match rows.first().and_then(|row| row.get("request_id")) {
+            Some(SpendLogValue::Text(id)) => id.as_str(),
+            Some(_) | None => "None",
+        };
         tracing::error!(
             "Spend tracking - dropping spend log row Postgres rejected. request_id={poisoned} error={rejected}"
         );
@@ -55,11 +58,4 @@ where
         writer, right, remaining,
     ))
     .await
-}
-
-fn poisoned_request_id(rows: &[SpendLogRow]) -> &str {
-    match rows.first().and_then(|row| row.get("request_id")) {
-        Some(SpendLogValue::Text(id)) => id,
-        Some(_) | None => "None",
-    }
 }

@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use crate::key_user_writes::retry::WriteClock;
@@ -130,8 +131,7 @@ where
             popped = self.queue.dequeue(MAX_LOGS_PER_INTERVAL);
             &popped
         };
-        if !logs.is_empty() {
-            let processing = logs.len();
+        if let Some(processing) = NonZeroUsize::new(logs.len()) {
             tracing::info!("Spend tracking - processing {processing} spend logs for DB write");
         }
         let started = self.clock.instant();
@@ -186,9 +186,11 @@ where
         &self,
         logs: &[SpendLogRow],
     ) -> Result<(), FlushError<Writer::Error, Client::Error>> {
-        if !logs.is_empty()
-            && let (Some(client), Some(base_url)) =
-                (self.external, self.policy.spend_logs_url.as_deref())
+        if logs.is_empty() {
+            return Ok(());
+        }
+        if let (Some(client), Some(base_url)) =
+            (self.external, self.policy.spend_logs_url.as_deref())
         {
             return self.post_external(client, base_url, logs).await;
         }

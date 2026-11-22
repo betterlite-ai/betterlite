@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
+use crate::postgres_store::errors::backend;
 use crate::redis_spend::buffer::RedisUpdateBuffer;
 use crate::redis_spend::events::NoRedisBufferEventSink;
 use crate::redis_spend::log_row::SpendLogRow;
@@ -293,4 +294,64 @@ async fn an_outage_is_not_mistaken_for_a_poison_row() {
     assert!(error.is_transient());
     assert!(!error.is_data_rejection());
     assert!(error.is_database());
+}
+
+#[tokio::test]
+async fn a_plain_database_error_is_not_bisected() {
+    let writer = ScriptedWriter {
+        failure: Some(ScriptedFailure::database_error()),
+        ..ScriptedWriter::default()
+    };
+    let rows = [ordinary_row("a"), ordinary_row("b")];
+    let error = create_spend_logs_with_poison_isolation(&writer, &rows, 256)
+        .await
+        .expect_err("the database error propagates");
+    assert_eq!(writer.attempted_count(), 1);
+    assert!(writer.persisted().is_empty());
+    assert!(error.is_database());
+    assert!(!error.is_transient());
+}
+
+#[tokio::test]
+async fn native_sqlstate_classification_follows_the_sqlstate_class() {
+    let case = SpendLogCase::new().await;
+    let rejection = case
+        .client
+        .batch_execute(
+            "DO $$ BEGIN RAISE EXCEPTION 'invalid byte sequence' USING ERRCODE = '22021'; END $$",
+        )
+        .await
+        .expect_err("the statement raises a data rejection");
+    let rejection = SpendLogStoreError::Database(backend(rejection));
+    assert!(rejection.is_data_rejection());
+    assert!(!rejection.is_transient());
+    assert!(!rejection.is_service_unavailable());
+    assert!(!rejection.is_deadlock());
+    assert!(rejection.is_database());
+    let deadlock = case
+        .client
+        .batch_execute(
+            "DO $$ BEGIN RAISE EXCEPTION 'deadlock detected' USING ERRCODE = '40P01'; END $$",
+        )
+        .await
+        .expect_err("the statement raises a deadlock");
+    let deadlock = SpendLogStoreError::Database(backend(deadlock));
+    assert!(deadlock.is_deadlock());
+    assert!(deadlock.is_transient());
+    assert!(!deadlock.is_data_rejection());
+    assert!(!deadlock.is_service_unavailable());
+    assert!(deadlock.is_database());
+    case.close().await;
+}
+
+#[test]
+fn a_row_encoding_failure_is_not_a_database_error() {
+    let error = SpendLogStoreError::Json(
+        serde_json::from_str::<i32>("not json").expect_err("the text is not a number"),
+    );
+    assert!(!error.is_database());
+    assert!(!error.is_transient());
+    assert!(!error.is_data_rejection());
+    assert!(!error.is_service_unavailable());
+    assert!(!error.is_deadlock());
 }

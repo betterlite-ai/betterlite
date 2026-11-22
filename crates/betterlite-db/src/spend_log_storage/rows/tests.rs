@@ -89,6 +89,7 @@ fn dequeue_pops_the_oldest_rows_and_accounts_their_bytes() {
 fn enqueueing_nothing_leaves_the_queue_untouched() {
     let queue = SpendLogQueue::new(usize::MAX);
     queue.enqueue(&[ordinary_row("a")], QueuePosition::Tail);
+    assert!(!queue.is_empty());
     queue.enqueue(&[], QueuePosition::Head);
     assert_eq!(queue.len(), 1);
     assert_eq!(ids(&queue.dequeue(1)), ["a"]);

@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::Notify;
@@ -72,10 +73,10 @@ impl SpendLogQueue {
         let _removed = queued.drain(..keep_from);
         state.rows = queued;
         state.bytes = kept_bytes;
-        if dropped > 0 {
+        if let Some(dropped_rows) = NonZeroUsize::new(dropped) {
             let max_bytes = self.max_bytes;
             tracing::error!(
-                "Spend tracking - spend log queue is at its {max_bytes} byte budget; dropped the {dropped} oldest spend logs"
+                "Spend tracking - spend log queue is at its {max_bytes} byte budget; dropped the {dropped_rows} oldest spend logs"
             );
         }
     }

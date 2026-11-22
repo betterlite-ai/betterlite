@@ -11,7 +11,7 @@ use tokio::time::timeout;
 
 use crate::redis_spend::log_row::SpendLogRow;
 use crate::spend_log_storage::rows::{QueuePosition, SpendLogQueue};
-use crate::spend_log_storage::sql::takeover_statement;
+use crate::spend_log_storage::sql::{insert_statement, takeover_statement};
 use crate::spend_log_storage::tests::support::{
     batch_cost_row, decimal_of, ids, ordinary_row, text, text_of,
 };
@@ -255,6 +255,7 @@ async fn a_successful_retrieve_claims_the_batch_once() {
     assert!(!record(&table, &queue, &payload, false).await);
     assert_eq!(ids(&table.rows()), ["batch-1"]);
     assert!(queue.is_empty());
+    assert!(table.take_overs().is_empty());
 }
 
 #[tokio::test]
@@ -434,6 +435,7 @@ fn the_take_over_statement_matches_only_the_uncharged_success_row() {
     let _replaced = data.insert("private_note".to_owned(), text("not a column"));
     let statement = takeover_statement(&data);
     assert!(!statement.contains(r#""request_id" = src."#));
+    assert!(!statement.contains(r#""api_key" = src."api_key""#));
     assert!(!statement.contains("private_note"));
     assert!(statement.contains(r#"logs."request_id" = $2"#));
     assert!(statement.contains(r#"logs."call_type" = 'aretrieve_batch'"#));
@@ -483,6 +485,22 @@ async fn a_disabled_ordinary_log_is_not_queued() {
     assert!(record(&table, &queue, &ordinary_row("request-1"), true).await);
     assert!(queue.is_empty());
     assert!(table.rows().is_empty());
+}
+
+#[test]
+fn the_insert_statement_defaults_every_prisma_defaulted_column() {
+    let statement = insert_statement();
+    for fragment in [
+        r#"COALESCE(src."api_key", '')"#,
+        r#"COALESCE(src."spend", 0.0)"#,
+        r#"COALESCE(src."metadata", '{}'::jsonb)"#,
+        r#"COALESCE(src."request_tags", '[]'::jsonb)"#,
+    ] {
+        assert!(
+            statement.contains(fragment),
+            "{fragment} missing from {statement}"
+        );
+    }
 }
 
 #[test]

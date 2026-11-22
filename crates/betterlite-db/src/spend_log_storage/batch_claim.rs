@@ -86,29 +86,24 @@ where
     Table: BatchClaimTable + ?Sized,
 {
     let Some(SpendLogAttachment { table, queue }) = attachment else {
-        if !disable_spend_logs {
-            insert_spend_log_to_db(None, payload);
-        }
         return true;
     };
     if is_batch_cost_row(payload) {
         return claim_batch_cost_spend_log(table, queue, payload, disable_spend_logs).await;
     }
     if !disable_spend_logs {
-        insert_spend_log_to_db(Some(queue), payload);
+        insert_spend_log_to_db(queue, payload);
     }
     true
 }
 
-// _insert_spend_log_to_db: without a database attachment nothing is queued, even when an external writer URL is set.
-pub fn insert_spend_log_to_db(queue: Option<&SpendLogQueue>, payload: &SpendLogRow) {
-    let request_id = render(payload, "request_id");
-    let spend = render(payload, "spend");
-    tracing::debug!("Writing spend log to db - request_id: {request_id}, spend: {spend}");
-    let Some(queue) = queue else {
-        tracing::debug!("prisma_client is None. Skipping writing spend logs to db.");
-        return;
-    };
+// _insert_spend_log_to_db: a row with a database attachment joins the tail of the queue, and a Responses row also wakes the monitor.
+pub fn insert_spend_log_to_db(queue: &SpendLogQueue, payload: &SpendLogRow) {
+    tracing::debug!(
+        "Writing spend log to db - request_id: {:?}, spend: {:?}",
+        text_field(payload, "request_id"),
+        spend_field(payload, "spend"),
+    );
     queue.enqueue(from_ref(payload), QueuePosition::Tail);
     if text_field(payload, "call_type")
         .is_some_and(|call_type| RESPONSES_SESSION_CALL_TYPES.contains(&call_type))
@@ -222,7 +217,7 @@ fn queue_after_claim_failure<Failure>(
     tracing::warn!(
         "Could not claim spend row {request_id} for a batch's cost, queueing it: {error}"
     );
-    insert_spend_log_to_db(Some(queue), row);
+    insert_spend_log_to_db(queue, row);
 }
 
 fn text_field<'row>(row: &'row SpendLogRow, field: &str) -> Option<&'row str> {
@@ -237,14 +232,5 @@ fn spend_field(row: &SpendLogRow) -> Option<Decimal> {
         Some(SpendLogValue::Decimal(amount)) => Some(*amount),
         Some(SpendLogValue::Whole(amount)) => Some(Decimal::from(*amount)),
         Some(_) | None => None,
-    }
-}
-
-// Python's format renders a missing key as None and every number as its plain text.
-fn render(row: &SpendLogRow, field: &str) -> String {
-    match row.get(field) {
-        Some(SpendLogValue::Text(text)) => text.clone(),
-        Some(value) => serde_json::to_string(value).unwrap_or_default(),
-        None => "None".to_owned(),
     }
 }
