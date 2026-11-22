@@ -4,9 +4,11 @@ use super::resolve::{merge_defaults, resolve};
 use super::wire::{self, Wire};
 use crate::prepared::{PreparedChat, PreparedHttp, PreparedRequest};
 use crate::transform_retry::TransformRetry;
+use betterlite_azure::endpoints::dynamic::check_dynamic_azure_params;
 use betterlite_prompts::arguments::json::Json;
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap, Method};
+use std::collections::BTreeMap;
 use std::time::Duration;
 use url::Url;
 const DEFAULT_TIMEOUT_SECONDS: f64 = 6000.0;
@@ -22,18 +24,11 @@ pub struct Prepared {
     pub detection: Option<String>,
     pub stream: bool,
 }
-const fn rejected(message: String) -> AzureProviderError {
-    AzureProviderError::Rejected {
-        status: 400,
-        message,
-    }
-}
 fn prepared_http(wire: Wire, timeout: Option<f64>) -> Result<PreparedHttp, AzureProviderError> {
-    let url = Url::parse(&wire.url).map_err(|source| rejected(source.to_string()))?;
+    let url = Url::parse(&wire.url).map_err(AzureProviderError::InvalidUrl)?;
     let mut headers = HeaderMap::new();
     for (name, value) in &wire.headers {
-        let header =
-            HeaderName::try_from(name.as_str()).map_err(|source| rejected(source.to_string()))?;
+        let header = HeaderName::try_from(name.as_str()).map_err(AzureProviderError::HeaderName)?;
         let mut header_value =
             HeaderValue::try_from(value.as_str()).map_err(|source| AzureProviderError::Header {
                 name: name.clone(),
@@ -50,10 +45,7 @@ fn prepared_http(wire: Wire, timeout: Option<f64>) -> Result<PreparedHttp, Azure
     let body = serde_json::to_vec(&Json::Object(wire.body))
         .map_err(|source| AzureProviderError::Encode { source })?;
     let deadline = Duration::try_from_secs_f64(timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS))
-        .map_err(|source| AzureProviderError::Rejected {
-            status: 500,
-            message: source.to_string(),
-        })?;
+        .map_err(AzureProviderError::TimeoutValue)?;
     Ok(PreparedHttp {
         method: Method::POST,
         url,
@@ -66,12 +58,17 @@ fn prepared_http(wire: Wire, timeout: Option<f64>) -> Result<PreparedHttp, Azure
 // the supplied client changes only this debug log, so its mutants are equivalent
 #[cfg_attr(test, mutants::skip)]
 fn check_supplied(call: &ChatCall) {
-    if call.supplied.as_ref().is_some_and(|client| {
-        call.credentials
-            .api_version
-            .as_deref()
-            .is_some_and(|version| client.api_version.as_deref() != Some(version))
-    }) {
+    let Some(client) = call.supplied.as_ref() else {
+        return;
+    };
+    // the client's stored api-version is the custom query LiteLLM's check reads
+    let query = client
+        .api_version
+        .as_ref()
+        .map(|version| BTreeMap::from([(String::from("api-version"), version.clone())]));
+    if check_dynamic_azure_params(call.credentials.api_version.as_deref(), query.as_ref())
+        == Ok(true)
+    {
         tracing::debug!(
             "the supplied Azure client's api_version changed, so the client is rebuilt"
         );
