@@ -1,0 +1,20 @@
+kind: helper
+name: io_over_limit_with_tpm_refund
+# an ITPM rejection refunds the combined TPM reservation, marks it released and frees the slot
+call:
+  b3043:
+    requested_model: "text-embedding-3-small"
+    call_type: "aembedding"
+    tpm_reservation_scopes: [["model_per_key", "key1:text-embedding-3-small"]]
+    tpm_reservation_amount: 200
+    window_size: 60
+    now: 1700000000
+    cache: {"{model_per_project_itpm:p1:text-embedding-3-small}:window": "1699999970", "{model_per_project_itpm:p1:text-embedding-3-small}:tokens": 98, "{api_key:k1}:max_parallel_requests": 2}
+    parallel_slot: {"slot_id": "slot-1", "counter_keys": ["{api_key:k1}:max_parallel_requests"]}
+    rate_limit_response: null
+    descriptors: [{"key": "model_per_key", "value": "key1:text-embedding-3-small", "rate_limit": {"requests_per_unit": null, "tokens_per_unit": 10000, "window_size": 60}}, {"key": "model_per_project_itpm", "value": "p1:text-embedding-3-small", "rate_limit": {"requests_per_unit": null, "tokens_per_unit": 100, "window_size": 60}}]
+    data: {"model": "text-embedding-3-small", "input": [[1, 2, 3, 4, 5]], "litellm_call_id": "call-1"}
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "60"
+compare:
+  ignore: []

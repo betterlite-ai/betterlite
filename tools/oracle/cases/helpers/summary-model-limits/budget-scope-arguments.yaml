@@ -1,0 +1,78 @@
+kind: helper
+name: summary-model-limits-budget-scope-arguments
+call:
+  summary_model_limits:
+    summary_model: sum
+    scenarios:
+      - principal: null
+        spend: {}
+        offline: []
+        rate: {hook: limiter, missing: [], base: [], team: [], project: [], organization: [], overall_code: OK, failure: null}
+      - principal:
+          token: key-1
+          key_alias: alias-1
+          model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          user_id: user-1
+          user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          team_id: team-1
+          team_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          end_user_id: end-1
+          end_user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+        spend: {"virtual_key_spend:key-1:sum:1d": 0.5, "user_model_spend:user-1:sum:1d": 0.5, "end_user_model_spend:end-1:sum:1d": 0.5}
+        offline: []
+        rate: {hook: none, missing: [], base: [], team: [], project: [], organization: [], overall_code: OK, failure: null}
+      - principal:
+          token: key-1
+          model_max_budget: {other: {budget_limit: 1.0, time_period: 1d}}
+          user_id: user-1
+          user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          team_id: team-1
+          team_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          end_user_id: end-1
+          end_user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+        spend: {"team_model_spend:team-1:sum:1d": 0.5}
+        offline: []
+        rate: {hook: none, missing: [], base: [], team: [], project: [], organization: [], overall_code: OK, failure: null}
+      - principal:
+          token: key-1
+          model_max_budget: {}
+          user_id: null
+          user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          team_id: team-1
+          team_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          end_user_id: null
+          end_user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+        spend: {}
+        offline: []
+        rate: {hook: none, missing: [], base: [], team: [], project: [], organization: [], overall_code: OK, failure: null}
+      - principal:
+          token: null
+          model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          user_id: user-1
+          user_model_max_budget: {}
+          team_id: team-1
+          team_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          end_user_id: end-1
+          end_user_model_max_budget: {}
+        spend: {}
+        offline: []
+        rate: {hook: none, missing: [], base: [], team: [], project: [], organization: [], overall_code: OK, failure: null}
+      - principal:
+          token: ""
+          model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          user_id: ""
+          user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+          end_user_id: ""
+          end_user_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+        spend: {}
+        offline: []
+        rate: {hook: none, missing: [], base: [], team: [], project: [], organization: [], overall_code: OK, failure: null}
+      - principal:
+          token: key-1
+          team_id: ""
+          team_model_max_budget: {sum: {budget_limit: 1.0, time_period: 1d}}
+        spend: {}
+        offline: []
+        rate: {hook: none, missing: [], base: [], team: [], project: [], organization: [], overall_code: OK, failure: null}
+env: {}
+compare: {ignore: []}

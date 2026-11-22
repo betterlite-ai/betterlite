@@ -1,0 +1,1 @@
+{"litellm_params":{"search_provider":"tavily","api_key":"tvly-secret","api_base":"https://search.example","region":"eu"}}

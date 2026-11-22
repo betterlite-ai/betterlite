@@ -19,6 +19,8 @@ description: >-
 
 
   B3680 (https://github.com/betterlite-ai/betterlite/pull/2838) wrote twelve more HTTP cases in tools/oracle/cases/guardrails/unified-lifecycle/. They boot both gateways with a `litellm_content_filter` guardrail (B3693) that blocks a fixed word, and they need B3680's UnifiedGuardrailHooks registered as proxy hooks, so they run here. Make them pass as they are, with one exception: unmapped-route-post-call-skipped.yaml calls /v1/ocr, which B036 builds later, so point it at a route on main that has no guardrail translation and keep what it checks, a response that comes back unchanged.
+
+  B6260 and B6370 write seven streaming HTTP cases in tools/oracle/cases/guardrails/unified-stream-hook/ and proxy-stream-wrapper/. They stream /v1/chat/completions with `generic_guardrail_api` post_call guardrails (B3771) and need B6370's wrapper on the proxy stream path (LiteLLM proxy/utils.py L3936-L3995), so they run here too. Make them pass as they are.
 scope:
   paths:
     - crates/betterlite-server/src/proxy_logging.rs
@@ -27,6 +29,8 @@ scope:
     - crates/betterlite-config/src/sections/proxy_hook_selection/**
     - tools/oracle/cases/guardrails/proxy-logging/**
     - tools/oracle/cases/guardrails/unified-lifecycle/**
+    - tools/oracle/cases/guardrails/unified-stream-hook/**
+    - tools/oracle/cases/guardrails/proxy-stream-wrapper/**
     - tools/oracle/helpers/b8399.py
     - tools/oracle/helpers/b8399/**
     - tools/oracle/src/helpers/server/b8399.rs
@@ -49,6 +53,8 @@ dod:
   - text: Pre, during and post call guardrail blocks and the applied guardrails header match LiteLLM through the booted proxy.
     proof: [oracle]
   - text: B3680's unified guardrail pre-call, during-call and post-call blocks and masks reach clients through the booted proxy with the same status, error body and headers as LiteLLM on the endpoint families its cases cover.
+    proof: [oracle]
+  - text: Streamed chat requests with generic_guardrail_api post_call guardrails match LiteLLM through the booted proxy for B6260's and B6370's cases (clean, sampled, mid-stream and end-of-stream blocks, buffered release, the incremental_diff fallback, and a block by the second of two guardrails).
     proof: [oracle]
   - text: LEGACY_MULTI_INSTANCE_RATE_LIMITING defaults to false and selects the legacy limiter only when its lowercased text equals true, and the limiter's success, failure and proxy hooks share one instance and request stash.
     proof: [wiring-tests, hook-selection-section]
@@ -78,6 +84,13 @@ oracle_cases:
   - tools/oracle/cases/guardrails/unified-lifecycle/image-generation-pre-call-block.yaml
   - tools/oracle/cases/guardrails/unified-lifecycle/passthrough-pre-call-block.yaml
   - tools/oracle/cases/guardrails/unified-lifecycle/unmapped-route-post-call-skipped.yaml
+  - tools/oracle/cases/guardrails/unified-stream-hook/clean-stream-sampled.yaml
+  - tools/oracle/cases/guardrails/unified-stream-hook/mid-stream-block.yaml
+  - tools/oracle/cases/guardrails/unified-stream-hook/end-of-stream-block.yaml
+  - tools/oracle/cases/guardrails/unified-stream-hook/buffered-release.yaml
+  - tools/oracle/cases/guardrails/unified-stream-hook/incremental-diff-fallback.yaml
+  - tools/oracle/cases/guardrails/proxy-stream-wrapper/two-guardrails-clean.yaml
+  - tools/oracle/cases/guardrails/proxy-stream-wrapper/second-guardrail-blocks.yaml
 deviations:
   - what: The enterprise email logger is not created, so its email budget alerts never send. Legacy SMTP email stays reachable through B8891's bindings and B8400.
     why: The enterprise email loggers ship only in litellm_enterprise; open-source LiteLLM leaves email_logging_instance None too.

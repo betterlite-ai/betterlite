@@ -1,0 +1,15 @@
+kind: helper
+name: accessible-admin-sees-all
+call:
+  b4780:
+    operation: accessible
+    agents:
+      - {agent_id: c, identity_managed: false}
+      - {agent_id: a, identity_managed: false}
+      - {agent_id: b, identity_managed: false}
+    user_role: proxy_admin
+    contexts: [{user_id: lister}]
+    access: {lister: []}
+env: {}
+compare:
+  ignore: []
