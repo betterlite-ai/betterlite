@@ -59,13 +59,19 @@ where
     async fn items(&self, items: &mut [Json]) -> Result<bool, Guard::Error> {
         let mut masked = false;
         for item in items {
-            let Json::Object(fields) = item else {
-                continue;
-            };
-            for key in ["content", "output"] {
-                if let Some(value) = fields.get_mut(key) {
-                    masked |= self.field(value).await?;
-                }
+            masked |= self.item(item).await?;
+        }
+        Ok(masked)
+    }
+
+    async fn item(&self, item: &mut Json) -> Result<bool, Guard::Error> {
+        let Json::Object(fields) = item else {
+            return Ok(false);
+        };
+        let mut masked = false;
+        for key in ["content", "output"] {
+            if let Some(value) = fields.get_mut(key) {
+                masked |= self.field(value).await?;
             }
         }
         Ok(masked)
