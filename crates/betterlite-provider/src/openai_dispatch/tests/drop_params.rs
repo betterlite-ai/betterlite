@@ -143,7 +143,7 @@ async fn refused(drop_policy: DeploymentDropPolicy, request: &str) -> OperationE
     let error = OpenAi
         .prepare(&chat(request), &deployment, &support::composition().catalog)
         .expect_err("the parameter check refuses the call");
-    if let Ok((_stream, _peer)) = timeout(QUIET, listener.accept()).await {
+    if timeout(QUIET, listener.accept()).await.is_ok() {
         panic!("a refused call sends no request");
     }
     error
