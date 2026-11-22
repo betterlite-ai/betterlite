@@ -196,7 +196,16 @@ fn assert_success_metric_order(events: &[Recorded]) {
 }
 
 fn assert_limit_updates(events: &[Recorded]) {
-    let [tpm, rpm, overhead, guardrails, params_tpm, params_rpm, ..] = events else {
+    let [
+        tpm,
+        rpm,
+        overhead,
+        guardrails,
+        requests_left,
+        tokens_left,
+        ..,
+    ] = events
+    else {
         panic!("the six limit updates come first");
     };
     assert_eq!(
@@ -216,11 +225,11 @@ fn assert_limit_updates(events: &[Recorded]) {
         MetricUpdate::Observe(MetricValue::Finite(Decimal::new(15, 3)))
     );
     assert_eq!(
-        update_of(params_tpm),
+        update_of(requests_left),
         MetricUpdate::Set(MetricValue::Finite(Decimal::from(5_i64)))
     );
     assert_eq!(
-        update_of(params_rpm),
+        update_of(tokens_left),
         MetricUpdate::Set(MetricValue::Finite(Decimal::from(7_i64)))
     );
 }
