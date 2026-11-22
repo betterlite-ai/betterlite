@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), expect(dead_code, reason = "B4785 calls the request check"))]
+
 use betterlite_auth::identity::{EntraIdentityConfig, ExecutionMode};
 use betterlite_core::agents::AgentResponse;
 use betterlite_core::agents::json::AgentJson;

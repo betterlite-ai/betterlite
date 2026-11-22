@@ -1,40 +1,42 @@
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
-use betterlite_auth::user_roles::UserRole;
-use serde::Deserialize;
 
 use super::error::{Detail, IdentityAdminError};
+use crate::plugin_routes::routes::PROXY_ADMIN_ROLE;
+use crate::team_access::caller::TeamCaller;
 
 mod tests;
-
-// the UserAPIKeyAuth field this check reads, taken from the key's serde form as team access does
-#[derive(Deserialize)]
-struct ManagementCaller {
-    #[serde(default)]
-    user_role: Option<UserRole>,
-}
 
 // ast-grep-ignore: no-long-names
 pub(crate) fn check_agent_management_permission(
     auth: &UserAPIKeyAuth,
 ) -> Result<(), IdentityAdminError> {
-    let caller: ManagementCaller = serde_json::to_value(auth)
-        .and_then(serde_json::from_value)
-        .map_err(|_error| IdentityAdminError {
-            status: 500,
-            detail: Detail::Text(String::from("the caller's role could not be read")),
-        })?;
-    if caller.user_role == Some(UserRole::ProxyAdmin) {
+    let caller = TeamCaller::try_from(auth).map_err(|_error| IdentityAdminError {
+        status: 500,
+        detail: Detail::Text(String::from("the caller's role could not be read")),
+    })?;
+    let role = caller.user_role.map(|role| role.to_string());
+    check_agent_management_role(role.as_deref())
+}
+
+// a JWT caller's principal carries its role while its key may not, and caller_identity falls back to the principal's roles
+pub(crate) fn key_has_role(auth: &UserAPIKeyAuth) -> bool {
+    match TeamCaller::try_from(auth) {
+        Ok(caller) => caller.user_role.is_some(),
+        Err(_error) => false,
+    }
+}
+
+// LiteLLM compares user_api_key_dict.user_role, which the master key and JWT callers carry on the principal
+pub(crate) fn check_agent_management_role(role: Option<&str>) -> Result<(), IdentityAdminError> {
+    if role == Some(PROXY_ADMIN_ROLE) {
         return Ok(());
     }
-    let role = match caller.user_role {
-        Some(role) => role.to_string(),
-        None => String::from("None"),
-    };
     Err(IdentityAdminError {
         status: 403,
         detail: Detail::Object {
             error: format!(
-                "Only proxy admins can create, update, or delete agents. Your role={role}"
+                "Only proxy admins can create, update, or delete agents. Your role={}",
+                role.unwrap_or("None")
             ),
         },
     })

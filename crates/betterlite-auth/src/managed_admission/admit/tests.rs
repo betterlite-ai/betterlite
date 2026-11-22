@@ -60,7 +60,8 @@ async fn a_plain_registered_agent_without_a_database_is_admitted() {
     let registry = registry(&[PLAIN]);
     let mut auth = key(r#"{"agent_id":"plain"}"#);
     let access = resolver(&registry, &[], None);
-    admit_managed_actor(&mut auth, None, &registry, &access)
+    let store: Option<&FakeStore> = None;
+    admit_managed_actor(&mut auth, store, &registry, &access)
         .await
         .unwrap();
     assert!(auth.extra.managed_agent_policy.is_none());
@@ -72,8 +73,9 @@ async fn a_context_without_a_database_is_policy_unavailable() {
     let mut auth = key(r#"{"agent_id":"agent-1"}"#);
     auth.extra.managed_agent_context = Some(context(ManagedAgentMode::Delegated, Some("human")));
     let access = resolver(&registry, &[], None);
+    let store: Option<&FakeStore> = None;
     assert_eq!(
-        refusal(admit_managed_actor(&mut auth, None, &registry, &access).await),
+        refusal(admit_managed_actor(&mut auth, store, &registry, &access).await),
         (
             503,
             String::from("Managed agent policy requires a database")
@@ -92,8 +94,9 @@ async fn a_registered_managed_agent_without_a_database_is_policy_unavailable(
     let registry = registry(&[fields]);
     let mut auth = key(&format!(r#"{{"agent_id":"{agent_id}"}}"#));
     let access = resolver(&registry, &[], None);
+    let store: Option<&FakeStore> = None;
     assert_eq!(
-        refusal(admit_managed_actor(&mut auth, None, &registry, &access).await),
+        refusal(admit_managed_actor(&mut auth, store, &registry, &access).await),
         (
             503,
             String::from("Managed agent policy requires a database")

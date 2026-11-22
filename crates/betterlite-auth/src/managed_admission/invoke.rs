@@ -1,5 +1,3 @@
-use std::str::FromStr as _;
-
 use betterlite_db::budget_permission_rows::JsonData;
 use rust_decimal::Decimal;
 
@@ -9,6 +7,7 @@ use crate::agent_access::resolver::AgentAccessResolver;
 use crate::agent_policy::AgentResponse;
 use crate::agent_registry::AgentRegistryApi as _;
 use crate::identity::{AgentIdentityFailure, FailureCode};
+use crate::model_budget_values::amount_text::amount_from_text;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
 use super::error::AdmissionError;
@@ -133,15 +132,12 @@ fn invocation_price(agent: &AgentResponse, billable: bool) -> Option<Decimal> {
     };
     let value: JsonData = serde_json::from_str(raw.get()).ok()?;
     match value {
-        JsonData::Number(number) => decimal_price(&number.to_string()),
-        JsonData::String(text) => decimal_price(text.trim()),
+        JsonData::Number(number) => {
+            amount_from_text(&number.to_string()).filter(|price| *price >= Decimal::ZERO)
+        }
+        JsonData::String(text) => {
+            amount_from_text(text.trim()).filter(|price| *price >= Decimal::ZERO)
+        }
         JsonData::Null | JsonData::Bool(_) | JsonData::Array(_) | JsonData::Object(_) => None,
     }
-}
-
-fn decimal_price(text: &str) -> Option<Decimal> {
-    Decimal::from_str(text)
-        .or_else(|_error| Decimal::from_scientific(text))
-        .ok()
-        .filter(|price| *price >= Decimal::ZERO)
 }

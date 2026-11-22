@@ -94,7 +94,7 @@ impl Helper for Op {
                 store,
                 granted,
                 billable,
-            } => invoke(
+            } => invoke_case(
                 &runtime,
                 &Case {
                     auth,
@@ -124,7 +124,12 @@ fn admit(runtime: &Runtime, case: &Case<'_>, retired: bool) -> HelperResult {
     answer(&auth, outcome)
 }
 
-fn invoke(runtime: &Runtime, case: &Case<'_>, target_name: &str, billable: bool) -> HelperResult {
+fn invoke_case(
+    runtime: &Runtime,
+    case: &Case<'_>,
+    target_name: &str,
+    billable: bool,
+) -> HelperResult {
     let registry = registry(case.registry)?;
     let rows = store_rows(case.store)?;
     let store = rows.map(|agents| CaseStore {

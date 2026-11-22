@@ -9,12 +9,13 @@ use axum::http::{Request, StatusCode};
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
+use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_auth::identity::{AgentIdentityFailure, FailureCode};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::jwt_settings::records::IssuerConfig;
 use betterlite_core::agents::AgentResponse;
 use betterlite_db::budget_permission_rows::JsonData;
+use rstest::rstest;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use tower::ServiceExt as _;
@@ -80,10 +81,33 @@ fn caller(role: &str) -> AuthContext {
     }
 }
 
-fn caller_without_a_key() -> AuthContext {
+fn keyless_caller() -> AuthContext {
     let mut context = caller("proxy_admin");
     context.principal.source_key = SourceKey(None);
     context
+}
+
+fn master_caller() -> AuthContext {
+    let mut context = keyless_caller();
+    context.principal.subject = String::from("master_key");
+    context
+}
+
+fn platform_admin_caller() -> AuthContext {
+    let mut context = keyless_caller();
+    context.principal.roles = vec![Role::PlatformAdmin];
+    context
+}
+
+fn roleless_key_caller(roles: Vec<Role>) -> AuthContext {
+    let mut context = caller("proxy_admin");
+    context.principal.roles = roles;
+    context.principal.source_key = SourceKey(Some(key_without_role()));
+    context
+}
+
+fn key_without_role() -> UserAPIKeyAuth {
+    UserAPIKeyAuth::construct(AuthInput::Dict(BTreeMap::new())).unwrap()
 }
 
 #[derive(Clone)]
@@ -237,29 +261,76 @@ async fn providers_is_forbidden_for_a_non_admin() {
 }
 
 #[tokio::test]
-async fn providers_requires_a_key() {
+async fn providers_requires_an_authenticated_caller() {
     assert_eq!(
         get_providers(settings(&[FIRST_ISSUER]), None).await.status,
         StatusCode::UNAUTHORIZED
     );
+}
+
+#[rstest]
+#[case::master_key(master_caller())]
+#[case::platform_admin(platform_admin_caller())]
+#[tokio::test]
+async fn providers_answers_the_issuers_for_a_keyless_admin(#[case] given: AuthContext) {
+    let answer = get_providers(settings(&[FIRST_ISSUER]), Some(&given)).await;
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(answer.text(), format!(r#"["{FIRST_ISSUER}"]"#));
+}
+
+#[tokio::test]
+async fn providers_forbids_a_keyless_caller_without_a_role() {
+    let answer = get_providers(settings(&[FIRST_ISSUER]), Some(&keyless_caller())).await;
+    assert_eq!(answer.status, StatusCode::FORBIDDEN);
     assert_eq!(
-        get_providers(settings(&[FIRST_ISSUER]), Some(&caller_without_a_key()))
-            .await
-            .status,
-        StatusCode::UNAUTHORIZED
+        answer.text(),
+        r#"{"detail":{"error":"Only proxy admins can create, update, or delete agents. Your role=internal_user"}}"#
     );
 }
 
 #[tokio::test]
-async fn status_answers_the_identity_of_a_bound_agent() {
-    let reads = FakeReads::answering(BOUND);
-    let answer = get_status(
+async fn providers_forbids_a_keyless_viewer_with_its_role() {
+    let mut viewer = keyless_caller();
+    viewer.principal.roles = vec![Role::PlatformViewer];
+    let answer = get_providers(settings(&[FIRST_ISSUER]), Some(&viewer)).await;
+    assert_eq!(answer.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        answer.text(),
+        r#"{"detail":{"error":"Only proxy admins can create, update, or delete agents. Your role=proxy_admin_viewer"}}"#
+    );
+}
+
+#[tokio::test]
+async fn providers_takes_a_roleless_keys_platform_role() {
+    let answer = get_providers(
         settings(&[FIRST_ISSUER]),
-        &reads,
-        Some(&caller("proxy_admin")),
-        STATUS_PATH,
+        Some(&roleless_key_caller(vec![Role::PlatformAdmin])),
     )
     .await;
+    assert_eq!(answer.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn providers_forbids_a_roleless_key_without_a_platform_role() {
+    let answer = get_providers(
+        settings(&[FIRST_ISSUER]),
+        Some(&roleless_key_caller(Vec::new())),
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        answer.text(),
+        r#"{"detail":{"error":"Only proxy admins can create, update, or delete agents. Your role=internal_user"}}"#
+    );
+}
+
+#[rstest]
+#[case::key(caller("proxy_admin"))]
+#[case::platform_admin(platform_admin_caller())]
+#[tokio::test]
+async fn status_answers_the_identity_of_a_bound_agent(#[case] given: AuthContext) {
+    let reads = FakeReads::answering(BOUND);
+    let answer = get_status(settings(&[FIRST_ISSUER]), &reads, Some(&given), STATUS_PATH).await;
     assert_eq!(answer.status, StatusCode::OK);
     assert_eq!(reads.reads(), vec![String::from("agent-1")]);
     let reply: StatusReply = answer.json();
@@ -393,23 +464,12 @@ async fn status_is_forbidden_for_a_non_admin_before_the_store_is_read() {
 }
 
 #[tokio::test]
-async fn status_requires_a_key() {
+async fn status_requires_an_authenticated_caller() {
     let reads = FakeReads::answering(BOUND);
     assert_eq!(
         get_status(settings(&[FIRST_ISSUER]), &reads, None, STATUS_PATH)
             .await
             .status,
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        get_status(
-            settings(&[FIRST_ISSUER]),
-            &reads,
-            Some(&caller_without_a_key()),
-            STATUS_PATH,
-        )
-        .await
-        .status,
         StatusCode::UNAUTHORIZED
     );
     assert!(reads.reads().is_empty());

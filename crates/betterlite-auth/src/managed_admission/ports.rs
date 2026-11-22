@@ -22,7 +22,7 @@ pub trait ReadThrough: Sync {
 }
 
 // the sources get_agent_with_read_through takes from the proxy, which prepare_agent_invocation receives together
-pub struct InvocationSources<'a, Store, Read> {
-    pub store: Option<&'a Store>,
-    pub read_through: &'a Read,
+pub struct InvocationSources<'sources, Store, Read> {
+    pub store: Option<&'sources Store>,
+    pub read_through: &'sources Read,
 }

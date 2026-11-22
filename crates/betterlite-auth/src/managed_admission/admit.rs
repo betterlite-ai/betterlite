@@ -37,7 +37,7 @@ where
     let Some(agent) = stored_agent(store, &agent_id, context.as_ref()).await? else {
         return Ok(());
     };
-    admit_stored(auth, agent, context.as_deref(), delegation_verified, access).await
+    admit_stored(auth, agent, context.as_ref(), delegation_verified, access).await
 }
 
 // step c: with no database a plain registered agent passes, a managed one cannot be admitted at all
@@ -57,11 +57,14 @@ fn without_database(
 }
 
 // steps d and e: a failed read goes out, and a missing row is refused only when a context or the history still names it
-async fn stored_agent<Store: AdmissionStore>(
+async fn stored_agent<Store>(
     store: &Store,
     agent_id: &str,
     context: Option<&ManagedAgentContext>,
-) -> Result<Option<AgentResponse>, AdmissionError> {
+) -> Result<Option<AgentResponse>, AdmissionError>
+where
+    Store: AdmissionStore,
+{
     let Some(agent) = store.agent(agent_id).await? else {
         let retired = store.retired_agent(agent_id).await?;
         if context.is_some() || retired {
