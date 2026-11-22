@@ -298,6 +298,51 @@ async fn every_group_uses_its_own_horizon() {
 }
 
 #[tokio::test]
+async fn a_health_check_retention_alone_keeps_the_cleanup_job_running() {
+    let mut case = provision().await;
+    case.seed_log("old-log", naive(2024, 12, 1, 0)).await;
+    seed_health_check(&case, "old-check", moment(2024, 12, 1)).await;
+    let cleanup = fixed_cleanup(
+        retention_settings(r#"{"maximum_health_check_retention_period": "30d"}"#),
+        FakePartitions::default(),
+        None,
+    );
+    let registry = CollectorRegistry::default();
+    let metrics = CleanupMetrics::new(&registry);
+    cleanup
+        .cleanup_old_spend_logs(&mut case.client, &metrics)
+        .await
+        .expect("a completed run");
+    assert_eq!(runs(&registry, "completed"), Some(1));
+    assert_eq!(text_join(&case.client, HEALTH_IDS).await, "");
+    assert_eq!(text_join(&case.client, SPEND_IDS).await, "old-log");
+    case.close().await;
+}
+
+#[tokio::test]
+async fn a_daily_tag_retention_alone_keeps_the_cleanup_job_running() {
+    let mut case = provision().await;
+    case.seed_log("old-log", naive(2024, 12, 1, 0)).await;
+    seed_daily_tag(&case, "old-day", "2024-12-01").await;
+    seed_daily_tag(&case, "horizon", "2025-01-02").await;
+    let cleanup = fixed_cleanup(
+        retention_settings(r#"{"maximum_daily_tag_spend_retention_period": "30d"}"#),
+        FakePartitions::default(),
+        None,
+    );
+    let registry = CollectorRegistry::default();
+    let metrics = CleanupMetrics::new(&registry);
+    cleanup
+        .cleanup_old_spend_logs(&mut case.client, &metrics)
+        .await
+        .expect("a completed run");
+    assert_eq!(runs(&registry, "completed"), Some(1));
+    assert_eq!(text_join(&case.client, TAG_IDS).await, "horizon");
+    assert_eq!(text_join(&case.client, SPEND_IDS).await, "old-log");
+    case.close().await;
+}
+
+#[tokio::test]
 async fn a_completed_run_logs_the_groups_in_order_at_info() {
     let mut case = provision().await;
     let cleanup = fixed_cleanup(
