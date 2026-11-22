@@ -93,6 +93,30 @@ async fn hook_keeps_a_batch_limiter_unverifiable_error_as_the_fail_closed_reject
     );
 }
 
+#[test]
+fn hook_reports_a_fail_closed_rejection_as_the_503_across_the_limiter_seam() {
+    let error = PreCallHookError::Admission(WindowedAdmissionError::Unverifiable(
+        RateLimitUnverifiableError {
+            status_code: 503,
+            detail: BTreeMap::new(),
+        },
+    ));
+
+    assert!(matches!(
+        error.into_limiter_error(),
+        CallTypeRateLimitError::Unverifiable(_)
+    ));
+}
+
+#[test]
+fn hook_returns_a_batch_hook_error_unchanged_across_the_limiter_seam() {
+    let error = PreCallHookError::from_limiter_error(CallTypeRateLimitError::Hook(
+        PreCallHookError::AdmissionTaskLost,
+    ));
+
+    assert!(matches!(error, PreCallHookError::AdmissionTaskLost));
+}
+
 #[tokio::test]
 async fn hook_refuses_a_batch_call_without_a_batch_limiter() {
     let fixture = Fixture::plain();
