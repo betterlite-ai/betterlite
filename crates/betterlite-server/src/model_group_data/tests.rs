@@ -124,14 +124,10 @@ fn value_error_message(error: GroupDataError) -> String {
 }
 
 fn runtime_message(error: GroupDataError) -> String {
-    match error {
-        GroupDataError::Runtime { message } => message,
-        other @ GroupDataError::Http(_)
-        | other @ GroupDataError::ValueError { .. }
-        | other @ GroupDataError::Database(_)
-        | other @ GroupDataError::Catalog(_)
-        | other @ GroupDataError::Row(_) => panic!("expected a runtime error, got {other:?}"),
-    }
+    let GroupDataError::Runtime { message } = &error else {
+        panic!("expected a runtime error, got {error:?}")
+    };
+    message.clone()
 }
 
 #[derive(Parser)]
@@ -231,7 +227,7 @@ async fn postgres_pinned_rows() {
     pinned_model_info_write(&pool, &database).await;
     pinned_budget_reads(&database).await;
     pinned_budget_create(&pool, &database).await;
-    pinned_budget_rewrite(&pool, &database).await;
+    pinned_budget_rewrite(&database).await;
     pinned_budget_actors(&pool).await;
     pinned_budget_delete(&pool, &database).await;
     pool.close();
@@ -344,32 +340,37 @@ async fn pinned_budget_reads(database: &PostgresGroupData<'_>) {
     assert_eq!(every.len(), 2);
 }
 
-async fn pinned_budget_create(pool: &Pool, database: &PostgresGroupData<'_>) {
-    let created = database
+async fn upsert_group_c(
+    database: &PostgresGroupData<'_>,
+    budget_id: &str,
+    updated_by: &str,
+) -> GroupBudgetRow {
+    database
         .budget_upsert(
             &GroupBudgetCreate {
                 access_group_name: "group-c".to_owned(),
-                budget_id: Some("budget-2".to_owned()),
+                budget_id: Some(budget_id.to_owned()),
                 created_by: "creator".to_owned(),
                 updated_by: "creator".to_owned(),
             },
             &GroupBudgetUpdate {
-                budget_id: Some("budget-2".to_owned()),
-                updated_by: "creator".to_owned(),
+                budget_id: Some(budget_id.to_owned()),
+                updated_by: updated_by.to_owned(),
             },
             BudgetInclude {
                 litellm_budget_table: true,
             },
         )
         .await
-        .expect("the created row");
+        .expect("the upserted row")
+}
+
+async fn pinned_budget_create(pool: &Pool, database: &PostgresGroupData<'_>) {
+    let created = upsert_group_c(database, "budget-2", "creator").await;
     assert_eq!(created.spend, Some(Decimal::ZERO));
     assert_eq!(
-        created
-            .litellm_budget_table
-            .expect("the joined budget")
-            .max_budget,
-        None
+        created.litellm_budget_table.map(|row| row.max_budget),
+        Some(None)
     );
     execute(
         pool,
@@ -378,32 +379,12 @@ async fn pinned_budget_create(pool: &Pool, database: &PostgresGroupData<'_>) {
     .await;
 }
 
-async fn pinned_budget_rewrite(pool: &Pool, database: &PostgresGroupData<'_>) {
-    let rewritten = database
-        .budget_upsert(
-            &GroupBudgetCreate {
-                access_group_name: "group-c".to_owned(),
-                budget_id: Some("budget-1".to_owned()),
-                created_by: "creator".to_owned(),
-                updated_by: "creator".to_owned(),
-            },
-            &GroupBudgetUpdate {
-                budget_id: Some("budget-1".to_owned()),
-                updated_by: "editor".to_owned(),
-            },
-            BudgetInclude {
-                litellm_budget_table: true,
-            },
-        )
-        .await
-        .expect("the updated row");
+async fn pinned_budget_rewrite(database: &PostgresGroupData<'_>) {
+    let rewritten = upsert_group_c(database, "budget-1", "editor").await;
     assert_eq!(rewritten.spend, Some(Decimal::new(70, 1)));
     assert_eq!(
-        rewritten
-            .litellm_budget_table
-            .expect("the joined budget")
-            .budget_id,
-        "budget-1"
+        rewritten.litellm_budget_table.map(|row| row.budget_id),
+        Some("budget-1".to_owned())
     );
 }
 
