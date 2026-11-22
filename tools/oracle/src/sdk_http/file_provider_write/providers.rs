@@ -6,7 +6,7 @@ use betterlite_anthropic::files::error::FilesError as AnthropicError;
 use betterlite_anthropic::files::request::{FileCall, FilesClient as AnthropicClient, Upload};
 use betterlite_core::api::file_http_upload::service::Mode;
 use betterlite_core::api::file_provider_write::{
-    ConfigDelete, ConfigUpload, DeleteTarget, FileWriteProviders, ProviderCall, UploadTarget,
+    ConfigUpload, DeleteTarget, FileWriteProviders, ProviderCall, UploadTarget,
 };
 use betterlite_core::api::resource_sdk_settings::timeout::FineTuningTimeout;
 use betterlite_http::proxy::ProxiedClient;
