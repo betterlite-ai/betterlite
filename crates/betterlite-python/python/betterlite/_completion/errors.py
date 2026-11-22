@@ -1,18 +1,10 @@
 import json
-from typing import Final, NoReturn
+from typing import Final, NoReturn, NotRequired, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import NotRequired, TypedDict
 
-from betterlite import _native
-from betterlite.exceptions import (
-    APIConnectionError, APIError, APIResponseValidationError,
-    AuthenticationError, BadGatewayError, BadRequestError, BudgetExceededError,
-    ContentPolicyViolationError, ContextWindowExceededError, GuardrailRaisedException,
-    InternalServerError, JSONSchemaValidationError, MidStreamFallbackError,
-    NotFoundError, PermissionDeniedError, RateLimitError, ServiceUnavailableError,
-    Timeout, UnprocessableEntityError, UnsupportedParamsError,
-)
+from betterlite import exceptions
+from betterlite._native import NativeError
 from betterlite.exceptions._http import Request, Response
 
 
@@ -24,28 +16,26 @@ class ErrorPayload(TypedDict):
     model: NotRequired[str | None]
     body: NotRequired[JsonValue]
     headers: NotRequired[dict[str, str] | None]
-    num_retries: NotRequired[int | None]
-    max_retries: NotRequired[int | None]
 
 
 ERROR_PAYLOAD: Final[TypeAdapter[ErrorPayload]] = TypeAdapter(ErrorPayload)
 
-# one entry per `type` B5659's NativeError JSON can carry, so an unknown one never becomes generic
+# B5659's NativeError JSON carries the exception class name as `type`, so the table maps that name
 EXCEPTION_TYPES: Final[dict[str, type[BaseException]]] = {
-    "AuthenticationError": AuthenticationError, "NotFoundError": NotFoundError,
-    "PermissionDeniedError": PermissionDeniedError, "BadRequestError": BadRequestError,
-    "UnprocessableEntityError": UnprocessableEntityError, "Timeout": Timeout,
-    "RateLimitError": RateLimitError, "BudgetExceededError": BudgetExceededError,
-    "ContextWindowExceededError": ContextWindowExceededError,
-    "ContentPolicyViolationError": ContentPolicyViolationError,
-    "ServiceUnavailableError": ServiceUnavailableError, "BadGatewayError": BadGatewayError,
-    "InternalServerError": InternalServerError, "APIError": APIError,
-    "APIConnectionError": APIConnectionError,
-    "APIResponseValidationError": APIResponseValidationError,
-    "JSONSchemaValidationError": JSONSchemaValidationError,
-    "UnsupportedParamsError": UnsupportedParamsError,
-    "GuardrailRaisedException": GuardrailRaisedException,
-    "MidStreamFallbackError": MidStreamFallbackError, "Exception": Exception,
+    error.__name__: error
+    for error in (
+        exceptions.AuthenticationError, exceptions.NotFoundError,
+        exceptions.PermissionDeniedError,
+        exceptions.BadRequestError, exceptions.UnprocessableEntityError, exceptions.Timeout,
+        exceptions.RateLimitError, exceptions.BudgetExceededError,
+        exceptions.ContextWindowExceededError,
+        exceptions.ContentPolicyViolationError, exceptions.ServiceUnavailableError,
+        exceptions.BadGatewayError, exceptions.InternalServerError, exceptions.APIError,
+        exceptions.APIConnectionError, exceptions.APIResponseValidationError,
+        exceptions.JSONSchemaValidationError, exceptions.UnsupportedParamsError,
+        exceptions.GuardrailRaisedException, exceptions.MidStreamFallbackError,
+        exceptions.Exception,
+    )
 }
 
 
@@ -67,22 +57,20 @@ class UnsupportedCallArgument(Exception):
         )
 
 
+# ast-grep-ignore: no-one-line-functions
 def _text_value(value: str | None) -> str:
-    if value is None:
-        return ""
-    return value
+    return "" if value is None else value
 
 
+# ast-grep-ignore: no-one-line-functions
 def _status_value(value: int | None) -> int:
-    if value is None:
-        return 500
-    return value
+    return 500 if value is None else value
 
 
 def _body_content(value: JsonValue) -> bytes | None:
+    if value is None:
+        return None
     match value:
-        case None:
-            return None
         case str():
             return value.encode()
         case bool() | int() | float() | list() | dict():
@@ -90,10 +78,9 @@ def _body_content(value: JsonValue) -> bytes | None:
 
 
 def _response(payload: ErrorPayload) -> Response:
-    request = Request(method="POST", url="https://api.openai.com/v1")
     return Response(
         status_code=_status_value(payload.get("status_code")),
-        request=request,
+        request=Request(method="POST", url="https://api.openai.com/v1"),
         headers=payload.get("headers"),
         content=_body_content(payload.get("body")),
     )
@@ -107,60 +94,59 @@ def _build_error(payload: ErrorPayload) -> BaseException:
     response = _response(payload)
     match payload["type"]:
         case "AuthenticationError":
-            return AuthenticationError(message, provider, model, response)
+            return exceptions.AuthenticationError(message, provider, model, response)
         case "NotFoundError":
-            return NotFoundError(message, model, provider, response)
+            return exceptions.NotFoundError(message, model, provider, response)
         case "PermissionDeniedError":
-            return PermissionDeniedError(message, provider, model, response)
+            return exceptions.PermissionDeniedError(message, provider, model, response)
         case "BadRequestError":
-            return BadRequestError(message, model, provider, response, body=body)
+            return exceptions.BadRequestError(message, model, provider, response, body=body)
         case "UnprocessableEntityError":
-            return UnprocessableEntityError(message, model, provider, response)
+            return exceptions.UnprocessableEntityError(message, model, provider, response)
         case "Timeout":
-            return Timeout(message, model, provider, headers=payload.get("headers"))
+            return exceptions.Timeout(message, model, provider, headers=payload.get("headers"))
         case "RateLimitError":
-            return RateLimitError(
+            return exceptions.RateLimitError(
                 message, provider, model, headers=payload.get("headers"), body=body
             )
         case "BudgetExceededError":
-            return BudgetExceededError(0.0, 0.0, message, provider)
+            return exceptions.BudgetExceededError(0.0, 0.0, message, provider)
         case "ContextWindowExceededError":
-            return ContextWindowExceededError(message, model, provider)
+            return exceptions.ContextWindowExceededError(message, model, provider)
         case "ContentPolicyViolationError":
-            return ContentPolicyViolationError(message, model, provider, body=body)
+            return exceptions.ContentPolicyViolationError(message, model, provider, body=body)
         case "ServiceUnavailableError":
-            return ServiceUnavailableError(message, provider, model)
+            return exceptions.ServiceUnavailableError(message, provider, model)
         case "BadGatewayError":
-            return BadGatewayError(message, provider, model)
+            return exceptions.BadGatewayError(message, provider, model)
         case "InternalServerError":
-            return InternalServerError(message, provider, model, body=body)
+            return exceptions.InternalServerError(message, provider, model, body=body)
         case "APIError":
-            return APIError(
+            return exceptions.APIError(
                 _status_value(payload.get("status_code")), message, provider, model, body=body
             )
         case "APIConnectionError":
-            return APIConnectionError(message, provider, model)
+            return exceptions.APIConnectionError(message, provider, model)
         case "APIResponseValidationError":
-            return APIResponseValidationError(message, provider, model)
+            return exceptions.APIResponseValidationError(message, provider, model)
         case "JSONSchemaValidationError":
-            return JSONSchemaValidationError(model, provider, message, "")
+            return exceptions.JSONSchemaValidationError(model, provider, message, "")
         case "UnsupportedParamsError":
-            return UnsupportedParamsError(message, provider, model)
+            return exceptions.UnsupportedParamsError(message, provider, model)
         case "GuardrailRaisedException":
-            return GuardrailRaisedException(
+            return exceptions.GuardrailRaisedException(
                 message=message,
                 should_wrap_with_default_message=False,
                 status_code=_status_value(payload.get("status_code")),
             )
         case "MidStreamFallbackError":
-            return MidStreamFallbackError(message, model, provider)
+            return exceptions.MidStreamFallbackError(message, model, provider)
         case "Exception":
-            return Exception(message)
-        case _:
-            raise UnknownNativeError(payload["type"])
+            return exceptions.Exception(message)
+    raise UnknownNativeError(payload["type"])
 
 
-def raise_native_error(error: _native.NativeError) -> NoReturn:
+def raise_native_error(error: NativeError) -> NoReturn:
     payload = ERROR_PAYLOAD.validate_json(str(error))
     if payload["type"] not in EXCEPTION_TYPES:
         raise UnknownNativeError(str(error)) from error

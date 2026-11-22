@@ -2,9 +2,9 @@ import logging
 from collections.abc import Mapping
 from typing import Final, Protocol, TypeAlias, runtime_checkable
 
-import betterlite
 from pydantic import JsonValue, TypeAdapter
 
+import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite.llms.base_llm.base_utils import ResponseFormatModel, type_to_response_format_param
 from betterlite.types.utils import Message
@@ -12,6 +12,7 @@ from betterlite.types.utils import Message
 LOGGER: Final = logging.getLogger("LiteLLM")
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 JSON_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+MESSAGES: Final[TypeAdapter[list[JsonValue]]] = TypeAdapter(list[JsonValue])
 
 
 @runtime_checkable
@@ -34,21 +35,19 @@ class _ProxyAuthHeadersProvider(Protocol):
 
 CallValue: TypeAlias = JsonValue | SessionLike
 
-# LiteLLM keeps proxy_auth and config_path as typed Python globals; betterlite's are untyped None,
-# so the bridge and the tests set this seam and the globals stay readable for the day they are typed
+# untyped betterlite globals (proxy_auth, config_path, num_retries) get a typed seam here
 proxy_auth: _ProxyAuthHeadersProvider | None = None
 config_path: JsonValue = None
+num_retries: JsonValue = None
 
 
 def _proxy_auth_headers() -> dict[str, JsonValue] | None:
-    provider: object = betterlite.proxy_auth
+    provider: _ProxyAuthHeadersProvider | None = betterlite.proxy_auth
     if provider is None:
         provider = proxy_auth
     if provider is None:
         return None
     try:
-        if not isinstance(provider, _ProxyAuthHeadersProvider):
-            raise TypeError("proxy_auth has no get_auth_headers")
         return JSON_OBJECT.validate_python(dict(provider.get_auth_headers()))
     except Exception as error:
         LOGGER.warning("Failed to get proxy auth headers: %s", error)
@@ -63,11 +62,12 @@ def message_value(message: dict[str, JsonValue] | Message) -> JsonValue:
             return message
 
 
+# ast-grep-ignore: no-one-line-functions
 def messages_value(messages: list[dict[str, JsonValue] | Message]) -> JsonValue:
     return [message_value(message) for message in messages]
 
 
-def timeout_value(value: float | int | str | TimeoutValues) -> JsonValue:
+def timeout_value(value: CallValue | TimeoutValues) -> JsonValue:
     match value:
         case float():
             return value
@@ -83,23 +83,10 @@ def timeout_value(value: float | int | str | TimeoutValues) -> JsonValue:
                 "pool": value.pool,
             }
             return phases
-        case object():
-            raise UnsupportedCallArgument("timeout")
+    raise UnsupportedCallArgument("timeout")
 
 
-def timeout_seconds(value: float | int | str | TimeoutValues) -> float | None:
-    match value:
-        case float():
-            return value
-        case str():
-            return float(value)
-        case TimeoutValues():
-            return value.connect
-        case object():
-            return None
-
-
-def response_format_value(value: dict[str, JsonValue] | type[ResponseFormatModel]) -> JsonValue:
+def response_format_value(value: JsonValue | type[ResponseFormatModel]) -> JsonValue:
     formatted = type_to_response_format_param(value)
     if formatted is None:
         raise UnsupportedCallArgument("response_format")
@@ -118,9 +105,7 @@ def settings_snapshot() -> dict[str, JsonValue]:
             betterlite.route_all_chat_openai_to_responses
         ),
         "add_function_to_prompt": JSON.validate_python(betterlite.add_function_to_prompt),
-        "disable_stop_sequence_limit": JSON.validate_python(
-            betterlite.disable_stop_sequence_limit
-        ),
+        "disable_stop_sequence_limit": JSON.validate_python(betterlite.disable_stop_sequence_limit),
     }
     auth = _proxy_auth_headers()
     if auth is not None:

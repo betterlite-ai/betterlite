@@ -1,19 +1,16 @@
-from collections.abc import Awaitable, Callable
-from typing import Final, Protocol, TypeAlias
+from collections.abc import Awaitable
+from typing import Protocol
 
 from pydantic import JsonValue
 
 import betterlite
-from betterlite._completion.acompletion import acompletion
-from betterlite._completion.arguments import JSON, messages_value
-from betterlite._completion.completion import CompletionOutcome, completion
+from betterlite._completion.arguments import JSON, messages_value, num_retries
+from betterlite._completion.completion import (
+    completion_from_arguments,
+    settle_outcome,
+)
+from betterlite._completion.stream import CompletionOutcome
 from betterlite.types.utils import Message
-
-_CompletionCall: TypeAlias = Callable[..., CompletionOutcome | Awaitable[CompletionOutcome]]
-_AsyncCall: TypeAlias = Callable[..., Awaitable[CompletionOutcome]]
-
-_COMPLETION: Final[_CompletionCall] = completion
-_ACOMPLETION: Final[_AsyncCall] = acompletion
 
 
 class Router(Protocol):
@@ -34,16 +31,13 @@ class Router(Protocol):
 
 def _selected_model(model: str | None, params: dict[str, JsonValue]) -> str | None:
     # LiteLLM's `model or self.params.get("model")`, so an empty name falls through to the params
-    match model:
-        case str() if len(model) > 0:
-            return model
-        case object():
-            configured = params.get("model")
-            match configured:
-                case str():
-                    return configured
-                case object():
-                    return None
+    if model is not None and len(model) > 0:
+        return model
+    configured = params.get("model")
+    match configured:
+        case str():
+            return configured
+    return None
 
 
 class Completions:
@@ -60,15 +54,12 @@ class Completions:
         model: str | None = None,
         **kwargs: JsonValue,
     ) -> CompletionOutcome | Awaitable[CompletionOutcome]:
-        for name, value in kwargs.items():
-            self.params[name] = value
+        self.params.update(kwargs)
         selected = _selected_model(model, self.params)
+        forwarded = {**self.params, "model": selected, "messages": messages_value(messages)}
         if self.router_obj is not None:
             return self.router_obj.completion(model=selected, messages=messages, **self.params)
-        forwarded: dict[str, JsonValue] = dict(self.params)
-        forwarded["model"] = selected
-        forwarded["messages"] = messages_value(messages)
-        return _COMPLETION(**forwarded)
+        return completion_from_arguments(forwarded)
 
 
 class AsyncCompletions:
@@ -85,17 +76,16 @@ class AsyncCompletions:
         model: str | None = None,
         **kwargs: JsonValue,
     ) -> CompletionOutcome:
-        for name, value in kwargs.items():
-            self.params[name] = value
-        selected = _selected_model(model, self.params)
-        if self.router_obj is not None:
-            return await self.router_obj.acompletion(
-                model=selected, messages=messages, **self.params
+        self.params.update(kwargs)
+        chosen = _selected_model(model, self.params)
+        if self.router_obj is None:
+            forwarded = {**self.params, "model": chosen, "messages": messages_value(messages)}
+            return await settle_outcome(
+                completion_from_arguments({**forwarded, "acompletion": True})
             )
-        forwarded: dict[str, JsonValue] = dict(self.params)
-        forwarded["model"] = selected
-        forwarded["messages"] = messages_value(messages)
-        return await _ACOMPLETION(**forwarded)
+        return await self.router_obj.acompletion(
+            model=chosen, messages=messages, **self.params
+        )
 
 
 class Chat:
@@ -106,9 +96,9 @@ class Chat:
         self.params = params
         if self.params.get("acompletion") is True:
             self.params.pop("acompletion")
-            self.completions = AsyncCompletions(self.params, router_obj=router_obj)
+            self.completions = AsyncCompletions(params, router_obj=router_obj)
         else:
-            self.completions = Completions(self.params, router_obj=router_obj)
+            self.completions = Completions(params, router_obj=router_obj)
 
 
 class LiteLLM:
@@ -125,10 +115,9 @@ class LiteLLM:
         max_retries: JsonValue = None,
         default_headers: dict[str, JsonValue] | None = None,
     ) -> None:
-        retries: JsonValue = max_retries
-        if retries is None:
-            retries = JSON.validate_python(betterlite.num_retries)
-        params: dict[str, JsonValue] = {
+        configured = num_retries if num_retries is not None else betterlite.num_retries
+        retries = max_retries if max_retries is not None else JSON.validate_python(configured)
+        self.params = {
             "api_key": api_key,
             "organization": organization,
             "base_url": base_url,
@@ -136,5 +125,4 @@ class LiteLLM:
             "max_retries": retries,
             "default_headers": default_headers,
         }
-        self.params = params
-        self.chat = Chat(params, router_obj=None)
+        self.chat = Chat(self.params, router_obj=None)

@@ -1,44 +1,61 @@
 import asyncio
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Final, NoReturn
 
+import litellm
 import pytest
 from completion_server import (
     GOOD_KEY,
     GOOD_MODEL,
+    LITELLM,
+    LITELLM_ASYNC,
+    LITELLM_ASYNC_CLASSES,
+    LITELLM_CHAT,
+    LITELLM_CLASSES,
+    LITELLM_CLIENT,
     UNKNOWN_MODEL,
+    AsyncChatView,
+    AsyncCreate,
     CompletionServer,
-    Dumpable,
-    await_outcome,
+    RefResult,
+    dump_of,
     litellm_async_plain,
-    litellm_module,
     litellm_plain,
+    litellm_stream_parts,
     model_response,
     normalized,
-    raised,
+    ours_stream_parts,
+    stream_response,
 )
 from pydantic import JsonValue
 
-import betterlite
+from betterlite._completion import adapters, arguments
 from betterlite._completion.arguments import CallValue
-from betterlite._completion.completion import CompletionOutcome
-from betterlite._completion.retries import attempts_for, backoff_seconds, retry_kwargs
-from betterlite._completion.stream import CustomStreamWrapper
+from betterlite._completion.retries import (
+    acompletion_with_retries,
+    attempts_for,
+    backoff_seconds,
+    completion_with_retries,
+    retry_kwargs,
+)
+from betterlite._completion.stream import CompletionOutcome
 from betterlite.main import (
     AsyncCompletions,
     Chat,
     Completions,
+    CustomStreamWrapper,
     LiteLLM,
     aadapter_completion,
-    acompletion_with_retries,
     adapter_completion,
-    completion_with_retries,
     config_completion,
 )
 from betterlite.types.utils import Message, ModelResponse
 
-MESSAGES: Final[list[dict[str, JsonValue]]] = [{"role": "user", "content": "hi"}]
+MESSAGES: Final[list[dict[str, JsonValue] | Message]] = [{"role": "user", "content": "hi"}]
+PLAIN_MESSAGES: Final[list[dict[str, JsonValue]]] = [{"role": "user", "content": "hi"}]
 TEMPERATURE: Final = 0.5
 MAX_TOKENS: Final = 7
 CLIENT_TIMEOUT: Final = 600
@@ -50,6 +67,7 @@ SYNC_RETRIES: Final = 2
 ASYNC_RETRIES: Final = 2
 DEFAULT_ATTEMPTS: Final = 3
 CONFIGURED_RETRIES: Final = 5
+SECOND_RETRIES: Final = 7
 MIN_ATTEMPTS: Final = 1
 FIRST_BACKOFF: Final = 1.0
 FOUR_SECONDS: Final = 4.0
@@ -62,6 +80,7 @@ CONFIG_MESSAGE: Final = (
 )
 ADAPTER_ID: Final = "fake-adapter"
 ADAPTER_CALLS: Final = 1
+ZERO_CALLS: Final = 0
 
 
 def routed_response() -> ModelResponse:
@@ -69,11 +88,6 @@ def routed_response() -> ModelResponse:
         id=ROUTED_ID, created=ROUTED_CREATED, model=GOOD_MODEL,
         choices=[{"index": 0, "message": {"role": "assistant", "content": ROUTED_CONTENT}}],
     )
-
-
-def dump_of(result: object) -> dict[str, JsonValue]:
-    assert isinstance(result, Dumpable)
-    return result.model_dump()
 
 
 class RecordingRouter:
@@ -97,15 +111,15 @@ class RecordingRouter:
         messages: list[dict[str, JsonValue] | Message],
         **params: JsonValue,
     ) -> CompletionOutcome:
-        self.calls.append((model, messages, params))
-        return routed_response()
+        routed = self.completion(model, messages, **params)
+        return routed
 
 
 class Counter:
     def __init__(self) -> None:
-        self.calls: list[dict[str, object]] = []
+        self.calls: list[dict[str, CallValue]] = []
 
-    def failing(self, *_args: object, **kwargs: object) -> NoReturn:
+    def failing(self, *_args: JsonValue, **kwargs: CallValue) -> NoReturn:
         self.calls.append(dict(kwargs))
         raise ValueError(FAILURE_TEXT)
 
@@ -113,8 +127,10 @@ class Counter:
 class Keeper:
     def __init__(self) -> None:
         self.response = routed_response()
+        self.calls = 0
 
-    def keep(self, **_kwargs: object) -> CompletionOutcome:
+    def keep(self, *_args: JsonValue, **_kwargs: CallValue) -> CompletionOutcome:
+        self.calls += 1
         return self.response
 
 
@@ -122,75 +138,164 @@ class FakeAdapter:
     def __init__(self) -> None:
         self.input_calls = 0
         self.output_calls = 0
+        self.stream_calls = 0
 
-    def translate_completion_input_params(
+    def translate_completion_input_params(  # ast-grep-ignore: no-long-names
         self, *, kwargs: dict[str, JsonValue]
     ) -> dict[str, JsonValue]:
         self.input_calls += 1
         return {**kwargs, "model": GOOD_MODEL}
 
-    def translate_completion_output_params(self, *, response: ModelResponse) -> ModelResponse:
+    def translate_completion_output_params(  # ast-grep-ignore: no-long-names
+        self, *, response: ModelResponse
+    ) -> ModelResponse:
         self.output_calls += 1
         return response
 
-    def translate_completion_output_params_streaming(
+    def translate_completion_output_params_streaming(  # ast-grep-ignore: no-long-names
         self, *, completion_stream: CustomStreamWrapper
     ) -> CompletionOutcome | None:
+        self.stream_calls += 1
         return completion_stream
 
 
-def test_completion_client_plain_matches_litellm() -> None:
+def retries_params(retries: int) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
+    arguments.num_retries = retries
+    litellm.num_retries = retries
+    try:
+        ours = LiteLLM(api_key=GOOD_KEY)
+        reference = LITELLM_CLIENT.LiteLLM(api_key=GOOD_KEY)
+    finally:
+        arguments.num_retries = None
+        litellm.num_retries = None
+    return ours.params, reference.params
+
+
+def async_chat(server_url: str) -> tuple[AsyncCompletions, AsyncChatView]:
+    params: dict[str, JsonValue] = {
+        "api_key": GOOD_KEY, "base_url": server_url, "acompletion": True,
+    }
+    reference = LITELLM_CHAT.Chat(dict(params), None)
+    chat = Chat(params, None)
+    assert "acompletion" not in params
+    assert reference.params == params
+    match chat.completions:
+        case AsyncCompletions() as completions:
+            return completions, reference
+        case Completions():
+            raise AssertionError("a client with acompletion picked the sync completions")
+
+
+@contextmanager
+def adapter_seam(adapter: FakeAdapter) -> Iterator[None]:
+    adapters.adapter_entries = [{"id": ADAPTER_ID, "adapter": adapter}]
+    try:
+        yield
+    finally:
+        adapters.adapter_entries = None
+
+
+@contextmanager
+def config_seam(config_file: Path) -> Iterator[None]:
+    arguments.config_path = str(config_file)
+    try:
+        yield
+    finally:
+        arguments.config_path = None
+
+
+def adapter_outcome(
+    adapter: FakeAdapter, server_url: str, stream: bool = False
+) -> CompletionOutcome | None:
+    with adapter_seam(adapter):
+        return adapter_completion(
+            adapter_id=ADAPTER_ID, model=UNKNOWN_MODEL, messages=MESSAGES,
+            api_base=server_url, api_key=GOOD_KEY, stream=stream,
+        )
+
+
+def config_call(config_file: Path) -> dict[str, JsonValue]:
+    with config_seam(config_file):
+        return dump_of(config_completion(model=UNKNOWN_MODEL, messages=MESSAGES))
+
+
+def plain_reference(server_url: str) -> dict[str, JsonValue]:
+    return litellm_plain(
+        model=GOOD_MODEL, messages=PLAIN_MESSAGES, api_base=server_url, api_key=GOOD_KEY
+    )
+
+
+def write_config(server_url: str, config_file: Path) -> None:
+    config: dict[str, JsonValue] = {
+        "model": GOOD_MODEL, "messages": PLAIN_MESSAGES,
+        "api_base": server_url, "api_key": GOOD_KEY,
+    }
+    config_file.write_text(json.dumps(config))
+
+
+def test_client_plain_matches() -> None:
     with CompletionServer() as server:
         client = LiteLLM(api_key=GOOD_KEY, base_url=server.url)
-        completions = client.chat.completions
-        assert isinstance(completions, Completions)
-        response = model_response(completions.create(messages=MESSAGES, model=GOOD_MODEL))
-        reference = litellm_plain(
-            model=GOOD_MODEL, messages=MESSAGES, api_base=server.url, api_key=GOOD_KEY
+        reference_client = LITELLM_CLIENT.LiteLLM(api_key=GOOD_KEY, base_url=server.url)
+        response = model_response(
+            client.chat.completions.create(messages=MESSAGES, model=GOOD_MODEL)
         )
+        reference = litellm_plain(
+            model=GOOD_MODEL, messages=PLAIN_MESSAGES, api_base=server.url, api_key=GOOD_KEY
+        )
+        expected_params = {
+            name: value for name, value in reference_client.params.items() if name != "self"
+        }
     assert normalized(response.model_dump()) == normalized(reference)
-    assert client.params["api_key"] == GOOD_KEY
-    assert client.params["base_url"] == server.url
+    assert client.params == expected_params
     assert client.params["timeout"] == CLIENT_TIMEOUT
     assert client.params["max_retries"] is None
     assert "self" not in client.params
 
 
-def test_completion_client_reads_num_retries_at_construction(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(betterlite, "num_retries", CONFIGURED_RETRIES)
-    client = LiteLLM(api_key=GOOD_KEY)
-    assert client.params["max_retries"] == CONFIGURED_RETRIES
+def test_client_reads_retries() -> None:
+    first, reference_first = retries_params(CONFIGURED_RETRIES)
+    second, _reference_second = retries_params(SECOND_RETRIES)
+    assert first["max_retries"] == CONFIGURED_RETRIES
+    assert second["max_retries"] == SECOND_RETRIES
+    assert first["max_retries"] == reference_first["max_retries"]
 
 
-def test_completion_client_async_branch_matches_litellm() -> None:
+async def async_chat_response(completions: AsyncCreate) -> dict[str, JsonValue]:
+    response = await completions.create(messages=MESSAGES, model=GOOD_MODEL)
+    return dump_of(response)
+
+
+async def chat_responses(
+    completions: AsyncCompletions, reference: AsyncChatView
+) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
+    ours = await completions.create(messages=MESSAGES, model=GOOD_MODEL)
+    reference_response = await reference.completions.create(
+        messages=MESSAGES, model=GOOD_MODEL
+    )
+    return dump_of(ours), dump_of(reference_response)
+
+
+def test_client_async_branch() -> None:
     with CompletionServer() as server:
-        params: dict[str, JsonValue] = {
-            "api_key": GOOD_KEY, "base_url": server.url, "acompletion": True,
-        }
-        chat = Chat(params, None)
-        assert "acompletion" not in params
-        completions = chat.completions
-        assert isinstance(completions, AsyncCompletions)
-        response = model_response(
-            asyncio.run(await_outcome(completions.create(messages=MESSAGES, model=GOOD_MODEL)))
-        )
-        reference = asyncio.run(
+        completions, reference = async_chat(server.url)
+        ours, reference_response = asyncio.run(chat_responses(completions, reference))
+        expected = asyncio.run(
             litellm_async_plain(
-                model=GOOD_MODEL, messages=MESSAGES, api_base=server.url, api_key=GOOD_KEY
+                model=GOOD_MODEL, messages=PLAIN_MESSAGES, api_base=server.url,
+                api_key=GOOD_KEY,
             )
         )
-    assert normalized(response.model_dump()) == normalized(reference)
+    assert [normalized(ours), normalized(reference_response)] == [normalized(expected)] * 2
 
 
-def test_completion_client_router_matches_litellm() -> None:
+def test_client_router() -> None:
     ours_router = RecordingRouter()
     reference_router = RecordingRouter()
     ours_params: dict[str, JsonValue] = {"temperature": TEMPERATURE}
     reference_params: dict[str, JsonValue] = {"temperature": TEMPERATURE}
     ours = Completions(ours_params, ours_router)
-    reference = litellm_module().Completions(reference_params, reference_router)
+    reference = LITELLM_CLASSES.Completions(reference_params, reference_router)
     ours_outcome = ours.create(messages=MESSAGES, model=GOOD_MODEL, max_tokens=MAX_TOKENS)
     reference_outcome = reference.create(
         messages=MESSAGES, model=GOOD_MODEL, max_tokens=MAX_TOKENS
@@ -204,43 +309,45 @@ def test_completion_client_router_matches_litellm() -> None:
     assert ours_router.calls[1][0] is None
 
 
-def test_completion_client_async_router_matches_litellm() -> None:
+async def our_async_router_call(completions: AsyncCompletions) -> dict[str, JsonValue]:
+    outcome = await completions.create(messages=MESSAGES, model=GOOD_MODEL)
+    return dump_of(outcome)
+
+
+async def reference_async_router_call(completions: AsyncCreate) -> dict[str, JsonValue]:
+    outcome = await completions.create(messages=MESSAGES, model=GOOD_MODEL)
+    return dump_of(outcome)
+
+
+def test_client_async_router() -> None:
     ours_router = RecordingRouter()
     reference_router = RecordingRouter()
     ours = AsyncCompletions({"temperature": TEMPERATURE}, ours_router)
-    reference = litellm_module().AsyncCompletions(
+    reference = LITELLM_ASYNC_CLASSES.AsyncCompletions(
         {"temperature": TEMPERATURE}, reference_router
     )
-    ours_outcome = asyncio.run(
-        await_outcome(ours.create(messages=MESSAGES, model=GOOD_MODEL))
-    )
-    reference_outcome = asyncio.run(
-        reference.create(messages=MESSAGES, model=GOOD_MODEL)
-    )
-    assert dump_of(ours_outcome) == dump_of(reference_outcome)
+    ours_outcome = asyncio.run(our_async_router_call(ours))
+    reference_outcome = asyncio.run(reference_async_router_call(reference))
+    assert ours_outcome == reference_outcome
     assert ours_router.calls == reference_router.calls
 
 
-def test_completion_retries_sync_matches_litellm() -> None:
+def test_retries_sync_matches() -> None:
     ours_counter = Counter()
-    ours_error = raised(
-        lambda: completion_with_retries(
+    with pytest.raises(ValueError) as ours_caught:
+        completion_with_retries(
             model=GOOD_MODEL, messages=MESSAGES, num_retries=SYNC_RETRIES,
             original_function=ours_counter.failing,
-        ),
-        ValueError,
-    )
+        )
     reference_counter = Counter()
-    reference_error = raised(
-        lambda: litellm_module().completion_with_retries(
-            model=GOOD_MODEL, messages=MESSAGES, num_retries=SYNC_RETRIES,
+    with pytest.raises(ValueError) as reference_caught:
+        LITELLM.completion_with_retries(
+            model=GOOD_MODEL, messages=PLAIN_MESSAGES, num_retries=SYNC_RETRIES,
             original_function=reference_counter.failing,
-        ),
-        ValueError,
-    )
+        )
     assert len(ours_counter.calls) == SYNC_RETRIES
     assert ours_counter.calls == reference_counter.calls
-    assert str(ours_error) == str(reference_error)
+    assert str(ours_caught.value) == str(reference_caught.value)
 
 
 async def ours_async_retries(counter: Counter) -> CompletionOutcome:
@@ -250,47 +357,48 @@ async def ours_async_retries(counter: Counter) -> CompletionOutcome:
     )
 
 
-async def litellm_async_retries(counter: Counter) -> object:
-    return await litellm_module().acompletion_with_retries(
+async def reference_async_retries(counter: Counter) -> RefResult:
+    return await LITELLM_ASYNC.acompletion_with_retries(
         model=GOOD_MODEL, messages=MESSAGES, num_retries=ASYNC_RETRIES,
         original_function=counter.failing,
     )
 
 
-def test_completion_retries_async_matches_litellm() -> None:
+def test_retries_async_matches() -> None:
     ours_counter = Counter()
-    ours_error = raised(lambda: asyncio.run(ours_async_retries(ours_counter)), ValueError)
     reference_counter = Counter()
-    reference_error = raised(
-        lambda: asyncio.run(litellm_async_retries(reference_counter)), ValueError
-    )
-    assert len(ours_counter.calls) == ASYNC_RETRIES
+    with pytest.raises(ValueError) as ours_caught:
+        asyncio.run(ours_async_retries(ours_counter))
+    with pytest.raises(ValueError) as reference_caught:
+        asyncio.run(reference_async_retries(reference_counter))
     assert ours_counter.calls == reference_counter.calls
-    assert str(ours_error) == str(reference_error)
+    assert len(ours_counter.calls) == ASYNC_RETRIES
+    assert str(ours_caught.value) == str(reference_caught.value)
 
 
-async def keep_outcome(keeper: Keeper) -> CompletionOutcome:
+async def ours_keep_outcome(keeper: Keeper) -> CompletionOutcome:
     return await acompletion_with_retries(
         model=GOOD_MODEL, messages=MESSAGES, num_retries=MIN_ATTEMPTS,
         original_function=keeper.keep,
     )
 
 
-async def litellm_keep_outcome(keeper: Keeper) -> object:
-    return await litellm_module().acompletion_with_retries(
+async def reference_keep_outcome(keeper: Keeper) -> RefResult:
+    return await LITELLM_ASYNC.acompletion_with_retries(
         model=GOOD_MODEL, messages=MESSAGES, num_retries=MIN_ATTEMPTS,
         original_function=keeper.keep,
     )
 
 
-def test_completion_retries_async_keeps_a_sync_outcome() -> None:
+def test_retries_keep_sync_outcome() -> None:
     ours = Keeper()
-    assert asyncio.run(keep_outcome(ours)) is ours.response
+    assert asyncio.run(ours_keep_outcome(ours)) is ours.response
     reference = Keeper()
-    assert asyncio.run(litellm_keep_outcome(reference)) is reference.response
+    assert asyncio.run(reference_keep_outcome(reference)) is reference.response
+    assert ours.calls == reference.calls
 
 
-def test_completion_retries_helpers() -> None:
+def test_retries_helpers() -> None:
     assert attempts_for(None) == DEFAULT_ATTEMPTS
     assert attempts_for(0) == MIN_ATTEMPTS
     assert attempts_for(SYNC_RETRIES) == SYNC_RETRIES
@@ -304,115 +412,77 @@ def test_completion_retries_helpers() -> None:
     assert not retry_kwargs({}, None)
 
 
-def test_completion_config_matches_litellm(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_config_matches(tmp_path: Path) -> None:
+    config_file = tmp_path / CONFIG_NAME
     with CompletionServer() as server:
-        config: dict[str, JsonValue] = {
-            "model": GOOD_MODEL, "messages": MESSAGES,
-            "api_base": server.url, "api_key": GOOD_KEY,
-        }
-        config_file = tmp_path / CONFIG_NAME
-        config_file.write_text(json.dumps(config))
-        monkeypatch.setattr(betterlite, "config_path", str(config_file))
-        litellm_ref = litellm_module()
-        monkeypatch.setattr(litellm_ref, "config_path", str(config_file))
-        ours = dump_of(config_completion())
-        reference = dump_of(litellm_ref.config_completion())
+        write_config(server.url, config_file)
+        ours = config_call(config_file)
+        reference = plain_reference(server.url)
     assert normalized(ours) == normalized(reference)
 
 
-def test_completion_config_without_path_matches_litellm(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(betterlite, "config_path", None)
-    litellm_ref = litellm_module()
-    monkeypatch.setattr(litellm_ref, "config_path", None)
-    ours = raised(lambda: config_completion(), ValueError)
-    reference = raised(lambda: litellm_ref.config_completion(), ValueError)
-    assert str(ours) == str(reference) == CONFIG_MESSAGE
+def test_config_without_path() -> None:
+    with pytest.raises(ValueError) as ours_caught:
+        config_completion(model=GOOD_MODEL, messages=MESSAGES)
+    with pytest.raises(ValueError) as reference_caught:
+        LITELLM.config_completion()
+    assert str(ours_caught.value) == str(reference_caught.value) == CONFIG_MESSAGE
 
 
-def test_completion_adapter_translates_like_litellm(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_adapter_translates() -> None:
+    adapter = FakeAdapter()
     with CompletionServer() as server:
-        ours_adapter = FakeAdapter()
-        reference_adapter = FakeAdapter()
-        monkeypatch.setattr(
-            betterlite, "adapters", [{"id": ADAPTER_ID, "adapter": ours_adapter}]
-        )
-        litellm_ref = litellm_module()
-        monkeypatch.setattr(
-            litellm_ref, "adapters", [{"id": ADAPTER_ID, "adapter": reference_adapter}]
-        )
-        ours = dump_of(
-            adapter_completion(
-                adapter_id=ADAPTER_ID, model=UNKNOWN_MODEL, messages=MESSAGES,
-                api_base=server.url, api_key=GOOD_KEY,
-            )
-        )
-        reference = dump_of(
-            litellm_ref.adapter_completion(
-                adapter_id=ADAPTER_ID, model=UNKNOWN_MODEL, messages=MESSAGES,
-                api_base=server.url, api_key=GOOD_KEY,
-            )
-        )
+        ours = dump_of(adapter_outcome(adapter, server.url))
+        reference = plain_reference(server.url)
     assert normalized(ours) == normalized(reference)
-    assert ours_adapter.input_calls == ADAPTER_CALLS
-    assert ours_adapter.output_calls == ADAPTER_CALLS
-    assert reference_adapter.input_calls == ADAPTER_CALLS
-    assert reference_adapter.output_calls == ADAPTER_CALLS
+    assert adapter.input_calls == ADAPTER_CALLS
+    assert adapter.output_calls == ADAPTER_CALLS
+    assert adapter.stream_calls == ZERO_CALLS
 
 
-async def ours_adapt_async(server_url: str) -> object:
-    return await aadapter_completion(
-        adapter_id=ADAPTER_ID, model=UNKNOWN_MODEL, messages=MESSAGES,
-        api_base=server_url, api_key=GOOD_KEY,
-    )
-
-
-async def litellm_adapt_async(server_url: str) -> object:
-    return await litellm_module().aadapter_completion(
-        adapter_id=ADAPTER_ID, model=UNKNOWN_MODEL, messages=MESSAGES,
-        api_base=server_url, api_key=GOOD_KEY,
-    )
-
-
-def test_completion_adapter_async_matches_litellm(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_adapter_stream_matches() -> None:
+    adapter = FakeAdapter()
     with CompletionServer() as server:
-        ours_adapter = FakeAdapter()
-        reference_adapter = FakeAdapter()
-        monkeypatch.setattr(
-            betterlite, "adapters", [{"id": ADAPTER_ID, "adapter": ours_adapter}]
+        outcome = adapter_outcome(adapter, server.url, stream=True)
+        ours = ours_stream_parts(stream_response(outcome))
+        reference = litellm_stream_parts(
+            model=GOOD_MODEL, messages=PLAIN_MESSAGES, api_base=server.url,
+            api_key=GOOD_KEY, stream=True,
         )
-        litellm_ref = litellm_module()
-        monkeypatch.setattr(
-            litellm_ref, "adapters", [{"id": ADAPTER_ID, "adapter": reference_adapter}]
+    assert ours == reference
+    assert adapter.stream_calls == ADAPTER_CALLS
+    assert adapter.output_calls == ZERO_CALLS
+
+
+async def ours_adapt_async(adapter: FakeAdapter, server_url: str) -> dict[str, JsonValue]:
+    with adapter_seam(adapter):
+        outcome = await aadapter_completion(
+            adapter_id=ADAPTER_ID, model=UNKNOWN_MODEL, messages=MESSAGES,
+            api_base=server_url, api_key=GOOD_KEY,
         )
-        ours = dump_of(asyncio.run(ours_adapt_async(server.url)))
-        reference = dump_of(asyncio.run(litellm_adapt_async(server.url)))
+        return dump_of(outcome)
+
+
+async def reference_adapt_async(server_url: str) -> dict[str, JsonValue]:
+    return await litellm_async_plain(
+        model=GOOD_MODEL, messages=PLAIN_MESSAGES, api_base=server_url, api_key=GOOD_KEY
+    )
+
+
+def test_adapter_async_matches() -> None:
+    adapter = FakeAdapter()
+    with CompletionServer() as server:
+        ours = asyncio.run(ours_adapt_async(adapter, server.url))
+        reference = asyncio.run(reference_adapt_async(server.url))
     assert normalized(ours) == normalized(reference)
-    assert ours_adapter.input_calls == ADAPTER_CALLS
-    assert reference_adapter.input_calls == ADAPTER_CALLS
+    assert [adapter.input_calls, adapter.output_calls] == [ADAPTER_CALLS, ADAPTER_CALLS]
 
 
-def test_completion_adapter_missing_matches_litellm(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(betterlite, "adapters", [])
-    litellm_ref = litellm_module()
-    monkeypatch.setattr(litellm_ref, "adapters", [])
-    ours = raised(
-        lambda: adapter_completion(adapter_id=ADAPTER_ID, model=GOOD_MODEL, messages=MESSAGES),
-        ValueError,
-    )
-    reference = raised(
-        lambda: litellm_ref.adapter_completion(
-            adapter_id=ADAPTER_ID, model=GOOD_MODEL, messages=MESSAGES
-        ),
-        ValueError,
-    )
-    assert str(ours) == str(reference)
+def test_adapter_missing() -> None:
+    with pytest.raises(ValueError) as ours_caught:
+        adapter_completion(adapter_id=ADAPTER_ID, model=GOOD_MODEL, messages=MESSAGES)
+    with pytest.raises(ValueError) as reference_caught:
+        LITELLM.adapter_completion(
+            adapter_id=ADAPTER_ID, model=GOOD_MODEL, messages=PLAIN_MESSAGES
+        )
+    assert str(ours_caught.value) == str(reference_caught.value)

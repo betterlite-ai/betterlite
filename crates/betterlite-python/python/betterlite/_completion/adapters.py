@@ -1,16 +1,17 @@
 from collections.abc import Awaitable
 from pathlib import Path
-from typing import Final, NoReturn, Protocol, runtime_checkable
+from typing import NoReturn, Protocol, TypedDict, runtime_checkable
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue
 
 import betterlite
-from betterlite._completion.arguments import JSON_OBJECT, CallValue, config_path
-from betterlite._completion.classes import _ACOMPLETION, _COMPLETION
+from betterlite._completion.arguments import JSON, JSON_OBJECT, CallValue, config_path
+from betterlite._completion.completion import (
+    completion_from_arguments,
+    settle_outcome,
+)
 from betterlite._completion.stream import CompletionOutcome, CustomStreamWrapper
 from betterlite.types.utils import ModelResponse
-
-CONFIG: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 
 @runtime_checkable
@@ -28,39 +29,46 @@ class CompletionAdapter(Protocol):
     ) -> CompletionOutcome | None: ...
 
 
+class AdapterEntry(TypedDict):
+    id: str
+    adapter: CompletionAdapter
+
+
+# betterlite.adapters is JSON in the settings task, so this seam carries the Python adapters
+adapter_entries: list[AdapterEntry] | None = None
+
+
 def _missing_adapter(adapter_id: str) -> NoReturn:
-    adapters = betterlite.adapters
+    configured = betterlite.adapters
     raise ValueError(
         f"No matching adapter given. Received 'adapter_id'={adapter_id}, "
-        f"litellm.adapters={adapters}"
+        f"litellm.adapters={configured}"
     )
 
 
 def _find_adapter(adapter_id: str) -> CompletionAdapter:
-    # litellm.adapters is a list of {"id": ..., "adapter": ...}; the last match wins as in LiteLLM
+    # litellm.adapters holds {"id": ..., "adapter": ...} entries; the last match wins as in LiteLLM
+    entries = adapter_entries
+    if entries is None:
+        entries = []
     found: CompletionAdapter | None = None
-    for item in betterlite.adapters:
-        match item:
-            case dict():
-                if item.get("id") != adapter_id:
-                    continue
-                candidate = item.get("adapter")
-                match candidate:
-                    case CompletionAdapter():
-                        found = candidate
-                    case object():
-                        continue
-            case object():
-                continue
+    for entry in entries:
+        if entry["id"] == adapter_id:
+            found = entry["adapter"]
     if found is None:
         _missing_adapter(adapter_id)
     return found
 
 
+# ast-grep-ignore: no-one-line-functions
+def _json_values(values: dict[str, CallValue]) -> dict[str, JsonValue]:
+    return {name: JSON.validate_python(value) for name, value in values.items()}
+
+
 def _translated(
     adapter: CompletionAdapter,
     response: CompletionOutcome | Awaitable[CompletionOutcome],
-) -> CompletionOutcome | Awaitable[CompletionOutcome] | None:
+) -> CompletionOutcome | None:
     match response:
         case ModelResponse():
             return adapter.translate_completion_output_params(response=response)
@@ -68,46 +76,44 @@ def _translated(
             return adapter.translate_completion_output_params_streaming(
                 completion_stream=response
             )
-        case object():
-            return None
+    return None
 
 
 def adapter_completion(
     *, adapter_id: str, **kwargs: CallValue
-) -> CompletionOutcome | Awaitable[CompletionOutcome] | None:
+) -> CompletionOutcome | None:
     adapter = _find_adapter(adapter_id)
-    configured = JSON_OBJECT.validate_python(dict(kwargs))
-    new_kwargs = adapter.translate_completion_input_params(kwargs=configured)
-    return _translated(adapter, _COMPLETION(**new_kwargs))
+    translated = adapter.translate_completion_input_params(kwargs=_json_values(kwargs))
+    return _translated(adapter, completion_from_arguments(translated))
 
 
 async def aadapter_completion(
     *, adapter_id: str, **kwargs: CallValue
 ) -> CompletionOutcome | None:
     adapter = _find_adapter(adapter_id)
-    configured = JSON_OBJECT.validate_python(dict(kwargs))
-    new_kwargs = adapter.translate_completion_input_params(kwargs=configured)
-    translated = _translated(adapter, await _ACOMPLETION(**new_kwargs))
-    if isinstance(translated, Awaitable):
-        return await translated
-    return translated
+    translated = adapter.translate_completion_input_params(kwargs=_json_values(kwargs))
+    outcome = await settle_outcome(
+        completion_from_arguments({**translated, "acompletion": True})
+    )
+    return _translated(adapter, outcome)
 
 
 def config_completion(
     **kwargs: CallValue,
 ) -> CompletionOutcome | Awaitable[CompletionOutcome]:
-    configured: object = betterlite.config_path
+    configured = config_path
     if configured is None:
-        configured = config_path
+        configured = betterlite.config_path
     if configured is None:
         raise ValueError(
             "No config path set, please set a config path using "
             "`litellm.config_path = 'path/to/config.json'`"
         )
+    supplied = _json_values(kwargs)
     match configured:
         case str():
-            config = CONFIG.validate_json(Path(configured).read_text())
-            merged: dict[str, CallValue] = {**kwargs, **config}
-            return _COMPLETION(**merged)
-        case object():
-            raise ValueError("betterlite.config_path must be a string")
+            config = JSON_OBJECT.validate_json(Path(configured).read_text(encoding="utf-8"))
+            return completion_from_arguments({**supplied, **config})
+        case dict():
+            return completion_from_arguments({**supplied, **configured})
+    raise ValueError("betterlite.config_path must be a string")

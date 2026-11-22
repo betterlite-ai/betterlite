@@ -4,12 +4,8 @@ from typing import Final, NoReturn, Protocol, runtime_checkable
 
 from pydantic import JsonValue
 
-from betterlite._completion.arguments import JSON, CallValue, TimeoutValues, timeout_seconds
-from betterlite.exceptions import (
-    APIError, AuthenticationError, BadGatewayError, BadRequestError,
-    ContextWindowExceededError, InternalServerError, MockException, NotFoundError,
-    RateLimitError, ServiceUnavailableError, Timeout,
-)
+from betterlite import exceptions
+from betterlite._completion.arguments import JSON, CallValue
 from betterlite.exceptions._http import Request
 from betterlite.types.utils import ModelResponse
 
@@ -32,13 +28,13 @@ class _ProviderName(Protocol):
     llm_provider: str
 
 
+# openai.APIError without importing openai: betterlite's mirror plays that base for our classes
 def _is_api_error(error: Exception) -> bool:
-    # openai.APIError without importing openai; betterlite's mirror plays that base for our classes
-    if isinstance(error, APIError):
+    if isinstance(error, exceptions.APIError):  # ast-grep-ignore: no-isinstance
         return True
     return any(
         base.__module__ == "openai" and base.__name__ == "APIError"
-        for base in type(error).__mro__
+        for base in error.__class__.__mro__
     )
 
 
@@ -47,53 +43,56 @@ def provider_name(value: CallValue) -> str:
     match value:
         case str() if len(value) > 0:
             return value
-        case object():
-            return "openai"
+    return "openai"
 
 
-def _exception_provider(provider: str) -> str:
-    if provider == "openai":
-        return "OpenAIException"
-    return f"{provider[0].upper()}{provider[1:]}Exception"
-
-
-def _mapped_mock(error: MockException, model: str, provider: str) -> NoReturn:
+def _mapped_mock(error: exceptions.MockException, model: str, provider: str) -> NoReturn:
     # the completion boundary maps a mock exception by status, as LiteLLM's exception_type does
-    text = f"{_exception_provider(provider)} - {error.message}"
+    name = "OpenAI" if provider == "openai" else f"{provider[0].upper()}{provider[1:]}"
+    text = f"{name}Exception - {error.message}"
     status = error.status_code
     if status in (408, 504):
-        raise Timeout(f"Timeout Error: {text}", model, provider)
+        raise exceptions.Timeout(f"Timeout Error: {text}", model, provider)
     if status in (400, 422):
-        raise BadRequestError(text, model, provider)
+        raise exceptions.BadRequestError(text, model, provider)
     if status == 401:
-        raise AuthenticationError(
+        raise exceptions.AuthenticationError(
             f"AuthenticationError: {text}", llm_provider=provider, model=model
         )
     if status == 404:
-        raise NotFoundError(f"NotFoundError: {text}", model, provider)
+        raise exceptions.NotFoundError(f"NotFoundError: {text}", model, provider)
     if status == 429:
-        raise RateLimitError(f"RateLimitError: {text}", llm_provider=provider, model=model)
+        raise exceptions.RateLimitError(
+            f"RateLimitError: {text}", llm_provider=provider, model=model
+        )
     if status == 500:
-        raise InternalServerError(
+        raise exceptions.InternalServerError(
             f"InternalServerError: {text}", llm_provider=provider, model=model
         )
     if status == 502:
-        raise BadGatewayError(f"BadGatewayError: {text}", llm_provider=provider, model=model)
+        raise exceptions.BadGatewayError(
+            f"BadGatewayError: {text}", llm_provider=provider, model=model
+        )
     if status == 503:
-        raise ServiceUnavailableError(
+        raise exceptions.ServiceUnavailableError(
             f"ServiceUnavailableError: {text}", llm_provider=provider, model=model
         )
-    raise APIError(status, f"APIError: {text}", provider, model, request=error.request)
+    raise exceptions.APIError(
+        status, f"APIError: {text}", provider, model, request=error.request
+    )
 
 
 def raise_mock_exception(error: Exception, model: str, provider: str) -> NoReturn:
     # _handle_mock_potential_exceptions: an APIError is raised as is, anything else is a mock error
     if _is_api_error(error):
         raise error
+    # ast-grep-ignore: no-isinstance
     status = error.status_code if isinstance(error, _StatusCodeProvider) else 500
+    # ast-grep-ignore: no-isinstance
     message = error.text if isinstance(error, _TextProvider) else str(error)
+    # ast-grep-ignore: no-isinstance
     llm_provider = error.llm_provider if isinstance(error, _ProviderName) else provider
-    mock = MockException(
+    mock = exceptions.MockException(
         status_code=status,
         message=message,
         llm_provider=llm_provider,
@@ -106,16 +105,18 @@ def raise_mock_exception(error: Exception, model: str, provider: str) -> NoRetur
 def raise_text_mock(text: str, model: str, provider: str) -> None:
     # the four failure strings mock_completion turns into errors before any request is built
     if text == "litellm.RateLimitError":
-        raise RateLimitError("this is a mock rate limit error", provider, model)
+        raise exceptions.RateLimitError("this is a mock rate limit error", provider, model)
     if text == "litellm.ContextWindowExceededError":
-        raise ContextWindowExceededError(
+        raise exceptions.ContextWindowExceededError(
             "this is a mock context window exceeded error", model, provider
         )
     if text == "litellm.InternalServerError":
-        raise InternalServerError("this is a mock internal server error", provider, model)
+        raise exceptions.InternalServerError(
+            "this is a mock internal server error", provider, model
+        )
     if text.startswith("Exception: content_filter_policy"):
         _mapped_mock(
-            MockException(
+            exceptions.MockException(
                 status_code=400,
                 message=text,
                 llm_provider="azure",
@@ -127,7 +128,7 @@ def raise_text_mock(text: str, model: str, provider: str) -> None:
         )
     if text.startswith("Exception: mock_streaming_error"):
         _mapped_mock(
-            MockException(
+            exceptions.MockException(
                 status_code=529,
                 message="This is a mock error raised mid-stream",
                 llm_provider="anthropic",
@@ -149,21 +150,33 @@ def mock_response_value(value: CallValue, model: str, provider: str) -> JsonValu
         case str():
             raise_text_mock(value, model, provider)
             return value
-        case object():
-            return JSON.validate_python(value)
+    return JSON.validate_python(value)
 
 
-def raise_mock_timeout(timeout: float | int | str | TimeoutValues, model: str) -> NoReturn:
+def _connect_seconds(timeout: JsonValue) -> float | None:
+    # a mock timeout sleeps the connect phase of a phases mapping, and a number is its own delay
+    match timeout:
+        case int() | float():
+            return float(timeout)
+        case dict():
+            connect = timeout.get("connect")
+            match connect:
+                case int() | float():
+                    return float(connect)
+    return None
+
+
+def raise_mock_timeout(timeout: JsonValue, model: str) -> NoReturn:
     # _handle_mock_timeout: sleep the timeout first, then raise the Timeout LiteLLM raises
-    seconds = timeout_seconds(timeout)
+    seconds = _connect_seconds(timeout)
     if seconds is not None:
         time.sleep(seconds)
-    raise Timeout("This is a mock timeout error", model, "openai")
+    raise exceptions.Timeout("This is a mock timeout error", model, "openai")
 
 
-async def araise_mock_timeout(timeout: float | int | str | TimeoutValues, model: str) -> NoReturn:
+async def araise_mock_timeout(timeout: JsonValue, model: str) -> NoReturn:
     # the awaitable call's own timeout mock, so the event loop is not blocked
-    seconds = timeout_seconds(timeout)
+    seconds = _connect_seconds(timeout)
     if seconds is not None:
         await asyncio.sleep(seconds)
-    raise Timeout("This is a mock timeout error", model, "openai")
+    raise exceptions.Timeout("This is a mock timeout error", model, "openai")

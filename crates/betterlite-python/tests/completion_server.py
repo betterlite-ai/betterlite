@@ -1,18 +1,17 @@
 import importlib
 import json
 import threading
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
+from collections.abc import AsyncIterator, Awaitable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
 from typing import ClassVar, Final, Protocol, Self, TypeAlias, runtime_checkable
 
-from pydantic import BaseModel, JsonValue, TypeAdapter
-from typing_extensions import TypedDict
+from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypedDict, override
 
-from betterlite._completion.acompletion import acompletion
-from betterlite._completion.completion import completion
+from betterlite._completion.arguments import SessionLike
 from betterlite._completion.stream import CompletionOutcome, CustomStreamWrapper
-from betterlite.types.utils import ModelResponse
+from betterlite.types.utils import Message, ModelResponse
 
 HOST = "127.0.0.1"
 OK = 200
@@ -58,10 +57,6 @@ class RecordedCall(TypedDict):
 REQUEST: TypeAdapter[CompletionRequest] = TypeAdapter(CompletionRequest)
 
 
-def error_payload(message: str) -> dict[str, JsonValue]:
-    return {"error": {"message": message, "type": "invalid_request_error"}}
-
-
 def completion_payload(model: str) -> dict[str, JsonValue]:
     message: dict[str, JsonValue] = {"role": "assistant", "content": CONTENT}
     choice: dict[str, JsonValue] = {
@@ -75,12 +70,10 @@ def completion_payload(model: str) -> dict[str, JsonValue]:
 
 def stream_payload(model: str, content: str | None, finish: str | None) -> dict[str, JsonValue]:
     delta: dict[str, JsonValue] = {} if content is None else {"content": content}
-    choice: dict[str, JsonValue] = {
-        "index": 0, "delta": delta, "finish_reason": finish,
-    }
     return {
         "id": COMPLETION_ID, "object": "chat.completion.chunk", "created": CREATED,
-        "model": model, "choices": [choice],
+        "model": model,
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
     }
 
 
@@ -102,9 +95,11 @@ class CompletionServer(ThreadingHTTPServer):
     def record(self, path: str, headers: dict[str, str], body: CompletionRequest) -> None:
         self.calls.append({"path": path, "headers": headers, "body": body})
 
+    @override
     def __enter__(self) -> Self:
         return self
 
+    @override
     def __exit__(
         self,
         _exc_type: type[BaseException] | None,
@@ -119,20 +114,21 @@ class CompletionServer(ThreadingHTTPServer):
 class _Handler(BaseHTTPRequestHandler):
     owner: ClassVar["CompletionServer"]
 
+    @override
     def log_message(self, _format: str, *_args: str) -> None:
         return
 
     def do_GET(self) -> None:
         self.owner.record(self.path, dict(self.headers.items()), {})
         if self.headers.get("Authorization") != f"Bearer {GOOD_KEY}":
-            self.reply(UNAUTHORIZED, error_payload("invalid api key"))
+            self.reply_error(UNAUTHORIZED, "invalid api key")
             return
         if not self.path.startswith(MODELS_PATH):
             self.send_error(NOT_FOUND)
             return
         model = self.path.removeprefix(MODELS_PATH)
         if model != GOOD_MODEL:
-            self.reply(NOT_FOUND, error_payload(f"model {model} does not exist"))
+            self.reply_error(NOT_FOUND, f"model {model} does not exist")
             return
         self.reply(OK, {"id": model, "object": "model"})
 
@@ -142,31 +138,36 @@ class _Handler(BaseHTTPRequestHandler):
         body = REQUEST.validate_json(raw)
         self.owner.record(self.path, dict(self.headers.items()), body)
         if self.path == USAGE_PATH:
-            self.reply(NOT_FOUND, error_payload("no token counting endpoint"))
+            self.reply_error(NOT_FOUND, "no token counting endpoint")
             return
         authorized = self.headers.get("Authorization")
         if authorized == f"Bearer {RATE_LIMITED_KEY}":
-            self.reply(RATE_LIMITED, error_payload("rate limit reached"))
+            self.reply_error(RATE_LIMITED, "rate limit reached")
             return
         if authorized != f"Bearer {GOOD_KEY}":
-            self.reply(UNAUTHORIZED, error_payload("invalid api key"))
+            self.reply_error(UNAUTHORIZED, "invalid api key")
             return
         model = body.get("model")
+        if model is None:
+            self.reply_error(BAD_REQUEST, "model is required")
+            return
         match model:
-            case None:
-                self.reply(BAD_REQUEST, error_payload("model is required"))
             case str() if model == UNKNOWN_MODEL:
-                self.reply(NOT_FOUND, error_payload("model does not exist"))
+                self.reply_error(NOT_FOUND, "model does not exist")
             case str() if model == BROKEN_MODEL:
-                self.reply(BROKEN, error_payload("provider failed"))
+                self.reply_error(BROKEN, "provider failed")
             case str() if model == RATE_LIMITED_MODEL:
-                self.reply(RATE_LIMITED, error_payload("rate limit reached"))
+                self.reply_error(RATE_LIMITED, "rate limit reached")
             case str() if body.get("stream") is True:
                 self.stream(model)
             case str():
                 self.reply(OK, completion_payload(model))
-            case _:
-                self.reply(400, error_payload("model must be a string"))
+
+    def reply_error(self, status: int, message: str) -> None:
+        payload: dict[str, JsonValue] = {
+            "error": {"message": message, "type": "invalid_request_error"},
+        }
+        self.reply(status, payload)
 
     def reply(self, status: int, payload: dict[str, JsonValue]) -> None:
         encoded = json.dumps(payload).encode()
@@ -190,38 +191,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
-class Dumpable(Protocol):
-    def model_dump(self) -> dict[str, JsonValue]: ...
-
-
-class StreamOf(Protocol):
-    def __iter__(self) -> Iterator[Dumpable]: ...
-
-
-class AsyncStreamOf(Protocol):
-    def __aiter__(self) -> AsyncIterator[Dumpable]: ...
-
-
-@runtime_checkable
-class ErrorFields(Protocol):
-    message: str
-    status_code: int
-    llm_provider: str
-    model: str
-
-
-@runtime_checkable
-class ErrorStatus(Protocol):
-    status_code: int
-
-
-class TokenCountView(Protocol):
-    total_tokens: int
-    request_model: str
-    model_used: str
-    tokenizer_type: str
-
-
 class ChunkDelta(TypedDict, total=False):
     content: str
     role: str
@@ -240,136 +209,186 @@ class ChunkView(TypedDict):
 CHUNK_VIEW: Final[TypeAdapter[ChunkView]] = TypeAdapter(ChunkView)
 DROPPED: Final[frozenset[str]] = frozenset({"id", "created"})
 StreamParts: TypeAlias = list[tuple[int, str | None, str | None, str | None]]
-
-CallArgument: TypeAlias = (
-    JsonValue | Dumpable | BaseException | type[BaseModel] | Callable[..., object]
-)
+CallArgument: TypeAlias = JsonValue | SessionLike
+OwnResult: TypeAlias = CompletionOutcome | Awaitable[CompletionOutcome] | None
 
 
-class LitellmCompletion(Protocol):
+@runtime_checkable
+class Dumpable(Protocol):
+    def model_dump(self) -> dict[str, JsonValue]: ...
+
+
+@runtime_checkable
+class StreamOf(Protocol):
+    def __iter__(self) -> Iterator[Dumpable]: ...
+
+
+@runtime_checkable
+class AsyncStreamOf(Protocol):
+    def __aiter__(self) -> AsyncIterator[Dumpable]: ...
+
+
+RefResult: TypeAlias = Dumpable | StreamOf | None
+
+
+@runtime_checkable
+class ErrorFields(Protocol):
+    message: str
+    status_code: int
+    llm_provider: str
+    model: str
+
+
+class CountView(Protocol):
+    total_tokens: int
+    request_model: str
+    model_used: str
+    tokenizer_type: str
+
+
+class SyncCall(Protocol):
+    def __call__(self, *args: CallArgument, **kwargs: CallArgument) -> RefResult: ...
+
+
+class AsyncCall(Protocol):
     def __call__(
         self, *args: CallArgument, **kwargs: CallArgument
-    ) -> Dumpable | StreamOf: ...
+    ) -> Awaitable[RefResult]: ...
 
 
-class LitellmAsyncCompletion(Protocol):
-    def __call__(
-        self, *args: CallArgument, **kwargs: CallArgument
-    ) -> Awaitable[Dumpable | StreamOf]: ...
+class CountCall(Protocol):
+    def __call__(self, *args: CallArgument, **kwargs: CallArgument) -> Awaitable[CountView]: ...
 
 
-class LitellmSyncRetry(Protocol):
-    def __call__(
-        self, *args: CallArgument, **kwargs: CallArgument
-    ) -> Dumpable | StreamOf: ...
+class Router(Protocol):
+    def completion(
+        self,
+        model: str | None,
+        messages: list[dict[str, JsonValue] | Message],
+        **params: JsonValue,
+    ) -> CompletionOutcome: ...
+
+    def acompletion(
+        self,
+        model: str | None,
+        messages: list[dict[str, JsonValue] | Message],
+        **params: JsonValue,
+    ) -> Awaitable[CompletionOutcome]: ...
 
 
-class LitellmAsyncRetry(Protocol):
-    def __call__(
-        self, *args: CallArgument, **kwargs: CallArgument
-    ) -> Awaitable[Dumpable | StreamOf]: ...
-
-
-class LitellmCreate(Protocol):
+class SyncCreate(Protocol):
     def create(
-        self, messages: list[dict[str, JsonValue]], model: str | None = None,
+        self,
+        messages: list[dict[str, JsonValue] | Message],
+        model: str | None = None,
         **kwargs: JsonValue,
-    ) -> object: ...
+    ) -> CompletionOutcome: ...
 
 
-class LitellmCompletionsFactory(Protocol):
-    def __call__(self, params: dict[str, JsonValue], router_obj: object) -> LitellmCreate: ...
-
-
-class LitellmAsyncCreate(Protocol):
+class AsyncCreate(Protocol):
     def create(
-        self, messages: list[dict[str, JsonValue]], model: str | None = None,
+        self,
+        messages: list[dict[str, JsonValue] | Message],
+        model: str | None = None,
         **kwargs: JsonValue,
-    ) -> Coroutine[object, object, object]: ...
+    ) -> Awaitable[CompletionOutcome]: ...
 
 
-class LitellmAsyncCompletionsFactory(Protocol):
+class SyncFactory(Protocol):
     def __call__(
-        self, params: dict[str, JsonValue], router_obj: object
-    ) -> LitellmAsyncCreate: ...
+        self, params: dict[str, JsonValue], router_obj: Router | None
+    ) -> SyncCreate: ...
 
 
-class LitellmConfigCompletion(Protocol):
-    def __call__(self, **kwargs: CallArgument) -> object: ...
-
-
-class LitellmAdapterCompletion(Protocol):
-    def __call__(self, *, adapter_id: str, **kwargs: CallArgument) -> object: ...
-
-
-class LitellmAsyncAdapterCompletion(Protocol):
+class AsyncFactory(Protocol):
     def __call__(
-        self, *, adapter_id: str, **kwargs: CallArgument
-    ) -> Awaitable[object]: ...
+        self, params: dict[str, JsonValue], router_obj: Router | None
+    ) -> AsyncCreate: ...
 
 
-@runtime_checkable
-class LitellmModule(Protocol):
-    completion: LitellmCompletion
-    acompletion: LitellmAsyncCompletion
-    completion_with_retries: LitellmSyncRetry
-    acompletion_with_retries: LitellmAsyncRetry
-    Completions: LitellmCompletionsFactory
-    AsyncCompletions: LitellmAsyncCompletionsFactory
-    ModelResponse: type[BaseModel]
-    config_completion: LitellmConfigCompletion
-    adapter_completion: LitellmAdapterCompletion
-    aadapter_completion: LitellmAsyncAdapterCompletion
+class ApiErrorCall(Protocol):
+    def __call__(
+        self, message: str, request: JsonValue, *, body: JsonValue
+    ) -> BaseException: ...
 
 
-@runtime_checkable
-class LitellmUtils(Protocol):
-    def check_valid_key(self, model: str, api_key: str) -> bool: ...
-    def valid_model(self, model: str) -> None: ...
-    def acreate(
-        self, *args: CallArgument, **kwargs: CallArgument
-    ) -> Awaitable[Dumpable | StreamOf]: ...
+class LiteLLMSync(Protocol):
+    def __getattr__(self, name: str) -> SyncCall: ...
 
 
-@runtime_checkable
-class LitellmMain(Protocol):
-    def acount_tokens(
-        self, model: str, messages: list[dict[str, JsonValue]], **kwargs: JsonValue
-    ) -> Coroutine[object, object, TokenCountView]: ...
+class LiteLLMAsync(Protocol):
+    def __getattr__(self, name: str) -> AsyncCall: ...
 
 
-@runtime_checkable
+class ReferenceClient(Protocol):
+    params: dict[str, JsonValue]
+
+
+class ClientFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        api_key: JsonValue = None,
+        organization: JsonValue = None,
+        base_url: JsonValue = None,
+        timeout: JsonValue = 600,
+        max_retries: JsonValue = None,
+        default_headers: dict[str, JsonValue] | None = None,
+    ) -> ReferenceClient: ...
+
+
+class LiteLLMClient(Protocol):
+    def __getattr__(self, name: str) -> ClientFactory: ...
+
+
+class LiteLLMCounts(Protocol):
+    def __getattr__(self, name: str) -> CountCall: ...
+
+
+class LiteLLMClasses(Protocol):
+    def __getattr__(self, name: str) -> SyncFactory: ...
+
+
+class LiteLLMAsyncClasses(Protocol):
+    def __getattr__(self, name: str) -> AsyncFactory: ...
+
+
+class AsyncChatView(Protocol):
+    params: dict[str, JsonValue]
+    completions: AsyncCreate
+
+
+class ChatFactory(Protocol):
+    def __call__(
+        self, params: dict[str, JsonValue], router_obj: Router | None
+    ) -> AsyncChatView: ...
+
+
+class LiteLLMChats(Protocol):
+    def __getattr__(self, name: str) -> ChatFactory: ...
+
+
 class OpenaiModule(Protocol):
-    APIError: type[BaseException]
+    def __getattr__(self, name: str) -> ApiErrorCall: ...
 
 
-def litellm_module() -> LitellmModule:
-    # litellm is a runtime dependency of the check, not a typed one pyright can resolve
-    module = importlib.import_module("litellm")
-    assert isinstance(module, LitellmModule)
-    return module
-
-
-def litellm_utils() -> LitellmUtils:
-    module = importlib.import_module("litellm.utils")
-    assert isinstance(module, LitellmUtils)
-    return module
-
-
-def litellm_main() -> LitellmMain:
-    module = importlib.import_module("litellm.main")
-    assert isinstance(module, LitellmMain)
-    return module
-
-
-def openai_module() -> OpenaiModule:
-    module = importlib.import_module("openai")
-    assert isinstance(module, OpenaiModule)
-    return module
+LITELLM: LiteLLMSync = importlib.import_module("litellm")
+LITELLM_ASYNC: LiteLLMAsync = importlib.import_module("litellm")
+LITELLM_CLASSES: LiteLLMClasses = importlib.import_module("litellm")
+LITELLM_ASYNC_CLASSES: LiteLLMAsyncClasses = importlib.import_module("litellm")
+LITELLM_CHAT: LiteLLMChats = importlib.import_module("litellm")
+LITELLM_CLIENT: LiteLLMClient = importlib.import_module("litellm")
+LITELLM_COUNTS: LiteLLMCounts = importlib.import_module("litellm.main")
+OPENAI: OpenaiModule = importlib.import_module("openai")
 
 
 def normalized(dump: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    return {name: value for name, value in dump.items() if name not in DROPPED}
+    kept: dict[str, JsonValue] = {}
+    for name, value in dump.items():
+        if name in DROPPED:
+            continue
+        kept[name] = value
+    return kept
 
 
 def chunk_parts(
@@ -381,18 +400,6 @@ def chunk_parts(
     return (choice["index"], delta.get("content"), delta.get("role"), choice["finish_reason"])
 
 
-def error_view(error: BaseException) -> tuple[str, str, int, str, str]:
-    assert isinstance(error, ErrorFields)
-    return (
-        type(error).__name__, error.message, error.status_code, error.llm_provider, error.model,
-    )
-
-
-def error_kind(error: BaseException) -> tuple[str, int]:
-    assert isinstance(error, ErrorStatus)
-    return (type(error).__name__, error.status_code)
-
-
 def header_of(call_record: RecordedCall, name: str) -> str | None:
     lowered = name.lower()
     for header, value in call_record["headers"].items():
@@ -401,83 +408,93 @@ def header_of(call_record: RecordedCall, name: str) -> str | None:
     return None
 
 
-def raised(call: Callable[[], object], expected: type[BaseException]) -> BaseException:
-    # the error itself is the comparison, so the test names no class for the reference side
-    try:
-        call()
-    except expected as error:
-        return error
-    raise AssertionError("the call did not raise an error")
+def error_view(error: BaseException) -> tuple[str, str, int, str, str]:
+    match error:
+        case ErrorFields():
+            return (
+                type(error).__name__, error.message, error.status_code,
+                error.llm_provider, error.model,
+            )
+    raise AssertionError("the error does not carry the mock fields")
 
 
-def model_response(
-    outcome: CompletionOutcome | Awaitable[CompletionOutcome] | None,
-) -> ModelResponse:
+def model_response(outcome: OwnResult) -> ModelResponse:
     match outcome:
         case ModelResponse():
             return outcome
         case CustomStreamWrapper():
             raise AssertionError("a plain call answered with a stream")
-        case object():
-            raise AssertionError("a plain call answered with an awaitable or nothing")
+    raise AssertionError("a plain call answered with an awaitable or nothing")
 
 
-def stream_response(
-    outcome: CompletionOutcome | Awaitable[CompletionOutcome] | None,
-) -> CustomStreamWrapper:
+def stream_response(outcome: OwnResult) -> CustomStreamWrapper:
     match outcome:
-        case CustomStreamWrapper():
-            return outcome
         case ModelResponse():
             raise AssertionError("a streaming call answered with a response")
-        case object():
-            raise AssertionError("a streaming call answered with an awaitable or nothing")
+        case CustomStreamWrapper():
+            return outcome
+    raise AssertionError("a streaming call answered with an awaitable or nothing")
+
+
+def dump_of(outcome: OwnResult | RefResult) -> dict[str, JsonValue]:
+    match outcome:
+        case ModelResponse():
+            return outcome.model_dump()
+        case CustomStreamWrapper():
+            raise AssertionError("the call answered with a stream")
+        case Dumpable():
+            return outcome.model_dump()
+    raise AssertionError("the call answered with an awaitable or nothing")
 
 
 def litellm_plain(**kwargs: CallArgument) -> dict[str, JsonValue]:
-    result = litellm_module().completion(**kwargs)
-    assert isinstance(result, Dumpable)
-    return result.model_dump()
+    result = LITELLM.completion(**kwargs)
+    match result:
+        case Dumpable():
+            return result.model_dump()
+    raise AssertionError("the reference call answered with no model response")
 
 
 async def litellm_async_plain(**kwargs: CallArgument) -> dict[str, JsonValue]:
-    result = await litellm_module().acompletion(**kwargs)
-    assert isinstance(result, Dumpable)
-    return result.model_dump()
+    result = await LITELLM_ASYNC.acompletion(**kwargs)
+    match result:
+        case Dumpable():
+            return result.model_dump()
+    raise AssertionError("the reference call answered with no model response")
 
 
 def litellm_stream_parts(**kwargs: CallArgument) -> StreamParts:
-    result = litellm_module().completion(**kwargs)
-    assert isinstance(result, StreamOf)
-    return [chunk_parts(chunk.model_dump()) for chunk in result]
+    result = LITELLM.completion(**kwargs)
+    match result:
+        case Dumpable():
+            raise AssertionError("a streaming call answered with a response")
+        case StreamOf():
+            return [chunk_parts(chunk.model_dump()) for chunk in result]
+    raise AssertionError("the reference call answered with no stream")
 
 
 async def litellm_async_stream_parts(**kwargs: CallArgument) -> StreamParts:
-    result = await litellm_module().acompletion(**kwargs)
-    assert isinstance(result, AsyncStreamOf)
-    parts: StreamParts = []
-    async for chunk in result:
-        parts.append(chunk_parts(chunk.model_dump()))
-    return parts
+    result = await LITELLM_ASYNC.acompletion(**kwargs)
+    match result:
+        case Dumpable():
+            raise AssertionError("a streaming call answered with a response")
+        case AsyncStreamOf():
+            parts: StreamParts = []
+            async for chunk in result:
+                parts.append(chunk_parts(chunk.model_dump()))
+            return parts
+    raise AssertionError("the reference call answered with no stream")
 
 
 def ours_stream_parts(stream: CustomStreamWrapper) -> StreamParts:
-    return [chunk_parts(chunk.model_dump()) for chunk in stream]
+    return [
+        chunk_parts(chunk.model_dump())
+        for chunk in stream
+    ]
 
 
 async def ours_async_stream_parts(stream: CustomStreamWrapper) -> StreamParts:
-    parts: StreamParts = []
-    async for chunk in stream:
-        parts.append(chunk_parts(chunk.model_dump()))
-    return parts
-
-
-# the loose view of a call the tests drive with Python objects: completion's own **kwargs are JSON
-CompletionCall: TypeAlias = Callable[..., CompletionOutcome | Awaitable[CompletionOutcome]]
-AsyncCompletionCall: TypeAlias = Callable[..., Awaitable[CompletionOutcome]]
-COMPLETION: Final[CompletionCall] = completion
-ACOMPLETION: Final[AsyncCompletionCall] = acompletion
-
-
-async def await_outcome(awaitable: Awaitable[CompletionOutcome]) -> CompletionOutcome:
-    return await awaitable
+    return [
+        chunk_parts(chunk.model_dump())
+        async for chunk in stream
+    ]

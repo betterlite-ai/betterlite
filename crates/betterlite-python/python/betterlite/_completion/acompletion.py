@@ -1,9 +1,15 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 
 from pydantic import JsonValue
 
 from betterlite._completion.arguments import CallValue, SessionLike, TimeoutValues
-from betterlite._completion.completion import CompletionOutcome, completion, settle_outcome
+from betterlite._completion.completion import (
+    call_arguments_from,
+    completion,
+    completion_from_arguments,
+    settle_outcome,
+)
+from betterlite._completion.stream import CompletionOutcome
 from betterlite.llms.base_llm.base_utils import ResponseFormatModel
 from betterlite.types.utils import Message
 
@@ -12,7 +18,7 @@ async def acompletion(
     model: str | None,
     messages: list[dict[str, JsonValue] | Message] = [],
     functions: JsonValue = None, function_call: JsonValue = None,
-    timeout: float | int | str | TimeoutValues | None = None,
+    timeout: float | str | TimeoutValues | None = None,
     temperature: JsonValue = None, top_p: JsonValue = None, n: JsonValue = None,
     stream: JsonValue = None, stream_options: JsonValue = None, stop: JsonValue = None,
     max_tokens: JsonValue = None, max_completion_tokens: JsonValue = None,
@@ -59,9 +65,7 @@ async def acompletion(
     return await settle_outcome(pending)
 
 
-_ACOMPLETION: Callable[..., Awaitable[CompletionOutcome]] = acompletion
-
-
 def acreate(*args: JsonValue, **kwargs: CallValue) -> Awaitable[CompletionOutcome]:
     # litellm.utils.acreate: a thin client that hands its arguments to acompletion
-    return _ACOMPLETION(*args, **kwargs)
+    arguments = call_arguments_from(args, kwargs)
+    return settle_outcome(completion_from_arguments({**arguments, "acompletion": True}))

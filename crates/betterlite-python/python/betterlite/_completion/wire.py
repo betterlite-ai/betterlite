@@ -1,7 +1,6 @@
-from typing import Final
+from typing import Final, NotRequired, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import NotRequired, TypedDict
 
 
 class WireMessage(TypedDict):
@@ -32,7 +31,6 @@ class WireUsage(TypedDict):
     total_tokens: NotRequired[int]
     prompt_tokens_details: NotRequired[dict[str, JsonValue] | None]
     completion_tokens_details: NotRequired[dict[str, JsonValue] | None]
-    cost: NotRequired[float | None]
 
 
 class WireResponse(TypedDict):
@@ -76,20 +74,7 @@ class WireChunk(TypedDict):
     usage: NotRequired[WireUsage]
     system_fingerprint: NotRequired[str | None]
     provider_specific_fields: NotRequired[dict[str, JsonValue] | None]
-    hidden_params: NotRequired[dict[str, JsonValue]]
-
-
-class TokenCountPayload(TypedDict):
-    total_tokens: int
-    request_model: str
-    model_used: str
-    tokenizer_type: str
-    original_response: NotRequired[dict[str, JsonValue] | None]
-    error: NotRequired[bool]
-    error_message: NotRequired[str | None]
-    status_code: NotRequired[int | None]
 
 
 RESPONSE: Final[TypeAdapter[WireResponse]] = TypeAdapter(WireResponse)
 CHUNK: Final[TypeAdapter[WireChunk]] = TypeAdapter(WireChunk)
-TOKEN_COUNT: Final[TypeAdapter[TokenCountPayload]] = TypeAdapter(TokenCountPayload)

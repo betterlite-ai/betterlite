@@ -1,15 +1,23 @@
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
-from typing import TypeAlias
+from collections.abc import Awaitable
+from typing import Protocol
 
 from pydantic import JsonValue
 
 from betterlite._completion.arguments import CallValue
-from betterlite._completion.completion import completion, settle_outcome
+from betterlite._completion.completion import (
+    call_arguments_from,
+    completion_from_arguments,
+    settle_outcome,
+)
 from betterlite._completion.stream import CompletionOutcome
 
-RetryCall: TypeAlias = Callable[..., CompletionOutcome | Awaitable[CompletionOutcome]]
+
+class RetryCall(Protocol):
+    def __call__(
+        self, *args: JsonValue, **kwargs: CallValue
+    ) -> CompletionOutcome | Awaitable[CompletionOutcome]: ...
 
 
 def attempts_for(num_retries: int | None) -> int:
@@ -19,7 +27,8 @@ def attempts_for(num_retries: int | None) -> int:
 
 
 def backoff_seconds(attempt: int) -> float:
-    return min(2.0 ** (attempt - 1), 10.0)
+    seconds = 2.0 ** (attempt - 1)
+    return min(seconds, 10.0)
 
 
 def retry_kwargs(kwargs: dict[str, CallValue], retry_strategy: str | None) -> bool:
@@ -29,6 +38,13 @@ def retry_kwargs(kwargs: dict[str, CallValue], retry_strategy: str | None) -> bo
     return retry_strategy == "exponential_backoff_retry"
 
 
+def call_default(
+    *args: JsonValue, **kwargs: CallValue
+) -> CompletionOutcome | Awaitable[CompletionOutcome]:
+    arguments = call_arguments_from(args, kwargs)
+    return completion_from_arguments(arguments)
+
+
 def completion_with_retries(
     *args: JsonValue,
     original_function: RetryCall | None = None,
@@ -36,17 +52,16 @@ def completion_with_retries(
     retry_strategy: str | None = None,
     **kwargs: CallValue,
 ) -> CompletionOutcome | Awaitable[CompletionOutcome]:
-    function: RetryCall = completion if original_function is None else original_function
+    function: RetryCall = call_default if original_function is None else original_function
     attempts = attempts_for(num_retries)
     exponential = retry_kwargs(kwargs, retry_strategy)
-    for attempt in range(1, attempts + 1):
+    for attempt in range(1, attempts):
         try:
             return function(*args, **kwargs)
         except Exception:
-            if attempt == attempts:
-                raise
             if exponential:
                 time.sleep(backoff_seconds(attempt))
+    return function(*args, **kwargs)
 
 
 async def acompletion_with_retries(
@@ -56,17 +71,15 @@ async def acompletion_with_retries(
     retry_strategy: str | None = None,
     **kwargs: CallValue,
 ) -> CompletionOutcome:
-    function: RetryCall = completion if original_function is None else original_function
+    function: RetryCall = call_default if original_function is None else original_function
     attempts = attempts_for(num_retries)
     exponential = retry_kwargs(kwargs, retry_strategy)
-    remaining = attempts
+    remaining = attempts - 1
     while remaining > 0:
-        remaining -= 1
         try:
-            # a sync original_function answers with an outcome, which settle_outcome keeps as it is
             return await settle_outcome(function(*args, **kwargs))
         except Exception:
-            if remaining == 0:
-                raise
             if exponential:
                 await asyncio.sleep(backoff_seconds(attempts - remaining))
+            remaining -= 1
+    return await settle_outcome(function(*args, **kwargs))

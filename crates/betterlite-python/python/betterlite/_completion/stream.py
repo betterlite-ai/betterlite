@@ -2,11 +2,24 @@ from collections.abc import AsyncIterator, Awaitable, Iterator
 from typing import Protocol, TypeAlias
 
 from betterlite._completion.wire import (
-    CHUNK, RESPONSE, WireChoice, WireChunk, WireDelta, WireMessage, WireResponse,
-    WireStreamChoice, WireUsage,
+    CHUNK,
+    RESPONSE,
+    WireChoice,
+    WireChunk,
+    WireDelta,
+    WireMessage,
+    WireResponse,
+    WireStreamChoice,
+    WireUsage,
 )
 from betterlite.types.utils import (
-    Choices, Delta, Message, ModelResponse, ModelResponseStream, StreamingChoices, Usage,
+    Choices,
+    Delta,
+    Message,
+    ModelResponse,
+    ModelResponseStream,
+    StreamingChoices,
+    Usage,
 )
 from betterlite.types.utils.base import InitValue
 
@@ -18,17 +31,11 @@ class ChunkSource(Protocol):
     def aclose(self) -> Awaitable[None]: ...
 
 
-def wire_count(value: int | None) -> int:
-    if value is None:
-        return 0
-    return value
-
-
 def usage_from_wire(usage: WireUsage) -> Usage:
     return Usage(
-        prompt_tokens=wire_count(usage.get("prompt_tokens")),
-        completion_tokens=wire_count(usage.get("completion_tokens")),
-        total_tokens=wire_count(usage.get("total_tokens")),
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=usage.get("completion_tokens"),
+        total_tokens=usage.get("total_tokens"),
         prompt_tokens_details=usage.get("prompt_tokens_details"),
         completion_tokens_details=usage.get("completion_tokens_details"),
     )
@@ -51,13 +58,11 @@ def message_from_wire(message: WireMessage) -> Message:
 
 
 def choice_from_wire(choice: WireChoice) -> Choices:
-    fields = choice.get("provider_specific_fields")
-    if fields is None:
-        fields = {}
+    provider_fields = choice.get("provider_specific_fields")
     return Choices(
         finish_reason=choice.get("finish_reason"), index=choice["index"],
         message=message_from_wire(choice["message"]), logprobs=choice.get("logprobs"),
-        provider_specific_fields=fields,
+        provider_specific_fields={} if provider_fields is None else provider_fields,
     )
 
 
@@ -73,6 +78,7 @@ def response_from_wire(wire: WireResponse) -> ModelResponse:
     )
 
 
+# ast-grep-ignore: no-one-line-functions
 def response_from_text(text: str) -> ModelResponse:
     return response_from_wire(RESPONSE.validate_json(text))
 
@@ -116,6 +122,7 @@ def chunk_from_wire(wire: WireChunk, first: bool) -> ModelResponseStream:
     )
 
 
+# ast-grep-ignore: no-one-line-functions
 def stream_chunk(text: str, first: bool) -> ModelResponseStream:
     return chunk_from_wire(CHUNK.validate_json(text), first)
 
@@ -133,15 +140,19 @@ class CustomStreamWrapper:
     def __iter__(self) -> Iterator[ModelResponseStream]:
         return self
 
+    def _chunk(self, text: str) -> ModelResponseStream:
+        # only the first chunk carries the assistant role LiteLLM writes
+        first = not self.sent_first
+        self.sent_first = True
+        return stream_chunk(text, first)
+
     def __next__(self) -> ModelResponseStream:
         if self.closed:
             raise StopIteration
         text = self.source.next_chunk()
         if text is None:
             raise StopIteration
-        chunk = stream_chunk(text, not self.sent_first)
-        self.sent_first = True
-        return chunk
+        return self._chunk(text)
 
     def __aiter__(self) -> AsyncIterator[ModelResponseStream]:
         return self
@@ -152,9 +163,7 @@ class CustomStreamWrapper:
         text = await self.source.anext_chunk()
         if text is None:
             raise StopAsyncIteration
-        chunk = stream_chunk(text, not self.sent_first)
-        self.sent_first = True
-        return chunk
+        return self._chunk(text)
 
     def close(self) -> None:
         self.closed = True

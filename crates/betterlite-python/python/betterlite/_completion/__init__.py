@@ -1,4 +1,4 @@
-from betterlite._completion.acompletion import acreate, acompletion
+from betterlite._completion.acompletion import acompletion, acreate
 from betterlite._completion.adapters import (
     aadapter_completion,
     adapter_completion,
