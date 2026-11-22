@@ -20,7 +20,7 @@ use crate::routes::mcp_byok_oauth::{ByokOauthRoutes, RequestBaseUrl};
 
 const FORM_CONTENT_TYPE: &str = "application/x-www-form-urlencoded";
 // LiteLLM caps one form field at 1 MiB but leaves the total unbounded; one MiB for the whole body closes that.
-const BODY_LIMIT_BYTES: usize = 1_048_576;
+const BODY_LIMIT_BYTES: usize = 0x0010_0000;
 const MAX_FORM_FIELDS: usize = 1000;
 const REQUIRED_FIELDS: [&str; 3] = ["grant_type", "code", "code_verifier"];
 const UNREADABLE_BODY: &str = "There was an error parsing the body";
@@ -50,7 +50,9 @@ where
     };
     let form = match required_form(&entries) {
         Ok(form) => form,
-        Err(body) => return (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response(),
+        Err(rejection) => {
+            return (StatusCode::UNPROCESSABLE_ENTITY, Json(rejection)).into_response();
+        }
     };
     let Ok(clock) = SystemTime::now().duration_since(UNIX_EPOCH) else {
         return token_error_response(TokenError::ServerError);

@@ -273,7 +273,7 @@ async fn exactly_a_thousand_fields_is_accepted() {
 
 #[tokio::test]
 async fn a_body_over_one_megabyte_is_refused() {
-    let body = format!("{}&padding={}", valid_body(), "a".repeat(1_048_577));
+    let body = format!("{}&padding={}", valid_body(), "a".repeat(0x0010_0001));
     let (status, response) = exchange(TestApp::with_record(), &body).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(

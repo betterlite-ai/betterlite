@@ -12,7 +12,7 @@ use axum::response::Response;
 use betterlite_mcp::byok_token_exchange::ports::{
     AuthCodeLookup, AuthCodeRecord, ByokCredentialSink, SinkError,
 };
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use super::{ByokOauthRoutes, RequestBaseUrl, routes};
@@ -68,14 +68,14 @@ pub(crate) enum SinkCall {
 
 #[derive(Default)]
 struct FakeSinkState {
-    calls: Mutex<Vec<SinkCall>>,
+    calls: Vec<SinkCall>,
     fail_store: bool,
     fail_invalidate: bool,
 }
 
 #[derive(Clone, Default)]
 pub(crate) struct FakeSink {
-    state: Arc<FakeSinkState>,
+    state: Arc<Mutex<FakeSinkState>>,
 }
 
 impl FakeSink {
@@ -233,7 +233,7 @@ pub(crate) fn post_form(uri: &str, body: &str) -> Request<Body> {
 }
 
 pub(crate) async fn text(response: Response) -> String {
-    let bytes = to_bytes(response.into_body(), 1_048_576).await.unwrap();
+    let bytes = to_bytes(response.into_body(), 0x0010_0000).await.unwrap();
     String::from_utf8(bytes.to_vec()).unwrap()
 }
 
