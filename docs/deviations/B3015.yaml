@@ -21,4 +21,13 @@ deviations:
       poisoned lock where LiteLLM's in-process cache delete cannot fail, so a working setup sees
       no difference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3754-L3757
+  - what: >-
+      The source cache base spend reads JSON documents only: a dict's spend field is read, and
+      a non-object document answers zero. LiteLLM also reads a spend attribute from an arbitrary
+      Python object with getattr, which has no JSON form.
+    why: >-
+      betterlite's auth cache stores JSON payloads and its source cache trait returns Json, so a
+      cached value is always one of the JSON shapes; a Python object never crosses that cache,
+      and a working LiteLLM setup reads the same dict payloads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3648-L3650
 kept_bugs: []
