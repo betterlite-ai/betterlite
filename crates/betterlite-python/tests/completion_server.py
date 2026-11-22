@@ -418,20 +418,16 @@ def model_response(outcome: OwnResult) -> ModelResponse:
     match outcome:
         case ModelResponse():
             return outcome
-        case CustomStreamWrapper():
-            raise AssertionError("a plain call answered with a stream")
-        case object():
-            raise AssertionError("a plain call answered with an awaitable or nothing")
+        case CustomStreamWrapper() | Awaitable() | None:
+            raise AssertionError("a plain call answered with a stream, an awaitable or nothing")
 
 
 def stream_response(outcome: OwnResult) -> CustomStreamWrapper:
     match outcome:
-        case ModelResponse():
-            raise AssertionError("a streaming call answered with a response")
+        case ModelResponse() | Awaitable() | None:
+            raise AssertionError("a streaming call answered with a response or nothing")
         case CustomStreamWrapper():
             return outcome
-        case object():
-            raise AssertionError("a streaming call answered with an awaitable or nothing")
 
 
 def dump_of(outcome: OwnResult | RefResult) -> dict[str, JsonValue]:
