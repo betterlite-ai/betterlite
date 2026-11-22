@@ -24,4 +24,7 @@ deviations:
   - what: A timeout given as a connect/read/write/pool mapping collapses to its read phase, or to 600 s when the mapping has none, where LiteLLM hands the mapping to the provider's httpx client.
     why: The shared transport enforces one total deadline per call, so the other phases cannot be honored; the read phase is what LiteLLM itself uses for providers without httpx timeouts.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/completion_timeout.py#L33-L70
+  - what: The bridge maps betterlite-provider's OperationError to ChatError in calls.rs instead of reusing the server chat route's chat_error, and builds its provider call in calls.rs's send instead of the route's provider_chat.
+    why: chat_error and provider_chat are private to crates/betterlite-server/src/server/chat_setup/provider_call.rs and answer in the server's own CallError<ChatError>, so betterlite-python can neither import them nor name their type. Moving the mapping into betterlite-openai, which defines ChatError, is impossible because betterlite-provider already depends on betterlite-openai and the reverse edge would be a cycle; the hand-written mapping in calls.rs is the only option inside this task's scope.
+    link: https://github.com/betterlite-ai/betterlite/blob/main/crates/betterlite-server/src/server/chat_setup/provider_call.rs
 kept_bugs: []
