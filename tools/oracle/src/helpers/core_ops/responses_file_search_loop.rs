@@ -33,7 +33,8 @@ const NOW: i64 = 1_700_000_000;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    input: Json,
+    #[serde(rename = "input")]
+    request: Json,
     model: String,
     tools: Option<Vec<Json>>,
     kwargs: Fields,
@@ -76,7 +77,7 @@ impl Helper for Op {
             clock: Arc::new(|| Decimal::from(NOW)),
         };
         let case = ResponsesFileSearchLoopInput {
-            input: input.input.clone(),
+            input: input.request.clone(),
             model: input.model.clone(),
             tools: input.tools.clone(),
             kwargs: input.kwargs.clone(),
