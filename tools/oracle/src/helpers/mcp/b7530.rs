@@ -54,8 +54,8 @@ fn output(value: JsonValue) -> Result<Value, Box<HelperError>> {
 fn redirect_uris(value: &Value) -> Result<Value, Box<HelperError>> {
     let parsed = json_value(value)?;
     let uris = client_supplied_redirect_uris(Some(&parsed));
-    output(uris.map_or(JsonValue::Null, |uris| {
-        JsonValue::Array(uris.into_iter().map(JsonValue::String).collect())
+    output(uris.map_or(JsonValue::Null, |redirects| {
+        JsonValue::Array(redirects.into_iter().map(JsonValue::String).collect())
     }))
 }
 
