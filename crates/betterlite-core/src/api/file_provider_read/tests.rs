@@ -240,10 +240,50 @@ fn reader() -> FileProviderRead<FakeDispatch> {
     service(Settings::default(), FileListing::Files(Vec::new()))
 }
 
+// every field named, so a test that sets two of them says which two
+fn bare_settings() -> Settings {
+    Settings {
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        openai_key: None,
+        azure_key: None,
+        azure_ad_token: None,
+        organization: None,
+        vertex_project: None,
+        vertex_location: None,
+        openai_base_url: None,
+        openai_api_base: None,
+        openai_api_key: None,
+        openai_organization: None,
+        azure_api_base: None,
+        azure_api_version: None,
+        azure_openai_api_key: None,
+        azure_api_key: None,
+        vertexai_project: None,
+        vertexai_location: None,
+        vertexai_credentials: None,
+    }
+}
+
 fn kwargs(provider: &str) -> ReadKwargs {
     ReadKwargs {
         custom_llm_provider: ReadProvider(provider.to_owned()),
-        ..ReadKwargs::default()
+        extra_headers: None,
+        extra_body: None,
+        api_base: None,
+        api_key: None,
+        api_version: None,
+        organization: None,
+        timeout: None,
+        request_timeout: None,
+        max_retries: None,
+        is_async: false,
+        litellm_call_id: Kwarg::Absent,
+        id: Kwarg::Absent,
+        after: None,
+        limit: None,
+        order: None,
     }
 }
 
@@ -284,10 +324,8 @@ async fn retrieved(read: &FileProviderRead<FakeDispatch>, kwargs: &ReadKwargs) -
 #[case::litellm_proxy("litellm_proxy")]
 #[tokio::test]
 async fn retrieve_provider_metadata_compatible(#[case] provider: &str) {
-    let settings = Settings {
-        api_key: Some(SecretString::from("sk-settings")),
-        ..Settings::default()
-    };
+    let mut settings = bare_settings();
+    settings.api_key = Some(SecretString::from("sk-settings"));
     let read = service(settings, FileListing::Files(Vec::new()));
     let mut call = kwargs(provider);
     call.extra_headers = Some(text_map(&[("x-dropped", "1")]));
@@ -327,11 +365,9 @@ async fn retrieve_provider_metadata_defaults_to_openai() {
 
 #[tokio::test]
 async fn retrieve_provider_metadata_azure() {
-    let settings = Settings {
-        azure_api_version: Some("2024-06-01".to_owned()),
-        azure_api_key: Some(SecretString::from("sk-env-azure")),
-        ..Settings::default()
-    };
+    let mut settings = bare_settings();
+    settings.azure_api_version = Some("2024-06-01".to_owned());
+    settings.azure_api_key = Some(SecretString::from("sk-env-azure"));
     let read = service(settings, FileListing::Files(Vec::new()));
     let mut call = kwargs("azure");
     call.api_base = Some("https://azure.example".to_owned());
@@ -647,11 +683,9 @@ async fn read_deadline_and_mode_async(
 
 #[tokio::test]
 async fn read_trusted_context_generic_fields() {
-    let settings = Settings {
-        api_key: Some(SecretString::from("sk-settings")),
-        api_base: Some("https://settings.example".to_owned()),
-        ..Settings::default()
-    };
+    let mut settings = bare_settings();
+    settings.api_key = Some(SecretString::from("sk-settings"));
+    settings.api_base = Some("https://settings.example".to_owned());
     let read = service(settings, FileListing::Files(Vec::new()));
     let trusted = TrustedCredentials {
         values: BTreeMap::from([("bucket".to_owned(), SecretString::from("files"))]),
