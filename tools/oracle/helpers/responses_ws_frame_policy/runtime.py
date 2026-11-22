@@ -7,12 +7,7 @@ from typing import Final, Literal, TypeAlias, TypedDict
 from litellm.exceptions import RateLimitError
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
-from litellm.responses.streaming_iterator import (
-    RESPONSES_WS_LOGGED_EVENT_TYPES as LOGGED,
-)
-from litellm.responses.streaming_iterator import (
-    RESPONSES_WS_MASKABLE_TEXT_BLOCK_TYPES as MASKABLE,
-)
+from litellm.responses import streaming_iterator
 from litellm.responses.streaming_iterator import (
     ProjectQuotaCallback,
     ResponsesWebSocketStreaming,
@@ -237,9 +232,9 @@ class Probe(ResponsesWebSocketStreaming):
             kind for kind in candidates if self.wrap_view({"type": kind, "item": item}) is not None
         ]
         frame: dict[str, JsonValue] = {
-            "logged": JSON.validate_python(LOGGED),
+            "logged": JSON.validate_python(streaming_iterator.RESPONSES_WS_LOGGED_EVENT_TYPES),
             "maskable": JSON.validate_python(
-                sorted(MASKABLE)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1825
+                sorted(streaming_iterator.RESPONSES_WS_MASKABLE_TEXT_BLOCK_TYPES)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1825
             ),
             "failure": JSON.validate_python(failure),
             "output_item": JSON.validate_python(output_item),
