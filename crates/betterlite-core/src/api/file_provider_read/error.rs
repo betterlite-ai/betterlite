@@ -25,12 +25,12 @@ impl ReadFunction {
         }
     }
 
-    // retrieve's placeholder request still names create_thread, the function its branch was copied from
+    // retrieve's placeholder still names create_thread, the function its branch was copied from; httpx.Request upper-cases it
     #[must_use]
     pub const fn request_method(self) -> &'static str {
         match self {
-            Self::FileRetrieve => "create_thread",
-            Self::FileList => "file_list",
+            Self::FileRetrieve => "CREATE_THREAD",
+            Self::FileList => "FILE_LIST",
         }
     }
 }

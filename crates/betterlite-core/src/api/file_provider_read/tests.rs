@@ -760,8 +760,8 @@ async fn unsupported_file_read(#[case] function: ReadFunction, #[case] message: 
 }
 
 #[rstest]
-#[case::retrieve(ReadFunction::FileRetrieve, "file_retrieve", "create_thread")]
-#[case::list(ReadFunction::FileList, "file_list", "file_list")]
+#[case::retrieve(ReadFunction::FileRetrieve, "file_retrieve", "CREATE_THREAD")]
+#[case::list(ReadFunction::FileList, "file_list", "FILE_LIST")]
 fn unsupported_file_read_placeholder(
     #[case] function: ReadFunction,
     #[case] name: &str,
