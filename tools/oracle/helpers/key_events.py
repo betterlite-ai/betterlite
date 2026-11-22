@@ -142,7 +142,9 @@ class Manager(BaseSecretManager):
         return self.secrets.get(secret_name)
 
     @override
-    def sync_read_secret(self, secret_name: str, optional_params: Params = None, _timeout: float | None = None) -> str | None:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L48-L54
+    def sync_read_secret(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L48-L54
+        self, secret_name: str, optional_params: Params = None, _timeout: float | None = None
+    ) -> str | None:
         self.answer(["read", secret_name, optional_params], secret_name)
         return self.secrets.get(secret_name)
 
@@ -259,8 +261,6 @@ async def answer(call: Call, board: Board) -> dict[str, JsonValue]:
         await perform(call)
     except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L92-L93
         raised = True
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
     return {"raised": raised, "trace": board.effects}
 
 
