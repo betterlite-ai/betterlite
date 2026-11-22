@@ -77,8 +77,12 @@ fn rewrite_row(value: &mut JsonValue, form: InstantForm) {
 fn object_of(values: &BTreeMap<String, JsonData>) -> Result<JsonValue, DecodeError> {
     let value = serde_json::to_value(values).map_err(DecodeError::Document)?;
     match value {
-        value @ JsonValue::Object(_) => Ok(value),
-        _ => Err(DecodeError::NotAnObject),
+        JsonValue::Object(fields) => Ok(JsonValue::Object(fields)),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_) => Err(DecodeError::NotAnObject),
     }
 }
 
