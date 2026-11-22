@@ -253,9 +253,10 @@ fn rejects_dtd_entity_expansion_and_non_request_documents() {
 
 #[test]
 fn rejects_saml_steps_that_cannot_be_bound_before_proxies_start() {
-    let mut undeclared = assertion(None, "_assertion_undeclared");
-    undeclared.request_id_capture = "ghost".to_owned();
-    let steps = transcript(&[undeclared]);
+    let steps = vec![
+        redirect_step("authn"),
+        saml_step(assertion(None, "_assertion_undeclared"), "ghost"),
+    ];
     let error = validate_steps(Path::new("<case>"), &steps)
         .expect_err("an undeclared capture reference is rejected");
     assert!(error.to_string().contains("undeclared capture"));
