@@ -1,0 +1,117 @@
+kind: helper
+name: responses-affinity-enablement
+call:
+  responses_affinity:
+    model: gpt-group
+    enable_global_affinity: false
+    healthy_deployments:
+      - model_name: gpt-group
+        litellm_params:
+          model: openai/a
+          api_base: https://a.example
+          api_key: sk-a
+        model_info:
+          id: A
+      - model_name: gpt-group
+        litellm_params:
+          model: openai/b
+          api_base: https://b.example
+          api_key: sk-b
+        model_info:
+          id: B
+    request_kwargs:
+      input:
+        - type: reasoning
+          id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+          encrypted_content: litellm_enc:bW9kZWxfaWQ6QQ==;cipher
+calls:
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/a
+            api_base: https://a.example
+            api_key: sk-a
+          model_info:
+            id: A
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/b
+            api_base: https://b.example
+            api_key: sk-b
+          model_info:
+            id: B
+      request_kwargs:
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+            encrypted_content: litellm_enc:bW9kZWxfaWQ6QQ==;cipher
+  - responses_affinity:
+      model: gpt-group
+      enable_global_affinity: false
+      model_group_affinity_config:
+        gpt-group: [encrypted_content_affinity]
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/a
+            api_base: https://a.example
+            api_key: sk-a
+          model_info:
+            id: A
+      request_kwargs:
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+            encrypted_content: litellm_enc:bW9kZWxfaWQ6QQ==;cipher
+  - responses_affinity:
+      model: gpt-group
+      enable_global_affinity: false
+      model_group_affinity_config:
+        other-group: [encrypted_content_affinity]
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/a
+            api_base: https://a.example
+            api_key: sk-a
+          model_info:
+            id: A
+      request_kwargs:
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+            encrypted_content: litellm_enc:bW9kZWxfaWQ6QQ==;cipher
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/a
+            api_base: https://a.example
+            api_key: sk-a
+          model_info:
+            id: A
+      request_kwargs:
+        litellm_metadata:
+          tags: [routing]
+        input:
+          - type: message
+            role: user
+            content: hello
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/a
+            api_base: https://a.example
+            api_key: sk-a
+          model_info:
+            id: A
+      request_kwargs:
+        litellm_metadata: null
+        input: not-a-list
+env: {}
+compare: {ignore: []}

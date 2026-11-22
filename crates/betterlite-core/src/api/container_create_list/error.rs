@@ -84,10 +84,13 @@ pub fn failure(error: ContainerOpError, provider: &str, redactor: &Redactor) -> 
         ContainerOpError::Handler(handler_error) => {
             handler_class(handler_error, provider, redactor)
         }
-        ContainerOpError::Mock(_)
-        | ContainerOpError::UnknownProvider { .. }
+        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+        ContainerOpError::UnknownProvider { .. }
         | ContainerOpError::Unsupported { .. }
-        | ContainerOpError::ConfigMissing { .. }
+        | ContainerOpError::ConfigMissing { .. } => ErrorClass::BadRequest(Box::new(
+            ResponseDetails::for_provider(error.to_string(), Some(MODEL.to_owned()), provider),
+        )),
+        ContainerOpError::Mock(_)
         | ContainerOpError::Params(_)
         | ContainerOpError::Timeout { .. }
         | ContainerOpError::Logging(_) => value_error(error.to_string(), provider, redactor),

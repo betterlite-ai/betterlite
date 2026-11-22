@@ -1,0 +1,203 @@
+use std::collections::BTreeMap;
+
+use betterlite_azure::realtime::connect::RealtimeConnectSettings;
+use betterlite_azure::realtime::http_config::RealtimeHttpSettings;
+use betterlite_config::tls::Verification;
+use betterlite_openai::realtime::url::QueryParams;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_provider::azure_resource_dispatch::realtime::{self, Call, Outcome, SessionRoute};
+use betterlite_provider::azure_resource_dispatch::{
+    AzureResourceError, AzureResourceOperation, AzureResourceResult, dispatch,
+};
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use tokio::runtime::Runtime;
+
+use super::support::{OTHER, failure, runtime};
+
+// B545's websocket plan and HTTP session views, each one read from the leaf's own settings
+pub(super) fn run(input: &Input) -> HelperResult {
+    let runtime = runtime()?;
+    let mut connects = Vec::with_capacity(input.queries.len());
+    let mut http = Vec::with_capacity(input.http_setups.len());
+    for step in &input.queries {
+        connects.push(connect(&runtime, input, step)?);
+    }
+    for step in &input.http_setups {
+        http.push(http_view(&runtime, input, step)?);
+    }
+    Ok(json!({"connects": connects, "http": http}))
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Input {
+    pub(super) model: String,
+    #[serde(default)]
+    pub(super) max_message_size_bytes: Option<u64>,
+    #[serde(default)]
+    pub(super) azure_api_base: Option<String>,
+    #[serde(default)]
+    pub(super) azure_api_key: Option<String>,
+    #[serde(default)]
+    pub(super) azure_api_version: Option<String>,
+    #[serde(default)]
+    pub(super) queries: Vec<QuerySetup>,
+    #[serde(default)]
+    pub(super) http_setups: Vec<HttpSetup>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct QuerySetup {
+    pub(super) api_base: Option<String>,
+    pub(super) api_version: Option<String>,
+    pub(super) realtime_protocol: Option<String>,
+    #[serde(default)]
+    pub(super) query_params: Option<QueryParams>,
+    pub(super) api_key: Option<String>,
+    pub(super) azure_ad_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct HttpSetup {
+    pub(super) api_base: Option<String>,
+    pub(super) api_key: Option<String>,
+    pub(super) api_version: Option<String>,
+    pub(super) litellm_api_base: Option<String>,
+    pub(super) litellm_api_key: Option<String>,
+    pub(super) ephemeral_key: String,
+    #[serde(default)]
+    pub(super) headers: BTreeMap<String, String>,
+}
+
+fn connect(runtime: &Runtime, input: &Input, step: &QuerySetup) -> Result<Value, Box<HelperError>> {
+    let key = step.api_key.clone().map(SecretString::from);
+    let token = step.azure_ad_token.clone().map(SecretString::from);
+    let verification = Verification::Enabled;
+    let max_size = input
+        .max_message_size_bytes
+        .map_or(Ok(0_usize), |value| usize::try_from(value).map_err(failure))?;
+    let base = step.api_base.as_deref();
+    let version = step.api_version.as_deref();
+    let protocol = step.realtime_protocol.as_deref();
+    let params = step.query_params.as_ref();
+    let settings = RealtimeConnectSettings {
+        api_base: base,
+        api_key: key.as_ref(),
+        azure_ad_token: token.as_ref(),
+        model: &input.model,
+        api_version: version,
+        realtime_protocol: protocol,
+        query_params: params,
+        ssl_verification: &verification,
+        max_message_size_bytes: max_size,
+    };
+    let Outcome::Connection(plan) = through(runtime, Call::Connection(&settings))? else {
+        return Err(failure(OTHER));
+    };
+    let headers: Vec<[String; 2]> = plan
+        .headers
+        .iter()
+        .map(|(name, value)| [name.clone(), value.clone()])
+        .collect();
+    Ok(json!({
+        "url": plan.url,
+        "headers": headers,
+        "max_size": plan.max_message_size_bytes,
+        "ssl": plan.ssl,
+    }))
+}
+
+fn http_view(
+    runtime: &Runtime,
+    input: &Input,
+    step: &HttpSetup,
+) -> Result<Value, Box<HelperError>> {
+    let settings = RealtimeHttpSettings {
+        litellm_api_base: step.litellm_api_base.clone(),
+        litellm_api_key: step.litellm_api_key.clone().map(SecretString::from),
+        azure_api_base: input.azure_api_base.clone(),
+        azure_api_key: input.azure_api_key.clone().map(SecretString::from),
+        azure_api_version: input.azure_api_version.clone(),
+    };
+    let base = settings.api_base(step.api_base.as_deref());
+    let key = settings.api_key(step.api_key.as_deref());
+    let [complete, calls, transcription] = session_urls(runtime, &settings, step, &base)?;
+    let (headers, calls_headers) = session_headers(runtime, step, &key)?;
+    Ok(json!({
+        "api_base": base,
+        "api_key": key.expose_secret(),
+        "complete_url": complete,
+        "calls_url": calls,
+        "transcription_url": transcription,
+        "headers": headers,
+        "calls_headers": calls_headers,
+    }))
+}
+
+fn session_urls(
+    runtime: &Runtime,
+    settings: &RealtimeHttpSettings,
+    step: &HttpSetup,
+    base: &str,
+) -> Result<[String; 3], Box<HelperError>> {
+    let mut urls = [String::new(), String::new(), String::new()];
+    let routes = [
+        SessionRoute::ClientSecrets,
+        SessionRoute::Calls,
+        SessionRoute::Transcription,
+    ];
+    for (slot, route) in urls.iter_mut().zip(routes) {
+        let Outcome::Url(url) = through(
+            runtime,
+            Call::SessionUrl {
+                route,
+                settings,
+                base: Some(base),
+                version: step.api_version.as_deref(),
+            },
+        )?
+        else {
+            return Err(failure(OTHER));
+        };
+        *slot = url;
+    }
+    Ok(urls)
+}
+
+type HeaderPair = (BTreeMap<String, String>, BTreeMap<String, String>);
+
+fn session_headers(
+    runtime: &Runtime,
+    step: &HttpSetup,
+    key: &SecretString,
+) -> Result<HeaderPair, Box<HelperError>> {
+    let headers = match through(
+        runtime,
+        Call::SessionHeaders {
+            headers: &step.headers,
+            api_key: Some(key),
+        },
+    )? {
+        Outcome::Headers(headers) => headers,
+        Outcome::Url(_) | Outcome::Connection(_) => return Err(failure(OTHER)),
+    };
+    let calls_headers = match through(runtime, Call::CallsHeaders(&step.ephemeral_key))? {
+        Outcome::Headers(calls) => calls,
+        Outcome::Url(_) | Outcome::Connection(_) => return Err(failure(OTHER)),
+    };
+    Ok((headers, calls_headers))
+}
+
+fn through(runtime: &Runtime, call: Call<'_>) -> Result<Outcome, Box<HelperError>> {
+    let result = runtime.block_on(dispatch(AzureResourceOperation::Realtime(Box::new(
+        realtime::Dispatch { call },
+    ))));
+    match result {
+        Ok(AzureResourceResult::Realtime(outcome)) => Ok(outcome),
+        Ok(_) => Err(failure(OTHER)),
+        Err(AzureResourceError::Realtime(error)) => Err(failure(&error)),
+        Err(error) => Err(failure(error)),
+    }
+}

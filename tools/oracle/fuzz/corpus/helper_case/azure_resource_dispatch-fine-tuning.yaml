@@ -1,0 +1,8 @@
+kind: helper
+name: azure-resource-dispatch-fine-tuning-seed
+call:
+  azure_resource_dispatch:
+    case: fine_tuning
+    steps: []
+env: {}
+compare: {ignore: []}

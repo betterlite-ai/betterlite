@@ -1,0 +1,76 @@
+kind: helper
+name: direct-nova-endpoint
+call:
+  bedrock_nova_chat:
+    function: endpoint
+    api_base: null
+    api_key: null
+    global_api_key: null
+    litellm_api_key: null
+    environment: {}
+calls:
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: https://explicit.example/v1
+      api_key: explicit-key
+      global_api_key: global-key
+      litellm_api_key: fallback-key
+      environment: {}
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: null
+      api_key: null
+      global_api_key: global-key
+      litellm_api_key: fallback-key
+      environment: {}
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: null
+      api_key: null
+      global_api_key: null
+      litellm_api_key: fallback-key
+      environment: {}
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: null
+      api_key: null
+      global_api_key: null
+      litellm_api_key: null
+      environment: {AMAZON_NOVA_API_BASE: https://env.example/v1, AMAZON_NOVA_API_KEY: env-key}
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: https://explicit.example/v1
+      api_key: null
+      global_api_key: global-key
+      litellm_api_key: fallback-key
+      environment: {AMAZON_NOVA_API_BASE: https://env.example/v1, AMAZON_NOVA_API_KEY: env-key}
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: ''
+      api_key: ''
+      global_api_key: null
+      litellm_api_key: null
+      environment: {AMAZON_NOVA_API_KEY: env-key}
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: https://explicit.example/v1
+      api_key: explicit-key
+      global_api_key: null
+      litellm_api_key: null
+      environment: {AMAZON_NOVA_API_BASE: oidc/circleci/nova, AMAZON_NOVA_API_KEY: oidc/circleci/nova}
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: null
+      api_key: null
+      global_api_key: null
+      litellm_api_key: null
+      environment: {AMAZON_NOVA_API_BASE: '', AMAZON_NOVA_API_KEY: ''}
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: https://explicit.example/v1/
+      api_key: null
+      global_api_key: oidc/circleci/nova
+      litellm_api_key: null
+      environment: {}
+env: {}
+compare: {ignore: []}

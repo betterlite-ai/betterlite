@@ -1,3 +1,12 @@
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex, PoisonError};
+
+use tracing::field::{Field, Visit};
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing::{Event, Subscriber};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+use tracing_subscriber::registry;
+
 use super::harness::{HarnessOptions, harness, invalid_status, os};
 use crate::api::realtime_backend_transport::error::{ClientCloseError, RealtimeConnectionError};
 
@@ -53,16 +62,29 @@ async fn realtime_backend_connection_errors() {
 
 async fn redacts_the_secret_from_the_error_event() {
     let secret = format!("sk-{}", "a".repeat(48));
+    let (logs, _guard) = capture_messages();
     let options = HarnessOptions::default().with_dials(vec![os(&secret), os(&secret), os(&secret)]);
     let mut failed = harness(options, Vec::new());
     failed.run().await.unwrap();
     let texts = failed.texts();
-    assert_eq!(texts.len(), 1);
-    assert!(!texts[0].contains(&secret));
+    assert_eq!(
+        texts,
+        vec![
+            "{\"type\":\"error\",\"error\":{\"type\":\"server_error\",\"message\":\"REDACTED\"}}"
+                .to_owned()
+        ]
+    );
+    let logged = logs.messages();
+    assert!(
+        logged
+            .iter()
+            .any(|message| message.as_str() == "Error connecting to backend: REDACTED")
+    );
+    assert!(logged.iter().all(|message| !message.contains(&secret)));
     assert_eq!(failed.dials().len(), 3);
     let close = failed.close().unwrap();
     assert_eq!(close.0, 1011);
-    assert!(!close.1.unwrap().contains(&secret));
+    assert_eq!(close.1, Some("Internal server error: REDACTED".to_owned()));
 }
 
 async fn closes_a_dead_client_with_the_error() {
@@ -101,4 +123,46 @@ async fn reports_unexpected_and_other_close_errors() {
     let other_error = other_class.run().await.unwrap_err();
     assert!(matches!(other_error, RealtimeConnectionError::Close(_)));
     assert_eq!(other_error.to_string(), "the socket is gone");
+}
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<String>>>);
+
+impl Captured {
+    fn messages(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+#[derive(Default)]
+struct MessageVisitor(String);
+
+impl Visit for MessageVisitor {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+impl<Inner: Subscriber> Layer<Inner> for Captured {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
+        let mut visitor = MessageVisitor::default();
+        event.record(&mut visitor);
+        if !visitor.0.is_empty() {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(visitor.0);
+        }
+    }
+}
+
+fn capture_messages() -> (Captured, DefaultGuard) {
+    let captured = Captured::default();
+    let guard = set_default(registry().with(captured.clone()));
+    (captured, guard)
 }

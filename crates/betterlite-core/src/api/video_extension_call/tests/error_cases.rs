@@ -1,3 +1,4 @@
+use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use futures_executor::block_on;
 use indexmap::IndexMap;
@@ -126,18 +127,21 @@ fn an_unknown_provider_fails() {
         failure.error,
         VideoExtensionCallError::UnknownProvider(_)
     ));
-    let context = connection(&failure.class);
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("an unknown provider answers 400, got {:?}", failure.class);
+    };
+    assert_eq!(failure.class.metadata().status_code, 400);
     assert!(
-        context
+        details
             .message
             .contains("is not a provider betterlite knows"),
         "the message names the conversion: {}",
-        context.message
+        details.message
     );
-    assert!(context.message.contains("bogus"));
-    assert_eq!(context.provider.as_deref(), Some("bogus"));
+    assert!(details.message.contains("bogus"));
+    assert_eq!(details.provider.as_deref(), Some("bogus"));
     assert_eq!(
-        context.model.as_deref(),
+        details.model.as_deref(),
         Some(""),
         "model is the empty string"
     );
@@ -157,14 +161,20 @@ fn an_unsupported_provider_keeps_litellms_message() {
         failure.error,
         VideoExtensionCallError::ProviderConfigMissing { .. }
     ));
-    let context = connection(&failure.class);
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!(
+            "a missing video config answers 400, got {:?}",
+            failure.class
+        );
+    };
+    assert_eq!(failure.class.metadata().status_code, 400);
     assert_eq!(
-        context.message,
-        "APIConnectionError: MistralException - video extension is not supported for mistral"
+        details.message,
+        "video extension is not supported for mistral"
     );
-    assert_eq!(context.provider.as_deref(), Some("mistral"));
+    assert_eq!(details.provider.as_deref(), Some("mistral"));
     assert_eq!(
-        context.model.as_deref(),
+        details.model.as_deref(),
         Some(""),
         "model is the empty string"
     );
@@ -331,12 +341,16 @@ fn the_async_entry_maps_every_failure_with_the_callers_provider() {
     let Err(mapped) = block_on(avideo_extension(&mapped_deps, &mapped_request)) else {
         panic!("mistral has no video config");
     };
-    let mapped_context = connection(&mapped.class);
+    let ErrorClass::BadRequest(mapped_details) = &mapped.class else {
+        panic!("the remapped provider mistake answers 400, got {mapped:?}");
+    };
+    assert_eq!(mapped.class.metadata().status_code, 400);
     assert_eq!(
-        mapped_context.message,
-        "APIConnectionError: MistralException - video extension is not supported for mistral"
+        mapped_details.message,
+        "video extension is not supported for mistral"
     );
-    assert_eq!(mapped_context.provider.as_deref(), Some("mistral"));
+    assert_eq!(mapped_details.provider.as_deref(), Some("mistral"));
+    assert_eq!(mapped_details.model.as_deref(), Some(""), "model is empty");
     let failed_rig = Rig::new(
         Reply::Failed {
             status_code: 500,
@@ -371,10 +385,22 @@ fn a_missing_caller_config_is_unsupported() {
         failure.error,
         VideoExtensionCallError::ProviderConfigMissing { .. }
     ));
-    let context = connection(&failure.class);
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!(
+            "a missing caller config answers 400, got {:?}",
+            failure.class
+        );
+    };
+    assert_eq!(failure.class.metadata().status_code, 400);
     assert_eq!(
-        context.message,
-        "APIConnectionError: OpenAIException - video extension is not supported for openai"
+        details.message,
+        "video extension is not supported for openai"
+    );
+    assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(
+        details.model.as_deref(),
+        Some(""),
+        "model is the empty string"
     );
     assert_eq!(rig.configs.asked(), vec![VideoConfigTag::OpenAi]);
     assert_eq!(rig.handler.calls().len(), 0);

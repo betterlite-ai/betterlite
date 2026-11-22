@@ -36,6 +36,10 @@ description: >-
   errors keep LiteLLM's class. Rewrite each to say they answer 400 where LiteLLM answers 500, why, and keep its link.
 scope:
   paths:
+  - "crates/betterlite-core/src/api/container_resource_ops/tests/asynchronous.rs"
+  - "crates/betterlite-core/src/api/container_file_upload/tests/upload_calls.rs"
+  - "crates/betterlite-core/src/api/container_file_endpoints/tests/asynchronous.rs"
+  - "crates/betterlite-core/src/api/container_create_list/tests/create.rs"
   - crates/betterlite-core/src/api/container_create_list/error.rs
   - crates/betterlite-core/src/api/container_file_endpoints/error.rs
   - crates/betterlite-core/src/api/container_file_list/error.rs
