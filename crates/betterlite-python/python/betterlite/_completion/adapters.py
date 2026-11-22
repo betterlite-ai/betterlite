@@ -5,7 +5,8 @@ from typing import Protocol, TypedDict, runtime_checkable
 from pydantic import JsonValue
 
 import betterlite
-from betterlite._completion.arguments import JSON, JSON_OBJECT, CallValue, config_path
+from betterlite._completion import arguments
+from betterlite._completion.arguments import JSON, JSON_OBJECT, CallValue, response_format_value
 from betterlite._completion.completion import completion_from_arguments, settle_outcome
 from betterlite._completion.stream import CompletionOutcome, CustomStreamWrapper
 from betterlite.types.utils import ModelResponse
@@ -53,9 +54,15 @@ def _find_adapter(adapter_id: str) -> CompletionAdapter:
     return found
 
 
-# ast-grep-ignore: no-one-line-functions
 def _json_values(values: dict[str, CallValue]) -> dict[str, JsonValue]:
-    return {name: JSON.validate_python(value) for name, value in values.items()}
+    # response_format can be a pydantic class, so it converts before every value is checked as JSON
+    converted: dict[str, JsonValue] = {}
+    for name, value in values.items():
+        if name == "response_format" and value is not None:
+            converted[name] = response_format_value(value)
+        else:
+            converted[name] = JSON.validate_python(value)
+    return converted
 
 
 def _translated(
@@ -95,7 +102,8 @@ async def aadapter_completion(
 def config_completion(
     **kwargs: CallValue,
 ) -> CompletionOutcome | Awaitable[CompletionOutcome]:
-    configured = config_path
+    # read at call time: a later assignment to the seam or to betterlite.config_path takes effect
+    configured = arguments.config_path
     if configured is None:
         configured = betterlite.config_path
     if configured is None:

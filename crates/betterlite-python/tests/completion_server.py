@@ -2,13 +2,17 @@ import importlib
 import json
 import threading
 from collections.abc import AsyncIterator, Awaitable, Iterator
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Final, Protocol, Self, TypeAlias, runtime_checkable
 
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict, override
 
+from betterlite._completion import adapters, arguments
+from betterlite._completion.adapters import AdapterEntry
 from betterlite._completion.arguments import SessionLike
 from betterlite._completion.stream import CompletionOutcome, CustomStreamWrapper
 from betterlite.types.utils import Message, ModelResponse
@@ -375,6 +379,50 @@ LITELLM_CHAT: LiteLLMChats = importlib.import_module("litellm")
 LITELLM_CLIENT: LiteLLMClient = importlib.import_module("litellm")
 LITELLM_COUNTS: LiteLLMCounts = importlib.import_module("litellm.main")
 OPENAI: OpenaiModule = importlib.import_module("openai")
+
+
+class FakeAdapter:
+    def __init__(self) -> None:
+        self.input_calls = 0
+        self.output_calls = 0
+        self.stream_calls = 0
+
+    def translate_completion_input_params(  # ast-grep-ignore: no-long-names
+        self, *, kwargs: dict[str, JsonValue]
+    ) -> dict[str, JsonValue]:
+        self.input_calls += 1
+        return {**kwargs, "model": GOOD_MODEL}
+
+    def translate_completion_output_params(  # ast-grep-ignore: no-long-names
+        self, *, response: ModelResponse
+    ) -> ModelResponse:
+        self.output_calls += 1
+        return response
+
+    def translate_completion_output_params_streaming(  # ast-grep-ignore: no-long-names
+        self, *, completion_stream: CustomStreamWrapper
+    ) -> CompletionOutcome | None:
+        self.stream_calls += 1
+        return completion_stream
+
+
+@contextmanager
+def config_seam(config_file: Path) -> Iterator[None]:
+    arguments.config_path = str(config_file)
+    try:
+        yield
+    finally:
+        arguments.config_path = None
+
+
+@contextmanager
+def adapter_seam(adapter: FakeAdapter, adapter_id: str) -> Iterator[None]:
+    entries: list[AdapterEntry] = [{"id": adapter_id, "adapter": adapter}]
+    adapters.adapter_entries = entries
+    try:
+        yield
+    finally:
+        adapters.adapter_entries = None
 
 
 def normalized(dump: dict[str, JsonValue]) -> dict[str, JsonValue]:

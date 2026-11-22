@@ -1,7 +1,5 @@
 import asyncio
 import json
-from collections.abc import Generator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Final, NoReturn
 
@@ -20,7 +18,10 @@ from completion_server import (
     AsyncChatView,
     AsyncCreate,
     CompletionServer,
+    FakeAdapter,
     RefResult,
+    adapter_seam,
+    config_seam,
     dump_of,
     litellm_async_plain,
     litellm_plain,
@@ -32,7 +33,7 @@ from completion_server import (
 )
 from pydantic import JsonValue
 
-from betterlite._completion import adapters, arguments
+from betterlite._completion import arguments
 from betterlite._completion.arguments import JSON, CallValue
 from betterlite._completion.retries import (
     acompletion_with_retries,
@@ -46,7 +47,6 @@ from betterlite.main import (
     AsyncCompletions,
     Chat,
     Completions,
-    CustomStreamWrapper,
     LiteLLM,
     aadapter_completion,
     adapter_completion,
@@ -134,31 +134,6 @@ class Keeper:
         return self.response
 
 
-class FakeAdapter:
-    def __init__(self) -> None:
-        self.input_calls = 0
-        self.output_calls = 0
-        self.stream_calls = 0
-
-    def translate_completion_input_params(  # ast-grep-ignore: no-long-names
-        self, *, kwargs: dict[str, JsonValue]
-    ) -> dict[str, JsonValue]:
-        self.input_calls += 1
-        return {**kwargs, "model": GOOD_MODEL}
-
-    def translate_completion_output_params(  # ast-grep-ignore: no-long-names
-        self, *, response: ModelResponse
-    ) -> ModelResponse:
-        self.output_calls += 1
-        return response
-
-    def translate_completion_output_params_streaming(  # ast-grep-ignore: no-long-names
-        self, *, completion_stream: CustomStreamWrapper
-    ) -> CompletionOutcome | None:
-        self.stream_calls += 1
-        return completion_stream
-
-
 def retries_params(retries: int) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     arguments.num_retries = retries
     litellm.num_retries = retries
@@ -186,28 +161,10 @@ def async_chat(server_url: str) -> tuple[AsyncCompletions, AsyncChatView]:
             raise AssertionError("a client with acompletion picked the sync completions")
 
 
-@contextmanager
-def adapter_seam(adapter: FakeAdapter) -> Generator[None]:
-    adapters.adapter_entries = [{"id": ADAPTER_ID, "adapter": adapter}]
-    try:
-        yield
-    finally:
-        adapters.adapter_entries = None
-
-
-@contextmanager
-def config_seam(config_file: Path) -> Generator[None]:
-    arguments.config_path = str(config_file)
-    try:
-        yield
-    finally:
-        arguments.config_path = None
-
-
 def adapter_outcome(
     adapter: FakeAdapter, server_url: str, *, stream: bool = False
 ) -> CompletionOutcome | None:
-    with adapter_seam(adapter):
+    with adapter_seam(adapter, ADAPTER_ID):
         return adapter_completion(
             adapter_id=ADAPTER_ID, model=UNKNOWN_MODEL, messages=MESSAGES,
             api_base=server_url, api_key=GOOD_KEY, stream=stream,
@@ -455,7 +412,7 @@ def test_adapter_stream_matches() -> None:
 
 
 async def ours_adapt_async(adapter: FakeAdapter, server_url: str) -> dict[str, JsonValue]:
-    with adapter_seam(adapter):
+    with adapter_seam(adapter, ADAPTER_ID):
         outcome = await aadapter_completion(
             adapter_id=ADAPTER_ID, model=UNKNOWN_MODEL, messages=MESSAGES,
             api_base=server_url, api_key=GOOD_KEY,

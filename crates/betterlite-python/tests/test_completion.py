@@ -3,6 +3,7 @@ import inspect
 import json
 import logging
 from collections.abc import Awaitable, Mapping
+from pathlib import Path
 from typing import Final, Protocol, TypedDict
 
 import httpx
@@ -20,6 +21,9 @@ from completion_server import (
     UNKNOWN_MODEL,
     CompletionServer,
     CountView,
+    FakeAdapter,
+    adapter_seam,
+    config_seam,
     error_view,
     header_of,
     litellm_async_plain,
@@ -50,9 +54,11 @@ from betterlite.main import (
     acompletion,
     acount_tokens,
     acreate,
+    adapter_completion,
     check_valid_key,
     completion,
     completion_with_retries,
+    config_completion,
     valid_model,
 )
 from betterlite.types.utils import Message, ModelResponse
@@ -85,6 +91,8 @@ TIMEOUT_STATUS: Final = 408
 OPENAI_API_ERROR: Final[type[BaseException]] = OPENAI.APIError(
     "probe", None, body=None
 ).__class__
+ADAPTER_ID: Final = "values-adapter"
+CONFIG_NAME: Final = "config.json"
 
 
 class Answer(BaseModel):
@@ -266,6 +274,19 @@ def test_coroutine_paths() -> None:
         assert normalized(response) == expected
 
 
+def assert_response_format_matches(
+    server: CompletionServer, bodies: list[dict[str, JsonValue]]
+) -> None:
+    litellm_plain(
+        model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
+        api_key=GOOD_KEY, response_format=Answer,
+    )
+    expected = server.calls[-1]["body"].get("response_format")
+    assert expected is not None
+    for body in bodies:
+        assert body.get("response_format") == expected
+
+
 def test_python_values(caplog: pytest.LogCaptureFixture) -> None:
     with pytest.raises(UnsupportedCallArgument) as client_caught:
         completion(model=GOOD_MODEL, messages=MESSAGES, client=object())
@@ -299,15 +320,7 @@ def test_python_values(caplog: pytest.LogCaptureFixture) -> None:
                 api_key=GOOD_KEY, response_format=Answer,
             )
         )
-        formatted_call = server.calls[-1]
-        litellm_plain(
-            model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
-            api_key=GOOD_KEY, response_format=Answer,
-        )
-        reference_call = server.calls[-1]
-        assert formatted_call["body"].get("response_format") == (
-            reference_call["body"].get("response_format")
-        )
+        assert_response_format_matches(server, [server.calls[-1]["body"]])
         message = Message(role="user", content="hi")
         message_dump = message.model_dump()
         message_values: list[dict[str, JsonValue] | Message] = [message]
@@ -344,7 +357,7 @@ def test_python_values(caplog: pytest.LogCaptureFixture) -> None:
     assert ignored_logging.choices[0].message.content == MOCK_TEXT
 
 
-def test_python_values_entries() -> None:
+def test_python_values_calls() -> None:
     # the class conversion sits in completion_from_arguments, so acreate and the retry loop share it
     with CompletionServer() as server:
         awaited = acreate(
@@ -358,15 +371,34 @@ def test_python_values_entries() -> None:
             api_key=GOOD_KEY, response_format=Answer,
         )
         retried_body = server.calls[-1]["body"]
-        litellm_plain(
-            model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
-            api_key=GOOD_KEY, response_format=Answer,
-        )
-        reference_body = server.calls[-1]["body"]
-    expected = reference_body.get("response_format")
-    assert expected is not None
-    assert awaited_body.get("response_format") == expected
-    assert retried_body.get("response_format") == expected
+        assert_response_format_matches(server, [awaited_body, retried_body])
+
+
+def test_python_values_entries(tmp_path: Path) -> None:
+    # _json_values converts the class before config_completion and adapter_completion look at values
+    adapter = FakeAdapter()
+    with CompletionServer() as server:
+        config_file = tmp_path / CONFIG_NAME
+        config: dict[str, JsonValue] = {
+            "model": GOOD_MODEL, "api_base": server.url, "api_key": GOOD_KEY,
+        }
+        config_file.write_text(json.dumps(config))
+        with config_seam(config_file):
+            configured = model_response(
+                config_completion(messages=MESSAGES, response_format=Answer)
+            )
+        configured_body = server.calls[-1]["body"]
+        with adapter_seam(adapter, ADAPTER_ID):
+            adapted = model_response(
+                adapter_completion(
+                    adapter_id=ADAPTER_ID, model=GOOD_MODEL, messages=MESSAGES,
+                    api_base=server.url, api_key=GOOD_KEY, response_format=Answer,
+                )
+            )
+        adapter_body = server.calls[-1]["body"]
+        assert_response_format_matches(server, [configured_body, adapter_body])
+    assert configured.choices[0].message.content == CONTENT
+    assert adapted.choices[0].message.content == CONTENT
 
 
 def test_mock_errors_match_litellm() -> None:
@@ -443,36 +475,30 @@ def test_mock_timeout_async() -> None:
     assert caught.value.status_code == TIMEOUT_STATUS
 
 
+def plain_response(server: CompletionServer) -> ModelResponse:
+    return model_response(
+        completion(
+            model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
+            api_key=GOOD_KEY,
+        )
+    )
+
+
 def test_settings_take_effect(caplog: pytest.LogCaptureFixture) -> None:
     with CompletionServer() as server:
         arguments.proxy_auth = ProxyAuth()
         try:
-            proxied = model_response(
-                completion(
-                    model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
-                    api_key=GOOD_KEY,
-                )
-            )
+            proxied = plain_response(server)
             assert header_of(server.calls[-1], PROXY_HEADER) == PROXY_VALUE
             arguments.proxy_auth = BrokenProxyAuth()
             with caplog.at_level(logging.WARNING, logger="LiteLLM"):
-                broken = model_response(
-                    completion(
-                        model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
-                        api_key=GOOD_KEY,
-                    )
-                )
+                broken = plain_response(server)
             assert BROKEN_PROXY_MESSAGE in caplog.messages
         finally:
             arguments.proxy_auth = None
         betterlite.model_alias_map = {GOOD_MODEL: ALIASED_MODEL}
         try:
-            aliased = model_response(
-                completion(
-                    model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
-                    api_key=GOOD_KEY,
-                )
-            )
+            aliased = plain_response(server)
             aliased_call = server.calls[-1]
             assert aliased_call["body"].get("model") == ALIASED_MODEL
             assert aliased.model == ALIASED_MODEL
