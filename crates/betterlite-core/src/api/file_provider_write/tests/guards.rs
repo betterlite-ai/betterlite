@@ -120,7 +120,7 @@ fn upload_passthrough_guard(
     let reported = if provider.is_some() { named } else { "n/a" };
     assert_eq!(
         error.bad_request(),
-        Some(bad_request(reported, PASSTHROUGH_BODY, "create_file"))
+        Some(bad_request(reported, PASSTHROUGH_BODY, "CREATE_FILE"))
     );
     assert!(seen.is_empty());
 }
@@ -280,7 +280,7 @@ fn unsupported_write() {
     );
     assert_eq!(
         upload_error.bad_request(),
-        Some(bad_request("cohere", "Unsupported provider", "create_file"))
+        Some(bad_request("cohere", "Unsupported provider", "CREATE_FILE"))
     );
     let (deleted, delete_calls) = delete(Mode::Sync, &delete_input(Some("cohere")));
     let delete_error = deleted.unwrap_err();
@@ -293,7 +293,7 @@ fn unsupported_write() {
         Some(bad_request(
             "cohere",
             "Unsupported provider",
-            "create_thread"
+            "CREATE_THREAD"
         ))
     );
     assert!(upload_calls.is_empty() && delete_calls.is_empty());

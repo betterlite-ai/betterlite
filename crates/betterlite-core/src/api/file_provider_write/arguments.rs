@@ -11,7 +11,6 @@ use crate::api::resource_sdk_settings::timeout::{
 };
 
 use super::{DeleteParams, FileWriteError, SuppliedClient, UploadInput, WriteParams, WriteTimeout};
-
 // an absent provider takes the function's default: None for create_file, openai for acreate_file
 pub(super) fn upload_provider<Logger, Client>(
     mode: Mode,
@@ -25,7 +24,6 @@ pub(super) fn upload_provider<Logger, Client>(
             Mode::Asynchronous => Some("openai".to_owned()),
         })
 }
-
 // CreateFileRequest carries expires_after only when the caller set it
 pub(super) fn create_request<Logger, Client>(input: &UploadInput<Logger, Client>) -> FileCreate {
     FileCreate {
@@ -37,7 +35,6 @@ pub(super) fn create_request<Logger, Client>(input: &UploadInput<Logger, Client>
         timeout: None,
     }
 }
-
 // only the literal True arms the guard, and then only a vertex_ai batch passes it
 pub(super) fn passthrough_guard<ProviderError: Error + 'static>(
     passthrough: Option<bool>,
@@ -54,7 +51,6 @@ pub(super) fn passthrough_guard<ProviderError: Error + 'static>(
     }
     Ok(())
 }
-
 pub(super) fn request_options<Logger, Client>(
     params: &WriteParams<Logger, Client>,
 ) -> ResourceSdkRequestOptions {
@@ -68,7 +64,6 @@ pub(super) fn request_options<Logger, Client>(
         vertex_credentials: None,
     }
 }
-
 // the generic handler takes a supplied client only when it is an httpx handler
 pub(super) fn handler<Logger, Client>(
     params: &WriteParams<Logger, Client>,
@@ -78,7 +73,6 @@ pub(super) fn handler<Logger, Client>(
         .as_ref()
         .filter(|client| matches!(client, SuppliedClient::Handler { .. }))
 }
-
 pub(super) fn delete_params<Logger, Client>(
     params: &WriteParams<Logger, Client>,
 ) -> DeleteParams<'_> {
@@ -88,7 +82,6 @@ pub(super) fn delete_params<Logger, Client>(
         credentials: params.credentials.as_ref(),
     }
 }
-
 // LlmProviders(custom_llm_provider): an unknown or missing name is a ValueError naming its repr
 pub(super) fn provider_id<ProviderError: Error + 'static>(
     provider: Option<&str>,
@@ -99,7 +92,6 @@ pub(super) fn provider_id<ProviderError: Error + 'static>(
     let name = provider.ok_or_else(unknown)?;
     ProviderId::from_str(name).map_err(|_unparsed| unknown())
 }
-
 // optional_params.timeout or request_timeout or 600, where zero and empty fall through; an httpx.Timeout keeps its phases only for openai, azure and bedrock
 pub(super) fn write_timeout<Logger, Client, ProviderError: Error + 'static>(
     params: &WriteParams<Logger, Client>,

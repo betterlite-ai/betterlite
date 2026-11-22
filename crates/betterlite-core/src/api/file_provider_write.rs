@@ -26,14 +26,12 @@ pub enum WriteTimeout {
     Value(TimeoutValue),
     Structured(StructuredTimeout),
 }
-
 // the client kwarg as the branches tell it apart: an httpx handler of one mode, or a provider SDK client
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SuppliedClient<Client> {
     Handler { mode: Mode, client: Client },
     Sdk(Client),
 }
-
 // the GenericLiteLLMParams fields both calls read, and the kwargs they read beside it
 #[derive(Debug, Clone)]
 pub struct WriteParams<Logger, Client> {
@@ -52,7 +50,6 @@ pub struct WriteParams<Logger, Client> {
     pub client: Option<SuppliedClient<Client>>,
     pub credentials: Option<TrustedCredentials>,
 }
-
 #[derive(Debug, Clone)]
 pub struct UploadInput<Logger, Client> {
     pub file: FileUpload,
@@ -64,7 +61,6 @@ pub struct UploadInput<Logger, Client> {
     pub extra_body: Option<IndexMap<String, String>>,
     pub params: WriteParams<Logger, Client>,
 }
-
 #[derive(Debug, Clone)]
 pub struct DeleteInput<Logger, Client> {
     pub file_id: String,
@@ -75,7 +71,6 @@ pub struct DeleteInput<Logger, Client> {
     pub extra_body: Option<IndexMap<String, String>>,
     pub params: WriteParams<Logger, Client>,
 }
-
 // what get_openai_credentials or get_azure_credentials resolved, with the call's timeout and retries
 #[derive(Debug, Clone)]
 pub struct ProviderCall {
@@ -87,7 +82,6 @@ pub struct ProviderCall {
     pub timeout: FineTuningTimeout,
     pub max_retries: Option<i64>,
 }
-
 // base_llm_http_handler.create_file's arguments; litellm_params is the caller's kwargs, unfiltered
 pub struct ConfigUpload<'call, P: FileWriteProviders + ?Sized> {
     pub config: P::Config,
@@ -101,7 +95,6 @@ pub struct ConfigUpload<'call, P: FileWriteProviders + ?Sized> {
     pub client: Option<&'call SuppliedClient<P::Client>>,
     pub timeout: FineTuningTimeout,
 }
-
 pub enum UploadTarget<'call, P: FileWriteProviders + ?Sized> {
     Config(ConfigUpload<'call, P>),
     OpenAi {
@@ -114,7 +107,6 @@ pub enum UploadTarget<'call, P: FileWriteProviders + ?Sized> {
         params: &'call WriteParams<P::Logger, P::Client>,
     },
 }
-
 // get_litellm_params' api_key and api_base, assigned even when null, beside the trusted snapshot
 #[derive(Debug, Clone)]
 pub struct DeleteParams<'call> {
@@ -122,7 +114,6 @@ pub struct DeleteParams<'call> {
     pub api_base: Option<&'call str>,
     pub credentials: Option<&'call TrustedCredentials>,
 }
-
 // the Logging object file_delete builds when the caller passed none
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoggerSeed {
@@ -131,12 +122,10 @@ pub struct LoggerSeed {
     pub litellm_call_id: Option<String>,
     pub function_id: String,
 }
-
 pub enum DeleteLogger<'call, Logger> {
     Existing(&'call Logger),
     Created(LoggerSeed),
 }
-
 pub struct ConfigDelete<'call, P: FileWriteProviders + ?Sized> {
     pub config: P::Config,
     pub mode: Mode,
@@ -147,7 +136,6 @@ pub struct ConfigDelete<'call, P: FileWriteProviders + ?Sized> {
     pub client: Option<&'call SuppliedClient<P::Client>>,
     pub timeout: FineTuningTimeout,
 }
-
 pub enum DeleteTarget<'call, P: FileWriteProviders + ?Sized> {
     OpenAi {
         call: ProviderCall,
@@ -161,7 +149,6 @@ pub enum DeleteTarget<'call, P: FileWriteProviders + ?Sized> {
     },
     Config(ConfigDelete<'call, P>),
 }
-
 // the provider methods both calls end in; B2464's files config lookup comes in here because it lives above core
 pub trait FileWriteProviders: Sync {
     type Config: Copy + Send + Sync;
@@ -181,7 +168,6 @@ pub trait FileWriteProviders: Sync {
         target: DeleteTarget<'_, Self>,
     ) -> impl Future<Output = Result<FileDeleted, Self::Error>> + Send;
 }
-
 // the synthesized httpx.Response a LiteLLM BadRequestError carries for a rejected write
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BadRequest<'error> {
@@ -191,7 +177,6 @@ pub struct BadRequest<'error> {
     pub method: &'static str,
     pub url: &'static str,
 }
-
 #[derive(Debug, Error)]
 pub enum FileWriteError<ProviderError: Error + 'static> {
     #[error("logging_obj is required")]
@@ -225,22 +210,21 @@ pub enum FileWriteError<ProviderError: Error + 'static> {
     #[error(transparent)]
     Provider(ProviderError),
 }
-
 impl<ProviderError: Error + 'static> FileWriteError<ProviderError> {
-    // the three BadRequestErrors name no model; upload's guard reports a missing provider as n/a
+    // the three BadRequestErrors name no model; upload's guard reports a missing provider as n/a, and httpx upper-cases the method
     #[must_use]
     pub fn bad_request(&self) -> Option<BadRequest<'_>> {
         let (llm_provider, body, method) = match self {
             Self::Passthrough { provider, .. } => (
                 provider.as_deref().unwrap_or("n/a"),
                 "passthrough needs a vertex_ai batch",
-                "create_file",
+                "CREATE_FILE",
             ),
             Self::UnsupportedUpload { provider } => {
-                (provider.as_str(), "Unsupported provider", "create_file")
+                (provider.as_str(), "Unsupported provider", "CREATE_FILE")
             }
             Self::UnsupportedDelete { provider } => {
-                (provider.as_str(), "Unsupported provider", "create_thread")
+                (provider.as_str(), "Unsupported provider", "CREATE_THREAD")
             }
             Self::LoggingObjectRequired
             | Self::TimeoutText { .. }

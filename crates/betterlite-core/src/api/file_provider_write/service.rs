@@ -18,10 +18,8 @@ use super::{
 
 type Written<Value, Providers> =
     Result<Value, FileWriteError<<Providers as FileWriteProviders>::Error>>;
-
 // OPENAI_COMPATIBLE_BATCH_AND_FILES_PROVIDERS, the names the OpenAI files client serves
 const OPENAI_COMPATIBLE: [&str; 3] = ["openai", "hosted_vllm", "litellm_proxy"];
-
 pub struct FileWrite<'deps, Providers> {
     pub providers: Providers,
     pub settings: ResourceSdkSettings,
@@ -29,14 +27,12 @@ pub struct FileWrite<'deps, Providers> {
     pub clock: fn() -> DateTime<FixedOffset>,
     pub call_ids: fn() -> Uuid,
 }
-
 // the two values every provider branch receives beside its credentials
 #[derive(Debug, Clone, Copy)]
 struct Invocation {
     mode: Mode,
     timeout: FineTuningTimeout,
 }
-
 impl<Providers: FileWriteProviders> FileWrite<'_, Providers> {
     // create_file, with acreate_file as its asynchronous mode: the guard, the deadline, then config-first dispatch
     pub async fn create_file(
