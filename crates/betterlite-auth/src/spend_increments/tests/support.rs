@@ -20,7 +20,7 @@ use tokio_util::task::TaskTracker;
 use tracing::Event;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
-use tracing_subscriber::layer::{Context, SubscriberExt as _};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::budget_counter::CounterEntityType;
 use crate::budget_primitives::window_start::DurationParser;
@@ -680,7 +680,7 @@ impl Visit for LogFields {
 #[derive(Clone, Default)]
 struct MessageLog(Arc<Mutex<Vec<String>>>);
 
-impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for MessageLog {
+impl<S: tracing::Subscriber> Layer<S> for MessageLog {
     fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
         let mut fields = LogFields::default();
         event.record(&mut fields);
