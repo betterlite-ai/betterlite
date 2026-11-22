@@ -31,8 +31,8 @@ use rstest::rstest;
 
 use super::buffered::{ReplyInput, RuntimeReply, transform_response};
 use super::refusals::{
-    non_string_reasoning_effort, params_refused_for, params_refused_while_reasoning,
-    reasoning_efforts_refused_for, without_params, without_refused_effort,
+    REFUSED_BY_FAMILY, REFUSED_EFFORTS_BY_FAMILY, non_string_reasoning_effort,
+    params_refused_while_reasoning, union_by_family, without_params, without_refused_effort,
 };
 use super::stream::StreamingHandler;
 use super::{
@@ -163,9 +163,32 @@ fn stream_finish(handler: &mut StreamingHandler) {
         (None, None)
     );
 
+    empty_finish_flushes();
+}
+
+fn empty_finish_flushes() {
+    let mut handler = StreamingHandler::default();
+    let mut held = reply(vec![choice(0, Some("<reasoning>x</rea"), None)]);
+    handler.chunk_parser(&mut held);
+    let held_delta = &held.choices[0].delta;
+    assert_eq!(
+        (
+            held_delta.content.as_deref(),
+            held_delta.reasoning_content.as_deref()
+        ),
+        (Some(""), Some("x"))
+    );
+
     let mut empty_finish = reply(vec![choice(0, None, Some(""))]);
     handler.chunk_parser(&mut empty_finish);
-    assert_eq!(empty_finish.choices[0].delta.content, None);
+    let empty_delta = &empty_finish.choices[0].delta;
+    assert_eq!(
+        (
+            empty_delta.content.as_deref(),
+            empty_delta.reasoning_content.as_deref()
+        ),
+        (None, Some("</rea"))
+    );
 }
 
 fn stream_flush_at_finish() {
@@ -211,16 +234,25 @@ fn stream_appended_reasoning() {
 fn stream_duplicate_index() {
     let mut handler = StreamingHandler::default();
     let mut duplicate = reply(vec![
-        choice(1, Some("one"), None),
-        choice(1, Some("two"), None),
+        choice(1, Some("<reasoning>one"), None),
+        choice(1, Some(" two</reasoning>three"), None),
     ]);
     handler.chunk_parser(&mut duplicate);
+    let first_delta = &duplicate.choices[0].delta;
+    let second_delta = &duplicate.choices[1].delta;
     assert_eq!(
         (
-            duplicate.choices[0].delta.content.as_deref(),
-            duplicate.choices[1].delta.content.as_deref()
+            first_delta.content.as_deref(),
+            first_delta.reasoning_content.as_deref()
         ),
-        (Some("one"), Some("two"))
+        (Some(""), Some("one"))
+    );
+    assert_eq!(
+        (
+            second_delta.content.as_deref(),
+            second_delta.reasoning_content.as_deref()
+        ),
+        (Some("three"), Some(" two"))
     );
 }
 
@@ -526,9 +558,13 @@ fn refused_fields_by_model() {
         ("anthropic.claude-3-5-sonnet", &[], &[]),
     ];
     for (model, fields, efforts) in table {
-        assert_eq!(params_refused_for(model), set(fields), "fields {model}");
         assert_eq!(
-            reasoning_efforts_refused_for(model),
+            union_by_family(model, REFUSED_BY_FAMILY),
+            set(fields),
+            "fields {model}"
+        );
+        assert_eq!(
+            union_by_family(model, REFUSED_EFFORTS_BY_FAMILY),
             set(efforts),
             "efforts {model}"
         );

@@ -6,7 +6,7 @@ use indexmap::IndexSet;
 use crate::model_routes::catalog::openai_gpt_version;
 use crate::model_routes::{ModelRouteSelector, ParamMap, ParamValue, RouteError};
 
-const REFUSED_BY_FAMILY: &[(&str, &[&str])] = &[
+pub const REFUSED_BY_FAMILY: &[(&str, &[&str])] = &[
     ("openai.gpt-oss", &["logit_bias"]),
     ("xai.", &["frequency_penalty", "presence_penalty"]),
 ];
@@ -18,11 +18,12 @@ const REFUSED_WHILE_REASONING: [&str; 6] = [
     "logprobs",
     "top_logprobs",
 ];
-const REFUSED_EFFORTS_BY_FAMILY: &[(&str, &[&str])] = &[("xai.", &["none"])];
+pub const REFUSED_EFFORTS_BY_FAMILY: &[(&str, &[&str])] = &[("xai.", &["none"])];
 const EFFORT_KEY: &str = "reasoning_effort";
 
 #[must_use]
-fn union_by_family(model_id: &str, table: &[(&str, &[&str])]) -> BTreeSet<String> {
+pub fn union_by_family(model: &str, table: &[(&str, &[&str])]) -> BTreeSet<String> {
+    let (_, model_id) = split_bedrock_region_path(model);
     let mut values = BTreeSet::new();
     for (family, names) in table {
         if model_id.contains(*family) {
@@ -32,18 +33,6 @@ fn union_by_family(model_id: &str, table: &[(&str, &[&str])]) -> BTreeSet<String
         }
     }
     values
-}
-
-#[must_use]
-pub fn params_refused_for(model: &str) -> BTreeSet<String> {
-    let (_, model_id) = split_bedrock_region_path(model);
-    union_by_family(&model_id, REFUSED_BY_FAMILY)
-}
-
-#[must_use]
-pub fn reasoning_efforts_refused_for(model: &str) -> BTreeSet<String> {
-    let (_, model_id) = split_bedrock_region_path(model);
-    union_by_family(&model_id, REFUSED_EFFORTS_BY_FAMILY)
 }
 
 #[must_use]
@@ -57,7 +46,7 @@ pub fn without_params(params: &ParamMap, dropped: &BTreeSet<String>) -> ParamMap
 
 #[must_use]
 pub fn without_refused_effort(model: &str, params: &ParamMap) -> ParamMap {
-    let refused = reasoning_efforts_refused_for(model);
+    let refused = union_by_family(model, REFUSED_EFFORTS_BY_FAMILY);
     let refused_effort = matches!(
         params.get(EFFORT_KEY),
         Some(ParamValue::Text(effort)) if refused.contains(effort)

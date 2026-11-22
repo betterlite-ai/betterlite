@@ -1,7 +1,7 @@
 use betterlite_bedrock::model_routes::{ParamMap, RouteError};
 use betterlite_bedrock::reasoning_stream::refusals::{
-    non_string_reasoning_effort, params_refused_for, params_refused_while_reasoning,
-    reasoning_efforts_refused_for, without_refused_effort,
+    REFUSED_BY_FAMILY, REFUSED_EFFORTS_BY_FAMILY, non_string_reasoning_effort,
+    params_refused_while_reasoning, union_by_family, without_refused_effort,
 };
 use betterlite_bedrock::reasoning_stream::stream::StreamingHandler;
 use betterlite_bedrock::reasoning_stream::{
@@ -166,8 +166,8 @@ fn refusals(models: &[String], params: &ParamMap) -> Value {
         .map(|model| {
             json!({
                 "model": model,
-                "refused_params": params_refused_for(model),
-                "refused_efforts": reasoning_efforts_refused_for(model),
+                "refused_params": union_by_family(model, REFUSED_BY_FAMILY),
+                "refused_efforts": union_by_family(model, REFUSED_EFFORTS_BY_FAMILY),
                 "without_refused_effort": without_refused_effort(model, params),
             })
         })
