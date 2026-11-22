@@ -252,8 +252,8 @@ def authorize_answer(case: CallInput) -> JsonValue:
             return call_answer("internal_error", None, 500, "IndexError", scope)
         if no_result:
             return call_answer("not_responses_call", None, None, None, scope)
-    kind = "authorized" if text_or_none(data.get(ADDRESSED_RESPONSE_ID_FIELD)) else "unchanged"
-    return call_answer(kind, None, None, None, scope)
+        kind = "authorized" if text_or_none(data.get(ADDRESSED_RESPONSE_ID_FIELD)) else "unchanged"
+        return call_answer(kind, None, None, None, scope)
 
 
 def success_answer(case: CallInput) -> JsonValue:
@@ -262,8 +262,8 @@ def success_answer(case: CallInput) -> JsonValue:
         request_data: dict[str, JsonValue] = {}
         asyncio.run(hook.async_post_call_success_hook(request_data, user, response))  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L305
         dumped = MAPPING.validate_json(response.model_dump_json())
-    nested = project_nested(dumped["response"]) if "response" in dumped else None
-    return {"response": {"id": project(dumped["id"]), "nested": nested}}
+        nested = project_nested(dumped["response"]) if "response" in dumped else None
+        return {"response": {"id": project(dumped["id"]), "nested": nested}}
 
 
 def stream_answer(case: CallInput) -> JsonValue:

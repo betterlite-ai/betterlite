@@ -117,5 +117,5 @@ calls:
 env: {}
 compare:
   ignore:
-  - pointer: /call/class
+  - pointer: /value/call/class
     why: betterlite reports a typed internal failure where LiteLLM raises IndexError
