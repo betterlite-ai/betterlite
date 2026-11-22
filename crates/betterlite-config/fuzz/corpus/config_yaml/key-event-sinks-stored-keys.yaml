@@ -1,0 +1,8 @@
+general_settings:
+  alerting: [slack, email]
+  key_management_settings:
+    store_virtual_keys: true
+    prefix_for_stored_virtual_keys: vault/keys
+    description: managed virtual keys
+    tags:
+      Team: core
