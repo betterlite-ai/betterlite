@@ -1,0 +1,208 @@
+kind: helper
+name: realtime-backend-connection-errors
+call:
+  realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: invalid_status
+      status_code: 401
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+calls:
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: invalid_status
+      status_code: 403
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: invalid_status
+      status_code: 429
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: os
+      message: first
+    - kind: os
+      message: second
+    - kind: websocket
+      message: third
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: os
+      message: boom
+    send_error: the client is gone
+    close_error: null
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: os
+      message: boom
+    send_error: null
+    close_error:
+      error_class: RuntimeError
+      message: the response already completed
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: os
+      message: boom
+    send_error: null
+    close_error:
+      error_class: RuntimeError
+      message: another runtime failure
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: os
+      message: boom
+    send_error: null
+    close_error:
+      error_class: OSError
+      message: the socket is gone
+    metadata: null
+    intent: null
+- realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: null
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: invalid_status_code
+      status_code: 403
+      message: 'server rejected WebSocket connection: HTTP 403'
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: '1024'
+compare:
+  ignore: []
