@@ -6,6 +6,7 @@ use betterlite_error::error::ErrorClass;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::video_edits::response::CharacterKind;
+use rstest::rstest;
 
 use super::support::{
     CALL_ID, Fixture, INITIAL_CALL_TYPE, MOCK_JSON, REQUEST_TIMEOUT_SECONDS, Reply, create_call,
@@ -225,21 +226,21 @@ fn create_edenai_is_unavailable_until_its_config_is_installed() {
     assert!(fixture.handler.creates.is_empty());
 }
 
-#[test]
-fn create_falsey_timeout_falls_back_to_the_request_timeout() {
-    for timeout in [Some(0.0_f64), None] {
-        let mut fixture = Fixture::new();
-        let mut call = create_call();
-        call.timeout = timeout;
+#[rstest]
+#[case::zero(Some(0.0_f64))]
+#[case::absent(None)]
+fn create_falsey_timeout_falls_back_to_the_request_timeout(#[case] timeout: Option<f64>) {
+    let mut fixture = Fixture::new();
+    let mut call = create_call();
+    call.timeout = timeout;
 
-        fixture.create(&call).expect("the handler answers");
+    fixture.create(&call).expect("the handler answers");
 
-        assert_eq!(
-            fixture.handler.creates[0].timeout,
-            Duration::from_millis(1_234_000)
-        );
-        assert_eq!(REQUEST_TIMEOUT_SECONDS, 1234.0_f64);
-    }
+    assert_eq!(
+        fixture.handler.creates[0].timeout,
+        Duration::from_millis(1_234_000)
+    );
+    assert_eq!(REQUEST_TIMEOUT_SECONDS, 1234.0_f64);
 }
 
 #[test]

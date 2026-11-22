@@ -31,8 +31,9 @@ use thiserror::Error;
 
 use super::super::error::CharacterProviderFailure;
 use super::super::{
-    CharacterCallDeps, CharacterOutcome, CreateCharacterCall, GetCharacterCall,
-    avideo_create_character, avideo_get_character, video_create_character, video_get_character,
+    CharacterCallDeps, CharacterOutcome, CreateCharacterCall, DEFAULT_PROVIDER,
+    DEFAULT_TIMEOUT_SECONDS, GetCharacterCall, avideo_create_character, avideo_get_character,
+    video_create_character, video_get_character,
 };
 use super::support::{CALL_ID, CHARACTER_JSON, headers, video};
 use crate::api::bfl::edit::media::SuppliedMedia;
@@ -284,25 +285,36 @@ fn create_call() -> CreateCharacterCall {
     CreateCharacterCall {
         name: "Wren".to_owned(),
         video: video(),
+        timeout: Some(DEFAULT_TIMEOUT_SECONDS),
+        custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
+        extra_headers: Some(headers()),
+        extra_query: None,
+        extra_body: None,
+        mock_response: None,
         litellm_call_id: Some(CALL_ID.to_owned()),
         extra: IndexMap::from([(
             "api_base".to_owned(),
             Json::Text("https://api.openai.com/v1".to_owned()),
         )]),
-        extra_headers: Some(headers()),
-        ..CreateCharacterCall::default()
+        is_async: false,
     }
 }
 
 fn get_call() -> GetCharacterCall {
     GetCharacterCall {
         character_id: "char-1".to_owned(),
+        timeout: Some(DEFAULT_TIMEOUT_SECONDS),
+        custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
+        extra_headers: None,
+        extra_query: None,
+        extra_body: None,
+        mock_response: None,
         litellm_call_id: Some(CALL_ID.to_owned()),
         extra: IndexMap::from([(
             "api_base".to_owned(),
             Json::Text("https://api.openai.com/v1".to_owned()),
         )]),
-        ..GetCharacterCall::default()
+        is_async: false,
     }
 }
 

@@ -20,8 +20,9 @@ use thiserror::Error;
 use super::super::error::{CharacterCallFailure, CharacterHandlerFailure};
 use super::super::handler::{CharacterAnswered, CharacterHandler, HandlerArguments, HandlerCall};
 use super::super::{
-    CharacterCallDeps, CharacterOutcome, CreateCharacterCall, GetCharacterCall,
-    avideo_create_character, avideo_get_character, video_create_character, video_get_character,
+    CharacterCallDeps, CharacterOutcome, CreateCharacterCall, DEFAULT_PROVIDER,
+    DEFAULT_TIMEOUT_SECONDS, GetCharacterCall, avideo_create_character, avideo_get_character,
+    video_create_character, video_get_character,
 };
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_records::CharacterObject;
@@ -79,20 +80,31 @@ pub(crate) fn create_call() -> CreateCharacterCall {
     CreateCharacterCall {
         name: "Wren".to_owned(),
         video: video(),
+        timeout: Some(DEFAULT_TIMEOUT_SECONDS),
+        custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
+        extra_headers: None,
+        extra_query: None,
+        extra_body: None,
+        mock_response: None,
         litellm_call_id: Some(CALL_ID.to_owned()),
         extra,
-        ..CreateCharacterCall::default()
+        is_async: false,
     }
 }
 
 pub(crate) fn get_call() -> GetCharacterCall {
-    let mut call = GetCharacterCall {
+    GetCharacterCall {
         character_id: "char-1".to_owned(),
-        ..GetCharacterCall::default()
-    };
-    call.litellm_call_id = Some(CALL_ID.to_owned());
-    call.extra = extra_map();
-    call
+        timeout: Some(DEFAULT_TIMEOUT_SECONDS),
+        custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
+        extra_headers: None,
+        extra_query: None,
+        extra_body: None,
+        mock_response: None,
+        litellm_call_id: Some(CALL_ID.to_owned()),
+        extra: extra_map(),
+        is_async: false,
+    }
 }
 
 // what the fake handler answers with

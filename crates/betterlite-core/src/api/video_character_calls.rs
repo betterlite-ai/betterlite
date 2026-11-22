@@ -129,7 +129,7 @@ impl fmt::Debug for CharacterOutcome<'_> {
     }
 }
 
-// LiteLLM's video_create_character: mock first, then the handler of the form the call asks for
+// ast-grep-ignore: no-one-line-functions - LiteLLM's video_create_character: mock first, then one call
 pub fn video_create_character<'call, H: CharacterHandler>(
     handler: &'call mut H,
     deps: CharacterCallDeps<'call>,
@@ -138,7 +138,7 @@ pub fn video_create_character<'call, H: CharacterHandler>(
     character_call(handler, deps, CharacterCall::Create(call), false)
 }
 
-// LiteLLM's avideo_create_character: the sync function with the flag set, its future awaited
+// ast-grep-ignore: no-one-line-functions - LiteLLM's avideo_create_character: the whole flow is awaited
 pub async fn avideo_create_character<'call, H: CharacterHandler>(
     handler: &'call mut H,
     deps: CharacterCallDeps<'call>,
@@ -147,7 +147,7 @@ pub async fn avideo_create_character<'call, H: CharacterHandler>(
     awaited(handler, deps, CharacterCall::Create(call), true).await
 }
 
-// LiteLLM's video_get_character: the same steps with the character id as the primary argument
+// ast-grep-ignore: no-one-line-functions - LiteLLM's video_get_character: mock first, then one call
 pub fn video_get_character<'call, H: CharacterHandler>(
     handler: &'call mut H,
     deps: CharacterCallDeps<'call>,
@@ -156,7 +156,7 @@ pub fn video_get_character<'call, H: CharacterHandler>(
     character_call(handler, deps, CharacterCall::Get(call), false)
 }
 
-// LiteLLM's avideo_get_character: the sync function with the flag set, its future awaited
+// ast-grep-ignore: no-one-line-functions - LiteLLM's avideo_get_character: the whole flow is awaited
 pub async fn avideo_get_character<'call, H: CharacterHandler>(
     handler: &'call mut H,
     deps: CharacterCallDeps<'call>,
