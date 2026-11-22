@@ -9,6 +9,9 @@ deviations:
   - what: The failure event's diagnostic is the error and its source chain after the fixed prefix; LiteLLM's traceback_str is a formatted Python traceback.
     why: betterlite has no Python stack to print, so the event keeps the source's [Non-Blocking] prefix, call_type and duration while the traceback tail becomes the Rust error chain.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7915-L7916
+  - what: The debug line before an ordinary spend-log insert prints the row's request_id and spend with Rust Debug formatting, and the source's "prisma_client is None" debug line is absent when no database is attached.
+    why: Both lines are log text only; no typed input, output or stored row changes, and the queue, monitor signal and claim decisions are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1479-L1491
 kept_bugs:
   - what: A non-200 answer from the external spend writer is ignored and the popped rows are gone.
     why: The source acts only on status 200 and otherwise falls through to a completed pass, so betterlite copies the silent loss rather than adding a requeue no working external writer asked for.
