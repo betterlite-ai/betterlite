@@ -19,7 +19,9 @@ use crate::key_user_writes::retry::WriteClock;
 use crate::migration_ledger::lock::JitterSource;
 use crate::postgres_store::diagnostics::{DriverError, PoolFailure};
 use crate::spend_commit::tables::{SpendTable, SpendTableTransactions, spend_tables_left_to_send};
-use crate::spend_commit::transaction::{SPEND_TRANSACTION_TIMEOUT, SpendDeadline};
+use crate::spend_commit::transaction::{
+    SPEND_TRANSACTION_TIMEOUT, SpendDeadline, SpendTransactionError,
+};
 use crate::tool_spend::RetryPause;
 
 #[derive(Debug, thiserror::Error)]

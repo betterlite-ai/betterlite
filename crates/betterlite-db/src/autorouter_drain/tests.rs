@@ -223,12 +223,12 @@ async fn ambiguous_failure() -> TurnWriteError {
 fn partition_of_keeps_key_histories_apart_from_user_histories() {
     let keyed = partition_of(&turn("key-a", "user-a", "session", 1));
     let user = partition_of(&turn("", "user-a", "session", 1));
-    let expected_key = partition::DrainPartition::Key {
+    let expected_key = DrainPartition::Key {
         api_key: "key-a".to_owned(),
         session_id: "session".to_owned(),
         router_name: "router".to_owned(),
     };
-    let expected_user = partition::DrainPartition::User {
+    let expected_user = DrainPartition::User {
         user_id: "user-a".to_owned(),
         session_id: "session".to_owned(),
         router_name: "router".to_owned(),

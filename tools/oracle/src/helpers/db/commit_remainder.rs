@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -74,12 +74,11 @@ impl ScriptToken {
     // What each LiteLLM exception class means to the two replay predicates.
     const fn failure(self) -> SpendFailure {
         match self {
-            Self::Ok => SpendFailure::Other,
             Self::ConnectError => SpendFailure::NotSent,
             Self::ReadTimeout | Self::ReadError => SpendFailure::Ambiguous,
             Self::DataRejected => SpendFailure::Rejected,
             Self::Deadlock => SpendFailure::Deadlock,
-            Self::UnknownSqlstate | Self::OtherFailure => SpendFailure::Other,
+            Self::Ok | Self::UnknownSqlstate | Self::OtherFailure => SpendFailure::Other,
         }
     }
 }
@@ -169,7 +168,7 @@ struct NoPause;
 
 impl RetryPause for NoPause {
     fn pause(&self, _delay: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(std::future::ready(()))
+        Box::pin(ready(()))
     }
 }
 

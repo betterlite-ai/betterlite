@@ -9,12 +9,12 @@ use std::time::{Duration, Instant};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use deadpool_postgres::{Manager, Pool};
+use deadpool_postgres::{Client, Manager, Pool};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::oneshot;
-use tokio_postgres::{Client, NoTls};
+use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
 use super::order::{entity_id_field, ordered_chunk_keys};
