@@ -16,7 +16,7 @@ use betterlite_core::api::claude_plugin_write::StoredPlugin;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
-use chrono::{DateTime, NaiveDateTime, TimeZone as _, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, TimeZone as _, Utc};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use rstest::rstest;
@@ -487,45 +487,32 @@ async fn plugin_update_source(
     assert!(row.enabled);
 }
 
+async fn toggle_call(store: &Arc<FakeStore>, plugin_name: &str, action: &str) -> Reply {
+    let path = format!("/claude-code/plugins/{plugin_name}/{action}");
+    call(store, &master(), "POST", &path, None).await
+}
+
+fn toggles_of(store: &Arc<FakeStore>) -> Vec<(String, bool)> {
+    store.state.lock().expect("the fake store").toggles.clone()
+}
+
 #[tokio::test]
 async fn plugin_disable_enable() {
     let store = Arc::new(FakeStore::new());
     store.seed("toggle-plugin", true);
-    let disabled = call(
-        &store,
-        &master(),
-        "POST",
-        "/claude-code/plugins/toggle-plugin/disable",
-        None,
-    )
-    .await;
+    let disabled = toggle_call(&store, "toggle-plugin", "disable").await;
     assert_eq!(disabled.status, StatusCode::OK);
     assert_eq!(disabled.text, DISABLED_RESPONSE);
     assert!(!store.row("toggle-plugin").expect("the row").enabled);
-    let enabled = call(
-        &store,
-        &master(),
-        "POST",
-        "/claude-code/plugins/toggle-plugin/enable",
-        None,
-    )
-    .await;
+    let enabled = toggle_call(&store, "toggle-plugin", "enable").await;
     assert_eq!(enabled.status, StatusCode::OK);
     assert_eq!(enabled.text, ENABLED_RESPONSE);
     assert!(store.row("toggle-plugin").expect("the row").enabled);
-    let missing = call(
-        &store,
-        &master(),
-        "POST",
-        "/claude-code/plugins/absent-plugin/enable",
-        None,
-    )
-    .await;
+    let missing = toggle_call(&store, "absent-plugin", "enable").await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
     assert_eq!(missing.text, ENABLE_MISSING_RESPONSE);
-    let guard = store.state.lock().expect("the fake store");
     assert_eq!(
-        guard.toggles,
+        toggles_of(&store),
         vec![
             ("toggle-plugin".to_owned(), false),
             ("toggle-plugin".to_owned(), true)
@@ -533,17 +520,15 @@ async fn plugin_disable_enable() {
     );
 }
 
+async fn delete_call(store: &Arc<FakeStore>, plugin_name: &str) -> Reply {
+    let path = format!("/claude-code/plugins/{plugin_name}");
+    call(store, &master(), "DELETE", &path, None).await
+}
+
 #[tokio::test]
 async fn plugin_delete_missing() {
     let store = Arc::new(FakeStore::new());
-    let missing = call(
-        &store,
-        &master(),
-        "DELETE",
-        "/claude-code/plugins/absent-plugin",
-        None,
-    )
-    .await;
+    let missing = delete_call(&store, "absent-plugin").await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
     assert_eq!(missing.text, DELETE_MISSING_RESPONSE);
     let created = call(
@@ -555,25 +540,11 @@ async fn plugin_delete_missing() {
     )
     .await;
     assert_eq!(created.status, StatusCode::OK);
-    let deleted = call(
-        &store,
-        &master(),
-        "DELETE",
-        "/claude-code/plugins/delete-plugin",
-        None,
-    )
-    .await;
+    let deleted = delete_call(&store, "delete-plugin").await;
     assert_eq!(deleted.status, StatusCode::OK);
     assert_eq!(deleted.text, DELETED_RESPONSE);
     assert!(store.row("delete-plugin").is_none());
-    let again = call(
-        &store,
-        &master(),
-        "DELETE",
-        "/claude-code/plugins/delete-plugin",
-        None,
-    )
-    .await;
+    let again = delete_call(&store, "delete-plugin").await;
     assert_eq!(again.status, StatusCode::NOT_FOUND);
     assert_eq!(
         store.state.lock().expect("the fake store").deleted,
@@ -788,11 +759,8 @@ async fn database() -> (PostgresFixture, Pool, PostgresPluginStore) {
     (fixture, pool, store)
 }
 
-#[tokio::test]
-async fn store_round_trip() {
-    let (fixture, pool, store) = database().await;
-    let now = fixed_now().naive_utc();
-    let write = NewPlugin {
+fn round_trip_write(now: NaiveDateTime) -> NewPlugin {
+    NewPlugin {
         name: "round-trip-plugin".to_owned(),
         version: Some("1.0.0".to_owned()),
         description: Some("first".to_owned()),
@@ -801,66 +769,112 @@ async fn store_round_trip() {
         created_at: now,
         updated_at: now,
         created_by: Some("alice".to_owned()),
-    };
-    let created = store.create(write.clone()).await.expect("the created row");
-    assert_eq!(created.name, "round-trip-plugin");
-    assert!(created.enabled);
-    assert_eq!(created.version.as_deref(), Some("1.0.0"));
-    assert!(!created.id.is_empty());
-    let duplicate = store.create(write).await;
-    assert!(matches!(duplicate, Err(PluginCreateError::NameTaken)));
+    }
+}
 
+fn round_trip_changes(changed_at: NaiveDateTime) -> PluginChanges {
+    PluginChanges {
+        name: "round-trip-plugin".to_owned(),
+        version: None,
+        description: Some("second".to_owned()),
+        manifest_json: r#"{"name":"round-trip-plugin","version":null}"#.to_owned(),
+        updated_at: changed_at,
+    }
+}
+
+fn missing_changes(now: NaiveDateTime) -> PluginChanges {
+    PluginChanges {
+        name: "absent-plugin".to_owned(),
+        version: None,
+        description: None,
+        manifest_json: "{}".to_owned(),
+        updated_at: now,
+    }
+}
+
+async fn assert_created_row(pool: &Pool, now: NaiveDateTime) {
     let client = pool.get().await.expect("the pooled client");
     let row = client
         .query_one(
-            r#"SELECT manifest_json, files_json, created_by, created_at FROM "LiteLLM_ClaudeCodePluginTable" WHERE name = $1"#,
+            r#"SELECT manifest_json, files_json, created_by, created_at, updated_at FROM "LiteLLM_ClaudeCodePluginTable" WHERE name = $1"#,
             &[&"round-trip-plugin"],
         )
         .await
         .expect("the stored row");
     let manifest: Option<String> = row.get("manifest_json");
     let files: Option<String> = row.get("files_json");
-    let created_by: Option<String> = row.get("created_by");
+    let creator: Option<String> = row.get("created_by");
     let created_at: Option<NaiveDateTime> = row.get("created_at");
+    let updated_at: Option<NaiveDateTime> = row.get("updated_at");
     assert_eq!(manifest.as_deref(), Some(r#"{"name":"round-trip-plugin"}"#));
     assert_eq!(files.as_deref(), Some("{}"));
-    assert_eq!(created_by.as_deref(), Some("alice"));
+    assert_eq!(creator.as_deref(), Some("alice"));
     assert_eq!(created_at, Some(now));
+    assert_eq!(updated_at, Some(now));
     drop(client);
+}
 
-    let changes = PluginChanges {
-        name: "round-trip-plugin".to_owned(),
-        version: None,
-        description: Some("second".to_owned()),
-        manifest_json: r#"{"name":"round-trip-plugin","version":null}"#.to_owned(),
-        updated_at: now,
-    };
-    let changed = store
-        .update(changes)
-        .await
-        .expect("the update")
-        .expect("the updated row");
-    assert_eq!(changed.version, None);
-    assert_eq!(changed.description.as_deref(), Some("second"));
+async fn assert_updated_row(pool: &Pool, changed_at: NaiveDateTime) {
     let client = pool.get().await.expect("the pooled client");
     let row = client
         .query_one(
-            r#"SELECT manifest_json, files_json FROM "LiteLLM_ClaudeCodePluginTable" WHERE name = $1"#,
+            r#"SELECT manifest_json, files_json, updated_at FROM "LiteLLM_ClaudeCodePluginTable" WHERE name = $1"#,
             &[&"round-trip-plugin"],
         )
         .await
         .expect("the updated row");
     let manifest: Option<String> = row.get("manifest_json");
     let files: Option<String> = row.get("files_json");
+    let updated_at: Option<NaiveDateTime> = row.get("updated_at");
     assert_eq!(
         manifest.as_deref(),
         Some(r#"{"name":"round-trip-plugin","version":null}"#)
     );
     assert_eq!(files.as_deref(), Some("{}"));
+    assert_eq!(updated_at, Some(changed_at));
     drop(client);
+}
 
+async fn assert_toggled_row(pool: &Pool, toggled_at: NaiveDateTime) {
+    let client = pool.get().await.expect("the pooled client");
+    let row = client
+        .query_one(
+            r#"SELECT updated_at FROM "LiteLLM_ClaudeCodePluginTable" WHERE name = $1"#,
+            &[&"round-trip-plugin"],
+        )
+        .await
+        .expect("the toggled row");
+    let updated_at: Option<NaiveDateTime> = row.get("updated_at");
+    assert_eq!(updated_at, Some(toggled_at));
+    drop(client);
+}
+
+async fn create_round_trip(store: &PostgresPluginStore, now: NaiveDateTime) {
+    let created = store
+        .create(round_trip_write(now))
+        .await
+        .expect("the created row");
+    assert_eq!(created.name, "round-trip-plugin");
+    assert!(created.enabled);
+    assert_eq!(created.version.as_deref(), Some("1.0.0"));
+    assert!(!created.id.is_empty());
+    let duplicate = store.create(round_trip_write(now)).await;
+    assert!(matches!(duplicate, Err(PluginCreateError::NameTaken)));
+}
+
+async fn update_round_trip(store: &PostgresPluginStore, changed_at: NaiveDateTime) {
+    let changed = store
+        .update(round_trip_changes(changed_at))
+        .await
+        .expect("the update")
+        .expect("the updated row");
+    assert_eq!(changed.version, None);
+    assert_eq!(changed.description.as_deref(), Some("second"));
+}
+
+async fn toggle_round_trip(store: &PostgresPluginStore, toggled_at: NaiveDateTime) {
     store
-        .set_enabled("round-trip-plugin", false, now)
+        .set_enabled("round-trip-plugin", false, toggled_at)
         .await
         .expect("the toggle");
     let found = store
@@ -869,6 +883,9 @@ async fn store_round_trip() {
         .expect("the find")
         .expect("the disabled row");
     assert!(!found.enabled);
+}
+
+async fn delete_round_trip(store: &PostgresPluginStore, now: NaiveDateTime) {
     store.delete("round-trip-plugin").await.expect("the delete");
     assert!(
         store
@@ -877,14 +894,28 @@ async fn store_round_trip() {
             .expect("the find")
             .is_none()
     );
-    let missing = PluginChanges {
-        name: "absent-plugin".to_owned(),
-        version: None,
-        description: None,
-        manifest_json: "{}".to_owned(),
-        updated_at: now,
-    };
-    assert!(store.update(missing).await.expect("the update").is_none());
+    assert!(
+        store
+            .update(missing_changes(now))
+            .await
+            .expect("the update")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn store_round_trip() {
+    let (fixture, pool, store) = database().await;
+    let now = fixed_now().naive_utc();
+    let changed_at = now + Duration::seconds(60);
+    let toggled_at = changed_at + Duration::seconds(60);
+    create_round_trip(&store, now).await;
+    assert_created_row(&pool, now).await;
+    update_round_trip(&store, changed_at).await;
+    assert_updated_row(&pool, changed_at).await;
+    toggle_round_trip(&store, toggled_at).await;
+    assert_toggled_row(&pool, toggled_at).await;
+    delete_round_trip(&store, now).await;
     pool.close();
     fixture.close_async().await.expect("the fixture closes");
 }
