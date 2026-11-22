@@ -145,16 +145,16 @@ async fn passthrough_error_body_preview_decodes_and_replays() {
     let relayed = error_body_preview_and_relay(
         StatusCode::BAD_REQUEST,
         &headers,
-        body(vec![b"caf\xc3\xa9".to_vec(), b"\xff".to_vec()]),
+        body(vec![b"call\xc3\xa9".to_vec(), b"\xff".to_vec()]),
     )
     .await;
 
-    assert_eq!(relayed.preview, "caf\u{e9}\u{fffd}");
+    assert_eq!(relayed.preview, "call\u{e9}\u{fffd}");
     assert_eq!(relayed.status, StatusCode::BAD_REQUEST);
     assert!(!relayed.headers.contains_key("content-length"));
     assert_eq!(
         delivered(collected(relayed.stream).await),
-        vec![b"caf\xc3\xa9\xff".to_vec()]
+        vec![b"call\xc3\xa9\xff".to_vec()]
     );
 }
 

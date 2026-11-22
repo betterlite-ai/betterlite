@@ -24,7 +24,17 @@ use crate::passthrough::request_context::PassthroughLoggingObj;
 
 #[derive(Default)]
 struct RecordingHook {
+    fail: bool,
     calls: Mutex<Vec<(ProxyHookError, RequestData)>>,
+}
+
+impl RecordingHook {
+    fn failing() -> Self {
+        Self {
+            fail: true,
+            calls: Mutex::new(Vec::new()),
+        }
+    }
 }
 
 #[async_trait]
@@ -39,21 +49,10 @@ impl PassthroughFailureHook for RecordingHook {
             .lock()
             .unwrap()
             .push((original_exception.clone(), request_data.clone()));
+        if self.fail {
+            return Err(PassthroughHookError);
+        }
         Ok(())
-    }
-}
-
-struct BrokenHook;
-
-#[async_trait]
-impl PassthroughFailureHook for BrokenHook {
-    async fn post_call_failure_hook(
-        &self,
-        _user_api_key_dict: &PrincipalFacts,
-        _original_exception: &ProxyHookError,
-        _request_data: &mut RequestData,
-    ) -> Result<(), PassthroughHookError> {
-        Err(PassthroughHookError)
     }
 }
 
@@ -165,40 +164,14 @@ async fn assert_reported() {
     assert_eq!(calls[0].1["model"], Json::Text("m".to_owned()));
 }
 
-async fn assert_below_400() {
+async fn assert_status(status: StatusCode, reported: bool) {
     let hook = RecordingHook::default();
     let details = PassthroughLoggingObj::default();
     let principal = PrincipalFacts::default();
     let mut headers = HeaderMap::new();
     headers.insert("content-length", HeaderValue::from_static("12"));
     let relayed = log_upstream_failure(
-        response(StatusCode::OK, headers),
-        FailureReporting {
-            user_api_key_dict: &principal,
-            request_payload: data("{}"),
-            logging_obj: &details,
-            hook: &hook,
-            redaction: &FixedRedaction(false),
-        },
-    )
-    .await;
-    assert!(hook.calls.lock().unwrap().is_empty());
-    assert_eq!(
-        body_bytes(relayed.body).await,
-        vec![b"bad \x01body\t".to_vec()]
-    );
-    // a response under 400 is returned untouched, framing headers included
-    assert_eq!(relayed.headers.get("content-length").unwrap(), "12");
-}
-
-async fn assert_at_400() {
-    let hook = RecordingHook::default();
-    let details = PassthroughLoggingObj::default();
-    let principal = PrincipalFacts::default();
-    let mut headers = HeaderMap::new();
-    headers.insert("content-length", HeaderValue::from_static("12"));
-    let relayed = log_upstream_failure(
-        response(StatusCode::BAD_REQUEST, headers),
+        response(status, headers),
         FailureReporting {
             user_api_key_dict: &principal,
             request_payload: data(r#"{"model": "m"}"#),
@@ -208,11 +181,21 @@ async fn assert_at_400() {
         },
     )
     .await;
-    // 400 is the first failure status: it is reported and its framing stripped
-    assert!(relayed.headers.get("content-length").is_none());
-    let calls = hook.calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].1["model"], Json::Text("m".to_owned()));
+    if reported {
+        // 400 is the first failure status: it is reported and its framing stripped
+        assert!(relayed.headers.get("content-length").is_none());
+        let calls = hook.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].1["model"], Json::Text("m".to_owned()));
+    } else {
+        assert!(hook.calls.lock().unwrap().is_empty());
+        assert_eq!(
+            body_bytes(relayed.body).await,
+            vec![b"bad \x01body\t".to_vec()]
+        );
+        // a response under 400 is returned untouched, framing headers included
+        assert_eq!(relayed.headers.get("content-length").unwrap(), "12");
+    }
 }
 
 // the log line names the URL without the query or fragment a token can ride in
@@ -229,7 +212,8 @@ fn assert_without_query() {
 }
 
 async fn assert_broken_hook() {
-    let body = reported(&BrokenHook, &FixedRedaction(false)).await;
+    let hook = RecordingHook::failing();
+    let body = reported(&hook, &FixedRedaction(false)).await;
     assert_eq!(body, b"bad \x01body\t".to_vec());
 }
 
@@ -332,6 +316,7 @@ async fn assert_no_double_report() {
 }
 
 async fn assert_broken_stream_hook() {
+    let hook = RecordingHook::failing();
     let details = PassthroughLoggingObj::default();
     let principal = PrincipalFacts::default();
     let relayed: Vec<_> = relay_reporting_failures(
@@ -341,7 +326,7 @@ async fn assert_broken_stream_hook() {
             user_api_key_dict: &principal,
             request_payload: data("{}"),
             logging_obj: &details,
-            hook: &BrokenHook,
+            hook: &hook,
             redaction: &FixedRedaction(false),
         },
     )
@@ -382,8 +367,8 @@ fn passthrough_error_body_sanitize() {
         "a b c"
     );
     assert_eq!(
-        sanitize_upstream_error_body("caf\u{e9} \u{20ac}"),
-        "caf\u{e9} \u{20ac}"
+        sanitize_upstream_error_body("call\u{e9} \u{20ac}"),
+        "call\u{e9} \u{20ac}"
     );
     // a no-break space and a zero-width space count as non-printable, like str.isprintable
     assert_eq!(sanitize_upstream_error_body("a\u{a0}b\u{200b}c"), "a b c");
@@ -393,8 +378,8 @@ fn passthrough_error_body_sanitize() {
 #[tokio::test]
 async fn passthrough_log_upstream_failure() {
     assert_reported().await;
-    assert_below_400().await;
-    assert_at_400().await;
+    assert_status(StatusCode::OK, false).await;
+    assert_status(StatusCode::BAD_REQUEST, true).await;
     assert_broken_hook().await;
     assert_without_query();
 }
