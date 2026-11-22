@@ -17,12 +17,12 @@ use super::super::invalid;
 
 // the helper's in-memory spend counter: the case seeds its values, names the keys whose reads raise, and the recorded pipelines and invalidations come back out in the output
 pub(crate) struct ScriptedMemory {
-    values: Mutex<BTreeMap<String, Decimal>>,
+    pub(crate) values: Mutex<BTreeMap<String, Decimal>>,
     sources: BTreeMap<String, Decimal>,
     failures: BTreeSet<String>,
     pipeline_fails: bool,
-    pipelines: Mutex<Vec<Vec<(String, Decimal)>>>,
-    invalidated: Mutex<Vec<String>>,
+    pub(crate) pipelines: Mutex<Vec<Vec<(String, Decimal)>>>,
+    pub(crate) invalidated: Mutex<Vec<String>>,
 }
 
 impl ScriptedMemory {
@@ -56,18 +56,6 @@ impl ScriptedMemory {
         })
     }
 
-    pub(crate) fn values(&self) -> BTreeMap<String, Decimal> {
-        lock(&self.values).clone()
-    }
-
-    pub(crate) fn pipelines(&self) -> Vec<Vec<(String, Decimal)>> {
-        lock(&self.pipelines).clone()
-    }
-
-    pub(crate) fn invalidated(&self) -> Vec<String> {
-        lock(&self.invalidated).clone()
-    }
-
     fn record(&self, pending: &[PendingSpendIncrement]) {
         let recorded: Vec<(String, Decimal)> = pending
             .iter()
@@ -79,7 +67,9 @@ impl ScriptedMemory {
     // InMemoryCache.increment_cache: get or zero, add, set; a scripted failing read aborts the whole pipeline
     fn apply(&self, counter_key: &str, increment: Decimal) -> Result<Decimal, SettlementError> {
         if self.failures.contains(counter_key) {
-            return Err(store_failure());
+            return Err(SettlementError::Write(SpendWriteError::from(
+                LayersError::Unavailable,
+            )));
         }
         let held = lock(&self.values)
             .get(counter_key)
@@ -137,7 +127,9 @@ impl SettlementCounters for ScriptedMemory {
     ) -> Result<(), SettlementError> {
         self.record(pending);
         if self.pipeline_fails {
-            return Err(store_failure());
+            return Err(SettlementError::Write(SpendWriteError::from(
+                LayersError::Unavailable,
+            )));
         }
         for item in pending {
             let _after = self.apply(&item.counter_key, item.increment)?;
@@ -160,7 +152,7 @@ impl AdmissionCounters for ScriptedMemory {
         source_cache_key: &str,
     ) -> Result<(), SpendWriteError> {
         if self.failures.contains(counter_key) {
-            return Err(seed_failure());
+            return Err(SpendWriteError::from(LayersError::Unavailable));
         }
         if lock(&self.values).contains_key(counter_key) {
             return Ok(());
@@ -179,7 +171,7 @@ impl AdmissionCounters for ScriptedMemory {
     // _ensure_window_spend_counter_initialized: without a DB row a cold window answers false
     async fn seed_window(&self, counter: &BudgetCounter) -> Result<bool, SpendWriteError> {
         if self.failures.contains(&counter.counter_key) {
-            return Err(seed_failure());
+            return Err(SpendWriteError::from(LayersError::Unavailable));
         }
         Ok(lock(&self.values).contains_key(&counter.counter_key))
     }
@@ -198,7 +190,9 @@ impl AdmissionCounters for ScriptedMemory {
     ) -> Result<Vec<Option<Decimal>>, SettlementError> {
         self.record(pending);
         if self.pipeline_fails {
-            return Err(store_failure());
+            return Err(SettlementError::Write(SpendWriteError::from(
+                LayersError::Unavailable,
+            )));
         }
         let mut values = Vec::new();
         for item in pending {
@@ -206,12 +200,4 @@ impl AdmissionCounters for ScriptedMemory {
         }
         Ok(values)
     }
-}
-
-fn seed_failure() -> SpendWriteError {
-    SpendWriteError::from(LayersError::Unavailable)
-}
-
-fn store_failure() -> SettlementError {
-    SettlementError::Write(SpendWriteError::from(LayersError::Unavailable))
 }

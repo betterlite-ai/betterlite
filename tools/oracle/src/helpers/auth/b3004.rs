@@ -13,6 +13,7 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_redis::request_batch::lock;
 use chrono::DateTime;
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
@@ -72,12 +73,14 @@ async fn execute(input: &Input) -> HelperResult {
     let outcome = admit(&memory, &request, &mut applied).await;
     let (reservation, error) =
         outcome_values(&outcome, &mut applied, &memory, reservation_cost).await?;
+    let values = lock(&memory.values);
+    let pipelines = lock(&memory.pipelines);
     Ok(json!({
         "reservation": reservation,
         "error": error,
-        "memory": memory_value(&memory.values())?,
-        "pipelines": pipelines_value(&memory.pipelines())?,
-        "invalidated": memory.invalidated(),
+        "memory": memory_value(&values)?,
+        "pipelines": pipelines_value(&pipelines)?,
+        "invalidated": &*lock(&memory.invalidated),
     }))
 }
 
