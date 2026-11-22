@@ -21,6 +21,8 @@ use uuid::Uuid;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
+use crate::state::anthropic_runtime;
+use crate::state::shared::Shared;
 
 const CHAT: &str = r#"{"model":"g","messages":[{"role":"user","content":"hi"}]}"#;
 const STREAM: &str = r#"{"model":"g","messages":[{"role":"user","content":"hi"}],"stream":true}"#;
@@ -199,7 +201,12 @@ async fn answered(
     let mut executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
     executor.clock = fixed_clock;
     executor.next_id = fixed_id;
-    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    let shared = Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
+    };
+    let slot = anthropic_runtime::Slot::new(&config, &shared);
+    let calls = ChatCalls::new(&config, Arc::new(executor), &slot).unwrap();
     let router = chat_routes_with_call_id(Arc::new(calls), false).unwrap();
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")

@@ -21,6 +21,8 @@ use tower::ServiceExt as _;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
+use crate::state::anthropic_runtime;
+use crate::state::shared::Shared;
 
 use super::embedding::embedding_error;
 use super::{CallError, chat_error};
@@ -93,7 +95,12 @@ async fn call(
     let calls = {
         let config = loader.load(&source).unwrap();
         let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
-        ChatCalls::new(&config, Arc::new(executor)).unwrap()
+        let shared = Shared {
+            bundled_catalog: Arc::clone(&executor.bundled_catalog),
+            client: executor.client.clone(),
+        };
+        let slot = anthropic_runtime::Slot::new(&config, &shared);
+        ChatCalls::new(&config, Arc::new(executor), &slot).unwrap()
     };
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")

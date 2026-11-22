@@ -1,85 +1,38 @@
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::tls::{TlsPolicy, TlsPolicyError};
+use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ModelDeployment, RoutingStrategy};
 use betterlite_core::mock::chat::response as mock_chat;
 use betterlite_core::mock::embedding::response as mock_embedding;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
-use betterlite_http::proxy::pool::{ClientChoice, ClientPool, PoolError};
+use betterlite_http::proxy::pool::{ClientChoice, ClientPool};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::chat::deployment::{
-    ChatDeployment, DeploymentError, OpenAiDefaults, Provider as DeploymentProvider,
+    ChatDeployment, OpenAiDefaults, Provider as DeploymentProvider,
 };
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_provider::aiohttp_openai_dispatch::{DEFAULT_AIOHTTP_BASE, complete_url};
+use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicBases;
 use betterlite_provider::legacy_dispatch::Legacy;
 use betterlite_provider::provider::Provider;
-use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::rngs::StdRng;
 use secrecy::ExposeSecret as _;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use thiserror::Error;
-use url::{ParseError, Url};
+use url::Url;
 
+use anthropic_defaults::apply_anthropic_defaults;
 use mock::mock_settings;
 use uuid::Uuid;
 
-#[derive(Debug, Error)]
-pub enum ChatSetupError {
-    #[error(transparent)]
-    Environment {
-        #[from]
-        source: betterlite_env::EnvError,
-    },
-    #[error(transparent)]
-    Deployment {
-        #[from]
-        source: DeploymentError,
-    },
-    #[error(transparent)]
-    Tls {
-        #[from]
-        source: TlsPolicyError,
-    },
-    #[error(
-        "model_list entry {model_name} has an api_base the aiohttp_openai provider cannot use: {source}"
-    )]
-    AiohttpBase {
-        model_name: String,
-        #[source]
-        source: ParseError,
-    },
-    #[error(
-        "model_list entry {model_name} sets no {field}: LiteLLM's global key and base chain for {provider} is not built yet"
-    )]
-    UnbuiltChain {
-        model_name: String,
-        provider: &'static str,
-        field: &'static str,
-    },
-    #[error(
-        "router_settings.routing_strategy {strategy:?} is not supported, only simple-shuffle is"
-    )]
-    RoutingStrategy { strategy: RoutingStrategy },
-    #[error("cannot build the outbound HTTP client: {source}")]
-    Client {
-        #[from]
-        source: PoolError,
-    },
-    #[error(transparent)]
-    Redactor {
-        #[from]
-        source: RedactionError,
-    },
-}
+pub use crate::server::error::ChatSetupError;
 
 // reads certificate files, so it runs before the async runtime starts
 pub fn chat_executor(
@@ -175,6 +128,7 @@ fn chat_deployments(
     resolution: &ResolutionContext<'_>,
 ) -> Result<Vec<ChatDeployment>, ChatSetupError> {
     let identity = &config.sections.provider_resolution;
+    let bases = AnthropicBases::new(config);
     let mut resolved = Vec::new();
     for (index, deployment) in config.model_list.iter().enumerate() {
         let custom_llm_provider = identity.deployments.get(index).and_then(Option::as_deref);
@@ -184,6 +138,9 @@ fn chat_deployments(
         let provider = Provider::from_deployment(&chat);
         if let Ok(Provider::Legacy(legacy)) = &provider {
             refuse_unbuilt_chain(&chat, deployment, *legacy)?;
+        }
+        if let Ok(Provider::Anthropic(adapter)) = &provider {
+            apply_anthropic_defaults(&mut chat, deployment, &bases, adapter.surface)?;
         }
         if matches!(provider, Ok(Provider::AiohttpOpenAi(_))) {
             apply_aiohttp_defaults(&mut chat, deployment)?;
@@ -296,6 +253,7 @@ fn outbound_client(
     Ok(client)
 }
 
+mod anthropic_defaults;
 mod mock;
 pub(crate) mod provider_call;
 mod tests;

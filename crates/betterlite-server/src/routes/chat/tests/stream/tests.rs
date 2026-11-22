@@ -22,6 +22,8 @@ use tokio::time::timeout;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::routes::chat::{ErrorLayer, chat_routes_with_call_id};
 use crate::server::chat_setup::chat_executor;
+use crate::state::anthropic_runtime;
+use crate::state::shared::Shared;
 use betterlite_error::normalize::Normalizer;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -46,7 +48,12 @@ async fn gateway(upstream: &TcpListener, tasks: &mut JoinSet<()>) -> (ProxiedCli
     .load(&source)
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
-    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    let shared = Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
+    };
+    let slot = anthropic_runtime::Slot::new(&config, &shared);
+    let calls = ChatCalls::new(&config, Arc::new(executor), &slot).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!(
         "http://{}/v1/chat/completions",
@@ -183,7 +190,12 @@ async fn an_unrouted_chat_failure_is_logged_before_dispatch() {
     .load("model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k}}\n")
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
-    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    let shared = Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
+    };
+    let slot = anthropic_runtime::Slot::new(&config, &shared);
+    let calls = ChatCalls::new(&config, Arc::new(executor), &slot).unwrap();
     let router = chat_routes_with_call_id(Arc::new(calls), false).unwrap();
     let log = NamedTempFile::new().unwrap();
     let subscriber = tracing_subscriber::fmt()

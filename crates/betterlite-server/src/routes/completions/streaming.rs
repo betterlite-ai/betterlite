@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -20,6 +21,7 @@ use betterlite_openai::stream::SseParser;
 use betterlite_openai::text_completion_execution::CompletionAnswer;
 use betterlite_openai::text_completion_request::CompletionRequest;
 use betterlite_openai::text_completion_stream::{DONE_FRAME, decode_chat_events, without_nulls};
+use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use betterlite_provider::operation::{
     ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult,
 };
@@ -51,9 +53,11 @@ pub(crate) async fn provider_stream(
     request: &ChatRequest,
     control: ControlOptions,
     usage: StreamUsage,
+    anthropic: Option<&Arc<AnthropicRuntime>>,
 ) -> Result<(OperationResult, HeaderMap), CallError<ChatError>> {
     let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
-    let inputs = Deployment::from_chat(deployment);
+    let mut inputs = Deployment::from_chat(deployment);
+    inputs.anthropic = anthropic.cloned();
     let operation = OperationRequest::Stream(Box::new(ChatOperation {
         model: inputs.model.clone(),
         request: request.clone(),
@@ -193,6 +197,7 @@ pub(super) async fn streamed(
         chat,
         control,
         StreamUsage::Text,
+        None,
     )
     .await
     .map_err(|error| chat_call_failure(error, calls))?;

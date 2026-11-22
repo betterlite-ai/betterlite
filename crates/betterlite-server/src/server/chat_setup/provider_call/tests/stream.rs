@@ -18,6 +18,8 @@ use tokio::time::timeout;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
+use crate::state::anthropic_runtime;
+use crate::state::shared::Shared;
 
 const FIRST: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"first\"}}]}\n\n";
 const SECOND: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"second\"}}]}\n\n";
@@ -69,7 +71,12 @@ async fn gateway(upstream: &TcpListener, tasks: &mut JoinSet<()>) -> (ProxiedCli
     .load(&source)
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
-    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    let shared = Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
+    };
+    let slot = anthropic_runtime::Slot::new(&config, &shared);
+    let calls = ChatCalls::new(&config, Arc::new(executor), &slot).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!(
         "http://{}/v1/chat/completions",

@@ -234,6 +234,7 @@ async fn provider_body(usage: StreamUsage, request: &str) -> Json {
         &parsed,
         ControlOptions::default(),
         usage,
+        None,
     )
     .await
     .expect("provider stream");
@@ -319,6 +320,7 @@ async fn chat_stream_answer_decodes_the_chat_events() {
         &parsed,
         ControlOptions::default(),
         StreamUsage::Text,
+        None,
     )
     .await
     .expect("provider stream");

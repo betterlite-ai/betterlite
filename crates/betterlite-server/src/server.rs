@@ -36,8 +36,8 @@ use betterlite_logging::registry::CallbackRegistry;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::execution::ChatExecutor;
-use betterlite_tokenizer::count::error::CountError;
 use chat_setup::vertex_embedding::{VertexEmbeddingSetupError, vertex_embedding_calls};
+use error::ChatCallsError;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -73,10 +73,10 @@ pub enum ServerError {
         #[source]
         source: io::Error,
     },
-    #[error("the token counter limits are invalid: {source}")]
-    TokenCounter {
+    #[error(transparent)]
+    ChatCalls {
         #[from]
-        source: CountError,
+        source: ChatCallsError,
     },
     #[error(transparent)]
     VertexEmbedding(#[from] VertexEmbeddingSetupError),
@@ -181,13 +181,18 @@ pub(crate) fn application(
     tasks: &TaskTracker,
 ) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
-    let calls = Arc::new(ChatCalls::new(config, Arc::clone(&executor))?);
-    let counter = Arc::clone(&calls.counter);
-    let vertex = vertex_embedding_calls(config, &executor, tasks)?;
     let shared = Arc::new(Shared {
         bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
     });
     let state = Arc::new(ServerState::new(config, Arc::clone(&executor), shared));
+    let calls = Arc::new(ChatCalls::new(
+        config,
+        Arc::clone(&executor),
+        &state.anthropic_runtime,
+    )?);
+    let counter = Arc::clone(&calls.counter);
+    let vertex = vertex_embedding_calls(config, &executor, tasks)?;
     let read_through = state.model_read_through.read_through.clone();
     let routed = router(
         state,
@@ -283,6 +288,7 @@ pub(crate) fn failure(
 
 pub mod component;
 pub(crate) mod connections;
+pub mod error;
 pub mod filter;
 pub mod inputs;
 pub mod listener;
