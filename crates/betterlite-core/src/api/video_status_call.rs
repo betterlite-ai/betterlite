@@ -59,7 +59,7 @@ pub enum VideoStatusWork<'call> {
 pub type PendingVideoStatus<'call> =
     Pin<Box<dyn Future<Output = Result<VideoObject, VideoStatusCallError>> + Send + 'call>>;
 
-// the caller's client for a status call: the factories' two clients, or none when the caller supplies one
+// the client the caller supplied for a status call, or none when the factories build one
 pub type StatusClient<'call, Factories> = Option<
     SuppliedClient<
         'call,
