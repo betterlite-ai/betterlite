@@ -43,7 +43,7 @@ fn cooled_down_increments_with_five_sanitized_positional_values() {
                 ("model_id", "model-1"),
                 ("api_base", "https://api.example"),
                 ("api_provider", "openai"),
-                ("exception_status", "line break\"quoted\""),
+                ("exception_status", "line break\\\"quoted\\\""),
             ],
         )
     );

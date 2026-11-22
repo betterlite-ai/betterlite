@@ -5,6 +5,7 @@ use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
+use betterlite_error::normalize::class::Class;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_prometheus::collector_factory::collector::{Collector, MetricUpdate, MetricValue};
@@ -454,9 +455,14 @@ pub(crate) fn hidden_params(entries: &[(&str, Json)]) -> Json {
 pub(crate) fn exception(status: Option<&str>, code: Option<&str>) -> LabelException {
     LabelException {
         class_name: "BadRequestError".to_owned(),
+        class: Class::Other,
+        message: None,
         status_code: status.map(str::to_owned),
         code: code.map(str::to_owned),
-        ..LabelException::default()
+        llm_provider: None,
+        category: None,
+        rate_limit_type: None,
+        legacy_class_name: None,
     }
 }
 

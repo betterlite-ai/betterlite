@@ -247,9 +247,7 @@ fn a_full_success_writes_every_metric_in_order() {
             "litellm_deployment_total_requests",
             &[
                 ("model_group", "group-a"),
-                ("litellm_model_name", "gpt-4o"),
                 ("model_id", "value-model-id"),
-                ("api_base", "https://api.example"),
                 ("hashed_api_key", "hash-1"),
                 ("api_key_alias", "alias-1"),
                 ("team", "team-1"),
@@ -569,11 +567,9 @@ fn remaining_values_are_set_rather_than_incremented() {
         &expected_labels(
             "litellm_remaining_requests_metric",
             &[
-                ("litellm_model_name", "gpt-4o"),
+                ("model_group", "group-a"),
                 ("hashed_api_key", "hash-1"),
                 ("api_key_alias", "alias-1"),
-                ("team", "team-1"),
-                ("team_alias", "team-alias-1"),
                 ("model_id", "value-model-id"),
             ],
         )
@@ -677,11 +673,10 @@ fn an_observed_header_and_overhead_use_the_metric_label_lists() {
         &expected_labels(
             "litellm_overhead_latency_metric",
             &[
-                ("litellm_model_name", "gpt-4o"),
+                ("model_group", "group-a"),
                 ("hashed_api_key", "hash-1"),
                 ("api_key_alias", "alias-1"),
                 ("model_id", "value-model-id"),
-                ("api_base", "https://api.example"),
             ],
         )
     );

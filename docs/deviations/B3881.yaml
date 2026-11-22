@@ -14,11 +14,12 @@ deviations:
       is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3206-L3208
   - what: >-
-      A remaining-requests or remaining-tokens header that is a numeric string is parsed and set, where LiteLLM hands the value
-      to prometheus_client, whose Gauge.set converts it with float(); a header of any other type is skipped.
+      A remaining-requests or remaining-tokens header value is read into a decimal from a JSON number or numeric string, where
+      LiteLLM hands the value to prometheus_client, whose Gauge.set converts it with float(); a value that cannot be read as a
+      number is the failure the catch-all logs, as float()'s ValueError is in LiteLLM.
     why: >-
       The typed payload keeps header values as JSON values, and docs/compatibility.md reads a declared number from its numeric
-      text; LiteLLM's float() conversion is the behavior a working setup relies on.
+      text; the spellings float() accepts that a decimal does not, inf and nan, are not values a working setup sends.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3111-L3152
   - what: >-
       The router view and the metadata bucket come in as arguments, a requested model catalog and a metadata slots value, not

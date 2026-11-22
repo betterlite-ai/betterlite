@@ -127,18 +127,8 @@ fn a_selected_failure_without_an_exception_skips_the_failure_counter() {
     assert_eq!(events.len(), 2);
     assert_eq!(metric_of(&events[0]), "litellm_deployment_state");
     assert_eq!(metric_of(&events[1]), "litellm_deployment_total_requests");
-    assert_eq!(
-        labels_of(&events[1])
-            .get("exception_status")
-            .map(String::as_str),
-        Some("None")
-    );
-    assert_eq!(
-        labels_of(&events[1])
-            .get("exception_class")
-            .map(String::as_str),
-        Some("None")
-    );
+    assert!(!labels_of(&events[1]).contains_key("exception_status"));
+    assert!(!labels_of(&events[1]).contains_key("exception_class"));
 }
 
 #[test]
@@ -353,8 +343,12 @@ fn model_group_falls_back_to_litellm_metadata_then_metadata() {
 fn identity_labels_fall_through_a_falsy_b3880_result_to_the_payload_metadata() {
     let override_labels = DeploymentFailureLabels {
         api_key_alias: Some(String::new()),
+        user_email: None,
         team: Some("auth-team".to_owned()),
-        ..DeploymentFailureLabels::default()
+        team_alias: None,
+        hashed_api_key: None,
+        client_ip: None,
+        user_agent: None,
     };
     let gauges = ProbeGauges::new().with_failure_labels(override_labels);
     let metadata = Json::Object(json_object(&[
@@ -529,6 +523,6 @@ fn a_failure_without_a_payload_uses_the_default_empty_payload() {
     assert_eq!(metric_of(&events[0]), "litellm_deployment_total_requests");
     assert_eq!(
         labels_of(&events[0]).get("api_base").map(String::as_str),
-        Some("None")
+        Some("")
     );
 }
