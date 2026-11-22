@@ -143,7 +143,6 @@ fn retention_outcome(setup: &RetentionSetup<'_>) -> JsonValue {
     };
     let context = fixture.context();
     let settings = store(setup.settings);
-    let previous = cleanup_schedule_of(&store(setup.previous));
     let mut state = CleanupScheduleState {
         last_attempt: setup
             .last_attempt
@@ -158,7 +157,7 @@ fn retention_outcome(setup: &RetentionSetup<'_>) -> JsonValue {
     on_settings_changed(
         scheduler_option(setup.scheduler, &mut recording),
         &ScheduleChange {
-            previous: &previous,
+            previous: &cleanup_schedule_of(&store(setup.previous)),
             context: &context,
         },
         &settings,
@@ -167,14 +166,13 @@ fn retention_outcome(setup: &RetentionSetup<'_>) -> JsonValue {
     );
     let interval = interval_seconds(&settings, &context);
     let (kind, gap) = classification(recording.trigger.as_deref(), interval, context.now);
-    let recorded = state.last_attempt.as_ref().map(schedule_values);
     serde_json::json!({
         "added": recording.added,
         "removed": recording.removed,
         "job_present": recording.job_present,
         "kind": kind,
         "gap_seconds": gap,
-        "last_attempt": recorded,
+        "last_attempt": state.last_attempt.as_ref().map(schedule_values),
         "reschedule_failed": state.reschedule_failed,
     })
 }
