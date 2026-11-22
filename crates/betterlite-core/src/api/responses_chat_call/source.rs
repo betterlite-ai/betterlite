@@ -1,18 +1,14 @@
-use std::collections::VecDeque;
-use std::fmt::Display;
-
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
-use betterlite_openai::stream::SseParser;
-use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
-use betterlite_streaming::provider_chunk_decode::wrapper::{
-    StreamSetup as WrapperSetup, StreamWrapper,
+use betterlite_openai::text_completion_transport::sdk::{ByteStream, SdkError};
+use betterlite_openai::text_completion_transport::stream::{
+    ProviderStream, PumpError, StreamSetup, provider_stream,
 };
+use betterlite_streaming::provider_chunk_decode::error::ProviderChunkError;
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
-use betterlite_streaming::stream_chunk_shaping::records::{
-    JsonObject, JsonValue, StreamChunk, StreamOptions,
-};
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamOptions};
 use futures_util::StreamExt as _;
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::api::chat_response_stream::chunk::wrapper_view;
@@ -21,7 +17,6 @@ use crate::api::messages_stream_split::errors::StreamFailure;
 
 use super::completions::CompletionBody;
 
-const DONE_SENTINEL: &[u8] = b"[DONE]";
 // LiteLLM's REPEATED_STREAMING_CHUNK_LIMIT default
 const REPEATED_CHUNK_LIMIT: usize = 100;
 
@@ -34,37 +29,35 @@ pub struct ChunkSourceConfig {
     pub next_id: fn() -> Uuid,
 }
 
-// B014's SSE bytes as B924 reads them: CustomStreamWrapper's decode loop, one ModelResponseStream per item
+// What the shared pump can meet while it reads B014's body, kept typed so the caller can name each cause
+#[derive(Debug, Error)]
+enum ChunkError {
+    #[error(transparent)]
+    Chunk(ProviderChunkError),
+    #[error(transparent)]
+    Usage(serde_json::Error),
+    #[error(transparent)]
+    Sdk(Box<SdkError>),
+}
+
+// B014's SSE bytes as B924 reads them: the text transport's one pump, one ModelResponseStream per item
 pub struct ResponsesChunkSource {
-    body: CompletionBody,
-    parser: SseParser,
-    pending: VecDeque<Vec<u8>>,
-    wrapper: StreamWrapper,
-    phase: Phase,
-}
-
-// Exhausted means the bytes ended but parsed events may remain; Done means the [DONE] event was read.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Phase {
-    Reading,
-    Exhausted,
-    Done,
-    Failed,
-}
-
-// One step of the source: a shaped chunk, the closing chunks, or another look at the queue.
-enum Step {
-    Chunk(Json),
-    Close,
-    More,
+    chunks: ProviderStream<ChunkError>,
 }
 
 impl ResponsesChunkSource {
     #[must_use]
     pub fn new(config: ChunkSourceConfig, body: CompletionBody) -> Self {
-        let wrapper = StreamWrapper::new(
+        // the pump reads the OpenAI SDK's byte error, so a body failure enters it as the SDK's own text
+        let bytes: ByteStream = Box::pin(body.0.map(|read| {
+            read.map_err(|source| SdkError::Other {
+                message: source.to_string(),
+            })
+        }));
+        let chunks = provider_stream(
             &config.provider,
-            WrapperSetup {
+            bytes,
+            StreamSetup {
                 model: config.model,
                 stream_options: config.stream_options,
                 merge_reasoning_in_choices: false,
@@ -74,105 +67,29 @@ impl ResponsesChunkSource {
                 now: config.now,
                 next_id: config.next_id,
             },
+            |error| match error {
+                PumpError::Chunk(source) => ChunkError::Chunk(source),
+                PumpError::Usage(source) => ChunkError::Usage(source),
+                PumpError::Sdk(source) => ChunkError::Sdk(source),
+            },
         );
-        Self {
-            body,
-            parser: SseParser::default(),
-            pending: VecDeque::new(),
-            wrapper,
-            phase: Phase::Reading,
-        }
+        Self { chunks }
     }
-
-    async fn advance(&mut self) -> Result<Option<Json>, StreamFailure> {
-        loop {
-            match self.step().await? {
-                Step::Chunk(chunk) => return Ok(Some(chunk)),
-                Step::Close => return self.closing(),
-                Step::More => {}
-            }
-        }
-    }
-
-    // Pops one queued payload, reads one body item, or reports that only the closing chunks are left.
-    async fn step(&mut self) -> Result<Step, StreamFailure> {
-        if let Some(payload) = self.pending.pop_front() {
-            if payload.trim_ascii() == DONE_SENTINEL {
-                self.phase = Phase::Done;
-                return Ok(Step::More);
-            }
-            if let Some(chunk) = self.shape(&payload)? {
-                return Ok(Step::Chunk(chunk));
-            }
-            return Ok(Step::More);
-        }
-        if self.phase != Phase::Reading {
-            return Ok(Step::Close);
-        }
-        let Some(read) = self.body.0.next().await else {
-            self.pending.extend(self.parser.finish());
-            self.phase = Phase::Exhausted;
-            return Ok(if self.pending.is_empty() {
-                Step::Close
-            } else {
-                Step::More
-            });
-        };
-        let bytes = read.map_err(|error| unclassified(&error))?;
-        let events = self
-            .parser
-            .push(&bytes)
-            .map_err(|error| unclassified(&error))?;
-        self.pending.extend(events);
-        Ok(Step::More)
-    }
-
-    // None means the payload shaped no chunk, after the wrapper stripped a usage-only one.
-    fn shape(&mut self, payload: &[u8]) -> Result<Option<Json>, StreamFailure> {
-        let value: JsonValue =
-            serde_json::from_slice(payload).map_err(|source| unclassified(&source))?;
-        let shaped = self
-            .wrapper
-            .push(&ProviderChunk::Json(Box::new(value)))
-            .map_err(|error| unclassified(&error))?;
-        let Some(chunk) = shaped else {
-            return Ok(None);
-        };
-        view_chunk(&chunk)
-    }
-
-    // The wrapper's closing chunks: the finish reason when none went out, then the usage chunk it was asked for.
-    fn closing(&mut self) -> Result<Option<Json>, StreamFailure> {
-        let Some(closing) = self.wrapper.finish() else {
-            return Ok(None);
-        };
-        let chunk = closing.map_err(|error| unclassified(&error))?;
-        view_chunk(&chunk)
-    }
-}
-
-fn unclassified(error: &dyn Display) -> StreamFailure {
-    StreamFailure::Unclassified {
-        text: error.to_string(),
-    }
-}
-
-fn view_chunk(chunk: &StreamChunk) -> Result<Option<Json>, StreamFailure> {
-    wrapper_view(chunk)
-        .map(Some)
-        .map_err(|error| unclassified(&error))
 }
 
 #[async_trait]
 impl AsyncChunkStream for ResponsesChunkSource {
     async fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
-        if self.phase == Phase::Failed {
+        let Some(item) = self.chunks.next().await else {
             return Ok(None);
-        }
-        let result = self.advance().await;
-        if result.is_err() {
-            self.phase = Phase::Failed;
-        }
-        result
+        };
+        let chunk = item.map_err(|error| StreamFailure::Unclassified {
+            text: error.to_string(),
+        })?;
+        wrapper_view(&chunk)
+            .map(Some)
+            .map_err(|error| StreamFailure::Unclassified {
+                text: error.to_string(),
+            })
     }
 }
