@@ -117,13 +117,7 @@ impl HealthProbeParams {
         insert_parameter(&mut parameters, "cache", &self.cache);
         for (key, value) in &self.parameters {
             if include_messages || key != "messages" {
-                let typed = serde_json::from_value(value.clone()).map_err(|source| {
-                    HealthProbeError::ParameterValue {
-                        key: key.clone(),
-                        source,
-                    }
-                })?;
-                parameters.insert(key.clone(), typed);
+                parameters.insert(key.clone(), convert_parameter(key, value.clone())?);
             }
         }
         Ok(parameters)
@@ -142,12 +136,16 @@ where
     if value.is_null() {
         return Ok(Param::Null);
     }
-    let typed =
-        serde_json::from_value(value).map_err(|source| HealthProbeError::ParameterValue {
-            key: key.to_owned(),
-            source,
-        })?;
-    Ok(Param::Value(typed))
+    Ok(Param::Value(convert_parameter(key, value)?))
+}
+fn convert_parameter<T>(key: &str, value: Value) -> Result<T, HealthProbeError>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_value(value).map_err(|source| HealthProbeError::ParameterValue {
+        key: key.to_owned(),
+        source,
+    })
 }
 trait ParameterJson {
     fn parameter_json(&self) -> Json;

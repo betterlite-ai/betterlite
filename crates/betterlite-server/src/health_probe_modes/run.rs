@@ -102,18 +102,7 @@ pub async fn run_health_probe(
                 .await
         }
         Err(SpecialMode::ImageEdit) => probe_image_edit(probe.params, backend).await,
-        Err(SpecialMode::Realtime) => {
-            let call = RealtimeCall {
-                model: probe.model.to_owned(),
-                custom_llm_provider: probe.custom_llm_provider.to_owned(),
-                api_base: probe.params.api_base.as_option().cloned(),
-                api_key: probe.params.api_key.clone(),
-                api_version: probe.params.api_version.as_option().cloned(),
-                model_params: probe.params.call_parameters(true)?,
-                logging: probe.params.litellm_logging_obj.clone(),
-            };
-            backend.realtime(call).await
-        }
+        Err(SpecialMode::Realtime) => backend.realtime(realtime_call(&probe)?).await,
         Err(SpecialMode::Batch) => {
             probe_batch_mode(probe.custom_llm_provider, probe.params, backend).await
         }
@@ -208,6 +197,18 @@ fn ocr_call(
         parameters,
         document,
         api_key: request.params.api_key.clone(),
+        logging: request.params.litellm_logging_obj.clone(),
+    };
+    Ok(call)
+}
+fn realtime_call(request: &ProbeRequest<'_>) -> Result<RealtimeCall, HealthProbeError> {
+    let call = RealtimeCall {
+        model: request.model.to_owned(),
+        custom_llm_provider: request.custom_llm_provider.to_owned(),
+        api_base: request.params.api_base.as_option().cloned(),
+        api_key: request.params.api_key.clone(),
+        api_version: request.params.api_version.as_option().cloned(),
+        model_params: request.params.call_parameters(true)?,
         logging: request.params.litellm_logging_obj.clone(),
     };
     Ok(call)
