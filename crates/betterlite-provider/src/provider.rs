@@ -35,6 +35,7 @@ use self::speech_providers::SpeechProviders;
 use self::subscription::Subscription;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(align(8))] // the Box is the enum's only pointer; 8-byte variant layouts satisfy variant_size_differences without boxing the one-byte adapters
 pub enum Provider {
     OpenAi(OpenAi),
     AiohttpOpenAi(AiohttpOpenAi),
