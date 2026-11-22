@@ -102,7 +102,10 @@ impl MessagesCallSteps {
         match plan {
             MessagesRoute::Router {
                 specific_deployment,
-            } => self.call_router(data, input, specific_deployment).await,
+            } => {
+                let routing = self.routing.as_deref().ok_or_else(routing_missing)?;
+                call_router(routing, data, input, specific_deployment).await
+            }
             MessagesRoute::Direct => self.dispatch.dispatch(data).await,
             MessagesRoute::A2aAgent => self.call_a2a(data, input).await,
             MessagesRoute::UserConfig => Err(MessagesCallError::UserConfig),
@@ -116,26 +119,6 @@ impl MessagesCallSteps {
                 )))
             }
         }
-    }
-
-    async fn call_router(
-        &self,
-        mut data: JsonMap,
-        input: &MessagesRouteInput,
-        specific_deployment: bool,
-    ) -> Result<MessagesOutcome, MessagesCallError> {
-        let Some(routing) = self.routing.as_deref() else {
-            return Err(routing_missing());
-        };
-        // The team mapping runs only where LiteLLM reaches the router, never on the api_key or override branches
-        if !input.has_api_key_or_base.0
-            && !input.has_override.0
-            && let Some(team_id) = input.team_id.as_deref()
-            && let Some(mapped) = routing.map_team_model(input.model.as_deref(), team_id)
-        {
-            data.insert("model".to_owned(), JsonValue::String(mapped));
-        }
-        routing.anthropic_messages(data, specific_deployment).await
     }
 
     async fn call_a2a(
@@ -155,6 +138,23 @@ impl MessagesCallSteps {
         };
         result
     }
+}
+
+async fn call_router(
+    routing: &dyn MessagesRouting,
+    mut data: JsonMap,
+    input: &MessagesRouteInput,
+    specific_deployment: bool,
+) -> Result<MessagesOutcome, MessagesCallError> {
+    // The team mapping runs only where LiteLLM reaches the router, never on the api_key or override branches
+    if !input.has_api_key_or_base.0
+        && !input.has_override.0
+        && let Some(team_id) = input.team_id.as_deref()
+        && let Some(mapped) = routing.map_team_model(input.model.as_deref(), team_id)
+    {
+        data.insert("model".to_owned(), JsonValue::String(mapped));
+    }
+    routing.anthropic_messages(data, specific_deployment).await
 }
 
 fn route_input(
