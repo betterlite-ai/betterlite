@@ -1,8 +1,8 @@
 use super::support::{
     Fixture, MODEL_GROUP, caller_metadata, caller_session_metadata, deployment, fixture, grouped,
     groups, hook_kwargs, hook_request, litellm_hook, litellm_metadata, marked_session_metadata,
-    metadata, pin, pin_value, pool, seed_shared_value, session_and_response, session_metadata,
-    session_pin, settings, settings_with_ttl, shared_store, text, user_pin,
+    metadata, pin, pin_value, pool, scoped_session_pin, seed_shared_value, session_and_response,
+    session_metadata, session_pin, settings, settings_with_ttl, shared_store, text, user_pin,
 };
 use crate::affinity_claims::identity::AffinityFlag;
 use crate::deployment_affinity::flags::warn_unknown_affinity_flags;
@@ -50,11 +50,19 @@ pub(super) async fn session_pin_selects() {
     assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["b"]);
 }
 
-// the session pin is read before the caller pin
+// the session pin, scoped by the caller, is read before the caller pin
 pub(super) async fn session_beats_caller() {
     let fixture = fixture(&[AffinityFlag::Deployment, AffinityFlag::Session]);
-    fixture.seed(&session_pin("s1"), &pin("a"), 600);
+    fixture.seed(&scoped_session_pin("key", "s1"), &pin("a"), 600);
     fixture.seed(&user_pin("key"), &pin("b"), 600);
+    let kwargs = caller_session_metadata("key", "s1");
+    assert_eq!(fixture.selected(&kwargs).await, ["a"]);
+}
+
+// the session pin is scoped by the caller identity the request carries
+pub(super) async fn session_pin_scoped_by_caller() {
+    let fixture = fixture(&[AffinityFlag::Session]);
+    fixture.seed(&scoped_session_pin("key", "s1"), &pin("a"), 600);
     let kwargs = caller_session_metadata("key", "s1");
     assert_eq!(fixture.selected(&kwargs).await, ["a"]);
 }

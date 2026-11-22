@@ -33,6 +33,15 @@ pub fn deployment_model_name(kwargs: &JsonObject) -> Option<&str> {
     })
 }
 
+// kwargs["model_info"]: the router attaches the selected deployment's dict at the top level
+#[must_use]
+pub fn request_model_info(kwargs: &JsonObject) -> Option<&JsonObject> {
+    match kwargs.get(MODEL_INFO) {
+        Some(slot) => json_object(slot),
+        None => None,
+    }
+}
+
 // the model_info fallback: the selected deployment's own dict first, then the first metadata channel holding one
 #[must_use]
 pub fn metadata_model_info(kwargs: &JsonObject) -> Option<&JsonObject> {

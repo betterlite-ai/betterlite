@@ -227,6 +227,10 @@ pub(crate) fn session_pin(session_id: &str) -> AffinityKey {
     session_affinity_cache_key(MODEL_GROUP, session_id, None).unwrap()
 }
 
+pub(crate) fn scoped_session_pin(user_key: &str, session_id: &str) -> AffinityKey {
+    session_affinity_cache_key(MODEL_GROUP, session_id, Some(user_key)).unwrap()
+}
+
 pub(crate) fn pin(model_id: &str) -> StoredPin {
     StoredPin::Pin(AffinityPin(IndexMap::from([(
         "model_id".to_owned(),

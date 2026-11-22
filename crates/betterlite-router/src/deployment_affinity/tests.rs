@@ -19,6 +19,7 @@ fn runtime() -> Runtime {
 #[case::shared_pin_selects(deployment_affinity_behaviors::shared_pin_selects())]
 #[case::session_pin_selects(deployment_affinity_behaviors::session_pin_selects())]
 #[case::session_beats_caller(deployment_affinity_behaviors::session_beats_caller())]
+#[case::session_pin_scoped_by_caller(deployment_affinity_behaviors::session_pin_scoped_by_caller())]
 #[case::marker_enables_session(deployment_affinity_behaviors::marker_enables_session())]
 #[case::responses_beats_session(deployment_affinity_behaviors::responses_beats_session())]
 #[case::priority_group_keeps_pool(deployment_affinity_behaviors::priority_group_keeps_pool())]

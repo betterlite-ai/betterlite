@@ -205,6 +205,7 @@ impl DeploymentAffinity {
         }
         let Some(model_info) = request
             .model_info
+            .or_else(|| json::request_model_info(kwargs))
             .or_else(|| json::metadata_model_info(kwargs))
         else {
             return Ok(());
