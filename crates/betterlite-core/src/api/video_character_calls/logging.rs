@@ -1,5 +1,3 @@
-use std::sync::{Mutex, PoisonError};
-
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_logging::logging_state::updates::{CallUpdate, update_environment_variables};
@@ -17,7 +15,7 @@ pub(crate) struct LoggedCall<'call> {
 }
 
 pub(crate) fn log_call(
-    logging: &Mutex<LoggingState>,
+    logging: &mut LoggingState,
     call: &LoggedCall<'_>,
 ) -> Result<(), LoggingStateError> {
     // request_params is the one primary argument, and the same map is the optional params and the logged litellm params
@@ -35,9 +33,8 @@ pub(crate) fn log_call(
         "custom_llm_provider".to_owned(),
         Json::Text(call.provider.to_owned()),
     );
-    let mut state = logging.lock().unwrap_or_else(PoisonError::into_inner);
     update_environment_variables(
-        &mut state,
+        logging,
         &litellm_params,
         CallUpdate {
             model: Some(String::new()),
@@ -46,7 +43,6 @@ pub(crate) fn log_call(
             additional_params,
         },
     )?;
-    call.call_type.clone_into(&mut state.call_type);
-    drop(state);
+    call.call_type.clone_into(&mut logging.call_type);
     Ok(())
 }

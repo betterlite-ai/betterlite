@@ -39,16 +39,19 @@ fn video_create_character_mock_string_and_object() {
     let mut from_object = create_call();
     from_object.name = "Mocked".to_owned();
     from_object.mock_response = Some(json(MOCK_JSON));
-    let mut fixture = Fixture::answering(Reply::Failed {
+    let mut object_fixture = Fixture::answering(Reply::Failed {
         status_code: Some(500),
         message: "the handler must not run",
     });
-    let character = match fixture.create(&from_object).expect("the mock answers") {
-        CharacterOutcome::Done(character) => character,
+    let object_character = match object_fixture
+        .create(&from_object)
+        .expect("the mock answers")
+    {
+        CharacterOutcome::Done(answered) => answered,
         CharacterOutcome::Pending(_) => panic!("a mock answers directly"),
     };
-    assert_eq!(character.name, "Mocked");
-    assert!(fixture.handler.creates.is_empty());
+    assert_eq!(object_character.name, "Mocked");
+    assert!(object_fixture.handler.creates.is_empty());
 }
 
 #[test]

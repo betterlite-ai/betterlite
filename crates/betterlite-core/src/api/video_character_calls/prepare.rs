@@ -1,4 +1,3 @@
-use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_http::interactions::base::Params;
@@ -62,7 +61,7 @@ struct CallParts<'call> {
 
 // create_character's steps 1 to 8, before the handler call
 pub(crate) fn prepare_create(
-    logging: &Mutex<LoggingState>,
+    logging: &mut LoggingState,
     request_timeout_seconds: f64,
     call: &CreateCharacterCall,
 ) -> Result<Prepared, CharacterCallError> {
@@ -83,7 +82,7 @@ pub(crate) fn prepare_create(
 
 // get_character's steps 1 to 8, before the handler call
 pub(crate) fn prepare_get(
-    logging: &Mutex<LoggingState>,
+    logging: &mut LoggingState,
     request_timeout_seconds: f64,
     call: &GetCharacterCall,
 ) -> Result<Prepared, CharacterCallError> {
@@ -104,7 +103,7 @@ pub(crate) fn prepare_get(
 
 // LiteLLM's LlmProviders(provider), B3332's selector, the logging update, then `timeout or DEFAULT_REQUEST_TIMEOUT`
 fn ready(
-    logging: &Mutex<LoggingState>,
+    logging: &mut LoggingState,
     request_timeout_seconds: f64,
     parts: &CallParts<'_>,
 ) -> Result<ReadyCall, CharacterCallError> {

@@ -163,13 +163,23 @@ fn handler_failure(status_code: Option<u16>, message: &str) -> CharacterHandlerF
     }
 }
 
+async fn deferred_answer() -> Result<CharacterObject, CharacterHandlerFailure> {
+    tokio::task::yield_now().await;
+    Ok(character())
+}
+
+async fn deferred_failure(
+    status_code: Option<u16>,
+    message: &'static str,
+) -> Result<CharacterObject, CharacterHandlerFailure> {
+    tokio::task::yield_now().await;
+    Err(handler_failure(status_code, message))
+}
+
 fn answered(reply: Reply) -> Result<CharacterAnswered<'static>, CharacterHandlerFailure> {
     match reply {
         Reply::Direct => Ok(CharacterAnswered::Done(character())),
-        Reply::Deferred => Ok(CharacterAnswered::Pending(Box::pin(async {
-            tokio::task::yield_now().await;
-            Ok(character())
-        }))),
+        Reply::Deferred => Ok(CharacterAnswered::Pending(Box::pin(deferred_answer()))),
         Reply::Failed {
             status_code,
             message,
@@ -177,10 +187,10 @@ fn answered(reply: Reply) -> Result<CharacterAnswered<'static>, CharacterHandler
         Reply::DeferredFailure {
             status_code,
             message,
-        } => Ok(CharacterAnswered::Pending(Box::pin(async move {
-            tokio::task::yield_now().await;
-            Err(handler_failure(status_code, message))
-        }))),
+        } => Ok(CharacterAnswered::Pending(Box::pin(deferred_failure(
+            status_code,
+            message,
+        )))),
     }
 }
 

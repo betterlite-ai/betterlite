@@ -7,6 +7,7 @@ mod prepare;
 mod tests;
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -119,6 +120,15 @@ pub enum CharacterOutcome<'call> {
     ),
 }
 
+impl fmt::Debug for CharacterOutcome<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Done(character) => formatter.debug_tuple("Done").field(character).finish(),
+            Self::Pending(_) => formatter.write_str("Pending(<future>)"),
+        }
+    }
+}
+
 // LiteLLM's video_create_character: mock first, then the handler of the form the call asks for
 pub fn video_create_character<'call, 'deps, H>(
     handler: &'call mut H,
@@ -218,7 +228,7 @@ where
 fn answered<'call>(
     answer: CharacterAnswered<'call>,
     provider: String,
-    redactor: &Redactor,
+    redactor: &'call Redactor,
 ) -> Result<CharacterOutcome<'call>, CharacterCallFailure> {
     match answer {
         CharacterAnswered::Done(character) => Ok(CharacterOutcome::Done(character)),

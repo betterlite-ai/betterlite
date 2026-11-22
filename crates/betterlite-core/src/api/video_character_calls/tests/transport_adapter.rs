@@ -50,7 +50,6 @@ use crate::api::video_records::CharacterObject;
 struct TestError {
     message: String,
     status: u16,
-    headers: ResponseHeaders,
 }
 
 impl CharacterProviderFailure for TestError {
@@ -74,12 +73,11 @@ impl ErrorClasses for Config {
         &self,
         message: &str,
         status_code: u16,
-        headers: &ResponseHeaders,
+        _headers: &ResponseHeaders,
     ) -> TestError {
         TestError {
             message: message.to_owned(),
             status: status_code,
-            headers: headers.clone(),
         }
     }
 }
@@ -115,7 +113,6 @@ impl CharacterConfig for Config {
                 Err(TestError {
                     message: message.to_owned(),
                     status: 400,
-                    headers: ResponseHeaders::new(),
                 })
             },
         )
@@ -191,7 +188,7 @@ impl LogEnv {
             log: &self.sink,
             input_callbacks: &[],
             sentry: None,
-            logger_fn: Some(self.logger.as_ref()),
+            logger_fn: Some(&*self.logger),
             now: self.now,
         }
     }
@@ -394,10 +391,10 @@ fn transport_adapter_create_answers_in_place() {
     let outcome =
         video_create_character(&mut transport, deps, &call).expect("the transport answers");
 
-    let CharacterOutcome::Done(character) = outcome else {
+    let CharacterOutcome::Done(object) = outcome else {
         panic!("a blocking transport answers directly");
     };
-    assert_eq!(character, character());
+    assert_eq!(object, character());
     drop(transport);
     assert_eq!(
         fixture.sent(),
@@ -422,11 +419,11 @@ async fn transport_adapter_create_awaits_the_async_client() {
     );
     let call = create_call();
 
-    let character = avideo_create_character(&mut transport, deps, &call)
+    let object = avideo_create_character(&mut transport, deps, &call)
         .await
         .expect("the transport answers");
 
-    assert_eq!(character, character());
+    assert_eq!(object, character());
     drop(transport);
     assert_eq!(
         fixture.sent(),
@@ -451,11 +448,11 @@ async fn transport_adapter_get_awaits_the_async_client() {
     );
     let call = get_call();
 
-    let character = avideo_get_character(&mut transport, deps, &call)
+    let object = avideo_get_character(&mut transport, deps, &call)
         .await
         .expect("the transport answers");
 
-    assert_eq!(character, character());
+    assert_eq!(object, character());
     drop(transport);
     assert_eq!(
         fixture.sent(),
@@ -482,10 +479,10 @@ fn transport_adapter_get_answers_in_place() {
 
     let outcome = video_get_character(&mut transport, deps, &call).expect("the transport answers");
 
-    let CharacterOutcome::Done(character) = outcome else {
+    let CharacterOutcome::Done(object) = outcome else {
         panic!("a blocking transport answers directly");
     };
-    assert_eq!(character, character());
+    assert_eq!(object, character());
     drop(transport);
     assert_eq!(
         fixture.sent(),
@@ -572,9 +569,10 @@ fn transport_adapter_passes_the_resolved_fallback_timeout() {
     let outcome =
         video_create_character(&mut transport, deps, &call).expect("the transport answers");
 
-    let CharacterOutcome::Done(_) = outcome else {
+    let CharacterOutcome::Done(object) = outcome else {
         panic!("a blocking transport answers directly");
     };
+    assert_eq!(object, character());
     drop(transport);
     assert_eq!(
         fixture.sent(),
