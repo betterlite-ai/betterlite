@@ -30,6 +30,10 @@ description: >-
   authenticated user record. HTTP integration belongs to B1032.
 scope:
   paths:
+  - "tools/oracle/helpers/typos.toml"
+  - "tools/oracle/helpers/pyrightconfig.json"
+  - "tools/oracle/helpers"
+  - "tools/oracle"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/file_batch_guardrails.rs
   - crates/betterlite-core/src/api/file_batch_guardrails/**
