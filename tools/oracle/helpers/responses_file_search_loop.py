@@ -6,7 +6,7 @@ import litellm.responses.main as responses_main
 import litellm.vector_stores.main as vector_stores_main
 from litellm.responses.file_search import emulated_handler
 from litellm.types.llms.openai import ResponsesAPIResponse
-from openai.types.responses.response_create_params import ToolParam
+from openai.types.responses.tool_param import ToolParam
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -96,8 +96,6 @@ class ScriptedSearches:
 def run(input_value: LoopCall) -> JsonValue:
     fake_responses = ScriptedResponses(input_value["provider"])
     fake_searches = ScriptedSearches(input_value["searches"])
-    previous_responses = responses_main.aresponses
-    previous_searches = vector_stores_main.asearch
     object.__setattr__(responses_main, "aresponses", fake_responses)
     object.__setattr__(vector_stores_main, "asearch", fake_searches)
     handler = Capture()
@@ -118,8 +116,6 @@ def run(input_value: LoopCall) -> JsonValue:
             )
         )
     finally:
-        object.__setattr__(responses_main, "aresponses", previous_responses)
-        object.__setattr__(vector_stores_main, "asearch", previous_searches)
         logger.removeHandler(handler)
         for existing in previous_handlers:
             logger.addHandler(existing)
