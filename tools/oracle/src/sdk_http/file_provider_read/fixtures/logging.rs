@@ -11,14 +11,8 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset, Utc};
-use thiserror::Error;
 
-// the fixture's own failures: a redactor, a logging state or the init record it deserializes
-#[derive(Debug, Error)]
-#[error("the logging fixture could not be built: {message}")]
-pub(crate) struct FixtureError {
-    message: String,
-}
+use super::super::super::error::SdkHttpError;
 
 struct Sink;
 
@@ -34,10 +28,8 @@ pub(crate) struct Fixture {
 }
 
 impl Fixture {
-    pub(crate) fn new() -> Result<Self, FixtureError> {
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| FixtureError {
-            message: error.to_string(),
-        })?;
+    pub(crate) fn new() -> Result<Self, SdkHttpError> {
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
         Ok(Self {
             redactor,
             sink: Sink,
@@ -46,7 +38,7 @@ impl Fixture {
     }
 
     // the object LiteLLM's logging class gets for a call that passed none: model "", the call type and the dispatcher's id and function id
-    pub(crate) fn state(&self, new: &NewLogger) -> Result<LoggingState, FixtureError> {
+    pub(crate) fn state(&self, new: &NewLogger) -> Result<LoggingState, SdkHttpError> {
         let call_id = new.litellm_call_id.clone().unwrap_or_default();
         let text = format!(
             r#"{{"model":"","call_type":"{}","start_time":"{}","litellm_call_id":"{call_id}","function_id":"{}","litellm_trace_id":"trace-1"}}"#,
@@ -54,9 +46,8 @@ impl Fixture {
             new.start_time.to_rfc3339(),
             new.function_id
         );
-        let init: LoggingInit = serde_json::from_str(&text).map_err(|error| FixtureError {
-            message: error.to_string(),
-        })?;
+        let init: LoggingInit = serde_json::from_str(&text)
+            .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
         let setup = CorrelationSetup {
             context: &mut CorrelationContext::default(),
             settings: CorrelationSettings::default(),
@@ -68,9 +59,7 @@ impl Fixture {
             || String::from("generated"),
             Duration::default,
         )
-        .map_err(|error| FixtureError {
-            message: error.to_string(),
-        })
+        .map_err(SdkHttpError::LoggingState)
     }
 
     pub(crate) fn environment(&self) -> PrePostEnv<'_> {

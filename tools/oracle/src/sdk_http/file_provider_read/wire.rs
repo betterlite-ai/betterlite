@@ -32,8 +32,9 @@ use betterlite_provider::api::file_provider_selection::{
 };
 use chrono::Utc;
 
+use super::super::error::SdkHttpError;
 use super::fixtures::azure::open;
-use super::fixtures::logging::{Fixture, FixtureError};
+use super::fixtures::logging::Fixture;
 use super::fixtures::metadata::{AnthropicFiles, anthropic_settings, metadata_params};
 use super::fixtures::transport::{DispatchSource, WireClient};
 
@@ -46,7 +47,7 @@ pub(super) enum ReadWireError {
     #[error(transparent)]
     Metadata(#[from] MetadataError),
     #[error(transparent)]
-    Fixture(#[from] FixtureError),
+    Fixture(#[from] SdkHttpError),
     #[error("the oracle sends no {config} request")]
     Unbuilt { config: &'static str },
     #[error("the file call answered with another reply kind")]
