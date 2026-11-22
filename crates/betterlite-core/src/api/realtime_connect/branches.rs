@@ -120,10 +120,8 @@ pub(super) fn direct_connection<Config>(
     let generic = call.params.generic_api_base.as_deref();
     match provider {
         DirectProvider::OpenAi => {
-            let api_base = first_text_or(
-                [dynamic, generic, settings.api_base.as_deref()],
-                DEFAULT_API_BASE,
-            );
+            let api_base = first_text([dynamic, generic, settings.api_base.as_deref()])
+                .unwrap_or_else(|| String::from(DEFAULT_API_BASE));
             let api_key = first_secret([
                 prepared.dynamic_api_key.as_ref(),
                 settings.api_key.as_ref(),
@@ -133,10 +131,8 @@ pub(super) fn direct_connection<Config>(
             connector(call, prepared, Some(api_base), api_key, Branch::OpenAi)
         }
         DirectProvider::Xai => {
-            let api_base = first_text_or(
-                [dynamic, generic, settings.xai_api_base.as_deref()],
-                XAI_API_BASE,
-            );
+            let api_base = first_text([dynamic, generic, settings.xai_api_base.as_deref()])
+                .unwrap_or_else(|| String::from(XAI_API_BASE));
             let api_key = xai_api_key(settings, prepared);
             connector(call, prepared, Some(api_base), api_key, Branch::Xai)
         }
@@ -180,10 +176,6 @@ fn first_text<const N: usize>(candidates: [Option<&str>; N]) -> Option<String> {
         .flatten()
         .find(|value| !value.is_empty())
         .map(str::to_owned)
-}
-
-fn first_text_or<const N: usize>(candidates: [Option<&str>; N], fallback: &str) -> String {
-    first_text(candidates).unwrap_or_else(|| String::from(fallback))
 }
 
 fn first_secret<const N: usize>(candidates: [Option<&SecretString>; N]) -> Option<SecretString> {

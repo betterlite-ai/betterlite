@@ -1,6 +1,7 @@
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 import litellm
 from litellm.constants import AZURE_OPENAI_AUDIO_PROVIDERS
@@ -36,12 +37,12 @@ TEXT = TypeAdapter(str | None)
 OBJECT = TypeAdapter(dict[str, JsonValue] | None)
 
 
-class Scenario(TypedDict, total=False):
+class Scenario(TypedDict):
     model: str
-    params: dict[str, JsonValue]
-    query_params: dict[str, str]
-    settings: dict[str, JsonValue]
-    token: dict[str, list[str]]
+    params: NotRequired[dict[str, JsonValue]]
+    query_params: NotRequired[dict[str, str]]
+    settings: NotRequired[dict[str, JsonValue]]
+    token: NotRequired[dict[str, list[str]]]
 
 
 class Input(TypedDict):
@@ -74,13 +75,13 @@ def first_text(values: list[str | None]) -> str | None:
 
 def first_json(values: list[JsonValue]) -> JsonValue:
     for value in values:
-        if value is None or value == "" or value == [] or value == {}:
+        if value is None or value in ("", [], {}):
             continue
         return value
     return None
 
 
-def pairs(values: dict[str, JsonValue] | None) -> list[JsonValue]:
+def pairs(values: Mapping[str, JsonValue] | None) -> list[JsonValue]:
     if values is None:
         return []
     return [[name, values[name]] for name in sorted(values)]
@@ -159,7 +160,8 @@ def dispatch(case: Case) -> dict[str, JsonValue]:
     if config is None:
         builder = DIRECT_BRANCHES.get(case.provider)
         if builder is None:
-            return error_branch(case.model)
+            return {"branch": "error", "model": None,
+                "error": f"Unsupported model: {case.model}"}
         return builder(case)
     branch = record(case, PROVIDER_TAGS[type(config).__name__], {})
     branch["api_base"] = text_field(case.params, "api_base")
@@ -171,17 +173,24 @@ def dispatch(case: Case) -> dict[str, JsonValue]:
 def azure_branch(case: Case) -> dict[str, JsonValue]:
     api_base = first_text([case.api_base, text_field(case.params, "generic_api_base"),
         litellm.api_base, get_secret_str("AZURE_API_BASE")])
-    api_key = first_text([case.api_key, litellm.api_key, litellm.openai_key, get_secret_str("AZURE_API_KEY")])
-    version = first_text([text_field(case.params, "api_version"), text_field(case.params, "generic_api_version")])
+    api_key = first_text([
+        case.api_key, litellm.api_key, litellm.openai_key, get_secret_str("AZURE_API_KEY")])
+    version = first_text([
+        text_field(case.params, "api_version"), text_field(case.params, "generic_api_version")])
     if version is None:
         version = AZURE_DEFAULT_API_VERSION
-    ad_token = None if api_key is not None else get_azure_ad_token(GenericLiteLLMParams(**case.params))
+    ad_token = None
+    if api_key is None:
+        ad_params = TypeAdapter(GenericLiteLLMParams).validate_python(case.params)
+        ad_token = get_azure_ad_token(ad_params)
     configured = first_text([text_field(case.params, "realtime_protocol"),
-        text_field(case.params, "generic_realtime_protocol"), get_secret_str("LITELLM_AZURE_REALTIME_PROTOCOL")])
+        text_field(case.params, "generic_realtime_protocol"),
+        get_secret_str("LITELLM_AZURE_REALTIME_PROTOCOL")])
     protocol = "GA"
     if configured is not None:
         protocol = configured
-    details: dict[str, JsonValue] = {"api_version": version, "protocol": protocol, "azure_ad_token": ad_token}
+    details: dict[str, JsonValue] = {
+        "api_version": version, "protocol": protocol, "azure_ad_token": ad_token}
     branch = record(case, "azure", details)
     branch["api_base"] = api_base
     branch["api_key"] = api_key
@@ -189,7 +198,8 @@ def azure_branch(case: Case) -> dict[str, JsonValue]:
 
 
 def openai_branch(case: Case) -> dict[str, JsonValue]:
-    api_base = first_text([case.api_base, text_field(case.params, "generic_api_base"), litellm.api_base])
+    api_base = first_text([
+        case.api_base, text_field(case.params, "generic_api_base"), litellm.api_base])
     branch = record(case, "openai", {})
     branch["api_base"] = OPENAI_API_BASE if api_base is None else api_base
     branch["api_key"] = first_text([
@@ -244,12 +254,8 @@ def vertex_branch(case: Case) -> dict[str, JsonValue]:
     return branch
 
 
-def error_branch(model: str) -> dict[str, JsonValue]:
-    return {"branch": "error", "model": None, "error": f"Unsupported model: {model}"}
-
-
 DIRECT_BRANCHES = {
-    **{provider: azure_branch for provider in AZURE_OPENAI_AUDIO_PROVIDERS},
+    **dict.fromkeys(AZURE_OPENAI_AUDIO_PROVIDERS, azure_branch),
     "openai": openai_branch,
     "bedrock": bedrock_branch,
     "xai": xai_branch,

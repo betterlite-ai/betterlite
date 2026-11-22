@@ -80,7 +80,10 @@ where
         xai_key: xai.xai_key.clone(),
         vertex_project: resource.vertex_project.clone(),
         vertex_location: resource.vertex_location.clone(),
-        azure_api_base: non_empty(resource.azure_api_base.as_deref()),
+        azure_api_base: resource
+            .azure_api_base
+            .clone()
+            .filter(|value| !value.is_empty()),
         azure_api_key: non_empty_secret(resource.azure_api_key.as_ref()),
         openai_api_key: non_empty_secret(resource.openai_api_key.as_ref()),
         xai_api_base: xai.api_base.clone(),
@@ -90,8 +93,14 @@ where
             .as_ref()
             .filter(|value| !value.expose_secret().is_empty())
             .map(|value| Json::Text(value.expose_secret().to_owned())),
-        vertexai_project: non_empty(resource.vertexai_project.as_deref()),
-        vertexai_location: non_empty(resource.vertexai_location.as_deref()),
+        vertexai_project: resource
+            .vertexai_project
+            .clone()
+            .filter(|value| !value.is_empty()),
+        vertexai_location: resource
+            .vertexai_location
+            .clone()
+            .filter(|value| !value.is_empty()),
         azure_realtime_protocol,
         credential_timeout_seconds,
     })
@@ -106,10 +115,6 @@ where
         return Ok(DEFAULT_TIMEOUT_SECONDS);
     };
     Ok(number::<f64>(CREDENTIAL_TIMEOUT_VARIABLE, &text)?.unwrap_or(DEFAULT_TIMEOUT_SECONDS))
-}
-
-fn non_empty(value: Option<&str>) -> Option<String> {
-    value.filter(|value| !value.is_empty()).map(str::to_owned)
 }
 
 fn non_empty_secret(value: Option<&SecretString>) -> Option<SecretString> {
