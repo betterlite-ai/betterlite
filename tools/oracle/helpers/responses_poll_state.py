@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import UTC, datetime, tzinfo
 from functools import partial
-from typing import ClassVar, Literal, Protocol, Self, TypedDict
+from typing import ClassVar, Literal, Self, TypedDict
 from uuid import UUID
 
 from litellm.caching.redis_cache import RedisCache
@@ -12,7 +12,7 @@ from litellm.proxy.response_polling.polling_handler import (
     ResponsePollingHandler,
     should_use_polling_for_request,
 )
-from litellm.types.llms.openai import ResponsesAPIResponse
+from litellm.types.llms.openai import ResponsesAPIStatus
 from opentelemetry.trace import Span
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
@@ -25,13 +25,35 @@ class Seed(TypedDict):
     response: JsonValue
 
 
+class Patch(TypedDict, total=False):
+    status: ResponsesAPIStatus | None
+    output: list[JsonValue] | None
+    usage: dict[str, JsonValue] | None
+    error: dict[str, JsonValue] | None
+    incomplete_details: dict[str, JsonValue] | None
+    reasoning: dict[str, JsonValue] | None
+    tool_choice: JsonValue
+    tools: list[JsonValue] | None
+    model: str | None
+    instructions: str | None
+    temperature: float | None
+    top_p: float | None
+    max_output_tokens: int | None
+    previous_response_id: str | None
+    text: dict[str, JsonValue] | None
+    truncation: Literal["auto", "disabled"] | None
+    parallel_tool_calls: bool | None
+    user: str | None
+    store: bool | None
+
+
 class Call(TypedDict):
     op: Literal["generate", "create", "update", "get", "cancel", "delete"]
     polling_id: str
     redis: bool
     ttl: int | None
     metadata: dict[str, JsonValue] | None
-    patch: dict[str, JsonValue]
+    patch: Patch
     seed: Seed | None
 
 
@@ -55,21 +77,6 @@ class Input(TypedDict):
     uuid: str
     calls: list[Call]
     selections: list[Selection]
-
-
-# the source's update_state takes bare dict and list annotations, so this states the shapes sent
-class PollingHandler(Protocol):
-    async def create_initial_state(
-        self, polling_id: str, request_data: dict[str, JsonValue]
-    ) -> ResponsesAPIResponse: ...
-
-    async def update_state(self, polling_id: str, **patch: JsonValue) -> None: ...
-
-    async def get_state(self, polling_id: str) -> dict[str, JsonValue] | None: ...
-
-    async def cancel_polling(self, polling_id: str) -> bool: ...
-
-    async def delete_polling(self, polling_id: str) -> bool: ...
 
 
 class FrozenDatetime(datetime):
@@ -148,7 +155,7 @@ def deployment_params(deployment: dict[str, str | None]) -> dict[str, JsonValue]
     return params
 
 
-async def execute(call: Call, handler: PollingHandler) -> JsonValue:
+async def execute(call: Call, handler: ResponsePollingHandler) -> JsonValue:
     op = call["op"]
     polling_id = call["polling_id"]
     if op == "generate":
@@ -183,7 +190,7 @@ async def state_result(
     effects_start = len(cache.effects)
     logs_start = len(watch.lines)
     redis: ScriptedCache | None = cache if call["redis"] else None
-    handler: PollingHandler = ResponsePollingHandler(
+    handler = ResponsePollingHandler(
         redis_cache=redis, ttl=call["ttl"] if call["ttl"] is not None else default_ttl
     )
     returned: JsonValue = None
