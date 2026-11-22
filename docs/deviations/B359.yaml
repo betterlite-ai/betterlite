@@ -1,0 +1,6 @@
+task: B359
+deviations:
+  - what: Semantic routing scores the query against every configured keyword, where LiteLLM's route layer keeps only the five highest scoring utterance similarities before it groups them by route.
+    why: The global top-five cap drops a configured keyword from consideration once a config holds more than five utterances, so a tier whose best keyword ranks sixth can never win; betterlite keeps every keyword's score and returns the highest scoring route at or above its threshold, and each oracle case configures at most two utterances so the two agree there.
+    link: ""
+kept_bugs: []

@@ -35,55 +35,63 @@ mod wire;
 pub struct Input {
     #[serde(default)]
     tiers: BTreeMap<String, Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     tier_definitions: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     non_reasoning: Option<bool>,
     #[serde(default)]
     keyword_tier_rules: Vec<RuleInput>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     semantic_keyword_matching: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     embedding_model: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     match_threshold: Option<Json>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     stall_escalation_enabled: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     stall_escalation_window: Option<Json>,
-    #[serde(default, rename = "stall_escalation_repeat_threshold")]
+    #[serde(
+        default,
+        rename = "stall_escalation_repeat_threshold",
+        skip_serializing_if = "Option::is_none"
+    )]
     stall_repeat_threshold: Option<Json>,
-    #[serde(default, rename = "route_housekeeping_to_cheapest_tier")]
+    #[serde(
+        default,
+        rename = "route_housekeeping_to_cheapest_tier",
+        skip_serializing_if = "Option::is_none"
+    )]
     housekeeping_cheapest: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     escalation_keywords: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     plan_mode_min_tier: Option<String>,
     #[serde(default)]
     plan_mode_patterns: Vec<String>,
     #[serde(default)]
     housekeeping_patterns: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     reminder_markers: Option<Vec<MarkerInput>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     classifier_type: Option<String>,
     #[serde(default)]
     messages: Vec<Json>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     request_kwargs: Option<Json>,
     #[serde(default)]
     user_message: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     newest_ask: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     decided_tier: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     turns: Option<Json>,
     #[serde(default)]
     embeddings: BTreeMap<String, Json>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     document_failures: Option<Json>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     query_failures: Option<Json>,
 }
 

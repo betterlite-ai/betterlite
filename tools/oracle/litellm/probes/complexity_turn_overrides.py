@@ -5,10 +5,8 @@ from typing import Final
 from unittest.mock import patch
 
 from litellm.router import Router
-from litellm.router_strategy.complexity_router.complexity_router import (
-    ComplexityRouter,
-    ComplexityTier,
-)
+from litellm.router_strategy.complexity_router.complexity_router import ComplexityRouter
+from litellm.router_strategy.complexity_router.config import ComplexityTier
 from litellm.router_strategy.complexity_router.stall_detector import detect_stalled_task
 from litellm.types.utils import Embedding, EmbeddingResponse
 from pydantic import Field, JsonValue
@@ -184,16 +182,14 @@ class ComplexityTurnOverrides(Operation):
             message="The `dict` method is deprecated",
             category=DeprecationWarning,
         )
-        router = self.router()
         messages = self.raw_messages()
         request_kwargs: dict[str, JsonValue] = self.request_kwargs or {}
         with (
             patch.object(Router, "embedding", provider.embedding),
             patch.object(Router, "aembedding", provider.aembedding),
         ):
-            override: OverrideOut | None = None
-            for _turn in range(self.turns):
-                override = asyncio.run(router.keyword_override(self.user_message, request_kwargs))
+            router = self.router()
+            override = asyncio.run(self.keyword_overrides(router, request_kwargs))
         sentinel, housekeeping_tier = router.housekeeping(self.newest_ask)
         stalled = self.stall_escalation_enabled and detect_stalled_task(
             messages or None,
@@ -212,6 +208,14 @@ class ComplexityTurnOverrides(Operation):
             keyword_override=override,
             embedding_calls=provider.calls,
         )
+
+    async def keyword_overrides(
+        self, router: ProbeRouter, request_kwargs: dict[str, JsonValue]
+    ) -> OverrideOut | None:
+        override: OverrideOut | None = None
+        for _turn in range(self.turns):
+            override = await router.keyword_override(self.user_message, request_kwargs)
+        return override
 
     def router(self) -> ProbeRouter:
         return ProbeRouter(
