@@ -22,12 +22,12 @@ impl<Cache: LockCache> CleanupLock for PodLockManager<Cache> {
     }
 
     async fn acquire(&self, cronjob_id: &str) -> Option<bool> {
-        PodLockManager::acquire_lock(self, cronjob_id, None, true).await
+        Self::acquire_lock(self, cronjob_id, None, true).await
     }
 
     // release_lock swallows its own cache errors like the source's, so a failing release cannot hide a run's result
     async fn release(&self, cronjob_id: &str) -> Result<(), LockReleaseError> {
-        PodLockManager::release_lock(self, cronjob_id).await;
+        Self::release_lock(self, cronjob_id).await;
         Ok(())
     }
 }

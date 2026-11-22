@@ -22,12 +22,12 @@ pub struct SpendLogCleanupJob<Clock, Durations, Partitions, Lock> {
 impl<Clock, Durations, Partitions, Lock> SpendLogCleanupJob<Clock, Durations, Partitions, Lock>
 where
     Clock: CleanupClock,
-    Durations: DurationParser,
+    Durations: DurationParser + Send + Sync,
     Partitions: PartitionMaintenance,
     Lock: CleanupLock,
 {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         cleanup: Arc<SpendLogCleanup<Clock, Durations, Partitions, Lock>>,
         store: PostgresStore,
         registry: Arc<CollectorRegistry>,

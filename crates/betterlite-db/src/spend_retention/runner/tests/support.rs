@@ -431,7 +431,7 @@ impl PartitionMaintenance for FakePartitions {
         self.partitioned
     }
 
-    async fn ensure_partitions(&self, _client: &mut Client, _remaining: RemainingBudget<'_>) {
+    async fn ensure_upcoming(&self, _client: &mut Client, _remaining: RemainingBudget<'_>) {
         yield_now().await;
         self.calls
             .lock()

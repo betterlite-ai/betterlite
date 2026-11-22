@@ -4,7 +4,9 @@ use tokio_postgres::Client;
 
 use crate::cleanup_metrics::CleanupMetrics;
 use crate::spend_retention::batches::cutoff::Cutoff;
-use crate::spend_retention::batches::deadline::{MonotonicClock, group_deadline, remaining_budget};
+use crate::spend_retention::batches::deadline::{
+    MonotonicClock as _, group_deadline, remaining_budget,
+};
 use crate::spend_retention::batches::deleter::BatchDeleter;
 use crate::spend_retention::batches::settings::{CleanupBounds, DurationParser, SettingValue};
 use crate::spend_retention::batches::table::CleanupTable;
@@ -84,7 +86,7 @@ pub(super) enum GroupPlan {
 impl<Clock, Durations, Partitions, Lock> SpendLogCleanup<Clock, Durations, Partitions, Lock>
 where
     Clock: CleanupClock,
-    Durations: DurationParser,
+    Durations: DurationParser + Send + Sync,
     Partitions: PartitionMaintenance,
 {
     // one of the source's four _clean_* groups: its cutoff, the partition work it starts first, then its tables
@@ -151,11 +153,9 @@ where
         {
             return Ok(());
         }
-        let ensured = self
-            .partitions
-            .ensure_partitions(run.client, &mut remaining)
+        self.partitions
+            .ensure_upcoming(run.client, &mut remaining)
             .await;
-        drop(ensured);
         let dropped = self
             .partitions
             .drop_expired(run.client, moment, &mut remaining)
@@ -191,9 +191,8 @@ where
 
 // now - retention, or a run failure where the source raises OverflowError building the same subtraction
 fn retention_cutoff(now: DateTime<Utc>, seconds: i64) -> Result<DateTime<Utc>, RunFailure> {
-    let delta = match TimeDelta::try_seconds(seconds) {
-        Some(parsed) => parsed,
-        None => return Err(RunFailure::Cutoff),
+    let Some(delta) = TimeDelta::try_seconds(seconds) else {
+        return Err(RunFailure::Cutoff);
     };
     now.checked_sub_signed(delta).ok_or(RunFailure::Cutoff)
 }

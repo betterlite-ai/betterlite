@@ -6,7 +6,7 @@ use tokio::time::Instant;
 use tokio_postgres::Client;
 
 use crate::cleanup_metrics::{CleanupMetrics, RunOutcome};
-use crate::spend_retention::batches::deadline::{MonotonicClock, group_deadline};
+use crate::spend_retention::batches::deadline::{MonotonicClock as _, group_deadline};
 use crate::spend_retention::batches::settings::{DurationParser, Retention};
 use crate::spend_retention::batches::{SpendLogCleanup, StopReason, TableCleanupResult};
 
@@ -54,7 +54,7 @@ impl Drop for Cancellation<'_, '_> {
 impl<Clock, Durations, Partitions, Lock> SpendLogCleanup<Clock, Durations, Partitions, Lock>
 where
     Clock: CleanupClock,
-    Durations: DurationParser,
+    Durations: DurationParser + Send + Sync,
     Partitions: PartitionMaintenance,
     Lock: CleanupLock,
 {
@@ -67,7 +67,7 @@ where
         let started = self.clock.now();
         let progress = RunProgress::default();
         let mut cancellation = Cancellation {
-            clock: &self.clock as &dyn CleanupClock,
+            clock: &self.clock,
             progress: &progress,
             metrics,
             started,
@@ -175,60 +175,34 @@ where
     ) -> Result<Vec<TableCleanupResult>, RunFailure> {
         let now = run.clock.now();
         let deadline = now.checked_add(run.bounds.run_budget).unwrap_or(now);
-        let mut pending = 0_u32;
-        for retention in [
-            retentions.spend_logs,
-            retentions.sessions,
-            retentions.health_checks,
-            retentions.daily_tags,
-        ] {
-            if retention.is_some() {
-                pending = pending.saturating_add(1);
-            }
-        }
+        let groups = [
+            (retentions.spend_logs, GroupPlan::SpendLogs),
+            (retentions.sessions, GroupPlan::Sessions),
+            (retentions.health_checks, GroupPlan::HealthChecks),
+            (retentions.daily_tags, GroupPlan::DailyTags),
+        ];
+        let enabled = groups
+            .iter()
+            .filter(|(retention, _)| retention.is_some())
+            .count();
+        let mut pending = u32::try_from(enabled).unwrap_or(u32::MAX);
         let mut results = Vec::new();
-        if let Some(seconds) = retentions.spend_logs {
-            let share = group_deadline(deadline, run.clock.now(), pending);
+        for (retention, plan) in groups {
+            let Some(seconds) = retention else {
+                continue;
+            };
             let window = GroupWindow {
                 retention_seconds: seconds,
-                deadline: share,
+                deadline: group_deadline(deadline, run.clock.now(), pending),
             };
-            results.extend(self.clean_group(run, GroupPlan::SpendLogs, window).await?);
+            results.extend(self.clean_group(run, plan, window).await?);
             pending = pending.saturating_sub(1);
-        }
-        if let Some(seconds) = retentions.sessions {
-            let share = group_deadline(deadline, run.clock.now(), pending);
-            let window = GroupWindow {
-                retention_seconds: seconds,
-                deadline: share,
-            };
-            results.extend(self.clean_group(run, GroupPlan::Sessions, window).await?);
-            pending = pending.saturating_sub(1);
-        }
-        if let Some(seconds) = retentions.health_checks {
-            let share = group_deadline(deadline, run.clock.now(), pending);
-            let window = GroupWindow {
-                retention_seconds: seconds,
-                deadline: share,
-            };
-            results.extend(
-                self.clean_group(run, GroupPlan::HealthChecks, window)
-                    .await?,
-            );
-            pending = pending.saturating_sub(1);
-        }
-        if let Some(seconds) = retentions.daily_tags {
-            let window = GroupWindow {
-                retention_seconds: seconds,
-                deadline,
-            };
-            results.extend(self.clean_group(run, GroupPlan::DailyTags, window).await?);
         }
         Ok(results)
     }
 }
 
-fn all_disabled(retentions: &Retentions) -> bool {
+const fn all_disabled(retentions: &Retentions) -> bool {
     retentions.spend_logs.is_none()
         && retentions.sessions.is_none()
         && retentions.health_checks.is_none()

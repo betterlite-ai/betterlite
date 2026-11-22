@@ -17,7 +17,7 @@ pub trait PartitionMaintenance: Send + Sync {
         remaining: RemainingBudget<'_>,
     ) -> impl Future<Output = bool> + Send;
 
-    fn ensure_partitions(
+    fn ensure_upcoming(
         &self,
         client: &mut Client,
         remaining: RemainingBudget<'_>,
@@ -36,8 +36,8 @@ impl<Clock: PartitionClock> PartitionMaintenance for SpendPartitionManager<Clock
         probe_partitioned(client, remaining).await
     }
 
-    async fn ensure_partitions(&self, client: &mut Client, remaining: RemainingBudget<'_>) {
-        let ensured = SpendPartitionManager::ensure_partitions(self, client, remaining).await;
+    async fn ensure_upcoming(&self, client: &mut Client, remaining: RemainingBudget<'_>) {
+        let ensured = Self::ensure_partitions(self, client, remaining).await;
         drop(ensured);
     }
 
