@@ -2,10 +2,10 @@ import asyncio
 import json
 import os
 import sys
-from collections.abc import AsyncGenerator, Generator, Mapping
+from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 from types import SimpleNamespace
-from typing import Final, Generic, Literal, TypeVar, TypedDict
+from typing import Final, Generic, Literal, TypedDict, TypeVar
 
 from fastapi import HTTPException
 from litellm.caching.dual_cache import DualCache
@@ -37,7 +37,7 @@ class PrincipalInput(TypedDict):
     role_form: Literal["enum", "value"] | None
 
 
-class CallInput(TypedDict, total=False):
+class CallInput(TypedDict):
     operation: Literal["authorize", "success", "stream"]
     settings: SettingsInput
     principal: PrincipalInput
@@ -62,7 +62,7 @@ def proxy_salt(signing_key: str | None) -> Generator[None]:
     if signing_key is not None:
         os.environ[SALT_ENV] = signing_key
     saved_module = sys.modules.get(PROXY_SERVER_NAME)
-    sys.modules[PROXY_SERVER_NAME] = SimpleNamespace(master_key=None, general_settings={})  # type: ignore[assignment]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L49-L55
+    sys.modules[PROXY_SERVER_NAME] = SimpleNamespace(master_key=None, general_settings={})  # type: ignore[assignment, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L49-L55
     try:
         yield
     finally:
@@ -91,13 +91,18 @@ def principal_user(principal: PrincipalInput, route: str | None) -> UserAPIKeyAu
     if role is None:
         return UserAPIKeyAuth(user_id=user_id, team_id=team_id, request_route=route)
     raw_role = "proxy_admin" if role == "PROXY_ADMIN" else "proxy_admin_viewer"
-    if principal["role_form"] == "enum":
-        return UserAPIKeyAuth(
-            user_id=user_id, team_id=team_id, user_role=LitellmUserRoles(raw_role), request_route=route
-        )
-    return UserAPIKeyAuth.model_construct(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownVariableType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
-        user_id=user_id, team_id=team_id, user_role=raw_role, request_route=route
+    user_role = LitellmUserRoles(raw_role)
+    return UserAPIKeyAuth(
+        user_id=user_id, team_id=team_id, user_role=user_role, request_route=route
     )
+
+
+@contextmanager
+def hook_session(
+    settings: SettingsInput, principal: PrincipalInput, route: str | None
+) -> Generator[tuple[ResponsesIDSecurity, UserAPIKeyAuth]]:
+    with proxy_salt(settings["signing_key"]):
+        yield response_hook(settings), principal_user(principal, route)
 
 
 def text_or_none(value: JsonValue) -> str | None:
@@ -171,10 +176,7 @@ async def chunk_source(chunks: list[EventBase]) -> AsyncGenerator[EventBase, Non
 
 
 async def collect_chunks(stream: AsyncGenerator[EventBase, None]) -> list[EventBase]:
-    chunks: list[EventBase] = []
-    async for chunk in stream:
-        chunks.append(chunk)
-    return chunks
+    return [chunk async for chunk in stream]
 
 
 def stream_run(
@@ -184,7 +186,7 @@ def stream_run(
 ) -> tuple[list[JsonValue], list[str], list[str | None]]:
     chunks = [parse_event(event) for event in events]
     request_data: dict[str, JsonValue] = {}
-    stream = hook.async_post_call_streaming_iterator_hook(user, chunk_source(chunks), request_data)  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L328
+    stream = hook.async_post_call_streaming_iterator_hook(user, chunk_source(chunks), request_data)  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L328
     produced = asyncio.run(collect_chunks(stream))
     views: list[JsonValue] = []
     raw: list[str] = []
@@ -239,44 +241,35 @@ def call_answer(
 
 
 def authorize_answer(case: CallInput) -> JsonValue:
-    settings = case["settings"]
-    with proxy_salt(settings["signing_key"]):
-        hook = response_hook(settings)
-        user = principal_user(case["principal"], None)
-        data = case["data"]
-        field_name = addressed_field(case["call_type"])
-        scope = (data, field_name)
+    data = case["data"]
+    field_name = addressed_field(case["call_type"])
+    scope = (data, field_name)
+    with hook_session(case["settings"], case["principal"], None) as (hook, user):
         try:
-            changed: JsonValue = asyncio.run(hook.async_pre_call_hook(user, DualCache(), data, case["call_type"]))  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L116
-        except HTTPException as error:  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L171
+            changed = asyncio.run(hook.async_pre_call_hook(user, DualCache(), data, case["call_type"]))  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L116
+        except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L171
             detail = error.detail
             return call_answer(forbidden_kind(detail), detail, error.status_code, None, scope)
         except IndexError:
             return call_answer("internal_error", None, 500, "IndexError", scope)
-        if changed is None:
-            return call_answer("not_responses_call", None, None, None, scope)
-        kind = "authorized" if text_or_none(data.get(ADDRESSED_RESPONSE_ID_FIELD)) else "unchanged"
-        return call_answer(kind, None, None, None, scope)
+    if changed is None:
+        return call_answer("not_responses_call", None, None, None, scope)
+    kind = "authorized" if text_or_none(data.get(ADDRESSED_RESPONSE_ID_FIELD)) else "unchanged"
+    return call_answer(kind, None, None, None, scope)
 
 
 def success_answer(case: CallInput) -> JsonValue:
-    settings = case["settings"]
-    with proxy_salt(settings["signing_key"]):
-        hook = response_hook(settings)
-        user = principal_user(case["principal"], case["route"])
-        response = openai.ResponsesAPIResponse.model_validate(case["response"])  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
+    with hook_session(case["settings"], case["principal"], case["route"]) as (hook, user):
+        response = openai.ResponsesAPIResponse.model_validate(case["response"])  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
         request_data: dict[str, JsonValue] = {}
-        asyncio.run(hook.async_post_call_success_hook(request_data, user, response))  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L305
+        asyncio.run(hook.async_post_call_success_hook(request_data, user, response))  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L305
         dumped = MAPPING.validate_json(response.model_dump_json())
-        nested = project_nested(dumped["response"]) if "response" in dumped else None
-        return {"response": {"id": project(dumped["id"]), "nested": nested}}
+    nested = project_nested(dumped["response"]) if "response" in dumped else None
+    return {"response": {"id": project(dumped["id"]), "nested": nested}}
 
 
 def stream_answer(case: CallInput) -> JsonValue:
-    settings = case["settings"]
-    with proxy_salt(settings["signing_key"]):
-        hook = response_hook(settings)
-        user = principal_user(case["principal"], case["route"])
+    with hook_session(case["settings"], case["principal"], case["route"]) as (hook, user):
         first = stream_run(hook, user, case["events"])
         second = stream_run(hook, user, case["events"])
     head = first[2][0] if first[2] else None

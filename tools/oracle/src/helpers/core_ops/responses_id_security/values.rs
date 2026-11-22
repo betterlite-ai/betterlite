@@ -15,12 +15,12 @@ pub(crate) struct EventView {
 }
 
 pub(crate) fn project(value: &Json, cipher: &Cipher) -> Result<String, Box<HelperError>> {
-    match value {
-        Json::Text(text) => Ok(project_text(text, cipher)),
-        other => serde_json::to_string(other)
+    let Json::Text(text) = value else {
+        return serde_json::to_string(value)
             .map(|text| format!("json:{text}"))
-            .map_err(|error| failure("SerializeFailed", error.to_string())),
-    }
+            .map_err(|error| failure("SerializeFailed", error.to_string()));
+    };
+    Ok(project_text(text, cipher))
 }
 
 // a projection both sides can compare: the decrypted identity, or the plain text
@@ -51,13 +51,12 @@ fn decrypted_other(text: &str, cipher: &Cipher) -> Option<String> {
 }
 
 pub(crate) fn project_nested(value: &Json, cipher: &Cipher) -> Result<String, Box<HelperError>> {
-    match value {
-        Json::Object(fields) => match fields.get("id") {
-            Some(id) => project(id, cipher),
-            None => project(value, cipher),
-        },
-        other => project(other, cipher),
+    if let Json::Object(fields) = value
+        && let Some(id) = fields.get("id")
+    {
+        return project(id, cipher);
     }
+    project(value, cipher)
 }
 
 pub(crate) fn view_event(event: &Value, cipher: &Cipher) -> Result<EventView, Box<HelperError>> {
