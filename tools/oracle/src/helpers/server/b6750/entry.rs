@@ -12,12 +12,12 @@ use betterlite_server::health_check_entry::{
 };
 use betterlite_server::health_probe_modes::logging::HealthProbeLogging;
 use betterlite_server::health_probe_modes::params::HealthProbeParams;
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
-use super::calls::{HealthCheckDocuments, ProbeRecorder, ScriptedCheapest};
+use super::calls::{HealthCheckDocuments, ProbeRecord, ProbeRecorder, ScriptedCheapest};
 use super::{Resolution, Step};
 
 const NOW: &str = "2026-01-02T03:04:05+00:00";
@@ -95,14 +95,6 @@ impl CatalogModes for ScriptedCatalog {
     }
 }
 
-fn fixed_time() -> DateTime<FixedOffset> {
-    DateTime::parse_from_rfc3339(NOW).unwrap_or_else(|_| DateTime::UNIX_EPOCH.fixed_offset())
-}
-
-fn fixed_id() -> String {
-    FIXED_ID.to_owned()
-}
-
 pub(super) async fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
     let entries: IndexMap<String, Value> = step.params.clone().into_iter().collect();
     let params = HealthProbeParams::from_map(entries).or_value_error()?;
@@ -122,8 +114,11 @@ pub(super) async fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
         catalog: Arc::new(ScriptedCatalog::new(&step.catalog)),
         redactor: Arc::new(Redactor::new(16).or_config_error()?),
         redact_secrets: true,
-        clock: fixed_time,
-        next_id: fixed_id,
+        clock: || {
+            DateTime::parse_from_rfc3339(NOW)
+                .unwrap_or_else(|_| DateTime::UNIX_EPOCH.fixed_offset())
+        },
+        next_id: || FIXED_ID.to_owned(),
     };
     let outcome = entry
         .check_health(
@@ -167,25 +162,25 @@ fn resolution_view(resolver: &ScriptedResolver) -> Value {
 
 fn probe_view(recorder: &ProbeRecorder) -> Value {
     let call = recorder.call.lock().unwrap_or_else(PoisonError::into_inner);
-    let Some(record) = call.as_ref() else {
-        return Value::Null;
-    };
-    let mut arguments = record.arguments.clone();
+    call.as_ref().map_or(Value::Null, probe_record)
+}
+
+fn probe_record(record: &ProbeRecord) -> Value {
+    json!({"name": record.name, "arguments": without_metadata(record.arguments.clone())})
+}
+
+fn without_metadata(mut arguments: Value) -> Value {
     if let Value::Object(entries) = &mut arguments {
         entries.remove("litellm_metadata");
     }
-    json!({"name": record.name, "arguments": arguments})
+    arguments
 }
 
 fn logging_view(recorder: &ProbeRecorder) -> Value {
     let call = recorder.call.lock().unwrap_or_else(PoisonError::into_inner);
-    let Some(record) = call.as_ref() else {
-        return Value::Null;
-    };
-    let Some(logging) = record.logging.as_ref() else {
-        return Value::Null;
-    };
-    logged_fields(logging)
+    call.as_ref()
+        .and_then(|record| record.logging.as_ref())
+        .map_or(Value::Null, logged_fields)
 }
 
 fn logged_fields(logging: &Arc<dyn HealthProbeLogging>) -> Value {
