@@ -78,6 +78,49 @@ async fn failure_stops_downstream() {
 }
 
 #[rstest]
+#[case::settings("/router/settings")]
+#[case::fields("/router/fields")]
+#[tokio::test]
+async fn router_settings_routes_answer_a_missing_key_with_the_dependency_envelope(
+    #[case] path: &str,
+) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let response = configured_router(Arc::clone(&calls), "[]")
+        .oneshot(Request::get(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let bytes = to_bytes(response.into_body(), 8192).await.unwrap();
+    let body: ErrorResponse = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body.error.error_type, "auth_error");
+    assert_eq!(body.error.param.as_deref(), Some("None"));
+    assert_eq!(body.error.code, "401");
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[case::settings("/router/settings", "current_values")]
+#[case::fields("/router/fields", "routing_group_strategies")]
+#[tokio::test]
+async fn router_settings_routes_accept_the_master_key(#[case] path: &str, #[case] marker: &str) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let response = configured_router(Arc::clone(&calls), "[]")
+        .oneshot(
+            Request::get(path)
+                .header("authorization", "Bearer secret")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(body.contains(marker), "{body}");
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
 #[case::native_public_routes_without_license("/v1/chat/completions", "['/v1/chat/*']", 200)]
 #[case::metrics_templates_not_auth_aliases(
     "/v1/threads/thread_123",

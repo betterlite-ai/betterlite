@@ -54,7 +54,7 @@ pub fn settings_response(
     let mut fields = catalog_fields();
     for field in &mut fields {
         if let Some(value) = current_values.get(field.field_name) {
-            field.field_value = value.clone();
+            field.field_value.clone_from(value);
         }
     }
     // every key the router reports gets a source, including one the field catalog doesn't name
