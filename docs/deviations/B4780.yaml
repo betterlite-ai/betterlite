@@ -1,0 +1,27 @@
+task: B4780
+deviations:
+  - what: The injected resolve_ceiling, resolve_access and effective_contexts callables are replaced by the three port traits GrantSources, TargetAgents and HumanSources, passed to the resolver's constructor.
+    why: betterlite wires dependencies through constructors and has no function-valued defaults that reach module globals. The same calls happen in the same order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L618-L623
+  - what: resolve_agent_access and is_agent_allowed have no resolve_ceiling parameter. The access group ceiling always comes from GrantSources.access_group_ceiling, which picks the check_db_only read in strict mode itself.
+    why: LiteLLM only passes a different resolver in its own tests; every production caller uses the default, and the port already covers both modes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L86-L111
+  - what: granted_agent_ids resolves the contexts one after another, not with asyncio.gather. When several contexts fail, the first failing context in list order is reported.
+    why: The result is a union and does not depend on order. Only which error wins can differ, and gather's choice is timing-dependent anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L612-L615
+  - what: accessible_agents resolves the managed agents one after another, not concurrently. _verified_human_agent_sources does the same for the human's sources.
+    why: The permitted set does not depend on order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L635-L641
+  - what: The identity failure raised through raise_identity_failure, the 503 "Agent invocation policy is unavailable" and the 403 team error are variants of AgentAccessError with a status() method, not HTTPException values.
+    why: betterlite errors are typed. The HTTP layer turns status() and the message into the same response LiteLLM sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L721
+  - what: A managed agent whose object_permission does not parse is AgentAccessError::ObjectPermission with the agent id and the parse error as source, status 500. LiteLLM lets pydantic's ValidationError escape, which its proxy also answers with 500.
+    why: betterlite errors are typed and keep their cause; the status is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L662
+  - what: Building the stand-in key that carries the managed agent's object_permission can fail with AgentAccessError::Record, status 500.
+    why: The only constructor of UserAPIKeyAuth is fallible. Turning a failure into an empty grant would hide it; it cannot happen for the empty record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L663
+  - what: Only the proxy_admin role enum value is compared in accessible_agents; LiteLLM also accepts the plain string "proxy_admin".
+    why: UserApiKeyAuth.user_role is already the role enum in betterlite, so a stray string cannot reach this code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L628
+kept_bugs: []

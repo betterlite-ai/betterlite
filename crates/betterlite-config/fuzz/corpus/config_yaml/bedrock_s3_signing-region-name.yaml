@@ -1,0 +1,6 @@
+model_list:
+- model_name: bedrock-files
+  litellm_params:
+    model: bedrock/anthropic.claude-3-5-sonnet
+    s3_bucket_name: litellm-proxy/uploads
+    s3_region_name: eu-west-1

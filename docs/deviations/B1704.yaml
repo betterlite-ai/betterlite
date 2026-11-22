@@ -1,0 +1,6 @@
+task: B1704
+deviations:
+  - what: When the permitted-team lookup fails, betterlite still narrows the caller to their own rows as LiteLLM does, and also logs a warning with the failure.
+    why: LiteLLM's bare except drops the error silently, so an operator can't tell a broken membership read from a caller who simply has no permitted teams.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L5118-L5131
+kept_bugs: []
