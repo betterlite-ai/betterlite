@@ -1,5 +1,6 @@
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::key_user_writes::hash::hash_token;
+use betterlite_redis::request_batch::lock;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -281,7 +282,7 @@ async fn reserved_counters_are_skipped_by_the_direct_increment() {
 async fn a_finalized_reservation_charges_the_counters_directly() {
     let fixture = Fixture::new(false);
     let reservation = handle("5", &["spend:key:tok"]);
-    betterlite_redis::request_batch::lock(&reservation.0).finalized = true;
+    lock(&reservation.0).finalized = true;
     let mut request = input(Some("tok"));
     request.budget_reservation = Some(&reservation);
 
@@ -308,7 +309,7 @@ async fn the_first_scope_error_is_returned_after_the_other_scopes_apply() {
 
     assert!(matches!(
         result,
-        Err(SpendIncrementError::BudgetLimits { ref cache_key, .. })
+        Err(SpendIncrementError::BudgetLimits { cache_key, .. })
             if cache_key.as_str() == "tok"
     ));
     assert_eq!(fixture.counter("spend:key:tok").await, None);

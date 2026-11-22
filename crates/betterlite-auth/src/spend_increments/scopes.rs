@@ -134,6 +134,7 @@ pub(super) fn counter_items(input: &SpendIncrementInput<'_>) -> Vec<CounterItem>
 }
 
 // the two list scopes: a tag or an access group charges its own counter, and its source key is the auth cache key it came from
+#[derive(Clone, Copy)]
 enum TextScope {
     Tag,
     AccessGroup,

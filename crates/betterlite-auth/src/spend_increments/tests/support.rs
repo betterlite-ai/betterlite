@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,6 +15,7 @@ use betterlite_db::spend_rows::rows::{
 };
 use betterlite_db::window_queue::{WindowQueueError, WindowSpendTransaction};
 use betterlite_models::decisions::Json;
+use betterlite_redis::request_batch::lock;
 use chrono::{DateTime, TimeZone as _, Utc};
 use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
@@ -125,12 +127,13 @@ impl SpyLayers {
         counter_key: &str,
         increment: Decimal,
     ) -> Result<Decimal, ReseedCacheError> {
-        let mut memory = self.memory.lock().expect("the fake cache lock");
+        let mut memory = self.memory.lock().unwrap_or_else(PoisonError::into_inner);
         let current = memory.get(counter_key).copied().unwrap_or(Decimal::ZERO);
         let next = current
             .checked_add(increment)
             .ok_or(ReseedCacheError::OutOfRange(increment))?;
         memory.insert(counter_key.to_owned(), next);
+        drop(memory);
         Ok(next)
     }
 }
@@ -644,11 +647,11 @@ pub(crate) fn handle(reserved_cost: &str, counter_keys: &[&str]) -> ReservationH
 }
 
 pub(crate) fn finalized(handle: &ReservationHandle) -> bool {
-    betterlite_redis::request_batch::lock(&handle.0).finalized
+    lock(&handle.0).finalized
 }
 
 pub(crate) fn applied_adjustment(handle: &ReservationHandle) -> Option<Decimal> {
-    betterlite_redis::request_batch::lock(&handle.0)
+    lock(&handle.0)
         .entries
         .first()
         .map(|entry| entry.applied_adjustment)
@@ -664,7 +667,7 @@ impl Visit for LogFields {
         }
     }
 
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = Some(format!("{value:?}"));
         }

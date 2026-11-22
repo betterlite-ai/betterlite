@@ -14,6 +14,7 @@ use super::sources::cached_budget_limits;
 use super::window::{WindowScope, window_charge, window_outcome};
 
 // the key or team scope a request fans out to: the key token is the only one the sk- safety net can rewrite
+#[derive(Clone, Copy)]
 pub(super) enum WindowScopeKind<'id> {
     Key(&'id str),
     Team(&'id str),

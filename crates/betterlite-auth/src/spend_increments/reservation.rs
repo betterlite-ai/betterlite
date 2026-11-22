@@ -26,18 +26,18 @@ pub(super) async fn reconcile_reservation<Counters>(
 where
     Counters: SettlementCounters,
 {
-    let Some(handle) = handle else {
+    let Some(reservation) = handle else {
         return ReservationCounterUpdate::default();
     };
-    let finalized = lock(&handle.0).finalized;
+    let finalized = lock(&reservation.0).finalized;
     if finalized {
         return ReservationCounterUpdate::default();
     }
-    let reserved_counter_keys = get_reserved_counter_keys(handle);
+    let reserved_counter_keys = get_reserved_counter_keys(reservation);
     let actual_cost = response_cost.unwrap_or(Decimal::ZERO);
     match reconcile_budget_reservation(
         counters,
-        handle,
+        reservation,
         actual_cost,
         ReservationFinality::LeaveOpen,
         AdjustmentMode::Defer,
@@ -53,7 +53,7 @@ where
                 %error,
                 "Failed to reconcile budget reservation after persisted spend; invalidating reserved counters and falling back to direct increment"
             );
-            invalidate_reservation_keys(counters, handle).await;
+            invalidate_reservation_keys(counters, reservation).await;
             ReservationCounterUpdate::default()
         }
     }

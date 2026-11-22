@@ -145,10 +145,10 @@ where
     Rows: SpendCounterRows,
 {
     apply_spend_counter_increments(writes, pending).await?;
-    let Some(handle) = handle else {
+    let Some(reservation) = handle else {
         return Ok(());
     };
-    stamp_reservation_actual_cost(handle, Decimal::ZERO)?;
-    lock(&handle.0).finalized = true;
+    stamp_reservation_actual_cost(reservation, Decimal::ZERO)?;
+    lock(&reservation.0).finalized = true;
     Ok(())
 }
