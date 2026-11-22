@@ -21,7 +21,7 @@ WriteResult: TypeAlias = BaseModel | Coroutine[object, object, BaseModel]
 Purpose: TypeAlias = Literal["assistants", "batch", "fine-tune", "messages"]
 
 
-class ExpiresAfter(TypedDict):
+class Expires(TypedDict):
     anchor: Literal["created_at"]
     seconds: int
 
@@ -30,7 +30,7 @@ class ExpiresAfter(TypedDict):
 class WriteValues(TypedDict, total=False):
     file: tuple[str, bytes, str]
     purpose: Purpose
-    expires_after: ExpiresAfter | None
+    expires_after: Expires | None
     custom_llm_provider: str | None
     extra_headers: dict[str, str] | None
     extra_body: dict[str, str] | None
@@ -211,7 +211,7 @@ def write_values(step: UploadStep | DeleteStep, harness: str) -> WriteValues:
             values["purpose"] = step.purpose
             expires = step.expires_after
             if expires is not None:
-                values["expires_after"] = ExpiresAfter(anchor=expires.anchor, seconds=expires.seconds)
+                values["expires_after"] = Expires(anchor=expires.anchor, seconds=expires.seconds)
             # an explicit null reaches create_file, an absent provider keeps each function's default
             if "custom_llm_provider" in step.model_fields_set:
                 values["custom_llm_provider"] = step.custom_llm_provider
