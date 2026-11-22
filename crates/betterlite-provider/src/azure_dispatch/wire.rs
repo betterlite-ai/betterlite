@@ -23,11 +23,6 @@ pub(crate) struct Wire {
     pub(crate) body: Object,
     pub(crate) json_mode: bool,
 }
-fn present(secret: Option<&SecretString>) -> Option<&str> {
-    secret
-        .map(SecretString::expose_secret)
-        .filter(|text| !text.is_empty())
-}
 // the auth header: the SDK's Azure client prefers its token, while the v1 OpenAI client prefers its key
 fn auth_headers(resolved: &Resolved, version: Option<&str>) -> BTreeMap<String, String> {
     let mut headers = BTreeMap::from([
@@ -37,8 +32,11 @@ fn auth_headers(resolved: &Resolved, version: Option<&str>) -> BTreeMap<String, 
             String::from("application/json"),
         ),
     ]);
-    let key = present(resolved.api_key.as_ref());
-    let token = present(resolved.auth_token.as_ref());
+    let key = resolved.api_key.as_ref().map(SecretString::expose_secret);
+    let token = resolved
+        .auth_token
+        .as_ref()
+        .map(SecretString::expose_secret);
     let v1 = version.is_some_and(|text| V1_API_VERSIONS.contains(&text));
     let bearer = if v1 { key.or(token) } else { token };
     let auth = bearer
