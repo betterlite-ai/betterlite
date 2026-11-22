@@ -11,8 +11,8 @@ use crate::model_ptu_pricing::catalog::LoadedCatalog;
 // A case's cost map: a lookup records its key and finds the entry, unless the case marks the map unreachable.
 pub struct CostMap {
     pub entries: BTreeMap<String, JsonObject>,
-    broken: bool,
-    lookups: Mutex<Vec<String>>,
+    pub broken: bool,
+    pub lookups: Mutex<Vec<String>>,
 }
 
 #[derive(Debug, thiserror::Error)]

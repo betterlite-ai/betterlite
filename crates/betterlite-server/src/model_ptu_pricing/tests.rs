@@ -48,11 +48,11 @@ fn object(text: &str) -> JsonObject {
 }
 
 fn fake_cost_map(entries: &[(&str, &str)], broken: bool) -> CostMap {
-    let entries = entries
+    let table = entries
         .iter()
         .map(|(model, entry)| ((*model).to_owned(), object(entry)))
         .collect();
-    CostMap::new(entries, broken)
+    CostMap::new(table, broken)
 }
 
 fn cipher() -> DbCipher {
