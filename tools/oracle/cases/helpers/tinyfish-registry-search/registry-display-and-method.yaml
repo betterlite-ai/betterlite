@@ -1,0 +1,26 @@
+kind: helper
+name: registry-display-and-method
+call:
+  b048:
+    op: registry
+    providers:
+      - perplexity
+      - tavily
+      - parallel_ai
+      - exa_ai
+      - brave
+      - google_pse
+      - dataforseo
+      - firecrawl
+      - fastcrw
+      - searxng
+      - linkup
+      - duckduckgo
+      - searchapi
+      - serper
+      - you_com
+      - apiserpent
+      - tinyfish
+      - nimble
+env: {}
+compare: {ignore: []}
