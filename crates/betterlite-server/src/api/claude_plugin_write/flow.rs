@@ -31,10 +31,10 @@ fn create_failure(error: &PluginCreateError, plugin_name: &str) -> ClaudePluginW
     }
 }
 
-fn decode_write<T: DeserializeOwned>(
-    state: &ClaudePluginWriteState,
-    body: &[u8],
-) -> Result<T, ClaudePluginWriteError> {
+fn decode_write<T>(state: &ClaudePluginWriteState, body: &[u8]) -> Result<T, ClaudePluginWriteError>
+where
+    T: DeserializeOwned,
+{
     check_body(state, body)?;
     decode_body(body).map_err(ClaudePluginWriteError::from)
 }
@@ -95,11 +95,11 @@ async fn require_updated(
     changes: PluginChanges,
     plugin_name: &str,
 ) -> Result<StoredPlugin, ClaudePluginWriteError> {
-    let changed = store
+    let found = store
         .update(changes)
         .await
         .map_err(|source| table_failure(Some(UPDATE_FAILED), &source))?;
-    changed.ok_or_else(|| ClaudePluginWriteError::from(plugin_not_found_error(plugin_name)))
+    found.ok_or_else(|| ClaudePluginWriteError::from(plugin_not_found_error(plugin_name)))
 }
 
 fn registration(
