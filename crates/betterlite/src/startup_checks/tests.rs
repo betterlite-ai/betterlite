@@ -763,6 +763,14 @@ async fn team_budgets_reject_a_team_list_of_the_wrong_shape() {
         .await
         .unwrap_err();
     assert!(matches!(entry_error, StartupCheckError::TeamEntry(_)));
+    let string_budget = params_with_teams(JsonData::Array(vec![team_entry(
+        "team-a",
+        Some(JsonData::String("10".to_owned())),
+    )]));
+    let budget_error = update_default_team_budgets(Some(&string_budget), &master_key, &updater)
+        .await
+        .unwrap_err();
+    assert!(matches!(budget_error, StartupCheckError::TeamEntry(_)));
     assert!(updater.calls.lock().unwrap().is_empty());
 }
 

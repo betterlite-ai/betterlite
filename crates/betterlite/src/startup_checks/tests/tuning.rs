@@ -176,6 +176,8 @@ fn uses_heuristic_v1_follows_classifier_type() {
         assert!(!uses_heuristic_v1(Some(&config)), "{kind}");
     }
     assert!(!uses_heuristic_v1(Some(&Json::Null)));
+    let numeric = json(r#"{"classifier_type": 5}"#);
+    assert!(!uses_heuristic_v1(Some(&numeric)));
 }
 
 #[test]
