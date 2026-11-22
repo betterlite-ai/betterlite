@@ -128,7 +128,7 @@ where
         return true;
     };
     let row = batch_cost_row_to_write(payload, disable_spend_logs);
-    let Some(found) = match table.insert_rows(from_ref(&row)).await {
+    let found = match table.insert_rows(from_ref(&row)).await {
         Ok(1) => return true,
         Ok(_) => table.find_batch_row(request_id).await,
         Err(error) => Err(error),
@@ -136,23 +136,23 @@ where
     .unwrap_or_else(|error| {
         queue_after_claim_failure(queue, request_id, &row, &error);
         None
-    }) else {
+    });
+    let Some(existing) = found else {
+        tracing::warn!(
+            "Spend row {request_id} belongs to a None request, so this batch's cost is charged without a row of its own"
+        );
         return true;
     };
-    let Some(claimed_row) = found.as_ref().filter(|existing| {
-        existing.call_type.as_deref() == Some(ARETRIEVE_BATCH)
-            && existing.status.as_deref() == Some(SUCCESS)
-    }) else {
-        let owner = found
-            .as_ref()
-            .and_then(|existing| existing.call_type.as_deref())
-            .unwrap_or("None");
+    if existing.call_type.as_deref() != Some(ARETRIEVE_BATCH)
+        || existing.status.as_deref() != Some(SUCCESS)
+    {
+        let owner = existing.call_type.as_deref().unwrap_or("None");
         tracing::warn!(
             "Spend row {request_id} belongs to a {owner} request, so this batch's cost is charged without a row of its own"
         );
         return true;
-    };
-    if claimed_row.spend > Decimal::ZERO {
+    }
+    if existing.spend > Decimal::ZERO {
         tracing::debug!("Cost tracking skipped: spend row {request_id} already charged this batch");
         return false;
     }
