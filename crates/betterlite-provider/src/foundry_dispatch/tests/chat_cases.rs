@@ -21,6 +21,7 @@ pub(super) fn chat_case() {
     deployment_key_reply();
     global_key_fallback();
     stream_body_carries_stream();
+    buffered_body_carries_stream();
     other_routes_skip_chat();
 }
 
@@ -80,7 +81,7 @@ fn global_key_fallback() {
     );
 }
 
-// the azure_ai body carries the request's stream flag: false when buffered, and true after the transform when streamed
+// a streamed azure_ai body forces stream true after the transform, so a caller's extra_body cannot turn it off
 fn stream_body_carries_stream() {
     let env = Env::default();
     let deployment = support::deployment(BASE, Some(KEY));
@@ -106,6 +107,13 @@ fn stream_body_carries_stream() {
         serde_json::from_slice(&stream_http(&overridden.prepared).body)
             .expect("the overridden stream body");
     assert_eq!(field(&overridden_sent, "stream"), &JsonValue::Bool(true));
+}
+
+// a buffered azure_ai call carries stream false, and its extra_body still overrides the flag
+fn buffered_body_carries_stream() {
+    let env = Env::default();
+    let deployment = support::deployment(BASE, Some(KEY));
+    let request = support::simple_request("mistral-large");
     let buffered = chat::prepare::prepare(
         &chat_call(&request, &deployment, "mistral-large", false),
         &env.globals(),
