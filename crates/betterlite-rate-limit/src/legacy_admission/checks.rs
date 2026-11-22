@@ -72,7 +72,7 @@ pub(super) async fn model(
     handler: &LegacyRateLimitHandler,
     call: &mut Call<'_>,
     metadata: &mut JsonMap,
-    catalog: Option<&dyn DeploymentLimitCatalog>,
+    catalog: Option<&(dyn DeploymentLimitCatalog + Send + Sync)>,
 ) -> Result<(), LegacyAdmissionError> {
     let Some((tpm_for_model, rpm_for_model)) = requested_limits(call, catalog)? else {
         return Ok(());
@@ -107,12 +107,16 @@ pub(super) async fn model(
 // step 6's gate and lookup: both maps absent skips the check, and each map's entry for the model is its limit
 fn requested_limits(
     call: &Call<'_>,
-    catalog: Option<&dyn DeploymentLimitCatalog>,
+    catalog: Option<&(dyn DeploymentLimitCatalog + Send + Sync)>,
 ) -> Result<Option<(Option<i64>, Option<i64>)>, LegacyAdmissionError> {
-    let query = LimitQuery {
+    // the query holds the bare trait object, so the auto traits come off here
+    let mut query = LimitQuery {
         model_name: call.model,
-        catalog,
+        catalog: None,
     };
+    if let Some(source) = catalog {
+        query.catalog = Some(source);
+    }
     let tpm_limits = get_key_model_tpm_limit(call.principal, &query)?;
     let rpm_limits = get_key_model_rpm_limit(call.principal, &query)?;
     if tpm_limits.is_none() && rpm_limits.is_none() {
