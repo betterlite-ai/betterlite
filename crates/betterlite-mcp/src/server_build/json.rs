@@ -6,7 +6,7 @@ use betterlite_db::mcp_stored_contracts::JsonValue;
 pub fn deserialize_json_dict(value: Option<&JsonValue>) -> Option<BTreeMap<String, JsonValue>> {
     match value? {
         JsonValue::Object(entries) => (!entries.is_empty()).then(|| entries.clone()),
-        JsonValue::String(text) => object_from_text(text),
+        JsonValue::String(text) => serde_json::from_str(text).ok(),
         JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => None,
     }
 }
@@ -15,17 +15,9 @@ pub fn deserialize_json_dict(value: Option<&JsonValue>) -> Option<BTreeMap<Strin
 pub fn deserialize_json_list(value: Option<&JsonValue>) -> Option<Vec<JsonValue>> {
     match value? {
         JsonValue::Array(entries) => (!entries.is_empty()).then(|| entries.clone()),
-        JsonValue::String(text) => list_from_text(text),
+        JsonValue::String(text) => serde_json::from_str(text).ok(),
         JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_) => None,
     }
-}
-
-fn object_from_text(text: &str) -> Option<BTreeMap<String, JsonValue>> {
-    serde_json::from_str(text).ok()
-}
-
-fn list_from_text(text: &str) -> Option<Vec<JsonValue>> {
-    serde_json::from_str(text).ok()
 }
 
 pub fn normalize_cost_info(info: &mut BTreeMap<String, JsonValue>) {
