@@ -2,6 +2,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::Response;
+use betterlite_db::database_availability::classification::STALE_PLAN_MARKER;
 use betterlite_db::database_faults::native::is_native_transport_error;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_error::envelope::ErrorObject;
@@ -43,7 +44,7 @@ impl IntoResponse for ModelMetricsError {
                 tracing::error!("the alerting threshold cannot be cut to whole seconds");
                 (StatusCode::INTERNAL_SERVER_ERROR, Json(INTERNAL_BODY)).into_response()
             }
-            Self::Store(source) if is_native_transport_error(&source) => {
+            Self::Store(source) if is_database_outage(&source) => {
                 tracing::warn!(error = %source, "the model metrics database is unavailable");
                 (StatusCode::SERVICE_UNAVAILABLE, Json(NO_DB_CONNECTION_BODY)).into_response()
             }
@@ -53,6 +54,28 @@ impl IntoResponse for ModelMetricsError {
             }
         }
     }
+}
+
+// LiteLLM also answers 503 when a driver reports a stale prepared plan, whatever its SQLSTATE.
+fn is_database_outage(error: &DbError) -> bool {
+    if is_native_transport_error(error) {
+        return true;
+    }
+    let driver = match error {
+        DbError::Backend { source }
+        | DbError::SqlState { source, .. }
+        | DbError::UniqueViolation { source, .. } => &source.driver,
+        DbError::NoDbConnected
+        | DbError::Pool { .. }
+        | DbError::InvalidRecord { .. }
+        | DbError::CreateNull => return false,
+    };
+    driver.as_db_error().is_some_and(|database| {
+        database
+            .message()
+            .to_ascii_lowercase()
+            .contains(STALE_PLAN_MARKER)
+    })
 }
 
 #[derive(Serialize)]

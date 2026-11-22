@@ -29,6 +29,7 @@ use support::DEFAULT_THRESHOLD;
 use support::FakeStore;
 use support::Fault;
 use support::app;
+use support::cached_plan_error;
 use support::caller;
 use support::clock;
 use support::days_before;
@@ -560,6 +561,19 @@ async fn oneshot_a_database_outage_answers_no_db_connection() {
         app(Some(Arc::new(fake)), DEFAULT_THRESHOLD),
         Some(&caller()),
         STREAMING_METRICS_PATH,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(reply.body, NO_DB_CONNECTION_BODY);
+}
+
+#[tokio::test]
+async fn oneshot_a_stale_plan_answers_no_db_connection() {
+    let fake = FakeStore::failing(cached_plan_error().await);
+    let reply = get(
+        app(Some(Arc::new(fake)), DEFAULT_THRESHOLD),
+        Some(&caller()),
+        METRICS_PATH,
     )
     .await;
     assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);

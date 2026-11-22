@@ -14,6 +14,7 @@ use betterlite_auth::auth_identity::records::Principal;
 use betterlite_db::gateway_request_tracking::GatewayRequestClock;
 use betterlite_db::postgres_store::diagnostics::PoolFailure;
 use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::DateTime;
@@ -99,15 +100,33 @@ pub(crate) enum Fault {
 pub(crate) struct FakeStore {
     pub(crate) rows: Rows,
     pub(crate) fault: Option<Fault>,
+    failure: Mutex<Option<DbError>>,
     calls: Mutex<Vec<Call>>,
 }
 
 impl FakeStore {
+    pub(crate) fn failing(error: DbError) -> Self {
+        Self {
+            rows: Rows::default(),
+            fault: None,
+            failure: Mutex::new(Some(error)),
+            calls: Mutex::default(),
+        }
+    }
+
     fn record(&self, call: Call) -> Result<(), DbError> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
+        let failure = self
+            .failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(error) = failure {
+            return Err(error);
+        }
         match self.fault {
             None => Ok(()),
             Some(Fault::CreateNull) => Err(DbError::CreateNull),
@@ -252,6 +271,28 @@ pub(crate) async fn database() -> (PostgresFixture, Pool) {
 pub(crate) async fn execute(pool: &Pool, sql: &str) {
     let client = pool.get().await.expect("the pooled client");
     client.batch_execute(sql).await.expect("the seed SQL");
+}
+
+// The test database raises the driver error LiteLLM classifies as a database outage.
+pub(crate) async fn cached_plan_error() -> DbError {
+    let (fixture, pool) = database().await;
+    let client = pool.get().await.expect("a pooled client");
+    let statement = client
+        .prepare(r#"SELECT * FROM "LiteLLM_SpendLogs""#)
+        .await
+        .expect("the prepared statement");
+    client
+        .batch_execute(r#"ALTER TABLE "LiteLLM_SpendLogs" ADD COLUMN "stale_probe" text"#)
+        .await
+        .expect("the added column");
+    let error = client
+        .query(&statement, &[])
+        .await
+        .expect_err("the cached plan no longer matches the table");
+    drop(client);
+    pool.close();
+    fixture.close_async().await.expect("the fixture closes");
+    backend(error)
 }
 
 pub(crate) fn postgres_store(pool: &Pool) -> PostgresModelMetricsStore {
