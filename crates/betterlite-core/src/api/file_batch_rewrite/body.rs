@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, Read, Seek, SeekFrom};
+use std::io::{self, BufRead, Seek, SeekFrom};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use thiserror::Error;
@@ -97,6 +97,7 @@ where
         }
     }
 
+    // The request stops right after its last record, so that record's line number is how many lines the file has moved on
     fn read_records(
         &self,
         first: usize,
@@ -106,35 +107,31 @@ where
         Source: BufRead,
     {
         let mut state = self.lock();
+        let base = first.saturating_sub(1);
         let mut records = Vec::new();
-        let parsed = {
-            let mut counted = Counted {
-                inner: &mut state,
-                physical: 0,
-            };
-            let base = first.saturating_sub(1);
-            for record in iter_records(&mut counted).take(limit) {
-                match record {
-                    Ok(mut record) => {
-                        record.line_number = record.line_number.saturating_add(base);
-                        records.push(record);
-                    }
-                    Err(BatchGuardrailError::Record {
-                        line_number,
-                        source,
-                    }) => {
-                        return Err(BatchGuardrailError::Record {
-                            line_number: line_number.saturating_add(base),
-                            source,
-                        });
-                    }
-                    Err(read @ BatchGuardrailError::Read { .. }) => return Err(read),
+        for record in iter_records(&mut *state).take(limit) {
+            match record {
+                Ok(mut record) => {
+                    record.line_number = record.line_number.saturating_add(base);
+                    records.push(record);
                 }
+                Err(BatchGuardrailError::Record {
+                    line_number,
+                    source,
+                }) => {
+                    return Err(BatchGuardrailError::Record {
+                        line_number: line_number.saturating_add(base),
+                        source,
+                    });
+                }
+                Err(read @ BatchGuardrailError::Read { .. }) => return Err(read),
             }
-            counted.physical
-        };
+        }
+        let consumed = records
+            .last()
+            .map_or(0, |record| record.line_number.saturating_sub(base));
         drop(state);
-        Ok((records, parsed))
+        Ok((records, consumed))
     }
 
     fn read_lines(
@@ -146,22 +143,18 @@ where
         Source: BufRead,
     {
         let mut state = self.lock();
+        let base = first.saturating_sub(1);
         let mut lines = Vec::new();
-        let read = {
-            let mut counted = Counted {
-                inner: &mut state,
-                physical: 0,
-            };
-            let base = first.saturating_sub(1);
-            for line in iter_lines(&mut counted).take(limit) {
-                let mut line = line?;
-                line.line_number = line.line_number.saturating_add(base);
-                lines.push(line);
-            }
-            counted.physical
-        };
+        for line in iter_lines(&mut *state).take(limit) {
+            let mut line = line?;
+            line.line_number = line.line_number.saturating_add(base);
+            lines.push(line);
+        }
+        let consumed = lines
+            .last()
+            .map_or(0, |line| line.line_number.saturating_sub(base));
         drop(state);
-        Ok((lines, read))
+        Ok((lines, consumed))
     }
 
     pub(super) fn lock(&self) -> MutexGuard<'_, Source> {
@@ -169,41 +162,5 @@ where
             Ok(state) => state,
             Err(poisoned) => poisoned.into_inner(),
         }
-    }
-}
-
-// Counts the physical lines one request consumed, blank lines included, so the next request keeps numbering from the file's start
-struct Counted<'source, Source> {
-    inner: &'source mut Source,
-    physical: usize,
-}
-
-impl<Source> Read for Counted<'_, Source>
-where
-    Source: Read,
-{
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        self.inner.read(buffer)
-    }
-}
-
-impl<Source> BufRead for Counted<'_, Source>
-where
-    Source: BufRead,
-{
-    fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        self.inner.fill_buf()
-    }
-
-    fn consume(&mut self, amount: usize) {
-        self.inner.consume(amount);
-    }
-
-    fn read_until(&mut self, byte: u8, buffer: &mut Vec<u8>) -> io::Result<usize> {
-        let read = self.inner.read_until(byte, buffer)?;
-        if read > 0 {
-            self.physical = self.physical.saturating_add(1);
-        }
-        Ok(read)
     }
 }

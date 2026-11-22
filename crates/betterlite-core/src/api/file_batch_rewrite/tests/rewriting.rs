@@ -4,8 +4,9 @@ use std::io::SeekFrom;
 
 use tokio_util::task::TaskTracker;
 
-use super::support::{CountedBody, UnrewindableSource, scan_result};
+use super::support::{CountedBody, UnrewindableSource, lines_of, scan_result};
 use crate::api::file_batch_guardrails::REWRITE_SPOOL_BYTES;
+use crate::api::file_batch_guardrails::SCAN_WINDOW;
 use crate::api::file_batch_guardrails::records::{RecordChange, RecordDropped, RecordRedacted};
 use crate::api::file_batch_rewrite::body::UploadBody;
 use crate::api::file_batch_rewrite::error::RewriteError;
@@ -99,6 +100,25 @@ async fn a_failing_rewind_replaces_the_rewritten_file() {
         Err(RewriteError::Rewind { .. }) => (),
         other => panic!("the rewind error replaces the rewritten file, got {other:?}"),
     }
+}
+
+// A file larger than one window keeps reading past the first window; the blank line between them is skipped and every kept row is copied in order
+#[tokio::test]
+async fn rewrite_copies_every_window() {
+    let tasks = TaskTracker::new();
+    let expected = lines_of(65);
+    let mut lines: Vec<String> = expected.split('\n').map(str::to_owned).collect();
+    lines.insert(SCAN_WINDOW, String::new());
+    let source = CountedBody::new(lines.join("\n"));
+    let result = scan_result(Vec::new(), 65, Spool::default());
+    let output = Spool::default();
+    let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output)
+        .await
+        .expect("the rewrite succeeds");
+    assert_eq!(
+        rewritten.read_to_end(&tasks).await.unwrap(),
+        expected.into_bytes()
+    );
 }
 
 #[tokio::test]
