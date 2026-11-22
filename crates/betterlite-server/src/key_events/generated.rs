@@ -34,32 +34,45 @@ where
         warn!("Failed to send key created email: {error}");
     }
     if audit.settings.is_audit_logging_enabled(None) {
-        let updated_values =
-            encode::response_dump(&event.response).map_err(KeyEventError::Encode)?;
-        let object_id = event
-            .response
-            .response
-            .token_id
-            .as_ref()
-            .and_then(Option::as_ref)
-            .cloned()
-            .unwrap_or_default();
-        let record = audit
-            .record(KeyAuditEntry {
-                action: AuditAction::Created,
-                object_id: &object_id,
-                changed_by_api_key: caller.identity.api_key.as_ref(),
-                before_value: None,
-                updated_values: Some(JsonValue::String(updated_values)),
-                litellm_changed_by,
-                caller: &caller.identity,
-            })
-            .map_err(KeyEventError::Audit)?;
-        audit.scheduler.schedule(record);
+        audit_created::<Manager>(audit, event, caller, litellm_changed_by)?;
     }
     if let Err(error) = store_secret(effects, event).await {
         warn!("Failed to store virtual key in secret manager: {error}");
     }
+    Ok(())
+}
+
+fn audit_created<Manager>(
+    audit: &KeyEventAudit,
+    event: &GeneratedEvent,
+    caller: &KeyEventCaller,
+    litellm_changed_by: Option<&str>,
+) -> Result<(), KeyEventError<Manager>>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
+    let updated_values = encode::response_dump(&event.response).map_err(KeyEventError::Encode)?;
+    let object_id = event
+        .response
+        .response
+        .token_id
+        .as_ref()
+        .and_then(Option::as_ref)
+        .cloned()
+        .unwrap_or_default();
+    let record = audit
+        .record(KeyAuditEntry {
+            action: AuditAction::Created,
+            object_id: &object_id,
+            changed_by_api_key: caller.identity.api_key.as_ref(),
+            before_value: None,
+            updated_values: Some(JsonValue::String(updated_values)),
+            litellm_changed_by,
+            caller: &caller.identity,
+        })
+        .map_err(KeyEventError::Audit)?;
+    audit.scheduler.schedule(record);
     Ok(())
 }
 
