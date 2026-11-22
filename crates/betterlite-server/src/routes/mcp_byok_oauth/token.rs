@@ -63,8 +63,11 @@ where
         }
     };
     let Ok(clock) = SystemTime::now().duration_since(UNIX_EPOCH) else {
-        let TokenErrorResponse { status, body } = TokenError::ServerError.response();
-        return (status, TOKEN_NO_CACHE_HEADERS, Json(body)).into_response();
+        let TokenErrorResponse {
+            status,
+            body: error_body,
+        } = TokenError::ServerError.response();
+        return (status, TOKEN_NO_CACHE_HEADERS, Json(error_body)).into_response();
     };
     let result = exchange_authorization_code(
         &form,
@@ -77,8 +80,11 @@ where
     match result {
         Ok(grant) => (StatusCode::OK, TOKEN_NO_CACHE_HEADERS, Json(grant)).into_response(),
         Err(error) => {
-            let TokenErrorResponse { status, body } = error.response();
-            (status, TOKEN_NO_CACHE_HEADERS, Json(body)).into_response()
+            let TokenErrorResponse {
+                status,
+                body: error_body,
+            } = error.response();
+            (status, TOKEN_NO_CACHE_HEADERS, Json(error_body)).into_response()
         }
     }
 }

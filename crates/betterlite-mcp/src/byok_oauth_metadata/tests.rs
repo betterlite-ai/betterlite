@@ -77,7 +77,7 @@ fn protected_resource_document_uses_an_array_for_authorization_servers() {
 #[case::bare_base("https://proxy.test", "/prem", "https://proxy.test/prem")]
 #[case::empty_prefix("https://proxy.test/root", "", "https://proxy.test")]
 #[case::nested_prefix("http://10.0.0.1:8080/a/b", "/x/y", "http://10.0.0.1:8080/x/y")]
-#[case::empty_base("", "/prem", "://prem")]
+#[case::empty_base("", "/prem", ":///prem")]
 fn prefixed_base_url_keeps_only_scheme_and_netloc(
     #[case] base_url: &str,
     #[case] prefix: &str,
