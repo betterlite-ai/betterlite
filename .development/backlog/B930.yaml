@@ -1,7 +1,7 @@
 id: B930
 milestone: M5 api families
 title: Responses affinity
-status: todo
+status: done
 depends_on: [B171, B844, B759, B903, B904, B220]
 file: tasks/B930-responses-affinity.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2959
