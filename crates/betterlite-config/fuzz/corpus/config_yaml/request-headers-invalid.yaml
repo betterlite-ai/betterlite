@@ -1,0 +1,10 @@
+general_settings:
+  user_header_mappings:
+    - {header_name: X-User, litellm_user_role: proxy_admin}
+  user_header_name: {nested: value}
+  forward_openai_org_id: "yes"
+litellm_settings:
+  add_user_information_to_llm_headers: 1
+  model_group_settings:
+    forward_client_headers_to_llm_api: gpt-4o
+  forward_traceparent_to_llm_provider: "true"

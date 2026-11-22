@@ -1,0 +1,46 @@
+kind: helper
+name: mcp-oauth-state-token-rules-absent-and-mismatch
+call:
+  b7530:
+    function: validate_token_response
+    token_response: {access_token: token}
+    rules: {org_id: "1"}
+    server_id: srv-1
+calls:
+  - b7530:
+      function: validate_token_response
+      token_response: {org_id: null}
+      rules: {org_id: "1"}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {scope: write}
+      rules: {scope: read}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {expires_in: 300}
+      rules: {expires_in: "301"}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {expires_in: 300.0}
+      rules: {expires_in: 300}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {verified: true}
+      rules: {verified: "True"}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {x: anything}
+      rules: {x: null}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {a: "1", b: "3"}
+      rules: {a: "1", b: "2"}
+      server_id: other-server
+env: {}
+compare: {ignore: []}

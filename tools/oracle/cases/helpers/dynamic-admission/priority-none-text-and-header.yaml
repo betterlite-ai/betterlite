@@ -1,0 +1,28 @@
+kind: helper
+name: dynamic-admission-priority-none-text-and-header
+call:
+  b3052:
+    model: gpt-4
+    rpm: 100
+    tpm: 1000
+    window_size: 60
+    priority: null
+    priority_reservation:
+      prod: 0.5
+    default_priority: 0.25
+    saturation_threshold: 0.5
+    saturation: 0.6
+    atomic:
+      overall_code: OVER_LIMIT
+      statuses:
+        - code: OVER_LIMIT
+          current_limit: 25
+          limit_remaining: 0
+          rate_limit_type: requests
+          descriptor_key: priority_model
+          descriptor_value: gpt-4:default_pool
+    tracking:
+      overall_code: OK
+      statuses: []
+env: {}
+compare: {ignore: []}

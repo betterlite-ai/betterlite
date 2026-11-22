@@ -978,7 +978,9 @@ name = "betterlite"
 version = "0.1.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-cache",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-http",
  "betterlite-models",
@@ -989,6 +991,7 @@ dependencies = [
  "chrono",
  "clap",
  "croner",
+ "jiff",
  "nix",
  "rand 0.10.3",
  "regex",
@@ -1186,6 +1189,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
  "unicode-normalization",
  "url",
  "uuid",
@@ -3601,6 +3605,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
@@ -3609,6 +3614,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -4181,13 +4188,25 @@ dependencies = [
 name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
+ "betterlite-env",
+ "betterlite-error",
  "betterlite-guardrails",
+ "betterlite-http",
  "betterlite-models",
+ "betterlite-openai",
+ "betterlite-provider",
  "betterlite-redact",
+ "betterlite-sdk",
  "betterlite-secrets",
+ "betterlite-tokenizer",
+ "chrono",
+ "http 1.5.0",
  "pyo3",
+ "pyo3-async-runtimes",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -4196,6 +4215,8 @@ dependencies = [
  "temp-env",
  "tempfile",
  "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -4276,6 +4297,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -9348,6 +9370,20 @@ dependencies = [
  "pyo3-build-config",
  "pyo3-ffi",
  "pyo3-macros",
+]
+
+[[package]]
+name = "pyo3-async-runtimes"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b877331c7817ccb6379e9d19a06993160141f1d0a386e55276128717df85e3fc"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "once_cell",
+ "pin-project-lite",
+ "pyo3",
+ "tokio",
 ]
 
 [[package]]
