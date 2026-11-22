@@ -465,7 +465,7 @@ impl VideoTransport for Wire {
                 value
                     .to_str()
                     .ok()
-                    .map(|header_text| (name.as_str().to_owned(), header_text.to_owned()))
+                    .map(|shown| (name.as_str().to_owned(), shown.to_owned()))
             })
             .collect();
         self.seen
