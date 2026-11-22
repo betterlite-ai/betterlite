@@ -27,17 +27,17 @@ fn reload_message(access_group: &str, gone: &[&str]) -> String {
 #[test]
 fn reload_metadata_only() {
     let live = ids(&["d1"]);
-    let written = vec![written_pair("d1")];
+    let written = [written_pair("d1")];
     raise_if_degraded_serving(&ids(&["d1"]), &written, "group-a", None, Some(&live))
         .expect("the live model");
-    let already_dead = vec![written_pair("d1")];
+    let already_dead = [written_pair("d1")];
     raise_if_degraded_serving(&ids(&[]), &already_dead, "group-a", None, Some(&ids(&[])))
         .expect("a row that was already dead");
 }
 
 #[test]
 fn reload_saved_but_not_live() {
-    let written = vec![written_pair("d1")];
+    let written = [written_pair("d1")];
     let error =
         raise_if_degraded_serving(&ids(&["d1"]), &written, "group-a", None, Some(&ids(&[])))
             .expect_err("the dropped model");
@@ -48,7 +48,7 @@ fn reload_saved_but_not_live() {
 
 #[test]
 fn reload_collateral_and_order() {
-    let written = vec![written_pair("d1"), written_pair("d1")];
+    let written = [written_pair("d1"), written_pair("d1")];
     let still_desired = ids(&["d1", "d2", "d3"]);
     let live = ids(&["d4"]);
     let error = raise_if_degraded_serving(
@@ -69,7 +69,7 @@ fn reload_collateral_and_order() {
 
 #[test]
 fn reload_snapshot_fallback() {
-    let written = vec![written_pair("d1")];
+    let written = [written_pair("d1")];
     let error = raise_if_degraded_serving(&ids(&["d1"]), &written, "group-a", None, None)
         .expect_err("the missing live set");
     assert_eq!(
