@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Json;
-use axum::body::{Body, to_bytes};
+use axum::body::to_bytes;
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse as _, Response};
@@ -12,7 +12,7 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_form::values::{FormParts, PartValue};
 use betterlite_mcp::byok_token_exchange::exchange::exchange_authorization_code;
 use betterlite_mcp::byok_token_exchange::ports::{AuthCodeLookup, ByokCredentialSink};
-use betterlite_mcp::byok_token_exchange::{TokenError, TokenErrorResponse, TokenForm};
+use betterlite_mcp::byok_token_exchange::{TokenError, TokenForm};
 use betterlite_mcp::oauth_resource::challenge::TOKEN_NO_CACHE_HEADERS;
 use serde::Serialize;
 use thiserror::Error;
@@ -43,8 +43,7 @@ where
     S: ByokCredentialSink + 'static,
     B: RequestBaseUrl + 'static,
 {
-    let (parts, body) = request.into_parts();
-    let form_parts = match read_form(&parts.headers, body).await {
+    let form_parts = match read_form(request).await {
         Ok(form_parts) => form_parts,
         Err(error) => {
             return (
@@ -63,11 +62,8 @@ where
         }
     };
     let Ok(clock) = SystemTime::now().duration_since(UNIX_EPOCH) else {
-        let TokenErrorResponse {
-            status,
-            body: response_body,
-        } = TokenError::ServerError.response();
-        return (status, TOKEN_NO_CACHE_HEADERS, Json(response_body)).into_response();
+        let failure = TokenError::ServerError.response();
+        return (failure.status, TOKEN_NO_CACHE_HEADERS, Json(failure.body)).into_response();
     };
     let result = exchange_authorization_code(
         &form,
@@ -80,17 +76,15 @@ where
     match result {
         Ok(grant) => (StatusCode::OK, TOKEN_NO_CACHE_HEADERS, Json(grant)).into_response(),
         Err(error) => {
-            let TokenErrorResponse {
-                status,
-                body: response_body,
-            } = error.response();
-            (status, TOKEN_NO_CACHE_HEADERS, Json(response_body)).into_response()
+            let failure = error.response();
+            (failure.status, TOKEN_NO_CACHE_HEADERS, Json(failure.body)).into_response()
         }
     }
 }
 
-async fn read_form(headers: &HeaderMap, body: Body) -> Result<FormParts, FormError> {
-    let Some(content_type) = form_content_type(headers) else {
+async fn read_form(request: Request) -> Result<FormParts, FormError> {
+    let (parts, body) = request.into_parts();
+    let Some(content_type) = form_content_type(&parts.headers) else {
         return Ok(FormParts::default());
     };
     let Ok(bytes) = to_bytes(body, BODY_LIMIT_BYTES).await else {
