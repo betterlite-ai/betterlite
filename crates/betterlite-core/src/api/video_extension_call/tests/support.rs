@@ -32,7 +32,7 @@ use crate::api::video_selection::VideoConfigTag;
 
 pub(crate) const CALL_ID: &str = "call-1";
 pub(crate) const INITIAL_CALL_TYPE: &str = "endpoint_func";
-pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(6_000);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_mins(100);
 
 fn moment() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00").expect("the fixture is RFC 3339")
