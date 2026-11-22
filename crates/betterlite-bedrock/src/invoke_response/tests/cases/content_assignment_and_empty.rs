@@ -39,6 +39,18 @@ fn non_string_text_errors() {
         run.message(),
         "Error parsing received text=True.\nError-the response text is not a string"
     );
+
+    let run = decode(&case, r#"{"results": [{"outputText": ["a"]}]}"#);
+    assert_eq!(
+        run.message(),
+        "Error parsing received text=[\"a\"].\nError-the response text is not a string"
+    );
+
+    let run = decode(&case, r#"{"results": [{"outputText": {"a": 1}}]}"#);
+    assert_eq!(
+        run.message(),
+        "Error parsing received text={\"a\":1}.\nError-the response text is not a string"
+    );
 }
 
 fn tool_calls_keep_the_seed_content() {

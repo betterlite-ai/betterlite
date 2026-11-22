@@ -14,6 +14,7 @@ pub(in crate::invoke_response::tests) fn response_header_token_counts() {
     invalid_headers_surface();
     negative_headers_surface();
     counter_failures_surface();
+    clock_and_created_ranges_surface();
     created_and_model_are_set();
 }
 
@@ -139,6 +140,20 @@ fn counter_failures_surface() {
     tool_case.response = with_tool_calls(seeded(), Vec::new());
     let run = decode(&tool_case, r#"{"results": [{}]}"#);
     assert!(matches!(run.failure(), InvokeReplyError::TokenCount { .. }));
+}
+
+fn clock_and_created_ranges_surface() {
+    let mut case = fixture();
+    case.headers = headers("1", "2");
+    case.now = -1.5;
+    let run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
+    assert!(matches!(run.failure(), InvokeReplyError::CreatedOutOfRange));
+    assert_eq!(run.status(), None);
+
+    case.now = f64::NAN;
+    let run = decode(&case, r#"{"results": [{"outputText": "x"}]}"#);
+    assert!(matches!(run.failure(), InvokeReplyError::ClockOutOfRange));
+    assert_eq!(run.status(), None);
 }
 
 fn created_and_model_are_set() {
