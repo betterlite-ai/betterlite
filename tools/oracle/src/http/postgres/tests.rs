@@ -195,7 +195,7 @@ async fn replay_seed(name: &str, result: Result<HttpCase, OracleError>) {
             let case = result.expect("a genai corpus seed decodes");
             replay_genai_case(&case).await;
         }
-        _ => assert!(result.is_err(), "{} should be rejected", name),
+        _ => assert!(result.is_err(), "{name} should be rejected"),
     }
 }
 
