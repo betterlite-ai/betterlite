@@ -6,23 +6,26 @@ use super::*;
 use crate::responses_affinity::boundary::{Boundary, encryption_boundary, same_boundary};
 
 // The boundary keeps its key secret; only these assertions read the key text back out.
-fn revealed(boundary: Option<Boundary>) -> Option<(String, String)> {
-    boundary.map(|found| (found.0, found.1.expose_secret().to_owned()))
+fn assert_boundary(found: Option<Boundary>, base: &str, key: &str) {
+    let (actual_base, actual_key) = found.unwrap();
+    assert_eq!(actual_base, base);
+    assert_eq!(actual_key.expose_secret(), key);
 }
 
-fn pair(base: &str, key: &str) -> (String, String) {
-    (base.to_owned(), key.to_owned())
+fn assert_no_boundary(found: Option<Boundary>) {
+    if let Some(boundary) = found {
+        let base = boundary.0;
+        panic!("a boundary was found at {base}");
+    }
 }
 
 #[test]
 fn the_deployment_fields_form_the_boundary() {
     let credentials = CredentialSnapshot::default();
-    assert_eq!(
-        revealed(encryption_boundary(
-            &params(Some("u"), Some("k")),
-            &credentials
-        )),
-        Some(pair("u", "k"))
+    assert_boundary(
+        encryption_boundary(&params(Some("u"), Some("k")), &credentials),
+        "u",
+        "k",
     );
 }
 
@@ -35,80 +38,59 @@ fn named_credential_fields_override_by_presence() {
             ("api_key", text("cred-key")),
         ]),
     )]);
-    assert_eq!(
-        revealed(encryption_boundary(
-            &params_with_credential("team-a"),
-            &credentials
-        )),
-        Some(pair("cred-base", "cred-key"))
+    assert_boundary(
+        encryption_boundary(&params_with_credential("team-a"), &credentials),
+        "cred-base",
+        "cred-key",
     );
 }
 
 #[test]
 fn a_null_credential_field_disables_the_boundary() {
     let credentials = named_credentials(&[("team-a", object(&[("api_base", Json::Null)]))]);
-    assert_eq!(
-        revealed(encryption_boundary(
-            &params_with_credential("team-a"),
-            &credentials
-        )),
-        None
-    );
+    assert_no_boundary(encryption_boundary(
+        &params_with_credential("team-a"),
+        &credentials,
+    ));
 }
 
 #[test]
 fn a_missing_credential_field_falls_back_to_the_deployment() {
     let credentials = named_credentials(&[("team-a", object(&[("api_base", text("cred-base"))]))]);
-    assert_eq!(
-        revealed(encryption_boundary(
-            &params_with_credential("team-a"),
-            &credentials
-        )),
-        Some(pair("cred-base", "deployment-key"))
+    assert_boundary(
+        encryption_boundary(&params_with_credential("team-a"), &credentials),
+        "cred-base",
+        "deployment-key",
     );
 }
 
 #[test]
 fn an_unknown_credential_name_keeps_both_deployment_values() {
     let credentials = CredentialSnapshot::default();
-    assert_eq!(
-        revealed(encryption_boundary(
-            &params_with_credential("absent"),
-            &credentials
-        )),
-        Some(pair("deployment-base", "deployment-key"))
+    assert_boundary(
+        encryption_boundary(&params_with_credential("absent"), &credentials),
+        "deployment-base",
+        "deployment-key",
     );
 }
 
 #[test]
 fn falsy_values_have_no_boundary() {
     let credentials = CredentialSnapshot::default();
-    assert_eq!(
-        revealed(encryption_boundary(
-            &params(Some(""), Some("k")),
-            &credentials
-        )),
-        None
-    );
-    assert_eq!(
-        revealed(encryption_boundary(
-            &params(Some("u"), Some("")),
-            &credentials
-        )),
-        None
-    );
-    assert_eq!(
-        revealed(encryption_boundary(&params(None, None), &credentials)),
-        None
-    );
+    assert_no_boundary(encryption_boundary(
+        &params(Some(""), Some("k")),
+        &credentials,
+    ));
+    assert_no_boundary(encryption_boundary(
+        &params(Some("u"), Some("")),
+        &credentials,
+    ));
+    assert_no_boundary(encryption_boundary(&params(None, None), &credentials));
     let empty_credential = named_credentials(&[("team-a", object(&[("api_base", text(""))]))]);
-    assert_eq!(
-        revealed(encryption_boundary(
-            &params_with_credential("team-a"),
-            &empty_credential
-        )),
-        None
-    );
+    assert_no_boundary(encryption_boundary(
+        &params_with_credential("team-a"),
+        &empty_credential,
+    ));
 }
 
 #[test]
@@ -120,12 +102,10 @@ fn an_empty_credential_name_keeps_the_deployment_values() {
             ("api_key", text("cred-key")),
         ]),
     )]);
-    assert_eq!(
-        revealed(encryption_boundary(
-            &params_with_credential(""),
-            &credentials
-        )),
-        Some(pair("deployment-base", "deployment-key"))
+    assert_boundary(
+        encryption_boundary(&params_with_credential(""), &credentials),
+        "deployment-base",
+        "deployment-key",
     );
 }
 
@@ -143,9 +123,10 @@ fn a_non_text_credential_name_keeps_the_deployment_values() {
         "litellm_credential_name".to_owned(),
         Json::Number(serde_json::Number::from(5_i32)),
     );
-    assert_eq!(
-        revealed(encryption_boundary(&params, &credentials)),
-        Some(pair("deployment-base", "deployment-key"))
+    assert_boundary(
+        encryption_boundary(&params, &credentials),
+        "deployment-base",
+        "deployment-key",
     );
 }
 
@@ -157,7 +138,7 @@ fn non_text_values_have_no_boundary() {
         "api_base".to_owned(),
         Json::Number(serde_json::Number::from(1_i32)),
     );
-    assert_eq!(revealed(encryption_boundary(&params, &credentials)), None);
+    assert_no_boundary(encryption_boundary(&params, &credentials));
 }
 
 #[test]
