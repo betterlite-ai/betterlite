@@ -51,9 +51,7 @@ impl RequestScheduler {
         // the poll loop nests more generator states than rustc lays out by default, so its future lives on the heap
         let polls = Box::pin(self.wait_for_turn(item, call, plan)).await?;
         let answered = call.call().await;
-        if let Err(error) = self.remove_request(item).await {
-            tracing::warn!(%error, "the completed request left a scheduler queue entry behind");
-        }
+        self.remove_quietly(item).await;
         finish(item, polls, answered)
     }
     async fn wait_for_turn<C>(
@@ -71,9 +69,7 @@ impl RequestScheduler {
                 Ok(_remaining) => {}
                 Err(TimeoutError::Cancelled) => return Err(self.cancelled(item).await),
                 Err(_expired) => {
-                    if let Err(error) = self.remove_request(item).await {
-                        tracing::warn!(%error, "the expired request left a scheduler queue entry behind");
-                    }
+                    self.remove_quietly(item).await;
                     return Err(SchedulerError::TimedOut {
                         model: item.model.clone(),
                         request_id: item.request_id.clone(),
@@ -96,6 +92,13 @@ impl RequestScheduler {
             }
         }
     }
+    // the removal after the call and in the deadline arm is best effort: a failure is logged, not returned
+    async fn remove_quietly(&self, item: &FlowItem) {
+        if let Err(error) = self.remove_request(item).await {
+            tracing::warn!(%error, "the request left a scheduler queue entry behind");
+        }
+    }
+
     async fn cancelled(&self, item: &FlowItem) -> SchedulerError {
         let removed = self.remove_request(item).await;
         match removed {

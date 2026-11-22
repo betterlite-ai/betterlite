@@ -305,12 +305,12 @@ async fn a_request_accepted_during_an_outage_survives_the_recovery() {
         .await
         .expect("the fallback queue accepts the request");
     server.set_down(false);
-    let served = service.queue(MODEL).await.expect("the queue reads");
+    let recovered = service.queue(MODEL).await.expect("the queue reads");
     assert!(
-        served.warning.is_none(),
+        recovered.warning.is_none(),
         "the recovered read answers from the shared tier"
     );
-    assert_eq!(served.value, entries(&[(0, "second"), (128, "first")]));
+    assert_eq!(recovered.value, entries(&[(0, "second"), (128, "first")]));
 }
 
 // an empty queue is the setup error Scheduler.poll and Scheduler.peek raise, told apart from the wait
