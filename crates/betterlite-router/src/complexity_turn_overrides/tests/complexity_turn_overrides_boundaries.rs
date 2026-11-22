@@ -3,7 +3,7 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::Role;
 use rstest::rstest;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use super::support::{
     FakeEmbedder, base_settings, catalog, chat, custom_catalog, json_list, json_object, json_text,
@@ -68,20 +68,20 @@ fn a_custom_tier_set_numbers_its_definitions_in_list_order() {
 
 #[test]
 fn an_unknown_tier_names_itself_in_the_error() {
-    let error = plan_mode_floor(&floor_settings("DEEP"), &all_pools()).unwrap_err();
+    let floor_error = plan_mode_floor(&floor_settings("DEEP"), &all_pools()).unwrap_err();
     assert!(matches!(
-        error,
+        floor_error,
         TurnOverrideError::UnknownTier { ref tier } if tier.as_str() == "DEEP"
     ));
-    let error = LexicalRules::compile(&all_pools(), &[rule(&["x"], "DEEP")]).unwrap_err();
+    let rule_error = LexicalRules::compile(&all_pools(), &[rule(&["x"], "DEEP")]).unwrap_err();
     assert!(matches!(
-        error,
+        rule_error,
         TurnOverrideError::UnknownTier { ref tier } if tier.as_str() == "DEEP"
     ));
     let custom = custom_catalog(&["cheap"], &[("cheap", &["a"])]);
-    let error = active_tier(&custom, "deep").unwrap_err();
+    let custom_error = active_tier(&custom, "deep").unwrap_err();
     assert!(matches!(
-        error,
+        custom_error,
         TurnOverrideError::UnknownTier { ref tier } if tier.as_str() == "deep"
     ));
 }
@@ -320,7 +320,7 @@ fn a_plan_signal_is_not_required_when_the_floor_is_unset() {
     );
 }
 
-fn runtime() -> tokio::runtime::Runtime {
+fn runtime() -> Runtime {
     Builder::new_current_thread()
         .enable_all()
         .build()

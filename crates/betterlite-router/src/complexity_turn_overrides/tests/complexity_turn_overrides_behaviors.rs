@@ -7,7 +7,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::Role;
 use indexmap::IndexMap;
 use rstest::rstest;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use super::support::{
     FakeEmbedder, base_settings, catalog, chat, json_list, json_number, json_object, json_text,
@@ -80,25 +80,26 @@ fn the_top_tier_shortcut_counts_the_configured_pools(
 fn a_plan_mode_tool_or_sentinel_is_recognized() {
     let settings = floor_settings("COMPLEX");
     let tool = json_list(vec![json_object(&[("name", json_text("exit_plan_mode"))])]);
-    let kwargs = request_kwargs(json_object(&[("tools", tool)]));
-    let found = matched_plan_mode_signal(&settings, Some(&kwargs), None).unwrap();
-    assert_eq!(found.as_deref(), Some("exit_plan_mode"));
+    let tool_kwargs = request_kwargs(json_object(&[("tools", tool)]));
+    let tool_signal = matched_plan_mode_signal(&settings, Some(&tool_kwargs), None).unwrap();
+    assert_eq!(tool_signal.as_deref(), Some("exit_plan_mode"));
 
     let body = json_object(&[(
         "system",
         json_text("You are currently running in \"Plan\" mode."),
     )]);
-    let kwargs = request_kwargs(body);
-    let found = matched_plan_mode_signal(&settings, Some(&kwargs), None).unwrap();
+    let sentinel_kwargs = request_kwargs(body);
+    let sentinel_signal =
+        matched_plan_mode_signal(&settings, Some(&sentinel_kwargs), None).unwrap();
     assert_eq!(
-        found.as_deref(),
+        sentinel_signal.as_deref(),
         Some("You are currently running in \"Plan\" mode.")
     );
 
     let quiet = Settings::default();
-    let kwargs = request_kwargs(json_object(&[]));
+    let empty_kwargs = request_kwargs(json_object(&[]));
     assert_eq!(
-        matched_plan_mode_signal(&quiet, Some(&kwargs), None).unwrap(),
+        matched_plan_mode_signal(&quiet, Some(&empty_kwargs), None).unwrap(),
         None
     );
 }
@@ -117,10 +118,10 @@ fn the_client_marker_set_decides_where_the_newest_ask_starts() {
         "metadata".to_owned(),
         json_object(&[("user_agent", json_text("codex-cli/0.20"))]),
     )]);
-    let found = matched_plan_mode_signal(&settings, Some(&codex), Some(&messages)).unwrap();
-    assert_eq!(found.as_deref(), Some("Plan mode is active"));
-    let found = matched_plan_mode_signal(&settings, None, Some(&messages)).unwrap();
-    assert_eq!(found, None);
+    let codex_signal = matched_plan_mode_signal(&settings, Some(&codex), Some(&messages)).unwrap();
+    assert_eq!(codex_signal.as_deref(), Some("Plan mode is active"));
+    let plain_signal = matched_plan_mode_signal(&settings, None, Some(&messages)).unwrap();
+    assert_eq!(plain_signal, None);
 }
 
 #[test]
@@ -181,22 +182,22 @@ fn the_escalation_keyword_defaults_to_the_shouted_phrase() {
 fn the_most_severe_lexical_rule_wins_whatever_the_rule_order() {
     let set = all_pools();
     let configured = rules(&[(&["refund"], "SIMPLE"), (&["invoice"], "COMPLEX")]);
-    let compiled = LexicalRules::compile(&set, &configured).unwrap();
-    let found = compiled.matches("please refund the invoice").unwrap();
+    let compiled_pair = LexicalRules::compile(&set, &configured).unwrap();
+    let found = compiled_pair.matches("please refund the invoice").unwrap();
     assert_eq!(found.tier.name(), "COMPLEX");
     assert_eq!(found.matched_keyword.as_deref(), Some("invoice"));
     let phrase = rules(&[(&["invoice number"], "MEDIUM")]);
-    let compiled = LexicalRules::compile(&set, &phrase).unwrap();
+    let compiled_phrase = LexicalRules::compile(&set, &phrase).unwrap();
     assert_eq!(
-        compiled
+        compiled_phrase
             .matches("the INVOICE NUMBER is 7")
             .unwrap()
             .tier
             .name(),
         "MEDIUM"
     );
-    let compiled = LexicalRules::compile(&set, &rules(&[(&["api"], "SIMPLE")])).unwrap();
-    assert_eq!(compiled.matches("the capital is Paris"), None);
+    let compiled_api = LexicalRules::compile(&set, &rules(&[(&["api"], "SIMPLE")])).unwrap();
+    assert_eq!(compiled_api.matches("the capital is Paris"), None);
     let sole = LexicalRules::compile(&set, &rules(&[(&["refund"], "SIMPLE")])).unwrap();
     assert_eq!(sole.matches("a refund").unwrap().tier.name(), "SIMPLE");
 }
@@ -356,18 +357,18 @@ fn a_tier_named_by_several_rules_gets_one_route() {
 fn a_semantic_failure_falls_back_to_no_override() {
     let settings = semantic_settings(&[(&["invoice"], "COMPLEX")], 0.5);
     let failing_build = FakeEmbedder::new(&[("test", vec![1.0, 0.0])]).failing_documents();
-    let index =
+    let build_failure_index =
         SemanticKeywordIndex::new(&settings, &all_pools(), Arc::new(failing_build)).unwrap();
     assert_eq!(
-        runtime().block_on(index.tier_override("invoice", &CallerContext::default())),
+        runtime().block_on(build_failure_index.tier_override("invoice", &CallerContext::default())),
         None
     );
     let failing_query =
         FakeEmbedder::new(&[("test", vec![1.0, 0.0]), ("invoice", vec![1.0, 0.0])]).failing_query();
-    let index =
+    let query_failure_index =
         SemanticKeywordIndex::new(&settings, &all_pools(), Arc::new(failing_query)).unwrap();
     assert_eq!(
-        runtime().block_on(index.tier_override("invoice", &CallerContext::default())),
+        runtime().block_on(query_failure_index.tier_override("invoice", &CallerContext::default())),
         None
     );
 }
@@ -530,7 +531,7 @@ fn from_config_reads_the_section_and_the_shared_settings() {
     assert_eq!(found.stall_repeat_threshold, 2);
     assert_eq!(found.keyword_matching, KeywordMatching::Semantic);
     assert_eq!(found.embedding_model.as_deref(), Some("fake-embed"));
-    assert_eq!(found.match_threshold, 0.7);
+    assert_eq!(found.match_threshold.to_bits(), 0.7_f64.to_bits());
     assert!(!found.housekeeping_cheapest);
     assert_eq!(found.escalation_keywords, Some(vec!["help me".to_owned()]));
     assert_eq!(found.plan_mode_min_tier.as_deref(), Some("COMPLEX"));
@@ -539,7 +540,7 @@ fn from_config_reads_the_section_and_the_shared_settings() {
     assert_eq!(found.classifier_type, ClassifierKind::Custom);
 }
 
-fn runtime() -> tokio::runtime::Runtime {
+fn runtime() -> Runtime {
     Builder::new_current_thread()
         .enable_all()
         .build()

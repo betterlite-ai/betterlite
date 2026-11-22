@@ -108,7 +108,7 @@ fn declared_values_replace_the_defaults() {
         found.embedding_model.as_deref(),
         Some("openai/text-embedding-3-small")
     );
-    assert_eq!(found.match_threshold, 0.7);
+    assert_eq!(found.match_threshold.to_bits(), 0.7_f64.to_bits());
     assert!(!found.housekeeping_cheapest);
 }
 
@@ -134,7 +134,7 @@ fn environment_values_resolve_once_in_the_config() {
     .unwrap();
     assert!(found.stall_escalation_enabled);
     assert_eq!(found.stall_escalation_window, 8);
-    assert_eq!(found.match_threshold, 0.25);
+    assert_eq!(found.match_threshold.to_bits(), 0.25_f64.to_bits());
     assert_eq!(found.embedding_model, None);
     assert!(!found.housekeeping_cheapest);
 }

@@ -108,7 +108,7 @@ where
         lookup,
         DEFAULT_SEMANTIC_MATCHING,
     )?;
-    let model = optional_text(model, &format!("{prefix}.embedding_model"), lookup)?;
+    let embedding = optional_text(model, &format!("{prefix}.embedding_model"), lookup)?;
     let threshold = ratio(
         threshold_value,
         &format!("{prefix}.match_threshold"),
@@ -120,7 +120,7 @@ where
         } else {
             KeywordMatching::Lexical
         },
-        model,
+        model: embedding,
         threshold,
     })
 }

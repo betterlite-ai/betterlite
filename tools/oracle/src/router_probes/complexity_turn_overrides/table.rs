@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, PoisonError};
 
@@ -94,7 +94,7 @@ impl RouteEmbedder for TableEmbedder {
         model: &str,
         texts: Vec<String>,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        std::future::ready(self.collect("documents", model, texts, &self.document_failures))
+        ready(self.collect("documents", model, texts, &self.document_failures))
     }
 
     fn embed_query(
@@ -104,7 +104,7 @@ impl RouteEmbedder for TableEmbedder {
         _raw_text: &str,
         _caller: &CallerContext,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        std::future::ready(self.collect("query", model, vec![text], &self.query_failures))
+        ready(self.collect("query", model, vec![text], &self.query_failures))
     }
 }
 

@@ -67,8 +67,8 @@ fn error_by_call_id(messages: &[Json]) -> BTreeMap<String, bool> {
         let Some(Json::List(content)) = fields.get("content") else {
             continue;
         };
-        for part in content {
-            let Json::Object(part) = part else {
+        for entry in content {
+            let Json::Object(part) = entry else {
                 continue;
             };
             if !matches!(part.get("type"), Some(Json::Text(kind)) if kind == "tool_result") {

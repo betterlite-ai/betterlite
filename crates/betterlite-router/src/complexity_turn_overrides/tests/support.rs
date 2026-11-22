@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Future, pending};
+use std::future::{Future, pending, ready};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -214,16 +214,19 @@ impl FakeEmbedder {
         }
     }
 
+    #[must_use]
     pub(crate) fn failing_documents(mut self) -> Self {
         self.document_failures = AtomicUsize::new(1);
         self
     }
 
+    #[must_use]
     pub(crate) fn failing_query(mut self) -> Self {
         self.query_failure = true;
         self
     }
 
+    #[must_use]
     pub(crate) fn stalled_query(mut self) -> Self {
         self.stall_query = true;
         self
@@ -277,7 +280,7 @@ impl RouteEmbedder for FakeEmbedder {
         model: &str,
         texts: Vec<String>,
     ) -> impl Future<Output = Result<Vec<Vec<f64>>, Self::Error>> + Send {
-        std::future::ready(self.document_answer(model, texts))
+        ready(self.document_answer(model, texts))
     }
 
     fn embed_query(
