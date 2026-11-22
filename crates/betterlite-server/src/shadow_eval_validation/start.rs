@@ -16,6 +16,7 @@ pub struct TargetKey<'rows> {
     pub team_id: Option<&'rows str>,
 }
 
+#[derive(Clone, Copy)]
 pub struct TargetRecords<'rows> {
     pub keys: &'rows [TargetKey<'rows>],
     pub teams: &'rows [&'rows str],

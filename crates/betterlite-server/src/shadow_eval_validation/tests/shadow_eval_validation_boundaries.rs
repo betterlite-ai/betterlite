@@ -15,7 +15,7 @@ fn assert_bounded(body: &str, rejected: bool, field: &str) {
     let parsed = parse_shadow_eval_request(body.as_bytes());
     assert_eq!(parsed.is_err(), rejected);
     if rejected {
-        assert_eq!(validation_field(parsed.unwrap_err()), field);
+        assert_eq!(validation_field(&parsed.unwrap_err()), field);
     }
 }
 
@@ -38,7 +38,7 @@ fn the_target_count_is_bounded(#[case] count: usize, #[case] rejected: bool) {
         } else {
             "team_ids"
         };
-        assert_eq!(validation_field(error), field);
+        assert_eq!(validation_field(&error), field);
     }
 }
 
@@ -50,7 +50,7 @@ fn the_target_ceiling_counts_every_kind_together() {
         serde_json::to_string(&teams).unwrap()
     );
     let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-    assert_eq!(validation_field(error), "api_key_ids");
+    assert_eq!(validation_field(&error), "api_key_ids");
 }
 
 #[rstest]
@@ -81,7 +81,7 @@ fn a_fractional_duration_is_rejected() {
         br#"{"team_ids":["t"],"router_names":["r"],"shadow_percentage":50,"duration_days":7.5}"#,
     )
     .unwrap_err();
-    assert_eq!(validation_field(error), "duration_days");
+    assert_eq!(validation_field(&error), "duration_days");
 }
 
 #[rstest]
@@ -153,13 +153,12 @@ fn model_names_are_never_blank(#[case] models: &str, #[case] rejected: bool) {
 #[case(None)]
 #[case(Some("null"))]
 fn the_percentage_is_required(#[case] percentage: Option<&str>) {
-    let field = match percentage {
-        Some(value) => format!(r#","shadow_percentage":{value}"#),
-        None => String::new(),
-    };
+    let field = percentage.map_or_else(String::new, |value| {
+        format!(r#","shadow_percentage":{value}"#)
+    });
     let body = format!(r#"{{"team_ids":["t"],"router_names":["r"]{field}}}"#);
     let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-    assert_eq!(validation_field(error), "shadow_percentage");
+    assert_eq!(validation_field(&error), "shadow_percentage");
 }
 
 #[test]
@@ -181,7 +180,13 @@ fn refuses_a_body_one_byte_past_the_limit_with_its_size() {
             assert_eq!(size, MAX_JSON_BYTES.saturating_add(1));
             assert_eq!(limit, MAX_JSON_BYTES);
         }
-        other => assert_eq!(other.to_string(), "expected the byte bound"),
+        other @ (ShadowEvalRequestError::Bounded(..)
+        | ShadowEvalRequestError::Decode(..)
+        | ShadowEvalRequestError::NotAnObject
+        | ShadowEvalRequestError::Field { .. }
+        | ShadowEvalRequestError::Validation { .. }) => {
+            assert_eq!(other.to_string(), "expected the byte bound");
+        }
     }
 }
 
@@ -193,7 +198,12 @@ fn a_wrongly_typed_field_names_its_path() {
     .unwrap_err();
     match error {
         ShadowEvalRequestError::Field { path, .. } => assert_eq!(path, "api_key_ids"),
-        other => assert_eq!(other.to_string(), "expected a field error"),
+        other @ (ShadowEvalRequestError::Bounded(..)
+        | ShadowEvalRequestError::Decode(..)
+        | ShadowEvalRequestError::NotAnObject
+        | ShadowEvalRequestError::Validation { .. }) => {
+            assert_eq!(other.to_string(), "expected a field error");
+        }
     }
 }
 
@@ -210,6 +220,12 @@ fn a_deeply_nested_body_is_refused_before_decoding() {
         ShadowEvalRequestError::Bounded(PrivateJsonError::TooDeep(limit)) => {
             assert_eq!(limit, 64);
         }
-        other => assert_eq!(other.to_string(), "expected the depth bound"),
+        other @ (ShadowEvalRequestError::Bounded(..)
+        | ShadowEvalRequestError::Decode(..)
+        | ShadowEvalRequestError::NotAnObject
+        | ShadowEvalRequestError::Field { .. }
+        | ShadowEvalRequestError::Validation { .. }) => {
+            assert_eq!(other.to_string(), "expected the depth bound");
+        }
     }
 }

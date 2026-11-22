@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::judge_primitives::provider_qualified::ProviderCache;
@@ -27,12 +27,15 @@ use crate::shadow_eval_validation::start::{
     StartContext, TargetKey, TargetRecords, validate_start,
 };
 
-pub const KEYS: [TargetKey<'static>; 1] = [TargetKey {
+static NO_NAMES: BTreeSet<String> = BTreeSet::new();
+static NO_ENVIRONMENT: BTreeMap<String, String> = BTreeMap::new();
+
+pub(super) const KEYS: [TargetKey<'static>; 1] = [TargetKey {
     token: "key-1",
     team_id: Some("team-1"),
 }];
 
-pub fn records() -> TargetRecords<'static> {
+pub(super) fn records() -> TargetRecords<'static> {
     TargetRecords {
         keys: &KEYS,
         teams: &["team-1"],
@@ -40,19 +43,11 @@ pub fn records() -> TargetRecords<'static> {
     }
 }
 
-pub fn empty_records() -> TargetRecords<'static> {
-    TargetRecords {
-        keys: &[],
-        teams: &[],
-        users: &[],
-    }
-}
-
-pub fn parse(text: &str) -> StartShadowEvalRequest {
+pub(super) fn parse(text: &str) -> StartShadowEvalRequest {
     parse_shadow_eval_request(text.as_bytes()).unwrap()
 }
 
-pub fn validation_field(error: ShadowEvalRequestError) -> &'static str {
+pub(super) fn validation_field(error: &ShadowEvalRequestError) -> &'static str {
     match error {
         ShadowEvalRequestError::Validation { field, .. } => field,
         ShadowEvalRequestError::Bounded(..)
@@ -62,17 +57,17 @@ pub fn validation_field(error: ShadowEvalRequestError) -> &'static str {
     }
 }
 
-pub const JUDGE: &str = "judge-model";
-pub const TIER: &str = "tier-model";
-pub const ROUTER: &str = "shadow-router";
-pub const JUDGE_MODEL: &str = "openai/gpt-4o-mini";
-pub const TIER_MODEL: &str = "anthropic/claude-sonnet-5";
+pub(super) const JUDGE: &str = "judge-model";
+pub(super) const TIER: &str = "tier-model";
+pub(super) const ROUTER: &str = "shadow-router";
+pub(super) const JUDGE_MODEL: &str = "openai/gpt-4o-mini";
+pub(super) const TIER_MODEL: &str = "anthropic/claude-sonnet-5";
 
-pub fn params(model: &str) -> JsonObject {
+pub(super) fn params(model: &str) -> JsonObject {
     JsonObject::from([("model".to_owned(), Json::Text(model.to_owned()))])
 }
 
-pub fn router_params(default: &str) -> JsonObject {
+pub(super) fn router_params(default: &str) -> JsonObject {
     JsonObject::from([
         (
             "model".to_owned(),
@@ -85,7 +80,7 @@ pub fn router_params(default: &str) -> JsonObject {
     ])
 }
 
-pub fn deployments() -> Vec<(&'static str, JsonObject)> {
+pub(super) fn deployments() -> Vec<(&'static str, JsonObject)> {
     vec![
         (JUDGE, params(JUDGE_MODEL)),
         (TIER, params(TIER_MODEL)),
@@ -93,7 +88,7 @@ pub fn deployments() -> Vec<(&'static str, JsonObject)> {
     ]
 }
 
-pub fn auth(role: Option<&str>) -> UserAPIKeyAuth {
+pub(super) fn auth(role: Option<&str>) -> UserAPIKeyAuth {
     let mut fields = BTreeMap::new();
     if let Some(name) = role {
         fields.insert("user_role".to_owned(), JsonData::String(name.to_owned()));
@@ -101,13 +96,13 @@ pub fn auth(role: Option<&str>) -> UserAPIKeyAuth {
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap()
 }
 
-pub enum Credentials {
+pub(super) enum Credentials {
     None,
     Hosted(Vec<String>),
     ApiKey(String),
 }
 
-pub fn validate(
+pub(super) fn validate(
     request: &StartShadowEvalRequest,
     deployments: &[(&str, JsonObject)],
     records: &TargetRecords<'_>,
@@ -115,7 +110,7 @@ pub fn validate(
     validate_with(request, deployments, records, &Credentials::None)
 }
 
-pub fn validate_with(
+pub(super) fn validate_with(
     request: &StartShadowEvalRequest,
     deployments: &[(&str, JsonObject)],
     records: &TargetRecords<'_>,
@@ -133,13 +128,8 @@ fn unconsulted_manager() -> SecretManagerReadState<'static> {
     }
 }
 
-fn run_validation(
-    request: &StartShadowEvalRequest,
-    deployments: &[(&str, JsonObject)],
-    records: &TargetRecords<'_>,
-    credentials: &Credentials,
-) -> Result<(), ShadowEvalValidationError> {
-    let (settings, manager) = match credentials {
+fn credential_state(credentials: &Credentials) -> (AnthropicSettings, SecretManagerReadState<'_>) {
+    match credentials {
         Credentials::None => (AnthropicSettings::default(), unconsulted_manager()),
         Credentials::Hosted(keys) => (
             AnthropicSettings::default(),
@@ -150,38 +140,54 @@ fn run_validation(
                 hosted_keys: Some(keys),
             },
         ),
-        Credentials::ApiKey(key) => {
-            let mut settings = AnthropicSettings::default();
-            settings.api_key = Some(SecretString::from(key.as_str()));
-            (settings, unconsulted_manager())
-        }
-    };
-    let mut bundled = BundledCatalog::default();
-    let catalog = bundled.get();
-    let known = BTreeSet::new();
-    let custom = BTreeSet::new();
-    let environment = BTreeMap::new();
-    let resolution = ResolutionContext {
-        catalog: catalog.as_ref(),
-        known_model_names: &known,
-        custom_providers: &custom,
-        environment: &environment,
+        Credentials::ApiKey(key) => (
+            AnthropicSettings {
+                api_key: Some(SecretString::from(key.as_str())),
+                ..AnthropicSettings::default()
+            },
+            unconsulted_manager(),
+        ),
+    }
+}
+
+fn resolution_context(catalog: &ModelCatalog) -> ResolutionContext<'_> {
+    ResolutionContext {
+        catalog,
+        known_model_names: &NO_NAMES,
+        custom_providers: &NO_NAMES,
+        environment: &NO_ENVIRONMENT,
         registry: JSONProviderRegistry::load(),
         policies: ProviderPolicies::default(),
         globals: GlobalCredentials::default(),
-    };
-    let cache = ProviderCache::default();
-    let sdk = NoSdk;
+    }
+}
+
+fn snapshot(deployments: &[(&str, JsonObject)]) -> Snapshot {
     let info = Json::Object(JsonObject::new());
     let rows: Vec<Row<'_>> = deployments
         .iter()
         .map(|(name, litellm_params)| Row {
-            model_name: *name,
+            model_name: name,
             litellm_params,
             model_info: &info,
         })
         .collect();
-    let fixture = Snapshot::build(&rows, &JsonObject::new()).unwrap();
+    Snapshot::build(&rows, &JsonObject::new()).unwrap()
+}
+
+fn run_validation(
+    request: &StartShadowEvalRequest,
+    deployments: &[(&str, JsonObject)],
+    records: &TargetRecords<'_>,
+    credentials: &Credentials,
+) -> Result<(), ShadowEvalValidationError> {
+    let (settings, secret_state) = credential_state(credentials);
+    let mut bundled = BundledCatalog::default();
+    let catalog = bundled.get();
+    let resolution = resolution_context(catalog.as_ref());
+    let cache = ProviderCache::default();
+    let sdk = NoSdk;
+    let fixture = snapshot(deployments);
     let provider = |_model: &str| -> Option<String> { None };
     let context = StartContext {
         router: Some(ShadowEvalRouter {
@@ -197,59 +203,9 @@ fn run_validation(
             anthropic_key: None,
             api_key: None,
             settings: &settings,
-            secret_state: manager,
+            secret_state,
         },
-        records: TargetRecords {
-            keys: records.keys,
-            teams: records.teams,
-            users: records.users,
-        },
-    };
-    validate_start(request, &context)
-}
-
-pub fn validate_without_router(
-    request: &StartShadowEvalRequest,
-    records: &TargetRecords<'_>,
-) -> Result<(), ShadowEvalValidationError> {
-    let mut bundled = BundledCatalog::default();
-    let catalog = bundled.get();
-    let known = BTreeSet::new();
-    let custom = BTreeSet::new();
-    let environment = BTreeMap::new();
-    let resolution = ResolutionContext {
-        catalog: catalog.as_ref(),
-        known_model_names: &known,
-        custom_providers: &custom,
-        environment: &environment,
-        registry: JSONProviderRegistry::load(),
-        policies: ProviderPolicies::default(),
-        globals: GlobalCredentials::default(),
-    };
-    let cache = ProviderCache::default();
-    let sdk = NoSdk;
-    let settings = AnthropicSettings::default();
-    let context = StartContext {
-        router: None,
-        sdk: &sdk,
-        cache: &cache,
-        resolution: &resolution,
-        credentials: AnthropicCredentials {
-            anthropic_key: None,
-            api_key: None,
-            settings: &settings,
-            secret_state: SecretManagerReadState {
-                client_exists: false,
-                settings_exist: false,
-                access_mode: SecretAccessMode::ReadOnly,
-                hosted_keys: None,
-            },
-        },
-        records: TargetRecords {
-            keys: records.keys,
-            teams: records.teams,
-            users: records.users,
-        },
+        records: *records,
     };
     validate_start(request, &context)
 }

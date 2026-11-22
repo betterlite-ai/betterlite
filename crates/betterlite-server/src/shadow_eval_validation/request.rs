@@ -102,12 +102,12 @@ fn fields_of(raw: RawRequest) -> Result<StartShadowEvalRequest, ShadowEvalReques
             .as_ref()
             .map_or(Ok(Decimal::new(100, 1)), budget)?,
     };
-    validate(request, raw.router_name)
+    validate(request, raw.router_name.as_deref())
 }
 
 fn validate(
     request: StartShadowEvalRequest,
-    router_name: Option<String>,
+    router_name: Option<&str>,
 ) -> Result<StartShadowEvalRequest, ShadowEvalRequestError> {
     target_count(&request)?;
     if !request.models.is_empty() && request.direction == ShadowEvalDirection::Reverse {
@@ -130,7 +130,7 @@ fn validate(
             message: "baseline_model is only meaningful when direction is 'reverse'".to_owned(),
         });
     }
-    router_set(request, router_name.as_deref())
+    router_set(request, router_name)
 }
 
 fn target_count(request: &StartShadowEvalRequest) -> Result<(), ShadowEvalRequestError> {

@@ -45,7 +45,7 @@ fn deduplicates_each_list_in_first_spelling_order() {
 }
 
 #[rstest]
-#[case(33.333333_f64, "33.33")]
+#[case(33.333_333_f64, "33.33")]
 #[case(0.1_f64, "0.10")]
 #[case(100.0_f64, "100.00")]
 fn rounds_the_percentage_to_two_decimals(#[case] given: f64, #[case] rounded: &str) {
@@ -58,7 +58,7 @@ fn rounds_the_percentage_to_two_decimals(#[case] given: f64, #[case] rounded: &s
 fn rejects_the_retired_max_turns_before_reading_fields() {
     let error =
         parse_shadow_eval_request(br#"{"max_turns":3,"shadow_percentage":0.01}"#).unwrap_err();
-    assert_eq!(validation_field(error), "max_turns");
+    assert_eq!(validation_field(&error), "max_turns");
 }
 
 #[rstest]
@@ -78,7 +78,7 @@ fn one_router_spelling_resolves_to_a_deduplicated_set(
 #[case(r#"{"team_ids":["t"],"shadow_percentage":50}"#)]
 fn requires_exactly_one_router_spelling(#[case] body: &str) {
     let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-    assert_eq!(validation_field(error), "router_names");
+    assert_eq!(validation_field(&error), "router_names");
 }
 
 #[rstest]
@@ -96,7 +96,7 @@ fn requires_exactly_one_router_spelling(#[case] body: &str) {
 )]
 fn direction_decides_which_model_fields_apply(#[case] body: &str, #[case] field: &'static str) {
     let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-    assert_eq!(validation_field(error), field);
+    assert_eq!(validation_field(&error), field);
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn reverse_jobs_evaluate_one_router() {
         br#"{"team_ids":["t"],"router_names":["r1","r2"],"direction":"reverse","baseline_model":"b","shadow_percentage":50}"#,
     )
     .unwrap_err();
-    assert_eq!(validation_field(error), "router_names");
+    assert_eq!(validation_field(&error), "router_names");
 }
 
 #[rstest]

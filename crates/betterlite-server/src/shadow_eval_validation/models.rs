@@ -120,10 +120,12 @@ pub fn validate_model_scope(
     context: &StartContext<'_>,
     models: &[String],
 ) -> Result<(), ShadowEvalValidationError> {
-    let public_names = match context.router.as_ref() {
-        Some(router) => router.catalog.team_public_model_names(),
-        None => BTreeSet::new(),
-    };
+    let public_names = context
+        .router
+        .as_ref()
+        .map_or_else(BTreeSet::new, |router| {
+            router.catalog.team_public_model_names()
+        });
     let unreachable: Vec<&String> = models
         .iter()
         .filter(|model| {
@@ -197,13 +199,13 @@ pub fn reject_judge_collision(
     if collisions.is_empty() {
         return Ok(());
     }
-    let arms = collisions
+    let listed = collisions
         .iter()
         .map(|(role, model)| format!("{role} model '{model}'"))
         .collect::<Vec<String>>()
         .join(", ");
     Err(ShadowEvalValidationError::JudgeIsCandidate {
         judge: request.judge_model.clone(),
-        collisions: arms,
+        collisions: listed,
     })
 }

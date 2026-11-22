@@ -18,7 +18,7 @@ fn replays_the_shadow_req_corpus(#[files("fuzz/corpus/shadow_req/*")] path: Path
     let name = path.file_name().and_then(|name| name.to_str()).unwrap();
     if name.starts_with("shadow-eval-validation-valid") {
         drop(parsed.unwrap());
-    } else if name.starts_with("shadow-eval-validation-invalid") {
+    } else {
         drop(parsed.unwrap_err());
     }
 }

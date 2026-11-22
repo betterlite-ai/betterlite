@@ -36,12 +36,15 @@ fn decimal(number: &Number, field: &'static str) -> Result<Decimal, ShadowEvalRe
         })
 }
 
-fn ranged<T: Copy + PartialOrd>(
+fn ranged<T>(
     value: T,
     field: &'static str,
     (low, high): (T, T),
     message: &'static str,
-) -> Result<T, ShadowEvalRequestError> {
+) -> Result<T, ShadowEvalRequestError>
+where
+    T: Copy + PartialOrd,
+{
     if !(low..=high).contains(&value) {
         return Err(Validation {
             field,
@@ -79,37 +82,37 @@ pub(super) struct RawRequest {
 }
 
 pub(super) fn bounded_list(
-    values: Option<Vec<String>>,
+    given: Option<Vec<String>>,
     field: &'static str,
     max: usize,
 ) -> Result<Vec<String>, ShadowEvalRequestError> {
-    let values = values.unwrap_or_default();
-    if values.len() > max {
+    let listed = given.unwrap_or_default();
+    if listed.len() > max {
         return Err(Validation {
             field,
             message: format!("{field} must have at most {max} entries"),
         });
     }
-    Ok(deduplicated(values))
+    Ok(deduplicated(listed))
 }
 
-pub(super) fn percentage(value: Option<Number>) -> Result<f64, ShadowEvalRequestError> {
-    let number = value.ok_or_else(|| Validation {
+pub(super) fn percentage(given: Option<Number>) -> Result<f64, ShadowEvalRequestError> {
+    let number = given.ok_or_else(|| Validation {
         field: "shadow_percentage",
         message: "shadow_percentage is required".to_owned(),
     })?;
-    let value = number.as_f64().ok_or_else(|| Validation {
+    let parsed = number.as_f64().ok_or_else(|| Validation {
         field: "shadow_percentage",
         message: "shadow_percentage must be a finite number".to_owned(),
     })?;
-    let value = ranged(
-        value,
+    let checked = ranged(
+        parsed,
         "shadow_percentage",
         (0.1_f64, 100.0_f64),
         "shadow_percentage must be between 0.1 and 100",
     )?;
     // Python's round(value, 2) is the correctly rounded two-decimal value of the same double
-    format!("{value:.2}")
+    format!("{checked:.2}")
         .parse::<f64>()
         .map_err(|source| Validation {
             field: "shadow_percentage",
