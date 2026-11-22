@@ -327,7 +327,7 @@ async fn returns_every_daily_tag_past_ten() {
 }
 
 #[tokio::test]
-async fn keeps_an_unparseable_date_as_a_database_error() {
+async fn keeps_an_unparsable_date_as_a_database_error() {
     let (fixture, pool) = database().await;
     let store = postgres_store(&pool);
     let failure = store
