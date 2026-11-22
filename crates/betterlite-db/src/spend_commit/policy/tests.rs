@@ -251,6 +251,18 @@ async fn backend_transport_failure_is_ambiguous() {
 }
 
 #[tokio::test]
+async fn connection_sqlstate_is_not_sent() {
+    let value = DbError::<Infallible>::SqlState {
+        code: SqlState::CONNECTION_EXCEPTION,
+        constraint: None,
+        source: DriverError {
+            driver: refused_connection_error().await,
+        },
+    };
+    assert_eq!(classify_spend_failure(&value), SpendFailure::NotSent);
+}
+
+#[tokio::test]
 async fn retryable_failure_stops_after_the_last_attempt_and_reports() {
     let ports = Ports::new();
     let policy = ports.policy(2);

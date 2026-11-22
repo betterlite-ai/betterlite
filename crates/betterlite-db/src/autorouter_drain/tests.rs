@@ -254,6 +254,8 @@ async fn flush_orders_each_partition_by_turn_time() {
             turn("", "user-b", "session", 1),
             turn("key-a", "user", "session", 3),
             turn("key-a", "user", "session", 2),
+            turn("key-b", "user-b", "session", 6),
+            turn("key-b", "user-c", "session", 7),
         ])
         .await;
     assert_eq!(
@@ -262,6 +264,8 @@ async fn flush_orders_each_partition_by_turn_time() {
             written("key-a", "user", 2, false),
             written("key-a", "user", 3, false),
             written("key-b", "user", 5, false),
+            written("key-b", "user-b", 6, false),
+            written("key-b", "user-c", 7, false),
             written("", "user-b", 1, false),
         ]
     );
@@ -373,8 +377,10 @@ async fn a_rejected_turn_stops_its_partition_and_other_partitions_advance() {
 
 #[tokio::test]
 async fn a_failed_key_partition_advances_other_users_independently() {
-    let writer =
-        ScriptedWriter::with_script(vec![Some(TurnWriteError::Statement(DbError::CreateNull))]);
+    let writer = ScriptedWriter::with_script(vec![
+        Some(TurnWriteError::Statement(DbError::CreateNull)),
+        Some(TurnWriteError::Statement(DbError::CreateNull)),
+    ]);
     let jitter = FixedJitter { nanos: 0 };
     let pause = RecordingPause::default();
     let rollup = AutoRouterDrain::new(&writer, &jitter, &pause);
@@ -393,7 +399,6 @@ async fn a_failed_key_partition_advances_other_users_independently() {
         vec![
             written("key-a", "user-a", 1, false),
             written("key-a", "user-b", 4, true),
-            written("key-a", "user-b", 6, true),
             written("key-a", "user-c", 3, true),
         ]
     );

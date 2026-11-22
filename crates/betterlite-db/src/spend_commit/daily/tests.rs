@@ -56,7 +56,26 @@ impl ScriptedFailure {
             cancelled: true,
         }
     }
+
+    const fn cancelled_retryable() -> Self {
+        Self {
+            failure: SpendFailure::NotSent,
+            cancelled: true,
+        }
+    }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("plain failure")]
+struct PlainFailure;
+
+impl SpendUpdateFailure for PlainFailure {
+    fn spend_failure(&self) -> SpendFailure {
+        SpendFailure::Other
+    }
+}
+
+impl DailyChunkFailure for PlainFailure {}
 
 impl SpendUpdateFailure for ScriptedFailure {
     fn spend_failure(&self) -> SpendFailure {
@@ -74,6 +93,7 @@ impl DailyChunkFailure for ScriptedFailure {
 enum Step {
     Ok,
     Cancelled,
+    CancelledRetryable,
     ConnectError,
     Rejected,
     Deadlock,
@@ -84,6 +104,7 @@ fn error_for(step: Step) -> ScriptedFailure {
     match step {
         Step::Ok => ScriptedFailure::new(SpendFailure::Other),
         Step::Cancelled => ScriptedFailure::cancelled(),
+        Step::CancelledRetryable => ScriptedFailure::cancelled_retryable(),
         Step::ConnectError => ScriptedFailure::new(SpendFailure::NotSent),
         Step::Rejected => ScriptedFailure::new(SpendFailure::Rejected),
         Step::Deadlock => ScriptedFailure::new(SpendFailure::Deadlock),
@@ -451,6 +472,39 @@ async fn cancelled_phase_keeps_the_rows_and_skips_the_report() {
     assert!(error.is_cancelled());
     assert_eq!(pending.len(), 1);
     assert!(ports.sink.events().is_empty());
+}
+
+#[tokio::test]
+async fn a_cancelled_chunk_skips_the_retry_rule() {
+    let writer = ScriptedWriter::new(vec![Step::CancelledRetryable]);
+    let ports = Ports::new();
+    let commit = DailyChunkCommit {
+        writer: &writer,
+        policy: ports.policy(3),
+        phase: Arc::new(CommitPhase::new()),
+    };
+    let mut pending = pending_rows(1, "user_id");
+    let error = commit
+        .update_daily_spend(DailySpendEntity::User, &mut pending)
+        .await
+        .unwrap_err();
+    assert!(error.is_cancelled());
+    assert_eq!(writer.chunks().len(), 1);
+    assert_eq!(pending.len(), 1);
+    assert!(ports.pause.delays().is_empty());
+    assert!(ports.sink.events().is_empty());
+}
+
+#[test]
+fn a_plain_failure_is_not_a_cancellation() {
+    assert!(!PlainFailure.is_cancelled());
+}
+
+#[test]
+fn only_the_cancelled_phase_counts_as_a_cancellation() {
+    assert!(DailyChunkError::Phase(CommitPhaseError::Cancelled).is_cancelled());
+    assert!(!DailyChunkError::Phase(CommitPhaseError::NotCommitting).is_cancelled());
+    assert!(!DailyChunkError::Timeout.is_cancelled());
 }
 
 #[test]
