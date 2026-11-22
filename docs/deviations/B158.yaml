@@ -54,4 +54,7 @@ deviations:
   - what: A mock exception maps by LiteLLM's OpenAI status table whatever the provider, so status 403, 413 or 529 raises APIError on an anthropic model, and `llm_provider` stays the requested provider (custom_llm_provider, else openai) rather than the model prefix's provider.
     why: The mock answer is built before any provider call, so LiteLLM's per-provider exception mappers and prefix resolution never run; the Python mock path keeps the OpenAI table the task describes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2486-L2495
+  - what: "`adapter_completion` and `aadapter_completion` check every value as JSON before the adapter's `translate_completion_input_params` runs, so a `response_format` class reaches the adapter as its json_schema mapping where LiteLLM passes the class."
+    why: The adapter's translated kwargs go straight into the Rust call, which takes JSON; a class or a `Message` object would fail that check before completion_from_arguments could convert it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7741-L7761
 kept_bugs: []
