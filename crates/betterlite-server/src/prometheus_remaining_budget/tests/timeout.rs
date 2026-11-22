@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use crate::prometheus_remaining_budget::fan_out::RemainingBudgetFanOut;
 
 use super::support::{
@@ -19,7 +21,7 @@ async fn a_slow_lookup_returns_after_the_timeout_with_one_line() {
         &collectors_with(&[RealGauge::Team]),
     );
     let (guard, log) = capture_log();
-    let started = tokio::time::Instant::now();
+    let started = Instant::now();
     fan_out
         .increment_remaining_budget_metrics(request(&metadata(&[])))
         .await;
@@ -48,7 +50,7 @@ async fn uses_the_configured_timeout() {
         &collectors_with(&[RealGauge::Team]),
     );
     let (guard, log) = capture_log();
-    let started = tokio::time::Instant::now();
+    let started = Instant::now();
     fan_out
         .increment_remaining_budget_metrics(request(&metadata(&[])))
         .await;

@@ -48,7 +48,7 @@ where
 #[case::unrepresentable_duration(Some("1e300"), Duration::MAX)]
 fn resolves_the_per_request_timeout(#[case] text: Option<&str>, #[case] expected: Duration) {
     let variables: Vec<(&str, &str)> = text
-        .map(|text| (TIMEOUT_VARIABLE, text))
+        .map(|raw| (TIMEOUT_VARIABLE, raw))
         .into_iter()
         .collect();
     let loaded = settings(&variables).expect("the timeout loads");

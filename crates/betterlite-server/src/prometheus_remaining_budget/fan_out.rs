@@ -11,6 +11,7 @@ use betterlite_logging::prometheus::budget_gauges::gauge::BudgetGauges;
 use betterlite_prometheus::collector_factory::collector::MetricLike;
 use futures_util::future::join5;
 use rust_decimal::Decimal;
+use tokio::time::timeout;
 
 use super::lookups::{
     CustomerBudgetLookup, KeyBudgetLookup, LookupError, OrgBudgetLookup, RequestBudgetLookups,
@@ -70,7 +71,7 @@ impl<L: RequestBudgetLookups> RemainingBudgetFanOut<L> {
             return;
         }
         let lookups = lookups_for(request);
-        match tokio::time::timeout(self.timeout, self.dispatch(lookups)).await {
+        match timeout(self.timeout, self.dispatch(lookups)).await {
             Ok(results) => log_failures(results),
             Err(_) => log_timeout(self.timeout),
         }
@@ -90,78 +91,51 @@ impl<L: RequestBudgetLookups> RemainingBudgetFanOut<L> {
 }
 
 fn lookups_for(request: RemainingBudgetRequest<'_>) -> BudgetLookups<'_> {
-    let metadata = request.metadata;
     BudgetLookups {
-        key: key_lookup(request, metadata),
-        team: team_lookup(request, metadata),
-        user: user_lookup(request, metadata),
-        org: org_lookup(request, metadata),
-        customer: customer_lookup(request),
+        key: KeyBudgetLookup {
+            user_api_key: request.key,
+            user_api_key_alias: request.key_alias,
+            response_cost: request.response_cost,
+            key_max_budget: metadata_decimal(request.metadata, "user_api_key_max_budget"),
+            key_spend: metadata_decimal(request.metadata, "user_api_key_spend"),
+            carried: KeyBudgetSnapshot::from_metadata(request.metadata),
+        },
+        team: TeamBudgetLookup {
+            user_api_team: request.team,
+            user_api_team_alias: request.team_alias,
+            team_spend: metadata_decimal(request.metadata, "user_api_key_team_spend"),
+            team_max_budget: metadata_decimal(request.metadata, "user_api_key_team_max_budget"),
+            response_cost: request.response_cost,
+            carried: TeamBudgetSnapshot::from_metadata(request.metadata),
+        },
+        user: UserBudgetLookup {
+            user_id: request.user_id,
+            user_spend: metadata_decimal(request.metadata, "user_api_key_user_spend"),
+            user_max_budget: metadata_decimal(request.metadata, "user_api_key_user_max_budget"),
+            response_cost: request.response_cost,
+            carried: UserBudgetSnapshot::from_metadata(request.metadata),
+            user_email: metadata_text(request.metadata, "user_api_key_user_email"),
+        },
+        org: OrgBudgetLookup {
+            org_id: request.org_id,
+            response_cost: request.response_cost,
+            carried: OrgBudgetSnapshot::from_metadata(request.metadata),
+            org_alias: metadata_text(request.metadata, "user_api_key_org_alias"),
+        },
+        customer: CustomerBudgetLookup {
+            end_user_id: request.end_user_id,
+            response_cost: request.response_cost,
+        },
     }
 }
 
-fn key_lookup<'request>(
-    request: RemainingBudgetRequest<'request>,
-    metadata: &'request BTreeMap<String, AgentJson>,
-) -> KeyBudgetLookup<'request> {
-    KeyBudgetLookup {
-        key: request.key,
-        key_alias: request.key_alias,
-        response_cost: request.response_cost,
-        max_budget: metadata_decimal(metadata, "user_api_key_max_budget"),
-        spend: metadata_decimal(metadata, "user_api_key_spend"),
-        carried: KeyBudgetSnapshot::from_metadata(metadata),
-    }
-}
-
-fn team_lookup<'request>(
-    request: RemainingBudgetRequest<'request>,
-    metadata: &'request BTreeMap<String, AgentJson>,
-) -> TeamBudgetLookup<'request> {
-    TeamBudgetLookup {
-        team: request.team,
-        team_alias: request.team_alias,
-        spend: metadata_decimal(metadata, "user_api_key_team_spend"),
-        max_budget: metadata_decimal(metadata, "user_api_key_team_max_budget"),
-        response_cost: request.response_cost,
-        carried: TeamBudgetSnapshot::from_metadata(metadata),
-    }
-}
-
-fn user_lookup<'request>(
-    request: RemainingBudgetRequest<'request>,
-    metadata: &'request BTreeMap<String, AgentJson>,
-) -> UserBudgetLookup<'request> {
-    UserBudgetLookup {
-        user_id: request.user_id,
-        spend: metadata_decimal(metadata, "user_api_key_user_spend"),
-        max_budget: metadata_decimal(metadata, "user_api_key_user_max_budget"),
-        response_cost: request.response_cost,
-        carried: UserBudgetSnapshot::from_metadata(metadata),
-        user_email: metadata
-            .get("user_api_key_user_email")
-            .and_then(AgentJson::as_str),
-    }
-}
-
-fn org_lookup<'request>(
-    request: RemainingBudgetRequest<'request>,
-    metadata: &'request BTreeMap<String, AgentJson>,
-) -> OrgBudgetLookup<'request> {
-    OrgBudgetLookup {
-        org_id: request.org_id,
-        response_cost: request.response_cost,
-        carried: OrgBudgetSnapshot::from_metadata(metadata),
-        org_alias: metadata
-            .get("user_api_key_org_alias")
-            .and_then(AgentJson::as_str),
-    }
-}
-
-fn customer_lookup(request: RemainingBudgetRequest<'_>) -> CustomerBudgetLookup<'_> {
-    CustomerBudgetLookup {
-        end_user_id: request.end_user_id,
-        response_cost: request.response_cost,
+fn metadata_text<'metadata>(
+    metadata: &'metadata BTreeMap<String, AgentJson>,
+    name: &str,
+) -> Option<&'metadata str> {
+    match metadata.get(name) {
+        Some(value) => value.as_str(),
+        None => None,
     }
 }
 
@@ -178,10 +152,10 @@ fn decimal_text(text: &str) -> Option<Decimal> {
         .or_else(|| Decimal::from_scientific(text).ok())
 }
 
-fn log_timeout(timeout: Duration) {
+fn log_timeout(limit: Duration) {
     tracing::debug!(
         "[Non-Blocking] Prometheus: per-request budget metric emission exceeded {:?}s under load; skipping (values are refreshed by the periodic budget-metrics cron job).",
-        timeout.as_secs_f64()
+        limit.as_secs_f64()
     );
 }
 

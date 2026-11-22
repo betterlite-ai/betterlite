@@ -2,15 +2,11 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_core::agents::json::AgentJson;
-use betterlite_core::proxy::carried_budget_state::{
-    KeyBudgetSnapshot, OrgBudgetSnapshot, TeamBudgetSnapshot, UserBudgetSnapshot,
-};
+use serde_json::json;
 
 use crate::prometheus_remaining_budget::fan_out::RemainingBudgetFanOut;
 
-use super::support::{
-    RealGauge, RecordedCall, Recorder, collectors_with, decimal, metadata, request, reset_at,
-};
+use super::support::{RealGauge, Recorder, collectors_with, full_metadata, metadata, request};
 
 fn fan_out(recorder: &Recorder) -> RemainingBudgetFanOut<Recorder> {
     RemainingBudgetFanOut::new(
@@ -21,142 +17,192 @@ fn fan_out(recorder: &Recorder) -> RemainingBudgetFanOut<Recorder> {
 }
 
 #[tokio::test]
-async fn each_lookup_gets_its_metadata() {
-    let entries = metadata(&[
-        ("user_api_key_team_spend", AgentJson::from(3.0_f64)),
-        ("user_api_key_team_max_budget", AgentJson::from(10.0_f64)),
-        ("user_api_key_spend", AgentJson::from(1.5_f64)),
-        ("user_api_key_max_budget", AgentJson::from(5.0_f64)),
-        ("user_api_key_user_spend", AgentJson::from(0.25_f64)),
-        ("user_api_key_user_max_budget", AgentJson::from(2.0_f64)),
-        ("user_api_key_user_email", AgentJson::from("u@example.com")),
-        ("user_api_key_org_alias", AgentJson::from("Org")),
-        (
-            "user_api_key_budget_reset_at",
-            AgentJson::from("2026-11-20T02:00:00Z"),
-        ),
-        (
-            "user_api_key_team_budget_reset_at",
-            AgentJson::from("2026-11-20T02:00:00Z"),
-        ),
-        (
-            "user_api_key_team_table_max_budget",
-            AgentJson::from(10.0_f64),
-        ),
-        (
-            "user_api_key_user_budget_reset_at",
-            AgentJson::from("2026-11-20T02:00:00Z"),
-        ),
-        (
-            "user_api_key_user_table_max_budget",
-            AgentJson::from(2.0_f64),
-        ),
-        ("user_api_key_user_alias", AgentJson::from("Alias")),
-        ("user_api_key_org_spend", AgentJson::from(0.5_f64)),
-        ("user_api_key_org_max_budget", AgentJson::from(7.0_f64)),
-    ]);
+async fn the_key_lookup_gets_its_metadata() {
     let recorder = Recorder::recording();
     fan_out(&recorder)
-        .increment_remaining_budget_metrics(request(&entries))
+        .increment_remaining_budget_metrics(request(&full_metadata()))
         .await;
     assert_eq!(
-        recorder.calls(),
-        vec![
-            RecordedCall::Key {
-                key: Some("sk-hashed".to_owned()),
-                key_alias: Some("Key".to_owned()),
-                response_cost: decimal("0.5"),
-                max_budget: Some(decimal("5.0")),
-                spend: Some(decimal("1.5")),
-                carried: Some(KeyBudgetSnapshot {
-                    budget_reset_at: Some(reset_at()),
-                }),
-            },
-            RecordedCall::Team {
-                team: Some("team-1".to_owned()),
-                team_alias: Some("Team".to_owned()),
-                spend: Some(decimal("3.0")),
-                max_budget: Some(decimal("10.0")),
-                response_cost: decimal("0.5"),
-                carried: Some(TeamBudgetSnapshot {
-                    budget_reset_at: Some(reset_at()),
-                    max_budget: Some(decimal("10.0")),
-                }),
-            },
-            RecordedCall::User {
-                user_id: Some("user-1".to_owned()),
-                spend: Some(decimal("0.25")),
-                max_budget: Some(decimal("2.0")),
-                response_cost: decimal("0.5"),
-                carried: Some(UserBudgetSnapshot {
-                    budget_reset_at: Some(reset_at()),
-                    max_budget: Some(decimal("2.0")),
-                    user_alias: Some("Alias".to_owned()),
-                }),
-                user_email: Some("u@example.com".to_owned()),
-            },
-            RecordedCall::Org {
-                org_id: Some("org-1".to_owned()),
-                response_cost: decimal("0.5"),
-                carried: Some(OrgBudgetSnapshot {
-                    spend: decimal("0.5"),
-                    max_budget: Some(decimal("7.0")),
-                }),
-                org_alias: Some("Org".to_owned()),
-            },
-            RecordedCall::Customer {
-                end_user_id: Some("end-1".to_owned()),
-                response_cost: decimal("0.5"),
-            },
-        ]
+        recorder.calls()["key"],
+        json!({
+            "user_api_key": "sk-hashed",
+            "user_api_key_alias": "Key",
+            "response_cost": 0.5,
+            "key_max_budget": 5.0,
+            "key_spend": 1.5,
+            "carried": {"user_api_key_budget_reset_at": "2026-11-20T02:00:00Z"},
+        })
     );
 }
 
 #[tokio::test]
-async fn an_absent_metadata_map_leaves_every_optional_field_empty() {
-    let entries = BTreeMap::new();
+async fn the_team_lookup_gets_its_metadata() {
     let recorder = Recorder::recording();
     fan_out(&recorder)
-        .increment_remaining_budget_metrics(request(&entries))
+        .increment_remaining_budget_metrics(request(&full_metadata()))
         .await;
     assert_eq!(
-        recorder.calls(),
-        vec![
-            RecordedCall::Key {
-                key: Some("sk-hashed".to_owned()),
-                key_alias: Some("Key".to_owned()),
-                response_cost: decimal("0.5"),
-                max_budget: None,
-                spend: None,
-                carried: None,
+        recorder.calls()["team"],
+        json!({
+            "user_api_team": "team-1",
+            "user_api_team_alias": "Team",
+            "team_spend": 3.0,
+            "team_max_budget": 10.0,
+            "response_cost": 0.5,
+            "carried": {
+                "user_api_key_team_budget_reset_at": "2026-11-20T02:00:00Z",
+                "user_api_key_team_table_max_budget": 10.0,
             },
-            RecordedCall::Team {
-                team: Some("team-1".to_owned()),
-                team_alias: Some("Team".to_owned()),
-                spend: None,
-                max_budget: None,
-                response_cost: decimal("0.5"),
-                carried: None,
+        })
+    );
+}
+
+#[tokio::test]
+async fn the_user_lookup_gets_its_metadata() {
+    let recorder = Recorder::recording();
+    fan_out(&recorder)
+        .increment_remaining_budget_metrics(request(&full_metadata()))
+        .await;
+    assert_eq!(
+        recorder.calls()["user"],
+        json!({
+            "user_id": "user-1",
+            "user_spend": 0.25,
+            "user_max_budget": 2.0,
+            "response_cost": 0.5,
+            "carried": {
+                "user_api_key_user_budget_reset_at": "2026-11-20T02:00:00Z",
+                "user_api_key_user_table_max_budget": 2.0,
+                "user_api_key_user_alias": "Alias",
             },
-            RecordedCall::User {
-                user_id: Some("user-1".to_owned()),
-                spend: None,
-                max_budget: None,
-                response_cost: decimal("0.5"),
-                carried: None,
-                user_email: None,
+            "user_email": "u@example.com",
+        })
+    );
+}
+
+#[tokio::test]
+async fn the_org_lookup_gets_its_metadata() {
+    let recorder = Recorder::recording();
+    fan_out(&recorder)
+        .increment_remaining_budget_metrics(request(&full_metadata()))
+        .await;
+    assert_eq!(
+        recorder.calls()["org"],
+        json!({
+            "org_id": "org-1",
+            "response_cost": 0.5,
+            "carried": {
+                "user_api_key_org_spend": 0.5,
+                "user_api_key_org_max_budget": 7.0,
             },
-            RecordedCall::Org {
-                org_id: Some("org-1".to_owned()),
-                response_cost: decimal("0.5"),
-                carried: None,
-                org_alias: None,
-            },
-            RecordedCall::Customer {
-                end_user_id: Some("end-1".to_owned()),
-                response_cost: decimal("0.5"),
-            },
-        ]
+            "org_alias": "Org",
+        })
+    );
+}
+
+#[tokio::test]
+async fn the_customer_lookup_gets_its_metadata() {
+    let recorder = Recorder::recording();
+    fan_out(&recorder)
+        .increment_remaining_budget_metrics(request(&full_metadata()))
+        .await;
+    assert_eq!(
+        recorder.calls()["customer"],
+        json!({
+            "end_user_id": "end-1",
+            "response_cost": 0.5,
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_absent_metadata_map_leaves_the_key_lookup_empty() {
+    let recorder = Recorder::recording();
+    fan_out(&recorder)
+        .increment_remaining_budget_metrics(request(&BTreeMap::new()))
+        .await;
+    assert_eq!(
+        recorder.calls()["key"],
+        json!({
+            "user_api_key": "sk-hashed",
+            "user_api_key_alias": "Key",
+            "response_cost": 0.5,
+            "key_max_budget": null,
+            "key_spend": null,
+            "carried": null,
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_absent_metadata_map_leaves_the_team_lookup_empty() {
+    let recorder = Recorder::recording();
+    fan_out(&recorder)
+        .increment_remaining_budget_metrics(request(&BTreeMap::new()))
+        .await;
+    assert_eq!(
+        recorder.calls()["team"],
+        json!({
+            "user_api_team": "team-1",
+            "user_api_team_alias": "Team",
+            "team_spend": null,
+            "team_max_budget": null,
+            "response_cost": 0.5,
+            "carried": null,
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_absent_metadata_map_leaves_the_user_lookup_empty() {
+    let recorder = Recorder::recording();
+    fan_out(&recorder)
+        .increment_remaining_budget_metrics(request(&BTreeMap::new()))
+        .await;
+    assert_eq!(
+        recorder.calls()["user"],
+        json!({
+            "user_id": "user-1",
+            "user_spend": null,
+            "user_max_budget": null,
+            "response_cost": 0.5,
+            "carried": null,
+            "user_email": null,
+        })
+    );
+}
+
+#[tokio::test]
+async fn an_absent_metadata_map_leaves_the_org_lookup_empty() {
+    let recorder = Recorder::recording();
+    fan_out(&recorder)
+        .increment_remaining_budget_metrics(request(&BTreeMap::new()))
+        .await;
+    assert_eq!(
+        recorder.calls()["org"],
+        json!({
+            "org_id": "org-1",
+            "response_cost": 0.5,
+            "carried": null,
+            "org_alias": null,
+        })
+    );
+}
+
+#[tokio::test]
+async fn the_customer_lookup_ignores_the_metadata_map() {
+    let recorder = Recorder::recording();
+    fan_out(&recorder)
+        .increment_remaining_budget_metrics(request(&full_metadata()))
+        .await;
+    let with_metadata = recorder.calls();
+    let without_metadata = Recorder::recording();
+    fan_out(&without_metadata)
+        .increment_remaining_budget_metrics(request(&BTreeMap::new()))
+        .await;
+    assert_eq!(
+        without_metadata.calls()["customer"],
+        with_metadata["customer"]
     );
 }
 
@@ -174,22 +220,10 @@ async fn drops_values_that_are_not_the_declared_type() {
         .await;
     let calls = recorder.calls();
     assert_eq!(calls.len(), 5);
-    let RecordedCall::Key { spend, .. } = &calls[0] else {
-        panic!("the key lookup runs first");
-    };
-    assert!(spend.is_none());
-    let RecordedCall::Team { max_budget, .. } = &calls[1] else {
-        panic!("the team lookup runs second");
-    };
-    assert!(max_budget.is_none());
-    let RecordedCall::User { user_email, .. } = &calls[2] else {
-        panic!("the user lookup runs third");
-    };
-    assert!(user_email.is_none());
-    let RecordedCall::Org { org_alias, .. } = &calls[3] else {
-        panic!("the org lookup runs fourth");
-    };
-    assert!(org_alias.is_none());
+    assert_eq!(calls["key"]["key_spend"], json!(null));
+    assert_eq!(calls["team"]["team_max_budget"], json!(null));
+    assert_eq!(calls["user"]["user_email"], json!(null));
+    assert_eq!(calls["org"]["org_alias"], json!(null));
 }
 
 #[tokio::test]
@@ -202,10 +236,7 @@ async fn drops_an_amount_that_does_not_fit_a_decimal() {
         .await;
     let calls = recorder.calls();
     assert_eq!(calls.len(), 5);
-    let RecordedCall::Key { spend, .. } = &calls[0] else {
-        panic!("the key lookup runs first");
-    };
-    assert!(spend.is_none());
+    assert_eq!(calls["key"]["key_spend"], json!(null));
 }
 
 #[tokio::test]
@@ -226,20 +257,15 @@ async fn snapshots_parse_only_the_keys_they_carry() {
         .await;
     let calls = recorder.calls();
     assert_eq!(
-        calls[0],
-        RecordedCall::Key {
-            key: Some("sk-hashed".to_owned()),
-            key_alias: Some("Key".to_owned()),
-            response_cost: decimal("0.5"),
-            max_budget: None,
-            spend: None,
-            carried: Some(KeyBudgetSnapshot {
-                budget_reset_at: Some(reset_at()),
-            }),
-        }
+        calls["key"],
+        json!({
+            "user_api_key": "sk-hashed",
+            "user_api_key_alias": "Key",
+            "response_cost": 0.5,
+            "key_max_budget": null,
+            "key_spend": null,
+            "carried": {"user_api_key_budget_reset_at": "2026-11-20T02:00:00Z"},
+        })
     );
-    let RecordedCall::Team { carried, .. } = &calls[1] else {
-        panic!("the team lookup runs second");
-    };
-    assert!(carried.is_none());
+    assert_eq!(calls["team"]["carried"], json!(null));
 }

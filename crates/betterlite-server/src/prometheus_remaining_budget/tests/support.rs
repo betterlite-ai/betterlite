@@ -6,16 +6,16 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_core::agents::json::AgentJson;
-use betterlite_core::proxy::carried_budget_state::{
-    KeyBudgetSnapshot, OrgBudgetSnapshot, TeamBudgetSnapshot, UserBudgetSnapshot,
-};
 use betterlite_logging::prometheus::budget_gauges::gauge::{
     BudgetGauges, EntityBudgetGauges, GaugeField,
 };
 use betterlite_prometheus::collector_factory::collector::MetricLike;
 use betterlite_prometheus::no_op_metric::NoOpMetric;
 use rust_decimal::Decimal;
+use serde::Serialize;
+use serde_json::to_value;
 use tempfile::NamedTempFile;
+use tokio::time::sleep;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::prometheus_remaining_budget::fan_out::RemainingBudgetRequest;
@@ -35,44 +35,6 @@ pub(super) enum Behaviour {
     Failing,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum RecordedCall {
-    Key {
-        key: Option<String>,
-        key_alias: Option<String>,
-        response_cost: Decimal,
-        max_budget: Option<Decimal>,
-        spend: Option<Decimal>,
-        carried: Option<KeyBudgetSnapshot>,
-    },
-    Team {
-        team: Option<String>,
-        team_alias: Option<String>,
-        spend: Option<Decimal>,
-        max_budget: Option<Decimal>,
-        response_cost: Decimal,
-        carried: Option<TeamBudgetSnapshot>,
-    },
-    User {
-        user_id: Option<String>,
-        spend: Option<Decimal>,
-        max_budget: Option<Decimal>,
-        response_cost: Decimal,
-        carried: Option<UserBudgetSnapshot>,
-        user_email: Option<String>,
-    },
-    Org {
-        org_id: Option<String>,
-        response_cost: Decimal,
-        carried: Option<OrgBudgetSnapshot>,
-        org_alias: Option<String>,
-    },
-    Customer {
-        end_user_id: Option<String>,
-        response_cost: Decimal,
-    },
-}
-
 #[derive(Clone)]
 pub(super) struct Recorder {
     inner: Arc<Inner>,
@@ -80,7 +42,7 @@ pub(super) struct Recorder {
 
 struct Inner {
     behaviour: BTreeMap<&'static str, Behaviour>,
-    calls: Mutex<Vec<RecordedCall>>,
+    calls: Mutex<BTreeMap<&'static str, AgentJson>>,
     finished: Mutex<Vec<&'static str>>,
 }
 
@@ -89,7 +51,7 @@ impl Recorder {
         Self {
             inner: Arc::new(Inner {
                 behaviour,
-                calls: Mutex::new(Vec::new()),
+                calls: Mutex::new(BTreeMap::new()),
                 finished: Mutex::new(Vec::new()),
             }),
         }
@@ -99,7 +61,7 @@ impl Recorder {
         Self::new(BTreeMap::new())
     }
 
-    pub(super) fn calls(&self) -> Vec<RecordedCall> {
+    pub(super) fn calls(&self) -> BTreeMap<&'static str, AgentJson> {
         self.inner
             .calls
             .lock()
@@ -115,12 +77,14 @@ impl Recorder {
             .clone()
     }
 
-    fn record(&self, call: RecordedCall) {
-        self.inner
+    fn record<T: Serialize>(&self, entity: &'static str, lookup: &T) {
+        let recorded = to_value(lookup).unwrap();
+        let mut calls = self
+            .inner
             .calls
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call);
+            .unwrap_or_else(PoisonError::into_inner);
+        calls.insert(entity, recorded);
     }
 
     fn mark_finished(&self, entity: &'static str) {
@@ -144,7 +108,7 @@ impl Recorder {
                 Ok(())
             }
             Behaviour::Slow(delay) => {
-                tokio::time::sleep(delay).await;
+                sleep(delay).await;
                 self.mark_finished(entity);
                 Ok(())
             }
@@ -158,56 +122,27 @@ impl Recorder {
 #[async_trait]
 impl RequestBudgetLookups for Recorder {
     async fn key(&self, lookup: KeyBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(RecordedCall::Key {
-            key: lookup.key.map(str::to_owned),
-            key_alias: lookup.key_alias.map(str::to_owned),
-            response_cost: lookup.response_cost,
-            max_budget: lookup.max_budget,
-            spend: lookup.spend,
-            carried: lookup.carried,
-        });
+        self.record("key", &lookup);
         self.act("key").await
     }
 
     async fn team(&self, lookup: TeamBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(RecordedCall::Team {
-            team: lookup.team.map(str::to_owned),
-            team_alias: lookup.team_alias.map(str::to_owned),
-            spend: lookup.spend,
-            max_budget: lookup.max_budget,
-            response_cost: lookup.response_cost,
-            carried: lookup.carried,
-        });
+        self.record("team", &lookup);
         self.act("team").await
     }
 
     async fn user(&self, lookup: UserBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(RecordedCall::User {
-            user_id: lookup.user_id.map(str::to_owned),
-            spend: lookup.spend,
-            max_budget: lookup.max_budget,
-            response_cost: lookup.response_cost,
-            carried: lookup.carried,
-            user_email: lookup.user_email.map(str::to_owned),
-        });
+        self.record("user", &lookup);
         self.act("user").await
     }
 
     async fn org(&self, lookup: OrgBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(RecordedCall::Org {
-            org_id: lookup.org_id.map(str::to_owned),
-            response_cost: lookup.response_cost,
-            carried: lookup.carried,
-            org_alias: lookup.org_alias.map(str::to_owned),
-        });
+        self.record("org", &lookup);
         self.act("org").await
     }
 
     async fn customer(&self, lookup: CustomerBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(RecordedCall::Customer {
-            end_user_id: lookup.end_user_id.map(str::to_owned),
-            response_cost: lookup.response_cost,
-        });
+        self.record("customer", &lookup);
         self.act("customer").await
     }
 }
@@ -237,54 +172,59 @@ pub(super) fn collectors_with(real: &[RealGauge]) -> BudgetGauges<MetricLike<Ena
 }
 
 fn entity_gauges(real: &[RealGauge]) -> [EntityBudgetGauges<MetricLike<EnabledGauge>>; 5] {
+    let [team, org, key, user, customer] = gauge_names();
+    let [customer_remaining, customer_max, customer_hours] = customer;
     [
-        entity(
-            real.contains(&RealGauge::Team),
-            "litellm_remaining_team_budget_metric",
-            "litellm_team_max_budget_metric",
-            "litellm_team_budget_remaining_hours_metric",
-        ),
-        entity(
-            real.contains(&RealGauge::Org),
-            "litellm_remaining_org_budget_metric",
-            "litellm_org_max_budget_metric",
-            "litellm_org_budget_remaining_hours_metric",
-        ),
-        entity(
-            real.contains(&RealGauge::Key),
-            "litellm_remaining_api_key_budget_metric",
-            "litellm_max_budget_metric",
-            "litellm_budget_remaining_hours_metric",
-        ),
-        entity(
-            real.contains(&RealGauge::User),
-            "litellm_remaining_user_budget_metric",
-            "litellm_user_max_budget_metric",
-            "litellm_user_budget_remaining_hours_metric",
-        ),
+        entity(real.contains(&RealGauge::Team), team),
+        entity(real.contains(&RealGauge::Org), org),
+        entity(real.contains(&RealGauge::Key), key),
+        entity(real.contains(&RealGauge::User), user),
         EntityBudgetGauges {
             remaining: field(
                 real.contains(&RealGauge::CustomerRemaining),
-                "litellm_remaining_customer_budget_metric",
+                customer_remaining,
             ),
-            max: field(
-                real.contains(&RealGauge::CustomerMax),
-                "litellm_customer_max_budget_metric",
-            ),
-            remaining_hours: field(
-                real.contains(&RealGauge::CustomerHours),
-                "litellm_customer_budget_remaining_hours_metric",
-            ),
+            max: field(real.contains(&RealGauge::CustomerMax), customer_max),
+            remaining_hours: field(real.contains(&RealGauge::CustomerHours), customer_hours),
         },
     ]
 }
 
-fn entity(
+const fn gauge_names() -> [[&'static str; 3]; 5] {
+    [
+        [
+            "litellm_remaining_team_budget_metric",
+            "litellm_team_max_budget_metric",
+            "litellm_team_budget_remaining_hours_metric",
+        ],
+        [
+            "litellm_remaining_org_budget_metric",
+            "litellm_org_max_budget_metric",
+            "litellm_org_budget_remaining_hours_metric",
+        ],
+        [
+            "litellm_remaining_api_key_budget_metric",
+            "litellm_max_budget_metric",
+            "litellm_budget_remaining_hours_metric",
+        ],
+        [
+            "litellm_remaining_user_budget_metric",
+            "litellm_user_max_budget_metric",
+            "litellm_user_budget_remaining_hours_metric",
+        ],
+        [
+            "litellm_remaining_customer_budget_metric",
+            "litellm_customer_max_budget_metric",
+            "litellm_customer_budget_remaining_hours_metric",
+        ],
+    ]
+}
+
+const fn entity(
     all_three: bool,
-    remaining: &'static str,
-    max: &'static str,
-    hours: &'static str,
+    names: [&'static str; 3],
 ) -> EntityBudgetGauges<MetricLike<EnabledGauge>> {
+    let [remaining, max, hours] = names;
     EntityBudgetGauges {
         remaining: field(all_three, remaining),
         max: field(all_three, max),
@@ -292,7 +232,7 @@ fn entity(
     }
 }
 
-fn field(enabled: bool, metric_name: &'static str) -> GaugeField<MetricLike<EnabledGauge>> {
+const fn field(enabled: bool, metric_name: &'static str) -> GaugeField<MetricLike<EnabledGauge>> {
     let collector = if enabled {
         MetricLike::Real(EnabledGauge)
     } else {
@@ -305,7 +245,7 @@ fn field(enabled: bool, metric_name: &'static str) -> GaugeField<MetricLike<Enab
     }
 }
 
-pub(super) fn request(metadata: &BTreeMap<String, AgentJson>) -> RemainingBudgetRequest<'_> {
+pub(super) fn request(entries: &BTreeMap<String, AgentJson>) -> RemainingBudgetRequest<'_> {
     RemainingBudgetRequest {
         team: Some("team-1"),
         team_alias: Some("Team"),
@@ -315,8 +255,45 @@ pub(super) fn request(metadata: &BTreeMap<String, AgentJson>) -> RemainingBudget
         org_id: Some("org-1"),
         end_user_id: Some("end-1"),
         response_cost: Decimal::from_str("0.5").unwrap(),
-        metadata,
+        metadata: entries,
     }
+}
+
+// every metadata key the fan-out reads, each set to a value of its declared type
+pub(super) fn full_metadata() -> BTreeMap<String, AgentJson> {
+    metadata(&[
+        ("user_api_key_team_spend", AgentJson::from(3.0_f64)),
+        ("user_api_key_team_max_budget", AgentJson::from(10.0_f64)),
+        ("user_api_key_spend", AgentJson::from(1.5_f64)),
+        ("user_api_key_max_budget", AgentJson::from(5.0_f64)),
+        ("user_api_key_user_spend", AgentJson::from(0.25_f64)),
+        ("user_api_key_user_max_budget", AgentJson::from(2.0_f64)),
+        ("user_api_key_user_email", AgentJson::from("u@example.com")),
+        ("user_api_key_org_alias", AgentJson::from("Org")),
+        (
+            "user_api_key_budget_reset_at",
+            AgentJson::from("2026-11-20T02:00:00Z"),
+        ),
+        (
+            "user_api_key_team_budget_reset_at",
+            AgentJson::from("2026-11-20T02:00:00Z"),
+        ),
+        (
+            "user_api_key_team_table_max_budget",
+            AgentJson::from(10.0_f64),
+        ),
+        (
+            "user_api_key_user_budget_reset_at",
+            AgentJson::from("2026-11-20T02:00:00Z"),
+        ),
+        (
+            "user_api_key_user_table_max_budget",
+            AgentJson::from(2.0_f64),
+        ),
+        ("user_api_key_user_alias", AgentJson::from("Alias")),
+        ("user_api_key_org_spend", AgentJson::from(0.5_f64)),
+        ("user_api_key_org_max_budget", AgentJson::from(7.0_f64)),
+    ])
 }
 
 pub(super) fn metadata(entries: &[(&str, AgentJson)]) -> BTreeMap<String, AgentJson> {
@@ -324,14 +301,6 @@ pub(super) fn metadata(entries: &[(&str, AgentJson)]) -> BTreeMap<String, AgentJ
         .iter()
         .map(|(name, value)| ((*name).to_owned(), value.clone()))
         .collect()
-}
-
-pub(super) fn decimal(text: &str) -> Decimal {
-    Decimal::from_str(text).unwrap()
-}
-
-pub(super) fn reset_at() -> chrono::DateTime<chrono::Utc> {
-    "2026-11-20T02:00:00Z".parse().unwrap()
 }
 
 pub(super) fn capture_log() -> (DefaultGuard, NamedTempFile) {

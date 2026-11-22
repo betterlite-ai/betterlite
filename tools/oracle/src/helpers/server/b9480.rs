@@ -21,8 +21,8 @@ use betterlite_server::prometheus_remaining_budget::lookups::{
     TeamBudgetLookup, UserBudgetLookup,
 };
 use rust_decimal::Decimal;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json, to_value};
 use tokio::runtime::Builder;
 
 const TIMEOUT_VARIABLE: &str = "PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT";
@@ -161,7 +161,7 @@ const fn gauge_names(group: GaugeGroup) -> [&'static str; 3] {
     }
 }
 
-fn collectors(noop_groups: &[GaugeGroup]) -> BudgetGauges<MetricLike<StandIn>> {
+fn budget_gauges(noop_groups: &[GaugeGroup]) -> BudgetGauges<MetricLike<StandIn>> {
     BudgetGauges {
         team: entity(GaugeGroup::Team, !noop_groups.contains(&GaugeGroup::Team)),
         org: entity(GaugeGroup::Org, !noop_groups.contains(&GaugeGroup::Org)),
@@ -177,91 +177,41 @@ fn collectors(noop_groups: &[GaugeGroup]) -> BudgetGauges<MetricLike<StandIn>> {
 }
 
 impl Recorder {
-    fn record(&self, entity: &'static str, call: Value) {
+    fn record<T: Serialize>(&self, entity: &'static str, lookup: &T) -> Result<(), LookupError> {
+        let recorded = to_value(lookup).map_err(|error| LookupError {
+            message: error.to_string(),
+        })?;
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        calls.insert(entity, call);
-    }
-
-    fn recorded(&self) -> Value {
-        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        json!(calls.clone())
+        calls.insert(entity, recorded);
+        Ok(())
     }
 }
 
 #[async_trait]
 impl RequestBudgetLookups for Recorder {
     async fn key(&self, lookup: KeyBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(
-            "key",
-            json!({
-                "key": lookup.key,
-                "key_alias": lookup.key_alias,
-                "response_cost": lookup.response_cost,
-                "max_budget": lookup.max_budget,
-                "spend": lookup.spend,
-                "carried": lookup.carried,
-            }),
-        );
-        Ok(())
+        self.record("key", &lookup)
     }
 
     async fn team(&self, lookup: TeamBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(
-            "team",
-            json!({
-                "team": lookup.team,
-                "team_alias": lookup.team_alias,
-                "spend": lookup.spend,
-                "max_budget": lookup.max_budget,
-                "response_cost": lookup.response_cost,
-                "carried": lookup.carried,
-            }),
-        );
-        Ok(())
+        self.record("team", &lookup)
     }
 
     async fn user(&self, lookup: UserBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(
-            "user",
-            json!({
-                "user_id": lookup.user_id,
-                "spend": lookup.spend,
-                "max_budget": lookup.max_budget,
-                "response_cost": lookup.response_cost,
-                "carried": lookup.carried,
-                "user_email": lookup.user_email,
-            }),
-        );
-        Ok(())
+        self.record("user", &lookup)
     }
 
     async fn org(&self, lookup: OrgBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(
-            "org",
-            json!({
-                "org_id": lookup.org_id,
-                "response_cost": lookup.response_cost,
-                "carried": lookup.carried,
-                "org_alias": lookup.org_alias,
-            }),
-        );
-        Ok(())
+        self.record("org", &lookup)
     }
 
     async fn customer(&self, lookup: CustomerBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.record(
-            "customer",
-            json!({
-                "end_user_id": lookup.end_user_id,
-                "response_cost": lookup.response_cost,
-            }),
-        );
-        Ok(())
+        self.record("customer", &lookup)
     }
 }
 
 fn run_fan_out(call: &FanOutCall) -> HelperResult {
-    let collectors = collectors(&call.noop_groups);
+    let collectors = budget_gauges(&call.noop_groups);
     let recorder = Recorder::default();
     let fan_out = RemainingBudgetFanOut::new(recorder.clone(), HELPER_TIMEOUT, &collectors);
     let request = RemainingBudgetRequest {
@@ -280,7 +230,13 @@ fn run_fan_out(call: &FanOutCall) -> HelperResult {
         .build()
         .map_err(|error| failure(&error))?;
     runtime.block_on(fan_out.increment_remaining_budget_metrics(request));
-    Ok(recorder.recorded())
+    Ok(json!(
+        recorder
+            .calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    ))
 }
 
 impl Helper for Op {
