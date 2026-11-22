@@ -430,7 +430,7 @@ fn field_defaults_are_read_from_the_reviewed_catalog() {
         .collect();
     assert_eq!(
         defaults.get("routing_strategy"),
-        Some(&json("simple-shuffle"))
+        Some(&json(r#""simple-shuffle""#))
     );
     assert_eq!(defaults.get("routing_groups"), Some(&json("[]")));
     assert_eq!(defaults.get("routing_strategy_args"), Some(&json("{}")));
