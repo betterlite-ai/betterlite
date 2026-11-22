@@ -47,112 +47,37 @@ fn the_blocked_and_missing_model_checks_run_before_the_team_map() {
     assert!(routing.team_queries.lock().unwrap().is_empty());
 }
 
-fn overrides() -> JsonMap {
-    object(&[
-        (
-            "fallbacks",
-            JsonValue::Array(vec![text("override-fallback")]),
-        ),
-        (
-            "context_window_fallbacks",
-            JsonValue::Array(vec![text("override-context")]),
-        ),
-        (
-            "content_policy_fallbacks",
-            JsonValue::Array(vec![text("override-policy")]),
-        ),
-        ("num_retries", JsonValue::from(2_i64)),
-        ("timeout", JsonValue::from(5_i64)),
-        (
-            "model_group_retry_policy",
-            JsonValue::Object(object(&[("retries", JsonValue::from(1_i64))])),
-        ),
-        ("routing_strategy", text("least-busy")),
-        ("enable_tag_filtering", JsonValue::Bool(true)),
-    ])
-}
-
-fn body_values() -> JsonMap {
+fn values(prefix: &str, retries: i64, timeout: i64, retry_policy: i64, tag: bool) -> JsonMap {
     object(&[
         ("model", text("m")),
-        ("fallbacks", JsonValue::Array(vec![text("body-fallback")])),
+        (
+            "fallbacks",
+            JsonValue::Array(vec![text(&format!("{prefix}-fallback"))]),
+        ),
         (
             "context_window_fallbacks",
-            JsonValue::Array(vec![text("body-context")]),
+            JsonValue::Array(vec![text(&format!("{prefix}-context"))]),
         ),
         (
             "content_policy_fallbacks",
-            JsonValue::Array(vec![text("body-policy")]),
+            JsonValue::Array(vec![text(&format!("{prefix}-policy"))]),
         ),
-        ("num_retries", JsonValue::from(4_i64)),
-        ("timeout", JsonValue::from(9_i64)),
+        ("num_retries", JsonValue::from(retries)),
+        ("timeout", JsonValue::from(timeout)),
         (
             "model_group_retry_policy",
-            JsonValue::Object(object(&[("retries", JsonValue::from(3_i64))])),
+            JsonValue::Object(object(&[("retries", JsonValue::from(retry_policy))])),
         ),
-        ("routing_strategy", text("body-strategy")),
-        ("enable_tag_filtering", JsonValue::Bool(false)),
+        ("routing_strategy", text(&format!("{prefix}-strategy"))),
+        ("enable_tag_filtering", JsonValue::Bool(tag)),
     ])
 }
 
-fn assert_override_copied(sent: &JsonMap) {
+fn assert_sent(sent: &JsonMap, expected: &JsonMap) {
     assert!(!sent.contains_key("router_settings_override"));
-    assert_eq!(
-        sent.get("fallbacks"),
-        Some(&JsonValue::Array(vec![text("override-fallback")]))
-    );
-    assert_eq!(
-        sent.get("context_window_fallbacks"),
-        Some(&JsonValue::Array(vec![text("override-context")]))
-    );
-    assert_eq!(
-        sent.get("content_policy_fallbacks"),
-        Some(&JsonValue::Array(vec![text("override-policy")]))
-    );
-    assert_eq!(sent.get("num_retries"), Some(&JsonValue::from(2_i64)));
-    assert_eq!(sent.get("timeout"), Some(&JsonValue::from(5_i64)));
-    assert_eq!(
-        sent.get("model_group_retry_policy"),
-        Some(&JsonValue::Object(object(&[(
-            "retries",
-            JsonValue::from(1_i64)
-        )])))
-    );
-    assert_eq!(sent.get("routing_strategy"), Some(&text("least-busy")));
-    assert_eq!(
-        sent.get("enable_tag_filtering"),
-        Some(&JsonValue::Bool(true))
-    );
-}
-
-fn assert_body_values_kept(sent: &JsonMap) {
-    assert_eq!(
-        sent.get("fallbacks"),
-        Some(&JsonValue::Array(vec![text("body-fallback")]))
-    );
-    assert_eq!(
-        sent.get("context_window_fallbacks"),
-        Some(&JsonValue::Array(vec![text("body-context")]))
-    );
-    assert_eq!(
-        sent.get("content_policy_fallbacks"),
-        Some(&JsonValue::Array(vec![text("body-policy")]))
-    );
-    assert_eq!(sent.get("num_retries"), Some(&JsonValue::from(4_i64)));
-    assert_eq!(sent.get("timeout"), Some(&JsonValue::from(9_i64)));
-    assert_eq!(
-        sent.get("model_group_retry_policy"),
-        Some(&JsonValue::Object(object(&[(
-            "retries",
-            JsonValue::from(3_i64)
-        )])))
-    );
-    assert_eq!(sent.get("routing_strategy"), Some(&text("body-strategy")));
-    // The shared step pops the body's flag before the override copy, so the override's value is the one kept
-    assert_eq!(
-        sent.get("enable_tag_filtering"),
-        Some(&JsonValue::Bool(true))
-    );
+    for (key, value) in expected {
+        assert_eq!(sent.get(key), Some(value), "{key}");
+    }
 }
 
 #[tokio::test]
@@ -165,13 +90,17 @@ async fn the_override_copies_only_the_keys_the_body_lacks() {
         false,
         None,
     );
+    let expected = values("override", 2, 5, 1, true);
     let data = object(&[
         ("model", text("m")),
-        ("router_settings_override", JsonValue::Object(overrides())),
+        (
+            "router_settings_override",
+            JsonValue::Object(expected.clone()),
+        ),
     ]);
     steps.call(data, false).await.unwrap();
     let sent = routing.router_calls.lock().unwrap()[0].0.clone();
-    assert_override_copied(&sent);
+    assert_sent(&sent, &expected);
 }
 
 #[tokio::test]
@@ -184,14 +113,15 @@ async fn the_body_values_keep_the_override_from_writing_them() {
         false,
         None,
     );
-    let mut body = body_values();
+    let mut body = values("body", 4, 9, 3, false);
     body.insert(
         "router_settings_override".to_owned(),
-        JsonValue::Object(overrides()),
+        JsonValue::Object(values("override", 2, 5, 1, true)),
     );
     steps.call(body, false).await.unwrap();
     let sent = routing.router_calls.lock().unwrap()[0].0.clone();
-    assert_body_values_kept(&sent);
+    // The shared step pops the body's flag before the override copy, so the override's value wins
+    assert_sent(&sent, &values("body", 4, 9, 3, true));
 }
 
 fn team_metadata() -> JsonValue {
