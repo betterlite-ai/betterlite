@@ -1,0 +1,9 @@
+task: B3332
+deviations:
+  - what: Selecting EDENAI returns the typed error VideoSelectionError::Unavailable with the display text "no video config is installed for 'edenai'" instead of a config object.
+    why: B5838 builds the Eden AI video config and turns this arm into a tag. Until it lands, a provider that has a video config in LiteLLM must not fall through to the None that means "this provider has no video config".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9723-L9724
+  - what: The selector answers a closed tag enum that names the provider config class and carries its constructor arguments, not a BaseVideoConfig instance.
+    why: The provider configs live in betterlite-openai, betterlite-azure, betterlite-vertex and betterlite-provider, and the last one depends on betterlite-core, so the selector cannot name or build them. B5360's media config selectors answer the same kind of tag and the caller builds its adapter.
+    link: ""
+kept_bugs: []

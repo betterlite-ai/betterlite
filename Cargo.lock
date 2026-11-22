@@ -3026,6 +3026,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-db",
  "betterlite-env",
  "betterlite-lens",
@@ -3593,6 +3594,7 @@ name = "betterlite-oracle-rate-limit"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-core",
