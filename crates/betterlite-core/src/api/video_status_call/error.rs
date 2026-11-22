@@ -55,7 +55,6 @@ pub fn failure(
     provider: &str,
     redactor: &Redactor,
 ) -> VideoStatusCallError {
-    let message = error.to_string();
     match error {
         VideoStatusCallError::Mapped {
             class,
@@ -64,18 +63,21 @@ pub fn failure(
             class: dispatch(&DispatchInput::Mapped(class), redactor),
             message: mapped,
         },
-        VideoStatusCallError::FieldType { field, expected } => VideoStatusCallError::Mapped {
-            class: field_class(field, expected, provider),
-            message,
-        },
-        rejected => VideoStatusCallError::Mapped {
-            class: dispatch(
-                &DispatchInput::Raw(Box::new(rejected_exception(&message, provider))),
-                redactor,
-            ),
-            message,
-        },
+        unmapped => rejected_failure(&unmapped, provider, redactor),
     }
+}
+
+fn rejected_failure(
+    error: &VideoStatusCallError,
+    provider: &str,
+    redactor: &Redactor,
+) -> VideoStatusCallError {
+    if let VideoStatusCallError::FieldType { field, expected } = error {
+        return field_failure(field, expected, provider, error.to_string());
+    }
+    let message = error.to_string();
+    let raw = rejected_exception(&message, provider);
+    raw_failure(message, raw, redactor)
 }
 
 // what the B3337 handler's failure carries into exception_type: a converted class or an unconverted provider failure
@@ -85,29 +87,40 @@ pub fn status_failure(
     provider: &str,
     redactor: &Redactor,
 ) -> VideoStatusCallError {
-    let message = error.to_string();
-    let (text, status_code, synthesized) = match &error {
-        VideoStatusError::Converted(carried) => (
-            carried.message.clone(),
-            Some(carried.status_code),
-            carried.status_code_is_synthesized,
-        ),
+    let raw = match &error {
+        VideoStatusError::Converted(carried) => {
+            let mut raw =
+                raw_exception(carried.message.clone(), provider, Some(carried.status_code));
+            raw.status_code_is_synthesized = carried.status_code_is_synthesized;
+            raw
+        }
         VideoStatusError::Unconverted(carried) => {
-            (carried.message.clone(), carried.status_code, false)
+            raw_exception(carried.message.clone(), provider, carried.status_code)
         }
         VideoStatusError::FieldType { field, expected } => {
-            return VideoStatusCallError::Mapped {
-                class: field_class(field, expected, provider),
-                message,
-            };
+            return field_failure(field, expected, provider, error.to_string());
         }
         VideoStatusError::Client(_)
         | VideoStatusError::Logging(_)
         | VideoStatusError::UnknownProvider { .. }
-        | VideoStatusError::Suspended => (message.clone(), None, false),
+        | VideoStatusError::Suspended => raw_exception(error.to_string(), provider, None),
     };
-    let mut raw = raw_exception(text, provider, status_code);
-    raw.status_code_is_synthesized = synthesized;
+    raw_failure(error.to_string(), raw, redactor)
+}
+
+fn field_failure(
+    field: &str,
+    expected: &str,
+    provider: &str,
+    message: String,
+) -> VideoStatusCallError {
+    VideoStatusCallError::Mapped {
+        class: field_class(field, expected, provider),
+        message,
+    }
+}
+
+fn raw_failure(message: String, raw: RawException, redactor: &Redactor) -> VideoStatusCallError {
     VideoStatusCallError::Mapped {
         class: dispatch(&DispatchInput::Raw(Box::new(raw)), redactor),
         message,

@@ -106,19 +106,53 @@ pub(crate) struct Logged {
     pub(crate) provider_note: Option<Json>,
 }
 
+impl Event {
+    fn into_handled(self) -> Option<Handled> {
+        if let Self::Handled(handled) = self {
+            Some(handled)
+        } else {
+            None
+        }
+    }
+
+    fn into_lookup(self) -> Option<String> {
+        if let Self::Lookup { provider } = self {
+            Some(provider)
+        } else {
+            None
+        }
+    }
+
+    fn into_validation(self) -> Option<(Headers, bool)> {
+        if let Self::Validate { headers, api_key } = self {
+            Some((headers, api_key))
+        } else {
+            None
+        }
+    }
+
+    fn into_transform(self) -> Option<(String, Headers)> {
+        if let Self::Transform { video_id, headers } = self {
+            Some((video_id, headers))
+        } else {
+            None
+        }
+    }
+
+    fn into_sent(self) -> Option<StatusRequest> {
+        if let Self::Sent(request) = self {
+            Some(request)
+        } else {
+            None
+        }
+    }
+}
+
 pub(crate) fn handles(journal: &Journal) -> Vec<Handled> {
     journal
         .events()
         .into_iter()
-        .filter_map(|event| match event {
-            Event::Handled(handled) => Some(handled),
-            Event::Lookup { .. }
-            | Event::Validate { .. }
-            | Event::Transform { .. }
-            | Event::SyncClient
-            | Event::AsyncClient
-            | Event::Sent(_) => None,
-        })
+        .filter_map(Event::into_handled)
         .collect()
 }
 
@@ -132,15 +166,7 @@ pub(crate) fn lookups(journal: &Journal) -> Vec<String> {
     journal
         .events()
         .into_iter()
-        .filter_map(|event| match event {
-            Event::Lookup { provider } => Some(provider),
-            Event::Validate { .. }
-            | Event::Transform { .. }
-            | Event::Handled(_)
-            | Event::SyncClient
-            | Event::AsyncClient
-            | Event::Sent(_) => None,
-        })
+        .filter_map(Event::into_lookup)
         .collect()
 }
 
@@ -148,15 +174,7 @@ pub(crate) fn validations(journal: &Journal) -> Vec<(Headers, bool)> {
     journal
         .events()
         .into_iter()
-        .filter_map(|event| match event {
-            Event::Validate { headers, api_key } => Some((headers, api_key)),
-            Event::Lookup { .. }
-            | Event::Transform { .. }
-            | Event::Handled(_)
-            | Event::SyncClient
-            | Event::AsyncClient
-            | Event::Sent(_) => None,
-        })
+        .filter_map(Event::into_validation)
         .collect()
 }
 
@@ -164,15 +182,7 @@ pub(crate) fn transforms(journal: &Journal) -> Vec<(String, Headers)> {
     journal
         .events()
         .into_iter()
-        .filter_map(|event| match event {
-            Event::Transform { video_id, headers } => Some((video_id, headers)),
-            Event::Lookup { .. }
-            | Event::Validate { .. }
-            | Event::Handled(_)
-            | Event::SyncClient
-            | Event::AsyncClient
-            | Event::Sent(_) => None,
-        })
+        .filter_map(Event::into_transform)
         .collect()
 }
 
@@ -180,15 +190,7 @@ pub(crate) fn sent(journal: &Journal) -> Vec<StatusRequest> {
     journal
         .events()
         .into_iter()
-        .filter_map(|event| match event {
-            Event::Sent(request) => Some(request),
-            Event::Lookup { .. }
-            | Event::Validate { .. }
-            | Event::Transform { .. }
-            | Event::Handled(_)
-            | Event::SyncClient
-            | Event::AsyncClient => None,
-        })
+        .filter_map(Event::into_sent)
         .collect()
 }
 
@@ -228,10 +230,7 @@ impl FakeProviders {
         Self {
             journal: journal.clone(),
             behavior,
-            config: FakeConfig {
-                mode,
-                journal: journal.clone(),
-            },
+            config: FakeConfig::new(journal, mode),
         }
     }
 }
@@ -263,6 +262,15 @@ impl VideoStatusProviders for FakeProviders {
 pub(crate) struct FakeConfig {
     pub(crate) mode: Mode,
     pub(crate) journal: Journal,
+}
+
+impl FakeConfig {
+    fn new(journal: &Journal, mode: Mode) -> Self {
+        Self {
+            mode,
+            journal: journal.clone(),
+        }
+    }
 }
 
 impl VideoErrorClasses for FakeConfig {
@@ -325,10 +333,7 @@ impl VideoStatusConfig for FakeConfig {
         _reply: VideoReply<'_>,
         _client: Option<&SyncStub>,
     ) -> Result<VideoObject, ProviderFailure> {
-        match self.mode {
-            Mode::Answers => Ok(video(VIDEO_ID)),
-            Mode::Fails => Err(refusal()),
-        }
+        answered(self.mode)
     }
 
     async fn async_transform_video_status_retrieve_response(
@@ -336,10 +341,14 @@ impl VideoStatusConfig for FakeConfig {
         _reply: VideoReply<'_>,
         _client: Option<&AsyncStub>,
     ) -> Result<VideoObject, ProviderFailure> {
-        match self.mode {
-            Mode::Answers => Ok(video(VIDEO_ID)),
-            Mode::Fails => Err(refusal()),
-        }
+        answered(self.mode)
+    }
+}
+
+fn answered(mode: Mode) -> Result<VideoObject, ProviderFailure> {
+    match mode {
+        Mode::Answers => Ok(video(VIDEO_ID)),
+        Mode::Fails => Err(refusal()),
     }
 }
 
@@ -652,25 +661,32 @@ impl Bench {
             journal,
         }
     }
+
+    fn run<'bench>(
+        &'bench mut self,
+        request: VideoStatusRequest,
+        client: Option<SuppliedClient<'bench, SyncStub, AsyncStub>>,
+    ) -> StatusWork<'bench> {
+        self.caller
+            .video_status(request, client, &mut self.fixture.state)
+    }
 }
+
+pub(crate) type StatusWork<'bench> = Result<VideoStatusWork<'bench>, VideoStatusCallError>;
 
 pub(crate) fn call<'bench>(
     bench: &'bench mut Bench,
     request: VideoStatusRequest,
-) -> Result<VideoStatusWork<'bench>, VideoStatusCallError> {
-    bench
-        .caller
-        .video_status(request, None, &mut bench.fixture.state)
+) -> StatusWork<'bench> {
+    bench.run(request, None)
 }
 
 pub(crate) fn call_with<'bench>(
     bench: &'bench mut Bench,
     request: VideoStatusRequest,
     client: SuppliedClient<'bench, SyncStub, AsyncStub>,
-) -> Result<VideoStatusWork<'bench>, VideoStatusCallError> {
-    bench
-        .caller
-        .video_status(request, Some(client), &mut bench.fixture.state)
+) -> StatusWork<'bench> {
+    bench.run(request, Some(client))
 }
 
 pub(crate) async fn async_call(

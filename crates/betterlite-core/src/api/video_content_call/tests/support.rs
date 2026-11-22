@@ -94,14 +94,29 @@ pub(crate) struct Logged {
     pub(crate) provider_note: Option<Json>,
 }
 
+impl Event {
+    fn into_handled(self) -> Option<Handled> {
+        if let Self::Handled(handled) = self {
+            Some(handled)
+        } else {
+            None
+        }
+    }
+
+    fn into_lookup(self) -> Option<String> {
+        if let Self::Lookup { provider } = self {
+            Some(provider)
+        } else {
+            None
+        }
+    }
+}
+
 pub(crate) fn handles(journal: &Journal) -> Vec<Handled> {
     journal
         .events()
         .into_iter()
-        .filter_map(|event| match event {
-            Event::Handled(handled) => Some(handled),
-            Event::Lookup { .. } => None,
-        })
+        .filter_map(Event::into_handled)
         .collect()
 }
 
@@ -115,10 +130,7 @@ pub(crate) fn lookups(journal: &Journal) -> Vec<String> {
     journal
         .events()
         .into_iter()
-        .filter_map(|event| match event {
-            Event::Lookup { provider } => Some(provider),
-            Event::Handled(_) => None,
-        })
+        .filter_map(Event::into_lookup)
         .collect()
 }
 
@@ -555,6 +567,15 @@ impl Bench {
             journal,
         }
     }
+
+    fn run<'bench>(
+        &'bench mut self,
+        request: VideoContentRequest,
+        client: Option<SuppliedClient<'bench, Wire>>,
+    ) -> ContentWork<'bench> {
+        self.caller
+            .video_content(request, client, &mut self.fixture.state)
+    }
 }
 
 pub(crate) fn request(video_id: &str) -> VideoContentRequest {
@@ -588,23 +609,21 @@ pub(crate) fn headers(pairs: &[(&str, &str)]) -> Headers {
         .collect()
 }
 
+pub(crate) type ContentWork<'bench> = Result<VideoContentWork<'bench>, VideoContentCallError>;
+
 pub(crate) fn call<'bench>(
     bench: &'bench mut Bench,
     request: VideoContentRequest,
-) -> Result<VideoContentWork<'bench>, VideoContentCallError> {
-    bench
-        .caller
-        .video_content(request, None, &mut bench.fixture.state)
+) -> ContentWork<'bench> {
+    bench.run(request, None)
 }
 
 pub(crate) fn call_with<'bench>(
     bench: &'bench mut Bench,
     request: VideoContentRequest,
     client: SuppliedClient<'bench, Wire>,
-) -> Result<VideoContentWork<'bench>, VideoContentCallError> {
-    bench
-        .caller
-        .video_content(request, Some(client), &mut bench.fixture.state)
+) -> ContentWork<'bench> {
+    bench.run(request, Some(client))
 }
 
 pub(crate) async fn async_call(

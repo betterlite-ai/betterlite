@@ -130,12 +130,10 @@ where
             .kwargs
             .insert(ASYNC_CALL.to_owned(), Json::Bool(true));
         let provider = request.custom_llm_provider.clone().unwrap_or_default();
-        let awaiting = match self.video_content(request, client, logging) {
-            Ok(VideoContentWork::Ready(content)) => Ok(content),
-            Ok(VideoContentWork::Pending(pending)) => pending.await,
-            Err(error) => Err(error),
-        };
-        awaiting.map_err(|error| failure(error, &provider, &self.redactor))
+        self.video_content(request, client, logging)?
+            .resolve()
+            .await
+            .map_err(|error| failure(error, &provider, &self.redactor))
     }
 
     // steps 2 to 6 of LiteLLM's try block, in order, before the handler is handed anything
@@ -231,5 +229,15 @@ where
     match pinned.as_mut().poll(&mut context) {
         Poll::Ready(outcome) => Polled::Ready(outcome),
         Poll::Pending => Polled::StillWaiting,
+    }
+}
+
+impl VideoContentWork<'_> {
+    // await the handler future an async call in the sync entry left pending
+    pub async fn resolve(self) -> Result<Vec<u8>, VideoContentCallError> {
+        match self {
+            Self::Ready(content) => Ok(content),
+            Self::Pending(pending) => pending.await,
+        }
     }
 }
