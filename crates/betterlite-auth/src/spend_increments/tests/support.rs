@@ -112,6 +112,14 @@ impl SpyLayers {
             .clone()
     }
 
+    fn amount(&self, counter_key: &str) -> Option<Decimal> {
+        self.memory
+            .lock()
+            .expect("the fake cache lock")
+            .get(counter_key)
+            .copied()
+    }
+
     fn increment_memory(
         &self,
         counter_key: &str,
@@ -153,13 +161,7 @@ impl ReseedCache for SpyLayers {
         &self,
         counter_key: &str,
     ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
-        let value = self
-            .memory
-            .lock()
-            .expect("the fake cache lock")
-            .get(counter_key)
-            .copied();
-        ready(Ok(value.map(ReseedCacheValue::Number)))
+        ready(Ok(self.amount(counter_key).map(ReseedCacheValue::Number)))
     }
 
     fn memory_set(
@@ -176,8 +178,7 @@ impl ReseedCache for SpyLayers {
         counter_key: &str,
         increment: Decimal,
     ) -> impl Future<Output = Result<Option<Decimal>, ReseedCacheError>> + Send {
-        let counted = self.increment_memory(counter_key, increment);
-        ready(counted.map(Some))
+        ready(self.increment_memory(counter_key, increment).map(Some))
     }
 }
 
@@ -187,8 +188,7 @@ impl WindowReseedCache for SpyLayers {
         counter_key: &str,
         amount: Decimal,
     ) -> impl Future<Output = Result<Decimal, ReseedCacheError>> + Send {
-        let counted = self.increment_memory(counter_key, amount);
-        ready(counted)
+        ready(self.increment_memory(counter_key, amount))
     }
 }
 
@@ -337,6 +337,13 @@ impl FakeRows {
     pub(crate) fn fail(&self) {
         self.failing.store(true, Ordering::Relaxed);
     }
+
+    fn rows_or_fail<T>(&self, value: T) -> Result<T, FakeError> {
+        if self.failing.load(Ordering::Relaxed) {
+            return Err(FakeError);
+        }
+        Ok(value)
+    }
 }
 
 impl DbSpendCounterRows for FakeRows {
@@ -346,10 +353,7 @@ impl DbSpendCounterRows for FakeRows {
         &self,
         _lookup: SpendRowLookup<'_>,
     ) -> impl Future<Output = Result<Option<DbSpendRow>, FakeError>> + Send {
-        if self.failing.load(Ordering::Relaxed) {
-            return ready(Err(FakeError));
-        }
-        ready(Ok(None))
+        ready(self.rows_or_fail(None))
     }
 }
 
@@ -362,17 +366,14 @@ impl SpendCounterRows for FakeRows {
         _entity_id: &str,
         _window_duration: &str,
     ) -> impl Future<Output = Result<Option<WindowSpendRow>, FakeError>> + Send {
-        if self.failing.load(Ordering::Relaxed) {
-            return ready(Err(FakeError));
-        }
-        ready(Ok(None))
+        ready(self.rows_or_fail(None))
     }
 
     fn window_log_rows(
         &self,
-        _entity: WindowEntity,
-        _entity_id: &str,
-        _window_start: DateTime<Utc>,
+        _scope: WindowEntity,
+        _owner: &str,
+        _at: DateTime<Utc>,
     ) -> impl Future<Output = Result<Vec<SpendAggregateRow>, FakeError>> + Send {
         if self.failing.load(Ordering::Relaxed) {
             return ready(Err(FakeError));
@@ -473,18 +474,7 @@ impl SettlementCounters for FakeCounters {
         &self,
         counter_key: &str,
     ) -> Result<Option<Decimal>, CounterReadError> {
-        match ReseedCache::memory_get(&*self.layers, counter_key).await {
-            Ok(Some(ReseedCacheValue::Number(amount))) => Ok(Some(amount)),
-            Ok(Some(
-                ReseedCacheValue::Text(_)
-                | ReseedCacheValue::Boolean(_)
-                | ReseedCacheValue::Unreadable,
-            ))
-            | Ok(None) => Ok(None),
-            Err(_error) => Err(CounterReadError::NotNumeric {
-                counter_key: counter_key.to_owned(),
-            }),
-        }
+        Ok(self.layers.amount(counter_key))
     }
 
     async fn reseed_from_db(&self, _counter_key: &str) -> bool {
