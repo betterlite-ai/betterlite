@@ -39,7 +39,7 @@ def chosen(problems: list[Problem]) -> JsonValue:
     for item in problems:
         failure = scan_failure(item)
         if failure is None:
-            raised = HTTPException(status_code=item["status"], detail=None)
+            raised: BaseException = HTTPException(status_code=item["status"], detail=None)
             entries.append((item["line_number"], raised))
         else:
             entries.append((item["line_number"], failure))
