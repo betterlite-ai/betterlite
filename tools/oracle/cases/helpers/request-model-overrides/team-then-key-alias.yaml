@@ -1,0 +1,114 @@
+kind: helper
+name: request-model-overrides-team-then-key-alias
+call:
+  request_model_overrides:
+    settings:
+      credential_overrides: false
+      enforced_params: null
+      service_account_params: null
+      team_stale_alias_bypass: false
+    deployments:
+      - model_name: model_name_team-1_live
+        model: openai/gpt-4o
+        custom_llm_provider: null
+        team_id: null
+        team_public_model_name: null
+      - model_name: public
+        model: azure/gpt-4o
+        custom_llm_provider: null
+        team_id: team-1
+        team_public_model_name: public
+    credentials: []
+    calls:
+      - data: {model: gpt-4o}
+        principal:
+          team_id: team-1
+          team_model_aliases: {gpt-4o: team-target}
+          aliases: {team-target: xai/grok-4-fast}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: plain}
+        principal:
+          team_id: team-1
+          team_model_aliases: {gpt-4o: team-target}
+          aliases: {team-target: xai/grok-4-fast}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: team-target}
+        principal:
+          team_id: team-1
+          team_model_aliases: {gpt-4o: team-target}
+          aliases: {team-target: xai/grok-4-fast}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: chain}
+        principal:
+          team_id: team-1
+          team_model_aliases: {chain: second}
+          aliases: {second: third, third: fourth}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: ""}
+        principal:
+          team_id: team-1
+          team_model_aliases: {gpt-4o: team-target}
+          aliases: {team-target: xai/grok-4-fast}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {}
+        principal:
+          team_id: team-1
+          team_model_aliases: {gpt-4o: team-target}
+          aliases: {team-target: xai/grok-4-fast}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: gpt-4o}
+        principal:
+          team_id: team-1
+          team_model_aliases: {gpt-4o: model_name_team-1_gone}
+          aliases: {}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: gpt-4o}
+        principal:
+          team_id: team-1
+          team_model_aliases: {gpt-4o: model_name_team-1_gone}
+          aliases: {}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: public}
+        principal:
+          team_id: team-1
+          team_model_aliases: {public: model_name_team-1_live}
+          aliases: {}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+      - data: {model: public}
+        principal:
+          team_id: team-1
+          team_model_aliases: {public: model_name_team-1_live}
+          aliases: {}
+          metadata: null
+          team_metadata: null
+          project_metadata: null
+        premium_user: true
+env: {}
+compare: {ignore: []}
