@@ -197,6 +197,28 @@ fn a_failed_reschedule_is_retried_on_the_next_sync() {
 }
 
 #[test]
+fn a_live_job_retries_a_failed_reschedule_without_a_schedule_change() {
+    let fixture = fixture();
+    let settings = retained("30d");
+    let previous = cleanup_schedule_of(&settings);
+    let mut scheduler = with_job(recording(SchedulerState::Paused));
+    let mut state = CleanupScheduleState {
+        last_attempt: None,
+        reschedule_failed: true,
+    };
+    apply(
+        Some(&mut scheduler),
+        &previous,
+        &settings,
+        &fixture.context(),
+        &mut state,
+    );
+    assert_eq!(scheduler.inserted, 1);
+    assert!(!state.reschedule_failed);
+    assert_eq!(state.last_attempt, Some(cleanup_schedule_of(&settings)));
+}
+
+#[test]
 fn a_recorded_attempt_is_not_retried_while_the_schedule_is_unchanged() {
     let fixture = fixture();
     let settings = retained("30d");
