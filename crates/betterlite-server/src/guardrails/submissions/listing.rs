@@ -55,12 +55,7 @@ where
     if visible.as_ref().is_some_and(Vec::is_empty) {
         return Ok(Json(SubmissionListResponse {
             submissions: Vec::new(),
-            summary: GuardrailSubmissionSummary {
-                total: 0,
-                pending_review: 0,
-                active: 0,
-                rejected: 0,
-            },
+            summary: summarize(&[]),
         }));
     }
     let filter = visible.map_or(TeamFilter::AnyTeam, TeamFilter::Teams);
