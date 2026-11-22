@@ -171,6 +171,27 @@ async fn a_healthy_deployment_bypasses_the_queue_head() {
     );
 }
 
+// Scheduler.poll counts every false answer the wait takes before the head admits the request
+#[tokio::test(start_paused = true)]
+async fn a_waiting_request_counts_its_polls() {
+    let service = scheduler(Settings::default());
+    queue_all(&service, &[(Priority::High.value(), "head")]).await;
+    let head = item(Priority::High.value(), "head", MODEL);
+    let late = item(Priority::Low.value(), "late", MODEL);
+    let call = ScriptedCall::answered(0);
+    let deadline = plan(1.0);
+    let scheduled = service.schedule(&late, &call, &deadline);
+    let release = async {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        service
+            .remove_request(&head)
+            .await
+            .expect("the head leaves the queue");
+    };
+    let (outcome, ()) = tokio::join!(scheduled, release);
+    assert_eq!(outcome.expect("the request is scheduled").polls, 2);
+}
+
 // Router.acompletion's `kwargs.get("priority") or self.default_priority`, with no configured default by default
 #[tokio::test]
 async fn the_configured_default_priority_fills_a_request_without_one() {
