@@ -183,7 +183,6 @@ fn safe_to_replay(error: &TurnWriteError) -> bool {
     failure == SpendFailure::NotSent
 }
 
-// 2**attempt plus random.uniform(0, 1) seconds of jitter
 fn turn_retry_delay(jitter: &dyn JitterSource, attempt: u32) -> Duration {
     let base = 1_u64.checked_shl(attempt).unwrap_or(u64::MAX);
     Duration::from_secs(base)

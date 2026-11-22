@@ -310,43 +310,6 @@ fn retry_delay_covers_the_upper_second() {
     assert_eq!(retry_delay(&jitter, 1), Duration::from_millis(3_999));
 }
 
-#[tokio::test]
-async fn retry_spend_update_retries_until_success() {
-    let ports = Ports::new();
-    let policy = ports.policy(2);
-    let mut attempts = 0_u32;
-    let outcome = retry_spend_update(&policy, || {
-        attempts = attempts.saturating_add(1);
-        async move {
-            if attempts < 3 {
-                return Err(ScriptedFailure {
-                    failure: SpendFailure::NotSent,
-                });
-            }
-            Ok(attempts)
-        }
-    })
-    .await;
-    assert_eq!(outcome.unwrap(), 3);
-    assert_eq!(ports.pause.delays().len(), 2);
-    assert!(ports.sink.events().is_empty());
-}
-
-#[tokio::test]
-async fn retry_spend_update_reports_the_final_failure() {
-    let ports = Ports::new();
-    let policy = ports.policy(1);
-    let outcome = retry_spend_update(&policy, || async {
-        Err::<(), _>(ScriptedFailure {
-            failure: SpendFailure::NotSent,
-        })
-    })
-    .await;
-    assert_eq!(outcome.unwrap_err().failure, SpendFailure::NotSent);
-    assert_eq!(ports.pause.delays().len(), 1);
-    assert_eq!(ports.sink.events().len(), 1);
-}
-
 #[test]
 fn report_keeps_the_cause_chain() {
     let sink = RecordingSink::default();

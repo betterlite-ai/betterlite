@@ -1,5 +1,4 @@
 use std::error::Error as StdError;
-use std::future::Future;
 use std::time::{Duration, Instant};
 
 use deadpool_postgres::PoolError;
@@ -21,15 +20,10 @@ const JITTER_NANOS: u64 = 1_000_000_000;
 // What _spend_commit_failure_is_requeue_safe and the retry rule decide about one failed chunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpendFailure {
-    // a connection failure that proves the statement never reached the database
     NotSent,
-    // a connection failure that may have applied the statement
     Ambiguous,
-    // a deadlock or a serialization failure
     Deadlock,
-    // SQLSTATE class 22 or 23: the database refused the data
     Rejected,
-    // no SQLSTATE, an unknown one, or an error that is not a database failure
     Other,
 }
 
@@ -57,7 +51,6 @@ pub trait SpendUpdateFailure: StdError + Send + Sync + 'static {
     fn spend_failure(&self) -> SpendFailure;
 }
 
-// The failure a statement error stands for, from the SQLSTATE Postgres attached to it.
 pub(crate) fn failure_for_sqlstate(code: &SqlState) -> SpendFailure {
     if code.code().starts_with("22") || code.code().starts_with("23") {
         return SpendFailure::Rejected;
@@ -83,7 +76,6 @@ pub fn classify_spend_failure<E>(error: &DbError<E>) -> SpendFailure {
     }
 }
 
-// No connection was handed out, so none of the chunk's statements could have run; a server-reported connection error refused them.
 fn proven_not_sent<E>(error: &DbError<E>) -> bool {
     match error {
         DbError::NoDbConnected => true,
@@ -146,31 +138,6 @@ where
     SpendRetry::Retry
 }
 
-// The table-commit retry loop: one attempt per round, and the last failure is the one reported.
-pub async fn retry_spend_update<T, Failure, Attempt, Work>(
-    policy: &SpendRetryPolicy<'_>,
-    mut attempt_work: Attempt,
-) -> Result<T, Failure>
-where
-    Attempt: FnMut() -> Work,
-    Work: Future<Output = Result<T, Failure>>,
-    Failure: SpendUpdateFailure,
-{
-    let mut attempt = 0_u32;
-    loop {
-        let started = policy.clock.instant();
-        match attempt_work().await {
-            Ok(value) => return Ok(value),
-            Err(error) => {
-                match handle_spend_update_failure(policy, &error, attempt, started).await {
-                    SpendRetry::Retry => attempt = attempt.saturating_add(1),
-                    SpendRetry::Stop => return Err(error),
-                }
-            }
-        }
-    }
-}
-
 // _raise_failed_update_spend_exception: report the non-blocking failure through the sink and keep the whole cause chain.
 pub fn report_failed_update_spend(
     failures: &dyn SpendLogFailureSink,
@@ -190,7 +157,6 @@ pub fn report_failed_update_spend(
     });
 }
 
-// random.uniform(2**attempt, 2 ** (attempt + 1)): the base doubles per attempt and the draw fills the second
 pub(crate) fn retry_delay(jitter: &dyn JitterSource, attempt: u32) -> Duration {
     let base = 1_u64.checked_shl(attempt).unwrap_or(u64::MAX);
     let span = base.saturating_mul(JITTER_NANOS);

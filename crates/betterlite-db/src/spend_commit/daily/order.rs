@@ -4,7 +4,6 @@ use crate::spend_queues::daily::DailySpendUpdate;
 
 use super::DAILY_BATCH_SIZE;
 
-// The entity_id_field each of the six public adapters passes to _update_daily_spend.
 #[must_use]
 pub fn entity_id_field(entity: DailySpendEntity) -> &'static str {
     match entity {

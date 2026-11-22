@@ -32,7 +32,6 @@ pub fn partition_of(turn: &AutoRouterTurnTransaction) -> DrainPartition {
     }
 }
 
-// turn_at sorts aware and naive timestamps on the instant they name.
 #[must_use]
 pub fn turn_micros(time: TurnTime) -> i64 {
     match time {

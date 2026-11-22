@@ -4,7 +4,6 @@ use rust_decimal::Decimal;
 
 use super::policy::SpendFailure;
 
-// The eleven per-table increment maps _commit_spend_updates_to_db writes, in the source's declaration order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SpendTable {
     UserList,
@@ -68,14 +67,9 @@ pub fn spend_tables_left_to_send(
         .copied()
         .filter(|_in_flight| !failure.is_requeue_safe());
     if let Some(table) = dropped {
-        let increments = transactions
-            .get(&table)
-            .and_then(Option::as_ref)
-            .map_or(0, BTreeMap::len);
         tracing::error!(
             table = table.name(),
-            increments,
-            "Spend tracking - dropped increments: the failed statement may have applied or the database refused the data, so re-sending it is not safe"
+            "Spend tracking - dropped unsafe increments"
         );
     }
     let mut remaining = SpendTableTransactions::new();
