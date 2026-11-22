@@ -70,7 +70,9 @@ where
     Operations: ImageGenerationOperations,
 {
     // the call's option or kwarg wins only as a nonempty string; every other value falls back to AZURE_AD_TOKEN
-    let from_options = optional_params.shift_remove("azure_ad_token");
+    let popped = optional_params.shift_remove("azure_ad_token");
+    let folded = take_extra_body_token(optional_params);
+    let from_options = popped.or(folded);
     let from_kwargs = prepared.generic.azure_ad_token.clone();
     let azure_ad_token = match from_options.or(from_kwargs) {
         Some(Json::Text(text)) if !text.is_empty() => Some(SecretString::from(text)),
@@ -104,6 +106,20 @@ where
             .or_else(|| plan.settings.azure_api_key.clone()),
         azure_ad_token,
     }
+}
+
+// get_optional_params_image_gen folds an unsupported option into extra_body, and the Azure execution
+// flattens that object into the provider body, so the credential leaves both places
+fn take_extra_body_token(optional_params: &mut Params) -> Option<Json> {
+    let Some(Json::Object(fields)) = optional_params.get_mut("extra_body") else {
+        return None;
+    };
+    let removed = fields.shift_remove("azure_ad_token");
+    let emptied = fields.is_empty();
+    if emptied {
+        optional_params.shift_remove("extra_body");
+    }
+    removed
 }
 
 // the default loop checks the exact spelling, so a differently cased caller key never blocks it

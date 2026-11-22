@@ -619,6 +619,7 @@ struct FakeOps {
 
 impl FakeOps {
     fn new(config: Option<ImageGenerationConfigTag>) -> Self {
+        // no real image config lists azure_ad_token, so the unsupported option folds into extra_body
         let supported = vec![
             String::from("n"),
             String::from("quality"),
@@ -626,7 +627,6 @@ impl FakeOps {
             String::from("size"),
             String::from("style"),
             String::from("user"),
-            String::from("azure_ad_token"),
         ];
         Self {
             config,
