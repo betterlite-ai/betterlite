@@ -33,7 +33,7 @@ use mock::mock_settings;
 use uuid::Uuid;
 
 // the error lives in server/error.rs to keep this file under the line limit; the re-export keeps the name here
-pub use crate::server::error::ChatSetupError;
+pub(crate) use crate::server::error::ChatSetupError;
 
 // reads certificate files, so it runs before the async runtime starts
 pub fn chat_executor(

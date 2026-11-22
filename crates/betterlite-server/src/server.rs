@@ -195,10 +195,10 @@ pub(crate) fn application(
         .sections
         .error_body_call_id
         .include_call_id_in_error_body;
-    let routes = chat_routes_with_call_id(calls, include_call_id)?;
+    let endpoints = chat_routes_with_call_id(calls, include_call_id)?;
     let embeddings = embedding_routes(executor, vertex, read_through);
     // the completion route recovers an output-limit 400 with the counter the chat route counts prompts with
-    let routed = router(state, shutting_down, routes, embeddings).layer(Extension(counter));
+    let routed = router(state, shutting_down, endpoints, embeddings).layer(Extension(counter));
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
         routed.route_layer(from_fn(filter_route)),
@@ -211,8 +211,8 @@ pub(crate) fn application(
         in_flight: Arc::new(InFlightRequests::default()),
     };
     let application = stack.wrap(stacked);
-    let rooted = RootPaths::from_settings(&config.sections.request_root_paths);
-    Ok(match rooted {
+    let prefixed = RootPaths::from_settings(&config.sections.request_root_paths);
+    Ok(match prefixed {
         Some(paths) => paths.wrap(application),
         None => application,
     })
