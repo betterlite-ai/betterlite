@@ -251,6 +251,25 @@ async fn names_write_in_query_order() {
 }
 
 #[tokio::test]
+async fn names_tag_every_deployment_sharing_a_name() {
+    let database = group_database(vec![
+        deployment("d1", "shared", None),
+        deployment("d2", "shared", None),
+    ]);
+    let model_names = names(&["shared"]);
+    let tagged = tag_deployments(
+        DeploymentSelection::ByNames(&model_names),
+        "group-a",
+        &database,
+    )
+    .await
+    .expect("the tags");
+    let written: Vec<String> = tagged.iter().map(|pair| pair.0.clone()).collect();
+    assert_eq!(written, names(&["d1", "d2"]));
+    assert_eq!(database.updates().len(), 2);
+}
+
+#[tokio::test]
 async fn ids_partial_write_on_missing() {
     let database = group_database(vec![
         deployment("d1", "alpha", None),
