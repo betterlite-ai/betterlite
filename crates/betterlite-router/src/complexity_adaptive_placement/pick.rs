@@ -209,7 +209,7 @@ impl AdaptivePlacement {
                 quality_sample,
                 economy_score,
                 settings.tier_distance_penalty,
-                usize::from(tier_distance),
+                usize::try_from(tier_distance).unwrap_or(usize::MAX),
             )?;
             candidates.push(CandidateScore {
                 model: model.clone(),

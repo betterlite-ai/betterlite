@@ -164,6 +164,28 @@ fn a_declared_weights_object_keeps_its_field_defaults() {
     assert!(!resolved.adaptive);
 }
 
+// {} keeps AdaptiveRouterWeights' own 0.7/0.3, unlike an absent key's 0.3/0.7
+#[test]
+fn a_declared_empty_weights_object_takes_the_adaptive_router_defaults() {
+    let resolved = PlacementSettings::resolve(&placement_section::Config {
+        adaptive: true,
+        weights: Some(Weights {
+            quality: None,
+            economy: None,
+        }),
+        tier_distance_penalty: placement_section::DEFAULT_TIER_DISTANCE_PENALTY,
+        eligible: AdaptiveEligible::All,
+    })
+    .expect("an empty weights object is valid");
+    assert_eq!(
+        resolved.weights,
+        AdaptiveRouterWeights {
+            quality: 0.7,
+            economy: 0.3,
+        }
+    );
+}
+
 #[test]
 fn declared_preferences_shape_the_cold_start_priors() {
     let facts = model_facts(&[
@@ -320,6 +342,18 @@ fn a_cold_classified_pool_places_from_that_pool_and_records_the_decision() {
         decision.get("quality_weight"),
         Some(&Json::Number(Number::from_f64(0.3).expect("0.3 is finite")))
     );
+    assert_eq!(
+        decision.get("cost_weight"),
+        Some(&Json::Number(Number::from_f64(0.7).expect("0.7 is finite")))
+    );
+    assert_eq!(
+        decision.get("tier_distance_penalty"),
+        Some(&Json::Number(Number::from_f64(0.5).expect("0.5 is finite")))
+    );
+    assert_eq!(
+        decision.get("classified_tier"),
+        Some(&Json::Text("SIMPLE".to_owned()))
+    );
     let Some(Json::List(candidates)) = decision.get("candidates") else {
         panic!("the decision lists its candidates");
     };
@@ -471,10 +505,158 @@ fn the_distance_penalty_keeps_the_nearer_tier_against_a_higher_sample() {
         decision.get("eligible_mode"),
         Some(&Json::Text("all".to_owned()))
     );
+    assert_eq!(
+        decision.get("classified_tier"),
+        Some(&Json::Text("MEDIUM".to_owned()))
+    );
+    assert_eq!(
+        decision.get("request_type"),
+        Some(&Json::Text("general".to_owned()))
+    );
+    assert_eq!(
+        decision.get("quality_weight"),
+        Some(&Json::Number(Number::from_f64(0.3).expect("0.3 is finite")))
+    );
+    assert_eq!(
+        decision.get("cost_weight"),
+        Some(&Json::Number(Number::from_f64(0.7).expect("0.7 is finite")))
+    );
+    assert_eq!(
+        decision.get("tier_distance_penalty"),
+        Some(&Json::Number(Number::from_f64(0.5).expect("0.5 is finite")))
+    );
+    assert_eq!(
+        decision.get("chosen_model"),
+        Some(&Json::Text("mid".to_owned()))
+    );
     let Some(Json::List(candidates)) = decision.get("candidates") else {
         panic!("the decision lists its candidates");
     };
     assert_eq!(candidates.len(), 3);
+    for (index, candidate) in candidates.iter().enumerate() {
+        let Json::Object(fields) = candidate else {
+            panic!("each candidate is an object");
+        };
+        assert_eq!(
+            fields.get("model"),
+            Some(&Json::Text(choice.candidates[index].model.clone()))
+        );
+        let Some(Json::Number(sample)) = fields.get("quality_sample") else {
+            panic!("each candidate records its quality sample");
+        };
+        assert_eq!(
+            sample.as_f64().map(f64::to_bits),
+            Some(choice.candidates[index].quality_sample.to_bits())
+        );
+        let Some(Json::Number(cost_score)) = fields.get("cost_score") else {
+            panic!("each candidate records its cost score");
+        };
+        assert_eq!(
+            cost_score.as_f64().map(f64::to_bits),
+            Some(choice.candidates[index].economy_score.to_bits())
+        );
+        assert_eq!(
+            fields.get("tier_distance"),
+            Some(&Json::Number(Number::from(
+                choice.candidates[index].tier_distance
+            )))
+        );
+        let Some(Json::Number(score)) = fields.get("score") else {
+            panic!("each candidate records its score");
+        };
+        assert_eq!(
+            score.as_f64().map(f64::to_bits),
+            Some(choice.candidates[index].score.to_bits())
+        );
+    }
+}
+
+// the declared weights reach placement_score: the same samples under the pinned defaults keep mini
+#[test]
+fn declared_weights_decide_the_adaptive_pick() {
+    let facts = priced(&[("mini", 1), ("mid", 5), ("big", 3)]);
+    let settings = PlacementSettings::resolve(&placement_section::Config {
+        adaptive: true,
+        weights: Some(Weights {
+            quality: Some(1.0),
+            economy: Some(0.0),
+        }),
+        tier_distance_penalty: placement_section::DEFAULT_TIER_DISTANCE_PENALTY,
+        eligible: AdaptiveEligible::All,
+    })
+    .expect("the declared weights are valid");
+    let mut configured =
+        Harness::new(settings, POOLS, &facts, &[0.5, 0.9, 0.0], None).expect("the router builds");
+    warm(&mut configured.router, RequestType::General, &["mid"]);
+    let classified = tier("MEDIUM");
+    let placed = configured
+        .pick(&request(&classified, "hello"))
+        .expect("the pick succeeds");
+    assert_eq!(placed.model, "mid");
+    let Some(AdaptiveDecision::Adaptive(choice)) = &placed.decision else {
+        panic!("the warm pool takes the adaptive phase");
+    };
+    assert_eq!(
+        choice.weights,
+        AdaptiveRouterWeights {
+            quality: 1.0,
+            economy: 0.0,
+        }
+    );
+    assert_eq!(
+        choice.tier_distance_penalty.to_bits(),
+        placement_section::DEFAULT_TIER_DISTANCE_PENALTY.to_bits()
+    );
+    let mut defaults = Harness::new(
+        adaptive_settings(true),
+        POOLS,
+        &facts,
+        &[0.5, 0.9, 0.0],
+        None,
+    )
+    .expect("the router builds");
+    warm(&mut defaults.router, RequestType::General, &["mid"]);
+    let default_placed = defaults
+        .pick(&request(&classified, "hello"))
+        .expect("the pick succeeds");
+    assert_eq!(default_placed.model, "mini");
+}
+
+// the declared penalty reaches placement_score: the same samples under the pinned 0.5 keep mid
+#[test]
+fn a_declared_distance_penalty_decides_the_adaptive_pick() {
+    let facts = priced(&[("mini", 1), ("mid", 2), ("big", 3)]);
+    let mut configured = Harness::new(
+        configured_settings(true, 0.0, AdaptiveEligible::All),
+        POOLS,
+        &facts,
+        &[0.0, 0.5, 0.0],
+        None,
+    )
+    .expect("the router builds");
+    warm(&mut configured.router, RequestType::General, &["mid"]);
+    let classified = tier("MEDIUM");
+    let placed = configured
+        .pick(&request(&classified, "hello"))
+        .expect("the pick succeeds");
+    assert_eq!(placed.model, "mini");
+    let Some(AdaptiveDecision::Adaptive(choice)) = &placed.decision else {
+        panic!("the warm pool takes the adaptive phase");
+    };
+    assert_eq!(choice.tier_distance_penalty.to_bits(), 0.0_f64.to_bits());
+    let mut defaults = Harness::new(
+        adaptive_settings(true),
+        POOLS,
+        &facts,
+        &[0.0, 0.5, 0.0],
+        None,
+    )
+    .expect("the router builds");
+    warm(&mut defaults.router, RequestType::General, &["mid"]);
+    let default_placed = defaults
+        .pick(&request(&classified, "hello"))
+        .expect("the pick succeeds");
+    assert_eq!(default_placed.model, "mid");
 }
 
 #[test]

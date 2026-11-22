@@ -6,7 +6,9 @@ use crate::adaptive_classification::config::AdaptiveRouterWeights;
 use crate::adaptive_classification::request_type::RequestType;
 use crate::bandit_math::error::BanditMathError;
 use crate::complexity_adaptive_placement::candidates::CandidateQuery;
-use crate::complexity_adaptive_placement::decision::AdaptiveDecision;
+use crate::complexity_adaptive_placement::decision::{
+    AdaptiveDecision, ColdStartCandidate, ColdStartDecision,
+};
 use crate::complexity_adaptive_placement::error::AdaptivePlacementError;
 use crate::complexity_adaptive_placement::pick::Placed;
 use crate::soft_floor_math::placement_score;
@@ -199,6 +201,82 @@ fn a_tie_keeps_the_first_candidate() {
         .map(|candidate| candidate.score.to_bits())
         .collect();
     assert_eq!(scores[1], scores[2]);
+}
+
+// the distance is the minimum over every pool the model sits in, not its first membership
+#[test]
+fn a_multi_pool_candidate_takes_its_nearest_membership_distance() {
+    let pools: &[(&str, &[&str])] = &[
+        ("SIMPLE", &["mini"]),
+        ("MEDIUM", &["mid"]),
+        ("COMPLEX", &["mini"]),
+    ];
+    // equal prices leave only the distance to separate the two candidates
+    let facts = priced(&[("mini", 1), ("mid", 1)]);
+    let mut harness = Harness::new(adaptive_settings(true), pools, &facts, &[0.9, 0.9], None)
+        .expect("the router builds");
+    warm(&mut harness.router, RequestType::General, &["mini"]);
+    let classified = tier("SIMPLE");
+    let placed = harness
+        .pick(&request(&classified, "hello"))
+        .expect("the pick succeeds");
+    assert_eq!(placed.model, "mini");
+    let Some(AdaptiveDecision::Adaptive(choice)) = &placed.decision else {
+        panic!("the warm pool takes the adaptive phase");
+    };
+    let models: Vec<&str> = choice
+        .candidates
+        .iter()
+        .map(|candidate| candidate.model.as_str())
+        .collect();
+    assert_eq!(models, vec!["mini", "mid"]);
+    let distances: Vec<u32> = choice
+        .candidates
+        .iter()
+        .map(|candidate| candidate.tier_distance)
+        .collect();
+    assert_eq!(distances, vec![0, 1]);
+}
+
+// cold start draws only the classified pool's unobserved models, never the warm ones beside them
+#[rstest]
+fn a_partly_cold_pool_draws_only_its_unobserved_models(
+    #[values(0_u64, 1_u64, 2_u64, 3_u64, 4_u64, 5_u64, 6_u64, 7_u64)] seed: u64,
+) {
+    let pools: &[(&str, &[&str])] = &[
+        ("SIMPLE", &["mini", "small"]),
+        ("MEDIUM", &["mid"]),
+        ("COMPLEX", &["big"]),
+    ];
+    let facts = priced(&[("mini", 1), ("small", 1), ("mid", 2), ("big", 3)]);
+    let mut harness =
+        Harness::new(adaptive_settings(true), pools, &facts, &[], None).expect("the router builds");
+    harness.reseed(seed);
+    warm(&mut harness.router, RequestType::General, &["mini"]);
+    let classified = tier("SIMPLE");
+    let placed = harness
+        .pick(&request(&classified, "hello"))
+        .expect("the pick succeeds");
+    assert_eq!(
+        placed,
+        Placed {
+            model: "small".to_owned(),
+            decision: Some(AdaptiveDecision::ColdStart(ColdStartDecision {
+                classified_tier: "SIMPLE".to_owned(),
+                request_type: RequestType::General,
+                weights: AdaptiveRouterWeights {
+                    quality: 0.3,
+                    economy: 0.7,
+                },
+                tier_distance_penalty: 0.5,
+                chosen_model: "small".to_owned(),
+                candidates: vec![ColdStartCandidate {
+                    model: "small".to_owned(),
+                    total_samples: 0,
+                }],
+            })),
+        }
+    );
 }
 
 #[rstest]

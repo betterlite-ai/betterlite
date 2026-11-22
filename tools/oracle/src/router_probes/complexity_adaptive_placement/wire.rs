@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
+
+use betterlite_models::decisions::Json;
 use betterlite_router::adaptive_classification::request_type::RequestType;
-use betterlite_router::complexity_adaptive_placement::decision::{
-    AdaptiveChoice, AdaptiveDecision, ColdStartDecision,
-};
 use serde::{Deserialize, Serialize};
+
+use crate::router_probes::error::OperationError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -68,6 +70,14 @@ pub(super) struct Fields {
     pub(super) chosen_model: String,
     pub(super) decision: Option<DecisionOutput>,
     pub(super) decision_keys: Vec<String>,
+    pub(super) preferences: BTreeMap<String, PreferenceOutput>,
+}
+
+// _ensure_adaptive_router's model_to_prefs, keyed by model so the pooled order never matters
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct PreferenceOutput {
+    pub(super) quality_tier: u8,
+    pub(super) strengths: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,61 +103,87 @@ pub(super) struct CandidateOutput {
     pub(super) score: Option<String>,
 }
 
+// the object the router rendered into request metadata, which is what the Python probe reads back
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDecision {
+    phase: String,
+    classified_tier: String,
+    request_type: String,
+    eligible_mode: String,
+    quality_weight: f64,
+    cost_weight: f64,
+    tier_distance_penalty: f64,
+    chosen_model: String,
+    candidates: Vec<RawCandidate>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCandidate {
+    model: String,
+    total_samples: Option<u64>,
+    quality_sample: Option<f64>,
+    cost_score: Option<f64>,
+    tier_distance: Option<u32>,
+    score: Option<f64>,
+}
+
 impl DecisionOutput {
-    pub(super) fn from_decision(decision: &AdaptiveDecision) -> Self {
-        match decision {
-            AdaptiveDecision::ColdStart(decision) => Self::from_cold_start(decision),
-            AdaptiveDecision::Adaptive(choice) => Self::from_adaptive(choice),
-        }
-    }
-
-    fn from_cold_start(decision: &ColdStartDecision) -> Self {
-        Self {
-            phase: "cold_start".to_owned(),
-            classified_tier: decision.classified_tier.clone(),
-            request_type: decision.request_type.to_string(),
-            eligible_mode: "classified_tier".to_owned(),
-            quality_weight: format!("{:.6}", decision.weights.quality),
-            cost_weight: format!("{:.6}", decision.weights.economy),
-            tier_distance_penalty: format!("{:.6}", decision.tier_distance_penalty),
-            chosen_model: decision.chosen_model.clone(),
-            candidates: decision
-                .candidates
-                .iter()
-                .map(|candidate| CandidateOutput {
-                    model: candidate.model.clone(),
-                    total_samples: Some(candidate.total_samples),
-                    quality_sample: None,
-                    cost_score: None,
-                    tier_distance: None,
-                    score: None,
-                })
+    pub(super) fn from_json(value: &Json) -> Result<Self, OperationError> {
+        let text =
+            serde_json::to_string(value).map_err(|error| OperationError::InvalidRequest {
+                message: error.to_string(),
+            })?;
+        let raw: RawDecision =
+            serde_json::from_str(&text).map_err(|error| OperationError::InvalidRequest {
+                message: error.to_string(),
+            })?;
+        let RawDecision {
+            phase,
+            classified_tier,
+            request_type,
+            eligible_mode,
+            quality_weight,
+            cost_weight,
+            tier_distance_penalty,
+            chosen_model,
+            candidates,
+        } = raw;
+        Ok(Self {
+            phase,
+            classified_tier,
+            request_type,
+            eligible_mode,
+            quality_weight: format!("{quality_weight:.6}"),
+            cost_weight: format!("{cost_weight:.6}"),
+            tier_distance_penalty: format!("{tier_distance_penalty:.6}"),
+            chosen_model,
+            candidates: candidates
+                .into_iter()
+                .map(CandidateOutput::from_raw)
                 .collect(),
-        }
+        })
     }
+}
 
-    fn from_adaptive(choice: &AdaptiveChoice) -> Self {
+impl CandidateOutput {
+    fn from_raw(raw: RawCandidate) -> Self {
+        let RawCandidate {
+            model,
+            total_samples,
+            quality_sample,
+            cost_score,
+            tier_distance,
+            score,
+        } = raw;
         Self {
-            phase: "adaptive".to_owned(),
-            classified_tier: choice.classified_tier.clone(),
-            request_type: choice.request_type.to_string(),
-            eligible_mode: choice.eligible.as_str().to_owned(),
-            quality_weight: format!("{:.6}", choice.weights.quality),
-            cost_weight: format!("{:.6}", choice.weights.economy),
-            tier_distance_penalty: format!("{:.6}", choice.tier_distance_penalty),
-            chosen_model: choice.chosen_model.clone(),
-            candidates: choice
-                .candidates
-                .iter()
-                .map(|candidate| CandidateOutput {
-                    model: candidate.model.clone(),
-                    total_samples: None,
-                    quality_sample: Some(format!("{:.6}", candidate.quality_sample)),
-                    cost_score: Some(format!("{:.6}", candidate.economy_score)),
-                    tier_distance: Some(candidate.tier_distance),
-                    score: Some(format!("{:.6}", candidate.score)),
-                })
-                .collect(),
+            model,
+            total_samples,
+            quality_sample: quality_sample.map(|value| format!("{value:.6}")),
+            cost_score: cost_score.map(|value| format!("{value:.6}")),
+            tier_distance,
+            score: score.map(|value| format!("{value:.6}")),
         }
     }
 }

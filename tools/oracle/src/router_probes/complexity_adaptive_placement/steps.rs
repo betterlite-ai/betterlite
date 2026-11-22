@@ -1,24 +1,23 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 
 use betterlite_config::sections::adaptive_classification::Weights;
 use betterlite_config::sections::complexity_adaptive_placement as section;
 use betterlite_config::sections::complexity_adaptive_placement::AdaptiveEligible;
 use betterlite_models::decisions::Json;
-use betterlite_router::adaptive_classification::error::AdaptiveClassificationError;
 use betterlite_router::bandit_math::error::BanditMathError;
 use betterlite_router::bandit_math::sampler::{QualitySampler, ScriptedSampler};
-use betterlite_router::complexity_adaptive_placement::AdaptivePlacement;
 use betterlite_router::complexity_adaptive_placement::error::AdaptivePlacementError;
 use betterlite_router::complexity_adaptive_placement::facts::ModelFacts;
 use betterlite_router::complexity_adaptive_placement::pick::{PickRequest, Placed};
 use betterlite_router::complexity_adaptive_placement::settings::PlacementSettings;
+use betterlite_router::complexity_adaptive_placement::{AdaptivePlacement, PlacementSnapshot};
 use betterlite_router::router_predicates::JsonMap;
 use betterlite_router::tier_definitions::model::TierSet;
 use rust_decimal::Decimal;
 
 use self::world::{World, tier};
-use super::wire::{DecisionOutput, Fields, Payload};
+use super::wire::{DecisionOutput, Fields, Payload, PreferenceOutput};
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
@@ -55,14 +54,6 @@ impl From<AdaptivePlacementError> for OperationError {
             | AdaptivePlacementError::Placement(_)) => Self::InvalidRequest {
                 message: refused.to_string(),
             },
-        }
-    }
-}
-
-impl From<AdaptiveClassificationError> for OperationError {
-    fn from(error: AdaptiveClassificationError) -> Self {
-        Self::InvalidRequest {
-            message: error.to_string(),
         }
     }
 }
@@ -110,7 +101,8 @@ pub(super) fn fields_for(
         fit_filter: fit.as_ref(),
     };
     let placed = router.pick(&request, &placement, kwargs.as_mut(), random)?;
-    Ok(fields_from(&placed, kwargs.as_ref()))
+    let snapshot = router.snapshot();
+    fields_from(&placed, kwargs.as_ref(), snapshot.as_ref())
 }
 
 // the same litellm_params win model_info rule _ensure_adaptive_router applies
@@ -187,12 +179,50 @@ fn warm(router: &mut AdaptivePlacement, payload: &Payload) -> Result<(), Operati
     Ok(())
 }
 
-fn fields_from(placed: &Placed, kwargs: Option<&JsonMap>) -> Fields {
-    Fields {
+fn fields_from(
+    placed: &Placed,
+    kwargs: Option<&JsonMap>,
+    snapshot: Option<&PlacementSnapshot>,
+) -> Result<Fields, OperationError> {
+    Ok(Fields {
         chosen_model: placed.model.clone(),
-        decision: placed.decision.as_ref().map(DecisionOutput::from_decision),
+        decision: decision_output(kwargs)?,
         decision_keys: decision_keys(kwargs),
+        preferences: preferences(snapshot),
+    })
+}
+
+// the decision the router rendered under metadata, not the typed value that produced it
+fn decision_output(kwargs: Option<&JsonMap>) -> Result<Option<DecisionOutput>, OperationError> {
+    let Some(Json::Object(metadata)) = kwargs.and_then(|kwargs| kwargs.get("metadata")) else {
+        return Ok(None);
+    };
+    let Some(decision) = metadata.get("adaptive_router_decision") else {
+        return Ok(None);
+    };
+    DecisionOutput::from_json(decision).map(Some)
+}
+
+// _ensure_adaptive_router's model_to_prefs, so a configured declaration is distinguishable
+fn preferences(snapshot: Option<&PlacementSnapshot>) -> BTreeMap<String, PreferenceOutput> {
+    let Some(snapshot) = snapshot else {
+        return BTreeMap::new();
+    };
+    let mut preferences = BTreeMap::new();
+    for (model, preference) in &snapshot.preferences {
+        preferences.insert(
+            model.clone(),
+            PreferenceOutput {
+                quality_tier: preference.quality_tier,
+                strengths: preference
+                    .strengths
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+            },
+        );
     }
+    preferences
 }
 
 // the keys the router actually wrote under metadata, so a missing or extra one shows

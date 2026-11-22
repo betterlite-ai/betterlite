@@ -75,6 +75,20 @@ fn declared_values_replace_the_defaults() {
     assert_eq!(resolved.eligible, AdaptiveEligible::ClassifiedTier);
 }
 
+// {} keeps the AdaptiveRouterWeights model defaults 0.7/0.3, unlike the absent key's 0.3/0.7
+#[test]
+fn an_empty_weights_object_keeps_the_weight_model_defaults() {
+    let source = router("        adaptive_weights: {}\n");
+    let resolved = deployment(&settings(&source, &[]).unwrap());
+    assert_eq!(
+        resolved.weights,
+        Some(Weights {
+            quality: None,
+            economy: None,
+        })
+    );
+}
+
 #[test]
 fn an_environment_reference_resolves_into_the_declared_type() {
     let source = router(

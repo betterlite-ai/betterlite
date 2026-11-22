@@ -117,10 +117,16 @@ class DecisionOutput(Strict):
     candidates: list[CandidateOutput]
 
 
+class PreferenceOutput(Strict):
+    quality_tier: int
+    strengths: list[str]
+
+
 class Output(Strict):
     chosen_model: str
     decision: DecisionOutput | None = None
     decision_keys: list[str] = Field(default_factory=list)
+    preferences: dict[str, PreferenceOutput] = Field(default_factory=dict)
 
 
 def parse_number(text: str, name: str) -> float:
@@ -253,7 +259,7 @@ class ComplexityAdaptivePlacement(Operation):
                 None if self.hard_ceiling is None else complexity_tier(self.hard_ceiling),
                 None if self.fit_filter is None else frozenset(self.fit_filter),
             )
-        return self._output(model, kwargs)
+        return self._output(model, kwargs, adaptive)
 
     def _router(self) -> Router:
         router = Router()
@@ -300,11 +306,23 @@ class ComplexityAdaptivePlacement(Operation):
                 weights["quality"] = parse_number(self.weights.quality, "weights.quality")
             if self.weights.cost is not None:
                 weights["cost"] = parse_number(self.weights.cost, "weights.cost")
-        if weights:
+            # {} keeps AdaptiveRouterWeights' own 0.7/0.3, so the key is passed even when empty
             config["adaptive_weights"] = weights
         return config
 
-    def _output(self, model: str, kwargs: dict[str, JsonValue] | None) -> Output:
+    def _output(
+        self,
+        model: str,
+        kwargs: dict[str, JsonValue] | None,
+        adaptive: AdaptiveRouter | None,
+    ) -> Output:
+        preferences: dict[str, PreferenceOutput] = {}
+        if adaptive is not None:
+            for name, declared in adaptive.model_to_prefs.items():
+                preferences[name] = PreferenceOutput(
+                    quality_tier=declared.quality_tier,
+                    strengths=[strength.value for strength in declared.strengths],
+                )
         raw_object: dict[str, JsonValue] | None = None
         if kwargs is not None:
             try:
@@ -313,9 +331,10 @@ class ComplexityAdaptivePlacement(Operation):
             except ValidationError:
                 raw_object = None
         if raw_object is None:
-            return Output(chosen_model=model)
+            return Output(chosen_model=model, preferences=preferences)
         return Output(
             chosen_model=model,
             decision=decision_output(_RAW_DECISION.validate_python(raw_object)),
             decision_keys=sorted(raw_object),
+            preferences=preferences,
         )

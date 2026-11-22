@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::complexity_adaptive_placement as placement_section;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rust_decimal::Decimal;
@@ -228,7 +229,7 @@ fn tier_pool(models: &[&str]) -> TierPool {
             .iter()
             .map(|model| TierModelEntry {
                 model_name: (*model).to_owned(),
-                params: JsonMap::new(),
+                params: IndexMap::new(),
             })
             .collect(),
     )

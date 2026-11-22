@@ -6,8 +6,8 @@ probes:
     operation:
       complexity_adaptive_placement:
         adaptive: true
-        weights: null
-        tier_distance_penalty: null
+        weights: {quality: "1", cost: "0"}
+        tier_distance_penalty: "0.2"
         adaptive_eligible: null
         pools:
           - {tier: SIMPLE, models: [mini]}
