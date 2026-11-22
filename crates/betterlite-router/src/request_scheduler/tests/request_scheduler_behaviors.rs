@@ -15,7 +15,10 @@ use crate::router_core::headers::Response;
 use crate::routing_state_store::error::StoreWarning;
 use crate::routing_value_store::RouteValue;
 
-use super::{MODEL, ScriptedCall, entries, item, plan, queue_all, scheduler, shared_scheduler};
+use super::{
+    MODEL, ScriptedCall, entries, item, plan, queue_all, queue_and_remove, scheduler,
+    shared_scheduler,
+};
 
 // Scheduler.add_request + get_queue: the queue serves lower priorities first and the request id breaks a tie
 #[rstest]
@@ -406,32 +409,21 @@ async fn a_request_removed_during_an_outage_does_not_become_the_head() {
     );
 }
 
-// an add and its removal during an outage leave no record, so the pending map cannot grow past the queue's bound
+// an add and its removal during an outage cancel in the record, so churn leaves the pending map empty
 #[tokio::test]
 async fn the_pending_changes_stay_bounded_while_the_shared_tier_is_down() {
     let (service, server) = shared_scheduler().await;
     server.set_down(true);
-    for index in 0..=queue::MAX_PENDING_REQUESTS {
-        let request_id = format!("outage-{index}");
-        service
-            .add_request(&item(0, &request_id, MODEL))
-            .await
-            .expect("the fallback queue accepts the request");
-        service
-            .remove_request(&item(0, &request_id, MODEL))
-            .await
-            .expect("the fallback queue removes the request");
-    }
+    queue_and_remove(&service, queue::MAX_PENDING_REQUESTS + 1).await;
     let pending = service
         .pending
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     let recorded: usize = pending.values().map(BTreeMap::len).sum();
-    assert!(
-        recorded <= queue::MAX_PENDING_REQUESTS,
-        "the pending map holds {recorded} changes, past the queue's bound"
+    assert_eq!(
+        recorded, 0,
+        "more than 1024 add-and-remove pairs leave no record in the pending map"
     );
-    assert_eq!(recorded, 0, "an add and its removal leave no record");
 }
 
 // a member removed and re-added during an outage is still recorded when it leaves again, so the shared queue drops it
