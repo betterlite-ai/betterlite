@@ -18,6 +18,7 @@ use crate::routes::chat::streaming::ChatCalls;
 use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
 use crate::server::chat_setup::chat_executor;
 use crate::state::ServerState;
+use crate::state::anthropic_runtime;
 use crate::state::shared::Shared;
 
 const SOURCE: &str = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:9/v1'}}\n";
@@ -89,11 +90,13 @@ async fn ask(
         Arc::new(chat_executor(&config, &environment, StdRng::seed_from_u64(3)).expect("executor"));
     let shared = Arc::new(Shared {
         bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
     });
     let mut state = ServerState::new(&config, Arc::clone(&executor), shared);
     state.model_read_through.read_through = read_through;
+    let slot = anthropic_runtime::Slot::new(&config, &state.shared);
     let shared_state = Arc::new(state);
-    let calls = ChatCalls::new(&config, executor).expect("calls");
+    let calls = ChatCalls::new(&config, executor, &slot).expect("calls");
     let router = chat_routes_with_call_id(Arc::new(calls), false)
         .expect("routes")
         .layer(Extension(Arc::clone(&shared_state)));

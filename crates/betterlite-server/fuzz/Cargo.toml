@@ -489,3 +489,10 @@ path = "fuzz_targets/stored_ui_settings.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "tag_report_query"
+path = "fuzz_targets/tag_report_query.rs"
+test = false
+doc = false
+bench = false

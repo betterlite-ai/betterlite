@@ -1,0 +1,24 @@
+task: B4440
+deviations:
+  - what: The OCR health check document comes from an injected OcrHealthDocuments value; LiteLLM calls its native Rust extension through NATIVE_OCR_HEALTH_CHECK_DOCUMENT and raises NoPythonImplementationError when the extension is missing.
+    why: betterlite has no Python extension to call, and the proxy supplies the document from its own OCR support through the trait, so the ocr mode keeps the same document lookup without a native bridge.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L48-L56
+  - what: An evaluation payload that fails validation reports betterlite's own typed error naming the offending field, where LiteLLM surfaces pydantic's ValidationError message; both errors name the same field.
+    why: betterlite validates the decisions payload with its own typed parser, and the health endpoint only needs to say which field is wrong; copying pydantic's message format would tie the error to a library betterlite does not use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L277-L287
+  - what: HealthCheckResponse keeps the three rate limit and region headers as strings, so a header value that is not a string is rejected at the type boundary; LiteLLM's _create_health_check_response takes a bare dict and copies any non-None value through unchanged.
+    why: HTTP header values are strings, and betterlite's response type carries them as such; the values LiteLLM copies here always come from response headers, which are strings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L19-L30
+  - what: The logging update a batch health check makes receives the filtered parameters without api_key and without the logging object; LiteLLM hands Logging.update_from_kwargs the whole filtered model_params, api key included.
+    why: betterlite carries the api key and the logging object as typed fields that never enter the parameter map, so a credential cannot reach a logging callback through these kwargs; the values a logging callback reads are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L124-L152
+  - what: A mode whose call would repeat a key already in the model parameters fails with the typed RepeatedParameter error before any provider call; LiteLLM builds the same call and Python raises TypeError for the duplicate keyword.
+    why: The call is refused either way, and betterlite names the key and the mode in an error its health endpoint can report; a Python TypeError carries no mode and cannot be mapped to a typed error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L224-L247
+  - what: A model parameter of the wrong type, such as a numeric api_base, fails with the typed ParameterValue error naming the key; LiteLLM passes the value through to the provider call and lets the provider or LiteLLM's own validation fail.
+    why: betterlite reads model, api_base, api_version, custom_llm_provider, max_tokens, voice, messages, fallbacks, litellm_metadata and cache into typed fields, so a value of the wrong type is named at the health check boundary; LiteLLM's handlers treat model_params as an untyped dict.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L165-L173
+kept_bugs:
+  - what: A max_tokens key present with the value null stays null instead of taking the 16-token default, because LiteLLM reads it with model_params.get("max_tokens", 16).
+    why: It is not clear whether a config that writes a null max_tokens relies on the value staying null, so the lookup is copied rather than changed to treat null as absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L79

@@ -1,0 +1,6 @@
+{
+  "include": ["../b4440.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

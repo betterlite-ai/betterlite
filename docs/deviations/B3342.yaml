@@ -12,9 +12,25 @@ deviations:
       A provider string that LiteLLM's LlmProviders enum rejects fails with betterlite's typed
       unknown-provider error instead of Python's ValueError text "'x' is not a valid LlmProviders".
     why: >-
-      The Rust provider type is a closed enum parsed from the name; the status and error class after
-      exception_type stay the same, and only the message text differs.
+      The Rust provider type is a closed enum parsed from the name, so only the message text differs; the
+      400 this call answers instead of LiteLLM's 500 is recorded in its own row below.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1430-L1432
+  - what: >-
+      A video_edit call whose provider is unknown or has no video config answers a BadRequestError (400) with
+      model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes out as
+      an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1430-L1436
+  - what: >-
+      A video_extension call whose provider is unknown or has no video config answers a BadRequestError (400)
+      with model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes out
+      as an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1564-L1570
   - what: >-
       The timeout argument is Option<Duration>, and None means the argument's declared default of 600
       seconds, while only Some(0) falls back to B198's request_timeout. An explicit Python None,

@@ -1,0 +1,10 @@
+kind: helper
+name: azure-resource-dispatch-realtime-seed
+call:
+  azure_resource_dispatch:
+    case: realtime
+    model: "realtime-a"
+    queries: []
+    http_setups: []
+env: {}
+compare: {ignore: []}

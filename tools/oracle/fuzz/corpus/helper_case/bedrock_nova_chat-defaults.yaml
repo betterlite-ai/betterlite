@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock_nova_chat-defaults
+call:
+  bedrock_nova_chat:
+    function: defaults
+    arguments: {max_tokens: 32, temperature: 0}
+env: {}
+compare: {ignore: []}

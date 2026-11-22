@@ -8,12 +8,14 @@ use betterlite_models::params::ParameterError;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
+use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use betterlite_provider::operation::{
     ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult,
 };
 use betterlite_provider::prepared::deployment::Deployment;
 use betterlite_provider::provider::Provider;
 use http::HeaderMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -33,9 +35,10 @@ pub(crate) async fn answer_chat(
     request: &ChatRequest,
     deployment: &ChatDeployment,
     control: ControlOptions,
+    anthropic: Option<&Arc<AnthropicRuntime>>,
 ) -> Result<(OperationResult, HeaderMap, Duration), CallError<ChatError>> {
     if !chat_mocks_resolve(executor, deployment, request)? {
-        return provider_chat(executor, request, deployment, control).await;
+        return provider_chat(executor, request, deployment, control, anthropic).await;
     }
     let outcome = executor.send(deployment, request).await?;
     Ok((
@@ -67,9 +70,11 @@ async fn provider_chat(
     request: &ChatRequest,
     deployment: &ChatDeployment,
     control: ControlOptions,
+    anthropic: Option<&Arc<AnthropicRuntime>>,
 ) -> Result<(OperationResult, HeaderMap, Duration), CallError<ChatError>> {
     let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
-    let inputs = Deployment::from_chat(deployment);
+    let mut inputs = Deployment::from_chat(deployment);
+    inputs.anthropic = anthropic.cloned();
     let operation = OperationRequest::Chat(Box::new(ChatOperation {
         model: inputs.model.clone(),
         request: request.clone(),
