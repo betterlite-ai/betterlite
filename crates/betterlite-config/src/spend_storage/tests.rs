@@ -22,10 +22,11 @@ use super::retention::{
     ENV_RUN_BUDGET, ENV_RUN_LOOPS,
 };
 use super::{
-    DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, DEFAULT_PRECREATE_AHEAD, ENV_DEQUEUE_COUNT,
-    ENV_PARTITION_INTERVAL, ENV_PRECREATE_AHEAD, MissingSessionId, Settings, SpendUpdates,
-    decode_spend_storage_policy, load_spend_storage_policy, runtime_dequeue_count,
-    runtime_max_prompt_length,
+    DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, DEFAULT_PRECREATE_AHEAD,
+    DEFAULT_SPEND_LOG_QUEUE_MAX_BYTES, ENV_DEQUEUE_COUNT, ENV_PARTITION_INTERVAL,
+    ENV_PRECREATE_AHEAD, ENV_SPEND_LOG_QUEUE_MAX_BYTES, ENV_SPEND_LOGS_URL, MissingSessionId,
+    Settings, SpendUpdates, decode_spend_storage_policy, load_spend_storage_policy,
+    runtime_dequeue_count, runtime_max_prompt_length,
 };
 use crate::loader::ConfigLoader;
 
@@ -676,4 +677,55 @@ fn loads_spend_retention_settings_from_a_stored_row() {
             .retention_seconds(Retention::SpendLogs, &Durations),
         Some(604_800)
     );
+}
+
+#[test]
+fn loads_spend_log_storage_settings() {
+    let defaults = load("general_settings: {}\n", &[]);
+    assert_eq!(
+        defaults.spend_log_queue_max_bytes,
+        DEFAULT_SPEND_LOG_QUEUE_MAX_BYTES
+    );
+    assert_eq!(defaults.spend_logs_url, None);
+    let configured = load(
+        "general_settings: {}\n",
+        &[
+            (ENV_SPEND_LOG_QUEUE_MAX_BYTES, "1024"),
+            (ENV_SPEND_LOGS_URL, "https://spend.example/api"),
+        ],
+    );
+    assert_eq!(configured.spend_log_queue_max_bytes, 1024);
+    assert_eq!(
+        configured.spend_logs_url.as_deref(),
+        Some("https://spend.example/api")
+    );
+}
+
+#[rstest]
+#[case::zero("0", 1)]
+#[case::negative("-5", 1)]
+#[case::one("1", 1)]
+#[case::surrounding_space(" 42 ", 42)]
+fn clamps_the_spend_log_queue_byte_budget(#[case] value: &str, #[case] expected: usize) {
+    let settings = load(
+        "general_settings: {}\n",
+        &[(ENV_SPEND_LOG_QUEUE_MAX_BYTES, value)],
+    );
+    assert_eq!(settings.spend_log_queue_max_bytes, expected);
+}
+
+#[rstest]
+#[case::text("many")]
+#[case::fraction("20.5")]
+#[case::python_digit_group("1_0")]
+fn a_malformed_spend_log_queue_byte_budget_fails_loading(#[case] value: &str) {
+    let lookup = environment(&[(ENV_SPEND_LOG_QUEUE_MAX_BYTES, value)]);
+    let error = load_spend_storage_policy("general_settings: {}\n", &lookup).unwrap_err();
+    assert!(error.to_string().contains(ENV_SPEND_LOG_QUEUE_MAX_BYTES));
+}
+
+#[test]
+fn treats_an_empty_spend_logs_url_as_unset() {
+    let settings = load("general_settings: {}\n", &[(ENV_SPEND_LOGS_URL, "")]);
+    assert_eq!(settings.spend_logs_url, None);
 }
