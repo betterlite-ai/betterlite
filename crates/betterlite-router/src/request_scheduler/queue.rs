@@ -16,6 +16,7 @@ pub fn key(model: &str) -> Result<RouteKey, SchedulerError> {
     }
 }
 // the members a queue write stores; three digits make string order agree with the tuple order
+#[must_use]
 pub fn encoded(entries: &[SchedulerTuple]) -> BTreeSet<String> {
     let mut members = BTreeSet::new();
     for entry in entries {
