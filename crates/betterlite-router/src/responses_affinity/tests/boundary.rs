@@ -19,7 +19,7 @@ fn the_deployment_fields_form_the_boundary() {
 
 #[test]
 fn named_credential_fields_override_by_presence() {
-    let credentials = credentials(&[(
+    let credentials = named_credentials(&[(
         "team-a",
         object(&[
             ("api_base", text("cred-base")),
@@ -34,7 +34,7 @@ fn named_credential_fields_override_by_presence() {
 
 #[test]
 fn a_null_credential_field_disables_the_boundary() {
-    let credentials = credentials(&[("team-a", object(&[("api_base", Json::Null)]))]);
+    let credentials = named_credentials(&[("team-a", object(&[("api_base", Json::Null)]))]);
     assert_eq!(
         encryption_boundary(&params_with_credential("team-a"), &credentials),
         None
@@ -43,7 +43,7 @@ fn a_null_credential_field_disables_the_boundary() {
 
 #[test]
 fn a_missing_credential_field_falls_back_to_the_deployment() {
-    let credentials = credentials(&[("team-a", object(&[("api_base", text("cred-base"))]))]);
+    let credentials = named_credentials(&[("team-a", object(&[("api_base", text("cred-base"))]))]);
     assert_eq!(
         encryption_boundary(&params_with_credential("team-a"), &credentials),
         Some(pair("cred-base", "deployment-key"))
@@ -71,7 +71,7 @@ fn falsy_values_have_no_boundary() {
         None
     );
     assert_eq!(encryption_boundary(&params(None, None), &credentials), None);
-    let empty_credential = credentials(&[("team-a", object(&[("api_base", text(""))]))]);
+    let empty_credential = named_credentials(&[("team-a", object(&[("api_base", text(""))]))]);
     assert_eq!(
         encryption_boundary(&params_with_credential("team-a"), &empty_credential),
         None
@@ -80,7 +80,7 @@ fn falsy_values_have_no_boundary() {
 
 #[test]
 fn an_empty_credential_name_keeps_the_deployment_values() {
-    let credentials = credentials(&[(
+    let credentials = named_credentials(&[(
         "",
         object(&[
             ("api_base", text("cred-base")),
@@ -95,7 +95,7 @@ fn an_empty_credential_name_keeps_the_deployment_values() {
 
 #[test]
 fn a_non_text_credential_name_keeps_the_deployment_values() {
-    let credentials = credentials(&[(
+    let credentials = named_credentials(&[(
         "5",
         object(&[
             ("api_base", text("cred-base")),

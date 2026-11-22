@@ -100,7 +100,7 @@ pub(super) fn spec_with_model_info(model_info: JsonObject) -> DeploymentSpec {
     }
 }
 
-pub(super) fn credentials(entries: &[(&str, JsonObject)]) -> CredentialSnapshot {
+pub(super) fn named_credentials(entries: &[(&str, JsonObject)]) -> CredentialSnapshot {
     CredentialSnapshot::new(
         entries
             .iter()
@@ -217,10 +217,10 @@ pub(super) fn ids(deployments: &[DeploymentSpec]) -> Vec<Option<String>> {
     deployments.iter().map(deployment_id).collect()
 }
 
-pub(super) fn check<'check>(
+pub(super) fn check(
     settings: AffinitySettings,
-    credentials: &'check CredentialSnapshot,
-) -> AffinityCheck<'check, 'static> {
+    credentials: &CredentialSnapshot,
+) -> AffinityCheck<'_, 'static> {
     AffinityCheck::new(settings, None, credentials)
 }
 

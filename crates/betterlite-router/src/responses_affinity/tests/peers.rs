@@ -48,7 +48,7 @@ fn a_named_credential_supplies_the_origin_boundary() {
     let origin = spec("A", params_with_credential("team-a"));
     let peer = spec("B", params(Some("shared-base"), Some("shared-key")));
     let fixture = Fixture::new(vec![origin, peer.clone()]);
-    let credentials = credentials(&[(
+    let credentials = named_credentials(&[(
         "team-a",
         object(&[
             ("api_base", text("shared-base")),
@@ -85,7 +85,7 @@ fn a_null_credential_field_falls_back_to_the_pool() {
     let origin = spec("A", params_with_credential("team-a"));
     let peer = spec("B", params(Some("deployment-base"), Some("deployment-key")));
     let fixture = Fixture::new(vec![origin, peer.clone()]);
-    let credentials = credentials(&[("team-a", object(&[("api_base", Json::Null)]))]);
+    let credentials = named_credentials(&[("team-a", object(&[("api_base", Json::Null)]))]);
     let lookup = fixture.lookup();
     let check = catalog_check(settings(true, &[]), &lookup, &credentials);
     let mut request = Request::with_items(vec![reasoning_item("A")]);
