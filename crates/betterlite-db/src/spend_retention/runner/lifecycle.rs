@@ -83,6 +83,8 @@ where
         let mut run = GroupRun {
             client,
             clock: &self.clock,
+            settings: &self.settings,
+            partitions: &self.partitions,
             metrics,
             bounds: self.settings.bounds(&self.durations),
             progress: &progress,
@@ -113,12 +115,12 @@ where
     // the lease is taken before the budget starts and released only when it was actually acquired
     async fn drive_run(
         &self,
-        run: &mut GroupRun<'_, '_, Clock>,
+        run: &mut GroupRun<'_, '_, Clock, Partitions>,
         retentions: &Retentions,
         cancellation: &mut Cancellation<'_, '_>,
     ) -> Result<(), RunError> {
         let Some(lock) = self.pod_lock.as_ref().filter(|held| held.redis_backed()) else {
-            self.run_enabled_groups(run, retentions).await;
+            run_enabled_groups(run, retentions).await;
             cancellation.finished = true;
             return Ok(());
         };
@@ -126,7 +128,7 @@ where
             cancellation.finished = true;
             return Ok(());
         }
-        self.run_enabled_groups(run, retentions).await;
+        run_enabled_groups(run, retentions).await;
         cancellation.finished = true;
         lock.release(SPEND_LOG_CLEANUP_JOB_NAME).await?;
         tracing::info!("Released cleanup lock");
@@ -150,56 +152,65 @@ where
         metrics.record_run(RunOutcome::SkippedLocked);
         false
     }
+}
 
-    // an ordinary error records aborted, logs its type and returns; only the release above reaches the caller
-    async fn run_enabled_groups(&self, run: &mut GroupRun<'_, '_, Clock>, retentions: &Retentions) {
-        match self.clean_groups(run, retentions).await {
-            Ok(results) => {
-                let outcome = run_outcome(&results);
-                run.metrics.record_run(outcome);
-                let elapsed = run.clock.now().saturating_duration_since(run.started);
-                log_run_summary(outcome, &results, elapsed);
-            }
-            Err(failure) => {
-                tracing::error!("Error during spend log cleanup: {failure}");
-                run.metrics.record_run(RunOutcome::Aborted);
-            }
+// an ordinary error records aborted, logs its type and returns; only the release above reaches the caller
+async fn run_enabled_groups<Clock, Partitions>(
+    run: &mut GroupRun<'_, '_, Clock, Partitions>,
+    retentions: &Retentions,
+) where
+    Clock: CleanupClock,
+    Partitions: PartitionMaintenance,
+{
+    match clean_groups(run, retentions).await {
+        Ok(results) => {
+            let outcome = run_outcome(&results);
+            run.metrics.record_run(outcome);
+            let elapsed = run.clock.now().saturating_duration_since(run.started);
+            log_run_summary(outcome, &results, elapsed);
+        }
+        Err(failure) => {
+            tracing::error!("Error during spend log cleanup: {failure}");
+            run.metrics.record_run(RunOutcome::Aborted);
         }
     }
+}
 
-    // the enabled groups in order, each taking an equal share of the time still pending when it starts
-    async fn clean_groups(
-        &self,
-        run: &mut GroupRun<'_, '_, Clock>,
-        retentions: &Retentions,
-    ) -> Result<Vec<TableCleanupResult>, RunFailure> {
-        let now = run.clock.now();
-        let deadline = now.checked_add(run.bounds.run_budget).unwrap_or(now);
-        let groups = [
-            (retentions.spend_logs, GroupPlan::SpendLogs),
-            (retentions.sessions, GroupPlan::Sessions),
-            (retentions.health_checks, GroupPlan::HealthChecks),
-            (retentions.daily_tags, GroupPlan::DailyTags),
-        ];
-        let enabled = groups
-            .iter()
-            .filter(|(retention, _)| retention.is_some())
-            .count();
-        let mut pending = u32::try_from(enabled).unwrap_or(u32::MAX);
-        let mut results = Vec::new();
-        for (retention, plan) in groups {
-            let Some(seconds) = retention else {
-                continue;
-            };
-            let window = GroupWindow {
-                retention_seconds: seconds,
-                deadline: group_deadline(deadline, run.clock.now(), pending),
-            };
-            results.extend(self.clean_group(run, plan, window).await?);
-            pending = pending.saturating_sub(1);
-        }
-        Ok(results)
+// the enabled groups in order, each taking an equal share of the time still pending when it starts
+async fn clean_groups<Clock, Partitions>(
+    run: &mut GroupRun<'_, '_, Clock, Partitions>,
+    retentions: &Retentions,
+) -> Result<Vec<TableCleanupResult>, RunFailure>
+where
+    Clock: CleanupClock,
+    Partitions: PartitionMaintenance,
+{
+    let now = run.clock.now();
+    let deadline = now.checked_add(run.bounds.run_budget).unwrap_or(now);
+    let groups = [
+        (retentions.spend_logs, GroupPlan::SpendLogs),
+        (retentions.sessions, GroupPlan::Sessions),
+        (retentions.health_checks, GroupPlan::HealthChecks),
+        (retentions.daily_tags, GroupPlan::DailyTags),
+    ];
+    let enabled = groups
+        .iter()
+        .filter(|(retention, _)| retention.is_some())
+        .count();
+    let mut pending = u32::try_from(enabled).unwrap_or(u32::MAX);
+    let mut results = Vec::new();
+    for (retention, plan) in groups {
+        let Some(seconds) = retention else {
+            continue;
+        };
+        let window = GroupWindow {
+            retention_seconds: seconds,
+            deadline: group_deadline(deadline, run.clock.now(), pending),
+        };
+        results.extend(run.clean_group(plan, window).await?);
+        pending = pending.saturating_sub(1);
     }
+    Ok(results)
 }
 
 const fn all_disabled(retentions: &Retentions) -> bool {

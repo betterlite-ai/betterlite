@@ -3,25 +3,26 @@ use tokio::time::Instant;
 use tokio_postgres::Client;
 
 use crate::cleanup_metrics::CleanupMetrics;
+use crate::spend_retention::batches::TableCleanupResult;
 use crate::spend_retention::batches::cutoff::Cutoff;
 use crate::spend_retention::batches::deadline::{group_deadline, remaining_budget};
 use crate::spend_retention::batches::deleter::BatchDeleter;
-use crate::spend_retention::batches::settings::{CleanupBounds, DurationParser, SettingValue};
+use crate::spend_retention::batches::settings::{CleanupBounds, CleanupSettings, SettingValue};
 use crate::spend_retention::batches::table::CleanupTable;
-use crate::spend_retention::batches::{SpendLogCleanup, TableCleanupResult};
 
 mod tests;
 
 use super::clock::CleanupClock;
 use super::error::RunFailure;
-use super::lock::CleanupLock;
 use super::partitions::PartitionMaintenance;
 use super::progress::{RunProgress, SharedProgress};
 
 // the collaborators and live bounds every group of one run reads, so each group receives them from one place
-pub(super) struct GroupRun<'run, 'registry, Clock> {
+pub(super) struct GroupRun<'run, 'registry, Clock, Partitions> {
     pub client: &'run mut Client,
     pub clock: &'run Clock,
+    pub settings: &'run CleanupSettings,
+    pub partitions: &'run Partitions,
     pub metrics: &'run CleanupMetrics<'registry>,
     pub bounds: CleanupBounds,
     pub progress: &'run RunProgress,
@@ -82,17 +83,14 @@ pub(super) enum GroupPlan {
 }
 
 // the four _clean_* groups and the six table deletions they issue, in the order the source runs them
-impl<Clock, Durations, Partitions, Lock> SpendLogCleanup<Clock, Durations, Partitions, Lock>
+impl<Clock, Partitions> GroupRun<'_, '_, Clock, Partitions>
 where
     Clock: CleanupClock,
-    Durations: DurationParser + Send + Sync,
     Partitions: PartitionMaintenance,
-    Lock: CleanupLock,
 {
     // one of the source's four _clean_* groups: its cutoff, the partition work it starts first, then its tables
     pub(super) async fn clean_group(
-        &self,
-        run: &mut GroupRun<'_, '_, Clock>,
+        &mut self,
         plan: GroupPlan,
         window: GroupWindow,
     ) -> Result<Vec<TableCleanupResult>, RunFailure> {
@@ -111,8 +109,7 @@ where
         };
         if matches!(plan, GroupPlan::SpendLogs) {
             tracing::info!("Removing logs older than {}", cutoff.text());
-            self.maintain_partitions(run, moment, window.deadline)
-                .await?;
+            self.maintain_partitions(moment, window.deadline).await?;
         }
         let mut pending = u32::try_from(steps.len()).unwrap_or(1);
         let mut results = Vec::new();
@@ -123,7 +120,7 @@ where
             } else {
                 group_deadline(window.deadline, self.clock.now(), pending)
             };
-            results.push(self.delete_step(run, *step, cutoff, share).await);
+            results.push(self.delete_step(*step, cutoff, share).await);
             pending = pending.saturating_sub(1);
         }
         Ok(results)
@@ -131,12 +128,11 @@ where
 
     // partition DDL is started only with budget left, only behind the switch, and only on a partitioned table
     async fn maintain_partitions(
-        &self,
-        run: &mut GroupRun<'_, '_, Clock>,
+        &mut self,
         moment: DateTime<Utc>,
         deadline: Instant,
     ) -> Result<(), RunFailure> {
-        let mut remaining = remaining_budget(&self.clock, deadline, run.bounds.batch_timeout);
+        let mut remaining = remaining_budget(self.clock, deadline, self.bounds.batch_timeout);
         if self.clock.now() >= deadline {
             tracing::info!("Run budget already spent, skipping partition maintenance this run");
             return Ok(());
@@ -149,17 +145,17 @@ where
         }
         if !self
             .partitions
-            .is_partitioned(run.client, &mut remaining)
+            .is_partitioned(self.client, &mut remaining)
             .await
         {
             return Ok(());
         }
         self.partitions
-            .ensure_upcoming(run.client, &mut remaining)
+            .ensure_upcoming(self.client, &mut remaining)
             .await;
         let dropped = self
             .partitions
-            .drop_expired(run.client, moment, &mut remaining)
+            .drop_expired(self.client, moment, &mut remaining)
             .await?;
         tracing::info!(
             "Dropped {} expired spend-log partitions: {dropped:?}",
@@ -170,18 +166,17 @@ where
 
     // one of the six _delete_old_* callers, told which table, its log line and its horizon
     async fn delete_step(
-        &self,
-        run: &mut GroupRun<'_, '_, Clock>,
+        &mut self,
         step: TableStep,
         cutoff: Cutoff,
         deadline: Instant,
     ) -> TableCleanupResult {
-        let mut progress = SharedProgress(run.progress);
+        let mut progress = SharedProgress(self.progress);
         let mut deleter = BatchDeleter {
-            client: &mut *run.client,
-            bounds: run.bounds,
-            clock: run.clock,
-            metrics: run.metrics,
+            client: &mut *self.client,
+            bounds: self.bounds,
+            clock: self.clock,
+            metrics: self.metrics,
             progress: &mut progress,
         };
         let result = deleter.delete_expired(step.table, cutoff, deadline).await;

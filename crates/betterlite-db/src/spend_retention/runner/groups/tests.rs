@@ -101,14 +101,14 @@ async fn spend_group_deletes_expired_logs_and_tool_index_rows() {
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
     let mono = cleanup.clock.mono;
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, mono);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, mono);
     let deadline = deadline_after(mono, 300);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline,
     };
-    let results = cleanup
-        .clean_group(&mut run, GroupPlan::SpendLogs, window)
+    let results = run
+        .clean_group(GroupPlan::SpendLogs, window)
         .await
         .expect("the spend group");
     assert_eq!(results[0].table, CleanupTable::SpendLogs);
@@ -133,14 +133,14 @@ async fn session_group_prunes_both_rollups_by_their_last_turn() {
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
     let mono = cleanup.clock.mono;
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, mono);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, mono);
     let deadline = deadline_after(mono, 300);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline,
     };
-    let results = cleanup
-        .clean_group(&mut run, GroupPlan::Sessions, window)
+    let results = run
+        .clean_group(GroupPlan::Sessions, window)
         .await
         .expect("the session group");
     assert_eq!(results[0].table, CleanupTable::AutoRouterSessions);
@@ -166,14 +166,14 @@ async fn health_group_prunes_checks_by_their_own_retention() {
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
     let mono = cleanup.clock.mono;
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, mono);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, mono);
     let deadline = deadline_after(mono, 300);
     let window = GroupWindow {
         retention_seconds: 86_400,
         deadline,
     };
-    let results = cleanup
-        .clean_group(&mut run, GroupPlan::HealthChecks, window)
+    let results = run
+        .clean_group(GroupPlan::HealthChecks, window)
         .await
         .expect("the health-check group");
     assert_eq!(results[0].table, CleanupTable::HealthChecks);
@@ -195,14 +195,14 @@ async fn daily_tag_group_keeps_the_horizon_day_and_non_iso_keys() {
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
     let mono = cleanup.clock.mono;
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, mono);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, mono);
     let deadline = deadline_after(mono, 300);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline,
     };
-    let results = cleanup
-        .clean_group(&mut run, GroupPlan::DailyTags, window)
+    let results = run
+        .clean_group(GroupPlan::DailyTags, window)
         .await
         .expect("the daily tag group");
     assert_eq!(results[0].table, CleanupTable::DailyTagSpend);
@@ -233,14 +233,14 @@ async fn expired_partitions_drop_before_their_stragglers_are_deleted() {
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
     let mono = cleanup.clock.mono;
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, mono);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, mono);
     let deadline = deadline_after(mono, 300);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline,
     };
-    let results = cleanup
-        .clean_group(&mut run, GroupPlan::SpendLogs, window)
+    let results = run
+        .clean_group(GroupPlan::SpendLogs, window)
         .await
         .expect("the spend group");
     assert_eq!(results[0].rows_deleted, 2);
@@ -267,15 +267,15 @@ async fn a_switch_on_table_that_is_not_partitioned_skips_partition_ddl() {
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
     let mono = cleanup.clock.mono;
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, mono);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, mono);
     let deadline = deadline_after(mono, 300);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline,
     };
     let (logs, _subscriber) = install_logs();
-    let results = cleanup
-        .clean_group(&mut run, GroupPlan::SpendLogs, window)
+    let results = run
+        .clean_group(GroupPlan::SpendLogs, window)
         .await
         .expect("the spend group");
     assert_eq!(results[0].rows_deleted, 1);
@@ -311,14 +311,13 @@ async fn partition_maintenance_needs_the_switch_and_a_successful_probe(
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
     let mono = cleanup.clock.mono;
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, mono);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, mono);
     let deadline = deadline_after(mono, 300);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline,
     };
-    cleanup
-        .clean_group(&mut run, GroupPlan::SpendLogs, window)
+    run.clean_group(GroupPlan::SpendLogs, window)
         .await
         .expect("the spend group");
     assert_eq!(cleanup.partitions.calls(), expected);
@@ -343,13 +342,13 @@ async fn a_spent_budget_skips_partition_maintenance() {
     let registry = CollectorRegistry::default();
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, start);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, start);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline: start,
     };
-    let results = cleanup
-        .clean_group(&mut run, GroupPlan::SpendLogs, window)
+    let results = run
+        .clean_group(GroupPlan::SpendLogs, window)
         .await
         .expect("the spend group");
     assert_eq!(results[0].stop_reason, StopReason::BudgetExhausted);
@@ -375,14 +374,14 @@ async fn the_logs_table_gets_half_the_group_time_and_the_index_the_rest() {
     let registry = CollectorRegistry::default();
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, start);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, start);
     let deadline = deadline_after(start, 100);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline,
     };
-    let results = cleanup
-        .clean_group(&mut run, GroupPlan::SpendLogs, window)
+    let results = run
+        .clean_group(GroupPlan::SpendLogs, window)
         .await
         .expect("the spend group");
     assert_eq!(results[0].rows_deleted, 6);
@@ -408,14 +407,14 @@ async fn the_session_rollups_split_their_group_time() {
     let registry = CollectorRegistry::default();
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
-    let mut run = group_run(&mut case.client, &cleanup.clock, &metrics, &progress, start);
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, start);
     let deadline = deadline_after(start, 100);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline,
     };
-    let results = cleanup
-        .clean_group(&mut run, GroupPlan::Sessions, window)
+    let results = run
+        .clean_group(GroupPlan::Sessions, window)
         .await
         .expect("the session group");
     assert_eq!(results[0].rows_deleted, 6);

@@ -25,6 +25,7 @@ use crate::queues::pod_lock::{
 use crate::spend_partitions::catalog::{BoundedTransactionError, RemainingBudget};
 use crate::spend_partitions::fixtures::SpendPartitionCase;
 use crate::spend_partitions::manager::PartitionMaintenanceError;
+use crate::spend_retention::batches::SpendLogCleanup;
 use crate::spend_retention::batches::deadline::MonotonicClock;
 use crate::spend_retention::batches::settings::{
     CleanupBounds, CleanupGeneralSettings, CleanupSettings, DurationParser,
@@ -117,16 +118,18 @@ pub(crate) async fn text_join(client: &Client, sql: &str) -> String {
 }
 
 // the collaborators one group reads, in the shape the group entry points take
-pub(super) fn group_run<'run, Clock>(
+pub(super) fn group_run<'run, Clock, Durations, Partitions, Lock>(
     client: &'run mut Client,
-    clock: &'run Clock,
+    cleanup: &'run SpendLogCleanup<Clock, Durations, Partitions, Lock>,
     metrics: &'run CleanupMetrics<'run>,
     progress: &'run RunProgress,
     started: Instant,
-) -> GroupRun<'run, 'run, Clock> {
+) -> GroupRun<'run, 'run, Clock, Partitions> {
     GroupRun {
         client,
-        clock,
+        clock: &cleanup.clock,
+        settings: &cleanup.settings,
+        partitions: &cleanup.partitions,
         metrics,
         bounds: BOUNDS,
         progress,
