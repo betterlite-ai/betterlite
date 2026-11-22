@@ -23,4 +23,8 @@ compare:
   headers: []
   headers_present: []
   upstream_headers: []
-  ignore: []
+  ignore:
+    - pointer: /image_edit_call/value/runs/12/failure/message
+      why: "LiteLLM's exception constructors prefix the message with \"litellm.APIConnectionError: \", and betterlite carries the mapper's text without that prefix"
+    - pointer: /image_edit_call/value/runs/13/failure/message
+      why: "LiteLLM's exception constructors prefix the message with \"litellm.APIConnectionError: \", and betterlite carries the mapper's text without that prefix"

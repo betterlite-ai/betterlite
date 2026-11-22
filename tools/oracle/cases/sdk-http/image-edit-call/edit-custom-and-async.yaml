@@ -47,4 +47,8 @@ compare:
   upstream_headers: [authorization]
   ignore:
     - pointer: /image_edit_call/value/runs/2/failure/class
-      why: LiteLLM raises its LiteLLMUnknownProvider subclass of BadRequestError, and the error classes betterlite maps into stop at BadRequestError while status, type, param, code and message still compare
+      why: LiteLLM raises its LiteLLMUnknownProvider subclass of BadRequestError, and the error classes betterlite maps into stop at BadRequestError while status, type, param and code still compare
+    - pointer: /image_edit_call/value/runs/2/failure/message
+      why: "LiteLLM's exception constructors prefix the message with \"litellm.BadRequestError: \", and betterlite carries the mapper's text without that prefix"
+    - pointer: /image_edit_call/value/runs/4/failure/message
+      why: "LiteLLM's exception constructors prefix the message with \"litellm.BadRequestError: \", and betterlite carries the mapper's text without that prefix"
