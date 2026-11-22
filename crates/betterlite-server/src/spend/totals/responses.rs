@@ -41,7 +41,7 @@ struct ValidationIssue {
     msg: &'static str,
 }
 
-pub(super) fn wrapped_error(message: String) -> Response {
+pub(crate) fn wrapped_error(message: String) -> Response {
     let body = ErrorResponse {
         error: ErrorObject {
             message,
@@ -53,7 +53,7 @@ pub(super) fn wrapped_error(message: String) -> Response {
     (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
 }
 
-pub(super) fn detail_error(status: StatusCode, message: &str) -> Response {
+pub(crate) fn detail_error(status: StatusCode, message: &str) -> Response {
     let detail = DetailMessage {
         error: message.to_owned(),
     };
