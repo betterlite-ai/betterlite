@@ -1,0 +1,40 @@
+kind: helper
+name: model-effective-fields-null-clearable-fields
+call:
+  model_effective_fields:
+    salt_key: b1213-salt
+    ptu_enabled: true
+    calls:
+      - function: ptu
+        stored: {id: m1, db_model: true, member_auto_router: false, team_id: t1, ptu_count: 2, cost_per_ptu_per_hour: 1.5, ptu_effective_from: "2026-01-01T00:00:00Z", ptu_effective_to: "2026-06-01T00:00:00Z"}
+        incoming: {id: m1, db_model: true, member_auto_router: false, team_id: null, ptu_count: null, cost_per_ptu_per_hour: null, ptu_effective_to: "2026-09-01T00:00:00Z"}
+      - function: ptu
+        stored: {id: m1, db_model: true, member_auto_router: false, team_id: t1, ptu_count: 2, cost_per_ptu_per_hour: 1.5, ptu_effective_from: "2026-01-01T00:00:00Z"}
+        incoming: {id: m1, db_model: true, member_auto_router: false, ptu_effective_from: null}
+      - function: ptu
+        stored: {id: m1, db_model: true, member_auto_router: false, team_id: t1}
+        incoming: null
+      - function: credential_name
+        incoming: {litellm_credential_name: null}
+        existing: {model: gpt-4o, litellm_credential_name: 5c1QvXZfGrUBCIP3Ir1W3UnWo2F_l8MqvDamYu6V607MrFHLvL7iPShNuMJn87Hadh2L}
+        loaded: []
+        stored: []
+      - function: credential_name
+        incoming: {tpm: 5}
+        existing: {model: gpt-4o}
+        loaded: []
+        stored: []
+      - function: strategy_router_write
+        incoming: {complexity_router_config: null, tpm: 1}
+        existing: {model: dpoheJoC1tsLKBOn-0AUhHlb9U9fnIQsHkI2imebPPl1ClGTK5JQzijag_JSMWpjXPBPaOVFqD4y7mgLqNjXP2sqN1d_, complexity_router_default_model: gpt-4o}
+      - function: member_marker
+        incoming: {complexity_router_config: null}
+        existing_params: {model: dpoheJoC1tsLKBOn-0AUhHlb9U9fnIQsHkI2imebPPl1ClGTK5JQzijag_JSMWpjXPBPaOVFqD4y7mgLqNjXP2sqN1d_}
+        existing_model_info: {id: r1, member_auto_router: true}
+      - function: effective_params
+        incoming: {complexity_router_config: null}
+        existing: {model: -eJlSAaF7mB3qQYOFQtKB1704NdBclX4Jqs0Oh0BFCHJbkm5c4hskLnBXUAOjg==, complexity_router_config: {classifier_type: heuristic}}
+env:
+  LITELLM_SALT_KEY: b1213-salt
+  LITELLM_ENABLE_PTU_COST_ATTRIBUTION: "true"
+compare: {ignore: []}

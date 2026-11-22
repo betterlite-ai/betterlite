@@ -3026,6 +3026,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-db",
  "betterlite-env",
  "betterlite-lens",
@@ -4119,10 +4120,14 @@ dependencies = [
 name = "betterlite-proxy"
 version = "0.1.0"
 dependencies = [
+ "async-stream",
  "base64 0.23.1",
+ "betterlite-a2a",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-http",
+ "futures-util",
  "hex",
  "http 1.5.0",
  "rstest",
@@ -4135,6 +4140,14 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "betterlite-proxy-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-proxy",
+ "libfuzzer-sys",
 ]
 
 [[package]]

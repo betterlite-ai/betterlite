@@ -1,0 +1,10 @@
+general_settings:
+  disable_custom_api_keys: "TRUE"
+litellm_settings:
+  key_generation_settings:
+    team_key_generation:
+      allowed_team_member_roles: [admin]
+      required_params: [tags, key_alias]
+    personal_key_generation:
+      allowed_user_roles: [proxy_admin, internal_user]
+      required_params: [duration]
