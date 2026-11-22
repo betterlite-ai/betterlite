@@ -83,12 +83,12 @@ class Input(TypedDict):
     steps: list[Step]
 
 
-class Socket(Protocol):
+class ClientSocket(Protocol):
     sent: list[str]
 
 
 class SocketFactory(Protocol):
-    def __call__(self, *, refuse: bool) -> Socket: ...
+    def __call__(self, *, refuse: bool) -> ClientSocket: ...
 
 
 class GuardFactory(Protocol):
@@ -110,7 +110,7 @@ class Probe(Protocol):
     request_defaults: ResponsesWebSocketRequestDefaults | None  # ast-grep-ignore: no-long-names
 
     async def quota_view(
-        self, socket: Socket, calls: list[JsonValue], message: str
+        self, socket: ClientSocket, calls: list[JsonValue], message: str
     ) -> JsonValue: ...
     async def create_view(self, message: str, calls: list[JsonValue]) -> JsonValue: ...
     def unmask_view(self, message: str, calls: list[JsonValue]) -> JsonValue: ...
@@ -127,7 +127,7 @@ class Runtime(Protocol):
 
     def connect(
         self,
-        socket: Socket,
+        socket: ClientSocket,
         request_data: dict[str, JsonValue],
         guardrails: list[PresidioGuardrailCallback],
         authorized_model: str | None,
