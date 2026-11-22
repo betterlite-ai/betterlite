@@ -196,41 +196,43 @@ fn assert_success_metric_order(events: &[Recorded]) {
 }
 
 fn assert_limit_updates(events: &[Recorded]) {
+    let [tpm, rpm, overhead, guardrails, params_tpm, params_rpm, ..] = events else {
+        panic!("the six limit updates come first");
+    };
     assert_eq!(
-        update_of(&events[0]),
+        update_of(tpm),
         MetricUpdate::Set(MetricValue::Finite(Decimal::from(100_i64)))
     );
     assert_eq!(
-        update_of(&events[1]),
+        update_of(rpm),
         MetricUpdate::Set(MetricValue::Finite(Decimal::from(10_i64)))
     );
     assert_eq!(
-        update_of(&events[2]),
+        update_of(overhead),
         MetricUpdate::Observe(MetricValue::Finite(Decimal::new(12, 3)))
     );
     assert_eq!(
-        update_of(&events[3]),
+        update_of(guardrails),
         MetricUpdate::Observe(MetricValue::Finite(Decimal::new(15, 3)))
     );
     assert_eq!(
-        update_of(&events[4]),
+        update_of(params_tpm),
         MetricUpdate::Set(MetricValue::Finite(Decimal::from(5_i64)))
     );
     assert_eq!(
-        update_of(&events[5]),
+        update_of(params_rpm),
         MetricUpdate::Set(MetricValue::Finite(Decimal::from(7_i64)))
     );
 }
 
 fn assert_success_and_total(events: &[Recorded]) {
-    assert_eq!(update_of(&events[7]), inc_amount());
+    let success = events.get(7).expect("the success counter");
+    let total = events.get(8).expect("the total counter");
+    assert_eq!(update_of(success), inc_amount());
+    assert_eq!(metric_of(success), "litellm_deployment_success_responses");
+    assert_eq!(metric_of(total), "litellm_deployment_total_requests");
     assert_eq!(
-        metric_of(&events[7]),
-        "litellm_deployment_success_responses"
-    );
-    assert_eq!(metric_of(&events[8]), "litellm_deployment_total_requests");
-    assert_eq!(
-        labels_of(&events[8]),
+        labels_of(total),
         &expected_labels(
             "litellm_deployment_total_requests",
             &[
@@ -323,9 +325,8 @@ fn absent_or_zero_values_skip_the_overhead_and_remaining_gauges() {
             Timing::default(),
         ),
     );
-    let names: Vec<&'static str> = gauges.updates().iter().map(metric_of).collect();
     assert_eq!(
-        names,
+        gauges.updates().iter().map(metric_of).collect::<Vec<_>>(),
         vec![
             "litellm_overhead_with_guardrails_latency_metric",
             "litellm_deployment_state",

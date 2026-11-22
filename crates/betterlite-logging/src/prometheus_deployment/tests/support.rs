@@ -15,6 +15,7 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Number;
 use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::end_user::EndUserCostTrackingSettings;
@@ -571,7 +572,7 @@ pub(crate) fn capture_logs(level: tracing::Level) -> (Captured, DefaultGuard) {
         .with_max_level(level)
         .with_writer(move || writer.clone())
         .finish();
-    (captured, tracing::subscriber::set_default(subscriber))
+    (captured, set_default(subscriber))
 }
 
 pub(crate) fn now() -> Instant {

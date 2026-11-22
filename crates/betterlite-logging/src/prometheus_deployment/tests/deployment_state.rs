@@ -95,8 +95,7 @@ fn every_deployment_state_name_is_distinct() {
     set_deployment_healthy(&gauges, labels()).unwrap();
     set_deployment_partial_outage(&gauges, labels()).unwrap();
     set_deployment_complete_outage(&gauges, labels()).unwrap();
-    let states: Vec<MetricUpdate> = gauges.updates().iter().map(update_of).collect();
-    assert_eq!(states.len(), 3);
+    assert_eq!(gauges.updates().iter().map(update_of).count(), 3);
     assert_eq!(
         metric_of(&gauges.updates()[0]),
         DeploymentMetric::DeploymentState.name()

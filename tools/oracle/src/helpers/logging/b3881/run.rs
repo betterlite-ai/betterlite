@@ -31,7 +31,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Function::FallbackSuccess => fallback(&probe, input, true)?,
         Function::FallbackFailure => fallback(&probe, input, false)?,
         Function::Success => success(&probe, input),
-    };
+    }
     Ok(json!({ "events": probe.events_value() }))
 }
 
