@@ -32,7 +32,7 @@ pub struct JobAggregates<'rows> {
     pub funnel: Option<FunnelTotals>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct JobResults {
     pub results: Option<ShadowEvalResult>,
     pub verdicts: TargetVerdicts,

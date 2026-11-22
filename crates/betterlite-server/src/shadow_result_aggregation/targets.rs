@@ -10,6 +10,12 @@ pub struct TargetKey {
     pub target_id: String,
 }
 
+impl PartialOrd for TargetKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl Ord for TargetKey {
     fn cmp(&self, other: &Self) -> Ordering {
         target_type_name(self.target_type)

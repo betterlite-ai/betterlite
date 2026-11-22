@@ -56,7 +56,7 @@ pub fn pct_of(numerator: i64, denominator: i64) -> Result<f64, ShadowResultsErro
         .ok_or(ShadowResultsError::Unrepresentable {
             name: "denominator",
         })?;
-    let rate = Div::div(Mul::mul(100.0_f64, numerator), denominator);
+    let rate = numerator.mul(100.0_f64).div(denominator);
     Ok(round_to(rate, 1, "rate")?.as_f64())
 }
 

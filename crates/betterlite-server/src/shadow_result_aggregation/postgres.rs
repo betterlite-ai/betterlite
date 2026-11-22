@@ -129,7 +129,8 @@ pub fn leg_row(row: &Row) -> RepositoryResult<LegRow> {
         max_budget,
         created_at: column::<NaiveDateTime>(row, "created_at")?.and_utc(),
         ends_at: column::<NaiveDateTime>(row, "ends_at")?.and_utc(),
-        stopped_at: column::<Option<NaiveDateTime>>(row, "stopped_at")?.map(NaiveDateTime::and_utc),
+        stopped_at: column::<Option<NaiveDateTime>>(row, "stopped_at")?
+            .map(|stamp| stamp.and_utc()),
         stopped_by: column(row, "stopped_by")?,
     })
 }

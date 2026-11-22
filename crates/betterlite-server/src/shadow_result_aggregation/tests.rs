@@ -263,7 +263,7 @@ enum Behavior {
         },
         leg("leg-key", Key, "k1"),
     ],
-    counts: vec![count("leg-key", 3, 0.1234567), count("leg-user", 4, 0.5)],
+    counts: vec![count("leg-key", 3, 0.123_456_7), count("leg-user", 4, 0.5)],
     expected: GroupExpectation {
         job_id: "job-7",
         router_names: vec!["router-first"],
@@ -320,7 +320,7 @@ enum Behavior {
         overall_shadow_win: 40.0,
         overall_tie: 20.0,
         real_spend: money(0.4),
-        shadow_spend: money(0.30000000000000004),
+        shadow_spend: money(0.300_000_000_000_000_04),
         funnel: None,
         verdicts: vec![(Key, "k1", "k1"), (Team, "t1", "t1")],
     },
@@ -387,7 +387,7 @@ enum Behavior {
     totals: AttemptTotals {
         judged_count: 7,
         error_count: 2,
-        judge_spend: money(0.1234567),
+        judge_spend: money(0.123_456_7),
     },
     last_error: Some("judge timed out"),
     by_tier: vec![agg("simple", 5, (2, 2, 1), Some(0.9), (0.4, 0.3), 0)],
@@ -654,13 +654,13 @@ enum Boundary {
 #[case::percent_zero_denominator_reads_zero(Boundary::Percent { numerator: 7, denominator: 0, expected: 0.0 })]
 #[case::percent_negative_denominator_reads_zero(Boundary::Percent { numerator: 7, denominator: -1, expected: 0.0 })]
 #[case::percent_zero_numerator_reads_zero(Boundary::Percent { numerator: 0, denominator: 7, expected: 0.0 })]
-#[case::round_six_places_keeps_the_representable_below(Boundary::Round { value: 0.1234565, places: 6, expected: spelled("0.123456") })]
+#[case::round_six_places_keeps_the_representable_below(Boundary::Round { value: 0.123_456_5, places: 6, expected: spelled("0.123456") })]
 #[case::round_three_places_at_a_true_half(Boundary::Round { value: 0.0005, places: 3, expected: spelled("0.001") })]
 #[case::round_one_decimal_keeps_the_representable_below(Boundary::Round { value: 0.15, places: 1, expected: spelled("0.1") })]
 #[case::round_one_decimal_ties_to_even(Boundary::Round { value: 6.25, places: 1, expected: spelled("6.2") })]
 #[case::round_zero_places_ties_to_even(Boundary::Round { value: 2.5, places: 0, expected: spelled("2.0") })]
 #[case::round_zero_places_ties_up_to_even(Boundary::Round { value: 3.5, places: 0, expected: spelled("4.0") })]
-#[case::round_six_places_carries(Boundary::Round { value: 0.9999995, places: 6, expected: spelled("1.0") })]
+#[case::round_six_places_carries(Boundary::Round { value: 0.999_999_5, places: 6, expected: spelled("1.0") })]
 #[case::round_nan_is_unrepresentable(Boundary::RoundUnrepresentable { value: f64::NAN })]
 #[case::slice_nan_confidence_is_unrepresentable(Boundary::SliceUnrepresentable {
     row: agg("tier", 1, (1, 0, 0), Some(f64::NAN), (0.5, 0.0), 0),
@@ -748,10 +748,10 @@ fn shadow_result_aggregation_boundaries(#[case] boundary: Boundary) {
     }
 }
 
-fn assert_unrepresentable<Value: std::fmt::Debug>(
-    outcome: Result<Value, ShadowResultsError>,
-    name: &str,
-) {
+fn assert_unrepresentable<Value>(outcome: Result<Value, ShadowResultsError>, name: &str)
+where
+    Value: std::fmt::Debug,
+{
     match outcome {
         Err(ShadowResultsError::Unrepresentable { name: found }) => assert_eq!(found, name),
         other => panic!("{other:?}"),
