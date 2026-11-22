@@ -33,48 +33,42 @@ fn invoke_agent_config_cases(#[case] check: fn()) {
     check();
 }
 
+const ENVIRONMENT: [(&str, &str); 1] = [("INVOKE_AGENT_SESSION_ID", "from-environment")];
+
 fn check_session_id() {
-    assert_eq!(session_id(&load("", "", &[]).unwrap()), None, "default");
-    assert_eq!(
-        session_id(&load("", "sessionID: global-value", &[]).unwrap()),
-        Some("global-value".to_owned()),
-        "global"
-    );
-    assert_eq!(
-        session_id(&load(", sessionID: deployment-value", "", &[]).unwrap()),
-        Some("deployment-value".to_owned()),
-        "deployment"
-    );
-    assert_eq!(
-        session_id(
-            &load(
-                ", sessionID: deployment-value",
-                "sessionID: global-value",
-                &[]
-            )
-            .unwrap()
+    for (params, settings, environment, expected) in [
+        ("", "", &[][..], None),
+        ("", "sessionID: global-value", &[][..], Some("global-value")),
+        (
+            ", sessionID: deployment-value",
+            "",
+            &[][..],
+            Some("deployment-value"),
         ),
-        Some("deployment-value".to_owned()),
-        "precedence"
-    );
-    assert_eq!(
-        session_id(&load("", "sessionID: \"\"", &[]).unwrap()),
-        Some(String::new()),
-        "explicit empty"
-    );
-    let environment = [("INVOKE_AGENT_SESSION_ID", "from-environment")];
-    assert_eq!(
-        session_id(
-            &load(
-                "",
-                "sessionID: os.environ/INVOKE_AGENT_SESSION_ID",
-                &environment
-            )
-            .unwrap()
+        (
+            ", sessionID: deployment-value",
+            "sessionID: global-value",
+            &[][..],
+            Some("deployment-value"),
         ),
-        Some("from-environment".to_owned()),
-        "environment"
-    );
+        ("", "sessionID: \"\"", &[][..], Some("")),
+        (
+            "",
+            "sessionID: os.environ/INVOKE_AGENT_SESSION_ID",
+            &ENVIRONMENT[..],
+            Some("from-environment"),
+        ),
+    ] {
+        assert_eq!(
+            session_id(&load(params, settings, environment).unwrap()),
+            expected.map(str::to_owned),
+            "{settings}"
+        );
+    }
+    check_session_id_rejects_unknown_keys();
+}
+
+fn check_session_id_rejects_unknown_keys() {
     let error = load(", sessionID_unrelated: 1", "", &[]).unwrap_err();
     assert!(
         matches!(&error, ConfigError::Unsupported { paths } if *paths == [String::from("model_list.0.litellm_params.sessionID_unrelated")]),

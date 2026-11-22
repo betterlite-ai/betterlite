@@ -24,7 +24,7 @@ struct RawFields {
     session_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub session_id: Option<String>,
 }
