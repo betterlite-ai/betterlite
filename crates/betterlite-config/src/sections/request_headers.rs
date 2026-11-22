@@ -1,9 +1,10 @@
 #![expect(
     clippy::struct_excessive_bools,
-    reason = "the settings mirror LiteLLM's independent request header and tracing switches"
+    reason = "switches mirror LiteLLM's independent flags"
 )]
 
 use serde::Deserialize;
+use std::mem::take;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
@@ -11,7 +12,6 @@ use crate::sections::Section;
 
 mod tests;
 
-const ENVIRONMENT_PREFIX: &str = "os.environ/";
 const ADD_USER_INFORMATION_PATH: &str = "litellm_settings.add_user_information_to_llm_headers";
 const FORWARD_ORG_ID_PATH: &str = "general_settings.forward_openai_org_id";
 const FORWARD_HEADERS_PATH: &str = "general_settings.forward_client_headers_to_llm_api";
@@ -91,9 +91,18 @@ impl Section for Raw {
     {
         let general = self.general_settings;
         let litellm = self.litellm_settings;
+        let user_header_name = general
+            .user_header_name
+            .map(|text| resolve_string(text, "general_settings.user_header_name", lookup))
+            .transpose()?;
+        let mut user_header_mappings = general.user_header_mappings.unwrap_or_default();
+        for (index, entry) in user_header_mappings.iter_mut().enumerate() {
+            let path = format!("general_settings.user_header_mappings[{index}].header_name");
+            entry.header_name = resolve_string(take(&mut entry.header_name), &path, lookup)?;
+        }
         Ok(Settings {
-            user_header_mappings: general.user_header_mappings.unwrap_or_default(),
-            user_header_name: general.user_header_name,
+            user_header_mappings,
+            user_header_name,
             add_user_information: flag(
                 litellm.add_user_information,
                 ADD_USER_INFORMATION_PATH,
@@ -130,7 +139,7 @@ where
         None => Ok(false),
         Some(RawFlag::Boolean(enabled)) => Ok(enabled),
         Some(RawFlag::Text(text)) => {
-            let Some(variable) = text.strip_prefix(ENVIRONMENT_PREFIX).map(str::to_owned) else {
+            let Some(variable) = text.strip_prefix("os.environ/").map(str::to_owned) else {
                 return Err(ConfigError::InvalidScalar {
                     path: path.to_owned(),
                     value: false,

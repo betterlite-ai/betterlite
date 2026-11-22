@@ -13,6 +13,11 @@ fn load(source: &str) -> Result<Settings, ConfigError> {
         ("FORWARD_ON".to_owned(), "yes".to_owned()),
         ("FORWARD_EMPTY".to_owned(), String::new()),
         ("FORWARD_BAD".to_owned(), "maybe".to_owned()),
+        ("USER_HEADER_FROM_ENV".to_owned(), "X-From-Env".to_owned()),
+        (
+            "MAPPED_HEADER_FROM_ENV".to_owned(),
+            "X-Mapped-Env".to_owned(),
+        ),
     ]);
     Ok(ConfigLoader { lookup }
         .load(source)?
@@ -32,7 +37,7 @@ enum Expected {
     Loaded(Settings),
     InvalidScalar(&'static str),
     Environment,
-    MissingEnvironment,
+    MissingEnvironment(&'static str, &'static str),
     Yaml,
 }
 
@@ -137,7 +142,37 @@ fn only(change: fn(&mut Settings)) -> Settings {
 )]
 #[case::forward_traceparent_missing_environment(
     "litellm_settings: {forward_traceparent_to_llm_provider: os.environ/FORWARD_UNSET}\n",
-    Expected::MissingEnvironment
+    Expected::MissingEnvironment(
+        "FORWARD_UNSET",
+        "litellm_settings.forward_traceparent_to_llm_provider"
+    )
+)]
+#[case::user_header_name_from_environment(
+    "general_settings: {user_header_name: os.environ/USER_HEADER_FROM_ENV}\n",
+    Expected::Loaded(only(|settings| settings.user_header_name = Some("X-From-Env".to_owned())))
+)]
+#[case::user_header_name_missing_environment(
+    "general_settings: {user_header_name: os.environ/USER_HEADER_UNSET}\n",
+    Expected::MissingEnvironment("USER_HEADER_UNSET", "general_settings.user_header_name")
+)]
+#[case::user_header_mapping_from_environment(
+    "general_settings: {user_header_mappings: [{header_name: os.environ/MAPPED_HEADER_FROM_ENV, litellm_user_role: internal_user}]}\n",
+    Expected::Loaded(only(|settings| settings.user_header_mappings =
+        vec![mapping("X-Mapped-Env", UserHeaderRole::InternalUser)]))
+)]
+#[case::user_header_mapping_missing_environment(
+    "general_settings: {user_header_mappings: [{header_name: os.environ/MAPPED_HEADER_UNSET, litellm_user_role: customer}]}\n",
+    Expected::MissingEnvironment(
+        "MAPPED_HEADER_UNSET",
+        "general_settings.user_header_mappings[0].header_name"
+    )
+)]
+#[case::second_user_header_mapping_path(
+    "general_settings: {user_header_mappings: [{header_name: X-First, litellm_user_role: internal_user}, {header_name: os.environ/MAPPED_UNSET, litellm_user_role: customer}]}\n",
+    Expected::MissingEnvironment(
+        "MAPPED_UNSET",
+        "general_settings.user_header_mappings[1].header_name"
+    )
 )]
 #[case::forward_traceparent_from_environment(
     "litellm_settings: {forward_traceparent_to_llm_provider: os.environ/FORWARD_ON}\n",
@@ -154,8 +189,14 @@ fn loads_settings(#[case] source: &str, #[case] expected: Expected) {
             assert_eq!((path.as_str(), value), (want, false));
         }
         (Err(ConfigError::Environment { .. }), Expected::Environment)
-        | (Err(ConfigError::MissingEnvironment { .. }), Expected::MissingEnvironment)
         | (Err(ConfigError::Yaml { .. }), Expected::Yaml) => {}
+        (
+            Err(ConfigError::MissingEnvironment { variable, path }),
+            Expected::MissingEnvironment(want_variable, want_path),
+        ) => assert_eq!(
+            (variable.as_str(), path.as_str()),
+            (want_variable, want_path)
+        ),
         (other, want) => panic!("{want:?} expected, got {other:?}"),
     }
 }

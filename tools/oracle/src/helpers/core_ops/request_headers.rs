@@ -1,7 +1,4 @@
 mod calls;
-
-use std::collections::BTreeMap;
-
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
 use betterlite_auth::auth_model_patterns::pattern::CatalogProviderInference;
 use betterlite_config::sections::request_headers::Settings;
@@ -30,12 +27,12 @@ use calls::{
 };
 use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
 
 pub(crate) struct Op;
 
 impl Helper for Op {
     type Input = Input;
-
     fn run(input: &Self::Input) -> HelperResult {
         Ok(json!({
             "clean": input.clean.iter().map(clean_value).collect::<Vec<Value>>(),
@@ -104,7 +101,6 @@ fn backend_value(call: &BackendCall) -> Value {
         Err(_error) => json!({ "error": "invalid header" }),
     }
 }
-
 // LitellmDataForBackendLLMCall holds only the keys LiteLLM set
 fn backend_json(arguments: &BackendCallArguments) -> Value {
     let fields = json!({
@@ -157,7 +153,6 @@ fn model_group_value(call: &ModelGroupCall) -> Value {
         Err(_error) => json!({ "error": "invalid header" }),
     }
 }
-
 fn metadata_value(call: &MetadataCall) -> Value {
     let mut data = call.data.clone();
     add_header_metadata(
@@ -168,7 +163,6 @@ fn metadata_value(call: &MetadataCall) -> Value {
     );
     json!(data)
 }
-
 fn otel_value(call: &OtelCall) -> Value {
     let mut data = call.data.clone();
     let span = call.span.map(|(trace_id, span_id)| SpanContext {
@@ -178,14 +172,12 @@ fn otel_value(call: &OtelCall) -> Value {
     add_otel_trace_id(&mut data, slot(&call.slot), span);
     json!(data)
 }
-
 fn traceparent_value(call: &TraceparentCall) -> Value {
     let mut data = call.data.clone();
     let headers: IndexMap<String, String> = call.headers.iter().cloned().collect();
     forward_traceparent(&mut data, &headers, call.forward && call.otel_enabled);
     json!(data)
 }
-
 fn user_value(call: &UserCall) -> Value {
     let given = &call.general_settings;
     let settings = configured(|chosen| {
@@ -197,7 +189,6 @@ fn user_value(call: &UserCall) -> Value {
         .or_else(|| call.principal_user_id.clone());
     json!({ "user": user_from_headers(&headers, &settings), "user_id": user_id })
 }
-
 fn provider_value(headers: &Pairs) -> Value {
     let provider = provider_specific_headers(&plain(headers));
     let mut scoped: Vec<Value> = provider
@@ -222,7 +213,6 @@ fn provider_value(headers: &Pairs) -> Value {
     }
     json!({ "data": data, "used_client_oauth_token": provider.used_client_oauth_token })
 }
-
 fn cache_value(cache_control: &str) -> Value {
     match parse_cache_control(cache_control) {
         Ok(directives) => {
