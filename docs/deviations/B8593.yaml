@@ -1,0 +1,40 @@
+task: B8593
+deviations:
+  - what: >-
+      A budget_limits entry that is an object without a budget_duration key is skipped with
+      betterlite's warning "Skipping budget window with invalid duration", and the increment
+      completes normally. LiteLLM reads the key with window["budget_duration"] and raises
+      KeyError, which the window gather's return_exceptions collects as a scope error: the key
+      or team counter and the sibling windows still charge, and the cost callback then raises
+      that KeyError after the apply.
+    why: >-
+      Every stored budget limit serializes the field (null when unset), so no working setup can
+      hold an entry without the key; raising after the charges went out fails the callback over
+      cache input no working setup produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3149-L3157
+  - what: >-
+      A budget_limits element that is not an object goes through betterlite's shared budget
+      window parser: a JSON string that decodes to a window charges its
+      <scope>:window:<decoded duration> counter and queues its row when reset_at is set, while
+      a null, number, boolean or array element is skipped with a warning. LiteLLM reads the
+      duration and reset_at from a non-dict with getattr, so both are None: its counter key ends
+      in :window:None, and only when the string decodes to a window with a parseable duration
+      (get_budget_window_start coerces strings) can that None-keyed counter be charged; it
+      never queues a row.
+    why: >-
+      budget_limits of the declared type is a list of objects, so no stored row reaches this
+      branch; decoding a string element keeps betterlite on its one budget window parser
+      instead of adding a second, narrower reader for cached limits, and avoids a counter key
+      with None in it, which no budget check reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3150-L3156
+  - what: >-
+      A budget_duration present but not a string is skipped before a window counter key is
+      built, with betterlite's warning "Skipping budget window with invalid duration" instead
+      of LiteLLM's counter-keyed "Skipping spend counter increment for invalid budget window".
+      Neither side charges a counter or queues a row.
+    why: >-
+      LiteLLM renders the value into the counter key with an f-string and its duration parser
+      then rejects the text, and betterlite does not port Python's str()/repr text; the typed
+      DurationParser only reads a string field, so the entry is rejected one step earlier.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3593-L3606
+kept_bugs: []
