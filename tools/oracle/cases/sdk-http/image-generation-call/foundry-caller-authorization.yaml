@@ -1,0 +1,18 @@
+kind: sdk_http
+name: image-generation-call-foundry-caller-authorization
+env: {}
+call:
+  image_generation_call:
+    prompt: cat
+    model: azure_ai/flux
+    api_key: foundry-key
+    headers: {Authorization: "Bearer caller"}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {created: 11, data: [{url: "https://example.test/f.png"}]}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, api-key]
+  ignore: []

@@ -1,0 +1,32 @@
+kind: probe
+name: complexity-adaptive-placement-cost-params-over-model-info
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_adaptive_placement:
+        adaptive: true
+        weights: null
+        tier_distance_penalty: null
+        adaptive_eligible: classified_tier
+        pools:
+          - {tier: SIMPLE, models: [mini]}
+          - {tier: MEDIUM, models: [mid-expensive, mid-cheap]}
+          - {tier: COMPLEX, models: [big]}
+        deployments:
+          - {model_name: big, quality_tier: 3, strengths: [], params_cost: null, info_cost: "0.5"}
+          - {model_name: mid-expensive, quality_tier: 2, strengths: [], params_cost: "0.2", info_cost: "0.9"}
+          - {model_name: mid-cheap, quality_tier: 2, strengths: [], params_cost: null, info_cost: "0.3"}
+          - {model_name: mini, quality_tier: 1, strengths: [], params_cost: null, info_cost: "0.1"}
+        default_model: null
+        classified_tier: MEDIUM
+        user_message: hello there
+        hard_floor: null
+        hard_ceiling: null
+        fit_filter: null
+        observations:
+          - {request_type: general, model: mid-expensive, delta_alpha: "1", delta_beta: "0"}
+          - {request_type: general, model: mid-cheap, delta_alpha: "1", delta_beta: "0"}
+        samples: ["0.5", "0.5"]
+        kwargs_present: null
+compare: {ignore: []}

@@ -1,0 +1,3 @@
+general_settings:
+  disable_responses_id_security: false
+  allow_unmanaged_response_ids: false

@@ -1,0 +1,249 @@
+use betterlite_config::sections::image_edit_call::Settings;
+use betterlite_context::media_config_selection::image_edit::{
+    ImageEditConfigTag, select_image_edit,
+};
+use betterlite_context::non_default_params::Params;
+use betterlite_context::non_default_params::filters::filter_out_litellm_params;
+use betterlite_context::non_default_params::names::is_openai_compatible_provider;
+use betterlite_models::decisions::Json;
+use betterlite_models::resolution::{
+    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, resolve,
+};
+use betterlite_openai::api::image_contracts::records::ImageParams;
+
+use super::call::{
+    DEFAULT_MODEL, ImageEditCall, ImageEditClientKind, ImageEditStep, OPENAI_EDIT_PARAMS,
+    request_timeout, seconds_checked,
+};
+use super::entry::{Attribution, ImageEditOperation};
+use super::error::ImageEditError;
+use super::forms::{
+    control_params, form_fields, merge_form_fields, merge_non_default, merged_headers,
+};
+use super::logging::{ImageEditLogger, PreCallRecord};
+use super::options::{params_policy, requested_options, supported_extensions};
+use super::send::{
+    CustomEditLookup, CustomEditProviders, CustomEditRequest, ImageEditProvider,
+    ImageEditProviderSource, ImageEditSendRequest,
+};
+
+// The production operation: B174 resolution, B157 config selection, B1120 option mapping and one send.
+pub struct ImageEdits<'context> {
+    pub settings: &'context Settings,
+    pub resolution: &'context ResolutionContext<'context>,
+    pub providers: &'context dyn ImageEditProviderSource,
+    pub custom: &'context dyn CustomEditProviders,
+    pub global_drop_params: bool,
+}
+
+// what resolution settled before either the custom handler or a provider sees the call
+struct ResolvedEdit {
+    model: String,
+    provider: String,
+    identity: ProviderIdentity,
+}
+
+impl ImageEditOperation for ImageEdits<'_> {
+    fn begin(
+        &self,
+        call: &ImageEditCall,
+        asynchronous: bool,
+        logger: &mut dyn ImageEditLogger,
+    ) -> Result<ImageEditStep<'_>, ImageEditError> {
+        let resolved = self.resolve_call(call)?;
+        if let Some(step) = self.custom_step(call, &resolved, asynchronous)? {
+            return Ok(step);
+        }
+        self.configured_step(call, &resolved, asynchronous, logger)
+    }
+
+    // image_edit rebinds model and custom_llm_provider only when get_llm_provider returns
+    fn attribution(&self, call: &ImageEditCall) -> Attribution {
+        match self.resolve_call(call) {
+            Ok(resolved) => Attribution {
+                model: Some(resolved.model),
+                provider: Some(resolved.provider),
+            },
+            Err(_unresolved) => Attribution {
+                model: call.model.clone(),
+                provider: call.custom_llm_provider.clone(),
+            },
+        }
+    }
+}
+
+impl ImageEdits<'_> {
+    // get_llm_provider runs without an api_base here, so no registered endpoint is consulted
+    fn resolve_call(&self, call: &ImageEditCall) -> Result<ResolvedEdit, ResolutionError> {
+        let requested_model = call
+            .model
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MODEL.to_owned());
+        let request = ResolutionRequest {
+            model: &requested_model,
+            custom_llm_provider: call.custom_llm_provider.as_deref(),
+            api_base: None,
+            api_key: None,
+        };
+        let resolved = resolve(&request, self.resolution)?;
+        Ok(ResolvedEdit {
+            model: resolved.model,
+            provider: resolved.provider.slug().to_owned(),
+            identity: resolved.provider,
+        })
+    }
+
+    // a listed custom provider skips config lookup, option projection and logging entirely
+    fn custom_step(
+        &self,
+        call: &ImageEditCall,
+        resolved: &ResolvedEdit,
+        asynchronous: bool,
+    ) -> Result<Option<ImageEditStep<'_>>, ImageEditError> {
+        let handler = match self.custom.lookup(&resolved.provider) {
+            CustomEditLookup::Missing => return Ok(None),
+            CustomEditLookup::Unmatched => {
+                return Err(ImageEditError::UnknownProvider {
+                    model: resolved.model.clone(),
+                    provider: resolved.provider.clone(),
+                });
+            }
+            CustomEditLookup::Handler(handler) => handler,
+        };
+        let images = call.image.images();
+        let request = CustomEditRequest {
+            model: &resolved.model,
+            images: &images,
+            prompt: call.prompt.as_deref(),
+            api_key: text_param(&call.kwargs, "api_key"),
+            api_base: text_param(&call.kwargs, "api_base"),
+            optional_params: &call.kwargs,
+            timeout: call.timeout,
+            client: client_for(call, asynchronous),
+        };
+        Ok(Some(handler.call(request, asynchronous)?))
+    }
+
+    fn select_provider(
+        &self,
+        resolved: &ResolvedEdit,
+    ) -> Result<(ImageEditConfigTag, &dyn ImageEditProvider), ImageEditError> {
+        let unsupported = || ImageEditError::UnsupportedConfig {
+            provider: resolved.provider.clone(),
+        };
+        let tag = match &resolved.identity {
+            ProviderIdentity::Known(id) => select_image_edit(&resolved.model, *id),
+            ProviderIdentity::Anyscale | ProviderIdentity::Custom(_) => None,
+        }
+        .ok_or_else(unsupported)?;
+        let provider = self.providers.provider(&tag).ok_or_else(unsupported)?;
+        Ok((tag, provider))
+    }
+
+    fn edit_params(
+        &self,
+        call: &ImageEditCall,
+        resolved: &ResolvedEdit,
+        provider: &dyn ImageEditProvider,
+        non_default: &Params,
+    ) -> Result<ImageParams, ImageEditError> {
+        let supported = provider.supported_openai_params(&resolved.model);
+        let extensions = supported_extensions(&call.kwargs, non_default, &supported);
+        let options = requested_options(call, &extensions)?;
+        let policy = params_policy(call, self.global_drop_params);
+        let mut params = provider.map_edit_options(&options, &resolved.model, &policy)?;
+        if provider.use_multipart_form_data()
+            && (resolved.provider == "openai"
+                || resolved.provider == "azure"
+                || is_openai_compatible_provider(&resolved.provider))
+        {
+            let fields = form_fields(call, non_default)?;
+            merge_form_fields(&mut params, fields);
+        }
+        Ok(params)
+    }
+
+    fn configured_step(
+        &self,
+        call: &ImageEditCall,
+        resolved: &ResolvedEdit,
+        asynchronous: bool,
+        logger: &mut dyn ImageEditLogger,
+    ) -> Result<ImageEditStep<'_>, ImageEditError> {
+        let (tag, provider) = self.select_provider(resolved)?;
+        let non_default =
+            filter_out_litellm_params(&control_params(&call.kwargs), &OPENAI_EDIT_PARAMS);
+        let mut params = self.edit_params(call, resolved, provider, &non_default)?;
+        let mut litellm_params = params.clone();
+        for name in ["litellm_call_id", "model_info"] {
+            let value = call.kwargs.get(name).cloned().unwrap_or(Json::Null);
+            litellm_params.insert(name.to_owned(), value);
+        }
+        // the record keeps the options as they stand here, before any branch-specific merge
+        logger.update_from_kwargs(PreCallRecord {
+            model: resolved.model.clone(),
+            user: call.user.clone(),
+            optional_params: params.clone(),
+            litellm_params,
+            custom_llm_provider: resolved.provider.clone(),
+        })?;
+        let timeout = branch_timeout(&tag, call.timeout, self.settings.request_timeout_seconds)?;
+        if merges_non_default(&tag) {
+            merge_non_default(&mut params, &non_default)?;
+        }
+        let headers = merged_headers(call)?;
+        let images = call.image.images();
+        provider.send(ImageEditSendRequest {
+            model: &resolved.model,
+            prompt: call.prompt.as_deref(),
+            images: &images,
+            mask: call.mask.as_ref(),
+            optional_params: &params,
+            litellm_params: &call.kwargs,
+            extra_headers: headers.as_ref(),
+            extra_body: call.extra_body.as_ref(),
+            timeout,
+            api_key: text_param(&call.kwargs, "api_key"),
+            api_base: text_param(&call.kwargs, "api_base"),
+            custom_llm_provider: &resolved.provider,
+            client: client_for(call, asynchronous),
+            asynchronous,
+        })
+    }
+}
+
+// a supplied client of the other kind reaches no handler
+fn client_for(call: &ImageEditCall, asynchronous: bool) -> Option<ImageEditClientKind> {
+    call.client
+        .filter(|kind| *kind == ImageEditClientKind::of(asynchronous))
+}
+
+fn text_param<'params>(params: &'params ImageParams, name: &str) -> Option<&'params str> {
+    match params.get(name) {
+        Some(Json::Text(text)) => Some(text),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    }
+}
+
+// timeout or DEFAULT_REQUEST_TIMEOUT everywhere but bedrock, which keeps the caller's value unchanged
+pub(crate) fn branch_timeout(
+    tag: &ImageEditConfigTag,
+    timeout: Option<f64>,
+    fallback_seconds: f64,
+) -> Result<Option<f64>, ImageEditError> {
+    if matches!(tag, ImageEditConfigTag::Bedrock(_)) {
+        return timeout.map(seconds_checked).transpose();
+    }
+    request_timeout(timeout, fallback_seconds).map(Some)
+}
+
+#[must_use]
+pub(crate) const fn merges_non_default(tag: &ImageEditConfigTag) -> bool {
+    matches!(
+        tag,
+        ImageEditConfigTag::Bedrock(_)
+            | ImageEditConfigTag::Stability(_)
+            | ImageEditConfigTag::BlackForestLabs
+    )
+}
