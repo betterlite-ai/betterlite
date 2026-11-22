@@ -90,10 +90,10 @@ fn pipeline(case: &TransformInput) -> HelperResult {
     let value = output
         .value
         .ok_or_else(|| helper_error("the Converse request returned no body"))?;
-    let body = value
+    let member = value
         .get("body")
         .ok_or_else(|| helper_error("the Converse request returned no body member"))?;
-    let view: ConverseBodyView = from_value(body.clone()).map_err(helper_error)?;
+    let view: ConverseBodyView = from_value(member.clone()).map_err(helper_error)?;
     let body = transform_converse(&view.into_body()).map_err(helper_error)?;
     Ok(json!({"body": body}))
 }
