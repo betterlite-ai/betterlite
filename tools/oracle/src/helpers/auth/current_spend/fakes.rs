@@ -70,10 +70,14 @@ impl ScriptedCache<'_> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(json!([counter_key, amount_json(value)]));
-        if self.input.set_max_fails.0 {
+        Self::redis_answer(self.input.set_max_fails.0, self.input.set_max)
+    }
+
+    fn redis_answer<Answer>(fails: bool, answer: Answer) -> Result<Answer, ScriptedFailure> {
+        if fails {
             return Err(ScriptedFailure);
         }
-        Ok(self.input.set_max)
+        Ok(answer)
     }
 }
 
@@ -88,11 +92,8 @@ impl ReseedCache for ScriptedCache<'_> {
         &self,
         _counter_key: &str,
     ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ScriptedFailure>> + Send {
-        if self.input.redis_fails.0 {
-            return ready(Err(ScriptedFailure));
-        }
         let stored = self.input.redis_get.clone().map(ReseedCacheValue::Text);
-        ready(Ok(stored))
+        ready(Self::redis_answer(self.input.redis_fails.0, stored))
     }
 
     fn redis_set_nx(
@@ -170,9 +171,15 @@ impl ScriptedBatch {
         Self(Mutex::new(state))
     }
 
+    fn state(&self) -> BatchState {
+        match self.0.lock() {
+            Ok(guard) => *guard,
+            Err(poisoned) => *poisoned.into_inner(),
+        }
+    }
+
     pub(crate) fn after(&self) -> Value {
-        let state = *self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        match state {
+        match self.state() {
             BatchState::Loaded(value) => json!({"value": value.map_or(Value::Null, amount_json)}),
             BatchState::Absent | BatchState::Forgotten => Value::Null,
         }
@@ -184,8 +191,7 @@ impl ActiveSpendBatch for ScriptedBatch {
         &self,
         _counter_key: &str,
     ) -> impl Future<Output = Result<Option<CounterValue>, SpendCounterBatchError>> + Send {
-        let state = *self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        let answer = match state {
+        let answer = match self.state() {
             BatchState::Loaded(Some(amount)) => Some(CounterValue::Amount(amount)),
             BatchState::Loaded(None) => Some(CounterValue::Missing),
             BatchState::Absent | BatchState::Forgotten => None,
