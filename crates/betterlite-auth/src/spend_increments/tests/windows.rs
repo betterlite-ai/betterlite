@@ -1,8 +1,10 @@
+use betterlite_db::window_queue::queue::WindowSpendUpdateQueue;
 use rstest::rstest;
 
 use crate::spend_counter_batch::batch::SpendCounterBatchError;
 use crate::spend_increments::error::SpendIncrementError;
 use crate::spend_increments::increment_spend_counters;
+use crate::spend_increments::window::WindowSpendQueue;
 use crate::spend_writes::error::SpendWriteError;
 
 use super::support::{Fixture, Logs, decimal, fixture_instant, handle, input};
@@ -270,6 +272,26 @@ async fn a_cached_budget_limits_list_charges_its_windows(#[case] source: &str) {
         Some(decimal("2"))
     );
     assert_eq!(fixture.queue.records().len(), 1);
+}
+
+#[tokio::test]
+async fn the_wiring_queue_takes_the_window_row() {
+    let fixture = Fixture::new(false);
+    fixture.sources.put(
+        "tok",
+        r#"{"budget_limits": [{"budget_duration": "1d", "reset_at": "2026-11-18T00:00:00+00:00"}]}"#,
+    );
+
+    increment_spend_counters(&input(Some("tok")), &fixture.services())
+        .await
+        .unwrap();
+
+    let row = fixture.queue.records().remove(0);
+    let queue = WindowSpendUpdateQueue::new(4, 100, 10).unwrap();
+    WindowSpendQueue::enqueue(&queue, row.clone())
+        .await
+        .unwrap();
+    assert_eq!(queue.flush().unwrap(), vec![row]);
 }
 
 #[tokio::test]
