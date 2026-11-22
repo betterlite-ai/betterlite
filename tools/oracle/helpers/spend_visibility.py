@@ -201,14 +201,14 @@ class Recorder(CustomLogger, AdditionalLoggingUtils):
         return self.board.step["payload"]
 
 
-# the callbacks the detail route searches, with the base's bare Callable spelled Any-free
+# the callbacks the detail route searches: just the step's recorder
 class Loggers(LoggingCallbackManager):
-    def __init__(self, recorder: Recorder) -> None:
-        self.recorder = recorder
-
+    def __init__(self, recorder: Recorder) -> None: self.recorder = recorder
     @override
-    def _get_all_callbacks(self) -> list[CustomLogger | Callable[[], None] | str]:
-        return [self.recorder]
+    def get_active_additional_logging_utils_from_custom_logger(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> set[AdditionalLoggingUtils]:
+        return {self.recorder}
 
 
 # the lookup FastAPI makes for the key check, answered for every callback the route declares
