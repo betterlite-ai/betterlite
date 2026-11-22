@@ -1,0 +1,5 @@
+kind: helper
+name: sso-identity-bridge-corpus-seed
+call: {sso_identity_bridge: {function: provider, environment: {GENERIC_CLIENT_ID: generic-seed}}}
+env: {}
+compare: {ignore: []}
