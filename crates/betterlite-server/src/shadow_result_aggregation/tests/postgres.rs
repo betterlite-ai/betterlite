@@ -137,12 +137,12 @@ async fn execute(pool: &Pool, sql: &str) {
 }
 
 async fn legs(pool: &Pool, ids: &[&str]) -> Vec<LegRow> {
-    let ids: Vec<String> = ids.iter().map(|id| (*id).to_owned()).collect();
+    let owned: Vec<String> = ids.iter().map(|id| (*id).to_owned()).collect();
     let client = pool.get().await.unwrap();
     let rows = client
         .query(
             r#"SELECT * FROM "LiteLLM_ShadowEvalJob" WHERE "id" = ANY($1::text[])"#,
-            &[&ids],
+            &[&owned],
         )
         .await
         .unwrap();
@@ -207,7 +207,7 @@ async fn model_slices_name_a_missing_model_unknown() {
     fixture.close_async().await.unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(row(&rows, "gpt-5.2").turn_count, 2);
-    assert_eq!(row(&rows, "gpt-5.2").avg_confidence, Some(0.625));
+    assert_eq!(row(&rows, "gpt-5.2").avg_confidence, Some(0.625_f64));
     assert_eq!(row(&rows, "unknown").turn_count, 1);
     assert_eq!(row(&rows, "unknown").cache_hit_turns, 1);
 }
@@ -226,7 +226,7 @@ async fn leg_slices_count_only_the_requested_legs() {
     assert_eq!(rows.len(), 2);
     assert_eq!(row(&rows, "leg-a").turn_count, 2);
     assert_eq!(row(&rows, "leg-a").real_spend, money(0.375));
-    assert_eq!(row(&rows, "leg-a").avg_confidence, Some(0.75));
+    assert_eq!(row(&rows, "leg-a").avg_confidence, Some(0.75_f64));
     assert_eq!(row(&rows, "leg-b").turn_count, 1);
 }
 
@@ -341,7 +341,7 @@ async fn attempt_counts_freeze_each_leg_at_its_stopped_at() {
     assert_eq!(leg_b.attempt_count, 2);
     assert_eq!(leg_b.spend, money(0.75));
     assert_eq!(counts.len(), 2);
-    assert_eq!(counts.get("leg-a").unwrap().attempt_count, 1);
+    assert_eq!(counts["leg-a"].attempt_count, 1);
     assert!(empty.is_empty());
 }
 
@@ -450,6 +450,15 @@ async fn labels_read_each_kind_and_ignore_unknown_ids() {
     let empty = repo.label_rows(LabelKind::Key, &[]).await.unwrap();
     pool.close();
     fixture.close_async().await.unwrap();
+    assert_label_rows(&keys, &teams, &users, &empty);
+}
+
+fn assert_label_rows(
+    keys: &[LabelRow],
+    teams: &[LabelRow],
+    users: &[LabelRow],
+    empty: &[LabelRow],
+) {
     assert_eq!(
         keys,
         vec![LabelRow {
@@ -466,6 +475,7 @@ async fn labels_read_each_kind_and_ignore_unknown_ids() {
             key_name: None,
         }]
     );
+    assert_eq!(users.len(), 1);
     assert_eq!(
         users.first().unwrap().target_alias.as_deref(),
         Some("user@example.com")

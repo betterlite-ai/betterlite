@@ -106,13 +106,6 @@ pub fn leg_row(row: &Row) -> RepositoryResult<LegRow> {
     let direction: String = column(row, "direction")?;
     let max_turns: i32 = column(row, "max_turns")?;
     let max_budget: Option<f64> = column(row, "max_budget")?;
-    let max_budget = match max_budget {
-        Some(value) => Some(
-            Decimal::from_f64_retain(value)
-                .ok_or(ShadowResultsError::Unrepresentable { name: "max_budget" })?,
-        ),
-        None => None,
-    };
     Ok(LegRow {
         id: column(row, "id")?,
         group_id: column(row, "group_id")?,
@@ -126,7 +119,12 @@ pub fn leg_row(row: &Row) -> RepositoryResult<LegRow> {
         judge_model: column(row, "judge_model")?,
         shadow_percentage: column(row, "shadow_percentage")?,
         max_turns: i64::from(max_turns),
-        max_budget,
+        max_budget: max_budget
+            .map(|value| {
+                Decimal::from_f64_retain(value)
+                    .ok_or(ShadowResultsError::Unrepresentable { name: "max_budget" })
+            })
+            .transpose()?,
         created_at: column::<NaiveDateTime>(row, "created_at")?.and_utc(),
         ends_at: column::<NaiveDateTime>(row, "ends_at")?.and_utc(),
         stopped_at: column::<Option<NaiveDateTime>>(row, "stopped_at")?

@@ -12,7 +12,7 @@ use crate::shadow_eval_models::job::ShadowJob;
 use crate::shadow_eval_models::leg::ShadowLeg;
 
 // _AttemptCountRow: one leg's attempts and recorded eval spend, judged and errored alike
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct LegAttemptCount {
     pub job_id: String,
@@ -23,7 +23,7 @@ pub struct LegAttemptCount {
 pub type LegCounts = BTreeMap<String, LegAttemptCount>;
 
 // _AttemptTotalsRow: judged turns, errored attempts and judge spend over every attempt
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AttemptTotals {
     pub judged_count: i64,
@@ -39,6 +39,7 @@ pub struct ErrorAttempt {
 }
 
 // the newest error across the job's legs; a per-leg read leaves one candidate per leg
+#[must_use]
 pub fn latest_error(attempts: &[ErrorAttempt]) -> Option<String> {
     let mut newest: Option<&ErrorAttempt> = None;
     for attempt in attempts {
@@ -46,7 +47,7 @@ pub fn latest_error(attempts: &[ErrorAttempt]) -> Option<String> {
             newest = Some(attempt);
         }
     }
-    newest.and_then(|attempt| attempt.error.clone())
+    newest?.error.clone()
 }
 
 // _group_response: the one constructor of a job response, its config read off the first leg
@@ -62,10 +63,7 @@ pub fn group_response(
             .cmp(target_type_name(right.target_type))
             .then_with(|| left.target_id.cmp(&right.target_id))
     });
-    let targets = ordered
-        .into_iter()
-        .map(|leg| target(leg, counts))
-        .collect::<Result<Vec<_>, _>>()?;
+    let targets = ordered.into_iter().map(|leg| target(leg, counts)).collect();
     Ok(ShadowJob {
         job_id: group_id.to_owned(),
         targets,
@@ -119,21 +117,18 @@ pub fn detail_response(
 }
 
 // one target entry; a leg with no counted attempt reads as zero attempts and zero spend
-fn target(leg: &LegRow, counts: &LegCounts) -> Result<ShadowLeg, ShadowResultsError> {
+fn target(leg: &LegRow, counts: &LegCounts) -> ShadowLeg {
     let count = counts.get(&leg.id);
-    Ok(ShadowLeg {
+    ShadowLeg {
         target_type: leg.target_type,
         target_id: leg.target_id.clone(),
         max_turns: leg.max_turns,
         max_budget: leg.max_budget,
         stopped_at: leg.stopped_at,
         attempt_count: Some(count.map_or(0, |found| found.attempt_count)),
-        spend: Some(match count {
-            Some(found) => found.spend.round_dp(6),
-            None => Decimal::ZERO,
-        }),
+        spend: Some(count.map_or(Decimal::ZERO, |found| found.spend.round_dp(6))),
         verdicts: None,
         target_alias: None,
         key_name: None,
-    })
+    }
 }

@@ -5,6 +5,7 @@ mod postgres;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 use rust_decimal::Decimal;
+use std::fmt::Debug;
 
 use super::aggregation::{AttemptAggRow, pct_of, round_to, slices};
 use super::error::ShadowResultsError;
@@ -68,44 +69,46 @@ fn count(job_id: &str, attempt_count: i64, spend: f64) -> LegAttemptCount {
 fn agg(
     group: &str,
     turns: i64,
-    wins: (i64, i64, i64),
+    counts: (i64, i64, i64, i64),
     confidence: Option<f64>,
     spends: (f64, f64),
-    cache_hits: i64,
 ) -> AttemptAggRow {
     AttemptAggRow {
         group: group.to_owned(),
         turn_count: turns,
-        real_wins: wins.0,
-        shadow_wins: wins.1,
-        ties: wins.2,
+        real_wins: counts.0,
+        shadow_wins: counts.1,
+        ties: counts.2,
+        cache_hit_turns: counts.3,
         avg_confidence: confidence,
         real_spend: money(spends.0),
         shadow_spend: money(spends.1),
-        cache_hit_turns: cache_hits,
     }
 }
 
-fn slice(
-    group: &str,
+#[derive(Clone, Copy)]
+struct SliceRow {
+    group: &'static str,
     turns: i64,
     rates: (f64, f64, f64),
     confidence: f64,
     spends: (f64, f64),
     cache_hits: i64,
-) -> ShadowEvalSlice {
-    let (real_win_rate_pct, shadow_win_rate_pct, tie_rate_pct) = rates;
-    let (real_spend, shadow_spend) = spends;
+}
+
+fn slice(row: SliceRow) -> ShadowEvalSlice {
+    let (real_win_rate_pct, shadow_win_rate_pct, tie_rate_pct) = row.rates;
+    let (real_spend, shadow_spend) = row.spends;
     ShadowEvalSlice {
-        group: group.to_owned(),
-        turn_count: turns,
+        group: row.group.to_owned(),
+        turn_count: row.turns,
         real_win_rate_pct,
         shadow_win_rate_pct,
         tie_rate_pct,
-        avg_judge_confidence: confidence,
+        avg_judge_confidence: row.confidence,
         real_spend: money(real_spend),
         shadow_spend: money(shadow_spend),
-        cache_hit_turns: cache_hits,
+        cache_hit_turns: row.cache_hits,
     }
 }
 
@@ -289,28 +292,61 @@ enum Behavior {
 }))]
 #[case::slices_rank_the_busiest_group_first(Behavior::Slices(SlicesCase {
     rows: vec![
-        agg("simple", 4, (3, 1, 0), Some(0.8751), (0.1, 0.2), 1),
-        agg("complex", 2, (0, 1, 1), None, (0.0, 0.0), 0),
-        agg("equal-turn", 2, (2, 0, 0), Some(0.5), (0.3, 0.0), 2),
+        agg("simple", 4, (3, 1, 0, 1), Some(0.875_1_f64), (0.1_f64, 0.2_f64)),
+        agg("complex", 2, (0, 1, 1, 0), None, (0.0_f64, 0.0_f64)),
+        agg("equal-turn", 2, (2, 0, 0, 2), Some(0.5_f64), (0.3_f64, 0.0_f64)),
     ],
     expected: vec![
-        slice("simple", 4, (75.0, 25.0, 0.0), 0.875, (0.1, 0.2), 1),
-        slice("complex", 2, (0.0, 50.0, 50.0), 0.0, (0.0, 0.0), 0),
-        slice("equal-turn", 2, (100.0, 0.0, 0.0), 0.5, (0.3, 0.0), 2),
+        slice(SliceRow {
+            group: "simple",
+            turns: 4,
+            rates: (75.0_f64, 25.0_f64, 0.0_f64),
+            confidence: 0.875_f64,
+            spends: (0.1_f64, 0.2_f64),
+            cache_hits: 1,
+        }),
+        slice(SliceRow {
+            group: "complex",
+            turns: 2,
+            rates: (0.0_f64, 50.0_f64, 50.0_f64),
+            confidence: 0.0_f64,
+            spends: (0.0_f64, 0.0_f64),
+            cache_hits: 0,
+        }),
+        slice(SliceRow {
+            group: "equal-turn",
+            turns: 2,
+            rates: (100.0_f64, 0.0_f64, 0.0_f64),
+            confidence: 0.5_f64,
+            spends: (0.3_f64, 0.0_f64),
+            cache_hits: 2,
+        }),
     ],
 }))]
 #[case::results_sum_tiers_and_key_verdicts_by_target(Behavior::Results(ResultsCase {
     legs: vec![leg("leg-key", Key, "k1"), leg("leg-team", Team, "t1")],
     by_tier: vec![
-        agg("simple", 3, (1, 2, 0), Some(0.9), (0.1, 0.2), 0),
-        agg("complex", 2, (1, 0, 1), Some(0.9), (0.3, 0.1), 0),
+        agg("simple", 3, (1, 2, 0, 0), Some(0.9_f64), (0.1_f64, 0.2_f64)),
+        agg("complex", 2, (1, 0, 1, 0), Some(0.9_f64), (0.3_f64, 0.1_f64)),
     ],
-    by_model: vec![agg("gpt-5.2", 5, (2, 2, 1), Some(0.9), (0.4, 0.3), 0)],
+    by_model: vec![agg(
+        "gpt-5.2",
+        5,
+        (2, 2, 1, 0),
+        Some(0.9_f64),
+        (0.4_f64, 0.3_f64),
+    )],
     by_leg: vec![
-        agg("leg-key", 3, (1, 1, 1), Some(0.7), (0.2, 0.1), 0),
-        agg("leg-team", 2, (1, 1, 0), Some(0.8), (0.2, 0.2), 0),
+        agg("leg-key", 3, (1, 1, 1, 0), Some(0.7_f64), (0.2_f64, 0.1_f64)),
+        agg("leg-team", 2, (1, 1, 0, 0), Some(0.8_f64), (0.2_f64, 0.2_f64)),
     ],
-    by_router: vec![agg("router-a", 5, (2, 2, 1), Some(0.9), (0.4, 0.3), 0)],
+    by_router: vec![agg(
+        "router-a",
+        5,
+        (2, 2, 1, 0),
+        Some(0.9_f64),
+        (0.4_f64, 0.3_f64),
+    )],
     funnel: None,
     expected: ResultsExpectation {
         tier_groups: vec!["simple", "complex"],
@@ -326,7 +362,7 @@ enum Behavior {
 }))]
 #[case::results_carry_a_fully_covered_funnel(Behavior::Results(ResultsCase {
     legs: vec![leg("leg-key", Key, "k1"), leg("leg-team", Team, "t1")],
-    by_tier: vec![agg("simple", 2, (1, 1, 0), Some(0.5), (0.0, 0.0), 0)],
+    by_tier: vec![agg("simple", 2, (1, 1, 0, 0), Some(0.5_f64), (0.0_f64, 0.0_f64))],
     by_model: Vec::new(),
     by_leg: Vec::new(),
     by_router: Vec::new(),
@@ -389,10 +425,10 @@ enum Behavior {
         judge_spend: money(0.123_456_7),
     },
     last_error: Some("judge timed out"),
-    by_tier: vec![agg("simple", 5, (2, 2, 1), Some(0.9), (0.4, 0.3), 0)],
+    by_tier: vec![agg("simple", 5, (2, 2, 1, 0), Some(0.9_f64), (0.4_f64, 0.3_f64))],
     by_leg: vec![
-        agg("leg-key", 3, (1, 1, 1), Some(0.7), (0.2, 0.1), 0),
-        agg("leg-team", 2, (1, 1, 0), Some(0.8), (0.2, 0.2), 0),
+        agg("leg-key", 3, (1, 1, 1, 0), Some(0.7_f64), (0.2_f64, 0.1_f64)),
+        agg("leg-team", 2, (1, 1, 0, 0), Some(0.8_f64), (0.2_f64, 0.2_f64)),
     ],
     expected: DetailExpectation {
         judged_count: 7,
@@ -485,10 +521,13 @@ fn assert_result_slices(result: &ShadowEvalResult, expected: &ResultsExpectation
 
 fn assert_result_totals(result: &ShadowEvalResult, expected: &ResultsExpectation) {
     assert_eq!(
-        result.overall_shadow_win_rate_pct,
-        expected.overall_shadow_win
+        result.overall_shadow_win_rate_pct.to_bits(),
+        expected.overall_shadow_win.to_bits()
     );
-    assert_eq!(result.overall_tie_rate_pct, expected.overall_tie);
+    assert_eq!(
+        result.overall_tie_rate_pct.to_bits(),
+        expected.overall_tie.to_bits()
+    );
     assert_eq!(result.sampled_real_spend, expected.real_spend);
     assert_eq!(result.sampled_shadow_spend, expected.shadow_spend);
     let funnel = expected.funnel;
@@ -646,30 +685,30 @@ enum Boundary {
 }
 
 #[rstest]
-#[case::percent_one_third_rounds_to_one_decimal(Boundary::Percent { numerator: 1, denominator: 3, expected: 33.3 })]
-#[case::percent_two_thirds_rounds_up(Boundary::Percent { numerator: 2, denominator: 3, expected: 66.7 })]
-#[case::percent_five_per_mille_rounds_up(Boundary::Percent { numerator: 1, denominator: 2000, expected: 0.1 })]
-#[case::percent_just_under_one_hundred_rounds_to_it(Boundary::Percent { numerator: 1999, denominator: 2000, expected: 100.0 })]
-#[case::percent_zero_denominator_reads_zero(Boundary::Percent { numerator: 7, denominator: 0, expected: 0.0 })]
-#[case::percent_negative_denominator_reads_zero(Boundary::Percent { numerator: 7, denominator: -1, expected: 0.0 })]
-#[case::percent_zero_numerator_reads_zero(Boundary::Percent { numerator: 0, denominator: 7, expected: 0.0 })]
-#[case::round_six_places_keeps_the_representable_below(Boundary::Round { value: 0.123_456_5, places: 6, expected: spelled("0.123456") })]
-#[case::round_three_places_at_a_true_half(Boundary::Round { value: 0.0005, places: 3, expected: spelled("0.001") })]
-#[case::round_one_decimal_keeps_the_representable_below(Boundary::Round { value: 0.15, places: 1, expected: spelled("0.1") })]
-#[case::round_one_decimal_ties_to_even(Boundary::Round { value: 6.25, places: 1, expected: spelled("6.2") })]
-#[case::round_zero_places_ties_to_even(Boundary::Round { value: 2.5, places: 0, expected: spelled("2.0") })]
-#[case::round_zero_places_ties_up_to_even(Boundary::Round { value: 3.5, places: 0, expected: spelled("4.0") })]
-#[case::round_six_places_carries(Boundary::Round { value: 0.999_999_5, places: 6, expected: spelled("1.0") })]
+#[case::percent_one_third_rounds_to_one_decimal(Boundary::Percent { numerator: 1, denominator: 3, expected: 33.3_f64 })]
+#[case::percent_two_thirds_rounds_up(Boundary::Percent { numerator: 2, denominator: 3, expected: 66.7_f64 })]
+#[case::percent_five_per_mille_rounds_up(Boundary::Percent { numerator: 1, denominator: 2000, expected: 0.1_f64 })]
+#[case::percent_just_under_one_hundred_rounds_to_it(Boundary::Percent { numerator: 1999, denominator: 2000, expected: 100.0_f64 })]
+#[case::percent_zero_denominator_reads_zero(Boundary::Percent { numerator: 7, denominator: 0, expected: 0.0_f64 })]
+#[case::percent_negative_denominator_reads_zero(Boundary::Percent { numerator: 7, denominator: -1, expected: 0.0_f64 })]
+#[case::percent_zero_numerator_reads_zero(Boundary::Percent { numerator: 0, denominator: 7, expected: 0.0_f64 })]
+#[case::round_six_places_keeps_the_representable_below(Boundary::Round { value: 0.123_456_5_f64, places: 6, expected: spelled("0.123456") })]
+#[case::round_three_places_at_a_true_half(Boundary::Round { value: 0.000_5_f64, places: 3, expected: spelled("0.001") })]
+#[case::round_one_decimal_keeps_the_representable_below(Boundary::Round { value: 0.15_f64, places: 1, expected: spelled("0.1") })]
+#[case::round_one_decimal_ties_to_even(Boundary::Round { value: 6.25_f64, places: 1, expected: spelled("6.2") })]
+#[case::round_zero_places_ties_to_even(Boundary::Round { value: 2.5_f64, places: 0, expected: spelled("2.0") })]
+#[case::round_zero_places_ties_up_to_even(Boundary::Round { value: 3.5_f64, places: 0, expected: spelled("4.0") })]
+#[case::round_six_places_carries(Boundary::Round { value: 0.999_999_5_f64, places: 6, expected: spelled("1.0") })]
 #[case::round_nan_is_unrepresentable(Boundary::RoundUnrepresentable { value: f64::NAN })]
 #[case::slice_nan_confidence_is_unrepresentable(Boundary::SliceUnrepresentable {
-    row: agg("tier", 1, (1, 0, 0), Some(f64::NAN), (0.5, 0.0), 0),
+    row: agg("tier", 1, (1, 0, 0, 0), Some(f64::NAN), (0.5_f64, 0.0_f64)),
     name: "avg_judge_confidence",
 })]
 #[case::group_response_needs_a_leg(Boundary::NoLegs)]
 #[case::verdicts_name_an_attempt_for_an_unknown_leg(Boundary::UnknownLeg {
     legs: vec![leg("leg-key", Key, "k1")],
-    by_tier: vec![agg("simple", 1, (1, 0, 0), Some(0.5), (0.0, 0.0), 0)],
-    by_leg: vec![agg("ghost", 1, (1, 0, 0), Some(0.5), (0.0, 0.0), 0)],
+    by_tier: vec![agg("simple", 1, (1, 0, 0, 0), Some(0.5_f64), (0.0_f64, 0.0_f64))],
+    by_leg: vec![agg("ghost", 1, (1, 0, 0, 0), Some(0.5_f64), (0.0_f64, 0.0_f64))],
 })]
 #[case::funnel_with_one_leg_missing_is_unknown(Boundary::Coverage {
     legs: vec![leg("leg-key", Key, "k1"), leg("leg-team", Team, "t1")],
@@ -712,17 +751,17 @@ fn shadow_result_aggregation_boundaries(#[case] boundary: Boundary) {
             numerator,
             denominator,
             expected,
-        } => assert_eq!(pct_of(numerator, denominator).unwrap(), expected),
+        } => assert_percent(numerator, denominator, expected),
         Boundary::Round {
             value,
             places,
             expected,
         } => assert_eq!(round_to(value, places, "rate").unwrap(), expected),
         Boundary::RoundUnrepresentable { value } => {
-            assert_unrepresentable(round_to(value, 1, "rate"), "rate")
+            assert_unrepresentable(round_to(value, 1, "rate"), "rate");
         }
         Boundary::SliceUnrepresentable { row, name } => {
-            assert_unrepresentable(slices(&[row]), name)
+            assert_unrepresentable(slices(&[row]), name);
         }
         Boundary::NoLegs => assert_no_legs(),
         Boundary::UnknownLeg {
@@ -747,9 +786,14 @@ fn shadow_result_aggregation_boundaries(#[case] boundary: Boundary) {
     }
 }
 
+fn assert_percent(numerator: i64, denominator: i64, expected: f64) {
+    let rate = pct_of(numerator, denominator).unwrap();
+    assert_eq!(rate.to_bits(), expected.to_bits());
+}
+
 fn assert_unrepresentable<Value>(outcome: Result<Value, ShadowResultsError>, name: &str)
 where
-    Value: std::fmt::Debug,
+    Value: Debug,
 {
     match outcome {
         Err(ShadowResultsError::Unrepresentable { name: found }) => assert_eq!(found, name),
@@ -779,7 +823,13 @@ fn assert_unknown_leg(legs: &[LegRow], by_tier: &[AttemptAggRow], by_leg: &[Atte
 }
 
 fn assert_coverage(legs: &[LegRow], reported: i64, expected: Option<i64>) {
-    let by_tier = vec![agg("simple", 1, (1, 0, 0), Some(0.5), (0.0, 0.0), 0)];
+    let by_tier = vec![agg(
+        "simple",
+        1,
+        (1, 0, 0, 0),
+        Some(0.5_f64),
+        (0.0_f64, 0.0_f64),
+    )];
     let aggregates = JobAggregates {
         by_tier: &by_tier,
         by_model: &[],
@@ -815,6 +865,6 @@ fn assert_target_ids(
     target_type: ShadowEvalTargetType,
     expected: &[&str],
 ) {
-    let expected: Vec<String> = expected.iter().map(|id| (*id).to_owned()).collect();
-    assert_eq!(target_ids_of(responses, target_type), expected);
+    let wanted: Vec<String> = expected.iter().map(|id| (*id).to_owned()).collect();
+    assert_eq!(target_ids_of(responses, target_type), wanted);
 }

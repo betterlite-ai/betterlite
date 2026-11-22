@@ -47,15 +47,15 @@ pub fn pct_of(numerator: i64, denominator: i64) -> Result<f64, ShadowResultsErro
     if denominator <= 0 {
         return Ok(0.0_f64);
     }
-    let numerator = numerator
+    let count = numerator
         .to_f64()
         .ok_or(ShadowResultsError::Unrepresentable { name: "numerator" })?;
-    let denominator = denominator
+    let total = denominator
         .to_f64()
         .ok_or(ShadowResultsError::Unrepresentable {
             name: "denominator",
         })?;
-    let rate = numerator.mul(100.0_f64).div(denominator);
+    let rate = count.mul(100.0_f64).div(total);
     Ok(round_to(rate, 1, "rate")?.as_f64())
 }
 
