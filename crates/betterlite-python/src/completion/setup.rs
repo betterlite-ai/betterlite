@@ -44,14 +44,9 @@ pub(crate) fn openai_defaults(environment: &BTreeMap<String, String>) -> OpenAiD
 pub(crate) fn outbound_client(
     environment: &BTreeMap<String, String>,
 ) -> Result<ProxiedClient, SessionError> {
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment).map_err(|error| {
-        SessionError::Proxy {
-            message: error.to_string(),
-        }
-    })?;
-    ProxiedClient::outbound(&Arc::new(policy)).map_err(|error| SessionError::Client {
-        message: error.to_string(),
-    })
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment)
+        .map_err(|source| SessionError::Proxy { source })?;
+    ProxiedClient::outbound(&Arc::new(policy)).map_err(|source| SessionError::Client { source })
 }
 // litellm.api_key and litellm.api_base reach resolution as the module-level credentials
 pub(crate) fn global_credentials(settings: &CompletionSettings) -> GlobalCredentials {

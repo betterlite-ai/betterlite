@@ -81,9 +81,7 @@ impl SessionCore {
         let mut model_sets = ProviderModelSets::default();
         model_sets.add_known_models(&catalog);
         let counter = runtime_counter(&runtime_config(), &Arc::new(client.clone()), &catalog)
-            .map_err(|error| SessionError::Tokenizer {
-                message: error.to_string(),
-            })?;
+            .map_err(|source| SessionError::Tokenizer { source })?;
         Ok(Self {
             defaults: openai_defaults(&environment),
             environment,

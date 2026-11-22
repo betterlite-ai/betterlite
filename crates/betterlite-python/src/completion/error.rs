@@ -1,7 +1,10 @@
 use super::convert::{ConvertError, NativeErrorPayload};
+use betterlite_env::EnvError;
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_http::error::HttpError;
 use betterlite_sdk::call_wrapper::error::CallError;
+use betterlite_tokenizer::count::error::CountError;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
@@ -10,12 +13,21 @@ create_exception!(betterlite_native, NativeError, PyException);
 pub(crate) enum SessionError {
     #[error(transparent)]
     Json(#[from] ConvertError),
-    #[error("the proxy environment could not be read: {message}")]
-    Proxy { message: String },
-    #[error("the outbound http client could not be built: {message}")]
-    Client { message: String },
-    #[error("the tokenizer counter could not be built: {message}")]
-    Tokenizer { message: String },
+    #[error("the proxy environment could not be read: {source}")]
+    Proxy {
+        #[source]
+        source: EnvError,
+    },
+    #[error("the outbound http client could not be built: {source}")]
+    Client {
+        #[source]
+        source: HttpError,
+    },
+    #[error("the tokenizer counter could not be built: {source}")]
+    Tokenizer {
+        #[source]
+        source: CountError,
+    },
 }
 pub(crate) fn call_error(error: &CallError) -> PyErr {
     let payload = NativeErrorPayload::from_call_error(error);
