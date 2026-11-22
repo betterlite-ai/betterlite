@@ -191,10 +191,10 @@ fn the_router_config_registers_the_named_check() {
     assert!(from_config(&config("model_list: []\n")).is_none());
 }
 
-// _ensure_deployment_affinity_callback: a complexity router that stamps the marker registers the check with every global flag off
+// _ensure_deployment_affinity_callback: a complexity router whose config omits deployment_affinity still registers the check
 #[test]
 fn a_marker_stamping_router_registers_the_check() {
-    let source = "model_list:\n  - model_name: router\n    litellm_params:\n      model: openai/gpt-4o\n      complexity_router_config:\n        deployment_affinity: true\n";
+    let source = "model_list:\n  - model_name: router\n    litellm_params:\n      model: openai/gpt-4o\n      complexity_router_config: {}\n";
     let affinity = from_config(&config(source)).expect("the marker registers the check");
     assert!(affinity.flags_for("gpt-4o").is_empty());
 }
