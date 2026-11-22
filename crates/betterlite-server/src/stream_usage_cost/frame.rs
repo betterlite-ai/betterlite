@@ -1,5 +1,5 @@
 use betterlite_logging::logging_state::LoggingState;
-use betterlite_logging::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
+use betterlite_logging::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, MAX_DEPTH_MARKER};
 use betterlite_models::decisions::Json;
 
 use super::StreamCostInjector;
@@ -53,7 +53,34 @@ fn payload_of(line: &str) -> Option<&str> {
 }
 
 fn data_line(modified: &Json, carriage_return: bool) -> Option<String> {
-    let serialized = safe_dumps(modified, DEFAULT_MAX_RECURSE_DEPTH, None).ok()?;
+    let serialized = serde_json::to_string(&bounded_value(modified, 0)).ok()?;
     let suffix = if carriage_return { "\r" } else { "" };
     Some(format!("data: {serialized}{suffix}"))
+}
+
+// B192's safe_dumps sorts keys, so the parsed value gets the same depth marker and NUL stripping.
+fn bounded_value(value: &Json, depth: usize) -> Json {
+    if depth > DEFAULT_MAX_RECURSE_DEPTH {
+        return Json::Text(MAX_DEPTH_MARKER.to_owned());
+    }
+    match value {
+        Json::Null | Json::Bool(_) | Json::Number(_) => value.clone(),
+        Json::Text(text) => Json::Text(text.replace('\0', "")),
+        Json::List(items) => Json::List(
+            items
+                .iter()
+                .map(|item| bounded_value(item, depth.saturating_add(1)))
+                .collect(),
+        ),
+        Json::Object(fields) => Json::Object(
+            fields
+                .iter()
+                .map(|(name, item)| {
+                    let clean_name = name.replace('\0', "");
+                    let child = bounded_value(item, depth.saturating_add(1));
+                    (clean_name, child)
+                })
+                .collect(),
+        ),
+    }
 }

@@ -27,14 +27,17 @@ fn byte_frames_need_a_complete_terminator(#[case] terminator: &str, #[case] rewr
     let calculator = calculator(None);
     let injector = injector(&recorder, &calculator, true);
     let frame = format!("data: {CHAT_EVENT}{terminator}");
-    let output = injector.process_bytes(frame.as_bytes(), "gpt-4o", None);
+    let mut log = call_log("deployment");
+    let output = injector.process_bytes(frame.as_bytes(), "gpt-4o", Some(&mut log));
     if rewritten {
         let text = from_utf8(&output).unwrap();
         assert!(text.ends_with(terminator), "the separator is preserved");
         assert!(text.contains("\"cost\":0.5"));
+        assert_eq!(take_calls(&recorder.observed).len(), 1);
     } else {
         assert!(matches!(output, Cow::Borrowed(_)));
         assert_eq!(output.as_ref(), frame.as_bytes());
+        assert!(take_calls(&recorder.observed).is_empty());
     }
     assert!(take_calls(&calculator.observed).is_empty());
 }
@@ -142,6 +145,19 @@ fn crlf_is_preserved_on_the_rewritten_line() {
     assert!(rewritten.ends_with('\r'));
     assert!(rewritten.contains("\"cost\":0.5"));
     assert!(output.starts_with("event: message\r\n"));
+}
+
+#[test]
+fn the_rewritten_line_keeps_the_events_key_order() {
+    let recorder = recorder(None);
+    let calculator = calculator(Some("0.5"));
+    let injector = injector(&recorder, &calculator, true);
+    let source = format!("data: {CHAT_EVENT}\n\n");
+    let output = injector.process_text(&source, "gpt-4o", None);
+    assert_eq!(
+        output.as_ref(),
+        "data: {\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"cost\":0.5}}\n\n"
+    );
 }
 
 #[test]
@@ -259,7 +275,7 @@ fn anthropic_cache_usage_reaches_the_recorder(#[case] cached: bool) {
         assert_eq!(
             seen[0].prompt_details,
             Some(details_object(
-                r#"{"text_tokens":10,"cached_tokens":3,"cache_creation_tokens":2,"cache_write_tokens":2,"cache_creation_token_details":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":1}}"#
+                r#"{"text_tokens":10,"cached_tokens":3,"cache_creation_tokens":2,"cache_write_tokens":2,"audio_tokens":null,"image_tokens":null,"video_tokens":null,"cache_creation_token_details":{"ephemeral_5m_input_tokens":1,"ephemeral_1h_input_tokens":1}}"#
             ))
         );
     } else {
@@ -455,7 +471,8 @@ fn the_fixed_helpers_price_a_frame_with_a_nonzero_cost() {
         calculator: &calculator_absent,
     };
     let recorded_event = json(CHAT_EVENT);
-    let recorded = priced.process_object(&recorded_event, "gpt-4o", None);
+    let mut log = call_log("deployment");
+    let recorded = priced.process_object(&recorded_event, "gpt-4o", Some(&mut log));
     assert_eq!(cost_text(recorded.as_ref()), Some("0.5".to_owned()));
     let recorder_absent = FixedRecorder(None);
     let calculator_priced = FixedCalculator(Some(amount("0.5")));
@@ -465,7 +482,7 @@ fn the_fixed_helpers_price_a_frame_with_a_nonzero_cost() {
         calculator: &calculator_priced,
     };
     let computed_event = json(CHAT_EVENT);
-    let computed = fallback.process_object(&computed_event, "gpt-4o", None);
+    let computed = fallback.process_object(&computed_event, "gpt-4o", Some(&mut log));
     assert_eq!(cost_text(computed.as_ref()), Some("0.5".to_owned()));
 }
 
@@ -541,6 +558,20 @@ fn a_wrongly_typed_details_field_aborts_the_attempt() {
 }
 
 #[test]
+fn a_frame_whose_first_usage_is_wrongly_typed_is_unchanged() {
+    let recorder = recorder(None);
+    let calculator = calculator(Some("0.5"));
+    let injector = injector(&recorder, &calculator, true);
+    let source = format!(
+        "data: {{\"object\":\"chat.completion.chunk\",\"usage\":{{\"prompt_tokens\":\"two\"}}}}\ndata: {CHAT_EVENT}\n\n"
+    );
+    let output = injector.process_text(&source, "gpt-4o", None);
+    assert!(matches!(output, Cow::Borrowed(_)));
+    assert_eq!(output.as_ref(), source.as_str());
+    assert!(take_calls(&calculator.observed).is_empty());
+}
+
+#[test]
 fn a_zero_cost_is_written_with_one_decimal_place() {
     let recorder = recorder(Some("0"));
     let calculator = calculator(None);
@@ -581,4 +612,37 @@ fn the_cost_key_keeps_its_place_after_the_other_usage_fields() {
     let names: Vec<&str> = usage.keys().map(String::as_str).collect();
     assert_eq!(names, vec!["prompt_tokens", "cost", "completion_tokens"]);
     assert_eq!(cost_text(output.as_ref()), Some("0.5".to_owned()));
+}
+
+#[rstest]
+#[case::leaf_at_the_depth_bound(99_usize, false)]
+#[case::leaf_past_the_depth_bound(100_usize, true)]
+fn a_value_past_the_safe_depth_is_marked(#[case] levels: usize, #[case] marked: bool) {
+    let recorder = recorder(None);
+    let calculator = calculator(Some("0.5"));
+    let injector = injector(&recorder, &calculator, true);
+    let opening = "[".repeat(levels);
+    let closing = "]".repeat(levels);
+    let source = format!(
+        "data: {{\"object\":\"chat.completion.chunk\",\"usage\":{{\"prompt_tokens\":2}},\"pad\":{opening}0{closing}}}\n\n"
+    );
+    let output = injector.process_text(&source, "gpt-4o", None);
+    assert!(output.contains("\"cost\":0.5"));
+    if marked {
+        assert!(output.contains(&format!("\"pad\":{opening}\"MaxDepthExceeded\"{closing}")));
+    } else {
+        assert!(output.contains(&format!("\"pad\":{opening}0{closing}")));
+    }
+}
+
+#[test]
+fn nul_bytes_are_dropped_from_a_rewritten_line() {
+    let recorder = recorder(None);
+    let calculator = calculator(Some("0.5"));
+    let injector = injector(&recorder, &calculator, true);
+    let source = "data: {\"object\":\"chat.completion.chunk\",\"usage\":{\"prompt_tokens\":2},\"no\\u0000te\":\"a\\u0000b\"}\n\n";
+    let output = injector.process_text(source, "gpt-4o", None);
+    assert!(output.contains("\"cost\":0.5"));
+    assert!(output.contains("\"note\":\"ab\""));
+    assert!(!output.contains("\\u0000"));
 }
