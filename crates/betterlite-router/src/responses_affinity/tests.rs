@@ -269,7 +269,7 @@ impl Fixture {
 pub(super) struct Request {
     pub(super) input: Option<Json>,
     pub(super) messages: Option<Vec<Message>>,
-    pub(super) request_messages: Option<Vec<Message>>,
+    pub(super) kwargs_messages: Option<Vec<Message>>,
     pub(super) metadata: Option<Json>,
     pub(super) pinned: bool,
 }
@@ -279,7 +279,7 @@ impl Request {
         Self {
             input: None,
             messages: None,
-            request_messages: None,
+            kwargs_messages: None,
             metadata: None,
             pinned: false,
         }
@@ -308,7 +308,7 @@ impl Request {
         let history = History {
             input: input.as_mut(),
             messages: self.messages.as_mut(),
-            request_messages: self.request_messages.as_mut(),
+            request_messages: self.kwargs_messages.as_mut(),
             metadata,
             pinned: &mut self.pinned,
         };

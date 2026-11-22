@@ -90,7 +90,7 @@ fn request_kwargs_messages_are_stripped_when_the_argument_is_empty() {
     let check = check(settings(true, &[]), &credentials);
     let mut request = Request::new();
     request.messages = Some(Vec::new());
-    request.request_messages = Some(vec![message(vec![
+    request.kwargs_messages = Some(vec![message(vec![
         thinking_part(Some("A")),
         thinking_part(Some("B")),
         text_part("keep"),
@@ -101,7 +101,7 @@ fn request_kwargs_messages_are_stripped_when_the_argument_is_empty() {
         thinking_part(Some("A")),
         text_part("keep"),
     ])]);
-    assert_eq!(request.request_messages, expected);
+    assert_eq!(request.kwargs_messages, expected);
 }
 
 #[test]

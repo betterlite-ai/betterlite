@@ -139,7 +139,7 @@ fn explicit_messages_win_over_request_kwargs_messages() {
     let check = check(settings(true, &[]), &credentials);
     let mut request = Request::new();
     request.messages = Some(vec![message(vec![thinking_part(Some("A"))])]);
-    request.request_messages = Some(vec![message(vec![thinking_part(Some("B"))])]);
+    request.kwargs_messages = Some(vec![message(vec![thinking_part(Some("B"))])]);
     let returned = request.filter(&check, "gpt-group", &deployments).unwrap();
     assert_eq!(ids(&returned), vec![Some("A".to_owned())]);
 }
@@ -154,7 +154,7 @@ fn an_empty_messages_argument_falls_back_to_request_kwargs_messages() {
     let check = check(settings(true, &[]), &credentials);
     let mut request = Request::new();
     request.messages = Some(Vec::new());
-    request.request_messages = Some(vec![message(vec![thinking_part(Some("B"))])]);
+    request.kwargs_messages = Some(vec![message(vec![thinking_part(Some("B"))])]);
     let returned = request.filter(&check, "gpt-group", &deployments).unwrap();
     assert_eq!(ids(&returned), vec![Some("B".to_owned())]);
 }
