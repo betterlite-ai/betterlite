@@ -1,5 +1,5 @@
 import asyncio
-from typing import Final, Protocol
+from typing import Protocol
 
 import litellm.main as speech_main
 import openai
@@ -26,7 +26,7 @@ class AsyncSpeechEntry(Protocol):
     async def aspeech(self, /, **kwargs: Json) -> HttpxBinaryResponseContent: ...
 
 
-ENTRY: Final[AsyncSpeechEntry] = speech_main
+ENTRY: AsyncSpeechEntry = speech_main
 
 
 class AsyncStep(BaseModel):

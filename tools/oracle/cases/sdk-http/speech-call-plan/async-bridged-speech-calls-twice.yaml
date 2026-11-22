@@ -1,6 +1,8 @@
 kind: sdk_http
 name: sdk-http-speech-call-plan-async-bridged-speech-calls-twice
 env:
+  # LiteLLM reads the Gemini key from the environment; a step key would reach the bridge's completion request
+  GEMINI_API_KEY: sk-oracle
   GEMINI_API_BASE: '$API_BASE'
 call:
   speech_call_plan:
@@ -8,7 +10,6 @@ call:
       - speech:
           model: gemini/gemini-2.5-flash-preview-tts
           voice: Kore
-          api_key: sk-oracle
 # LiteLLM reads the Gemini candidates and betterlite's bridge reads the chat choices, so each answer carries both
 upstream:
   - status: 200
