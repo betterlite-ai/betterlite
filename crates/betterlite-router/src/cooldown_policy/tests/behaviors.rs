@@ -88,6 +88,7 @@ pub(super) async fn fallback_cools_the_server_stamped_deployment() {
             .await
     );
     assert_eq!(harness.events.recorded().len(), 1);
+    assert_eq!(harness.service.counters.failures_for_minute("a"), 1);
 }
 
 pub(super) async fn generic_404_and_caller_timeout_never_cool() {
