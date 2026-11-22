@@ -1,14 +1,14 @@
 id: B4678
 milestone: M9 agents and mcp
 title: MCP BYOK OAuth metadata and authorization-code exchange
-status: done
+status: todo
 depends_on: [B4654]
 file: tasks/B4678-mcp-byok-token-exchange.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py"
 parent: B137
 split_from: B137
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2950
+pr: null
