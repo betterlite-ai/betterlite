@@ -56,17 +56,21 @@ fn source_error(write: &ClaudePluginWriteInput, expected: &str) {
     }
 }
 
+fn create_write(name: &str) -> ClaudePluginWriteInput {
+    input(
+        ClaudePluginWriteAction::Create,
+        name,
+        Some(spec(GITHUB_SPEC)),
+    )
+}
+
 #[rstest]
 #[case::plain("plugin")]
 #[case::numbered("plugin-2")]
 #[case::hyphenated("my-cool-plugin")]
 #[case::digits("9-lives")]
 fn create_accepts_kebab_names(#[case] name: &str) {
-    let write = input(
-        ClaudePluginWriteAction::Create,
-        name,
-        Some(spec(GITHUB_SPEC)),
-    );
+    let write = create_write(name);
     write.validate().unwrap();
     assert_eq!(write.manifest().unwrap().name, name);
 }
@@ -79,11 +83,7 @@ fn create_accepts_kebab_names(#[case] name: &str) {
 #[case::accented("plügin")]
 #[case::slash("org/plugin")]
 fn create_rejects_other_names(#[case] name: &str) {
-    let write = input(
-        ClaudePluginWriteAction::Create,
-        name,
-        Some(spec(GITHUB_SPEC)),
-    );
+    let write = create_write(name);
     name_error(&write);
 }
 

@@ -12,6 +12,7 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_redis::config_sync::publish::redis_config_change_publisher;
 use chrono::NaiveDateTime;
 use thiserror::Error;
+use tokio_postgres::Client;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
@@ -109,13 +110,24 @@ impl PostgresPluginStore {
         .access()
         .map_err(TableError::Database)
     }
+
+    async fn read_session(&self) -> Result<Client, TableError> {
+        let access = self.access()?;
+        let session = access.read.session().await;
+        session.map_err(TableError::Database)
+    }
+
+    async fn write_session(&self) -> Result<Client, TableError> {
+        let access = self.access()?;
+        let session = access.write.session().await;
+        session.map_err(TableError::Database)
+    }
 }
 
 #[async_trait]
 impl ClaudePluginStore for PostgresPluginStore {
     async fn find_by_name(&self, plugin_name: &str) -> Result<Option<StoredPlugin>, TableError> {
-        let access = self.access()?;
-        let session = access.read.session().await?;
+        let session = self.read_session().await?;
         let found = session
             .query_opt(FIND_SQL, &[&plugin_name])
             .await
@@ -124,8 +136,7 @@ impl ClaudePluginStore for PostgresPluginStore {
     }
 
     async fn create(&self, write: NewPlugin) -> Result<StoredPlugin, PluginCreateError> {
-        let access = self.access()?;
-        let session = access.write.session().await?;
+        let session = self.write_session().await?;
         let id = Uuid::new_v4().to_string();
         let parameters: [&(dyn ToSql + Sync); 9] = [
             &id,
@@ -154,8 +165,7 @@ impl ClaudePluginStore for PostgresPluginStore {
     }
 
     async fn update(&self, write: PluginChanges) -> Result<Option<StoredPlugin>, TableError> {
-        let access = self.access()?;
-        let session = access.write.session().await?;
+        let session = self.write_session().await?;
         let parameters: [&(dyn ToSql + Sync); 5] = [
             &write.name,
             &write.version,
@@ -176,8 +186,7 @@ impl ClaudePluginStore for PostgresPluginStore {
         enabled: bool,
         updated_at: NaiveDateTime,
     ) -> Result<(), TableError> {
-        let access = self.access()?;
-        let session = access.write.session().await?;
+        let session = self.write_session().await?;
         let parameters: [&(dyn ToSql + Sync); 3] = [&plugin_name, &enabled, &updated_at];
         session
             .execute(SET_ENABLED_SQL, &parameters)
@@ -187,8 +196,7 @@ impl ClaudePluginStore for PostgresPluginStore {
     }
 
     async fn delete(&self, plugin_name: &str) -> Result<(), TableError> {
-        let access = self.access()?;
-        let session = access.write.session().await?;
+        let session = self.write_session().await?;
         session
             .execute(DELETE_SQL, &[&plugin_name])
             .await

@@ -1,18 +1,28 @@
 task: B992
 deviations:
-  - what: A create request whose name is not kebab-case answers 400 {"detail": {"error": "Plugin name must be kebab-case (lowercase letters, numbers, hyphens)"}}, where LiteLLM's pydantic RegisterPluginRequest pattern rejects the same body with FastAPI's 422 validation envelope before the handler runs.
-    why: The pinned handler still carries its own kebab regex guard, and the task pins that 400 detail as the contract; betterlite decodes name as a string so the guard is reachable, and ClaudePluginWriteInput::validate raises the same 400 detail. plugin_create's invalid_name case proves it.
+  - what: >-
+      A create request whose name is not kebab-case answers 400 {"detail": {"error": "Plugin name must be kebab-case (lowercase letters, numbers, hyphens)"}}, where LiteLLM's pydantic RegisterPluginRequest pattern rejects the same body with FastAPI's 422 validation envelope before the handler runs.
+    why: >-
+      The pinned handler still carries its own kebab regex guard, and the task pins that 400 detail as the contract; betterlite decodes name as a string so the guard is reachable, and ClaudePluginWriteInput::validate raises the same 400 detail. plugin_create's invalid_name case proves it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L332-L337
-  - what: A request with no credentials on these routes answers 500 with the plain text "Internal Server Error", where LiteLLM's generic exception handler renders 500 {"error": {"message": "Internal server error", "type": "internal_server_error"}}.
-    why: betterlite's master-key authentication stage answers a missing key with the pinned plain 500 on every non-public route (B003), and this slice does not own that stage; both peers answer the same status, and auth_missing.yaml ignores the body.
+  - what: >-
+      A request with no credentials on these routes answers 500 with the plain text "Internal Server Error", where LiteLLM's generic exception handler renders 500 {"error": {"message": "Internal server error", "type": "internal_server_error"}}.
+    why: >-
+      betterlite's master-key authentication stage answers a missing key with the pinned plain 500 on every non-public route (B003), and this slice does not own that stage; both peers answer the same status, and auth_missing.yaml ignores the body.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2078
-  - what: An invalid virtual key with no database answers 400 with betterlite's own message "the API key is not valid", where LiteLLM reports the ProxyException message "No connected db.".
-    why: Status, type no_db_connection, null param and code "400" match LiteLLM; the authentication stage (B003) owns the wording, and auth_invalid.yaml ignores /error/message.
+  - what: >-
+      An invalid virtual key with no database answers 400 with betterlite's own message "the API key is not valid", where LiteLLM reports the ProxyException message "No connected db.".
+    why: >-
+      Status, type no_db_connection, null param and code "400" match LiteLLM; the authentication stage (B003) owns the wording, and auth_invalid.yaml ignores /error/message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1883-L1888
 kept_bugs:
-  - what: The name-conflict answer says "A skill named '<name>' already exists. Update the existing skill instead of adding it again." for a plugin, and betterlite keeps that wording.
-    why: A marketplace entry is a skill in LiteLLM's catalogue model and a client may match the message, so the 409 copies it.
+  - what: >-
+      The name-conflict answer says "A skill named '<name>' already exists. Update the existing skill instead of adding it again." for a plugin, and betterlite keeps that wording.
+    why: >-
+      A marketplace entry is a skill in LiteLLM's catalogue model and a client may match the message, so the 409 copies it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L259-L262
-  - what: An absent database answers 500 rather than 503 and names DATABASE_URL in the detail; betterlite keeps the status and the detail text.
-    why: The marketplace handlers ask for the Prisma client with a plain HTTPException, and a setup that watches for that 500 relies on the classification.
+  - what: >-
+      An absent database answers 500 rather than 503 and names DATABASE_URL in the detail; betterlite keeps the status and the detail text.
+    why: >-
+      The marketplace handlers ask for the Prisma client with a plain HTTPException, and a setup that watches for that 500 relies on the classification.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L88-L97

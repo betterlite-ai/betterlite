@@ -5,11 +5,12 @@ use betterlite_core::api::claude_plugin_policy::source::{
 use betterlite_core::api::claude_plugin_policy::{name_conflict_error, plugin_not_found_error};
 use betterlite_core::api::claude_plugin_write::{
     ClaudePluginWriteAction, ClaudePluginWriteInput, ClaudePluginWriteResult, PluginRegistration,
-    PluginView, REGISTRATION_FAILED, RegistrationAction, SUCCESS, UPDATE_FAILED,
+    PluginView, REGISTRATION_FAILED, RegistrationAction, SUCCESS, StoredPlugin, UPDATE_FAILED,
 };
+use serde::de::DeserializeOwned;
 
 use super::ClaudePluginWriteState;
-use super::access::{check_body, creator_id, gate, require_present, table_failure};
+use super::access::{Gate, check_body, creator_id, prepare, require_present, table_failure};
 use super::error::ClaudePluginWriteError;
 use super::store::{ClaudePluginStore, NewPlugin, PluginChanges, PluginCreateError};
 use super::wire::CreatePluginBody;
@@ -25,12 +26,19 @@ fn create_failure(error: &PluginCreateError, plugin_name: &str) -> ClaudePluginW
     }
 }
 
+fn decode_write<T: DeserializeOwned>(
+    state: &ClaudePluginWriteState,
+    body: &[u8],
+) -> Result<T, ClaudePluginWriteError> {
+    check_body(state, body)?;
+    decode_body(body).map_err(ClaudePluginWriteError::from)
+}
+
 fn create_input(
     state: &ClaudePluginWriteState,
     body: &[u8],
 ) -> Result<ClaudePluginWriteInput, ClaudePluginWriteError> {
-    check_body(state, body)?;
-    let request: CreatePluginBody = decode_body(body)?;
+    let request: CreatePluginBody = decode_write(state, body)?;
     Ok(ClaudePluginWriteInput {
         action: ClaudePluginWriteAction::Create,
         plugin_name: request.name,
@@ -38,18 +46,12 @@ fn create_input(
     })
 }
 
-fn update_input(
-    state: &ClaudePluginWriteState,
-    plugin_name: String,
-    body: &[u8],
-) -> Result<ClaudePluginWriteInput, ClaudePluginWriteError> {
-    check_body(state, body)?;
-    let request: UpdatePluginSpec = decode_body(body)?;
-    Ok(ClaudePluginWriteInput {
+fn update_write(plugin_name: String, spec: PluginSpec) -> ClaudePluginWriteInput {
+    ClaudePluginWriteInput {
         action: ClaudePluginWriteAction::Update,
         plugin_name,
-        spec: Some(PluginSpec::from(request)),
-    })
+        spec: Some(spec),
+    }
 }
 
 async fn ensure_absent(
@@ -68,33 +70,61 @@ async fn ensure_absent(
     )))
 }
 
+async fn register_plugin(
+    state: &ClaudePluginWriteState,
+    gate: &Gate,
+    input: &ClaudePluginWriteInput,
+) -> Result<(StoredPlugin, PluginSource), ClaudePluginWriteError> {
+    ensure_absent(gate.store.as_ref(), &input.plugin_name).await?;
+    let (write, source) = new_plugin(state, input, creator_id(&gate.caller))?;
+    let created = gate
+        .store
+        .create(write)
+        .await
+        .map_err(|error| create_failure(&error, &input.plugin_name))?;
+    Ok((created, source))
+}
+
+async fn require_updated(
+    store: &dyn ClaudePluginStore,
+    changes: PluginChanges,
+    plugin_name: &str,
+) -> Result<StoredPlugin, ClaudePluginWriteError> {
+    let changed = store
+        .update(changes)
+        .await
+        .map_err(|source| table_failure(Some(UPDATE_FAILED), &source))?;
+    changed.ok_or_else(|| ClaudePluginWriteError::from(plugin_not_found_error(plugin_name)))
+}
+
+fn registration(
+    stored: StoredPlugin,
+    source: PluginSource,
+    action: RegistrationAction,
+) -> ClaudePluginWriteResult {
+    ClaudePluginWriteResult::Registration(PluginRegistration {
+        status: SUCCESS,
+        action,
+        plugin: PluginView {
+            id: stored.id,
+            name: stored.name,
+            version: stored.version,
+            description: stored.description,
+            source,
+            enabled: stored.enabled,
+        },
+    })
+}
+
 pub(super) async fn create(
     state: &ClaudePluginWriteState,
     caller: Option<Extension<AuthContext>>,
     body: &[u8],
 ) -> Result<ClaudePluginWriteResult, ClaudePluginWriteError> {
     let input = create_input(state, body)?;
-    let gate = gate(state, caller)?;
-    input.validate()?;
-    ensure_absent(gate.store.as_ref(), &input.plugin_name).await?;
-    let (write, source) = new_plugin(state, &input, creator_id(&gate.caller))?;
-    let created = gate
-        .store
-        .create(write)
-        .await
-        .map_err(|error| create_failure(&error, &input.plugin_name))?;
-    Ok(ClaudePluginWriteResult::Registration(PluginRegistration {
-        status: SUCCESS,
-        action: RegistrationAction::Created,
-        plugin: PluginView {
-            id: created.id,
-            name: created.name,
-            version: created.version,
-            description: created.description,
-            source,
-            enabled: created.enabled,
-        },
-    }))
+    let gate = prepare(state, caller, &input)?;
+    let (created, source) = register_plugin(state, &gate, &input).await?;
+    Ok(registration(created, source, RegistrationAction::Created))
 }
 
 fn new_plugin(
@@ -124,33 +154,13 @@ pub(super) async fn update(
     plugin_name: String,
     body: &[u8],
 ) -> Result<ClaudePluginWriteResult, ClaudePluginWriteError> {
-    let input = update_input(state, plugin_name, body)?;
-    let gate = gate(state, caller)?;
-    input.validate()?;
+    let request: UpdatePluginSpec = decode_write(state, body)?;
+    let input = update_write(plugin_name, PluginSpec::from(request));
+    let gate = prepare(state, caller, &input)?;
     require_present(gate.store.as_ref(), &input.plugin_name, Some(UPDATE_FAILED)).await?;
     let (changes, source) = plugin_changes(state, &input)?;
-    let changed = gate
-        .store
-        .update(changes)
-        .await
-        .map_err(|source| table_failure(Some(UPDATE_FAILED), &source))?;
-    let Some(stored) = changed else {
-        return Err(ClaudePluginWriteError::from(plugin_not_found_error(
-            &input.plugin_name,
-        )));
-    };
-    Ok(ClaudePluginWriteResult::Registration(PluginRegistration {
-        status: SUCCESS,
-        action: RegistrationAction::Updated,
-        plugin: PluginView {
-            id: stored.id,
-            name: stored.name,
-            version: stored.version,
-            description: stored.description,
-            source,
-            enabled: stored.enabled,
-        },
-    }))
+    let stored = require_updated(gate.store.as_ref(), changes, &input.plugin_name).await?;
+    Ok(registration(stored, source, RegistrationAction::Updated))
 }
 
 fn plugin_changes(

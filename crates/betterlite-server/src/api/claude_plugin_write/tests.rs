@@ -872,17 +872,20 @@ async fn update_round_trip(store: &PostgresPluginStore, changed_at: NaiveDateTim
     assert_eq!(changed.description.as_deref(), Some("second"));
 }
 
+async fn stored_plugin(store: &PostgresPluginStore) -> StoredPlugin {
+    store
+        .find_by_name("round-trip-plugin")
+        .await
+        .expect("the find")
+        .expect("the stored row")
+}
+
 async fn toggle_round_trip(store: &PostgresPluginStore, toggled_at: NaiveDateTime) {
     store
         .set_enabled("round-trip-plugin", false, toggled_at)
         .await
         .expect("the toggle");
-    let found = store
-        .find_by_name("round-trip-plugin")
-        .await
-        .expect("the find")
-        .expect("the disabled row");
-    assert!(!found.enabled);
+    assert!(!stored_plugin(store).await.enabled);
 }
 
 async fn delete_round_trip(store: &PostgresPluginStore, now: NaiveDateTime) {

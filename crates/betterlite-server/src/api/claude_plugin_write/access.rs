@@ -5,6 +5,7 @@ use betterlite_core::api::api_boundaries::{ApiBoundariesInput, JsonBoundary};
 use betterlite_core::api::claude_plugin_policy::{
     ClaudePluginPolicyError, PluginCaller, plugin_not_found_error, require_proxy_admin,
 };
+use betterlite_core::api::claude_plugin_write::ClaudePluginWriteInput;
 use betterlite_db::auxiliary_repository::repository::TableError;
 
 use super::ClaudePluginWriteState;
@@ -32,6 +33,16 @@ pub(super) fn gate(
     require_admin(&caller)?;
     let store = state.connected_store()?;
     Ok(Gate { caller, store })
+}
+
+pub(super) fn prepare(
+    state: &ClaudePluginWriteState,
+    caller: Option<Extension<AuthContext>>,
+    input: &ClaudePluginWriteInput,
+) -> Result<Gate, ClaudePluginWriteError> {
+    let checked = gate(state, caller)?;
+    input.validate()?;
+    Ok(checked)
 }
 
 // is_proxy_admin checks the PROXY_ADMIN role, which the master key's stage does not carry here

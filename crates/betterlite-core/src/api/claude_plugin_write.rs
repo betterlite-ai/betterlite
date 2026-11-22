@@ -46,12 +46,7 @@ impl ClaudePluginWriteInput {
         match self.action {
             ClaudePluginWriteAction::Create => {
                 if !plugin_name_is_valid(&self.plugin_name)? {
-                    return Err(ClaudePluginWriteFailure::Policy(
-                        ClaudePluginPolicyError::Response {
-                            status_code: 400,
-                            message: PLUGIN_NAME_INVALID.to_owned(),
-                        },
-                    ));
+                    return Err(plugin_name_error());
                 }
                 self.validate_source()
             }
@@ -67,8 +62,7 @@ impl ClaudePluginWriteInput {
     }
 
     pub fn fields(&self) -> Result<PluginFields, ClaudePluginWriteFailure> {
-        let spec = self.spec()?;
-        Ok(PluginFields {
+        self.spec().map(|spec| PluginFields {
             version: spec.version.clone(),
             description: spec.description.clone(),
             source: spec.source.clone(),
@@ -92,6 +86,13 @@ pub struct PluginFields {
     pub version: Option<String>,
     pub description: Option<String>,
     pub source: PluginSource,
+}
+
+fn plugin_name_error() -> ClaudePluginWriteFailure {
+    ClaudePluginWriteFailure::Policy(ClaudePluginPolicyError::Response {
+        status_code: 400,
+        message: PLUGIN_NAME_INVALID.to_owned(),
+    })
 }
 
 fn plugin_name_is_valid(name: &str) -> Result<bool, ClaudePluginPolicyError> {
