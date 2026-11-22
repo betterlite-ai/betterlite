@@ -616,22 +616,21 @@ fn path_model_operation(path: &str) -> (&str, &str) {
 fn generation_answer(operation: &str, upstream: &UpstreamAnswer) -> Option<GenerationAnswer> {
     let headers = answer_headers(&upstream.headers);
     match operation {
-        "generateContent" => Some(json_generation(headers, upstream)),
-        "streamGenerateContent" => Some(stream_generation(headers, upstream)),
+        "generateContent" => Some(GenerationAnswer {
+            headers,
+            body: GenerationBody::Json(json_answer(upstream)),
+        }),
+        "streamGenerateContent" => Some(streamed_answer(headers, upstream)),
         _ => None,
     }
 }
 
-fn json_generation(headers: HeaderMap, upstream: &UpstreamAnswer) -> GenerationAnswer {
-    let body = serde_json::from_value(upstream.body.clone().expect("a JSON answer"))
-        .expect("the answer is JSON");
-    GenerationAnswer {
-        headers,
-        body: GenerationBody::Json(body),
-    }
+fn json_answer(upstream: &UpstreamAnswer) -> Json {
+    serde_json::from_value(upstream.body.clone().expect("a JSON answer"))
+        .expect("the answer is JSON")
 }
 
-fn stream_generation(headers: HeaderMap, upstream: &UpstreamAnswer) -> GenerationAnswer {
+fn streamed_answer(headers: HeaderMap, upstream: &UpstreamAnswer) -> GenerationAnswer {
     let events = upstream.events.as_ref().expect("SSE events").clone();
     GenerationAnswer {
         headers,
