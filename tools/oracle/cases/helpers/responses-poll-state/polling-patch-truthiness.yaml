@@ -1,0 +1,95 @@
+kind: helper
+name: polling-patch-truthiness
+call:
+  responses_poll_state:
+    calls:
+      - op: update
+        polling_id: litellm_poll_falsy
+        seed:
+          response:
+            id: litellm_poll_falsy
+            object: response
+            status: queued
+            output:
+              - id: old
+            usage:
+              total_tokens: 1
+            error:
+              code: old
+            incomplete_details:
+              reason: old
+        patch:
+          status: ""
+          output: []
+          usage: {}
+          error: {}
+          incomplete_details: {}
+      - op: update
+        polling_id: litellm_poll_error
+        seed:
+          response:
+            id: litellm_poll_error
+            object: response
+            status: queued
+            output:
+              - id: old
+            usage:
+              total_tokens: 1
+            error:
+              code: old
+        patch:
+          status: completed
+          error:
+            code: bad
+            message: failed
+      - op: update
+        polling_id: litellm_poll_present
+        seed:
+          response:
+            id: litellm_poll_present
+            object: response
+            status: queued
+            output:
+              - id: old
+            usage:
+              total_tokens: 1
+            error:
+              code: old
+        patch:
+          status: null
+          output: null
+          reasoning: {}
+          tool_choice: ""
+          tools: []
+          model: ""
+          instructions: ""
+          temperature: 0
+          top_p: 0
+          max_output_tokens: 0
+          previous_response_id: ""
+          text: {}
+          truncation: ""
+          parallel_tool_calls: false
+          user: ""
+          store: false
+      - op: update
+        polling_id: litellm_poll_usage
+        ttl: 17
+        seed:
+          response:
+            id: litellm_poll_usage
+            object: response
+            status: queued
+            output:
+              - id: old
+            usage:
+              total_tokens: 1
+            error:
+              code: old
+        patch:
+          usage:
+            total_tokens: 2
+          incomplete_details:
+            reason: max_output_tokens
+env: {}
+compare: {ignore: []}

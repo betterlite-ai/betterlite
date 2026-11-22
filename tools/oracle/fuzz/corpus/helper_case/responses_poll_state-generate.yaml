@@ -1,0 +1,15 @@
+kind: helper
+name: responses_poll_state-generate
+call:
+  responses_poll_state:
+    uuid: "00000000-0000-4000-8000-000000000001"
+    calls:
+      - op: generate
+      - op: create
+        polling_id: litellm_poll_seed
+        metadata:
+          trace: seed
+      - op: get
+        polling_id: litellm_poll_seed
+env: {}
+compare: {ignore: []}

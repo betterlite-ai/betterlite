@@ -1,0 +1,22 @@
+kind: helper
+name: queued-record-and-cache-key
+call:
+  responses_poll_state:
+    now: 1700000000
+    uuid: "00000000-0000-4000-8000-000000000001"
+    calls:
+      - op: generate
+      - op: create
+        polling_id: litellm_poll_queued
+        metadata:
+          trace: a
+      - op: get
+        polling_id: litellm_poll_queued
+      - op: create
+        polling_id: litellm_poll_short_ttl
+        ttl: 17
+      - op: create
+        polling_id: litellm_poll_no_cache
+        redis: false
+env: {}
+compare: {ignore: []}

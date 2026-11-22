@@ -1,0 +1,64 @@
+kind: helper
+name: polling-missing-cancel-delete
+call:
+  responses_poll_state:
+    calls:
+      - op: get
+        polling_id: litellm_poll_absent
+      - op: update
+        polling_id: litellm_poll_absent
+        patch:
+          status: completed
+      - op: cancel
+        polling_id: litellm_poll_absent
+      - op: delete
+        polling_id: litellm_poll_absent
+      - op: update
+        polling_id: litellm_poll_empty
+        seed:
+          raw: ""
+        patch:
+          status: completed
+      - op: cancel
+        polling_id: litellm_poll_empty
+      - op: get
+        polling_id: litellm_poll_live
+        seed:
+          response:
+            id: litellm_poll_live
+            object: response
+            status: in_progress
+            output:
+              - id: one
+            usage:
+              total_tokens: 4
+      - op: cancel
+        polling_id: litellm_poll_live
+      - op: delete
+        polling_id: litellm_poll_live
+      - op: delete
+        polling_id: litellm_poll_live
+      - op: get
+        polling_id: litellm_poll_corrupt
+        seed:
+          raw: '{"id":'
+      - op: update
+        polling_id: litellm_poll_corrupt
+        patch:
+          status: completed
+      - op: get
+        polling_id: litellm_poll_offline
+        redis: false
+      - op: update
+        polling_id: litellm_poll_offline
+        redis: false
+        patch:
+          status: completed
+      - op: cancel
+        polling_id: litellm_poll_offline
+        redis: false
+      - op: delete
+        polling_id: litellm_poll_offline
+        redis: false
+env: {}
+compare: {ignore: []}

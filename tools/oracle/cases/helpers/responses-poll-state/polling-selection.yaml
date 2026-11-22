@@ -1,0 +1,173 @@
+kind: helper
+name: polling-selection
+call:
+  responses_poll_state:
+    selections:
+      - background: true
+        selector: "all"
+        redis: true
+        model: gpt-5
+      - background: true
+        selector: "all"
+        redis: false
+        model: gpt-5
+      - background: false
+        selector: "all"
+        redis: true
+        model: gpt-5
+      - background: true
+        selector: false
+        redis: true
+        model: gpt-5
+      - background: true
+        selector: null
+        redis: true
+        model: gpt-5
+      - background: true
+        selector: true
+        redis: true
+        model: gpt-5
+      - background: true
+        selector: "openai"
+        redis: true
+        model: gpt-5
+      - background: true
+        selector: "other"
+        redis: true
+        model: gpt-5
+      - background: true
+        selector: true
+        redis: true
+        model: gpt-5
+        native_background_mode:
+          - gpt-5
+      - background: true
+        selector: "all"
+        redis: true
+        model: gpt-5
+        native_background_mode:
+          - gpt-5
+      - background: true
+        selector: "all"
+        redis: true
+        model: gpt-5
+        native_background_mode:
+          - gpt-4o
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: openai/gpt-4o
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: anthropic/claude
+        router:
+          indices:
+            - 0
+          deployments:
+            - custom_llm_provider: openai
+      - background: true
+        selector:
+          - azure
+        redis: true
+        model: gpt-5
+        router:
+          indices:
+            - 0
+            - 1
+          deployments:
+            - custom_llm_provider: openai
+            - custom_llm_provider: azure
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        router:
+          indices:
+            - 0
+          deployments:
+            - custom_llm_provider: bedrock
+              model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        router:
+          indices:
+            - 0
+          deployments:
+            - custom_llm_provider: ""
+              model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        router:
+          indices:
+            - 0
+          deployments:
+            - {}
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        router:
+          indices: []
+          deployments:
+            - model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        router:
+          indices:
+            - 1
+          deployments:
+            - model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        router:
+          indices:
+            - 0
+            - 1
+          deployments:
+            - model: openai/gpt-5
+      - background: true
+        selector:
+          - openai
+        redis: true
+        model: gpt-5
+        router:
+          indices:
+            - 1
+            - 0
+          deployments:
+            - model: openai/gpt-5
+      - background: true
+        selector: []
+        redis: true
+        model: gpt-5
+        native_background_mode:
+          - gpt-5
+      - background: true
+        selector:
+          - groq
+        redis: true
+        model: gpt-5
+env: {}
+compare: {ignore: []}
