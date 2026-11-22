@@ -634,7 +634,7 @@ struct FakeOps {
     supported: Vec<String>,
     bedrock: TestMapper<'static>,
     configs_seen: Mutex<Vec<(Option<String>, String)>>,
-    mapper_models: Mutex<Vec<String>>,
+    mapper_models_seen: Mutex<Vec<String>>,
     entra_seen: Mutex<Vec<(String, String, String, String)>>,
     foundry_seen: Mutex<Vec<FoundrySeen>>,
     sends: Mutex<Vec<Sent>>,
@@ -660,7 +660,7 @@ impl FakeOps {
                 models: None,
             },
             configs_seen: Mutex::new(Vec::new()),
-            mapper_models: Mutex::new(Vec::new()),
+            mapper_models_seen: Mutex::new(Vec::new()),
             entra_seen: Mutex::new(Vec::new()),
             foundry_seen: Mutex::new(Vec::new()),
             sends: Mutex::new(Vec::new()),
@@ -694,7 +694,7 @@ impl FakeOps {
     }
 
     fn mapper_models(&self) -> Vec<String> {
-        self.mapper_models
+        self.mapper_models_seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -735,7 +735,7 @@ impl ImageGenerationOperations for FakeOps {
     ) -> Option<Box<dyn OptionalParamsMapper + '_>> {
         Some(Box::new(TestMapper {
             supported: self.supported.clone(),
-            models: Some(&self.mapper_models),
+            models: Some(&self.mapper_models_seen),
         }))
     }
 
