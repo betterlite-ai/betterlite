@@ -1,0 +1,37 @@
+kind: helper
+name: access-both-restricted-intersect
+call:
+  b4778:
+    operation: intersect_access
+    config_agents:
+      - agent_name: alpha
+        agent_card_params: {model: gpt-4o}
+    key_access:
+      kind: restricted
+      restricted_ids: [db-agent, key-only]
+      restricted_by_legacy_name: [alpha]
+      restricted_by_stable_name: []
+    team_access:
+      kind: restricted
+      restricted_ids: [db-agent, team-only]
+      restricted_by_legacy_name: []
+      restricted_by_stable_name: [alpha]
+calls:
+  - b4778:
+      operation: intersect_access
+      config_agents:
+        - agent_name: alpha
+          agent_card_params: {model: gpt-4o}
+      key_access:
+        kind: restricted
+        restricted_ids: [key-only]
+        restricted_by_legacy_name: []
+        restricted_by_stable_name: []
+      team_access:
+        kind: restricted
+        restricted_ids: [team-only]
+        restricted_by_legacy_name: []
+        restricted_by_stable_name: []
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,12 @@
+task: B832
+deviations:
+  - what: can_make_team_model_call and allow_team_model_action have no premium_user input, so a team admin may write the team's models on any betterlite proxy instead of getting 403 not_premium_user.
+    why: betterlite has no paid tier and no license check (README Decisions), so the MIT behavior behind the premium gate is what every proxy runs; native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava proves it, and the oracle cases pass premium_user=True to LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2001-L2005
+  - what: The same premium_user gate is gone from allow_team_model_action, so a write that names a team goes straight to the team row read.
+    why: Same no-paid-tier decision; a team admin's write passes in native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava and team_model_action.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2075-L2079
+  - what: A member router update takes its patch by type (MemberWrite::Update needs one), so LiteLLM's 400 for member_operation="update" with incoming_model_params=None has no betterlite path; an unregistered member router policy gives that same 400 instead.
+    why: Every LiteLLM caller of the update operation passes the patch, so the branch is unreachable from a route; the remaining half of that condition, a missing llm_router, is the unregistered policy and keeps its 400 (member_router_policy, team-model-owner).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2141-L2144
+kept_bugs: []

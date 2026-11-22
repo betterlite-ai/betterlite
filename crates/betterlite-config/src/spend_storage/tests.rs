@@ -5,8 +5,10 @@ use std::fmt::Debug;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use betterlite_db::spend_partitions::calendar::PartitionInterval;
+use betterlite_db::spend_retention::batches::settings::{CleanupBounds, DurationParser, Retention};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use tracing::Subscriber;
@@ -15,6 +17,10 @@ use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
+use super::retention::{
+    ENV_BATCH_SIZE, ENV_BATCH_TIMEOUT, ENV_COUNT_CAP, ENV_FAILURE_BACKOFF, ENV_MAX_FAILURES,
+    ENV_RUN_BUDGET, ENV_RUN_LOOPS,
+};
 use super::{
     DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, DEFAULT_PRECREATE_AHEAD, ENV_DEQUEUE_COUNT,
     ENV_PARTITION_INTERVAL, ENV_PRECREATE_AHEAD, MissingSessionId, Settings, SpendUpdates,
@@ -454,4 +460,196 @@ fn loads_spend_partition_settings_from_a_stored_row() {
     .unwrap();
     assert_eq!(decoded.partition_interval, PartitionInterval::Month);
     assert_eq!(decoded.precreate_ahead, 3);
+}
+
+struct Durations;
+
+impl DurationParser for Durations {
+    type Failure = String;
+
+    fn duration_seconds(&self, spec: &str) -> Result<i64, String> {
+        match spec {
+            "10m" => Ok(600),
+            "90s" => Ok(90),
+            "0s" => Ok(0),
+            "12h" => Ok(43_200),
+            "30d" => Ok(2_592_000),
+            "7d" => Ok(604_800),
+            other => Err(format!("unsupported duration {other}")),
+        }
+    }
+}
+
+const SHIPPED_BOUNDS: CleanupBounds = CleanupBounds {
+    batch_size: 1_000,
+    max_batches: 500,
+    run_budget: Duration::from_secs(300),
+    batch_timeout: Duration::from_secs(30),
+    max_consecutive_failures: 3,
+    failure_backoff: Duration::from_millis(500),
+    remaining_count_cap: 100_000,
+};
+
+const OVERRIDDEN_BOUNDS: CleanupBounds = CleanupBounds {
+    batch_size: 250,
+    max_batches: 40,
+    run_budget: Duration::from_secs(600),
+    batch_timeout: Duration::from_secs(90),
+    ..SHIPPED_BOUNDS
+};
+
+const ENVIRONMENT_BOUNDS: CleanupBounds = CleanupBounds {
+    batch_size: 50,
+    max_batches: 7,
+    run_budget: Duration::from_millis(12_500),
+    batch_timeout: Duration::ZERO,
+    max_consecutive_failures: 0,
+    failure_backoff: Duration::from_millis(250),
+    remaining_count_cap: 10,
+};
+
+const OVERRIDDEN_ENVIRONMENT: CleanupBounds = CleanupBounds {
+    batch_size: 250,
+    max_batches: 40,
+    run_budget: Duration::from_secs(600),
+    batch_timeout: Duration::from_secs(90),
+    ..ENVIRONMENT_BOUNDS
+};
+
+const EVERY_KEY: &str = "general_settings:
+  maximum_spend_logs_cleanup_batch_size: 250
+  maximum_spend_logs_cleanup_max_batches: '40'
+  maximum_spend_logs_cleanup_run_budget: 10m
+  maximum_spend_logs_cleanup_batch_timeout: 90s
+  maximum_spend_logs_retention_period: 30d
+  maximum_autorouter_session_retention_period: 12h
+  maximum_health_check_retention_period: 7
+  maximum_daily_tag_spend_retention_period: 90s
+";
+
+const CLEARED_KEYS: &str = "general_settings:
+  maximum_spend_logs_cleanup_batch_size: null
+  maximum_spend_logs_cleanup_max_batches: null
+  maximum_spend_logs_cleanup_run_budget: null
+  maximum_spend_logs_cleanup_batch_timeout: null
+  maximum_spend_logs_retention_period: null
+";
+
+const UNUSABLE_KEYS: &str = "general_settings:
+  maximum_spend_logs_cleanup_batch_size: 0
+  maximum_spend_logs_cleanup_max_batches: many
+  maximum_spend_logs_cleanup_run_budget: 0s
+  maximum_spend_logs_cleanup_batch_timeout: soon
+  maximum_spend_logs_retention_period: forever
+";
+
+const CLEANUP_ENVIRONMENT: [(&str, &str); 7] = [
+    (ENV_BATCH_SIZE, "50"),
+    (ENV_RUN_LOOPS, " 7 "),
+    (ENV_RUN_BUDGET, "12.5"),
+    (ENV_BATCH_TIMEOUT, "-1"),
+    (ENV_MAX_FAILURES, "0"),
+    (ENV_FAILURE_BACKOFF, "0.25"),
+    (ENV_COUNT_CAP, "10"),
+];
+
+const EMPTY_ENVIRONMENT: [(&str, &str); 7] = [
+    (ENV_BATCH_SIZE, ""),
+    (ENV_RUN_LOOPS, ""),
+    (ENV_RUN_BUDGET, ""),
+    (ENV_BATCH_TIMEOUT, ""),
+    (ENV_MAX_FAILURES, ""),
+    (ENV_FAILURE_BACKOFF, ""),
+    (ENV_COUNT_CAP, ""),
+];
+
+const RETENTIONS: [Retention; 4] = [
+    Retention::SpendLogs,
+    Retention::AutorouterSessions,
+    Retention::HealthChecks,
+    Retention::DailyTagSpend,
+];
+
+const EVERY_RETENTION: [Option<i64>; 4] = [Some(2_592_000), Some(43_200), Some(604_800), Some(90)];
+
+#[rstest]
+#[case::shipped_defaults("general_settings: {}\n", &[], SHIPPED_BOUNDS, [None; 4])]
+#[case::every_key(EVERY_KEY, &[], OVERRIDDEN_BOUNDS, EVERY_RETENTION)]
+#[case::reset_to_default(CLEARED_KEYS, &[], SHIPPED_BOUNDS, [None; 4])]
+#[case::environment_defaults(
+    "general_settings: {}\n",
+    &CLEANUP_ENVIRONMENT,
+    ENVIRONMENT_BOUNDS,
+    [None; 4]
+)]
+#[case::unusable_overrides_use_the_environment(
+    UNUSABLE_KEYS,
+    &CLEANUP_ENVIRONMENT,
+    ENVIRONMENT_BOUNDS,
+    [None; 4]
+)]
+#[case::overrides_beat_the_environment(
+    EVERY_KEY,
+    &CLEANUP_ENVIRONMENT,
+    OVERRIDDEN_ENVIRONMENT,
+    EVERY_RETENTION
+)]
+#[case::empty_environment("general_settings: {}\n", &EMPTY_ENVIRONMENT, SHIPPED_BOUNDS, [None; 4])]
+fn loads_spend_retention_settings(
+    #[case] source: &str,
+    #[case] pairs: &[(&str, &str)],
+    #[case] expected: CleanupBounds,
+    #[case] retention: [Option<i64>; 4],
+) {
+    let settings = load(source, pairs);
+    assert_eq!(settings.retention.bounds(&Durations), expected);
+    let read = RETENTIONS.map(|group| settings.retention.retention_seconds(group, &Durations));
+    assert_eq!(read, retention);
+}
+
+#[test]
+fn loads_spend_retention_settings_live_after_a_reset() {
+    let configured = load(EVERY_KEY, &[]);
+    assert_eq!(configured.retention.bounds(&Durations), OVERRIDDEN_BOUNDS);
+    let cleared = load(CLEARED_KEYS, &[]);
+    assert_eq!(cleared.retention.bounds(&Durations), SHIPPED_BOUNDS);
+    assert_eq!(
+        cleared
+            .retention
+            .retention_seconds(Retention::SpendLogs, &Durations),
+        None
+    );
+}
+
+#[rstest]
+#[case::fraction(ENV_BATCH_SIZE, "1.5")]
+#[case::digit_group(ENV_RUN_LOOPS, "1_0")]
+#[case::word(ENV_RUN_BUDGET, "soon")]
+#[case::infinite(ENV_BATCH_TIMEOUT, "1e999")]
+#[case::failures(ENV_MAX_FAILURES, "three")]
+#[case::backoff(ENV_FAILURE_BACKOFF, "fast")]
+#[case::cap(ENV_COUNT_CAP, "2.5")]
+fn loads_spend_retention_settings_rejects_a_malformed_number(
+    #[case] name: &str,
+    #[case] value: &str,
+) {
+    let error = load_spend_storage_policy("general_settings: {}\n", &environment(&[(name, value)]))
+        .unwrap_err();
+    assert!(error.to_string().contains(name));
+}
+
+#[test]
+fn loads_spend_retention_settings_from_a_stored_row() {
+    let decoded = decode_spend_storage_policy(
+        br#"{"general_settings":{"maximum_spend_logs_cleanup_batch_size":2.9,"maximum_spend_logs_retention_period":7},"litellm_settings":{},"environment":{"SPEND_LOG_CLEANUP_BATCH_SIZE":"40"}}"#,
+    )
+    .unwrap();
+    assert_eq!(decoded.retention.defaults.batch_size, 40);
+    assert_eq!(decoded.retention.bounds(&Durations).batch_size, 2);
+    assert_eq!(
+        decoded
+            .retention
+            .retention_seconds(Retention::SpendLogs, &Durations),
+        Some(604_800)
+    );
 }
