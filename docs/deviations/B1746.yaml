@@ -1,0 +1,24 @@
+task: B1746
+deviations:
+  - what: A statement error carrying a connection-class SQLSTATE (08xxx) counts as a proved-unapplied connection failure, so the daily writer retries it and keeps its chunk; LiteLLM retries only an httpx.ConnectError and, for a prisma error with SQLSTATE 08xxx, only treats it as requeue-safe.
+    why: betterlite reads the database's own SQLSTATE for connection certainty instead of porting prisma's Python exception hierarchy, and a server-reported connection failure before the statement ran is exactly what the retry rule exists for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2010
+  - what: A unique violation (SQLSTATE 23505) is a data rejection, so the chunk's rows are dropped and reported; LiteLLM's postgres_sqlstate reads no code off prisma's unique-violation subclass and treats it as requeue-safe.
+    why: betterlite classifies every SQLSTATE class 23 refusal the same way, so a refused daily upsert never re-sends rows that the database will refuse again.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L240-L251
+  - what: Entries whose five sort fields are equal leave the pending map in the map's key order; LiteLLM keeps Python's dict insertion order for the same tie.
+    why: betterlite's pending map is a BTreeMap supplied by the daily queue, and every conflict key is still merged and summed the same way, so only which same-tuple rows a mid-batch unsafe failure drops can differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2464-L2482
+  - what: The daily commit exposes an explicit phase that a shutdown coordinator cancels before the commit or waits on after it; LiteLLM marks a ContextVar event, cancels the task outside the phase, and otherwise tracks a settle coroutine that requeues or restores the whole drained map.
+    why: betterlite tracks the commit future with its queue's TaskTracker, so a cancellation that loses the phase race rolls the transaction back and leaves the pending rows untouched for B1747 and B1748 to restore, instead of a task-local event deciding it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L285-L315
+  - what: An auto-router turn write is retried when the failure proves the statement never applied, which includes a pool wait timeout, a closed pool and a connection-class SQLSTATE; LiteLLM retries only an httpx.ConnectError.
+    why: betterlite classifies database failures from the driver's SQLSTATE and pool state, so the same certainty rule covers the turn drain without porting prisma's exception tuple.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L425-L439
+kept_bugs:
+  - what: An exhausted retryable daily failure is reported twice, once by the retry rule and once by the outer handler, producing two failure events for one chunk.
+    why: The report raises the same error the outer handler reports again, and callers and tests of a working setup observe the duplicate; betterlite keeps the count so the sink's event stream matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2549-L2565
+  - what: An auto-router turn write that fails with a deadlock is not retried, so the rest of that partition's turns are lost for the batch even though a deadlock never applied.
+    why: The source retries only connection errors on this path and the task keeps that asymmetry with the daily writer, so betterlite copies it rather than replaying turns the source would abandon.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L431-L437
