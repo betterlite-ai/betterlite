@@ -254,12 +254,13 @@ impl VideoExtensionHandlers for FakeHandler {
         _config: &'call dyn BaseVideoConfig,
     ) -> Result<Handled<'call>, VideoEditTransportError> {
         self.record(&request);
-        match self.reply.clone() {
-            Reply::Pending(object) => Ok(Handled::Pending(Box::pin(ready(Ok(object))))),
-            Reply::Done(_) | Reply::Failed { .. } | Reply::Broken => {
-                reply_result(&self.reply).map(|object| Handled::Done(Box::new(object)))
-            }
-        }
+        let reply = self.reply.clone();
+        let Reply::Pending(object) = reply else {
+            let object = reply_result(&self.reply)?;
+            return Ok(Handled::Done(Box::new(object)));
+        };
+        let pending = ready(Ok(object));
+        Ok(Handled::Pending(Box::pin(pending)))
     }
 
     fn async_video_extension<'call>(
@@ -268,8 +269,8 @@ impl VideoExtensionHandlers for FakeHandler {
         _config: &'call dyn BaseVideoConfig,
     ) -> impl Future<Output = Result<VideoObject, VideoEditTransportError>> + Send + 'call {
         self.record(&request);
-        let result = reply_result(&self.reply);
-        async move { result }
+        let reply = self.reply.clone();
+        async move { reply_result(&reply) }
     }
 }
 

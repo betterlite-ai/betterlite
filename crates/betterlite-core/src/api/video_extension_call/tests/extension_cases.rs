@@ -229,26 +229,29 @@ fn zero_timeout_falls_to_the_request_timeout() {
     assert_eq!(only_call(&rig).timeout, Some(Duration::from_secs(1_234)));
 }
 
-fn a_string_async_call_stays_sync() {
-    let rig = Rig::new(Reply::Done(video("video_1")), &[VideoConfigTag::OpenAi]);
-    let mut kwargs = base_kwargs();
-    kwargs.insert("async_call".to_owned(), Json::Text("true".to_owned()));
-    let request = call("video_1", "extend it", "8", &kwargs);
-    let deps = rig.deps(None);
-    let answer = video_extension(&deps, &request).expect("the call runs");
-    assert!(!only_call(&rig).is_async, "a string is not the boolean");
-    assert_eq!(done(answer), video("video_1"));
-}
-
-fn the_number_one_async_call_stays_sync() {
-    let rig = Rig::new(Reply::Done(video("video_1")), &[VideoConfigTag::OpenAi]);
-    let mut kwargs = base_kwargs();
-    kwargs.insert("async_call".to_owned(), Json::Number(Number::from(1_u8)));
-    let request = call("video_1", "extend it", "8", &kwargs);
-    let deps = rig.deps(None);
-    let answer = video_extension(&deps, &request).expect("the call runs");
-    assert!(!only_call(&rig).is_async, "a number is not the boolean");
-    assert_eq!(done(answer), video("video_1"));
+fn a_non_boolean_async_call_stays_sync() {
+    let string_rig = Rig::new(Reply::Done(video("video_1")), &[VideoConfigTag::OpenAi]);
+    let mut string_kwargs = base_kwargs();
+    string_kwargs.insert("async_call".to_owned(), Json::Text("true".to_owned()));
+    let string_request = call("video_1", "extend it", "8", &string_kwargs);
+    let string_deps = string_rig.deps(None);
+    let string_answer = video_extension(&string_deps, &string_request).expect("the call runs");
+    assert!(
+        !only_call(&string_rig).is_async,
+        "a string is not the boolean"
+    );
+    assert_eq!(done(string_answer), video("video_1"));
+    let number_rig = Rig::new(Reply::Done(video("video_1")), &[VideoConfigTag::OpenAi]);
+    let mut number_kwargs = base_kwargs();
+    number_kwargs.insert("async_call".to_owned(), Json::Number(Number::from(1_u8)));
+    let number_request = call("video_1", "extend it", "8", &number_kwargs);
+    let number_deps = number_rig.deps(None);
+    let number_answer = video_extension(&number_deps, &number_request).expect("the call runs");
+    assert!(
+        !only_call(&number_rig).is_async,
+        "a number is not the boolean"
+    );
+    assert_eq!(done(number_answer), video("video_1"));
 }
 
 fn an_async_call_answers_with_the_pending_future() {
@@ -359,8 +362,7 @@ fn an_explicit_timeout_reaches_the_handler() {
 #[case::handler_receives_the_load_bearing_arguments(handler_receives_the_load_bearing_arguments)]
 #[case::zero_timeout_falls_to_the_request_timeout(zero_timeout_falls_to_the_request_timeout)]
 #[case::an_explicit_timeout_reaches_the_handler(an_explicit_timeout_reaches_the_handler)]
-#[case::a_string_async_call_stays_sync(a_string_async_call_stays_sync)]
-#[case::the_number_one_async_call_stays_sync(the_number_one_async_call_stays_sync)]
+#[case::a_non_boolean_async_call_stays_sync(a_non_boolean_async_call_stays_sync)]
 #[case::an_async_call_answers_with_the_pending_future(
     an_async_call_answers_with_the_pending_future
 )]

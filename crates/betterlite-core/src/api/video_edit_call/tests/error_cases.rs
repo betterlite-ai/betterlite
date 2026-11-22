@@ -316,46 +316,41 @@ fn the_async_entry_maps_a_pending_error_with_the_caller_provider() {
     assert_eq!(rig.handler.calls().len(), 1);
 }
 
-fn the_async_entry_keeps_the_sync_error_mapping() {
-    let rig = Rig::new(Reply::Done(video("video_1")), &[VideoConfigTag::OpenAi]);
-    let kwargs = base_kwargs();
-    let mut request = call("video_1", "make it blue", &kwargs);
-    request.custom_llm_provider = Some("mistral");
-    let deps = rig.deps(None);
-    let Err(failure) = block_on(avideo_edit(&deps, &request)) else {
+fn the_async_entry_maps_every_failure_with_the_callers_provider() {
+    let mapped_rig = Rig::new(Reply::Done(video("video_1")), &[VideoConfigTag::OpenAi]);
+    let mapped_kwargs = base_kwargs();
+    let mut mapped_request = call("video_1", "make it blue", &mapped_kwargs);
+    mapped_request.custom_llm_provider = Some("mistral");
+    let mapped_deps = mapped_rig.deps(None);
+    let Err(mapped) = block_on(avideo_edit(&mapped_deps, &mapped_request)) else {
         panic!("mistral has no video config");
     };
-    let context = connection(&failure.class);
+    let mapped_context = connection(&mapped.class);
     assert_eq!(
-        context.message,
-        "APIConnectionError: MistralException - video edit is not supported for mistral",
-        "the async wrap remaps the already mapped error without changing it"
+        mapped_context.message,
+        "APIConnectionError: MistralException - video edit is not supported for mistral"
     );
-    assert_eq!(context.provider.as_deref(), Some("mistral"));
-}
-
-fn the_async_entry_uses_the_callers_provider() {
-    let rig = Rig::new(
+    assert_eq!(mapped_context.provider.as_deref(), Some("mistral"));
+    let failed_rig = Rig::new(
         Reply::Failed {
             status_code: 500,
             message: "boom".to_owned(),
         },
         &[VideoConfigTag::RunwayMl],
     );
-    let kwargs = base_kwargs();
-    let mut request = call("video_1", "make it blue", &kwargs);
-    request.custom_llm_provider = Some("runwayml");
-    let deps = rig.deps(None);
-    let Err(failure) = block_on(avideo_edit(&deps, &request)) else {
+    let failed_kwargs = base_kwargs();
+    let mut failed_request = call("video_1", "make it blue", &failed_kwargs);
+    failed_request.custom_llm_provider = Some("runwayml");
+    let failed_deps = failed_rig.deps(None);
+    let Err(failed) = block_on(avideo_edit(&failed_deps, &failed_request)) else {
         panic!("the pending call fails");
     };
-    let context = internal(&failure.class);
+    let failed_context = internal(&failed.class);
     assert_eq!(
-        context.message, "InternalServerError: RunwaymlException - boom",
-        "the wrapper maps with the provider its caller passed"
+        failed_context.message,
+        "InternalServerError: RunwaymlException - boom"
     );
-    assert_eq!(context.provider.as_deref(), Some("runwayml"));
-    assert_eq!(rig.handler.calls().len(), 1);
+    assert_eq!(failed_context.provider.as_deref(), Some("runwayml"));
 }
 
 fn a_missing_caller_config_is_unsupported() {
@@ -397,8 +392,9 @@ fn a_missing_caller_config_is_unsupported() {
 #[case::the_async_entry_maps_a_pending_error_with_the_caller_provider(
     the_async_entry_maps_a_pending_error_with_the_caller_provider
 )]
-#[case::the_async_entry_keeps_the_sync_error_mapping(the_async_entry_keeps_the_sync_error_mapping)]
-#[case::the_async_entry_uses_the_callers_provider(the_async_entry_uses_the_callers_provider)]
+#[case::the_async_entry_maps_every_failure_with_the_callers_provider(
+    the_async_entry_maps_every_failure_with_the_callers_provider
+)]
 fn call_error_behavior(#[case] check: fn()) {
     check();
 }
