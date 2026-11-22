@@ -30,7 +30,7 @@ fn remix_timeout_none_uses_the_request_timeout() {
         .expect("the remix answers");
     assert_eq!(
         bench.requests()[0].timeout,
-        Some(Duration::from_secs_f64(7.5))
+        Some(Duration::from_millis(7_500))
     );
 }
 
@@ -44,7 +44,7 @@ fn remix_timeout_zero_uses_the_request_timeout() {
         .expect("the remix answers");
     assert_eq!(
         bench.requests()[0].timeout,
-        Some(Duration::from_secs_f64(7.5))
+        Some(Duration::from_millis(7_500))
     );
 }
 
@@ -58,7 +58,7 @@ fn remix_timeout_given_is_used() {
         .expect("the remix answers");
     assert_eq!(
         bench.requests()[0].timeout,
-        Some(Duration::from_secs_f64(12.5))
+        Some(Duration::from_millis(12_500))
     );
 }
 

@@ -29,7 +29,7 @@ fn list_timeout_none_uses_the_request_timeout() {
     call.timeout = None;
     let prepared =
         prepare_list(&mut fixture.state, &call, "openai", 7.5).expect("the list prepares");
-    assert_eq!(prepared.timeout, Duration::from_secs_f64(7.5));
+    assert_eq!(prepared.timeout, Duration::from_millis(7_500));
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn list_timeout_zero_uses_the_request_timeout() {
     call.timeout = Some(0.0);
     let prepared =
         prepare_list(&mut fixture.state, &call, "openai", 7.5).expect("the list prepares");
-    assert_eq!(prepared.timeout, Duration::from_secs_f64(7.5));
+    assert_eq!(prepared.timeout, Duration::from_millis(7_500));
 }
 
 #[test]
