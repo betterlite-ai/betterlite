@@ -36,10 +36,10 @@ impl Answer for Reply {
 
 // A default arrives either as the value the case names or as the class defaults, which merge only absent keys.
 fn defaults<T: DeserializeOwned + Default>(value: Option<&Value>) -> Result<T, Box<HelperError>> {
-    match value {
-        Some(named) => decode(named),
-        None => Ok(T::default()),
-    }
+    let Some(named) = value else {
+        return Ok(T::default());
+    };
+    decode(named)
 }
 
 fn kept_headers(case: &Case) -> BTreeSet<String> {

@@ -18,10 +18,10 @@ pub(crate) fn decode<T: DeserializeOwned>(value: &Value) -> Result<T, Box<Helper
 fn decode_optional<T: DeserializeOwned>(
     value: Option<&Value>,
 ) -> Result<Option<T>, Box<HelperError>> {
-    match value {
-        Some(named) => Ok(Some(decode(named)?)),
-        None => Ok(None),
-    }
+    let Some(named) = value else {
+        return Ok(None);
+    };
+    Ok(Some(decode(named)?))
 }
 
 fn messages(case: &Case) -> Result<Vec<Message>, Box<HelperError>> {
@@ -30,10 +30,10 @@ fn messages(case: &Case) -> Result<Vec<Message>, Box<HelperError>> {
 }
 
 fn optional(case: &Case) -> Result<Object, Box<HelperError>> {
-    match case.optional_params.as_ref() {
-        Some(value) => decode(value),
-        None => Ok(Object::new()),
-    }
+    let Some(value) = case.optional_params.as_ref() else {
+        return Ok(Object::new());
+    };
+    decode(value)
 }
 
 // One provider call built the way main.py reads its own arguments; every credential comes from the case.
