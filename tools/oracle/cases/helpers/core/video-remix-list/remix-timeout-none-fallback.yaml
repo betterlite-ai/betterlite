@@ -10,6 +10,7 @@ call:
     api_base: https://api.openai.com/v1
     api_key: test-key
     timeout: null
+    timeout_explicitly_none: true
     request_timeout_seconds: 30.0
     status: 200
     body: '{"id": "video_123", "object": "video", "status": "completed", "seconds": "4", "model": "sora-2"}'

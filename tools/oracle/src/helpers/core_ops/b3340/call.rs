@@ -56,6 +56,7 @@ pub(super) fn current_runtime() -> Result<Runtime, Box<HelperError>> {
 // The signature's `timeout: Optional[float] = 600`, then the caller's explicit None or number
 pub(super) fn call_timeout(input: &Input) -> Option<f64> {
     match input.timeout.as_ref() {
+        None if input.timeout_explicitly_none => None,
         None => Some(DEFAULT_TIMEOUT_SECONDS),
         Some(Value::Number(number)) => number.as_f64(),
         Some(

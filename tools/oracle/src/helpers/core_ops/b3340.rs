@@ -50,6 +50,9 @@ pub(crate) struct Input {
     // absent: the signature's 600; null: an explicit None; a number: that many seconds
     #[serde(default)]
     timeout: Option<Value>,
+    // serde folds a null into the absent case, so a null case marks itself here
+    #[serde(default)]
+    timeout_explicitly_none: bool,
     #[serde(default)]
     extra_headers: BTreeMap<String, String>,
     #[serde(default)]
