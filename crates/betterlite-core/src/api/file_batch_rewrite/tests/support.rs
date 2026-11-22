@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, BufRead, Cursor, Read, Seek, SeekFrom};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::ThreadId;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -96,11 +97,12 @@ where
         .expect("the scan did not finish in time")
 }
 
-// A seekable upload body that counts the block reads the scan makes and records every seek it asks for
+// A seekable upload body that counts the block reads the scan makes and records every seek and reading thread it asks for
 pub(super) struct CountingSource {
     inner: Cursor<Vec<u8>>,
     pub(super) reads: Arc<AtomicUsize>,
     pub(super) seeks: Arc<Mutex<Vec<SeekFrom>>>,
+    pub(super) threads: Arc<Mutex<Vec<ThreadId>>>,
 }
 
 impl CountingSource {
@@ -109,6 +111,7 @@ impl CountingSource {
             inner: Cursor::new(text.into_bytes()),
             reads: Arc::new(AtomicUsize::new(0)),
             seeks: Arc::new(Mutex::new(Vec::new())),
+            threads: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -130,6 +133,10 @@ impl BufRead for CountingSource {
 
     fn read_until(&mut self, byte: u8, buf: &mut Vec<u8>) -> io::Result<usize> {
         self.reads.fetch_add(1, Ordering::SeqCst);
+        self.threads
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ThreadId::current());
         self.inner.read_until(byte, buf)
     }
 }
@@ -144,11 +151,12 @@ impl Seek for CountingSource {
     }
 }
 
-// A counting source already handed to the blocking port, with its read and seek tallies kept reachable
+// A counting source already handed to the blocking port, with its read, seek and thread tallies kept reachable
 pub(super) struct CountedBody {
     pub(super) body: UploadBody<CountingSource>,
     pub(super) reads: Arc<AtomicUsize>,
     pub(super) seeks: Arc<Mutex<Vec<SeekFrom>>>,
+    pub(super) threads: Arc<Mutex<Vec<ThreadId>>>,
 }
 
 impl CountedBody {
@@ -156,10 +164,12 @@ impl CountedBody {
         let source = CountingSource::new(text);
         let reads = Arc::clone(&source.reads);
         let seeks = Arc::clone(&source.seeks);
+        let threads = Arc::clone(&source.threads);
         Self {
             body: UploadBody::new(source),
             reads,
             seeks,
+            threads,
         }
     }
 }

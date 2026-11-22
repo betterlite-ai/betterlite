@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io::SeekFrom;
+use std::thread;
 
 use tokio_util::task::TaskTracker;
 
@@ -120,6 +121,29 @@ async fn rewrite_matches_physical_lines_across_windows() {
     assert_eq!(
         rewritten.read_to_end(&tasks).await.unwrap(),
         rows.join("\n").into_bytes()
+    );
+}
+
+// The rewrite's line reads run on the blocking port too, never on the async task that awaits them
+#[tokio::test]
+async fn rewrite_reads_run_on_the_blocking_port() {
+    let tasks = TaskTracker::new();
+    let caller = thread::current().id();
+    let source = CountedBody::new(lines_of(3));
+    let result = scan_result(Vec::new(), 3, Spool::default());
+    let output = Spool::default();
+    let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output)
+        .await
+        .expect("the rewrite succeeds");
+    assert_eq!(
+        rewritten.read_to_end(&tasks).await.unwrap(),
+        lines_of(3).into_bytes()
+    );
+    let reads = source.threads.lock().unwrap();
+    assert!(!reads.is_empty());
+    assert!(
+        reads.iter().all(|read| *read != caller),
+        "an upload read ran on the async task"
     );
 }
 
