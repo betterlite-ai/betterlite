@@ -156,28 +156,26 @@ impl RawRouterConfig {
         let user_turn = self.classification_mode == Some(ClassificationMode::UserTurn);
         // LiteLLM reads a configured plugin list by truthiness, and plugins replace the pin machinery
         let plugins = self.plugins.is_some_and(|plugins| !plugins.is_empty());
-        let pin = !plugins && (deployment_affinity || session_affinity || user_turn);
-        Ok(Placement {
-            config: Config {
-                return_raw_model_name: flag(
-                    self.raw_model_name,
-                    &format!("{prefix}.{RETURN_RAW_MODEL_NAME_KEY}"),
-                    lookup,
-                )?
-                .unwrap_or(DEFAULT_RETURN_RAW_MODEL_NAME),
-                max_tokens_from_tier_model: flag(
-                    self.tier_model_ceiling,
-                    &format!("{prefix}.{MAX_TOKENS_FROM_TIER_MODEL_KEY}"),
-                    lookup,
-                )?
-                .unwrap_or(DEFAULT_MAX_TOKENS_FROM_TIER),
-            },
-            pin: if pin {
-                DeploymentPin::InUse
-            } else {
-                DeploymentPin::Unused
-            },
-        })
+        let pin = if !plugins && (deployment_affinity || session_affinity || user_turn) {
+            DeploymentPin::InUse
+        } else {
+            DeploymentPin::Unused
+        };
+        let config = Config {
+            return_raw_model_name: flag(
+                self.raw_model_name,
+                &format!("{prefix}.{RETURN_RAW_MODEL_NAME_KEY}"),
+                lookup,
+            )?
+            .unwrap_or(DEFAULT_RETURN_RAW_MODEL_NAME),
+            max_tokens_from_tier_model: flag(
+                self.tier_model_ceiling,
+                &format!("{prefix}.{MAX_TOKENS_FROM_TIER_MODEL_KEY}"),
+                lookup,
+            )?
+            .unwrap_or(DEFAULT_MAX_TOKENS_FROM_TIER),
+        };
+        Ok(Placement { config, pin })
     }
 }
 
