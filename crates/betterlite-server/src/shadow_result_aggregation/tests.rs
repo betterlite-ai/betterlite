@@ -5,6 +5,7 @@ mod postgres;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 use rust_decimal::Decimal;
+use std::cmp::Ordering;
 use std::fmt::Debug;
 
 use super::aggregation::{AttemptAggRow, pct_of, round_to, slices};
@@ -949,4 +950,23 @@ fn assert_target_ids(
 ) {
     let wanted: Vec<String> = expected.iter().map(|id| (*id).to_owned()).collect();
     assert_eq!(target_ids_of(responses, target_type), wanted);
+}
+
+#[test]
+fn target_keys_order_by_kind_spelling_then_id() {
+    let key = TargetKey {
+        target_type: Key,
+        target_id: "z".to_owned(),
+    };
+    let first_key = TargetKey {
+        target_type: Key,
+        target_id: "a".to_owned(),
+    };
+    let team = TargetKey {
+        target_type: Team,
+        target_id: "a".to_owned(),
+    };
+    assert_eq!(key.partial_cmp(&team), Some(Ordering::Less));
+    assert_eq!(key.partial_cmp(&first_key), Some(Ordering::Greater));
+    assert_eq!(first_key.partial_cmp(&first_key), Some(Ordering::Equal));
 }
