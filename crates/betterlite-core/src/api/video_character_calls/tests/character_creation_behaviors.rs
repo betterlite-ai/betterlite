@@ -418,3 +418,17 @@ fn create_extra_headers_and_the_video_reach_the_handler() {
     assert_eq!(seen.extra_headers, Some(headers()));
     assert_eq!(seen.video, SuppliedMedia::Bytes(b"video-bytes".to_vec()));
 }
+
+// the outcome's Debug names its form, since a pending answer's future cannot be printed
+#[test]
+fn create_outcome_debug_names_the_form() {
+    let mut deferred = Fixture::answering(Reply::Deferred);
+    let mut call = create_call();
+    call.is_async = true;
+    let pending = deferred.create(&call).expect("the handler raises a future");
+    assert_eq!(format!("{pending:?}"), "Pending(<future>)");
+
+    let mut direct = Fixture::new();
+    let done = direct.create(&create_call()).expect("the handler answers");
+    assert!(format!("{done:?}").starts_with("Done("));
+}
