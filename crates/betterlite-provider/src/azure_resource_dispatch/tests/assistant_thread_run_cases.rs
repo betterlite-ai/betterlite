@@ -97,25 +97,62 @@ impl Fixture {
     }
 }
 
-async fn definitions_rows() {
-    let fake = Arc::new(AssistantsFake::new(vec![Planned::json(200, PAGE)]));
+async fn definitions_leaf(
+    fake: &Arc<AssistantsFake>,
+    call: DefinitionCall<'_>,
+) -> Result<AzureResourceResult, AzureResourceError> {
     let fixture = Fixture::new();
     let request = fixture.request();
     let api = AssistantsApi {
-        transport: Arc::clone(&fake),
+        transport: Arc::clone(fake),
     };
-    let result = dispatch(AzureResourceOperation::AssistantDefinitions(Box::pin(
+    dispatch(AzureResourceOperation::AssistantDefinitions(Box::pin(
         DefinitionsDispatch {
             api: &api,
             request: &request,
             supplied: None,
             flag: None,
-            call: DefinitionCall::List,
+            call,
         }
         .run(),
     )))
     .await
-    .expect("the list reaches its leaf");
+}
+
+async fn runs_leaf(
+    fake: &Arc<AssistantsFake>,
+    settings: RunDispatch,
+) -> Result<AzureResourceResult, AzureResourceError> {
+    let harness = Fixture::new();
+    let client_request = harness.request();
+    let runs_api = AssistantsRunsApi {
+        transport: Arc::clone(fake),
+    };
+    let run: RunRequest = parse(
+        r#"{"thread_id":"thread_1","assistant_id":"asst_1","model":"gpt-4o-mini","instructions":"base"}"#,
+    );
+    let call = RunCall {
+        dispatch: settings,
+        run: &run,
+        handler: None,
+    };
+    dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
+        RunsDispatch {
+            api: &runs_api,
+            request: &client_request,
+            supplied: None,
+            call,
+        }
+        .run(),
+    )))
+    .await
+}
+
+async fn definitions_rows() {
+    let fake = Arc::new(AssistantsFake::new(vec![Planned::json(200, PAGE)]));
+    let result = definitions_leaf(&fake, DefinitionCall::List)
+        .await
+        .expect("the list reaches its leaf");
     let AzureResourceResult::AssistantDefinitions(reply) = result else {
         panic!("the definitions dispatch returns its reply");
     };
@@ -127,30 +164,6 @@ async fn definitions_rows() {
         fake.requests()[0].url,
         "https://example.test/openai/assistants?api-version=2024-02-01"
     );
-}
-
-async fn definitions_failure_row() {
-    let failed = Arc::new(AssistantsFake::new(vec![Planned::json(404, ERROR_BODY)]));
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    let api = AssistantsApi {
-        transport: Arc::clone(&failed),
-    };
-    let create: AssistantCreate = parse(r#"{"model":"gpt-4o"}"#);
-    let error = leaf_error(
-        dispatch(AzureResourceOperation::AssistantDefinitions(Box::pin(
-            DefinitionsDispatch {
-                api: &api,
-                request: &request,
-                supplied: None,
-                flag: None,
-                call: DefinitionCall::Create(&create),
-            }
-            .run(),
-        )))
-        .await,
-    );
-    assert!(matches!(error, AzureResourceError::AssistantDefinitions(_)));
 }
 
 async fn threads_rows() {
@@ -223,38 +236,14 @@ async fn messages_rows() {
     );
 }
 
-fn run_request() -> RunRequest {
-    parse(
-        r#"{"thread_id":"thread_1","assistant_id":"asst_1","model":"gpt-4o-mini","instructions":"base"}"#,
-    )
-}
-
 async fn runs_polled_row() {
     let fake = Arc::new(AssistantsFake::new(vec![
         Planned::polled(QUEUED),
         Planned::json(200, COMPLETED),
     ]));
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    let api = AssistantsRunsApi {
-        transport: Arc::clone(&fake),
-    };
-    let run = run_request();
-    let result = dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
-        RunsDispatch {
-            api: &api,
-            request: &request,
-            supplied: None,
-            call: RunCall {
-                dispatch: RunDispatch::default(),
-                run: &run,
-                handler: None,
-            },
-        }
-        .run(),
-    )))
-    .await
-    .expect("the run reaches its leaf");
+    let result = runs_leaf(&fake, RunDispatch::default())
+        .await
+        .expect("the run reaches its leaf");
     let AzureResourceResult::AssistantRuns(RunOutcome::Polled(_kind, reply)) = result else {
         panic!("a polled run returns its reply");
     };
@@ -278,31 +267,14 @@ fn polled_urls(seen: &[Seen]) {
 }
 
 async fn runs_streaming_row() {
-    let streaming = Arc::new(AssistantsFake::new(vec![Planned::json(200, STREAM_BODY)]));
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    let api = AssistantsRunsApi {
-        transport: Arc::clone(&streaming),
+    let fake = Arc::new(AssistantsFake::new(vec![Planned::json(200, STREAM_BODY)]));
+    let settings = RunDispatch {
+        arun_thread: None,
+        stream: Some(true),
     };
-    let run = run_request();
-    let streamed = dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
-        RunsDispatch {
-            api: &api,
-            request: &request,
-            supplied: None,
-            call: RunCall {
-                dispatch: RunDispatch {
-                    arun_thread: None,
-                    stream: Some(true),
-                },
-                run: &run,
-                handler: None,
-            },
-        }
-        .run(),
-    )))
-    .await
-    .expect("the streamed run reaches its leaf");
+    let streamed = runs_leaf(&fake, settings)
+        .await
+        .expect("the streamed run reaches its leaf");
     let AzureResourceResult::AssistantRuns(RunOutcome::Streaming(_kind, events)) = streamed else {
         panic!("a streaming run returns its event stream");
     };
@@ -314,39 +286,26 @@ async fn runs_streaming_row() {
     assert_eq!(names, vec!["thread.run.created", "thread.run.completed"]);
 }
 
-async fn runs_failure_row() {
+async fn failure_rows() {
+    let fake = Arc::new(AssistantsFake::new(vec![Planned::json(404, ERROR_BODY)]));
+    let create: AssistantCreate = parse(r#"{"model":"gpt-4o"}"#);
+    let definitions_error =
+        leaf_error(definitions_leaf(&fake, DefinitionCall::Create(&create)).await);
+    assert!(matches!(
+        definitions_error,
+        AzureResourceError::AssistantDefinitions(_)
+    ));
+
     let failing = Arc::new(AssistantsFake::new(vec![Planned::json(400, ERROR_BODY)]));
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    let api = AssistantsRunsApi {
-        transport: Arc::clone(&failing),
-    };
-    let run = run_request();
-    let error = leaf_error(
-        dispatch(AzureResourceOperation::AssistantRuns(Box::pin(
-            RunsDispatch {
-                api: &api,
-                request: &request,
-                supplied: None,
-                call: RunCall {
-                    dispatch: RunDispatch::default(),
-                    run: &run,
-                    handler: None,
-                },
-            }
-            .run(),
-        )))
-        .await,
-    );
-    assert!(matches!(error, AzureResourceError::AssistantRuns(_)));
+    let runs_error = leaf_error(runs_leaf(&failing, RunDispatch::default()).await);
+    assert!(matches!(runs_error, AzureResourceError::AssistantRuns(_)));
 }
 
 pub(super) async fn check() {
     definitions_rows().await;
-    definitions_failure_row().await;
     threads_rows().await;
     messages_rows().await;
     runs_polled_row().await;
     runs_streaming_row().await;
-    runs_failure_row().await;
+    failure_rows().await;
 }

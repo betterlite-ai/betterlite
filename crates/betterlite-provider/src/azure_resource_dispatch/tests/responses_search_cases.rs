@@ -143,24 +143,10 @@ fn responses_resource_rows() {
     assert!(items.url.contains("/openai/responses/resp_1/input_items"));
 }
 
-fn responses_failure_row() {
-    let environment: BTreeMap<String, String> = BTreeMap::new();
-    let error = leaf_error(super::block_on(dispatch(
-        AzureResourceOperation::Responses(Box::new(responses::Dispatch {
-            environment: &environment,
-            call: ResponsesCall::WebsocketUrl { api_base: None },
-        })),
-    )));
-    assert!(matches!(
-        error,
-        AzureResourceError::Responses(ResponsesError::MissingWebsocketApiBase)
-    ));
-}
-
-fn search_environment_row() {
-    let settings = search_settings();
+fn search_header_and_url_rows() {
+    let header_settings = search_settings();
     let SearchOutcome::Headers(headers) = search_outcome(
-        &settings,
+        &header_settings,
         SearchCall::ValidateEnvironment {
             headers: Headers::new(),
             api_key: Some(&SecretString::from("key-1")),
@@ -174,13 +160,12 @@ fn search_environment_row() {
         headers.get("Content-Type"),
         Some(&String::from("application/json"))
     );
-}
 
-fn search_url_row() {
-    let settings = search_settings();
-    let SearchOutcome::Url(url) =
-        search_outcome(&settings, SearchCall::CompleteUrl(Some("https://res.test")))
-    else {
+    let url_settings = search_settings();
+    let SearchOutcome::Url(url) = search_outcome(
+        &url_settings,
+        SearchCall::CompleteUrl(Some("https://res.test")),
+    ) else {
         panic!("the url call returns its endpoint");
     };
     assert_eq!(url, "https://res.test/openai/v1/responses");
@@ -225,7 +210,19 @@ fn search_response_row() {
     assert!(response.hidden_params.is_empty());
 }
 
-fn search_failure_row() {
+fn failure_rows() {
+    let environment: BTreeMap<String, String> = BTreeMap::new();
+    let responses_error = leaf_error(super::block_on(dispatch(
+        AzureResourceOperation::Responses(Box::new(responses::Dispatch {
+            environment: &environment,
+            call: ResponsesCall::WebsocketUrl { api_base: None },
+        })),
+    )));
+    assert!(matches!(
+        responses_error,
+        AzureResourceError::Responses(ResponsesError::MissingWebsocketApiBase)
+    ));
+
     let bare = Settings {
         project_endpoint: None,
         model: Some(String::from("gpt-4o-mini")),
@@ -236,14 +233,14 @@ fn search_failure_row() {
         settings: &bare,
         minter: None,
     };
-    let error = leaf_error(super::block_on(dispatch(AzureResourceOperation::Search(
+    let search_error = leaf_error(super::block_on(dispatch(AzureResourceOperation::Search(
         Box::new(search::Dispatch {
             config: &config,
             call: SearchCall::CompleteUrl(None),
         }),
     ))));
     assert!(matches!(
-        error,
+        search_error,
         AzureResourceError::Search(AzureSearchError::MissingProjectEndpoint)
     ));
 }
@@ -252,10 +249,8 @@ pub(super) fn check() {
     responses_transform_row();
     responses_url_rows();
     responses_resource_rows();
-    responses_failure_row();
-    search_environment_row();
-    search_url_row();
+    search_header_and_url_rows();
     search_request_row();
     search_response_row();
-    search_failure_row();
+    failure_rows();
 }

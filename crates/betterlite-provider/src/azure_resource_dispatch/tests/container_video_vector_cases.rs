@@ -67,30 +67,26 @@ fn resource_url(
 }
 
 fn container_url_rows() {
-    let Outcome::Url(container) = resource_url(
-        Some("https://res.test"),
-        Some("2024-10-21"),
-        AzureResource::Container,
-    )
-    .expect("the container url builds") else {
-        panic!("the url call returns its endpoint");
-    };
-    assert_eq!(
-        container,
-        "https://res.test/openai/containers?api-version=2024-10-21"
-    );
-    let Outcome::Url(embedded) = resource_url(
-        Some("https://res.test/openai/responses?api-version=2024-10-21"),
-        None,
-        AzureResource::Container,
-    )
-    .expect("the embedded version is read") else {
-        panic!("the url call returns its endpoint");
-    };
-    assert_eq!(
-        embedded,
-        "https://res.test/openai/containers?api-version=2024-10-21"
-    );
+    let cases = [
+        (
+            Some("https://res.test"),
+            Some("2024-10-21"),
+            "https://res.test/openai/containers?api-version=2024-10-21",
+        ),
+        (
+            Some("https://res.test/openai/responses?api-version=2024-10-21"),
+            None,
+            "https://res.test/openai/containers?api-version=2024-10-21",
+        ),
+    ];
+    for (api_base, api_version, expected) in cases {
+        let Outcome::Url(url) = resource_url(api_base, api_version, AzureResource::Container)
+            .expect("the container url builds")
+        else {
+            panic!("the url call returns its endpoint");
+        };
+        assert_eq!(url, expected);
+    }
 }
 
 fn video_vector_url_rows() {

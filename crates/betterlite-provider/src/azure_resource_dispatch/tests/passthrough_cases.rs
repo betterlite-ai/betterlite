@@ -35,23 +35,27 @@ fn target<'call>(model: &'call str, endpoint: &'call str) -> PassthroughTarget<'
     }
 }
 
-fn through(
-    config: &passthrough::Config,
-    logging: &mut RecordingPassthrough,
-    call: Call<'_>,
-) -> Result<Outcome, AzurePassthroughError> {
+fn outcome(call: passthrough::Dispatch<'_>) -> Result<Outcome, AzurePassthroughError> {
     let result = super::block_on(dispatch(AzureResourceOperation::Passthrough(Box::new(
-        passthrough::Dispatch {
-            config,
-            logging,
-            call,
-        },
+        call,
     ))));
     match result {
         Ok(AzureResourceResult::Passthrough(outcome)) => Ok(outcome),
         Err(AzureResourceError::Passthrough(error)) => Err(error),
         Ok(_) | Err(_) => panic!("the passthrough dispatch returns its own outcome"),
     }
+}
+
+fn through(
+    config: &passthrough::Config,
+    logging: &mut RecordingPassthrough,
+    call: Call<'_>,
+) -> Result<Outcome, AzurePassthroughError> {
+    outcome(passthrough::Dispatch {
+        config,
+        logging,
+        call,
+    })
 }
 
 fn streaming_rows() {
@@ -142,15 +146,22 @@ fn url_rows() {
     ));
 }
 
-fn reply_logging_row() {
+fn logged(call: passthrough::Dispatch<'_>) -> Option<Box<AzureRelayedLog>> {
+    let Outcome::Logged(record) = outcome(call).expect("the logging runs") else {
+        panic!("the logging call returns its record");
+    };
+    record
+}
+
+fn logging_rows() {
     let config = config(Some("https://res.test"));
     let mut logging = RecordingPassthrough::default();
     let request: Object = parse("{}");
     let body = EMBEDDINGS_BODY.as_bytes();
-    let Outcome::Logged(logged) = through(
-        &config,
-        &mut logging,
-        Call::NonStreamingResponse {
+    let reply = logged(passthrough::Dispatch {
+        config: &config,
+        logging: &mut logging,
+        call: Call::NonStreamingResponse {
             target: target("text-embedding-3-small", EMBEDDINGS_ENDPOINT),
             response: RelayedResponse {
                 status_code: 200,
@@ -158,35 +169,21 @@ fn reply_logging_row() {
             },
             request_data: &request,
         },
-    )
-    .expect("the reply logging runs") else {
-        panic!("the reply logging returns its record");
-    };
-    let Some(logged) = logged else {
-        panic!("an embedding reply is logged as a relay");
-    };
-    assert!(matches!(*logged, AzureRelayedLog::Relay(_)));
+    })
+    .expect("an embedding reply is logged as a relay");
+    assert!(matches!(*reply, AzureRelayedLog::Relay(_)));
     assert_eq!(logging.call_types, vec![String::from("aembedding")]);
-}
 
-fn chunk_logging_row() {
-    let config = config(Some("https://res.test"));
-    let mut logging = RecordingPassthrough::default();
     let chunks = vec![String::from(TERMINAL_CHUNK)];
-    let Outcome::Logged(terminal) = through(
-        &config,
-        &mut logging,
-        Call::CollectedChunks {
+    let terminal = logged(passthrough::Dispatch {
+        config: &config,
+        logging: &mut logging,
+        call: Call::CollectedChunks {
             chunks: &chunks,
             target: target("gpt-4.1-mini", "openai/responses"),
         },
-    )
-    .expect("the stream logging runs") else {
-        panic!("the stream logging returns its record");
-    };
-    let Some(terminal) = terminal else {
-        panic!("a response.completed chunk is logged as its terminal event");
-    };
+    })
+    .expect("a response.completed chunk is logged as its terminal event");
     assert!(matches!(*terminal, AzureRelayedLog::Terminal(_)));
     assert_eq!(logging.call_types, vec![String::from("aresponses")]);
 }
@@ -195,6 +192,5 @@ pub(super) fn check() {
     streaming_rows();
     streaming_missing_row();
     url_rows();
-    reply_logging_row();
-    chunk_logging_row();
+    logging_rows();
 }
