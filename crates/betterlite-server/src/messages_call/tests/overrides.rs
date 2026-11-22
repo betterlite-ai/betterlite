@@ -91,11 +91,35 @@ async fn the_override_copies_only_the_keys_the_body_lacks() {
         let calls = routing.router_calls.lock().unwrap();
         let sent = &calls[0].0;
         assert!(!sent.contains_key("router_settings_override"));
-        for (key, value) in &overrides {
-            assert_eq!(sent.get(key.as_str()), Some(value), "override {key}");
-        }
+        assert_eq!(
+            sent.get("fallbacks"),
+            Some(&JsonValue::Array(vec![text("override-fallback")]))
+        );
+        assert_eq!(
+            sent.get("context_window_fallbacks"),
+            Some(&JsonValue::Array(vec![text("override-context")]))
+        );
+        assert_eq!(
+            sent.get("content_policy_fallbacks"),
+            Some(&JsonValue::Array(vec![text("override-policy")]))
+        );
+        assert_eq!(sent.get("num_retries"), Some(&JsonValue::from(2_i64)));
+        assert_eq!(sent.get("timeout"), Some(&JsonValue::from(5_i64)));
+        assert_eq!(
+            sent.get("model_group_retry_policy"),
+            Some(&JsonValue::Object(object(&[(
+                "retries",
+                JsonValue::from(1_i64)
+            )])))
+        );
+        assert_eq!(sent.get("routing_strategy"), Some(&text("least-busy")));
+        assert_eq!(
+            sent.get("enable_tag_filtering"),
+            Some(&JsonValue::Bool(true))
+        );
     }
-    let body_values = object(&[
+    let body = object(&[
+        ("model", text("m")),
         ("fallbacks", JsonValue::Array(vec![text("body-fallback")])),
         (
             "context_window_fallbacks",
@@ -112,22 +136,34 @@ async fn the_override_copies_only_the_keys_the_body_lacks() {
             JsonValue::Object(object(&[("retries", JsonValue::from(3_i64))])),
         ),
         ("routing_strategy", text("body-strategy")),
+        ("enable_tag_filtering", JsonValue::Bool(false)),
+        ("router_settings_override", JsonValue::Object(overrides)),
     ]);
-    let mut body = object(&[("model", text("m"))]);
-    for (key, value) in &body_values {
-        body.insert(key.clone(), value.clone());
-    }
-    body.insert("enable_tag_filtering".to_owned(), JsonValue::Bool(false));
-    body.insert(
-        "router_settings_override".to_owned(),
-        JsonValue::Object(overrides),
-    );
     steps.call(body, false).await.unwrap();
     let calls = routing.router_calls.lock().unwrap();
     let sent = &calls[1].0;
-    for (key, value) in &body_values {
-        assert_eq!(sent.get(key.as_str()), Some(value), "body {key}");
-    }
+    assert_eq!(
+        sent.get("fallbacks"),
+        Some(&JsonValue::Array(vec![text("body-fallback")]))
+    );
+    assert_eq!(
+        sent.get("context_window_fallbacks"),
+        Some(&JsonValue::Array(vec![text("body-context")]))
+    );
+    assert_eq!(
+        sent.get("content_policy_fallbacks"),
+        Some(&JsonValue::Array(vec![text("body-policy")]))
+    );
+    assert_eq!(sent.get("num_retries"), Some(&JsonValue::from(4_i64)));
+    assert_eq!(sent.get("timeout"), Some(&JsonValue::from(9_i64)));
+    assert_eq!(
+        sent.get("model_group_retry_policy"),
+        Some(&JsonValue::Object(object(&[(
+            "retries",
+            JsonValue::from(3_i64)
+        )])))
+    );
+    assert_eq!(sent.get("routing_strategy"), Some(&text("body-strategy")));
     // The shared step pops the body's flag before the override copy, so the override's value is the one kept
     assert_eq!(
         sent.get("enable_tag_filtering"),
