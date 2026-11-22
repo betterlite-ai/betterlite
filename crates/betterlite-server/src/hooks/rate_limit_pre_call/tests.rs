@@ -299,7 +299,10 @@ async fn run(
     .await
 }
 
-async fn body_of<Body: DeserializeOwned>(response: Response) -> Body {
+async fn body_of<Body>(response: Response) -> Body
+where
+    Body: DeserializeOwned,
+{
     let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("the error body reads");
