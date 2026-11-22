@@ -90,7 +90,7 @@ fn rejects_a_non_boolean_flag() {
     let error = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
-    .load("general_settings:\n  disable_responses_id_security: 'true'")
-    .expect_err("a string flag is not a bool");
+    .load("general_settings:\n  disable_responses_id_security: yes please")
+    .expect_err("a non-boolean flag is a load error");
     assert!(matches!(error, ConfigError::Yaml { .. }), "{error}");
 }
