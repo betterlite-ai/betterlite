@@ -51,3 +51,17 @@ fn list_call_type_is_set_before_the_handler() {
     assert_eq!(bench.fixture.state.call_type, "video_list");
     assert_eq!(bench.requests().len(), 1);
 }
+
+#[tokio::test]
+async fn list_async_provider_error_keeps_its_status() {
+    let mut bench = Bench::new(500, r#"{"error":{"message":"upstream failed"}}"#);
+    let mut call = list_call();
+    call.custom_llm_provider = Some("openai".to_owned());
+    let failure = bench
+        .alist_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
+        .await
+        .expect_err("the provider answer is a failure");
+    assert_eq!(failure.class.metadata().status_code, 500);
+    assert_eq!(bench.fixture.state.call_type, "video_list");
+    assert_eq!(bench.requests().len(), 1);
+}
