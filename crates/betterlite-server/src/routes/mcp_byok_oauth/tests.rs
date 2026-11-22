@@ -99,9 +99,7 @@ impl FakeSink {
     fn lock(&self) -> MutexGuard<'_, FakeSinkState> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
-}
 
-impl FakeSink {
     fn finish(
         &self,
         call: SinkCall,

@@ -296,8 +296,7 @@ async fn a_percent_encoded_unicode_verifier_is_decoded_as_utf8() {
 
 #[tokio::test]
 async fn a_raw_utf8_verifier_is_read_as_latin1() {
-    let mut body =
-        format!("grant_type=authorization_code&code=auth-code-1&code_verifier=").into_bytes();
+    let mut body = b"grant_type=authorization_code&code=auth-code-1&code_verifier=".to_vec();
     body.extend_from_slice("\u{fc}\u{f1}\u{ef}\u{e7}\u{f8}d\u{e9}".as_bytes());
     let Built { router, .. } = TestApp::with_record().build();
     let request = Request::builder()
