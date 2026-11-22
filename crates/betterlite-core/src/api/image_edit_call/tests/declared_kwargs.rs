@@ -139,11 +139,11 @@ async fn edit_option_merge_rejects_an_unsupported_background() {
 }
 
 #[tokio::test]
-async fn edit_option_merge_drops_a_null_background() {
+async fn edit_option_merge_drops_null_kwargs() {
     let world = World::new();
     let context = world.context();
     let settings = settings(&[]);
-    let provider = Arc::new(Provider::new(&[], true));
+    let provider = Arc::new(Provider::new(&["seed"], true));
     let source = Source::new(vec![(gpt_image_tag(), Arc::clone(&provider))]);
     let service = ImageEdits {
         settings: &settings,
@@ -159,7 +159,10 @@ async fn edit_option_merge_drops_a_null_background() {
     call.response_format = None;
     call.size = None;
     call.user = None;
-    call.kwargs = ImageParams::from([(String::from("background"), Json::Null)]);
+    call.kwargs = ImageParams::from([
+        (String::from("background"), Json::Null),
+        (String::from("seed"), Json::Null),
+    ]);
     ImageEditEntry {
         operation: &service,
         logger: &mut RecordingLogger::new(),
@@ -167,14 +170,15 @@ async fn edit_option_merge_drops_a_null_background() {
     }
     .image_edit(&call)
     .await
-    .expect("a null background is absent, not unsupported");
+    .expect("a null kwarg is absent, not unsupported");
     let recorded = provider.take();
     let [sent] = recorded.as_slice() else {
         panic!("exactly one send");
     };
     assert!(
-        sent.optional_params.is_empty(),
-        "a null background is absent, so neither the options nor the form fields carry it"
+        !sent.optional_params.contains_key("background")
+            && !sent.optional_params.contains_key("seed"),
+        "a null kwarg is absent, so neither the declared field nor the supported extension carries it"
     );
 }
 
