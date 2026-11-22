@@ -235,6 +235,18 @@ async fn drops_values_that_are_not_the_declared_type() {
 }
 
 #[tokio::test]
+async fn accepts_an_amount_written_in_exponent_notation() {
+    let exponent: AgentJson = serde_json::from_str("5e-6").unwrap();
+    let entries = metadata(&[("user_api_key_spend", exponent)]);
+    let recorder = Recorder::recording();
+    fan_out(&recorder)
+        .increment_remaining_budget_metrics(request(&entries))
+        .await;
+    let expected: AgentJson = serde_json::from_str("0.000005").unwrap();
+    assert_eq!(recorder.calls()["key"]["key_spend"], expected);
+}
+
+#[tokio::test]
 async fn drops_an_amount_that_does_not_fit_a_decimal() {
     let huge: AgentJson = serde_json::from_str("1e300").unwrap();
     let entries = metadata(&[("user_api_key_spend", huge)]);
