@@ -1,0 +1,9 @@
+task: B652
+deviations: []
+kept_bugs:
+  - what: The request body copies every optional parameter verbatim, so sessionID and the aws_* credential keys a caller merged into optional_params travel to the endpoint inside the JSON body.
+    why: LiteLLM's transform_request ends with **optional_params, and a working setup can rely on arbitrary provider fields passing through to the agent; the overlay and its credential spill are kept as LiteLLM writes them, and the agent_input_text case pins the exact body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L148-L162
+  - what: The agent path is appended to the runtime endpoint with a plain string join and no trailing-slash trim, so a configured endpoint that ends in / yields a //agents/... path.
+    why: LiteLLM builds the URL with an f-string; a working setup that points aws_bedrock_runtime_endpoint at a proxy with a trailing slash gets the doubled slash today and its proxy tolerates it, so betterlite reproduces it instead of changing the URL under that setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L100-L106
