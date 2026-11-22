@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-other-stability-edit-url
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: multipart
+      - function: url
+      - function: environment
+        headers: null
+      - function: environment
+        headers: {}
+      - function: environment
+        headers:
+          Content-Type: text/plain
+          x-a: b
+      - function: environment
+        headers:
+          content-type: text/plain
+      - function: error_class
+        message: boom
+        status: 418
+        headers:
+          h: v
+      - function: error_class
+        message: ''
+        status: 400
+        headers: {}
+env: {}
+compare: {ignore: []}
