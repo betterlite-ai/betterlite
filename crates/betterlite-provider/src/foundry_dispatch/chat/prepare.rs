@@ -103,7 +103,14 @@ pub fn prepare(call: &Call<'_>, globals: &Globals<'_>) -> Result<Plan, PrepareEr
         key: resolve_key(call.api_key, globals),
         headers: headers_or_global(call.headers, globals).cloned(),
     };
-    let leaf = leaf_chat(call, globals, &resolved, &wire)?;
+    let mut leaf = leaf_chat(call, globals, &resolved, &wire)?;
+    // LiteLLM adds the stream flag after the provider transform, so a caller's extra_body cannot turn it off
+    if call.stream {
+        leaf.body.insert(
+            String::from("stream"),
+            serde_json::to_value(JsonValue::Bool(true)).map_err(encode)?,
+        );
+    }
     let chat = assembled(&leaf, call, extra_headers.as_ref())?;
     let prepared = if call.stream {
         PreparedRequest::Stream(Box::new(chat))
@@ -138,10 +145,6 @@ fn wire_parts(call: &Call<'_>) -> Result<(Wire, Option<Headers>), PrepareError> 
         .map_err(|source| PrepareError::Encode { source })?;
     let messages = command_r::transform(&sent, call.model)?;
     let mut params = fields.params;
-    // LiteLLM's azure_ai config takes the stream parameter in the body, so a streamed call sends it
-    if call.stream {
-        params.insert(String::from("stream"), JsonValue::Bool(true));
-    }
     if let Some(extra) = call.extra_headers {
         params.insert(
             String::from(EXTRA_HEADERS_FIELD),

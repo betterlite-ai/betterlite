@@ -93,6 +93,19 @@ fn stream_body_carries_stream() {
     let sent: JsonValue =
         serde_json::from_slice(&stream_http(&streaming.prepared).body).expect("the stream body");
     assert_eq!(field(&sent, "stream"), &JsonValue::Bool(true));
+    // the flag lands after the leaf merges extra_body, so a false value there cannot turn the stream off
+    let with_extra_body = support::request(
+        r#"{"model":"mistral-large","messages":[{"role":"user","content":"hi"}],"extra_body":{"stream":false}}"#,
+    );
+    let overridden = chat::prepare::prepare(
+        &chat_call(&with_extra_body, &deployment, "mistral-large", true),
+        &env.globals(),
+    )
+    .expect("the overridden stream plan");
+    let overridden_sent: JsonValue =
+        serde_json::from_slice(&stream_http(&overridden.prepared).body)
+            .expect("the overridden stream body");
+    assert_eq!(field(&overridden_sent, "stream"), &JsonValue::Bool(true));
     let buffered = chat::prepare::prepare(
         &chat_call(&request, &deployment, "mistral-large", false),
         &env.globals(),
