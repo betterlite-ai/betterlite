@@ -1,0 +1,8 @@
+kind: helper
+name: ui-settings-record-coercion-seed
+call:
+  ui_settings_record:
+    settings: {enable_chat_ui: "on", allow_agents_for_team_admins: 0, enable_projects_ui: true}
+env: {}
+compare:
+  ignore: []

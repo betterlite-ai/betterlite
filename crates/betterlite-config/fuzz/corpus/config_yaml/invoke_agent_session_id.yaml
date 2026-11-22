@@ -1,0 +1,7 @@
+model_list:
+  - model_name: agent
+    litellm_params:
+      model: bedrock/agent/L1RT58GYRW/MFPSBCXYTW
+      sessionID: session-from-deployment
+litellm_settings:
+  sessionID: os.environ/INVOKE_AGENT_SESSION_ID

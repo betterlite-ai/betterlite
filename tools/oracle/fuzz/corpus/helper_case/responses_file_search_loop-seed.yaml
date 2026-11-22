@@ -1,0 +1,26 @@
+kind: helper
+name: responses-file-search-loop-seed
+call:
+  responses_file_search_loop:
+    input: question
+    model: gpt-test
+    tools: null
+    kwargs: {}
+    provider:
+      - id: resp_seed
+        created_at: 1700000000
+        model: gpt-test
+        status: completed
+        output:
+          - type: message
+            id: msg_seed
+            status: completed
+            role: assistant
+            content:
+              - {type: output_text, text: seed, annotations: []}
+    searches: []
+env: {}
+compare:
+  ignore:
+    - pointer: /value/response/output/0/id
+      why: LiteLLM mints the file_search_call id from uuid.uuid4, so only the fields around it are comparable
