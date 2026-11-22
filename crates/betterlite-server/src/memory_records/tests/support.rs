@@ -125,11 +125,11 @@ pub(crate) fn auth(
     user_role: Option<&str>,
 ) -> UserAPIKeyAuth {
     let mut fields: BTreeMap<String, JsonData> = BTreeMap::new();
-    if let Some(user_id) = user_id {
-        fields.insert("user_id".to_owned(), JsonData::String(user_id.to_owned()));
+    if let Some(owner) = user_id {
+        fields.insert("user_id".to_owned(), JsonData::String(owner.to_owned()));
     }
-    if let Some(team_id) = team_id {
-        fields.insert("team_id".to_owned(), JsonData::String(team_id.to_owned()));
+    if let Some(scope) = team_id {
+        fields.insert("team_id".to_owned(), JsonData::String(scope.to_owned()));
     }
     if let Some(role) = user_role {
         fields.insert("user_role".to_owned(), JsonData::String(role.to_owned()));

@@ -43,7 +43,7 @@ pub(super) fn request_value(step: &Step) -> Result<Value, StepFailure> {
 // the JSON text the metadata column stores, read back as the value the case compares
 fn metadata_column(text: Option<String>) -> Result<Option<JsonData>, StepFailure> {
     match text {
-        Some(text) => Ok(Some(serde_json::from_str(&text)?)),
+        Some(json_text) => Ok(Some(serde_json::from_str(&json_text)?)),
         None => Ok(None),
     }
 }
