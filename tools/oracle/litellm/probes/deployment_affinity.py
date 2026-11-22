@@ -110,12 +110,8 @@ class DeploymentAffinity(Operation):
             deployment_dict(deployment, self.model) for deployment in pool_deployments
         ]
         model: Final = self.model if step.model is None else step.model
-        filter_check: Final[FilterCheck] = check
-        chosen: Final[list[dict[str, JsonValue]]] = await filter_check.async_filter_deployments(
-            model=model,
-            healthy_deployments=pool,
-            messages=None,
-            request_kwargs=kwargs,
+        chosen: Final[list[dict[str, JsonValue]]] = await self.filtered_pool(
+            check, model, pool, kwargs
         )
         return Observation(
             action="filter",
@@ -124,6 +120,21 @@ class DeploymentAffinity(Operation):
                 for position, deployment in enumerate(pool_deployments)
                 if any(pool[position] is kept for kept in chosen)
             ],
+        )
+
+    # LiteLLM types the method as list[dict], so the call goes through the protocol parameter
+    async def filtered_pool(
+        self,
+        check: FilterCheck,
+        model: str,
+        pool: list[dict[str, JsonValue]],
+        kwargs: dict[str, JsonValue],
+    ) -> list[dict[str, JsonValue]]:
+        return await check.async_filter_deployments(
+            model=model,
+            healthy_deployments=pool,
+            messages=None,
+            request_kwargs=kwargs,
         )
 
     def request_kwargs(self, step: Step) -> dict[str, JsonValue]:
