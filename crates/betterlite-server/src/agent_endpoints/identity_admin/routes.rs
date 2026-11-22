@@ -8,7 +8,8 @@ use axum::routing::get;
 use betterlite_auth::agent_identity::error::AgentIdentityError;
 use betterlite_auth::agent_policy::{AgentExecutionMode, AgentResponse as PolicyAgent};
 use betterlite_auth::identity::{
-    ActiveState, AgentIdentityFailure, ExecutionMode, ManagedAgentIdentityStatus,
+    ActiveState, AgentIdentityBinding, AgentIdentityFailure, ExecutionMode,
+    ManagedAgentIdentityStatus,
 };
 
 use super::error::{Detail, IdentityAdminError};
@@ -108,7 +109,8 @@ fn status_body(agent: PolicyAgent) -> Result<ManagedAgentIdentityStatus, Identit
         .identity
         .map(|binding| {
             let wire = serde_json::to_value(binding).map_err(|_error| policy_unreadable())?;
-            serde_json::from_value(wire).map_err(|_error| policy_unreadable())
+            serde_json::from_value::<AgentIdentityBinding>(wire)
+                .map_err(|_error| policy_unreadable())
         })
         .transpose()?;
     let last_authenticated_at = identity

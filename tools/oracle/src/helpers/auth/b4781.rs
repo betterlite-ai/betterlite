@@ -8,7 +8,7 @@ use betterlite_auth::managed_admission::admit::admit_managed_actor;
 use betterlite_auth::managed_admission::error::AdmissionError;
 use betterlite_auth::managed_admission::invoke::prepare_agent_invocation;
 use betterlite_auth::managed_admission::ports::InvocationSources;
-use betterlite_auth::managed_admission::{ManagedMarks, managed_marks, managed_token};
+use betterlite_auth::managed_admission::{managed_marks, managed_token};
 use betterlite_auth::request_quota_view::RequestQuotaViewExt as _;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -161,11 +161,11 @@ fn registry(rows: &[String]) -> Result<Arc<AgentRegistry>, Box<HelperError>> {
 }
 
 fn store_rows(rows: Option<&[String]>) -> Result<Option<Vec<AgentResponse>>, Box<HelperError>> {
-    let Some(rows) = rows else {
+    let Some(list) = rows else {
         return Ok(None);
     };
-    let mut parsed = Vec::with_capacity(rows.len());
-    for row in rows {
+    let mut parsed = Vec::with_capacity(list.len());
+    for row in list {
         parsed.push(serde_json::from_str(row).or_value_error()?);
     }
     Ok(Some(parsed))
@@ -182,7 +182,7 @@ fn access(
             granted: granted.iter().cloned().collect(),
         },
         targets: CaseTargets {
-            store: store.map_or(Vec::new(), |store| store.agents.clone()),
+            store: store.map_or(Vec::new(), |case| case.agents.clone()),
             registry: Arc::clone(registry),
             database: store.is_some(),
         },
@@ -231,7 +231,7 @@ fn answer(auth: &UserAPIKeyAuth, outcome: Result<(), AdmissionError>) -> HelperR
             detail: error.detail,
         },
     };
-    let marks: ManagedMarks = managed_marks(auth);
+    let marks = managed_marks(auth);
     let view = auth.request_quota_view();
     let answer = Answer {
         outcome: verdict,

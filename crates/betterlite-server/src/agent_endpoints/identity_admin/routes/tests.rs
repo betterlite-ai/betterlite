@@ -176,7 +176,10 @@ struct Reply {
 }
 
 impl Reply {
-    fn json<T: DeserializeOwned>(&self) -> T {
+    fn json<T>(&self) -> T
+    where
+        T: DeserializeOwned,
+    {
         serde_json::from_slice(&self.body).unwrap()
     }
 
