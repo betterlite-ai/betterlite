@@ -2,6 +2,8 @@ mod prepare;
 
 use std::future::Future;
 
+use betterlite_logging::logging_pre_post::env::PrePostEnv;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
@@ -17,6 +19,7 @@ use crate::api::video_remix_call::config::{
 use crate::api::video_remix_call::error::{VideoCallError, VideoCallFailure, failure};
 use crate::api::video_remix_call::shared::{VideoCallDeps, mock_answer};
 use crate::api::video_remix_list_transport::client::{VideoClient, VideoClientSource};
+use crate::api::video_remix_list_transport::config::VideoRemixListConfig;
 use crate::api::video_remix_list_transport::error::VideoRemixListTransportError;
 use crate::api::video_remix_list_transport::records::Params;
 use crate::api::video_remix_list_transport::{
@@ -86,9 +89,18 @@ pub struct ListRequest<'call, 'deps, 'env, Source: VideoClientSource> {
 pub fn video_list<Source: VideoClientSource>(
     request: ListRequest<'_, '_, '_, Source>,
 ) -> Result<VideoListReply, VideoCallFailure> {
+    let argument_provider = request.call.custom_llm_provider.clone().unwrap_or_default();
+    if let Some(objects) = list_mock(request.call, &argument_provider, request.deps.redactor)? {
+        return Ok(VideoListReply::Objects(objects));
+    }
     let provider = sync_provider(request.call);
-    let argument = request.call.custom_llm_provider.as_deref();
-    list_begin(request, argument.unwrap_or_default(), provider, false)?.finish()
+    let mut ready = list_ready(request, provider)?;
+    let answered_provider = ready.provider.clone();
+    let redactor = ready.redactor;
+    match ready.run(false)? {
+        Handled::Done(params) => Ok(VideoListReply::Page(params)),
+        Handled::Pending(_pending) => Err(list_pending(&answered_provider, redactor)),
+    }
 }
 
 // avideo_list: get_llm_provider(model="") before the mock, then the async handler awaited here
@@ -97,112 +109,109 @@ pub async fn avideo_list<Source: VideoClientSource>(
     resolution: &ResolutionContext<'_>,
 ) -> Result<VideoListReply, VideoCallFailure> {
     let provider = match &request.call.custom_llm_provider {
-        Some(provider) => provider.clone(),
+        Some(data) => data.clone(),
         None => inferred_provider(resolution)
             .map_err(|error| failure(error, "", request.deps.redactor))?,
     };
-    list_begin(request, &provider, provider.clone(), true)?
-        .finish_async()
-        .await
-}
-
-// The two answers a list entry can carry: the mock's objects, or the handler's answer
-enum ListAnswer<Pending> {
-    Objects(Vec<VideoObject>),
-    Handled(Handled<Params, Pending>),
-}
-
-// What a list entry has after list_begin: its answer, the provider and the redactor an error prints with
-struct ListBegin<'redactor, Pending> {
-    answer: ListAnswer<Pending>,
-    provider: String,
-    redactor: &'redactor Redactor,
-}
-
-impl<'redactor, Pending> ListBegin<'redactor, Pending>
-where
-    Pending: Future<Output = Result<Params, VideoRemixListTransportError>>,
-{
-    // the sync entry's answer: the mock's objects, or the params the handler answered in place
-    fn finish(self) -> Result<VideoListReply, VideoCallFailure> {
-        match self.answer {
-            ListAnswer::Objects(objects) => Ok(VideoListReply::Objects(objects)),
-            ListAnswer::Handled(handled) => list_answer(handled, &self.provider, self.redactor),
-        }
+    if let Some(objects) = list_mock(request.call, &provider, request.deps.redactor)? {
+        return Ok(VideoListReply::Objects(objects));
     }
-
-    // the async entry's answer: the handler's future, awaited and mapped like a direct failure
-    async fn finish_async(self) -> Result<VideoListReply, VideoCallFailure> {
-        let pending = match self.answer {
-            ListAnswer::Objects(objects) => return Ok(VideoListReply::Objects(objects)),
-            ListAnswer::Handled(Handled::Done(params)) => {
-                return Ok(VideoListReply::Page(params));
-            }
-            ListAnswer::Handled(Handled::Pending(pending)) => pending,
-        };
-        let params = pending
-            .await
-            .map_err(|error| failure(VideoCallError::from(error), &self.provider, self.redactor))?;
-        Ok(VideoListReply::Page(params))
-    }
-}
-
-// a sync handler's answer: the params page, or the failure of answering with a future instead
-fn list_answer<Pending: Future<Output = Result<Params, VideoRemixListTransportError>>>(
-    handled: Handled<Params, Pending>,
-    provider: &str,
-    redactor: &Redactor,
-) -> Result<VideoListReply, VideoCallFailure> {
-    match handled {
-        Handled::Done(params) => Ok(VideoListReply::Page(params)),
-        Handled::Pending(_pending) => Err(list_pending(provider, redactor)),
-    }
-}
-
-// the mock short circuit, the provider, the config and the handler, which answers in place or with a future
-fn list_begin<'call, 'deps, 'env, Source: VideoClientSource>(
-    request: ListRequest<'call, 'deps, 'env, Source>,
-    mock_provider: &str,
-    provider: String,
-    is_async: bool,
-) -> Result<
-    ListBegin<'deps, impl Future<Output = Result<Params, VideoRemixListTransportError>> + Send>,
-    VideoCallFailure,
-> {
-    let redactor = request.deps.redactor;
-    let mock = mock_answer(request.call.mock_response.as_ref(), "a video list")
-        .map_err(|error| failure(VideoCallError::Mock(error), mock_provider, redactor))?;
-    let answer = match mock {
-        Some(objects) => ListAnswer::Objects(objects),
-        None => {
-            let VideoCallDeps {
-                configs,
-                logging,
-                env,
-                request_timeout_seconds,
-                ..
-            } = request.deps;
-            let config = provider_config(configs, &provider, VideoOperation::List)?;
-            let prepared = prepare_list(logging, request.call, &provider, request_timeout_seconds)?;
-            let handled = request
-                .transport
-                .list(
-                    config,
-                    list_wire_call(request.call, &provider, &prepared, request.client),
-                    LogContext {
-                        state: logging,
-                        env,
-                    },
-                    is_async,
-                )
-                .map_err(|error| failure(error, &provider, redactor))?;
-            ListAnswer::Handled(handled)
-        }
+    let mut ready = list_ready(request, provider)?;
+    let answered_provider = ready.provider.clone();
+    let redactor = ready.redactor;
+    let pending = match ready.run(true)? {
+        Handled::Done(params) => return Ok(VideoListReply::Page(params)),
+        Handled::Pending(pending) => pending,
     };
-    Ok(ListBegin {
-        answer,
-        provider,
+    let params = pending
+        .await
+        .map_err(|error| failure(VideoCallError::from(error), &answered_provider, redactor))?;
+    Ok(VideoListReply::Page(params))
+}
+
+// The provider and the prepared call, with every collaborator the handler borrows, held by the entry that awaits it
+struct ListReady<'call, 'deps, 'env, Source: VideoClientSource> {
+    transport: &'deps VideoRemixListTransport<Source>,
+    config: &'deps dyn VideoRemixListConfig,
+    logging: &'deps mut LoggingState,
+    env: &'deps PrePostEnv<'env>,
+    redactor: &'deps Redactor,
+    call: &'call VideoListCall,
+    client: Option<VideoClient<'call, Source>>,
+    provider: String,
+    prepared: PreparedList,
+}
+
+impl<Source: VideoClientSource> ListReady<'_, '_, '_, Source> {
+    // the handler's answer: the params page, or a future that borrows this ready call
+    fn run(
+        &mut self,
+        is_async: bool,
+    ) -> Result<
+        Handled<
+            Params,
+            impl Future<Output = Result<Params, VideoRemixListTransportError>> + Send + '_,
+        >,
+        VideoCallFailure,
+    > {
+        let call = list_wire_call(
+            self.call,
+            &self.provider,
+            &self.prepared,
+            self.client.take(),
+        );
+        let log = LogContext {
+            state: &mut *self.logging,
+            env: self.env,
+        };
+        self.transport
+            .list(self.config, call, log, is_async)
+            .map_err(|error| failure(error, &self.provider, self.redactor))
+    }
+}
+
+// the mock short circuit: LiteLLM answers from mock_response before it reads the provider's config
+fn list_mock(
+    call: &VideoListCall,
+    mock_provider: &str,
+    redactor: &Redactor,
+) -> Result<Option<Vec<VideoObject>>, VideoCallFailure> {
+    mock_answer(call.mock_response.as_ref(), "a video list")
+        .map_err(|error| failure(VideoCallError::Mock(error), mock_provider, redactor))
+}
+
+// the provider's config and the call's preparation, kept together for the handler
+fn list_ready<'call, 'deps, 'env, Source: VideoClientSource>(
+    request: ListRequest<'call, 'deps, 'env, Source>,
+    provider: String,
+) -> Result<ListReady<'call, 'deps, 'env, Source>, VideoCallFailure> {
+    let ListRequest {
+        transport,
+        deps,
+        call,
+        client,
+    } = request;
+    let VideoCallDeps {
+        configs,
+        logging,
+        env,
         redactor,
+        request_timeout_seconds,
+    } = deps;
+    let config = provider_config(configs, &provider, VideoOperation::List)
+        .map_err(|error| failure(error, &provider, redactor))?;
+    let prepared = prepare_list(logging, call, &provider, request_timeout_seconds)
+        .map_err(|error| failure(error, &provider, redactor))?;
+    Ok(ListReady {
+        transport,
+        config,
+        logging,
+        env,
+        redactor,
+        call,
+        client,
+        provider,
+        prepared,
     })
 }
 
