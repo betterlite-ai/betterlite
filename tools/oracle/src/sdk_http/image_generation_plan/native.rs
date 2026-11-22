@@ -46,7 +46,18 @@ pub(super) async fn execute(
     let operations = Operations {
         source: &world.source,
     };
-    let plan = build_plan(&world, &identity, &operations);
+    // the plan B998's own oracle adapter builds, minus the provider pieces this adapter does not wire
+    let plan = ImageGenerationPlan {
+        identity: &identity,
+        operations: &operations,
+        settings: &world.settings,
+        environment: &world.variables,
+        custom_providers: &world.custom_providers,
+        custom_provider_map: &[],
+        azure_ad_token_provider: None,
+        drop_params: false,
+        redactor: &world.redactor,
+    };
     let entry = PlanEntry { plan: &plan };
     let facade = AimageGenerationPlan {
         entry: &entry,
@@ -55,10 +66,19 @@ pub(super) async fn execute(
     };
     let mut state = logging_state(&world.redactor)?;
     let outcome = match call.sync_mode {
+        // image_generation answers the answer type; the wrapper above it keeps only the response
         SyncMode::Sync => projected(
             image_generation(&plan, core_call(&call.call, api_base), &mut state)
                 .await
-                .map_err(promoted),
+                .map(|answer| answer.response)
+                .map_err(|failure| match failure {
+                    ImageGenerationException::Mapped { class, message } => {
+                        AimageGenerationError::Raised { class, message }
+                    }
+                    ImageGenerationException::UnknownProvider { message } => {
+                        AimageGenerationError::UnknownProvider { message }
+                    }
+                }),
         )?,
         SyncMode::Asynchronous => projected(
             aimage_generation(
@@ -117,37 +137,6 @@ impl World {
             registry: JSONProviderRegistry::default(),
             policies: ProviderPolicies::default(),
             globals: GlobalCredentials::default(),
-        }
-    }
-}
-
-// the plan B998's own oracle adapter builds, minus the provider pieces this adapter does not wire
-fn build_plan<'plan, Identity, Operations>(
-    world: &'plan World,
-    identity: &'plan Identity,
-    operations: &'plan Operations,
-) -> ImageGenerationPlan<'plan, Identity, Operations> {
-    ImageGenerationPlan {
-        identity,
-        operations,
-        settings: &world.settings,
-        environment: &world.variables,
-        custom_providers: &world.custom_providers,
-        custom_provider_map: &[],
-        azure_ad_token_provider: None,
-        drop_params: false,
-        redactor: &world.redactor,
-    }
-}
-
-// the sync function's exceptions are the litellm ones the wrapper re-raises
-fn promoted(failure: ImageGenerationException) -> AimageGenerationError {
-    match failure {
-        ImageGenerationException::Mapped { class, message } => {
-            AimageGenerationError::Raised { class, message }
-        }
-        ImageGenerationException::UnknownProvider { message } => {
-            AimageGenerationError::UnknownProvider { message }
         }
     }
 }
