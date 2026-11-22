@@ -479,18 +479,37 @@ async fn end_scan_other_failure_leaves_as_an_error() {
     );
 }
 
+#[rstest]
+#[case::sampled_every_chunk(false, &[1, 2])]
+#[case::end_of_stream_only(true, &[2])]
 #[tokio::test]
-async fn transform_route_incremental_diff_on_a_chat_route_runs_the_transform_loop() {
+async fn transform_route_incremental_diff_on_a_chat_route_runs_the_transform_loop(
+    #[case] end_of_stream_only: bool,
+    #[case] scanned: &[usize],
+) {
     let mut harness = Harness::new(KeyMode::Texts, Vec::new()).rate(1).flag(
         "streaming_transform_mode",
         GuardrailValue::Text(String::from("incremental_diff")),
     );
+    if end_of_stream_only {
+        harness = harness.flag(
+            "streaming_end_of_stream_only",
+            GuardrailValue::Boolean(true),
+        );
+    }
     harness.route = Some("/chat");
     let (logs, _guard) = capture_logs();
-    harness.run(texts("ab")).await;
-    let calls = harness.calls(CallType::Completion);
-    assert!(!calls.is_empty());
-    assert!(calls.iter().all(|call| call.sink));
+    let items = vec![chunk("a", None), chunk("b", Some("stop"))];
+    let outputs = harness.run(items).await;
+    let expected: Vec<ScanCall> = scanned
+        .iter()
+        .map(|count| ScanCall {
+            items: *count,
+            sink: true,
+        })
+        .collect();
+    assert_eq!(harness.calls(CallType::Completion), expected);
+    assert_eq!(lines(&outputs), [""]);
     assert!(!logs.contents().contains(FALLBACK_WARNING));
 }
 
