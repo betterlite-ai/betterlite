@@ -90,4 +90,13 @@ deviations:
       pinned by the auth tests; these two routes sit behind that middleware unchanged, and forking the reply for
       them would change the auth stack this task does not own.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1884
+  - what: >-
+      A router_settings key outside the seventeen the endpoint reconstructs, such as default_fallbacks, is
+      left out of current_values and source, where LiteLLM copies every key the router_settings block wrote
+      into both maps.
+    why: >-
+      the writer table reports only the keys a loaded config section proves were written, and a key another
+      section folds into a computed value (default_fallbacks becomes a wildcard fallbacks chain) has no
+      separate stored value to echo.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L135
 kept_bugs: []

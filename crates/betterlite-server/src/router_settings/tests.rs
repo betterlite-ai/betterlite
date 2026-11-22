@@ -325,7 +325,10 @@ fn only_the_tag_filtering_field_carries_a_documentation_link() {
         .iter()
         .find(|field| field.field_name == "enable_tag_filtering")
         .unwrap();
-    assert_eq!(tag.link, Some("https://docs.litellm.ai/docs/tag_routing"));
+    assert_eq!(
+        tag.link,
+        Some("https://docs.litellm.ai/docs/proxy/tag_routing")
+    );
     assert!(
         answer
             .fields
