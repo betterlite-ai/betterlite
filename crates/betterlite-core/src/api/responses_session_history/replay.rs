@@ -94,7 +94,7 @@ where
     Cold: ColdStorageReader + Sync,
     Sleep: Sync,
 {
-    let request = stored_request(service, log).await?.unwrap_or_default();
+    let request = stored_request(service, log).await?;
     if let Some(chosen) = replayed_input(&request) {
         let mut assembly: InputRequest = serde_json::from_value(serde_json::to_value(&request)?)?;
         assembly.input = Some(chosen);

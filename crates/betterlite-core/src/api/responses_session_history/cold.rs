@@ -9,21 +9,21 @@ use crate::api::responses_session_history::{ColdStorageReader, SessionHistory, S
 const TRUNCATED_MARKER: &str = "litellm_truncated";
 const OBJECT_KEY: &str = "cold_storage_object_key";
 
-// None is a stored JSON null; a missing or empty column reads as an empty request
+// a missing, null or empty column and an empty cold-storage result all read as an empty request
 pub async fn stored_request<Query, Cold, Sleep>(
     service: &SessionHistory<'_, Query, Cold, Sleep>,
     log: &SessionLog,
-) -> Result<Option<IndexMap<String, Json>>, SessionHistoryError<Cold::Error>>
+) -> Result<IndexMap<String, Json>, SessionHistoryError<Cold::Error>>
 where
     Query: Sync,
     Cold: ColdStorageReader + Sync,
     Sleep: Sync,
 {
     let request = match &log.proxy_server_request {
-        None | Some(Json::Null) => Some(IndexMap::new()),
+        None | Some(Json::Null) => IndexMap::new(),
         Some(Json::Text(text)) => {
             if text.is_empty() {
-                Some(IndexMap::new())
+                IndexMap::new()
             } else {
                 decode_session_log_json(
                     text.as_bytes(),
@@ -31,9 +31,10 @@ where
                     service.limits,
                 )
                 .map_err(SessionHistoryError::StoredRequest)?
+                .unwrap_or_default()
             }
         }
-        Some(Json::Object(fields)) => Some(fields.clone()),
+        Some(Json::Object(fields)) => fields.clone(),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
             return Err(SessionHistoryError::Column {
                 column: "proxy_server_request",
@@ -43,7 +44,7 @@ where
     let Some(cold) = service.cold_storage else {
         return Ok(request);
     };
-    if !request_is_truncated(request.as_ref()) {
+    if !request_is_truncated(&request) {
         return Ok(request);
     }
     let Some(object_key) = cold_storage_key(log, service.limits) else {
@@ -54,17 +55,17 @@ where
         .proxy_server_request(&object_key)
         .await
         .map_err(SessionHistoryError::ColdStorage)?;
-    Ok(restored.filter(|fields| !fields.is_empty()).or(request))
+    Ok(restored
+        .filter(|fields| !fields.is_empty())
+        .unwrap_or(request))
 }
 
-fn request_is_truncated(request: Option<&IndexMap<String, Json>>) -> bool {
+fn request_is_truncated(request: &IndexMap<String, Json>) -> bool {
     // LiteLLM searches str(request), so the marker in any key or nested string counts
-    request.is_none_or(|fields| {
-        fields.is_empty()
-            || fields
-                .iter()
-                .any(|(key, value)| key.contains(TRUNCATED_MARKER) || holds_truncation(value))
-    })
+    request.is_empty()
+        || request
+            .iter()
+            .any(|(key, value)| key.contains(TRUNCATED_MARKER) || holds_truncation(value))
 }
 
 fn holds_truncation(value: &Json) -> bool {

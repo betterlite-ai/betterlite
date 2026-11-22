@@ -413,7 +413,8 @@ fn stored_turn_replay_rejects_invalid_response(#[case] response: &str) {
 #[case::key_empty(r#""{}""#, r#"{"cold_storage_object_key": ""}"#, true, &[], "{}")]
 #[case::key_number(r#""{}""#, r#"{"cold_storage_object_key": 7}"#, true, &[], "{}")]
 #[case::empty_cold_result(r#"{"input": "litellm_truncated"}"#, r#"{"cold_storage_object_key": "key-empty"}"#, true, &["key-empty"], r#"{"input": "litellm_truncated"}"#)]
-#[case::null_cold_result(r#""null""#, r#"{"cold_storage_object_key": "key-null"}"#, true, &["key-null"], "null")]
+#[case::null_cold_result(r#""null""#, r#"{"cold_storage_object_key": "key-null"}"#, true, &["key-null"], "{}")]
+#[case::null_cold_result_keeps_request(r#"{"input": "litellm_truncated"}"#, r#"{"cold_storage_object_key": "key-null"}"#, true, &["key-null"], r#"{"input": "litellm_truncated"}"#)]
 fn cold_payload_selection(
     #[case] request: &str,
     #[case] metadata: &str,
@@ -429,7 +430,7 @@ fn cold_payload_selection(
     let debugs = Debugs::default();
     let _guard = set_default(tracing_subscriber::registry().with(debugs.clone()));
     let stored = block_on(stored_request(&setup.service(), &log)).unwrap();
-    let wanted: Option<IndexMap<String, Json>> = serde_json::from_str(expected).unwrap();
+    let wanted: IndexMap<String, Json> = serde_json::from_str(expected).unwrap();
     assert_eq!(stored, wanted);
     assert_eq!(setup.reads(), reads);
     let announced = debugs.0.lock().unwrap().clone();
@@ -454,7 +455,7 @@ fn cold_payload_selection_logs_malformed_metadata(#[case] metadata: &str) {
     let debugs = Debugs::default();
     let _guard = set_default(tracing_subscriber::registry().with(debugs.clone()));
     let stored = block_on(stored_request(&setup.service(), &log)).unwrap();
-    assert_eq!(stored, Some(IndexMap::new()));
+    assert_eq!(stored, IndexMap::new());
     assert!(setup.reads().is_empty());
     assert_eq!(
         *debugs.0.lock().unwrap(),
