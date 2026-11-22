@@ -76,7 +76,10 @@ fn error_mapping_content_transport_failure_keeps_the_provider_status() {
         panic!("a provider 400 is a bad request");
     };
     assert_eq!(details.status.0, 400);
-    assert_eq!(details.message, "the transform refused");
+    assert_eq!(
+        details.message,
+        "gemini: Vertex AI rejected the request body"
+    );
     assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(details.provider.as_deref(), Some("gemini"));
     assert_eq!(wire.seen().len(), 1);
