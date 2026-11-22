@@ -1,0 +1,22 @@
+kind: helper
+name: foundry-provider-chat-seed
+call:
+  foundry_provider:
+    inputs:
+      - op: dispatch
+        model: gpt-4o
+        messages:
+          - role: user
+            content: hi
+        api_base: https://res.services.ai.azure.com
+        api_key: sk-foundry-fixture
+        headers: null
+        globals:
+          api_base: null
+          api_key: null
+          headers: null
+        environment: {}
+        stream: false
+        status: null
+env: {}
+compare: {ignore: []}
