@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_azure::image_transport::ImageRequest;
+use betterlite_azure::image_transport::ImageTransport as _;
 use betterlite_azure::image_transport::error::ImageTransportError;
 use betterlite_azure::image_transport::request::{ImageClientConstructor, TimeoutPhases};
 use betterlite_azure::images::edit::{
