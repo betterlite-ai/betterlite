@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
 use betterlite_auth::budget_primitives::window_start::DurationParser;
@@ -85,23 +85,14 @@ impl FakeCache {
         }
     }
 
-    fn state(&self) -> MutexGuard<'_, CacheState> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn stored_amount(&self) -> Option<Decimal> {
-        self.state().memory.and_then(Decimal::from_f64)
-    }
-
-    fn take_answer(&self) -> Option<Answer> {
-        self.state().answers.pop_front()
-    }
-
     fn write_memory(&self, value: Decimal) -> Result<(), FakeError> {
         if self.memory_set_fails {
             return Err(FakeError);
         }
-        self.state().memory = value.to_f64();
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .memory = value.to_f64();
         Ok(())
     }
 
@@ -112,19 +103,29 @@ impl FakeCache {
         if matches!(self.set_nx, SetNx::Fail) {
             return Err(FakeError);
         }
-        self.state().sets.push((counter_key.to_owned(), value));
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .sets
+            .push((counter_key.to_owned(), value));
         Ok(Some(matches!(self.set_nx, SetNx::Stored)))
     }
 
     pub(crate) fn memory_json(&self) -> Value {
-        let Some(amount) = self.stored_amount() else {
+        let Some(amount) = self
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .memory
+            .and_then(Decimal::from_f64)
+        else {
             return Value::Null;
         };
         amount_json(amount)
     }
 
     pub(crate) fn sets_json(&self) -> Value {
-        let state = self.state();
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         Value::Array(
             state
                 .sets
@@ -149,7 +150,14 @@ impl ReseedCache for FakeCache {
         if !self.redis {
             return ready(Ok(None));
         }
-        ready(cache_value(self.take_answer().as_ref()))
+        ready(cache_value(
+            self.state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .answers
+                .pop_front()
+                .as_ref(),
+        ))
     }
 
     fn redis_set_nx(
@@ -164,7 +172,13 @@ impl ReseedCache for FakeCache {
         &self,
         _counter_key: &str,
     ) -> impl Future<Output = Result<Option<ReseedCacheValue>, FakeError>> + Send {
-        ready(Ok(self.stored_amount().map(ReseedCacheValue::Number)))
+        ready(Ok(self
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .memory
+            .and_then(Decimal::from_f64)
+            .map(ReseedCacheValue::Number)))
     }
 
     fn memory_set(

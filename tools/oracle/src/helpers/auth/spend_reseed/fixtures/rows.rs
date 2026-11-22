@@ -17,12 +17,8 @@ use serde_json::Number;
 use super::fakes::{FakeError, timestamp};
 use super::input::Input;
 
-fn stored(amount: f64) -> Option<JsonData> {
-    Number::from_f64(amount).map(JsonData::Number)
-}
-
 fn aggregate(total: f64) -> SpendAggregateRow {
-    let spend = stored(total).unwrap_or(JsonData::Null);
+    let spend = Number::from_f64(total).map_or(JsonData::Null, JsonData::Number);
     SpendAggregateRow::Mapping(BTreeMap::from([(
         "_sum".to_owned(),
         JsonData::Object(BTreeMap::from([("spend".to_owned(), spend)])),
@@ -71,7 +67,7 @@ impl SpendCounterRows for FakeRows {
         }
         ready(Ok(self.window.map(|(start, spend)| WindowSpendRow {
             window_start: start,
-            spend: stored(spend),
+            spend: Number::from_f64(spend).map(JsonData::Number),
         })))
     }
 
