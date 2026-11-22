@@ -15,16 +15,14 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
-use betterlite_models::params::{ParameterError, ParameterMapping, ParameterPolicy};
+use betterlite_models::params::{ParameterMapping, ParameterPolicy};
 use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 
 use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use crate::operation::{AnthropicCallError, OperationError};
-use crate::prepared::body::{listed_parameters, parameter_policy};
+use crate::prepared::body::{convert, listed_parameters, parameter_policy};
 use crate::prepared::deployment::Deployment;
 
 // The runtime values every parameter step reads, borrowed once so each step takes one argument.
@@ -173,17 +171,6 @@ fn copy_extra_body(
     }
     optional.insert(String::from("extra_body"), convert(value)?);
     Ok(())
-}
-
-fn convert<T, U>(value: T) -> Result<U, OperationError>
-where
-    T: Serialize,
-    U: DeserializeOwned,
-{
-    let wire = serde_json::to_value(value).map_err(|source| OperationError::Encode { source })?;
-    serde_json::from_value(wire).map_err(|source| OperationError::Parameters {
-        source: ParameterError::Encode { source },
-    })
 }
 
 // A mapped parameter that LiteLLM rejects keeps the status it raised, so the caller reads it as the provider's own error.

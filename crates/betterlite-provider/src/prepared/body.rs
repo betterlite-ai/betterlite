@@ -152,7 +152,7 @@ fn chat_parameters(fields: &IndexMap<String, JsonValue>) -> Result<ChatParameter
     convert(JsonValue::Object(listed))
 }
 
-fn convert<T, U>(value: T) -> Result<U, OperationError>
+pub(crate) fn convert<T, U>(value: T) -> Result<U, OperationError>
 where
     T: Serialize,
     U: DeserializeOwned,
