@@ -10,12 +10,12 @@ from litellm.models.access_group import LiteLLM_AccessGroupTable
 from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
 from litellm.models.team import LiteLLM_TeamTableCachedObj
 from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy.agent_endpoints.agent_registry import global_agent_registry
 from litellm.proxy.agent_endpoints.auth.agent_permission_handler import (
     AgentRequestHandler,
     RestrictedAgentAccess,
     UnrestrictedAgentAccess,
 )
-from litellm.proxy.agent_endpoints.agent_registry import global_agent_registry
 from litellm.proxy.auth import auth_checks
 from litellm.proxy.auth.auth_checks import TeamNotFoundError
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
@@ -196,15 +196,14 @@ def patched(
     proxy_server.user_api_key_cache = UserApiKeyCache() if call["database"] else None
     saved_module = sys.modules.get(PROXY_MODULE)
     saved_lookup = auth_checks.get_team_object
-    saved_access = auth_checks.get_access_object
     sys.modules[PROXY_MODULE] = proxy_server
     auth_checks.get_team_object = lookup
+    # dispatch runs one case per process, so the access lookup patch cannot outlive this run
     auth_checks.get_access_object = access
     try:
         yield
     finally:
         auth_checks.get_team_object = saved_lookup
-        auth_checks.get_access_object = saved_access
         if saved_module is None:
             del sys.modules[PROXY_MODULE]
         else:
@@ -234,4 +233,5 @@ def run(input_value: Input) -> JsonValue:
         case UnrestrictedAgentAccess():
             return "unrestricted"
         case RestrictedAgentAccess(agent_ids=agent_ids):
-            return JSON.validate_python(sorted(agent_ids))
+            restricted: list[str] = sorted(agent_ids)
+            return JSON.validate_python(restricted)
