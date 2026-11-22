@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::time::Duration;
 
 use betterlite_anthropic::credentials::AnthropicSettings;
@@ -98,16 +97,11 @@ impl FileWriteProviders for OracleProviders {
     fn files_config(&self, provider: ProviderId) -> Option<FileProviderConfig> {
         file_config_selection("", provider)
     }
-    fn upload(
-        &self,
-        target: UploadTarget<'_, Self>,
-    ) -> impl Future<Output = Result<FileObject, WireError>> + Send {
-        async move {
-            match target {
-                UploadTarget::Config(upload) => self.anthropic_upload(&upload).await,
-                UploadTarget::OpenAi { call, data } => self.openai_upload(&call, &data).await,
-                UploadTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
-            }
+    async fn upload(&self, target: UploadTarget<'_, Self>) -> Result<FileObject, WireError> {
+        match target {
+            UploadTarget::Config(upload) => self.anthropic_upload(&upload).await,
+            UploadTarget::OpenAi { call, data } => self.openai_upload(&call, &data).await,
+            UploadTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
         }
     }
     async fn delete(&self, target: DeleteTarget<'_, Self>) -> Result<FileDeleted, WireError> {
