@@ -31,6 +31,9 @@ pub(crate) struct PostCallCase {
     pub(crate) hidden_params: bool,
     #[serde(default)]
     pub(crate) headers: BTreeMap<String, Json>,
+    // the probe's hidden params raise when read, so the hook never writes into the response
+    #[serde(default)]
+    pub(crate) probe_raises: bool,
 }
 
 #[derive(Debug, Deserialize)]

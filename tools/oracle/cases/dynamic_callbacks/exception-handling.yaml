@@ -8,7 +8,7 @@ call:
       priority: high
     statuses:
       - {code: OK, current_limit: 100, limit_remaining: 40, rate_limit_type: tokens, descriptor_key: model, descriptor_value: null}
-    hidden_params: false
+    hidden_params: true
     headers:
       x-kept: unchanged
     probe_raises: true

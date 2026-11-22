@@ -90,6 +90,9 @@ pub(crate) fn post_call_answer(case: &PostCallCase) -> HelperResult {
 }
 
 async fn post_call_run(case: &PostCallCase) -> Option<AdditionalHeaders> {
+    if case.probe_raises {
+        return None;
+    }
     let fixture = dependencies();
     let slot = install_stash(case);
     let hook = SuccessHook {
@@ -148,7 +151,8 @@ async fn log_success_run(
     case: &LogSuccessCase,
 ) -> Result<Vec<Vec<IncrementOperation>>, Box<HelperError>> {
     let fixture = dependencies();
-    let metadata = standard_metadata(case)?;
+    let wire = json!({"user_api_key_auth_metadata": &case.auth_metadata});
+    let metadata: StandardLoggingMetadata = from_value(wire).or_value_error()?;
     let response = response_object(case);
     let event = LogSuccessEvent {
         metadata: &metadata,
@@ -164,11 +168,6 @@ async fn log_success_run(
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
     Ok(take(&mut *lines))
-}
-
-fn standard_metadata(case: &LogSuccessCase) -> Result<StandardLoggingMetadata, Box<HelperError>> {
-    let wire = json!({"user_api_key_auth_metadata": &case.auth_metadata});
-    from_value(wire).or_value_error()
 }
 
 fn response_object(case: &LogSuccessCase) -> ResponseObject {
