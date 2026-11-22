@@ -19,7 +19,10 @@ fn number(value: f64) -> Json {
     Json::Number(Number::from_f64(value).expect("a finite number"))
 }
 
-fn encoded<T: Serialize>(value: &T) -> Json {
+fn encoded<Value>(value: &Value) -> Json
+where
+    Value: Serialize,
+{
     let stored = serde_json::to_value(value).expect("the encoded value");
     serde_json::from_value(stored).expect("the JSON form")
 }

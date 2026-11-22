@@ -99,10 +99,10 @@ fn decode_group_budget(row: &tokio_postgres::Row) -> Result<GroupBudgetRow, Grou
 async fn query_optional(
     store: &PostgresStore,
     sql: &str,
-    parameter: &(dyn ToSql + Sync),
+    parameter: &str,
 ) -> Result<Option<tokio_postgres::Row>, DbError> {
     let client = store.session().await?;
-    let parameters: [&(dyn ToSql + Sync); 1] = [parameter];
+    let parameters: [&(dyn ToSql + Sync); 1] = [&parameter];
     client.query_opt(sql, &parameters).await.map_err(backend)
 }
 

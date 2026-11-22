@@ -14,7 +14,6 @@ use super::{
     deployment, group_database, http_failure, linked_group, names, number, runtime_message,
     tagged_deployment, text,
 };
-use crate::route_read_through::ModelReadThrough;
 
 #[tokio::test]
 async fn group_count_duplicates() {
@@ -141,13 +140,10 @@ fn lookup_failure_propagates() {
 #[tokio::test]
 async fn readthrough_order_and_rebound_router() {
     let router = ScriptedRouter::new(names(&["alpha"]), names(&["beta"]));
-    let remaining = missing_after_read_through(
-        &names(&["alpha", "beta", "gamma"]),
-        &router,
-        Some(&router as &dyn ModelReadThrough),
-    )
-    .await
-    .expect("the missing names");
+    let remaining =
+        missing_after_read_through(&names(&["alpha", "beta", "gamma"]), &router, Some(&router))
+            .await
+            .expect("the missing names");
     assert_eq!(remaining, names(&["gamma"]));
     assert_eq!(router.attempted(), names(&["beta", "gamma"]));
 }
@@ -155,13 +151,9 @@ async fn readthrough_order_and_rebound_router() {
 #[tokio::test]
 async fn readthrough_empty_missing_no_work() {
     let router = ScriptedRouter::new(names(&["alpha"]), Vec::new());
-    let remaining = missing_after_read_through(
-        &names(&["alpha"]),
-        &router,
-        Some(&router as &dyn ModelReadThrough),
-    )
-    .await
-    .expect("the missing names");
+    let remaining = missing_after_read_through(&names(&["alpha"]), &router, Some(&router))
+        .await
+        .expect("the missing names");
     assert_eq!(remaining, Vec::<String>::new());
     assert!(router.attempted().is_empty());
 }
@@ -169,13 +161,9 @@ async fn readthrough_empty_missing_no_work() {
 #[tokio::test]
 async fn readthrough_installs_a_router() {
     let router = ScriptedRouter::absent(Vec::new(), names(&["beta"]));
-    let remaining = missing_after_read_through(
-        &names(&["beta"]),
-        &router,
-        Some(&router as &dyn ModelReadThrough),
-    )
-    .await
-    .expect("the missing names");
+    let remaining = missing_after_read_through(&names(&["beta"]), &router, Some(&router))
+        .await
+        .expect("the missing names");
     assert_eq!(remaining, Vec::<String>::new());
     assert_eq!(router.attempted(), names(&["beta"]));
 }
@@ -184,13 +172,9 @@ async fn readthrough_installs_a_router() {
 async fn readthrough_failure_no_write() {
     let database = group_database(vec![deployment("d1", "alpha", None)]);
     let router = ScriptedRouter::new(Vec::new(), Vec::new());
-    let remaining = missing_after_read_through(
-        &names(&["alpha"]),
-        &router,
-        Some(&router as &dyn ModelReadThrough),
-    )
-    .await
-    .expect("the missing names");
+    let remaining = missing_after_read_through(&names(&["alpha"]), &router, Some(&router))
+        .await
+        .expect("the missing names");
     assert_eq!(remaining, names(&["alpha"]));
     assert_eq!(router.attempted(), names(&["alpha"]));
     assert!(database.updates().is_empty());

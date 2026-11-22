@@ -109,7 +109,7 @@ impl InvalidationTransport for RecordingTransport {
 
 pub fn recording_auth_invalidation() -> (Arc<RecordingTransport>, AuthInvalidation) {
     let recorder = Arc::new(RecordingTransport::default());
-    let transport: Arc<dyn InvalidationTransport> = Arc::clone(&recorder);
+    let transport = Arc::clone(&recorder);
     let invalidation = AuthInvalidation {
         auth: Arc::new(NoopAuth),
         usage: None,

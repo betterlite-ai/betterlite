@@ -134,9 +134,9 @@ where
 }
 
 // The two selection modes of update_deployments_with_access_group and update_specific_deployments_with_access_group.
-pub enum DeploymentSelection<'a> {
-    ByNames(&'a [String]),
-    ByIds(&'a [String]),
+pub enum DeploymentSelection<'names> {
+    ByNames(&'names [String]),
+    ByIds(&'names [String]),
 }
 
 // update_deployments_with_access_group and update_specific_deployments_with_access_group: every name is checked before the first write, while each id is re-read just before its own write.
