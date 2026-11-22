@@ -1,0 +1,12 @@
+kind: helper
+name: key-access-object-permission-unset
+call:
+  key_access:
+    steps:
+      - {"function": "object_permission", "config": {"general_settings": {"disable_custom_api_keys": null}, "litellm_settings": {"key_generation_settings": null}}, "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": null, "metadata": {}}, "team": null, "data": {}, "route": "/key/generate", "user_id": null, "custom_key": null, "metadata": null, "team_id": null, "database": false, "teams": [], "object_permission": null}
+      - {"function": "object_permission", "config": {"general_settings": {"disable_custom_api_keys": null}, "litellm_settings": {"key_generation_settings": null}}, "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": null, "metadata": {}}, "team": null, "data": {}, "route": "/key/generate", "user_id": null, "custom_key": null, "metadata": null, "team_id": null, "database": false, "teams": [], "object_permission": {}}
+      - {"function": "object_permission", "config": {"general_settings": {"disable_custom_api_keys": null}, "litellm_settings": {"key_generation_settings": null}}, "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": null, "metadata": {}}, "team": null, "data": {}, "route": "/key/generate", "user_id": null, "custom_key": null, "metadata": null, "team_id": null, "database": false, "teams": [], "object_permission": {"models": null}}
+      - {"function": "object_permission", "config": {"general_settings": {"disable_custom_api_keys": null}, "litellm_settings": {"key_generation_settings": null}}, "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": null, "metadata": {}}, "team": null, "data": {}, "route": "/key/generate", "user_id": null, "custom_key": null, "metadata": null, "team_id": null, "database": false, "teams": [], "object_permission": {"mcp_servers": ["server-1"], "skills": [], "mcp_tool_search_enabled": false}}
+      - {"function": "object_permission", "config": {"general_settings": {"disable_custom_api_keys": null}, "litellm_settings": {"key_generation_settings": null}}, "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": null, "metadata": {}}, "team": null, "data": {}, "route": "/key/generate", "user_id": null, "custom_key": null, "metadata": null, "team_id": null, "database": false, "teams": [], "object_permission": {"mcp_tool_permissions": {"server-1": ["tool-a"]}, "vector_stores": null}}
+env: {}
+compare: {ignore: []}
