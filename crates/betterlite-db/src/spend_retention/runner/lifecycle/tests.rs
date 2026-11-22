@@ -90,7 +90,7 @@ fn position(contents: &str, needle: &str) -> usize {
         .unwrap_or_else(|| panic!("missing log line {needle}"))
 }
 
-async fn run_until_rows_are_deleted<Run>(mut run: Pin<&mut Run>, observer: &Client, before: i64)
+async fn run_until_rows_are_deleted<Run>(mut run: Pin<&mut Run>, observer: &Client, below: i64)
 where
     Run: Future + Send,
 {
@@ -98,7 +98,7 @@ where
         tokio::select! {
             _finished = &mut run => panic!("the cleanup finished before it could be cancelled"),
             () = sleep(Duration::from_millis(5)) => {
-                if count_rows(observer, SPEND_COUNT).await < before {
+                if count_rows(observer, SPEND_COUNT).await < below {
                     return;
                 }
             }
@@ -614,17 +614,24 @@ async fn cancellation_records_aborted_with_the_progress_so_far() {
     let metrics = CleanupMetrics::new(&registry);
     let (logs, _subscriber) = install_logs();
     let mut future = Box::pin(cleanup.cleanup_old_spend_logs(&mut case.client, &metrics));
-    run_until_rows_are_deleted(future.as_mut(), &observer, 1_000).await;
+    run_until_rows_are_deleted(future.as_mut(), &observer, 998).await;
     drop(future);
     assert_eq!(runs(&registry, "aborted"), Some(1));
     assert_eq!(runs(&registry, "completed"), None);
     let remaining = count_rows(&observer, SPEND_COUNT).await;
     let deleted = 1_000_i64.saturating_sub(remaining);
-    let batches = deleted.checked_div(2).expect("two rows per batch");
     let contents = logs.contents();
     assert!(contents.contains("Spend log cleanup cancelled after"));
-    assert!(contents.contains(&format!("rows_deleted={deleted},")));
-    assert!(contents.contains(&format!("batches={batches})")));
+    // the drop can land after a batch's COMMIT reached the server and before the run counted it
+    let reports = [deleted, deleted.saturating_sub(2)].map(|rows| {
+        let batches = rows.checked_div(2).expect("two rows per batch");
+        format!("rows_deleted={rows}, batches={batches})")
+    });
+    assert!(
+        reports
+            .iter()
+            .any(|report| contents.contains(report.as_str()))
+    );
     let lock = cleanup.pod_lock.as_ref().expect("the lock manager");
     assert_eq!(lock.calls(), vec!["acquire"]);
     case.close().await;
