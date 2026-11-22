@@ -109,19 +109,11 @@ fn team_callback_wiring() {
     assert!(empty.failure_callbacks.is_none());
     assert!(empty.logging_kwargs.is_none());
 
-    // every field is mutable, since Logging.__init__ owns these values
-    let mut mutable = TeamCallbackWiring::default();
-    mutable.success_callbacks = names(&["langfuse"]);
-    mutable.failure_callbacks = names(&["datadog"]);
-    mutable.logging_kwargs = Some(serde_json::from_str(r#"{"a": "b"}"#).unwrap());
-    assert_eq!(
-        mutable,
-        TeamCallbackWiring {
-            success_callbacks: names(&["langfuse"]),
-            failure_callbacks: names(&["datadog"]),
-            logging_kwargs: Some(serde_json::from_str(r#"{"a": "b"}"#).unwrap()),
-        }
-    );
+    // Logging.__init__ copies these values out of the kwargs and may overwrite them
+    let mut resolved = wiring(r#"{"metadata": {"logging": [{"callback_name": "langfuse"}]}}"#);
+    resolved.success_callbacks = names(&["datadog"]);
+    assert_eq!(resolved.success_callbacks, names(&["datadog"]));
+    assert_eq!(resolved.failure_callbacks, names(&["langfuse"]));
 }
 
 #[test]

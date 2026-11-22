@@ -61,11 +61,11 @@ pub fn build_failure_payload(
     upstream_usage: Option<&UpstreamReportedUsage>,
 ) -> RequestData {
     let mut request_payload = parsed_body.cloned().unwrap_or_default();
-    if let Some(kwargs) = kwargs {
-        request_payload.extend(kwargs.to_data());
+    if let Some(resolved) = kwargs {
+        request_payload.extend(resolved.to_data());
     }
-    if let Some(logging_obj) = logging_obj {
-        request_payload.insert(LOGGING_OBJ_KEY.to_owned(), logging_obj.to_json());
+    if let Some(details) = logging_obj {
+        request_payload.insert(LOGGING_OBJ_KEY.to_owned(), details.to_json());
     }
     merge_model_and_provider(&mut request_payload, parsed_body, custom_llm_provider);
     if let Some(usage) = upstream_usage {

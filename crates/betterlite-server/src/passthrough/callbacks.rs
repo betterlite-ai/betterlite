@@ -38,19 +38,19 @@ where
         Ok(settings) => settings,
         Err(error) => return fail_open(route_description, &error),
     };
-    let Some(settings) = settings else {
+    let Some(resolved) = settings else {
         return TeamCallbackWiring::default();
     };
-    if has_environment_reference(&settings.callback_vars) {
+    if has_environment_reference(&resolved.callback_vars) {
         return fail_open(
             route_description,
             "a callback variable is an os.environ/ reference",
         );
     }
     TeamCallbackWiring {
-        success_callbacks: Some(settings.success_callback.clone()),
-        failure_callbacks: Some(settings.failure_callback.clone()),
-        logging_kwargs: callback_logging_kwargs(&settings),
+        success_callbacks: Some(resolved.success_callback.clone()),
+        failure_callbacks: Some(resolved.failure_callback.clone()),
+        logging_kwargs: callback_logging_kwargs(&resolved),
     }
 }
 

@@ -19,9 +19,9 @@ pub fn update_metadata_tags(headers: &HeaderMap, metadata: &mut Metadata) {
             .get(name)
             .and_then(|value| value.to_str().ok())
             .filter(|value| !value.is_empty());
-        if let Some(found) = found {
+        if let Some(header_value) = found {
             tags.extend(
-                found
+                header_value
                     .split(',')
                     .map(|tag| Json::Text(tag.trim().to_owned())),
             );
