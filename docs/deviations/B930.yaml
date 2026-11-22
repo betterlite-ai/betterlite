@@ -42,8 +42,9 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/encrypted_content_affinity_check.py#L273-L285
 kept_bugs:
   - what: >-
-      litellm_metadata that is present but not an object raises TypeError "'<type>' object does not
-      support item assignment" instead of ignoring the enabled flag.
+      litellm_metadata that is present but not an object raises the TypeError Python raises for that
+      value, with the type-naming message or the list-index message for a list, instead of ignoring
+      the enabled flag.
     why: >-
       A working Responses API setup always sends a metadata object, and the TypeError is what an operator
       sees today for a null or string metadata; the task keeps that failure, with the Python type name in

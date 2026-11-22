@@ -8,6 +8,9 @@ pub enum AffinityError {
     // LiteLLM assigns into litellm_metadata, and Python raises TypeError for any value that is not a dict
     #[error("'{python_type}' object does not support item assignment")]
     MetadataNotAssignable { python_type: &'static str },
+    // a list rejects a string key with its own index message, not the mapping-assignment message
+    #[error("list indices must be integers or slices, not str")]
+    MetadataListNotAssignable,
     #[error(transparent)]
     Lookup(#[from] LookupError),
 }

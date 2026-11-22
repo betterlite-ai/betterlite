@@ -112,8 +112,9 @@ fn flag_enabled(history: &mut History<'_>) -> Result<(), AffinityError> {
             Ok(())
         }
         MetadataSlot::Absent => Ok(()),
-        MetadataSlot::NotAnObject { python_type } => Err(AffinityError::MetadataNotAssignable {
-            python_type: *python_type,
+        MetadataSlot::NotAnObject { python_type } => Err(match *python_type {
+            "list" => AffinityError::MetadataListNotAssignable,
+            name => AffinityError::MetadataNotAssignable { python_type: name },
         }),
     }
 }
