@@ -353,10 +353,9 @@ impl AgentRequestProcessing<TestKey> for FakeProcessing {
                 failure: failure.clone(),
                 data: data.clone(),
             });
-        let team = match key.team_id() {
-            Some(team) => JsonValue::String(team.to_owned()),
-            None => JsonValue::Null,
-        };
+        let team = key
+            .team_id()
+            .map_or(JsonValue::Null, |team| JsonValue::String(team.to_owned()));
         let mut body = JsonMap::new();
         body.insert(String::from("handled"), JsonValue::Bool(true));
         body.insert(
