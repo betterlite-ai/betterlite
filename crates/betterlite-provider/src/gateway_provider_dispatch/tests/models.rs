@@ -1,3 +1,4 @@
+use std::error::Error as _;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_openai::vercel_ai_gateway::models_error::ModelsError as VercelModelsError;
@@ -10,10 +11,16 @@ use crate::gateway_provider_dispatch::models::{
 
 use super::support::{Fixture, secret};
 
+#[derive(Clone, Debug, thiserror::Error)]
+#[error("{message}")]
+struct TransportFailure {
+    message: String,
+}
+
 #[derive(Debug)]
 struct Transport {
     requests: Mutex<Vec<ModelsRequest>>,
-    reply: Result<ModelsResponse, String>,
+    reply: Result<ModelsResponse, TransportFailure>,
 }
 
 impl Transport {
@@ -30,7 +37,9 @@ impl Transport {
     fn failing(message: &str) -> Self {
         Self {
             requests: Mutex::new(Vec::new()),
-            reply: Err(String::from(message)),
+            reply: Err(TransportFailure {
+                message: String::from(message),
+            }),
         }
     }
 
@@ -49,7 +58,7 @@ impl Transport {
 }
 
 impl ModelsTransport for Transport {
-    type Error = String;
+    type Error = TransportFailure;
 
     fn get(&self, request: &ModelsRequest) -> Result<ModelsResponse, Self::Error> {
         self.requests
@@ -198,10 +207,8 @@ fn a_transport_failure_names_the_underlying_message() {
     let transport = Transport::failing("connection refused");
     let error = get_models(&transport, None, DispatchSettings::from(&fixture.settings))
         .expect_err("the listing surfaces the transport error");
-    assert!(matches!(
-        &error,
-        ModelsError::Request { message } if message.as_str() == "connection refused"
-    ));
+    let source = error.source().expect("the transport error is kept");
+    assert_eq!(source.to_string(), "connection refused");
     assert_eq!(
         error.to_string(),
         "the models request failed: connection refused"
