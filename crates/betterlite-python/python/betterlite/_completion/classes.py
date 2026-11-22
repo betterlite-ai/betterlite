@@ -4,7 +4,8 @@ from typing import Protocol
 from pydantic import JsonValue
 
 import betterlite
-from betterlite._completion.arguments import JSON, messages_value, num_retries
+from betterlite._completion import arguments
+from betterlite._completion.arguments import JSON, messages_value
 from betterlite._completion.completion import completion_from_arguments, settle_outcome
 from betterlite._completion.stream import CompletionOutcome
 from betterlite.types.utils import Message
@@ -112,7 +113,8 @@ class LiteLLM:
         max_retries: JsonValue = None,
         default_headers: dict[str, JsonValue] | None = None,
     ) -> None:
-        configured = num_retries if num_retries is not None else betterlite.num_retries
+        global_retries = betterlite.num_retries
+        configured = arguments.num_retries if global_retries is None else global_retries
         retries = max_retries if max_retries is not None else JSON.validate_python(configured)
         self.params = {
             "api_key": api_key,
