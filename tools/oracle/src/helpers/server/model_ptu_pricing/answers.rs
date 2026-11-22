@@ -31,7 +31,7 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
-use super::{Call, CatalogCall, DeltaCall, DeploymentCall, Input, ZeroedCall};
+use super::{Call, CatalogCall, DeltaCall, DeploymentCall, Input, PricesCall, ZeroedCall};
 
 struct Attribution(bool);
 
@@ -80,20 +80,7 @@ pub(super) fn answer(input: &Input) -> HelperResult {
     let mut answers = Vec::with_capacity(input.calls.len());
     for call in &input.calls {
         let answered = match call {
-            Call::Prices(prices_call) => {
-                let found: Vec<[bool; 3]> = prices_call
-                    .values
-                    .iter()
-                    .map(|value| {
-                        [
-                            is_nonzero_rate(value),
-                            is_nonzero_price(value),
-                            is_zero_price(value),
-                        ]
-                    })
-                    .collect();
-                json!({ "answers": found })
-            }
+            Call::Prices(prices_call) => prices_answer(prices_call),
             Call::Priced(priced_call) => {
                 let outcome = check_ptu_unpriced(
                     &priced_call.model_info,
@@ -112,6 +99,21 @@ pub(super) fn answer(input: &Input) -> HelperResult {
         answers.push(answered);
     }
     Ok(json!({ "calls": answers }))
+}
+
+fn prices_answer(call: &PricesCall) -> Value {
+    let found: Vec<[bool; 3]> = call
+        .values
+        .iter()
+        .map(|value| {
+            [
+                is_nonzero_rate(value),
+                is_nonzero_price(value),
+                is_zero_price(value),
+            ]
+        })
+        .collect();
+    json!({ "answers": found })
 }
 
 // a bare HTTPException carries its status and neither type, param nor code
