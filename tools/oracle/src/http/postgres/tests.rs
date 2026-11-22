@@ -663,10 +663,14 @@ fn answer_headers(headers: &BTreeMap<String, String>) -> HeaderMap {
 }
 
 async fn route_genai_request(case: &HttpCase, replay: &mut GenaiReplay) {
+    let generation: Arc<dyn GenerateContentDispatch> =
+        Arc::<ReplayGeneration>::clone(&replay.generation);
+    let translator: Arc<dyn TranslateContents> = Arc::<ReplayTranslator>::clone(&replay.translator);
+    let counter: Arc<dyn TokenCounter> = Arc::<ReplayCounter>::clone(&replay.counter);
     let router = routes(GenaiRoutesState {
-        generation: Arc::clone(&replay.generation),
-        translator: Arc::clone(&replay.translator),
-        token_counter: Arc::clone(&replay.counter),
+        generation,
+        translator,
+        token_counter: counter,
         include_call_id_in_error_body: false,
     });
     let answered = router
@@ -810,6 +814,6 @@ fn assert_counted(replay: &GenaiReplay) {
     assert!(count.1);
 }
 
-fn response_header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+fn response_header<'headers>(headers: &'headers HeaderMap, name: &str) -> Option<&'headers str> {
     headers.get(name).and_then(|value| value.to_str().ok())
 }
