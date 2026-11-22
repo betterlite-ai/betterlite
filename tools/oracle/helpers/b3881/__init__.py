@@ -134,9 +134,9 @@ async def _log_fallback(
     error: ProbeError,
 ) -> None:
     if function == "fallback_success":
-        await logger.log_success_fallback_event(group, kwargs, error)  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3434
+        await logger.log_success_fallback_event(group, kwargs, error)  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3434
     else:
-        await logger.log_failure_fallback_event(group, kwargs, error)  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3466
+        await logger.log_failure_fallback_event(group, kwargs, error)  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3466
 
 
 def run(input_value: Input) -> JsonValue:
@@ -153,7 +153,7 @@ def run(input_value: Input) -> JsonValue:
         kwargs["exception"] = error
     function = input_value["function"]
     if function == "failure":
-        logger.set_llm_deployment_failure_metrics(kwargs)  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2794
+        logger.set_llm_deployment_failure_metrics(kwargs)  # type: ignore[arg-type]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2794
     elif function == "success":
         values = input_value.get("values")
         enum_values = UserAPIKeyLabelValues() if values is None else UserAPIKeyLabelValues(**values)
@@ -161,8 +161,8 @@ def run(input_value: Input) -> JsonValue:
         if completion is not None:
             kwargs["completion_start_time"] = datetime.fromtimestamp(float(completion), tz=UTC)
         tokens = input_value.get("output_tokens")
-        logger.set_llm_deployment_success_metrics(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3066
-            kwargs,
+        logger.set_llm_deployment_success_metrics(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3066
+            kwargs,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3066
             datetime.fromtimestamp(float(input_value["start_time"]), tz=UTC),
             datetime.fromtimestamp(float(input_value["end_time"]), tz=UTC),
             enum_values,
