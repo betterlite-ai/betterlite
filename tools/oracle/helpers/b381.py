@@ -127,19 +127,17 @@ class FakeDb(PrismaWrapper):
         ids = TypeAdapter(list[str]).validate_python(args[0])
         if query == _ATTEMPT_COUNTS_SQL:
             return [row for row in self.call["counts"] if CountRow.model_validate(row).job_id in ids]
-        if query == _ATTEMPT_TOTALS_SQL:
-            return [self.call["totals"]]
-        if query == _FUNNEL_TOTALS_SQL:
-            return [self.call["funnel"]]
-        if query == _ATTEMPT_AGG_BY_TIER_SQL:
-            return self.call["by_tier"]
-        if query == _ATTEMPT_AGG_BY_MODEL_SQL:
-            return self.call["by_model"]
-        if query == _ATTEMPT_AGG_BY_LEG_SQL:
-            return self.call["by_leg"]
-        if query == _ATTEMPT_AGG_BY_ROUTER_SQL:
-            return self.call["by_router"]
-        raise ValueError("the shadow eval detail read issued an unknown query")
+        rows = {
+            _ATTEMPT_TOTALS_SQL: [self.call["totals"]],
+            _FUNNEL_TOTALS_SQL: [self.call["funnel"]],
+            _ATTEMPT_AGG_BY_TIER_SQL: self.call["by_tier"],
+            _ATTEMPT_AGG_BY_MODEL_SQL: self.call["by_model"],
+            _ATTEMPT_AGG_BY_LEG_SQL: self.call["by_leg"],
+            _ATTEMPT_AGG_BY_ROUTER_SQL: self.call["by_router"],
+        }
+        if query not in rows:
+            raise ValueError("the shadow eval detail read issued an unknown query")
+        return rows[query]
 
 
 class FakePrismaClient(PrismaClient):
