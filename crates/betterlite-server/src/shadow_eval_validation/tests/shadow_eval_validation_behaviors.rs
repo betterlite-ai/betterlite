@@ -246,7 +246,7 @@ fn rejects_an_sdk_judge_without_anthropic_credentials() {
 fn names_the_teams_a_fault_applies_to_in_sorted_order() {
     let keys = [TargetKey {
         token: "key-1",
-        team_id: Some("team-b"),
+        team_id: Some("team-c"),
     }];
     let records = TargetRecords {
         keys: &keys,
@@ -259,8 +259,21 @@ fn names_the_teams_a_fault_applies_to_in_sorted_order() {
     let error = validate(&parsed, &deployments(), &records).unwrap_err();
     assert_eq!(
         error.to_string(),
-        "judge_model 'anthropic/claude-sonnet-5' needs ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN for team team-a, team-b"
+        "judge_model 'anthropic/claude-sonnet-5' needs ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN for team team-a, team-b, team-c"
     );
+}
+
+#[test]
+fn a_router_served_judge_needs_no_anthropic_credentials() {
+    let rows = vec![
+        (ROUTER, router_params("other-model")),
+        ("other-model", params("openai/gpt-4o")),
+        ("anthropic/claude-sonnet-5", params(JUDGE_MODEL)),
+    ];
+    let parsed = parse(
+        r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"anthropic/claude-sonnet-5","shadow_percentage":50}"#,
+    );
+    validate(&parsed, &rows, &records()).unwrap();
 }
 
 #[test]
