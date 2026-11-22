@@ -117,7 +117,7 @@ class Output(Strict):
 
 class Table:
     def __init__(self, rows: Sequence[KeyRow | TeamRow | UserRow]) -> None:
-        self.rows = rows
+        self.rows: Sequence[KeyRow | TeamRow | UserRow] = rows
 
     async def find_many(self, *, where: Mapping[str, object]) -> Sequence[KeyRow | TeamRow | UserRow]:
         _ = where
