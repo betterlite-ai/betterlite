@@ -345,6 +345,10 @@ impl Harness {
                     route("/chat", CallType::Completion),
                     route("/responses", CallType::Responses),
                     route("/embed", CallType::Embedding),
+                    RouteEntry {
+                        route: String::from("/empty"),
+                        call_types: Vec::new(),
+                    },
                 ],
             },
             request_data: BTreeMap::new(),

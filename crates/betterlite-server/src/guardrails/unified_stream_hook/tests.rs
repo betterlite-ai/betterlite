@@ -249,6 +249,16 @@ async fn passthrough_unmapped_call_type_sends_every_chunk(
     assert_eq!(harness.calls(CallType::Completion), scans(&[]));
 }
 
+// LiteLLM raises IndexError on call_types[0]; an empty list falls back to the chunk inference instead
+#[tokio::test]
+async fn route_with_empty_call_types_infers_the_translation_from_the_chunk() {
+    let mut harness = Harness::new(KeyMode::Texts, Vec::new()).rate(1);
+    harness.route = Some("/empty");
+    let outputs = harness.run(texts("ab")).await;
+    assert_eq!(lines(&outputs), ["a", "b"]);
+    assert_eq!(harness.calls(CallType::Completion), scans(&[1, 2]));
+}
+
 #[tokio::test]
 async fn passthrough_source_error_ends_the_stream() {
     let mut harness = Harness::new(KeyMode::Texts, Vec::new());
