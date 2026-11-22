@@ -25,7 +25,9 @@ pub(super) fn answer(step: &Step) -> HelperResult {
     let fixture = step.fixture();
     let runtime = runtime()?;
     let opened = opened(fixture)?;
-    let fake = FileFake::new(Reply::json(fixture.status, &fixture.body));
+    let fake = FileFake {
+        reply: Reply::json(fixture.status, &fixture.body),
+    };
     let data = create();
     let request = FileContentRequest {
         file_id: fixture.target_id.clone(),

@@ -89,12 +89,6 @@ pub(super) struct FileFake {
     pub(super) reply: Reply,
 }
 
-impl FileFake {
-    pub(super) const fn new(reply: Reply) -> Self {
-        Self { reply }
-    }
-}
-
 impl FileTransport for FileFake {
     fn send_buffered(
         &self,
