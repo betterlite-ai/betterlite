@@ -150,16 +150,12 @@ fn endpoint(case: &EndpointInput) -> HelperResult {
     }))
 }
 
-fn converse_options(case: &DelegationInput) -> Result<Json, Box<HelperError>> {
+fn converse(operation: &str, input: Json) -> Result<Json, Box<HelperError>> {
     let output = invoke(
         &[crate::GROUP],
         &HelperCall {
-            operation: String::from("bedrock_converse_options"),
-            input: json!({
-                "function": "params",
-                "model_cost": case.model_cost,
-                "models": [case.model],
-            }),
+            operation: operation.to_owned(),
+            input,
         },
     );
     if let Some(error) = output.error {
@@ -167,38 +163,32 @@ fn converse_options(case: &DelegationInput) -> Result<Json, Box<HelperError>> {
     }
     output
         .value
-        .ok_or_else(|| helper_error("the Converse options returned nothing"))
-}
-
-fn converse_params(case: &DelegationInput) -> Result<Json, Box<HelperError>> {
-    let output = invoke(
-        &[crate::GROUP],
-        &HelperCall {
-            operation: String::from("bedrock_converse_params"),
-            input: json!({
-                "function": "map_params",
-                "model": case.model,
-                "model_cost": case.model_cost,
-                "environment": case.environment,
-                "non_default_params": case.non_default_params,
-                "optional_params": case.optional_params,
-                "global_drop": false,
-                "call_drop": false,
-            }),
-        },
-    );
-    if let Some(error) = output.error {
-        return Err(Box::new(error));
-    }
-    output
-        .value
-        .ok_or_else(|| helper_error("the Converse params returned nothing"))
+        .ok_or_else(|| helper_error("the Converse adapter returned nothing"))
 }
 
 // The Nova invoke config has no option or mapping code of its own: both come from the Converse adapters.
 fn delegation(case: &DelegationInput) -> HelperResult {
-    let supported = converse_options(case)?;
-    let mapped = converse_params(case)?;
+    let supported = converse(
+        "bedrock_converse_options",
+        json!({
+            "function": "params",
+            "model_cost": case.model_cost,
+            "models": [case.model],
+        }),
+    )?;
+    let mapped = converse(
+        "bedrock_converse_params",
+        json!({
+            "function": "map_params",
+            "model": case.model,
+            "model_cost": case.model_cost,
+            "environment": case.environment,
+            "non_default_params": case.non_default_params,
+            "optional_params": case.optional_params,
+            "global_drop": false,
+            "call_drop": false,
+        }),
+    )?;
     Ok(json!({
         "supported": supported.pointer("/results/0"),
         "params": mapped.pointer("/params"),

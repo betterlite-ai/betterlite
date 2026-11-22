@@ -10,63 +10,9 @@ from litellm.llms.amazon_nova.chat.transformation import AmazonNovaChatConfig
 from litellm.llms.bedrock.chat.invoke_transformations.amazon_nova_transformation import (
     AmazonInvokeNovaConfig,
 )
-from litellm.types.llms.bedrock import BedrockInvokeNovaRequest, MessageBlock, SystemContentBlock
 from litellm.types.utils import ModelResponse
-from pydantic import BaseModel, ConfigDict, JsonValue as Json, TypeAdapter
-
-
-class Input(TypedDict, total=False):
-    function: Literal[
-        "inline_cache_points",
-        "filter_allowed_fields",
-        "tool_config_injection",
-        "endpoint",
-        "converse_delegation",
-        "defaults",
-        "response_model",
-    ]
-    system: list[SystemContentBlock]
-    messages: list[MessageBlock]
-    model: str
-    model_cost: dict[str, Json]
-    optional_params: dict[str, Json]
-    litellm_params: dict[str, Json]
-    api_base: str | None
-    api_key: str | None
-    global_api_key: str | None
-    litellm_api_key: str | None
-    environment: dict[str, str]
-    non_default_params: dict[str, Json]
-    arguments: dict[str, Json]
-    body: str
-
-
-class InlineCase(TypedDict):
-    system: list[SystemContentBlock]
-    messages: list[MessageBlock]
-
-
-class TransformCase(TypedDict):
-    model: str
-    messages: list[Json]
-    model_cost: dict[str, Json]
-    optional_params: dict[str, Json]
-    litellm_params: dict[str, Json]
-
-
-class EndpointCase(TypedDict):
-    api_base: str | None
-    api_key: str | None
-    global_api_key: str | None
-    litellm_api_key: str | None
-    environment: dict[str, str]
-
-
-class DelegationCase(TypedDict):
-    model: str
-    model_cost: dict[str, Json]
-    non_default_params: dict[str, Json]
-    optional_params: dict[str, Json]
+from pydantic import BaseModel, ConfigDict, TypeAdapter
+from pydantic import JsonValue as Json
 
 
 class Arguments(TypedDict, total=False):
@@ -78,19 +24,64 @@ class Arguments(TypedDict, total=False):
     reasoning_effort: list[Json]
 
 
+class InlineCase(TypedDict):
+    function: Literal["inline_cache_points"]
+    system: list[Json]
+    messages: list[Json]
+
+
+class TransformCase(TypedDict):
+    function: Literal["filter_allowed_fields", "tool_config_injection"]
+    model: str
+    messages: list[Json]
+    model_cost: dict[str, Json]
+    optional_params: dict[str, Json]
+    litellm_params: dict[str, Json]
+
+
+class EndpointCase(TypedDict):
+    function: Literal["endpoint"]
+    api_base: str | None
+    api_key: str | None
+    global_api_key: str | None
+    litellm_api_key: str | None
+    environment: dict[str, str]
+
+
+class DelegationCase(TypedDict):
+    function: Literal["converse_delegation"]
+    model: str
+    model_cost: dict[str, Json]
+    environment: dict[str, str]
+    non_default_params: dict[str, Json]
+    optional_params: dict[str, Json]
+
+
+class DefaultsCase(TypedDict):
+    function: Literal["defaults"]
+    arguments: Arguments
+
+
 class ResponseCase(TypedDict):
+    function: Literal["response_model"]
     model: str
     body: str
 
 
+Input = InlineCase | TransformCase | EndpointCase | DelegationCase | DefaultsCase | ResponseCase
+
+
+class InvokeRequest(TypedDict, total=False):
+    system: list[Json]
+    messages: list[Json]
+
+
+class Reply(TypedDict):
+    model: str
+
+
 JSON: TypeAdapter[Json] = TypeAdapter(Json)
-REQUEST: TypeAdapter[BedrockInvokeNovaRequest] = TypeAdapter(BedrockInvokeNovaRequest)
-INLINE: TypeAdapter[InlineCase] = TypeAdapter(InlineCase)
-TRANSFORM: TypeAdapter[TransformCase] = TypeAdapter(TransformCase)
-ENDPOINT: TypeAdapter[EndpointCase] = TypeAdapter(EndpointCase)
-DELEGATION: TypeAdapter[DelegationCase] = TypeAdapter(DelegationCase)
-ARGUMENTS: TypeAdapter[Arguments] = TypeAdapter(Arguments)
-RESPONSE: TypeAdapter[ResponseCase] = TypeAdapter(ResponseCase)
+REPLY: TypeAdapter[Reply] = TypeAdapter(Reply)
 
 
 # LiteLLM's methods take bare dicts, so each seam is read with the JSON-facing signature.
@@ -141,17 +132,25 @@ DECLARED: type[Declared] = AmazonNovaChatConfig
 
 # The private cache-point pass is reachable through a subclass, the seam ruff and pyright allow.
 class InvokeConfig(AmazonInvokeNovaConfig):
-    def inline(self, request: BedrockInvokeNovaRequest) -> Json:
-        return JSON.validate_python(self._inline_cache_points(request))
+    def __init__(self) -> None:
+        super().__init__()  # type: ignore[misc, no-untyped-call]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py#L83-L84
+
+    def inline(self, request: InvokeRequest) -> Json:
+        return JSON.validate_python(self._inline_cache_points(request))  # type: ignore[arg-type, misc]  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py#L150-L170
 
     def supported(self, model: str) -> list[str]:
-        return self.get_supported_openai_params(model)
+        return self.get_supported_openai_params(model)  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py#L86-L87
 
 
+# The endpoint chain is typed upstream, so only the supported list needs the parent's seam.
 class DirectConfig(AmazonNovaChatConfig):
     def endpoint(self, api_base: str | None, api_key: str | None) -> Json:
         base, key = self._get_openai_compatible_provider_info(api_base, api_key)
-        return JSON.validate_python({"api_base": base, "api_key": key})
+        resolved: dict[str, Json] = {"api_base": base, "api_key": key}
+        return JSON.validate_python(resolved)
+
+    def supported(self, model: str) -> list[str]:
+        return self.get_supported_openai_params(model)  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/amazon_nova/chat/transformation.py#L64-L77
 
 
 def logging_fixture() -> Logging:
@@ -167,13 +166,14 @@ def logging_fixture() -> Logging:
 
 
 def inline_points(case: InlineCase) -> Json:
-    request = REQUEST.validate_python({"system": case["system"], "messages": case["messages"]})
+    request: InvokeRequest = {"system": case["system"], "messages": case["messages"]}
     return InvokeConfig().inline(request)
 
 
 def invoke_body(case: TransformCase) -> Json:
     litellm.model_cost = case["model_cost"]
-    seam = TransformerSeam.model_validate({"seam": InvokeConfig()}).seam
+    holder: dict[str, InvokeConfig] = {"seam": InvokeConfig()}
+    seam = TransformerSeam.model_validate(holder).seam
     body = seam.transform_request(
         case["model"],
         list(case["messages"]),
@@ -181,7 +181,8 @@ def invoke_body(case: TransformCase) -> Json:
         dict(case["litellm_params"]),
         {},
     )
-    return JSON.validate_python({"body": body})
+    answer: dict[str, Json] = {"body": body}
+    return JSON.validate_python(answer)
 
 
 def endpoint(case: EndpointCase) -> Json:
@@ -195,7 +196,8 @@ def endpoint(case: EndpointCase) -> Json:
 def delegation(case: DelegationCase) -> Json:
     litellm.model_cost = case["model_cost"]
     config = InvokeConfig()
-    seam = TransformerSeam.model_validate({"seam": config}).seam
+    holder: dict[str, InvokeConfig] = {"seam": config}
+    seam = TransformerSeam.model_validate(holder).seam
     drop_params = False
     mapped = seam.map_openai_params(
         dict(case["non_default_params"]),
@@ -203,26 +205,32 @@ def delegation(case: DelegationCase) -> Json:
         case["model"],
         drop_params,
     )
-    return JSON.validate_python({"supported": config.supported(case["model"]), "params": mapped})
+    supported = config.supported(case["model"])
+    answer: dict[str, Json] = {"supported": supported, "params": mapped}
+    return JSON.validate_python(answer)
 
 
-def defaults(case: Arguments) -> Json:
+def defaults(arguments: Arguments) -> Json:
     # the constructor writes its non-None fields onto the class dict get_config reads
-    config = AmazonNovaChatConfig(
-        max_completion_tokens=case.get("max_completion_tokens"),
-        max_tokens=case.get("max_tokens"),
-        temperature=case.get("temperature"),
-        top_p=case.get("top_p"),
-        tools=case.get("tools"),
-        reasoning_effort=case.get("reasoning_effort"),
+    _ = AmazonNovaChatConfig(
+        max_completion_tokens=arguments.get("max_completion_tokens"),
+        max_tokens=arguments.get("max_tokens"),
+        temperature=arguments.get("temperature"),
+        top_p=arguments.get("top_p"),
+        tools=arguments.get("tools"),
+        reasoning_effort=arguments.get("reasoning_effort"),
     )
-    supported: list[str] = config.get_supported_openai_params("amazon.nova-pro-v1:0")
-    return JSON.validate_python({"config": DECLARED.get_config(), "supported": supported})
+    rendered: dict[str, Json] = {
+        "config": DECLARED.get_config(),
+        "supported": DirectConfig().supported("amazon.nova-pro-v1:0"),
+    }
+    return JSON.validate_python(rendered)
 
 
 def response_model(case: ResponseCase) -> Json:
-    seam = DirectSeam.model_validate({"seam": DirectConfig()}).seam
-    reply = seam.transform_response(
+    holder: dict[str, DirectConfig] = {"seam": DirectConfig()}
+    seam = DirectSeam.model_validate(holder).seam
+    returned = seam.transform_response(
         case["model"],
         httpx.Response(200, content=case["body"].encode()),
         ModelResponse(),
@@ -233,24 +241,9 @@ def response_model(case: ResponseCase) -> Json:
         {},
         None,
     )
-    return JSON.validate_python({"model": reply.model})
-
-
-def answer(input_value: Input) -> Json:
-    function = input_value["function"]
-    if function == "inline_cache_points":
-        return inline_points(INLINE.validate_python(input_value))
-    if function in ("filter_allowed_fields", "tool_config_injection"):
-        return invoke_body(TRANSFORM.validate_python(input_value))
-    if function == "endpoint":
-        return endpoint(ENDPOINT.validate_python(input_value))
-    if function == "converse_delegation":
-        return delegation(DELEGATION.validate_python(input_value))
-    if function == "defaults":
-        return defaults(ARGUMENTS.validate_python(input_value["arguments"]))
-    if function == "response_model":
-        return response_model(RESPONSE.validate_python(input_value))
-    raise ValueError("unknown bedrock_nova_chat function")
+    reply = REPLY.validate_json(returned.model_dump_json())
+    answer: dict[str, Json] = {"model": reply["model"]}
+    return JSON.validate_python(answer)
 
 
 def run(input_value: Input) -> Json:
@@ -260,4 +253,17 @@ def run(input_value: Input) -> Json:
     litellm.modify_params = False
     litellm.bedrock_neutralize_orphaned_tool_blocks = False
     litellm.bedrock_request_metadata_fields = None
-    return answer(input_value)
+    if input_value["function"] == "inline_cache_points":
+        return inline_points(input_value)
+    if (
+        input_value["function"] == "filter_allowed_fields"
+        or input_value["function"] == "tool_config_injection"
+    ):
+        return invoke_body(input_value)
+    if input_value["function"] == "endpoint":
+        return endpoint(input_value)
+    if input_value["function"] == "converse_delegation":
+        return delegation(input_value)
+    if input_value["function"] == "defaults":
+        return defaults(input_value["arguments"])
+    return response_model(input_value)

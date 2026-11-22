@@ -17,6 +17,7 @@ use super::support::{
     Answers, Call, FixedIds, Fixture, Logs, MODEL_COST, NOVA_PRO, NoReasoning, field, json,
     metadata_json, object, params, runtime, secret, secret_lookup, supplied, transform, value,
 };
+use crate::converse_options::supported::supported_openai_params as converse_supported;
 use crate::converse_params::compose::ConverseParamsRequest;
 use crate::converse_request::{CommonRequest, ConverseRequestBody};
 use crate::converse_response::request::{OptionalParams, RawReply, ReplyRequest};
@@ -477,11 +478,7 @@ fn converse_supported_params() {
     let dynamic = NoDynamicMetadata;
     let resolution = fixture.resolution();
     let mut environment = fixture.environment(&resolution, &mut keys, &dynamic);
-    let supported = runtime().block_on(invoke::supported_openai_params(
-        NOVA_PRO,
-        &mut environment,
-        &catalogs,
-    ));
+    let supported = runtime().block_on(converse_supported(NOVA_PRO, &mut environment, &catalogs));
     assert!(supported.iter().any(|name| name == "web_search_options"));
     assert!(!supported.iter().any(|name| name == "metadata"));
     assert!(!supported.iter().any(|name| name == "top_k"));

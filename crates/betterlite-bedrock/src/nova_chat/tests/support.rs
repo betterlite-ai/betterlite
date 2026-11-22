@@ -225,14 +225,15 @@ impl Fixture {
     }
 
     pub(super) fn resolution(&self) -> ResolutionContext<'_> {
+        let registry = JSONProviderRegistry::load();
         ResolutionContext {
+            registry,
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
             catalog: &self.typed,
             known_model_names: &self.known_model_names,
             custom_providers: &self.custom_providers,
             environment: &self.environment,
-            registry: JSONProviderRegistry::load(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
         }
     }
 }
@@ -354,7 +355,15 @@ pub(super) struct SinkParts {
 }
 
 impl SinkParts {
+    const fn new(redactor: Redactor) -> Self {
+        Self {
+            redactor,
+            silent: Silent,
+        }
+    }
+
     pub(super) fn env(&self) -> PrePostEnv<'_> {
+        let now = DateTime::parse_from_rfc3339(NOW).expect("the fixture clock parses");
         PrePostEnv {
             debug: DebugSettings::default(),
             globals: GlobalFlags::default(),
@@ -367,7 +376,7 @@ impl SinkParts {
             input_callbacks: &[],
             sentry: None,
             logger_fn: None,
-            now: DateTime::parse_from_rfc3339(NOW).expect("the fixture clock parses"),
+            now,
         }
     }
 }
@@ -378,26 +387,26 @@ pub(super) struct Logs {
     pub(super) parts: SinkParts,
 }
 
+fn logging_state(redactor: &Redactor) -> LoggingState {
+    LoggingState::new(
+        serde_json::from_str::<LoggingInit>(INIT).expect("the logging init parses"),
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || String::from("trace"),
+        Duration::default(),
+    )
+    .expect("the logging state builds")
+}
+
 impl Logs {
     pub(super) fn new() -> Self {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-        let state = LoggingState::new(
-            serde_json::from_str::<LoggingInit>(INIT).expect("the logging init parses"),
-            CorrelationSetup {
-                context: &mut CorrelationContext::default(),
-                settings: CorrelationSettings::default(),
-            },
-            &redactor,
-            || String::from("trace"),
-            Duration::default(),
-        )
-        .expect("the logging state builds");
         Self {
-            state,
-            parts: SinkParts {
-                redactor,
-                silent: Silent,
-            },
+            state: logging_state(&redactor),
+            parts: SinkParts::new(redactor),
         }
     }
 }

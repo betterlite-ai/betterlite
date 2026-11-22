@@ -9,7 +9,6 @@ use serde::Serialize;
 
 use crate::agentcore_stream::IdSource;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
-use crate::converse_options::supported::supported_openai_params as converse_supported;
 use crate::converse_params::compose::{
     ConverseParamsRequest, map_openai_params as converse_map_openai_params,
 };
@@ -238,19 +237,6 @@ fn is_tool_config_point(point: &ParamValue) -> bool {
         fields.get(LOCATION_FIELD),
         Some(ParamValue::Text(location)) if location == TOOL_CONFIG_LOCATION
     )
-}
-
-// LiteLLM's AmazonInvokeNovaConfig.get_supported_openai_params hands the model to AmazonConverseConfig.
-pub async fn supported_openai_params<Source, Transport>(
-    model: &str,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
-    catalogs: &CatalogSources<'_>,
-) -> Vec<String>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-{
-    converse_supported(model, environment, catalogs).await
 }
 
 // LiteLLM's AmazonInvokeNovaConfig.map_openai_params passes the request to AmazonConverseConfig.
