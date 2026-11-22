@@ -1,0 +1,42 @@
+{
+  "kind": "helper",
+  "name": "foundry-anthropic-dispatch",
+  "call": {
+    "foundry_provider": {
+      "inputs": [
+        {
+          "op": "dispatch",
+          "model": "claude-sonnet-4-5",
+          "messages": [{"role": "user", "content": "hi"}],
+          "api_base": "https://res.services.ai.azure.com/anthropic",
+          "api_key": "sk-foundry-fixture",
+          "headers": {"x-team": "claude"},
+          "optionals": {},
+          "globals": {"api_base": null, "api_key": null, "headers": {"x-global": "g"}},
+          "environment": {},
+          "stream": false,
+          "status": null
+        },
+        {
+          "op": "dispatch",
+          "model": "claude-sonnet-4-5",
+          "messages": [{"role": "user", "content": "hi"}],
+          "api_base": null,
+          "api_key": null,
+          "headers": null,
+          "optionals": {},
+          "globals": {
+            "api_base": "https://global.services.ai.azure.com",
+            "api_key": "sk-global-fixture",
+            "headers": null
+          },
+          "environment": {},
+          "stream": false,
+          "status": null
+        }
+      ]
+    }
+  },
+  "env": {"LITELLM_RUST": "false", "LITELLM_LOCAL_MODEL_COST_MAP": "true"},
+  "compare": {"ignore": []}
+}
