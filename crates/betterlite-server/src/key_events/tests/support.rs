@@ -155,11 +155,9 @@ impl BaseSecretManager for FakeManager {
         &self,
         write: SecretWrite<'_, TeamSecretSettings>,
     ) -> SecretFuture<'_, (), Refused> {
-        let call = Call::Write {
-            name: write.secret_name.to_owned(),
-            value: write.secret_value.expose_secret().to_owned(),
-        };
-        Box::pin(future::ready(self.answer(call)))
+        let name = write.secret_name.to_owned();
+        let value = write.secret_value.expose_secret().to_owned();
+        Box::pin(future::ready(self.answer(Call::Write { name, value })))
     }
 
     fn async_delete_secret<'borrowed>(
@@ -181,10 +179,9 @@ impl BaseSecretManager for FakeManager {
             new: rotation.new_secret_name.to_owned(),
             value: rotation.new_secret_value.expose_secret().to_owned(),
         };
-        Box::pin(future::ready(
-            self.answer(call)
-                .map_err(|source| RotationError::Operation { source }),
-        ))
+        let answer = self.answer(call);
+        let settled = answer.map_err(|source| RotationError::Operation { source });
+        Box::pin(future::ready(settled))
     }
 }
 
@@ -325,10 +322,10 @@ impl KeyEventEmail for RecordingEmail {
     ) -> Result<(), KeyEmailError> {
         self.board.mark("email:rotated".to_owned());
         lock(&self.rotated).push((response.to_owned(), existing_key_alias.map(str::to_owned)));
-        if self.fail_rotated.load(Ordering::Relaxed) {
-            return Err(KeyEmailError::Rejected(EmailError::NullSpend));
+        if !self.fail_rotated.load(Ordering::Relaxed) {
+            return Ok(());
         }
-        Ok(())
+        Err(KeyEmailError::Rejected(EmailError::NullSpend))
     }
 }
 
@@ -344,32 +341,40 @@ impl KeyCreatedMailer for RecordingMailer {
     }
 }
 
-#[derive(Clone, Default)]
-pub(super) struct Logs {
-    pub(super) lines: Arc<Mutex<Vec<String>>>,
+// one subscriber layer per test; a case reads the levels and texts it selected with a target prefix
+#[derive(Clone)]
+pub(super) struct Lines {
+    pub(super) lines: Arc<Mutex<Vec<(Level, String)>>>,
+    pub(super) target: &'static str,
+    pub(super) level: Option<Level>,
 }
 
-impl Logs {
-    pub(super) fn lines(&self) -> Vec<String> {
+impl Lines {
+    pub(super) fn at(target: &'static str, level: Option<Level>) -> Self {
+        Self {
+            lines: Arc::new(Mutex::new(Vec::new())),
+            target,
+            level,
+        }
+    }
+
+    pub(super) fn lines(&self) -> Vec<(Level, String)> {
         lock(&self.lines).clone()
     }
 }
 
-impl<S: Subscriber> Layer<S> for Logs {
+impl<S: Subscriber> Layer<S> for Lines {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
-        if *event.metadata().level() != Level::WARN {
+        let metadata = event.metadata();
+        if !metadata.target().starts_with(self.target) {
             return;
         }
-        if !event
-            .metadata()
-            .target()
-            .starts_with("betterlite_server::key_events")
-        {
+        if self.level.is_some_and(|level| *metadata.level() != level) {
             return;
         }
         let mut message = Message(String::new());
         event.record(&mut message);
-        lock(&self.lines).push(message.0);
+        lock(&self.lines).push((*metadata.level(), message.0));
     }
 }
 
@@ -383,33 +388,6 @@ impl Visit for Message {
     }
 }
 
-// the legacy email's skip decision is a debug line, so a test reads the level and text it wrote
-#[derive(Clone, Default)]
-pub(super) struct DebugLines {
-    pub(super) lines: Arc<Mutex<Vec<(Level, String)>>>,
-}
-
-impl DebugLines {
-    pub(super) fn lines(&self) -> Vec<(Level, String)> {
-        lock(&self.lines).clone()
-    }
-}
-
-impl<S: Subscriber> Layer<S> for DebugLines {
-    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
-        if !event
-            .metadata()
-            .target()
-            .starts_with("betterlite_server::key_event_sinks::email")
-        {
-            return;
-        }
-        let mut message = Message(String::new());
-        event.record(&mut message);
-        lock(&self.lines).push((*event.metadata().level(), message.0));
-    }
-}
-
 pub(super) struct Harness {
     pub(super) board: Arc<Board>,
     pub(super) manager: FakeManager,
@@ -417,7 +395,7 @@ pub(super) struct Harness {
     pub(super) email: RecordingEmail,
     pub(super) settings: Settings,
     pub(super) audit: KeyEventAudit,
-    pub(super) logs: Arc<Logs>,
+    pub(super) logs: Arc<Lines>,
     pub(super) teams: Option<ScriptedTeams>,
     pub(super) client: bool,
     pub(super) _logging: DefaultGuard,
@@ -453,8 +431,11 @@ pub(super) fn wired(wiring: Wiring) -> Harness {
         board: Arc::clone(&board),
         records: Mutex::new(Vec::new()),
     });
-    let logs = Arc::new(Logs::default());
-    let logging = set_default(tracing_subscriber::registry().with(Logs::clone(&logs)));
+    let logs = Arc::new(Lines::at(
+        "betterlite_server::key_events",
+        Some(Level::WARN),
+    ));
+    let logging = set_default(tracing_subscriber::registry().with(Lines::clone(&logs)));
     Harness {
         manager: fake_manager(&board),
         email: recording_email(&board),
@@ -581,20 +562,6 @@ impl Harness {
         .await
     }
 
-    pub(super) async fn dispatch_with(
-        &self,
-        audit: &KeyEventAudit,
-        event: &KeyEvent,
-        caller: &KeyEventCaller,
-    ) -> Result<(), KeyEventError> {
-        KeyEvents {
-            audit,
-            effects: self.effects(),
-        }
-        .dispatch(event, caller, None)
-        .await
-    }
-
     fn effects(&self) -> KeyEventEffects<'_, FakeManager> {
         let directory: Option<&dyn TeamDirectory> =
             self.teams.as_ref().map(|teams| teams as &dyn TeamDirectory);
@@ -621,7 +588,11 @@ impl Harness {
     }
 
     pub(super) fn warnings(&self) -> Vec<String> {
-        self.logs.lines()
+        self.logs
+            .lines()
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect()
     }
 
     pub(super) fn created_emails(&self) -> usize {

@@ -129,10 +129,7 @@ fn rewrite_instants(value: &mut JsonValue, names: &[&str], form: InstantForm) {
 }
 
 fn rewrite_windows(value: &mut JsonValue, form: InstantForm) {
-    let JsonValue::Object(fields) = value else {
-        return;
-    };
-    let Some(JsonValue::Array(entries)) = fields.get_mut("budget_limits") else {
+    let Some(JsonValue::Array(entries)) = value.pointer_mut("/budget_limits") else {
         return;
     };
     for entry in entries {
@@ -150,13 +147,12 @@ fn rewrite_window(entry: &mut JsonValue, form: InstantForm) {
 }
 
 fn rewrite_instant(value: &mut JsonValue, form: InstantForm) {
-    let JsonValue::String(text) = value else {
+    let Some(text) = value.as_str_mut() else {
         return;
     };
-    let Some(instant) = parse_instant(text) else {
-        return;
-    };
-    *text = render_instant(instant, form);
+    if let Some(instant) = parse_instant(text) {
+        *text = render_instant(instant, form);
+    }
 }
 
 // a stored expiry typed str keeps its text; only a datetime value is re-rendered
@@ -183,11 +179,12 @@ fn parse_instant(text: &str) -> Option<Instant> {
 }
 
 fn render_instant(instant: Instant, form: InstantForm) -> String {
-    match (instant, form) {
-        (Instant::Aware(value), InstantForm::Json) => timestamp_text(value, "Z"),
-        (Instant::Aware(value), InstantForm::Python) => aware_legacy_text(value),
-        (Instant::Naive(value), InstantForm::Json) => naive_json(value),
-        (Instant::Naive(value), InstantForm::Python) => naive_legacy_text(value),
+    match instant {
+        Instant::Aware(value) => match form {
+            InstantForm::Json => timestamp_text(value, "Z"),
+            InstantForm::Python => aware_legacy_text(value),
+        },
+        Instant::Naive(value) => naive_text(value, form),
     }
 }
 
@@ -202,22 +199,14 @@ fn aware_legacy_text(value: DateTime<FixedOffset>) -> String {
     }
 }
 
-fn naive_json(value: NaiveDateTime) -> String {
-    let seconds = value.format("%Y-%m-%dT%H:%M:%S");
+fn naive_text(value: NaiveDateTime, form: InstantForm) -> String {
     let micros = value.and_utc().timestamp_subsec_micros();
+    let seconds = match form {
+        InstantForm::Json => value.format("%Y-%m-%dT%H:%M:%S"),
+        InstantForm::Python => value.format("%Y-%m-%d %H:%M:%S"),
+    };
     if micros == 0 {
-        seconds.to_string()
-    } else {
-        format!("{seconds}.{micros:06}")
+        return seconds.to_string();
     }
-}
-
-fn naive_legacy_text(value: NaiveDateTime) -> String {
-    let seconds = value.format("%Y-%m-%d %H:%M:%S");
-    let micros = value.and_utc().timestamp_subsec_micros();
-    if micros == 0 {
-        seconds.to_string()
-    } else {
-        format!("{seconds}.{micros:06}")
-    }
+    format!("{seconds}.{micros:06}")
 }

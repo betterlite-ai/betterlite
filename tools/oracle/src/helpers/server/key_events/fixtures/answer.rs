@@ -20,6 +20,7 @@ use betterlite_server::key_events::types::{
     DeletedEvent, GeneratedEvent, KeyEvent, KeyEventCaller, RotatedEvent, UpdatedEvent,
 };
 use betterlite_server::key_fields::decode::TypedValue;
+use betterlite_server::key_fields::error::DecodeError;
 use betterlite_server::key_fields::regenerate::RegenerateKeyRequest;
 use betterlite_server::key_fields::request::GenerateKeyRequest;
 use betterlite_server::key_fields::response::GenerateKeyResponse;
@@ -34,6 +35,9 @@ use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::types::{Caller, EventKind, Input, Runtime, failure};
 use super::{Board, Levels, RecordingScheduler, ScriptedManager, ScriptedTeams, WaitingEmail};
+
+type Reader<T> = fn(&TypedValue) -> Result<T, DecodeError>;
+type Reply<T> = Result<T, Box<HelperError>>;
 
 // litellm.store_audit_logs with the environment unset and the OSS proxy's premium_user false
 struct EnabledAudit {
@@ -68,57 +72,73 @@ pub(crate) async fn answer(input: &Input) -> HelperResult {
         board: Arc::clone(&board),
     }));
     let event = event(input)?;
-    let settings = settings(input);
-    let manager = ScriptedManager {
-        board: Arc::clone(&board),
-        secrets: input.secrets.clone(),
-        failing: input.failing.clone(),
-    };
-    let teams = ScriptedTeams {
-        board: Arc::clone(&board),
-        metadata: input.teams.clone(),
-        database: input.runtime == Runtime::Ready,
-    };
+    let wired = collaborate(input, &board)?;
     let directory: Option<&dyn TeamDirectory> = match input.runtime {
         Runtime::Absent => None,
-        Runtime::NoDatabase | Runtime::Ready => Some(&teams),
-    };
-    let email = WaitingEmail {
-        alerting: input.alerting.clone(),
-        board: Arc::clone(&board),
-        tasks: TaskTracker::new(),
+        Runtime::NoDatabase | Runtime::Ready => Some(&wired.teams),
     };
     let effects = KeyEventEffects {
         secrets: SecretSink {
-            settings: &settings,
-            manager: input.client.then_some(&manager),
+            settings: &wired.settings,
+            manager: input.client.then_some(&wired.manager),
             teams: directory,
         },
-        email: &email,
-    };
-    let audit = KeyEventAudit {
-        settings: Arc::new(EnabledAudit {
-            enabled: input.audit == Some(true),
-        }),
-        clock: Arc::new(audit_clock(input)?),
-        new_id: {
-            let id = input.id.clone();
-            Arc::new(move || id.clone())
-        },
-        scheduler: Arc::new(RecordingScheduler {
-            board: Arc::clone(&board),
-        }),
-        litellm_proxy_admin_name: input.admin_name.clone(),
+        email: &wired.email,
     };
     let caller = key_event_caller(&input.caller);
     let raised = KeyEvents {
-        audit: &audit,
+        audit: &wired.audit,
         effects,
     }
     .dispatch(&event, &caller, input.changed_by.as_deref())
     .await
     .is_err();
     Ok(json!({"raised": raised, "trace": board.entries()}))
+}
+
+struct Collaborators {
+    settings: Settings,
+    manager: ScriptedManager,
+    teams: ScriptedTeams,
+    email: WaitingEmail,
+    audit: KeyEventAudit,
+}
+
+fn collaborate(input: &Input, board: &Arc<Board>) -> Result<Collaborators, Box<HelperError>> {
+    let manager = ScriptedManager {
+        board: Arc::clone(board),
+        secrets: input.secrets.clone(),
+        failing: input.failing.clone(),
+    };
+    let teams = ScriptedTeams {
+        board: Arc::clone(board),
+        metadata: input.teams.clone(),
+        database: input.runtime == Runtime::Ready,
+    };
+    let email = WaitingEmail {
+        alerting: input.alerting.clone(),
+        board: Arc::clone(board),
+        tasks: TaskTracker::new(),
+    };
+    let id = input.id.clone();
+    let audit = KeyEventAudit {
+        settings: Arc::new(EnabledAudit {
+            enabled: input.audit == Some(true),
+        }),
+        clock: Arc::new(audit_clock(input)?),
+        new_id: Arc::new(move || id.clone()),
+        scheduler: Arc::new(RecordingScheduler {
+            board: Arc::clone(board),
+        }),
+        litellm_proxy_admin_name: input.admin_name.clone(),
+    };
+    Ok(Collaborators {
+        settings: settings(input),
+        manager,
+        teams,
+        email,
+        audit,
+    })
 }
 
 fn settings(input: &Input) -> Settings {
@@ -131,7 +151,7 @@ fn settings(input: &Input) -> Settings {
     }
 }
 
-fn audit_clock(input: &Input) -> Result<FixedClock, Box<HelperError>> {
+fn audit_clock(input: &Input) -> Reply<FixedClock> {
     let moment =
         DateTime::parse_from_rfc3339(&input.now).map_err(|error| failure("InvalidInput", error))?;
     Ok(FixedClock(moment))
@@ -149,70 +169,73 @@ fn key_event_caller(call: &Caller) -> KeyEventCaller {
     }
 }
 
-fn event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
+fn event(input: &Input) -> Reply<KeyEvent> {
     match input.event {
-        EventKind::Generated => generated_event(input),
-        EventKind::Updated => updated_event(input),
-        EventKind::Rotated => rotated_event(input),
-        EventKind::Deleted => deleted_event(input),
+        EventKind::Generated => Ok(KeyEvent::Generated(generated(input)?)),
+        EventKind::Updated => Ok(KeyEvent::Updated(updated(input)?)),
+        EventKind::Rotated => Ok(KeyEvent::Rotated(rotated(input)?)),
+        EventKind::Deleted => Ok(KeyEvent::Deleted(deleted(input)?)),
     }
 }
 
-fn generated_event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
-    let data = GenerateKeyRequest::read(&decoded::<TypedValue>(input.data.as_ref(), "data")?)
-        .map_err(|error| failure("ValidationError", error))?;
-    let response =
-        GenerateKeyResponse::read(&decoded::<TypedValue>(input.response.as_ref(), "response")?)
-            .map_err(|error| failure("ValidationError", error))?;
-    Ok(KeyEvent::Generated(GeneratedEvent { data, response }))
+fn generated(input: &Input) -> Reply<GeneratedEvent> {
+    Ok(GeneratedEvent {
+        data: request(input.data.as_ref(), "data", GenerateKeyRequest::read)?,
+        response: response_of(input)?,
+    })
 }
 
-fn updated_event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
-    let data = UpdateKeyRequest::read(&decoded::<TypedValue>(input.data.as_ref(), "data")?)
-        .map_err(|error| failure("ValidationError", error))?;
-    let row = decoded::<LiteLLMVerificationToken>(input.row.as_ref(), "row")?;
-    let response = decoded::<JsonData>(input.response.as_ref(), "response")?;
-    Ok(KeyEvent::Updated(UpdatedEvent {
-        data,
-        row,
-        response,
-    }))
+fn updated(input: &Input) -> Reply<UpdatedEvent> {
+    Ok(UpdatedEvent {
+        data: request(input.data.as_ref(), "data", UpdateKeyRequest::read)?,
+        row: decoded::<LiteLLMVerificationToken>(input.row.as_ref(), "row")?,
+        response: decoded::<JsonData>(input.response.as_ref(), "response")?,
+    })
 }
 
-fn rotated_event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
-    let data = match input.data.as_ref() {
-        Some(value) => Some(
-            RegenerateKeyRequest::read(&decoded::<TypedValue>(Some(value), "data")?)
-                .map_err(|error| failure("ValidationError", error))?,
-        ),
-        None => None,
-    };
-    let row = decoded::<LiteLLMVerificationToken>(input.row.as_ref(), "row")?;
-    let response =
-        GenerateKeyResponse::read(&decoded::<TypedValue>(input.response.as_ref(), "response")?)
-            .map_err(|error| failure("ValidationError", error))?;
-    Ok(KeyEvent::Rotated(RotatedEvent {
-        data,
-        row,
-        response,
-    }))
+fn rotated(input: &Input) -> Reply<RotatedEvent> {
+    Ok(RotatedEvent {
+        data: optional_request(input.data.as_ref(), RegenerateKeyRequest::read)?,
+        row: decoded::<LiteLLMVerificationToken>(input.row.as_ref(), "row")?,
+        response: response_of(input)?,
+    })
 }
 
-fn deleted_event(input: &Input) -> Result<KeyEvent, Box<HelperError>> {
-    let request = decoded::<JsonData>(input.data.as_ref(), "data")?;
+fn deleted(input: &Input) -> Reply<DeletedEvent> {
+    let body = decoded::<JsonData>(input.data.as_ref(), "data")?;
     let mut rows = Vec::with_capacity(input.rows.len());
     for value in &input.rows {
         rows.push(decoded::<JsonData>(Some(value), "rows")?);
     }
     let response = decoded::<JsonData>(input.response.as_ref(), "response")?;
-    Ok(KeyEvent::Deleted(DeletedEvent {
-        request,
+    Ok(DeletedEvent {
+        request: body,
         rows,
         response,
-    }))
+    })
 }
 
-fn decoded<T>(value: Option<&JsonValue>, name: &str) -> Result<T, Box<HelperError>>
+fn request<T>(value: Option<&JsonValue>, name: &str, read: Reader<T>) -> Reply<T> {
+    let typed = decoded::<TypedValue>(value, name)?;
+    read(&typed).map_err(|error| failure("ValidationError", error))
+}
+
+fn response_of(input: &Input) -> Reply<GenerateKeyResponse> {
+    request(
+        input.response.as_ref(),
+        "response",
+        GenerateKeyResponse::read,
+    )
+}
+
+fn optional_request<T>(value: Option<&JsonValue>, read: Reader<T>) -> Reply<Option<T>> {
+    match value {
+        Some(raw) => Ok(Some(request(Some(raw), "data", read)?)),
+        None => Ok(None),
+    }
+}
+
+fn decoded<T>(value: Option<&JsonValue>, name: &str) -> Reply<T>
 where
     T: DeserializeOwned,
 {

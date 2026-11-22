@@ -17,8 +17,8 @@ use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use self::support::{
-    AUDIT, BOTH, Call, DebugLines, NOW, RecordingMailer, STORE, caller, harness, lock,
-    sink_fixture, wired,
+    AUDIT, BOTH, Call, Lines, NOW, RecordingMailer, STORE, caller, harness, lock, sink_fixture,
+    wired,
 };
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
@@ -667,25 +667,20 @@ async fn delete_unused_request_fields() {
 
 #[tokio::test]
 async fn audit_no_raw_key() {
-    let harness = harness();
+    let mut harness = harness();
     let fixture = sink_fixture();
+    harness.audit = fixture.audit;
     let created = generated(
         r#"{"key_alias": "alias-a"}"#,
         r#"{"key": "sk-raw-secret-value-1234", "token_id": "tok-1"}"#,
     );
-    harness
-        .dispatch_with(&fixture.audit, &created, &caller())
-        .await
-        .unwrap();
+    harness.dispatch(&created, &caller()).await.unwrap();
     let rotated_event = rotated(
         None,
         r#"{"token": "sk-old-secret-value-9999", "key_alias": "old-alias"}"#,
         r#"{"key": "sk-raw-secret-value-1234", "token_id": "tok-2", "key_alias": "resp"}"#,
     );
-    harness
-        .dispatch_with(&fixture.audit, &rotated_event, &caller())
-        .await
-        .unwrap();
+    harness.dispatch(&rotated_event, &caller()).await.unwrap();
     fixture.spawner.drain().await;
     let records = lock(&fixture.repository.records).clone();
     assert_eq!(records.len(), 2);
@@ -845,7 +840,7 @@ async fn legacy_email_effects_created_and_rotated() {
     tasks.wait().await;
     assert_eq!(lock(&mailer.events).len(), 1);
 
-    let logs = DebugLines::default();
+    let logs = Lines::at("betterlite_server::key_event_sinks::email", None);
     let _logging = set_default(tracing_subscriber::registry().with(logs.clone()));
     KeyEventEmail::send_rotated(&email, "sk-new", Some("old-alias"))
         .await
