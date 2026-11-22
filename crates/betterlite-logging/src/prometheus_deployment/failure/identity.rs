@@ -47,28 +47,28 @@ fn merge_labels(
     IdentityLabels {
         api_key_alias: merge(
             found.api_key_alias,
-            recorded.and_then(|p| p.user_api_key_alias.as_ref()),
+            recorded.and_then(|record| record.user_api_key_alias.as_ref()),
         ),
         user_email: found.user_email,
         team: merge(
             found.team,
-            recorded.and_then(|p| p.user_api_key_team_id.as_ref()),
+            recorded.and_then(|record| record.user_api_key_team_id.as_ref()),
         ),
         team_alias: merge(
             found.team_alias,
-            recorded.and_then(|p| p.user_api_key_team_alias.as_ref()),
+            recorded.and_then(|record| record.user_api_key_team_alias.as_ref()),
         ),
         hashed_api_key: merge(
             found.hashed_api_key,
-            recorded.and_then(|p| p.user_api_key_hash.as_ref()),
+            recorded.and_then(|record| record.user_api_key_hash.as_ref()),
         ),
         client_ip: merge(
             found.client_ip,
-            recorded.and_then(|p| p.requester_ip_address.as_ref()),
+            recorded.and_then(|record| record.requester_ip_address.as_ref()),
         ),
         user_agent: merge(
             found.user_agent,
-            recorded.and_then(|p| p.user_agent.as_ref()),
+            recorded.and_then(|record| record.user_agent.as_ref()),
         ),
     }
 }

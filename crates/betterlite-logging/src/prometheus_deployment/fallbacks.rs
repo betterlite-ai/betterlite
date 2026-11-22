@@ -19,14 +19,14 @@ pub enum FallbackEvent {
 }
 
 impl FallbackEvent {
-    fn metric(self) -> DeploymentMetric {
+    const fn metric(self) -> DeploymentMetric {
         match self {
             Self::Success => DeploymentMetric::SuccessfulFallbacks,
             Self::Failure => DeploymentMetric::FailedFallbacks,
         }
     }
 
-    fn entry_point(self) -> &'static str {
+    const fn entry_point(self) -> &'static str {
         match self {
             Self::Success => "log_success_fallback_event",
             Self::Failure => "log_failure_fallback_event",

@@ -48,7 +48,7 @@ pub(super) fn push_identity(
 // the metadata fallback for model_group: a text field whose empty string names nothing
 pub(super) fn model_group_field(value: &Json) -> Option<String> {
     match value {
-        Json::Text(text) => Some(text.clone()).filter(|text| !text.is_empty()),
+        Json::Text(text) => Some(text.clone()).filter(|label| !label.is_empty()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
@@ -65,11 +65,10 @@ pub(super) fn tags_from_json(tags: &[Json]) -> Vec<String> {
 
 // str(getattr(exception, "status_code", None)), so an absent status_code is the text "None"
 pub(super) fn fallback_exception_status(exception: &LabelException) -> String {
-    if let Some(status) = exception.status_code.as_deref() {
-        status.to_owned()
-    } else {
-        MISSING_LABEL_VALUE.to_owned()
-    }
+    exception
+        .status_code
+        .as_deref()
+        .map_or_else(|| MISSING_LABEL_VALUE.to_owned(), str::to_owned)
 }
 
 pub(super) fn failure_exception_status(exception: &LabelException) -> String {

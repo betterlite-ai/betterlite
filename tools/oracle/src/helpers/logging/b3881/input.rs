@@ -15,7 +15,7 @@ pub(super) enum Function {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Input {
+pub(crate) struct Input {
     pub(super) function: Function,
     #[serde(default)]
     pub(super) kwargs: JsonObject,

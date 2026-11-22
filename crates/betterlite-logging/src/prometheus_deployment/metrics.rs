@@ -47,13 +47,13 @@ pub trait DeploymentMetrics: RateLimitGauges {
         &'metrics self,
         context: Option<&'metrics PrometheusLabelFactoryContext>,
     ) -> LabelSource<'metrics> {
-        match context {
-            Some(context) => LabelSource::Context(context),
-            None => LabelSource::Values {
+        context.map_or_else(
+            || LabelSource::Values {
                 settings: self.settings(),
                 end_user_settings: self.end_user_settings(),
             },
-        }
+            LabelSource::Context,
+        )
     }
 
     fn failure_labels(&self, sources: &DeploymentFailureSources<'_>) -> DeploymentFailureLabels {

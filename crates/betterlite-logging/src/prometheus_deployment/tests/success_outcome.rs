@@ -327,11 +327,16 @@ fn absent_or_zero_values_skip_the_overhead_and_remaining_gauges() {
     assert_eq!(
         names,
         vec![
+            "litellm_overhead_with_guardrails_latency_metric",
             "litellm_deployment_state",
             "litellm_deployment_success_responses",
             "litellm_deployment_total_requests",
             "litellm_deployment_latency_per_output_token",
         ]
+    );
+    assert_eq!(
+        update_of(&gauges.updates()[0]),
+        MetricUpdate::Observe(MetricValue::Finite(Decimal::ZERO))
     );
 }
 

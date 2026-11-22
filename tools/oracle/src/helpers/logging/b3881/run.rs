@@ -4,18 +4,14 @@ use std::time::Instant;
 
 use betterlite_error::normalize::class::Class;
 use betterlite_logging::prometheus::failure::exception::LabelException;
-use betterlite_logging::prometheus_deployment::failure::{
-    // ast-grep-ignore: no-long-names
-    set_llm_deployment_failure_metrics as record_failure_metrics,
-};
+// ast-grep-ignore: no-long-names
+use betterlite_logging::prometheus_deployment::failure::set_llm_deployment_failure_metrics as record_failure_metrics;
 use betterlite_logging::prometheus_deployment::fallbacks::{FallbackEvent, log_fallback_event};
 use betterlite_logging::prometheus_deployment::requests::{
     FailureRequest, FallbackRequest, SuccessRequest,
 };
-use betterlite_logging::prometheus_deployment::success::{
-    // ast-grep-ignore: no-long-names
-    set_llm_deployment_success_metrics as record_success_metrics,
-};
+// ast-grep-ignore: no-long-names
+use betterlite_logging::prometheus_deployment::success::set_llm_deployment_success_metrics as record_success_metrics;
 use betterlite_models::call_helpers::metadata::MetadataSlots;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;

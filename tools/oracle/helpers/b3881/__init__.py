@@ -136,7 +136,7 @@ async def _log_fallback(
     if function == "fallback_success":
         await logger.log_success_fallback_event(group, kwargs, error)  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3434
     else:
-        await logger.log_failure_fallback_event(group, kwargs, error)  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3466
+        await logger.log_failure_fallback_event(group, kwargs, error)  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3477
 
 
 def run(input_value: Input) -> JsonValue:

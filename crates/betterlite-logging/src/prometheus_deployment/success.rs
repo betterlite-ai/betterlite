@@ -158,10 +158,10 @@ where
         .as_ref()
         .map(|value| value.0);
     record_overhead_latency(metrics, request, overhead_ms)?;
-    let records = match payload.guardrail_information.as_deref() {
-        Some(records) => GuardrailRecords::Multiple(records),
-        None => GuardrailRecords::Absent,
-    };
+    let records = payload
+        .guardrail_information
+        .as_deref()
+        .map_or(GuardrailRecords::Absent, GuardrailRecords::Multiple);
     let observation = OverheadObservation {
         overhead_ms,
         guardrail_records: records,

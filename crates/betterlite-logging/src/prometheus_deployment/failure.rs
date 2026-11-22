@@ -80,10 +80,10 @@ where
 fn failure_fields(request: &FailureRequest<'_>) -> FailureFields {
     let payload = request.payload;
     let model_id = payload
-        .and_then(|payload| payload.model_id.clone())
+        .and_then(|record| record.model_id.clone())
         .or_else(|| params_model_id(request.litellm_params));
     let model_group = payload
-        .and_then(|payload| payload.model_group.clone())
+        .and_then(|record| record.model_group.clone())
         .or_else(|| params_model_group(request.litellm_params));
     let rejected = matches!(
         request.litellm_params.get(PROXY_REJECTED_KEY),
