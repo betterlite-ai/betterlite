@@ -292,6 +292,19 @@ fn the_async_entry_awaits_the_pending_future() {
     );
 }
 
+fn the_async_entry_returns_a_ready_value_as_is() {
+    let rig = Rig::new(Reply::Done(video("video_5")), &[VideoConfigTag::OpenAi]);
+    let kwargs = base_kwargs();
+    let request = call("video_1", "extend it", "8", &kwargs);
+    let deps = rig.deps(None);
+    let object = block_on(avideo_extension(&deps, &request)).expect("the ready answer");
+    assert_eq!(object, video("video_5"));
+    assert!(
+        only_call(&rig).is_async,
+        "the transport sees the async flag"
+    );
+}
+
 fn the_async_entry_returns_the_mock_as_is() {
     let rig = Rig::new(Reply::Done(video("handler")), &[]);
     let mut kwargs = base_kwargs();
@@ -352,6 +365,7 @@ fn an_explicit_timeout_reaches_the_handler() {
     an_async_call_answers_with_the_pending_future
 )]
 #[case::the_async_entry_awaits_the_pending_future(the_async_entry_awaits_the_pending_future)]
+#[case::the_async_entry_returns_a_ready_value_as_is(the_async_entry_returns_a_ready_value_as_is)]
 #[case::the_async_entry_returns_the_mock_as_is(the_async_entry_returns_the_mock_as_is)]
 #[case::a_null_mock_response_is_not_a_mock(a_null_mock_response_is_not_a_mock)]
 fn extension_call_behavior(#[case] check: fn()) {
