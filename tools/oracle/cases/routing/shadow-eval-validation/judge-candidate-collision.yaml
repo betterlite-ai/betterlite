@@ -18,7 +18,7 @@ probes:
               complexity_router_default_model: tier-model
         rows:
           teams:
-            - {team_id: team-1}
+            - team-1
         steps:
           - validate_start:
               text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"judge-alias","shadow_percentage":50}'

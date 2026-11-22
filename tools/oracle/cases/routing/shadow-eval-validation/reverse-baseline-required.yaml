@@ -16,7 +16,7 @@ probes:
               complexity_router_default_model: tier-model
         rows:
           teams:
-            - {team_id: team-1}
+            - team-1
         steps:
           - parse:
               text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"direction":"reverse","shadow_percentage":50}'

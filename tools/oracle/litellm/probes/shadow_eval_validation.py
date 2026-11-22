@@ -48,8 +48,8 @@ class UserRow(Strict):
 
 class Targets(Strict):
     keys: list[KeyRow] = Field(default_factory=list)
-    teams: list[TeamRow] = Field(default_factory=list)
-    users: list[UserRow] = Field(default_factory=list)
+    teams: list[str] = Field(default_factory=list)
+    users: list[str] = Field(default_factory=list)
 
 
 class Body(Strict):
@@ -135,8 +135,8 @@ class FakeDb:
 
     def __init__(self, rows: Targets) -> None:
         self.litellm_verificationtoken = Table(rows.keys)
-        self.litellm_teamtable = Table(rows.teams)
-        self.litellm_usertable = Table(rows.users)
+        self.litellm_teamtable = Table([TeamRow(team_id=team) for team in rows.teams])
+        self.litellm_usertable = Table([UserRow(user_id=user) for user in rows.users])
 
     async def query_raw(self, _query: str, *_args: object) -> Sequence[Mapping[str, object]]:
         raise Sentinel

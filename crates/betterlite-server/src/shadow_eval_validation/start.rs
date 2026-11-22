@@ -79,9 +79,9 @@ fn reject_unknown_targets(
     let known_teams: BTreeSet<&str> = records.teams.iter().copied().collect();
     let known_users: BTreeSet<&str> = records.users.iter().copied().collect();
     let faults: Vec<TargetFault> = [
-        unknown_ids(&request.api_key_ids, &known_keys).map(TargetFault::UnknownKeys),
-        unknown_ids(&request.team_ids, &known_teams).map(TargetFault::UnknownTeams),
-        unknown_ids(&request.user_ids, &known_users).map(TargetFault::UnknownUsers),
+        unknown_ids(&request.api_key_ids, &known_keys).map(|ids| TargetFault::UnknownKeys { ids }),
+        unknown_ids(&request.team_ids, &known_teams).map(|ids| TargetFault::UnknownTeams { ids }),
+        unknown_ids(&request.user_ids, &known_users).map(|ids| TargetFault::UnknownUsers { ids }),
     ]
     .into_iter()
     .flatten()

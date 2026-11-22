@@ -18,9 +18,9 @@ probes:
           keys:
             - {token: key-1, team_id: team-1}
           teams:
-            - {team_id: team-1}
+            - team-1
           users:
-            - {user_id: user-1}
+            - user-1
         steps:
           - validate_start:
               text: '{"api_key_ids":["key-1","key-unknown"],"team_ids":["team-unknown"],"user_ids":["user-unknown"],"router_names":["shadow-router"],"judge_model":"judge-model","shadow_percentage":50}'

@@ -23,9 +23,14 @@ fn the_target_count_is_bounded(#[case] count: usize, #[case] rejected: bool) {
         serde_json::to_string(&ids).unwrap()
     );
     assert_eq!(refused(&body), rejected);
-    if count == 0 || count == 101 {
+    if rejected {
         let error = parse_shadow_eval_request(body.as_bytes()).unwrap_err();
-        assert_eq!(validation_field(error), "api_key_ids");
+        let field = if count == 0 {
+            "api_key_ids"
+        } else {
+            "team_ids"
+        };
+        assert_eq!(validation_field(error), field);
     }
 }
 
