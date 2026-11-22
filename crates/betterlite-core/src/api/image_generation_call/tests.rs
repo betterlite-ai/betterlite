@@ -138,6 +138,7 @@ enum FakeResult {
 
 struct FakeIdentity {
     result: FakeResult,
+    key: Option<SecretString>,
     seen: Mutex<Vec<SeenResolution>>,
 }
 
@@ -152,26 +153,22 @@ impl FakeIdentity {
         let seen = Mutex::new(Vec::new());
         Self {
             result: FakeResult::Resolved(resolved),
+            key: None,
             seen,
         }
     }
 
     fn keyed(model: Option<&str>, provider: ProviderIdentity) -> Self {
-        let resolved = ResolvedImageModel {
-            model: model.map(str::to_owned),
-            provider,
-            api_base: None,
-            api_key: Some(SecretString::from("resolved-key")),
-        };
         Self {
-            result: FakeResult::Resolved(resolved),
-            seen: Mutex::new(Vec::new()),
+            key: Some(SecretString::from("resolved-key")),
+            ..Self::new(model, provider)
         }
     }
 
     fn failing(model: &str) -> Self {
         Self {
             result: FakeResult::MissingProvider(model.to_owned()),
+            key: None,
             seen: Mutex::new(Vec::new()),
         }
     }
@@ -207,9 +204,12 @@ impl ImageIdentity for FakeIdentity {
             )),
         };
         let mut resolved = answer?;
-        // the real resolver answers the caller's api_base, so the fake echoes it too
+        // the real resolver answers the caller's api_base and any key it found, so the fake does too
         if let Some(api_base) = request.api_base {
             resolved.api_base = Some(api_base.to_owned());
+        }
+        if let Some(key) = &self.key {
+            resolved.api_key = Some(key.clone());
         }
         Ok(resolved)
     }
