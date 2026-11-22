@@ -18,7 +18,7 @@ from litellm.types.llms.openai import ResponsesAPIResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from openai_chat import Failure, project_failure
-from responses_compact_transport import INPUT, JSON, Mode
+from responses_compact_transport import JSON, Mode
 from responses_create_transport import JSON_MAP
 
 # The handler answers directly in the sync mode and with a coroutine in the async one
@@ -154,9 +154,11 @@ def invoke(call: Call, api_base: str) -> Work:
         "num_retries": 0,
         "timeout": call.timeout_seconds,
     }
-    return HANDLER.response_api_handler(
+    # the case request is JSON, as a proxy caller's request is: pydantic's lazy tool union
+    # would strip the tools of an additional_tools item before the handler hoists them
+    return HANDLER.response_api_handler(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/handler.py#L26-L40  # noqa: E501
         call.model,
-        INPUT.validate_python(request["input"]),
+        request["input"],  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/handler.py#L29
         request,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/handler.py#L29
         custom_llm_provider="openai",
         _is_async=call.mode == "async",
