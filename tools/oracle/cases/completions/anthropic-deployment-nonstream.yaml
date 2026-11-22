@@ -1,0 +1,31 @@
+name: completions-anthropic-deployment-nonstream
+config: |
+  model_list:
+    - model_name: chat-model
+      litellm_params: {model: anthropic/claude-3-haiku-20240307, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: chat-model, prompt: Once upon a time}
+upstream:
+  - status: 200
+    headers: {content-type: application/json, request-id: upstream-anthropic-1}
+    body:
+      id: msg_bridge
+      type: message
+      role: assistant
+      model: claude-3-haiku-20240307
+      content:
+        - {type: text, text: hello over anthropic}
+      stop_reason: end_turn
+      stop_sequence: null
+      usage: {input_tokens: 3, output_tokens: 2}
+compare:
+  headers: [content-type, llm_provider-request-id]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: [x-api-key, anthropic-version, content-type]
+  ignore:
+    - {pointer: /id, why: LiteLLM generates the completion id and betterlite keeps the upstream message id}
+    - {pointer: /created, why: the completion time is read from the clock on each side}
