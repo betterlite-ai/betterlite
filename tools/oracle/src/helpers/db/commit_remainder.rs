@@ -124,8 +124,10 @@ impl DailyChunkWriter for ScriptedWriter {
     ) -> ChunkFuture<'writer, ScriptedFailure> {
         Box::pin(async move {
             self.attempts.fetch_add(1, Ordering::SeqCst);
-            let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
-            let token = script.pop_front().unwrap_or(ScriptToken::Ok);
+            let token = {
+                let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
+                script.pop_front().unwrap_or(ScriptToken::Ok)
+            };
             match token {
                 ScriptToken::Ok => Ok(()),
                 ScriptToken::ConnectError
@@ -232,7 +234,7 @@ async fn run_call(call: &Call) -> Value {
         .await
     {
         Ok(()) => String::new(),
-        Err(failure) => failure.to_string(),
+        Err(scripted) => scripted.to_string(),
     };
     json!({
         "attempts": writer.attempts.load(Ordering::SeqCst),

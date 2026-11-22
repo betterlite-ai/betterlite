@@ -278,7 +278,15 @@ impl Ports {
 fn field_text(row: &SpendRow, field: &str) -> String {
     match row.get(field) {
         Some(SpendColumnValue::Text(text)) => text.clone(),
-        _ => String::new(),
+        None
+        | Some(
+            SpendColumnValue::Null
+            | SpendColumnValue::Bool(_)
+            | SpendColumnValue::Int(_)
+            | SpendColumnValue::Decimal(_)
+            | SpendColumnValue::Array(_)
+            | SpendColumnValue::Object(_),
+        ) => String::new(),
     }
 }
 
@@ -662,8 +670,16 @@ async fn postgres_chunks_apply_and_clear_the_phase() {
         .await
         .unwrap()
         .get(0);
-    assert_eq!(spend, 2.0);
+    assert_eq!(spend.to_bits(), 2.0_f64.to_bits());
     close(fixture, store, session).await;
+}
+
+async fn daily_user_count(session: &Client) -> i64 {
+    session
+        .query_one("SELECT COUNT(*) FROM \"LiteLLM_DailyUserSpend\"", &[])
+        .await
+        .unwrap()
+        .get(0)
 }
 
 #[tokio::test]
@@ -700,12 +716,7 @@ async fn postgres_check_violation_is_rejected_and_dropped() {
     assert_eq!(error.spend_failure(), SpendFailure::Rejected);
     assert!(pending.is_empty());
     assert_eq!(ports.sink.events().len(), 1);
-    let count: i64 = session
-        .query_one("SELECT COUNT(*) FROM \"LiteLLM_DailyUserSpend\"", &[])
-        .await
-        .unwrap()
-        .get(0);
-    assert_eq!(count, 0);
+    assert_eq!(daily_user_count(&session).await, 0);
     close(fixture, store, session).await;
 }
 

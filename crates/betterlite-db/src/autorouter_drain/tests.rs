@@ -13,8 +13,8 @@ use clap::Parser as _;
 use deadpool_postgres::{Manager, Pool, PoolError, TimeoutType};
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio_postgres::NoTls;
 use tokio_postgres::error::SqlState;
+use tokio_postgres::{Client, NoTls};
 
 use super::*;
 use crate::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnFlag, TurnTime};
@@ -192,7 +192,7 @@ async fn refused_connection_error() -> tokio_postgres::Error {
             "host=127.0.0.1 port={} user=missing",
             refused.address.port()
         ),
-        tokio_postgres::NoTls,
+        NoTls,
     )
     .await
     else {
@@ -452,6 +452,38 @@ async fn close(fixture: PostgresFixture, store: PostgresStore) {
     fixture.close_async().await.expect("the fixture teardown");
 }
 
+async fn keyed_rows(session: &Client) -> Vec<(String, i32)> {
+    session
+        .query(
+            "SELECT api_key, turns FROM \"LiteLLM_AutoRouterSession\"",
+            &[],
+        )
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| (row.get::<_, String>(0), row.get::<_, i32>(1)))
+        .collect()
+}
+
+async fn user_rows(session: &Client) -> Vec<(String, String, i32)> {
+    session
+        .query(
+            "SELECT user_id, api_key, turns FROM \"LiteLLM_AutoRouterUserSession\" ORDER BY user_id",
+            &[],
+        )
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row.get::<_, String>(0),
+                row.get::<_, String>(1),
+                row.get::<_, i32>(2),
+            )
+        })
+        .collect()
+}
+
 #[tokio::test]
 async fn postgres_flush_advances_both_session_scopes() {
     let (fixture, store) = database().await;
@@ -468,35 +500,12 @@ async fn postgres_flush_advances_both_session_scopes() {
         ])
         .await;
     let session = store.session().await.expect("the rollup session");
-    let keyed = session
-        .query(
-            "SELECT api_key, turns FROM \"LiteLLM_AutoRouterSession\"",
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| (row.get::<_, String>(0), row.get::<_, i32>(1)))
-        .collect::<Vec<_>>();
-    assert_eq!(keyed, vec![("key-a".to_owned(), 1_i32)]);
-    let users = session
-        .query(
-            "SELECT user_id, api_key, turns FROM \"LiteLLM_AutoRouterUserSession\" ORDER BY user_id",
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row.get::<_, String>(0),
-                row.get::<_, String>(1),
-                row.get::<_, i32>(2),
-            )
-        })
-        .collect::<Vec<_>>();
     assert_eq!(
-        users,
+        keyed_rows(&session).await,
+        vec![("key-a".to_owned(), 1_i32)]
+    );
+    assert_eq!(
+        user_rows(&session).await,
         vec![
             ("user-a".to_owned(), "key-a".to_owned(), 1_i32),
             ("user-b".to_owned(), String::new(), 1_i32),
@@ -528,30 +537,9 @@ async fn postgres_failed_key_partition_still_writes_other_user_histories() {
             turn("key-a", "user-c", "session-1", 4),
         ])
         .await;
-    let keyed: i64 = probe
-        .query_one("SELECT COUNT(*) FROM \"LiteLLM_AutoRouterSession\"", &[])
-        .await
-        .unwrap()
-        .get(0);
-    assert_eq!(keyed, 0);
-    let users = probe
-        .query(
-            "SELECT user_id, api_key, turns FROM \"LiteLLM_AutoRouterUserSession\" ORDER BY user_id",
-            &[],
-        )
-        .await
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row.get::<_, String>(0),
-                row.get::<_, String>(1),
-                row.get::<_, i32>(2),
-            )
-        })
-        .collect::<Vec<_>>();
+    assert!(keyed_rows(&probe).await.is_empty());
     assert_eq!(
-        users,
+        user_rows(&probe).await,
         vec![
             ("user-b".to_owned(), "key-a".to_owned(), 1_i32),
             ("user-c".to_owned(), "key-a".to_owned(), 1_i32),

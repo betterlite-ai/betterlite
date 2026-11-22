@@ -194,8 +194,5 @@ async def replay_call(call: Call) -> dict[str, JsonValue]:
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
-    calls: list[JsonValue] = []
-    for call in input_value["calls"]:
-        report = asyncio.run(replay_call(call))
-        calls.append(report)
+    calls: list[JsonValue] = [asyncio.run(replay_call(call)) for call in input_value["calls"]]
     return {"calls": calls}
