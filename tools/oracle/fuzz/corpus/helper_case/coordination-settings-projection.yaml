@@ -1,0 +1,13 @@
+kind: helper
+name: "coordination_settings_projection: redacted roundtrip seed"
+call:
+  coordination_settings:
+    function: merge
+    settings:
+      host: cache.internal
+      password: "***REDACTED***"
+    saved:
+      host: old.internal
+      password: hunter2
+env: {}
+compare: {ignore: []}
