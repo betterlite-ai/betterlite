@@ -23,6 +23,7 @@ use betterlite_router::strategy_dispatch::service::StrategyDispatch;
 use rand::Rng;
 
 use crate::routing::prompt_affinity::{PromptAffinityError, PromptAffinityInputs, build};
+use crate::routing::request_scheduler;
 
 mod tests;
 
@@ -48,7 +49,7 @@ impl RouterServices {
         Ok(Self {
             prompt_affinity: build(&config.sections.prompt_affinity, inputs)?,
             model_rate_limits: None,
-            request_scheduler: crate::routing::request_scheduler::build(config),
+            request_scheduler: request_scheduler::build(config),
         })
     }
 
