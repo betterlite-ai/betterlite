@@ -4,9 +4,10 @@ use std::io::SeekFrom;
 
 use tokio_util::task::TaskTracker;
 
-use super::support::{CountingSource, scan_result};
+use super::support::{CountingSource, UnrewindableSource, scan_result};
 use crate::api::file_batch_guardrails::REWRITE_SPOOL_BYTES;
 use crate::api::file_batch_guardrails::records::{RecordChange, RecordDropped, RecordRedacted};
+use crate::api::file_batch_rewrite::error::RewriteError;
 use crate::api::file_batch_rewrite::rewrite::rewrite_batch_input_file;
 use crate::api::file_batch_rewrite::spool::Spool;
 
@@ -83,6 +84,20 @@ async fn a_kept_last_row_without_a_newline_is_copied() {
         rewritten.read_to_end(&tasks).await.unwrap(),
         KEPT.as_bytes()
     );
+}
+
+// A source that reads but refuses to rewind fails the rewrite with Rewind instead of handing back the written file
+#[tokio::test]
+async fn a_failing_rewind_replaces_the_rewritten_file() {
+    let tasks = TaskTracker::new();
+    let result = scan_result(Vec::new(), 1, Spool::default());
+    let mut source = UnrewindableSource::new(KEPT.to_owned());
+    let output = Spool::default();
+    let outcome = rewrite_batch_input_file(&mut source, &result, &tasks, output.clone()).await;
+    match outcome {
+        Err(RewriteError::Rewind { .. }) => (),
+        other => panic!("the rewind error replaces the rewritten file, got {other:?}"),
+    }
 }
 
 #[tokio::test]
