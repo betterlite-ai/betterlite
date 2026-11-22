@@ -279,9 +279,12 @@ impl ImageEditLogger for FailingLogger {
     }
 }
 
+// no test configures a model_list entry, so every world's resolution sees the empty set
+static NO_CONFIGURED_MODELS: BTreeSet<String> = BTreeSet::new();
+
 pub(super) struct World {
     catalog: Arc<ModelCatalog>,
-    names: BTreeSet<String>,
+    custom_providers: BTreeSet<String>,
     environment: BTreeMap<String, String>,
 }
 
@@ -289,7 +292,7 @@ impl World {
     pub(super) fn new() -> Self {
         Self {
             catalog: BundledCatalog::default().get(),
-            names: BTreeSet::new(),
+            custom_providers: BTreeSet::from(["my-provider", "ghost-provider"].map(str::to_owned)),
             environment: BTreeMap::new(),
         }
     }
@@ -297,8 +300,8 @@ impl World {
     pub(super) fn context(&self) -> ResolutionContext<'_> {
         ResolutionContext {
             catalog: &self.catalog,
-            known_model_names: &self.names,
-            custom_providers: &self.names,
+            known_model_names: &NO_CONFIGURED_MODELS,
+            custom_providers: &self.custom_providers,
             environment: &self.environment,
             registry: JSONProviderRegistry::default(),
             policies: ProviderPolicies::default(),

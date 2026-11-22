@@ -549,6 +549,11 @@ async fn edit_dispatch_and_timeout_logs_before_the_branch_merge() {
     call.model = Some(String::from("stability/edit-model"));
     call.image = ImageInput::One(Box::new(image("a.png", b"abc")));
     call.mask = None;
+    call.count = None;
+    call.quality = None;
+    call.response_format = None;
+    call.size = None;
+    call.user = None;
     call.kwargs = ImageParams::from([(
         String::from("settings"),
         Json::Object(IndexMap::from([(
@@ -568,7 +573,10 @@ async fn edit_dispatch_and_timeout_logs_before_the_branch_merge() {
     let [record] = logger.records.as_slice() else {
         panic!("exactly one logged pre-call");
     };
-    assert!(record.optional_params.is_empty());
+    assert!(
+        !record.optional_params.contains_key("settings"),
+        "the record is taken before the stability branch merges the non-default kwargs"
+    );
     let recorded = stability.take();
     let [sent] = recorded.as_slice() else {
         panic!("exactly one send");
