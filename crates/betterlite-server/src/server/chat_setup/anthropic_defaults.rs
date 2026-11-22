@@ -13,9 +13,10 @@ pub(super) fn apply_anthropic_defaults(
     bases: &AnthropicBases,
     surface: Surface,
 ) -> Result<(), ChatSetupError> {
+    let configured = deployment.litellm_params.api_base.as_deref();
     let base = resolve_base(
         surface,
-        deployment.litellm_params.api_base.as_deref(),
+        configured,
         &bases.globals,
         &bases.environment,
         bases.disable_suffix,
@@ -24,7 +25,10 @@ pub(super) fn apply_anthropic_defaults(
         model_name: resolved.model_group.clone(),
         source,
     })?;
-    resolved.api_base = base.url;
+    // get_api_base reports the deployment's own api_base; the adapter appends the suffix when it calls
+    configured
+        .unwrap_or_default()
+        .clone_into(&mut resolved.api_base);
     resolved
         .api_key
         .clone_from(&deployment.litellm_params.api_key);
