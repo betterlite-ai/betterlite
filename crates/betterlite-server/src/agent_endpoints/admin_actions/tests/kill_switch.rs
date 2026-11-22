@@ -125,6 +125,24 @@ async fn webhook_failure_is_502() {
 }
 
 #[tokio::test]
+async fn a_legacy_id_is_fired_as_the_caller_sent_it() {
+    let fixture = Fixture::new();
+    fixture
+        .registry
+        .resolves("legacy-1", known_with_switch("stable-1", "Agent One", URL));
+    let reply = post(
+        fixture.state(),
+        &kill_switch_path("legacy-1"),
+        &caller(ADMIN),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let fired = fixture.trigger.fired();
+    assert_eq!(fired[0].0, "legacy-1");
+    assert_eq!(fired[0].1.url, URL);
+}
+
+#[tokio::test]
 async fn a_db_row_wins_over_the_registry() {
     let fixture = Fixture::new();
     fixture.rows.add(known_with_switch(

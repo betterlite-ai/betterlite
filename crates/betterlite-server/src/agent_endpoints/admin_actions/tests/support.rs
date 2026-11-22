@@ -133,6 +133,10 @@ impl FakeRegistry {
             .or_default()
             .insert(legacy.to_owned());
     }
+
+    pub(super) fn resolves(&self, requested: &str, agent: KnownAgent) {
+        lock(&self.agents).insert(requested.to_owned(), agent);
+    }
 }
 
 impl AgentRegistryLookup for FakeRegistry {

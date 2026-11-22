@@ -28,7 +28,7 @@ pub(super) async fn trigger(
         Ok(resolved) => resolved,
         Err(error) => return error.into_response(),
     };
-    let Some((resolved_id, switch)) = resolved else {
+    let Some(switch) = resolved else {
         return missing_agent(agent_id).into_response();
     };
     let Some(configured) = switch else {
@@ -39,7 +39,7 @@ pub(super) async fn trigger(
         };
         return error.into_response();
     };
-    let result = state.kill_switch.fire(&resolved_id, &configured).await;
+    let result = state.kill_switch.fire(agent_id, &configured).await;
     record_attempt(state, &result, caller).await;
     if result.succeeded() {
         return Json(result).into_response();
@@ -48,26 +48,25 @@ pub(super) async fn trigger(
     (StatusCode::BAD_GATEWAY, Json(body)).into_response()
 }
 
-// the DB row wins over this replica's registry; a config.yaml agent has no row and falls back to the registry
+// the DB row wins over this replica's registry; a config.yaml agent has no row and falls back to the registry.
+// outer None is no such agent, inner None an agent with no kill_switch: the route answers 404 and 400 apart
 async fn resolve(
     state: &AgentAdminState,
     agent_id: &str,
-) -> Result<Option<(String, Option<AgentKillSwitchConfig>)>, IdentityAdminError> {
+) -> Result<Option<Option<AgentKillSwitchConfig>>, IdentityAdminError> {
     if let Some(database) = state.database.as_deref() {
         let found = database
             .agent_row(agent_id)
             .await
             .map_err(unexpected_failure)?;
         if let Some(stored) = found {
-            let switch = parse_agent_kill_switch(stored.kill_switch.as_ref());
-            return Ok(Some((stored.agent_id, switch)));
+            return Ok(Some(parse_agent_kill_switch(stored.kill_switch.as_ref())));
         }
     }
     let Some(agent) = state.registry.agent_by_id(agent_id) else {
         return Ok(None);
     };
-    let switch = parse_agent_kill_switch(agent.kill_switch.as_ref());
-    Ok(Some((agent.agent_id, switch)))
+    Ok(Some(parse_agent_kill_switch(agent.kill_switch.as_ref())))
 }
 
 // the audit row comes after the attempt, so a failed webhook leaves one too, and its write never changes the answer
