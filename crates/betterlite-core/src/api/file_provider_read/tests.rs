@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::future::{Future, ready};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -105,21 +106,23 @@ struct FakeDispatch {
     listing: FileListing,
 }
 
-fn exposed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|secret| secret.expose_secret().to_owned())
-}
-
 fn seen(target: ReadTarget<'_, FakeConfig, ()>) -> Seen {
     match target {
         ReadTarget::Compatible(read) => Seen::Compatible {
-            api_key: exposed(read.api_key.as_ref()),
+            api_key: read
+                .api_key
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_owned()),
             api_base: read.api_base,
             organization: read.organization,
             max_retries: read.max_retries,
             mode: read.mode,
         },
         ReadTarget::Azure(read) => Seen::Azure {
-            api_key: exposed(read.api_key.as_ref()),
+            api_key: read
+                .api_key
+                .as_ref()
+                .map(|secret| secret.expose_secret().to_owned()),
             api_base: read.api_base,
             api_version: read.api_version,
             max_retries: read.max_retries,
@@ -129,7 +132,10 @@ fn seen(target: ReadTarget<'_, FakeConfig, ()>) -> Seen {
             let read = *boxed;
             Seen::Generic(Box::new(GenericSeen {
                 config: read.config,
-                api_key: exposed(read.api_key.as_ref()),
+                api_key: read
+                    .api_key
+                    .as_ref()
+                    .map(|secret| secret.expose_secret().to_owned()),
                 api_base: read.api_base,
                 trusted: read
                     .trusted
@@ -186,11 +192,11 @@ impl FileReadDispatch for FakeDispatch {
             .then_some(FakeConfig(provider))
     }
 
-    async fn read(
+    fn read(
         &self,
         target: ReadTarget<'_, FakeConfig, ()>,
         operation: ReadOperation<'_>,
-    ) -> Result<ReadAnswer, Infallible> {
+    ) -> impl Future<Output = Result<ReadAnswer, Infallible>> + Send {
         let (argument, answer) = match operation {
             ReadOperation::Retrieve { file_id } => (
                 Some(file_id.to_owned()),
@@ -202,7 +208,7 @@ impl FileReadDispatch for FakeDispatch {
             ),
         };
         self.record(target, argument);
-        Ok(answer)
+        ready(Ok(answer))
     }
 }
 
@@ -235,9 +241,10 @@ fn reader() -> FileProviderRead<FakeDispatch> {
 }
 
 fn kwargs(provider: &str) -> ReadKwargs {
-    let mut kwargs = ReadKwargs::default();
-    kwargs.custom_llm_provider = ReadProvider(provider.to_owned());
-    kwargs
+    ReadKwargs {
+        custom_llm_provider: ReadProvider(provider.to_owned()),
+        ..ReadKwargs::default()
+    }
 }
 
 const fn bare() -> ReadContext<'static, ()> {
@@ -277,8 +284,10 @@ async fn retrieved(read: &FileProviderRead<FakeDispatch>, kwargs: &ReadKwargs) -
 #[case::litellm_proxy("litellm_proxy")]
 #[tokio::test]
 async fn retrieve_provider_metadata_compatible(#[case] provider: &str) {
-    let mut settings = Settings::default();
-    settings.api_key = Some(SecretString::from("sk-settings"));
+    let settings = Settings {
+        api_key: Some(SecretString::from("sk-settings")),
+        ..Settings::default()
+    };
     let read = service(settings, FileListing::Files(Vec::new()));
     let mut call = kwargs(provider);
     call.extra_headers = Some(text_map(&[("x-dropped", "1")]));
@@ -318,9 +327,11 @@ async fn retrieve_provider_metadata_defaults_to_openai() {
 
 #[tokio::test]
 async fn retrieve_provider_metadata_azure() {
-    let mut settings = Settings::default();
-    settings.azure_api_version = Some("2024-06-01".to_owned());
-    settings.azure_api_key = Some(SecretString::from("sk-env-azure"));
+    let settings = Settings {
+        azure_api_version: Some("2024-06-01".to_owned()),
+        azure_api_key: Some(SecretString::from("sk-env-azure")),
+        ..Settings::default()
+    };
     let read = service(settings, FileListing::Files(Vec::new()));
     let mut call = kwargs("azure");
     call.api_base = Some("https://azure.example".to_owned());
@@ -479,13 +490,13 @@ fn text(value: &str) -> ReadTimeoutValue {
     ReadTimeoutValue::Text(value.to_owned())
 }
 
-fn phases(read: Option<u32>) -> Option<ReadTimeout> {
-    Some(ReadTimeout::Structured(ReadStructuredTimeout {
+fn phases(read: Option<u32>) -> ReadTimeout {
+    ReadTimeout::Structured(ReadStructuredTimeout {
         connect: None,
         read: read.map(Number::from),
         write: None,
         pool: None,
-    }))
+    })
 }
 
 const fn kept(read: Option<f64>) -> FineTuningTimeout {
@@ -542,17 +553,17 @@ const fn kept(read: Option<f64>) -> FineTuningTimeout {
     "anthropic",
     FineTuningTimeout::Seconds(4.5_f64)
 )]
-#[case::openai_keeps_phases(phases(Some(5)), Some(number(3)), "openai", kept(Some(5.0_f64)))]
-#[case::azure_keeps_phases(phases(Some(5)), None, "azure", kept(Some(5.0_f64)))]
-#[case::bedrock_keeps_phases(phases(Some(5)), None, "bedrock", kept(Some(5.0_f64)))]
+#[case::openai_keeps_phases(Some(phases(Some(5))), Some(number(3)), "openai", kept(Some(5.0_f64)))]
+#[case::azure_keeps_phases(Some(phases(Some(5))), None, "azure", kept(Some(5.0_f64)))]
+#[case::bedrock_keeps_phases(Some(phases(Some(5))), None, "bedrock", kept(Some(5.0_f64)))]
 #[case::anthropic_reads_the_read_phase(
-    phases(Some(5)),
+    Some(phases(Some(5))),
     None,
     "anthropic",
     FineTuningTimeout::Seconds(5.0_f64)
 )]
 #[case::anthropic_without_read_phase(
-    phases(None),
+    Some(phases(None)),
     None,
     "anthropic",
     FineTuningTimeout::Seconds(600.0_f64)
@@ -636,9 +647,11 @@ async fn read_deadline_and_mode_async(
 
 #[tokio::test]
 async fn read_trusted_context_generic_fields() {
-    let mut settings = Settings::default();
-    settings.api_key = Some(SecretString::from("sk-settings"));
-    settings.api_base = Some("https://settings.example".to_owned());
+    let settings = Settings {
+        api_key: Some(SecretString::from("sk-settings")),
+        api_base: Some("https://settings.example".to_owned()),
+        ..Settings::default()
+    };
     let read = service(settings, FileListing::Files(Vec::new()));
     let trusted = TrustedCredentials {
         values: BTreeMap::from([("bucket".to_owned(), SecretString::from("files"))]),
@@ -692,82 +705,92 @@ async fn read_trusted_context_drops_sdk_clients() {
     assert_eq!(generic.api_base.as_deref(), Some("https://call.example"));
 }
 
+// the logging object the case expects LiteLLM to create
+#[derive(Clone, Copy)]
+struct ExpectedLogger {
+    call_type: &'static str,
+    call_id: Option<&'static str>,
+    function_id: &'static str,
+}
+
 #[rstest]
 #[case::retrieve(
     ReadFunction::FileRetrieve,
     ReadEntry::Sync,
     Kwarg::Absent,
     Kwarg::Absent,
-    "file_retrieve",
-    Some(GENERATED_ID),
-    ""
+    ExpectedLogger { call_type: "file_retrieve", call_id: Some(GENERATED_ID), function_id: "" }
 )]
 #[case::aretrieve(
     ReadFunction::FileRetrieve,
     ReadEntry::Async,
     Kwarg::Absent,
     Kwarg::Absent,
-    "afile_retrieve",
-    Some(GENERATED_ID),
-    ""
+    ExpectedLogger { call_type: "afile_retrieve", call_id: Some(GENERATED_ID), function_id: "" }
 )]
 #[case::list(
     ReadFunction::FileList,
     ReadEntry::Sync,
     Kwarg::Absent,
     Kwarg::Absent,
-    "file_list",
-    Some(GENERATED_ID),
-    ""
+    ExpectedLogger { call_type: "file_list", call_id: Some(GENERATED_ID), function_id: "" }
 )]
 #[case::alist(
     ReadFunction::FileList,
     ReadEntry::Async,
     Kwarg::Absent,
     Kwarg::Absent,
-    "afile_list",
-    Some(GENERATED_ID),
-    ""
+    ExpectedLogger { call_type: "afile_list", call_id: Some(GENERATED_ID), function_id: "" }
 )]
 #[case::null_call_id_stays_null(
     ReadFunction::FileRetrieve,
     ReadEntry::Sync,
     Kwarg::Null,
     Kwarg::Absent,
-    "file_retrieve",
-    None,
-    ""
+    ExpectedLogger { call_type: "file_retrieve", call_id: None, function_id: "" }
 )]
-#[case::given_call_id(ReadFunction::FileList, ReadEntry::Sync, Kwarg::Text("call-7".to_owned()), Kwarg::Absent, "file_list", Some("call-7"), "")]
+#[case::given_call_id(
+    ReadFunction::FileList,
+    ReadEntry::Sync,
+    Kwarg::Text("call-7".to_owned()),
+    Kwarg::Absent,
+    ExpectedLogger { call_type: "file_list", call_id: Some("call-7"), function_id: "" }
+)]
 #[case::retrieve_null_id_is_empty(
     ReadFunction::FileRetrieve,
     ReadEntry::Sync,
     Kwarg::Absent,
     Kwarg::Null,
-    "file_retrieve",
-    Some(GENERATED_ID),
-    ""
+    ExpectedLogger { call_type: "file_retrieve", call_id: Some(GENERATED_ID), function_id: "" }
 )]
 #[case::list_null_id_is_none_text(
     ReadFunction::FileList,
     ReadEntry::Sync,
     Kwarg::Absent,
     Kwarg::Null,
-    "file_list",
-    Some(GENERATED_ID),
-    "None"
+    ExpectedLogger { call_type: "file_list", call_id: Some(GENERATED_ID), function_id: "None" }
 )]
-#[case::retrieve_given_id(ReadFunction::FileRetrieve, ReadEntry::Sync, Kwarg::Absent, Kwarg::Text("fn-1".to_owned()), "file_retrieve", Some(GENERATED_ID), "fn-1")]
-#[case::list_given_id(ReadFunction::FileList, ReadEntry::Sync, Kwarg::Absent, Kwarg::Text("fn-2".to_owned()), "file_list", Some(GENERATED_ID), "fn-2")]
+#[case::retrieve_given_id(
+    ReadFunction::FileRetrieve,
+    ReadEntry::Sync,
+    Kwarg::Absent,
+    Kwarg::Text("fn-1".to_owned()),
+    ExpectedLogger { call_type: "file_retrieve", call_id: Some(GENERATED_ID), function_id: "fn-1" }
+)]
+#[case::list_given_id(
+    ReadFunction::FileList,
+    ReadEntry::Sync,
+    Kwarg::Absent,
+    Kwarg::Text("fn-2".to_owned()),
+    ExpectedLogger { call_type: "file_list", call_id: Some(GENERATED_ID), function_id: "fn-2" }
+)]
 #[tokio::test]
 async fn read_trusted_context_creates_logger(
     #[case] function: ReadFunction,
     #[case] entry: ReadEntry,
     #[case] litellm_call_id: Kwarg,
     #[case] id: Kwarg,
-    #[case] call_type: &'static str,
-    #[case] expected_call_id: Option<&str>,
-    #[case] function_id: &str,
+    #[case] expected: ExpectedLogger,
 ) {
     let read = reader();
     let mut call = kwargs("anthropic");
@@ -791,13 +814,13 @@ async fn read_trusted_context_creates_logger(
         }
     }
     let created = sent(&read).pop().unwrap().target.generic().created;
-    let expected = NewLogger {
-        call_type,
+    let logger = NewLogger {
+        call_type: expected.call_type,
         start_time: DateTime::<FixedOffset>::parse_from_rfc3339(STARTED).unwrap(),
-        litellm_call_id: expected_call_id.map(str::to_owned),
-        function_id: function_id.to_owned(),
+        litellm_call_id: expected.call_id.map(str::to_owned),
+        function_id: expected.function_id.to_owned(),
     };
-    assert_eq!(created, Some(expected));
+    assert_eq!(created, Some(logger));
 }
 
 #[tokio::test]
