@@ -106,7 +106,43 @@ pub fn validate(
     deployments: &[(&str, JsonObject)],
     records: &TargetRecords<'_>,
 ) -> Result<(), ShadowEvalValidationError> {
-    run_validation(request, deployments, records, AnthropicSettings::default())
+    run_validation(
+        request,
+        deployments,
+        records,
+        AnthropicSettings::default(),
+        unconsulted_manager(),
+    )
+}
+
+fn unconsulted_manager() -> SecretManagerReadState<'static> {
+    SecretManagerReadState {
+        client_exists: false,
+        settings_exist: false,
+        access_mode: SecretAccessMode::ReadOnly,
+        hosted_keys: None,
+    }
+}
+
+pub fn validate_with_hosted_keys(
+    request: &StartShadowEvalRequest,
+    deployments: &[(&str, JsonObject)],
+    records: &TargetRecords<'_>,
+    hosted_keys: &[String],
+) -> Result<(), ShadowEvalValidationError> {
+    let manager = SecretManagerReadState {
+        client_exists: true,
+        settings_exist: true,
+        access_mode: SecretAccessMode::ReadOnly,
+        hosted_keys: Some(hosted_keys),
+    };
+    run_validation(
+        request,
+        deployments,
+        records,
+        AnthropicSettings::default(),
+        manager,
+    )
 }
 
 pub fn validate_with_api_key(
@@ -119,7 +155,13 @@ pub fn validate_with_api_key(
         api_key: Some(SecretString::from(api_key)),
         ..AnthropicSettings::default()
     };
-    run_validation(request, deployments, records, settings)
+    run_validation(
+        request,
+        deployments,
+        records,
+        settings,
+        unconsulted_manager(),
+    )
 }
 
 fn run_validation(
@@ -127,6 +169,7 @@ fn run_validation(
     deployments: &[(&str, JsonObject)],
     records: &TargetRecords<'_>,
     settings: AnthropicSettings,
+    manager: SecretManagerReadState<'_>,
 ) -> Result<(), ShadowEvalValidationError> {
     let mut bundled = BundledCatalog::default();
     let catalog = bundled.get();
@@ -169,12 +212,7 @@ fn run_validation(
             anthropic_key: None,
             api_key: None,
             settings: &settings,
-            secret_state: SecretManagerReadState {
-                client_exists: false,
-                settings_exist: false,
-                access_mode: SecretAccessMode::ReadOnly,
-                hosted_keys: None,
-            },
+            secret_state: manager,
         },
         records: TargetRecords {
             keys: records.keys,

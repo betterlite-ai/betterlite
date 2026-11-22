@@ -1,15 +1,22 @@
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use indexmap::IndexMap;
 use rstest::rstest;
 
+use crate::judge_targets::call::JudgeCall;
+use crate::judge_targets::router::JudgeRouter as _;
+use crate::model_visibility::testing::{Row, Snapshot};
 use crate::shadow_eval_validation::access::{require_admin_viewer, require_admin_writer};
 use crate::shadow_eval_validation::error::AccessError;
 use crate::shadow_eval_validation::request::{
     DEFAULT_SHADOW_EVAL_JUDGE_MODEL, ShadowEvalDirection, parse_shadow_eval_request,
 };
+use crate::shadow_eval_validation::router_view::ShadowEvalRouter;
 use crate::shadow_eval_validation::start::{TargetKey, TargetRecords};
 
 use super::support::{
-    ROUTER, TIER_MODEL, auth, deployments, params, parse, records, router_params, validate,
-    validate_with_api_key, validation_field,
+    JUDGE, JUDGE_MODEL, ROUTER, TIER, TIER_MODEL, auth, deployments, params, parse, records,
+    router_params, validate, validate_with_api_key, validate_with_hosted_keys, validation_field,
 };
 
 #[test]
@@ -266,4 +273,85 @@ fn accepts_an_sdk_judge_once_a_key_is_configured() {
         r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"anthropic/claude-sonnet-5","shadow_percentage":50}"#,
     );
     validate_with_api_key(&parsed, &rows, &records(), "sk-ant-test").unwrap();
+}
+
+fn tiered_deployments() -> Vec<(&'static str, JsonObject)> {
+    let tiers = JsonObject::from([("SIMPLE".to_owned(), Json::Text(TIER.to_owned()))]);
+    let compaction = JsonObject::from([("model".to_owned(), Json::Text(JUDGE.to_owned()))]);
+    let config = JsonObject::from([
+        ("tiers".to_owned(), Json::Object(tiers)),
+        ("context_compaction".to_owned(), Json::Object(compaction)),
+    ]);
+    let mut router = router_params("other-model");
+    router.insert("complexity_router_config".to_owned(), Json::Object(config));
+    vec![
+        (JUDGE, params(JUDGE_MODEL)),
+        (TIER, params(TIER_MODEL)),
+        (ROUTER, router),
+        ("other-model", params("openai/gpt-4o")),
+    ]
+}
+
+#[rstest]
+#[case(TIER, Some("tier model 'tier-model'"))]
+#[case("other-model", Some("default model 'other-model'"))]
+#[case(JUDGE, None)]
+fn only_tier_and_default_arms_collide_with_the_judge(
+    #[case] judge: &str,
+    #[case] collision: Option<&str>,
+) {
+    let body = format!(
+        r#"{{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"{judge}","shadow_percentage":50}}"#
+    );
+    let result = validate(&parse(&body), &tiered_deployments(), &records());
+    match collision {
+        Some(arm) => assert!(result.unwrap_err().to_string().contains(arm)),
+        None => result.unwrap(),
+    }
+}
+
+#[tokio::test]
+async fn the_validation_router_refuses_to_dispatch_a_judge_call() {
+    let rows: Vec<Row<'_>> = Vec::new();
+    let fixture = Snapshot::build(&rows, &JsonObject::new()).unwrap();
+    let provider = |_model: &str| -> Option<String> { None };
+    let router = ShadowEvalRouter {
+        catalog: &fixture.catalog,
+        model_group_alias: &fixture.aliases,
+        routing_groups: &fixture.groups,
+        inferred_provider: &provider,
+    };
+    let call = JudgeCall {
+        model: "judge-model".to_owned(),
+        messages: Vec::new(),
+        num_retries: 0,
+        fallbacks: None,
+        drop_params: false,
+        params: IndexMap::new(),
+    };
+    let error = router.acompletion(call).await.unwrap_err();
+    assert_eq!(
+        error.message,
+        "start-time validation resolves models without dispatching a judge call"
+    );
+}
+
+#[rstest]
+#[case("ANTHROPIC_API_KEY", true)]
+#[case("os.environ/ANTHROPIC_AUTH_TOKEN", true)]
+#[case("OPENAI_API_KEY", false)]
+fn a_hosted_manager_holding_either_anthropic_secret_is_consulted(
+    #[case] hosted: &str,
+    #[case] accepted: bool,
+) {
+    let rows = vec![
+        (ROUTER, router_params("other-model")),
+        ("other-model", params("openai/gpt-4o")),
+    ];
+    let parsed = parse(
+        r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"anthropic/claude-sonnet-5","shadow_percentage":50}"#,
+    );
+    let keys = [hosted.to_owned()];
+    let result = validate_with_hosted_keys(&parsed, &rows, &records(), &keys);
+    assert_eq!(result.is_ok(), accepted);
 }
