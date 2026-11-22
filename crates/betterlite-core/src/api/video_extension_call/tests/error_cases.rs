@@ -364,6 +364,27 @@ fn the_async_entry_uses_the_callers_provider() {
     assert_eq!(rig.handler.calls().len(), 1);
 }
 
+fn a_missing_caller_config_is_unsupported() {
+    let rig = Rig::new(Reply::Done(video("video_1")), &[]);
+    let kwargs = base_kwargs();
+    let request = call("video_1", "extend it", "8", &kwargs);
+    let deps = rig.deps(None);
+    let Err(failure) = video_extension(&deps, &request) else {
+        panic!("the caller built no openai config");
+    };
+    assert!(matches!(
+        failure.error,
+        VideoExtensionCallError::ProviderConfigMissing { .. }
+    ));
+    let context = connection(&failure.class);
+    assert_eq!(
+        context.message,
+        "APIConnectionError: OpenAIException - video extension is not supported for openai"
+    );
+    assert_eq!(rig.configs.asked(), vec![VideoConfigTag::OpenAi]);
+    assert_eq!(rig.handler.calls().len(), 0);
+}
+
 #[rstest]
 #[case::a_missing_logging_object_fails(a_missing_logging_object_fails)]
 #[case::a_null_logging_object_fails(a_null_logging_object_fails)]
@@ -373,6 +394,7 @@ fn the_async_entry_uses_the_callers_provider() {
 #[case::an_unsupported_provider_keeps_litellms_message(
     an_unsupported_provider_keeps_litellms_message
 )]
+#[case::a_missing_caller_config_is_unsupported(a_missing_caller_config_is_unsupported)]
 #[case::edenai_reports_the_selection_message(edenai_reports_the_selection_message)]
 #[case::a_handler_provider_error_keeps_its_status(a_handler_provider_error_keeps_its_status)]
 #[case::a_handler_field_type_error_is_a_value_error(a_handler_field_type_error_is_a_value_error)]

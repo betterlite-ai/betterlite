@@ -127,6 +127,14 @@ fn logging_update_carries_the_request_params() {
             "seconds".to_owned()
         ]
     );
+    assert_eq!(
+        state.litellm_params.get("video_id"),
+        Some(&Json::Text("video_1".to_owned()))
+    );
+    assert_eq!(
+        state.litellm_params.get("prompt"),
+        Some(&Json::Text("extend it".to_owned()))
+    );
 }
 
 fn the_logging_params_start_with_the_call_id() {
@@ -160,6 +168,12 @@ fn the_logging_params_start_with_the_call_id() {
     assert_eq!(
         state.litellm_params.get("seconds"),
         Some(&Json::Text("8".to_owned()))
+    );
+    let recorded = only_call(&rig);
+    assert_eq!(
+        recorded.litellm_params.get("litellm_call_id"),
+        Some(&Json::Text("call-9".to_owned())),
+        "the call id is read, not removed"
     );
 }
 
@@ -309,6 +323,16 @@ fn a_null_mock_response_is_not_a_mock() {
     );
 }
 
+fn an_explicit_timeout_reaches_the_handler() {
+    let rig = Rig::new(Reply::Done(video("video_1")), &[VideoConfigTag::OpenAi]);
+    let kwargs = base_kwargs();
+    let mut request = call("video_1", "extend it", "8", &kwargs);
+    request.timeout = Some(Duration::from_secs(42));
+    let deps = rig.deps(None);
+    let _answer = video_extension(&deps, &request).expect("the call runs");
+    assert_eq!(only_call(&rig).timeout, Some(Duration::from_secs(42)));
+}
+
 #[rstest]
 #[case::mock_string_answers_before_the_provider(mock_string_answers_before_the_provider)]
 #[case::mock_map_answers_before_the_provider(mock_map_answers_before_the_provider)]
@@ -321,6 +345,7 @@ fn a_null_mock_response_is_not_a_mock() {
 #[case::seconds_reach_the_handler_unchanged(seconds_reach_the_handler_unchanged)]
 #[case::handler_receives_the_load_bearing_arguments(handler_receives_the_load_bearing_arguments)]
 #[case::zero_timeout_falls_to_the_request_timeout(zero_timeout_falls_to_the_request_timeout)]
+#[case::an_explicit_timeout_reaches_the_handler(an_explicit_timeout_reaches_the_handler)]
 #[case::a_string_async_call_stays_sync(a_string_async_call_stays_sync)]
 #[case::the_number_one_async_call_stays_sync(the_number_one_async_call_stays_sync)]
 #[case::an_async_call_answers_with_the_pending_future(
