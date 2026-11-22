@@ -132,10 +132,10 @@ async fn make_agents_public(
 }
 
 // both public-discovery routes answer 500 before any lookup when prisma_client is None, then check user_role inline
-fn public_access(
-    state: &AgentAdminState,
+fn public_access<'state>(
+    state: &'state AgentAdminState,
     admin: &AdminCaller,
-) -> Result<&dyn AgentRowLookup, Refusal> {
+) -> Result<&'state dyn AgentRowLookup, Refusal> {
     let Some(database) = state.database.as_deref() else {
         return Err(Refusal::Caller(db_not_connected()));
     };
