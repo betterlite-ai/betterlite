@@ -78,6 +78,8 @@ description: >-
   LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS so the beta matrix never leaves the machine.
 scope:
   paths:
+  - "crates/betterlite-server/src/auth/current_spend/tests.rs"
+  - "crates/betterlite-server/src"
   - crates/betterlite-server/src/routes/chat/tests/unknown_model_cases.rs
   - crates/betterlite-server/src/routes/chat/streaming/recovery/tests.rs
   - crates/betterlite-server/src/routes/completions/tests.rs
