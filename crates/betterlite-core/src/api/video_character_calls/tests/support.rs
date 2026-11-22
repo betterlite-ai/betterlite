@@ -70,14 +70,14 @@ fn extra_map() -> IndexMap<String, Json> {
     ])
 }
 
-// the call with every keyword a case cares about
-pub(crate) fn create_call() -> CreateCharacterCall {
+// both fixture calls: the create one adds api_base to the keyword entries the get one carries
+fn calls() -> (CreateCharacterCall, GetCharacterCall) {
     let mut extra = extra_map();
     extra.insert(
         "api_base".to_owned(),
         Json::Text("https://api.openai.com/v1".to_owned()),
     );
-    CreateCharacterCall {
+    let create = CreateCharacterCall {
         name: "Wren".to_owned(),
         video: video(),
         timeout: Some(DEFAULT_TIMEOUT_SECONDS),
@@ -89,11 +89,8 @@ pub(crate) fn create_call() -> CreateCharacterCall {
         litellm_call_id: Some(CALL_ID.to_owned()),
         extra,
         is_async: false,
-    }
-}
-
-pub(crate) fn get_call() -> GetCharacterCall {
-    GetCharacterCall {
+    };
+    let get = GetCharacterCall {
         character_id: "char-1".to_owned(),
         timeout: Some(DEFAULT_TIMEOUT_SECONDS),
         custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
@@ -104,7 +101,17 @@ pub(crate) fn get_call() -> GetCharacterCall {
         litellm_call_id: Some(CALL_ID.to_owned()),
         extra: extra_map(),
         is_async: false,
-    }
+    };
+    (create, get)
+}
+
+// the call with every keyword a case cares about
+pub(crate) fn create_call() -> CreateCharacterCall {
+    calls().0
+}
+
+pub(crate) fn get_call() -> GetCharacterCall {
+    calls().1
 }
 
 // what the fake handler answers with
