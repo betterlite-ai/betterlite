@@ -75,7 +75,7 @@ pub(super) fn build_settings(input: &Input) -> Result<Settings, OperationError> 
     let plan_mode_min_tier = input.plan_mode_min_tier.clone();
     let plan_mode_patterns = input.plan_mode_patterns.clone();
     let housekeeping_patterns = input.housekeeping_patterns.clone();
-    let reminder_markers = reminder_markers(input);
+    let configured_markers = reminder_markers(input);
     let classifier_type = classifier(input);
     Ok(Settings {
         keyword_tier_rules,
@@ -90,7 +90,7 @@ pub(super) fn build_settings(input: &Input) -> Result<Settings, OperationError> 
         plan_mode_min_tier,
         plan_mode_patterns,
         housekeeping_patterns,
-        reminder_markers,
+        reminder_markers: configured_markers,
         classifier_type,
     })
 }

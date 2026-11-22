@@ -117,8 +117,8 @@ where
     let tier = index
         .tier_override(request.user_message, request.caller)
         .await;
-    Ok(tier.map(|tier| KeywordOverride {
-        tier,
+    Ok(tier.map(|decided| KeywordOverride {
+        tier: decided,
         matched_keyword: None,
     }))
 }

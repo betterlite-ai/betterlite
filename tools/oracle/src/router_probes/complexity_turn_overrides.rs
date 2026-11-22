@@ -211,9 +211,9 @@ fn fields(prepared: &Prepared, found: &TurnOverrides) -> Result<Fields, Operatio
             .housekeeping_tier
             .as_ref()
             .map(|tier| tier.name().to_owned()),
-        keyword_override: found.keyword_override.as_ref().map(|found| OverrideOut {
-            tier: found.tier.name().to_owned(),
-            matched_keyword: found.matched_keyword.clone(),
+        keyword_override: found.keyword_override.as_ref().map(|matched| OverrideOut {
+            tier: matched.tier.name().to_owned(),
+            matched_keyword: matched.matched_keyword.clone(),
         }),
         embedding_calls: prepared.embedder.calls(),
     })

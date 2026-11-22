@@ -50,10 +50,10 @@ pub(super) struct Fields {
 
 // an absent key is None and a non-number is an error, before any key-specific conversion
 fn numeric(value: Option<&Json>) -> Result<Option<&Number>, OperationError> {
-    let Some(value) = value else {
+    let Some(declared) = value else {
         return Ok(None);
     };
-    if let Json::Number(found) = value {
+    if let Json::Number(found) = declared {
         return Ok(Some(found));
     }
     Err(invalid("the value is not a number"))

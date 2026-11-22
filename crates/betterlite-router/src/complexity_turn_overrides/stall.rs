@@ -156,13 +156,13 @@ fn tool_call_event(call: &Json, events: &mut Vec<ToolCallEvent>) {
 // detect_stalled_task: the newest call repeats, or errors, repeat_threshold times across the window
 #[must_use]
 pub fn detect_stalled_task(messages: Option<&[Json]>, window: u32, repeat_threshold: u32) -> bool {
-    let Some(messages) = messages else {
+    let Some(conversation) = messages else {
         return false;
     };
     if repeat_threshold == 0 {
         return false;
     }
-    let events = events_newest_first(messages);
+    let events = events_newest_first(conversation);
     let limit = usize::try_from(window).unwrap_or(usize::MAX);
     let threshold = usize::try_from(repeat_threshold).unwrap_or(usize::MAX);
     let recent: Vec<&ToolCallEvent> = events.iter().take(limit).collect();

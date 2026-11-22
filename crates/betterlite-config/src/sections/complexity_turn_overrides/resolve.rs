@@ -157,10 +157,10 @@ fn normalize_rule(raw: RawKeywordTierRule, path: &str) -> Result<KeywordTierRule
     if cleaned.is_empty() {
         return Err(invalid(&format!("{path}.keywords")));
     }
-    let Some(tier) = raw.tier else {
+    let Some(decorated) = raw.tier else {
         return Err(invalid(&format!("{path}.tier")));
     };
-    let tier = tier.trim();
+    let tier = decorated.trim();
     if tier.is_empty() {
         return Err(invalid(&format!("{path}.tier")));
     }
