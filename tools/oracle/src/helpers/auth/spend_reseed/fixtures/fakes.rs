@@ -112,16 +112,13 @@ impl FakeCache {
     }
 
     pub(crate) fn memory_json(&self) -> Value {
-        let Some(amount) = self
+        let stored = self
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .memory
-            .and_then(Decimal::from_f64)
-        else {
-            return Value::Null;
-        };
-        amount_json(amount)
+            .and_then(Decimal::from_f64);
+        stored.map_or(Value::Null, amount_json)
     }
 
     pub(crate) fn sets_json(&self) -> Value {
