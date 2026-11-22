@@ -76,7 +76,7 @@ struct ScriptedTable {
 }
 
 impl ScriptedTable {
-    fn new(rows: Vec<SpendLogRow>) -> Self {
+    const fn new(rows: Vec<SpendLogRow>) -> Self {
         Self {
             rows: Mutex::new(rows),
         }
@@ -89,7 +89,7 @@ impl ScriptedTable {
             .clone()
     }
 
-    fn insert(&self, rows: &[SpendLogRow]) -> Result<usize, SpendLogStoreError> {
+    fn insert(&self, rows: &[SpendLogRow]) -> usize {
         let mut stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
         let mut inserted = 0;
         for row in rows {
@@ -105,18 +105,18 @@ impl ScriptedTable {
             stored.push(row.clone());
             inserted = inserted.saturating_add(1);
         }
-        Ok(inserted)
+        inserted
     }
 
-    fn find(&self, request_id: &str) -> Result<Option<BatchChargeRow>, SpendLogStoreError> {
+    fn find(&self, request_id: &str) -> Option<BatchChargeRow> {
         let stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(stored
+        stored
             .iter()
             .find(|candidate| text_field(candidate, "request_id") == Some(request_id))
-            .map(charge_row))
+            .map(charge_row)
     }
 
-    fn take(&self, data: &SpendLogRow, request_id: &str) -> Result<usize, SpendLogStoreError> {
+    fn take(&self, data: &SpendLogRow, request_id: &str) -> usize {
         let mut stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
         let mut updated = 0;
         for entry in stored
@@ -128,7 +128,7 @@ impl ScriptedTable {
             }
             updated = updated.saturating_add(1);
         }
-        Ok(updated)
+        updated
     }
 }
 
@@ -139,7 +139,7 @@ impl SpendLogsWriter for ScriptedTable {
         &'call self,
         rows: &'call [SpendLogRow],
     ) -> SpendLogFuture<'call, Result<usize, SpendLogStoreError>> {
-        Box::pin(async move { self.insert(rows) })
+        Box::pin(async move { Ok(self.insert(rows)) })
     }
 }
 
@@ -148,7 +148,7 @@ impl BatchClaimTable for ScriptedTable {
         &'call self,
         request_id: &'call str,
     ) -> SpendLogFuture<'call, Result<Option<BatchChargeRow>, SpendLogStoreError>> {
-        Box::pin(async move { self.find(request_id) })
+        Box::pin(async move { Ok(self.find(request_id)) })
     }
 
     fn take_over<'call>(
@@ -156,7 +156,7 @@ impl BatchClaimTable for ScriptedTable {
         data: &'call SpendLogRow,
         request_id: &'call str,
     ) -> SpendLogFuture<'call, Result<usize, SpendLogStoreError>> {
-        Box::pin(async move { self.take(data, request_id) })
+        Box::pin(async move { Ok(self.take(data, request_id)) })
     }
 }
 
