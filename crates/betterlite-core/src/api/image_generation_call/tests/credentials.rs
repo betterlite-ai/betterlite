@@ -140,11 +140,13 @@ fn azure_ad_tokens() {
         (Json::Number(Number::from(5_u64)), "env-token"),
     ] {
         let mut tokenized = call(Some("dep"), Some("azure"));
-        tokenized.kwargs = kwargs(vec![("azure_ad_token", value)]);
+        tokenized.kwargs = kwargs(vec![("azure_ad_token", value.clone())]);
         case.run(tokenized).0.unwrap();
         let sends = ops.sends();
         let sent = sends.last().expect("the call was sent");
         assert_eq!(sent.azure_ad_token.as_deref(), Some(expected));
+        // get_litellm_params copies the kwarg into litellm_params_dict whatever its type
+        assert_eq!(sent.litellm("azure_ad_token"), Some(&value));
         assert!(sent.option("azure_ad_token").is_none());
         assert!(sent.option("extra_body").is_none());
         assert!(sent.api_key.is_none());

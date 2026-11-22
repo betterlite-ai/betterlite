@@ -8,6 +8,7 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use serde_json::Number;
 
+use super::super::error::{unknown_provider, unsupported_params};
 use super::super::plan::CatalogIdentity;
 use super::*;
 
@@ -693,6 +694,21 @@ fn unsupported_params_keep_their_prefix() {
         other => panic!("expected the unsupported params error, got {other:?}"),
     }
     assert!(ops.sends().is_empty());
+}
+
+// str(e) of the carried exception is the message the caller reads
+#[test]
+fn message_returns_the_carried_text() {
+    let unsupported = unsupported_params("imageConfig is not supported");
+    assert_eq!(
+        unsupported.message(),
+        "litellm.UnsupportedParamsError: imageConfig is not supported"
+    );
+    let unknown = unknown_provider(Some("mystery"), "nowhere");
+    assert_eq!(
+        unknown.message(),
+        "Unmapped LLM provider for this endpoint. You passed model=mystery, custom_llm_provider=nowhere. Check supported provider and route: https://docs.litellm.ai/docs/providers"
+    );
 }
 
 #[test]
