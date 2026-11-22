@@ -3,6 +3,7 @@ use std::time::Duration;
 use betterlite_config::sections::request_scheduler::Settings;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
+use tokio::time::sleep;
 
 use crate::request_scheduler::error::SchedulerError;
 use crate::request_scheduler::flow::Priority;
@@ -210,7 +211,7 @@ async fn a_waiting_request_counts_its_polls() {
     let deadline = plan(1.0);
     let scheduled = service.schedule(&late, &call, &deadline);
     let release = async {
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        sleep(Duration::from_millis(50)).await;
         service
             .remove_request(&head)
             .await

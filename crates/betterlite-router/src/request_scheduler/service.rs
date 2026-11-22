@@ -1,6 +1,6 @@
 use super::error::SchedulerError;
 use super::flow::FlowItem;
-use super::queue;
+use super::{queue, store};
 use crate::routing_state_store::RoutingStateStore;
 use crate::routing_state_store::error::Observed;
 use crate::routing_value_store::{RoutingValueStore, SchedulerTuple};
@@ -54,7 +54,7 @@ impl RequestScheduler {
         Duration::ZERO
     }
     #[must_use]
-    pub fn priority(&self, requested: Option<u8>) -> Option<u8> {
+    pub const fn priority(&self, requested: Option<u8>) -> Option<u8> {
         if let Some(priority) = requested {
             return Some(priority);
         }
@@ -75,7 +75,7 @@ impl RequestScheduler {
             });
         }
         let model = item.model.as_str();
-        let changed = Box::pin(self.change(model, |members| {
+        let changed = Box::pin(store::change(self, model, |members| {
             if members.len() >= queue::MAX_PENDING_REQUESTS {
                 return Err(SchedulerError::QueueFull {
                     model: model.to_owned(),
@@ -97,7 +97,7 @@ impl RequestScheduler {
         })
     }
     pub async fn remove_request(&self, item: &FlowItem) -> Result<Observed<()>, SchedulerError> {
-        let changed = Box::pin(self.change(&item.model, |members| {
+        let changed = Box::pin(store::change(self, &item.model, |members| {
             Ok(queue::without(&members, &item.request_id))
         }))
         .await?;
@@ -111,7 +111,7 @@ impl RequestScheduler {
         &self,
         model: &str,
     ) -> Result<Observed<Vec<SchedulerTuple>>, SchedulerError> {
-        let members = self.queue_members(model).await?;
+        let members = store::queue_members(self, model).await?;
         Ok(Observed {
             value: queue::scheduled(&members.value),
             warning: members.warning,
@@ -123,7 +123,7 @@ impl RequestScheduler {
         request_id: &str,
         model: &str,
     ) -> Result<Observed<bool>, SchedulerError> {
-        let queued = self.queue_members(model).await?;
+        let queued = store::queue_members(self, model).await?;
         match queue::head(&queued.value) {
             Some(head) => Ok(Observed {
                 value: head.request_id == request_id,
@@ -141,7 +141,7 @@ impl RequestScheduler {
         model: &str,
         healthy_deployments: usize,
     ) -> Result<Observed<bool>, SchedulerError> {
-        let queued = self.queue_members(model).await?;
+        let queued = store::queue_members(self, model).await?;
         if queued.value.is_empty() {
             return Err(SchedulerError::EmptyQueue {
                 model: model.to_owned(),
@@ -162,9 +162,10 @@ impl RequestScheduler {
                 warning: queued.warning,
             });
         }
-        let removed =
-            Box::pin(self.change(model, |members| Ok(queue::without(&members, request_id))))
-                .await?;
+        let removed = Box::pin(store::change(self, model, |members| {
+            Ok(queue::without(&members, request_id))
+        }))
+        .await?;
         Ok(Observed {
             value: true,
             warning: removed.warning.or(queued.warning),

@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use betterlite_config::sections::request_scheduler::Settings;
 use betterlite_error::envelope::WireField;
+use betterlite_error::error::ErrorClass;
 use rstest::rstest;
+use tokio::time::sleep;
 
 use crate::request_scheduler::error::SchedulerError;
 use crate::request_scheduler::flow::Priority;
@@ -115,8 +117,8 @@ fn an_injected_request_id_past_128_bytes_is_refused() {
     );
     let error = service.next_request_id().expect_err("129 bytes do not fit");
     assert!(matches!(
-        error,
-        SchedulerError::InvalidRequestId { ref id } if id.len() == 129
+        &error,
+        SchedulerError::InvalidRequestId { id } if id.len() == 129
     ));
     assert_eq!(error.status_code(), Some(400));
 }
@@ -139,10 +141,10 @@ async fn a_waiting_request_times_out_at_the_deadline() {
         .await
         .expect_err("the deadline passes before the head does");
     assert!(matches!(
-        error,
+        &error,
         SchedulerError::TimedOut {
-            ref model,
-            ref request_id,
+            model,
+            request_id,
         } if model == MODEL && request_id == "waiting"
     ));
     assert_eq!(error.status_code(), Some(408));
@@ -191,10 +193,10 @@ async fn a_cancelled_request_leaves_the_queue_before_the_wait() {
         .await
         .expect_err("the caller went away");
     assert!(matches!(
-        error,
+        &error,
         SchedulerError::Cancelled {
-            ref request_id,
-            ref model,
+            request_id,
+            model,
         } if request_id == "cancelled" && model == MODEL
     ));
     assert_eq!(error.status_code(), None);
@@ -256,22 +258,15 @@ async fn a_provider_failure_keeps_the_status_code_and_the_stamped_priority() {
     assert_eq!(error.status_code(), Some(429));
     assert_eq!(error.code(), Some("429".to_owned()));
     assert_eq!(error.priority(), Some(Priority::Low.value()));
-    match error {
-        SchedulerError::Provider {
-            error: cause,
-            priority,
-        } => {
-            let metadata = cause.metadata();
-            assert_eq!(metadata.status_code, 429);
-            assert_eq!(
-                metadata.error_type,
-                WireField::Text("invalid_request_error".to_owned())
-            );
-            assert_eq!(metadata.param, WireField::Text("model".to_owned()));
-            assert_eq!(priority, Priority::Low.value());
-        }
-        other => panic!("expected a provider failure, got {other:?}"),
-    }
+    let SchedulerError::Provider {
+        error: cause,
+        priority,
+    } = &error
+    else {
+        panic!("expected a provider failure, got {error:?}");
+    };
+    assert_provider_failure(cause);
+    assert_eq!(*priority, Priority::Low.value());
     assert_eq!(call.calls(), 1);
     assert!(
         service
@@ -281,6 +276,17 @@ async fn a_provider_failure_keeps_the_status_code_and_the_stamped_priority() {
             .value
             .is_empty()
     );
+}
+
+// the API error class keeps the provider's status and the wire fields the pin reports
+fn assert_provider_failure(cause: &ErrorClass) {
+    let metadata = cause.metadata();
+    assert_eq!(metadata.status_code, 429);
+    assert_eq!(
+        metadata.error_type,
+        WireField::Text("invalid_request_error".to_owned())
+    );
+    assert_eq!(metadata.param, WireField::Text("model".to_owned()));
 }
 
 // every compare lost to another writer: the update stops at the attempt bound and names the model
@@ -430,19 +436,14 @@ async fn a_timed_out_request_answers_its_timeout_when_the_cleanup_fails() {
         .expect("the head queues");
     let call = ScriptedCall::answered(0);
     let flipping = Arc::clone(&broken);
-    let flip = tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(10)).await;
+    let flip = async move {
+        sleep(Duration::from_millis(10)).await;
         flipping.store(true, Ordering::SeqCst);
-    });
-    let error = service
-        .schedule(
-            &item(Priority::Low.value(), "late", MODEL),
-            &call,
-            &plan(0.5),
-        )
-        .await
-        .expect_err("the deadline expires");
-    flip.await.expect("the clock flips");
+    };
+    let late = item(Priority::Low.value(), "late", MODEL);
+    let deadline = plan(0.5);
+    let (scheduled, ()) = tokio::join!(service.schedule(&late, &call, &deadline), flip);
+    let error = scheduled.expect_err("the deadline expires");
     assert!(matches!(error, SchedulerError::TimedOut { .. }));
     assert_eq!(call.calls(), 0);
 }
