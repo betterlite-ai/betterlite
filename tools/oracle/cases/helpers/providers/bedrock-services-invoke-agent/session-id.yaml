@@ -1,0 +1,46 @@
+kind: helper
+name: session-id
+call:
+  bedrock_services_invoke_agent:
+    scenario: session_id
+    runs:
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: null}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: ''}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: session-1}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: 'a b/c?d'}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: ' '}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: '..'}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: '.'}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: '123e4567-e89b-12d3-a456-426614174111'}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: '~-._'}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        optional_params: {sessionID: 'séssion é'}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: not-an-agent
+        optional_params: {sessionID: '..'}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - model: agent/L1RT58GYRW/MFPSBCXYTW
+        environment: {runtime_endpoint: 'https://env.example', region_name: eu-west-1}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+env: {}
+compare: {ignore: []}

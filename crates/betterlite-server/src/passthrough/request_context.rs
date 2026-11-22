@@ -13,6 +13,7 @@ use thiserror::Error;
 use self::metadata::{client_metadata, stamp_internal_keys};
 use super::PassthroughLogPayload;
 use super::metadata_tags::update_metadata_tags;
+use crate::credential_headers::{CREDENTIAL_HEADER_NAMES, REDACTED_VALUE};
 use crate::failure_hook::lift::PASS_THROUGH_CALL_TYPE;
 
 mod metadata;
@@ -221,12 +222,15 @@ fn request_headers_json(headers: &HeaderMap) -> Json {
         let Ok(text) = value.to_str() else {
             continue;
         };
+        let credential = CREDENTIAL_HEADER_NAMES.contains(&name.as_str());
         match object.entry(name.as_str().to_owned()) {
             Entry::Vacant(entry) => {
-                entry.insert(Json::Text(text.to_owned()));
+                let logged = if credential { REDACTED_VALUE } else { text };
+                entry.insert(Json::Text(logged.to_owned()));
             }
             Entry::Occupied(mut entry) => {
-                if let Json::Text(joined) = entry.get_mut() {
+                // a repeated credential header stays one redacted value, not a joined list of them
+                if !credential && let Json::Text(joined) = entry.get_mut() {
                     joined.push_str(", ");
                     joined.push_str(text);
                 }

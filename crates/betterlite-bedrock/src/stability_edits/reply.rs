@@ -140,11 +140,8 @@ where
             url: None,
         })
         .collect();
-    let record = lookup
-        .price_record(model)
-        .ok_or_else(|| StabilityEditError::ModelInfo {
-            model: model.to_owned(),
-        })?;
+    // an unmapped model's missing record reads like one without the key: the image stays, the price is zero
+    let record = lookup.price_record(model).unwrap_or_default();
     let mut additional_headers = AdditionalHeaders::new();
     if let Some(price) = cost_header(&record)? {
         additional_headers.insert(COST_HEADER.to_owned(), price);
