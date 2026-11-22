@@ -34,6 +34,7 @@ const EVENTS: [&str; 6] = [
 
 #[derive(Deserialize)]
 struct TextReply {
+    id: String,
     object: String,
     model: String,
     choices: Vec<TextChoice>,
@@ -123,6 +124,18 @@ async fn buffered_text() {
         Some("application/json")
     );
     let reply: TextReply = serde_json::from_str(&answered.raw).expect("text answer");
+    assert_reply(&reply);
+    // the text conversion keeps the usage dump's null extras as LiteLLM writes them
+    assert!(
+        answered.raw.contains(r#""iterations":null"#),
+        "{}",
+        answered.raw
+    );
+    assert_prompt(&answered.sent);
+}
+
+fn assert_reply(reply: &TextReply) {
+    assert_eq!(reply.id, "msg_bridge");
     assert_eq!(reply.object, "text_completion");
     assert_eq!(reply.model, "chat-model");
     assert_eq!(
@@ -144,21 +157,14 @@ async fn buffered_text() {
             .cache_creation_token_details
             .is_none()
     );
-    // the text conversion keeps the usage dump's null extras as LiteLLM writes them
-    assert!(
-        answered.raw.contains(r#""iterations":null"#),
-        "{}",
-        answered.raw
-    );
-    assert!(
-        answered.sent.starts_with("POST /v1/messages"),
-        "{}",
-        answered.sent
-    );
+}
+
+fn assert_prompt(sent: &str) {
+    assert!(sent.starts_with("POST /v1/messages"), "{}", sent);
     let prompted =
         r#""messages":[{"role":"user","content":[{"type":"text","text":"Once upon a time"}]}]"#;
-    assert!(answered.sent.contains(prompted), "{}", answered.sent);
-    assert!(!answered.sent.contains(r#""stream""#), "{}", answered.sent);
+    assert!(sent.contains(prompted), "{}", sent);
+    assert!(!sent.contains(r#""stream""#), "{}", sent);
 }
 
 async fn stream_text() {
