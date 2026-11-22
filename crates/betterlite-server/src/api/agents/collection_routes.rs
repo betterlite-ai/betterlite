@@ -52,12 +52,12 @@ where
     Router::new()
         .route(
             AGENTS_PATH,
-            post(handlers::create_agent::<K>).get(handlers::list_agents::<K>),
+            post(handlers::agent::<K>).get(handlers::agent::<K>),
         )
         .route(
             AGENT_PATH,
-            get(handlers::get_agent::<K>).delete(handlers::delete_agent::<K>),
+            get(handlers::agent::<K>).delete(handlers::agent::<K>),
         )
-        .route(AGENT_VERSIONS_PATH, get(handlers::list_agent_versions::<K>))
+        .route(AGENT_VERSIONS_PATH, get(handlers::agent::<K>))
         .with_state(state)
 }
