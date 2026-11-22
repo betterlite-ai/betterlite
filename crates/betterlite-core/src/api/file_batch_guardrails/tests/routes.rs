@@ -45,6 +45,7 @@ use crate::routes::CallType;
     "http://user[x]@v1.fe/v1/embeddings",
     CallType::Aembedding
 )]
+#[case::uppercase_future_version("https://[V1.x]/v1/chat/completions", CallType::Acompletion)]
 fn a_supported_route_names_its_call_type(#[case] url: &str, #[case] expected: CallType) {
     assert_eq!(call_type_from_url(&routes(), url), Some(expected));
 }
@@ -67,7 +68,6 @@ fn a_supported_route_names_its_call_type(#[case] url: &str, #[case] expected: Ca
 #[case::future_bad_version("https://[vg.x]/v1/chat/completions")]
 #[case::future_without_address("https://[v1.]/v1/chat/completions")]
 #[case::future_without_point("https://[v1]/v1/chat/completions")]
-#[case::uppercase_future_version("https://[V1.x]/v1/chat/completions")]
 #[case::bracket_only_in_user("https://[a]@host/v1/chat/completions")]
 #[case::nfkc_delimiter("https://a\u{2100}b.example/v1/chat/completions")]
 fn an_unscannable_or_unreadable_url_resolves_nothing(#[case] url: &str) {

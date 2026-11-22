@@ -229,7 +229,7 @@ fn check_netloc(netloc: &str) -> Result<(), UrlError> {
 
 // urllib.parse's ipaddress check also accepts an IPvFuture literal and an IPv6 scope id.
 fn is_bracketed_host(host: &str) -> bool {
-    if let Some(future) = host.strip_prefix('v') {
+    if let Some(future) = host.strip_prefix(['v', 'V']) {
         let Some((hex, suffix)) = future.split_once('.') else {
             return false;
         };

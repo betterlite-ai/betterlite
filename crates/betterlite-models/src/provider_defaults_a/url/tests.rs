@@ -248,8 +248,14 @@ fn urlsplit_accepts_userinfo_brackets_over_a_bracketed_literal_host(#[case] sour
     );
 }
 
+#[test]
+fn urlsplit_reads_an_uppercase_ipvfuture_literal() {
+    let parsed = urlsplit("https://[V1.x]/api").unwrap();
+    assert_eq!(parsed.netloc, "[V1.x]");
+    assert_eq!(parsed.path, "/api");
+}
+
 #[rstest]
-#[case::uppercase_ipvfuture_version("https://[V1.x]/api")]
 #[case::ipv4_in_brackets("https://[127.0.0.1]/api")]
 fn urlsplit_rejects_a_bracketed_host_ipaddress_refuses(#[case] source: &str) {
     assert_eq!(urlsplit(source).unwrap_err(), UrlError::InvalidIpv6);
