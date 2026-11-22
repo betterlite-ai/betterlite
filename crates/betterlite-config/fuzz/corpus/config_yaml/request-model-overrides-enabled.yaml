@@ -1,0 +1,12 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: sk-sample
+general_settings:
+  enforced_params: [user, metadata.generation_name]
+  service_account_settings:
+    enforced_params: [metadata.service_account_id]
+litellm_settings:
+  enable_model_config_credential_overrides: true
+  drop_params: false
