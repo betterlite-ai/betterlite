@@ -2,6 +2,7 @@ use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_models::decisions::Json;
 
 use super::*;
+use crate::responses_affinity::identity::deployment_id;
 
 fn pool() -> Vec<DeploymentSpec> {
     vec![
@@ -109,4 +110,26 @@ fn pinning_does_not_rewrite_unmarked_input() {
         request.input,
         Some(Json::List(vec![reasoning_item("A"), message_item()]))
     );
+}
+
+#[test]
+fn deployment_id_reads_only_text_and_numbers() {
+    assert_eq!(
+        deployment_id(&spec("A", params(None, None))),
+        Some("A".to_owned())
+    );
+    let numeric = spec_with_model_info(object(&[(
+        "id",
+        Json::Number(serde_json::Number::from(7_i32)),
+    )]));
+    assert_eq!(deployment_id(&numeric), Some("7".to_owned()));
+    for value in [
+        Json::Null,
+        Json::Bool(true),
+        Json::List(Vec::new()),
+        Json::Object(JsonObject::new()),
+    ] {
+        let row = spec_with_model_info(object(&[("id", value)]));
+        assert_eq!(deployment_id(&row), None);
+    }
 }

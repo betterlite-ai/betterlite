@@ -84,6 +84,30 @@ fn enabled_for_group_follows_the_global_switch_and_the_group_list() {
 }
 
 #[test]
+fn default_settings_follow_the_constructor() {
+    let settings = AffinitySettings::default();
+    assert!(settings.enable_global_affinity);
+    assert!(settings.model_group_affinity_config.is_empty());
+    assert!(!settings.has_group_affinity_enabled());
+    assert!(settings.enabled_for_group("any-group"));
+}
+
+#[test]
+fn python_type_names_every_json_shape() {
+    assert_eq!(python_type(&Json::Null), "NoneType");
+    assert_eq!(python_type(&Json::Bool(true)), "bool");
+    assert_eq!(
+        python_type(&Json::Number(serde_json::Number::from(1_i32))),
+        "int"
+    );
+    let float = serde_json::Number::from_f64(0.5_f64).unwrap();
+    assert_eq!(python_type(&Json::Number(float)), "float");
+    assert_eq!(python_type(&text("value")), "str");
+    assert_eq!(python_type(&Json::List(Vec::new())), "list");
+    assert_eq!(python_type(&Json::Object(JsonObject::new())), "dict");
+}
+
+#[test]
 fn the_flag_is_written_into_existing_metadata() {
     let deployments = vec![spec("A", params(Some("u"), Some("k")))];
     let credentials = CredentialSnapshot::default();
