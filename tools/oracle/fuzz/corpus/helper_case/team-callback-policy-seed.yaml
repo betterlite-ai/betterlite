@@ -1,0 +1,12 @@
+kind: helper
+name: team-callback-policy-seed
+call:
+  team_callback_policy:
+    steps:
+      - {"function": "validate", "callback_name": "arize", "callback_vars": {"arize_success_sampling_rate": "1.5"}}
+      - {"function": "redact", "metadata": {"logging": [{"callback_name": "langfuse", "callback_vars": {"langfuse_secret_key": "sk-1"}}]}}
+      - {"function": "resolve", "encrypt": true, "salt_key": "team-callback-policy-salt", "metadata": {"logging": null, "callback_settings": {"success_callback": ["langfuse"], "callback_vars": {"langfuse_secret_key": "sk-legacy"}}}}
+      - {"function": "audit", "store_audit_logs": true, "team_id": "team-1", "before": {"owner": "ops"}, "after": {"owner": "ops"}, "user_id": "user-1", "api_key": null, "litellm_changed_by": null, "admin_name": "admin", "outcome": "failed", "now": "2026-11-21T10:30:00+00:00"}
+      - {"function": "unknown_team", "team_id": "team-9", "user_role": "internal_user", "status": 404}
+env: {}
+compare: {ignore: []}
