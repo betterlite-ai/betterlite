@@ -106,6 +106,12 @@ fn scrub_replaces_an_integer_credential_literally() {
         scrub_credentials("auth 12345 rejected twice: 12345", &settings),
         "auth ***REDACTED*** rejected twice: ***REDACTED***",
     );
+    // Python's int covers negative numbers, and a negative JSON integer is an i64 but not a u64.
+    let negative = object(r#"{"password": -12345}"#);
+    assert_eq!(
+        scrub_credentials("auth -12345 rejected twice", &negative),
+        "auth ***REDACTED*** rejected twice",
+    );
 }
 
 #[test]
