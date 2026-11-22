@@ -229,78 +229,80 @@ fn router_settings_behaviors(
 }
 
 #[rstest]
-#[case::zero_retries(
+#[case::zero_retries((
     "router_settings: {num_retries: 0}",
     "num_retries",
     "0",
     FieldSource::Config
-)]
-#[case::zero_fails(
+))]
+#[case::zero_fails((
     "router_settings: {allowed_fails: 0}",
     "allowed_fails",
     "0",
     FieldSource::Config
-)]
-#[case::zero_max_fallbacks(
+))]
+#[case::zero_max_fallbacks((
     "router_settings: {max_fallbacks: 0}",
     "max_fallbacks",
     "0",
     FieldSource::Default
-)]
-#[case::zero_cooldown(
+))]
+#[case::zero_cooldown((
     "router_settings: {cooldown_time: 0}",
     "cooldown_time",
     "0",
     FieldSource::Config
-)]
-#[case::zero_timeout("router_settings: {timeout: 0}", "timeout", "0", FieldSource::Config)]
-#[case::zero_retry_after(
+))]
+#[case::zero_timeout((
+    "router_settings: {timeout: 0}",
+    "timeout",
+    "0",
+    FieldSource::Config
+))]
+#[case::zero_retry_after((
     "router_settings: {retry_after: 0}",
     "retry_after",
     "0",
     FieldSource::Default
-)]
-#[case::largest_allowed_fails(
+))]
+#[case::largest_allowed_fails((
     "router_settings: {allowed_fails: 4294967295}",
     "allowed_fails",
     "4294967295",
     FieldSource::Config
-)]
-#[case::largest_max_fallbacks(
+))]
+#[case::largest_max_fallbacks((
     "router_settings: {max_fallbacks: 9223372036854775807}",
     "max_fallbacks",
     "9223372036854775807",
     FieldSource::Default
-)]
-#[case::empty_alias(
+))]
+#[case::empty_alias((
     "router_settings: {model_group_alias: {gpt-4: ''}}",
     "model_group_alias",
     r#"{"gpt-4": ""}"#,
     FieldSource::Config
-)]
-#[case::empty_groups(
+))]
+#[case::empty_groups((
     "router_settings: {routing_groups: []}",
     "routing_groups",
     "[]",
     FieldSource::Config
-)]
-#[case::fractional_retry_after(
+))]
+#[case::fractional_retry_after((
     "router_settings: {retry_after: 0.5}",
     "retry_after",
     "0.5",
     FieldSource::Default
-)]
-#[case::configured_false_pre_call_checks(
+))]
+#[case::configured_false_pre_call_checks((
     "router_settings: {enable_pre_call_checks: false}",
     "enable_pre_call_checks",
     "false",
     FieldSource::Default
-)]
+))]
 fn router_settings_boundaries(
-    #[case] document: &str,
-    #[case] key: &str,
-    #[case] expected_json: &str,
-    #[case] expected_source: FieldSource,
+    #[case] (document, key, expected_json, expected_source): (&str, &str, &str, FieldSource),
 ) {
     assert_value_and_source(&response(document), key, expected_json, expected_source);
 }
