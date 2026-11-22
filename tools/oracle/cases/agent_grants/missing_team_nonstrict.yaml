@@ -1,0 +1,21 @@
+kind: helper
+name: missing_team_nonstrict
+call:
+  b4779:
+    operation: grants
+    method: key_team
+    strict: false
+    database: true
+    key:
+      team_id: t1
+      agents: []
+      agent_access_groups: []
+      access_group_ids: []
+    team: null
+    db_agents: []
+    groups: {}
+    config_agents: []
+    fail: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,21 @@
+kind: helper
+name: lookup_failure_strict
+call:
+  b4779:
+    operation: grants
+    method: key
+    strict: true
+    database: true
+    key:
+      team_id: null
+      agents: []
+      agent_access_groups: [g1]
+      access_group_ids: []
+    team: null
+    db_agents: []
+    groups: {}
+    config_agents: []
+    fail: table
+env: {}
+compare:
+  ignore: []
