@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use axum::http::{Method, StatusCode};
+use axum::body::Body;
+use axum::http::{Method, Request, StatusCode, header};
 use betterlite_core::agents::json::AgentJson as JsonValue;
 use serde_json::json;
 
@@ -137,6 +138,30 @@ async fn create_reads_only_the_body_template_and_ignores_the_query_one() {
     assert_eq!(status, StatusCode::OK);
     let data = &pre_call.calls()[0].data;
     assert!(!data.contains_key("api_key"));
+    assert_eq!(data.get("custom_llm_provider"), Some(&json!("gemini")));
+}
+
+// the route hands the request media type to _read_request_body, so a form body decodes into its fields
+#[tokio::test]
+async fn create_reads_a_form_body_through_the_request_content_type() {
+    let pre_call = FakePreCall::passing();
+    let form_request = Request::builder()
+        .method(Method::POST)
+        .uri(AGENTS_PATH)
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .extension(admin())
+        .extension(key())
+        .body(Body::from("name=agent&api_key=AIza"))
+        .unwrap();
+    let (status, _body) = call(
+        router(Arc::clone(&pre_call), FakeProcessing::answering(json!({}))),
+        form_request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let data = &pre_call.calls()[0].data;
+    assert_eq!(data.get("name"), Some(&json!("agent")));
+    assert_eq!(data.get("api_key"), Some(&json!("AIza")));
     assert_eq!(data.get("custom_llm_provider"), Some(&json!("gemini")));
 }
 
