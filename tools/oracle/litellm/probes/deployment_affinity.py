@@ -59,10 +59,6 @@ def deployment_dict(deployment: Deployment, model_group: str) -> dict[str, JsonV
     }
 
 
-def wall(now_millis: int) -> float:
-    return now_millis / 1000
-
-
 class DeploymentAffinity(Operation):
     model: str
     deployments: list[Deployment]
@@ -90,7 +86,7 @@ class DeploymentAffinity(Operation):
         )
         observations: Final[list[Observation]] = []
         for step in self.steps:
-            with patch("time.time", return_value=wall(step.now_millis)):
+            with patch("time.time", return_value=step.now_millis / 1000):
                 observations.append(await self.apply_step(check, step))
         return Output(steps=observations)
 
