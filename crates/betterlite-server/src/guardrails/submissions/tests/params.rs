@@ -130,34 +130,26 @@ const GENERIC_HOSTED_NO_MODE: &str =
 #[tokio::test]
 async fn register_runs_the_checks_in_the_order_litellm_does() {
     let harness = harness();
-    assert_team_before_params(&harness).await;
-    harness.teams.allow("alice", &["team-a"]);
-    assert_membership_before_params(&harness).await;
-    assert_params_before_the_name_lookup(&harness).await;
-}
-
-async fn assert_team_before_params(harness: &Harness) {
-    let answer = register(
-        harness,
+    let without_team = register(
+        &harness,
         user_key(None, "alice"),
         &register_request("guard", BEDROCK_NO_TEAM, None),
     )
     .await;
-    assert_error(&answer, StatusCode::BAD_REQUEST, TEAM_REQUIRED);
-}
-
-async fn assert_membership_before_params(harness: &Harness) {
-    let answer = register(
-        harness,
+    assert_error(&without_team, StatusCode::BAD_REQUEST, TEAM_REQUIRED);
+    harness.teams.allow("alice", &["team-a"]);
+    let not_a_member = register(
+        &harness,
         user_key(Some("team-a"), "alice"),
         &register_request("guard", BEDROCK_FTP, Some("team-b")),
     )
     .await;
     assert_error(
-        &answer,
+        &not_a_member,
         StatusCode::FORBIDDEN,
         "You are not a member of team 'team-b'",
     );
+    assert_params_before_the_name_lookup(&harness).await;
 }
 
 async fn assert_params_before_the_name_lookup(harness: &Harness) {
