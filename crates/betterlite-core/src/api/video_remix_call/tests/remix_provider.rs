@@ -12,11 +12,15 @@ const REQUEST_TIMEOUT: f64 = 6000.0;
 fn remix_provider_decodes_from_the_video_id() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let mut call = remix_call();
-    call.video_id = encode_video_id_with_provider("video_1", "openai", None);
-    bench
+    call.video_id = encode_video_id_with_provider("video_1", "not-a-provider", None);
+    let failure = bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
-        .expect("the openai config answers");
-    assert_eq!(bench.requests().len(), 1);
+        .expect_err("the decoded name selects the provider");
+    let VideoCallError::UnknownProvider { provider } = &failure.error else {
+        panic!("the decoded name is parsed like an explicit one");
+    };
+    assert_eq!(provider, "not-a-provider");
+    assert!(bench.requests().is_empty());
 }
 
 #[test]
@@ -47,6 +51,19 @@ fn remix_provider_explicit_overrides_the_decoded_one() {
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect("the explicit provider is the one used");
+    assert_eq!(bench.requests().len(), 1);
+}
+
+#[test]
+fn remix_provider_empty_decoded_falls_back_to_openai() {
+    let mut bench = Bench::new(200, VIDEO_BODY);
+    let mut call = remix_call();
+    // "video_" and the standard base64 of "litellm:custom_llm_provider:;model_id:;video_id:abc"
+    call.video_id =
+        "video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOjttb2RlbF9pZDo7dmlkZW9faWQ6YWJj".to_owned();
+    bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect("an empty decoded provider falls back to openai");
     assert_eq!(bench.requests().len(), 1);
 }
 

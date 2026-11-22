@@ -63,6 +63,22 @@ fn mock_response_null_is_no_mock_response() {
     assert_eq!(bench.requests().len(), 1);
 }
 
+#[tokio::test]
+async fn mock_response_answers_the_async_entry() {
+    let mut bench = Bench::new(200, VIDEO_BODY);
+    let mut call = remix_call();
+    call.mock_response = Some(json(
+        r#"{"id":"video_4","object":"video","status":"queued"}"#,
+    ));
+    let video = bench
+        .avideo_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .await
+        .expect("the mock answers the async entry");
+    assert_eq!(video.id, "video_4");
+    assert!(bench.requests().is_empty());
+    assert!(bench.source.async_calls().is_empty());
+}
+
 #[test]
 fn mock_response_wins_over_an_unsupported_provider() {
     let mut bench = Bench::new(200, VIDEO_BODY);

@@ -5,7 +5,6 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::support::{Bench, Case, Plan, VIDEO_BODY, json, remix_call};
-use crate::api::video_remix_call::VideoRemixCall;
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
 
@@ -75,11 +74,9 @@ fn remix_call_type_logs_the_call_params() {
 #[test]
 fn remix_call_type_is_set_before_the_handler() {
     let mut bench = Bench::new(500, r#"{"error":{"message":"upstream failed"}}"#);
+    let call = remix_call();
     let failure = bench
-        .video_answer(Plan::seconds(
-            Case::Remix(&VideoRemixCall::default()),
-            REQUEST_TIMEOUT,
-        ))
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect_err("the provider answer is a failure");
     assert_eq!(failure.class.metadata().status_code, 500);
     assert_eq!(bench.fixture.state.call_type, "video_remix");

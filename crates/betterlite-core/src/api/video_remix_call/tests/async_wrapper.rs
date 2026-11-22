@@ -2,8 +2,7 @@
 
 use betterlite_models::identity::provider_id::ProviderId;
 
-use super::support::{Bench, Case, Plan, VIDEO_BODY, Wire};
-use crate::api::video_remix_call::VideoRemixCall;
+use super::support::{Bench, Case, Plan, VIDEO_BODY, Wire, remix_call};
 use crate::api::video_remix_list_transport::client::VideoClient;
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -11,11 +10,9 @@ const REQUEST_TIMEOUT: f64 = 6000.0;
 #[tokio::test]
 async fn avideo_remix_uses_the_async_path() {
     let mut bench = Bench::new(200, VIDEO_BODY);
+    let call = remix_call();
     let video = bench
-        .avideo_answer(Plan::seconds(
-            Case::Remix(&VideoRemixCall::default()),
-            REQUEST_TIMEOUT,
-        ))
+        .avideo_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .await
         .expect("the remix answers");
     assert_eq!(video.id, "video_123");
@@ -28,9 +25,10 @@ async fn avideo_remix_uses_the_async_path() {
 async fn avideo_remix_uses_a_supplied_async_client() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let wire = Wire::replying(200, VIDEO_BODY);
+    let call = remix_call();
     let video = bench
         .avideo_answer(Plan::client(
-            Case::Remix(&VideoRemixCall::default()),
+            Case::Remix(&call),
             VideoClient::Asynchronous(&wire),
         ))
         .await
@@ -45,11 +43,9 @@ async fn avideo_remix_uses_a_supplied_async_client() {
 fn remix_uses_a_supplied_sync_client() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let wire = Wire::replying(200, VIDEO_BODY);
+    let call = remix_call();
     let video = bench
-        .video_answer(Plan::client(
-            Case::Remix(&VideoRemixCall::default()),
-            VideoClient::Sync(&wire),
-        ))
+        .video_answer(Plan::client(Case::Remix(&call), VideoClient::Sync(&wire)))
         .expect("the supplied client answers");
     assert_eq!(video.id, "video_123");
     assert_eq!(wire.requests().len(), 1);

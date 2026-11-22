@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use super::support::{Bench, Case, Plan, VIDEO_BODY, remix_call};
-use crate::api::video_remix_call::VideoRemixCall;
 use crate::api::video_remix_call::error::VideoCallError;
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -11,11 +10,9 @@ const REQUEST_TIMEOUT: f64 = 6000.0;
 #[test]
 fn remix_timeout_defaults_to_600_seconds() {
     let mut bench = Bench::new(200, VIDEO_BODY);
+    let call = remix_call();
     bench
-        .video_answer(Plan::seconds(
-            Case::Remix(&VideoRemixCall::default()),
-            REQUEST_TIMEOUT,
-        ))
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect("the remix answers");
     assert_eq!(bench.requests()[0].timeout, Some(Duration::from_secs(600)));
 }

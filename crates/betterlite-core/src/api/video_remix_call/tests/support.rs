@@ -542,9 +542,13 @@ impl Bench {
     }
 }
 
-// A remix call whose every field starts at its default, for a case that varies a few of them
+// A remix call a case can vary: a video id and prompt the wire accepts, every other field at its default
 pub(crate) fn remix_call() -> VideoRemixCall {
-    VideoRemixCall::default()
+    VideoRemixCall {
+        video_id: "video_1".to_owned(),
+        prompt: "make it better".to_owned(),
+        ..VideoRemixCall::default()
+    }
 }
 
 // A list call whose every field starts at its default, for a case that varies a few of them
