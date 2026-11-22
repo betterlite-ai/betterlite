@@ -1,0 +1,43 @@
+kind: helper
+name: model-group-data-add-idempotent-remove-first
+call:
+  model_group_data:
+    calls:
+      - function: add_access_group_to_deployment
+        model_info: {}
+        access_group: group-a
+calls:
+  - model_group_data:
+      calls:
+        - function: add_access_group_to_deployment
+          model_info:
+            access_groups: [group-a]
+          access_group: group-a
+        - function: add_access_group_to_deployment
+          model_info:
+            access_groups: [group-b]
+          access_group: group-a
+        - function: add_access_group_to_deployment
+          model_info:
+            id: d1
+          access_group: group-b
+  - model_group_data:
+      calls:
+        - function: remove_access_group_from_deployment
+          model_info:
+            access_groups: [group-a, group-a]
+          access_group: group-a
+        - function: remove_access_group_from_deployment
+          model_info:
+            access_groups: [group-a]
+          access_group: group-a
+        - function: remove_access_group_from_deployment
+          model_info:
+            access_groups: []
+          access_group: group-a
+        - function: remove_access_group_from_deployment
+          model_info:
+            id: d1
+          access_group: group-a
+env: {}
+compare: {ignore: []}

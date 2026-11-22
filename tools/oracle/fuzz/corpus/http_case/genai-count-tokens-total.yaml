@@ -1,0 +1,14 @@
+name: genai-count-tokens-total
+config: 'general_settings: {}'
+env: {}
+request:
+  method: POST
+  path: /v1beta/models/gemini-2.0-flash:countTokens
+  headers: {content-type: application/json, authorization: 'Bearer oracle-key'}
+  body:
+    contents:
+      - role: user
+        parts:
+          - text: Hello
+upstream: []
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

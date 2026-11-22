@@ -1,0 +1,27 @@
+kind: helper
+name: model-group-data-readable-json-or-absent
+call:
+  model_group_data:
+    calls:
+      - function: readable_model_info_or_raise
+        model_id: d1
+        model_info: null
+calls:
+  - model_group_data:
+      calls:
+        - function: readable_model_info_or_raise
+          model_id: d1
+          model_info:
+            id: d1
+            ciphertext: c2VjcmV0
+        - function: readable_model_info_or_raise
+          model_id: d2
+          model_info: '{"nested": true}'
+        - function: readable_model_info_or_raise
+          model_id: d3
+          model_info: '{"nested": [1, 2]}'
+        - function: readable_model_info_or_raise
+          model_id: d4
+          model_info: {}
+env: {}
+compare: {ignore: []}
