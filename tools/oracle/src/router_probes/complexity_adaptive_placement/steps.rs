@@ -159,11 +159,11 @@ fn service(
     tiers: &TierSet,
     samples: Vec<f64>,
 ) -> Result<AdaptivePlacement, OperationError> {
-    let sampler = QualitySampler::Scripted(Box::new(ScriptedSampler {
+    let draws = QualitySampler::Scripted(Box::new(ScriptedSampler {
         samples,
         position: 0,
     }));
-    Ok(AdaptivePlacement::new(settings, tiers, facts, sampler)?)
+    Ok(AdaptivePlacement::new(settings, tiers, facts, draws)?)
 }
 
 // the case's learned cells: apply_delta over the cold-start prior, as the bandit's updates do
@@ -194,7 +194,7 @@ fn fields_from(
 
 // the decision the router rendered under metadata, not the typed value that produced it
 fn decision_output(kwargs: Option<&JsonMap>) -> Result<Option<DecisionOutput>, OperationError> {
-    let Some(Json::Object(metadata)) = kwargs.and_then(|kwargs| kwargs.get("metadata")) else {
+    let Some(Json::Object(metadata)) = kwargs.and_then(|storage| storage.get("metadata")) else {
         return Ok(None);
     };
     let Some(decision) = metadata.get("adaptive_router_decision") else {
@@ -205,11 +205,11 @@ fn decision_output(kwargs: Option<&JsonMap>) -> Result<Option<DecisionOutput>, O
 
 // _ensure_adaptive_router's model_to_prefs, so a configured declaration is distinguishable
 fn preferences(snapshot: Option<&PlacementSnapshot>) -> BTreeMap<String, PreferenceOutput> {
-    let Some(snapshot) = snapshot else {
+    let Some(known) = snapshot else {
         return BTreeMap::new();
     };
     let mut preferences = BTreeMap::new();
-    for (model, preference) in &snapshot.preferences {
+    for (model, preference) in &known.preferences {
         preferences.insert(
             model.clone(),
             PreferenceOutput {
@@ -227,7 +227,7 @@ fn preferences(snapshot: Option<&PlacementSnapshot>) -> BTreeMap<String, Prefere
 
 // the keys the router actually wrote under metadata, so a missing or extra one shows
 fn decision_keys(kwargs: Option<&JsonMap>) -> Vec<String> {
-    let Some(Json::Object(metadata)) = kwargs.and_then(|kwargs| kwargs.get("metadata")) else {
+    let Some(Json::Object(metadata)) = kwargs.and_then(|storage| storage.get("metadata")) else {
         return Vec::new();
     };
     let Some(Json::Object(decision)) = metadata.get("adaptive_router_decision") else {
