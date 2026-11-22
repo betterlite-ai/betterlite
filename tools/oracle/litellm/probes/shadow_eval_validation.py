@@ -20,7 +20,7 @@ from typing_extensions import override
 
 from probes.protocol import MAX_MESSAGE_BYTES, Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 FORBIDDEN: Final = 403
