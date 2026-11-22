@@ -66,11 +66,12 @@ fn prepared_http(wire: Wire, timeout: Option<f64>) -> Result<PreparedHttp, Azure
 // the supplied client changes only this debug log, so its mutants are equivalent
 #[cfg_attr(test, mutants::skip)]
 fn check_supplied(call: &ChatCall) {
-    if call
-        .supplied
-        .as_ref()
-        .is_some_and(|client| client.discarded(call.credentials.api_version.as_deref()))
-    {
+    if call.supplied.as_ref().is_some_and(|client| {
+        call.credentials
+            .api_version
+            .as_deref()
+            .is_some_and(|version| client.api_version.as_deref() != Some(version))
+    }) {
         tracing::debug!(
             "the supplied Azure client's api_version changed, so the client is rebuilt"
         );

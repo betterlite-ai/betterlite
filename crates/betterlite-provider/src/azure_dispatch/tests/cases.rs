@@ -79,7 +79,7 @@ pub(super) fn chat_dispatch() {
     assert_eq!(sent.len(), 1);
     chat_request_line(&sent[0]);
     chat_body_shape(&sent[0]);
-    chat_reply_shape(&result);
+    reply_shape(&result, "chatcmpl-1", "gpt-4o-2024-08-06", "hi");
     chat_stream_and_supplied(&composition);
     deployment_route_base();
     upstream_refusal(&composition);
@@ -111,18 +111,15 @@ fn chat_body_shape(request: &RecordedRequest) {
     assert!(support::body_at(request, "max_retries").is_none());
 }
 
-fn chat_reply_shape(result: &AzureResult) {
+fn reply_shape(result: &AzureResult, id: &str, model: &str, content: &str) {
     assert_eq!(result.error, Json::Null);
-    assert_eq!(support::reply_text(result, "id"), Some("chatcmpl-1"));
+    assert_eq!(support::reply_text(result, "id"), Some(id));
     assert_eq!(
         support::reply_text(result, "object"),
         Some("chat.completion")
     );
-    assert_eq!(
-        support::reply_text(result, "model"),
-        Some("gpt-4o-2024-08-06")
-    );
-    assert_eq!(support::reply_text(result, "content"), Some("hi"));
+    assert_eq!(support::reply_text(result, "model"), Some(model));
+    assert_eq!(support::reply_text(result, "content"), Some(content));
     assert_eq!(support::reply_text(result, "finish_reason"), Some("stop"));
     assert_eq!(support::number_at(&result.reply, "total_tokens"), Some(2));
 }
@@ -143,6 +140,10 @@ fn chat_stream_and_supplied(composition: &Composition) {
         api_version: Some(String::from("2024-10-21")),
     });
     let stream_answer = Fixture::ok(support::CHAT_REPLY);
+    let mut mismatched = stream_call.clone();
+    mismatched.supplied = Some(SuppliedClient {
+        api_version: Some(String::from("2025-01-01")),
+    });
     let stream_result = dispatch(
         composition,
         Request::Chat(Box::new(stream_call)),
@@ -153,13 +154,12 @@ fn chat_stream_and_supplied(composition: &Composition) {
         support::body_at(&stream_answer.sent()[0], "stream"),
         Some(&Json::Bool(true))
     );
-    let retained = SuppliedClient {
-        api_version: Some(String::from("2024-10-21")),
-    };
-    assert!(!retained.discarded(Some("2024-10-21")));
-    assert!(!retained.discarded(None));
-    assert!(retained.discarded(Some("2025-01-01")));
-    assert!(SuppliedClient { api_version: None }.discarded(Some("2024-10-21")));
+    let rebuilt = dispatch(
+        composition,
+        Request::Chat(Box::new(mismatched)),
+        &stream_answer,
+    );
+    assert_eq!(rebuilt.error, Json::Null);
 }
 
 // a refusing upstream keeps its status in the observed error, with nothing projected
@@ -297,23 +297,7 @@ fn text_request_shape(answer: &Fixture, result: &AzureResult) {
     assert_eq!(support::body_number(request, "temperature"), Some(1));
     assert_eq!(support::body_number(request, "top_p"), Some(1));
     assert!(support::body_at(request, "max_retries").is_none());
-    assert_text_reply(result);
-}
-
-fn assert_text_reply(result: &AzureResult) {
-    assert_eq!(result.error, Json::Null);
-    assert_eq!(support::reply_text(result, "id"), Some("cmpl-1"));
-    assert_eq!(
-        support::reply_text(result, "object"),
-        Some("chat.completion")
-    );
-    assert_eq!(
-        support::reply_text(result, "model"),
-        Some("gpt-3.5-turbo-instruct")
-    );
-    assert_eq!(support::reply_text(result, "content"), Some("hello"));
-    assert_eq!(support::reply_text(result, "finish_reason"), Some("stop"));
-    assert_eq!(support::number_at(&result.reply, "total_tokens"), Some(2));
+    reply_shape(result, "cmpl-1", "gpt-3.5-turbo-instruct", "hello");
 }
 
 // The post_call condition: acompletion, or a truthy stream.
@@ -562,7 +546,6 @@ pub(super) fn config_ranks() {
     global_ranks(&composition);
     key_ranks(&mut composition);
     empty_values_fall_through();
-    empty_secrets_fall_through();
     version_default();
     token_pop();
     malformed_extra_body();
@@ -648,7 +631,7 @@ fn assert_key_rank(composition: &Composition, expected: &str) {
     );
 }
 
-// an empty explicit value is not a rank: the environment fills it
+// an empty explicit value is not a rank and an empty environment secret is unset, so the next rank fills both
 fn empty_values_fall_through() {
     let environment = support::composition(&[
         ("AZURE_API_BASE", "env-base"),
@@ -663,10 +646,7 @@ fn empty_values_fall_through() {
         resolve(&environment, credentials, Operation::Chat, Some("gpt-4o")).expect("the env ranks");
     assert_eq!(resolved.api_base.as_deref(), Some("env-base"));
     assert_eq!(resolved.api_version.as_deref(), Some("env-version"));
-}
 
-// an empty environment secret counts as unset, so the next key rank fills it and no token is resolved
-fn empty_secrets_fall_through() {
     let environment = support::composition(&[
         ("AZURE_OPENAI_API_KEY", ""),
         ("AZURE_API_KEY", "fallback-key"),

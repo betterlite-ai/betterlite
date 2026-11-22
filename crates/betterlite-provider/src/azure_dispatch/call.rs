@@ -98,13 +98,6 @@ pub struct Credentials {
 pub struct SuppliedClient {
     pub api_version: Option<String>,
 }
-impl SuppliedClient {
-    // _check_dynamic_azure_params: only a non-None version that differs from the client's discards it
-    #[must_use]
-    pub fn discarded(&self, api_version: Option<&str>) -> bool {
-        api_version.is_some_and(|version| self.api_version.as_deref() != Some(version))
-    }
-}
 #[derive(Clone)]
 pub struct ChatCall {
     pub model: String,
