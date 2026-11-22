@@ -174,9 +174,9 @@ fn text(value: &str) -> TimeoutValue {
 )]
 #[case::empty_falls_through(
     Some(WriteTimeout::Value(text(""))),
-    None,
+    Some(number(4.0_f64)),
     "openai",
-    FineTuningTimeout::Seconds(600.0_f64)
+    FineTuningTimeout::Seconds(4.0_f64)
 )]
 #[case::timeout_wins(
     Some(WriteTimeout::Value(number(2.0_f64))),
@@ -249,10 +249,14 @@ fn invalid_timeout_text_fails_before_http(
     assert!(seen.is_empty());
 }
 
-#[test]
-fn infinite_timeout_is_rejected() {
+// a deviation: LiteLLM's float() accepts inf and NaN, number or text, and hands them to the client
+#[rstest]
+#[case::number(number(f64::INFINITY))]
+#[case::text(text("inf"))]
+#[case::nan_text(text("nan"))]
+fn infinite_timeout_is_rejected(#[case] timeout: TimeoutValue) {
     let mut input = delete_input(Some("openai"));
-    input.params.timeout = Some(WriteTimeout::Value(number(f64::INFINITY)));
+    input.params.timeout = Some(WriteTimeout::Value(timeout));
     let (sent, seen) = delete(Mode::Sync, &input);
     assert!(matches!(sent.unwrap_err(), FileWriteError::Timeout(_)));
     assert!(seen.is_empty());
