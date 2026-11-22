@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import ModuleType
 from typing import Annotated, Final, Literal
 
@@ -94,7 +94,7 @@ def deployment_entry(deployment: Deployment) -> dict[str, object]:
 
 def utc_day(now_unix_millis: int) -> str:
     try:
-        instant = datetime.fromtimestamp(now_unix_millis / 1000, tz=timezone.utc)
+        instant = datetime.fromtimestamp(now_unix_millis / 1000, tz=UTC)
     except (OverflowError, OSError, ValueError) as error:
         raise ProbeError("invalid_request", "the probe clock is outside the supported calendar") from error
     return instant.date().isoformat()

@@ -6,4 +6,10 @@ deviations:
   - what: "A benchmark window whose implicit start or exclusive end falls outside the representable calendar answers the typed invalid-request outcome, where LiteLLM raises an unhandled OverflowError and answers 500."
     why: "datetime arithmetic underflows for an end_date in 0001-01-01..0001-01-30 without start_date, and adding one day overflows for end_date 9999-12-31; a request that cannot name a representable window is a bad request, not a server fault."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L879-L892
+  - what: "A per-session average divides exact decimals, so 4 turns over 3 sessions reads 1.3333333333333333333333333333 where LiteLLM divides binary floats and prints 1.3333333333333333; avg_session_seconds, avg_tokens_per_session and saved_per_session divide the same way."
+    why: "rule money-is-decimal keeps every ratio computed from stored measures exact; a dashboard comparing the value at float precision sees the same number, and compare.numeric in benchmark-aggregates-partial-baseline-cohort pins the two to within 8e-17."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L704-L715
+  - what: "The totals sum money as exact decimals, so rows spending 0.1 and 0.2 total 0.3 where LiteLLM's float sum prints 0.30000000000000004; saved_spend, savings_estimated_actual_spend, savings_estimated_saved_spend, savings_estimated_classifier_cost and classifier_cost sum the same way, and baseline_spend is built from those exact sums."
+    why: "rule money-is-decimal keeps the dashboard totals exact from the moment the rows are read, so repeated float addition cannot drift the reported spend; expected_difference in benchmark-aggregates-partial-baseline-cohort pins the reference 0.30000000000000004 against betterlite's 0.3."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L777-L789
 kept_bugs: []

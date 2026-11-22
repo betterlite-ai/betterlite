@@ -37,10 +37,8 @@ pub struct BenchmarkGroup {
         deserialize_with = "rust_decimal::serde::arbitrary_precision::deserialize"
     )]
     pub spend: Decimal,
-    #[serde(
-        serialize_with = "serialize_optional_money",
-        deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
-    )]
+    // absent money: a number or null out, and the plain Option reader back, which takes the unit a buffered enum gives a null
+    #[serde(serialize_with = "serialize_optional_money")]
     pub classifier_cost: Option<Decimal>,
     pub savings_estimated_turns: i64,
     #[serde(
@@ -50,29 +48,16 @@ pub struct BenchmarkGroup {
     pub savings_estimated_actual_spend: Decimal,
     #[serde(
         rename = "savings_estimated_classifier_cost",
-        serialize_with = "serialize_optional_money",
-        deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
+        serialize_with = "serialize_optional_money"
     )]
     pub savings_classifier_cost: Option<Decimal>,
-    #[serde(
-        serialize_with = "serialize_optional_money",
-        deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
-    )]
+    #[serde(serialize_with = "serialize_optional_money")]
     pub saved_spend: Option<Decimal>,
-    #[serde(
-        serialize_with = "serialize_optional_money",
-        deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
-    )]
+    #[serde(serialize_with = "serialize_optional_money")]
     pub baseline_spend: Option<Decimal>,
-    #[serde(
-        serialize_with = "serialize_optional_money",
-        deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
-    )]
+    #[serde(serialize_with = "serialize_optional_money")]
     pub saved_pct: Option<Decimal>,
-    #[serde(
-        serialize_with = "serialize_optional_money",
-        deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
-    )]
+    #[serde(serialize_with = "serialize_optional_money")]
     pub saved_per_session: Option<Decimal>,
     pub cache: CacheStats,
 }
@@ -127,7 +112,7 @@ impl Summed for i64 {
 }
 
 impl Summed for Decimal {
-    const ZERO: Self = Decimal::ZERO;
+    const ZERO: Self = Self::ZERO;
 
     fn plus(self, amount: Self) -> Self {
         self.saturating_add(amount)

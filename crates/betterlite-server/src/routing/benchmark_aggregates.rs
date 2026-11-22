@@ -6,9 +6,9 @@ use crate::router_dependencies::{StrategyRouterKind, classify_strategy_router_mo
 
 // The parts of a Router deployment the idle-group list reads, already narrowed to strings
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StrategyDeployment<'a> {
-    pub model_name: Option<&'a str>,
-    pub model: Option<&'a str>,
+pub struct StrategyDeployment<'deployment> {
+    pub model_name: Option<&'deployment str>,
+    pub model: Option<&'deployment str>,
 }
 
 const fn router_type_name(kind: StrategyRouterKind) -> &'static str {
@@ -37,10 +37,10 @@ pub fn idle_router_groups(
     deployments: Option<&[StrategyDeployment<'_>]>,
     covered: &BTreeSet<(String, String)>,
 ) -> Vec<BenchmarkGroup> {
-    let Some(deployments) = deployments else {
+    let Some(configured) = deployments else {
         return Vec::new();
     };
-    let idle: BTreeSet<(String, String)> = deployments
+    let idle: BTreeSet<(String, String)> = configured
         .iter()
         .filter_map(|deployment| strategy_router_key(*deployment))
         .filter(|key| !covered.contains(key))

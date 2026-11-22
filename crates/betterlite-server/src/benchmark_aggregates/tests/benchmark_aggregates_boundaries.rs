@@ -226,5 +226,5 @@ fn a_document_one_byte_past_the_limit_is_refused() {
 
 #[test]
 fn the_limit_is_a_megabyte() {
-    assert_eq!(MAX_ROUTER_READ_BYTES, 1 << 20);
+    assert_eq!(MAX_ROUTER_READ_BYTES, 1_usize << 20_u32);
 }

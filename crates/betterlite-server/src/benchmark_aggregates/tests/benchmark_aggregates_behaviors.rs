@@ -24,19 +24,19 @@ fn complexity_row() -> SessionAggRow {
         tier_turns: BTreeMap::from([("SIMPLE".to_owned(), 1_i64), ("MEDIUM".to_owned(), 2_i64)]),
         sessions: 2,
         turns: 4,
-        unordered_turns: 0,
+        unordered_turns: 3,
         covered_turns: 4,
         cache_hits: 2,
         same_model_turns: 1,
         same_model_hits: 1,
         first_visit_turns: 1,
-        first_visit_hits: 0,
-        return_turns: 2,
+        first_visit_hits: 1,
+        return_turns: 5,
         return_hits: 1,
-        return_expired_misses: 0,
-        return_within_ttl_misses: 0,
+        return_expired_misses: 1,
+        return_within_ttl_misses: 1,
         ttl_5m_turns: 2,
-        ttl_1h_turns: 0,
+        ttl_1h_turns: 3,
         total_tokens: 1024,
         spend: dec("2.0"),
         saved_spend: dec("2.0"),
@@ -139,38 +139,91 @@ fn a_comparison_with_unrecorded_classifier_cost_reports_none() {
     assert_eq!(compared_row(&row).savings_classifier_cost, None);
 }
 
+fn assert_savings_totals(totals: &BenchmarkTotals) {
+    assert_eq!(
+        (totals.classifier_cost, totals.savings_classifier_cost),
+        (Some(dec("0.5")), Some(dec("0.5")))
+    );
+    assert_eq!(
+        (
+            totals.savings_estimated_actual_spend,
+            totals.saved_spend,
+            totals.baseline_spend,
+        ),
+        (dec("1.5"), Some(dec("2.5")), Some(dec("4")))
+    );
+    assert_eq!(
+        (totals.saved_pct, totals.saved_per_session),
+        (Some(dec("62.5")), Some(dec("1.25")))
+    );
+}
+
+fn assert_cache_totals(totals: &BenchmarkTotals) {
+    assert_eq!(
+        (totals.cache.coverage_pct, totals.cache.hit_rate_pct),
+        (dec("100"), dec("50"))
+    );
+    assert_eq!(
+        (
+            totals.cache.same_model.turns,
+            totals.cache.same_model.hits,
+            totals.cache.same_model.hit_rate_pct,
+        ),
+        (1, 1, dec("100"))
+    );
+    assert_eq!(
+        (
+            totals.cache.first_visit.turns,
+            totals.cache.first_visit.hits,
+            totals.cache.first_visit.hit_rate_pct,
+        ),
+        (1, 1, dec("100"))
+    );
+    assert_eq!(
+        (
+            totals.cache.return_to_tier.turns,
+            totals.cache.return_to_tier.hits,
+            totals.cache.return_to_tier.hit_rate_pct,
+        ),
+        (5, 1, dec("20"))
+    );
+    assert_eq!(
+        (
+            totals.cache.unordered_turns,
+            totals.cache.return_misses_expired,
+            totals.cache.return_misses_within_ttl,
+            totals.cache.return_misses_unknown,
+        ),
+        (3, 1, 1, 2)
+    );
+    assert_eq!(
+        (totals.cache.ttl_5m_turns, totals.cache.ttl_1h_turns),
+        (2, 3)
+    );
+}
+
 #[test]
 fn the_totals_follow_the_row() {
     let totals = benchmark_totals(&complexity_row());
-    assert_eq!(totals.sessions, 2);
-    assert_eq!(totals.turns, 4);
-    assert_eq!(totals.avg_turns_per_session, dec("2"));
-    assert_eq!(totals.avg_session_seconds, dec("3600"));
-    assert_eq!(totals.avg_tokens_per_session, dec("512"));
-    assert_eq!(totals.spend, dec("2"));
-    assert_eq!(totals.classifier_cost, Some(dec("0.5")));
-    assert_eq!(totals.savings_estimated_turns, 2);
-    assert_eq!(totals.savings_estimated_actual_spend, dec("1.5"));
-    assert_eq!(totals.savings_classifier_cost, Some(dec("0.5")));
-    assert_eq!(totals.saved_spend, Some(dec("2.5")));
-    assert_eq!(totals.baseline_spend, Some(dec("4")));
-    assert_eq!(totals.saved_pct, Some(dec("62.5")));
-    assert_eq!(totals.saved_per_session, Some(dec("1.25")));
-    assert_eq!(totals.cache.coverage_pct, dec("100"));
-    assert_eq!(totals.cache.hit_rate_pct, dec("50"));
-    assert_eq!(totals.cache.same_model.turns, 1);
-    assert_eq!(totals.cache.same_model.hits, 1);
-    assert_eq!(totals.cache.same_model.hit_rate_pct, dec("100"));
-    assert_eq!(totals.cache.first_visit.turns, 1);
-    assert_eq!(totals.cache.first_visit.hit_rate_pct, Decimal::ZERO);
-    assert_eq!(totals.cache.return_to_tier.turns, 2);
-    assert_eq!(totals.cache.return_to_tier.hits, 1);
-    assert_eq!(totals.cache.return_to_tier.hit_rate_pct, dec("50"));
-    assert_eq!(totals.cache.return_misses_expired, 0);
-    assert_eq!(totals.cache.return_misses_within_ttl, 0);
-    assert_eq!(totals.cache.return_misses_unknown, 1);
-    assert_eq!(totals.cache.ttl_5m_turns, 2);
-    assert_eq!(totals.cache.ttl_1h_turns, 0);
+    assert_eq!(
+        (
+            totals.sessions,
+            totals.turns,
+            totals.savings_estimated_turns
+        ),
+        (2, 4, 2)
+    );
+    assert_eq!(
+        (
+            totals.avg_turns_per_session,
+            totals.avg_session_seconds,
+            totals.avg_tokens_per_session,
+            totals.spend,
+        ),
+        (dec("2"), dec("3600"), dec("512"), dec("2"))
+    );
+    assert_savings_totals(&totals);
+    assert_cache_totals(&totals);
 }
 
 #[test]
@@ -233,7 +286,7 @@ fn a_group_carries_the_router_and_its_totals() {
     assert_eq!(group.tier_turns.get("MEDIUM"), Some(&2));
     assert_eq!(group.turns, 4);
     assert_eq!(group.spend, dec("2"));
-    assert_eq!(group.cache.return_to_tier.hit_rate_pct, dec("50"));
+    assert_eq!(group.cache.return_to_tier.hit_rate_pct, dec("20"));
 }
 
 #[test]
@@ -252,20 +305,33 @@ fn the_summed_row_adds_every_measure() {
     second.classifier_cost_recorded_turns = 2;
     second.session_seconds = dec("3600.0");
     let summed = summed_agg_row(&[complexity_row(), second]);
-    assert_eq!(summed.router_name, "");
-    assert_eq!(summed.router_type, "");
+    assert_eq!(
+        (summed.router_name.as_str(), summed.router_type.as_str()),
+        ("", "")
+    );
     assert_eq!(summed.tier_turns, BTreeMap::new());
-    assert_eq!(summed.sessions, 3);
-    assert_eq!(summed.turns, 6);
-    assert_eq!(summed.total_tokens, 1536);
-    assert_eq!(summed.spend, dec("3.5"));
-    assert_eq!(summed.saved_spend, dec("2.5"));
-    assert_eq!(summed.savings_estimated_turns, 4);
-    assert_eq!(summed.savings_estimated_actual_spend, dec("2.5"));
-    assert_eq!(summed.savings_estimated_saved_spend, dec("3.0"));
-    assert_eq!(summed.savings_classifier_cost, Some(dec("0.75")));
-    assert_eq!(summed.classifier_cost, dec("0.75"));
-    assert_eq!(summed.classifier_cost_recorded_turns, 6);
+    assert_eq!(
+        (summed.sessions, summed.turns, summed.total_tokens),
+        (3, 6, 1536)
+    );
+    assert_eq!(
+        (
+            summed.spend,
+            summed.saved_spend,
+            summed.savings_estimated_actual_spend,
+            summed.savings_estimated_saved_spend,
+        ),
+        (dec("3.5"), dec("2.5"), dec("2.5"), dec("3.0"))
+    );
+    assert_eq!(
+        (
+            summed.savings_estimated_turns,
+            summed.savings_classifier_cost,
+            summed.classifier_cost,
+            summed.classifier_cost_recorded_turns,
+        ),
+        (4, Some(dec("0.75")), dec("0.75"), 6)
+    );
     assert_eq!(summed.session_seconds, dec("10800.0"));
 }
 
@@ -279,12 +345,15 @@ fn an_empty_sum_is_the_zero_row() {
 
 #[test]
 fn a_summed_row_is_unavailable_when_any_classifier_cost_is() {
-    let mut second = complexity_row();
-    second.savings_classifier_cost = None;
-    assert_eq!(
-        summed_agg_row(&[complexity_row(), second]).savings_classifier_cost,
-        None
-    );
+    let mut partial = complexity_row();
+    partial.classifier_cost_recorded_turns = 3;
+    let rows = [complexity_row(), partial];
+    assert_eq!(summed_agg_row(&rows).savings_classifier_cost, None);
+    let response = benchmarks(&window(), &rows, None);
+    assert_eq!(response.totals.savings_classifier_cost, None);
+    assert_eq!(response.totals.classifier_cost, None);
+    assert_eq!(response.groups[1].savings_classifier_cost, None);
+    assert_eq!(response.groups[0].savings_classifier_cost, Some(dec("0.5")));
 }
 
 #[test]

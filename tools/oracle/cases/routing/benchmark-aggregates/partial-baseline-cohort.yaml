@@ -1,5 +1,16 @@
 kind: probe
 name: benchmark-aggregates-partial-baseline-cohort
+compare:
+  numeric:
+    - pointer: /output/benchmark_aggregates/response/totals/avg_turns_per_session
+      absolute_tolerance: 0.00000000000000008
+      why: betterlite divides exact decimals, so 4 turns over 3 sessions reads 1.3333333333333333333333333333 where LiteLLM divides binary floats and prints 1.3333333333333333; the two differ by 3.3e-17
+  expected_difference:
+    - pointer: /output/benchmark_aggregates/response/totals/spend
+      reference: 0.30000000000000004
+      rust: 0.3
+      why: betterlite sums money as exact decimals, so rows spending 0.1 and 0.2 total 0.3 where LiteLLM's float sum prints 0.30000000000000004
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L777-L789
 probes:
   - clock: {unix_millis: 1710504000000, monotonic_millis: 0}
     samples: []
@@ -14,55 +25,53 @@ probes:
             tier_turns: {SIMPLE: 1, MEDIUM: 1}
             sessions: 1
             turns: 2
-            unordered_turns: 0
+            unordered_turns: 1
             covered_turns: 2
             cache_hits: 1
             same_model_turns: 1
             same_model_hits: 1
             first_visit_turns: 1
-            first_visit_hits: 0
-            return_turns: 0
+            first_visit_hits: 1
+            return_turns: 2
             return_hits: 0
-            return_expired_misses: 0
-            return_within_ttl_misses: 0
+            return_expired_misses: 1
+            return_within_ttl_misses: 1
             ttl_5m_turns: 1
-            ttl_1h_turns: 0
-            total_tokens: 1000
-            spend: 3.0
-            saved_spend: 1.0
+            ttl_1h_turns: 1
+            total_tokens: 100
+            spend: 0.1
+            saved_spend: 0.0
             savings_estimated_turns: 2
-            savings_estimated_actual_spend: 3.0
+            savings_estimated_actual_spend: 0.1
             savings_estimated_classifier_cost: 0.25
-            savings_estimated_saved_spend: 1.0
+            savings_estimated_saved_spend: 0.0
             classifier_cost: 0.25
             classifier_cost_recorded_turns: 2
-            session_seconds: 3600.0
+            session_seconds: 60.0
           - router_name: complexity-partial
             router_type: complexity
             tier_turns: {SIMPLE: 2}
-            sessions: 1
+            sessions: 2
             turns: 2
-            unordered_turns: 0
+            unordered_turns: 2
             covered_turns: 2
             cache_hits: 1
-            same_model_turns: 2
-            same_model_hits: 1
-            first_visit_turns: 0
+            same_model_turns: 1
+            same_model_hits: 0
+            first_visit_turns: 1
             first_visit_hits: 0
-            return_turns: 0
-            return_hits: 0
+            return_turns: 1
+            return_hits: 1
             return_expired_misses: 0
             return_within_ttl_misses: 0
             ttl_5m_turns: 0
-            ttl_1h_turns: 0
-            total_tokens: 500
-            spend: 2.0
+            ttl_1h_turns: 2
+            total_tokens: 200
+            spend: 0.2
             saved_spend: 0.0
             savings_estimated_turns: 0
             savings_estimated_actual_spend: 0.0
             savings_estimated_saved_spend: 0.0
             classifier_cost: 0.5
             classifier_cost_recorded_turns: 1
-            session_seconds: 1000.0
-compare:
-  ignore: []
+            session_seconds: 120.0

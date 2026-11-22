@@ -28,7 +28,6 @@ pub enum WindowError {
 }
 
 impl BenchmarkWindow {
-    #[must_use]
     pub fn resolve(
         start_date: Option<&str>,
         end_date: Option<&str>,
@@ -87,10 +86,8 @@ fn parse_day(value: &str) -> Result<NaiveDate, WindowError> {
 
 // Python's strptime reads %d as a plain digit, two digits, or one digit behind a space
 fn parse_day_part(text: &str) -> Option<i32> {
-    match text.strip_prefix(' ') {
-        Some(digits) => parse_part(digits, 1, 1),
-        None => parse_part(text, 1, 2),
-    }
+    text.strip_prefix(' ')
+        .map_or_else(|| parse_part(text, 1, 2), |digits| parse_part(digits, 1, 1))
 }
 
 fn parse_part(text: &str, min_digits: usize, max_digits: usize) -> Option<i32> {

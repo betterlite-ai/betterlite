@@ -44,11 +44,11 @@ pub struct SessionAggRow {
         deserialize_with = "rust_decimal::serde::arbitrary_precision::deserialize"
     )]
     pub savings_estimated_actual_spend: Decimal,
+    // money out as a number, and the plain Option reader back, which takes the unit a buffered tagged enum gives a null
     #[serde(
         default,
         rename = "savings_estimated_classifier_cost",
-        serialize_with = "serialize_optional_money",
-        deserialize_with = "rust_decimal::serde::arbitrary_precision_option::deserialize"
+        serialize_with = "serialize_optional_money"
     )]
     pub savings_classifier_cost: Option<Decimal>,
     #[serde(
