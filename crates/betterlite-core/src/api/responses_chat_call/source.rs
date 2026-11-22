@@ -96,15 +96,11 @@ impl ResponsesChunkSource {
                 self.phase = Phase::Exhausted;
                 continue;
             };
-            let bytes = read.map_err(|error| StreamFailure::Unclassified {
-                text: error.to_string(),
-            })?;
+            let bytes = read.map_err(|error| unclassified(&error))?;
             let events = self
                 .parser
                 .push(&bytes)
-                .map_err(|error| StreamFailure::Unclassified {
-                    text: error.to_string(),
-                })?;
+                .map_err(|error| unclassified(&error))?;
             self.pending.extend(events);
         }
     }
@@ -112,15 +108,11 @@ impl ResponsesChunkSource {
     // None means the payload shaped no chunk, after the wrapper stripped a usage-only one.
     fn shape(&mut self, payload: &[u8]) -> Result<Option<Json>, StreamFailure> {
         let value: JsonValue =
-            serde_json::from_slice(payload).map_err(|source| StreamFailure::Unclassified {
-                text: source.to_string(),
-            })?;
+            serde_json::from_slice(payload).map_err(|source| unclassified(&source))?;
         let shaped = self
             .wrapper
             .push(&ProviderChunk::Json(Box::new(value)))
-            .map_err(|error| StreamFailure::Unclassified {
-                text: error.to_string(),
-            })?;
+            .map_err(|error| unclassified(&error))?;
         let Some(chunk) = shaped else {
             return Ok(None);
         };
@@ -132,19 +124,21 @@ impl ResponsesChunkSource {
         let Some(closing) = self.wrapper.finish() else {
             return Ok(None);
         };
-        let chunk = closing.map_err(|error| StreamFailure::Unclassified {
-            text: error.to_string(),
-        })?;
+        let chunk = closing.map_err(|error| unclassified(&error))?;
         view_chunk(&chunk)
+    }
+}
+
+fn unclassified(error: &dyn std::fmt::Display) -> StreamFailure {
+    StreamFailure::Unclassified {
+        text: error.to_string(),
     }
 }
 
 fn view_chunk(chunk: &StreamChunk) -> Result<Option<Json>, StreamFailure> {
     wrapper_view(chunk)
         .map(Some)
-        .map_err(|error| StreamFailure::Unclassified {
-            text: error.to_string(),
-        })
+        .map_err(|error| unclassified(&error))
 }
 
 #[async_trait]
