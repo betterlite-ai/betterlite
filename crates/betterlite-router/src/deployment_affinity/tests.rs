@@ -83,6 +83,12 @@ where
 #[case::hook_user_ttl_uses_settings(deployment_affinity_boundaries::hook_user_ttl_uses_settings())]
 #[case::hook_without_model_info(deployment_affinity_boundaries::hook_without_model_info())]
 #[case::hook_unusable_model_id(deployment_affinity_boundaries::hook_unusable_model_id())]
+#[case::over_long_model_group_keeps_pool(
+    deployment_affinity_boundaries::over_long_model_group_keeps_pool()
+)]
+#[case::over_long_session_id_keeps_pool(
+    deployment_affinity_boundaries::over_long_session_id_keeps_pool()
+)]
 fn deployment_affinity_boundaries<Fut>(#[case] case: Fut)
 where
     Fut: Future<Output = ()>,

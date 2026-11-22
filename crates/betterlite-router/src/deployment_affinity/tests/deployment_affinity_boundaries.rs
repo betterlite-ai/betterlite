@@ -1,10 +1,10 @@
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    Fixture, MODEL_GROUP, encoded_previous_response_id, fixture, fixture_ttl, generated_flag_text,
-    generated_session_metadata, hook_kwargs, hook_request, marked_hook, marked_session_metadata,
-    metadata, model_info, number, pin, pool, request, seed_shared_value, session_pin, settings,
-    shared_store, text, user_pin,
+    Fixture, MODEL_GROUP, caller_metadata, deployment, encoded_previous_response_id, fixture,
+    fixture_ttl, generated_flag_text, generated_session_metadata, hook_kwargs, hook_request,
+    marked_hook, marked_session_metadata, metadata, model_info, number, pin, pool, request,
+    seed_shared_value, session_metadata, session_pin, settings, shared_store, text, user_pin,
 };
 use crate::affinity_claims::error::AffinityError::{
     MetadataNotBool, MetadataNotText, TtlOutOfRange,
@@ -227,4 +227,19 @@ pub(super) async fn hook_unusable_model_id() {
         ["a", "b"]
     );
     assert_eq!(fixture.expiry(&user_pin("key")), None);
+}
+
+// a model group past the affinity key's byte limit is a best-effort miss that keeps the pool
+pub(super) async fn over_long_model_group_keeps_pool() {
+    let fixture = fixture(&[AffinityFlag::Deployment]);
+    let healthy = vec![deployment(&"g".repeat(2048), "a")];
+    let kwargs = caller_metadata("key");
+    assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["a"]);
+}
+
+// a session id past the affinity key's byte limit is a best-effort miss that keeps the pool
+pub(super) async fn over_long_session_id_keeps_pool() {
+    let fixture = fixture(&[AffinityFlag::Session]);
+    let kwargs = session_metadata(&"s".repeat(2048));
+    assert_eq!(fixture.selected(&kwargs).await, ["a", "b"]);
 }
