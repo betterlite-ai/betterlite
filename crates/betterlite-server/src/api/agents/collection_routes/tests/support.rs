@@ -117,14 +117,6 @@ pub(crate) fn json_text(value: &str) -> JsonValue {
     JsonValue::String(value.to_owned())
 }
 
-pub(crate) fn json_strings(fields: &[(&str, &str)]) -> JsonValue {
-    let mut object = JsonMap::new();
-    for (name, value) in fields {
-        object.insert(String::from(*name), JsonValue::String(String::from(*value)));
-    }
-    JsonValue::Object(object)
-}
-
 pub(crate) fn query(pairs: &[(&str, &str)]) -> String {
     let mut serializer = form_urlencoded::Serializer::new(String::new());
     serializer.extend_pairs(pairs.iter().copied());

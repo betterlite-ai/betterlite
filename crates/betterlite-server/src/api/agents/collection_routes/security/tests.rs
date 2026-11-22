@@ -11,8 +11,8 @@ use crate::api::agents::collection_routes::AGENTS_PATH;
 use crate::api::agents::collection_routes::guards::MISSING_KEY_DETAIL;
 use crate::api::agents::collection_routes::merge::TEMPLATE_FIELD;
 use crate::api::agents::collection_routes::tests::support::{
-    FakePreCall, FakeProcessing, admin, call, json_object, json_strings, json_text, key,
-    master_key, query, request, router, user,
+    FakePreCall, FakeProcessing, admin, call, json_object, json_text, key, master_key, query,
+    request, router, user,
 };
 use crate::auth::auth_identity::AuthContext;
 
@@ -49,7 +49,9 @@ async fn a_non_admin_without_a_key_is_refused_before_the_call(
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body, json_strings(&[("detail", MISSING_KEY_DETAIL)]));
+    let detail = body.as_object().unwrap();
+    assert_eq!(detail.len(), 1);
+    assert_eq!(detail.get("detail"), Some(&json_text(MISSING_KEY_DETAIL)));
     assert!(pre_call.calls().is_empty());
     assert!(processing.calls().is_empty());
     assert!(processing.failures().is_empty());
