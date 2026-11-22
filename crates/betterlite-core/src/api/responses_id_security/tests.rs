@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod call_types;
 mod support;
 
 use std::collections::BTreeMap;
