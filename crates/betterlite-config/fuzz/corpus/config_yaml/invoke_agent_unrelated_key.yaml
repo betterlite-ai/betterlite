@@ -1,0 +1,8 @@
+model_list:
+  - model_name: agent
+    litellm_params:
+      model: bedrock/agent/L1RT58GYRW/MFPSBCXYTW
+      sessionID: short
+litellm_settings:
+  sessionID: global-session
+  request_timeout: 3

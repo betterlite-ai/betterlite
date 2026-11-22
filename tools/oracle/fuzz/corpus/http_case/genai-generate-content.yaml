@@ -1,0 +1,23 @@
+name: genai-generate-content
+config: 'general_settings: {}'
+env: {}
+request:
+  method: POST
+  path: /v1beta/models/gemini-2.0-flash:generateContent
+  headers: {content-type: application/json, authorization: 'Bearer oracle-key'}
+  body:
+    contents:
+      - role: user
+        parts:
+          - text: Hello
+    generationConfig: {temperature: 0.2}
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-litellm-call-id: call-1, x-litellm-model-id: model-1}
+    body:
+      candidates:
+        - content: {role: model, parts: [{text: Hi}]}
+          finishReason: STOP
+      usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+    events: null
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

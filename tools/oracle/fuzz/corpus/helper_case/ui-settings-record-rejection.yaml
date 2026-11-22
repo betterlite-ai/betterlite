@@ -1,0 +1,8 @@
+kind: helper
+name: ui-settings-record-rejection-seed
+call:
+  ui_settings_record:
+    settings: {team_admin_editable_team_fields: 3, enabled_ui_pages_internal_users: ["chat", null]}
+env: {}
+compare:
+  ignore: []

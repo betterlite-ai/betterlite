@@ -1,0 +1,70 @@
+use std::future::Future;
+use std::time::SystemTime;
+
+use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use secrecy::SecretString;
+use serde_json::value::to_raw_value;
+
+use super::error::InvokeAgentRequestError;
+use crate::aws_settings::sources::Credentials;
+use crate::credentials::error::CredentialError;
+use crate::invoke_primitives::config::Params;
+use crate::invoke_primitives::signing::{SignRequest as PrimitiveRequest, sign_request as sign};
+use crate::model_routes::ParamMap;
+use crate::signing::request::AwsSignedRequest;
+use crate::signing::target::RegionInputs;
+
+pub struct SignRequest<'text> {
+    pub headers: &'text [(String, Option<String>)],
+    pub optional_params: &'text ParamMap,
+    pub request_data: &'text IndexMap<String, Json>,
+    pub api_base: &'text str,
+    pub api_key: Option<&'text SecretString>,
+    pub configured_bearer: Option<&'text SecretString>,
+    pub model: Option<&'text str>,
+    pub stream: Option<bool>,
+    pub fake_stream: Option<bool>,
+    pub region_inputs: RegionInputs<'text>,
+    pub now: SystemTime,
+}
+
+// _sign_request(service_name="bedrock"): the shared Bedrock signer takes every argument as supplied
+pub async fn sign_request<F, Fut>(
+    request: SignRequest<'_>,
+    resolve_credentials: F,
+) -> Result<AwsSignedRequest, InvokeAgentRequestError>
+where
+    F: FnOnce(&AwsSettings, &str) -> Fut,
+    Fut: Future<Output = Result<Credentials, CredentialError>>,
+{
+    let optional_params = signing_parameters(request.optional_params)?;
+    Ok(sign(
+        PrimitiveRequest {
+            headers: request.headers,
+            optional_params: &optional_params,
+            request_data: request.request_data,
+            api_base: request.api_base,
+            api_key: request.api_key,
+            configured_bearer: request.configured_bearer,
+            model: request.model,
+            stream: request.stream,
+            fake_stream: request.fake_stream,
+            region_inputs: request.region_inputs,
+            now: request.now,
+        },
+        resolve_credentials,
+    )
+    .await?)
+}
+
+fn signing_parameters(optional_params: &ParamMap) -> Result<Params, InvokeAgentRequestError> {
+    let mut parameters = Params::with_capacity(optional_params.len());
+    for (name, value) in optional_params {
+        let encoded =
+            to_raw_value(value).map_err(|source| InvokeAgentRequestError::Parameters { source })?;
+        parameters.insert(name.clone(), encoded);
+    }
+    Ok(parameters)
+}

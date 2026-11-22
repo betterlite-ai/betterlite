@@ -1,0 +1,6 @@
+{
+  "include": ["../b9480.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

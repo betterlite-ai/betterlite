@@ -1,0 +1,27 @@
+task: B3342
+deviations:
+  - what: >-
+      Python's executor thread with a copied contextvars context is replaced by B198's explicit call
+      context passed to the sync path, and avideo_edit and avideo_extension await the handler's
+      future directly instead of hopping through run_in_executor.
+    why: >-
+      betterlite keeps no ContextVars and its handlers are async, so the caller sees the same result
+      without a thread hop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1375-L1377
+  - what: >-
+      A provider string that LiteLLM's LlmProviders enum rejects fails with betterlite's typed
+      unknown-provider error instead of Python's ValueError text "'x' is not a valid LlmProviders".
+    why: >-
+      The Rust provider type is a closed enum parsed from the name; the status and error class after
+      exception_type stay the same, and only the message text differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1430-L1432
+  - what: >-
+      The timeout argument is Option<Duration>, and None means the argument's declared default of 600
+      seconds, while only Some(0) falls back to B198's request_timeout. An explicit Python None,
+      which also falls back, cannot be told apart from an omitted argument in the Rust entry points.
+    why: >-
+      docs/compatibility.md says an absent argument takes its declared default, and betterlite's
+      container file list call translates the same `timeout: float = 600` signature and the same
+      `timeout or DEFAULT_REQUEST_TIMEOUT` expression the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1461
+kept_bugs: []
