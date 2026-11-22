@@ -1,5 +1,7 @@
 pub mod error;
+mod filter;
 pub mod flags;
+mod hook;
 pub mod json;
 mod read;
 mod tests;
@@ -7,20 +9,17 @@ mod tests;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use betterlite_core::api::response_id_codecs::response::get_model_id_from_response_id;
-use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
 
 use self::error::DeploymentAffinityError;
-use self::json::previous_response_id;
-use self::read::pinned_model_id;
+use self::filter::{caller_selection, responses_deployment, session_deployment};
+use self::hook::{HookIdentities, hook_identities, selected_model_id};
 use crate::affinity_claims::AffinityClaims;
 use crate::affinity_claims::error::AffinityError;
 use crate::affinity_claims::identity::{
-    AffinityFlag, AffinityKey, affinity_cache_key, effective_flags, find_deployment_by_model_id,
-    marker_session_affinity_ttl, session_affinity_cache_key, session_id_from_request_kwargs,
-    stable_model_map_key, user_key_from_request_kwargs,
+    AffinityFlag, AffinityKey, affinity_cache_key, effective_flags, session_affinity_cache_key,
+    stable_model_map_key,
 };
 use crate::affinity_claims::pin::AffinityPin;
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -107,15 +106,7 @@ impl DeploymentAffinity {
         let flags = self.flags_for(request.model);
         let empty = JsonObject::new();
         let kwargs = request.request_kwargs.unwrap_or(&empty);
-        if flags.contains(&AffinityFlag::ResponsesApi)
-            && let Some(previous) = previous_response_id(kwargs)?
-            && let Some(model_id) = get_model_id_from_response_id(Some(previous))
-            && let Some(deployment) = find_deployment_by_model_id(request.deployments, &model_id)
-        {
-            tracing::debug!(
-                model_id,
-                "DeploymentAffinityCheck: previous_response_id pinning"
-            );
+        if let Some(deployment) = responses_deployment(&flags, kwargs, request.deployments)? {
             return Ok(vec![deployment.clone()]);
         }
         if self
@@ -128,49 +119,11 @@ impl DeploymentAffinity {
         let Some(model_group) = stable_model_map_key(request.deployments) else {
             return Ok(request.deployments.to_vec());
         };
-        let marker_ttl = marker_session_affinity_ttl(kwargs)?;
-        let session_active = flags.contains(&AffinityFlag::Session) || marker_ttl.is_some();
-        let user_key_enabled = flags.contains(&AffinityFlag::Deployment);
-        let user_key = if session_active || user_key_enabled {
-            user_key_from_request_kwargs(kwargs)?
-        } else {
-            None
-        };
-        if session_active
-            && let Some(session_id) = session_id_from_request_kwargs(kwargs)?
-            && let Ok(key) =
-                session_affinity_cache_key(&model_group, &session_id, user_key.as_deref())
-            && let Some(model_id) = pinned_model_id(self, &key).await
-            && let Some(deployment) = find_deployment_by_model_id(request.deployments, &model_id)
-        {
-            tracing::debug!(
-                model_id,
-                session_id,
-                "DeploymentAffinityCheck: session-id affinity hit"
-            );
+        let session = session_deployment(self, &flags, kwargs, request.deployments, &model_group);
+        if let Some(deployment) = session.await? {
             return Ok(vec![deployment.clone()]);
         }
-        if !user_key_enabled {
-            return Ok(request.deployments.to_vec());
-        }
-        let Some(caller) = user_key else {
-            return Ok(request.deployments.to_vec());
-        };
-        let Ok(key) = affinity_cache_key(&model_group, &caller) else {
-            return Ok(request.deployments.to_vec());
-        };
-        let Some(model_id) = pinned_model_id(self, &key).await else {
-            return Ok(request.deployments.to_vec());
-        };
-        let Some(deployment) = find_deployment_by_model_id(request.deployments, &model_id) else {
-            tracing::debug!(
-                model_id,
-                "DeploymentAffinityCheck: pinned deployment not in healthy_deployments"
-            );
-            return Ok(request.deployments.to_vec());
-        };
-        tracing::debug!(model_id, "DeploymentAffinityCheck: caller affinity hit");
-        Ok(vec![deployment.clone()])
+        caller_selection(self, &flags, kwargs, request.deployments, &model_group).await
     }
 
     // async_pre_call_deployment_hook: persist the selected deployment for the caller and the session
@@ -186,54 +139,34 @@ impl DeploymentAffinity {
             return Ok(());
         };
         let flags = self.flags_for(model_group);
-        let marker_ttl = marker_session_affinity_ttl(kwargs)?;
-        let session_active = flags.contains(&AffinityFlag::Session) || marker_ttl.is_some();
-        let user_key_enabled = flags.contains(&AffinityFlag::Deployment);
-        if !user_key_enabled && !session_active {
-            return Ok(());
-        }
-        let user_key = user_key_from_request_kwargs(kwargs)?;
-        let session_id = if session_active {
-            session_id_from_request_kwargs(kwargs)?
-        } else {
-            None
-        };
-        let caller_key = user_key.as_deref().filter(|_| user_key_enabled);
-        // LiteLLM returns here too when no caller or session identity can claim
-        if caller_key.is_none() && session_id.is_none() {
-            return Ok(());
-        }
-        let Some(model_info) = request
-            .model_info
-            .or_else(|| json::request_model_info(kwargs))
-            .or_else(|| json::metadata_model_info(kwargs))
-        else {
+        let Some(identities) = hook_identities(&flags, kwargs)? else {
             return Ok(());
         };
-        let model_id = match model_info.get("id") {
-            Some(Json::Text(model_id)) if !model_id.is_empty() => model_id,
-            None
-            | Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | Some(Json::Text(_)) => {
-                tracing::warn!(
-                    "DeploymentAffinityCheck: model_id missing; skipping affinity cache update."
-                );
-                return Ok(());
-            }
+        let Some(model_id) = selected_model_id(request) else {
+            return Ok(());
         };
-        let pin = AffinityPin(IndexMap::from([("model_id".to_owned(), model_id.clone())]));
-        if let Some(caller) = caller_key {
-            let key = affinity_cache_key(model_group, caller);
-            self.claim_pin(key, &pin, self.settings.ttl_seconds).await;
-        }
-        if let Some(session) = session_id.as_deref() {
-            let ttl_seconds = marker_ttl.unwrap_or(self.settings.ttl_seconds);
-            let key = session_affinity_cache_key(model_group, session, user_key.as_deref());
-            self.claim_pin(key, &pin, ttl_seconds).await;
-        }
+        let pin = AffinityPin(IndexMap::from([("model_id".to_owned(), model_id)]));
+        self.claim_identities(model_group, identities, &pin).await;
         Ok(())
+    }
+
+    // _claim_pin for both identities: the caller under the router ttl, the session under the marker's
+    async fn claim_identities(
+        &self,
+        model_group: &str,
+        identities: HookIdentities,
+        pin: &AffinityPin,
+    ) {
+        let session_ttl = identities.marker_ttl.unwrap_or(self.settings.ttl_seconds);
+        if let Some(caller) = identities.caller_key {
+            let key = affinity_cache_key(model_group, &caller);
+            self.claim_pin(key, pin, self.settings.ttl_seconds).await;
+        }
+        if let Some(session) = identities.session_id {
+            let key =
+                session_affinity_cache_key(model_group, &session, identities.user_key.as_deref());
+            self.claim_pin(key, pin, session_ttl).await;
+        }
     }
 
     // _claim_pin: the first writer wins and a claim failure leaves affinity best effort
@@ -243,11 +176,11 @@ impl DeploymentAffinity {
         pin: &AffinityPin,
         ttl_seconds: u32,
     ) {
-        let Ok(key) = key else {
+        let Ok(usable) = key else {
             tracing::debug!("deployment affinity: the cache key is unusable; skipping the claim");
             return;
         };
-        if let Err(error) = self.claims.claim(&key, pin, ttl_seconds, None).await {
+        if let Err(error) = self.claims.claim(&usable, pin, ttl_seconds, None).await {
             tracing::debug!(%error, "deployment affinity: the pin claim failed");
         }
     }

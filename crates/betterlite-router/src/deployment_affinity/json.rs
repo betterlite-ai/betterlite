@@ -36,9 +36,10 @@ pub fn deployment_model_name(kwargs: &JsonObject) -> Option<&str> {
 // kwargs["model_info"]: the router attaches the selected deployment's dict at the top level
 #[must_use]
 pub fn request_model_info(kwargs: &JsonObject) -> Option<&JsonObject> {
-    match kwargs.get(MODEL_INFO) {
-        Some(slot) => json_object(slot),
-        None => None,
+    let slot = kwargs.get(MODEL_INFO)?;
+    match slot {
+        Json::Object(info) => Some(info),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
