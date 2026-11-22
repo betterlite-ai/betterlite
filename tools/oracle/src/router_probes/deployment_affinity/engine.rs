@@ -116,14 +116,10 @@ async fn hook_step(
     Box::pin(service.pre_call_deployment_hook(&request))
         .await
         .map_err(|error| invalid(&error.to_string()))?;
-    Ok(hook_observation())
-}
-
-const fn hook_observation() -> Observation {
-    Observation {
+    Ok(Observation {
         action: StepKind::Hook,
         selected: Vec::new(),
-    }
+    })
 }
 
 fn selected_ids(deployments: &[DeploymentSpec]) -> Vec<String> {

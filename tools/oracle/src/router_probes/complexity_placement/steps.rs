@@ -259,6 +259,7 @@ pub(super) fn probe(input: &Input) -> Result<Probe<'_>, OperationError> {
             max_tokens_from_tier_model: input
                 .max_tokens_from_tier_model
                 .unwrap_or(section::DEFAULT_MAX_TOKENS_FROM_TIER),
+            deployment_pin: section::DeploymentPin::Unused,
         },
         tiers: tier_set(&input.tiers),
         deployments: deployments(&input.deployments),
