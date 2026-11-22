@@ -12,6 +12,7 @@ use secrecy::SecretString;
 use thiserror::Error;
 
 use crate::api::file_http_upload::service::Mode;
+use crate::api::resource_sdk_settings::ResourceSdkRequestOptions;
 use crate::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutError, TimeoutValue,
 };
@@ -32,6 +33,15 @@ pub enum SuppliedClient<Client> {
     Handler { mode: Mode, client: Client },
     Sdk(Client),
 }
+impl<Client> SuppliedClient<Client> {
+    // the generic handler takes a supplied client only when it is an httpx handler
+    fn as_handler(&self) -> Option<&Self> {
+        match self {
+            Self::Handler { .. } => Some(self),
+            Self::Sdk(_) => None,
+        }
+    }
+}
 // the GenericLiteLLMParams fields both calls read, and the kwargs they read beside it
 #[derive(Debug, Clone)]
 pub struct WriteParams<Logger, Client> {
@@ -50,12 +60,25 @@ pub struct WriteParams<Logger, Client> {
     pub client: Option<SuppliedClient<Client>>,
     pub credentials: Option<TrustedCredentials>,
 }
+impl<Logger, Client> From<&WriteParams<Logger, Client>> for ResourceSdkRequestOptions {
+    fn from(params: &WriteParams<Logger, Client>) -> Self {
+        Self {
+            api_base: params.api_base.clone(),
+            api_version: params.api_version.clone(),
+            api_key: params.api_key.clone(),
+            organization: params.organization.clone(),
+            vertex_project: None,
+            vertex_location: None,
+            vertex_credentials: None,
+        }
+    }
+}
 #[derive(Debug, Clone)]
 pub struct UploadInput<Logger, Client> {
     pub file: FileUpload,
     pub purpose: CreatePurpose,
     pub expires_after: Option<ExpiresAfter>,
-    // absent takes the function's default: None for create_file, openai for acreate_file
+    // absent or null takes the function's default: None for create_file, openai for acreate_file
     pub custom_llm_provider: Option<Option<String>>,
     pub extra_headers: Option<IndexMap<String, String>>,
     pub extra_body: Option<IndexMap<String, String>>,

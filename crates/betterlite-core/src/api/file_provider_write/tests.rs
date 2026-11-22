@@ -26,11 +26,16 @@ use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
 
 use super::service::FileWrite;
 use super::{
-    DeleteInput, DeleteLogger, DeleteTarget, FileWriteError, FileWriteProviders, LoggerSeed,
-    ProviderCall, SuppliedClient, UploadInput, UploadTarget, WriteParams,
+    ConfigDelete, DeleteInput, DeleteLogger, DeleteParams, DeleteTarget, FileWriteError,
+    FileWriteProviders, LoggerSeed, ProviderCall, SuppliedClient, UploadInput, UploadTarget,
+    WriteParams,
 };
 
 const CALL_ID: &str = "00000000-0000-4000-8000-000000000001";
+
+type UploadRequest = UploadInput<String, &'static str>;
+type DeleteRequest = DeleteInput<String, &'static str>;
+type Outcome<Value> = Result<Value, FileWriteError<Rejected>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("the provider answered {status}: {message}")]
@@ -145,6 +150,80 @@ fn file_object() -> FileObject {
     }
 }
 
+// the target a recorder answers, from either write function
+enum Target<'call> {
+    Upload(UploadTarget<'call, Recorder>),
+    Delete(DeleteTarget<'call, Recorder>),
+}
+
+fn seen(target: Target<'_>) -> Seen {
+    match target {
+        Target::Upload(UploadTarget::Config(upload)) => Seen::ConfigUpload {
+            config: upload.config,
+            mode: upload.mode,
+            data: upload.data,
+            headers: upload.headers,
+            api_base: upload.api_base.map(str::to_owned),
+            api_key: exposed(upload.api_key),
+            logger: upload.logger.clone(),
+            client: upload.client.cloned(),
+            timeout: upload.timeout,
+        },
+        Target::Upload(UploadTarget::OpenAi { call, data }) => {
+            Seen::OpenAiUpload(credentials(&call), data)
+        }
+        Target::Upload(UploadTarget::Azure { call, data, .. }) => {
+            Seen::AzureUpload(credentials(&call), data)
+        }
+        Target::Delete(DeleteTarget::Config(delete)) => config_delete_seen(delete),
+        Target::Delete(DeleteTarget::OpenAi { call, file_id }) => {
+            Seen::OpenAiDelete(credentials(&call), file_id.to_owned())
+        }
+        Target::Delete(DeleteTarget::Azure {
+            call,
+            file_id,
+            client,
+            params,
+        }) => seen_azure_delete(&call, file_id, client, params),
+    }
+}
+
+fn seen_azure_delete(
+    call: &ProviderCall,
+    file_id: &str,
+    client: Option<&SuppliedClient<&'static str>>,
+    params: DeleteParams<'_>,
+) -> Seen {
+    Seen::AzureDelete {
+        call: credentials(call),
+        file_id: file_id.to_owned(),
+        client: client.cloned(),
+        api_key: exposed(params.api_key),
+        api_base: params.api_base.map(str::to_owned),
+    }
+}
+
+fn config_delete_seen(delete: ConfigDelete<'_, Recorder>) -> Seen {
+    Seen::ConfigDelete {
+        config: delete.config,
+        mode: delete.mode,
+        file_id: delete.file_id.to_owned(),
+        api_key: exposed(delete.params.api_key),
+        api_base: delete.params.api_base.map(str::to_owned),
+        trusted: delete
+            .params
+            .credentials
+            .map(|trusted| trusted.values.keys().cloned().collect()),
+        headers: delete.headers,
+        logger: match delete.logger {
+            DeleteLogger::Existing(logger) => Logged::Existing(logger.clone()),
+            DeleteLogger::Created(seed) => Logged::Created(seed),
+        },
+        client: delete.client.cloned(),
+        timeout: delete.timeout,
+    }
+}
+
 impl FileWriteProviders for Recorder {
     type Config = ProviderId;
     type Logger = String;
@@ -170,21 +249,7 @@ impl FileWriteProviders for Recorder {
         &self,
         target: UploadTarget<'_, Self>,
     ) -> impl Future<Output = Result<FileObject, Rejected>> + Send {
-        self.push(match target {
-            UploadTarget::Config(upload) => Seen::ConfigUpload {
-                config: upload.config,
-                mode: upload.mode,
-                data: upload.data,
-                headers: upload.headers,
-                api_base: upload.api_base.map(str::to_owned),
-                api_key: exposed(upload.api_key),
-                logger: upload.logger.clone(),
-                client: upload.client.cloned(),
-                timeout: upload.timeout,
-            },
-            UploadTarget::OpenAi { call, data } => Seen::OpenAiUpload(credentials(&call), data),
-            UploadTarget::Azure { call, data, .. } => Seen::AzureUpload(credentials(&call), data),
-        });
+        self.push(seen(Target::Upload(target)));
         ready(self.failure.clone().map_or_else(|| Ok(file_object()), Err))
     }
 
@@ -198,42 +263,7 @@ impl FileWriteProviders for Recorder {
             }
             DeleteTarget::Config(delete) => delete.file_id.to_owned(),
         };
-        self.push(match target {
-            DeleteTarget::OpenAi { call, file_id } => {
-                Seen::OpenAiDelete(credentials(&call), file_id.to_owned())
-            }
-            DeleteTarget::Azure {
-                call,
-                file_id,
-                client,
-                params,
-            } => Seen::AzureDelete {
-                call: credentials(&call),
-                file_id: file_id.to_owned(),
-                client: client.cloned(),
-                api_key: exposed(params.api_key),
-                api_base: params.api_base.map(str::to_owned),
-            },
-            DeleteTarget::Config(delete) => Seen::ConfigDelete {
-                config: delete.config,
-                mode: delete.mode,
-                file_id: delete.file_id.to_owned(),
-                api_key: exposed(delete.params.api_key),
-                api_base: delete.params.api_base.map(str::to_owned),
-                trusted: delete
-                    .params
-                    .credentials
-                    .map(|trusted| trusted.values.keys().cloned().collect()),
-                headers: delete.headers,
-                logger: match delete.logger {
-                    DeleteLogger::Existing(logger) => Logged::Existing(logger.clone()),
-                    DeleteLogger::Created(seed) => Logged::Created(seed),
-                },
-                client: delete.client.cloned(),
-                timeout: delete.timeout,
-            },
-        });
-        // the provider's own deleted flag comes back untouched
+        self.push(seen(Target::Delete(target)));
         let deleted = FileDeleted {
             id: file_id,
             object: FileKind::File,
@@ -284,44 +314,6 @@ fn settings(configured: &ConfiguredSettings) -> ResourceSdkSettings {
     ResourceSdkSettings::from(configured)
 }
 
-type Outcome<Value> = Result<Value, FileWriteError<Rejected>>;
-
-fn upload_with(
-    recorder: &Recorder,
-    configured: &ConfiguredSettings,
-    mode: Mode,
-    input: &UploadInput<String, &'static str>,
-) -> Outcome<FileObject> {
-    let resolution = Resolution::new();
-    let context = resolution.context();
-    let service = FileWrite {
-        providers: recorder.clone(),
-        settings: settings(configured),
-        resolution: &context,
-        clock: started,
-        call_ids: call_id,
-    };
-    futures_executor::block_on(service.create_file(mode, input))
-}
-
-fn delete_with(
-    recorder: &Recorder,
-    configured: &ConfiguredSettings,
-    mode: Mode,
-    input: &DeleteInput<String, &'static str>,
-) -> Outcome<FileDeleted> {
-    let resolution = Resolution::new();
-    let context = resolution.context();
-    let service = FileWrite {
-        providers: recorder.clone(),
-        settings: settings(configured),
-        resolution: &context,
-        clock: started,
-        call_ids: call_id,
-    };
-    futures_executor::block_on(service.delete_file(mode, input))
-}
-
 fn params() -> WriteParams<String, &'static str> {
     WriteParams {
         api_base: None,
@@ -340,49 +332,117 @@ fn params() -> WriteParams<String, &'static str> {
     }
 }
 
-fn upload_input(provider: Option<Option<&str>>) -> UploadInput<String, &'static str> {
-    UploadInput {
-        file: FileUpload {
-            filename: None,
-            content_type: None,
-            data: b"abc".to_vec(),
-        },
-        purpose: CreatePurpose::Batch,
-        expires_after: None,
-        custom_llm_provider: provider.map(|named| named.map(str::to_owned)),
-        extra_headers: None,
-        extra_body: None,
-        params: params(),
+// which of the two write functions a test builds its input for
+#[derive(Debug, Clone, Copy)]
+enum Operation {
+    Upload,
+    Delete,
+}
+
+// the input a test runs, with the provider it names or the null it sends as given
+enum Request {
+    Upload(UploadRequest),
+    Delete(DeleteRequest),
+}
+
+// the record the provider answered with, before the test reads the branch it asked for
+enum Answer {
+    File(Outcome<FileObject>),
+    Deleted(Outcome<FileDeleted>),
+}
+
+impl Answer {
+    fn file(self) -> Outcome<FileObject> {
+        match self {
+            Self::File(outcome) => outcome,
+            Self::Deleted(_) => panic!("the case uploads"),
+        }
+    }
+
+    fn deleted(self) -> Outcome<FileDeleted> {
+        match self {
+            Self::File(_) => panic!("the case deletes"),
+            Self::Deleted(outcome) => outcome,
+        }
     }
 }
 
-fn delete_input(provider: Option<&str>) -> DeleteInput<String, &'static str> {
-    DeleteInput {
-        file_id: "file-abc".to_owned(),
-        model: None,
-        custom_llm_provider: provider.map(str::to_owned),
-        extra_headers: None,
-        extra_body: None,
-        params: params(),
+fn request(operation: Operation, provider: Option<Option<&str>>) -> Request {
+    let named = provider.map(|name| name.map(str::to_owned));
+    match operation {
+        Operation::Upload => Request::Upload(UploadInput {
+            file: FileUpload {
+                filename: None,
+                content_type: None,
+                data: b"abc".to_vec(),
+            },
+            purpose: CreatePurpose::Batch,
+            expires_after: None,
+            custom_llm_provider: named,
+            extra_headers: None,
+            extra_body: None,
+            params: params(),
+        }),
+        Operation::Delete => Request::Delete(DeleteInput {
+            file_id: "file-abc".to_owned(),
+            model: None,
+            custom_llm_provider: named.flatten(),
+            extra_headers: None,
+            extra_body: None,
+            params: params(),
+        }),
     }
 }
 
-fn upload(
-    mode: Mode,
-    input: &UploadInput<String, &'static str>,
-) -> (Outcome<FileObject>, Vec<Seen>) {
-    let recorder = Recorder::default();
-    let outcome = upload_with(&recorder, &ConfiguredSettings::default(), mode, input);
-    (outcome, recorder.seen())
+fn upload_input(provider: Option<Option<&str>>) -> UploadRequest {
+    let Request::Upload(input) = request(Operation::Upload, provider) else {
+        panic!("the case uploads");
+    };
+    input
 }
 
-fn delete(
+fn delete_input(provider: Option<&str>) -> DeleteRequest {
+    let Request::Delete(input) = request(Operation::Delete, provider.map(Some)) else {
+        panic!("the case deletes");
+    };
+    input
+}
+
+fn write_with(
+    recorder: &Recorder,
+    configured: &ConfiguredSettings,
     mode: Mode,
-    input: &DeleteInput<String, &'static str>,
-) -> (Outcome<FileDeleted>, Vec<Seen>) {
+    request: Request,
+) -> Answer {
+    let resolution = Resolution::new();
+    let context = resolution.context();
+    let service = FileWrite {
+        providers: recorder.clone(),
+        settings: settings(configured),
+        resolution: &context,
+        clock: started,
+        call_ids: call_id,
+    };
+    futures_executor::block_on(async {
+        match request {
+            Request::Upload(input) => Answer::File(service.create_file(mode, &input).await),
+            Request::Delete(input) => Answer::Deleted(service.delete_file(mode, &input).await),
+        }
+    })
+}
+
+fn upload(mode: Mode, input: UploadRequest) -> (Outcome<FileObject>, Vec<Seen>) {
     let recorder = Recorder::default();
-    let outcome = delete_with(&recorder, &ConfiguredSettings::default(), mode, input);
-    (outcome, recorder.seen())
+    let configured = ConfiguredSettings::default();
+    let answer = write_with(&recorder, &configured, mode, Request::Upload(input));
+    (answer.file(), recorder.seen())
+}
+
+fn delete(mode: Mode, input: DeleteRequest) -> (Outcome<FileDeleted>, Vec<Seen>) {
+    let recorder = Recorder::default();
+    let configured = ConfiguredSettings::default();
+    let answer = write_with(&recorder, &configured, mode, Request::Delete(input));
+    (answer.deleted(), recorder.seen())
 }
 
 fn sent_data(seen: &[Seen]) -> FileCreate {

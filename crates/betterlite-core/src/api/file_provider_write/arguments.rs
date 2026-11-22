@@ -5,24 +5,21 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::files::records::{CreatePurpose, FileCreate};
 
 use crate::api::file_http_upload::service::Mode;
-use crate::api::resource_sdk_settings::ResourceSdkRequestOptions;
 use crate::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, TimeoutError, TimeoutValue, resolve_fine_tuning_timeout,
 };
 
-use super::{DeleteParams, FileWriteError, SuppliedClient, UploadInput, WriteParams, WriteTimeout};
-// an absent provider takes the function's default: None for create_file, openai for acreate_file
+use super::{DeleteParams, FileWriteError, UploadInput, WriteParams, WriteTimeout};
+// an absent or null provider takes the function's default: None for create_file, openai for acreate_file
 pub(super) fn upload_provider<Logger, Client>(
     mode: Mode,
     input: &UploadInput<Logger, Client>,
 ) -> Option<String> {
-    input
-        .custom_llm_provider
-        .clone()
-        .unwrap_or_else(|| match mode {
-            Mode::Sync => None,
-            Mode::Asynchronous => Some("openai".to_owned()),
-        })
+    let named = input.custom_llm_provider.clone().flatten();
+    named.unwrap_or_else(|| match mode {
+        Mode::Sync => None,
+        Mode::Asynchronous => Some("openai".to_owned()),
+    })
 }
 // CreateFileRequest carries expires_after only when the caller set it
 pub(super) fn create_request<Logger, Client>(input: &UploadInput<Logger, Client>) -> FileCreate {
@@ -50,28 +47,6 @@ pub(super) fn passthrough_guard<ProviderError: Error + 'static>(
         });
     }
     Ok(())
-}
-pub(super) fn request_options<Logger, Client>(
-    params: &WriteParams<Logger, Client>,
-) -> ResourceSdkRequestOptions {
-    ResourceSdkRequestOptions {
-        api_base: params.api_base.clone(),
-        api_version: params.api_version.clone(),
-        api_key: params.api_key.clone(),
-        organization: params.organization.clone(),
-        vertex_project: None,
-        vertex_location: None,
-        vertex_credentials: None,
-    }
-}
-// the generic handler takes a supplied client only when it is an httpx handler
-pub(super) fn handler<Logger, Client>(
-    params: &WriteParams<Logger, Client>,
-) -> Option<&SuppliedClient<Client>> {
-    params
-        .client
-        .as_ref()
-        .filter(|client| matches!(client, SuppliedClient::Handler { .. }))
 }
 pub(super) fn delete_params<Logger, Client>(
     params: &WriteParams<Logger, Client>,

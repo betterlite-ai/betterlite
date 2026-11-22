@@ -4,22 +4,29 @@ use chrono::{DateTime, FixedOffset};
 use uuid::Uuid;
 
 use crate::api::file_http_upload::service::Mode;
+use crate::api::resource_sdk_settings::ResourceSdkRequestOptions;
 use crate::api::resource_sdk_settings::ResourceSdkSettings;
 use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
 
 use super::arguments::{
-    create_request, delete_params, handler, passthrough_guard, provider_id, request_options,
-    upload_provider, write_timeout,
+    create_request, delete_params, passthrough_guard, provider_id, upload_provider, write_timeout,
 };
 use super::{
     ConfigDelete, ConfigUpload, DeleteInput, DeleteLogger, DeleteTarget, FileWriteError,
-    FileWriteProviders, LoggerSeed, ProviderCall, UploadInput, UploadTarget, WriteParams,
+    FileWriteProviders, LoggerSeed, ProviderCall, SuppliedClient, UploadInput, UploadTarget,
+    WriteParams,
 };
 
 type Written<Value, Providers> =
     Result<Value, FileWriteError<<Providers as FileWriteProviders>::Error>>;
 // OPENAI_COMPATIBLE_BATCH_AND_FILES_PROVIDERS, the names the OpenAI files client serves
 const OPENAI_COMPATIBLE: [&str; 3] = ["openai", "hosted_vllm", "litellm_proxy"];
+// get_openai_credentials or get_azure_credentials, whichever chain a dispatch branch takes
+#[derive(Debug, Clone, Copy)]
+enum CredentialSource {
+    OpenAi,
+    Azure,
+}
 pub struct FileWrite<'deps, Providers> {
     pub providers: Providers,
     pub settings: ResourceSdkSettings,
@@ -50,9 +57,8 @@ impl<Providers: FileWriteProviders> FileWrite<'_, Providers> {
         let timeout = write_timeout::<_, _, Providers::Error>(params, named.unwrap_or("None"))?;
         let invocation = Invocation { mode, timeout };
         let data = create_request(input);
-        let config = self
-            .providers
-            .files_config(provider_id::<Providers::Error>(named)?);
+        let id = provider_id::<Providers::Error>(named)?;
+        let config = self.providers.files_config(id);
         let target = match config {
             Some(config) => UploadTarget::Config(ConfigUpload {
                 config,
@@ -63,7 +69,7 @@ impl<Providers: FileWriteProviders> FileWrite<'_, Providers> {
                 api_key: params.api_key.as_ref(),
                 params,
                 logger,
-                client: handler(params),
+                client: params.client.as_ref().and_then(SuppliedClient::as_handler),
                 timeout,
             }),
             None => self.sdk_upload(invocation, named.unwrap_or("None"), params, data)?,
@@ -83,13 +89,13 @@ impl<Providers: FileWriteProviders> FileWrite<'_, Providers> {
     ) -> Written<UploadTarget<'call, Providers>, Providers> {
         if OPENAI_COMPATIBLE.contains(&provider) {
             return Ok(UploadTarget::OpenAi {
-                call: self.openai_call(invocation, params),
+                call: self.provider_call(CredentialSource::OpenAi, invocation, params),
                 data,
             });
         }
         if provider == "azure" {
             return Ok(UploadTarget::Azure {
-                call: self.azure_call(invocation, params),
+                call: self.provider_call(CredentialSource::Azure, invocation, params),
                 data,
                 params,
             });
@@ -112,12 +118,12 @@ impl<Providers: FileWriteProviders> FileWrite<'_, Providers> {
         let file_id = input.file_id.as_str();
         let target = if OPENAI_COMPATIBLE.contains(&provider.as_str()) {
             DeleteTarget::OpenAi {
-                call: self.openai_call(invocation, params),
+                call: self.provider_call(CredentialSource::OpenAi, invocation, params),
                 file_id,
             }
         } else if provider == "azure" {
             DeleteTarget::Azure {
-                call: self.azure_call(invocation, params),
+                call: self.provider_call(CredentialSource::Azure, invocation, params),
                 file_id,
                 client: params.client.as_ref(),
                 params: delete_params(params),
@@ -149,7 +155,7 @@ impl<Providers: FileWriteProviders> FileWrite<'_, Providers> {
             params: delete_params(params),
             headers: input.extra_headers.clone().unwrap_or_default(),
             logger: self.delete_logger(invocation.mode, params),
-            client: handler(params),
+            client: params.client.as_ref().and_then(SuppliedClient::as_handler),
             timeout: invocation.timeout,
         }))
     }
@@ -170,7 +176,7 @@ impl<Providers: FileWriteProviders> FileWrite<'_, Providers> {
             api_key: None,
         };
         let resolved = resolve(&request, self.resolution);
-        resolved.map_or(declared, |found| found.provider.slug().to_owned())
+        resolved.map_or_else(|_error| declared, |found| found.provider.slug().to_owned())
     }
 
     fn delete_logger<'call>(
@@ -195,42 +201,38 @@ impl<Providers: FileWriteProviders> FileWrite<'_, Providers> {
         })
     }
 
-    // get_openai_credentials: the call's value, then the litellm settings, then the environment
-    fn openai_call<Logger, Client>(
+    // get_openai_credentials and get_azure_credentials: the call's value, then the litellm settings, then the environment
+    fn provider_call<Logger, Client>(
         &self,
+        source: CredentialSource,
         invocation: Invocation,
         params: &WriteParams<Logger, Client>,
     ) -> ProviderCall {
-        let options = request_options(params);
-        ProviderCall {
+        let options = ResourceSdkRequestOptions::from(params);
+        let mut call = ProviderCall {
             mode: invocation.mode,
-            api_base: Some(self.settings.openai_base(&options)),
-            api_key: self.settings.openai_api_key(&options).cloned(),
+            api_base: None,
+            api_key: None,
             api_version: None,
-            organization: self
-                .settings
-                .openai_organization(&options)
-                .map(str::to_owned),
-            timeout: invocation.timeout,
-            max_retries: params.max_retries,
-        }
-    }
-
-    // get_azure_credentials: the same chain over the azure names
-    fn azure_call<Logger, Client>(
-        &self,
-        invocation: Invocation,
-        params: &WriteParams<Logger, Client>,
-    ) -> ProviderCall {
-        let options = request_options(params);
-        ProviderCall {
-            mode: invocation.mode,
-            api_base: self.settings.azure_base(&options).map(str::to_owned),
-            api_key: self.settings.azure_api_key(&options).cloned(),
-            api_version: self.settings.azure_version(&options).map(str::to_owned),
             organization: None,
             timeout: invocation.timeout,
             max_retries: params.max_retries,
+        };
+        match source {
+            CredentialSource::OpenAi => {
+                call.api_base = Some(self.settings.openai_base(&options));
+                call.api_key = self.settings.openai_api_key(&options).cloned();
+                call.organization = self
+                    .settings
+                    .openai_organization(&options)
+                    .map(str::to_owned);
+            }
+            CredentialSource::Azure => {
+                call.api_base = self.settings.azure_base(&options).map(str::to_owned);
+                call.api_key = self.settings.azure_api_key(&options).cloned();
+                call.api_version = self.settings.azure_version(&options).map(str::to_owned);
+            }
         }
+        call
     }
 }

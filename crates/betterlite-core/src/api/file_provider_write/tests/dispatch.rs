@@ -13,8 +13,8 @@ use crate::api::file_provider_write::{FileWriteError, LoggerSeed, SuppliedClient
 use crate::api::resource_sdk_settings::timeout::FineTuningTimeout;
 
 use super::{
-    CALL_ID, Credentials, Logged, Recorder, Rejected, Seen, delete, delete_input, delete_with,
-    sent_data, started, upload, upload_input, upload_with,
+    CALL_ID, Credentials, Logged, Recorder, Rejected, Request, Seen, delete, delete_input,
+    sent_data, started, upload, upload_input, write_with,
 };
 
 const DEFAULT_TIMEOUT: FineTuningTimeout = FineTuningTimeout::Seconds(600.0_f64);
@@ -55,6 +55,42 @@ fn handler() -> SuppliedClient<&'static str> {
     }
 }
 
+// which of the two SDK clouds a dispatch test reads its credentials for
+#[derive(Debug, Clone, Copy)]
+enum Cloud {
+    OpenAi,
+    Azure,
+}
+
+// value is the request's organization for OpenAI and its api_version for Azure
+fn sdk_credentials(cloud: Cloud, mode: Mode, value: &str) -> Credentials {
+    let (api_base, api_key, api_version, organization, max_retries) = match cloud {
+        Cloud::OpenAi => (
+            "https://api.openai.com/v1",
+            "sk-env",
+            None,
+            Some(value),
+            Some(1),
+        ),
+        Cloud::Azure => (
+            "https://azure.example",
+            "az-request",
+            Some(value),
+            None,
+            Some(3),
+        ),
+    };
+    Credentials {
+        mode,
+        api_base: Some(api_base.to_owned()),
+        api_key: Some(api_key.to_owned()),
+        api_version: api_version.map(str::to_owned),
+        organization: organization.map(str::to_owned),
+        timeout: DEFAULT_TIMEOUT,
+        max_retries,
+    }
+}
+
 #[test]
 fn config_first_upload_takes_the_files_config() {
     let mut input = upload_input(Some(Some("anthropic")));
@@ -62,7 +98,7 @@ fn config_first_upload_takes_the_files_config() {
     input.params.api_base = Some("https://anthropic.example".to_owned());
     input.params.api_key = secret("sk-ant");
     input.params.client = Some(handler());
-    let (_, seen) = upload(Mode::Asynchronous, &input);
+    let (_, seen) = upload(Mode::Asynchronous, input);
     let [
         Seen::ConfigUpload {
             config,
@@ -94,30 +130,18 @@ fn config_first_upload_takes_the_files_config() {
 fn generic_paths_drop_an_sdk_client() {
     let mut uploading = upload_input(Some(Some("anthropic")));
     uploading.params.client = Some(SuppliedClient::Sdk("sdk"));
-    let (_, uploaded) = upload(Mode::Sync, &uploading);
+    let (_, uploaded) = upload(Mode::Sync, uploading);
     assert!(matches!(
         uploaded.as_slice(),
         [Seen::ConfigUpload { client: None, .. }]
     ));
     let mut deleting = delete_input(Some("anthropic"));
     deleting.params.client = Some(SuppliedClient::Sdk("sdk"));
-    let (_, deleted) = delete(Mode::Sync, &deleting);
+    let (_, deleted) = delete(Mode::Sync, deleting);
     assert!(matches!(
         deleted.as_slice(),
         [Seen::ConfigDelete { client: None, .. }]
     ));
-}
-
-fn openai_credentials(mode: Mode, organization: &str) -> Credentials {
-    Credentials {
-        mode,
-        api_base: Some("https://api.openai.com/v1".to_owned()),
-        api_key: Some("sk-env".to_owned()),
-        api_version: None,
-        organization: Some(organization.to_owned()),
-        timeout: DEFAULT_TIMEOUT,
-        max_retries: Some(1),
-    }
 }
 
 #[rstest]
@@ -130,34 +154,28 @@ fn write_provider_dispatch(#[case] provider: &str) {
     uploading.params.organization = Some("org-request".to_owned());
     uploading.params.max_retries = Some(1);
     uploading.params.client = Some(SuppliedClient::Sdk("ignored"));
-    upload_with(&recorder, &configured(), Mode::Sync, &uploading).unwrap();
+    let upload_request = Request::Upload(uploading);
+    write_with(&recorder, &configured(), Mode::Sync, upload_request)
+        .file()
+        .unwrap();
     let mut deleting = delete_input(Some(provider));
     deleting.params.max_retries = Some(1);
     deleting.params.client = Some(SuppliedClient::Sdk("ignored"));
-    delete_with(&recorder, &configured(), Mode::Asynchronous, &deleting).unwrap();
+    let delete_request = Request::Delete(deleting);
+    write_with(&recorder, &configured(), Mode::Asynchronous, delete_request)
+        .deleted()
+        .unwrap();
     let expected = vec![
         Seen::OpenAiUpload(
-            openai_credentials(Mode::Sync, "org-request"),
+            sdk_credentials(Cloud::OpenAi, Mode::Sync, "org-request"),
             sent_data(&recorder.seen()[..1]),
         ),
         Seen::OpenAiDelete(
-            openai_credentials(Mode::Asynchronous, "org-env"),
+            sdk_credentials(Cloud::OpenAi, Mode::Asynchronous, "org-env"),
             "file-abc".to_owned(),
         ),
     ];
     assert_eq!(recorder.seen(), expected);
-}
-
-fn azure_credentials(mode: Mode, api_version: &str) -> Credentials {
-    Credentials {
-        mode,
-        api_base: Some("https://azure.example".to_owned()),
-        api_key: Some("az-request".to_owned()),
-        api_version: Some(api_version.to_owned()),
-        organization: None,
-        timeout: DEFAULT_TIMEOUT,
-        max_retries: Some(3),
-    }
 }
 
 #[test]
@@ -167,16 +185,29 @@ fn azure_receives_version_retries_and_its_delete_client() {
     uploading.params.api_key = secret("az-request");
     uploading.params.api_version = Some("2024-10-21".to_owned());
     uploading.params.max_retries = Some(3);
-    let sent = upload_with(&recorder, &configured(), Mode::Sync, &uploading);
+    let sent = write_with(
+        &recorder,
+        &configured(),
+        Mode::Sync,
+        Request::Upload(uploading),
+    )
+    .file();
     assert_eq!(sent.unwrap().id, "file-abc");
     let mut deleting = delete_input(Some("azure"));
     deleting.params.api_key = secret("az-request");
     deleting.params.max_retries = Some(3);
     deleting.params.client = Some(SuppliedClient::Sdk("azure-client"));
-    delete_with(&recorder, &configured(), Mode::Sync, &deleting).unwrap();
+    write_with(
+        &recorder,
+        &configured(),
+        Mode::Sync,
+        Request::Delete(deleting),
+    )
+    .deleted()
+    .unwrap();
     let seen = recorder.seen();
     assert!(
-        matches!(seen.first(), Some(Seen::AzureUpload(call, _)) if *call == azure_credentials(Mode::Sync, "2024-10-21"))
+        matches!(seen.first(), Some(Seen::AzureUpload(call, _)) if *call == sdk_credentials(Cloud::Azure, Mode::Sync, "2024-10-21"))
     );
     let Some(Seen::AzureDelete {
         call,
@@ -188,7 +219,10 @@ fn azure_receives_version_retries_and_its_delete_client() {
     else {
         panic!("expected the azure delete, saw {seen:?}");
     };
-    assert_eq!(*call, azure_credentials(Mode::Sync, "2024-06-01"));
+    assert_eq!(
+        *call,
+        sdk_credentials(Cloud::Azure, Mode::Sync, "2024-06-01")
+    );
     assert_eq!(file_id, "file-abc");
     assert_eq!(*client, Some(SuppliedClient::Sdk("azure-client")));
     assert_eq!(api_key.as_deref(), Some("az-request"));
@@ -205,7 +239,7 @@ fn generic_delete_assigns_credentials_even_when_null() {
     input.params.credentials = Some(TrustedCredentials {
         values: BTreeMap::from([("aws_bucket".to_owned(), SecretString::from("b"))]),
     });
-    let (sent, seen) = delete(Mode::Sync, &input);
+    let (sent, seen) = delete(Mode::Sync, input);
     assert_eq!(sent.unwrap().id, "file-abc");
     let [
         Seen::ConfigDelete {
@@ -239,14 +273,11 @@ fn provider_failures_pass_through_unchanged() {
         seen: Arc::default(),
         failure: Some(failure.clone()),
     };
-    let uploaded = upload_with(
-        &recorder,
-        &configured(),
-        Mode::Sync,
-        &upload_input(Some(Some("anthropic"))),
-    );
+    let upload_request = Request::Upload(upload_input(Some(Some("anthropic"))));
+    let uploaded = write_with(&recorder, &configured(), Mode::Sync, upload_request).file();
     assert!(matches!(uploaded, Err(FileWriteError::Provider(ref seen)) if *seen == failure));
-    let deleted = delete_with(&recorder, &configured(), Mode::Sync, &delete_input(None));
+    let delete_request = Request::Delete(delete_input(None));
+    let deleted = write_with(&recorder, &configured(), Mode::Sync, delete_request).deleted();
     assert!(matches!(deleted, Err(FileWriteError::Provider(ref seen)) if *seen == failure));
 }
 
@@ -265,7 +296,7 @@ fn delete_model_and_logger(
 ) {
     let mut input = delete_input(Some(provider));
     input.model = model.map(str::to_owned);
-    let (sent, seen) = delete(Mode::Sync, &input);
+    let (sent, seen) = delete(Mode::Sync, input);
     assert!(!sent.unwrap().deleted);
     let found = match seen.as_slice() {
         [Seen::ConfigDelete { config, logger, .. }] => {
@@ -282,7 +313,7 @@ fn delete_model_and_logger(
 fn unresolved_hint_keeps_the_declared_provider() {
     let mut input = delete_input(Some(""));
     input.model = Some("not-a-known-model".to_owned());
-    let (sent, seen) = delete(Mode::Sync, &input);
+    let (sent, seen) = delete(Mode::Sync, input);
     assert_eq!(
         sent.unwrap_err().to_string(),
         "'' is not a valid LlmProviders"
@@ -314,7 +345,7 @@ fn missing_logger_is_created(
     input.params.logger = None;
     input.params.litellm_call_id = call_id.map(|given| given.map(str::to_owned));
     input.params.id = id.map(str::to_owned);
-    let (_, seen) = delete(mode, &input);
+    let (_, seen) = delete(mode, input);
     let expected = Logged::Created(LoggerSeed {
         call_type,
         start_time: started(),
