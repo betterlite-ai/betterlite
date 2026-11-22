@@ -22,3 +22,6 @@ kept_bugs:
   - what: VERCEL_AI_GATEWAY_API_KEY and VERCEL_OIDC_TOKEN beat litellm.api_key for Vercel calls, and VERCEL_OIDC_TOKEN also authenticates chat even though the chat arm's own key chain stops at VERCEL_AI_GATEWAY_API_KEY.
     why: get_llm_provider resolves the Vercel key from the environment, VERCEL_OIDC_TOKEN included, and main.py assigns it to api_key before the arm runs. Deployments on Vercel rely on the OIDC token being picked up for every operation.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vercel_ai_gateway/chat/transformation.py#L33-L38
+  - what: The Vercel chat arm sends the caller's headers, or litellm.headers when the caller sends none, and merges no VercelAIGatewayConfig into optional_params.
+    why: litellm.completion routes vercel_ai_gateway through its openai-compatible branch because the provider is in litellm.openai_compatible_providers, so _complete_vercel_ai_gateway never runs, and the lower-case referer pair and the config merge that function builds never reach the request. Deployments only ever see the openai-compatible request, so betterlite sends that one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5950-L5956

@@ -266,19 +266,33 @@ fn openrouter_headers_read_the_site_and_app_from_the_environment() {
 }
 
 #[test]
-fn vercel_headers_are_lower_case_and_read_their_own_site_and_app() {
+fn vercel_headers_use_the_request_or_the_global_map_and_never_a_referer_pair() {
     let mut fixture = Fixture::new();
     fixture.settings.environment.vercel_site_url = Some(String::from("https://vercel.example"));
     fixture.settings.environment.vercel_app_name = Some(String::from("vercel-app"));
     assert_eq!(
+        vercel(&fixture).headers,
+        None,
+        "the env site and app never become headers"
+    );
+
+    fixture.settings.headers = Some(BTreeMap::from([(
+        String::from("x-global"),
+        String::from("one"),
+    )]));
+    assert_eq!(
         headers(&vercel(&fixture)),
-        BTreeMap::from([
-            (
-                String::from("http-referer"),
-                String::from("https://vercel.example")
-            ),
-            (String::from("x-title"), String::from("vercel-app")),
-        ])
+        BTreeMap::from([(String::from("x-global"), String::from("one"))])
+    );
+
+    fixture.headers = Some(BTreeMap::from([(
+        String::from("x-scope"),
+        String::from("tenant"),
+    )]));
+    assert_eq!(
+        headers(&vercel(&fixture)),
+        BTreeMap::from([(String::from("x-scope"), String::from("tenant"))]),
+        "request headers hide the global ones"
     );
 }
 
@@ -444,21 +458,13 @@ fn an_extra_body_that_is_not_an_object_is_refused(
 }
 
 #[test]
-fn the_vercel_error_names_its_own_provider() {
+fn the_vercel_arm_ignores_the_class_config() {
     let mut fixture = Fixture::new();
     fixture.provider = String::from(VERCEL_PROVIDER);
-    fixture.class_config = object(json!({"extra_body": 1}));
-    let handler = Recorder::succeeding();
-    let (outcome, _state) = run(ChatConfigTag::VercelAiGateway, &fixture, &handler);
-    let error = outcome
-        .expect("the dispatch owns vercel")
-        .expect_err("the merge refuses a non-object extra_body");
-    assert!(matches!(
-        error,
-        DispatchError::ExtraBody {
-            provider: VERCEL_PROVIDER
-        }
-    ));
+    fixture.optional_params = object(json!({"temperature": 1}));
+    fixture.class_config = object(json!({"temperature": 2, "top_p": 1, "extra_body": 1}));
+    let call = vercel(&fixture);
+    assert_eq!(call.optional_params, object(json!({"temperature": 1})));
 }
 
 #[test]

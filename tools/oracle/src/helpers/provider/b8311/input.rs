@@ -50,11 +50,8 @@ impl Provider {
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Globals {
-    #[serde(default)]
     pub(super) api_base: Option<String>,
-    #[serde(default)]
     pub(super) api_key: Option<String>,
-    #[serde(default)]
     pub(super) openrouter_key: Option<String>,
 }
 
@@ -66,20 +63,13 @@ pub(crate) struct Case {
     pub(super) model: String,
     #[serde(default)]
     pub(super) messages: Vec<Message>,
-    #[serde(default)]
     pub(super) input: Option<String>,
-    #[serde(default)]
     pub(super) api_base: Option<String>,
-    #[serde(default)]
     pub(super) api_key: Option<String>,
-    #[serde(default)]
     pub(super) headers: Option<BTreeMap<String, String>>,
-    #[serde(default)]
     pub(super) stream: Option<bool>,
-    #[serde(default)]
     pub(super) optional_params: Option<Json>,
-    // what litellm.OpenrouterConfig.get_config() or litellm.VercelAIGatewayConfig.get_config() returns
-    #[serde(default)]
+    // what litellm.OpenrouterConfig.get_config() returns
     pub(super) class_config: Option<Json>,
     #[serde(default)]
     pub(super) env: BTreeMap<String, String>,

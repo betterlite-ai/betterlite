@@ -4,6 +4,8 @@ use betterlite_openai::vercel_ai_gateway::DEFAULT_API_BASE as VERCEL_DEFAULT_API
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::SecretString;
 
+use crate::agent_platform_dispatch::context::headers_or_global;
+
 use super::call::CompletionCall;
 use super::context::{
     CallLogging, DispatchContext, DispatchSettings, first_nonempty, first_secret, referer_headers,
@@ -17,8 +19,6 @@ pub const VERCEL_PROVIDER: &str = "vercel_ai_gateway";
 pub const OPENROUTER_DEFAULT_API_BASE: &str = "https://openrouter.ai/api/v1";
 const OPENROUTER_REFERER: &str = "HTTP-Referer";
 const OPENROUTER_TITLE: &str = "X-Title";
-const VERCEL_REFERER: &str = "http-referer";
-const VERCEL_TITLE: &str = "x-title";
 
 // LiteLLM's dispatch arms for the gateway providers; the skip keeps the exhaustive no-op arm within clippy's line limit
 #[rustfmt::skip]
@@ -64,8 +64,8 @@ pub(super) struct Gateway {
     pub(super) which: Which,
     pub(super) provider: &'static str,
     pub(super) default_api_base: &'static str,
-    pub(super) referer: &'static str,
-    pub(super) title: &'static str,
+    pub(super) referer: Option<(&'static str, &'static str)>,
+    pub(super) merges_config: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -80,17 +80,17 @@ impl Gateway {
         which: Which::Openrouter,
         provider: OPENROUTER_PROVIDER,
         default_api_base: OPENROUTER_DEFAULT_API_BASE,
-        referer: OPENROUTER_REFERER,
-        title: OPENROUTER_TITLE,
+        referer: Some((OPENROUTER_REFERER, OPENROUTER_TITLE)),
+        merges_config: true,
     };
 
-    // _complete_vercel_ai_gateway: lower-case header names; its chat key chain skips VERCEL_OIDC_TOKEN
+    // litellm.completion reaches Vercel through its openai-compatible path: no referer pair, no config merge
     pub(super) const VERCEL: Self = Self {
         which: Which::Vercel,
         provider: VERCEL_PROVIDER,
         default_api_base: VERCEL_DEFAULT_API_BASE,
-        referer: VERCEL_REFERER,
-        title: VERCEL_TITLE,
+        referer: None,
+        merges_config: false,
     };
 }
 
@@ -145,18 +145,23 @@ fn complete<R>(
         values.third_key,
     ]);
     call.custom_llm_provider = String::from(gateway.provider);
-    call.headers = Some(referer_headers(
-        context.headers,
-        context.settings.headers,
-        (gateway.referer, gateway.title),
-        values.site_url,
-        values.app_name,
-    ));
-    merge_config(
-        &mut call.optional_params,
-        context.class_config,
-        gateway.provider,
-    )?;
+    call.headers = match gateway.referer {
+        Some(names) => Some(referer_headers(
+            context.headers,
+            context.settings.headers,
+            names,
+            values.site_url,
+            values.app_name,
+        )),
+        None => headers_or_global(context.headers.cloned(), context.settings.headers),
+    };
+    if gateway.merges_config {
+        merge_config(
+            &mut call.optional_params,
+            context.class_config,
+            gateway.provider,
+        )?;
+    }
     let reply = handler.complete(&call).map_err(DispatchError::Handler)?;
     logging::post(log, context.messages, LogJson::Null)?;
     Ok(reply)

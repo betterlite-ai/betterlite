@@ -111,7 +111,7 @@ pub struct DispatchContext<'request> {
     pub api_base: Option<&'request str>,
     pub api_key: Option<&'request SecretString>,
     pub custom_llm_provider: &'request str,
-    // litellm.OpenrouterConfig.get_config() or litellm.VercelAIGatewayConfig.get_config()
+    // litellm.OpenrouterConfig.get_config(); a public Vercel call merges no class config
     pub class_config: &'request Object,
     pub headers: Option<&'request BTreeMap<String, String>>,
     pub litellm_params: &'request Object,
