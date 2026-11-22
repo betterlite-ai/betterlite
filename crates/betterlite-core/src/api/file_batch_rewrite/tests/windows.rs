@@ -9,7 +9,7 @@ use tokio::sync::Barrier;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
-    BarrierHook, CountingSource, Probe, ReverseHook, line_of_change, lines_of, ordinal_of, raised,
+    Answer, CountingSource, Probe, ScriptedHook, line_of_change, lines_of, ordinal_of, raised,
     timed_scan,
 };
 use crate::api::file_batch_guardrails::SCAN_WINDOW;
@@ -22,12 +22,11 @@ async fn window_failure_barrier() {
     let tasks = TaskTracker::new();
     let mut source = CountingSource::new(lines_of(65));
     let failure = raised("r2", 503);
-    let hook = BarrierHook {
-        probe: Probe::new(source.reads.clone()),
-        gate: Barrier::new(SCAN_WINDOW),
-        failure: failure.clone(),
-        fail_marker: "r2".to_owned(),
-    };
+    let hook = ScriptedHook::with(
+        vec![("r2", Answer::Raise(failure.clone()))],
+        Probe::new(source.reads.clone()),
+    )
+    .behind_gate(Barrier::new(SCAN_WINDOW));
     let spool = Spool::default();
     let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
         .await
@@ -56,7 +55,7 @@ async fn window_failure_barrier() {
 async fn windows_scan_without_failure() {
     let tasks = TaskTracker::new();
     let mut source = CountingSource::new(lines_of(65));
-    let hook = ReverseHook::new(Probe::new(source.reads.clone()), 65);
+    let hook = ScriptedHook::reversing(Probe::new(source.reads.clone()), 65);
     let spool = Spool::default();
     let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
         .await
@@ -81,7 +80,7 @@ async fn windows_scan_without_failure() {
     assert!(!spool.is_closed());
 }
 
-fn window_starts(hook: &ReverseHook) -> Vec<usize> {
+fn window_starts(hook: &ScriptedHook) -> Vec<usize> {
     let started = hook.probe.started.lock().unwrap();
     started
         .iter()
@@ -90,7 +89,7 @@ fn window_starts(hook: &ReverseHook) -> Vec<usize> {
         .collect()
 }
 
-fn observed_reads(hook: &ReverseHook) -> Vec<usize> {
+fn observed_reads(hook: &ScriptedHook) -> Vec<usize> {
     hook.probe
         .started
         .lock()

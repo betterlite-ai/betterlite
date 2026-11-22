@@ -30,22 +30,7 @@ where
     }
 }
 
-// The scan and the rewrite both rewind once their outcome is known, and a failed seek replaces that outcome
-pub(super) fn finish<Source, Value, Error>(
-    guarded: &mut RewindOnDrop<'_, Source>,
-    result: Result<Value, Error>,
-) -> Result<Value, Error>
-where
-    Source: Seek,
-    Error: From<io::Error>,
-{
-    match (result, guarded.rewind()) {
-        (_, Err(source)) => Err(Error::from(source)),
-        (value, Ok(())) => value,
-    }
-}
-
-// The spool stays open only when the body succeeded, an error closes it, and the source rewinds either way
+// The spool stays open only when the body succeeded, an error closes it, and the source rewinds either way; a failed seek replaces that outcome
 pub(super) fn settle_spool<Source, Value, Error>(
     guarded: &mut RewindOnDrop<'_, Source>,
     close_on_drop: &mut OwnedSpool,
@@ -55,16 +40,14 @@ where
     Source: Seek,
     Error: From<io::Error>,
 {
-    match outcome {
-        Ok(value) => {
-            drop(close_on_drop.0.take());
-            finish(guarded, Ok(value))
-        }
-        Err(error) => {
-            if let Some(spool) = close_on_drop.0.take() {
-                spool.close();
-            }
-            finish(guarded, Err(error))
-        }
+    let held = close_on_drop.0.take();
+    if outcome.is_err()
+        && let Some(spool) = held
+    {
+        spool.close();
+    }
+    match guarded.rewind() {
+        Ok(()) => outcome,
+        Err(source) => Err(Error::from(source)),
     }
 }

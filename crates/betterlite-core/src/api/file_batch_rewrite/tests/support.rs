@@ -68,7 +68,7 @@ pub(super) fn line_of_change(change: &RecordChange) -> usize {
     }
 }
 
-pub(super) async fn scan_all<Source, Hook>(
+pub(super) async fn timed_scan<Source, Hook>(
     source: &mut Source,
     hook: &Hook,
     spool: &Spool,
@@ -90,20 +90,7 @@ where
         tasks,
         redactions: spool.clone(),
     };
-    scan_batch_input_file(call).await
-}
-
-pub(super) async fn timed_scan<Source, Hook>(
-    source: &mut Source,
-    hook: &Hook,
-    spool: &Spool,
-    tasks: &TaskTracker,
-) -> Result<ScanFile<Spool, Hook::Failure>, ScanFileError>
-where
-    Source: BufRead + Seek + Send,
-    Hook: GuardrailsOnlyPreCall,
-{
-    timeout(TEST_TIMEOUT, scan_all(source, hook, spool, tasks))
+    timeout(TEST_TIMEOUT, scan_batch_input_file(call))
         .await
         .expect("the scan did not finish in time")
 }
@@ -243,15 +230,12 @@ pub(super) fn raised(name: &str, status: u16) -> FakeFailure {
 }
 
 pub(super) fn blocked(name: &str) -> FakeFailure {
-    FakeFailure {
-        raised: Raised::Verdict {
-            blocked: true,
-            caused: false,
-        },
-        name: Some(name.to_owned()),
-        detail_name: None,
-        status: 400,
-    }
+    let mut failure = raised(name, 400);
+    failure.raised = Raised::Verdict {
+        blocked: true,
+        caused: false,
+    };
+    failure
 }
 
 impl RaisedGuardrail for FakeFailure {
@@ -367,17 +351,58 @@ pub(super) enum Answer {
     Block(FakeFailure),
 }
 
+// What the hook does besides answering by marker: finish each window in reverse row order, or stay pending until cancelled
+enum Behavior {
+    Answers,
+    Reverse(Reverse),
+    Cancel(CancelWatch),
+}
+
+struct Reverse {
+    done: Mutex<BTreeSet<usize>>,
+    rows: usize,
+}
+
+impl Reverse {
+    fn new(rows: usize) -> Self {
+        Self {
+            done: Mutex::new(BTreeSet::new()),
+            rows,
+        }
+    }
+
+    fn later_rows_done(&self, ordinal: usize) -> bool {
+        let end = window_end(ordinal, self.rows);
+        let done = self.done.lock().unwrap();
+        (ordinal + 1..=end).all(|later| done.contains(&later))
+    }
+}
+
+// Every dropped call says so, which is what cancellation leaves behind
+struct CancelWatch {
+    reached: Arc<Notify>,
+    cancelled: Arc<AtomicUsize>,
+}
+
+impl CancelWatch {
+    fn arm(&self, probe: &Probe) -> CancelSignal {
+        if probe.started.lock().unwrap().len() == SCAN_WINDOW {
+            self.reached.notify_one();
+        }
+        CancelSignal(Arc::clone(&self.cancelled))
+    }
+}
+
 pub(super) struct ScriptedHook {
     answers: BTreeMap<String, Answer>,
+    behavior: Behavior,
+    gate: Option<Barrier>,
     pub(super) probe: Probe,
 }
 
 impl ScriptedHook {
     pub(super) fn new(probe: Probe) -> Self {
-        Self {
-            answers: BTreeMap::new(),
-            probe,
-        }
+        Self::with(Vec::new(), probe)
     }
 
     pub(super) fn with(answers: Vec<(&str, Answer)>, probe: Probe) -> Self {
@@ -386,9 +411,39 @@ impl ScriptedHook {
                 .into_iter()
                 .map(|(marker, answer)| (marker.to_owned(), answer))
                 .collect(),
+            behavior: Behavior::Answers,
+            gate: None,
             probe,
         }
     }
+
+    pub(super) fn reversing(probe: Probe, rows: usize) -> Self {
+        Self::with(Vec::new(), probe).in_behavior(Behavior::Reverse(Reverse::new(rows)))
+    }
+
+    pub(super) fn cancelling(
+        probe: Probe,
+        reached: Arc<Notify>,
+        cancelled: Arc<AtomicUsize>,
+    ) -> Self {
+        let watch = CancelWatch { reached, cancelled };
+        Self::with(Vec::new(), probe).in_behavior(Behavior::Cancel(watch))
+    }
+
+    pub(super) fn behind_gate(mut self, gate: Barrier) -> Self {
+        self.gate = Some(gate);
+        self
+    }
+
+    fn in_behavior(mut self, behavior: Behavior) -> Self {
+        self.behavior = behavior;
+        self
+    }
+}
+
+fn rewritten(mut data: RecordObject) -> RecordObject {
+    data.insert(RecordText::from("rewritten"), RecordJson::Bool(true));
+    data
 }
 
 #[async_trait]
@@ -397,14 +452,28 @@ impl GuardrailsOnlyPreCall for ScriptedHook {
 
     async fn pre_call_hook(&self, input: PreCallInput<'_>) -> Result<RecordObject, FakeFailure> {
         let call = self.probe.begin(&input.data);
-        match self.answers.get(&call.marker) {
-            Some(Answer::Rewrite) => {
-                let mut data = input.data;
-                data.insert(RecordText::from("rewritten"), RecordJson::Bool(true));
-                Ok(data)
+        if let Some(gate) = &self.gate {
+            gate.wait().await;
+        }
+        match &self.behavior {
+            Behavior::Answers => match self.answers.get(&call.marker) {
+                Some(Answer::Rewrite) => Ok(rewritten(input.data)),
+                Some(Answer::Raise(failure) | Answer::Block(failure)) => Err(failure.clone()),
+                None => Ok(input.data),
+            },
+            Behavior::Reverse(reverse) => {
+                let ordinal = ordinal_of(&call.marker);
+                while !reverse.later_rows_done(ordinal) {
+                    yield_now().await;
+                }
+                reverse.done.lock().unwrap().insert(ordinal);
+                Ok(rewritten(input.data))
             }
-            Some(Answer::Raise(failure) | Answer::Block(failure)) => Err(failure.clone()),
-            None => Ok(input.data),
+            Behavior::Cancel(watch) => {
+                let _signal = watch.arm(&self.probe);
+                pending::<()>().await;
+                Ok(input.data)
+            }
         }
     }
 }
@@ -423,104 +492,10 @@ impl GuardrailsOnlyPreCall for RewriteAll {
     }
 }
 
-// Every call waits at one barrier, so a test observes which calls started before any of them answered
-pub(super) struct BarrierHook {
-    pub(super) probe: Probe,
-    pub(super) gate: Barrier,
-    pub(super) failure: FakeFailure,
-    pub(super) fail_marker: String,
-}
-
-#[async_trait]
-impl GuardrailsOnlyPreCall for BarrierHook {
-    type Failure = FakeFailure;
-
-    async fn pre_call_hook(&self, input: PreCallInput<'_>) -> Result<RecordObject, FakeFailure> {
-        let call = self.probe.begin(&input.data);
-        self.gate.wait().await;
-        if call.marker == self.fail_marker {
-            return Err(self.failure.clone());
-        }
-        Ok(input.data)
-    }
-}
-
-// Each window's calls finish in reverse row order, the hardest order for the scan to keep straight
-pub(super) struct ReverseHook {
-    pub(super) probe: Probe,
-    done: Mutex<BTreeSet<usize>>,
-    rows: usize,
-}
-
-impl ReverseHook {
-    pub(super) fn new(probe: Probe, rows: usize) -> Self {
-        Self {
-            probe,
-            done: Mutex::new(BTreeSet::new()),
-            rows,
-        }
-    }
-
-    fn later_rows_done(&self, ordinal: usize) -> bool {
-        let end = window_end(ordinal, self.rows);
-        let done = self.done.lock().unwrap();
-        (ordinal + 1..=end).all(|later| done.contains(&later))
-    }
-}
-
-#[async_trait]
-impl GuardrailsOnlyPreCall for ReverseHook {
-    type Failure = FakeFailure;
-
-    async fn pre_call_hook(&self, input: PreCallInput<'_>) -> Result<RecordObject, FakeFailure> {
-        let call = self.probe.begin(&input.data);
-        let ordinal = ordinal_of(&call.marker);
-        while !self.later_rows_done(ordinal) {
-            yield_now().await;
-        }
-        self.done.lock().unwrap().insert(ordinal);
-        let mut data = input.data;
-        data.insert(RecordText::from("rewritten"), RecordJson::Bool(true));
-        Ok(data)
-    }
-}
-
-pub(super) struct CancelSignal(pub(super) Arc<AtomicUsize>);
+pub(super) struct CancelSignal(Arc<AtomicUsize>);
 
 impl Drop for CancelSignal {
     fn drop(&mut self) {
         self.0.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-// Every call starts and stays pending, and each dropped call says so, which is what cancellation leaves behind
-pub(super) struct CancellingHook {
-    pub(super) probe: Probe,
-    pub(super) reached: Arc<Notify>,
-    pub(super) cancelled: Arc<AtomicUsize>,
-}
-
-impl CancellingHook {
-    pub(super) fn new(probe: Probe, reached: Arc<Notify>, cancelled: Arc<AtomicUsize>) -> Self {
-        Self {
-            probe,
-            reached,
-            cancelled,
-        }
-    }
-}
-
-#[async_trait]
-impl GuardrailsOnlyPreCall for CancellingHook {
-    type Failure = FakeFailure;
-
-    async fn pre_call_hook(&self, input: PreCallInput<'_>) -> Result<RecordObject, FakeFailure> {
-        let _call = self.probe.begin(&input.data);
-        let _cancel = CancelSignal(Arc::clone(&self.cancelled));
-        if self.probe.started.lock().unwrap().len() == SCAN_WINDOW {
-            self.reached.notify_one();
-        }
-        pending::<()>().await;
-        Ok(input.data)
     }
 }

@@ -10,8 +10,8 @@ use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
-    Answer, CancellingHook, CountingSource, FailingSource, Probe, ScriptedHook, TEST_TIMEOUT,
-    UnrewindableSource, lines_of, raised, scan_all, scan_result, timed_scan,
+    Answer, CountingSource, FailingSource, Probe, ScriptedHook, TEST_TIMEOUT, UnrewindableSource,
+    lines_of, raised, scan_result, timed_scan,
 };
 use crate::api::file_batch_guardrails::error::BatchGuardrailError;
 use crate::api::file_batch_guardrails::records::{RecordChange, RecordRedacted};
@@ -67,7 +67,7 @@ async fn a_parse_failure_closes_the_spool_and_rewinds() {
     let mut source = CountingSource::new("not json\n{\"body\":{\"messages\":[]}}".to_owned());
     let hook = ScriptedHook::new(Probe::new(source.reads.clone()));
     let spool = Spool::default();
-    let outcome = scan_all(&mut source, &hook, &spool, &tasks).await;
+    let outcome = timed_scan(&mut source, &hook, &spool, &tasks).await;
     match outcome {
         Err(ScanFileError::Input(BatchGuardrailError::Record { line_number: 1, .. })) => (),
         other => panic!("the first line is not a record, got {other:?}"),
@@ -110,7 +110,7 @@ async fn a_write_failure_closes_the_spool_and_rewinds() {
     );
     let spool = Spool::default();
     spool.close();
-    let outcome = scan_all(&mut source, &hook, &spool, &tasks).await;
+    let outcome = timed_scan(&mut source, &hook, &spool, &tasks).await;
     match outcome {
         Err(ScanFileError::Spool(SpoolError::Closed)) => (),
         other => panic!("a closed spool cannot take a rewrite, got {other:?}"),
@@ -126,7 +126,7 @@ async fn a_failing_rewind_replaces_the_earlier_result() {
     let hook = ScriptedHook::new(Probe::new(Arc::new(AtomicUsize::new(0))));
     let spool = Spool::default();
     let mut unreadable = UnrewindableSource::new("not json".to_owned());
-    let outcome = scan_all(&mut unreadable, &hook, &spool, &tasks).await;
+    let outcome = timed_scan(&mut unreadable, &hook, &spool, &tasks).await;
     match outcome {
         Err(ScanFileError::Rewind { .. }) => (),
         other => panic!("the rewind error replaces the record error, got {other:?}"),
@@ -135,7 +135,7 @@ async fn a_failing_rewind_replaces_the_earlier_result() {
 
     let clean = Spool::default();
     let mut unreachable = UnrewindableSource::new(lines_of(1));
-    let scanned = scan_all(&mut unreachable, &hook, &clean, &tasks).await;
+    let scanned = timed_scan(&mut unreachable, &hook, &clean, &tasks).await;
     match scanned {
         Err(ScanFileError::Rewind { .. }) => (),
         other => panic!("the rewind error replaces the scan result, got {other:?}"),
@@ -151,14 +151,14 @@ async fn scan_and_spool_cleanup_cancellation() {
     let cancelled = Arc::new(AtomicUsize::new(0));
     let mut source = CountingSource::new(lines_of(65));
     let seeks = source.seeks.clone();
-    let hook = CancellingHook::new(
+    let hook = ScriptedHook::cancelling(
         Probe::new(source.reads.clone()),
         reached.clone(),
         cancelled.clone(),
     );
     let mut scans = JoinSet::new();
     scans.spawn(async move {
-        let outcome = scan_all(&mut source, &hook, &spool, &tasks).await;
+        let outcome = timed_scan(&mut source, &hook, &spool, &tasks).await;
         outcome.map(drop)
     });
     timeout(TEST_TIMEOUT, reached.notified())

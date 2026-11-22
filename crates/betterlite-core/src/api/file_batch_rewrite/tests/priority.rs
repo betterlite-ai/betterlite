@@ -12,17 +12,41 @@ use crate::api::file_batch_rewrite::scan::ScanFile;
 use crate::api::file_batch_rewrite::spool::Spool;
 use crate::api::file_batch_rewrite::worst::{ScanProblem, worst_problem};
 
+const RAISED_ROWS: [&str; 5] = [
+    r#"{"body":7}"#,
+    r#"{"body":{"marker":"r2","messages":[]}}"#,
+    r#"{"body":{"marker":"r3","messages":[]}}"#,
+    r#"{"body":{"marker":"r4","messages":[]}}"#,
+    r#"{"body":{"marker":"r5","messages":[]}}"#,
+];
+
+const FAILED_ROWS: [&str; 5] = [
+    r#"{"body":{"marker":"r1","messages":[]}}"#,
+    r#"{"body":7}"#,
+    r#"{"body":{"marker":"r3","messages":[]}}"#,
+    r#"{"body":{"marker":"r4","messages":[]}}"#,
+    r#"{"body":{"x":1}}"#,
+];
+
 // A shape failure at line 1 loses to the exception at line 3; two refusals keep the earlier line
 #[tokio::test]
 async fn worst_problem_priority() {
-    match scan_raised_file().await {
+    match scan_file(
+        &RAISED_ROWS,
+        vec![
+            ("r3", Answer::Raise(raised("r3", 429))),
+            ("r5", Answer::Raise(raised("r5", 500))),
+        ],
+    )
+    .await
+    {
         ScanFile::Raised(returned) => {
             assert_eq!(returned, raised("r3", 429));
             assert_eq!(returned.status, 429);
         }
         other => panic!("the exception at line 3 wins, got {other:?}"),
     }
-    match scan_failed_file().await {
+    match scan_file(&FAILED_ROWS, Vec::new()).await {
         ScanFile::Rejected(failure) => assert_eq!(
             failure,
             BatchScanFailure::Unparseable(UnparseableRecord { line_number: 2 })
@@ -85,44 +109,10 @@ fn shape_failure(line: usize) -> ScanProblem<FakeFailure> {
     }))
 }
 
-async fn scan_raised_file() -> ScanFile<Spool, FakeFailure> {
+async fn scan_file(rows: &[&str], answers: Vec<(&str, Answer)>) -> ScanFile<Spool, FakeFailure> {
     let tasks = TaskTracker::new();
-    let mut source = CountingSource::new(
-        [
-            r#"{"body":7}"#,
-            r#"{"body":{"marker":"r2","messages":[]}}"#,
-            r#"{"body":{"marker":"r3","messages":[]}}"#,
-            r#"{"body":{"marker":"r4","messages":[]}}"#,
-            r#"{"body":{"marker":"r5","messages":[]}}"#,
-        ]
-        .join("\n"),
-    );
-    let hook = ScriptedHook::with(
-        vec![
-            ("r3", Answer::Raise(raised("r3", 429))),
-            ("r5", Answer::Raise(raised("r5", 500))),
-        ],
-        Probe::new(source.reads.clone()),
-    );
-    let spool = Spool::default();
-    timed_scan(&mut source, &hook, &spool, &tasks)
-        .await
-        .expect("a scan answers")
-}
-
-async fn scan_failed_file() -> ScanFile<Spool, FakeFailure> {
-    let tasks = TaskTracker::new();
-    let mut source = CountingSource::new(
-        [
-            r#"{"body":{"marker":"r1","messages":[]}}"#,
-            r#"{"body":7}"#,
-            r#"{"body":{"marker":"r3","messages":[]}}"#,
-            r#"{"body":{"marker":"r4","messages":[]}}"#,
-            r#"{"body":{"x":1}}"#,
-        ]
-        .join("\n"),
-    );
-    let hook = ScriptedHook::new(Probe::new(source.reads.clone()));
+    let mut source = CountingSource::new(rows.join("\n"));
+    let hook = ScriptedHook::with(answers, Probe::new(source.reads.clone()));
     let spool = Spool::default();
     timed_scan(&mut source, &hook, &spool, &tasks)
         .await
