@@ -1,6 +1,7 @@
+import inspect
 import logging
 from collections.abc import Mapping
-from typing import Final, Protocol, TypeAlias, runtime_checkable
+from typing import Final, Protocol, TypeAlias, TypeGuard, runtime_checkable
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -86,9 +87,14 @@ def timeout_value(value: CallValue | TimeoutValues) -> JsonValue:
             raise UnsupportedCallArgument("timeout")
 
 
+# ast-grep-ignore: no-one-line-functions
+def _is_response_format_class(value: CallValue) -> TypeGuard[type[ResponseFormatModel]]:
+    return inspect.isclass(value)
+
+
 def response_format_value(value: CallValue) -> JsonValue:
     # a pydantic class becomes its json_schema; every other value must already be JSON
-    if isinstance(value, type):  # ast-grep-ignore: no-isinstance
+    if _is_response_format_class(value):
         formatted = type_to_response_format_param(value)
     else:
         formatted = type_to_response_format_param(JSON.validate_python(value))

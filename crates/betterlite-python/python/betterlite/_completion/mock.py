@@ -173,17 +173,17 @@ def _connect_seconds(timeout: JsonValue) -> float | None:
             return None
 
 
-def raise_mock_timeout(timeout: JsonValue, model: str) -> NoReturn:
+def raise_mock_timeout(timeout_value: JsonValue, model: str) -> NoReturn:
     # _handle_mock_timeout: sleep the timeout first, then raise the Timeout LiteLLM raises
-    seconds = _connect_seconds(timeout)
+    seconds = _connect_seconds(timeout_value)
     if seconds is not None:
         time.sleep(seconds)
     raise exceptions.Timeout("This is a mock timeout error", model, "openai")
 
 
-async def araise_mock_timeout(timeout: JsonValue, model: str) -> NoReturn:
+async def araise_mock_timeout(timeout_value: JsonValue, model: str) -> NoReturn:
     # the awaitable call's own timeout mock, so the event loop is not blocked
-    seconds = _connect_seconds(timeout)
+    seconds = _connect_seconds(timeout_value)
     if seconds is not None:
         await asyncio.sleep(seconds)
     raise exceptions.Timeout("This is a mock timeout error", model, "openai")

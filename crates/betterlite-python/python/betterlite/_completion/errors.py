@@ -113,6 +113,8 @@ def _response_errors(payload: ErrorPayload) -> BaseException | None:
             error = exceptions.RateLimitError(
                 message, provider, model, headers=payload.get("headers"), body=body
             )
+        case object():
+            pass
     return error
 
 
@@ -172,6 +174,8 @@ def _status_errors(payload: ErrorPayload) -> BaseException | None:
                 model=_text_value(payload.get("model")),
                 body=payload.get("body"),
             )
+        case object():
+            pass
     return error
 
 
