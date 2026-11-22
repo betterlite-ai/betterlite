@@ -18,19 +18,20 @@ description: 'Compose B372 affinity identities/claims with previous-response IDs
   B016 registers RouteStage::DeploymentAffinity as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/deployment_affinity.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
-  - "tools/oracle"
+  - crates/betterlite-config/src/sections/complexity_placement.rs
+  - crates/betterlite-config/src/sections/complexity_placement/tests.rs
+  - crates/betterlite-router/src/router_core/error.rs
+  - crates/betterlite-router/src/router_core/tests.rs
+  - crates/betterlite-server/src/cost_estimate_route/deployments.rs
+  - crates/betterlite-server/src/routing/least_busy.rs
+  - crates/betterlite-server/src/routing/router_core/tests.rs
+  - tools/oracle/src/router_probes/complexity_placement/steps.rs
   - "crates/betterlite-server/src/routing/router_core.rs"
   - "crates/betterlite-server/src/routing/deployment_affinity*"
-  - "crates/betterlite-server/src/app/inference"
-  - "crates/betterlite-server/src"
-  - "crates/betterlite-server"
   - "crates/betterlite-router/src/router_core/services.rs"
   - "crates/betterlite-router/src/router_core/pipeline.rs"
-  - "crates/betterlite-router/src/router_core"
   - "crates/betterlite-router/src/deployment_affinity*"
   - "crates/betterlite-router/src/context/deployment_affinity*"
-  - "crates/betterlite-router"
-  - "crates/betterlite-config"
   - crates/betterlite-router/src/deployment_affinity.rs
   - crates/betterlite-router/src/deployment_affinity/**
   - crates/betterlite-router/src/context/deployment_affinity.rs
