@@ -463,3 +463,30 @@ fn an_unset_router_timeout_leaves_the_computed_default_params_timed_by_the_globa
         }))
     );
 }
+
+#[test]
+fn a_written_whole_float_is_reported_as_an_integer() {
+    let answer = response("router_settings: {timeout: 5.0}");
+    assert_eq!(answer.current_values.get("timeout"), Some(&json!(5)));
+    assert_eq!(answer.source.get("timeout"), Some(&FieldSource::Config));
+}
+
+#[test]
+fn a_configured_disable_cooldowns_false_reads_back_as_null() {
+    let answer = response("router_settings: {disable_cooldowns: false}");
+    assert_eq!(
+        answer.current_values.get("disable_cooldowns"),
+        Some(&json!(null))
+    );
+    assert_eq!(
+        answer.source.get("disable_cooldowns"),
+        Some(&FieldSource::Unset)
+    );
+}
+
+#[test]
+fn an_explicitly_empty_fallback_list_reads_back_as_null() {
+    let answer = response("router_settings: {fallbacks: []}");
+    assert_eq!(answer.current_values.get("fallbacks"), Some(&json!(null)));
+    assert_eq!(answer.source.get("fallbacks"), Some(&FieldSource::Default));
+}
