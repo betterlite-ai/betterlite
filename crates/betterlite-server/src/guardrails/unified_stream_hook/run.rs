@@ -220,17 +220,19 @@ where
                         .push_back(Err(StreamHookError::Loop(failure)));
                     self.finished = true;
                 }
-                None => self.end_stream().await,
+                None => {
+                    self.finished = true;
+                    self.end_scan().await;
+                }
             }
         }
     }
 
     // LiteLLM scans everything received so far once the iterator ends; without a translation nothing is scanned
-    async fn end_stream(&mut self) {
+    async fn end_scan(&mut self) {
         if let Stage::Scanning(scanner) = &mut self.stage {
             finish_stream(&mut self.window, scanner).await;
         }
-        self.finished = true;
     }
 
     async fn consume(&mut self, item: GuardrailValue) {
