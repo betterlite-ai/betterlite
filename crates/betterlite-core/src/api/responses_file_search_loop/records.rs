@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_logging::analytics::python::repr;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::VectorStoreSearchResult;
 use rust_decimal::Decimal;
@@ -102,10 +103,11 @@ impl DiagnosticMessage<'_> {
                  vector_store_id='{vector_store_id}': {error}"
             ),
             Self::StoreOutside { value, known } => {
-                let shown_value = display_value(value);
                 // str() of the request's ids, which is repr() of a list of strings
                 let listed = Json::List(known.iter().map(|id| Json::Text(id.clone())).collect());
-                let shown_ids = display_value(&listed);
+                // the formatter writes into a Vec, so its io error branch is unreachable
+                let shown_value = repr(value).unwrap_or_default();
+                let shown_ids = repr(&listed).unwrap_or_default();
                 format!(
                     "file_search emulated: model picked vector_store_id={shown_value} outside the \
                      request's vector_store_ids {shown_ids}; searching the request's stores instead"
@@ -113,39 +115,4 @@ impl DiagnosticMessage<'_> {
             }
         }
     }
-}
-
-// repr() of the JSON value that %r renders in the warning text
-fn display_value(value: &Json) -> String {
-    match value {
-        Json::Text(text) => quote(text),
-        Json::Bool(flag) => String::from(if *flag { "True" } else { "False" }),
-        Json::Number(number) => number.to_string(),
-        Json::Null => String::from("None"),
-        Json::List(items) => {
-            let shown: Vec<String> = items.iter().map(display_value).collect();
-            format!("[{}]", shown.join(", "))
-        }
-        Json::Object(fields) => {
-            let shown: Vec<String> = fields
-                .iter()
-                .map(|(key, field)| format!("{}: {}", quote(key), display_value(field)))
-                .collect();
-            format!("{{{}}}", shown.join(", "))
-        }
-    }
-}
-
-// Python's repr of a string: single quotes unless that forces escaping and double quotes would not
-fn quote(text: &str) -> String {
-    if text.contains('\'') && !text.contains('"') {
-        return format!("\"{text}\"");
-    }
-    let escaped = text
-        .replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t");
-    format!("'{escaped}'")
 }

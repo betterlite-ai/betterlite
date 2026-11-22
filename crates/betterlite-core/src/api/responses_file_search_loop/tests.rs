@@ -713,6 +713,13 @@ fn store_warning_quotes_like_python() {
     }
     .message();
     assert!(single.contains(r#"vector_store_id="a'b" outside"#));
+    let escaped_value = text("a'\\b\nc");
+    let escaped = DiagnosticMessage::StoreOutside {
+        value: &escaped_value,
+        known: &known,
+    }
+    .message();
+    assert!(escaped.contains(r#"vector_store_id="a'\\b\nc" outside"#));
 }
 
 #[tokio::test]
