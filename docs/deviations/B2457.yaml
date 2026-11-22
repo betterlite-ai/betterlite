@@ -6,6 +6,9 @@ deviations:
   - what: The generic connection hands the dialer an SSL argument for a ws:// URL instead of dropping it, so the dialer can reject the pair the way websockets 15 raises ssl argument is incompatible with a ws:// URI.
     why: The pin's generic handler uses the shared SSL context for every scheme, and the task text makes that argument rejection part of the connection error case rather than a silent strip.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6205-L6216
+  - what: A failed realtime backend connection logs the redacted error text, the same text the client's server_error event carries, where LiteLLM logs the raw exception.
+    why: A dial error is transparent over DialError, so its message can carry an API key or a backend URL with ?key=, and LiteLLM's verbose_logger.exception writes that secret to the log while its client never sees it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6274-L6276
 kept_bugs:
   - what: A RuntimeError raised while closing a failed connection is swallowed when its text contains "already completed" or "websocket.close", so an unrelated close failure with that substring is ignored.
     why: A working LiteLLM deployment relies on the ignore rule to keep an already-finished response from raising, and the pinned source spells it as a substring match.
