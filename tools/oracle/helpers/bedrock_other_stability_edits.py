@@ -153,7 +153,7 @@ class EditConfig(Protocol):
             GenericLiteLLMParams,
             dict[str, JsonValue],
         ],
-        tuple[dict[str, JsonValue], object],  # ast-grep-ignore: no-loose-types
+        tuple[dict[str, JsonValue], dict[str, JsonValue]],
     ]: ...
 
     @property
