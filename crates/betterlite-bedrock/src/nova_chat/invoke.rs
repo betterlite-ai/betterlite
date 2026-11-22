@@ -31,7 +31,7 @@ const INJECTION_POINTS_FIELD: &str = "cache_control_injection_points";
 const LOCATION_FIELD: &str = "location";
 const MESSAGES_FIELD: &str = "messages";
 const ROLE_FIELD: &str = "role";
-const SOFTWARE_FIELD: &str = "system";
+const SYSTEM_FIELD: &str = "system";
 const TEXT_FIELD: &str = "text";
 const TOOL_CONFIG_LOCATION: &str = "tool_config";
 
@@ -114,7 +114,7 @@ pub fn transform_converse(body: &ConverseRequestBody) -> Result<InvokeNovaBody, 
 }
 
 pub fn inline_cache_points(request: &InlineRequest<'_>) -> Result<InlineBody, NovaChatError> {
-    let system = block_objects(request.system, SOFTWARE_FIELD)?;
+    let system = block_objects(request.system, SYSTEM_FIELD)?;
     let mut messages = Vec::with_capacity(request.messages.len());
     for message in request.messages {
         messages.push(inline_message(message)?);
