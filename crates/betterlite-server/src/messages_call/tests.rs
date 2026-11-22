@@ -189,17 +189,29 @@ impl ModelReadThrough for FakeReadThrough {
     }
 }
 
+fn routing_port(port: Arc<FakeRouting>) -> Arc<dyn MessagesRouting> {
+    port
+}
+
+fn read_through_port(port: Arc<FakeReadThrough>) -> Arc<dyn ModelReadThrough> {
+    port
+}
+
+fn dispatch_port(port: Arc<FakeDispatch>) -> Arc<dyn MessagesDispatch> {
+    port
+}
+
 fn call_steps(
     dispatch: Arc<FakeDispatch>,
-    routing: Option<Arc<dyn MessagesRouting>>,
-    read_through: Option<Arc<dyn ModelReadThrough>>,
+    routing: Option<Arc<FakeRouting>>,
+    read_through: Option<Arc<FakeReadThrough>>,
     allowed: bool,
     user_model: Option<&str>,
 ) -> MessagesCallSteps {
     MessagesCallSteps::new(
-        dispatch,
-        routing,
-        read_through,
+        dispatch_port(dispatch),
+        routing.map(routing_port),
+        read_through.map(read_through_port),
         MockTestingParams { allowed },
         user_model.map(str::to_owned),
     )
@@ -448,21 +460,6 @@ fn a_body_without_a_model_key_is_missing_model() {
 }
 
 #[test]
-fn the_team_map_wins_over_the_model_lists() {
-    let mut routing = empty_routing();
-    routing.team_model = Some("internal".to_owned());
-    let mut input = input(Some("public"), true);
-    input.team_id = Some("team".to_owned());
-    assert_eq!(
-        plan_messages_route(&input, Some(&routing)),
-        router_plan(false)
-    );
-    let team_queries = routing.team_queries.lock().unwrap();
-    let expected = [(Some("public".to_owned()), "team".to_owned())];
-    assert_eq!(team_queries.as_slice(), expected.as_slice());
-}
-
-#[test]
 fn a_recognized_model_routes_to_the_router() {
     let routing = routing_with_groups(&["m"]);
     assert_eq!(
@@ -624,81 +621,6 @@ fn the_team_id_comes_from_metadata_first_then_litellm_metadata() {
 }
 
 #[tokio::test]
-async fn the_override_copies_only_the_keys_the_body_lacks() {
-    let routing = Arc::new(empty_routing());
-    let steps = call_steps(
-        Arc::new(FakeDispatch::default()),
-        Some(Arc::clone(&routing)),
-        None,
-        false,
-        None,
-    );
-    let data = object(&[
-        ("model", text("m")),
-        ("timeout", JsonValue::from(9_i64)),
-        (
-            "router_settings_override",
-            JsonValue::Object(object(&[
-                ("timeout", JsonValue::from(5_i64)),
-                ("num_retries", JsonValue::from(2_i64)),
-                ("enable_tag_filtering", JsonValue::Bool(true)),
-            ])),
-        ),
-    ]);
-    steps.call(data, false).await.unwrap();
-    let calls = routing.router_calls.lock().unwrap();
-    let sent = &calls[0].0;
-    assert!(!sent.contains_key("router_settings_override"));
-    assert!(!sent.contains_key("fallbacks"));
-    assert_eq!(sent.get("timeout"), Some(&JsonValue::from(9_i64)));
-    assert_eq!(sent.get("num_retries"), Some(&JsonValue::from(2_i64)));
-    assert_eq!(
-        sent.get("enable_tag_filtering"),
-        Some(&JsonValue::Bool(true))
-    );
-}
-
-#[tokio::test]
-async fn the_team_map_is_written_into_the_router_call_only_from_the_router_branch() {
-    let mut routing = empty_routing();
-    routing.team_model = Some("internal".to_owned());
-    let routing = Arc::new(routing);
-    let steps = call_steps(
-        Arc::new(FakeDispatch::default()),
-        Some(Arc::clone(&routing)),
-        None,
-        false,
-        None,
-    );
-    let data = object(&[
-        ("model", text("public")),
-        (
-            "metadata",
-            JsonValue::Object(object(&[("user_api_key_team_id", text("team"))])),
-        ),
-    ]);
-    steps.call(data, false).await.unwrap();
-    {
-        let calls = routing.router_calls.lock().unwrap();
-        assert_eq!(calls[0].0.get("model"), Some(&text("internal")));
-    }
-    let keyed = object(&[
-        ("model", text("public")),
-        ("api_key", text("k")),
-        (
-            "metadata",
-            JsonValue::Object(object(&[("user_api_key_team_id", text("team"))])),
-        ),
-    ]);
-    steps.call(keyed, false).await.unwrap();
-    {
-        let calls = routing.router_calls.lock().unwrap();
-        assert_eq!(calls[1].0.get("model"), Some(&text("public")));
-    }
-    assert_eq!(routing.team_queries.lock().unwrap().len(), 2);
-}
-
-#[tokio::test]
 async fn call_reaches_the_dispatch_for_the_direct_plan() {
     let dispatch = Arc::new(FakeDispatch::default());
     let steps = call_steps(Arc::clone(&dispatch), None, None, false, Some("cli-model"));
@@ -710,9 +632,17 @@ async fn call_reaches_the_dispatch_for_the_direct_plan() {
     assert_eq!(dispatch.calls.lock().unwrap().len(), 1);
 }
 
+#[rstest]
+#[case::model_group("m", false)]
+#[case::deployment_name("openai/m", true)]
 #[tokio::test]
-async fn call_reaches_the_router_for_the_router_plan() {
-    let routing = Arc::new(routing_with_groups(&["m"]));
+async fn call_reaches_the_router_for_the_router_plan(
+    #[case] model: &str,
+    #[case] specific_deployment: bool,
+) {
+    let mut fake = routing_with_groups(&["m"]);
+    fake.deployment_names = names(&["openai/m"]);
+    let routing = Arc::new(fake);
     let steps = call_steps(
         Arc::new(FakeDispatch::default()),
         Some(Arc::clone(&routing)),
@@ -721,17 +651,19 @@ async fn call_reaches_the_router_for_the_router_plan() {
         None,
     );
     steps
-        .call(object(&[("model", text("m"))]), false)
+        .call(object(&[("model", text(model))]), false)
         .await
         .unwrap();
-    assert_eq!(routing.router_calls.lock().unwrap().len(), 1);
+    let calls = routing.router_calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].1, specific_deployment);
 }
 
 #[tokio::test]
 async fn call_reaches_the_a2a_port_and_not_found_when_it_answers_none() {
-    let mut answering = empty_routing();
-    answering.a2a = Flag(true);
-    let answering = Arc::new(answering);
+    let mut fake = empty_routing();
+    fake.a2a = Flag(true);
+    let answering = Arc::new(fake);
     let steps = call_steps(
         Arc::new(FakeDispatch::default()),
         Some(Arc::clone(&answering)),
@@ -991,4 +923,5 @@ fn the_step_errors_answer_their_status_and_detail() {
 }
 
 mod edges;
+mod overrides;
 mod standalone;

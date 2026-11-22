@@ -11,8 +11,13 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 
 use super::{FakeDispatch, MessagesRoute, input, object, plan_messages_route, router_plan, text};
+use crate::messages_call::outcome::MessagesDispatch;
 use crate::messages_call::standalone::standalone_routing;
 use crate::server::chat_setup::chat_executor;
+
+fn dispatch_port(dispatch: &Arc<FakeDispatch>) -> Arc<dyn MessagesDispatch> {
+    Arc::clone(dispatch)
+}
 
 fn standalone_executor(params: &str) -> Arc<ChatExecutor> {
     let yaml =
@@ -74,7 +79,7 @@ fn standalone_routing_plans_its_groups_names_and_unknown_models() {
 async fn standalone_anthropic_messages_writes_the_picked_deployment() {
     let executor = standalone_executor(DEPLOYMENT);
     let dispatch = Arc::new(FakeDispatch::default());
-    let routing = standalone_routing(Arc::clone(&executor), Arc::clone(&dispatch));
+    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(&dispatch));
     let data = object(&[
         ("model", text("messages-model")),
         (
@@ -126,7 +131,7 @@ async fn standalone_anthropic_messages_writes_the_picked_deployment() {
 async fn standalone_specific_deployment_picks_the_named_litellm_model() {
     let executor = standalone_executor(DEPLOYMENT);
     let dispatch = Arc::new(FakeDispatch::default());
-    let routing = standalone_routing(Arc::clone(&executor), Arc::clone(&dispatch));
+    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(&dispatch));
     routing
         .anthropic_messages(object(&[("model", text("openai/messages-model"))]), true)
         .await
@@ -139,7 +144,7 @@ async fn standalone_specific_deployment_picks_the_named_litellm_model() {
 async fn standalone_a2a_and_an_unknown_pick_answer_no_agent_and_not_found() {
     let executor = standalone_executor(DEPLOYMENT);
     let dispatch = Arc::new(FakeDispatch::default());
-    let routing = standalone_routing(Arc::clone(&executor), Arc::clone(&dispatch));
+    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(&dispatch));
     assert!(routing.a2a_agent(JsonMap::new()).await.is_none());
     let Err(error) = routing
         .anthropic_messages(object(&[("model", text("mystery"))]), false)
