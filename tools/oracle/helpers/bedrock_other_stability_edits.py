@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import httpx
@@ -153,7 +153,7 @@ class EditConfig(Protocol):
             GenericLiteLLMParams,
             dict[str, JsonValue],
         ],
-        tuple[dict[str, JsonValue], object],
+        tuple[dict[str, JsonValue], Mapping[str, object] | Sequence[object]],
     ]: ...
 
     @property
