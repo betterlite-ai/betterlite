@@ -201,7 +201,7 @@ async def post_call_run(call: PostCallJson, handler: DynamicHandler) -> HeadersA
     await handler.async_post_call_success_hook({"litellm_call_id": CALL_ID}, auth, response)
     return HeadersAnswer(
         headers=reported_headers(call, response),
-        released=stash.parallel_slot is not acquisition,
+        released=get_or_create_request_stash().parallel_slot is not acquisition,
     )
 
 
