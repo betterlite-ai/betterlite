@@ -94,14 +94,6 @@ impl RequiredFields for PassthroughAuthorizationCode {
     }
 }
 
-fn seal_payload<TPayload>(prefix: &str, payload: &TPayload, cipher: &dyn SealCipher) -> String
-where
-    TPayload: Serialize,
-{
-    let json = serde_json::to_string(payload).unwrap_or_default();
-    format!("{prefix}{}", cipher.encrypt(&json))
-}
-
 fn open_payload<TPayload>(
     prefix: &str,
     label: &str,
@@ -130,7 +122,10 @@ pub fn seal_bridge_code(
         oauth_nonce: oauth_nonce.map(str::to_owned),
         upstream_code: upstream_code.to_owned(),
     };
-    seal_payload(BRIDGE_CODE_PREFIX, &sealed, cipher)
+    format!(
+        "{BRIDGE_CODE_PREFIX}{}",
+        cipher.encrypt(&serde_json::to_string(&sealed).unwrap_or_default())
+    )
 }
 
 #[must_use]
@@ -141,10 +136,12 @@ pub fn open_bridge_code(code: &str, cipher: &dyn SealCipher) -> Option<BridgeAut
 
 #[must_use]
 pub fn seal_passthrough_code(parts: &PassthroughCodeParts<'_>, cipher: &dyn SealCipher) -> String {
-    seal_payload(
-        PASSTHROUGH_CODE_PREFIX,
-        &PassthroughAuthorizationCode::from_parts(parts),
-        cipher,
+    format!(
+        "{PASSTHROUGH_CODE_PREFIX}{}",
+        cipher.encrypt(
+            &serde_json::to_string(&PassthroughAuthorizationCode::from_parts(parts))
+                .unwrap_or_default()
+        )
     )
 }
 
