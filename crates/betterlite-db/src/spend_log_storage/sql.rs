@@ -40,21 +40,6 @@ pub const COLUMNS: [(&str, &str); 34] = [
     ("billing_agent_id", "text"),
 ];
 
-// Prisma fills these when the payload leaves the key out, so the insert takes the column default rather than NULL.
-const DEFAULTED: [(&str, &str); 11] = [
-    ("api_key", "''"),
-    ("spend", "0.0"),
-    ("total_tokens", "0"),
-    ("prompt_tokens", "0"),
-    ("completion_tokens", "0"),
-    ("model", "''"),
-    ("metadata", "'{}'::jsonb"),
-    ("request_tags", "'[]'::jsonb"),
-    ("messages", "'{}'::jsonb"),
-    ("response", "'{}'::jsonb"),
-    ("proxy_server_request", "'{}'::jsonb"),
-];
-
 pub const SELECT_BATCH_ROW: &str = r#"SELECT "call_type", "status", "spend"::numeric AS "spend" FROM "LiteLLM_SpendLogs" WHERE "request_id" = $1"#;
 
 // create_many(skip_duplicates=True): ON CONFLICT takes no target so a partitioned deployment keeps working
@@ -115,9 +100,22 @@ fn recordset_columns() -> String {
         .join(", ")
 }
 
+// Prisma fills these when the payload leaves the key out, so the insert takes the column default rather than NULL.
 fn default_of(name: &str) -> Option<&'static str> {
-    DEFAULTED
-        .iter()
-        .find(|(column, _)| *column == name)
-        .map(|(_, default)| *default)
+    match name {
+        "spend" => Some("0.0"),
+        "total_tokens" | "prompt_tokens" | "completion_tokens" => Some("0"),
+        "metadata" | "messages" | "response" | "proxy_server_request" => Some("'{}'::jsonb"),
+        "request_tags" => Some("'[]'::jsonb"),
+        "api_key"
+        | "model"
+        | "model_id"
+        | "model_group"
+        | "custom_llm_provider"
+        | "api_base"
+        | "user"
+        | "cache_hit"
+        | "cache_key" => Some("''"),
+        _ => None,
+    }
 }

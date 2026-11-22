@@ -535,22 +535,32 @@ async fn a_disabled_ordinary_log_is_not_queued() {
 #[test]
 fn the_insert_statement_defaults_every_prisma_defaulted_column() {
     let statement = insert_statement();
-    assert!(
-        statement.contains(r#"COALESCE(src."api_key", '')"#),
-        "{statement}"
-    );
-    assert!(
-        statement.contains(r#"COALESCE(src."spend", 0.0)"#),
-        "{statement}"
-    );
-    assert!(
-        statement.contains(r#"COALESCE(src."metadata", '{}'::jsonb)"#),
-        "{statement}"
-    );
-    assert!(
-        statement.contains(r#"COALESCE(src."request_tags", '[]'::jsonb)"#),
-        "{statement}"
-    );
+    for (column, default) in [
+        ("api_key", "''"),
+        ("spend", "0.0"),
+        ("total_tokens", "0"),
+        ("prompt_tokens", "0"),
+        ("completion_tokens", "0"),
+        ("model", "''"),
+        ("model_id", "''"),
+        ("model_group", "''"),
+        ("custom_llm_provider", "''"),
+        ("api_base", "''"),
+        ("user", "''"),
+        ("cache_hit", "''"),
+        ("cache_key", "''"),
+        ("metadata", "'{}'::jsonb"),
+        ("request_tags", "'[]'::jsonb"),
+        ("messages", "'{}'::jsonb"),
+        ("response", "'{}'::jsonb"),
+        ("proxy_server_request", "'{}'::jsonb"),
+    ] {
+        let expected = format!(r#"COALESCE(src."{column}", {default})"#);
+        assert!(
+            statement.contains(&expected),
+            "{expected} is missing from {statement}"
+        );
+    }
 }
 
 #[test]

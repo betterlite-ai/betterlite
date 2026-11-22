@@ -5,7 +5,8 @@ use std::slice::from_ref;
 use rust_decimal::Decimal;
 
 use crate::spend_log_storage::batch_claim::{
-    ARETRIEVE_BATCH, BatchClaimTable as _, SUCCESS, SpendLogAttachment, record_spend_log,
+    ARETRIEVE_BATCH, BatchClaimTable as _, SUCCESS, SpendLogAttachment, batch_cost_row_to_write,
+    record_spend_log,
 };
 use crate::spend_log_storage::postgres::{PostgresSpendLogsWriter, insert_spend_log_rows};
 use crate::spend_log_storage::rows::SpendLogQueue;
@@ -139,5 +140,40 @@ async fn a_row_of_another_call_type_keeps_its_own_charge() {
     assert_eq!(rows[0].1, "acompletion");
     assert_eq!(charged(&rows, "shared"), Some(Decimal::new(25, 2)));
     assert!(queue.is_empty());
+    case.close().await;
+}
+
+#[tokio::test]
+async fn a_marker_row_keeps_the_schema_default_in_its_text_columns() {
+    let case = SpendLogCase::new().await;
+    let payload = batch_cost_row("batch-marker-1", SUCCESS, Decimal::new(50, 2));
+    let marker = batch_cost_row_to_write(&payload, true);
+    let inserted = insert_spend_log_rows(&case.store, from_ref(&marker))
+        .await
+        .expect("the marker row");
+    assert_eq!(inserted, 1);
+    let found = case
+        .client
+        .query_one(
+            r#"SELECT "model_id", "model_group", "custom_llm_provider", "api_base", "user", "cache_hit", "cache_key" FROM "LiteLLM_SpendLogs" WHERE "request_id" = $1"#,
+            &[&"batch-marker-1"],
+        )
+        .await
+        .expect("the marker row read back");
+    for column in [
+        "model_id",
+        "model_group",
+        "custom_llm_provider",
+        "api_base",
+        "user",
+        "cache_hit",
+        "cache_key",
+    ] {
+        assert_eq!(
+            found.get::<_, Option<String>>(column),
+            Some(String::new()),
+            "column {column}"
+        );
+    }
     case.close().await;
 }
