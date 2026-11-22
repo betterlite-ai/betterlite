@@ -44,15 +44,10 @@ fn normalize_default_cost(
     if matches!(original, JsonValue::Null) {
         return;
     }
-    if let Some(number) = cost_number(&original) {
+    let described = format!("default_cost_per_query {}", repr_text(&original));
+    normalized.remove("default_cost_per_query");
+    if let Some(number) = normalized_cost(&original, &described, server_name) {
         normalized.insert("default_cost_per_query".to_owned(), number);
-    } else {
-        tracing::warn!(
-            "MCP server '{}' has non-numeric default_cost_per_query {}; ignoring it",
-            display_text(server_name),
-            repr_text(&original)
-        );
-        normalized.remove("default_cost_per_query");
     }
 }
 
@@ -67,21 +62,31 @@ fn normalize_tool_costs(
     };
     let mut parsed = BTreeMap::new();
     for (tool_name, cost) in tool_costs {
-        if let Some(number) = cost_number(&cost) {
+        let described = format!("cost {} for tool '{tool_name}'", repr_text(&cost));
+        if let Some(number) = normalized_cost(&cost, &described, server_name) {
             parsed.insert(tool_name, number);
-        } else {
-            tracing::warn!(
-                "MCP server '{}' has non-numeric cost {} for tool '{}'; ignoring it",
-                display_text(server_name),
-                repr_text(&cost),
-                tool_name
-            );
         }
     }
     normalized.insert(
         "tool_name_to_cost_per_query".to_owned(),
         JsonValue::Object(parsed),
     );
+}
+
+fn normalized_cost(
+    stored: &JsonValue,
+    described: &str,
+    server_name: Option<&JsonValue>,
+) -> Option<JsonValue> {
+    let Some(number) = cost_number(stored) else {
+        tracing::warn!(
+            "MCP server '{}' has non-numeric {}; ignoring it",
+            display_text(server_name),
+            described
+        );
+        return None;
+    };
+    Some(number)
 }
 
 fn cost_number(value: &JsonValue) -> Option<JsonValue> {
