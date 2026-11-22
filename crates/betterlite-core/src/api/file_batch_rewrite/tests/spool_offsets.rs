@@ -108,25 +108,30 @@ async fn scan_spool_uses_the_same_threshold() {
 }
 
 const ACCENTED_ROW: &str = r#"{"custom_id":"c1","body":{"marker":"r1","messages":[]}}"#;
-const KEPT_ROW: &str = r#"{"custom_id":"c2","body":{"marker":"r2","messages":[]}}"#;
+const SECOND_ROW: &str = r#"{"custom_id":"c2","body":{"marker":"r2","messages":[]}}"#;
 // As _spool writes it: compact JSON with the record's custom_id and é as its two UTF-8 bytes
 const ACCENTED_SPOOLED: &str = "{\"custom_id\":\"c1\",\"body\":{\"content\":\"\u{e9}\"}}";
+// The second rewrite spools different bytes, so a span that points at the first record reads the wrong text
+const SECOND_SPOOLED: &str = "{\"custom_id\":\"c2\",\"body\":{\"content\":\"\u{e9}\u{e9}\"}}";
 
-fn accented() -> RecordObject {
+fn accented(text: &str) -> RecordObject {
     let mut data = RecordObject::new();
     data.insert(
         RecordText::from("content"),
-        RecordJson::Text(RecordText::from("\u{e9}")),
+        RecordJson::Text(RecordText::from(text)),
     );
     data
 }
 
-// Scans a blank line, the rewritten é row and a kept row, so the rewritten row is spooled at its own span
-async fn scanned_accented_row(tasks: &TaskTracker) -> (CountedBody, BatchScanResult<Spool>) {
-    // the blank first line is never a record, but it still makes the rewritten record line 2
-    let source = CountedBody::new(format!("\n{ACCENTED_ROW}\n{KEPT_ROW}"));
+// Scans a blank line and two rows rewritten to different bytes, so each record's span holds only its own text
+async fn scanned_accented_rows(tasks: &TaskTracker) -> (CountedBody, BatchScanResult<Spool>) {
+    // the blank first line is never a record, but it still makes the rewritten records lines 2 and 3
+    let source = CountedBody::new(format!("\n{ACCENTED_ROW}\n{SECOND_ROW}"));
     let hook = ScriptedHook::with(
-        vec![("r1", Answer::Replace(accented()))],
+        vec![
+            ("r1", Answer::Replace(accented("\u{e9}"))),
+            ("r2", Answer::Replace(accented("\u{e9}\u{e9}"))),
+        ],
         Probe::new(Arc::clone(&source.traces.reads)),
     );
     let spool = Spool::default();
@@ -134,56 +139,62 @@ async fn scanned_accented_row(tasks: &TaskTracker) -> (CountedBody, BatchScanRes
         .await
         .expect("a scan answers");
     let ScanFile::Scanned(result) = outcome else {
-        panic!("one rewritten row is a scanned file");
+        panic!("two rewritten rows are a scanned file");
     };
     (source, result)
 }
 
-// The scan's RecordRedacted carries the record's physical line, custom_id and the span of the rewritten record's UTF-8 bytes
+// The scan's RecordRedacted carries each record's physical line, custom_id and its own span of UTF-8 bytes
 #[tokio::test]
 async fn scan_spools_the_rewritten_bytes_and_their_span() {
     let tasks = TaskTracker::new();
-    let (_, result) = scanned_accented_row(&tasks).await;
-    assert_eq!(result.changes.len(), 1);
-    let RecordChange::Redacted(change) = &result.changes[0] else {
-        panic!(
-            "the rewritten row is a redaction, got {:?}",
-            result.changes[0]
-        );
+    let (_, result) = scanned_accented_rows(&tasks).await;
+    let changes = result.changes.as_slice();
+    let [
+        RecordChange::Redacted(first),
+        RecordChange::Redacted(second),
+    ] = changes
+    else {
+        panic!("both rewritten rows are redactions, got {changes:?}");
     };
-    assert_eq!(change.line_number, 2);
-    assert_eq!(change.custom_id.as_deref(), Some("c1"));
-    assert_eq!(change.offset, 0);
-    assert_eq!(
-        change.length,
-        u64::try_from(ACCENTED_SPOOLED.len()).unwrap()
-    );
+    assert_eq!(first.line_number, 2);
+    assert_eq!(first.custom_id.as_deref(), Some("c1"));
+    assert_eq!(first.offset, 0);
+    assert_eq!(first.length, u64::try_from(ACCENTED_SPOOLED.len()).unwrap());
+    assert_eq!(second.line_number, 3);
+    assert_eq!(second.custom_id.as_deref(), Some("c2"));
+    assert_eq!(second.offset, first.length);
+    assert_eq!(second.length, u64::try_from(SECOND_SPOOLED.len()).unwrap());
     assert!(
         ACCENTED_SPOOLED.chars().count() < ACCENTED_SPOOLED.len(),
         "the fixture's \u{e9} must make the byte length exceed the character count"
     );
-    assert_eq!(
-        result
-            .redactions
-            .read_at(&tasks, change.offset, change.length)
-            .await
-            .unwrap(),
-        ACCENTED_SPOOLED.as_bytes()
-    );
+    let first_bytes = result
+        .redactions
+        .read_at(&tasks, first.offset, first.length)
+        .await
+        .unwrap();
+    assert_eq!(first_bytes, ACCENTED_SPOOLED.as_bytes());
+    let second_bytes = result
+        .redactions
+        .read_at(&tasks, second.offset, second.length)
+        .await
+        .unwrap();
+    assert_eq!(second_bytes, SECOND_SPOOLED.as_bytes());
 }
 
-// The rewrite puts exactly the spooled bytes back in the rewritten row's place and keeps the untouched row
+// The rewrite puts each spooled record back in its redacted row's place, in file order, and drops the blank line
 #[tokio::test]
 async fn rewrite_copies_the_spooled_bytes_of_a_redacted_row() {
     let tasks = TaskTracker::new();
-    let (source, result) = scanned_accented_row(&tasks).await;
+    let (source, result) = scanned_accented_rows(&tasks).await;
     let output = Spool::default();
     let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output)
         .await
         .expect("the rewrite succeeds");
     assert_eq!(
         rewritten.read_to_end(&tasks).await.unwrap(),
-        format!("{ACCENTED_SPOOLED}\n{KEPT_ROW}").into_bytes()
+        format!("{ACCENTED_SPOOLED}\n{SECOND_SPOOLED}").into_bytes()
     );
 }
 
