@@ -7,7 +7,7 @@ use super::super::query::{TagReportQuery, decode_tag_report_query};
 
 fn query_with_tags(tags: Option<&str>) -> TagReportQuery {
     match tags {
-        Some(tags) => decode_tag_report_query(format!("tags={tags}").as_bytes()),
+        Some(text) => decode_tag_report_query(format!("tags={text}").as_bytes()),
         None => TagReportQuery::default(),
     }
 }
@@ -84,8 +84,8 @@ fn decodes_the_dates(#[case] raw: &[u8], #[case] expected: &str) {
 #[case::trailing_comma("a,", &["a", ""])]
 #[case::underscore_is_ordinary("all_tags", &["all_tags"])]
 fn splits_on_commas_without_trimming(#[case] text: &str, #[case] expected: &[&str]) {
-    let expected: Vec<String> = expected.iter().map(|tag| (*tag).to_owned()).collect();
-    assert_eq!(query_with_tags(Some(text)).selected_tags(), Some(expected));
+    let listed: Vec<String> = expected.iter().map(|tag| (*tag).to_owned()).collect();
+    assert_eq!(query_with_tags(Some(text)).selected_tags(), Some(listed));
 }
 
 #[rstest]
@@ -98,9 +98,9 @@ fn selects_the_tags_a_nonempty_string_lists(
     #[case] tags: Option<&str>,
     #[case] expected: Option<Vec<&str>>,
 ) {
-    let expected: Option<Vec<String>> =
+    let wanted: Option<Vec<String>> =
         expected.map(|list| list.iter().map(|tag| (*tag).to_owned()).collect());
-    assert_eq!(query_with_tags(tags).selected_tags(), expected);
+    assert_eq!(query_with_tags(tags).selected_tags(), wanted);
 }
 
 #[rstest]

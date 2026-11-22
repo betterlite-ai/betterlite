@@ -146,7 +146,7 @@ async fn lists_every_user_with_the_key_aliases_for_an_admin() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].user_id, "u2");
     assert_eq!(rows[0].key_aliases, Some(vec![None]));
-    assert_eq!(rows[0].organization_memberships, None);
+    assert!(rows[0].organization_memberships.is_none());
     assert_eq!(
         rows[1].key_aliases,
         Some(vec![Some("primary".to_owned()), None])

@@ -61,7 +61,7 @@ impl TagReport {
 
 // spend_key_fn and spend_user_fn: the admin predicate picks the whole table or the caller's own
 pub(super) async fn table_respond(
-    State(store): State<TagReportHandle>,
+    State(handle): State<TagReportHandle>,
     Extension(report): Extension<TableReport>,
     identity: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
@@ -69,7 +69,7 @@ pub(super) async fn table_respond(
     let Some(Extension(context)) = identity else {
         return unauthenticated();
     };
-    let Some(store) = store.as_deref() else {
+    let Some(store) = handle.as_deref() else {
         return responses::detail_error(StatusCode::BAD_REQUEST, NO_DATABASE);
     };
     let caller = match team_caller(&context.principal) {
@@ -103,7 +103,7 @@ pub(super) async fn table_respond(
 
 // view_spend_tags, global_get_all_tag_names and global_view_spend_tags are not tenant scoped and fail through their own ProxyException wrapper
 pub(super) async fn tag_respond(
-    State(store): State<TagReportHandle>,
+    State(handle): State<TagReportHandle>,
     Extension(report): Extension<TagReport>,
     identity: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
@@ -111,7 +111,7 @@ pub(super) async fn tag_respond(
     if identity.is_none() {
         return unauthenticated();
     }
-    let Some(store) = store.as_deref() else {
+    let Some(store) = handle.as_deref() else {
         return responses::wrapped_error(format!("{}{NO_DATABASE}", report.prefix()));
     };
     report.answer(store, raw_query.as_deref()).await
@@ -170,7 +170,7 @@ async fn daily_tags(store: &dyn TagReportStore, raw_query: &str) -> Response {
             .await
     };
     match rows {
-        Ok(rows) => tag_spend_response(&rows),
+        Ok(spent) => tag_spend_response(&spent),
         Err(error) => tag_failure(SPEND_TAGS_FAILED, &error),
     }
 }

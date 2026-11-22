@@ -153,9 +153,9 @@ impl TagReportStore for PostgresTagReportStore {
                     .await?;
                 rows.iter().map(DailyTagSpend::try_from).collect()
             }
-            Some(tags) => {
+            Some(selected) => {
                 let rows = self
-                    .query(DAILY_TAGS_SQL, &[&start_date, &end_date, &tags])
+                    .query(DAILY_TAGS_SQL, &[&start_date, &end_date, &selected])
                     .await?;
                 rows.iter().map(DailyTagSpend::try_from).collect()
             }

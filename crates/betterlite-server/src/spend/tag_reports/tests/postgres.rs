@@ -140,49 +140,54 @@ async fn keys_follow_the_repository_order_and_user_scope() {
     fixture.close_async().await.unwrap();
 }
 
+const USERS_SQL: &str = r#"
+INSERT INTO "LiteLLM_UserTable" (user_id, spend, password) VALUES
+    ('u1', 1.0, 'hunter2'),
+    ('u2', 5.0, NULL),
+    ('u3', 2.0, NULL);
+INSERT INTO "LiteLLM_VerificationToken" (token, key_alias, user_id) VALUES
+    ('sk-a', 'a', 'u1'),
+    ('sk-b', NULL, 'u1');
+INSERT INTO "LiteLLM_OrganizationMembership" (user_id, organization_id) VALUES ('u1', 'org-1');
+"#;
+
+async fn users_database() -> (PostgresFixture, Pool) {
+    let (fixture, pool) = database().await;
+    execute(&pool, USERS_SQL).await;
+    (fixture, pool)
+}
+
 #[tokio::test]
 async fn users_are_ranked_with_their_key_aliases() {
-    let (fixture, pool) = database().await;
-    execute(
-        &pool,
-        r#"
-        INSERT INTO "LiteLLM_UserTable" (user_id, spend, password) VALUES
-            ('u1', 1.0, 'hunter2'),
-            ('u2', 5.0, NULL),
-            ('u3', 2.0, NULL);
-        INSERT INTO "LiteLLM_VerificationToken" (token, key_alias, user_id) VALUES
-            ('sk-a', 'a', 'u1'),
-            ('sk-b', NULL, 'u1');
-        INSERT INTO "LiteLLM_OrganizationMembership" (user_id, organization_id) VALUES ('u1', 'org-1');
-        "#,
-    )
-    .await;
+    let (fixture, pool) = users_database().await;
     let store = postgres_store(&pool);
     let users = store.users().await.unwrap();
-    assert_eq!(
-        users
-            .iter()
-            .map(|row| row.user.user_id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["u2", "u3", "u1"]
-    );
+    let ranked: Vec<&str> = users.iter().map(|row| row.user.user_id.as_str()).collect();
+    assert_eq!(ranked, vec!["u2", "u3", "u1"]);
     assert_eq!(users[0].key_aliases, vec![None]);
     let mut aliases = users[2].key_aliases.clone();
     aliases.sort();
     assert_eq!(aliases, vec![None, Some("a".to_owned())]);
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+#[tokio::test]
+async fn reads_one_user_with_the_membership_rows() {
+    let (fixture, pool) = users_database().await;
+    let store = postgres_store(&pool);
     let found = store.user("u1").await.unwrap().unwrap();
     assert_eq!(found.user_id, "u1");
     let memberships = found.organization_memberships.as_ref().unwrap();
     assert_eq!(memberships.len(), 1);
     assert_eq!(memberships[0].organization_id, "org-1");
     let unaffiliated = store.user("u2").await.unwrap().unwrap();
-    assert_eq!(
+    assert!(
         unaffiliated
             .organization_memberships
             .as_ref()
             .unwrap()
-            .len(),
-        0
+            .is_empty()
     );
     assert!(store.user("missing").await.unwrap().is_none());
     pool.close();
