@@ -51,33 +51,17 @@ impl SchedulerError {
     // litellm.Timeout carries no code, and a provider failure keeps the code its error reported
     #[must_use]
     pub fn code(&self) -> Option<&str> {
-        match self {
-            Self::Provider { failure } => failure.code.as_deref(),
-            Self::QueueFull { .. }
-            | Self::InvalidRequestId { .. }
-            | Self::Key { .. }
-            | Self::NotAQueue { .. }
-            | Self::EmptyQueue { .. }
-            | Self::Contended { .. }
-            | Self::TimedOut { .. }
-            | Self::Cancelled { .. }
-            | Self::Local { .. } => None,
+        if let Self::Provider { failure } = self {
+            return failure.code.as_deref();
         }
+        None
     }
     // Router.schedule_acompletion's `setattr(e, "priority", priority)`
     #[must_use]
     pub const fn priority(&self) -> Option<u8> {
-        match self {
-            Self::Provider { failure } => Some(failure.priority),
-            Self::QueueFull { .. }
-            | Self::InvalidRequestId { .. }
-            | Self::Key { .. }
-            | Self::NotAQueue { .. }
-            | Self::EmptyQueue { .. }
-            | Self::Contended { .. }
-            | Self::TimedOut { .. }
-            | Self::Cancelled { .. }
-            | Self::Local { .. } => None,
+        if let Self::Provider { failure } = self {
+            return Some(failure.priority);
         }
+        None
     }
 }

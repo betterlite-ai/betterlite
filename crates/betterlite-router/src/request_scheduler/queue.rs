@@ -10,13 +10,21 @@ pub const MAX_PENDING_REQUESTS: usize = 1024;
 pub const MAX_REQUEST_ID_BYTES: usize = 128;
 // Scheduler.get_queue's `scheduler:queue:{model_name}` key
 pub fn key(model: &str) -> Result<RouteKey, SchedulerError> {
-    RouteKey::parse(&format!("{PREFIX}{model}")).map_err(|source| SchedulerError::Key { source })
+    match RouteKey::parse(&format!("{PREFIX}{model}")) {
+        Ok(key) => Ok(key),
+        Err(source) => Err(SchedulerError::Key { source }),
+    }
 }
-// a heap tuple `(priority, request_id)` written as one member; a FlowItem documents 0 to 255, so three digits make
-// string order agree with tuple order
-#[must_use]
-pub fn encode(priority: u8, request_id: &str) -> String {
-    format!("{priority:03}{SEPARATOR}{request_id}")
+// the members a queue write stores; three digits make string order agree with the tuple order
+pub fn encoded(entries: &[SchedulerTuple]) -> BTreeSet<String> {
+    let mut members = BTreeSet::new();
+    for entry in entries {
+        members.insert(format!(
+            "{:03}{SEPARATOR}{}",
+            entry.priority, entry.request_id
+        ));
+    }
+    members
 }
 #[must_use]
 pub fn decode(member: &str) -> Option<SchedulerTuple> {

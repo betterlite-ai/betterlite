@@ -94,6 +94,26 @@ pub(super) fn item(priority: u8, request_id: &str, model: &str) -> FlowItem {
     }
 }
 
+// a table of requests queued one by one through the production operation
+pub(super) async fn queue_all(service: &RequestScheduler, added: &[(u8, &str)]) {
+    for (priority, request_id) in added {
+        service
+            .add_request(&item(*priority, request_id, MODEL))
+            .await
+            .expect("the request queues");
+    }
+}
+
+// fill one model's queue up to a count, for the pending bound
+pub(super) async fn fill_queue(service: &RequestScheduler, count: usize) {
+    for index in 0..count {
+        service
+            .add_request(&item(255, &format!("fill-{index}"), MODEL))
+            .await
+            .expect("the filler queues");
+    }
+}
+
 pub(super) fn entry(priority: u8, request_id: &str) -> SchedulerTuple {
     SchedulerTuple {
         priority,

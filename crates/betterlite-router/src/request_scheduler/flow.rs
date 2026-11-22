@@ -1,10 +1,10 @@
-// DefaultPriorities in litellm/types/scheduler.py: a lower number is served first
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Priority {
     High,
     Medium,
     Low,
 }
+// DefaultPriorities in litellm/types/scheduler.py: a lower number is served first
 impl Priority {
     #[must_use]
     pub const fn value(self) -> u8 {

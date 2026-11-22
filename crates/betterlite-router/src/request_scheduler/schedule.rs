@@ -56,7 +56,7 @@ impl RequestScheduler {
                     | TimeoutError::Negative { .. }
                     | TimeoutError::OutOfRange { .. },
                 ) => {
-                    self.remove_request(&item.request_id, &item.model).await?;
+                    self.remove_request(item).await?;
                     return Err(SchedulerError::TimedOut {
                         model: item.model.clone(),
                         request_id: item.request_id.clone(),
@@ -80,7 +80,7 @@ impl RequestScheduler {
         }
         // the queue entry leaves on every answer, the success path the pin leaks included
         let answered = call.call().await;
-        self.remove_request(&item.request_id, &item.model).await?;
+        self.remove_request(item).await?;
         match answered {
             Ok(()) => Ok(ScheduleOutcome {
                 request_id: item.request_id.clone(),
@@ -96,7 +96,7 @@ impl RequestScheduler {
     }
     // the timeout and the cancellation both take the waiting entry out before they answer
     async fn cancelled(&self, item: &FlowItem) -> SchedulerError {
-        let removed = self.remove_request(&item.request_id, &item.model).await;
+        let removed = self.remove_request(item).await;
         match removed {
             Ok(_observed) => SchedulerError::Cancelled {
                 request_id: item.request_id.clone(),

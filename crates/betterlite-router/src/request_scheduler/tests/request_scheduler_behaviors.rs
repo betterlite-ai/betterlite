@@ -8,7 +8,7 @@ use crate::request_scheduler::flow::Priority;
 use crate::request_scheduler::schedule::PRIORITIZATION_HEADER;
 use crate::routing_state_store::error::StoreWarning;
 
-use super::{MODEL, ScriptedCall, entries, item, plan, scheduler, shared_scheduler};
+use super::{MODEL, ScriptedCall, entries, item, plan, queue_all, scheduler, shared_scheduler};
 
 // Scheduler.add_request + get_queue: the queue serves lower priorities first and the request id breaks a tie
 #[rstest]
@@ -21,12 +21,7 @@ async fn queued_requests_run_in_priority_order(
     #[case] expected: Vec<(u8, &'static str)>,
 ) {
     let service = scheduler(Settings::default());
-    for (priority, request_id) in added {
-        service
-            .add_request(&item(priority, request_id, MODEL))
-            .await
-            .expect("the request queues");
-    }
+    queue_all(&service, &added).await;
     assert_eq!(
         service.queue(MODEL).await.expect("the queue reads").value,
         entries(&expected)
@@ -88,12 +83,7 @@ async fn without_a_healthy_deployment_only_the_head_runs() {
 #[tokio::test]
 async fn peek_reports_the_head_without_removing_it() {
     let service = scheduler(Settings::default());
-    for (priority, request_id) in [(128, "b"), (128, "a")] {
-        service
-            .add_request(&item(priority, request_id, MODEL))
-            .await
-            .expect("the request queues");
-    }
+    queue_all(&service, &[(128, "b"), (128, "a")]).await;
     let head = service.peek("a", MODEL).await.expect("the peek answers");
     assert!(head.value);
     let behind = service.peek("b", MODEL).await.expect("the peek answers");
@@ -185,8 +175,9 @@ async fn a_healthy_deployment_bypasses_the_queue_head() {
 #[tokio::test]
 async fn the_configured_default_priority_fills_a_request_without_one() {
     let configured = scheduler(Settings {
+        polling_interval: 0.03_f64,
         default_priority: Some(Priority::Medium.value()),
-        ..Settings::default()
+        local_ttl_seconds: 5.0_f64,
     });
     assert_eq!(configured.priority(None), Some(128));
     assert_eq!(configured.priority(Some(Priority::High.value())), Some(0));
@@ -196,11 +187,11 @@ async fn the_configured_default_priority_fills_a_request_without_one() {
 
 // Router.schedule_acompletion's str(uuid.uuid4()) comes from the injected source
 #[test]
-fn the_request_id_source_names_each_scheduled_request() {
-    assert_eq!(
-        scheduler(Settings::default()).next_request_id(),
-        "generated"
-    );
+fn the_request_id_source_names_each_request_id() {
+    let generated = scheduler(Settings::default())
+        .next_request_id()
+        .expect("the injected id is queueable");
+    assert_eq!(generated, "generated");
 }
 
 // polling_interval or DEFAULT_POLLING_INTERVAL, 0.03 seconds at the pin
@@ -210,7 +201,8 @@ async fn polling_interval_defaults_to_thirty_milliseconds() {
     assert_eq!(defaults.polling_interval(), Duration::from_millis(30));
     let configured = scheduler(Settings {
         polling_interval: 0.25_f64,
-        ..Settings::default()
+        default_priority: None,
+        local_ttl_seconds: 5.0_f64,
     });
     assert_eq!(configured.polling_interval(), Duration::from_millis(250));
 }

@@ -28,7 +28,10 @@ pub fn build(config: &Config) -> Option<Arc<RequestScheduler>> {
 }
 // Router.schedule_acompletion's `str(uuid.uuid4())`
 fn request_ids() -> RequestIdSource {
-    Arc::new(|| uuid::Uuid::new_v4().to_string())
+    Arc::new(|| {
+        let generated = uuid::Uuid::new_v4();
+        generated.to_string()
+    })
 }
 // a shared queue that cannot be built leaves this worker's queue alone, as a router without Redis keeps it
 fn shared_store(config: &Config) -> Option<RoutingStateStore> {

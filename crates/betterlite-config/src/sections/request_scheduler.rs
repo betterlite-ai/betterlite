@@ -1,8 +1,8 @@
-use serde::Deserialize;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
+use serde::Deserialize;
 mod tests;
 // DEFAULT_POLLING_INTERVAL: the scheduler's poll cadence when nothing sets one
 const DEFAULT_POLLING_INTERVAL: f64 = 0.03;

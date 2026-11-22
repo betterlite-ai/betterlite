@@ -8,9 +8,13 @@ use rstest::rstest;
 use crate::request_scheduler::error::SchedulerError;
 use crate::request_scheduler::flow::Priority;
 use crate::request_scheduler::queue::MAX_PENDING_REQUESTS;
+use crate::request_scheduler::service::RequestScheduler;
 use crate::routing_value_store::{RoutingValueStore, StoreSettings};
 
-use super::{MODEL, ScriptedCall, entries, item, plan, scheduler, shared_scheduler_with};
+use super::{
+    MODEL, ScriptedCall, entries, fill_queue, item, local_store, plan, scheduler,
+    shared_scheduler_with,
+};
 
 // add_request refuses the request past the bound and keeps the queue where it was
 #[rstest]
@@ -19,12 +23,7 @@ use super::{MODEL, ScriptedCall, entries, item, plan, scheduler, shared_schedule
 #[tokio::test]
 async fn the_queue_holds_at_most_1024_requests(#[case] pending: usize, #[case] accepted: bool) {
     let service = scheduler(Settings::default());
-    for index in 0..pending {
-        service
-            .add_request(&item(255, &format!("fill-{index}"), MODEL))
-            .await
-            .expect("the filler queues");
-    }
+    fill_queue(&service, pending).await;
     let added = service.add_request(&item(0, "last", MODEL)).await;
     if accepted {
         added.expect("the request fits in the last free slot");
@@ -102,6 +101,23 @@ async fn a_request_id_stops_at_128_bytes() {
         service.queue(MODEL).await.expect("the queue reads").value,
         entries(&[(0, fitting.as_str())])
     );
+}
+
+// the injected source passes the same encoder bound as a queued request id
+#[test]
+fn an_injected_request_id_past_128_bytes_is_refused() {
+    let service = RequestScheduler::new(
+        local_store(),
+        None,
+        Settings::default(),
+        Arc::new(|| "a".repeat(129)),
+    );
+    let error = service.next_request_id().expect_err("129 bytes do not fit");
+    assert!(matches!(
+        error,
+        SchedulerError::InvalidRequestId { ref id } if id.len() == 129
+    ));
+    assert_eq!(error.status_code(), Some(400));
 }
 
 // the routing deadline stops the wait and takes the entry out, without reaching the provider
