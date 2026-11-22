@@ -141,8 +141,8 @@ pub(crate) fn run(
     Ok(ProbeOutput::BenchmarkAggregates(Output(Box::new(Fields {
         response,
         query: QueryBounds {
-            start: window.query_start.clone(),
-            end: window.query_end.clone(),
+            start: window.query_start,
+            end: window.query_end,
         },
         parse,
     }))))

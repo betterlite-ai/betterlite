@@ -168,16 +168,11 @@ fn assert_cache_totals(totals: &BenchmarkTotals) {
             totals.cache.same_model.turns,
             totals.cache.same_model.hits,
             totals.cache.same_model.hit_rate_pct,
-        ),
-        (1, 1, dec("100"))
-    );
-    assert_eq!(
-        (
             totals.cache.first_visit.turns,
             totals.cache.first_visit.hits,
             totals.cache.first_visit.hit_rate_pct,
         ),
-        (1, 1, dec("100"))
+        (1, 1, dec("100"), 1, 1, dec("100"))
     );
     assert_eq!(
         (
