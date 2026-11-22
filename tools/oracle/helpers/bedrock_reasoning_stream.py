@@ -132,8 +132,7 @@ PARAMS_ADAPTER: TypeAdapter[JsonObject] = TypeAdapter(JsonObject)
 
 def sorted_names(names: Iterable[str]) -> list[JsonValue]:
     listed: list[JsonValue] = []
-    for name in sorted(names):
-        listed.append(name)
+    listed.extend(sorted(names))
     return listed
 
 
@@ -193,26 +192,29 @@ def chunk_view(reply: ModelResponseStream) -> JsonObject:
 def run_chunks(step: ChunkStep) -> JsonValue:
     handler = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/chat_completions/transformation.py#L218-L227
         ChunkParser,
-        BedrockRuntimeChatCompletionsStreamingHandler(streaming_response=iter(()), sync_stream=True),
+        BedrockRuntimeChatCompletionsStreamingHandler(
+            streaming_response=iter(()), sync_stream=True
+        ),
     )
     views: list[JsonValue] = [chunk_view(handler.chunk_parser(chunk)) for chunk in step["chunks"]]
     return JSON_ADAPTER.validate_python(views)
 
 
 def run_effort(step: EffortStep) -> JsonValue:
-    refused = sorted_names(chat_completions_params_refused_while_reasoning(step["model"], step["params"]))
+    refused = sorted_names(
+        chat_completions_params_refused_while_reasoning(step["model"], step["params"])
+    )
     non_string = sorted_names(non_string_reasoning_effort(step["params"]))
-    view: JsonObject = {
-        "non_string": non_string,
-        "refused_while_reasoning": refused,
-    }
+    view: JsonObject = {"non_string": non_string, "refused_while_reasoning": refused}
     return JSON_ADAPTER.validate_python(view)
 
 
 def run_refusals(step: RefusalStep) -> JsonValue:
     views: list[JsonValue] = []
     for model in step["models"]:
-        kept = PARAMS_ADAPTER.validate_python(without_refused_reasoning_effort(model, step["params"]))
+        kept = PARAMS_ADAPTER.validate_python(
+            without_refused_reasoning_effort(model, step["params"])
+        )
         views.append({
             "model": model,
             "refused_params": sorted_names(chat_completions_params_refused_for(model)),
