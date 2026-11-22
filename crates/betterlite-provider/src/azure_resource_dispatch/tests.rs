@@ -39,13 +39,13 @@ where
 
 // One row per azure-resource-dispatch oracle case file, each driving the production dispatcher
 #[rstest]
-#[case::case_1_files_batches(Family::FilesBatches)]
-#[case::case_2_fine_tuning(Family::FineTuning)]
-#[case::case_3_assistant_thread_run(Family::AssistantThreadRun)]
-#[case::case_4_responses_search(Family::ResponsesSearch)]
-#[case::case_5_realtime(Family::Realtime)]
-#[case::case_6_container_video_vector(Family::ContainerVideoVector)]
-#[case::case_7_passthrough(Family::Passthrough)]
+#[case::files_batches(Family::FilesBatches)]
+#[case::fine_tuning(Family::FineTuning)]
+#[case::assistant_thread_run(Family::AssistantThreadRun)]
+#[case::responses_search(Family::ResponsesSearch)]
+#[case::realtime(Family::Realtime)]
+#[case::container_video_vector(Family::ContainerVideoVector)]
+#[case::passthrough(Family::Passthrough)]
 fn azure_resource_dispatch_cases(#[case] family: Family) {
     match family {
         Family::FilesBatches => files_batches_cases::check(),
