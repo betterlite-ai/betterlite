@@ -1,0 +1,20 @@
+kind: helper
+name: responses-id-security-seed
+call:
+  responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: seed-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_dlJn4tF_lgrUNhoOf_QXkArEtAM3mWtputDFffel_6Y57Byt1VDprRETKYlBYpBlhjDAcB2Pf4kBfJlPlqxYZqoJwMvu_HO4OTrEmnd6wSgoAx5Sa58lgL7GYtRNOZZtFLnXWz3xeezW9gFUGOLjhgAhKQ_s3Y4=
+env: {}
+compare:
+  ignore: []

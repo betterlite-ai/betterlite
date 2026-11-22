@@ -11,6 +11,7 @@ use crate::atomic_counter::value::CounterValueError as AtomicCounterValueError;
 use crate::concurrency_gauges::{ConcurrencyGauges, GaugeError};
 use crate::fail_closed::{FailClosedPolicy, RateLimitUnverifiableError};
 use crate::limiter_records::{LimiterClock, ModelGroupResolver};
+use crate::pre_call_hook::PreCallHookError;
 use crate::rate_limit_window_store::{CounterScript, WindowStore, WindowStoreError};
 use crate::request_stash::RequestStashSlot;
 use crate::settlement_and_rollback::{AtomicSettlement, SettlementError};
@@ -24,6 +25,17 @@ mod tests;
 // the typed request body a proxy request carries, which every rate-limit hook reads
 pub type RateLimitCallData = RequestData;
 
+// the failure a pre-call limiter reports: LiteLLM's hook raises HTTPExceptions, so a 429 and the fail-closed 503 keep their own rejection and every other failure keeps the hook's error as its source
+#[derive(Debug, thiserror::Error)]
+pub enum CallTypeRateLimitError {
+    #[error(transparent)]
+    RateLimited(ProxyRateLimitError),
+    #[error(transparent)]
+    Unverifiable(RateLimitUnverifiableError),
+    #[error(transparent)]
+    Hook(PreCallHookError),
+}
+
 #[async_trait::async_trait]
 pub trait CallTypeRateLimiter: Send + Sync {
     async fn async_pre_call_hook(
@@ -32,7 +44,7 @@ pub trait CallTypeRateLimiter: Send + Sync {
         data: &RateLimitCallData,
         call_type: CallType,
         stash: &RequestStashSlot,
-    ) -> Result<(), ProxyRateLimitError>;
+    ) -> Result<(), CallTypeRateLimitError>;
 }
 
 pub struct RateLimiterAssembly {

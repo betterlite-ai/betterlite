@@ -1,0 +1,84 @@
+kind: helper
+name: model-group-data-budget-join-missing-vs-present
+call:
+  model_group_data:
+    calls:
+      - function: budget_or_none
+        row: null
+      - function: budget_response
+        access_group: group-a
+        row: null
+      - function: with_budget
+        info:
+          access_group: group-a
+          model_names: [gpt-4, gpt-4o]
+          deployment_count: 2
+        row: null
+calls:
+  - model_group_data:
+      calls:
+        - function: budget_or_none
+          row:
+            access_group_name: group-a
+            spend: 3.5
+            budget_id: budget-1
+            litellm_budget_table: null
+        - function: budget_response
+          access_group: group-a
+          row:
+            access_group_name: group-a
+            spend: 3.5
+            budget_id: budget-1
+            litellm_budget_table: null
+        - function: with_budget
+          info:
+            access_group: group-a
+            model_names: [gpt-4, gpt-4o]
+            deployment_count: 2
+          row:
+            access_group_name: group-a
+            spend: 3.5
+            budget_id: budget-1
+            litellm_budget_table: null
+  - model_group_data:
+      calls:
+        - function: budget_or_none
+          row:
+            access_group_name: group-a
+            spend: 3.5
+            budget_id: budget-1
+            litellm_budget_table:
+              budget_id: budget-1
+              max_budget: 25.0
+              soft_budget: 20.0
+              budget_duration: 30d
+              budget_reset_at: null
+        - function: budget_response
+          access_group: group-a
+          row:
+            access_group_name: group-a
+            spend: 3.5
+            budget_id: budget-1
+            litellm_budget_table:
+              budget_id: budget-1
+              max_budget: 25.0
+              soft_budget: 20.0
+              budget_duration: 30d
+              budget_reset_at: null
+        - function: with_budget
+          info:
+            access_group: group-a
+            model_names: [gpt-4, gpt-4o]
+            deployment_count: 2
+          row:
+            access_group_name: group-a
+            spend: 3.5
+            budget_id: budget-1
+            litellm_budget_table:
+              budget_id: budget-1
+              max_budget: 25.0
+              soft_budget: 20.0
+              budget_duration: 30d
+              budget_reset_at: null
+env: {}
+compare: {ignore: []}

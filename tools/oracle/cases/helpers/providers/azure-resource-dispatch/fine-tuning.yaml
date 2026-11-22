@@ -1,0 +1,34 @@
+kind: helper
+name: azure-resource-dispatch-fine-tuning
+call:
+  azure_resource_dispatch:
+    case: fine_tuning
+    steps:
+      - kind: create
+        api_base: "https://example.test"
+        api_version: "2024-10-21"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"id":"ft_1","created_at":1,"error":null,"fine_tuned_model":null,"finished_at":null,"estimated_finish":null,"integrations":null,"metadata":null,"hyperparameters":{"batch_size":null,"learning_rate_multiplier":null,"n_epochs":3},"method":null,"model":"gpt-4o-mini","object":"fine_tuning.job","organization_id":"org-x","result_files":[],"seed":5,"status":"running","trained_tokens":null,"training_file":"file_a","validation_file":null}'
+      - kind: list
+        api_base: "https://example.test"
+        api_version: "2024-10-21"
+        api_key: "sk-fixture"
+        status: 200
+        body: '{"object":"list","data":[{"id":"ft_1","created_at":1,"error":null,"fine_tuned_model":null,"finished_at":null,"estimated_finish":null,"integrations":null,"metadata":null,"hyperparameters":{"batch_size":null,"learning_rate_multiplier":null,"n_epochs":3},"method":null,"model":"gpt-4o-mini","object":"fine_tuning.job","organization_id":"org-x","result_files":[],"seed":5,"status":"running","trained_tokens":null,"training_file":"file_a","validation_file":null}],"has_more":false}'
+      - kind: retrieve
+        api_base: "https://example.test"
+        api_version: "2024-10-21"
+        api_key: "sk-fixture"
+        status: 200
+        job_id: "ft_retrieve"
+        body: '{"id":"ft_retrieve","created_at":1,"error":null,"fine_tuned_model":null,"finished_at":null,"estimated_finish":null,"integrations":null,"metadata":null,"hyperparameters":{"batch_size":null,"learning_rate_multiplier":null,"n_epochs":3},"method":null,"model":"gpt-4o-mini","object":"fine_tuning.job","organization_id":"org-x","result_files":[],"seed":5,"status":"running","trained_tokens":null,"training_file":"file_a","validation_file":null}'
+      - kind: cancel
+        api_base: "https://example.test"
+        api_version: "2024-10-21"
+        api_key: "sk-fixture"
+        status: 200
+        job_id: "ft_cancel"
+        body: '{"id":"ft_cancel","created_at":1,"error":null,"fine_tuned_model":null,"finished_at":null,"estimated_finish":null,"integrations":null,"metadata":null,"hyperparameters":{"batch_size":null,"learning_rate_multiplier":null,"n_epochs":3},"method":null,"model":"gpt-4o-mini","object":"fine_tuning.job","organization_id":"org-x","result_files":[],"seed":5,"status":"cancelled","trained_tokens":null,"training_file":"file_a","validation_file":null}'
+env: {}
+compare: {ignore: []}

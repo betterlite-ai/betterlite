@@ -53,11 +53,12 @@ deviations:
       transform reads only the keys it names.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L623-L628
   - what: >-
-      An unknown provider name and a known provider with no container config fail with two different messages, both
-      as ValueError through the dispatch. LiteLLM builds litellm.LlmProviders(name) first, so an unknown name fails
-      inside pydantic with its own text before the None check runs.
+      A BadRequest (400) with model "" and the provider resolved so far answers an unknown provider name and a
+      known provider with no container config, each keeping its own message, where LiteLLM's ValueError goes
+      through exception_type as an APIConnectionError (500).
     why: >-
-      B3361's provider lookup answers a config or nothing and has no enum constructor to fail in, so this module
-      names the unknown provider itself; the class a caller branches on is the same.
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server
+      broke when its own request was wrong. B3361's provider lookup answers a config or nothing and has no enum
+      constructor to fail in, so this module names the unknown provider itself; only the message differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L641-L645
 kept_bugs: []

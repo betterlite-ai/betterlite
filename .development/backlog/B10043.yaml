@@ -1,0 +1,13 @@
+id: B10043
+milestone: R2 bug fixes
+title: An unknown or unconfigured provider on video status, content, remix, list and character calls answers 400, not 500
+status: done
+depends_on: [B10039, B3339, B3340, B3341]
+file: tasks/B10043-video-calls-unknown-provider.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 2993

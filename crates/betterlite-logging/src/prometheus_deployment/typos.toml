@@ -1,0 +1,3 @@
+[default.extend-words]
+# LiteLLM's own log lines in set_llm_deployment_failure_metrics and set_llm_deployment_success_metrics spell it this way.
+occured = "occured"

@@ -1,0 +1,15 @@
+kind: helper
+name: b3340-remix-provider-explicit-override
+call:
+  b3340:
+    operation: remix
+    litellm_call_id: call-remix-override
+    video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmdyb3E7bW9kZWxfaWQ6O3ZpZGVvX2lkOnZpZGVvX2FiYw==
+    prompt: make it cooler
+    custom_llm_provider: openai
+    api_base: https://api.openai.com/v1
+    api_key: test-key
+    status: 200
+    body: '{"id": "video_abc", "object": "video", "status": "completed", "seconds": "8", "model": "sora-2"}'
+env: {}
+compare: {ignore: []}

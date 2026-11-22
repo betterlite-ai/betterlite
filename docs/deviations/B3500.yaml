@@ -49,4 +49,20 @@ deviations:
       Both names build the same client configuration, so the only difference is one cache entry that no caller can
       observe.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L536-L537
+  - what: >-
+      An interactions delete call whose provider is unknown or has no interactions config answers a
+      BadRequestError (400) with model "" and the provider set.
+    why: >-
+      LiteLLM's ValueError goes through exception_type and comes out as an APIConnectionError (500), though
+      the provider name is the caller's input and the call can never succeed.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L529-L530
+  - what: >-
+      An interactions cancel call whose provider is unknown or has no interactions config answers a
+      BadRequestError (400) with model "" and the provider set.
+    why: >-
+      LiteLLM's ValueError goes through exception_type and comes out as an APIConnectionError (500), though
+      the provider name is the caller's input and the call can never succeed.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L631-L632
 kept_bugs: []

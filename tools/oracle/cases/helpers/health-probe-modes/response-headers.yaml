@@ -1,0 +1,12 @@
+kind: helper
+name: response_headers
+call:
+  b4440:
+    mode: []
+    wildcard: []
+    tracking: []
+    response:
+      - headers: {x-ratelimit-remaining-requests: "10", x-ratelimit-remaining-tokens: "", x-ms-region: westus, other: ignored, X-Ratelimit-Remaining-Requests: "5"}
+      - headers: {}
+env: {}
+compare: {ignore: []}

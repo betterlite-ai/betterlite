@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -20,6 +21,7 @@ use betterlite_openai::stream::SseParser;
 use betterlite_openai::text_completion_execution::CompletionAnswer;
 use betterlite_openai::text_completion_request::CompletionRequest;
 use betterlite_openai::text_completion_stream::{DONE_FRAME, decode_chat_events, without_nulls};
+use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use betterlite_provider::operation::{
     ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult,
 };
@@ -39,9 +41,17 @@ use super::CompletionCalls;
 use super::bridge::{chat_call_failure, chat_stream_answer, converted};
 
 // The route whose upstream rules a chat stream follows: only the chat route's provider adds stream usage
+#[derive(Clone, Copy)]
 pub(crate) enum StreamUsage {
     Chat,
     Text,
+}
+
+// what the stream's route adds to the provider call: its usage rules and the Anthropic runtime it reaches
+#[derive(Clone, Copy)]
+pub(crate) struct StreamRoute<'runtime> {
+    pub(crate) usage: StreamUsage,
+    pub(crate) anthropic: Option<&'runtime Arc<AnthropicRuntime>>,
 }
 
 // The chat endpoint reached for a chat-catalog deployment; routes/chat.rs keeps its streaming module private
@@ -50,10 +60,11 @@ pub(crate) async fn provider_stream(
     deployment: &ChatDeployment,
     request: &ChatRequest,
     control: ControlOptions,
-    usage: StreamUsage,
+    route: StreamRoute<'_>,
 ) -> Result<(OperationResult, HeaderMap), CallError<ChatError>> {
     let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
-    let inputs = Deployment::from_chat(deployment);
+    let mut inputs = Deployment::from_chat(deployment);
+    inputs.anthropic = route.anthropic.cloned();
     let operation = OperationRequest::Stream(Box::new(ChatOperation {
         model: inputs.model.clone(),
         request: request.clone(),
@@ -63,7 +74,7 @@ pub(crate) async fn provider_stream(
         .prepare(&operation, &inputs, &executor.catalog)
         .map_err(chat_error)?;
     // atext_completion never asks the chat provider for stream usage unless the caller chose it
-    if matches!(usage, StreamUsage::Text) && request.stream_options.is_none() {
+    if matches!(route.usage, StreamUsage::Text) && request.stream_options.is_none() {
         strip_stream_usage(&mut prepared)?;
     }
     let client = executor
@@ -192,7 +203,10 @@ pub(super) async fn streamed(
         &call.deployment,
         chat,
         control,
-        StreamUsage::Text,
+        StreamRoute {
+            usage: StreamUsage::Text,
+            anthropic: None,
+        },
     )
     .await
     .map_err(|error| chat_call_failure(error, calls))?;

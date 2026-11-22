@@ -8,6 +8,8 @@ use std::time::Duration;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::types::Config;
+use betterlite_openai::chat::execution::ChatExecutor;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -21,6 +23,8 @@ use uuid::Uuid;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
+use crate::state::anthropic_runtime;
+use crate::state::shared::Shared;
 
 const CHAT: &str = r#"{"model":"g","messages":[{"role":"user","content":"hi"}]}"#;
 const STREAM: &str = r#"{"model":"g","messages":[{"role":"user","content":"hi"}],"stream":true}"#;
@@ -179,6 +183,15 @@ async fn serve(listener: TcpListener, replies: Vec<(u16, &'static str)>) -> Vec<
     bodies
 }
 
+fn chat_calls(config: &Config, executor: ChatExecutor) -> ChatCalls {
+    let shared = Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
+    };
+    let slot = anthropic_runtime::Slot::new(config, &shared);
+    ChatCalls::new(config, Arc::new(executor), &slot).unwrap()
+}
+
 // one booted chat router whose deployment points at a loopback provider answering the given replies in order
 async fn answered(
     sent: &'static str,
@@ -199,7 +212,7 @@ async fn answered(
     let mut executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
     executor.clock = fixed_clock;
     executor.next_id = fixed_id;
-    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    let calls = chat_calls(&config, executor);
     let router = chat_routes_with_call_id(Arc::new(calls), false).unwrap();
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")

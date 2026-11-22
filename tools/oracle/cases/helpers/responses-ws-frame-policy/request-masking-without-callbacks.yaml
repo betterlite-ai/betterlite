@@ -1,0 +1,54 @@
+kind: helper
+name: request-masking-without-callbacks
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: create
+      message: not-json
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "ping"}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "gpt-4o", "input": "hi a@example.com"}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "client"}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create"}'
+      authorized_model: null
+      defaults:
+        fill_missing: {temperature: 0.2}
+        overrides: {}
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "previous_response_id": "resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDptO3Jlc3BvbnNlX2lkOnJlc3Bfb3JpZw=="}'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "client", "input": [{"id": "encitem_bGl0ZWxsbTptb2RlbF9pZDptO2l0ZW1faWQ6aXRlbS05"}]}'
+      authorized_model: gpt-4o
+      defaults:
+        fill_missing: {temperature: 0.2, previous_response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDptO3Jlc3BvbnNlX2lkOnJlc3Bfb3JpZw==}
+        overrides: {model: override}
+      guardrails: []
+      request_data: {}
+env: {}
+compare:
+  ignore: []

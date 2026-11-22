@@ -1,0 +1,56 @@
+kind: helper
+name: affinity-output-item-wrap
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: deploy-7}}
+      event: {type: response.output_item.added, item: {id: rs_1, encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: deploy-7}}
+      event: {type: response.output_item.done, item: {id: rs_1, encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: ''}}
+      event: {type: response.output_item.added, item: {id: rs_1, encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: deploy-7}}
+      event: {type: response.output_text.delta, item: {id: rs_1, encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true}
+      event: {type: response.output_item.added, item: {encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: null}
+      event: {type: response.output_item.added, item: {encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: 7}}
+      event: {type: response.output_item.added, item: {encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: m}}
+      event: {type: response.output_item.added}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: m}}
+      event: {type: response.output_item.added, item: cipher}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: m}}
+      event: {type: response.output_item.added, item: {id: rs_1}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: m}}
+      event: {type: response.output_item.added, item: {encrypted_content: ''}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: m}}
+      event: {type: response.output_item.added, item: {encrypted_content: 5}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: false, model_info: {id: m}}
+      event: {type: response.output_item.added, item: {encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: null, model_info: {id: m}}
+      event: {type: response.output_item.added, item: {encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: {model_info: {id: m}}
+      event: {type: response.output_item.added, item: {encrypted_content: cipher}}
+    - kind: wrap
+      litellm_metadata: affinity
+      event: {type: response.output_item.added, item: {encrypted_content: cipher}}
+env: {}
+compare:
+  ignore: []

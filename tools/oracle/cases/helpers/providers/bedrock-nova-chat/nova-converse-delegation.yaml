@@ -1,0 +1,41 @@
+kind: helper
+name: nova-converse-delegation
+call:
+  bedrock_nova_chat:
+    function: converse_delegation
+    model: amazon.nova-pro-v1:0
+    model_cost:
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: true}
+    environment: {}
+    non_default_params:
+      temperature: 0.2
+      top_p: 0.9
+      max_tokens: 64
+      stop: [END]
+    optional_params: {}
+calls:
+  - bedrock_nova_chat:
+      function: converse_delegation
+      model: amazon.nova-pro-v1:0
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: true}
+      environment: {}
+      non_default_params:
+        tools:
+          - type: function
+            function:
+              name: lookup
+              description: finds things
+              parameters: {type: object, properties: {}}
+        tool_choice: auto
+      optional_params: {maxTokens: 10}
+  - bedrock_nova_chat:
+      function: converse_delegation
+      model: amazon.nova-pro-v1:0
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: true}
+      environment: {}
+      non_default_params: {max_completion_tokens: 32}
+      optional_params: {maxTokens: 10}
+env: {}
+compare: {ignore: []}

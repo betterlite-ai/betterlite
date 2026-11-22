@@ -1,0 +1,92 @@
+kind: helper
+name: response-event-unmasking
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: unmask
+      message: '{"type": "response.output_text.delta", "delta": "to <EMAIL_ADDRESS_1>"}'
+      guardrails: 0
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: not-json
+      guardrails: 2
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.output_text.delta", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data: {}
+    - kind: unmask
+      message: '{"type": "response.output_text.delta", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data:
+        metadata: x
+    - kind: unmask
+      message: '{"type": "response.output_text.delta", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: 5}}
+    - kind: unmask
+      message: '{"type": "response.output_text.delta", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {}}
+    - kind: unmask
+      message: '{"type": "response.completed", "response": {"output": [{"content": [{"text": "hi <EMAIL_ADDRESS_1>"}, {"text": 5}, "block", {"type": "refusal"}]}, {"content": "flat"}, "item", {"type": "message"}]}}'
+      guardrails: 2
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.completed", "response": {"output": [{"content": [{"text": "plain"}]}]}}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.completed", "response": "x"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.completed", "response": {"output": "x"}}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.reasoning_summary_text.delta", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.refusal.delta", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.function_call_arguments.delta", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.output_text.delta", "delta": "plain"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.output_text.delta", "delta": 5}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "response.output_text.done", "text": "<EMAIL_ADDRESS_1>", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '{"type": "other", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+env: {}
+compare:
+  ignore: []

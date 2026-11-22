@@ -1,0 +1,47 @@
+name: limiter-fail-closed-503
+config: |
+  model_list:
+    - model_name: limited-ten
+      litellm_params:
+        model: openai/gpt-4o-mini
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+        default_api_key_rpm_limit: 10
+  litellm_settings:
+    cache: true
+    cache_params:
+      type: redis
+      host: 127.0.0.1
+      port: 6399
+  general_settings:
+    fail_closed_rate_limit_enforcement: true
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+  body:
+    model: limited-ten
+    messages:
+      - {role: user, content: hi}
+    stream: false
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-upstream
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o-mini-2024
+      choices:
+        - index: 0
+          message: {role: assistant, content: Hello!}
+          finish_reason: stop
+      usage: {prompt_tokens: 5, completion_tokens: 2, total_tokens: 7}
+compare:
+  headers: [content-type]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: []
+  ignore: []

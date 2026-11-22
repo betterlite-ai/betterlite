@@ -1,0 +1,8 @@
+kind: helper
+name: non-ascii-verifier
+call:
+  b4678:
+    code_verifier: "üñïçødé"
+    code_challenge: CRq1B87KKMcG1TcI6MGzKFE7NtDLjfpfofPinwjxMOs
+env: {}
+compare: {ignore: []}

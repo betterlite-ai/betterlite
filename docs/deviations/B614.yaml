@@ -1,0 +1,15 @@
+task: B614
+deviations:
+  - what: "The delegated reply conversion logs no api_key, where LiteLLM's transform_response forwards api_key into logging_obj.post_call."
+    why: "The shared PostCall record has no api_key field (the omission B607 records for the same conversion); the record is the one B607 builds, and nothing that consumes it reads the key."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py#L121-L148
+  - what: "The Nova class fields and the direct Nova credentials load from YAML under an amazon_nova block in litellm_params and litellm_settings, plus litellm_settings.amazon_nova_api_key, where LiteLLM accepts these only as constructor arguments and module attributes."
+    why: "The task's config clause asks betterlite-config to resolve these inputs; the block keeps the class fields apart from the request parameters litellm_params also carries (temperature, max_tokens), and it is the provider-block shape the loader already reads. AMAZON_NOVA_API_BASE and AMAZON_NOVA_API_KEY are read from the injected environment lookup, with an empty value counting as unset."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/amazon_nova/chat/transformation.py#L32-L62
+  - what: "metadata is a configuration record field that reaches the direct provider config, where LiteLLM declares metadata as a class attribute its constructor never accepts."
+    why: "The task's config clause names AmazonNovaChatConfig.metadata as a loader key; typing it as a record field keeps every class field loadable, and a value set through config behaves like the attribute a setup sets directly. The constructor beside it still persists only the six non-None arguments."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/amazon_nova/chat/transformation.py#L23-L44
+  - what: "A body message without role or content, or a system or content block that is not an object, fails with a typed error naming the field, where LiteLLM raises KeyError or TypeError and answers 500."
+    why: "Those shapes cannot come from the Converse transform a working request runs, and the conversion still refuses the malformed invoke body instead of sending it; docs/compatibility.md makes a value of the wrong type an error that names the field."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py#L151-L166
+kept_bugs: []
