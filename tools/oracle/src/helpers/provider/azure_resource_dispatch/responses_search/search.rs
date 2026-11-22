@@ -169,10 +169,10 @@ fn options_of(step: &Step) -> Object {
 }
 
 const fn body_of(step: &Step) -> &[u8] {
-    let Step::SearchReply(value) = step else {
-        return &[];
-    };
-    value.body.as_bytes()
+    if let Step::SearchReply(value) = step {
+        return value.body.as_bytes();
+    }
+    &[]
 }
 
 fn search_failure(error: &AzureSearchError) -> Box<HelperError> {
