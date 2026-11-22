@@ -104,6 +104,7 @@ impl<const DEFAULT: u16> ResponseDetails<DEFAULT> {
     }
 
     // a caller mistake the call answers 400 for, with no provider answer behind it: no retry or body field is set
+    #[must_use]
     pub fn for_provider(message: String, model: Option<String>, provider: &str) -> Self {
         Self {
             message,
