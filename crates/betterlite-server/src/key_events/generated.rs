@@ -28,10 +28,10 @@ where
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
     <Manager::Params as TryFrom<TeamSecretSettings>>::Error: Error + Send + Sync + 'static,
 {
-    if matches!(event.data.generate.send_invite_email, Some(Some(true))) {
-        if let Err(error) = send_created_email(effects.email, event).await {
-            warn!("Failed to send key created email: {error}");
-        }
+    if matches!(event.data.generate.send_invite_email, Some(Some(true)))
+        && let Err(error) = send_created_email(effects.email, event).await
+    {
+        warn!("Failed to send key created email: {error}");
     }
     if audit.settings.is_audit_logging_enabled(None) {
         let updated_values =

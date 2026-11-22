@@ -346,7 +346,7 @@ impl KeyCreatedMailer for RecordingMailer {
 // one subscriber layer per test; a case reads the levels and texts it selected with a target prefix
 #[derive(Clone)]
 pub(super) struct Lines {
-    pub(super) lines: Arc<Mutex<Vec<(Level, String)>>>,
+    pub(super) recorded: Arc<Mutex<Vec<(Level, String)>>>,
     pub(super) target: &'static str,
     pub(super) level: Option<Level>,
 }
@@ -354,14 +354,14 @@ pub(super) struct Lines {
 impl Lines {
     pub(super) fn at(target: &'static str, level: Option<Level>) -> Self {
         Self {
-            lines: Arc::new(Mutex::new(Vec::new())),
+            recorded: Arc::new(Mutex::new(Vec::new())),
             target,
             level,
         }
     }
 
     pub(super) fn lines(&self) -> Vec<(Level, String)> {
-        lock(&self.lines).clone()
+        lock(&self.recorded).clone()
     }
 }
 
@@ -376,7 +376,7 @@ impl<S: Subscriber> Layer<S> for Lines {
         }
         let mut message = Message(String::new());
         event.record(&mut message);
-        lock(&self.lines).push((*metadata.level(), message.0));
+        lock(&self.recorded).push((*metadata.level(), message.0));
     }
 }
 

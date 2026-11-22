@@ -2,6 +2,7 @@
 
 mod support;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -45,8 +46,8 @@ fn value(text: &str) -> TypedValue {
     serde_json::from_str(text).expect("a JSON value")
 }
 
-fn exposed(secret: &Option<SecretString>) -> Option<&str> {
-    secret.as_ref().map(ExposeSecret::expose_secret)
+fn exposed(secret: Option<&SecretString>) -> Option<&str> {
+    secret.map(ExposeSecret::expose_secret)
 }
 
 fn data(text: &str) -> JsonData {
@@ -62,38 +63,38 @@ fn key_row(text: &str) -> LiteLLMVerificationToken {
 }
 
 fn generated(request: &str, response: &str) -> KeyEvent {
-    KeyEvent::Generated(GeneratedEvent {
+    KeyEvent::Generated(Box::new(GeneratedEvent {
         data: GenerateKeyRequest::read(&value(request)).expect("a generate request"),
         response: GenerateKeyResponse::read(&value(response)).expect("a generate response"),
-    })
+    }))
 }
 
 fn updated(request: &str, row: &str, response: &str) -> KeyEvent {
-    KeyEvent::Updated(UpdatedEvent {
+    KeyEvent::Updated(Box::new(UpdatedEvent {
         data: UpdateKeyRequest::read(&value(request)).expect("an update request"),
         row: key_row(row),
         response: data(response),
-    })
+    }))
 }
 
 fn rotated(request: Option<&str>, row: &str, response: &str) -> KeyEvent {
-    KeyEvent::Rotated(RotatedEvent {
+    KeyEvent::Rotated(Box::new(RotatedEvent {
         data: request
             .map(|text| RegenerateKeyRequest::read(&value(text)).expect("a regenerate request")),
         row: key_row(row),
         response: GenerateKeyResponse::read(&value(response)).expect("a generate response"),
-    })
+    }))
 }
 
 fn deleted(text: &str) -> KeyEvent {
     let JsonData::Array(rows) = data(text) else {
         panic!("the scripted rows are an array");
     };
-    KeyEvent::Deleted(DeletedEvent {
+    KeyEvent::Deleted(Box::new(DeletedEvent {
         request: data(r#"{"keys": ["request-marker"]}"#),
         rows,
         response: data(r#"{"deleted_keys": ["response-marker"]}"#),
-    })
+    }))
 }
 
 fn caller_with_metadata() -> KeyEventCaller {
@@ -168,7 +169,10 @@ async fn generated_audit_projection() {
     assert_eq!(record.table_name, AuditTable::Key);
     assert_eq!(record.object_id, "tok-1");
     assert_eq!(record.changed_by.as_deref(), Some("user-1"));
-    assert_eq!(exposed(&record.changed_by_api_key), Some("caller-api-key"));
+    assert_eq!(
+        exposed(record.changed_by_api_key.as_ref()),
+        Some("caller-api-key")
+    );
     assert_eq!(record.before_value, None);
     let Some(JsonValue::Object(values)) = &record.updated_values else {
         panic!("the created values are a masked object");
@@ -176,13 +180,13 @@ async fn generated_audit_projection() {
     assert_eq!(values.get("key"), Some(&serde_json::json!("sk-n**-key")));
     assert_eq!(values.get("key_alias"), Some(&serde_json::json!("*******")));
     assert_eq!(values.get("team_id"), Some(&serde_json::json!("team-a")));
-    assert_eq!(values.get("spend"), Some(&serde_json::json!(0.0)));
+    assert_eq!(values.get("spend"), Some(&serde_json::json!(0.0_f64)));
     assert!(values.values().all(|value| !value.is_null()));
 
     let header = wired(AUDIT);
-    let event = generated(r#"{"key_alias": "alias-a"}"#, RESPONSE);
+    let header_event = generated(r#"{"key_alias": "alias-a"}"#, RESPONSE);
     header
-        .dispatch_as(&event, &caller_with_metadata(), Some("proxy-admin"))
+        .dispatch_as(&header_event, &caller_with_metadata(), Some("proxy-admin"))
         .await
         .unwrap();
     assert_eq!(
@@ -206,8 +210,11 @@ async fn generated_null_token_fallback() {
     assert_eq!(harness.records()[0].object_id, "");
 
     let with_token = wired(BOTH);
-    let event = generated("{}", r#"{"key": "sk-new-key", "token_id": "tok-2"}"#);
-    with_token.dispatch(&event, &caller()).await.unwrap();
+    let with_token_event = generated("{}", r#"{"key": "sk-new-key", "token_id": "tok-2"}"#);
+    with_token
+        .dispatch(&with_token_event, &caller())
+        .await
+        .unwrap();
     assert_eq!(
         with_token.steps(),
         ["audit:tok-2", "write:litellm/virtual-key-tok-2"]
@@ -277,18 +284,21 @@ async fn update_empty_alias_rename_old_team() {
         ]
     );
     assert_eq!(harness.team_lookups(), ["team-a"]);
+}
 
+#[tokio::test]
+async fn update_blank_row_alias_renames_from_virtual_key() {
     let mut fallback = wired(STORE);
     fallback.manager.secrets.insert(
         "litellm/virtual-key-sk-old".to_owned(),
         "sk-stored".to_owned(),
     );
-    let event = updated(
+    let fallback_event = updated(
         r#"{"key": "sk-1", "key_alias": "renamed"}"#,
         r#"{"token": "sk-old", "key_alias": ""}"#,
         "{}",
     );
-    fallback.dispatch(&event, &caller()).await.unwrap();
+    fallback.dispatch(&fallback_event, &caller()).await.unwrap();
     assert_eq!(
         fallback.calls(),
         [
@@ -356,12 +366,11 @@ async fn update_before_value_encoding() {
         panic!("the before values are a masked object");
     };
     assert_eq!(
-        values.get("created_at"),
-        Some(&serde_json::json!("2026-01-02 03:04:05+00:00"))
-    );
-    assert_eq!(
-        values.get("budget_reset_at"),
-        Some(&serde_json::json!("2026-01-03 04:05:06.123456+00:00"))
+        (values.get("created_at"), values.get("budget_reset_at")),
+        (
+            Some(&serde_json::json!("2026-01-02 03:04:05+00:00")),
+            Some(&serde_json::json!("2026-01-03 04:05:06.123456+00:00")),
+        )
     );
     assert_eq!(
         values.get("expires"),
@@ -372,19 +381,16 @@ async fn update_before_value_encoding() {
         Some(&serde_json::json!("old-*lias"))
     );
     assert_eq!(values.get("token"), Some(&serde_json::json!("****")));
-    assert_eq!(values.get("spend"), Some(&serde_json::json!(1.5)));
-    assert_eq!(values.get("rotation_count"), Some(&serde_json::json!(0)));
+    assert_eq!(values.get("spend"), Some(&serde_json::json!(1.5_f64)));
+    assert_eq!(
+        values.get("rotation_count"),
+        Some(&serde_json::json!(0_i32))
+    );
     assert_eq!(values.get("auto_rotate"), Some(&serde_json::json!(false)));
     assert!(values.values().all(|value| !value.is_null()));
     assert_eq!(values.get("team_id"), None);
-    assert!(
-        !records[0]
-            .before_value
-            .as_ref()
-            .unwrap()
-            .to_string()
-            .contains("sk-1")
-    );
+    let encoded = records[0].before_value.as_ref().unwrap().to_string();
+    assert!(!encoded.contains("sk-1"), "{encoded}");
 }
 
 #[tokio::test]
@@ -588,7 +594,10 @@ async fn rotation_audit_identity() {
     let record = &records[0];
     assert_eq!(record.action, AuditAction::Rotated);
     assert_eq!(record.object_id, "sk-old-key");
-    assert_eq!(exposed(&record.changed_by_api_key), Some("caller-token"));
+    assert_eq!(
+        exposed(record.changed_by_api_key.as_ref()),
+        Some("caller-token")
+    );
     let Some(JsonValue::Object(before)) = &record.before_value else {
         panic!("the rotated before values are a masked object");
     };
@@ -623,9 +632,12 @@ async fn delete_audit_first() {
     let records = harness.records();
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].action, AuditAction::Deleted);
-    assert_eq!(records[0].updated_values, Some(serde_json::json!({})));
     assert_eq!(
-        exposed(&records[0].changed_by_api_key),
+        records[0].updated_values,
+        Some(JsonValue::Object(BTreeMap::new()))
+    );
+    assert_eq!(
+        exposed(records[0].changed_by_api_key.as_ref()),
         Some("caller-token")
     );
 }
@@ -728,19 +740,30 @@ async fn audit_no_raw_key() {
             .all(|text| !text.contains("raw-secret-value") && !text.contains("old-secret-value")),
         "{texts:?}"
     );
-    let Some(JsonValue::Object(created_values)) = &records[0].updated_values else {
+}
+
+#[tokio::test]
+async fn generated_audit_masks_key_shape() {
+    let mut harness = harness();
+    let fixture = sink_fixture();
+    harness.audit = fixture.audit;
+    let created = generated(
+        r#"{"key_alias": "alias-a"}"#,
+        r#"{"key": "sk-raw-secret-value-1234", "token_id": "tok-1"}"#,
+    );
+    harness.dispatch(&created, &caller()).await.unwrap();
+    fixture.spawner.drain().await;
+    let records = lock(&fixture.repository.records).clone();
+    let Some(JsonValue::Object(values)) = &records[0].updated_values else {
         panic!("the created values are a masked object");
     };
-    let masked = created_values
+    let masked = values
         .get("key")
         .and_then(JsonValue::as_str)
         .expect("a masked key");
     assert!(masked.starts_with("sk-r"), "{masked}");
     assert!(masked.ends_with("1234"), "{masked}");
-    assert_eq!(
-        created_values.get("token_id"),
-        Some(&serde_json::json!("*****"))
-    );
+    assert_eq!(values.get("token_id"), Some(&serde_json::json!("*****")));
 }
 
 #[tokio::test]
@@ -756,11 +779,11 @@ async fn generated_nested_model_nulls_dropped() {
     };
     assert_eq!(
         values.get("object_permission"),
-        Some(&serde_json::json!({"models": ["gpt-4"]}))
+        Some(&serde_json::from_str::<JsonValue>(r#"{"models": ["gpt-4"]}"#).unwrap())
     );
     assert_eq!(
         values.get("router_settings"),
-        Some(&serde_json::json!({"model_group_alias": {}}))
+        Some(&serde_json::from_str::<JsonValue>(r#"{"model_group_alias": {}}"#).unwrap())
     );
 }
 
@@ -822,12 +845,12 @@ async fn row_expiry_datetime_rendered() {
     row.expires = Some(Expiry::DateTime(
         DateTime::parse_from_rfc3339("2026-03-01T00:00:00+00:00").unwrap(),
     ));
-    let event = KeyEvent::Updated(UpdatedEvent {
+    let event = KeyEvent::Updated(Box::new(UpdatedEvent {
         data: UpdateKeyRequest::read(&value(r#"{"key": "sk-1", "key_alias": "renamed"}"#))
             .expect("an update request"),
         row,
         response: data("{}"),
-    });
+    }));
     let harness = wired(AUDIT);
     harness.dispatch(&event, &caller()).await.unwrap();
     let Some(JsonValue::Object(before)) = &harness.records()[0].before_value else {

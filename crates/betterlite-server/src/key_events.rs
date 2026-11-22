@@ -41,17 +41,45 @@ where
         litellm_changed_by: Option<&str>,
     ) -> Result<(), KeyEventError> {
         match event {
-            KeyEvent::Generated(event) => {
-                generated::run(&self.effects, self.audit, event, caller, litellm_changed_by).await
+            KeyEvent::Generated(generated_event) => {
+                generated::run(
+                    &self.effects,
+                    self.audit,
+                    generated_event,
+                    caller,
+                    litellm_changed_by,
+                )
+                .await
             }
-            KeyEvent::Updated(event) => {
-                updated::run(&self.effects, self.audit, event, caller, litellm_changed_by).await
+            KeyEvent::Updated(updated_event) => {
+                updated::run(
+                    &self.effects,
+                    self.audit,
+                    updated_event,
+                    caller,
+                    litellm_changed_by,
+                )
+                .await
             }
-            KeyEvent::Rotated(event) => {
-                rotated::run(&self.effects, self.audit, event, caller, litellm_changed_by).await
+            KeyEvent::Rotated(rotated_event) => {
+                rotated::run(
+                    &self.effects,
+                    self.audit,
+                    rotated_event,
+                    caller,
+                    litellm_changed_by,
+                )
+                .await
             }
-            KeyEvent::Deleted(event) => {
-                deleted::run(&self.effects, self.audit, event, caller, litellm_changed_by).await
+            KeyEvent::Deleted(deleted_event) => {
+                deleted::run(
+                    &self.effects,
+                    self.audit,
+                    deleted_event,
+                    caller,
+                    litellm_changed_by,
+                )
+                .await
             }
         }
     }

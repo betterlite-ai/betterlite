@@ -4,7 +4,6 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::{Expiry, LiteLLMVerificationToken};
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
-use serde_json::json;
 
 use crate::audit_events::record::timestamp_text;
 use crate::key_fields::error::DecodeError;
@@ -92,22 +91,24 @@ fn exclude_none(value: &mut JsonValue) {
         return;
     };
     fields.retain(|_, field| !field.is_null());
-    exclude_none_field(fields.get_mut("object_permission"));
+    if let Some(permission) = fields.get_mut("object_permission") {
+        exclude_none_field(permission);
+    }
     if let Some(JsonValue::Object(router)) = fields.get_mut("router_settings") {
         router.retain(|_, field| !field.is_null());
         router
             .entry("model_group_alias".to_owned())
-            .or_insert_with(|| json!({}));
+            .or_insert_with(|| JsonValue::Object(BTreeMap::new()));
     }
     if let Some(JsonValue::Array(entries)) = fields.get_mut("budget_limits") {
         for entry in entries {
-            exclude_none_field(Some(entry));
+            exclude_none_field(entry);
         }
     }
 }
 
-fn exclude_none_field(value: Option<&mut JsonValue>) {
-    let Some(JsonValue::Object(fields)) = value else {
+fn exclude_none_field(value: &mut JsonValue) {
+    let JsonValue::Object(fields) = value else {
         return;
     };
     fields.retain(|_, field| !field.is_null());
@@ -118,7 +119,9 @@ fn exclude_row_none(value: &mut JsonValue) {
         return;
     };
     fields.retain(|_, field| !field.is_null());
-    exclude_none_field(fields.get_mut("object_permission"));
+    if let Some(permission) = fields.get_mut("object_permission") {
+        exclude_none_field(permission);
+    }
 }
 
 fn rewrite_instants(value: &mut JsonValue, names: &[&str], form: InstantForm) {
@@ -155,7 +158,7 @@ fn rewrite_instant(value: &mut JsonValue, form: InstantForm) {
         return;
     };
     if let Some(instant) = parse_instant(text) {
-        *text = render_instant(instant, form);
+        *text = render_instant(&instant, form);
     }
 }
 
@@ -169,7 +172,7 @@ fn rewrite_expiry(value: &mut JsonValue, expires: Option<&Expiry>, form: Instant
     };
     fields.insert(
         "expires".to_owned(),
-        JsonValue::String(render_instant(Instant::Aware(*instant), form)),
+        JsonValue::String(render_instant(&Instant::Aware(*instant), form)),
     );
 }
 
@@ -182,13 +185,13 @@ fn parse_instant(text: &str) -> Option<Instant> {
         .map(Instant::Naive)
 }
 
-fn render_instant(instant: Instant, form: InstantForm) -> String {
+fn render_instant(instant: &Instant, form: InstantForm) -> String {
     match instant {
         Instant::Aware(value) => match form {
-            InstantForm::Json => timestamp_text(value, "Z"),
-            InstantForm::Python => aware_legacy_text(value),
+            InstantForm::Json => timestamp_text(*value, "Z"),
+            InstantForm::Python => aware_legacy_text(*value),
         },
-        Instant::Naive(value) => naive_text(value, form),
+        Instant::Naive(value) => naive_text(*value, form),
     }
 }
 

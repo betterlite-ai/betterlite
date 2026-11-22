@@ -28,10 +28,10 @@ where
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
     <Manager::Params as TryFrom<TeamSecretSettings>>::Error: Error + Send + Sync + 'static,
 {
-    if token_id(&event.response).is_some() {
-        if let Err(error) = rotate(effects, event).await {
-            warn!("Failed to rotate virtual key in secret manager: {error}");
-        }
+    if token_id(&event.response).is_some()
+        && let Err(error) = rotate(effects, event).await
+    {
+        warn!("Failed to rotate virtual key in secret manager: {error}");
     }
     if let Err(error) = send_rotated_email(effects.email, event).await {
         warn!("Failed to send key rotated email: {error}");

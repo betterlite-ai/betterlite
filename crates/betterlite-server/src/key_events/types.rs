@@ -35,10 +35,10 @@ pub struct DeletedEvent {
 }
 
 pub enum KeyEvent {
-    Generated(GeneratedEvent),
-    Updated(UpdatedEvent),
-    Rotated(RotatedEvent),
-    Deleted(DeletedEvent),
+    Generated(Box<GeneratedEvent>),
+    Updated(Box<UpdatedEvent>),
+    Rotated(Box<RotatedEvent>),
+    Deleted(Box<DeletedEvent>),
 }
 
 // UserAPIKeyAuth: api_key names the caller of created/updated rows, token names the caller of rotated/deleted rows, and the metadata decides whether the changed-by header may stand in

@@ -171,10 +171,10 @@ fn key_event_caller(call: &Caller) -> KeyEventCaller {
 
 fn event(input: &Input) -> Reply<KeyEvent> {
     match input.event {
-        EventKind::Generated => Ok(KeyEvent::Generated(generated(input)?)),
-        EventKind::Updated => Ok(KeyEvent::Updated(updated(input)?)),
-        EventKind::Rotated => Ok(KeyEvent::Rotated(rotated(input)?)),
-        EventKind::Deleted => Ok(KeyEvent::Deleted(deleted(input)?)),
+        EventKind::Generated => Ok(KeyEvent::Generated(Box::new(generated(input)?))),
+        EventKind::Updated => Ok(KeyEvent::Updated(Box::new(updated(input)?))),
+        EventKind::Rotated => Ok(KeyEvent::Rotated(Box::new(rotated(input)?))),
+        EventKind::Deleted => Ok(KeyEvent::Deleted(Box::new(deleted(input)?))),
     }
 }
 
