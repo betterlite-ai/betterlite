@@ -248,6 +248,11 @@ fn fetcher(
         &policy.user_url_allowed_hosts,
         &Verification::Enabled,
     );
+    let now = Arc::new(|| {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0.0_f64, |elapsed| elapsed.as_secs_f64())
+    });
     let fetcher = Fetcher::new(
         client.clone(),
         UserUrlFetcher {
@@ -255,11 +260,7 @@ fn fetcher(
             validation: policy.user_url_validation,
         },
         config.sections.image_url_download.max_download_size_mb,
-        Arc::new(|| {
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0.0_f64, |elapsed| elapsed.as_secs_f64())
-        }),
+        now,
     )?;
     Ok(fetcher)
 }

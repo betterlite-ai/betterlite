@@ -31,9 +31,7 @@ use crate::operation::{
     ChatCompletion, ChatOperation, EmbeddingOperation, OperationError, OperationRequest,
     OperationResult,
 };
-use crate::prepared::PreparedRequest;
-use crate::prepared::Upstream;
-use crate::prepared::deployment::Deployment;
+use crate::prepared::{PreparedRequest, Upstream, deployment::Deployment};
 use crate::provider::Adapter as _;
 
 fn catalog() -> CatalogCapabilities {

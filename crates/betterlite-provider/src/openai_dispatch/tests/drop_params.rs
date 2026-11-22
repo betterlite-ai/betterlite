@@ -239,12 +239,14 @@ pub(super) async fn openai_allowed_param() {
         r#"{{"model":"{MODEL}","messages":{MESSAGES},"response_format":{{"type":"json_object"}},"allowed_openai_params":["response_format"]}}"#
     );
     let body = sent_body(DeploymentDropPolicy::default(), &allowed).await;
-    let JsonValue::Object(response_format) = support::field(&body, "response_format") else {
-        panic!("response_format is sent as an object");
-    };
+    let object = IndexMap::from([(
+        String::from("type"),
+        JsonValue::Text(String::from("json_object")),
+    )]);
     assert_eq!(
-        response_format.get("type"),
-        Some(&JsonValue::Text(String::from("json_object")))
+        support::field(&body, "response_format"),
+        &JsonValue::Object(object),
+        "the allowed parameter reaches the body as sent"
     );
     assert!(body.get("allowed_openai_params").is_none());
 }
