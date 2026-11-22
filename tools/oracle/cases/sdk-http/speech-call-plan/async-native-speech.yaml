@@ -1,0 +1,21 @@
+kind: sdk_http
+name: sdk-http-speech-call-plan-async-native-speech
+env: {}
+call:
+  speech_call_plan:
+    steps:
+      - speech:
+          model: openai/tts-1
+          voice: alloy
+          api_key: sk-oracle
+          api_base: '$API_BASE'
+          kwargs: {aspeech: false}
+upstream:
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: audio/wav}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, accept, content-type]
+  ignore: []

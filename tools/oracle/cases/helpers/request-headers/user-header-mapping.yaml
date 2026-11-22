@@ -1,0 +1,57 @@
+kind: helper
+name: request-headers-user-header-mapping
+call:
+  request_headers:
+    clean: []
+    backend: []
+    model_group: []
+    metadata: []
+    otel_trace_id: []
+    traceparent: []
+    user:
+      - headers: [[x-openwebui-user-email, ada@example.com], [x-other, one]]
+        general_settings: {user_header_name: X-OpenWebUI-User-Email, user_header_mappings: null}
+        principal_user_id: key-owner
+      - headers: [[x-openwebui-user-email, ada@example.com]]
+        general_settings: {user_header_name: "", user_header_mappings: null}
+        principal_user_id: null
+      - headers: [[x-openwebui-user-email, ada@example.com]]
+        general_settings: {user_header_name: null, user_header_mappings: null}
+        principal_user_id: null
+      - headers: [[x-other, one]]
+        general_settings: {user_header_name: X-OpenWebUI-User-Email, user_header_mappings: null}
+        principal_user_id: null
+      - headers: [[X-OpenWebUI-User-Id, internal-7], [x-customer, cust-1]]
+        general_settings:
+          user_header_name: null
+          user_header_mappings:
+            - {header_name: x-customer, litellm_user_role: customer}
+            - {header_name: x-openwebui-user-id, litellm_user_role: internal_user}
+        principal_user_id: key-owner
+      - headers: [[x-openwebui-user-id, ""]]
+        general_settings:
+          user_header_name: null
+          user_header_mappings:
+            - {header_name: X-OpenWebUI-User-Id, litellm_user_role: internal_user}
+        principal_user_id: key-owner
+      - headers: [[x-other, one]]
+        general_settings:
+          user_header_name: null
+          user_header_mappings:
+            - {header_name: X-OpenWebUI-User-Id, litellm_user_role: internal_user}
+        principal_user_id: key-owner
+      - headers: [[x-customer, cust-1]]
+        general_settings:
+          user_header_name: x-customer
+          user_header_mappings:
+            - {header_name: x-customer, litellm_user_role: customer}
+        principal_user_id: key-owner
+      - headers: [[x-openwebui-user-id, internal-7]]
+        general_settings:
+          user_header_name: null
+          user_header_mappings: []
+        principal_user_id: null
+    provider: []
+    cache_control: []
+env: {}
+compare: {ignore: []}

@@ -1,14 +1,14 @@
 id: B3508
 milestone: M5 api families
 title: Enforce managed-agent credentials and serve the agent routes
-status: todo
+status: done
 depends_on: [B3504, B014, B2314, B1100, B8801, B3505]
 file: tasks/B3508-agent-collection-routes.yaml
 covers:
   - "litellm/proxy/google_endpoints/agents_endpoints.py"
 parent: B098
 split_from: B098
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2953

@@ -1,14 +1,14 @@
 id: B1659
 milestone: M4 keys, spend and management
 title: Load UI flags and refresh their runtime policy projection
-status: todo
+status: done
 depends_on: [B002, B1100, B202, B4293, B171, B726, B860, B1200, B1664, B4140]
 file: tasks/B1659-ui-settings-state.yaml
 covers:
   - "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py"
 parent: B066
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2931

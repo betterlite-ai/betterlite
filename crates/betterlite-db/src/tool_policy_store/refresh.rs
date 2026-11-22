@@ -13,7 +13,7 @@ use crate::postgres_store::session::PostgresStore;
 use crate::tool_records::decode::decode_tool_record;
 use crate::tool_records::records::LiteLLMToolTableRow;
 
-use super::deadline::{StatementBounds, StatementFailure, bounded_statement, discard_uncancelled};
+use super::deadline::{StatementBounds, StatementFailure, bounded_statement, discard_expired};
 use super::errors::ToolPolicyStoreError;
 use super::records::BlockedToolRow;
 use super::registry::{ToolPolicyMaps, ToolPolicyRegistry, blocked_tools_map, tool_policy_maps};
@@ -244,7 +244,7 @@ where
         Ok(rows) => rows.iter().map(map).collect(),
         Err(StatementFailure::Driver(source)) => Err(ReadFault::Native(backend(source))),
         Err(failure @ StatementFailure::Expired { .. }) => {
-            discard_uncancelled(client, &failure);
+            discard_expired(client, &failure);
             Err(ReadFault::Expired(lookup))
         }
     }

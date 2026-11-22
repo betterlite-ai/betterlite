@@ -1,0 +1,57 @@
+kind: helper
+name: bedrock-s3-signing-upload-content-size
+call:
+  bedrock_services_s3_signing:
+    operation: file_response
+    responses:
+      - litellm_params: {_s3_upload_content_length: 9}
+        headers: [[Content-Length, "5"]]
+        now: 0
+      - litellm_params: {_s3_upload_content_length: -3}
+        headers: [[Content-Length, "5"]]
+        now: 0
+      - litellm_params: {_s3_upload_content_length: true}
+        headers: [[Content-Length, "5"]]
+        now: 0
+      - litellm_params: {_s3_upload_content_length: false}
+        headers: [[Content-Length, "5"]]
+        now: 0
+      - litellm_params: {_s3_upload_content_length: 9.5}
+        headers: [[Content-Length, "5"]]
+        now: 0
+      - litellm_params: {_s3_upload_content_length: null}
+        headers: [[Content-Length, "5"]]
+        now: 0
+      - litellm_params: {_s3_upload_content_length: "7"}
+        headers: [[Content-Length, "5"]]
+        now: 0
+      - litellm_params: {}
+        headers: [[content-length, "12"]]
+        now: 0
+      - litellm_params: {}
+        headers: []
+        now: 0
+      - litellm_params: {}
+        headers: [[Content-Length, ""]]
+        now: 0
+      - litellm_params: {}
+        headers: [[Content-Length, "-1"]]
+        now: 0
+      - litellm_params: {}
+        headers: [[Content-Length, "1"], [content-length, "2"]]
+        now: 0
+      - litellm_params: {}
+        headers: [[Content-Length, "½"]]
+        now: 0
+      - litellm_params: {}
+        headers: [[Content-Length, "²"]]
+        now: 0
+      - litellm_params: {}
+        headers: [[Content-Length, "1¹"]]
+        now: 0
+      - litellm_params: {}
+        headers: [[X-Length, "4"]]
+        now: 0
+    errors: []
+env: {}
+compare: {ignore: []}

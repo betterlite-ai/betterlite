@@ -1,0 +1,13 @@
+kind: probe
+name: router-settings-routing-groups-present
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      router_settings:
+        endpoint: settings
+        router_settings:
+          routing_groups:
+            - {group_name: fast, models: [gpt-4], routing_strategy: priority, model_priorities: {gpt-4: 1}}
+            - {group_name: slow, models: [gpt-3.5-turbo], routing_strategy: simple-shuffle, routing_strategy_args: {ttl: 60}}
+compare: {ignore: []}

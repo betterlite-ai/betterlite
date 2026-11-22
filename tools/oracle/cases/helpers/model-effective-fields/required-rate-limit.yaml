@@ -1,0 +1,46 @@
+kind: helper
+name: model-effective-fields-required-rate-limit
+call:
+  model_effective_fields:
+    salt_key: b1213-salt
+    ptu_enabled: false
+    calls:
+      - {function: rate_limits, enforced: true, litellm_params: {model: gpt-4o}}
+      - {function: rate_limits, enforced: true, litellm_params: {model: gpt-4o, rpm: 10, tpm: 0}}
+      - {function: rate_limits, enforced: true, litellm_params: {model: gpt-4o, rpm: -1, tpm: 5}}
+      - {function: rate_limits, enforced: true, litellm_params: {model: gpt-4o, rpm: 1, tpm: 1}}
+      - {function: rate_limits, enforced: false, litellm_params: {model: gpt-4o}}
+      - function: credential_name
+        incoming: {litellm_credential_name: ""}
+        existing: {model: gpt-4o}
+        loaded: [""]
+        stored: [""]
+      - function: credential_name
+        incoming: {litellm_credential_name: azure}
+        existing: {model: gpt-4o}
+        loaded: [azure]
+        stored: []
+      - function: credential_name
+        incoming: {litellm_credential_name: vault}
+        existing: {model: gpt-4o}
+        loaded: [azure]
+        stored: [vault]
+      - function: credential_name
+        incoming: {litellm_credential_name: missing}
+        existing: null
+        loaded: [azure]
+        stored: [vault]
+      - function: credential_name
+        incoming: {litellm_credential_name: cred-stored}
+        existing: {model: gpt-4o, litellm_credential_name: 5c1QvXZfGrUBCIP3Ir1W3UnWo2F_l8MqvDamYu6V607MrFHLvL7iPShNuMJn87Hadh2L}
+        loaded: []
+        stored: []
+      - function: ptu
+        stored: {id: m1, db_model: true, member_auto_router: false}
+        incoming: {id: m1, db_model: true, member_auto_router: false, ptu_count: 2, ptu_effective_to: "2026-09-01T00:00:00Z"}
+      - function: ptu
+        stored: {id: m1, db_model: true, member_auto_router: false, team_id: t1, ptu_count: 2, cost_per_ptu_per_hour: 1.5, ptu_effective_from: "2026-01-01T00:00:00Z"}
+        incoming: {id: m1, db_model: true, member_auto_router: false, ptu_count: null}
+env:
+  LITELLM_SALT_KEY: b1213-salt
+compare: {ignore: []}

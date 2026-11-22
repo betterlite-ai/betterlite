@@ -1,0 +1,30 @@
+kind: helper
+name: auth-errors-model-denial-403
+call:
+  auth_errors:
+    rows:
+      # the client sees the public detail with param "None"; the internal message stays on the exception
+      - step: handle
+        failure: {kind: model_denial, message: "key not allowed to access model. This key can only access models=['gpt-4o-mini']. Tried to access gpt-4o", type: auth_error, param: null, status_code: 403, marked: false, internal_message: "key sk-...abcd team team-1 lacks gpt-4o"}
+        reply: original
+        replacement: null
+        switches: []
+        identity: null
+        request_data: {model: gpt-4o}
+        route: /v1/chat/completions
+        user_agent: curl/8.5
+        client_host: 203.0.113.7
+      # a callback that turns a quiet malformed-key 401 into a 403 adds an error line
+      - step: handle
+        failure: {kind: proxy, message: Invalid proxy server token passed., type: auth_error, param: null, status_code: 401, marked: true, internal_message: ""}
+        reply: replace
+        replacement: {kind: http, message: Access denied by policy, type: auth_error, param: null, status_code: 403, marked: false, internal_message: ""}
+        switches: []
+        identity: null
+        request_data: {model: gpt-4o}
+        route: /v1/chat/completions
+        user_agent: curl/8.5
+        client_host: 203.0.113.7
+env: {}
+compare:
+  ignore: []
