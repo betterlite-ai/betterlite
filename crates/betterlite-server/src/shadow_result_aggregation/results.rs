@@ -127,7 +127,7 @@ fn summed_spend(
         }
         total = next;
     }
-    if compensation.is_finite() && compensation.abs() > 0.0_f64 {
+    if compensation.is_finite() {
         total = total.add(compensation);
     }
     Decimal::from_f64_retain(total).ok_or(ShadowResultsError::Unrepresentable { name })
