@@ -62,7 +62,7 @@ fn session(call: Call<'_>) -> Outcome {
 
 fn connection_plan_row() {
     let key = SecretString::from("key-1");
-    let settings = connect_settings(&key, Some("https://res.test"), None, None);
+    let settings = connect_settings(&key, Some("https://res.test"), None, Some("GA"));
     let Outcome::Connection(plan) = connect(&settings) else {
         panic!("the connection call returns the plan");
     };

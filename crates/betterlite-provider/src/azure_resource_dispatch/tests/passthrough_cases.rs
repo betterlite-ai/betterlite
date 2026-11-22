@@ -180,7 +180,10 @@ fn logging_rows() {
     })
     .expect("a response.completed chunk is logged as its terminal event");
     assert!(matches!(*terminal, AzureRelayedLog::Terminal(_)));
-    assert_eq!(logging.call_types, vec![String::from("aresponses")]);
+    assert_eq!(
+        logging.call_types,
+        vec![String::from("aembedding"), String::from("aresponses")]
+    );
 }
 
 pub(super) fn check() {
