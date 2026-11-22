@@ -192,7 +192,7 @@ assertion_id: _assertion_defaults
 
 #[test]
 fn reuses_the_exact_signed_output_for_replay_steps() {
-    let _metadata = prepare();
+    prepare();
     let seed = corpus_seed("valid-authn-request-a.json");
     let assertion = assertion(None, "_assertion_replay");
     let mut signer = SamlSigner::new();
@@ -253,19 +253,22 @@ fn rejects_dtd_entity_expansion_and_non_request_documents() {
 
 #[test]
 fn rejects_saml_steps_that_cannot_be_bound_before_proxies_start() {
-    let steps = vec![
+    let undeclared_steps = vec![
         redirect_step("authn"),
         saml_step(assertion(None, "_assertion_undeclared"), "ghost"),
     ];
-    let error = validate_steps(Path::new("<case>"), &steps)
+    let capture_error = validate_steps(Path::new("<case>"), &undeclared_steps)
         .expect_err("an undeclared capture reference is rejected");
-    assert!(error.to_string().contains("undeclared capture"));
-    let mut steps = transcript(&[assertion(None, "_assertion_body")]);
-    steps.get_mut(1).expect("the saml step exists").request.body =
-        serde_json::json!({"probe": true});
-    let error =
-        validate_steps(Path::new("<case>"), &steps).expect_err("a request body is rejected");
-    assert!(error.to_string().contains("cannot be combined"));
+    assert!(capture_error.to_string().contains("undeclared capture"));
+    let mut body_steps = transcript(&[assertion(None, "_assertion_body")]);
+    body_steps
+        .get_mut(1)
+        .expect("the saml step exists")
+        .request
+        .body = Value::Bool(true);
+    let body_error =
+        validate_steps(Path::new("<case>"), &body_steps).expect_err("a request body is rejected");
+    assert!(body_error.to_string().contains("cannot be combined"));
 }
 
 #[test]
@@ -286,39 +289,47 @@ fn replay_authn_request_corpus(root: &Path) -> usize {
     let mut decoded = 0_usize;
     for path in &paths {
         let bytes = fs::read(path).expect("a seed reads");
-        let name = path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or_default();
         if let Ok(seed) = serde_json::from_slice::<CorpusSeed>(&bytes) {
-            assert_eq!(
-                decode_authn_request_id(seed.saml_request.as_bytes()).expect("the seed decodes"),
-                seed.request_id,
-                "{}",
-                path.display()
-            );
+            assert_seed_decodes(path, &seed);
             decoded = decoded.saturating_add(1);
-        } else if name.ends_with(".yaml") {
-            let steps = decode_case(path, &bytes)
-                .expect("the case seed decodes")
-                .steps
-                .expect("the case seed has steps");
-            assert!(
-                steps.iter().any(|step| step.saml_assertion.is_some()),
-                "{} carries no saml assertion",
-                path.display()
-            );
+        } else if path.extension().and_then(|value| value.to_str()) == Some("yaml") {
+            assert_case_seed_has_assertion(path, &bytes);
         } else {
-            let decoded_id = decode_authn_request_id(&bytes);
-            assert!(
-                decoded_id.is_err(),
-                "{} should be rejected, decoded {}",
-                path.display(),
-                decoded_id.unwrap_or_default()
-            );
+            assert_seed_rejected(path, &bytes);
         }
     }
     decoded
+}
+
+fn assert_seed_decodes(path: &Path, seed: &CorpusSeed) {
+    assert_eq!(
+        decode_authn_request_id(seed.saml_request.as_bytes()).expect("the seed decodes"),
+        seed.request_id,
+        "{}",
+        path.display()
+    );
+}
+
+fn assert_case_seed_has_assertion(path: &Path, bytes: &[u8]) {
+    let steps = decode_case(path, bytes)
+        .expect("the case seed decodes")
+        .steps
+        .expect("the case seed has steps");
+    assert!(
+        steps.iter().any(|step| step.saml_assertion.is_some()),
+        "{} carries no saml assertion",
+        path.display()
+    );
+}
+
+fn assert_seed_rejected(path: &Path, bytes: &[u8]) {
+    let decoded_id = decode_authn_request_id(bytes);
+    assert!(
+        decoded_id.is_err(),
+        "{} should be rejected, decoded {}",
+        path.display(),
+        decoded_id.unwrap_or_default()
+    );
 }
 
 fn assert_case_corpus_rejects(root: &Path) {

@@ -167,10 +167,7 @@ impl Drop for StubServer {
     }
 }
 
-async fn respond(
-    State(state): State<Arc<StubState>>,
-    request: AxumRequest<Body>,
-) -> AxumResponse<Body> {
+async fn record_request(state: &StubState, request: AxumRequest<Body>) {
     let path = request
         .uri()
         .path_and_query()
@@ -200,6 +197,13 @@ async fn respond(
         .lock()
         .expect("stub state lock")
         .push(body.to_vec());
+}
+
+async fn respond(
+    State(state): State<Arc<StubState>>,
+    request: AxumRequest<Body>,
+) -> AxumResponse<Body> {
+    record_request(&state, request).await;
     let Some(answer) = state.answers.lock().expect("stub state lock").pop_front() else {
         return AxumResponse::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)

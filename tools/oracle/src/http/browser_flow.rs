@@ -16,6 +16,7 @@ use crate::OracleError;
 use crate::case::Request;
 use crate::case::browser_flow::form::{FormCaptureError, parse_form_projection};
 use crate::case::browser_flow::{PlaceholderError, Step};
+use betterlite_oracle_runner::case::RequestBody;
 use betterlite_oracle_runner::multipart_oracle::error::MultipartError;
 
 mod capture;
@@ -229,22 +230,7 @@ fn run_step(
         }
         headers.insert("cookie".to_owned(), cookie_header);
     }
-    let body = match &step.saml_assertion {
-        Some(assertion) => {
-            let captured = state
-                .captures
-                .get(&assertion.request_id_capture)
-                .ok_or_else(|| BrowserFlowError::MissingCapture {
-                    index,
-                    name: assertion.request_id_capture.clone(),
-                })?;
-            state
-                .signer
-                .form_body(assertion, captured.text.expose_secret())
-                .map_err(|source| BrowserFlowError::Saml { index, source })?
-        }
-        None => interpolate::resolve_body(index, step, state.captures)?,
-    };
+    let body = step_body(index, step, state)?;
     let request = Request {
         method: step.request.method.clone(),
         path,
@@ -258,6 +244,27 @@ fn run_step(
         .update_from_response(index, state.base_url, &raw_headers)?;
     apply_captures(index, step, &response, &raw_headers, state)?;
     Ok(response)
+}
+
+fn step_body(
+    index: usize,
+    step: &Step,
+    state: &mut StepState<'_>,
+) -> Result<RequestBody, BrowserFlowError> {
+    let Some(assertion) = &step.saml_assertion else {
+        return interpolate::resolve_body(index, step, state.captures);
+    };
+    let captured = state
+        .captures
+        .get(&assertion.request_id_capture)
+        .ok_or_else(|| BrowserFlowError::MissingCapture {
+            index,
+            name: assertion.request_id_capture.clone(),
+        })?;
+    state
+        .signer
+        .form_body(assertion, captured.text.expose_secret())
+        .map_err(|source| BrowserFlowError::Saml { index, source })
 }
 
 fn apply_captures(
