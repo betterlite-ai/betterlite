@@ -226,7 +226,7 @@ fn response_model(case: &ResponseModelInput) -> HelperResult {
         &case.model,
         case.body.as_bytes(),
         &options,
-        LogContext {
+        &mut LogContext {
             state: &mut state,
             env: &env,
         },

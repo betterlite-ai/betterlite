@@ -130,7 +130,7 @@ pub fn transform_response(
     model: &str,
     bytes: &[u8],
     options: &ReplyOptions<'_>,
-    log: LogContext<'_, '_>,
+    log: &mut LogContext<'_, '_>,
     input: LogInput,
 ) -> Result<CompatibleReply, NovaChatError> {
     let mut reply = compatible_wire::transform_response(bytes, options, log.state, log.env, input)?;

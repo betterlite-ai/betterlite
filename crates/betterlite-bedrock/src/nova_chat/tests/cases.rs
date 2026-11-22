@@ -604,7 +604,7 @@ fn direct_nova_response_model() {
         NOVA_PRO,
         CHAT_BODY.as_bytes(),
         &options,
-        LogContext {
+        &mut LogContext {
             state: &mut state,
             env: &env,
         },
