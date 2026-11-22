@@ -500,6 +500,7 @@ async fn hook_logs_an_estimate_over_the_smallest_limit() {
             .text()
             .contains("cannot fit the smallest TPM limit")
     );
+    assert!(captured.text().contains("Inside Rate Limit Pre-Call Hook"));
 }
 
 #[tokio::test]
