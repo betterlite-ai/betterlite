@@ -1,0 +1,97 @@
+kind: helper
+name: family-reply-delegation
+call:
+  bedrock_invoke_response:
+    reply:
+      - model: anthropic.claude-3-5-sonnet-20240620-v1:0
+        body: '{"id": "msg_bdrk_01", "model": "claude-plain", "type": "message", "role": "assistant", "content": [{"type": "text", "text": "hi there"}], "stop_reason": "end_turn", "usage": {"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 2, "cache_read_input_tokens": 3}}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {model: anthropic.claude-3-5-sonnet-20240620-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.nova-pro-v1:0
+        body: '{"output": {"message": {"role": "assistant", "content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {model: amazon.nova-pro-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-nova
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: twelvelabs.pegasus-1-2-v1:0
+        body: '{"message": "A cat walks.", "finishReason": "length"}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "3"], [x-amzn-bedrock-output-token-count, "2"]]
+        messages: []
+        request_data: {model: twelvelabs.pegasus-1-2-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-pegasus
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: anthropic.claude-3-5-sonnet-20240620-v1:0
+        body: '{"id": "msg_1", "type": "message"}'
+        status: 200
+        headers: [[x-amzn-requestid, req-1]]
+        messages: []
+        request_data: {model: anthropic.claude-3-5-sonnet-20240620-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.nova-pro-v1:0
+        body: '{"output": {}}'
+        status: 200
+        headers: [[x-amzn-requestid, req-1]]
+        messages: []
+        request_data: {model: amazon.nova-pro-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-nova
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: twelvelabs.pegasus-1-2-v1:0
+        body: '{}'
+        status: 200
+        headers: [[x-amzn-requestid, req-1]]
+        messages: []
+        request_data: {model: twelvelabs.pegasus-1-2-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-pegasus
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+env: {}
+compare: {ignore: []}
