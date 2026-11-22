@@ -69,8 +69,9 @@ enum ClassificationMode {
 // ComplexityRouter._uses_deployment_pin: whether the router stamps the session-affinity marker before routing
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum DeploymentPin {
-    #[default]
     Unused,
+    // ComplexityRouterConfig.deployment_affinity declares default=True
+    #[default]
     InUse,
 }
 
@@ -86,7 +87,7 @@ impl Default for Config {
         Self {
             return_raw_model_name: DEFAULT_RETURN_RAW_MODEL_NAME,
             max_tokens_from_tier_model: DEFAULT_MAX_TOKENS_FROM_TIER,
-            deployment_pin: DeploymentPin::Unused,
+            deployment_pin: DeploymentPin::default(),
         }
     }
 }
@@ -139,7 +140,8 @@ impl RawRouterConfig {
             &format!("{prefix}.{DEPLOYMENT_AFFINITY_KEY}"),
             lookup,
         )?
-        .unwrap_or(false);
+        // ComplexityRouterConfig.deployment_affinity declares default=True
+        .unwrap_or(true);
         let session_affinity = flag(
             self.session_affinity,
             &format!("{prefix}.{SESSION_AFFINITY_KEY}"),
