@@ -1,0 +1,36 @@
+kind: helper
+name: bedrock-s3-signing-create-file-object
+call:
+  bedrock_services_s3_signing:
+    operation: file_response
+    responses:
+      - litellm_params:
+          upload_url: "https://s3.us-west-2.amazonaws.com/bkt/litellm-bedrock-files/x.jsonl"
+          _s3_upload_content_length: 42
+        headers: [[Content-Length, "3"]]
+        now: 1700000000
+      - litellm_params:
+          upload_url: "https://bkt.s3.eu-west-1.amazonaws.com/pre/litellm-bedrock-files-m-11111111-2222-4333-8444-555555555555.jsonl"
+        headers: []
+        now: 1700000001
+      - litellm_params: {}
+        headers: [[Content-Length, "3"]]
+        now: 5
+      - litellm_params: {upload_url: ""}
+        headers: [[Content-Length, "3"]]
+        now: 5
+      - litellm_params: {upload_url: null}
+        headers: [[Content-Length, "3"]]
+        now: 5
+      - litellm_params: {upload_url: "https://x/b"}
+        headers: []
+        now: 5
+    errors:
+      - status_code: 503
+        message: slow down
+        headers: [[x-amzn-requestid, r-1]]
+      - status_code: 403
+        message: ""
+        headers: []
+env: {}
+compare: {ignore: []}

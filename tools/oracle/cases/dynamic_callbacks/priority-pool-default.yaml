@@ -1,0 +1,14 @@
+kind: helper
+name: dynamic-callbacks-priority-pool-default
+call:
+  b3053:
+    function: log_success
+    auth_metadata: null
+    model_group: gpt-4
+    usage: {prompt_tokens: 10, completion_tokens: 7, total_tokens: 17}
+    rate_limit_type: total
+    window_size: 60
+    priority_reservation:
+      prod: 0.5
+env: {}
+compare: {ignore: []}

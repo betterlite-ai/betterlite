@@ -1,0 +1,21 @@
+task: B915
+deviations:
+  - what: An infinite or NaN RESPONSES_SESSION_LOOKUP_RETRY_INTERVAL waits zero seconds between spend log lookups.
+    why: LiteLLM passes the value to asyncio.sleep as given, so "inf" parks the request forever; a negative value already waits zero there and still does here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/session_handler.py#L308-L310
+  - what: A stored proxy_server_request text above the 16 MiB JSON limit fails the lookup, and stored metadata text above it is logged as unparsable and gives no cold storage key.
+    why: LiteLLM runs json.loads on any size; betterlite bounds every JSON document it decodes with the shared API limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/session_handler.py#L170-L174
+  - what: A stored response tool call with a missing or null id fails the lookup instead of getting a fresh uuid4 id.
+    why: LiteLLM writes the id when it builds the response, so a logged call always has one; a new random id on every replay could never match the tool result that answers it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1300-L1305
+  - what: Stored function arguments must be a string; an object there fails the lookup instead of being re-encoded with json.dumps.
+    why: The logged response is a dump of LiteLLM's own Function, whose arguments are already a string, so only a hand-edited spend log carries an object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1196-L1200
+  - what: Stored function arguments that are null while the call carries a parameters object are replayed with empty arguments and keep the parameters key.
+    why: LiteLLM's Function constructor fills arguments from parameters only for a hand-edited log, and the text it writes there is json.dumps output the compatibility rules say not to reproduce.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1193-L1198
+kept_bugs:
+  - what: The truncation marker is searched in the whole stored request, so a prompt that only mentions litellm_truncated still triggers a cold storage read.
+    why: A setup with cold storage relies on the read when the marker sits in any nested field, and the bucket copy is the full request, so the extra read changes nothing a caller sees.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/session_handler.py#L261

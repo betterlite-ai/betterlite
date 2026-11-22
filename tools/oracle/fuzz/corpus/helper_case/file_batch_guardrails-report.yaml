@@ -1,0 +1,10 @@
+kind: helper
+name: file-batch-guardrails-report-seed
+call:
+  file_batch_guardrails:
+    calls:
+      - {"function": "report", "scanned_records": 3, "changes": [{"kind": "redacted", "line_number": 2, "custom_id": "a", "url": null, "guardrail_name": null, "detail_guardrail_name": null, "blocked_content": false, "status": 400, "cause": "uncaused", "offset": 4, "length": 8}, {"kind": "dropped", "line_number": 3, "custom_id": "b", "url": null, "guardrail_name": "g", "detail_guardrail_name": null, "blocked_content": false, "status": 400, "cause": "uncaused", "offset": 0, "length": 0}]}
+      - {"function": "public_failure", "failure": {"kind": "unparseable", "line_number": 2, "custom_id": null, "url": null, "guardrail_name": null, "detail_guardrail_name": null, "blocked_content": false, "status": 400, "cause": "uncaused", "offset": 0, "length": 0}}
+      - {"function": "public_failure", "failure": {"kind": "unscannable", "line_number": 2, "custom_id": "a", "url": null, "guardrail_name": null, "detail_guardrail_name": null, "blocked_content": false, "status": 400, "cause": "uncaused", "offset": 0, "length": 0}}
+env: {}
+compare: {ignore: []}
