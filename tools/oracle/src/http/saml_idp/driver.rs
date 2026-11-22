@@ -72,18 +72,17 @@ impl SamlSigner {
         let in_response_to = decode_authn_request_id(request_value.as_bytes())?;
         let document = self.document(assertion, &in_response_to)?;
         let cached = self.cache.get(&document).cloned();
-        let response = match cached {
-            Some(signed) => signed,
-            None => {
-                ensure_keypair(&self.directory)?;
-                let output = run_fixture_script(DRIVER_SCRIPT, &document)?;
-                let text = String::from_utf8(output).map_err(SamlIdpError::Output)?;
-                STANDARD
-                    .decode(text.as_bytes())
-                    .map_err(SamlIdpError::ResponseBase64)?;
-                self.cache.insert(document, text.clone());
-                text
-            }
+        let response = if let Some(signed) = cached {
+            signed
+        } else {
+            ensure_keypair(&self.directory)?;
+            let output = run_fixture_script(DRIVER_SCRIPT, &document)?;
+            let text = String::from_utf8(output).map_err(SamlIdpError::Output)?;
+            STANDARD
+                .decode(text.as_bytes())
+                .map_err(SamlIdpError::ResponseBase64)?;
+            self.cache.insert(document, text.clone());
+            text
         };
         Ok(RequestBody::Raw {
             content_type: FORM_CONTENT_TYPE.to_owned(),
@@ -127,8 +126,8 @@ impl SamlSigner {
 fn form_bytes(response: &str, relay_state: Option<&str>) -> Vec<u8> {
     let mut form = form_urlencoded::Serializer::new(String::new());
     form.append_pair("SAMLResponse", response);
-    if let Some(relay_state) = relay_state {
-        form.append_pair("RelayState", relay_state);
+    if let Some(state) = relay_state {
+        form.append_pair("RelayState", state);
     }
     form.finish().into_bytes()
 }

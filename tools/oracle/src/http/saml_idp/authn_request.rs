@@ -19,7 +19,6 @@ pub(crate) const MAX_XML_BYTES: usize = 256 * 1024;
 const MAX_ID_BYTES: usize = 1024;
 const REQUEST_PARAMETER: &str = "SAMLRequest";
 
-#[must_use]
 pub fn decode_authn_request_id(encoded: &[u8]) -> Result<String, SamlIdpError> {
     if encoded.len() > MAX_REQUEST_BYTES {
         return Err(SamlIdpError::RequestTooLarge);
