@@ -43,16 +43,16 @@ where
     Manager: BaseSecretManager,
     Manager::Params: TryFrom<TeamSecretSettings>,
 {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            Self::Encode(source) => formatter.debug_tuple("Encode").field(source).finish(),
-            Self::Row(source) => formatter.debug_tuple("Row").field(source).finish(),
-            Self::EmailEvent(source) => formatter.debug_tuple("EmailEvent").field(source).finish(),
-            Self::Email(source) => formatter.debug_tuple("Email").field(source).finish(),
-            Self::Audit(source) => formatter.debug_tuple("Audit").field(source).finish(),
-            Self::MissingUpdateKey => formatter.write_str("MissingUpdateKey"),
-            Self::MissingResponseKey => formatter.write_str("MissingResponseKey"),
-            Self::Sink { source } => write!(formatter, "Sink {{ source: {source} }}"),
+            Self::Encode(source) => f.debug_tuple("Encode").field(source).finish(),
+            Self::Row(source) => f.debug_tuple("Row").field(source).finish(),
+            Self::EmailEvent(source) => f.debug_tuple("EmailEvent").field(source).finish(),
+            Self::Email(source) => f.debug_tuple("Email").field(source).finish(),
+            Self::Audit(source) => f.debug_tuple("Audit").field(source).finish(),
+            Self::MissingUpdateKey => f.write_str("MissingUpdateKey"),
+            Self::MissingResponseKey => f.write_str("MissingResponseKey"),
+            Self::Sink { source } => write!(f, "Sink {{ source: {source} }}"),
         }
     }
 }
