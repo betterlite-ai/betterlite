@@ -19,6 +19,12 @@ call:
         options: {}
         drop_params: false
       - function: request
+        model: STABILITY.STABLE-STYLE-TRANSFER-V1:0
+        prompt: stylize
+        image: {value: aW1n}
+        options: {}
+        drop_params: false
+      - function: request
         model: stability.stable-image-inpaint-v1:0
         options: {}
         drop_params: false
