@@ -1,6 +1,5 @@
 use std::sync::{Arc, PoisonError};
 
-use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_models::decisions::Json;
 use tokio::sync::{oneshot, watch};
 
@@ -15,21 +14,7 @@ use crate::windowed_admission::{
     AdmissionRequest, OK_CODE, OVER_LIMIT_CODE, WindowedAdmission, WindowedAdmissionError,
 };
 
-pub(super) async fn request_capacity(
-    hook: &RateLimitPreCallHook,
-    auth: &UserAPIKeyAuth,
-    model: &str,
-    request_data: Option<&RequestData>,
-) -> Result<RequestCapacityGuard, PreCallHookError> {
-    let data = request_data_with_model(request_data, model);
-    let descriptors = hook
-        .build_request_rate_limit_descriptors(auth, &data, None)
-        .await?;
-    let (guard, response) = start_admission(hook, &descriptors).await?;
-    admit_outcome(hook, &descriptors, model, &response, guard)
-}
-
-async fn start_admission(
+pub(super) async fn start_admission(
     hook: &RateLimitPreCallHook,
     descriptors: &[RateLimitDescriptor],
 ) -> Result<(RequestCapacityGuard, RateLimitResponse), PreCallHookError> {
@@ -111,7 +96,7 @@ fn spawn_release(
     );
 }
 
-fn admit_outcome(
+pub(super) fn admit_outcome(
     hook: &RateLimitPreCallHook,
     descriptors: &[RateLimitDescriptor],
     model: &str,
@@ -127,7 +112,10 @@ fn admit_outcome(
     Err(PreCallHookError::RateLimited(Box::new(error)))
 }
 
-fn request_data_with_model(request_data: Option<&RequestData>, model: &str) -> RequestData {
+pub(super) fn request_data_with_model(
+    request_data: Option<&RequestData>,
+    model: &str,
+) -> RequestData {
     let mut data = request_data.cloned().unwrap_or_default();
     data.insert("model".to_owned(), Json::Text(model.to_owned()));
     data

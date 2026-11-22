@@ -33,23 +33,20 @@ pub(super) fn without_project_io(descriptors: &[RateLimitDescriptor]) -> Vec<Rat
 }
 
 pub(super) fn parallel_counter_keys(descriptors: &[RateLimitDescriptor]) -> Vec<String> {
-    descriptors
-        .iter()
-        .filter(|descriptor| {
-            descriptor
-                .rate_limit
-                .as_ref()
-                .and_then(|limit| limit.max_parallel_requests)
-                .is_some()
-        })
-        .map(|descriptor| {
-            create_rate_limit_keys(
+    let mut keys = Vec::new();
+    for descriptor in descriptors {
+        let Some(limit) = descriptor.rate_limit.as_ref() else {
+            continue;
+        };
+        if limit.max_parallel_requests.is_some() {
+            keys.push(create_rate_limit_keys(
                 &descriptor.key,
                 &descriptor.value,
                 RateLimitType::MaxParallelRequests,
-            )
-        })
-        .collect()
+            ));
+        }
+    }
+    keys
 }
 
 pub(super) fn configured_tpm_limits(descriptors: &[RateLimitDescriptor]) -> Vec<i64> {

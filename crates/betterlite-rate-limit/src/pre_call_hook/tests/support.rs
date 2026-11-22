@@ -87,16 +87,12 @@ pub(crate) struct Recorder {
 }
 
 impl Recorder {
-    fn shared(
-        entries: &[(String, CacheCounterValue)],
-        gauges: &[(String, GaugeCacheValue)],
-        gate: Option<Arc<Semaphore>>,
-    ) -> Arc<Self> {
+    fn shared(parts: &Parts) -> Arc<Self> {
         Arc::new(Self {
-            values: Mutex::new(entries.iter().cloned().collect()),
-            gauges: Mutex::new(gauges.iter().cloned().collect()),
+            values: Mutex::new(parts.entries.iter().cloned().collect()),
+            gauges: Mutex::new(parts.gauges.iter().cloned().collect()),
             effects: Mutex::new(Vec::new()),
-            gate,
+            gate: parts.gate.clone(),
         })
     }
 
@@ -285,7 +281,6 @@ impl ModelGroupResolver for GroupMap {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct Parts {
     pub(crate) entries: Vec<(String, CacheCounterValue)>,
     pub(crate) gauges: Vec<(String, GaugeCacheValue)>,
@@ -297,6 +292,27 @@ pub(crate) struct Parts {
     pub(crate) failing_health: bool,
     pub(crate) gate: Option<Arc<Semaphore>>,
     pub(crate) batch_limiter: Option<Arc<dyn CallTypeRateLimiter>>,
+}
+
+impl Parts {
+    pub(crate) fn new(
+        entries: Vec<(String, CacheCounterValue)>,
+        gauges: Vec<(String, GaugeCacheValue)>,
+        gate: Option<Arc<Semaphore>>,
+    ) -> Self {
+        Self {
+            entries,
+            gauges,
+            groups: Vec::new(),
+            tags: Vec::new(),
+            agents: BTreeMap::new(),
+            counted_tokens: None,
+            reservation_off: false,
+            failing_health: false,
+            gate,
+            batch_limiter: None,
+        }
+    }
 }
 
 struct Wiring {
@@ -332,7 +348,7 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) fn new(parts: &Parts) -> Self {
-        let recorder = Recorder::shared(&parts.entries, &parts.gauges, parts.gate.clone());
+        let recorder = Recorder::shared(parts);
         let wiring = wiring(parts, &recorder);
         let probes = probes(parts);
         let tags = Arc::clone(&probes.tag_handle);
@@ -350,33 +366,25 @@ impl Fixture {
     }
 
     pub(crate) fn plain() -> Self {
-        Self::new(&Parts::default())
+        Self::new(&Parts::new(Vec::new(), Vec::new(), None))
     }
 
     pub(crate) async fn run(
         &self,
+        slot: Option<&RequestStashSlot>,
         auth: &UserAPIKeyAuth,
         data: &mut RequestData,
         call_type: CallType,
     ) -> Result<(), PreCallHookError> {
-        let slot = RequestStashSlot::default();
-        self.run_with_slot(&slot, auth, data, call_type).await
-    }
-
-    pub(crate) async fn run_with_slot(
-        &self,
-        slot: &RequestStashSlot,
-        auth: &UserAPIKeyAuth,
-        data: &mut RequestData,
-        call_type: CallType,
-    ) -> Result<(), PreCallHookError> {
+        let fallback = RequestStashSlot::default();
+        let stash = slot.unwrap_or(&fallback);
         self.hook
             .pre_call_hook(PreCallHookRequest {
                 auth,
                 data,
                 call_type,
                 endpoint: CapEndpoint::Generic,
-                stash: slot,
+                stash,
             })
             .await
     }
@@ -398,8 +406,7 @@ fn wiring(parts: &Parts, recorder: &Arc<Recorder>) -> Wiring {
     };
     let clock: Arc<dyn LimiterClock> = Arc::new(Clock::at(NOW));
     let windows = Arc::new(window_store(recorder));
-    let gauges = Arc::new(gauges(recorder, &clock, fail_closed));
-    let admission = Arc::new(admission(&clock, fail_closed, &windows, &gauges));
+    let (gauges, admission) = admission(recorder, &clock, fail_closed, &windows);
     let adjustments = Arc::new(adjustments(recorder));
     Wiring {
         settings,
@@ -407,7 +414,7 @@ fn wiring(parts: &Parts, recorder: &Arc<Recorder>) -> Wiring {
         clock,
         windows,
         gauges,
-        admission,
+        admission: Arc::new(admission),
         adjustments,
     }
 }
@@ -464,7 +471,7 @@ fn hook(
         model_groups: probes.model_groups,
         agents: probes.agents,
         health: probes.health,
-        health_error_threshold_per_minute: 1,
+        error_threshold_per_minute: 1,
         tags: probes.tags,
         translation: probes.translation,
         responses: probes.responses,
@@ -485,12 +492,13 @@ fn window_store(recorder: &Arc<Recorder>) -> WindowStore {
     }
 }
 
-fn gauges(
+fn admission(
     recorder: &Arc<Recorder>,
     clock: &Arc<dyn LimiterClock>,
     fail_closed: FailClosedPolicy,
-) -> ConcurrencyGauges {
-    ConcurrencyGauges {
+    windows: &Arc<WindowStore>,
+) -> (Arc<ConcurrencyGauges>, WindowedAdmission) {
+    let gauges = Arc::new(ConcurrencyGauges {
         cache: Arc::<Recorder>::clone(recorder),
         clock: Arc::clone(clock),
         acquire_script: None,
@@ -499,24 +507,17 @@ fn gauges(
         release_batch: None,
         fail_closed,
         check_and_increment_lock: AsyncMutex::new(()),
-    }
-}
-
-fn admission(
-    clock: &Arc<dyn LimiterClock>,
-    fail_closed: FailClosedPolicy,
-    windows: &Arc<WindowStore>,
-    gauges: &Arc<ConcurrencyGauges>,
-) -> WindowedAdmission {
-    WindowedAdmission {
+    });
+    let admission = WindowedAdmission {
         window_size: WINDOW,
         clock: Arc::clone(clock),
         fail_closed,
         windows: Arc::clone(windows),
         refund_script: None,
-        gauges: Arc::clone(gauges),
+        gauges: Arc::clone(&gauges),
         slot_ids: Arc::new(FixedSlotIds),
-    }
+    };
+    (gauges, admission)
 }
 
 fn adjustments(recorder: &Arc<Recorder>) -> TokenAdjustments {
@@ -681,7 +682,11 @@ impl CallTypeRateLimiter for BatchLimiter {
 pub(crate) fn proxy_rate_limit(message: &str) -> ProxyRateLimitError {
     ProxyRateLimitError::new(ProxyRateLimitErrorInit {
         detail: Payload::String(message.to_owned()),
-        ..ProxyRateLimitErrorInit::default()
+        headers: None,
+        category: None,
+        rate_limit_type: None,
+        model: None,
+        llm_provider: None,
     })
     .expect("the test rate limit error is valid")
 }

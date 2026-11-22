@@ -11,7 +11,7 @@ use super::support::{
     proxy_rate_limit, requests_key, scopes, snapshot, token_window,
 };
 use crate::limiter_records::{RateLimitResponse, RateLimitType, RateLimitedModel};
-use crate::pre_call_hook::PreCallHookError;
+use crate::pre_call_hook::{PreCallHookError, PreCallHookRejection};
 use crate::project_admission::ProjectAdmissionError;
 use crate::request_stash::RequestStashSlot;
 use crate::token_reservations::TokenReservationError;
@@ -19,15 +19,14 @@ use crate::token_reservations::TokenReservationError;
 #[tokio::test]
 async fn hook_hands_a_batch_call_to_the_batch_limiter() {
     let batch = BatchLimiter::succeeding();
-    let fixture = Fixture::new(&Parts {
-        batch_limiter: Some(Arc::clone(&batch)),
-        ..Parts::default()
-    });
+    let mut parts = Parts::new(Vec::new(), Vec::new(), None);
+    parts.batch_limiter = Some(Arc::clone(&batch));
+    let fixture = Fixture::new(&parts);
     let auth = support::auth(r#"{"api_key": "key-1", "rpm_limit": 10}"#);
     let mut data = support::data(r#"{"model": "gpt4"}"#);
 
     fixture
-        .run(&auth, &mut data, CallType::AcreateBatch)
+        .run(None, &auth, &mut data, CallType::AcreateBatch)
         .await
         .expect("the batch call passes");
 
@@ -37,19 +36,23 @@ async fn hook_hands_a_batch_call_to_the_batch_limiter() {
 #[tokio::test]
 async fn hook_returns_the_batch_limiter_error_unchanged() {
     let batch = BatchLimiter::failing(proxy_rate_limit("batch is full"));
-    let fixture = Fixture::new(&Parts {
-        batch_limiter: Some(batch),
-        ..Parts::default()
-    });
+    let mut parts = Parts::new(Vec::new(), Vec::new(), None);
+    parts.batch_limiter = Some(batch);
+    let fixture = Fixture::new(&parts);
     let auth = support::auth(r#"{"api_key": "key-1", "rpm_limit": 10}"#);
     let mut data = support::data(r#"{"model": "gpt4"}"#);
 
-    let Err(error) = fixture.run(&auth, &mut data, CallType::AcreateBatch).await else {
+    let Err(error) = fixture
+        .run(None, &auth, &mut data, CallType::AcreateBatch)
+        .await
+    else {
         panic!("the batch limiter rejection surfaces");
     };
 
     assert!(matches!(&error, PreCallHookError::RateLimited(_)));
-    let rate_limited = error.rate_limited().expect("the batch rejection is a 429");
+    let Some(PreCallHookRejection::RateLimited(rate_limited)) = error.rejection() else {
+        panic!("the batch rejection is a 429");
+    };
     assert_eq!(rate_limited.message, "batch is full");
 }
 
@@ -59,7 +62,10 @@ async fn hook_refuses_a_batch_call_without_a_batch_limiter() {
     let auth = support::auth(r#"{"api_key": "key-1", "rpm_limit": 10}"#);
     let mut data = support::data(r#"{"model": "gpt4"}"#);
 
-    let Err(error) = fixture.run(&auth, &mut data, CallType::AcreateBatch).await else {
+    let Err(error) = fixture
+        .run(None, &auth, &mut data, CallType::AcreateBatch)
+        .await
+    else {
         panic!("the missing batch limiter is refused");
     };
 
@@ -69,7 +75,7 @@ async fn hook_refuses_a_batch_call_without_a_batch_limiter() {
             call_type: CallType::AcreateBatch
         }
     ));
-    assert!(error.rate_limited().is_none());
+    assert!(error.rejection().is_none());
 }
 
 #[tokio::test]
@@ -80,7 +86,7 @@ async fn hook_with_no_descriptors_leaves_the_stash_empty() {
     let slot = RequestStashSlot::default();
 
     fixture
-        .run_with_slot(&slot, &auth, &mut data, CallType::Acompletion)
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
         .await
         .expect("a request without limits passes");
 
@@ -100,14 +106,16 @@ async fn hook_first_pass_over_limit_raises_and_saves_nothing() {
     let slot = RequestStashSlot::default();
 
     let Err(error) = fixture
-        .run_with_slot(&slot, &auth, &mut data, CallType::Acompletion)
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
         .await
     else {
         panic!("the first pass is over the request limit");
     };
 
     assert!(matches!(&error, PreCallHookError::RateLimited(_)));
-    let rate_limited = error.rate_limited().expect("the rejection is a 429");
+    let Some(PreCallHookRejection::RateLimited(rate_limited)) = error.rejection() else {
+        panic!("the rejection is a 429");
+    };
     assert!(
         rate_limited
             .message
@@ -131,7 +139,7 @@ async fn hook_saves_the_response_and_slot_after_a_passing_first_pass() {
     let other = RequestStashSlot::default();
 
     fixture
-        .run_with_slot(&slot, &auth, &mut data, CallType::Acompletion)
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
         .await
         .expect("the request passes");
 
@@ -167,12 +175,12 @@ async fn hook_reuses_the_stash_across_calls_of_one_request() {
     let slot = RequestStashSlot::default();
 
     fixture
-        .run_with_slot(&slot, &auth, &mut data, CallType::Acompletion)
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
         .await
         .expect("the first call passes");
     let first = slot.get().expect("the first call claimed the stash");
     fixture
-        .run_with_slot(&slot, &auth, &mut data, CallType::Acompletion)
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
         .await
         .expect("the second call passes");
     let second = slot.get().expect("the second call keeps the stash");
@@ -182,15 +190,17 @@ async fn hook_reuses_the_stash_across_calls_of_one_request() {
 
 #[tokio::test]
 async fn hook_skips_the_project_token_limit_in_the_first_pass_with_reservation_on() {
-    let fixture = Fixture::new(&Parts {
-        groups: vec![(String::from("gpt4"), String::from("gpt-4"))],
-        entries: entries([token_window(
+    let mut parts = Parts::new(
+        entries([token_window(
             "model_per_project_itpm",
             "project-1:gpt-4",
             11,
         )]),
-        ..Parts::default()
-    });
+        Vec::new(),
+        None,
+    );
+    parts.groups = vec![(String::from("gpt4"), String::from("gpt-4"))];
+    let fixture = Fixture::new(&parts);
     let auth = support::auth(
         r#"{"api_key": "key-1", "project_id": "project-1",
             "project_metadata": {"model_itpm_limit": {"gpt-4": 11},
@@ -202,7 +212,7 @@ async fn hook_skips_the_project_token_limit_in_the_first_pass_with_reservation_o
     let slot = RequestStashSlot::default();
 
     let Err(error) = fixture
-        .run_with_slot(&slot, &auth, &mut data, CallType::Acompletion)
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
         .await
     else {
         panic!("the project input reservation rejects the request");
@@ -220,16 +230,18 @@ async fn hook_skips_the_project_token_limit_in_the_first_pass_with_reservation_o
 
 #[tokio::test]
 async fn hook_leaves_the_project_limits_out_of_the_first_pass_with_reservation_off() {
-    let fixture = Fixture::new(&Parts {
-        reservation_off: true,
-        groups: vec![(String::from("gpt4"), String::from("gpt-4"))],
-        entries: entries([token_window(
+    let mut parts = Parts::new(
+        entries([token_window(
             "model_per_project_itpm",
             "project-1:gpt-4",
             11,
         )]),
-        ..Parts::default()
-    });
+        Vec::new(),
+        None,
+    );
+    parts.reservation_off = true;
+    parts.groups = vec![(String::from("gpt4"), String::from("gpt-4"))];
+    let fixture = Fixture::new(&parts);
     let auth = support::auth(
         r#"{"api_key": "key-1", "project_id": "project-1",
             "project_metadata": {"model_itpm_limit": {"gpt-4": 11},
@@ -239,7 +251,10 @@ async fn hook_leaves_the_project_limits_out_of_the_first_pass_with_reservation_o
         r#"{"model": "gpt4", "messages": [{"role": "user", "content": "hello there"}]}"#,
     );
 
-    let Err(error) = fixture.run(&auth, &mut data, CallType::Acompletion).await else {
+    let Err(error) = fixture
+        .run(None, &auth, &mut data, CallType::Acompletion)
+        .await
+    else {
         panic!("the project input reservation rejects the request");
     };
 
@@ -247,16 +262,19 @@ async fn hook_leaves_the_project_limits_out_of_the_first_pass_with_reservation_o
         &error,
         PreCallHookError::Project(ProjectAdmissionError::RateLimited(_))
     ));
-    let rate_limited = error.rate_limited().expect("the rejection is a 429");
+    let Some(PreCallHookRejection::RateLimited(rate_limited)) = error.rejection() else {
+        panic!("the rejection is a 429");
+    };
     assert!(rate_limited.message.contains("model_per_project_itpm"));
 }
 
 #[tokio::test]
 async fn hook_releases_the_stashed_slot_when_the_token_reservation_is_over_the_limit() {
-    let fixture = Fixture::new(&Parts {
-        entries: entries([token_window("api_key", "key-1", 5)]),
-        ..Parts::default()
-    });
+    let fixture = Fixture::new(&Parts::new(
+        entries([token_window("api_key", "key-1", 5)]),
+        Vec::new(),
+        None,
+    ));
     let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 5, "max_parallel_requests": 2}"#);
     let mut data = support::data(
         r#"{"model": "gpt4", "max_tokens": 10, "messages": [{"role": "user", "content": "hi"}]}"#,
@@ -264,7 +282,7 @@ async fn hook_releases_the_stashed_slot_when_the_token_reservation_is_over_the_l
     let slot = RequestStashSlot::default();
 
     let Err(error) = fixture
-        .run_with_slot(&slot, &auth, &mut data, CallType::Acompletion)
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
         .await
     else {
         panic!("the token reservation is over its limit");
@@ -288,7 +306,9 @@ fn assert_token_reservation_rejection(error: &PreCallHookError) {
         error,
         PreCallHookError::Reservation(TokenReservationError::RateLimited(_))
     ));
-    let rate_limited = error.rate_limited().expect("the rejection is a 429");
+    let Some(PreCallHookRejection::RateLimited(rate_limited)) = error.rejection() else {
+        panic!("the rejection is a 429");
+    };
     assert!(
         rate_limited
             .message
@@ -302,11 +322,13 @@ fn assert_token_reservation_rejection(error: &PreCallHookError) {
 
 #[tokio::test]
 async fn hook_checks_the_tpm_in_the_first_pass_with_reservation_off() {
-    let fixture = Fixture::new(&Parts {
-        reservation_off: true,
-        entries: entries([token_window("api_key", "key-1", 5)]),
-        ..Parts::default()
-    });
+    let mut parts = Parts::new(
+        entries([token_window("api_key", "key-1", 5)]),
+        Vec::new(),
+        None,
+    );
+    parts.reservation_off = true;
+    let fixture = Fixture::new(&parts);
     let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 5, "max_parallel_requests": 2}"#);
     let mut data = support::data(
         r#"{"model": "gpt4", "max_tokens": 10, "messages": [{"role": "user", "content": "hi"}]}"#,
@@ -314,7 +336,7 @@ async fn hook_checks_the_tpm_in_the_first_pass_with_reservation_off() {
     let slot = RequestStashSlot::default();
 
     let Err(error) = fixture
-        .run_with_slot(&slot, &auth, &mut data, CallType::Acompletion)
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
         .await
     else {
         panic!("the first pass checks the token counter");
@@ -327,10 +349,9 @@ async fn hook_checks_the_tpm_in_the_first_pass_with_reservation_off() {
 
 #[tokio::test]
 async fn hook_fills_the_stash_after_a_successful_token_reservation() {
-    let fixture = Fixture::new(&Parts {
-        tags: vec![(String::from("t1"), None, Some(100))],
-        ..Parts::default()
-    });
+    let mut parts = Parts::new(Vec::new(), Vec::new(), None);
+    parts.tags = vec![(String::from("t1"), None, Some(100))];
+    let fixture = Fixture::new(&parts);
     let auth = support::auth(r#"{"api_key": "key-1", "tpm_limit": 100}"#);
     let mut data = support::data(
         r#"{"model": "gpt4", "max_tokens": 10, "messages": [{"role": "user", "content": "hi"}],
@@ -339,7 +360,7 @@ async fn hook_fills_the_stash_after_a_successful_token_reservation() {
     let slot = RequestStashSlot::default();
 
     fixture
-        .run_with_slot(&slot, &auth, &mut data, CallType::Acompletion)
+        .run(Some(&slot), &auth, &mut data, CallType::Acompletion)
         .await
         .expect("the reservation passes");
 

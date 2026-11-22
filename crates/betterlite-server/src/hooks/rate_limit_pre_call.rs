@@ -7,7 +7,7 @@ use betterlite_core::routes::CallType;
 use betterlite_rate_limit::fail_closed::RateLimitUnverifiableError;
 use betterlite_rate_limit::limiter_assembly::selection::{LimiterChoice, select_call_type_limiter};
 use betterlite_rate_limit::pre_call_hook::{
-    PreCallHookError, PreCallHookRequest, RateLimitPreCallHook,
+    PreCallHookError, PreCallHookRejection, PreCallHookRequest, RateLimitPreCallHook,
 };
 use betterlite_rate_limit::request_stash::RequestStashSlot;
 use betterlite_rate_limit::token_estimation::output_cap::CapEndpoint;
@@ -102,7 +102,13 @@ impl IntoResponse for RateLimitPreCallError {
         match self {
             Self::MissingBatchLimiter { call_type } => {
                 let message = format!("the batch rate limiter is not registered for {call_type:?}");
-                error_body_response(StatusCode::SERVICE_UNAVAILABLE, message)
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(DetailBody {
+                        detail: ErrorDetail { error: message },
+                    }),
+                )
+                    .into_response()
             }
             Self::Hook(error) => hook_response(error),
         }
@@ -110,13 +116,23 @@ impl IntoResponse for RateLimitPreCallError {
 }
 
 fn hook_response(error: PreCallHookError) -> Response {
-    if let Some(rate_limited) = error.rate_limited() {
-        return rate_limited.clone().into_response();
+    match error.rejection() {
+        Some(PreCallHookRejection::RateLimited(rate_limited)) => {
+            rate_limited.clone().into_response()
+        }
+        Some(PreCallHookRejection::Unverifiable(unverifiable)) => {
+            unverifiable_response(unverifiable)
+        }
+        None => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(DetailBody {
+                detail: ErrorDetail {
+                    error: error.to_string(),
+                },
+            }),
+        )
+            .into_response(),
     }
-    if let Some(unverifiable) = error.unverifiable() {
-        return unverifiable_response(unverifiable);
-    }
-    error_body_response(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
 }
 
 fn unverifiable_response(error: &RateLimitUnverifiableError) -> Response {
@@ -128,9 +144,4 @@ fn unverifiable_response(error: &RateLimitUnverifiableError) -> Response {
         }),
     )
         .into_response()
-}
-
-fn error_body_response(status: StatusCode, message: String) -> Response {
-    let detail = ErrorDetail { error: message };
-    (status, Json(DetailBody { detail })).into_response()
 }

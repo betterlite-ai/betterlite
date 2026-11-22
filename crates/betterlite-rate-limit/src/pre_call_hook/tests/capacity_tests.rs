@@ -9,7 +9,7 @@ use tokio::sync::Semaphore;
 use super::support::{
     self, Fixture, Parts, count, entries, occupied_registry, parallel_key, request_window,
 };
-use crate::pre_call_hook::PreCallHookError;
+use crate::pre_call_hook::{PreCallHookError, PreCallHookRejection};
 
 fn limited_auth() -> UserAPIKeyAuth {
     support::auth(r#"{"api_key": "key-1", "rpm_limit": 10, "max_parallel_requests": 2}"#)
@@ -38,14 +38,14 @@ async fn capacity_charges_one_request() {
 
 #[tokio::test]
 async fn capacity_raises_on_an_over_limit_admission_and_keeps_the_slots() {
-    let fixture = Fixture::new(&Parts {
-        entries: entries([request_window("api_key", "key-1", 0)]),
-        gauges: vec![(
+    let fixture = Fixture::new(&Parts::new(
+        entries([request_window("api_key", "key-1", 0)]),
+        vec![(
             parallel_key("api_key", "key-1"),
             occupied_registry(&["old-1", "old-2", "slot-1"]),
         )],
-        ..Parts::default()
-    });
+        None,
+    ));
     let auth = limited_auth();
     let key = parallel_key("api_key", "key-1");
 
@@ -54,7 +54,9 @@ async fn capacity_raises_on_an_over_limit_admission_and_keeps_the_slots() {
     };
 
     assert!(matches!(&error, PreCallHookError::RateLimited(_)));
-    let rate_limited = error.rate_limited().expect("the rejection is a 429");
+    let Some(PreCallHookRejection::RateLimited(rate_limited)) = error.rejection() else {
+        panic!("the rejection is a 429");
+    };
     assert!(
         rate_limited
             .message
@@ -75,10 +77,11 @@ async fn capacity_raises_on_an_over_limit_admission_and_keeps_the_slots() {
 
 #[tokio::test]
 async fn capacity_releases_the_slot_after_a_normal_exit() {
-    let fixture = Fixture::new(&Parts {
-        entries: entries([request_window("api_key", "key-1", 0)]),
-        ..Parts::default()
-    });
+    let fixture = Fixture::new(&Parts::new(
+        entries([request_window("api_key", "key-1", 0)]),
+        Vec::new(),
+        None,
+    ));
     let auth = limited_auth();
     let key = parallel_key("api_key", "key-1");
 
@@ -104,10 +107,11 @@ async fn capacity_releases_the_slot_after_a_normal_exit() {
 
 #[tokio::test]
 async fn capacity_releases_the_slot_after_the_caller_errors() {
-    let fixture = Fixture::new(&Parts {
-        entries: entries([request_window("api_key", "key-1", 0)]),
-        ..Parts::default()
-    });
+    let fixture = Fixture::new(&Parts::new(
+        entries([request_window("api_key", "key-1", 0)]),
+        Vec::new(),
+        None,
+    ));
     let auth = limited_auth();
 
     let outcome = failing_provider_call(&fixture, &auth).await;
@@ -134,11 +138,11 @@ async fn failing_provider_call(
 #[tokio::test]
 async fn capacity_releases_the_slot_after_the_caller_is_cancelled() {
     let gate = Arc::new(Semaphore::new(0));
-    let fixture = Fixture::new(&Parts {
-        entries: entries([request_window("api_key", "key-1", 0)]),
-        gate: Some(Arc::clone(&gate)),
-        ..Parts::default()
-    });
+    let fixture = Fixture::new(&Parts::new(
+        entries([request_window("api_key", "key-1", 0)]),
+        Vec::new(),
+        Some(Arc::clone(&gate)),
+    ));
     let auth = limited_auth();
 
     let cancelled = tokio::time::timeout(

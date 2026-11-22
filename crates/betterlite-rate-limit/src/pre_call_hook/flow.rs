@@ -12,7 +12,6 @@ use crate::pre_call_hook::common::{
 };
 use crate::pre_call_hook::{PreCallHookError, PreCallHookRequest, RateLimitPreCallHook};
 use crate::request_scopes::body_text;
-use crate::request_scopes::request_assembly::build_request_rate_limit_descriptors;
 use crate::request_stash::{RequestStash, RequestStashSlot};
 use crate::token_estimation::output_cap::CapEndpoint;
 use crate::windowed_admission::SlotIdGenerator as _;
@@ -50,9 +49,9 @@ pub(super) async fn run(
     }
     let call_type_name = call_type_name(call_type);
     let builder = hook.request_scope_builder();
-    let descriptors =
-        build_request_rate_limit_descriptors(&builder, auth, data, call_type_name.as_deref())
-            .await?;
+    let descriptors = hook
+        .build_request_rate_limit_descriptors(auth, data, call_type_name.as_deref())
+        .await?;
     record_tag_scopes(&stash, &descriptors);
     if descriptors.is_empty() {
         return Ok(());
@@ -71,12 +70,8 @@ pub(super) async fn run(
         endpoint,
         model: &builder.model,
     };
-    reserve_limits(&mut context).await
-}
-
-async fn reserve_limits(context: &mut FlowContext<'_>) -> Result<(), PreCallHookError> {
-    let tpm = reservation::reserve_tokens(context).await?;
-    reservation::reserve_project_io(context, &tpm).await
+    let tpm = reservation::reserve_tokens(&mut context).await?;
+    reservation::reserve_project_io(&mut context, &tpm).await
 }
 
 async fn batch_pre_call(

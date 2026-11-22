@@ -270,7 +270,7 @@ fn hooks(batch: Option<Arc<dyn CallTypeRateLimiter>>) -> RateLimitPreCallHook {
         model_groups: Arc::new(NoGroups),
         agents: Arc::new(Noop),
         health: Arc::new(Noop),
-        health_error_threshold_per_minute: 1,
+        error_threshold_per_minute: 1,
         tags: Arc::new(NoTags),
         translation: Arc::new(Noop),
         responses: Arc::new(Noop),

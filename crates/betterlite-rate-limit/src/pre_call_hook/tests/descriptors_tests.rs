@@ -9,15 +9,14 @@ use super::support::{self, Fixture, Parts};
 use crate::limiter_records::{RateLimitDescriptor, RateLimitDescriptorRateLimit};
 
 fn parts() -> Parts {
-    Parts {
-        groups: vec![(String::from("gpt4"), String::from("gpt-4"))],
-        tags: vec![(String::from("t1"), Some(8), None)],
-        agents: BTreeMap::from([(
-            String::from("agent-1"),
-            support::policy("agent-1", Some(14)),
-        )]),
-        ..Parts::default()
-    }
+    let mut parts = Parts::new(Vec::new(), Vec::new(), None);
+    parts.groups = vec![(String::from("gpt4"), String::from("gpt-4"))];
+    parts.tags = vec![(String::from("t1"), Some(8), None)];
+    parts.agents = BTreeMap::from([(
+        String::from("agent-1"),
+        support::policy("agent-1", Some(14)),
+    )]);
+    parts
 }
 
 async fn descriptors(

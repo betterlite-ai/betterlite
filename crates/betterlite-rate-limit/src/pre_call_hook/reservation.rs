@@ -39,7 +39,14 @@ pub(super) async fn reserve_tokens(
         context.endpoint,
     );
     let estimate = estimate_tokens(context, smallest, configured_output_tokens);
-    log_large_estimate(context, estimate, smallest, configured_output_tokens);
+    if configured_output_tokens.is_some() && estimate > smallest {
+        tracing::debug!(
+            tokens = estimate,
+            model = context.requested_model,
+            limit = smallest,
+            "the reserved token estimate exceeds the smallest TPM limit"
+        );
+    }
     let reservations = token_reservations(context.hook, context.model, context.requested_model);
     let response = reservations
         .reserve_tpm_tokens(context.descriptors, estimate)
@@ -66,22 +73,6 @@ fn finish_reservation(
     TpmReservationState {
         scopes,
         amount: estimate,
-    }
-}
-
-fn log_large_estimate(
-    context: &FlowContext<'_>,
-    estimate: i64,
-    smallest: i64,
-    configured_output_tokens: Option<i64>,
-) {
-    if configured_output_tokens.is_some() && estimate > smallest {
-        tracing::debug!(
-            tokens = estimate,
-            model = context.requested_model,
-            limit = smallest,
-            "the reserved token estimate exceeds the smallest TPM limit"
-        );
     }
 }
 

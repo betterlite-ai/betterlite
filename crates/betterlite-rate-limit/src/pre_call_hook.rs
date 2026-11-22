@@ -22,9 +22,9 @@ use crate::model_descriptors::ModelDescriptorBuilder;
 use crate::project_admission::ProjectAdmissionError;
 use crate::request_scopes::RequestScopeBuilder;
 use crate::request_scopes::deployment_health::{DeploymentHealthPolicy, DeploymentHealthSource};
-use crate::request_scopes::request_assembly::{
-    RequestAssemblyError, build_request_rate_limit_descriptors,
-};
+use crate::request_scopes::request_assembly::RequestAssemblyError;
+// ast-grep-ignore: no-long-names - the ported LiteLLM name
+use crate::request_scopes::request_assembly::build_request_rate_limit_descriptors;
 use crate::request_stash::RequestStashSlot;
 use crate::settlement_and_rollback::SettlementError;
 use crate::token_estimation::output_cap::CapEndpoint;
@@ -37,7 +37,6 @@ mod common;
 mod flow;
 mod reservation;
 
-#[cfg(test)]
 mod tests;
 
 pub struct RateLimitPreCallHook {
@@ -45,7 +44,7 @@ pub struct RateLimitPreCallHook {
     pub model_groups: Arc<dyn ModelGroupResolver>,
     pub agents: Arc<dyn AgentPolicyRegistry>,
     pub health: Arc<dyn DeploymentHealthSource>,
-    pub health_error_threshold_per_minute: i64,
+    pub error_threshold_per_minute: i64,
     pub tags: Arc<dyn TagRateLimitResolver>,
     pub translation: Arc<dyn GenAiTranslation>,
     pub responses: Arc<dyn ResponsesInput>,
@@ -91,15 +90,21 @@ pub enum PreCallHookError {
 }
 
 impl RateLimitPreCallHook {
-    // ast-grep-ignore: no-long-names
+    // ast-grep-ignore: no-long-names - the ported LiteLLM name
     pub async fn build_request_rate_limit_descriptors(
         &self,
         user_api_key_dict: &UserAPIKeyAuth,
         data: &RequestData,
         call_type: Option<&str>,
     ) -> Result<Vec<RateLimitDescriptor>, RequestAssemblyError> {
-        let builder = self.request_scope_builder();
-        build_request_rate_limit_descriptors(&builder, user_api_key_dict, data, call_type).await
+        // ast-grep-ignore: no-long-names - the ported LiteLLM name
+        build_request_rate_limit_descriptors(
+            &self.request_scope_builder(),
+            user_api_key_dict,
+            data,
+            call_type,
+        )
+        .await
     }
 
     // clippy's same_name_method refuses async_pre_call_hook while the type implements CallTypeRateLimiter
@@ -117,7 +122,12 @@ impl RateLimitPreCallHook {
         model: &str,
         request_data: Option<&RequestData>,
     ) -> Result<RequestCapacityGuard, PreCallHookError> {
-        capacity::request_capacity(self, user_api_key_dict, model, request_data).await
+        let data = capacity::request_data_with_model(request_data, model);
+        let descriptors = self
+            .build_request_rate_limit_descriptors(user_api_key_dict, &data, None)
+            .await?;
+        let (guard, response) = capacity::start_admission(self, &descriptors).await?;
+        capacity::admit_outcome(self, &descriptors, model, &response, guard)
     }
 
     fn request_scope_builder(&self) -> RequestScopeBuilder<'_> {
@@ -134,7 +144,7 @@ impl RateLimitPreCallHook {
             },
             health: DeploymentHealthPolicy {
                 source: self.health.as_ref(),
-                error_threshold_per_minute: self.health_error_threshold_per_minute,
+                error_threshold_per_minute: self.error_threshold_per_minute,
             },
             tag_resolver: self.tags.as_ref(),
         }
@@ -164,6 +174,12 @@ impl CallTypeRateLimiter for RateLimitPreCallHook {
     }
 }
 
+// the two rejection kinds a proxy turns into an HTTP status: the 429 and the fail-closed 503
+pub enum PreCallHookRejection<'error> {
+    RateLimited(&'error ProxyRateLimitError),
+    Unverifiable(&'error RateLimitUnverifiableError),
+}
+
 impl PreCallHookError {
     fn into_proxy_rate_limit_error(self) -> ProxyRateLimitError {
         match self {
@@ -175,11 +191,24 @@ impl PreCallHookError {
     }
 
     #[must_use]
-    pub fn rate_limited(&self) -> Option<&ProxyRateLimitError> {
+    pub fn rejection(&self) -> Option<PreCallHookRejection<'_>> {
         match self {
-            Self::RateLimited(error) => Some(error),
-            Self::Reservation(TokenReservationError::RateLimited(error)) => Some(error),
-            Self::Project(ProjectAdmissionError::RateLimited(error)) => Some(error),
+            Self::RateLimited(error)
+            | Self::Reservation(TokenReservationError::RateLimited(error))
+            | Self::Project(ProjectAdmissionError::RateLimited(error)) => {
+                Some(PreCallHookRejection::RateLimited(error))
+            }
+            Self::Admission(WindowedAdmissionError::Unverifiable(error))
+            | Self::Admission(WindowedAdmissionError::Gauges(GaugeError::Unverifiable(error)))
+            | Self::Admission(WindowedAdmissionError::Settlement(SettlementError::Unverifiable(
+                error,
+            )))
+            | Self::Reservation(TokenReservationError::Settlement(
+                SettlementError::Unverifiable(error),
+            ))
+            | Self::Project(ProjectAdmissionError::Reservation(
+                TokenReservationError::Settlement(SettlementError::Unverifiable(error)),
+            )) => Some(PreCallHookRejection::Unverifiable(error)),
             Self::Descriptors(_)
             | Self::Admission(_)
             | Self::Reservation(_)
@@ -187,31 +216,6 @@ impl PreCallHookError {
             | Self::Projection(_)
             | Self::MissingBatchLimiter { .. }
             | Self::AdmissionTaskLost => None,
-        }
-    }
-
-    #[must_use]
-    pub fn unverifiable(&self) -> Option<&RateLimitUnverifiableError> {
-        match self {
-            Self::Admission(WindowedAdmissionError::Unverifiable(error))
-            | Self::Admission(WindowedAdmissionError::Gauges(GaugeError::Unverifiable(error)))
-            | Self::Admission(WindowedAdmissionError::Settlement(SettlementError::Unverifiable(
-                error,
-            ))) => Some(error),
-            Self::Reservation(TokenReservationError::Settlement(
-                SettlementError::Unverifiable(error),
-            )) => Some(error),
-            Self::Project(ProjectAdmissionError::Reservation(
-                TokenReservationError::Settlement(SettlementError::Unverifiable(error)),
-            )) => Some(error),
-            Self::Descriptors(_)
-            | Self::Admission(_)
-            | Self::Reservation(_)
-            | Self::Project(_)
-            | Self::Projection(_)
-            | Self::MissingBatchLimiter { .. }
-            | Self::AdmissionTaskLost
-            | Self::RateLimited(_) => None,
         }
     }
 }
