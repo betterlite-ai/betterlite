@@ -38,21 +38,17 @@ fn response(document: &str) -> RouterSettingsResponse {
     settings_response(current_values(&config), &store)
 }
 
-fn value(document: &str, key: &str) -> JsonValue {
-    response(document).current_values.get(key).cloned().unwrap()
-}
-
 #[rstest]
 #[case::strategy_default(
     "router_settings: {}",
     "routing_strategy",
-    "simple-shuffle",
+    r#""simple-shuffle""#,
     FieldSource::Default
 )]
 #[case::strategy_configured(
     "router_settings: {routing_strategy: least-busy}",
     "routing_strategy",
-    "least-busy",
+    r#""least-busy""#,
     FieldSource::Config
 )]
 #[case::retries_default("router_settings: {}", "num_retries", "2", FieldSource::Default)]
@@ -130,11 +126,23 @@ fn value(document: &str, key: &str) -> JsonValue {
     r#"{"BadRequestErrorRetries": 2}"#,
     FieldSource::Config
 )]
+#[case::retry_policy_all_errors(
+    "router_settings: {retry_policy: {BadRequestErrorRetries: 1, AuthenticationErrorRetries: 2, TimeoutErrorRetries: 3, RateLimitErrorRetries: 4, ContentPolicyViolationErrorRetries: 5, InternalServerErrorRetries: 6, ServiceUnavailableErrorRetries: 7, NotFoundErrorRetries: 8, DefaultRetries: 9}}",
+    "retry_policy",
+    r#"{"BadRequestErrorRetries": 1, "AuthenticationErrorRetries": 2, "TimeoutErrorRetries": 3, "RateLimitErrorRetries": 4, "ContentPolicyViolationErrorRetries": 5, "InternalServerErrorRetries": 6, "ServiceUnavailableErrorRetries": 7, "NotFoundErrorRetries": 8, "DefaultRetries": 9}"#,
+    FieldSource::Config
+)]
 #[case::alias_unset("router_settings: {}", "model_group_alias", "{}", FieldSource::Default)]
 #[case::alias_configured(
     "router_settings: {model_group_alias: {gpt-4: gpt-3.5-turbo}}",
     "model_group_alias",
     r#"{"gpt-4": "gpt-3.5-turbo"}"#,
+    FieldSource::Config
+)]
+#[case::alias_hidden_configured(
+    "router_settings: {model_group_alias: {gpt-4: {model: gpt-3.5-turbo, hidden: true}}}",
+    "model_group_alias",
+    r#"{"gpt-4": {"model": "gpt-3.5-turbo", "hidden": true}}"#,
     FieldSource::Config
 )]
 #[case::pre_call_checks_default(
@@ -169,12 +177,30 @@ fn value(document: &str, key: &str) -> JsonValue {
     FieldSource::Default
 )]
 #[case::cooldowns_unset("router_settings: {}", "disable_cooldowns", "null", FieldSource::Unset)]
+#[case::cooldowns_enabled(
+    "router_settings: {disable_cooldowns: true}",
+    "disable_cooldowns",
+    "true",
+    FieldSource::Config
+)]
 #[case::groups_unset("router_settings: {}", "routing_groups", "[]", FieldSource::Default)]
 #[case::strategy_args_unset(
     "router_settings: {}",
     "routing_strategy_args",
     "{}",
     FieldSource::Default
+)]
+#[case::computed_default_params(
+    "router_settings: {timeout: 9.5}",
+    "default_litellm_params",
+    r#"{"max_retries": 0, "metadata": {"caching_groups": null}, "timeout": 9.5}"#,
+    FieldSource::Default
+)]
+#[case::written_default_params(
+    "router_settings: {default_litellm_params: {timeout: 9.5}}",
+    "default_litellm_params",
+    r#"{"timeout": 9.5}"#,
+    FieldSource::Config
 )]
 fn router_settings_behaviors(
     #[case] document: &str,
@@ -195,34 +221,76 @@ fn router_settings_behaviors(
 }
 
 #[rstest]
-#[case::zero_retries("router_settings: {num_retries: 0}", "num_retries", "0")]
-#[case::zero_fails("router_settings: {allowed_fails: 0}", "allowed_fails", "0")]
-#[case::zero_max_fallbacks("router_settings: {max_fallbacks: 0}", "max_fallbacks", "0")]
-#[case::zero_cooldown("router_settings: {cooldown_time: 0}", "cooldown_time", "0")]
-#[case::zero_timeout("router_settings: {timeout: 0}", "timeout", "0")]
+#[case::zero_retries(
+    "router_settings: {num_retries: 0}",
+    "num_retries",
+    "0",
+    FieldSource::Config
+)]
+#[case::zero_fails(
+    "router_settings: {allowed_fails: 0}",
+    "allowed_fails",
+    "0",
+    FieldSource::Config
+)]
+#[case::zero_max_fallbacks(
+    "router_settings: {max_fallbacks: 0}",
+    "max_fallbacks",
+    "0",
+    FieldSource::Default
+)]
+#[case::zero_cooldown(
+    "router_settings: {cooldown_time: 0}",
+    "cooldown_time",
+    "0",
+    FieldSource::Config
+)]
+#[case::zero_timeout("router_settings: {timeout: 0}", "timeout", "0", FieldSource::Config)]
+#[case::zero_retry_after(
+    "router_settings: {retry_after: 0}",
+    "retry_after",
+    "0",
+    FieldSource::Default
+)]
 #[case::largest_allowed_fails(
     "router_settings: {allowed_fails: 4294967295}",
     "allowed_fails",
-    "4294967295"
+    "4294967295",
+    FieldSource::Config
 )]
 #[case::largest_max_fallbacks(
     "router_settings: {max_fallbacks: 9223372036854775807}",
     "max_fallbacks",
-    "9223372036854775807"
+    "9223372036854775807",
+    FieldSource::Default
 )]
 #[case::empty_alias(
     "router_settings: {model_group_alias: {gpt-4: ''}}",
     "model_group_alias",
-    r#"{"gpt-4": ""}"#
+    r#"{"gpt-4": ""}"#,
+    FieldSource::Config
 )]
-#[case::empty_groups("router_settings: {routing_groups: []}", "routing_groups", "[]")]
-#[case::fractional_retry_after("router_settings: {retry_after: 0.5}", "retry_after", "0.5")]
+#[case::empty_groups(
+    "router_settings: {routing_groups: []}",
+    "routing_groups",
+    "[]",
+    FieldSource::Config
+)]
+#[case::fractional_retry_after(
+    "router_settings: {retry_after: 0.5}",
+    "retry_after",
+    "0.5",
+    FieldSource::Default
+)]
 fn router_settings_boundaries(
     #[case] document: &str,
     #[case] key: &str,
     #[case] expected_json: &str,
+    #[case] expected_source: FieldSource,
 ) {
-    assert_eq!(value(document, key), json(expected_json));
+    let answer = response(document);
+    assert_eq!(answer.current_values.get(key), Some(&json(expected_json)));
+    assert_eq!(answer.source.get(key), Some(&expected_source));
 }
 
 #[test]
@@ -523,6 +591,20 @@ fn an_explicitly_empty_fallback_list_reads_back_as_null() {
     let answer = response("router_settings: {fallbacks: []}");
     assert_eq!(answer.current_values.get("fallbacks"), Some(&json("null")));
     assert_eq!(answer.source.get("fallbacks"), Some(&FieldSource::Default));
+}
+
+#[test]
+fn caching_groups_is_unsupported_configuration() {
+    let loader = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    };
+    let error = loader
+        .load("router_settings: {caching_groups: [[gpt-4, gpt-3.5-turbo]]}")
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        r#"unsupported config keys: ["router_settings.caching_groups"]"#
+    );
 }
 
 fn application(config: &Config) -> Router {

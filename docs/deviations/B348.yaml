@@ -99,4 +99,13 @@ deviations:
       section folds into a computed value (default_fallbacks becomes a wildcard fallbacks chain) has no
       separate stored value to echo.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L135
+  - what: >-
+      router_settings.caching_groups is unsupported configuration: a file that sets it fails to load with an
+      unsupported-key error, and default_litellm_params.metadata.caching_groups is always reported as null.
+    why: >-
+      no betterlite config section reads the key, so the loader's unsupported-key pass refuses it; LiteLLM
+      forwards the list to Router, which reports it back inside the computed default_litellm_params
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1133)
+      and as a raw router_settings key in current_values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L789
 kept_bugs: []
