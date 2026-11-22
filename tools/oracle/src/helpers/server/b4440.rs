@@ -17,7 +17,7 @@ const TRACKED: [&str; 7] = [
     "user_api_key_spend",
 ];
 #[derive(Deserialize)]
-struct Input {
+pub(crate) struct Input {
     mode: Vec<ModeStep>,
     wildcard: Vec<WildcardStep>,
     tracking: Vec<TrackingStep>,

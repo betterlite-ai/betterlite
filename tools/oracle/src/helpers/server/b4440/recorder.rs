@@ -39,10 +39,10 @@ impl Recorder {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(entry);
-        match &self.failure {
-            None => Ok(HealthProbeReply::default()),
-            Some(failure) => Err(backend_error(failure)),
-        }
+        self.failure.as_ref().map_or_else(
+            || Ok(HealthProbeReply::default()),
+            |failure| Err(backend_error(failure)),
+        )
     }
 }
 #[async_trait]

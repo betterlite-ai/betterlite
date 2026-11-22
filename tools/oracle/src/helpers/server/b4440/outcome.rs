@@ -121,12 +121,6 @@ fn success_outcome(step: &ModeStep, calls: &Recorder, updates: &UpdateRecorder) 
     };
     json!({"call": call, "logging": logged, "result": result})
 }
-fn failure_tag(step: &ModeStep) -> &str {
-    match &step.failure {
-        Some(failure) => failure.class_name.as_str(),
-        None => "",
-    }
-}
 fn mode_error(step: &ModeStep, error: &HealthProbeError) -> Value {
     match error {
         HealthProbeError::RepeatedParameter { key, .. } => {
@@ -136,7 +130,11 @@ fn mode_error(step: &ModeStep, error: &HealthProbeError) -> Value {
             json!({"error": {"kind": "payload", "detail": field}})
         }
         HealthProbeError::Backend { .. } => {
-            json!({"error": {"kind": "backend", "detail": failure_tag(step)}})
+            let class = step
+                .failure
+                .as_ref()
+                .map_or("", |failure| failure.class_name.as_str());
+            json!({"error": {"kind": "backend", "detail": class}})
         }
         HealthProbeError::ParameterType { .. }
         | HealthProbeError::NoCheapModel { .. }
