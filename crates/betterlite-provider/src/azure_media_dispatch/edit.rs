@@ -28,7 +28,10 @@ pub(super) async fn image_edit<C, K, T, L>(
     runtime: &MediaRuntime<'_, C, K, T, L>,
 ) -> Result<ImageEditOutcome, AzureMediaError>
 where
+    C: Sync,
+    K: Sync,
     T: ImageTransport,
+    L: Sync,
 {
     let boundary = operation.boundary;
     let now_seconds = operation.now_seconds;

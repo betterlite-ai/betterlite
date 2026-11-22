@@ -58,7 +58,6 @@ impl AzureMediaError {
             Self::Image(error) => error.classification().1,
             Self::Edit(error) => error.status(),
             Self::EditAuth(error) => error.status(),
-            Self::EditUrl(_) => None,
             Self::Transport(error) => error.status_code(),
             Self::Transcription(error) => error.status(),
             Self::Native(error) => error.status(),
@@ -69,6 +68,7 @@ impl AzureMediaError {
             | Self::Unavailable { .. }
             | Self::UnsupportedOperation
             | Self::NativeRequest
+            | Self::EditUrl(_)
             | Self::Url(_) => None,
         }
     }

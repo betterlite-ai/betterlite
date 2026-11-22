@@ -161,9 +161,9 @@ impl ImageClock for Clock {
 }
 
 impl ImageClientConstructor for Fixture {
-    type Client = Fixture;
+    type Client = Self;
 
-    fn construct(&self, _timeout: TimeoutPhases) -> Fixture {
+    fn construct(&self, _timeout: TimeoutPhases) -> Self {
         self.clone()
     }
 }

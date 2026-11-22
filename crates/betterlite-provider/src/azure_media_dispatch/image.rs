@@ -17,7 +17,8 @@ pub(super) async fn generation<C, K, T, L>(
 where
     C: ImageClientConstructor,
     K: ImageClock,
-    L: ImageGenerationLogger,
+    T: Sync,
+    L: ImageGenerationLogger + Send,
 {
     let call = Generation {
         model: operation.model.as_deref(),

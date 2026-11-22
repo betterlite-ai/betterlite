@@ -5,7 +5,7 @@ use betterlite_azure::transcription::native::NativeError;
 use betterlite_azure::transcription::native::reply::NativeTranscriptionReply;
 use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles;
+use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles as _;
 use betterlite_openai::api::transcription_contract::AudioTranscriptionData;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};

@@ -22,7 +22,7 @@ where
     C: ImageClientConstructor,
     K: ImageClock,
     T: ImageTransport + TranscriptionTransport,
-    L: ImageGenerationLogger + AzureTranscriptionLogger,
+    L: ImageGenerationLogger + AzureTranscriptionLogger + Send + Sync,
 {
     let OperationRequest::AzureMedia(AzureMediaRequest) = request else {
         return Err(AzureMediaError::UnsupportedOperation);

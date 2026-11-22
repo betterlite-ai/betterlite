@@ -39,8 +39,10 @@ pub(super) async fn openai<C, K, T, L>(
     runtime: &mut MediaRuntime<'_, C, K, T, L>,
 ) -> Result<TranscriptionReply, AzureMediaError>
 where
+    C: Sync,
+    K: Sync,
     T: TranscriptionTransport,
-    L: AzureTranscriptionLogger,
+    L: AzureTranscriptionLogger + Send,
 {
     let call = AzureTranscriptionCall {
         input: operation.input,
@@ -69,18 +71,23 @@ async fn exchange_call<C, K, T, L>(
     runtime: &mut MediaRuntime<'_, C, K, T, L>,
 ) -> Result<TranscriptionReply, AzureMediaError>
 where
+    C: Sync,
+    K: Sync,
     T: TranscriptionTransport,
-    L: AzureTranscriptionLogger,
+    L: AzureTranscriptionLogger + Send,
 {
-    let mut refresh = RefreshProviderCache::new(runtime.sources);
-    let mut wiring = ClientWiring {
-        settings: runtime.endpoints,
-        environment: runtime.environment,
-        sources: runtime.sources,
-        cache: &mut *runtime.cache,
-        refresh: &mut refresh,
+    // the refresh cache holds credential sources the future cannot carry across the send
+    let (outbound, pending) = {
+        let mut refresh = RefreshProviderCache::new(runtime.sources);
+        let mut wiring = ClientWiring {
+            settings: runtime.endpoints,
+            environment: runtime.environment,
+            sources: runtime.sources,
+            cache: &mut *runtime.cache,
+            refresh: &mut refresh,
+        };
+        audio_transcriptions(call, &mut wiring, &mut *runtime.logger)?
     };
-    let (outbound, pending) = audio_transcriptions(call, &mut wiring, &mut *runtime.logger)?;
     let sent = runtime.transport.send(outbound).await;
     Ok(finish_transcription(pending, sent, &mut *runtime.logger)?)
 }
@@ -91,7 +98,10 @@ pub(super) async fn native<C, K, T, L>(
     runtime: &MediaRuntime<'_, C, K, T, L>,
 ) -> Result<NativeTranscriptionReply, AzureMediaError>
 where
+    C: Sync,
+    K: Sync,
     T: TranscriptionTransport,
+    L: Sync,
 {
     let outbound = native_request(operation)?;
     let sent = runtime

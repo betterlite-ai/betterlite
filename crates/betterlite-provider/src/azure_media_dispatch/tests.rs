@@ -4,11 +4,11 @@ use std::collections::BTreeMap;
 use std::str::from_utf8;
 use std::time::Duration;
 
-use betterlite_azure::endpoints::get_client::ClientCache;
+use betterlite_azure::endpoints::get_client::ClientCache as _;
 use betterlite_azure::endpoints::projection::{
     ClientIdentity, ClientKind, LiteLlmParams, SessionKind,
 };
-use betterlite_azure::image_transport::ImageClock;
+use betterlite_azure::image_transport::ImageClock as _;
 use betterlite_azure::images::generation::GeneratedImage;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
@@ -80,8 +80,8 @@ async fn azure_media_dispatch_unsupported_operation() {
     assert!(outcome.fixture.outbound().is_empty());
 }
 
-fn key() -> Option<SecretString> {
-    Some(SecretString::from(API_KEY))
+fn key() -> SecretString {
+    SecretString::from(API_KEY)
 }
 
 fn generation(model: &str, version: &str, delegate_async: bool) -> ImageGenerationOperation {
@@ -91,7 +91,7 @@ fn generation(model: &str, version: &str, delegate_async: bool) -> ImageGenerati
         timeout: None,
         optional_params: IndexMap::new(),
         headers: Vec::new(),
-        api_key: key(),
+        api_key: Some(key()),
         api_base: Some(AZURE.to_owned()),
         api_version: Some(version.to_owned()),
         azure_ad_token: None,
@@ -250,7 +250,7 @@ fn edit_operation() -> ImageEditOperation {
         ]),
         headers: BTreeMap::new(),
         extra_headers: BTreeMap::new(),
-        api_key: key(),
+        api_key: Some(key()),
         api_base: Some(AZURE.to_owned()),
         api_version: Some(String::from("2025-04-01-preview")),
         provider: None,
@@ -288,7 +288,7 @@ async fn edit_success() {
         edit.data.get("prompt"),
         Some(&Json::Text(String::from("make it blue")))
     );
-    assert_eq!(edit.data.get("n"), Some(&Json::Number(Number::from(2))));
+    assert_eq!(edit.data.get("n"), Some(&Json::Number(Number::from(2_i32))));
     let (field, file) = &edit.files[0];
     assert_eq!(field, "image[]");
     assert_eq!(file.filename.as_deref(), Some("cat.png"));
@@ -333,7 +333,7 @@ async fn edit_failure() {
     assert!(matches!(error, AzureMediaError::EditStatus { .. }));
     assert_eq!(error.to_string(), "bad edit");
 
-    let outcome = exchange(
+    let invalid = exchange(
         AzureMediaOperation::ImageEdit(Box::new(edit_operation())),
         vec![Reply {
             status: 502,
@@ -342,9 +342,9 @@ async fn edit_failure() {
         }],
     )
     .await;
-    let error = error_of(&outcome);
-    assert_eq!(error.status(), Some(502));
-    assert_eq!(error.to_string(), "\u{fffd}");
+    let invalid_error = error_of(&invalid);
+    assert_eq!(invalid_error.status(), Some(502));
+    assert_eq!(invalid_error.to_string(), "\u{fffd}");
 }
 
 async fn edit_bad_field() {
@@ -447,7 +447,7 @@ fn form_parts_render_the_httpx_field_text() {
         (String::from("null"), Json::Null),
         (String::from("true"), Json::Bool(true)),
         (String::from("false"), Json::Bool(false)),
-        (String::from("number"), Json::Number(Number::from(2))),
+        (String::from("number"), Json::Number(Number::from(2_i32))),
         (String::from("text"), Json::Text(String::from("hello"))),
     ]);
     let parts = form_parts(&data).expect("the scalar fields encode");
@@ -495,7 +495,8 @@ fn header_map_rejects_unusable_names_and_values() {
 }
 
 fn header<'value>(headers: &'value HeaderMap, name: &str) -> Option<&'value str> {
-    headers.get(name).and_then(|value| value.to_str().ok())
+    let value = headers.get(name)?;
+    value.to_str().ok()
 }
 
 fn audio_file() -> ProcessedAudioFile {
@@ -515,7 +516,7 @@ fn transcription_operation(atranscription: bool) -> TranscriptionOperation {
         optional_params: IndexMap::new(),
         atranscription,
         api_version: Some(String::from("2024-06-01")),
-        api_key: key(),
+        api_key: Some(key()),
         api_base: Some(AZURE.to_owned()),
         azure_ad_token: None,
         max_retries: None,

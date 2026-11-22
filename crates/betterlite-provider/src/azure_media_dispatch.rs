@@ -15,7 +15,7 @@ pub mod test_support;
 mod edit;
 mod image;
 mod parts;
-mod runtime;
+pub mod runtime;
 mod tests;
 mod transcription;
 
