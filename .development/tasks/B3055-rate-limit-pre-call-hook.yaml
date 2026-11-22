@@ -60,6 +60,8 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-rate-limit/src/limiter_assembly/tests.rs"
+    - "crates/betterlite-rate-limit/src/limiter_assembly.rs"
     - "tools/oracle/src/gateway.rs"
     - "crates/betterlite-server/src/proxy_logging.rs"
     - "crates/betterlite-server/src/pre_call_step/step.rs"
