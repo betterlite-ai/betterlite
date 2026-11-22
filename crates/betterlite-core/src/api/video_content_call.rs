@@ -130,7 +130,8 @@ where
             .kwargs
             .insert(ASYNC_CALL.to_owned(), Json::Bool(true));
         let provider = request.custom_llm_provider.clone().unwrap_or_default();
-        self.video_content(request, client, logging)?
+        self.video_content(request, client, logging)
+            .map_err(|error| failure(error, &provider, &self.redactor))?
             .resolve()
             .await
             .map_err(|error| failure(error, &provider, &self.redactor))
