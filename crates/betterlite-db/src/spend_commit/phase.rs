@@ -112,6 +112,7 @@ where
 
 impl<T> StartedDailyCommit<T> {
     // The shutdown path cancels work that never reached its commit, and owns the rest until its definitive result.
+    #[must_use]
     pub async fn settle_for_shutdown(self) -> DailyCommitSettlement<T> {
         match self.phase.apply(CommitTransition::Cancel) {
             Ok(()) => {
