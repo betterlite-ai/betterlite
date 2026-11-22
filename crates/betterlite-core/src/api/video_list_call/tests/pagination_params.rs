@@ -2,9 +2,9 @@
 
 use betterlite_models::decisions::Json;
 
-use crate::api::video_list_call::VideoListCall;
 use crate::api::video_remix_call::support::{
-    Bench, Case, LIST_BODY, Plan, encoded_id, headers, json, params, request_header, request_query,
+    Bench, Case, LIST_BODY, Plan, encoded_id, headers, json, list_call, params, request_header,
+    request_query,
 };
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -12,13 +12,11 @@ const REQUEST_TIMEOUT: f64 = 6000.0;
 #[test]
 fn list_pagination_is_sent_as_query() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let call = VideoListCall {
-        after: Some(encoded_id("video_7", "openai")),
-        limit: Some(5),
-        order: Some("desc".to_owned()),
-        extra_query: Some(params(r#"{"extra":"yes","order":"asc"}"#)),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.after = Some(encoded_id("video_7", "openai"));
+    call.limit = Some(5);
+    call.order = Some("desc".to_owned());
+    call.extra_query = Some(params(r#"{"extra":"yes","order":"asc"}"#));
     bench
         .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .expect("the list answers");
@@ -34,12 +32,10 @@ fn list_pagination_is_sent_as_query() {
 fn list_params_are_logged_as_given() {
     let mut bench = Bench::new(200, LIST_BODY);
     let raw_after = encoded_id("video_7", "openai");
-    let call = VideoListCall {
-        after: Some(raw_after.clone()),
-        limit: Some(5),
-        order: Some("desc".to_owned()),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.after = Some(raw_after.clone());
+    call.limit = Some(5);
+    call.order = Some("desc".to_owned());
     bench
         .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .expect("the list answers");
@@ -57,10 +53,8 @@ fn list_params_are_logged_as_given() {
 #[test]
 fn list_extra_headers_reach_the_request() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let call = VideoListCall {
-        extra_headers: Some(headers(&[("x-test", "1")])),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.extra_headers = Some(headers(&[("x-test", "1")]));
     bench
         .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .expect("the list answers");

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use super::support::{Bench, Case, Plan, VIDEO_BODY};
+use super::support::{Bench, Case, Plan, VIDEO_BODY, remix_call};
 use crate::api::video_remix_call::VideoRemixCall;
 use crate::api::video_remix_call::error::VideoCallError;
 
@@ -23,10 +23,8 @@ fn remix_timeout_defaults_to_600_seconds() {
 #[test]
 fn remix_timeout_none_uses_the_request_timeout() {
     let mut bench = Bench::new(200, VIDEO_BODY);
-    let call = VideoRemixCall {
-        timeout: None,
-        ..VideoRemixCall::default()
-    };
+    let mut call = remix_call();
+    call.timeout = None;
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), 7.5))
         .expect("the remix answers");
@@ -39,10 +37,8 @@ fn remix_timeout_none_uses_the_request_timeout() {
 #[test]
 fn remix_timeout_zero_uses_the_request_timeout() {
     let mut bench = Bench::new(200, VIDEO_BODY);
-    let call = VideoRemixCall {
-        timeout: Some(0.0),
-        ..VideoRemixCall::default()
-    };
+    let mut call = remix_call();
+    call.timeout = Some(0.0);
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), 7.5))
         .expect("the remix answers");
@@ -55,10 +51,8 @@ fn remix_timeout_zero_uses_the_request_timeout() {
 #[test]
 fn remix_timeout_given_is_used() {
     let mut bench = Bench::new(200, VIDEO_BODY);
-    let call = VideoRemixCall {
-        timeout: Some(12.5),
-        ..VideoRemixCall::default()
-    };
+    let mut call = remix_call();
+    call.timeout = Some(12.5);
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect("the remix answers");
@@ -71,10 +65,8 @@ fn remix_timeout_given_is_used() {
 #[test]
 fn remix_timeout_negative_is_a_value_error() {
     let mut bench = Bench::new(200, VIDEO_BODY);
-    let call = VideoRemixCall {
-        timeout: Some(-1.0),
-        ..VideoRemixCall::default()
-    };
+    let mut call = remix_call();
+    call.timeout = Some(-1.0);
     let failure = bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect_err("a negative timeout fails");

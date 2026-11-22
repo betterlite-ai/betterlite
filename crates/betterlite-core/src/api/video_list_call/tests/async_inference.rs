@@ -5,7 +5,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 
 use crate::api::video_list_call::{VideoListCall, VideoListReply};
 use crate::api::video_remix_call::error::VideoCallError;
-use crate::api::video_remix_call::support::{Bench, Case, LIST_BODY, Plan, json};
+use crate::api::video_remix_call::support::{Bench, Case, LIST_BODY, Plan, json, list_call};
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
 
@@ -31,12 +31,10 @@ async fn avideo_list_without_a_provider_is_a_bad_request() {
 #[tokio::test]
 async fn avideo_list_infers_before_the_mock_response() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let call = VideoListCall {
-        mock_response: Some(json(
-            r#"[{"id":"video_1","object":"video","status":"queued"}]"#,
-        )),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.mock_response = Some(json(
+        r#"[{"id":"video_1","object":"video","status":"queued"}]"#,
+    ));
     let failure = bench
         .alist_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .await
@@ -48,10 +46,8 @@ async fn avideo_list_infers_before_the_mock_response() {
 #[tokio::test]
 async fn avideo_list_with_a_provider_calls_the_provider() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let call = VideoListCall {
-        custom_llm_provider: Some("openai".to_owned()),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.custom_llm_provider = Some("openai".to_owned());
     let reply = bench
         .alist_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .await
@@ -65,13 +61,11 @@ async fn avideo_list_with_a_provider_calls_the_provider() {
 #[tokio::test]
 async fn avideo_list_with_a_provider_skips_the_inference_for_a_mock() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let call = VideoListCall {
-        custom_llm_provider: Some("openai".to_owned()),
-        mock_response: Some(json(
-            r#"[{"id":"video_1","object":"video","status":"queued"}]"#,
-        )),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.custom_llm_provider = Some("openai".to_owned());
+    call.mock_response = Some(json(
+        r#"[{"id":"video_1","object":"video","status":"queued"}]"#,
+    ));
     let reply = bench
         .alist_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .await

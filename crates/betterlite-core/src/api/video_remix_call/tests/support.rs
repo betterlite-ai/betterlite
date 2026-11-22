@@ -39,14 +39,13 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::api::video_list_call::{
-    ListRequest, VideoListCall, VideoListDeps, VideoListReply, avideo_list, video_list,
+    ListRequest, VideoListCall, VideoListReply, avideo_list, video_list,
 };
 use crate::api::video_records::VideoObject;
 use crate::api::video_remix_call::config::VideoConfigLookup;
 use crate::api::video_remix_call::error::VideoCallFailure;
-use crate::api::video_remix_call::{
-    RemixRequest, VideoRemixCall, VideoRemixDeps, avideo_remix, video_remix,
-};
+use crate::api::video_remix_call::shared::VideoCallDeps;
+use crate::api::video_remix_call::{RemixRequest, VideoRemixCall, avideo_remix, video_remix};
 use crate::api::video_remix_list_transport::VideoRemixListTransport;
 use crate::api::video_remix_list_transport::client::{
     VideoAsyncClient, VideoClient, VideoClientSource, VideoRequest, VideoSyncClient,
@@ -538,6 +537,16 @@ impl Bench {
     ) -> Result<VideoListReply, VideoCallFailure> {
         self.run(plan, Mode::Async).await?.list()
     }
+}
+
+// A remix call whose every field starts at its default, for a case that varies a few of them
+pub(crate) fn remix_call() -> VideoRemixCall {
+    VideoRemixCall::default()
+}
+
+// A list call whose every field starts at its default, for a case that varies a few of them
+pub(crate) fn list_call() -> VideoListCall {
+    VideoListCall::default()
 }
 
 pub(crate) const VIDEO_BODY: &str =

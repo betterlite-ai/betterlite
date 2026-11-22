@@ -4,7 +4,7 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::support::{Bench, Case, Plan, VIDEO_BODY, json};
+use super::support::{Bench, Case, Plan, VIDEO_BODY, json, remix_call};
 use crate::api::video_remix_call::VideoRemixCall;
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -12,14 +12,12 @@ const REQUEST_TIMEOUT: f64 = 6000.0;
 #[test]
 fn remix_call_type_is_video_remix() {
     let mut bench = Bench::new(200, VIDEO_BODY);
-    let call = VideoRemixCall {
-        video_id: "video_5".to_owned(),
-        prompt: "make it blue".to_owned(),
-        custom_llm_provider: Some("openai".to_owned()),
-        user: Some("user-1".to_owned()),
-        litellm_call_id: Some("call-9".to_owned()),
-        ..VideoRemixCall::default()
-    };
+    let mut call = remix_call();
+    call.video_id = "video_5".to_owned();
+    call.prompt = "make it blue".to_owned();
+    call.custom_llm_provider = Some("openai".to_owned());
+    call.user = Some("user-1".to_owned());
+    call.litellm_call_id = Some("call-9".to_owned());
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect("the remix answers");
@@ -80,10 +78,8 @@ fn remix_metadata_reaches_the_logging_params() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let mut metadata = IndexMap::new();
     metadata.insert("user_id".to_owned(), JsonValue::Text("u-1".to_owned()));
-    let call = VideoRemixCall {
-        litellm_metadata: Some(metadata),
-        ..VideoRemixCall::default()
-    };
+    let mut call = remix_call();
+    call.litellm_metadata = Some(metadata);
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect("the remix answers");

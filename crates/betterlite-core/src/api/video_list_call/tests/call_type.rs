@@ -3,18 +3,16 @@
 use betterlite_models::decisions::Json;
 
 use crate::api::video_list_call::VideoListCall;
-use crate::api::video_remix_call::support::{Bench, Case, LIST_BODY, Plan};
+use crate::api::video_remix_call::support::{Bench, Case, LIST_BODY, Plan, list_call};
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
 
 #[test]
 fn list_call_type_is_video_list() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let call = VideoListCall {
-        custom_llm_provider: Some("openai".to_owned()),
-        user: Some("user-1".to_owned()),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.custom_llm_provider = Some("openai".to_owned());
+    call.user = Some("user-1".to_owned());
     bench
         .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .expect("the list answers");

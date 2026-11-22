@@ -5,7 +5,7 @@ use std::time::Duration;
 use super::prepare::prepare_list;
 use crate::api::video_list_call::VideoListCall;
 use crate::api::video_remix_call::error::VideoCallError;
-use crate::api::video_remix_call::support::{Bench, Case, Fixture, LIST_BODY, Plan};
+use crate::api::video_remix_call::support::{Bench, Case, Fixture, LIST_BODY, Plan, list_call};
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
 
@@ -25,10 +25,8 @@ fn list_timeout_defaults_to_600_seconds() {
 #[test]
 fn list_timeout_none_uses_the_request_timeout() {
     let mut fixture = Fixture::new();
-    let call = VideoListCall {
-        timeout: None,
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.timeout = None;
     let prepared =
         prepare_list(&mut fixture.state, &call, "openai", 7.5).expect("the list prepares");
     assert_eq!(prepared.timeout, Duration::from_secs_f64(7.5));
@@ -37,10 +35,8 @@ fn list_timeout_none_uses_the_request_timeout() {
 #[test]
 fn list_timeout_zero_uses_the_request_timeout() {
     let mut fixture = Fixture::new();
-    let call = VideoListCall {
-        timeout: Some(0.0),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.timeout = Some(0.0);
     let prepared =
         prepare_list(&mut fixture.state, &call, "openai", 7.5).expect("the list prepares");
     assert_eq!(prepared.timeout, Duration::from_secs_f64(7.5));
@@ -49,10 +45,8 @@ fn list_timeout_zero_uses_the_request_timeout() {
 #[test]
 fn list_entry_uses_the_calls_timeout() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let call = VideoListCall {
-        timeout: Some(f64::NAN),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.timeout = Some(f64::NAN);
     let failure = bench
         .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .expect_err("NaN is not a usable duration");
@@ -63,10 +57,8 @@ fn list_entry_uses_the_calls_timeout() {
 #[test]
 fn list_entry_forwards_the_request_timeout() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let call = VideoListCall {
-        timeout: None,
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.timeout = None;
     let failure = bench
         .list_answer(Plan::seconds(Case::List(&call), -1.0))
         .expect_err("a negative request timeout is rejected");

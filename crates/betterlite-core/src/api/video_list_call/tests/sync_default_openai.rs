@@ -4,7 +4,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 
 use crate::api::video_list_call::{VideoListCall, VideoListReply};
 use crate::api::video_remix_call::support::{
-    Bench, Case, LIST_BODY, Plan, Wire, request_header, secret,
+    Bench, Case, LIST_BODY, Plan, Wire, list_call, request_header, secret,
 };
 use crate::api::video_remix_list_transport::client::VideoClient;
 
@@ -48,10 +48,8 @@ fn video_list_defaults_the_authorization_header_to_bearer_none() {
 #[test]
 fn video_list_reads_the_key_from_the_params() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let call = VideoListCall {
-        api_key: Some(secret("sk-typed")),
-        ..VideoListCall::default()
-    };
+    let mut call = list_call();
+    call.api_key = Some(secret("sk-typed"));
     bench
         .list_answer(Plan::seconds(Case::List(&call), REQUEST_TIMEOUT))
         .expect("the list answers");

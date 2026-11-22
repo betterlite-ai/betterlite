@@ -2,8 +2,7 @@
 
 use betterlite_error::error::class_message;
 
-use super::support::{Bench, Case, Plan, VIDEO_BODY};
-use crate::api::video_remix_call::VideoRemixCall;
+use super::support::{Bench, Case, Plan, VIDEO_BODY, remix_call};
 use crate::api::video_remix_call::error::VideoCallError;
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -11,10 +10,8 @@ const REQUEST_TIMEOUT: f64 = 6000.0;
 #[test]
 fn unsupported_remix_provider_names_the_operation() {
     let mut bench = Bench::new(200, VIDEO_BODY);
-    let call = VideoRemixCall {
-        custom_llm_provider: Some("anthropic".to_owned()),
-        ..VideoRemixCall::default()
-    };
+    let mut call = remix_call();
+    call.custom_llm_provider = Some("anthropic".to_owned());
     let failure = bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect_err("anthropic has no video config");
@@ -29,10 +26,8 @@ fn unsupported_remix_provider_names_the_operation() {
 #[test]
 fn unsupported_remix_provider_maps_through_exception_type() {
     let mut bench = Bench::new(200, VIDEO_BODY);
-    let call = VideoRemixCall {
-        custom_llm_provider: Some("groq".to_owned()),
-        ..VideoRemixCall::default()
-    };
+    let mut call = remix_call();
+    call.custom_llm_provider = Some("groq".to_owned());
     let failure = bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect_err("groq has no video config");
@@ -45,10 +40,8 @@ fn unsupported_remix_provider_maps_through_exception_type() {
 #[test]
 fn edenai_selection_keeps_the_selection_message() {
     let mut bench = Bench::new(200, VIDEO_BODY);
-    let call = VideoRemixCall {
-        custom_llm_provider: Some("edenai".to_owned()),
-        ..VideoRemixCall::default()
-    };
+    let mut call = remix_call();
+    call.custom_llm_provider = Some("edenai".to_owned());
     let failure = bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect_err("edenai is unbuilt");
