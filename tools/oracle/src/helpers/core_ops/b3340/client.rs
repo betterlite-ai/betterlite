@@ -32,22 +32,22 @@ impl Wire {
         }
     }
 
-    fn answer(&self, request: VideoRequest) -> Result<UpstreamResponse, TransportError> {
+    fn answer(&self, request: VideoRequest) -> UpstreamResponse {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        Ok(UpstreamResponse {
+        UpstreamResponse {
             status: self.status,
             headers: HeaderMap::new(),
             body: self.body.clone(),
-        })
+        }
     }
 }
 
 impl VideoSyncClient for Wire {
     fn send(&self, request: VideoRequest) -> Result<UpstreamResponse, TransportError> {
-        self.answer(request)
+        Ok(self.answer(request))
     }
 }
 
@@ -60,7 +60,7 @@ impl VideoAsyncClient for Wire {
         &self,
         request: VideoRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        ready(self.answer(request))
+        ready(Ok(self.answer(request)))
     }
 }
 

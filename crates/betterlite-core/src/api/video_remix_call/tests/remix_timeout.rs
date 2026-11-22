@@ -38,7 +38,7 @@ fn remix_timeout_none_uses_the_request_timeout() {
 fn remix_timeout_zero_uses_the_request_timeout() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let mut call = remix_call();
-    call.timeout = Some(0.0);
+    call.timeout = Some(0.0_f64);
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), 7.5))
         .expect("the remix answers");
@@ -52,7 +52,7 @@ fn remix_timeout_zero_uses_the_request_timeout() {
 fn remix_timeout_given_is_used() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let mut call = remix_call();
-    call.timeout = Some(12.5);
+    call.timeout = Some(12.5_f64);
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect("the remix answers");
@@ -66,7 +66,7 @@ fn remix_timeout_given_is_used() {
 fn remix_timeout_negative_is_a_value_error() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let mut call = remix_call();
-    call.timeout = Some(-1.0);
+    call.timeout = Some(-1.0_f64);
     let failure = bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect_err("a negative timeout fails");

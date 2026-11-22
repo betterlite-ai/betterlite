@@ -31,7 +31,7 @@ use crate::api::video_remix_list_transport::{
 // both video_list entries' answer: LiteLLM's page or the list of objects it returns
 type ListAnswer = Result<VideoListReply, VideoCallFailure>;
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(untagged)]
 pub enum VideoListReply {
     Objects(Vec<VideoObject>),
@@ -145,7 +145,7 @@ impl<'call, 'deps, 'env, Source: VideoClientSource> ListReady<'call, 'deps, 'env
     fn ready(
         provider: String,
         request: ListRequest<'call, 'deps, 'env, Source>,
-    ) -> Result<ListReady<'call, 'deps, 'env, Source>, VideoCallFailure> {
+    ) -> Result<Self, VideoCallFailure> {
         let ListRequest {
             transport,
             deps,

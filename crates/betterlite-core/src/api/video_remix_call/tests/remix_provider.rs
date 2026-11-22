@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use betterlite_error::error::class_message;
+use betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provider;
 
-use super::support::{Bench, Case, Plan, VIDEO_BODY, encoded_id, remix_call};
+use super::support::{Bench, Case, Plan, VIDEO_BODY, remix_call};
 use crate::api::video_remix_call::error::VideoCallError;
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -11,7 +12,7 @@ const REQUEST_TIMEOUT: f64 = 6000.0;
 fn remix_provider_decodes_from_the_video_id() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let mut call = remix_call();
-    call.video_id = encoded_id("video_1", "openai");
+    call.video_id = encode_video_id_with_provider("video_1", "openai", None);
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect("the openai config answers");
@@ -22,7 +23,7 @@ fn remix_provider_decodes_from_the_video_id() {
 fn remix_provider_decoded_groq_is_unsupported() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let mut call = remix_call();
-    call.video_id = encoded_id("video_1", "groq");
+    call.video_id = encode_video_id_with_provider("video_1", "groq", None);
     let failure = bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect_err("groq has no video config");
@@ -41,7 +42,7 @@ fn remix_provider_decoded_groq_is_unsupported() {
 fn remix_provider_explicit_overrides_the_decoded_one() {
     let mut bench = Bench::new(200, VIDEO_BODY);
     let mut call = remix_call();
-    call.video_id = encoded_id("video_1", "groq");
+    call.video_id = encode_video_id_with_provider("video_1", "groq", None);
     call.custom_llm_provider = Some("openai".to_owned());
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))

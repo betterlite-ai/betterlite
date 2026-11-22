@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -178,22 +177,22 @@ impl Wire {
         self.requests.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn answer(&self, request: VideoRequest) -> Result<UpstreamResponse, TransportError> {
+    fn answer(&self, request: VideoRequest) -> UpstreamResponse {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        Ok(UpstreamResponse {
+        UpstreamResponse {
             status: self.reply.status,
             headers: self.reply.headers.clone(),
             body: self.reply.body.clone(),
-        })
+        }
     }
 }
 
 impl VideoSyncClient for Wire {
     fn send(&self, request: VideoRequest) -> Result<UpstreamResponse, TransportError> {
-        self.answer(request)
+        Ok(self.answer(request))
     }
 }
 
@@ -206,7 +205,7 @@ impl VideoAsyncClient for Wire {
         &self,
         request: VideoRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        ready(self.answer(request))
+        ready(Ok(self.answer(request)))
     }
 }
 
@@ -312,10 +311,10 @@ fn input_headers(headers: &Headers) -> BTreeMap<String, SecretString> {
 
 impl VideoRemixListConfig for OpenAiConfig {
     fn validate_environment(&self, request: VideoEnvironment<'_>) -> Headers {
-        let key = match request.api_key {
-            Some(key) => Some(key.clone()),
-            None => params_key(request.litellm_params),
-        };
+        let key = request.api_key.map_or_else(
+            || params_key(request.litellm_params),
+            |key| Some(key.clone()),
+        );
         let credentials = VideoCredentials {
             api_key: key,
             params_api_key: None,
@@ -357,8 +356,9 @@ impl VideoRemixListConfig for OpenAiConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, ConfigFailure> {
-        let video = remix_response(&reply.raw_response.body, reply.custom_llm_provider);
-        video.map(|video| core_video(&video)).map_err(failed)
+        remix_response(&reply.raw_response.body, reply.custom_llm_provider)
+            .map(|object| core_video(&object))
+            .map_err(failed)
     }
 
     fn transform_video_list_request(
@@ -381,13 +381,10 @@ impl VideoRemixListConfig for OpenAiConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<Params, ConfigFailure> {
-        let list = list_response(&reply.raw_response.body, reply.custom_llm_provider).map_err(
-            |error| ConfigFailure {
-                source: Box::new(error),
-            },
-        )?;
-        let encoded = serde_json::to_value(&list).expect("the openai list serializes");
-        Ok(serde_json::from_value(encoded).expect("the openai list is params"))
+        let list =
+            list_response(&reply.raw_response.body, reply.custom_llm_provider).map_err(failed)?;
+        let encoded = serde_json::to_value(&list).map_err(failed)?;
+        serde_json::from_value(encoded).map_err(failed)
     }
 
     fn get_error_class(
@@ -489,8 +486,12 @@ impl Bench {
                     client: plan.client,
                 };
                 match mode {
-                    Mode::Sync => video_remix(request).map(Answer::Object),
-                    Mode::Async => avideo_remix(request).await.map(Answer::Object),
+                    Mode::Sync => {
+                        video_remix(request).map(|object| Answer::Object(Box::new(object)))
+                    }
+                    Mode::Async => avideo_remix(request)
+                        .await
+                        .map(|object| Answer::Object(Box::new(object))),
                 }
             }
             Case::List(call) => {
@@ -511,7 +512,7 @@ impl Bench {
 
     // A remix case's answer, from the sync entry
     pub(crate) fn video_answer(&mut self, plan: Plan<'_>) -> Result<VideoObject, VideoCallFailure> {
-        self.poll(plan)?.video()
+        self.poll(plan).map(Answer::video)
     }
 
     // A remix case's answer, from the async entry
@@ -519,7 +520,7 @@ impl Bench {
         &mut self,
         plan: Plan<'_>,
     ) -> Result<VideoObject, VideoCallFailure> {
-        self.run(plan, Mode::Async).await?.video()
+        self.run(plan, Mode::Async).await.map(Answer::video)
     }
 
     // A list case's answer, from the sync entry
@@ -527,7 +528,7 @@ impl Bench {
         &mut self,
         plan: Plan<'_>,
     ) -> Result<VideoListReply, VideoCallFailure> {
-        self.poll(plan)?.list()
+        self.poll(plan).map(Answer::list)
     }
 
     // A list case's answer, from the async entry
@@ -535,7 +536,7 @@ impl Bench {
         &mut self,
         plan: Plan<'_>,
     ) -> Result<VideoListReply, VideoCallFailure> {
-        self.run(plan, Mode::Async).await?.list()
+        self.run(plan, Mode::Async).await.map(Answer::list)
     }
 }
 
@@ -597,22 +598,22 @@ impl<'call> Plan<'call> {
 
 // What one entry answered, before the case's wrapper says which shape it expects
 enum Answer {
-    Object(VideoObject),
+    Object(Box<VideoObject>),
     Page(VideoListReply),
 }
 
 impl Answer {
-    fn video(self) -> Result<VideoObject, VideoCallFailure> {
+    fn video(self) -> VideoObject {
         match self {
-            Answer::Object(object) => Ok(object),
-            Answer::Page(_page) => panic!("a remix case answers with a video object"),
+            Self::Object(object) => *object,
+            Self::Page(_page) => panic!("a remix case answers with a video object"),
         }
     }
 
-    fn list(self) -> Result<VideoListReply, VideoCallFailure> {
+    fn list(self) -> VideoListReply {
         match self {
-            Answer::Page(page) => Ok(page),
-            Answer::Object(_object) => panic!("a list case answers with a page"),
+            Self::Page(page) => page,
+            Self::Object(_object) => panic!("a list case answers with a page"),
         }
     }
 }
@@ -646,13 +647,6 @@ impl Resolver {
     }
 }
 
-pub(crate) fn request_body(request: &VideoRequest) -> Json {
-    let RequestBody::Json(body) = &request.body else {
-        panic!("the video POST carries a JSON body");
-    };
-    serde_json::from_slice(body).expect("the request body is JSON")
-}
-
 pub(crate) fn request_header<'request>(
     request: &'request VideoRequest,
     name: &str,
@@ -674,12 +668,6 @@ pub(crate) fn request_query(request: &VideoRequest, name: &str) -> Option<String
 
 pub(crate) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the JSON fixture parses")
-}
-
-pub(crate) fn encoded_id(video_id: &str, provider: &str) -> String {
-    betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provider(
-        video_id, provider, None,
-    )
 }
 
 pub(crate) fn secret(text: &str) -> SecretString {

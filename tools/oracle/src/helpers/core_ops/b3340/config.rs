@@ -45,10 +45,7 @@ where
 
 // the extra_body params as B525's options, or the empty set a call without them uses
 fn decode_extra(params: Option<&Params>) -> Result<VideoOptions, ConfigFailure> {
-    match params {
-        Some(params) => decode::<VideoOptions, _>(params),
-        None => Ok(VideoOptions::new()),
-    }
+    params.map_or(Ok(VideoOptions::new()), decode::<VideoOptions, Params>)
 }
 
 fn params_key(params: Option<&Params>) -> Option<SecretString> {
@@ -67,10 +64,10 @@ fn input_headers(headers: &Headers) -> BTreeMap<String, SecretString> {
 
 impl VideoRemixListConfig for OpenAiConfig {
     fn validate_environment(&self, request: VideoEnvironment<'_>) -> Headers {
-        let key = match request.api_key {
-            Some(key) => Some(key.clone()),
-            None => params_key(request.litellm_params),
-        };
+        let key = request.api_key.map_or_else(
+            || params_key(request.litellm_params),
+            |key| Some(key.clone()),
+        );
         let credentials = VideoCredentials {
             api_key: key,
             params_api_key: None,
@@ -120,10 +117,9 @@ impl VideoRemixListConfig for OpenAiConfig {
         query: VideoListQuery<'_>,
         context: VideoRequestContext<'_>,
     ) -> Result<(String, Params), ConfigFailure> {
-        let extra = match query.extra_query {
-            Some(params) => decode::<VideoOptions, _>(params)?,
-            None => VideoOptions::new(),
-        };
+        let extra = query
+            .extra_query
+            .map_or(Ok(VideoOptions::new()), decode::<VideoOptions, Params>)?;
         let (url, params) = list_request(
             context.api_base,
             query.after,

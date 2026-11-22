@@ -8,8 +8,8 @@ use betterlite_logging::logging_state::LoggingState;
 use serde_json::{Map, Value, json};
 
 // The request the recording client saw: method, URL without query, sorted query pairs, the compared headers, the JSON body and the read timeout a caller named
-pub(crate) fn request(request: Option<&VideoRequest>, wanted: &[String]) -> Value {
-    let Some(request) = request else {
+pub(crate) fn request(observed: Option<&VideoRequest>, wanted: &[String]) -> Value {
+    let Some(request) = observed else {
         return Value::Null;
     };
     let mut query = request.query.clone();
@@ -19,8 +19,8 @@ pub(crate) fn request(request: Option<&VideoRequest>, wanted: &[String]) -> Valu
         .map(|(name, value)| json!([name, value]))
         .collect();
     let mut headers = Map::new();
-    for (name, value) in &request.headers {
-        let name = name.as_str().to_owned();
+    for (header, value) in &request.headers {
+        let name = header.as_str().to_owned();
         if !wanted.contains(&name) {
             continue;
         }

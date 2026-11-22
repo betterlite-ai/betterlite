@@ -1,10 +1,10 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provider;
 
 use crate::api::video_remix_call::support::{
-    Bench, Case, LIST_BODY, Plan, encoded_id, headers, json, list_call, params, request_header,
-    request_query,
+    Bench, Case, LIST_BODY, Plan, headers, json, list_call, params, request_header, request_query,
 };
 
 const REQUEST_TIMEOUT: f64 = 6000.0;
@@ -13,7 +13,7 @@ const REQUEST_TIMEOUT: f64 = 6000.0;
 fn list_pagination_is_sent_as_query() {
     let mut bench = Bench::new(200, LIST_BODY);
     let mut call = list_call();
-    call.after = Some(encoded_id("video_7", "openai"));
+    call.after = Some(encode_video_id_with_provider("video_7", "openai", None));
     call.limit = Some(5);
     call.order = Some("desc".to_owned());
     call.extra_query = Some(params(r#"{"extra":"yes","order":"asc"}"#));
@@ -31,7 +31,7 @@ fn list_pagination_is_sent_as_query() {
 #[test]
 fn list_params_are_logged_as_given() {
     let mut bench = Bench::new(200, LIST_BODY);
-    let raw_after = encoded_id("video_7", "openai");
+    let raw_after = encode_video_id_with_provider("video_7", "openai", None);
     let mut call = list_call();
     call.after = Some(raw_after.clone());
     call.limit = Some(5);

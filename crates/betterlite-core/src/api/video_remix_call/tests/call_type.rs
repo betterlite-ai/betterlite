@@ -17,7 +17,6 @@ fn remix_call_type_is_video_remix() {
     call.prompt = "make it blue".to_owned();
     call.custom_llm_provider = Some("openai".to_owned());
     call.user = Some("user-1".to_owned());
-    call.litellm_call_id = Some("call-9".to_owned());
     bench
         .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
         .expect("the remix answers");
@@ -39,6 +38,20 @@ fn remix_call_type_is_video_remix() {
         details.get("prompt"),
         Some(&Json::Text("make it blue".to_owned()))
     );
+}
+
+#[test]
+fn remix_call_type_logs_the_call_params() {
+    let mut bench = Bench::new(200, VIDEO_BODY);
+    let mut call = remix_call();
+    call.video_id = "video_5".to_owned();
+    call.prompt = "make it blue".to_owned();
+    call.custom_llm_provider = Some("openai".to_owned());
+    call.litellm_call_id = Some("call-9".to_owned());
+    bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect("the remix answers");
+    let details = &bench.fixture.state.model_call_details;
     let Some(Json::Object(optional)) = details.get("optional_params") else {
         panic!("optional_params is an object");
     };

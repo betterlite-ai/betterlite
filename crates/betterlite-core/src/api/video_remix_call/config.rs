@@ -29,7 +29,7 @@ impl VideoOperation {
 }
 
 // Which B3331 config a provider tag resolves to: B3332 names the class, and the caller installs the adapters it has
-pub trait VideoConfigLookup {
+pub trait VideoConfigLookup: Send + Sync {
     fn video_config(&self, tag: &VideoConfigTag) -> Option<&dyn VideoRemixListConfig>;
 }
 

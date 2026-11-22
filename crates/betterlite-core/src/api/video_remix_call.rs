@@ -113,13 +113,12 @@ where
 
 // custom_llm_provider or decode_video_id_with_provider(video_id)["custom_llm_provider"] or "openai"
 fn remix_provider(call: &VideoRemixCall) -> String {
-    match &call.custom_llm_provider {
-        Some(provider) => provider.clone(),
-        None => decode_video_id_with_provider(&call.video_id)
+    call.custom_llm_provider.clone().unwrap_or_else(|| {
+        decode_video_id_with_provider(&call.video_id)
             .custom_llm_provider
             .filter(|provider| !provider.is_empty())
-            .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned()),
-    }
+            .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned())
+    })
 }
 
 // The provider and the prepared call, with every collaborator the handler borrows, held by the entry that awaits it
@@ -137,9 +136,7 @@ struct RemixReady<'call, 'deps, 'env, Source: VideoClientSource> {
 
 impl<'call, 'deps, 'env, Source: VideoClientSource> RemixReady<'call, 'deps, 'env, Source> {
     // the provider, its config and the call's preparation, kept together for the handler
-    fn ready(
-        request: RemixRequest<'call, 'deps, 'env, Source>,
-    ) -> Result<RemixReady<'call, 'deps, 'env, Source>, VideoCallFailure> {
+    fn ready(request: RemixRequest<'call, 'deps, 'env, Source>) -> Result<Self, VideoCallFailure> {
         let RemixRequest {
             transport,
             deps,

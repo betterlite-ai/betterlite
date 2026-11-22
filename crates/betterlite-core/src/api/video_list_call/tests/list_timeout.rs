@@ -36,7 +36,7 @@ fn list_timeout_none_uses_the_request_timeout() {
 fn list_timeout_zero_uses_the_request_timeout() {
     let mut fixture = Fixture::new();
     let mut call = list_call();
-    call.timeout = Some(0.0);
+    call.timeout = Some(0.0_f64);
     let prepared =
         prepare_list(&mut fixture.state, &call, "openai", 7.5).expect("the list prepares");
     assert_eq!(prepared.timeout, Duration::from_millis(7_500));
