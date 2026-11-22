@@ -6,6 +6,8 @@ use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 
 use crate::auth::auth_identity::AuthContext;
+use crate::cache_activity_routes::error::DATABASE_MISSING_ERROR;
+use crate::spend::totals::responses::{detail_error, wrapped_error};
 use crate::spend::visibility::roles::is_admin_view_safe;
 use crate::team_access::caller::TeamCaller;
 use crate::tracing_routes::router::unauthenticated;
@@ -13,7 +15,7 @@ use crate::tracing_routes::router::unauthenticated;
 use super::aggregation::tag_spend_body;
 use super::caller::team_caller;
 use super::query::decode_tag_report_query;
-use super::responses::{self, NO_DATABASE};
+use super::responses::missing_dates;
 use super::rows::{DailyTagSpend, KeyAliasedUser, TagNamesBody};
 use super::store::{TagReportError, TagReportHandle, TagReportStore};
 
@@ -70,12 +72,12 @@ pub(super) async fn table_respond(
         return unauthenticated();
     };
     let Some(store) = handle.as_deref() else {
-        return responses::detail_error(StatusCode::BAD_REQUEST, NO_DATABASE);
+        return detail_error(StatusCode::BAD_REQUEST, DATABASE_MISSING_ERROR);
     };
     let caller = match team_caller(&context.principal) {
         Ok(caller) => caller,
         Err(error) => {
-            return responses::detail_error(StatusCode::BAD_REQUEST, &error.to_string());
+            return detail_error(StatusCode::BAD_REQUEST, &error.to_string());
         }
     };
     let query = decode_tag_report_query(raw_query.as_deref().unwrap_or_default().as_bytes());
@@ -112,7 +114,7 @@ pub(super) async fn tag_respond(
         return unauthenticated();
     }
     let Some(store) = handle.as_deref() else {
-        return responses::wrapped_error(format!("{}{NO_DATABASE}", report.prefix()));
+        return wrapped_error(format!("{}{DATABASE_MISSING_ERROR}", report.prefix()));
     };
     report.answer(store, raw_query.as_deref()).await
 }
@@ -120,7 +122,7 @@ pub(super) async fn tag_respond(
 fn key_rows(result: Result<Vec<LiteLLMVerificationToken>, TagReportError>) -> Response {
     match result {
         Ok(rows) => Json(rows).into_response(),
-        Err(error) => responses::detail_error(StatusCode::BAD_REQUEST, &error.to_string()),
+        Err(error) => detail_error(StatusCode::BAD_REQUEST, &error.to_string()),
     }
 }
 
@@ -134,7 +136,7 @@ async fn scoped_user_rows(
         return Json(Vec::<LiteLLMUserTable>::new()).into_response();
     };
     if requested.is_some_and(|user_id| user_id != caller_id) {
-        return responses::detail_error(StatusCode::FORBIDDEN, FORBIDDEN_USER);
+        return detail_error(StatusCode::FORBIDDEN, FORBIDDEN_USER);
     }
     single_user(store.user(caller_id).await)
 }
@@ -142,14 +144,14 @@ async fn scoped_user_rows(
 fn single_user(result: Result<Option<LiteLLMUserTable>, TagReportError>) -> Response {
     match result {
         Ok(found) => Json(vec![found]).into_response(),
-        Err(error) => responses::detail_error(StatusCode::BAD_REQUEST, &error.to_string()),
+        Err(error) => detail_error(StatusCode::BAD_REQUEST, &error.to_string()),
     }
 }
 
 fn all_user_rows(result: Result<Vec<KeyAliasedUser>, TagReportError>) -> Response {
     match result {
         Ok(rows) => Json(rows).into_response(),
-        Err(error) => responses::detail_error(StatusCode::BAD_REQUEST, &error.to_string()),
+        Err(error) => detail_error(StatusCode::BAD_REQUEST, &error.to_string()),
     }
 }
 
@@ -159,7 +161,7 @@ async fn daily_tags(store: &dyn TagReportStore, raw_query: &str) -> Response {
     let (Some(start_date), Some(end_date)) =
         (query.start_date.as_deref(), query.end_date.as_deref())
     else {
-        return responses::missing_dates();
+        return missing_dates();
     };
     let tags = query.selected_tags();
     let rows = if query.selects_every_tag() {
@@ -180,12 +182,12 @@ fn tag_spend_response(rows: &[DailyTagSpend]) -> Response {
         Ok(body) => Json(body).into_response(),
         Err(error) => {
             tracing::warn!(error = %error, "the daily tag spend could not be aggregated");
-            responses::wrapped_error(format!("{SPEND_TAGS_FAILED}{error}"))
+            wrapped_error(format!("{SPEND_TAGS_FAILED}{error}"))
         }
     }
 }
 
 fn tag_failure(prefix: &str, error: &TagReportError) -> Response {
     tracing::warn!(error = %error, "a tag report query failed");
-    responses::wrapped_error(format!("{prefix}{error}"))
+    wrapped_error(format!("{prefix}{error}"))
 }
