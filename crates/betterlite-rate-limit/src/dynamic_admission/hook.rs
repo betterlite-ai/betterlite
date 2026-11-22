@@ -10,6 +10,8 @@ use crate::dynamic_priority::saturation::check_model_saturation;
 use crate::fail_closed::RateLimitUnverifiableError;
 use crate::provider_attribution::ModelGroupLimits;
 use crate::request_stash::RequestStashSlot;
+use crate::settlement_and_rollback::SettlementError;
+use crate::windowed_admission::WindowedAdmissionError;
 
 use super::admission::{AdmissionKey, CheckRateLimitError, DynamicAdmission, RateLimitCheck};
 use super::limiter_port::AdmissionLimiterError;
@@ -113,15 +115,20 @@ fn request_text<'data>(data: &'data RequestData, field: &str) -> Option<&'data s
     }
 }
 
-// LiteLLM re-raises HTTPExceptions (the 429 and the fail-closed 503) and logs and allows every other failure
+// LiteLLM re-raises HTTPExceptions (the 429 and the fail-closed 503 wherever the port wrapped it) and logs and allows everything else
 fn handle_check_result(result: Result<(), CheckRateLimitError>) -> Result<(), PreCallError> {
     match result {
         Ok(()) => Ok(()),
         Err(CheckRateLimitError::Rejection(error)) => Err(PreCallError::Rejection(error)),
-        Err(CheckRateLimitError::Limiter(AdmissionLimiterError::Unverifiable(error))) => {
-            Err(PreCallError::Unverifiable(error))
-        }
-        Err(other) => {
+        Err(CheckRateLimitError::Limiter(
+            AdmissionLimiterError::Unverifiable(error)
+            | AdmissionLimiterError::Settlement(SettlementError::Unverifiable(error))
+            | AdmissionLimiterError::Windowed(
+                WindowedAdmissionError::Unverifiable(error)
+                | WindowedAdmissionError::Settlement(SettlementError::Unverifiable(error)),
+            ),
+        )) => Err(PreCallError::Unverifiable(error)),
+        Err(other @ (CheckRateLimitError::Denial(_) | CheckRateLimitError::Limiter(_))) => {
             tracing::error!("Error in dynamic rate limiter: {other}, allowing request");
             Ok(())
         }

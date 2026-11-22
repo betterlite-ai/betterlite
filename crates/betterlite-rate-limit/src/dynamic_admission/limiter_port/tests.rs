@@ -17,7 +17,7 @@ use crate::limiter_records::{CacheCounterValue, LimiterClock, ModelGroupResolver
 use crate::rate_limit_window_store::{CounterCache, CounterValues, RedisCacheKind, WindowStore};
 use crate::settlement_and_rollback::SettlementError;
 use crate::token_adjustments::store::{TokenAdjustments, UsageIncrements};
-use crate::windowed_admission::{UuidSlotIds, WindowedAdmission, WindowedAdmissionError};
+use crate::windowed_admission::{UuidSlotIds, WindowedAdmission};
 
 struct FixedClock;
 
@@ -211,53 +211,6 @@ fn limiter_port_from_settlement_keeps_other_errors() {
     assert!(matches!(
         flattened,
         AdmissionLimiterError::Settlement(SettlementError::DescriptorCount { .. })
-    ));
-}
-
-#[test]
-fn limiter_port_from_windowed_keeps_the_fail_closed_error() {
-    let flattened =
-        AdmissionLimiterError::from_windowed(WindowedAdmissionError::Unverifiable(unverifiable()));
-    assert!(matches!(
-        flattened,
-        AdmissionLimiterError::Unverifiable(error) if error.status_code == 503
-    ));
-}
-
-#[test]
-fn limiter_port_from_windowed_reaches_the_settlement_inside() {
-    let flattened = AdmissionLimiterError::from_windowed(WindowedAdmissionError::Settlement(
-        SettlementError::Unverifiable(unverifiable()),
-    ));
-    assert!(matches!(
-        flattened,
-        AdmissionLimiterError::Unverifiable(error) if error.status_code == 503
-    ));
-}
-
-#[test]
-fn limiter_port_from_windowed_keeps_the_settlement_error() {
-    let flattened = AdmissionLimiterError::from_windowed(WindowedAdmissionError::Settlement(
-        SettlementError::DescriptorCount {
-            descriptors: 2,
-            increments: 1,
-        },
-    ));
-    assert!(matches!(
-        flattened,
-        AdmissionLimiterError::Settlement(SettlementError::DescriptorCount { .. })
-    ));
-}
-
-#[test]
-fn limiter_port_from_windowed_keeps_other_errors() {
-    let flattened = AdmissionLimiterError::from_windowed(WindowedAdmissionError::WindowPairCount {
-        keys: 1,
-        values: 2,
-    });
-    assert!(matches!(
-        flattened,
-        AdmissionLimiterError::Windowed(WindowedAdmissionError::WindowPairCount { .. })
     ));
 }
 

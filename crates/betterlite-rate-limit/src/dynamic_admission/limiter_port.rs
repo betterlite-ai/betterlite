@@ -32,7 +32,7 @@ pub trait AdmissionLimiter: Send + Sync {
     ) -> Result<RateLimitResponse, AdmissionLimiterError>;
 }
 
-// every way the port fails: the fail-closed 503 keeps its own variant, so the hook can re-raise it apart from the errors it fails open on
+// every way the port fails: the fail-closed 503 keeps its own variant, and the hook finds it wherever a wrapping error carries it
 #[derive(Debug, thiserror::Error)]
 pub enum AdmissionLimiterError {
     #[error(transparent)]
@@ -58,24 +58,6 @@ impl AdmissionLimiterError {
             | SettlementError::ClockOverflow { .. }
             | SettlementError::UnpairedRefundKeys { .. }
             | SettlementError::RefundPosition { .. }) => Self::Settlement(other),
-        }
-    }
-
-    // the windowed check wraps the same settlement errors one level deeper, so both levels are searched
-    #[must_use]
-    pub fn from_windowed(error: WindowedAdmissionError) -> Self {
-        match error {
-            WindowedAdmissionError::Unverifiable(inner) => Self::Unverifiable(inner),
-            WindowedAdmissionError::Settlement(inner) => Self::from_settlement(inner),
-            other @ (WindowedAdmissionError::ClockBeforeEpoch(_)
-            | WindowedAdmissionError::ClockOverflow { .. }
-            | WindowedAdmissionError::WindowStore(_)
-            | WindowedAdmissionError::Gauges(_)
-            | WindowedAdmissionError::Reply(_)
-            | WindowedAdmissionError::Counter(_)
-            | WindowedAdmissionError::Batch(_)
-            | WindowedAdmissionError::WindowPairCount { .. }
-            | WindowedAdmissionError::MissingWindowMetadata { .. }) => Self::Windowed(other),
         }
     }
 }
@@ -122,6 +104,6 @@ impl AdmissionLimiter for AssemblyLimiter {
             .admission
             .should_rate_limit(&request)
             .await
-            .map_err(AdmissionLimiterError::from_windowed)
+            .map_err(AdmissionLimiterError::from)
     }
 }

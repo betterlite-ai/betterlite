@@ -113,7 +113,12 @@ fn known_key_error(
         );
     }
     insert_priority_header(&mut headers, facts.priority);
-    proxy_error(single_error_detail(detail), headers, status, facts)
+    proxy_error(
+        Payload::Object(once((String::from("error"), Payload::String(detail))).collect()),
+        headers,
+        status,
+        facts,
+    )
 }
 
 // the fail-closed guard: an OVER_LIMIT answer no known descriptor key explains still refuses the request
@@ -225,10 +230,8 @@ fn insert_priority_header(headers: &mut BTreeMap<String, Payload>, priority: Opt
 
 // Python's "x if x is not None else 'not configured'": an explicit 0 is a configured limit
 fn configured_limit(value: Option<i64>) -> String {
-    value.map_or_else(|| String::from(NOT_CONFIGURED), |limit| limit.to_string())
-}
-
-// {"error": text}, the shape both known-key details take
-fn single_error_detail(text: String) -> Payload {
-    Payload::Object(once((String::from("error"), Payload::String(text))).collect())
+    let Some(limit) = value else {
+        return String::from(NOT_CONFIGURED);
+    };
+    limit.to_string()
 }

@@ -9,15 +9,18 @@ use tokio::runtime::Builder;
 
 use super::{ModelGroupInfoError, PreCallError};
 use crate::dynamic_admission::admission::AdmissionKey;
+use crate::dynamic_admission::limiter_port::AdmissionLimiterError;
 use crate::dynamic_admission::tests::support::{
     AdmissionSetup, Canned, GroupAnswer, Harness, MODEL, capture, counter_key, key, limits,
     metadata, ok, over_limit, percent, policy, request, response, settlement_failure, stash_owner,
-    stored_response, unverifiable_failure, with_call_id,
+    stored_response, unverifiable, unverifiable_failure, with_call_id,
 };
 use crate::dynamic_priority::descriptors::{PRIORITY_DESCRIPTOR_KEY, SATURATION_DESCRIPTOR_KEY};
 use crate::dynamic_priority::settings::PriorityPolicy;
 use crate::limiter_records::{CacheCounterValue, RateLimitResponse, RateLimitType};
 use crate::request_stash::RequestStashSlot;
+use crate::settlement_and_rollback::SettlementError;
+use crate::windowed_admission::WindowedAdmissionError;
 
 fn reserved_policy() -> PriorityPolicy {
     policy(0.5, Some(&[("default", percent(0.5))]))
@@ -415,6 +418,74 @@ fn hook_fail_closed_503_reaches_the_caller() {
         !logs.contains("Error in dynamic rate limiter"),
         "logs: {logs}"
     );
+}
+
+#[test]
+fn hook_fail_closed_503_reaches_the_caller_however_the_port_wraps_it() {
+    let wrapped = [
+        (
+            "settlement",
+            AdmissionLimiterError::Settlement(SettlementError::Unverifiable(unverifiable())),
+        ),
+        (
+            "windowed",
+            AdmissionLimiterError::Windowed(WindowedAdmissionError::Unverifiable(unverifiable())),
+        ),
+        (
+            "windowed settlement",
+            AdmissionLimiterError::Windowed(WindowedAdmissionError::Settlement(
+                SettlementError::Unverifiable(unverifiable()),
+            )),
+        ),
+    ];
+    for (shape, wrapped_error) in wrapped {
+        let harness = Harness::build(setup(
+            Some(group_present()),
+            seeded_requests(30),
+            Err(wrapped_error),
+            Ok(empty_tracking()),
+        ));
+        let key_metadata = metadata("default");
+        let admission_key = key(&key_metadata);
+        let stash = RequestStashSlot::default();
+        let (outcome, logs) = run_pre_call(&harness, &request(MODEL), &admission_key, &stash);
+        let Err(pre_call_failure) = outcome else {
+            panic!("the fail-closed 503 wrapped in {shape} is re-raised");
+        };
+        match pre_call_failure {
+            PreCallError::Unverifiable(error) => assert_eq!(error.status_code, 503),
+            other @ (PreCallError::ModelGroupInfo(_) | PreCallError::Rejection(_)) => {
+                panic!("the {shape} wrapping keeps the unverifiable variant, got {other:?}");
+            }
+        }
+        assert!(
+            !logs.contains("Error in dynamic rate limiter"),
+            "logs for {shape}: {logs}"
+        );
+    }
+}
+
+#[test]
+fn hook_windowed_errors_other_than_the_fail_closed_one_are_logged_and_allowed() {
+    let harness = Harness::build(setup(
+        Some(group_present()),
+        seeded_requests(30),
+        Err(AdmissionLimiterError::from(
+            WindowedAdmissionError::WindowPairCount { keys: 1, values: 2 },
+        )),
+        Ok(empty_tracking()),
+    ));
+    let key_metadata = metadata("default");
+    let admission_key = key(&key_metadata);
+    let stash = RequestStashSlot::default();
+    let (outcome, logs) = run_pre_call(&harness, &request(MODEL), &admission_key, &stash);
+    outcome.expect("a windowed failure never blocks the request");
+    assert!(
+        logs.contains("Error in dynamic rate limiter:"),
+        "logs: {logs}"
+    );
+    assert!(logs.contains("allowing request"), "logs: {logs}");
+    assert!(stored_response(&stash).is_none());
 }
 
 #[test]
