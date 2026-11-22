@@ -121,7 +121,7 @@ fn accented() -> RecordObject {
     data
 }
 
-// The scan of a blank line, the rewritten é row and a kept row, which spools the rewritten row at its own span
+// Scans a blank line, the rewritten é row and a kept row, so the rewritten row is spooled at its own span
 async fn scanned_accented_row(tasks: &TaskTracker) -> (CountedBody, BatchScanResult<Spool>) {
     // the blank first line is never a record, but it still makes the rewritten record line 2
     let source = CountedBody::new(format!("\n{ACCENTED_ROW}\n{KEPT_ROW}"));
