@@ -16,11 +16,12 @@ use crate::api::search_providers::you_com::YouComSearch;
 use adapter::Adapter;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::perplexity_search::PerplexitySearch;
-use loaded::{LinkupProvider, SearxngProvider};
+use loaded::{ReloadedFlavor, ReloadedProvider};
 use std::sync::Mutex;
-use url::{GooglePseProvider, SearchApiProvider};
+use url::{UrlKeyedFlavor, UrlKeyedProvider};
 mod adapter;
 mod loaded;
+mod shared;
 mod url;
 pub(super) fn build<'env>(
     name: SearchProviderName,
@@ -38,26 +39,31 @@ pub(super) fn build<'env>(
         SearchProviderName::Brave => {
             Box::new(Adapter::new(BraveSearchConfig::load(environment, None)))
         }
-        SearchProviderName::GooglePse => Box::new(GooglePseProvider {
+        SearchProviderName::GooglePse => Box::new(UrlKeyedProvider {
             environment,
-            body: Mutex::new(None),
+            flavor: Mutex::new(UrlKeyedFlavor::GooglePse(None)),
         }),
         SearchProviderName::DataForSeo => Box::new(Adapter::new(DataForSeoSearchConfig {
             settings: DataForSeoSearchSettings::load(environment),
         })),
         SearchProviderName::Firecrawl => Box::new(Adapter::new(FirecrawlSearch::load(environment))),
         SearchProviderName::Fastcrw => Box::new(Adapter::new(FastcrwSearch::load(environment))),
-        SearchProviderName::Searxng => Box::new(SearxngProvider {
+        SearchProviderName::Searxng => Box::new(ReloadedProvider {
             environment,
+            flavor: ReloadedFlavor::Searxng,
             body: Mutex::new(None),
         }),
-        SearchProviderName::Linkup => Box::new(LinkupProvider { environment }),
+        SearchProviderName::Linkup => Box::new(ReloadedProvider {
+            environment,
+            flavor: ReloadedFlavor::Linkup,
+            body: Mutex::new(None),
+        }),
         SearchProviderName::DuckDuckGo => {
             Box::new(Adapter::new(DuckDuckGoSearchConfig::load(environment)))
         }
-        SearchProviderName::SearchApi => Box::new(SearchApiProvider {
+        SearchProviderName::SearchApi => Box::new(UrlKeyedProvider {
             environment,
-            body: Mutex::new(None),
+            flavor: Mutex::new(UrlKeyedFlavor::SearchApi(None)),
         }),
         SearchProviderName::Serper => Box::new(Adapter::new(SerperSearchConfig {
             settings: SerperSearchSettings::load(environment),

@@ -87,11 +87,9 @@ pub(crate) trait SearchHooks: Send + Sync {
     fn validate_environment(
         &self,
         headers: Headers,
-        _api_key: Option<&SecretString>,
-        _api_base: Option<&str>,
-    ) -> Headers {
-        headers
-    }
+        api_key: Option<&SecretString>,
+        api_base: Option<&str>,
+    ) -> Headers;
     fn sign_request(
         &self,
         headers: Headers,

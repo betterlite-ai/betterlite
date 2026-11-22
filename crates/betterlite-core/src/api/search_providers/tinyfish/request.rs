@@ -138,13 +138,9 @@ fn clamped(value: i128) -> usize {
     limit.clamp(RESULT_FLOOR, TINYFISH_RESULT_CAP)
 }
 fn clamped_float(value: f64) -> usize {
-    value
-        .trunc()
-        .max(RESULT_FLOOR_FLOAT)
-        .min(RESULT_CAP_FLOAT)
-        .to_string()
-        .parse::<usize>()
-        .unwrap_or(TINYFISH_RESULT_CAP)
+    let bounded = value.trunc().max(RESULT_FLOOR_FLOAT).min(RESULT_CAP_FLOAT);
+    let raw = bounded.to_string();
+    raw.parse::<usize>().unwrap_or(TINYFISH_RESULT_CAP)
 }
 fn parse_caller_int(text: &str) -> Option<i128> {
     let trimmed = text.trim();
