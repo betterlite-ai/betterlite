@@ -139,10 +139,10 @@ impl GrantSources for FakeGrants {
         _auth: Option<&UserAPIKeyAuth>,
         _strict: bool,
     ) -> impl Future<Output = Result<AgentAccess, AgentAccessError>> + Send {
-        let answer = match self.failure {
-            Some(status) => Err(access_failure(status)),
-            None => Ok(AgentAccess::Restricted(self.granted.clone())),
-        };
+        let answer = self.failure.map_or_else(
+            || Ok(AgentAccess::Restricted(self.granted.clone())),
+            |status| Err(access_failure(status)),
+        );
         ready(answer)
     }
 
@@ -235,9 +235,8 @@ impl FakeTargets {
             .filter(|agent| agent.agent_id == agent_id)
             .cloned()
             .or_else(|| {
-                self.registry
-                    .as_ref()
-                    .and_then(|registry| registry.get_agent_by_id(agent_id))
+                let registry = self.registry.as_ref()?;
+                registry.get_agent_by_id(agent_id)
             })
     }
 }

@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use betterlite_auth::agent_identity::error::AgentIdentityError;
 use serde::Serialize;
 

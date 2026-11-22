@@ -15,8 +15,11 @@ fn caller(role: Option<&str>) -> UserAPIKeyAuth {
         String::from("api_key"),
         JsonData::String(String::from("sk-test")),
     );
-    if let Some(role) = role {
-        fields.insert(String::from("user_role"), JsonData::String(role.to_owned()));
+    if let Some(given) = role {
+        fields.insert(
+            String::from("user_role"),
+            JsonData::String(given.to_owned()),
+        );
     }
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap()
 }

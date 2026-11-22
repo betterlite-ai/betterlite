@@ -12,4 +12,7 @@ deviations:
   - what: validate_managed_identity_request takes an IdentityRequest with an explicit Absent, Null or Value identity, not LiteLLM's TypedDict key test.
     why: A typed record cannot test for a missing key. The three states give LiteLLM's results.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L519-L551
+  - what: GET /v1/agents/{agent_id}/identity answers 503 "Agent policy could not be loaded" when the stored identity binding cannot be held by B4770's response record, such as a tenant_id that is not a UUID or a last_authenticated_at without a UTC offset.
+    why: The status body is ManagedAgentIdentityStatus from B4770, whose binding types the Entra identifiers as UUIDs and the timestamp as UTC, while LiteLLM copies the stored strings through unchanged. LiteLLM's own validation normalizes the identifiers, so only a row written outside the proxy differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L562-L581
 kept_bugs: []

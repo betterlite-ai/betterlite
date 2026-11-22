@@ -61,6 +61,9 @@ async fn lookup<Grants, Targets, Humans, Read>(
     target_name: &str,
 ) -> Option<AgentResponse>
 where
+    Grants: GrantSources,
+    Targets: TargetAgents,
+    Humans: HumanSources,
     Read: ReadThrough,
 {
     if let Some(found) = registry_agent(access, target_name) {

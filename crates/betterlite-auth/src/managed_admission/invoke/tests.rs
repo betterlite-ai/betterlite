@@ -9,25 +9,48 @@ use rust_decimal::Decimal;
 use crate::agent_access::resolver::AgentAccessResolver;
 use crate::agent_policy::AgentResponse;
 use crate::identity::{AgentIdentityFailure, FailureCode};
+use crate::managed_admission::error::AdmissionError;
+use crate::resolved_key::auth::UserAPIKeyAuth;
 
 use super::prepare_agent_invocation;
-use crate::managed_admission::ports::InvocationSources;
+use crate::managed_admission::ports::{InvocationSources, ReadThrough};
 use crate::managed_admission::tests::{
     FakeGrants, FakeHumans, FakeStore, FakeTargets, MANAGED, MissedReadThrough, PLAIN,
-    RegisteringReadThrough, agent, ids, key, refusal, registry, resolver,
+    RegisteringReadThrough, Resolver, agent, ids, key, refusal, registry, resolver,
 };
 
 const PLAIN_COPY: &str = r#"{"agent_id":"agent-1","agent_name":"stale","agent_card_params":{}}"#;
 const STALE_ID: &str = r#"{"agent_id":"id-1","agent_name":"card-name","agent_card_params":{},"identity_managed":true,"identity":{"agent_id":"id-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}"#;
 const IDENTITY_ONLY: &str = r#"{"agent_id":"bound","agent_name":"bound-agent","agent_card_params":{},"identity":{"agent_id":"bound","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}"#;
 
+// the fake ports' futures carry an AgentResponse inline, so the awaited future exceeds clippy's large-futures ceiling and is boxed
+async fn prepare<Read>(
+    auth: &mut UserAPIKeyAuth,
+    target_name: &str,
+    billable: bool,
+    sources: &InvocationSources<'_, FakeStore, Read>,
+    access: &Resolver,
+) -> Result<(), AdmissionError>
+where
+    Read: ReadThrough,
+{
+    Box::pin(prepare_agent_invocation(
+        auth,
+        target_name,
+        billable,
+        sources,
+        access,
+    ))
+    .await
+}
+
 fn priced(params: Option<&str>) -> AgentResponse {
     let mut fields = String::from(
         r#"{"agent_id":"agent-1","agent_name":"agent-1","agent_card_params":{},"identity_managed":true,"identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}"#,
     );
-    if let Some(params) = params {
+    if let Some(raw) = params {
         fields.push_str(r#","litellm_params":"#);
-        fields.push_str(params);
+        fields.push_str(raw);
     }
     fields.push('}');
     agent(&fields)
@@ -44,7 +67,7 @@ async fn an_unknown_target_is_ignored_after_one_read_through_attempt() {
         store,
         read_through: &through,
     };
-    prepare_agent_invocation(&mut auth, "ghost", true, &sources, &access)
+    prepare(&mut auth, "ghost", true, &sources, &access)
         .await
         .unwrap();
     assert_eq!(through.attempts.lock().unwrap().clone(), vec!["ghost"]);
@@ -66,7 +89,7 @@ async fn a_read_through_that_changed_the_registry_is_looked_up_again() {
         read_through: &through,
     };
     assert_eq!(
-        refusal(prepare_agent_invocation(&mut auth, "agent-1", true, &sources, &access).await),
+        refusal(prepare(&mut auth, "agent-1", true, &sources, &access).await),
         (
             503,
             String::from("Managed agent policy requires a database")
@@ -86,7 +109,7 @@ async fn a_registry_agent_found_by_name_is_prepared() {
         store: Some(&store),
         read_through: &through,
     };
-    prepare_agent_invocation(&mut auth, "card-name", true, &sources, &access)
+    prepare(&mut auth, "card-name", true, &sources, &access)
         .await
         .unwrap();
     assert_eq!(auth.extra.invoked_agent_id.as_deref(), Some("id-1"));
@@ -111,7 +134,7 @@ async fn a_managed_target_without_a_database_is_policy_unavailable(
         read_through: &through,
     };
     assert_eq!(
-        refusal(prepare_agent_invocation(&mut auth, target, true, &sources, &access).await),
+        refusal(prepare(&mut auth, target, true, &sources, &access).await),
         (
             503,
             String::from("Managed agent policy requires a database")
@@ -130,7 +153,7 @@ async fn a_plain_target_without_a_database_is_prepared_without_changes() {
         store,
         read_through: &through,
     };
-    prepare_agent_invocation(&mut auth, "plain-agent", true, &sources, &access)
+    prepare(&mut auth, "plain-agent", true, &sources, &access)
         .await
         .unwrap();
     assert!(auth.extra.invoked_agent_id.is_none());
@@ -149,9 +172,7 @@ async fn a_managed_target_the_store_lost_is_gone() {
         read_through: &through,
     };
     assert_eq!(
-        refusal(
-            prepare_agent_invocation(&mut auth, "managed-agent", true, &sources, &access).await
-        ),
+        refusal(prepare(&mut auth, "managed-agent", true, &sources, &access).await),
         (403, String::from("Invoked agent no longer exists"))
     );
 }
@@ -167,7 +188,7 @@ async fn a_plain_target_the_store_lost_falls_back_to_the_registry() {
         store: Some(&store),
         read_through: &through,
     };
-    prepare_agent_invocation(&mut auth, "plain-agent", true, &sources, &access)
+    prepare(&mut auth, "plain-agent", true, &sources, &access)
         .await
         .unwrap();
     assert!(auth.extra.invoked_agent_id.is_none());
@@ -196,9 +217,7 @@ async fn a_store_failure_answers_by_its_code(#[case] code: FailureCode, #[case] 
         read_through: &through,
     };
     assert_eq!(
-        refusal(
-            prepare_agent_invocation(&mut auth, "managed-agent", true, &sources, &access).await
-        ),
+        refusal(prepare(&mut auth, "managed-agent", true, &sources, &access).await),
         (status, String::from("Agent policy could not be loaded"))
     );
 }
@@ -215,7 +234,7 @@ async fn the_store_row_decides_over_the_registry_copy() {
         store: Some(&store),
         read_through: &through,
     };
-    prepare_agent_invocation(&mut auth, "agent-1", true, &sources, &access)
+    prepare(&mut auth, "agent-1", true, &sources, &access)
         .await
         .unwrap();
     assert_eq!(auth.extra.invoked_agent_id.as_deref(), Some("agent-1"));
@@ -236,7 +255,7 @@ async fn a_managed_key_calling_a_plain_agent_is_checked() {
         read_through: &through,
     };
     assert_eq!(
-        refusal(prepare_agent_invocation(&mut auth, "plain-agent", true, &sources, &access).await),
+        refusal(prepare(&mut auth, "plain-agent", true, &sources, &access).await),
         (
             403,
             String::from("The caller is not permitted to invoke this agent")
@@ -254,14 +273,14 @@ async fn a_managed_key_keeps_its_own_billing_policy() {
     let access = resolver(&registry, &["agent-1"], None);
     let mut auth = key(r#"{"agent_id":"agent-1"}"#);
     auth.extra.managed_agent_policy = Some(agent(
-        r#"{"agent_id":"agent-1","agent_name":"managed-agent","agent_card_params":{},"identity_managed":true,"object_permission":{"agents":["agent-1"]},"identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}"#,
+        r#"{"agent_id":"agent-1","agent_name":"managed-agent","agent_card_params":{},"identity_managed":true,"object_permission":{"object_permission_id":"op","agents":["agent-1"]},"identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}"#,
     ));
     auth.extra.billing_agent_policy = Some(agent(PLAIN));
     let sources = InvocationSources {
         store: Some(&store),
         read_through: &through,
     };
-    prepare_agent_invocation(&mut auth, "managed-agent", true, &sources, &access)
+    prepare(&mut auth, "managed-agent", true, &sources, &access)
         .await
         .unwrap();
     assert_eq!(auth.extra.invoked_agent_id.as_deref(), Some("agent-1"));
@@ -298,9 +317,7 @@ async fn a_grant_failure_goes_out_with_its_status() {
         read_through: &through,
     };
     assert_eq!(
-        refusal(
-            prepare_agent_invocation(&mut auth, "managed-agent", true, &sources, &access).await
-        ),
+        refusal(prepare(&mut auth, "managed-agent", true, &sources, &access).await),
         (500, String::from("the case port failed"))
     );
 }
@@ -317,7 +334,7 @@ async fn a_price_is_not_read_when_not_billable() {
         store: Some(&store),
         read_through: &through,
     };
-    prepare_agent_invocation(&mut auth, "agent-1", false, &sources, &access)
+    prepare(&mut auth, "agent-1", false, &sources, &access)
         .await
         .unwrap();
     assert_eq!(auth.extra.agent_invocation_cost, Some(Decimal::ZERO));
@@ -345,7 +362,7 @@ async fn a_valid_price_is_read_from_the_effective_agent(
         store: Some(&store),
         read_through: &through,
     };
-    prepare_agent_invocation(&mut auth, "agent-1", true, &sources, &access)
+    prepare(&mut auth, "agent-1", true, &sources, &access)
         .await
         .unwrap();
     assert_eq!(
@@ -378,7 +395,7 @@ async fn an_invalid_price_is_policy_unavailable(#[case] params: &str) {
         read_through: &through,
     };
     assert_eq!(
-        refusal(prepare_agent_invocation(&mut auth, "agent-1", true, &sources, &access).await),
+        refusal(prepare(&mut auth, "agent-1", true, &sources, &access).await),
         (503, String::from("Agent invocation price is invalid"))
     );
     assert_eq!(auth.extra.agent_invocation_cost, Some(Decimal::ONE));

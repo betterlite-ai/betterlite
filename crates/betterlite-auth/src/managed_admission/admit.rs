@@ -30,11 +30,11 @@ where
         return Ok(());
     };
     let context = auth.extra.managed_agent_context.clone();
-    let Some(store) = store else {
+    let Some(database) = store else {
         let registered = registry.get_agent_by_id(&agent_id);
         return without_database(context.as_ref(), registered.as_ref());
     };
-    let Some(agent) = stored_agent(store, &agent_id, context.as_ref()).await? else {
+    let Some(agent) = stored_agent(database, &agent_id, context.as_ref()).await? else {
         return Ok(());
     };
     admit_stored(auth, agent, context.as_ref(), delegation_verified, access).await
@@ -134,13 +134,13 @@ where
     Targets: TargetAgents,
     Humans: HumanSources,
 {
-    let Some(context) = context else {
+    let Some(delegated) = context else {
         return Ok(());
     };
-    if context.mode != ManagedAgentMode::Delegated || delegation_verified {
+    if delegated.mode != ManagedAgentMode::Delegated || delegation_verified {
         return Ok(());
     }
-    let grants = verified_human_agent_grants(access, context.user_id.as_deref(), team_id).await?;
+    let grants = verified_human_agent_grants(access, delegated.user_id.as_deref(), team_id).await?;
     if grants.contains(agent_id) {
         return Ok(());
     }

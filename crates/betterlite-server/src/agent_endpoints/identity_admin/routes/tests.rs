@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
+use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
@@ -13,7 +14,6 @@ use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_auth::identity::{AgentIdentityFailure, FailureCode};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::jwt_settings::records::IssuerConfig;
-use betterlite_core::agents::AgentResponse;
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 use serde::Deserialize;
@@ -31,6 +31,7 @@ const SECOND_ISSUER: &str =
 const BOUND: &str = r#"{"agent_id":"agent-1","agent_name":"Bound Agent","agent_card_params":{},"identity_managed":true,"execution_mode":"delegated","identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"00000000-0000-0000-0000-000000000001","client_id":"00000000-0000-0000-0000-000000000002","issuer":"https://login.microsoftonline.com/00000000-0000-0000-0000-000000000001/v2.0","revision":"rev-7","last_authenticated_at":"2026-01-02T03:04:05Z"}}"#;
 const PLAIN: &str = r#"{"agent_id":"agent-1","agent_name":"Plain Agent","agent_card_params":{}}"#;
 const DISABLED: &str = r#"{"agent_id":"agent-1","agent_name":"Disabled Agent","agent_card_params":{},"enabled":false}"#;
+const UNREPRESENTABLE: &str = r#"{"agent_id":"agent-1","agent_name":"Bound Agent","agent_card_params":{},"identity_managed":true,"identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}"#;
 const PROVIDERS_PATH: &str = "/v1/agents/identity/providers";
 const STATUS_PATH: &str = "/v1/agents/agent-1/identity";
 
@@ -442,6 +443,23 @@ async fn status_answers_403_for_a_denied_failure() {
     assert_eq!(
         answer.text(),
         r#"{"detail":"Agent identity was retracted"}"#
+    );
+}
+
+#[tokio::test]
+async fn status_answers_503_for_a_binding_it_cannot_represent() {
+    let reads = FakeReads::answering(UNREPRESENTABLE);
+    let answer = get_status(
+        settings(&[FIRST_ISSUER]),
+        &reads,
+        Some(&caller("proxy_admin")),
+        STATUS_PATH,
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        answer.text(),
+        r#"{"detail":"Agent policy could not be loaded"}"#
     );
 }
 
