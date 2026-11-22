@@ -41,16 +41,20 @@ fn replays_corpus() {
             .any(|seed| iter_records(seed.as_slice()).next().is_none()),
         "no seed replays as no records"
     );
-    for seed in &seeds {
-        let Ok(record) = load_record(seed.as_slice()) else {
-            continue;
-        };
-        let mut replayed = iter_records(seed.as_slice());
-        let first = replayed
-            .next()
-            .expect("a seed that loads yields a record")
-            .expect("the record parses");
-        assert_eq!(first.payload, record);
-        assert!(replayed.next().is_none(), "a seed that loads is one record");
-    }
+    seeds
+        .iter()
+        .filter_map(|seed| {
+            load_record(seed.as_slice())
+                .ok()
+                .map(|record| (seed, record))
+        })
+        .for_each(|(seed, record)| {
+            let mut replayed = iter_records(seed.as_slice());
+            let first = replayed
+                .next()
+                .expect("a seed that loads yields a record")
+                .expect("the record parses");
+            assert_eq!(first.payload, record);
+            assert!(replayed.next().is_none(), "a seed that loads is one record");
+        });
 }
