@@ -1,0 +1,16 @@
+kind: helper
+name: truthy-string-is-not-false
+call:
+  management_rbac:
+    calls:
+      - role: internal_user
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: "false"}
+      - role: internal_user
+        feature: vector_stores
+        general_settings: {disable_vector_stores_for_internal_users: "0", allow_vector_stores_for_team_admins: "false"}
+      - role: team
+        feature: agents
+        general_settings: {disable_agents_for_internal_users: "no", allow_agents_for_team_admins: ""}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: sso-identity-bridge-no-provider-at-startup
+call:
+  sso_identity_bridge:
+    function: startup_gap
+    environment: {}
+calls:
+  - sso_identity_bridge:
+      function: gap
+      environment: {}
+  - sso_identity_bridge:
+      function: provider
+      environment: {}
+env: {}
+compare:
+  ignore: []
