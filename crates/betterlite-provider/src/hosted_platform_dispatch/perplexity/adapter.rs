@@ -1,16 +1,19 @@
 use std::collections::BTreeMap;
+use std::io::Error as IoError;
 
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
+use betterlite_models::controls::call_params::normalize_drop_params;
+use betterlite_models::params::ParameterError;
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_openai::perplexity_embedding;
 use betterlite_openai::perplexity_embedding::error::PerplexityEmbeddingError;
 use betterlite_openai::perplexity_embedding::reply::transform_embedding_response;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue, Method};
 use secrecy::SecretString;
-use serde::de::Error as _;
+use thiserror::Error;
 use url::Url;
 
 use super::embedding;
@@ -27,6 +30,27 @@ use crate::transform_retry::TransformRetry;
 // main.py sends a perplexity/ embedding through the shared HTTP handler with PerplexityEmbeddingConfig
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Perplexity;
+
+// LiteLLM's DEFAULT_EMBEDDING_PARAM_VALUES: every other request field is collected into extra_body
+const DEFAULT_EMBEDDING_PARAMS: [&str; 6] = [
+    "dimensions",
+    "encoding_format",
+    "user",
+    "model",
+    "custom_llm_provider",
+    "input",
+];
+
+// serde_json carries the transform and reply failures, so each leaf error travels as the typed cause it wraps
+#[derive(Debug, Error)]
+enum LeafError {
+    #[error(transparent)]
+    Transform(PerplexityEmbeddingError),
+    #[error(transparent)]
+    Url(url::ParseError),
+    #[error(transparent)]
+    Base64(base64::DecodeError),
+}
 
 impl Adapter for Perplexity {
     const NAME: &'static str = "perplexity";
@@ -88,7 +112,8 @@ fn unsupported() -> OperationError {
     }
 }
 
-// only dimensions and encoding_format survive map_openai_params, so the rest of the request never reaches the body
+// LiteLLM's get_optional_params_embeddings: a set `user` is refused unless drop_params allows the drop, and every
+// request field outside DEFAULT_EMBEDDING_PARAMS plus the client's extra_body is merged over the transformed body
 fn prepared_embedding(
     operation: &EmbeddingOperation,
     deployment: &Deployment,
@@ -97,22 +122,73 @@ fn prepared_embedding(
         .and_then(|bytes| serde_json::from_slice(&bytes))
         .map_err(|source| OperationError::Encode { source })?;
     let call = embedding_call(operation, &requested, deployment);
-    let Ok(resolved) = embedding(&call) else {
-        return Err(unsupported());
-    };
-    let body = perplexity_embedding::transform_embedding_request(
+    let resolved = embedding(&call);
+    let drop_params = deployment.global_drop_params
+        || normalize_drop_params(deployment.drop_params.as_ref()).unwrap_or(false);
+    let unsupported: Vec<String> = [
+        ("dimensions", operation.request.dimensions.is_some()),
+        (
+            "encoding_format",
+            operation.request.encoding_format.is_some(),
+        ),
+        ("user", operation.request.user.is_some()),
+    ]
+    .into_iter()
+    .filter(|(name, set)| *set && !perplexity_embedding::SUPPORTED_OPENAI_PARAMS.contains(name))
+    .map(|(name, _set)| String::from(name))
+    .collect();
+    if !unsupported.is_empty() && !drop_params {
+        return Err(OperationError::Parameters {
+            source: ParameterError::Unsupported {
+                model: resolved.model.clone(),
+                names: unsupported,
+            },
+        });
+    }
+    let mut body = perplexity_embedding::transform_embedding_request(
         &resolved.model,
         &resolved.input,
         &resolved.optional_params,
     )
     .map_err(|error| OperationError::Encode {
-        source: serde_json::Error::custom(error),
+        source: serde_json::Error::io(IoError::other(LeafError::Transform(error))),
     })?;
+    let mut extra_body = Object::new();
+    match requested.get("extra_body") {
+        None | Some(Json::Null) => {}
+        Some(Json::Object(client)) => {
+            for (name, value) in client {
+                // EXTRA_BODY_ROUTING_KEYS: a client extra_body never replaces the request's own model
+                if name != "model" {
+                    extra_body.insert(name.clone(), value.clone());
+                }
+            }
+        }
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            return Err(OperationError::Parameters {
+                source: ParameterError::NotAnObject {
+                    name: String::from("extra_body"),
+                },
+            });
+        }
+    }
+    for (name, value) in &requested {
+        // LiteLLM drops a null extra and never collects a named embedding param into extra_body
+        if name == "extra_body"
+            || *value == Json::Null
+            || DEFAULT_EMBEDDING_PARAMS.contains(&name.as_str())
+        {
+            continue;
+        }
+        extra_body.insert(name.clone(), value.clone());
+    }
+    // the handler merges extra_body into the transformed body, so it can replace one of its fields
+    body.extend(extra_body);
     let url = Url::parse(&perplexity_embedding::get_complete_url(
         resolved.api_base.as_deref(),
     ))
     .map_err(|source| OperationError::Encode {
-        source: serde_json::Error::custom(source),
+        source: serde_json::Error::io(IoError::other(LeafError::Url(source))),
     })?;
     let http = PreparedHttp {
         method: Method::POST,
@@ -176,7 +252,7 @@ fn reply_error(error: PerplexityEmbeddingError, response: UpstreamResponse) -> O
         },
         PerplexityEmbeddingError::Base64 { source } => OperationError::Decode {
             operation: "embedding",
-            source: serde_json::Error::custom(source),
+            source: serde_json::Error::io(IoError::other(LeafError::Base64(source))),
         },
     }
 }

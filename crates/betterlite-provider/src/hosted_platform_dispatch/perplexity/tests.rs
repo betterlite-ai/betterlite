@@ -5,9 +5,11 @@ use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
 
+use betterlite_models::controls::call_params::DropParams;
 use betterlite_models::decisions::DecisionsJson;
 use betterlite_models::decisions::ir::{DecisionInput, DecisionRequest};
 use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_models::params::ParameterError;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
@@ -154,7 +156,7 @@ fn reaches_config_embedding_through_the_perplexity_adapter() {
     assert_eq!(provider, Provider::Perplexity(Perplexity));
     assert_eq!(provider.name(), "perplexity");
     let operation = embedding_operation(
-        r#"{"model":"pplx","input":"hello","encoding_format":"float","dimensions":8,"user":"u1"}"#,
+        r#"{"model":"pplx","input":"hello","encoding_format":"float","dimensions":8}"#,
     );
     let prepared = provider
         .prepare(
@@ -182,6 +184,109 @@ fn reaches_config_embedding_through_the_perplexity_adapter() {
             r#"{"model":"pplx-embed-v1-0.6b","input":"hello","encoding_format":"float","dimensions":8}"#
         )
     );
+}
+
+#[test]
+fn reaches_config_embedding_user_without_drop_params_is_refused() {
+    let refused = Perplexity
+        .prepare(
+            &embedding_operation(r#"{"input":"hello","user":"u1"}"#),
+            &perplexity_deployment(Some("sk-deployment")),
+            &catalog(),
+        )
+        .unwrap_err();
+    let OperationError::Parameters {
+        source: ParameterError::Unsupported { model, names },
+    } = refused
+    else {
+        panic!("a set user is refused");
+    };
+    assert_eq!(model, "pplx-embed-v1-0.6b");
+    assert_eq!(names, [String::from("user")]);
+}
+
+#[test]
+fn reaches_config_embedding_user_with_drop_params_is_dropped() {
+    let deployment = Deployment {
+        drop_params: Some(DropParams::Flag(true)),
+        ..perplexity_deployment(Some("sk-deployment"))
+    };
+    let prepared = Perplexity
+        .prepare(
+            &embedding_operation(r#"{"input":"hello","user":"u1"}"#),
+            &deployment,
+            &catalog(),
+        )
+        .unwrap();
+    let PreparedRequest::Embedding(sent) = &prepared else {
+        panic!("an embedding request");
+    };
+    assert_eq!(
+        body(&sent.http.body),
+        json(r#"{"model":"pplx-embed-v1-0.6b","input":"hello"}"#)
+    );
+}
+
+#[test]
+fn reaches_config_embedding_user_with_global_drop_params_is_dropped() {
+    let deployment = Deployment {
+        global_drop_params: true,
+        ..perplexity_deployment(Some("sk-deployment"))
+    };
+    let prepared = Perplexity
+        .prepare(
+            &embedding_operation(r#"{"input":"hello","user":"u1"}"#),
+            &deployment,
+            &catalog(),
+        )
+        .unwrap();
+    let PreparedRequest::Embedding(sent) = &prepared else {
+        panic!("an embedding request");
+    };
+    assert_eq!(
+        body(&sent.http.body),
+        json(r#"{"model":"pplx-embed-v1-0.6b","input":"hello"}"#)
+    );
+}
+
+#[test]
+fn reaches_config_embedding_extra_fields_reach_the_body() {
+    let prepared = Perplexity
+        .prepare(
+            &embedding_operation(
+                r#"{"input":"hello","encoding_format":"float","dimensions":8,"foo":"bar","dropped":null,"extra_body":{"baz":1,"model":"other","kept":null}}"#,
+            ),
+            &perplexity_deployment(Some("sk-deployment")),
+            &catalog(),
+        )
+        .unwrap();
+    let PreparedRequest::Embedding(sent) = &prepared else {
+        panic!("an embedding request");
+    };
+    assert_eq!(
+        body(&sent.http.body),
+        json(
+            r#"{"model":"pplx-embed-v1-0.6b","input":"hello","encoding_format":"float","dimensions":8,"foo":"bar","baz":1,"kept":null}"#
+        )
+    );
+}
+
+#[test]
+fn reaches_config_embedding_extra_body_must_be_an_object() {
+    let refused = Perplexity
+        .prepare(
+            &embedding_operation(r#"{"input":"hello","extra_body":"nope"}"#),
+            &perplexity_deployment(Some("sk-deployment")),
+            &catalog(),
+        )
+        .unwrap_err();
+    let OperationError::Parameters {
+        source: ParameterError::NotAnObject { name },
+    } = refused
+    else {
+        panic!("a non-object extra_body is refused");
+    };
+    assert_eq!(name, "extra_body");
 }
 
 #[test]

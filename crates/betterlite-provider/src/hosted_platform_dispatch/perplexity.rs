@@ -42,11 +42,11 @@ impl PerplexityRequest {
 }
 
 // main.py's perplexity embedding arm (L7335-L7348): the base and key as they came, empty litellm_params and no headers
-pub fn embedding(call: &EmbeddingCall) -> Result<EmbeddingCall, DispatchError> {
+pub fn embedding(call: &EmbeddingCall) -> EmbeddingCall {
     let mut resolved = call.clone();
     resolved.litellm_params = Object::new();
     resolved.headers = None;
-    Ok(resolved)
+    resolved
 }
 
 // the Perplexity Responses config B5360's tag selects
