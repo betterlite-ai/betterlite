@@ -1,0 +1,28 @@
+kind: helper
+name: auth-end-users-team-default-budget
+call:
+  auth_end_users:
+    function: team_member_budget
+    database: true
+    validate_in_db: false
+    budget_id: b-team
+    cached_budget: {budget_id: b-team, max_budget: 5.0}
+calls:
+  - auth_end_users:
+      function: team_member_budget
+      database: true
+      validate_in_db: false
+      budget_id: b-team
+      budget_row: {budget_id: b-team, max_budget: 7.0}
+  - auth_end_users:
+      function: team_member_budget
+      database: true
+      validate_in_db: false
+      budget_id: b-team
+  - auth_end_users:
+      function: team_member_budget
+      database: false
+      validate_in_db: false
+      budget_id: b-team
+env: {}
+compare: {ignore: []}
