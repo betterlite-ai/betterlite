@@ -1,0 +1,13 @@
+kind: helper
+name: file-batch-guardrails-routes-seed
+call:
+  file_batch_guardrails:
+    calls:
+      - {"function": "call_type", "url": "/chat/completions", "body": {}}
+      - {"function": "call_type", "url": "/v1/chat/completions", "body": {}}
+      - {"function": "call_type", "url": "/engines/gpt-4o/chat/completions", "body": {}}
+      - {"function": "call_type", "url": "/responses/r_1/input_items", "body": {"input": "x"}}
+      - {"function": "call_type", "url": "/v1/embeddings", "body": {"messages": []}}
+      - {"function": "call_type", "url": "/v1/responses", "body": {"input": "x"}}
+env: {}
+compare: {ignore: []}

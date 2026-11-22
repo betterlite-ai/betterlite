@@ -1,0 +1,26 @@
+kind: helper
+name: model-group-data-malformed-groups
+call:
+  model_group_data:
+    calls:
+      - function: add_access_group_to_deployment
+        model_info:
+          access_groups: [null, group-a, 1.5]
+        access_group: group-a
+calls:
+  - model_group_data:
+      calls:
+        - function: add_access_group_to_deployment
+          model_info:
+            access_groups: [null, group-a, 1.5]
+          access_group: group-b
+        - function: remove_access_group_from_deployment
+          model_info:
+            access_groups: [null, group-a, 1.5, group-a]
+          access_group: group-a
+        - function: remove_access_group_from_deployment
+          model_info:
+            access_groups: [1.5]
+          access_group: group-a
+env: {}
+compare: {ignore: []}

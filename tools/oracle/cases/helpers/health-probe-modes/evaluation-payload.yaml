@@ -1,0 +1,58 @@
+kind: helper
+name: evaluation_payload
+call:
+  b4440:
+    mode:
+      - mode: evaluation
+        model: my-model
+        custom_llm_provider: hosted_vllm
+        params: {model: my-model, api_base: http://localhost:8000, custom_llm_provider: hosted_vllm}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: evaluation
+        model: gpt-5
+        custom_llm_provider: openai
+        params: {model: gpt-5, timeout: 30, extra_headers: {x-team: health}}
+        prompt: is it up?
+        inputs: null
+        logging: false
+        failure: null
+      - mode: evaluation
+        model: gpt-5
+        custom_llm_provider: openai
+        params: {model: gpt-5, state: {ticket: x}, questions: {q: {type: noul, instructions: "ok?"}}}
+        prompt: ignored
+        inputs: null
+        logging: false
+        failure: null
+      - mode: evaluation
+        model: gpt-5
+        custom_llm_provider: openai
+        params: {timeout: 30}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: evaluation
+        model: gpt-5
+        custom_llm_provider: openai
+        params: {model: gpt-5, state: 5}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: evaluation
+        model: gpt-5
+        custom_llm_provider: openai
+        params: {model: gpt-5, questions: {}}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+    wildcard: []
+    tracking: []
+    response: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+[files]
+extend-exclude = ["**/fixtures/**", "**/snapshots/**", "**/fuzz/corpus/**", "**/fuzz/artifacts/**", "tools/oracle/cases/**", ".development/**"]
+
+[default.extend-words]
+# LiteLLM spells its own file client_initalization_utils.py this way, and the backlog quotes it
+initalization = "initalization"
+asend = "asend"
+# AI21 on Bedrock takes frequencePenalty, and LiteLLM sends it under that name (amazon_ai21_transformation.py)
+frequence = "frequence"
+# LiteLLM's UnparseableRecord keeps this spelling
+Unparseable = "Unparseable"
+unparseable = "unparseable"

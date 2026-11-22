@@ -1,0 +1,40 @@
+kind: helper
+name: model-group-data-reload-collateral-and-order
+call:
+  model_group_data:
+    calls:
+      - function: raise_http_if_reload_degraded_serving
+        before: [d1, d2, d3, d4]
+        written:
+          - id: d1
+            model_info: {}
+          - id: d1
+            model_info: {}
+        access_group: group-a
+        still_desired: [d1, d2, d3]
+        live_after: [d4]
+calls:
+  - model_group_data:
+      calls:
+        - function: raise_http_if_reload_degraded_serving
+          before: [d3, d1, d2]
+          written: []
+          access_group: group-a
+          still_desired: [d3, d1, d2]
+          live_after: [d2]
+        - function: raise_http_if_reload_degraded_serving
+          before: [d1, d2]
+          written: []
+          access_group: group-a
+          still_desired: [d2]
+          live_after: []
+        - function: raise_http_if_reload_degraded_serving
+          before: [d1]
+          written:
+            - id: d2
+              model_info: {}
+          access_group: group-a
+          still_desired: [d1]
+          live_after: [d1]
+env: {}
+compare: {ignore: []}

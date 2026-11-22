@@ -1,0 +1,13 @@
+kind: probe
+name: benchmark-aggregates-reverse-date-range-400
+probes:
+  - clock: {unix_millis: 1710504000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      benchmark_aggregates:
+        now_unix_millis: 1710504000000
+        start_date: "2024-03-01"
+        end_date: "2024-02-29"
+        rows: []
+compare:
+  ignore: []

@@ -1,7 +1,7 @@
 id: B1749
 milestone: M4 keys, spend and management
 title: Persist request logs with byte limits and isolated poison rows
-status: todo
+status: done
 depends_on: [B002, B171, B173, B198, B204, B700, B726, B860, B1706, B1708, B1737]
 file: tasks/B1749-spend-log-storage.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/utils.py"
 parent: B070
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2955

@@ -457,7 +457,6 @@ fn assert_record_failure(body: &str) {
 }
 
 fn price_failures() {
-    unmapped_model_price();
     let upstream = upstream(200, r#"{"images":["x"]}"#);
     text_price_failure(&upstream);
     shape_price_failures();
@@ -465,10 +464,20 @@ fn price_failures() {
 }
 
 fn unmapped_model_price() {
-    let unknown = edit_reply(UNKNOWN, 200, r#"{"images":["x"]}"#)
-        .expect_err("an unmapped model has no price");
-    assert_eq!(unknown.status(), None);
-    assert!(matches!(unknown, StabilityEditError::ModelInfo { .. }));
+    let reply = edit_reply(UNKNOWN, 200, r#"{"images":["x"]}"#)
+        .expect("an unmapped model still returns its image");
+    assert_eq!(
+        reply.response.data,
+        Some(vec![ImageData {
+            b64_json: Some("x".to_owned()),
+            revised_prompt: None,
+            url: None,
+        }])
+    );
+    assert_eq!(
+        reply.additional_headers.get(COST_HEADER),
+        Some(&json("0.0"))
+    );
 }
 
 fn text_price_failure(upstream: &ImageHttpResponse) {
@@ -504,6 +513,7 @@ fn shape_price_failures() {
 }
 
 fn price_header_cases(upstream: &ImageHttpResponse) {
+    unmapped_model_price();
     let null_price = Prices::new(&[(
         INPAINT,
         price_record(&[("output_cost_per_image", Scalar::Null)]),
