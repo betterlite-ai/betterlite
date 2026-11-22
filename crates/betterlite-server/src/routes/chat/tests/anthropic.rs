@@ -259,7 +259,7 @@ async fn upstream_error() {
     assert_eq!(body.error.code, "429");
 }
 
-// LiteLLM's dump restores a null content beside the tool calls, as OpenAI's message shape requires it
+// LiteLLM's dump keeps a null content beside the tool calls, as OpenAI's message shape requires it
 async fn tool_call_reply() {
     let answer = Answer {
         status: 200,
