@@ -54,8 +54,7 @@ async fn openai_sync() {
     assert_eq!(reply.model.as_deref(), Some("whisper"));
     assert_eq!(reply.custom_llm_provider, "azure");
     assert_eq!(reply.duration, StoredDuration::Absent);
-    assert_eq!(outcome.logger.audio_pre, 1);
-    assert_eq!(outcome.logger.audio_post, 1);
+    assert_eq!(outcome.logger.events, ["audio_pre", "audio_post"]);
     let requests = outcome.fixture.outbound();
     let sent = &requests[0];
     assert_eq!(sent.method, Method::POST);
@@ -92,8 +91,7 @@ async fn openai_async() {
     let reply = transcription_result(&outcome);
     assert_eq!(reply.response.text.as_deref(), Some("hello"));
     assert_eq!(reply.duration, StoredDuration::Absent);
-    assert_eq!(outcome.logger.audio_pre, 1);
-    assert_eq!(outcome.logger.audio_post, 1);
+    assert_eq!(outcome.logger.events, ["audio_pre", "audio_post"]);
     assert_eq!(outcome.fixture.outbound().len(), 1);
 }
 

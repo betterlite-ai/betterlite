@@ -1,6 +1,6 @@
 import base64
 import json
-from typing import Final, Literal, TypedDict, TypeAlias
+from typing import Final, Literal, TypeAlias, TypedDict
 
 import litellm
 from pydantic import JsonValue, TypeAdapter
@@ -13,33 +13,28 @@ from openai_transcription.probe import Answer
 litellm.suppress_debug_info = True
 
 
-class GenerationCase(TypedDict):
-    case: Literal["image_generation"]
+class SharedCase(TypedDict):
     api_base: str
     api_version: str
     model: str
-    prompt: str
     api_key: str
+
+
+class GenerationCase(SharedCase):
+    case: Literal["image_generation"]
+    prompt: str
     options: dict[str, JsonValue]
     reply: JsonValue
 
 
-class EditCase(TypedDict):
+class EditCase(SharedCase):
     case: Literal["image_edit"]
-    api_base: str
-    api_version: str
-    model: str
     prompt: str
-    api_key: str
     options: dict[str, JsonValue]
 
 
-class TranscriptionCase(TypedDict):
+class TranscriptionCase(SharedCase):
     case: Literal["transcription"]
-    api_base: str
-    api_version: str
-    model: str
-    api_key: str
     reply: JsonValue
 
 
@@ -117,10 +112,6 @@ def edit_answer(case: EditCase) -> JsonValue:
     }
 
 
-def part_order(part: Part) -> str:
-    return part["name"]
-
-
 def transcription_answer(case: TranscriptionCase) -> JsonValue:
     probe = TranscriptionProbe(
         model=case["model"],
@@ -136,16 +127,20 @@ def transcription_answer(case: TranscriptionCase) -> JsonValue:
     view = OBJECT.validate_python(transcription_exchange(probe))
     request = OBJECT.validate_python(view["request"])
     result = OBJECT.validate_python(view["result"])
-    parts = sorted(PARTS.validate_python(request["parts"]), key=part_order)
-    entries: list[JsonValue] = [
-        {
-            "name": part["name"],
-            "filename": part["filename"],
-            "content_type": part["content_type"],
-            "body": base64.b64decode(part["body"]).decode(),
-        }
-        for part in parts
-    ]
+    parts = PARTS.validate_python(request["parts"])
+    positions = [(part["name"], index) for index, part in enumerate(parts)]
+    positions.sort()
+    entries: list[JsonValue] = []
+    for _name, index in positions:
+        part = parts[index]
+        entries.append(
+            {
+                "name": part["name"],
+                "filename": part["filename"],
+                "content_type": part["content_type"],
+                "body": base64.b64decode(part["body"]).decode(),
+            }
+        )
     return {
         "url": request["url"],
         "api_key": request["api_key"],

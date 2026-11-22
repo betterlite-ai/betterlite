@@ -149,8 +149,7 @@ async fn sync_generation() {
     assert_eq!(image.reply.created, 1_700_000_000);
     assert_eq!(image.reply.data.len(), 1);
     assert_eq!(image.hidden_model, None);
-    assert_eq!(outcome.logger.image_pre, 1);
-    assert_eq!(outcome.logger.image_post, 1);
+    assert_eq!(outcome.logger.events, ["image_pre", "image_post"]);
     let sent = &outcome.fixture.images()[0];
     assert_eq!(sent.method, Method::POST);
     assert_eq!(
@@ -219,8 +218,7 @@ async fn async_generation() {
     let image = image_result(&outcome);
     assert_eq!(image.reply.data.len(), 1);
     assert_eq!(image.reply.size.as_deref(), Some("1024x1024"));
-    assert_eq!(outcome.logger.image_pre, 1);
-    assert_eq!(outcome.logger.image_post, 1);
+    assert_eq!(outcome.logger.events, ["image_pre", "image_post"]);
 }
 
 async fn generation_failure() {
@@ -341,7 +339,7 @@ async fn edit_failure() {
         AzureMediaOperation::ImageEdit(Box::new(edit_operation())),
         vec![Reply {
             status: 502,
-            headers: Vec::new(),
+            headers: HeaderMap::new(),
             body: vec![0xff],
         }],
     )
@@ -468,13 +466,15 @@ fn form_parts_render_the_httpx_field_text() {
     assert_eq!(field("false"), b"false");
     assert_eq!(field("number"), b"2");
     assert_eq!(field("text"), b"hello");
-    for rejected in [
-        (String::from("list"), Json::List(Vec::new())),
-        (String::from("object"), Json::Object(IndexMap::new())),
-    ] {
-        let error = form_parts(&IndexMap::from([rejected])).expect_err("the field is not text");
-        assert!(matches!(error, AzureMediaError::FormField { .. }));
-    }
+}
+
+#[rstest]
+#[case::list(Json::List(Vec::new()))]
+#[case::object(Json::Object(IndexMap::new()))]
+fn form_parts_reject_non_scalar_fields(#[case] value: Json) {
+    let fields = IndexMap::from([(String::from("field"), value)]);
+    let error = form_parts(&fields).expect_err("the field is not text");
+    assert!(matches!(error, AzureMediaError::FormField { .. }));
 }
 
 #[test]
@@ -531,17 +531,15 @@ fn transcription_operation(atranscription: bool) -> TranscriptionOperation {
 }
 
 fn native_operation() -> NativeTranscriptionOperation {
+    let language = ("language".to_owned(), Json::Text("en-US".to_owned()));
     NativeTranscriptionOperation {
-        filename: String::from("a.wav"),
+        filename: "a.wav".to_owned(),
         content: b"abc".to_vec(),
-        optional_params: IndexMap::from([(
-            String::from("language"),
-            Json::Text(String::from("en-US")),
-        )]),
+        optional_params: IndexMap::from([language]),
         headers: BTreeMap::new(),
         api_key: None,
         environment_key: Some(SecretString::from("speech-key")),
-        api_base: Some(String::from("https://westus.api.cognitive.microsoft.com")),
+        api_base: Some("https://westus.api.cognitive.microsoft.com".to_owned()),
         environment_base: None,
         timeout: Duration::from_secs(30),
     }
