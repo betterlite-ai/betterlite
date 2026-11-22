@@ -85,6 +85,7 @@ pub fn group_response(
 }
 
 // get_shadow_eval_job: the totals, the latest error and the stratified reads land on the labeled response
+#[must_use]
 pub fn detail_response(
     job: &ShadowJob,
     totals: AttemptTotals,
