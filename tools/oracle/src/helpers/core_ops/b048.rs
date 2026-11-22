@@ -89,17 +89,17 @@ fn request_answer(call: &RequestCall) -> HelperResult {
     }))
 }
 fn reply_answer(config: &TinyfishSearch<'_>, reply: Option<&ReplyCall>) -> HelperResult {
-    let Some(reply) = reply else {
+    let Some(present) = reply else {
         return Ok(Value::Null);
     };
     let headers = Headers::new();
     let response = config.transform_search_response(&ProviderResponse {
-        status_code: reply.status,
+        status_code: present.status,
         headers: &headers,
-        text: &reply.body,
+        text: &present.body,
     });
     match response {
-        Ok(response) => serde_json::to_value(response).or_value_error(),
+        Ok(value) => serde_json::to_value(value).or_value_error(),
         Err(TinyfishSearchError::Provider(error)) => Ok(json!({
             "error": {"status": error.status_code, "message": error.message},
         })),
