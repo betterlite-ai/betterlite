@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sized
 from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import httpx
@@ -121,7 +121,6 @@ class Hidden(TypedDict):
 OPTIONS: Final = TypeAdapter(EditOptions)
 MAPPED: Final = TypeAdapter(dict[str, JsonValue])
 SUPPORTED: Final = TypeAdapter(list[JsonValue])
-FORM: Final = TypeAdapter(tuple[dict[str, JsonValue], dict[str, JsonValue]])
 HIDDEN: Final = TypeAdapter(Hidden)
 
 
@@ -153,7 +152,7 @@ class EditConfig(Protocol):
             GenericLiteLLMParams,
             dict[str, JsonValue],
         ],
-        tuple[dict[str, JsonValue], Mapping[str, object] | Sequence[object]],
+        tuple[dict[str, JsonValue], Sized],
     ]: ...
 
     @property
@@ -222,17 +221,15 @@ def request_answer(config: EditConfig, call: RequestCall) -> JsonValue:
         return {"unsupported": True}
     spec = call.get("image")
     image = None if spec is None else spec["value"].encode()
-    body, files = FORM.validate_python(
-        config.transform_image_edit_request(
-            call["model"],
-            call.get("prompt"),
-            image,
-            mapped,
-            GenericLiteLLMParams(),
-            NO_HEADERS,
-        )
+    body, files = config.transform_image_edit_request(
+        call["model"],
+        call.get("prompt"),
+        image,
+        mapped,
+        GenericLiteLLMParams(),
+        NO_HEADERS,
     )
-    return {"body": body, "files": len(files)}
+    return {"body": MAPPED.validate_python(body), "files": len(files)}
 
 
 def response_answer(config: EditConfig, call: ResponseCall) -> JsonValue:
