@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-s3-signing-file-config-contract
+call:
+  bedrock_services_s3_signing:
+    operation: contract
+    handoffs:
+      - headers: {a: "1", c: 4}
+        litellm_params:
+          keep: x
+          _s3_signed_request_headers: {a: "2", b: "3"}
+      - headers: {a: "1"}
+        litellm_params: {_s3_signed_request_headers: x}
+      - headers: {a: "1"}
+        litellm_params: {_s3_signed_request_headers: null, other: [1, 2]}
+      - headers: {}
+        litellm_params: {}
+    optional_params: {purpose: batch, n: 1, nested: {k: [true]}}
+env: {}
+compare: {ignore: []}

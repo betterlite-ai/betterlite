@@ -100,6 +100,7 @@ description: >-
   responses_yielded`; the withheld originals are never sent. On `Http`: send `emit_streaming_http_error` output with the same
   started flag. Any other failure leaves the stream as an error item.
 
+  Nothing wires this hook into the proxy yet: B8399 implements B6370's CallbackSet over ProxyLogging and runs these cases through the booted proxy (architect, 2026-11-21, as for B3680). Write the cases here so B8399 finds them, and prove the hook through the Rust tests.
   HTTP oracle cases, in tools/oracle/cases/guardrails/unified-stream-hook/. They run a streamed chat request through the booted
   proxy with a `generic_guardrail_api` guardrail (B3771) whose `api_base` is the oracle mock, and compare the SSE body,
   status and headers of LiteLLM and betterlite. LiteLLM sends a `generic_guardrail_api` guardrail through this hook
@@ -139,19 +140,19 @@ dod:
   - text: Buffering is turned off with the warning when mask_response_content is true, and buffering without release_on_scan forces end_of_stream_only.
     proof: [settings-tests]
   - text: No guardrail, a false gate and an unmapped call type send every chunk unchanged, and a gate error is the first stream item.
-    proof: [passthrough-tests, oracle]
+    proof: [passthrough-tests]
   - text: Sampling scans every Nth chunk, skips a redundant scan, and holds a buffered window while tool calls are in flight or the key is missing.
-    proof: [sampling-tests, oracle]
+    proof: [sampling-tests]
   - text: A block or HTTP failure during a sampled scan sends the translation's block chunks or error items, measured against only the chunks already sent, and ends the stream.
-    proof: [block-tests, oracle]
+    proof: [block-tests]
   - text: The end-of-stream scan releases buffered and pending chunks after a pass, sends only the block message after a block, and skips a redundant scan.
-    proof: [end-scan-tests, oracle]
+    proof: [end-scan-tests]
   - text: With incremental_diff and a chat route the stream goes to B6164's loop, and any other route logs the fallback warning and runs the block-only loop.
-    proof: [transform-route-tests, oracle]
+    proof: [transform-route-tests]
   - text: The stream-ended probe is true for chat, Responses and Anthropic exactly as their handlers say and false for every other variant.
     proof: [stream-end-tests]
-  - text: Streamed requests through the booted proxy match LiteLLM for a clean stream, a mid-stream block, an end-of-stream block, buffered release and the incremental_diff fallback.
-    proof: [oracle, http-case-corpus]
+  - text: The HTTP cases for a clean stream, a mid-stream block, an end-of-stream block, buffered release and the incremental_diff fallback are added in tools/oracle/cases/guardrails/unified-stream-hook/ for B8399 to run through the booted proxy.
+    proof: [http-case-corpus]
 
 checks:
   optional: [mutants]
@@ -182,12 +183,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/unified-stream-hook)"
 
-oracle_cases:
-  - tools/oracle/cases/guardrails/unified-stream-hook/clean-stream-sampled.yaml
-  - tools/oracle/cases/guardrails/unified-stream-hook/mid-stream-block.yaml
-  - tools/oracle/cases/guardrails/unified-stream-hook/end-of-stream-block.yaml
-  - tools/oracle/cases/guardrails/unified-stream-hook/buffered-release.yaml
-  - tools/oracle/cases/guardrails/unified-stream-hook/incremental-diff-fallback.yaml
+oracle_cases: []
 
 deviations:
   - what: The guardrail to apply is the typed `guardrail` field of the hook params, not the "guardrail_to_apply" key that LiteLLM pops from the request data when the argument is missing.
