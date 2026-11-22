@@ -1,0 +1,38 @@
+kind: helper
+name: logging-disabled-six-field-marker
+call:
+  batch_claim_row:
+    disable_spend_logs: true
+    database: true
+    seed: []
+    calls:
+      - payload:
+          request_id: batch-marker-1
+          call_type: aretrieve_batch
+          status: success
+          spend: 0.5
+          startTime: "2026-01-02T04:04:05.000000+00:00"
+          endTime: "2026-01-02T04:04:06.000000+00:00"
+          model: gpt-4o-mini
+          total_tokens: 7
+      - payload:
+          request_id: batch-marker-1
+          call_type: aretrieve_batch
+          status: success
+          spend: 0.5
+          startTime: "2026-01-02T04:04:05.000000+00:00"
+          endTime: "2026-01-02T04:04:06.000000+00:00"
+          model: gpt-4o-mini
+          total_tokens: 7
+      - payload:
+          request_id: batch-marker-1
+          call_type: aretrieve_batch
+          status: failure
+          spend: 0.5
+          startTime: "2026-01-02T04:05:05.000000+00:00"
+          endTime: "2026-01-02T04:05:06.000000+00:00"
+          model: gpt-4o-mini
+          total_tokens: 0
+env: {}
+compare:
+  ignore: []

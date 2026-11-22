@@ -1,0 +1,25 @@
+kind: helper
+name: batch-claim-row-marker-seed
+call:
+  batch_claim_row:
+    disable_spend_logs: true
+    database: true
+    seed:
+      - request_id: batch-seed-2
+        call_type: aretrieve_batch
+        status: success
+        spend: 0
+        startTime: "2026-01-02T06:04:05+00:00"
+        endTime: "2026-01-02T06:04:06+00:00"
+    calls:
+      - payload:
+          request_id: batch-seed-2
+          call_type: aretrieve_batch
+          status: success
+          spend: 0.5
+          startTime: "2026-01-02T06:04:05+00:00"
+          endTime: "2026-01-02T06:04:06+00:00"
+          model: gpt-4o
+env: {}
+compare:
+  ignore: []

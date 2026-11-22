@@ -1,0 +1,47 @@
+kind: helper
+name: successful-retrieve-versus-other-calls
+call:
+  batch_claim_row:
+    disable_spend_logs: false
+    database: true
+    seed: []
+    calls:
+      - payload:
+          request_id: batch-retrieve-1
+          call_type: aretrieve_batch
+          status: success
+          spend: 0.25
+          startTime: "2026-01-02T03:04:05.000000+00:00"
+          endTime: "2026-01-02T03:04:06.000000+00:00"
+          model: gpt-4o
+          total_tokens: 12
+      - payload:
+          request_id: batch-retrieve-1
+          call_type: aretrieve_batch
+          status: success
+          spend: 0.25
+          startTime: "2026-01-02T03:04:05.000000+00:00"
+          endTime: "2026-01-02T03:04:06.000000+00:00"
+          model: gpt-4o
+          total_tokens: 12
+      - payload:
+          request_id: batch-retrieve-1
+          call_type: aretrieve_batch
+          status: failure
+          spend: 0.25
+          startTime: "2026-01-02T03:05:05.000000+00:00"
+          endTime: "2026-01-02T03:05:06.000000+00:00"
+          model: gpt-4o
+          total_tokens: 0
+      - payload:
+          request_id: completion-1
+          call_type: acompletion
+          status: success
+          spend: 0.01
+          startTime: "2026-01-02T03:06:05.000000+00:00"
+          endTime: "2026-01-02T03:06:06.000000+00:00"
+          model: gpt-4o
+          total_tokens: 3
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,18 @@
+kind: helper
+name: batch-claim-row-seed
+call:
+  batch_claim_row:
+    disable_spend_logs: false
+    database: true
+    seed: []
+    calls:
+      - payload:
+          request_id: batch-seed-1
+          call_type: aretrieve_batch
+          status: success
+          spend: 0.25
+          startTime: "2026-01-02T05:04:05+00:00"
+          endTime: "2026-01-02T05:04:06+00:00"
+env: {}
+compare:
+  ignore: []
