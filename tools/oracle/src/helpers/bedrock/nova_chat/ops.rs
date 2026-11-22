@@ -2,7 +2,8 @@ use std::fmt::Display;
 
 use betterlite_bedrock::converse_request::{CommonRequest, ConverseRequestBody};
 use betterlite_bedrock::nova_chat::direct::{
-    NovaChatArgs, NovaChatConfig, NovaEndpointRequest, resolve_endpoint, transform_response,
+    NovaChatArgs, NovaChatConfig, NovaEndpointRequest, SUPPORTED_OPENAI_PARAMS, resolve_endpoint,
+    transform_response,
 };
 use betterlite_bedrock::nova_chat::invoke::{
     InlineRequest, inline_cache_points, transform_converse, without_tool_config_points,
@@ -213,7 +214,7 @@ fn defaults(case: &DefaultsInput) -> HelperResult {
         metadata: None,
     };
     let encoded = config.config().map_err(helper_error)?;
-    Ok(json!(encoded))
+    Ok(json!({"config": encoded, "supported": SUPPORTED_OPENAI_PARAMS}))
 }
 
 fn response_model(case: &ResponseModelInput) -> HelperResult {

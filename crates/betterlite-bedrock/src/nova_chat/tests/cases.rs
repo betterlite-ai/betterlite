@@ -581,6 +581,22 @@ fn direct_nova_defaults() {
     };
     let configured_metadata = value(&with_metadata.config().expect("the config renders"));
     assert_eq!(field(&configured_metadata, "metadata"), Some(&json("7")));
+    assert_eq!(
+        direct::SUPPORTED_OPENAI_PARAMS,
+        [
+            "top_p",
+            "temperature",
+            "max_tokens",
+            "max_completion_tokens",
+            "metadata",
+            "stop",
+            "stream",
+            "stream_options",
+            "tools",
+            "tool_choice",
+            "reasoning_effort",
+        ]
+    );
 }
 
 // The reply names amazon-nova/<model> so the cost lookup finds the direct provider's price.

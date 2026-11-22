@@ -208,7 +208,7 @@ def delegation(case: DelegationCase) -> Json:
 
 def defaults(case: Arguments) -> Json:
     # the constructor writes its non-None fields onto the class dict get_config reads
-    _ = AmazonNovaChatConfig(
+    config = AmazonNovaChatConfig(
         max_completion_tokens=case.get("max_completion_tokens"),
         max_tokens=case.get("max_tokens"),
         temperature=case.get("temperature"),
@@ -216,7 +216,8 @@ def defaults(case: Arguments) -> Json:
         tools=case.get("tools"),
         reasoning_effort=case.get("reasoning_effort"),
     )
-    return JSON.validate_python(DECLARED.get_config())
+    supported: list[str] = config.get_supported_openai_params("amazon.nova-pro-v1:0")
+    return JSON.validate_python({"config": DECLARED.get_config(), "supported": supported})
 
 
 def response_model(case: ResponseCase) -> Json:
