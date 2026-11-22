@@ -37,6 +37,7 @@ async fn polling_patch_truthiness() {
     patching::error_overrides_status(&cache, &store).await;
     patching::present_fields(&cache, &store).await;
     patching::null_patch_leaves_fields(&cache, &store).await;
+    patching::unknown_field_is_rejected();
     patching::ttl_is_refreshed(&cache);
     drop(guard);
     patching::assert_logs(&watch);

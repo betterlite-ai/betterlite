@@ -1,5 +1,9 @@
+use indexmap::IndexMap;
+
 use super::super::access::PollAccess;
+use super::super::error::UnknownPatchField;
 use super::super::get_cache_key;
+use super::super::record::PollPatch;
 use super::super::store::{PollingUpdate, ResponsePollingStore};
 use super::support::{self, CacheOperation, FakeCache, Watch};
 
@@ -127,6 +131,16 @@ pub(super) async fn null_patch_leaves_fields(cache: &FakeCache, store: &Response
         .await
         .expect("null values leave the state untouched");
     assert_eq!(support::stored(cache, ID), before);
+}
+
+pub(super) fn unknown_field_is_rejected() {
+    let fields = IndexMap::from([("bogus".to_owned(), support::json("1"))]);
+    assert_eq!(
+        PollPatch::try_from(fields),
+        Err(UnknownPatchField {
+            field: "bogus".to_owned()
+        })
+    );
 }
 
 pub(super) fn ttl_is_refreshed(cache: &FakeCache) {
