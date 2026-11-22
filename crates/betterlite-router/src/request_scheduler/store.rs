@@ -142,57 +142,68 @@ where
 {
     let key = queue::key(model)?;
     let Some(shared) = &scheduler.shared else {
-        return change_without_shared(scheduler, &key, model, &change);
+        let (entries, _) = change_local(scheduler, &key, model, &change)?;
+        return Ok(Observed {
+            value: entries,
+            warning: None,
+        });
     };
-    let carried = {
-        let guard = scheduler
-            .pending
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        guard.get(model).cloned().unwrap_or_default()
-    };
+    let carried = carried_changes(scheduler, model);
     let ttl = local_ttl(scheduler);
     match Box::pin(cas(shared, model, &change, &carried, ttl)).await {
-        Ok(entries) => {
-            forget_changes(scheduler, model, &carried);
-            mirror_local(scheduler, &key, &entries)?;
-            Ok(Observed {
-                value: entries,
-                warning: None,
-            })
-        }
+        Ok(entries) => shared_answer(scheduler, &key, model, &carried, entries),
         Err(SharedChange::Refused(error)) => Err(error),
         Err(SharedChange::Unavailable(warning)) => {
-            let (entries, fallback) = change_local(scheduler, &key, model, &change)?;
-            {
-                let mut pending = scheduler
-                    .pending
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
-                let recorded = pending.entry(model.to_owned()).or_default();
-                recorded.extend(fallback);
-            }
-            Ok(Observed {
-                value: entries,
-                warning: Some(warning),
-            })
+            fallback_answer(scheduler, &key, model, &change, warning)
         }
     }
 }
-// the local tier of a scheduler with no shared store
-fn change_without_shared<F>(
+// the fallback tier's changes the next shared write has to carry
+fn carried_changes(scheduler: &RequestScheduler, model: &str) -> PendingChanges {
+    let guard = scheduler
+        .pending
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    guard.get(model).cloned().unwrap_or_default()
+}
+// a shared write answered, so its result becomes this worker's queue too
+fn shared_answer(
+    scheduler: &RequestScheduler,
+    key: &RouteKey,
+    model: &str,
+    carried: &PendingChanges,
+    entries: Vec<SchedulerTuple>,
+) -> Result<Observed<Vec<SchedulerTuple>>, SchedulerError> {
+    forget_changes(scheduler, model, carried);
+    mirror_local(scheduler, key, &entries)?;
+    Ok(Observed {
+        value: entries,
+        warning: None,
+    })
+}
+// the shared tier is down, so this worker's copy takes the change and remembers it for the next shared write
+fn fallback_answer<F>(
     scheduler: &RequestScheduler,
     key: &RouteKey,
     model: &str,
     change: &F,
+    warning: StoreWarning,
 ) -> Result<Observed<Vec<SchedulerTuple>>, SchedulerError>
 where
     F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
 {
-    let (entries, _) = change_local(scheduler, key, model, change)?;
+    let (entries, fallback) = change_local(scheduler, key, model, change)?;
+    {
+        let mut pending = scheduler
+            .pending
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let recorded = pending.entry(model.to_owned()).or_default();
+        recorded.extend(fallback);
+    }
     Ok(Observed {
         value: entries,
-        warning: None,
+        warning: Some(warning),
     })
 }
 // the fallback tier of a degraded shared read: one lock serializes this worker's read-modify-write
