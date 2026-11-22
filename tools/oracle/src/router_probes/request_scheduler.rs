@@ -101,7 +101,12 @@ async fn apply(
             Ok(run_scheduled(service, step.model(), &queued, &deadline, calls).await)
         }
         wire::Step::Queue { .. } => Ok((wire::Outcome::Queue, None)),
-        wire::Step::Interval { .. } => Ok(interval(service)),
+        wire::Step::Interval { .. } => Ok((
+            wire::Outcome::Interval {
+                interval: format!("{:.6}", service.polling_interval().as_secs_f64()),
+            },
+            None,
+        )),
         wire::Step::Add {
             priority,
             request_id,
@@ -132,10 +137,6 @@ async fn peek(service: &RequestScheduler, model: &str, request_id: &str) -> Repl
     answer(peeked.map(|observed| wire::Outcome::Peeked {
         head: observed.value,
     }))
-}
-fn interval(service: &RequestScheduler) -> Reply {
-    let rendered = format!("{:.6}", service.polling_interval().as_secs_f64());
-    (wire::Outcome::Interval { interval: rendered }, None)
 }
 // the schedule step's own fields, gathered so the runner takes one value
 struct Queued<'a> {
