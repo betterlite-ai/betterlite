@@ -25,7 +25,8 @@ pub(super) async fn execute(input: &Payload) -> Result<Output, OperationError> {
     let service = build_service(input, &now)?;
     let mut steps = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
-        *now.lock().unwrap_or_else(PoisonError::into_inner) = seconds(step.now_millis);
+        *now.lock().unwrap_or_else(PoisonError::into_inner) =
+            Duration::from_millis(step.now_millis).as_secs_f64();
         steps.push(match step.kind {
             StepKind::Filter => filter_step(&service, input, step).await?,
             StepKind::Hook => hook_step(&service, step).await?,
@@ -200,10 +201,6 @@ fn deployment_spec(
         IndexMap::new(),
         String::new,
     )
-}
-
-fn seconds(now_millis: u64) -> f64 {
-    Duration::from_millis(now_millis).as_secs_f64()
 }
 
 const fn local_settings() -> StoreSettings {
