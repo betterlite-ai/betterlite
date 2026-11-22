@@ -1,0 +1,24 @@
+task: B3015
+deviations:
+  - what: >-
+      A settled post-call value that has no Decimal form (an infinity or NaN) is logged at debug
+      and leaves the counter untouched: no in-memory write and no active-batch record. LiteLLM
+      converts the float and stores it in both, so a non-finite answer would become the
+      counter's value.
+    why: >-
+      The workspace requires checked Decimal money, and Decimal::from_f64 answers None for a
+      non-finite double. Redis rejects an INCRBYFLOAT result it cannot represent as a double,
+      so a working setup never sees this answer, and the counter keeps its last good value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3797-L3800
+  - what: >-
+      When the in-memory delete fails during invalidation, betterlite logs it at debug and still
+      deletes from Redis, so the invalidation path never raises. LiteLLM calls the in-memory
+      delete unguarded, so an exception there would skip the Redis delete and propagate to the
+      caller.
+    why: >-
+      The task requires the invalidation failure path not to raise, and the counter must still
+      be cleared from Redis after a failed delete. betterlite's memory tier can report a
+      poisoned lock where LiteLLM's in-process cache delete cannot fail, so a working setup sees
+      no difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3754-L3757
+kept_bugs: []
