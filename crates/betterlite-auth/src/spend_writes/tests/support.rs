@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -54,7 +54,7 @@ use crate::spend_writes::error::LayersError;
 use crate::spend_writes::layers::{CounterLayers, CounterWriteBatch, PostCallBatch};
 use crate::spend_writes::source::SourceSpendCache;
 
-type CacheResult<T> = Result<T, ReseedCacheError>;
+type CacheReady<T> = Ready<Result<T, ReseedCacheError>>;
 
 pub(crate) const KEY: &str = "spend:key:k1";
 pub(crate) const OTHER_KEY: &str = "spend:key:k2";
@@ -414,33 +414,39 @@ impl FakeLayers {
         next
     }
 
-    fn read_redis(&self, key: &str) -> CacheResult<Option<ReseedCacheValue>> {
-        self.begin_cache(format!("redis_get:{key}"), Fault::RedisGet)?;
-        Ok(self.redis_value())
+    fn read_redis(&self, key: &str) -> CacheReady<Option<ReseedCacheValue>> {
+        if let Err(error) = self.begin_cache(format!("redis_get:{key}"), Fault::RedisGet) {
+            return ready(Err(error));
+        }
+        ready(Ok(self.redis_value()))
     }
 
-    fn store_set_nx(&self, key: &str, value: Decimal) -> CacheResult<Option<bool>> {
+    fn store_set_nx(&self, key: &str, value: Decimal) -> CacheReady<Option<bool>> {
         self.journal.push(format!("redis_set_nx:{key}"));
         self.put_redis(ReseedCacheValue::Number(value));
-        Ok(Some(true))
+        ready(Ok(Some(true)))
     }
 
-    fn read_memory(&self, key: &str) -> CacheResult<Option<ReseedCacheValue>> {
-        self.begin_cache(format!("memory_get:{key}"), Fault::MemoryGet)?;
-        Ok(self.memory_value(key))
+    fn read_memory(&self, key: &str) -> CacheReady<Option<ReseedCacheValue>> {
+        if let Err(error) = self.begin_cache(format!("memory_get:{key}"), Fault::MemoryGet) {
+            return ready(Err(error));
+        }
+        ready(Ok(self.memory_value(key)))
     }
 
-    fn store_memory(&self, key: &str, value: Decimal) -> CacheResult<()> {
-        self.begin_cache(format!("memory_set:{key}"), Fault::MemorySet)?;
+    fn store_memory(&self, key: &str, value: Decimal) -> CacheReady<()> {
+        if let Err(error) = self.begin_cache(format!("memory_set:{key}"), Fault::MemorySet) {
+            return ready(Err(error));
+        }
         self.put_memory(key, ReseedCacheValue::Number(value));
-        Ok(())
+        ready(Ok(()))
     }
 
-    fn bump_local(&self, key: &str, increment: Decimal) -> CacheResult<Option<Decimal>> {
+    fn bump_local(&self, key: &str, increment: Decimal) -> CacheReady<Option<Decimal>> {
         let counted = self.cache_op(key, "increment_local", Fault::IncrementLocal, || {
             self.bump(key, increment)
         });
-        Ok(Some(counted))
+        ready(counted.map(Some))
     }
 }
 
@@ -455,7 +461,7 @@ impl ReseedCache for FakeLayers {
         &self,
         counter_key: &str,
     ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
-        ready(self.read_redis(counter_key))
+        self.read_redis(counter_key)
     }
 
     fn redis_set_nx(
@@ -463,14 +469,14 @@ impl ReseedCache for FakeLayers {
         counter_key: &str,
         value: Decimal,
     ) -> impl Future<Output = Result<Option<bool>, ReseedCacheError>> + Send {
-        ready(self.store_set_nx(counter_key, value))
+        self.store_set_nx(counter_key, value)
     }
 
     fn memory_get(
         &self,
         counter_key: &str,
     ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
-        ready(self.read_memory(counter_key))
+        self.read_memory(counter_key)
     }
 
     fn memory_set(
@@ -478,7 +484,7 @@ impl ReseedCache for FakeLayers {
         counter_key: &str,
         value: Decimal,
     ) -> impl Future<Output = Result<(), ReseedCacheError>> + Send {
-        ready(self.store_memory(counter_key, value))
+        self.store_memory(counter_key, value)
     }
 
     fn increment_local(
@@ -486,7 +492,7 @@ impl ReseedCache for FakeLayers {
         counter_key: &str,
         increment: Decimal,
     ) -> impl Future<Output = Result<Option<Decimal>, ReseedCacheError>> + Send {
-        ready(self.bump_local(counter_key, increment))
+        self.bump_local(counter_key, increment)
     }
 }
 
