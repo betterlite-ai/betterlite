@@ -6,12 +6,9 @@ use axum::extract::{Extension, Path, State};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
 use betterlite_auth::agent_identity::error::AgentIdentityError;
-use betterlite_auth::agent_policy::{
-    AgentExecutionMode, AgentIdentityBinding as PolicyBinding, AgentResponse as PolicyAgent,
-};
+use betterlite_auth::agent_policy::{AgentExecutionMode, AgentResponse as PolicyAgent};
 use betterlite_auth::identity::{
-    ActiveState, AgentIdentityBinding, AgentIdentityFailure, ExecutionMode,
-    ManagedAgentIdentityStatus,
+    ActiveState, AgentIdentityFailure, ExecutionMode, ManagedAgentIdentityStatus,
 };
 
 use super::error::{Detail, IdentityAdminError};
@@ -106,7 +103,14 @@ where
 
 // LiteLLM copies the store row into the status, so the binding is read into the response record through its wire form
 fn status_body(agent: PolicyAgent) -> Result<ManagedAgentIdentityStatus, IdentityAdminError> {
-    let identity = agent.identity.map(identity_binding).transpose()?;
+    // a stored binding the response record cannot hold, such as a tenant that is not a UUID, is an unreadable policy
+    let identity = agent
+        .identity
+        .map(|binding| {
+            let wire = serde_json::to_value(binding).map_err(|_error| policy_unreadable())?;
+            serde_json::from_value(wire).map_err(|_error| policy_unreadable())
+        })
+        .transpose()?;
     let last_authenticated_at = identity
         .as_ref()
         .and_then(|binding| binding.last_authenticated_at);
@@ -117,12 +121,6 @@ fn status_body(agent: PolicyAgent) -> Result<ManagedAgentIdentityStatus, Identit
         execution_mode: execution_mode(agent.execution_mode),
         last_authenticated_at,
     })
-}
-
-// a stored binding the response record cannot hold (a tenant that is not a UUID, a timestamp without an offset) is an unreadable policy
-fn identity_binding(binding: PolicyBinding) -> Result<AgentIdentityBinding, IdentityAdminError> {
-    let wire = serde_json::to_value(binding).map_err(|_error| policy_unreadable())?;
-    serde_json::from_value(wire).map_err(|_error| policy_unreadable())
 }
 
 fn policy_unreadable() -> IdentityAdminError {
