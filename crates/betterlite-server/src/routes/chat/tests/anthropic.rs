@@ -193,7 +193,10 @@ async fn buffered_reply() {
         header(&answered.headers, "x-litellm-model-api-base"),
         Some(answered.base.as_str())
     );
-    let body: Reply = serde_json::from_slice(&answered.body).unwrap();
+    let text = String::from_utf8(answered.body).unwrap();
+    // the proxy dumps with exclude_none, so a null system_fingerprint never reaches the client
+    assert!(!text.contains("system_fingerprint"), "{text}");
+    let body: Reply = serde_json::from_str(&text).unwrap();
     assert_eq!(body.object, "chat.completion");
     assert_eq!(body.model, "g");
     assert_eq!(
