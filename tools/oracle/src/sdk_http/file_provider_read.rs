@@ -59,7 +59,8 @@ pub struct Step {
     pub file_id: String,
     #[serde(default)]
     pub purpose: Option<String>,
-    #[serde(default)]
+    // the Python step declares the provider as text, so an unnamed one is omitted rather than sent as null
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_llm_provider: Option<String>,
     #[serde(default)]
     pub extra_headers: Option<BTreeMap<String, String>>,
