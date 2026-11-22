@@ -61,6 +61,7 @@ def outcome(call):
 def exports(side, found):
     return {key: [hasattr(found[key], name) for name in names] for key, names in EXPORTS.items()}
 MESSAGES = [{"role": "user", "content": "hi"}]
+DYN = {"user_api_key": "k"}
 def template(prompt_id):
     if prompt_id == "missing":
         return {"prompt_id": prompt_id}
@@ -72,23 +73,24 @@ def template(prompt_id):
             "prompt_template": [{"role": "system", "content": "sys " + str(prompt_id)}],
             "prompt_template_model": "tmpl-model" if prompt_id == "with-model" else None,
             "prompt_template_optional_params": params, "completed_messages": None}
-def templated_class(base, seen):
+def templated_class(base, seen, runs):
     class Templated(base):
         @property
         def integration_name(self):
             return "templ"
         def should_run_prompt_management(self, prompt_id, prompt_spec, dynamic_callback_params):
+            runs.append([prompt_id, prompt_spec is not None, dynamic_callback_params])
             return prompt_id != "skip"
         def _compile_prompt_helper(self, prompt_id, prompt_spec, prompt_variables,
                                    dynamic_callback_params, prompt_label=None, prompt_version=None):
             seen.append(["sync", prompt_id, prompt_spec is not None, prompt_variables,
-                         prompt_label, prompt_version])
+                         prompt_label, prompt_version, dynamic_callback_params])
             return template(prompt_id)
         async def async_compile_prompt_helper(self, prompt_id, prompt_variables,
                                               dynamic_callback_params, prompt_spec=None,
                                               prompt_label=None, prompt_version=None):
             seen.append(["async", prompt_id, prompt_spec is not None, prompt_variables,
-                         prompt_label, prompt_version])
+                         prompt_label, prompt_version, dynamic_callback_params])
             return template(prompt_id)
     return Templated
 def spec(found, model, params):
@@ -96,13 +98,15 @@ def spec(found, model, params):
         "prompt_integration": "custom", "ignore_prompt_manager_model": model,
         "ignore_prompt_manager_optional_params": params})
 def base_calls(found):
-    seen = []; manager = templated_class(found["base"].PromptManagementBase, seen)(); r = {}
+    seen = []; runs = []
+    manager = templated_class(found["base"].PromptManagementBase, seen, runs)()
+    r = {}
     def call(prompt_id, **extra):
         return outcome(lambda: list(manager.get_chat_completion_prompt(
-            "templ/gpt-4o", list(MESSAGES), {"max_tokens": 5}, prompt_id, {"v": 1}, {}, **extra)))
+            "templ/gpt-4o", list(MESSAGES), {"max_tokens": 5}, prompt_id, {"v": 1}, DYN, **extra)))
     def async_call(prompt_id, **extra):
         return outcome(lambda: list(asyncio.run(manager.async_get_chat_completion_prompt(
-            "templ/gpt-4o", list(MESSAGES), {"max_tokens": 5}, prompt_id, {"v": 1}, {}, None,
+            "templ/gpt-4o", list(MESSAGES), {"max_tokens": 5}, prompt_id, {"v": 1}, DYN, None,
             **extra))))
     both = spec(found, True, True)
     r["sync_id"] = call("p1"); r["sync_no_id"] = call(None); r["sync_skipped"] = call("skip")
@@ -115,7 +119,6 @@ def base_calls(found):
     r["async_id"] = async_call("p1"); r["async_no_id"] = async_call(None)
     r["async_skipped"] = async_call("skip"); r["async_missing"] = async_call("missing")
     r["async_spec"] = async_call("p1", prompt_spec=both, prompt_label="dev", prompt_version=2)
-    r["seen"] = list(seen)
     template_none = {"prompt_id": "x", "prompt_template": [], "prompt_template_model": None,
                      "prompt_template_optional_params": None, "completed_messages": None}
     done = dict(template_none, completed_messages=[{"role": "system", "content": "done"}],
@@ -128,10 +131,11 @@ def base_calls(found):
     r["post_other_prefix"] = list(manager.post_compile_prompt_processing(
         template_none, [], {}, "other/m"))
     r["merge"] = manager.merge_messages([{"role": "system", "content": "a"}], list(MESSAGES))
-    r["compile"] = manager.compile_prompt("p1", None, list(MESSAGES), {})
-    r["async_compile_none"] = asyncio.run(manager.async_compile_prompt(None, None, [], {}))
+    r["compile"] = manager.compile_prompt("p1", None, list(MESSAGES), DYN, prompt_spec=both)
+    r["async_compile_none"] = asyncio.run(manager.async_compile_prompt(None, None, [], DYN))
     r["model_from_prompt"] = [manager._get_model_from_prompt(template("with-model"), "templ/x"),
                               manager._get_model_from_prompt(template("p1"), "templ/templ/x")]
+    r["seen"] = list(seen); r["runs"] = list(runs)
     return r
 def flag_calls(found):
     resolve = found["base"].resolve_prompt_manager_ignore_flags
@@ -150,7 +154,7 @@ def custom_calls(found):
                                        prompt_variables, dynamic_callback_params, **rest):
             return ("mine/" + model, [{"role": "system", "content": str(prompt_id)}] + messages,
                     {**non_default_params, "temperature": 0.2})
-    mine = Mine(); helper_args = ("p1", None, None, {})
+    mine = Mine(); helper_args = ("p1", None, None, DYN)
     return {
         "default_flags": [default.ignore_prompt_manager_model,
                           default.ignore_prompt_manager_optional_params],
@@ -161,20 +165,20 @@ def custom_calls(found):
         "has_message_logging": [hasattr(default, "message_logging"),
                                 hasattr(default, "turn_off_message_logging")],
         "integration_name": default.integration_name,
-        "should_run": [default.should_run_prompt_management(None, None, {}),
-                       default.should_run_prompt_management("p1", None, {})],
+        "should_run": [default.should_run_prompt_management(None, None, DYN),
+                       default.should_run_prompt_management("p1", None, DYN)],
         "compile_helper": outcome(lambda: default._compile_prompt_helper(*helper_args)),
         "async_compile_helper": outcome(
-            lambda: asyncio.run(default.async_compile_prompt_helper("p1", None, {}))),
-        "compile_prompt": outcome(lambda: default.compile_prompt("p1", None, list(MESSAGES), {})),
+            lambda: asyncio.run(default.async_compile_prompt_helper("p1", None, DYN))),
+        "compile_prompt": outcome(lambda: default.compile_prompt("p1", None, list(MESSAGES), DYN)),
         "passthrough": list(default.get_chat_completion_prompt(
-            "m", list(MESSAGES), {"t": 1}, "p1", None, {})),
+            "m", list(MESSAGES), {"t": 1}, "p1", None, DYN)),
         "async_passthrough": list(asyncio.run(default.async_get_chat_completion_prompt(
-            "m", list(MESSAGES), {"t": 1}, "p1", None, {}, None))),
+            "m", list(MESSAGES), {"t": 1}, "p1", None, DYN, None))),
         "mine": list(mine.get_chat_completion_prompt("gpt", list(MESSAGES), {"t": 1}, "p9",
-                                                     None, {})),
+                                                     None, DYN)),
         "mine_async": list(asyncio.run(mine.async_get_chat_completion_prompt(
-            "gpt", list(MESSAGES), {"t": 1}, "p9", None, {}, None))),
+            "gpt", list(MESSAGES), {"t": 1}, "p9", None, DYN, None))),
         "mine_flags": [mine.ignore_prompt_manager_model,
                        mine.ignore_prompt_manager_optional_params],
         "mine_kinds": [isinstance(mine, base), isinstance(mine, found["logger"].CustomLogger)],
@@ -332,20 +336,40 @@ MODEL_FLAGS: Final[list[JsonValue]] = [
 PARAM_FLAGS: Final[list[JsonValue]] = [
     [model, True] for model in (False, False, True) for _ in range(3)
 ]
+CALLBACK: Final[JsonValue] = {"user_api_key": "k"}
 SEEN: Final[JsonValue] = [
-    ["sync", "p1", False, {"v": 1}, None, None],
-    ["sync", "missing", False, {"v": 1}, None, None],
-    ["sync", "bad", False, {"v": 1}, None, None],
-    ["sync", "with-model", False, {"v": 1}, None, None],
-    ["sync", "no-params", False, {"v": 1}, None, None],
-    ["sync", "p1", False, {"v": 1}, None, None],
-    ["sync", "p1", False, {"v": 1}, None, None],
-    ["sync", "p1", False, {"v": 1}, None, None],
-    ["sync", "p1", False, {"v": 1}, "prod", 3],
-    ["async", "p1", False, {"v": 1}, None, None],
-    ["async", None, False, {"v": 1}, None, None],
-    ["async", "missing", False, {"v": 1}, None, None],
-    ["async", "p1", True, {"v": 1}, "dev", 2],
+    ["sync", "p1", False, {"v": 1}, None, None, CALLBACK],
+    ["sync", "missing", False, {"v": 1}, None, None, CALLBACK],
+    ["sync", "bad", False, {"v": 1}, None, None, CALLBACK],
+    ["sync", "with-model", False, {"v": 1}, None, None, CALLBACK],
+    ["sync", "no-params", False, {"v": 1}, None, None, CALLBACK],
+    ["sync", "p1", False, {"v": 1}, None, None, CALLBACK],
+    ["sync", "p1", False, {"v": 1}, None, None, CALLBACK],
+    ["sync", "p1", False, {"v": 1}, None, None, CALLBACK],
+    ["sync", "p1", False, {"v": 1}, "prod", 3, CALLBACK],
+    ["async", "p1", False, {"v": 1}, None, None, CALLBACK],
+    ["async", None, False, {"v": 1}, None, None, CALLBACK],
+    ["async", "missing", False, {"v": 1}, None, None, CALLBACK],
+    ["async", "p1", True, {"v": 1}, "dev", 2, CALLBACK],
+    ["sync", "p1", True, None, None, None, CALLBACK],
+    ["async", None, False, None, None, None, CALLBACK],
+]
+RUNS: Final[JsonValue] = [
+    ["p1", False, CALLBACK],
+    ["skip", False, CALLBACK],
+    ["missing", False, CALLBACK],
+    ["bad", False, CALLBACK],
+    ["with-model", False, CALLBACK],
+    ["no-params", False, CALLBACK],
+    ["p1", False, CALLBACK],
+    ["p1", False, CALLBACK],
+    ["p1", True, CALLBACK],
+    ["p1", False, CALLBACK],
+    ["p1", False, CALLBACK],
+    [None, False, CALLBACK],
+    ["skip", False, CALLBACK],
+    ["missing", False, CALLBACK],
+    ["p1", True, CALLBACK],
 ]
 PROMPT_EXPECTED: Final[dict[str, JsonValue]] = {
     "base_abstract": [
@@ -385,6 +409,7 @@ PROMPT_EXPECTED: Final[dict[str, JsonValue]] = {
     "async_missing": MISSING,
     "sync_bad": ["ValueError", BAD_TEMPLATE],
     "seen": SEEN,
+    "runs": RUNS,
     "post_none": ["m", [USER], {"a": 1}],
     "post_done": ["picked", DONE, {"a": 1, "top_p": 1}],
     "post_done_ignored": ["templ/m", DONE, {"a": 1}],
