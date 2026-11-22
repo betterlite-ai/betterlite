@@ -549,6 +549,30 @@ async fn hook_caps_the_output_tokens_from_the_smallest_configured_limit() {
 }
 
 #[tokio::test]
+async fn hook_leaves_the_project_token_limit_out_of_the_smallest_configured_limit() {
+    let mut parts = Parts::new(Vec::new(), Vec::new(), None);
+    parts.groups = vec![(String::from("gpt4"), String::from("gpt-4"))];
+    let fixture = Fixture::new(&parts);
+    let auth = support::auth(
+        r#"{"api_key": "key-1", "tpm_limit": 100, "project_id": "project-1",
+            "project_metadata": {"model_itpm_limit": {"gpt-4": 11}}}"#,
+    );
+    let mut data =
+        support::data(r#"{"model": "gpt4", "messages": [{"role": "user", "content": "hi"}]}"#);
+
+    fixture
+        .run(None, &auth, &mut data, CallType::Acompletion)
+        .await
+        .expect("the project input limit admits the request");
+
+    // the api_key's 100 caps output at 25; the project's 11 would have capped it at 2
+    assert!(matches!(
+        data.get("max_tokens"),
+        Some(Json::Number(number)) if number.as_i64() == Some(25)
+    ));
+}
+
+#[tokio::test]
 async fn hook_logs_an_estimate_over_the_smallest_limit() {
     let (_guard, captured) = support::Captured::recording();
     let fixture = Fixture::plain();
