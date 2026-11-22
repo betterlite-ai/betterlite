@@ -61,9 +61,15 @@ const fn probe_route(mode: HealthProbeMode) -> Result<ProbeCallMode, SpecialMode
 }
 async fn send_probe_call(
     mode: ProbeCallMode,
+    plan_mode: HealthProbeMode,
+    request: &ProbeRequest<'_>,
     backend: &dyn HealthProbeBackend,
-    call: ProbeCall,
 ) -> Result<HealthProbeReply, HealthProbeError> {
+    let call = ProbeCall {
+        parameters: mode_parameters(plan_mode, request)?,
+        api_key: request.params.api_key.clone(),
+        logging: request.params.litellm_logging_obj.clone(),
+    };
     match mode {
         ProbeCallMode::Chat => backend.chat(call).await,
         ProbeCallMode::Completion => backend.completion(call).await,
@@ -88,21 +94,25 @@ pub async fn run_health_probe(
         input: plan.input.as_deref(),
     };
     match probe_route(plan.mode) {
-        Ok(mode) => {
-            let call = ProbeCall {
-                parameters: mode_parameters(plan.mode, &probe)?,
-                api_key: probe.params.api_key.clone(),
-                logging: probe.params.litellm_logging_obj.clone(),
-            };
-            send_probe_call(mode, backend, call).await
-        }
+        Ok(mode) => send_probe_call(mode, plan.mode, &probe, backend).await,
         Err(SpecialMode::AudioTranscription) => {
             backend
                 .audio_transcription(audio_transcription_call(plan.mode, &probe)?)
                 .await
         }
         Err(SpecialMode::ImageEdit) => probe_image_edit(probe.params, backend).await,
-        Err(SpecialMode::Realtime) => backend.realtime(realtime_call(&probe)?).await,
+        Err(SpecialMode::Realtime) => {
+            let call = RealtimeCall {
+                model: probe.model.to_owned(),
+                custom_llm_provider: probe.custom_llm_provider.to_owned(),
+                api_base: probe.params.api_base.as_option().cloned(),
+                api_key: probe.params.api_key.clone(),
+                api_version: probe.params.api_version.as_option().cloned(),
+                model_params: probe.params.call_parameters(true)?,
+                logging: probe.params.litellm_logging_obj.clone(),
+            };
+            backend.realtime(call).await
+        }
         Err(SpecialMode::Batch) => {
             probe_batch_mode(probe.custom_llm_provider, probe.params, backend).await
         }
@@ -197,18 +207,6 @@ fn ocr_call(
         parameters,
         document,
         api_key: request.params.api_key.clone(),
-        logging: request.params.litellm_logging_obj.clone(),
-    };
-    Ok(call)
-}
-fn realtime_call(request: &ProbeRequest<'_>) -> Result<RealtimeCall, HealthProbeError> {
-    let call = RealtimeCall {
-        model: request.model.to_owned(),
-        custom_llm_provider: request.custom_llm_provider.to_owned(),
-        api_base: request.params.api_base.as_option().cloned(),
-        api_key: request.params.api_key.clone(),
-        api_version: request.params.api_version.as_option().cloned(),
-        model_params: request.params.call_parameters(true)?,
         logging: request.params.litellm_logging_obj.clone(),
     };
     Ok(call)
