@@ -4,10 +4,11 @@ use crate::router_probes::random::InjectedRandom;
 use async_trait::async_trait;
 use betterlite_config::sections::request_scheduler::Settings;
 use betterlite_error::error::ErrorClass;
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::request_scheduler::error::SchedulerError;
 use betterlite_router::request_scheduler::flow::FlowItem;
-use betterlite_router::request_scheduler::schedule::ScheduledCall;
+use betterlite_router::request_scheduler::schedule::{PRIORITIZATION_HEADER, ScheduledCall};
 use betterlite_router::request_scheduler::service::RequestScheduler;
 use betterlite_router::router_core::headers;
 use betterlite_router::routing_timeouts::global::GlobalRequestTimeout;
@@ -164,9 +165,28 @@ async fn run_scheduled(
         )
         .await;
     answer(answered.map(|outcome| wire::Outcome::Scheduled {
-        prioritized: outcome.prioritized,
+        prioritized: prioritization_header(&outcome.response),
         priority: outcome.priority,
     }))
+}
+// LiteLLM's probe reads the header off the response, so the answer must come from the map the scheduler wrote
+fn prioritization_header(response: &headers::Response) -> bool {
+    let hidden = match response {
+        headers::Response::Object(body) => {
+            let Some(Json::Object(hidden)) = body.get("_hidden_params") else {
+                return false;
+            };
+            hidden
+        }
+        headers::Response::Attributed(hidden) => hidden,
+        headers::Response::Absent | headers::Response::Stream | headers::Response::Opaque => {
+            return false;
+        }
+    };
+    matches!(
+        headers::ensure_additional_headers_dict(hidden).get(PRIORITIZATION_HEADER),
+        Some(Json::Bool(true))
+    )
 }
 fn answer(result: Result<wire::Outcome, SchedulerError>) -> Reply {
     match result {
