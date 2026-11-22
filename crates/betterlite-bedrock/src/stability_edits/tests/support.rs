@@ -27,10 +27,11 @@ pub(super) fn integer(value: i64) -> Json {
     Json::Number(Number::from(value))
 }
 
+// The endpoint hands option values over through the same conversion, so a JSON list stays a list here too.
 pub(super) fn options(entries: &[(&str, Json)]) -> EditOptions {
     entries
         .iter()
-        .map(|(name, value)| ((*name).to_owned(), EditValue::Json(value.clone())))
+        .map(|(name, value)| ((*name).to_owned(), EditValue::from(value.clone())))
         .collect()
 }
 

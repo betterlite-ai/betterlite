@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use betterlite_models::image_cost::error::ImageCostError;
+use betterlite_models::price_lookup::PriceRecord;
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_openai::api::image_contracts::records::ImageData;
+use serde_json::from_str;
 
 use super::support::{
     INPAINT, NOW, Prices, STYLE_TRANSFER, UNKNOWN, integer, json, options, price_record,
@@ -77,6 +80,13 @@ fn image_parts() {
     );
     assert_eq!(
         image_body(STYLE_TRANSFER, &ImageInput::Text("abc".to_owned())),
+        json(r#"{"output_format":"png","init_image":"abc"}"#)
+    );
+    assert_eq!(
+        image_body(
+            "STABILITY.STABLE-STYLE-TRANSFER-V1:0",
+            &ImageInput::Text("abc".to_owned())
+        ),
         json(r#"{"output_format":"png","init_image":"abc"}"#)
     );
 }
@@ -173,31 +183,31 @@ fn conversion_values() {
         ("left", text("12"), json("12")),
         ("left", text("-0"), json("0")),
         ("right", json("12.7"), json("12")),
-        ("right", text("-"), json("-")),
+        ("right", text("-"), text("-")),
         ("up", Json::Bool(true), json("1")),
-        ("up", text("_5"), json("_5")),
-        ("down", text("bad"), json("bad")),
+        ("up", text("_5"), text("_5")),
+        ("down", text("bad"), text("bad")),
         ("down", Json::Bool(false), json("0")),
-        ("down", text("5_"), json("5_")),
+        ("down", text("5_"), text("5_")),
         ("seed", text("1_0"), json("10")),
         ("seed", json("-0.5"), json("0")),
         ("strength", text("0.5"), json("0.5")),
         ("creativity", integer(2), json("2.0")),
-        ("control_strength", text("bad"), json("bad")),
+        ("control_strength", text("bad"), text("bad")),
         ("grow_mask", json("0.25"), json("0.25")),
         ("fidelity", text("0.75"), json("0.75")),
         ("composition_fidelity", Json::Bool(true), json("1.0")),
         ("style_strength", text("0.25"), json("0.25")),
         ("change_strength", integer(2), json("2.0")),
         ("change_strength", Json::Bool(false), json("0.0")),
-        ("negative_prompt", text("no"), json("no")),
-        ("aspect_ratio", text("1:1"), json("1:1")),
-        ("output_format", text("jpeg"), json("jpeg")),
-        ("model", text("m"), json("m")),
-        ("mode", text("x"), json("x")),
-        ("style_preset", text("y"), json("y")),
-        ("select_prompt", text("s"), json("s")),
-        ("search_prompt", text("q"), json("q")),
+        ("negative_prompt", text("no"), text("no")),
+        ("aspect_ratio", text("1:1"), text("1:1")),
+        ("output_format", text("jpeg"), text("jpeg")),
+        ("model", text("m"), text("m")),
+        ("mode", text("x"), text("x")),
+        ("style_preset", text("y"), text("y")),
+        ("select_prompt", text("s"), text("s")),
+        ("search_prompt", text("q"), text("q")),
         ("quality", text("high"), Json::Null),
     ];
     for (name, value, expected) in cases {
@@ -240,11 +250,17 @@ pub(super) fn stability_artifact_results() {
     empty_images();
     error_markers();
     finish_reasons();
+    price_values();
 }
 
 fn edit_reply(model: &str, status: u16, body: &str) -> Result<ImageEditReply, StabilityEditError> {
     let upstream = upstream(status, body);
     transform_image_edit_response(model, &upstream, NOW, &Prices::catalog())
+}
+
+fn priced_reply(record: PriceRecord) -> Result<ImageEditReply, StabilityEditError> {
+    let upstream = upstream(200, r#"{"images":["x"]}"#);
+    transform_image_edit_response(INPAINT, &upstream, NOW, &Prices::new(&[(INPAINT, record)]))
 }
 
 fn success_images() {
@@ -370,6 +386,34 @@ fn finish_reasons() {
     }
 }
 
+// The catalog round trip serializes a declared Decimal as text, which is the shape a real reply reads.
+fn price_values() {
+    let text_price = price_record(&[("output_cost_per_image", Scalar::Text("0.07".to_owned()))]);
+    let reply = priced_reply(text_price).expect("a text price reads as a decimal");
+    assert_eq!(
+        reply.additional_headers.get(COST_HEADER),
+        Some(&json("0.07"))
+    );
+    for (text, expected) in [("  0.5  ", "0.5"), ("5E-2", "0.05")] {
+        let record = price_record(&[("output_cost_per_image", Scalar::Text(text.to_owned()))]);
+        let reply = priced_reply(record).expect("a text price reads as a decimal");
+        assert_eq!(
+            reply.additional_headers.get(COST_HEADER),
+            Some(&json(expected)),
+            "{text}"
+        );
+    }
+    for (flag, expected) in [(true, "1.0"), (false, "0.0")] {
+        let record = price_record(&[("output_cost_per_image", Scalar::Bool(flag))]);
+        let reply = priced_reply(record).expect("a bool price reads as a number");
+        assert_eq!(
+            reply.additional_headers.get(COST_HEADER),
+            Some(&json(expected)),
+            "{flag}"
+        );
+    }
+}
+
 pub(super) fn filtered_result_error() {
     parse_failures();
     record_failures();
@@ -426,6 +470,21 @@ fn price_failures() {
         .expect_err("a non-numeric price fails");
     assert_eq!(error.status(), None);
     assert!(matches!(error, StabilityEditError::Price(_)));
+
+    for body in [
+        r#"{"output_cost_per_image":[1]}"#,
+        r#"{"output_cost_per_image":{"amount":1}}"#,
+    ] {
+        let record: PriceRecord = from_str(body).expect("the fixture is a price record");
+        let error = priced_reply(record).expect_err("a list or object price is not a decimal");
+        assert!(
+            matches!(
+                error,
+                StabilityEditError::Price(ImageCostError::WrongFieldType { .. })
+            ),
+            "{body}"
+        );
+    }
 
     let null_price = Prices::new(&[(
         INPAINT,
