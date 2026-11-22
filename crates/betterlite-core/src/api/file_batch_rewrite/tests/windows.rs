@@ -10,7 +10,7 @@ use tokio::sync::Barrier;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
-    Answer, CountingSource, Probe, ScriptedHook, line_of_change, lines_of, ordinal_of, raised,
+    Answer, CountedBody, Probe, ScriptedHook, line_of_change, lines_of, ordinal_of, raised,
     timed_scan,
 };
 use crate::api::file_batch_guardrails::SCAN_WINDOW;
@@ -21,7 +21,7 @@ use crate::api::file_batch_rewrite::spool::Spool;
 #[tokio::test]
 async fn window_failure_barrier() {
     let tasks = TaskTracker::new();
-    let mut source = CountingSource::new(lines_of(65));
+    let source = CountedBody::new(lines_of(65));
     let failure = raised("r2", 503);
     let hook = ScriptedHook::with(
         vec![("r2", Answer::Raise(failure.clone()))],
@@ -29,7 +29,7 @@ async fn window_failure_barrier() {
     )
     .behind_gate(Barrier::new(SCAN_WINDOW));
     let spool = Spool::default();
-    let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
+    let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
         .await
         .expect("a scan answers");
     match outcome {
@@ -46,6 +46,7 @@ async fn window_failure_barrier() {
         (1_usize..=32).map(|line| format!("r{line}")).collect();
     assert_eq!(markers, expected_markers);
     drop(started);
+    assert_eq!(hook.probe.completed.lock().unwrap().len(), 32);
     assert_eq!(hook.probe.finished.lock().unwrap().len(), 32);
     assert_eq!(source.reads.load(Ordering::SeqCst), 32);
     let seeks = source.seeks.lock().unwrap();
@@ -57,10 +58,10 @@ async fn window_failure_barrier() {
 #[tokio::test]
 async fn windows_scan_without_failure() {
     let tasks = TaskTracker::new();
-    let mut source = CountingSource::new(lines_of(65));
+    let source = CountedBody::new(lines_of(65));
     let hook = ScriptedHook::reversing(Probe::new(Arc::clone(&source.reads)), 65);
     let spool = Spool::default();
-    let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
+    let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
         .await
         .expect("a scan answers");
     let ScanFile::Scanned(result) = outcome else {

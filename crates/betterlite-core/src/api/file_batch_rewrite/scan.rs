@@ -6,6 +6,7 @@ use futures_util::future::join_all;
 use indexmap::IndexMap;
 use tokio_util::task::TaskTracker;
 
+use super::body::UploadBody;
 use super::error::ScanFileError;
 use super::rewind::{RewindOnDrop, settle_spool};
 use super::spool::{OwnedSpool, Spool};
@@ -13,7 +14,6 @@ use super::worst::{ScanProblem, worst_problem};
 use crate::api::file_batch_guardrails::SCAN_WINDOW;
 use crate::api::file_batch_guardrails::fingerprint::build_scan_metadata;
 use crate::api::file_batch_guardrails::hook::GuardrailsOnlyPreCall;
-use crate::api::file_batch_guardrails::lines::iter_records;
 use crate::api::file_batch_guardrails::records::{
     BatchScanFailure, BatchScanResult, ParsedRecord, RecordChange, RecordRedacted, ScanOutcome,
 };
@@ -22,7 +22,7 @@ use crate::routes::catalog::RouteCatalog;
 
 // What one scan needs from its caller: the seekable upload body, the request's context, the port for disk work, and the spool it fills
 pub struct BatchScanCall<'call, Source, Hook> {
-    pub file_source: &'call mut Source,
+    pub file_source: UploadBody<Source>,
     pub request_metadata: &'call IndexMap<String, Json>,
     pub user_api_key_dict: &'call UserAPIKeyAuth,
     pub routes: &'call RouteCatalog,
@@ -43,7 +43,7 @@ pub async fn scan_batch_input_file<Source, Hook>(
     call: BatchScanCall<'_, Source, Hook>,
 ) -> Result<ScanFile<Spool, Hook::Failure>, ScanFileError>
 where
-    Source: BufRead + Seek + Send,
+    Source: BufRead + Seek + Send + 'static,
     Hook: GuardrailsOnlyPreCall,
 {
     let redactions = call.redactions;
@@ -55,12 +55,13 @@ where
         routes: call.routes,
     };
     let mut guarded = RewindOnDrop {
-        source: call.file_source,
+        body: &call.file_source,
+        tasks: call.tasks,
         attempted: false,
     };
     let mut close_on_drop = OwnedSpool(Some(redactions.clone()));
-    let scanned = scan_windows(&mut guarded.source, &context, call.tasks, &redactions).await;
-    let progress = settle_spool(&mut guarded, &mut close_on_drop, scanned)?;
+    let scanned = scan_windows(&call.file_source, &context, call.tasks, &redactions).await;
+    let progress = settle_spool(&mut guarded, &mut close_on_drop, scanned).await?;
     Ok(finish_scan(progress, redactions))
 }
 
@@ -100,15 +101,15 @@ enum WindowOutcome<Raised> {
     Raised(Raised),
 }
 
-// Reads at most one window ahead, waits for every started record, and stops reading once a window failed
+// Reads at most one window ahead through the blocking port, waits for every started record, and stops reading once a window failed
 async fn scan_windows<Source, Hook>(
-    source: &mut Source,
+    body: &UploadBody<Source>,
     context: &ScanContext<'_, Hook>,
     tasks: &TaskTracker,
     spool: &Spool,
 ) -> Result<Progress<Hook::Failure>, ScanFileError>
 where
-    Source: BufRead,
+    Source: BufRead + Send + 'static,
     Hook: GuardrailsOnlyPreCall,
 {
     let mut progress = Progress {
@@ -116,26 +117,25 @@ where
         scanned_records: 0,
         problems: Vec::new(),
     };
-    let mut window: Vec<ParsedRecord> = Vec::with_capacity(SCAN_WINDOW);
-    for record in iter_records(&mut *source) {
-        window.push(record?);
-        if window.len() != SCAN_WINDOW {
-            continue;
-        }
-        drain_window(&mut progress, &mut window, context, tasks, spool).await?;
-        if !progress.problems.is_empty() {
+    let mut first = 1_usize;
+    loop {
+        let (window, consumed) = body.records(tasks, first, SCAN_WINDOW).await?;
+        first = first.saturating_add(consumed);
+        if window.is_empty() {
             break;
         }
-    }
-    if progress.problems.is_empty() {
-        drain_window(&mut progress, &mut window, context, tasks, spool).await?;
+        let full = window.len() == SCAN_WINDOW;
+        drain_window(&mut progress, &window, context, tasks, spool).await?;
+        if !progress.problems.is_empty() || !full {
+            break;
+        }
     }
     Ok(progress)
 }
 
 async fn drain_window<Hook>(
     progress: &mut Progress<Hook::Failure>,
-    window: &mut Vec<ParsedRecord>,
+    window: &[ParsedRecord],
     context: &ScanContext<'_, Hook>,
     tasks: &TaskTracker,
     spool: &Spool,
@@ -148,7 +148,6 @@ where
     for (line_number, outcome) in outcomes {
         note_outcome(progress, outcome, line_number, tasks, spool).await?;
     }
-    window.clear();
     Ok(())
 }
 

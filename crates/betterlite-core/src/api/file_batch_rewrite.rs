@@ -1,3 +1,4 @@
+pub mod body;
 pub mod error;
 pub mod rewind;
 pub mod rewrite;

@@ -10,11 +10,12 @@ use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
-    Answer, CountingSource, FailingSource, Probe, ScriptedHook, TEST_TIMEOUT, UnrewindableSource,
+    Answer, CountedBody, FailingSource, Probe, ScriptedHook, TEST_TIMEOUT, UnrewindableSource,
     lines_of, raised, scan_result, timed_scan,
 };
 use crate::api::file_batch_guardrails::error::BatchGuardrailError;
 use crate::api::file_batch_guardrails::records::{RecordChange, RecordRedacted};
+use crate::api::file_batch_rewrite::body::UploadBody;
 use crate::api::file_batch_rewrite::error::{RewriteError, ScanFileError};
 use crate::api::file_batch_rewrite::rewrite::rewrite_batch_input_file;
 use crate::api::file_batch_rewrite::scan::ScanFile;
@@ -24,10 +25,10 @@ use crate::api::file_batch_rewrite::spool::{Spool, SpoolError};
 #[tokio::test]
 async fn scan_and_spool_cleanup() {
     let tasks = TaskTracker::new();
-    let mut source = CountingSource::new(lines_of(3));
+    let source = CountedBody::new(lines_of(3));
     let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.reads)));
     let spool = Spool::default();
-    let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
+    let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
         .await
         .expect("a scan answers");
     let ScanFile::Scanned(result) = outcome else {
@@ -42,13 +43,13 @@ async fn scan_and_spool_cleanup() {
         Some(&SeekFrom::Start(0))
     );
 
-    let mut changed_source = CountingSource::new(lines_of(2));
+    let changed_source = CountedBody::new(lines_of(2));
     let changed_hook = ScriptedHook::with(
         vec![("r1", Answer::Rewrite)],
         Probe::new(Arc::clone(&changed_source.reads)),
     );
     let changed_spool = Spool::default();
-    let changed = timed_scan(&mut changed_source, &changed_hook, &changed_spool, &tasks)
+    let changed = timed_scan(&changed_source.body, &changed_hook, &changed_spool, &tasks)
         .await
         .expect("a scan answers");
     let ScanFile::Scanned(changed_result) = changed else {
@@ -65,10 +66,10 @@ async fn scan_and_spool_cleanup() {
 #[tokio::test]
 async fn a_parse_failure_closes_the_spool_and_rewinds() {
     let tasks = TaskTracker::new();
-    let mut source = CountingSource::new("not json\n{\"body\":{\"messages\":[]}}".to_owned());
+    let source = CountedBody::new("not json\n{\"body\":{\"messages\":[]}}".to_owned());
     let hook = ScriptedHook::new(Probe::new(Arc::clone(&source.reads)));
     let spool = Spool::default();
-    let outcome = timed_scan(&mut source, &hook, &spool, &tasks).await;
+    let outcome = timed_scan(&source.body, &hook, &spool, &tasks).await;
     match outcome {
         Err(ScanFileError::Input(BatchGuardrailError::Record { line_number: 1, .. })) => (),
         other => panic!("the first line is not a record, got {other:?}"),
@@ -82,14 +83,14 @@ async fn a_parse_failure_closes_the_spool_and_rewinds() {
 #[tokio::test]
 async fn a_hook_failure_closes_the_spool_and_rewinds() {
     let tasks = TaskTracker::new();
-    let mut source = CountingSource::new(lines_of(2));
+    let source = CountedBody::new(lines_of(2));
     let failure = raised("r1", 502);
     let hook = ScriptedHook::with(
         vec![("r1", Answer::Raise(failure.clone()))],
         Probe::new(Arc::clone(&source.reads)),
     );
     let spool = Spool::default();
-    let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
+    let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
         .await
         .expect("a scan answers");
     match outcome {
@@ -103,22 +104,22 @@ async fn a_hook_failure_closes_the_spool_and_rewinds() {
     assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
 }
 
+// The spool refuses the rewrite while the scan runs, and the failure still rewinds the source
 #[tokio::test]
-async fn a_write_failure_closes_the_spool_and_rewinds() {
+async fn a_write_failure_rewinds_the_source() {
     let tasks = TaskTracker::new();
-    let mut source = CountingSource::new(lines_of(2));
+    let source = CountedBody::new(lines_of(2));
     let hook = ScriptedHook::with(
         vec![("r1", Answer::Rewrite)],
         Probe::new(Arc::clone(&source.reads)),
     );
     let spool = Spool::default();
     spool.close();
-    let outcome = timed_scan(&mut source, &hook, &spool, &tasks).await;
+    let outcome = timed_scan(&source.body, &hook, &spool, &tasks).await;
     match outcome {
         Err(ScanFileError::Spool(SpoolError::Closed)) => (),
         other => panic!("a closed spool cannot take a rewrite, got {other:?}"),
     }
-    assert!(spool.is_closed());
     let seeks = source.seeks.lock().unwrap();
     assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
 }
@@ -128,8 +129,8 @@ async fn a_failing_rewind_replaces_the_earlier_result() {
     let tasks = TaskTracker::new();
     let hook = ScriptedHook::new(Probe::new(Arc::new(AtomicUsize::new(0))));
     let spool = Spool::default();
-    let mut unreadable = UnrewindableSource::new("not json".to_owned());
-    let outcome = timed_scan(&mut unreadable, &hook, &spool, &tasks).await;
+    let unreadable = UploadBody::new(UnrewindableSource::new("not json".to_owned()));
+    let outcome = timed_scan(&unreadable, &hook, &spool, &tasks).await;
     match outcome {
         Err(ScanFileError::Rewind { .. }) => (),
         other => panic!("the rewind error replaces the record error, got {other:?}"),
@@ -137,8 +138,8 @@ async fn a_failing_rewind_replaces_the_earlier_result() {
     assert!(spool.is_closed());
 
     let clean = Spool::default();
-    let mut unreachable = UnrewindableSource::new(lines_of(1));
-    let scanned = timed_scan(&mut unreachable, &hook, &clean, &tasks).await;
+    let unreachable = UploadBody::new(UnrewindableSource::new(lines_of(1)));
+    let scanned = timed_scan(&unreachable, &hook, &clean, &tasks).await;
     match scanned {
         Err(ScanFileError::Rewind { .. }) => (),
         other => panic!("the rewind error replaces the scan result, got {other:?}"),
@@ -148,12 +149,14 @@ async fn a_failing_rewind_replaces_the_earlier_result() {
 #[tokio::test]
 async fn scan_and_spool_cleanup_cancellation() {
     let tasks = TaskTracker::new();
+    let waiting = tasks.clone();
     let spool = Spool::default();
     let observed = spool.clone();
     let reached = Arc::new(Notify::new());
     let cancelled = Arc::new(AtomicUsize::new(0));
-    let mut source = CountingSource::new(lines_of(65));
+    let source = CountedBody::new(lines_of(65));
     let seeks = Arc::clone(&source.seeks);
+    let body = source.body.clone();
     let hook = ScriptedHook::cancelling(
         Probe::new(Arc::clone(&source.reads)),
         Arc::clone(&reached),
@@ -161,7 +164,7 @@ async fn scan_and_spool_cleanup_cancellation() {
     );
     let mut scans = JoinSet::new();
     scans.spawn(async move {
-        let outcome = timed_scan(&mut source, &hook, &spool, &tasks).await;
+        let outcome = timed_scan(&body, &hook, &spool, &tasks).await;
         outcome.map(drop)
     });
     timeout(TEST_TIMEOUT, reached.notified())
@@ -169,6 +172,8 @@ async fn scan_and_spool_cleanup_cancellation() {
         .expect("the first window starts");
     scans.abort_all();
     scans.join_all().await;
+    waiting.close();
+    waiting.wait().await;
     assert_eq!(cancelled.load(Ordering::SeqCst), 32);
     assert!(observed.is_closed());
     let recorded = seeks.lock().unwrap();
@@ -193,14 +198,16 @@ async fn a_rewrite_failure_closes_the_output_and_keeps_the_scan_spool() {
         redactions,
     );
     let output = Spool::default();
-    let mut source = FailingSource::default();
-    let outcome = rewrite_batch_input_file(&mut source, &result, &tasks, output.clone()).await;
+    let source = FailingSource::default();
+    let seeks = Arc::clone(&source.seeks);
+    let body = UploadBody::new(source);
+    let outcome = rewrite_batch_input_file(&body, &result, &tasks, output.clone()).await;
     match outcome {
         Err(RewriteError::Input(_)) => (),
         other => panic!("the upload cannot be read, got {other:?}"),
     }
     assert!(output.is_closed());
     assert!(!result.redactions.is_closed());
-    let seeks = source.seeks.lock().unwrap();
-    assert_eq!(seeks.last(), Some(&SeekFrom::Start(0)));
+    let recorded = seeks.lock().unwrap();
+    assert_eq!(recorded.last(), Some(&SeekFrom::Start(0)));
 }

@@ -22,6 +22,7 @@ use crate::api::file_batch_guardrails::hook::{
 use crate::api::file_batch_guardrails::record_json::text::RecordText;
 use crate::api::file_batch_guardrails::record_json::{RecordJson, RecordObject};
 use crate::api::file_batch_guardrails::records::{BatchScanResult, RecordChange};
+use crate::api::file_batch_rewrite::body::UploadBody;
 use crate::api::file_batch_rewrite::error::ScanFileError;
 use crate::api::file_batch_rewrite::scan::{BatchScanCall, ScanFile, scan_batch_input_file};
 use crate::api::file_batch_rewrite::spool::Spool;
@@ -69,20 +70,20 @@ pub(super) fn line_of_change(change: &RecordChange) -> usize {
 }
 
 pub(super) async fn timed_scan<Source, Hook>(
-    source: &mut Source,
+    body: &UploadBody<Source>,
     hook: &Hook,
     spool: &Spool,
     tasks: &TaskTracker,
 ) -> Result<ScanFile<Spool, Hook::Failure>, ScanFileError>
 where
-    Source: BufRead + Seek + Send,
+    Source: BufRead + Seek + Send + 'static,
     Hook: GuardrailsOnlyPreCall,
 {
     let metadata = IndexMap::new();
     let key = principal();
     let catalog = route_catalog();
     let call = BatchScanCall {
-        file_source: source,
+        file_source: body.clone(),
         request_metadata: &metadata,
         user_api_key_dict: &key,
         routes: &catalog,
@@ -140,6 +141,26 @@ impl Seek for CountingSource {
             .unwrap_or_else(PoisonError::into_inner)
             .push(pos);
         self.inner.seek(pos)
+    }
+}
+
+// A counting source already handed to the blocking port, with its read and seek tallies kept reachable
+pub(super) struct CountedBody {
+    pub(super) body: UploadBody<CountingSource>,
+    pub(super) reads: Arc<AtomicUsize>,
+    pub(super) seeks: Arc<Mutex<Vec<SeekFrom>>>,
+}
+
+impl CountedBody {
+    pub(super) fn new(text: String) -> Self {
+        let source = CountingSource::new(text);
+        let reads = Arc::clone(&source.reads);
+        let seeks = Arc::clone(&source.seeks);
+        Self {
+            body: UploadBody::new(source),
+            reads,
+            seeks,
+        }
     }
 }
 
@@ -306,6 +327,7 @@ pub(super) struct Probe {
     pub(super) active: AtomicUsize,
     pub(super) max_active: AtomicUsize,
     pub(super) started: Mutex<Vec<Started>>,
+    pub(super) completed: Mutex<Vec<String>>,
     pub(super) finished: Mutex<Vec<String>>,
 }
 
@@ -316,6 +338,7 @@ impl Probe {
             active: AtomicUsize::new(0),
             max_active: AtomicUsize::new(0),
             started: Mutex::new(Vec::new()),
+            completed: Mutex::new(Vec::new()),
             finished: Mutex::new(Vec::new()),
         }
     }
@@ -356,8 +379,11 @@ impl Drop for ActiveCall<'_> {
 
 pub(super) enum Answer {
     Rewrite,
+    Replace(RecordObject),
     Raise(FakeFailure),
     Block(FakeFailure),
+    // Raise only after the call for the named marker has returned, so a slow earlier line follows a fast later one
+    RaiseAfter(FakeFailure, String),
 }
 
 // What the hook does besides answering by marker: finish each window in reverse row order, or stay pending until cancelled
@@ -464,10 +490,24 @@ impl GuardrailsOnlyPreCall for ScriptedHook {
         if let Some(gate) = &self.gate {
             gate.wait().await;
         }
-        match &self.behavior {
+        let answer = match &self.behavior {
             Behavior::Answers => match self.answers.get(&call.marker) {
                 Some(Answer::Rewrite) => Ok(rewritten(input.data)),
+                Some(Answer::Replace(data)) => Ok(data.clone()),
                 Some(Answer::Raise(failure) | Answer::Block(failure)) => Err(failure.clone()),
+                Some(Answer::RaiseAfter(failure, after)) => {
+                    while !self
+                        .probe
+                        .completed
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .any(|done| done == after)
+                    {
+                        yield_now().await;
+                    }
+                    Err(failure.clone())
+                }
                 None => Ok(input.data),
             },
             Behavior::Reverse(reverse) => {
@@ -483,7 +523,13 @@ impl GuardrailsOnlyPreCall for ScriptedHook {
                 pending::<()>().await;
                 Ok(input.data)
             }
-        }
+        };
+        self.probe
+            .completed
+            .lock()
+            .unwrap()
+            .push(call.marker.clone());
+        answer
     }
 }
 

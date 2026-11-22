@@ -1,43 +1,54 @@
 use std::io::{self, Seek, SeekFrom};
 
+use tokio_util::task::TaskTracker;
+
+use super::body::UploadBody;
 use super::spool::OwnedSpool;
 
-// LiteLLM's finally: the source goes back to 0 on success, failure and cancellation alike
-pub(super) struct RewindOnDrop<'source, Source: Seek> {
-    pub(super) source: &'source mut Source,
+// LiteLLM's finally: the source goes back to 0 through the blocking port on success and failure, and is queued there on cancellation
+pub(super) struct RewindOnDrop<'pass, Source>
+where
+    Source: Seek + Send + 'static,
+{
+    pub(super) body: &'pass UploadBody<Source>,
+    pub(super) tasks: &'pass TaskTracker,
     pub(super) attempted: bool,
 }
 
 impl<Source> RewindOnDrop<'_, Source>
 where
-    Source: Seek,
+    Source: Seek + Send + 'static,
 {
-    pub(super) fn rewind(&mut self) -> io::Result<()> {
+    pub(super) async fn rewind(&mut self) -> io::Result<()> {
         self.attempted = true;
-        self.source.seek(SeekFrom::Start(0)).map(drop)
+        self.body.rewind(self.tasks).await
     }
 }
 
 impl<Source> Drop for RewindOnDrop<'_, Source>
 where
-    Source: Seek,
+    Source: Seek + Send + 'static,
 {
     fn drop(&mut self) {
         if self.attempted {
             return;
         }
-        drop(self.source.seek(SeekFrom::Start(0)));
+        let body = self.body.clone();
+        drop(
+            self.tasks
+                .spawn_blocking(move || body.lock().seek(SeekFrom::Start(0)).map(drop)),
+        );
     }
 }
 
 // The spool stays open only when the body succeeded, an error closes it, and the source rewinds either way; a failed seek replaces that outcome
-pub(super) fn settle_spool<Source, Value, Error>(
+pub(super) async fn settle_spool<Source, Value, Error>(
     guarded: &mut RewindOnDrop<'_, Source>,
     close_on_drop: &mut OwnedSpool,
     outcome: Result<Value, Error>,
 ) -> Result<Value, Error>
 where
-    Source: Seek,
+    Source: Seek + Send + 'static,
     Error: From<io::Error>,
 {
     let held = close_on_drop.0.take();
@@ -46,7 +57,7 @@ where
     {
         spool.close();
     }
-    match guarded.rewind() {
+    match guarded.rewind().await {
         Ok(()) => outcome,
         Err(source) => Err(Error::from(source)),
     }

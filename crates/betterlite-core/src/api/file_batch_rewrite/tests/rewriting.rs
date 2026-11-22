@@ -4,9 +4,10 @@ use std::io::SeekFrom;
 
 use tokio_util::task::TaskTracker;
 
-use super::support::{CountingSource, UnrewindableSource, scan_result};
+use super::support::{CountedBody, UnrewindableSource, scan_result};
 use crate::api::file_batch_guardrails::REWRITE_SPOOL_BYTES;
 use crate::api::file_batch_guardrails::records::{RecordChange, RecordDropped, RecordRedacted};
+use crate::api::file_batch_rewrite::body::UploadBody;
 use crate::api::file_batch_rewrite::error::RewriteError;
 use crate::api::file_batch_rewrite::rewrite::rewrite_batch_input_file;
 use crate::api::file_batch_rewrite::spool::Spool;
@@ -29,9 +30,9 @@ async fn rewrite_preserves_unedited() {
         4,
         redactions,
     );
-    let mut source = CountingSource::new(format!("{KEPT}\r\n\n{DROPPED}\n{REDACTED_ROW}"));
+    let source = CountedBody::new(format!("{KEPT}\r\n\n{DROPPED}\n{REDACTED_ROW}"));
     let output = Spool::default();
-    let rewritten = rewrite_batch_input_file(&mut source, &result, &tasks, output.clone())
+    let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output.clone())
         .await
         .expect("the rewrite succeeds");
     assert_eq!(
@@ -61,9 +62,9 @@ async fn rewrite_of_dropped_rows_is_empty() {
         2,
         Spool::default(),
     );
-    let mut source = CountingSource::new(format!("{KEPT}\n{KEPT}"));
+    let source = CountedBody::new(format!("{KEPT}\n{KEPT}"));
     let output = Spool::default();
-    let rewritten = rewrite_batch_input_file(&mut source, &result, &tasks, output)
+    let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output)
         .await
         .expect("the rewrite succeeds");
     assert!(rewritten.read_to_end(&tasks).await.unwrap().is_empty());
@@ -75,9 +76,9 @@ async fn rewrite_of_dropped_rows_is_empty() {
 async fn a_kept_last_row_without_a_newline_is_copied() {
     let tasks = TaskTracker::new();
     let result = scan_result(Vec::new(), 1, Spool::default());
-    let mut source = CountingSource::new(KEPT.to_owned());
+    let source = CountedBody::new(KEPT.to_owned());
     let output = Spool::default();
-    let rewritten = rewrite_batch_input_file(&mut source, &result, &tasks, output)
+    let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output)
         .await
         .expect("the rewrite succeeds");
     assert_eq!(
@@ -91,9 +92,9 @@ async fn a_kept_last_row_without_a_newline_is_copied() {
 async fn a_failing_rewind_replaces_the_rewritten_file() {
     let tasks = TaskTracker::new();
     let result = scan_result(Vec::new(), 1, Spool::default());
-    let mut source = UnrewindableSource::new(KEPT.to_owned());
+    let source = UploadBody::new(UnrewindableSource::new(KEPT.to_owned()));
     let output = Spool::default();
-    let outcome = rewrite_batch_input_file(&mut source, &result, &tasks, output.clone()).await;
+    let outcome = rewrite_batch_input_file(&source, &result, &tasks, output.clone()).await;
     match outcome {
         Err(RewriteError::Rewind { .. }) => (),
         other => panic!("the rewind error replaces the rewritten file, got {other:?}"),
@@ -104,10 +105,10 @@ async fn a_failing_rewind_replaces_the_rewritten_file() {
 async fn rewrite_output_uses_the_same_threshold() {
     let tasks = TaskTracker::new();
     let big = "a".repeat(REWRITE_SPOOL_BYTES + 1);
-    let mut source = CountingSource::new(format!(r#"{{"custom_id":"big","body":"{big}"}}"#));
+    let source = CountedBody::new(format!(r#"{{"custom_id":"big","body":"{big}"}}"#));
     let result = scan_result(Vec::new(), 1, Spool::default());
     let output = Spool::default();
-    let rewritten = rewrite_batch_input_file(&mut source, &result, &tasks, output)
+    let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output)
         .await
         .expect("the rewrite succeeds");
     assert!(rewritten.is_rolled());

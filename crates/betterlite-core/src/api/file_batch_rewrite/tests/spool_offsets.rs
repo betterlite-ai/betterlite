@@ -4,8 +4,12 @@ use std::sync::Arc;
 
 use tokio_util::task::TaskTracker;
 
-use super::support::{CountingSource, RewriteAll, timed_scan};
+use super::support::{Answer, CountedBody, Probe, RewriteAll, ScriptedHook, timed_scan};
 use crate::api::file_batch_guardrails::REWRITE_SPOOL_BYTES;
+use crate::api::file_batch_guardrails::record_json::text::RecordText;
+use crate::api::file_batch_guardrails::record_json::{RecordJson, RecordObject};
+use crate::api::file_batch_guardrails::records::RecordChange;
+use crate::api::file_batch_rewrite::rewrite::rewrite_batch_input_file;
 use crate::api::file_batch_rewrite::scan::ScanFile;
 use crate::api::file_batch_rewrite::spool::Spool;
 
@@ -91,9 +95,9 @@ async fn scan_spool_uses_the_same_threshold() {
             )
         })
         .collect();
-    let mut source = CountingSource::new(rows.join("\n"));
+    let source = CountedBody::new(rows.join("\n"));
     let spool = Spool::default();
-    let outcome = timed_scan(&mut source, &RewriteAll, &spool, &tasks)
+    let outcome = timed_scan(&source.body, &RewriteAll, &spool, &tasks)
         .await
         .expect("a scan answers");
     let ScanFile::Scanned(result) = outcome else {
@@ -101,6 +105,72 @@ async fn scan_spool_uses_the_same_threshold() {
     };
     assert_eq!(result.changes.len(), 32);
     assert!(result.redactions.is_rolled());
+}
+
+const ACCENTED_ROW: &str = r#"{"custom_id":"c1","body":{"marker":"r1","messages":[]}}"#;
+const KEPT_ROW: &str = r#"{"custom_id":"c2","body":{"marker":"r2","messages":[]}}"#;
+// As _spool writes it: compact JSON with the record's custom_id and é as its two UTF-8 bytes
+const ACCENTED_SPOOLED: &str = "{\"custom_id\":\"c1\",\"body\":{\"content\":\"\u{e9}\"}}";
+
+fn accented() -> RecordObject {
+    let mut data = RecordObject::new();
+    data.insert(
+        RecordText::from("content"),
+        RecordJson::Text(RecordText::from("\u{e9}")),
+    );
+    data
+}
+
+// The scan's RecordRedacted carries the record's custom_id and the span of the rewritten record's UTF-8 bytes, and the rewrite copies exactly those bytes back
+#[tokio::test]
+async fn scan_spools_the_rewritten_bytes_and_their_span() {
+    let tasks = TaskTracker::new();
+    let source = CountedBody::new(format!("{ACCENTED_ROW}\n{KEPT_ROW}"));
+    let hook = ScriptedHook::with(
+        vec![("r1", Answer::Replace(accented()))],
+        Probe::new(Arc::clone(&source.reads)),
+    );
+    let spool = Spool::default();
+    let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
+        .await
+        .expect("a scan answers");
+    let ScanFile::Scanned(result) = outcome else {
+        panic!("one rewritten row is a scanned file");
+    };
+    assert_eq!(result.changes.len(), 1);
+    let RecordChange::Redacted(change) = &result.changes[0] else {
+        panic!(
+            "the rewritten row is a redaction, got {:?}",
+            result.changes[0]
+        );
+    };
+    assert_eq!(change.line_number, 1);
+    assert_eq!(change.custom_id.as_deref(), Some("c1"));
+    assert_eq!(change.offset, 0);
+    assert_eq!(
+        change.length,
+        u64::try_from(ACCENTED_SPOOLED.len()).unwrap()
+    );
+    assert!(
+        ACCENTED_SPOOLED.chars().count() < ACCENTED_SPOOLED.len(),
+        "the fixture's é must make the byte length exceed the character count"
+    );
+    assert_eq!(
+        result
+            .redactions
+            .read_at(&tasks, change.offset, change.length)
+            .await
+            .unwrap(),
+        ACCENTED_SPOOLED.as_bytes()
+    );
+    let output = Spool::default();
+    let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output)
+        .await
+        .expect("the rewrite succeeds");
+    assert_eq!(
+        rewritten.read_to_end(&tasks).await.unwrap(),
+        format!("{ACCENTED_SPOOLED}\n{KEPT_ROW}").into_bytes()
+    );
 }
 
 async fn append(tasks: &TaskTracker, spool: &Spool, bytes: Vec<u8>) -> (u64, u64) {

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
-    Answer, CountingSource, FakeFailure, Probe, ScriptedHook, blocked, lines_of, raised, timed_scan,
+    Answer, CountedBody, FakeFailure, Probe, ScriptedHook, blocked, lines_of, raised, timed_scan,
 };
 use crate::api::file_batch_guardrails::records::{
     BatchScanFailure, RecordChange, UnparseableRecord,
@@ -59,6 +59,23 @@ async fn worst_problem_priority() {
             panic!("the refusal at line 2 wins, got {other:?}")
         }
     }
+    // Line 5 raises at once and line 2 raises only after that call returned: the earliest line still wins
+    let rows = lines_of(5);
+    let row_refs: Vec<&str> = rows.split('\n').collect();
+    match scan_file(
+        &row_refs,
+        vec![
+            ("r5", Answer::Raise(raised("r5", 500))),
+            ("r2", Answer::RaiseAfter(raised("r2", 503), "r5".to_owned())),
+        ],
+    )
+    .await
+    {
+        ScanFile::Raised(returned) => assert_eq!(returned, raised("r2", 503)),
+        other @ (ScanFile::Scanned(_) | ScanFile::Rejected(_)) => {
+            panic!("the exception at line 2 wins, got {other:?}")
+        }
+    }
 }
 
 #[test]
@@ -77,7 +94,7 @@ fn worst_problem_prefers_a_later_raised_exception() {
 #[tokio::test]
 async fn content_blocks_are_changes_not_problems() {
     let tasks = TaskTracker::new();
-    let mut source = CountingSource::new(lines_of(3));
+    let source = CountedBody::new(lines_of(3));
     let hook = ScriptedHook::with(
         vec![
             ("r1", Answer::Block(blocked("g"))),
@@ -87,7 +104,7 @@ async fn content_blocks_are_changes_not_problems() {
         Probe::new(Arc::clone(&source.reads)),
     );
     let spool = Spool::default();
-    let outcome = timed_scan(&mut source, &hook, &spool, &tasks)
+    let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
         .await
         .expect("a scan answers");
     let ScanFile::Scanned(result) = outcome else {
@@ -117,10 +134,10 @@ fn shape_failure(line: usize) -> ScanProblem<FakeFailure> {
 
 async fn scan_file(rows: &[&str], answers: Vec<(&str, Answer)>) -> ScanFile<Spool, FakeFailure> {
     let tasks = TaskTracker::new();
-    let mut source = CountingSource::new(rows.join("\n"));
+    let source = CountedBody::new(rows.join("\n"));
     let hook = ScriptedHook::with(answers, Probe::new(Arc::clone(&source.reads)));
     let spool = Spool::default();
-    timed_scan(&mut source, &hook, &spool, &tasks)
+    timed_scan(&source.body, &hook, &spool, &tasks)
         .await
         .expect("a scan answers")
 }
