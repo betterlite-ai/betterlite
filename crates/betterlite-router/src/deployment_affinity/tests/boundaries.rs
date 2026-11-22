@@ -109,7 +109,7 @@ pub(super) async fn marker_zero_ignored() {
 // a marker past the ttl range names the metadata field
 pub(super) async fn marker_out_of_range() {
     let fixture = fixture(&[AffinityFlag::Deployment]);
-    let kwargs = marked_session_metadata("s1", 4_294_967_296);
+    let kwargs = marked_session_metadata("s1", 0x0001_0000_0000);
     let error = fixture
         .filter_error(&pool(&["a", "b"]), Some(&kwargs))
         .await;
