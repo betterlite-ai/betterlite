@@ -7,8 +7,6 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_server::router_dependencies::config_write::validate_config_write;
 use indexmap::IndexMap;
 
-use crate::startup_checks::tuning_payload;
-
 pub const AUTO_ROUTER_COMPLEXITY_PREFIX: &str = "auto_router/complexity_router";
 
 // router_utils/auto_router_tuning_baseline.py's identity-to-fingerprint mapping, in deployment order
@@ -152,12 +150,12 @@ pub fn mutable_tuned_identities(
 
 #[must_use]
 pub fn tuning_limit_violation(held: usize, limit: Option<usize>) -> Option<String> {
-    let limit = limit?;
-    if held <= limit {
+    let allowed = limit?;
+    if held <= allowed {
         return None;
     }
     Some(format!(
-        "At most {limit} auto-router(s) with changed heuristic scoring rules can be modified without an auto-router license. Keep this router on its recorded settings, or revert the other changed router to its baseline, or remove one of them. Selecting models does not use this allowance."
+        "At most {allowed} auto-router(s) with changed heuristic scoring rules can be modified without an auto-router license. Keep this router on its recorded settings, or revert the other changed router to its baseline, or remove one of them. Selecting models does not use this allowance."
     ))
 }
 
@@ -169,7 +167,7 @@ fn changed_from_baseline(identity: &str, fingerprint: &str, baselines: &TuningBa
     baseline.is_none_or(|recorded| recorded != fingerprint)
 }
 
-fn object_of(value: Option<&Json>) -> Option<&JsonObject> {
+const fn object_of(value: Option<&Json>) -> Option<&JsonObject> {
     match value {
         Some(Json::Object(object)) => Some(object),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))

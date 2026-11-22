@@ -6,7 +6,7 @@ pub fn attach_router_to_detectors(
     detectors: &mut [PromptInjectionDetection],
     model_names: Option<&[String]>,
 ) -> Result<(), StartupCheckError> {
-    for detector in detectors.iter_mut() {
+    for detector in detectors {
         detector.update_environment(model_names)?;
     }
     Ok(())

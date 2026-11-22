@@ -325,8 +325,9 @@ struct BaselineStore {
 #[async_trait]
 impl TuningBaselineStore for BaselineStore {
     async fn find_baseline(&self, _param_name: &str) -> Result<Option<Json>, PortError> {
-        if let Some(message) = self.find_error.lock().unwrap().as_deref() {
-            return Err(PortError::new(message));
+        let failure = self.find_error.lock().unwrap().clone();
+        if let Some(message) = failure {
+            return Err(PortError::new(&message));
         }
         Ok(self.row.lock().unwrap().clone())
     }
@@ -346,7 +347,8 @@ impl TuningBaselineStore for BaselineStore {
                 Ok(())
             }
             RecordOutcome::Unique => {
-                *self.row.lock().unwrap() = self.winner.lock().unwrap().take();
+                let winner = self.winner.lock().unwrap().take();
+                *self.row.lock().unwrap() = winner;
                 Err(BaselineWriteError::UniqueViolation)
             }
             RecordOutcome::Fail => Err(BaselineWriteError::Database(PortError::new(
@@ -356,7 +358,7 @@ impl TuningBaselineStore for BaselineStore {
     }
 }
 
-fn baseline_store(row: Option<Json>) -> BaselineStore {
+const fn baseline_store(row: Option<Json>) -> BaselineStore {
     BaselineStore {
         row: Mutex::new(row),
         winner: Mutex::new(None),
@@ -427,7 +429,7 @@ async fn load_adopts_the_competing_pods_row_on_a_unique_violation() {
 
 #[tokio::test]
 async fn load_skips_the_gate_when_the_row_cannot_be_read() {
-    let mut find_failure = baseline_store(None);
+    let find_failure = baseline_store(None);
     *find_failure.find_error.lock().unwrap() = Some("read failed".to_owned());
     let (logs, _guard) = capture_logs();
     assert_eq!(load_tuning_baselines(&find_failure, &[]).await, None);
@@ -475,7 +477,7 @@ async fn load_skips_the_gate_when_a_recorded_value_is_not_a_string() {
 #[tokio::test]
 async fn enforce_returns_baselines_within_the_limit_and_fails_above_it() {
     let store = baseline_store(Some(Json::Object(IndexMap::new())));
-    let changed = vec![
+    let changed = [
         deployment("one", Some(json(r#"{"code_keywords": ["a"]}"#))),
         deployment("two", Some(json(r#"{"code_keywords": ["b"]}"#))),
     ];
@@ -513,8 +515,8 @@ async fn enforce_warns_and_skips_when_the_database_models_cannot_be_read() {
 #[tokio::test]
 async fn enforce_combines_config_and_database_deployments() {
     let store = baseline_store(Some(Json::Object(IndexMap::new())));
-    let config = vec![deployment("one", Some(json(r#"{"code_keywords": ["a"]}"#)))];
-    let database = vec![deployment("two", Some(json(r#"{"code_keywords": ["b"]}"#)))];
+    let config = [deployment("one", Some(json(r#"{"code_keywords": ["a"]}"#)))];
+    let database = [deployment("two", Some(json(r#"{"code_keywords": ["b"]}"#)))];
     let error = enforce_tuning_baseline(&store, &config, Some(&database), Some(1))
         .await
         .unwrap_err();

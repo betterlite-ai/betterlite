@@ -7,13 +7,13 @@ use crate::startup_checks::presence::{DatabasePresence, RedisPresence};
 
 // litellm.max_budget is a float in LiteLLM, so the message carries Python's repr of it
 pub fn warn_budget_without_db(max_budget: Option<f64>, database: DatabasePresence) {
-    let Some(max_budget) = max_budget else {
+    let Some(amount) = max_budget else {
         return;
     };
-    if database == DatabasePresence::Present || max_budget <= 0.0_f64 {
+    if database == DatabasePresence::Present || amount <= 0.0_f64 {
         return;
     }
-    let budget = float_text(max_budget);
+    let budget = float_text(amount);
     warn!(
         "A proxy-wide budget (litellm.max_budget={budget}) is configured but no database is connected, so the budget will NOT be enforced and requests will never be blocked. Set DATABASE_URL or general_settings.database_url and restart. Redis and fail_closed_budget_enforcement do not cover the proxy-wide budget because there is no global spend counter; Redis alone is not a substitute."
     );

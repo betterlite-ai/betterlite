@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::io::Result as IoResult;
 use std::io::Write;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -32,6 +33,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::Number;
 use tokio_util::task::TaskTracker;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -126,8 +128,8 @@ const fn buffer_settings(flag: BoolOrText) -> CoordinationGeneralSettings {
 fn team_entry(team_id: &str, budget: Option<JsonData>) -> JsonData {
     let mut fields = BTreeMap::new();
     fields.insert("team_id".to_owned(), JsonData::String(team_id.to_owned()));
-    if let Some(budget) = budget {
-        fields.insert("max_budget_in_team".to_owned(), budget);
+    if let Some(amount) = budget {
+        fields.insert("max_budget_in_team".to_owned(), amount);
     }
     JsonData::Object(fields)
 }
@@ -255,7 +257,7 @@ impl AgentLookup for StubLookup {}
 
 #[test]
 fn jwt_settings_resolve_only_top_level_environment_values() {
-    let source = r#"
+    let source = "
 general_settings:
   litellm_jwtauth:
     user_id_jwt_field: os.environ/USER_ID_FIELD
@@ -266,7 +268,7 @@ general_settings:
       - issuer: https://idp.example.com
         jwks_url: os.environ/JWKS_URL
         disable_audience_validation: true
-"#;
+";
     let lookup = BTreeMap::from([("USER_ID_FIELD".to_owned(), "sub".to_owned())]);
     let loaded = ConfigLoader { lookup }.load(source).unwrap();
     let settings = loaded.sections.jwt_settings;
@@ -321,14 +323,14 @@ fn detector(api_name: &str) -> PromptInjectionDetection {
 
 #[test]
 fn every_prompt_injection_detector_receives_the_model_list() {
-    let names = vec!["listed".to_owned()];
-    let mut detectors = vec![detector("listed"), detector("missing")];
+    let names = ["listed".to_owned()];
+    let mut detectors = [detector("listed"), detector("missing")];
     let error = attach_router_to_detectors(&mut detectors, Some(&names)).unwrap_err();
     assert!(matches!(
         error,
         StartupCheckError::PromptInjection(PromptInjectionError::InvalidLlmApiName)
     ));
-    let mut passing = vec![detector("listed")];
+    let mut passing = [detector("listed")];
     attach_router_to_detectors(&mut passing, Some(&names)).unwrap();
 }
 
@@ -355,8 +357,9 @@ impl ProxyBudgetStore for BudgetStore {
             max_budget,
             budget_duration.to_owned(),
         ));
-        match self.upsert_error.lock().unwrap().as_deref() {
-            Some(message) => Err(PortError::new(message)),
+        let failure = self.upsert_error.lock().unwrap().clone();
+        match failure {
+            Some(message) => Err(PortError::new(&message)),
             None => Ok(()),
         }
     }
@@ -370,8 +373,9 @@ impl ProxyBudgetStore for BudgetStore {
             .lock()
             .unwrap()
             .push((user_id.to_owned(), reset_at));
-        match self.backfill_error.lock().unwrap().as_deref() {
-            Some(message) => Err(PortError::new(message)),
+        let failure = self.backfill_error.lock().unwrap().clone();
+        match failure {
+            Some(message) => Err(PortError::new(&message)),
             None => Ok(()),
         }
     }
@@ -414,8 +418,8 @@ async fn seed_proxy_budget_refuses_missing_duration() {
     });
     let tasks = TaskTracker::new();
     let error = seed_proxy_budget(
-        budget(Decimal::from(5), None, DatabasePresence::Present),
-        Arc::clone(&store),
+        budget(Decimal::from(5_i32), None, DatabasePresence::Present),
+        Arc::<BudgetStore>::clone(&store),
         reset,
         &tasks,
     )
@@ -430,9 +434,9 @@ async fn seed_proxy_budget_refuses_missing_duration() {
 }
 
 #[rstest]
-#[case::no_database(Decimal::from(5), Some("30d"), DatabasePresence::Absent)]
+#[case::no_database(Decimal::from(5_i32), Some("30d"), DatabasePresence::Absent)]
 #[case::zero_budget(Decimal::ZERO, Some("30d"), DatabasePresence::Present)]
-#[case::negative_budget(Decimal::from(-1), Some("30d"), DatabasePresence::Present)]
+#[case::negative_budget(Decimal::from(-1_i32), Some("30d"), DatabasePresence::Present)]
 #[tokio::test]
 async fn seed_proxy_budget_skips_without_database_or_positive_budget(
     #[case] max_budget: Decimal,
@@ -443,7 +447,7 @@ async fn seed_proxy_budget_skips_without_database_or_positive_budget(
     let tasks = TaskTracker::new();
     seed_proxy_budget(
         budget(max_budget, duration, database),
-        Arc::clone(&store),
+        Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset {
             outcome: Ok(fixed_reset()),
         }),
@@ -461,8 +465,8 @@ async fn seed_proxy_budget_upserts_then_backfills_the_reset() {
     let store = Arc::new(BudgetStore::default());
     let tasks = TaskTracker::new();
     seed_proxy_budget(
-        budget(Decimal::from(5), Some("30d"), DatabasePresence::Present),
-        Arc::clone(&store),
+        budget(Decimal::from(5_i32), Some("30d"), DatabasePresence::Present),
+        Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset {
             outcome: Ok(fixed_reset()),
         }),
@@ -475,7 +479,7 @@ async fn seed_proxy_budget_upserts_then_backfills_the_reset() {
         *store.upserts.lock().unwrap(),
         vec![(
             LITELLM_PROXY_BUDGET_NAME.to_owned(),
-            Decimal::from(5),
+            Decimal::from(5_i32),
             "30d".to_owned()
         )]
     );
@@ -492,8 +496,8 @@ async fn seed_proxy_budget_warns_and_skips_the_backfill_when_the_upsert_fails() 
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
     seed_proxy_budget(
-        budget(Decimal::from(5), Some("30d"), DatabasePresence::Present),
-        Arc::clone(&store),
+        budget(Decimal::from(5_i32), Some("30d"), DatabasePresence::Present),
+        Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset {
             outcome: Ok(fixed_reset()),
         }),
@@ -517,8 +521,8 @@ async fn seed_proxy_budget_warns_when_the_backfill_fails() {
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
     seed_proxy_budget(
-        budget(Decimal::from(5), Some("30d"), DatabasePresence::Present),
-        Arc::clone(&store),
+        budget(Decimal::from(5_i32), Some("30d"), DatabasePresence::Present),
+        Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset {
             outcome: Ok(fixed_reset()),
         }),
@@ -540,8 +544,8 @@ async fn seed_proxy_budget_warns_when_the_reset_time_cannot_be_computed() {
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
     seed_proxy_budget(
-        budget(Decimal::from(5), Some("bad"), DatabasePresence::Present),
-        Arc::clone(&store),
+        budget(Decimal::from(5_i32), Some("bad"), DatabasePresence::Present),
+        Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset { outcome: Err(()) }),
         &tasks,
     )
@@ -559,16 +563,17 @@ async fn seed_proxy_budget_warns_when_the_reset_time_cannot_be_computed() {
 
 #[derive(Default)]
 struct RecordingFetch {
-    calls: Mutex<usize>,
+    calls: AtomicUsize,
     error: Mutex<Option<String>>,
 }
 
 #[async_trait]
 impl GlobalSpendFetch for RecordingFetch {
     async fn fetch_global_spend(&self) -> Result<(), PortError> {
-        *self.calls.lock().unwrap() += 1;
-        match self.error.lock().unwrap().as_deref() {
-            Some(message) => Err(PortError::new(message)),
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let failure = self.error.lock().unwrap().clone();
+        match failure {
+            Some(message) => Err(PortError::new(&message)),
             None => Ok(()),
         }
     }
@@ -579,26 +584,26 @@ async fn warm_global_spend_reads_once_under_the_budget_condition() {
     let fetch = Arc::new(RecordingFetch::default());
     let tasks = TaskTracker::new();
     warm_global_spend(
-        Decimal::from(5),
+        Decimal::from(5_i32),
         DatabasePresence::Present,
-        Arc::clone(&fetch),
+        Arc::<RecordingFetch>::clone(&fetch),
         &tasks,
     );
     warm_global_spend(
-        Decimal::from(5),
+        Decimal::from(5_i32),
         DatabasePresence::Absent,
-        Arc::clone(&fetch),
+        Arc::<RecordingFetch>::clone(&fetch),
         &tasks,
     );
     warm_global_spend(
         Decimal::ZERO,
         DatabasePresence::Present,
-        Arc::clone(&fetch),
+        Arc::<RecordingFetch>::clone(&fetch),
         &tasks,
     );
     tasks.close();
     tasks.wait().await;
-    assert_eq!(*fetch.calls.lock().unwrap(), 1);
+    assert_eq!(fetch.calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -607,7 +612,12 @@ async fn warm_global_spend_swallows_errors_at_debug() {
     *fetch.error.lock().unwrap() = Some("reader down".to_owned());
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
-    warm_global_spend(Decimal::from(5), DatabasePresence::Present, fetch, &tasks);
+    warm_global_spend(
+        Decimal::from(5_i32),
+        DatabasePresence::Present,
+        fetch,
+        &tasks,
+    );
     tasks.close();
     tasks.wait().await;
     assert!(
@@ -625,8 +635,9 @@ struct SettingsRepo {
 #[async_trait]
 impl UiSettingsRepository for SettingsRepo {
     async fn stored_ui_settings(&self) -> Result<Option<String>, TableError> {
-        match self.row.lock().unwrap().as_ref() {
-            Some(text) => Ok(Some(text.clone())),
+        let stored = self.row.lock().unwrap().clone();
+        match stored {
+            Some(text) => Ok(Some(text)),
             None => Err(TableError::MissingRow),
         }
     }
@@ -721,10 +732,7 @@ impl TeamMemberBudgetUpdater for RecordingUpdater {
 #[tokio::test]
 async fn team_budgets_run_as_the_hashed_master_key() {
     let teams = JsonData::Array(vec![
-        team_entry(
-            "team-a",
-            Some(JsonData::Number(serde_json::Number::from(12))),
-        ),
+        team_entry("team-a", Some(JsonData::Number(Number::from(12_i32)))),
         team_entry("team-b", None),
     ]);
     let params = params_with_teams(teams);
@@ -736,7 +744,7 @@ async fn team_budgets_run_as_the_hashed_master_key() {
     let calls = updater.calls.lock().unwrap();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].0, "team-a");
-    assert_eq!(calls[0].1, Some(Decimal::from(12)));
+    assert_eq!(calls[0].1, Some(Decimal::from(12_i32)));
     assert_eq!(calls[1].0, "team-b");
     assert_eq!(calls[1].1, None);
     assert_eq!(calls[0].2, hash_token("sk-master"));
@@ -790,10 +798,7 @@ async fn team_budgets_reject_a_team_list_of_the_wrong_shape() {
 #[tokio::test]
 async fn team_budgets_log_a_failure_and_continue() {
     let teams = JsonData::Array(vec![
-        team_entry(
-            "team-a",
-            Some(JsonData::Number(serde_json::Number::from(12))),
-        ),
+        team_entry("team-a", Some(JsonData::Number(Number::from(12_i32)))),
         team_entry("team-b", None),
     ]);
     let params = params_with_teams(teams);

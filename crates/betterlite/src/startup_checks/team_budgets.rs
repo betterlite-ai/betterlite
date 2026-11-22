@@ -50,14 +50,14 @@ pub async fn update_default_team_budgets(
     master_key: &SecretString,
     updater: &dyn TeamMemberBudgetUpdater,
 ) -> Result<(), StartupCheckError> {
-    let Some(params) = params else {
+    let Some(defaults) = params else {
         return Ok(());
     };
-    let Some(teams) = params.values.get("teams") else {
+    let Some(teams) = defaults.values.get("teams") else {
         return Ok(());
     };
     match teams {
-        JsonData::Array(teams) => apply_team_budgets(teams, master_key, updater).await,
+        JsonData::Array(entries) => apply_team_budgets(entries, master_key, updater).await,
         JsonData::Null => Ok(()),
         JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Object(_) => {
             Err(StartupCheckError::TeamsNotAList)

@@ -107,12 +107,12 @@ pub fn decode_tuning_baselines(stored: &Json) -> Result<TuningBaselines, serde_j
     };
     let mut baselines = TuningBaselines::new();
     for (identity, fingerprint) in entries {
-        let Json::Text(fingerprint) = fingerprint else {
+        let Json::Text(recorded) = fingerprint else {
             return Err(serde_json::Error::custom(format!(
                 "the row maps {identity} to a value that is not a string"
             )));
         };
-        baselines.insert(identity, fingerprint);
+        baselines.insert(identity, recorded);
     }
     Ok(baselines)
 }
@@ -123,12 +123,12 @@ pub async fn enforce_tuning_baseline(
     database_deployments: Option<&[Deployment]>,
     limit: Option<usize>,
 ) -> Result<Option<TuningBaselines>, StartupCheckError> {
-    let Some(database_deployments) = database_deployments else {
+    let Some(stored_deployments) = database_deployments else {
         warn!("Heuristic-v1 tuning baseline unavailable, gate not enforced this boot");
         return Ok(None);
     };
     let mut deployments = config_deployments.to_vec();
-    deployments.extend_from_slice(database_deployments);
+    deployments.extend_from_slice(stored_deployments);
     let Some(baselines) = load_tuning_baselines(store, &deployments).await else {
         return Ok(None);
     };

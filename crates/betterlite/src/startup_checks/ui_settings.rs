@@ -9,10 +9,10 @@ pub async fn sync_ui_settings(
     repository: Option<&dyn UiSettingsRepository>,
     target: GeneralSettingsTarget<'_>,
 ) {
-    let Some(repository) = repository else {
+    let Some(reader) = repository else {
         return;
     };
-    let applied = apply_ui_settings(repository, target).await;
+    let applied = apply_ui_settings(reader, target).await;
     if applied.is_empty() {
         return;
     }

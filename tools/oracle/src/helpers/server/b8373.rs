@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite::startup_checks::presence::{DatabasePresence, RedisPresence};
@@ -15,7 +16,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde::de::Error as _;
-use serde_json::{Value, json};
+use serde_json::{Error as JsonError, Value, json};
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -60,8 +61,8 @@ impl LogBuffer {
     }
 }
 
-impl std::io::Write for LogBuffer {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+impl io::Write for LogBuffer {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -69,7 +70,7 @@ impl std::io::Write for LogBuffer {
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
@@ -147,9 +148,7 @@ impl Helper for Op {
                 database_configured,
             } => {
                 let budget = max_budget.to_f64().ok_or_else(|| {
-                    serde_json::Error::custom(format!(
-                        "max_budget {max_budget} has no f64 representation"
-                    ))
+                    JsonError::custom(format!("max_budget {max_budget} has no f64 representation"))
                 })?;
                 let database = if *database_configured {
                     DatabasePresence::Present
