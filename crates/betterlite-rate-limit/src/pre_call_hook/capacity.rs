@@ -162,8 +162,10 @@ struct ReleaseTask {
 
 impl ReleaseTask {
     async fn run(mut self) {
+        // the guard sends this signal as it drops; one that ended without sending still holds its slot
         if self.finish.await.is_err() {
             tracing::debug!("the request capacity guard ended without its finish signal");
+            return;
         }
         if admitted(&mut self.status).await {
             release_capacity_slot(&self.gauges, &self.acquisition).await;
