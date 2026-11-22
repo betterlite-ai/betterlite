@@ -9,7 +9,7 @@ use betterlite_prompts::message_content::Message;
 use http::HeaderMap;
 use secrecy::SecretString;
 
-use crate::azure_dispatch::call::{ChatCall, Composition, Credentials, EmbeddingCall};
+use crate::azure_dispatch::call::{ChatCall, Composition, Credentials, EmbeddingCall, TextCall};
 use crate::azure_dispatch::fixtures::execution::recorded;
 use crate::azure_dispatch::fixtures::types::{Answer, AnswerReply, AzureResult, RecordedRequest};
 use crate::prepared::PreparedHttp;
@@ -17,6 +17,7 @@ use crate::prepared::PreparedHttp;
 pub(crate) const CHAT_REPLY: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o-2024-08-06","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
 pub(crate) const EMBEDDING_REPLY: &str = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25,0.5]}],"model":"text-embedding-3-small","usage":{"prompt_tokens":2,"total_tokens":2}}"#;
 pub(crate) const TEXT_REPLY: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"index":0,"text":"hello","finish_reason":"stop","logprobs":null}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+pub(crate) const AZURE_BASE: &str = "https://resource.openai.azure.com";
 
 const USER: &str = r#"[{"role":"user","content":"hi"}]"#;
 
@@ -72,6 +73,39 @@ pub(crate) const fn credentials() -> Credentials {
         azure_ad_token: None,
         base_model: None,
         timeout: None,
+    }
+}
+
+pub(crate) fn base_credentials() -> Credentials {
+    Credentials {
+        api_base: Some(String::from(AZURE_BASE)),
+        api_version: Some(String::from("2024-10-21")),
+        api_key: Some(key("call-key")),
+        ..credentials()
+    }
+}
+
+pub(crate) fn base_only() -> Credentials {
+    Credentials {
+        api_base: Some(String::from(AZURE_BASE)),
+        ..credentials()
+    }
+}
+
+pub(crate) fn extra_credentials(body: &str) -> Credentials {
+    Credentials {
+        extra_body: Some(json(body)),
+        ..base_credentials()
+    }
+}
+
+pub(crate) fn text_call(optional: Object, credentials: Credentials, acompletion: bool) -> TextCall {
+    TextCall {
+        model: String::from("gpt-3.5-turbo-instruct"),
+        messages: messages(),
+        optional,
+        credentials,
+        acompletion,
     }
 }
 

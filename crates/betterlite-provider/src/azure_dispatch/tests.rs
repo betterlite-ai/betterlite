@@ -2,6 +2,7 @@
 
 mod cases;
 mod http_dispatch;
+mod resolution;
 mod safety;
 mod support;
 
@@ -38,10 +39,10 @@ async fn azure_dispatch_cases(#[case] family: Family) {
         Family::Embedding => cases::embedding_dispatch(),
         Family::Text => cases::text_dispatch(),
         Family::OpenAiRegression => cases::openai_regression(),
-        Family::MissingBase => cases::missing_base(),
-        Family::ConfigRanks => cases::config_ranks(),
+        Family::MissingBase => resolution::missing_base(),
+        Family::ConfigRanks => resolution::config_ranks(),
         Family::OSeries => cases::o_series_dispatch(),
         Family::Http => http_dispatch::check_all().await,
-        Family::HeaderRetryMerge => cases::header_retry_merge(),
+        Family::HeaderRetryMerge => resolution::header_retry_merge(),
     }
 }
