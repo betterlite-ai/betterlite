@@ -9,6 +9,7 @@ use betterlite_openai::search::provider::{
     HttpMethod, OutboundSearch, ProviderResponse, RequestInput, SearchProvider as _, SearchQuery,
 };
 use rstest::rstest;
+use strum::IntoEnumIterator as _;
 
 use super::SearchRegistry;
 use super::config::{SearchBody, SearchConfig};

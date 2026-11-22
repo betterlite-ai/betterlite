@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 pub struct SearchBody(pub JsonValue);
 pub struct SearchConfig<'env> {
     pub name: SearchProviderName,
-    pub(crate) hooks: Box<dyn SearchHooks + 'env>,
+    pub hooks: Box<dyn SearchHooks + 'env>,
 }
 impl SearchProvider for SearchConfig<'_> {
     type Body = SearchBody;
@@ -71,7 +71,7 @@ impl SearchProvider for SearchConfig<'_> {
     }
 }
 // B3270's hooks with the body type erased, each provider struct adapting itself to them
-pub(crate) trait SearchHooks: Send + Sync {
+pub trait SearchHooks: Send + Sync {
     fn http_method(&self) -> HttpMethod {
         HttpMethod::Post
     }

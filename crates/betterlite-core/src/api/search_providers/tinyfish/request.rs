@@ -118,7 +118,7 @@ fn limit_of_number(number: &Number) -> CallerLimit {
 fn limit_of_text(text: &str) -> CallerLimit {
     match parse_caller_int(text) {
         Some(parsed) => CallerLimit::Set(clamped(parsed)),
-        None => CallerLimit::Ignored(python::repr(text).unwrap_or_default()),
+        None => CallerLimit::Ignored(python::repr(&text).unwrap_or_default()),
     }
 }
 pub(super) fn limit_of_float(value: Option<f64>, raw: &str) -> CallerLimit {
