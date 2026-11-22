@@ -1,0 +1,45 @@
+kind: helper
+name: nova-inline-cache-points
+call:
+  bedrock_nova_chat:
+    function: inline_cache_points
+    system:
+      - {text: filler}
+      - {text: kept, cachePoint: {type: default}}
+      - {cachePoint: {type: default, ttl: 1h}}
+    messages:
+      - role: user
+        extra_field: dropped
+        content:
+          - {text: first}
+          - {image: {format: png, source: {bytes: iVBORw0KGgo=}}}
+          - {text: second}
+          - {cachePoint: {type: default}}
+          - {cachePoint: {type: default, ttl: 5m}}
+      - role: assistant
+        content:
+          - {text: calling}
+          - {toolUse: {input: {}, name: lookup, toolUseId: tool-1}}
+          - {cachePoint: {type: default, ttl: 1h}}
+      - role: user
+        content:
+          - {cachePoint: {type: default}}
+      - role: assistant
+        content:
+          - {text: answer}
+calls:
+  - bedrock_nova_chat:
+      function: inline_cache_points
+      system:
+        - {cachePoint: {type: default}}
+      messages:
+        - role: user
+          content:
+            - {text: only text}
+            - {cachePoint: {type: default}}
+  - bedrock_nova_chat:
+      function: inline_cache_points
+      system: []
+      messages: []
+env: {}
+compare: {ignore: []}
