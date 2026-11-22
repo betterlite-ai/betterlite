@@ -1,0 +1,8 @@
+kind: helper
+name: azure-resource-dispatch-files-batches-seed
+call:
+  azure_resource_dispatch:
+    case: files_batches
+    steps: []
+env: {}
+compare: {ignore: []}
