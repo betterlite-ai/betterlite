@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use betterlite_redis::request_batch::lock;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use crate::reservation_settlement::adjust::{
@@ -102,20 +103,20 @@ async fn a_positive_delta_at_the_decimal_ceiling_stays_consistent() {
     assert!(counter_can_apply_adjustment(&fake, "spend:key:k1", decimal("1")).await);
 }
 
+#[rstest]
+#[case::exact("5", "-5", true)]
+#[case::within_the_floor("5", "-5.000000000001", true)]
+#[case::below_the_floor("5", "-5.000000000002", false)]
+#[case::from_zero("0", "-2", false)]
 #[tokio::test]
-async fn the_negative_floor_absorbs_rounding() {
-    let cases = [
-        ("5", "-5", true),
-        ("5", "-5.000000000001", true),
-        ("5", "-5.000000000002", false),
-        ("0", "-2", false),
-    ];
-    for (current, adjustment, expected) in cases {
-        let fake = counters(&[("spend:key:k1", current)]);
-        let can_apply =
-            counter_can_apply_adjustment(&fake, "spend:key:k1", decimal(adjustment)).await;
-        assert_eq!(can_apply, expected);
-    }
+async fn the_negative_floor_absorbs_rounding(
+    #[case] current: &str,
+    #[case] adjustment: &str,
+    #[case] expected: bool,
+) {
+    let fake = counters(&[("spend:key:k1", current)]);
+    let can_apply = counter_can_apply_adjustment(&fake, "spend:key:k1", decimal(adjustment)).await;
+    assert_eq!(can_apply, expected);
 }
 
 #[tokio::test]
