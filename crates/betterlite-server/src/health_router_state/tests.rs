@@ -254,11 +254,8 @@ fn settings(routing: bool) -> RouterSettings {
 
 fn ignoring_settings(routing: bool) -> RouterSettings {
     RouterSettings {
-        default_cooldown_time: 12.5,
-        redis_read_interval_seconds: 1.0,
-        enable_health_check_routing: routing,
-        staleness_threshold: 600.0,
         ignore_transient_errors: true,
+        ..settings(routing)
     }
 }
 
