@@ -1,0 +1,11 @@
+task: B8388
+deviations:
+  - what: >-
+      The health path hands B304's on_failure a FailureFacts whose class is Unclassified, because ProbeFailure carries only a status and a message; LiteLLM
+      passes the live exception object itself, so its "APIConnectionError" string check and a class-keyed per-deployment allowed_fails_policy never match a
+      background health failure here, and the cooldown is decided by status alone.
+    why: >-
+      The exception object does not survive B4443's probe boundary, and docs/compatibility.md keeps Python's str(exception) matching out of the port; a probe
+      that could not reach its provider still requests a cooldown, which the unhealthy verdict the same cycle writes into the health cache already justifies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4457-L4463
+kept_bugs: []
