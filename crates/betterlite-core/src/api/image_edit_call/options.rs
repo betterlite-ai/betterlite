@@ -2,6 +2,7 @@ use betterlite_context::non_default_params::Params;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams};
 use betterlite_openai::image_edits::file::DEFAULT_MASK_NAME;
+use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 
 use super::call::ImageEditCall;
@@ -15,13 +16,16 @@ pub(crate) fn requested_options(
     provider_supported: &[String],
 ) -> Result<ImageEditOptionalRequestParams, ImageEditError> {
     let mut options = ImageEditOptionalRequestParams {
+        background: None,
+        input_fidelity: None,
         mask: call.mask.as_ref().map(mask_name),
         count: call.count,
         quality: call.quality,
         response_format: call.response_format,
         size: call.size.clone(),
         user: call.user.clone(),
-        ..ImageEditOptionalRequestParams::default()
+        image_config: None,
+        extensions: IndexMap::new(),
     };
     for (name, value) in &call.kwargs {
         match name.as_str() {
