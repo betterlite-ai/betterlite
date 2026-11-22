@@ -6,7 +6,6 @@ use super::support::{object, routes};
 use crate::api::file_batch_guardrails::call_type::{call_type_from_url, scannable_call_type};
 use crate::api::file_batch_guardrails::record_json::RecordJson;
 use crate::api::file_batch_guardrails::record_json::text::RecordText;
-use crate::api::file_batch_guardrails::url_path::url_path;
 use crate::routes::CallType;
 
 #[rstest]
@@ -42,6 +41,10 @@ use crate::routes::CallType;
 #[case::scoped_host("http://[fe80::1%25eth0]/v1/embeddings", CallType::Aembedding)]
 #[case::future_host("http://[v1.x]/v1/embeddings", CallType::Aembedding)]
 #[case::user_info("http://user@[::1]/v1/embeddings", CallType::Aembedding)]
+#[case::userinfo_brackets_and_future_host(
+    "http://user[x]@v1.fe/v1/embeddings",
+    CallType::Aembedding
+)]
 fn a_supported_route_names_its_call_type(#[case] url: &str, #[case] expected: CallType) {
     assert_eq!(call_type_from_url(&routes(), url), Some(expected));
 }
@@ -64,28 +67,11 @@ fn a_supported_route_names_its_call_type(#[case] url: &str, #[case] expected: Ca
 #[case::future_bad_version("https://[vg.x]/v1/chat/completions")]
 #[case::future_without_address("https://[v1.]/v1/chat/completions")]
 #[case::future_without_point("https://[v1]/v1/chat/completions")]
+#[case::uppercase_future_version("https://[V1.x]/v1/chat/completions")]
 #[case::bracket_only_in_user("https://[a]@host/v1/chat/completions")]
+#[case::nfkc_delimiter("https://a\u{2100}b.example/v1/chat/completions")]
 fn an_unscannable_or_unreadable_url_resolves_nothing(#[case] url: &str) {
     assert_eq!(call_type_from_url(&routes(), url), None);
-}
-
-#[rstest]
-#[case::relative("/v1/chat/completions", Some("/v1/chat/completions"))]
-#[case::scheme_and_query("HTTPS://h:1/a/b?c=d#e", Some("/a/b"))]
-#[case::query_before_fragment("/a?b#c", Some("/a"))]
-#[case::network_path("//host/a", Some("/a"))]
-#[case::authority_only("https://host", Some(""))]
-#[case::authority_then_query("https://host?x=/a", Some(""))]
-#[case::digit_first_scheme("1a:/b", Some("1a:/b"))]
-#[case::odd_scheme_character("a_b:/c", Some("a_b:/c"))]
-#[case::scheme_characters("a+b-c.d:/e", Some("/e"))]
-#[case::removes_newlines("/a\r\n/b", Some("/a/b"))]
-#[case::keeps_trailing_space("/a ", Some("/a "))]
-#[case::port_after_bracket("http://[::1]:80/a", Some("/a"))]
-#[case::user_before_bracket("http://u:p@[::1]/a", Some("/a"))]
-#[case::malformed("http://[::1/a", None)]
-fn reduces_a_url_to_its_path(#[case] url: &str, #[case] expected: Option<&str>) {
-    assert_eq!(url_path(url).as_deref(), expected);
 }
 
 fn scanned_as(url: Option<&RecordJson>, body: &str) -> Option<CallType> {
@@ -132,6 +118,11 @@ fn text(url: &str) -> RecordJson {
     Some(&text("/v1/images/generations")),
     r#"{"messages":[]}"#,
     Some(CallType::Acompletion)
+)]
+#[case::nfkc_host_falls_back(
+    Some(&text("https://a\u{2100}b.example/v1/embeddings")),
+    r#"{"prompt":"x"}"#,
+    Some(CallType::AtextCompletion)
 )]
 #[case::input_items_falls_back(Some(&text("/responses/r_1/input_items")), "{}", None)]
 #[case::url_wins(

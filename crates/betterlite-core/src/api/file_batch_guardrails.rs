@@ -12,7 +12,6 @@ pub mod lines;
 pub mod record_json;
 pub mod records;
 pub mod scan_record;
-pub mod url_path;
 
 mod tests;
 

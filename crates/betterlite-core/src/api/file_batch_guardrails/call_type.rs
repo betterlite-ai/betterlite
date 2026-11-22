@@ -1,6 +1,7 @@
+use betterlite_models::provider_defaults_a::url::urlsplit;
+
 use super::record_json::text::RecordText;
 use super::record_json::{RecordJson, RecordObject};
-use super::url_path::url_path;
 use super::{BODY_SHAPE_CALL_TYPES, SCANNABLE_CALL_TYPES};
 use crate::routes::CallType;
 use crate::routes::catalog::RouteCatalog;
@@ -8,7 +9,7 @@ use crate::routes::catalog::RouteCatalog;
 // An absolute url reduces to its path, or a record naming /v1/responses in full would be scanned as an embedding
 #[must_use]
 pub fn call_type_from_url(routes: &RouteCatalog, url: &str) -> Option<CallType> {
-    let path = url_path(url)?;
+    let path = urlsplit(url).ok()?.path;
     // a path past the catalog's limits is one no route names, which the body shape already handles
     let call_types = routes
         .call_types_for(path.trim_end_matches('/'))
