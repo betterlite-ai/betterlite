@@ -79,7 +79,6 @@ pub enum DeploymentPin {
 pub struct Config {
     pub return_raw_model_name: bool,
     pub max_tokens_from_tier_model: bool,
-    pub deployment_pin: DeploymentPin,
 }
 
 impl Default for Config {
@@ -87,15 +86,21 @@ impl Default for Config {
         Self {
             return_raw_model_name: DEFAULT_RETURN_RAW_MODEL_NAME,
             max_tokens_from_tier_model: DEFAULT_MAX_TOKENS_FROM_TIER,
-            deployment_pin: DeploymentPin::default(),
         }
     }
+}
+
+// the placement scalars stay in Config, which other modules build, so the pin sits beside them
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Placement {
+    pub config: Config,
+    pub pin: DeploymentPin,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     // index-aligned with model_list; None when the deployment configures no placement settings
-    pub deployments: Vec<Option<Config>>,
+    pub deployments: Vec<Option<Placement>>,
 }
 
 impl Settings {
@@ -105,7 +110,7 @@ impl Settings {
         self.deployments
             .iter()
             .flatten()
-            .any(|config| config.deployment_pin == DeploymentPin::InUse)
+            .any(|placement| placement.pin == DeploymentPin::InUse)
     }
 }
 
@@ -130,7 +135,7 @@ impl Section for Raw {
 }
 
 impl RawRouterConfig {
-    fn resolve<L>(self, index: usize, lookup: &L) -> Result<Config, ConfigError>
+    fn resolve<L>(self, index: usize, lookup: &L) -> Result<Placement, ConfigError>
     where
         L: EnvironmentLookup,
     {
@@ -152,20 +157,22 @@ impl RawRouterConfig {
         // LiteLLM reads a configured plugin list by truthiness, and plugins replace the pin machinery
         let plugins = self.plugins.is_some_and(|plugins| !plugins.is_empty());
         let pin = !plugins && (deployment_affinity || session_affinity || user_turn);
-        Ok(Config {
-            return_raw_model_name: flag(
-                self.raw_model_name,
-                &format!("{prefix}.{RETURN_RAW_MODEL_NAME_KEY}"),
-                lookup,
-            )?
-            .unwrap_or(DEFAULT_RETURN_RAW_MODEL_NAME),
-            max_tokens_from_tier_model: flag(
-                self.tier_model_ceiling,
-                &format!("{prefix}.{MAX_TOKENS_FROM_TIER_MODEL_KEY}"),
-                lookup,
-            )?
-            .unwrap_or(DEFAULT_MAX_TOKENS_FROM_TIER),
-            deployment_pin: if pin {
+        Ok(Placement {
+            config: Config {
+                return_raw_model_name: flag(
+                    self.raw_model_name,
+                    &format!("{prefix}.{RETURN_RAW_MODEL_NAME_KEY}"),
+                    lookup,
+                )?
+                .unwrap_or(DEFAULT_RETURN_RAW_MODEL_NAME),
+                max_tokens_from_tier_model: flag(
+                    self.tier_model_ceiling,
+                    &format!("{prefix}.{MAX_TOKENS_FROM_TIER_MODEL_KEY}"),
+                    lookup,
+                )?
+                .unwrap_or(DEFAULT_MAX_TOKENS_FROM_TIER),
+            },
+            pin: if pin {
                 DeploymentPin::InUse
             } else {
                 DeploymentPin::Unused
