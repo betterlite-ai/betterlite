@@ -38,7 +38,7 @@ pub(super) struct ProbeRecorder {
 }
 
 impl ProbeRecorder {
-    pub(super) fn new(
+    pub(super) const fn new(
         headers: Option<BTreeMap<String, String>>,
         failure: Option<String>,
         raw_request: Option<RawRequest>,

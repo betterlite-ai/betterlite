@@ -146,12 +146,12 @@ impl FakeBackend {
         self.write_raw_request(recorded.logging());
         let failure = self.failure.lock().unwrap().clone();
         self.calls.lock().unwrap().push(recorded);
-        match failure {
-            Some(message) => Err(backend_failure(&message)),
-            None => Ok(HealthProbeReply {
+        let Some(message) = failure else {
+            return Ok(HealthProbeReply {
                 hidden_headers: self.headers.lock().unwrap().clone(),
-            }),
-        }
+            });
+        };
+        Err(backend_failure(&message))
     }
 
     fn write_raw_request(&self, logging: Option<&Arc<dyn HealthProbeLogging>>) {
@@ -439,11 +439,11 @@ impl Harness {
         let resolver = Arc::new(FakeResolver::new("resolved-model", "openai"));
         let catalog = Arc::new(FakeCatalog::new());
         let entry = HealthCheckEntry {
-            backend: Arc::clone(&backend),
-            cheapest: Arc::clone(&cheapest),
-            documents: Arc::clone(&documents),
-            resolver: Arc::clone(&resolver),
-            catalog: Arc::clone(&catalog),
+            backend: Arc::<FakeBackend>::clone(&backend),
+            cheapest: Arc::<FakeCheapest>::clone(&cheapest),
+            documents: Arc::<FakeDocuments>::clone(&documents),
+            resolver: Arc::<FakeResolver>::clone(&resolver),
+            catalog: Arc::<FakeCatalog>::clone(&catalog),
             redactor: Arc::new(Redactor::new(16).unwrap()),
             redact_secrets: true,
             clock: fixed_time,
@@ -470,7 +470,10 @@ impl Harness {
     }
 }
 
-pub(super) fn params<T: Serialize>(entries: T) -> HealthProbeParams {
+pub(super) fn params<T>(entries: T) -> HealthProbeParams
+where
+    T: Serialize,
+{
     let map = serde_json::from_value(serde_json::to_value(entries).unwrap()).unwrap();
     HealthProbeParams::from_map(map).unwrap()
 }

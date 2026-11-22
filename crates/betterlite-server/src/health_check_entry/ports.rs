@@ -21,13 +21,12 @@ pub trait CatalogModes: Send + Sync {
 
 impl CatalogModes for ModelCatalog {
     fn catalog_mode(&self, model: &str) -> CatalogMode {
-        match self.metadata(model) {
-            None => CatalogMode::NotListed,
-            Some(metadata) => match metadata.mode {
-                None => CatalogMode::NoMode,
-                Some(mode) => CatalogMode::Mode(mode_name(mode).to_owned()),
-            },
-        }
+        let Some(metadata) = self.metadata(model) else {
+            return CatalogMode::NotListed;
+        };
+        metadata.mode.map_or(CatalogMode::NoMode, |mode| {
+            CatalogMode::Mode(mode_name(mode).to_owned())
+        })
     }
 }
 

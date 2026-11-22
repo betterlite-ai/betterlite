@@ -12,6 +12,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ResolutionError, ResolutionRequest, ResolvedModel};
 use indexmap::IndexMap;
 
+use super::failure::build_failure;
 use super::ports::CatalogMode;
 use super::{
     DEFAULT_MODE, FlowFailure, HealthCheckEntry, HealthCheckFailure, HealthCheckOutcome,
@@ -37,7 +38,8 @@ impl HealthCheckEntry {
         let logging: Arc<dyn HealthProbeLogging> = match self.logging() {
             Ok(logging) => Arc::new(logging),
             Err(error) => {
-                return HealthCheckOutcome::Failed(Box::new(self.failure(
+                return HealthCheckOutcome::Failed(Box::new(build_failure(
+                    self,
                     mode.as_deref(),
                     error,
                     None,
@@ -67,7 +69,8 @@ impl HealthCheckEntry {
             Ok(tracked) => tracked,
             Err(error) => {
                 let probe = HealthEntryError::Probe { source: error };
-                return Err(Box::new(self.failure(
+                return Err(Box::new(build_failure(
+                    self,
                     mode.as_deref(),
                     probe,
                     Some(logging),
@@ -77,7 +80,8 @@ impl HealthCheckEntry {
         let prepared = match self.prepare(tracked, mode) {
             Ok(prepared) => prepared,
             Err(failure) => {
-                return Err(Box::new(self.failure(
+                return Err(Box::new(build_failure(
+                    self,
                     failure.mode.as_deref(),
                     failure.error,
                     Some(logging),
@@ -86,7 +90,8 @@ impl HealthCheckEntry {
         };
         match self.probe(prepared, arguments).await {
             Ok(response) => Ok(response),
-            Err(failure) => Err(Box::new(self.failure(
+            Err(failure) => Err(Box::new(build_failure(
+                self,
                 failure.mode.as_deref(),
                 failure.error,
                 Some(logging),
@@ -126,7 +131,7 @@ impl HealthCheckEntry {
         let mut cache = IndexMap::new();
         cache.insert(NO_CACHE_KEY.to_owned(), Json::Bool(true));
         params.cache = Param::Value(Json::Object(cache));
-        let mode_name = chat_mode(mode);
+        let mode_name = chat_mode(mode.as_deref());
         Ok(PreparedProbe {
             model,
             provider: provider.slug().to_owned(),
@@ -230,14 +235,14 @@ impl HealthCheckEntry {
     }
 }
 
-fn chat_mode(mode: Option<String>) -> String {
-    match mode.as_deref() {
+fn chat_mode(mode: Option<&str>) -> String {
+    match mode {
         None | Some("") => DEFAULT_MODE.to_owned(),
         Some(name) => name.to_owned(),
     }
 }
 
-fn probe_failure(mode: String, source: HealthProbeError) -> FlowFailure {
+const fn probe_failure(mode: String, source: HealthProbeError) -> FlowFailure {
     FlowFailure {
         mode: Some(mode),
         error: HealthEntryError::Probe { source },

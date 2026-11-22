@@ -39,7 +39,7 @@ pub(super) struct Requested {
 }
 
 impl ScriptedResolver {
-    pub(super) fn new(answer: Option<Resolution>) -> Self {
+    pub(super) const fn new(answer: Option<Resolution>) -> Self {
         Self {
             answer,
             requested: Mutex::new(None),
@@ -105,12 +105,12 @@ pub(super) async fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
     ));
     let resolver = Arc::new(ScriptedResolver::new(step.resolution.clone()));
     let entry = HealthCheckEntry {
-        backend: Arc::clone(&recorder),
+        backend: Arc::<ProbeRecorder>::clone(&recorder),
         cheapest: Arc::new(ScriptedCheapest {
             models: step.cheapest.clone(),
         }),
         documents: Arc::new(HealthCheckDocuments),
-        resolver: Arc::clone(&resolver),
+        resolver: Arc::<ScriptedResolver>::clone(&resolver),
         catalog: Arc::new(ScriptedCatalog::new(&step.catalog)),
         redactor: Arc::new(Redactor::new(16).or_config_error()?),
         redact_secrets: true,
