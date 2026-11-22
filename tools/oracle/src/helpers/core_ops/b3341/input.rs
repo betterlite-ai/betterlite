@@ -90,19 +90,16 @@ impl Input {
 
     // the object the fixture handler answers with, named by the create call or the lookup's fixed name
     pub(super) fn answered_object(&self) -> CharacterObject {
+        let name = match self.function {
+            Function::Create => self.name.clone().unwrap_or_default(),
+            Function::Get => "Wren".to_owned(),
+        };
         CharacterObject {
             id: CHARACTER_ID.to_owned(),
             object: CharacterKind::Character,
             created_at: CHARACTER_CREATED_AT,
-            name: self.answered_name(),
+            name,
             hidden_params: IndexMap::new(),
-        }
-    }
-
-    fn answered_name(&self) -> String {
-        match self.function {
-            Function::Create => self.name.clone().unwrap_or_default(),
-            Function::Get => "Wren".to_owned(),
         }
     }
 }
