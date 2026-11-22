@@ -5,7 +5,6 @@ import litellm.images.main as image_main
 import openai
 from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
-from pydantic import JsonValue as Json
 
 from image_generation_call import (
     Call as ImageGenerationCall,
@@ -23,7 +22,7 @@ IMAGE: TypeAdapter[ImageResponse] = TypeAdapter(ImageResponse)
 
 # litellm's client decorator leaves aimage_generation untyped, so the module is read through this protocol
 class AsyncImageEntry(Protocol):
-    async def aimage_generation(self, /, **kwargs: Json) -> ImageResponse: ...
+    async def aimage_generation(self, /, **kwargs: JsonValue) -> ImageResponse: ...
 
 
 ENTRY: AsyncImageEntry = image_main
@@ -48,13 +47,9 @@ class ImageGenerationPlanOutcome(BaseModel):
     image_generation_plan: ImageGenerationPlanValue
 
 
-async def generate(call: ImageGenerationCall, api_base: str) -> ImageResponse:
-    return await ENTRY.aimage_generation(**call_kwargs(call, api_base))
-
-
 def async_outcome(call: ImageGenerationCall, api_base: str) -> Outcome:
     try:
-        response = asyncio.run(generate(call, api_base))
+        response = asyncio.run(ENTRY.aimage_generation(**call_kwargs(call, api_base)))
     except openai.APIError as error:
         return Outcome(failure=api_failure(error))
     parsed = IMAGE.validate_python(response)
