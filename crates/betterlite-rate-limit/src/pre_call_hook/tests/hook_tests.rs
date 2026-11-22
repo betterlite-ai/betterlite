@@ -17,7 +17,6 @@ use crate::limiter_records::{RateLimitResponse, RateLimitType, RateLimitedModel}
 use crate::pre_call_hook::{PreCallHookError, PreCallHookRejection};
 use crate::project_admission::ProjectAdmissionError;
 use crate::request_stash::RequestStashSlot;
-use crate::token_reservations::TokenReservationError;
 use crate::windowed_admission::WindowedAdmissionError;
 
 #[tokio::test]
@@ -365,10 +364,7 @@ async fn hook_releases_the_stashed_slot_when_the_token_reservation_is_over_the_l
 }
 
 fn assert_token_reservation_rejection(error: &PreCallHookError) {
-    assert!(matches!(
-        error,
-        PreCallHookError::Reservation(TokenReservationError::RateLimited(_))
-    ));
+    assert!(matches!(error, PreCallHookError::RateLimited(_)));
     let Some(PreCallHookRejection::RateLimited(rate_limited)) = error.rejection() else {
         panic!("the rejection is a 429");
     };
