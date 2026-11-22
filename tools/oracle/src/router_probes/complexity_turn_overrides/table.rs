@@ -10,7 +10,7 @@ use super::wire::{CallOut, count, vector};
 use crate::router_probes::error::OperationError;
 
 #[derive(Debug, thiserror::Error)]
-enum EmbedError {
+pub(super) enum EmbedError {
     #[error("the probe has no vector for {text:?}")]
     Missing { text: String },
     #[error("the probe was told to fail the {stage} call")]

@@ -30,9 +30,12 @@ mod setup;
 mod table;
 mod wire;
 
+// the box keeps the probe enum's largest variant small enough for clippy large_enum_variant
+pub type Input = Box<InputBody>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Input {
+pub struct InputBody {
     #[serde(default)]
     tiers: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
