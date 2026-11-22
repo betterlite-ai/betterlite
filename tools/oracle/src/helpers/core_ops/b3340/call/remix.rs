@@ -21,7 +21,7 @@ pub(super) fn run(
         configs: &bench.configs,
         logging: &mut bench.state,
         env: &pre_post,
-        redactor: bench.env.redactor(),
+        redactor: &bench.env.redactor,
         request_timeout_seconds: input.request_timeout_seconds.unwrap_or(6000.0),
     };
     let request = RemixRequest {
