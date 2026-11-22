@@ -15,7 +15,7 @@ use thiserror::Error;
 
 use super::support::{ADMIN, Fixture, caller, kill_switch_path, lock, post};
 use crate::agent_endpoints::admin_actions::ports::{
-    AgentRegistryLookup, DeliveringTrigger, KillSwitchAuditWriter, KillSwitchTrigger,
+    AgentRegistryLookup, DeliveringTrigger, KillSwitchAuditWriter, KillSwitchTrigger as _,
 };
 use crate::audit_events::callbacks::{
     AuditCallbackConfig, AuditCallbackDispatcher, AuditCallbackError, AuditCallbackFuture,

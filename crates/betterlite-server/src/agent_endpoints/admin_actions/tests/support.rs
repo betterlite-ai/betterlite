@@ -182,7 +182,8 @@ impl FakeRows {
 impl AgentRowLookup for FakeRows {
     async fn agent_row(&self, agent_id: &str) -> Result<Option<KnownAgent>, PortFailure> {
         log_step(&self.lookups, "row");
-        if let Some(message) = lock(&self.failure).clone() {
+        let failure = lock(&self.failure).clone();
+        if let Some(message) = failure {
             return Err(PortFailure::new(FakeFailure { message }));
         }
         Ok(lock(&self.rows).get(agent_id).cloned())
@@ -252,7 +253,8 @@ impl FakeConfig {
 impl PublicGroupConfigWriter for FakeConfig {
     async fn save_public_groups(&self, groups: &[String]) -> Result<(), PortFailure> {
         log_step(&self.steps, "config");
-        if let Some(message) = lock(&self.failure).clone() {
+        let failure = lock(&self.failure).clone();
+        if let Some(message) = failure {
             return Err(PortFailure::new(FakeFailure { message }));
         }
         *lock(&self.saved) = Some(groups.to_vec());

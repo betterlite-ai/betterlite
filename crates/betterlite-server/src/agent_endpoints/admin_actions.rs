@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::Json;
 use axum::Router;
 use axum::extract::{Extension, Path, State};
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use betterlite_core::agents::MakeAgentsPublicRequest;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
@@ -54,19 +54,34 @@ pub fn agent_admin_routes(state: AgentAdminState) -> Router {
         .with_state(state)
 }
 
+// why a route refused a call before running it: no auth context answers 401, an unreadable caller answers through B4781's error
+enum Refusal {
+    Unauthenticated,
+    Caller(IdentityAdminError),
+}
+
+impl IntoResponse for Refusal {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Unauthenticated => unauthenticated(),
+            Self::Caller(error) => error.into_response(),
+        }
+    }
+}
+
 // every route starts from the auth context the mount inserted: no context answers 401, an unreadable caller 500
-fn admin_for(caller: Option<Extension<AuthContext>>) -> Result<AdminCaller, Response> {
+fn admin_for(caller: Option<Extension<AuthContext>>) -> Result<AdminCaller, Refusal> {
     let Some(Extension(context)) = caller else {
-        return Err(unauthenticated());
+        return Err(Refusal::Unauthenticated);
     };
-    admin_caller(&context.principal).map_err(|error| error.into_response())
+    admin_caller(&context.principal).map_err(Refusal::Caller)
 }
 
 // both public-discovery routes: the caller fields and the database their role check answers after
-fn public_access_for<'state>(
-    state: &'state AgentAdminState,
+fn public_access_for(
+    state: &AgentAdminState,
     caller: Option<Extension<AuthContext>>,
-) -> Result<(AdminCaller, &'state dyn AgentRowLookup), Response> {
+) -> Result<(AdminCaller, &dyn AgentRowLookup), Refusal> {
     let admin = admin_for(caller)?;
     let database = public_access(state, &admin)?;
     Ok((admin, database))
@@ -80,11 +95,11 @@ async fn trigger_agent_kill_switch(
 ) -> Response {
     let admin = match admin_for(caller) {
         Ok(admin) => admin,
-        Err(refusal) => return refusal,
+        Err(refusal) => return refusal.into_response(),
     };
     // LiteLLM's _check_agent_management_permission: B4781's shared predicate over user_api_key_dict.user_role
-    if let Some(refusal) = kill_switch_refusal(admin.user_role.as_deref()) {
-        return refusal;
+    if let Some(refusal) = check_agent_management_role(admin.user_role.as_deref()).err() {
+        return refusal.into_response();
     }
     kill_switch::trigger(&state, &agent_id, &admin).await
 }
@@ -97,7 +112,7 @@ async fn make_agent_public(
 ) -> Response {
     let (admin, database) = match public_access_for(&state, caller) {
         Ok(access) => access,
-        Err(refusal) => return refusal,
+        Err(refusal) => return refusal.into_response(),
     };
     public_groups::make_single(&state, database, &agent_id, &admin).await
 }
@@ -112,34 +127,26 @@ async fn make_agents_public(
         Ok((admin, database)) => {
             public_groups::make_bulk(&state, database, &request.agent_ids, &admin).await
         }
-        Err(refusal) => refusal,
+        Err(refusal) => refusal.into_response(),
     }
 }
 
 // both public-discovery routes answer 500 before any lookup when prisma_client is None, then check user_role inline
-fn public_access<'state>(
-    state: &'state AgentAdminState,
+fn public_access(
+    state: &AgentAdminState,
     admin: &AdminCaller,
-) -> Result<&'state dyn AgentRowLookup, Response> {
+) -> Result<&dyn AgentRowLookup, Refusal> {
     let Some(database) = state.database.as_deref() else {
-        return Err(db_not_connected());
+        return Err(Refusal::Caller(db_not_connected()));
     };
-    match public_groups_refusal(admin.user_role.as_deref()) {
-        Some(refusal) => Err(refusal),
-        None => Ok(database),
+    if let Some(refusal) = public_groups_refusal(admin.user_role.as_deref()) {
+        return Err(Refusal::Caller(refusal));
     }
-}
-
-// LiteLLM's _check_agent_management_permission answers through B4781's error, status and object detail included
-fn kill_switch_refusal(role: Option<&str>) -> Option<Response> {
-    match check_agent_management_role(role) {
-        Ok(()) => None,
-        Err(refusal) => Some(refusal.into_response()),
-    }
+    Ok(database)
 }
 
 // LiteLLM's inline `user_role != LitellmUserRoles.PROXY_ADMIN`, whose object detail names the caller's role
-fn public_groups_refusal(role: Option<&str>) -> Option<Response> {
+fn public_groups_refusal(role: Option<&str>) -> Option<IdentityAdminError> {
     if role == Some(PROXY_ADMIN_ROLE) {
         return None;
     }
@@ -147,18 +154,16 @@ fn public_groups_refusal(role: Option<&str>) -> Option<Response> {
         "Only proxy admins can update public model groups. Your role={}",
         role.unwrap_or("None")
     );
-    let refusal = IdentityAdminError {
+    Some(IdentityAdminError {
         status: 403,
         detail: Detail::Object { error },
-    };
-    Some(refusal.into_response())
+    })
 }
 
-fn db_not_connected() -> Response {
+fn db_not_connected() -> IdentityAdminError {
     let detail = CommonProxyErrors::DbNotConnectedError.as_str().to_owned();
     IdentityAdminError {
         status: 500,
         detail: Detail::Text(detail),
     }
-    .into_response()
 }

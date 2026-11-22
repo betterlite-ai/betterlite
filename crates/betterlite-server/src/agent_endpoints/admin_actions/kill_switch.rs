@@ -78,10 +78,10 @@ async fn resolve(
 }
 
 fn resolution(stored: Option<&AgentJson>) -> Resolution {
-    match parse_agent_kill_switch(stored) {
-        Some(config) => Resolution::Switch(Box::new(config)),
-        None => Resolution::NoSwitch,
-    }
+    let Some(config) = parse_agent_kill_switch(stored) else {
+        return Resolution::NoSwitch;
+    };
+    Resolution::Switch(Box::new(config))
 }
 
 // the audit row comes after the attempt, so a failed webhook leaves one too, and its write never changes the answer

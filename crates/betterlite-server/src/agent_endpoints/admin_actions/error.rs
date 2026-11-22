@@ -4,9 +4,10 @@ use super::ports::PortFailure;
 
 // LiteLLM wraps each route body in `except Exception as e: raise HTTPException(status_code=500, detail=str(e))`
 pub(super) fn unexpected_failure(failure: PortFailure) -> IdentityAdminError {
+    let PortFailure { source } = failure;
     IdentityAdminError {
         status: 500,
-        detail: Detail::Text(failure.to_string()),
+        detail: Detail::Text(source.to_string()),
     }
 }
 

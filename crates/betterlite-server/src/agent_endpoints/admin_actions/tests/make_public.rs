@@ -72,10 +72,7 @@ async fn single_success_appends_the_agent() {
         fixture.config.saved(),
         Some(body.public_agent_groups.clone())
     );
-    assert_eq!(
-        fixture.groups.current(),
-        Some(body.public_agent_groups.clone())
-    );
+    assert_eq!(fixture.groups.current(), Some(body.public_agent_groups));
     assert_eq!(events(&fixture.steps).join(","), "config,memory");
 }
 
@@ -257,10 +254,7 @@ async fn bulk_success_replaces_the_whole_list() {
         fixture.config.saved(),
         Some(body.public_agent_groups.clone())
     );
-    assert_eq!(
-        fixture.groups.current(),
-        Some(body.public_agent_groups.clone())
-    );
+    assert_eq!(fixture.groups.current(), Some(body.public_agent_groups));
     assert_eq!(events(&fixture.steps).join(","), "memory,config");
 }
 
