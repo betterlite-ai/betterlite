@@ -145,6 +145,10 @@ fn wire_parts(call: &Call<'_>) -> Result<(Wire, Option<Headers>), PrepareError> 
         .map_err(|source| PrepareError::Encode { source })?;
     let messages = command_r::transform(&sent, call.model)?;
     let mut params = fields.params;
+    // the azure_ai optional params carry the request's stream flag, so a buffered call sends stream: false
+    if !call.stream {
+        params.insert(String::from("stream"), JsonValue::Bool(false));
+    }
     if let Some(extra) = call.extra_headers {
         params.insert(
             String::from(EXTRA_HEADERS_FIELD),

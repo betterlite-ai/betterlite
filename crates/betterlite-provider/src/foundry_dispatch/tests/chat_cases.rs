@@ -80,7 +80,7 @@ fn global_key_fallback() {
     );
 }
 
-// LiteLLM adds the stream parameter to the azure_ai body only for a streamed call, so a buffered one omits it
+// the azure_ai body carries the request's stream flag: false when buffered, and true after the transform when streamed
 fn stream_body_carries_stream() {
     let env = Env::default();
     let deployment = support::deployment(BASE, Some(KEY));
@@ -113,10 +113,20 @@ fn stream_body_carries_stream() {
     .expect("the buffered plan");
     let body: JsonValue =
         serde_json::from_slice(&chat_http(&buffered.prepared).body).expect("the buffered body");
-    let JsonValue::Object(fields) = &body else {
-        panic!("the buffered body is an object");
-    };
-    assert!(!fields.contains_key("stream"));
+    assert_eq!(field(&body, "stream"), &JsonValue::Bool(false));
+    // a buffered call's extra_body still overrides the flag the params carry
+    let buffered_override = support::request(
+        r#"{"model":"mistral-large","messages":[{"role":"user","content":"hi"}],"extra_body":{"stream":true}}"#,
+    );
+    let buffered_overridden = chat::prepare::prepare(
+        &chat_call(&buffered_override, &deployment, "mistral-large", false),
+        &env.globals(),
+    )
+    .expect("the buffered override plan");
+    let overridden_body: JsonValue =
+        serde_json::from_slice(&chat_http(&buffered_overridden.prepared).body)
+            .expect("the buffered override body");
+    assert_eq!(field(&overridden_body, "stream"), &JsonValue::Bool(true));
 }
 
 // neither the agents nor the claude model reaches the chat leaf
