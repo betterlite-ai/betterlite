@@ -1,18 +1,20 @@
 import os
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import TypeAlias, TypedDict
 
 import httpx
 import litellm
 import openai
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.types.utils import EmbeddingResponse, ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
-KEPT_HEADERS = frozenset({"authorization", "content-type", "api-key"})
-DEFAULT_API_VERSION = "2025-02-01-preview"
 OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+# litellm.completion's decorator hides its declared return from mypy; this names the declared type.
+CompletionCall: TypeAlias = ModelResponse | CustomStreamWrapper
 
 
 class Globals(TypedDict):
@@ -24,7 +26,6 @@ class Globals(TypedDict):
     azure_default_api_version: str | None
 
 
-# The parameters each Azure config class accepts; instantiating it sets the class defaults main.py merges.
 class AzureDefaults(TypedDict, total=False):
     max_tokens: int
     n: int
@@ -34,7 +35,9 @@ class AzureDefaults(TypedDict, total=False):
 
 
 class OSeriesDefaults(TypedDict, total=False):
-    max_completion_tokens: int
+    max_tokens: int
+    temperature: int
+    top_p: int
 
 
 class OptionalParams(TypedDict, total=False):
@@ -50,7 +53,6 @@ class EmbeddingBody(TypedDict):
     encoding_format: str | None
 
 
-# One Azure call, keyed the way main.py reads its own arguments.
 class Call(TypedDict):
     case: str
     model: str
@@ -78,9 +80,6 @@ class ProviderCase(Call):
     second: Call | None
 
 
-CASE: TypeAdapter[ProviderCase] = TypeAdapter(ProviderCase)
-
-
 @dataclass
 class Answer:
     status: int
@@ -101,9 +100,30 @@ class Answer:
         return httpx.Response(self.status, json=self.reply, request=request)
 
 
-def call_chat(step: Call) -> ModelResponse:
-    response = litellm.completion(
-        model=f"azure/{step['model']}",
+def call(step: Call) -> tuple[str, ModelResponse | EmbeddingResponse]:
+    family = step["case"]
+    if family == "embedding":
+        body = step["embedding"]
+        if body is None:
+            raise ValueError("an embedding case names its body")
+        embedded = litellm.embedding(
+            model=f"azure/{step['model']}",
+            input=body["input"],
+            dimensions=body["dimensions"],
+            encoding_format=body["encoding_format"],
+            api_base=step["api_base"],
+            api_version=step["api_version"],
+            api_key=step["api_key"],
+            azure_ad_token=step["azure_ad_token"],
+            headers=step["headers"],
+            extra_headers=step["extra_headers"],
+            extra_body=step["extra_body"],
+            max_retries=0,
+        )
+        return (family, TypeAdapter(EmbeddingResponse).validate_python(embedded))
+    provider = "azure_text" if family == "text" else "azure"
+    response: CompletionCall | Awaitable[CompletionCall] = litellm.completion(
+        model=f"{provider}/{step['model']}",
         messages=step["messages"],
         api_base=step["api_base"],
         api_version=step["api_version"],
@@ -111,48 +131,11 @@ def call_chat(step: Call) -> ModelResponse:
         azure_ad_token=step["azure_ad_token"],
         headers=step["headers"],
         extra_headers=step["extra_headers"],
-        extra_body=step["extra_body"] or {},
+        extra_body=step["extra_body"],
         max_retries=step["max_retries"],
         **step["optional_params"],
     )
-    return TypeAdapter(ModelResponse).validate_python(response)
-
-
-def call_text(step: Call) -> ModelResponse:
-    response = litellm.completion(
-        model=f"azure_text/{step['model']}",
-        messages=step["messages"],
-        api_base=step["api_base"],
-        api_version=step["api_version"],
-        api_key=step["api_key"],
-        azure_ad_token=step["azure_ad_token"],
-        extra_headers=step["extra_headers"],
-        extra_body=step["extra_body"] or {},
-        max_retries=step["max_retries"],
-        **step["optional_params"],
-    )
-    return TypeAdapter(ModelResponse).validate_python(response)
-
-
-def call_embedding(step: Call) -> EmbeddingResponse:
-    body = step["embedding"]
-    if body is None:
-        raise ValueError("an embedding case names its body")
-    response = litellm.embedding(
-        model=f"azure/{step['model']}",
-        input=body["input"],
-        dimensions=body["dimensions"],
-        encoding_format=body["encoding_format"],
-        api_base=step["api_base"],
-        api_version=step["api_version"],
-        api_key=step["api_key"],
-        azure_ad_token=step["azure_ad_token"],
-        headers=step["headers"],
-        extra_headers=step["extra_headers"],
-        extra_body=step["extra_body"] or {},
-        max_retries=0,
-    )
-    return TypeAdapter(EmbeddingResponse).validate_python(response)
+    return (family, TypeAdapter(ModelResponse).validate_python(response))
 
 
 def first_object(values: JsonValue) -> dict[str, JsonValue]:
@@ -172,9 +155,7 @@ def total_tokens(dump: dict[str, JsonValue]) -> JsonValue:
             return None
 
 
-def reply_view(
-    family: str, response: ModelResponse | EmbeddingResponse
-) -> dict[str, JsonValue]:
+def reply_view(family: str, response: ModelResponse | EmbeddingResponse) -> dict[str, JsonValue]:
     dump = OBJECT.validate_json(response.model_dump_json())
     if family == "embedding":
         first = first_object(dump.get("data"))
@@ -201,41 +182,25 @@ def reply_view(
     }
 
 
-def call(step: Call) -> tuple[str, ModelResponse | EmbeddingResponse]:
-    family = step["case"]
-    if family == "embedding":
-        return (family, call_embedding(step))
-    if family == "text":
-        return (family, call_text(step))
-    return (family, call_chat(step))
-
-
 def kept_headers(case: ProviderCase) -> frozenset[str]:
-    keep = KEPT_HEADERS
+    names = {"authorization", "content-type", "api-key"}
     for step in (case, case["second"]):
-        if step is None:
-            continue
-        for mapping in (step["headers"], step["extra_headers"]):
-            if mapping is not None:
-                keep = keep.union(name.lower() for name in mapping)
-    return keep
-
-
-def apply_globals(globals_case: Globals) -> None:
-    litellm.api_base = globals_case["api_base"]
-    litellm.api_version = globals_case["api_version"]
-    litellm.api_key = globals_case["api_key"]
-    litellm.azure_key = globals_case["azure_key"]
-    litellm.headers = globals_case["headers"]
-    litellm.AZURE_DEFAULT_API_VERSION = (
-        globals_case["azure_default_api_version"] or DEFAULT_API_VERSION
-    )
+        if step is not None:
+            for mapping in (step["headers"], step["extra_headers"]):
+                if mapping is not None:
+                    names.update(name.lower() for name in mapping)
+    return frozenset(names)
 
 
 def dispatch_case(case: ProviderCase) -> JsonValue:
     for name, value in case["environment"].items():
         os.environ[name] = value
-    apply_globals(case["globals"])
+    module = case["globals"]
+    litellm.api_base = module["api_base"]
+    litellm.api_version = module["api_version"]
+    litellm.api_key = module["api_key"]
+    litellm.azure_key = module["azure_key"]
+    litellm.AZURE_DEFAULT_API_VERSION = module["azure_default_api_version"] or "2025-02-01-preview"
     chat_defaults = case["chat_defaults"]
     if chat_defaults is not None:
         litellm.AzureOpenAIConfig(**chat_defaults)
@@ -263,4 +228,4 @@ def dispatch_case(case: ProviderCase) -> JsonValue:
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    return dispatch_case(CASE.validate_python(input_value))
+    return dispatch_case(TypeAdapter(ProviderCase).validate_python(input_value))

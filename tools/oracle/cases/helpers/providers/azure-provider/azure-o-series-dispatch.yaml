@@ -29,7 +29,7 @@ call:
     chat_defaults:
       temperature: 1
     o_series_defaults:
-      max_completion_tokens: 64
+      max_tokens: 64
     status: 200
     reply:
       id: chatcmpl-1
