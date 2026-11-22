@@ -79,7 +79,7 @@ impl StreamCostInjector<'_> {
         model_name: &str,
         log: Option<&mut LoggingState>,
     ) -> Cow<'bytes, [u8]> {
-        if !self.enabled || bytes.len() > MAX_INSPECTED_BYTES {
+        if !self.enabled {
             return Cow::Borrowed(bytes);
         }
         decode_cost_frame(*self, bytes, model_name, log)
