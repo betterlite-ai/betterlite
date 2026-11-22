@@ -1,0 +1,70 @@
+task: B947
+deviations:
+  - what: >-
+      A file search tool call whose arguments are a JSON value that is not an object returns
+      FileSearchLoopError::ArgumentsNotObject. That covers a string that parses to a list, number,
+      boolean or null, and a parsed argument value of one of those types. LiteLLM reads
+      args.get("queries") on the parsed value regardless, so the same call raises AttributeError
+      and the request ends as a 500.
+    why: >-
+      A model that emits unusable tool arguments is a bad request, not a server fault. The emulated
+      loop reports a typed error the caller maps to a 4xx, and keeps the Python behavior of an
+      unparsable argument string, which falls back to empty arguments and the request input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L455-L461
+  - what: >-
+      The arguments string of a tool call is checked against ApiLimits.max_json_bytes before it is
+      parsed. LiteLLM passes the string to json.loads with no size bound.
+    why: >-
+      The arguments come from the model response, so they are untrusted input and get the same
+      JSON body bound as every other request B1087 covers. A larger string is refused with
+      ApiLimitError::JsonTooLarge instead of being parsed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L455-L459
+  - what: >-
+      The follow-up input built for the second provider call is checked against
+      ApiLimits.max_items. The caller's items, every first-response output item and one
+      function_call_output per tool call count toward it, and a larger list is refused with
+      ApiLimitError::TooManyItems. LiteLLM concatenates the three lists with no bound.
+    why: >-
+      The list is built from the provider's first response and from the caller's input, and both
+      are unbounded. B1087's item boundary keeps one request from assembling a list the server
+      cannot cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L489-L512
+  - what: >-
+      The synthesized response's hidden params are returned empty. LiteLLM adds the first provider
+      response's response_cost to the follow-up response's _hidden_params, so a billing callback
+      that reads the final response sees the cost of both provider calls.
+    why: >-
+      B1138's ResponsesApiResponse skips the _hidden_params field on decode and exposes no accessor
+      for it, so the loop cannot read either response's hidden params. The loop returns its own
+      hidden_params field on the result, but that field carries nothing today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L371-L383
+  - what: >-
+      Every vector store search carries the caller's user and team in a SearchAuthorization, which
+      the vector store layer can check against the store's access grants. LiteLLM calls asearch
+      with only vector_store_id and query, so its emulated search runs with no caller identity.
+    why: >-
+      The loop runs on behalf of a caller, and a store the caller cannot access must not become
+      readable because the model asked for it. The task requires the authorization to stay
+      attached to every search, and the port makes it required at the call site.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L163-L166
+kept_bugs:
+  - what: >-
+      A failed search is logged as a warning and dropped, and the loop carries on with the results
+      from the searches that worked. A store that fails for every query produces
+      "No results found in the vector store." in the tool output and an answer without citations,
+      never an error.
+    why: >-
+      Setups that use the emulated search today rely on partial results: one unavailable store does
+      not fail the whole answer. The warning text and its WARNING level stay as LiteLLM emits them,
+      through the LiteLLM logger, and the loop also records the failed search on its result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L170-L176
+  - what: >-
+      The file_search_call output item carries the matched chunks under search_results, LiteLLM's
+      own key, while results, the field the item type declares, stays null. A client that asked
+      for include=["file_search_call.results"] and reads file_search_call.results finds nothing
+      there.
+    why: >-
+      The item is built by B946's formatter, and that task's deviations file records the choice for
+      the same reason: setups read the chunks from search_results today. This task repeats the
+      entry because its loop puts the same item in the synthesized response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L273-L279

@@ -1,0 +1,3 @@
+litellm_settings:
+  include_cost_in_streaming_usage: false
+  disable_streaming_logging: true

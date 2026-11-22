@@ -1,0 +1,16 @@
+kind: helper
+name: coordination-settings-redacted-roundtrip-does-not-keep-omitted-fields
+call:
+  coordination_settings:
+    function: merge
+    settings:
+      host: cache.internal
+      password: "***REDACTED***"
+      port: 6380
+    saved:
+      host: old.internal
+      password: hunter2
+      ssl: true
+      sentinel_password: sentinel-pass
+env: {}
+compare: {ignore: []}

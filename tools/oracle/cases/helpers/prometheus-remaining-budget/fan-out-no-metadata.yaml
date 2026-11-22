@@ -1,0 +1,17 @@
+kind: helper
+name: prometheus-remaining-budget-fan-out-no-metadata
+call:
+  b9480:
+    function: fan_out
+    team: null
+    team_alias: null
+    key: null
+    key_alias: null
+    user_id: null
+    org_id: null
+    end_user_id: null
+    response_cost: 0.5
+    metadata: {}
+    noop_groups: [customer]
+env: {}
+compare: {ignore: []}

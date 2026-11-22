@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-other-stability-edits-supported
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: supported_params
+      - function: map
+        model: stability.stable-image-inpaint-v1:0
+        options: {quality: high, size: 1792x1024}
+        drop_params: true
+env: {}
+compare: {ignore: []}

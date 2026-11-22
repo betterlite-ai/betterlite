@@ -1,0 +1,77 @@
+id: B10042
+title: A failed realtime backend connection logs its error redacted
+description: >-
+  Security fix found in B2457's review (https://github.com/betterlite-ai/betterlite/pull/2881), decided "fix it".
+  B2457 was already approved and landing, so the fix is this task. handle_failure in
+  crates/betterlite-core/src/api/realtime_backend_transport/session.rs logs
+  tracing::error!("Error connecting to backend: {error}") with the raw error before it redacts the same text for the
+  client's server_error event and the 1011 close reason. A dial error is transparent over DialError, so its message
+  can carry an sk- key or a backend URL with ?key=, and that secret reaches the log while the client never sees it.
+  LiteLLM logs the raw exception the same way.
+
+
+  handle_failure redacts the error text once with self.redactor.redact_string, logs that redacted text, and sends the
+  same text in the server_error event. The close reason keeps its own redacted "Internal server error: ..." detail.
+  refuse() logs only the status code and stays as it is.
+
+
+  redacts_the_secret_from_the_error_event in tests/connection_errors.rs already dials with an sk- secret and checks
+  the event and the close reason; it also captures the tracing output during the run and asserts the secret is not
+  in it. Capture the log with a tracing_subscriber layer set through tracing::subscriber::set_default for the test,
+  the way crates/betterlite-core/src/api/anthropic_beta_config/tests.rs does. Add a row to
+  docs/deviations/B2457.yaml saying the log line carries the redacted error where LiteLLM logs the raw exception,
+  with the link below.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/realtime_backend_transport/session.rs
+  - crates/betterlite-core/src/api/realtime_backend_transport/tests/connection_errors.rs
+  - crates/betterlite-core/src/api/realtime_backend_transport/tests/harness.rs
+  - docs/deviations/B2457.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6274-L6276
+  why: The generic except logs the raw exception with verbose_logger.exception and only then redacts it for the client.
+dod:
+- text: >-
+    A realtime backend connection that fails with an sk- secret in its dial error logs "Error connecting to backend"
+    without the secret, and the client's server_error event and the 1011 close reason still carry no secret.
+  proof: [connection-errors]
+- text: >-
+    handle_failure redacts the error text once and uses it for both the log line and the client event.
+  proof: [one-redaction]
+- text: >-
+    docs/deviations/B2457.yaml records the redacted log line where LiteLLM logs the raw exception, with the pinned
+    LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: connection-errors
+    why: The dial error still reaches the log unredacted, or another realtime backend behavior broke.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_backend_transport::tests::/) - test(/::replays_corpus$/)'
+  - id: one-redaction
+    why: The log line still formats the raw error.
+    run: >-
+      ! grep -n -F 'tracing::error!("Error connecting to backend: {error}")' crates/betterlite-core/src/api/realtime_backend_transport/session.rs
+  - id: deviation-row
+    why: The deviation row for the redacted log line is missing its pinned link.
+    run: >-
+      perl -0ne 'exit !(m{- what:(?:(?!- what:).)*?redact(?:(?!- what:).)*?llm_http_handler[.]py[#]L6274-L6276}s)' docs/deviations/B2457.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    A failed realtime backend connection logs the redacted error text, the same text the client's server_error event
+    carries.
+  why: >-
+    LiteLLM logs the raw exception, so a dial error that carries an API key or a URL with ?key= writes the secret to
+    the log.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6274-L6276
+out_of_scope:
+- The handshake refusal log in refuse(), which carries only the status code.
+pitfalls:
+- The log capture must be scoped to the test with set_default and its guard, not a global subscriber, since other tests run in the same process.
+review_level: standard
+budget:
+  max_changed_lines: 150
+  max_new_expects: 0
