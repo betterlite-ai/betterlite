@@ -71,6 +71,7 @@ fn dequeue_pops_the_oldest_rows_and_accounts_their_bytes() {
         &[ordinary_row("a"), ordinary_row("b"), ordinary_row("c")],
         QueuePosition::Tail,
     );
+    assert_eq!(queue.len(), 3);
     let queued_bytes = queue.queued_bytes();
     assert_eq!(ids(&queue.dequeue(2)), ["a", "b"]);
     assert_eq!(
