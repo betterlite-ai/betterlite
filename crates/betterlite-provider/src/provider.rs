@@ -1,6 +1,7 @@
 use std::future::{Future, ready};
 use std::pin::Pin;
 
+use betterlite_config::loader::startup::process_environment;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::{ChatDeployment, Provider as DeploymentProvider};
 use betterlite_openai::openai_base_config::CatalogCapabilities;
@@ -9,6 +10,7 @@ use crate::aiohttp_openai_dispatch::AiohttpOpenAi;
 use crate::anthropic_dispatch::Anthropic;
 use crate::anthropic_dispatch::base::Surface;
 use crate::azure_dispatch::Azure;
+use crate::azure_dispatch::call::Composition;
 use crate::bedrock_dispatch_contract::Bedrock;
 use crate::compatible_providers::Compatible;
 use crate::embedding_rerank_providers::EmbeddingRerank;
@@ -32,7 +34,7 @@ use self::media_providers::MediaProviders;
 use self::speech_providers::SpeechProviders;
 use self::subscription::Subscription;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Provider {
     OpenAi(OpenAi),
     AiohttpOpenAi(AiohttpOpenAi),
@@ -154,7 +156,10 @@ impl Provider {
         match slug {
             "openai" => Ok(Self::OpenAi(OpenAi)),
             "aiohttp_openai" => Ok(Self::AiohttpOpenAi(AiohttpOpenAi)),
-            "azure" | "azure_text" => Ok(Self::Azure(Azure)),
+            "azure" | "azure_text" => {
+                let composition = Composition::from_environment(process_environment());
+                Ok(Self::Azure(Azure { composition }))
+            }
             "azure_ai" => Ok(Self::AzureAi(AzureAi)),
             "anthropic" => Ok(Self::Anthropic(Anthropic {
                 surface: Surface::Messages,

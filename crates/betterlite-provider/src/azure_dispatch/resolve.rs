@@ -23,9 +23,8 @@ fn filled_secret(secret: Option<&SecretString>) -> Option<SecretString> {
         .cloned()
 }
 fn api_type(composition: &Composition) -> String {
-    composition
-        .environment
-        .lookup("AZURE_API_TYPE")
+    let configured = composition.environment.lookup("AZURE_API_TYPE");
+    configured
         .filter(|kind| !kind.is_empty())
         .unwrap_or_else(|| DEFAULT_API_TYPE.to_owned())
 }

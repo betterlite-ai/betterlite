@@ -23,15 +23,22 @@ pub(crate) struct Wire {
     pub(crate) body: Object,
     pub(crate) json_mode: bool,
 }
+impl Wire {
+    const fn new(url: String, headers: BTreeMap<String, String>, body: Object, json: bool) -> Self {
+        Self {
+            url,
+            headers,
+            body,
+            json_mode: json,
+        }
+    }
+}
 // the auth header: the SDK's Azure client prefers its token, while the v1 OpenAI client prefers its key
 fn auth_headers(resolved: &Resolved, version: Option<&str>) -> BTreeMap<String, String> {
-    let mut headers = BTreeMap::from([
-        (String::from("accept"), String::from("application/json")),
-        (
-            String::from("content-type"),
-            String::from("application/json"),
-        ),
-    ]);
+    let mut headers = BTreeMap::new();
+    for name in ["accept", "content-type"] {
+        headers.insert(String::from(name), String::from("application/json"));
+    }
     let key = resolved.api_key.as_ref().map(SecretString::expose_secret);
     let token = resolved
         .auth_token
@@ -39,16 +46,10 @@ fn auth_headers(resolved: &Resolved, version: Option<&str>) -> BTreeMap<String, 
         .map(SecretString::expose_secret);
     let v1 = version.is_some_and(|text| V1_API_VERSIONS.contains(&text));
     let bearer = if v1 { key.or(token) } else { token };
-    let auth = bearer
-        .map(|credential| {
-            (
-                String::from("authorization"),
-                format!("Bearer {credential}"),
-            )
-        })
-        .or_else(|| key.map(|value| (String::from("api-key"), value.to_owned())));
-    if let Some((name, value)) = auth {
-        headers.insert(name, value);
+    if let Some(value) = bearer {
+        headers.insert(String::from("authorization"), format!("Bearer {value}"));
+    } else if let Some(value) = key {
+        headers.insert(String::from("api-key"), value.to_owned());
     }
     headers
 }
@@ -151,12 +152,7 @@ pub(crate) fn chat(
     )?;
     let mut headers = auth_headers(resolved, api_version);
     headers.extend(extra);
-    Ok(Wire {
-        url,
-        headers,
-        body,
-        json_mode,
-    })
+    Ok(Wire::new(url, headers, body, json_mode))
 }
 // Text never folds kwargs.headers: only kwargs.extra_headers reach the request.
 pub(crate) fn text(
@@ -207,12 +203,7 @@ fn text_wire(
     let url = url_for(Some(api_base), api_version, model, "/completions")?;
     let mut headers = auth_headers(resolved, api_version);
     headers.extend(extra);
-    Ok(Wire {
-        url,
-        headers,
-        body,
-        json_mode: false,
-    })
+    Ok(Wire::new(url, headers, body, false))
 }
 pub(crate) fn embedding(
     resolved: &Resolved,
@@ -242,10 +233,5 @@ pub(crate) fn embedding(
     let url = url_for(Some(api_base), api_version, model, "/embeddings")?;
     let mut headers = auth_headers(resolved, api_version);
     headers.extend(extra);
-    Ok(Wire {
-        url,
-        headers,
-        body,
-        json_mode: false,
-    })
+    Ok(Wire::new(url, headers, body, false))
 }

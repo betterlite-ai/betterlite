@@ -147,6 +147,16 @@ fn legacy_slugs_select_a_legacy_provider(#[case] slug: &str, #[case] legacy: Leg
     assert_eq!(Provider::from_slug(slug).unwrap().name(), "legacy");
 }
 
+// Both Azure slugs build the Azure adapter, which carries the composition the slug resolves.
+#[rstest]
+#[case::azure("azure")]
+#[case::azure_text("azure_text")]
+fn the_azure_slugs_build_the_azure_adapter(#[case] slug: &str) {
+    let provider = Provider::from_slug(slug).expect("the azure slug resolves");
+    assert!(matches!(&provider, Provider::Azure(_)));
+    assert_eq!(provider.name(), "azure");
+}
+
 #[test]
 fn a_proxy_deployment_keeps_the_nested_model_without_the_proxy_prefix() {
     let chat = listed(

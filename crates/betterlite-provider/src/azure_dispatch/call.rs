@@ -1,13 +1,12 @@
 use betterlite_azure::azure_chat_base_policy::AzureChatSettings;
 use betterlite_config::loader::EnvironmentLookup as _;
-use betterlite_config::loader::startup::process_environment;
 use betterlite_openai::embedding::EmbeddingRequest;
 use betterlite_openai::openai_base_config::{Headers, OpenAiSettings};
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Globals {
     pub api_base: Option<String>,
     pub api_version: Option<String>,
@@ -16,7 +15,7 @@ pub struct Globals {
     pub headers: Option<Headers>,
     pub azure_default_api_version: Option<String>,
 }
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Composition {
     pub environment: BTreeMap<String, String>,
     pub globals: Globals,
@@ -24,7 +23,6 @@ pub struct Composition {
     pub o_series_defaults: OpenAiSettings,
     pub openai_system_messages_first: bool,
 }
-const AZURE_ENVIRONMENT: &str = "AZURE_API_BASE AZURE_API_VERSION AZURE_API_TYPE AZURE_OPENAI_API_KEY AZURE_API_KEY AZURE_AD_TOKEN AZURE_DEFAULT_API_VERSION";
 impl Composition {
     #[must_use]
     pub fn from_environment(environment: BTreeMap<String, String>) -> Self {
@@ -35,16 +33,6 @@ impl Composition {
             o_series_defaults: OpenAiSettings::default(),
             openai_system_messages_first: false,
         }
-    }
-    // the process environment is not a test's to set, so no test can change what this reads
-    #[cfg_attr(test, mutants::skip)]
-    #[must_use]
-    pub fn process() -> Self {
-        let azure = process_environment()
-            .into_iter()
-            .filter(|(name, _value)| AZURE_ENVIRONMENT.split(' ').any(|key| key == name.as_str()))
-            .collect();
-        Self::from_environment(azure)
     }
     // an environment secret is unset when the variable is missing or empty
     #[must_use]

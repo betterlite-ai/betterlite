@@ -1,3 +1,5 @@
+use std::{fmt, mem::discriminant};
+
 use crate::operation::{
     ChatOperation, EmbeddingOperation, OperationError, OperationRequest, OperationResult,
     RequestKind,
@@ -42,8 +44,24 @@ struct CallOptions {
     azure_ad_token: Option<String>,
     timeout: Option<f64>,
 }
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Azure;
+#[derive(Clone)]
+pub struct Azure {
+    pub(crate) composition: call::Composition,
+}
+// the composition is the environment the adapter reads, not its identity, and its values stay out of Debug output
+impl fmt::Debug for Azure {
+    #[cfg_attr(test, mutants::skip)]
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("Azure").finish_non_exhaustive()
+    }
+}
+impl PartialEq for Azure {
+    #[cfg_attr(test, mutants::skip)]
+    fn eq(&self, other: &Self) -> bool {
+        discriminant(self) == discriminant(other)
+    }
+}
+impl Eq for Azure {}
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AzureRequest;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -56,18 +74,17 @@ impl Adapter for Azure {
         deployment: &Deployment,
         _catalog: &CatalogCapabilities,
     ) -> Result<PreparedRequest, OperationError> {
-        let composition = call::Composition::process();
         match request.kind() {
             RequestKind::Chat(chat) => prepared(
-                &composition,
+                &self.composition,
                 call::Request::Chat(Box::new(chat_call(chat, deployment, false)?)),
             ),
             RequestKind::Stream(chat) => prepared(
-                &composition,
+                &self.composition,
                 call::Request::Chat(Box::new(chat_call(chat, deployment, true)?)),
             ),
             RequestKind::Embedding(embedding) => prepared(
-                &composition,
+                &self.composition,
                 call::Request::Embedding(Box::new(embedding_call(embedding, deployment)?)),
             ),
             RequestKind::Other => Err(reply::unsupported()),
@@ -94,10 +111,9 @@ fn prepared(
     composition: &call::Composition,
     request: call::Request,
 ) -> Result<PreparedRequest, OperationError> {
-    Ok(compose::prepared_request(compose::prepare(
-        composition,
-        request,
-    )?))
+    compose::prepare(composition, request)
+        .map(compose::prepared_request)
+        .map_err(OperationError::from)
 }
 fn chat_call(
     chat: &ChatOperation,

@@ -110,12 +110,13 @@ async fn exchange(
     let deployment = deployment(&api_base);
     let request = prepared_request(composed);
     let client = client();
+    let adapter = Azure { composition };
     let executed = async {
-        let upstream = Azure
+        let upstream = adapter
             .execute(&client, &request, &deployment)
             .await
             .expect("the upstream answer");
-        Azure.decode(&request, upstream)
+        adapter.decode(&request, upstream)
     };
     let (result, raw) = tokio::join!(executed, serve_once(listener, &expected, &response));
     assert!(raw.ends_with(str::from_utf8(&expected).expect("the prepared body")));
@@ -192,7 +193,10 @@ fn adapter_request() -> OperationRequest {
 // The adapter's own prepare composes the deployment's base and key through the production path.
 fn check_adapter_prepare() {
     let target = deployment("https://deployment.test");
-    let prepared = Azure
+    let adapter = Azure {
+        composition: support::composition(&[]),
+    };
+    let prepared = adapter
         .prepare(&adapter_request(), &target, &catalog())
         .expect("the adapter request");
     let PreparedRequest::Chat(chat) = prepared else {
