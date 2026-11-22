@@ -49,7 +49,10 @@ pub fn parse_persisted_credentials(blob: &JsonValue) -> Option<PersistedDcrCrede
     match blob {
         JsonValue::Null => None,
         JsonValue::Object(fields) if fields.is_empty() => None,
-        JsonValue::Object(_) => decode_credentials(blob),
+        JsonValue::Object(_) => {
+            let text = serde_json::to_string(blob).ok()?;
+            serde_json::from_str(&text).ok()
+        }
         JsonValue::String(text) => parse_credentials_text(text),
         JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) => None,
     }
@@ -65,11 +68,6 @@ fn parse_credentials_text(text: &str) -> Option<PersistedDcrCredentials> {
         | JsonValue::String(_)
         | JsonValue::Array(_) => None,
     }
-}
-
-fn decode_credentials(blob: &JsonValue) -> Option<PersistedDcrCredentials> {
-    let text = serde_json::to_string(blob).ok()?;
-    serde_json::from_str(&text).ok()
 }
 
 #[must_use]
