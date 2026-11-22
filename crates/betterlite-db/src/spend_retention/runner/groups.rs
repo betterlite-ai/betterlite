@@ -27,6 +27,59 @@ pub(super) struct GroupRun<'run, 'registry, Clock> {
     pub started: Instant,
 }
 
+// the retention horizon and the deadline one enabled group works under
+#[derive(Debug, Clone, Copy)]
+pub(super) struct GroupWindow {
+    pub retention_seconds: i64,
+    pub deadline: Instant,
+}
+
+// one _delete_old_* call with the source's own per-table log line
+#[derive(Clone, Copy)]
+struct TableStep {
+    table: CleanupTable,
+    message: &'static str,
+}
+
+// the tables each group deletes and the source's log line for each, in the order it runs them
+static SPEND_LOG_STEPS: [TableStep; 2] = [
+    TableStep {
+        table: CleanupTable::SpendLogs,
+        message: "logs",
+    },
+    TableStep {
+        table: CleanupTable::ToolIndex,
+        message: "expired tool index rows",
+    },
+];
+static SESSION_STEPS: [TableStep; 2] = [
+    TableStep {
+        table: CleanupTable::AutoRouterSessions,
+        message: "expired auto-router session rollup rows",
+    },
+    TableStep {
+        table: CleanupTable::AutoRouterUserSessions,
+        message: "expired auto-router user session rollup rows",
+    },
+];
+static HEALTH_CHECK_STEPS: [TableStep; 1] = [TableStep {
+    table: CleanupTable::HealthChecks,
+    message: "expired health-check rows",
+}];
+static DAILY_TAG_STEPS: [TableStep; 1] = [TableStep {
+    table: CleanupTable::DailyTagSpend,
+    message: "expired daily tag spend rows",
+}];
+
+// the four _clean_* groups the source runs, each over its own member tables
+#[derive(Debug, Clone, Copy)]
+enum GroupPlan {
+    SpendLogs,
+    Sessions,
+    HealthChecks,
+    DailyTags,
+}
+
 // the four _clean_* groups and the six table deletions they issue, in the order the source runs them
 impl<Clock, Durations, Partitions, Lock> SpendLogCleanup<Clock, Durations, Partitions, Lock>
 where
@@ -38,90 +91,75 @@ where
     pub(super) async fn clean_spend_log_tables(
         &self,
         run: &mut GroupRun<'_, '_, Clock>,
-        retention_seconds: i64,
-        deadline: Instant,
+        window: GroupWindow,
     ) -> Result<Vec<TableCleanupResult>, RunFailure> {
-        let moment = retention_cutoff(self.clock.utc_now(), retention_seconds)?;
-        let cutoff = Cutoff::Timestamp(moment);
-        tracing::info!("Removing logs older than {}", cutoff.text());
-        self.maintain_partitions(run, moment, deadline).await?;
-        let logs_deadline = group_deadline(deadline, self.clock.now(), 2);
-        let logs = self
-            .delete_table(run, CleanupTable::SpendLogs, cutoff, logs_deadline)
-            .await;
-        tracing::info!("Deleted {} logs", logs.rows_deleted);
-        let index = self
-            .delete_table(run, CleanupTable::ToolIndex, cutoff, deadline)
-            .await;
-        tracing::info!("Deleted {} expired tool index rows", index.rows_deleted);
-        Ok(vec![logs, index])
+        self.clean_group(run, GroupPlan::SpendLogs, window).await
     }
 
     // _clean_session_rollup: both session tables carry their own retention horizon, split between them
     pub(super) async fn clean_session_rollup(
         &self,
         run: &mut GroupRun<'_, '_, Clock>,
-        retention_seconds: i64,
-        deadline: Instant,
+        window: GroupWindow,
     ) -> Result<Vec<TableCleanupResult>, RunFailure> {
-        let moment = retention_cutoff(self.clock.utc_now(), retention_seconds)?;
-        let cutoff = Cutoff::Timestamp(moment);
-        let sessions_deadline = group_deadline(deadline, self.clock.now(), 2);
-        let sessions = self
-            .delete_table(
-                run,
-                CleanupTable::AutoRouterSessions,
-                cutoff,
-                sessions_deadline,
-            )
-            .await;
-        tracing::info!(
-            "Deleted {} expired auto-router session rollup rows",
-            sessions.rows_deleted
-        );
-        let user_sessions = self
-            .delete_table(run, CleanupTable::AutoRouterUserSessions, cutoff, deadline)
-            .await;
-        tracing::info!(
-            "Deleted {} expired auto-router user session rollup rows",
-            user_sessions.rows_deleted
-        );
-        Ok(vec![sessions, user_sessions])
+        self.clean_group(run, GroupPlan::Sessions, window).await
     }
 
     // _clean_health_checks
     pub(super) async fn clean_health_checks(
         &self,
         run: &mut GroupRun<'_, '_, Clock>,
-        retention_seconds: i64,
-        deadline: Instant,
+        window: GroupWindow,
     ) -> Result<Vec<TableCleanupResult>, RunFailure> {
-        let moment = retention_cutoff(self.clock.utc_now(), retention_seconds)?;
-        let cutoff = Cutoff::Timestamp(moment);
-        let result = self
-            .delete_table(run, CleanupTable::HealthChecks, cutoff, deadline)
-            .await;
-        tracing::info!("Deleted {} expired health-check rows", result.rows_deleted);
-        Ok(vec![result])
+        self.clean_group(run, GroupPlan::HealthChecks, window).await
     }
 
     // _clean_daily_tag_spend: the horizon day itself is kept, and so is every row keyed by a non-ISO day
     pub(super) async fn clean_daily_tag_spend(
         &self,
         run: &mut GroupRun<'_, '_, Clock>,
-        retention_seconds: i64,
-        deadline: Instant,
+        window: GroupWindow,
     ) -> Result<Vec<TableCleanupResult>, RunFailure> {
-        let horizon = retention_cutoff(self.clock.utc_now(), retention_seconds)?;
-        let cutoff = Cutoff::Day(horizon.date_naive());
-        let result = self
-            .delete_table(run, CleanupTable::DailyTagSpend, cutoff, deadline)
-            .await;
-        tracing::info!(
-            "Deleted {} expired daily tag spend rows",
-            result.rows_deleted
-        );
-        Ok(vec![result])
+        self.clean_group(run, GroupPlan::DailyTags, window).await
+    }
+
+    // one _clean_* group: its cutoff, the partition work the source starts first, then its tables in order
+    async fn clean_group(
+        &self,
+        run: &mut GroupRun<'_, '_, Clock>,
+        plan: GroupPlan,
+        window: GroupWindow,
+    ) -> Result<Vec<TableCleanupResult>, RunFailure> {
+        let moment = retention_cutoff(self.clock.utc_now(), window.retention_seconds)?;
+        let steps: &[TableStep] = match plan {
+            GroupPlan::SpendLogs => &SPEND_LOG_STEPS,
+            GroupPlan::Sessions => &SESSION_STEPS,
+            GroupPlan::HealthChecks => &HEALTH_CHECK_STEPS,
+            GroupPlan::DailyTags => &DAILY_TAG_STEPS,
+        };
+        let cutoff = match plan {
+            GroupPlan::DailyTags => Cutoff::Day(moment.date_naive()),
+            GroupPlan::SpendLogs | GroupPlan::Sessions | GroupPlan::HealthChecks => {
+                Cutoff::Timestamp(moment)
+            }
+        };
+        if matches!(plan, GroupPlan::SpendLogs) {
+            tracing::info!("Removing logs older than {}", cutoff.text());
+            self.maintain_partitions(run, moment, window.deadline)
+                .await?;
+        }
+        let mut pending = u32::try_from(steps.len()).unwrap_or(1);
+        let mut results = Vec::new();
+        for step in steps {
+            let share = if pending > 1 {
+                group_deadline(window.deadline, self.clock.now(), pending)
+            } else {
+                window.deadline
+            };
+            results.push(self.delete_step(run, *step, cutoff, share).await);
+            pending = pending.saturating_sub(1);
+        }
+        Ok(results)
     }
 
     // partition DDL is started only with budget left, only behind the switch, and only on a partitioned table
@@ -165,11 +203,11 @@ where
         Ok(())
     }
 
-    // one of the six _delete_old_* callers, told which table and horizon its group owns
-    async fn delete_table(
+    // one of the six _delete_old_* callers, told which table, its log line and its horizon
+    async fn delete_step(
         &self,
         run: &mut GroupRun<'_, '_, Clock>,
-        table: CleanupTable,
+        step: TableStep,
         cutoff: Cutoff,
         deadline: Instant,
     ) -> TableCleanupResult {
@@ -181,7 +219,9 @@ where
             metrics: run.metrics,
             progress: &mut progress,
         };
-        deleter.delete_expired(table, cutoff, deadline).await
+        let result = deleter.delete_expired(step.table, cutoff, deadline).await;
+        tracing::info!("Deleted {} {}", result.rows_deleted, step.message);
+        result
     }
 }
 

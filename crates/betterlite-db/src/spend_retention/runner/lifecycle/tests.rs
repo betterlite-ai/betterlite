@@ -62,23 +62,6 @@ fn step_cleanup(
     )
 }
 
-fn slow_cleanup(
-    settings: CleanupSettings,
-    clock: Arc<StepCleanupClock>,
-) -> SpendLogCleanup<Arc<StepCleanupClock>, TestDurations, FakePartitions, SlowLock> {
-    let lock = SlowLock {
-        clock: Arc::clone(&clock),
-        readings: 50,
-    };
-    SpendLogCleanup::new(
-        settings,
-        clock,
-        TestDurations,
-        FakePartitions::default(),
-        Some(lock),
-    )
-}
-
 fn stopped(reason: StopReason) -> TableCleanupResult {
     TableCleanupResult {
         table: CleanupTable::SpendLogs,
@@ -550,7 +533,17 @@ async fn the_budget_starts_after_the_lease_is_acquired() {
         step: Duration::from_secs(10),
         readings: AtomicU32::new(0),
     });
-    let cleanup = slow_cleanup(retention_settings(SPEND_30D), Arc::clone(&clock));
+    let lock = SlowLock {
+        clock: Arc::clone(&clock),
+        readings: 50,
+    };
+    let cleanup = SpendLogCleanup::new(
+        retention_settings(SPEND_30D),
+        clock,
+        TestDurations,
+        FakePartitions::default(),
+        Some(lock),
+    );
     let registry = CollectorRegistry::default();
     let metrics = CleanupMetrics::new(&registry);
     cleanup

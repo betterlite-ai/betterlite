@@ -7,7 +7,6 @@ pub mod lock;
 pub mod partitions;
 pub mod progress;
 
-#[cfg(test)]
 #[path = "runner/tests/support.rs"]
 mod support;
 

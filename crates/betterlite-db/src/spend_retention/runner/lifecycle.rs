@@ -13,7 +13,7 @@ use crate::spend_retention::batches::{SpendLogCleanup, StopReason, TableCleanupR
 use super::SPEND_LOG_CLEANUP_JOB_NAME;
 use super::clock::CleanupClock;
 use super::error::{RunError, RunFailure};
-use super::groups::GroupRun;
+use super::groups::{GroupRun, GroupWindow};
 use super::lock::CleanupLock;
 use super::partitions::PartitionMaintenance;
 use super::progress::RunProgress;
@@ -189,21 +189,37 @@ where
         let mut results = Vec::new();
         if let Some(seconds) = retentions.spend_logs {
             let share = group_deadline(deadline, run.clock.now(), pending);
-            results.extend(self.clean_spend_log_tables(run, seconds, share).await?);
+            let window = GroupWindow {
+                retention_seconds: seconds,
+                deadline: share,
+            };
+            results.extend(self.clean_spend_log_tables(run, window).await?);
             pending = pending.saturating_sub(1);
         }
         if let Some(seconds) = retentions.sessions {
             let share = group_deadline(deadline, run.clock.now(), pending);
-            results.extend(self.clean_session_rollup(run, seconds, share).await?);
+            let window = GroupWindow {
+                retention_seconds: seconds,
+                deadline: share,
+            };
+            results.extend(self.clean_session_rollup(run, window).await?);
             pending = pending.saturating_sub(1);
         }
         if let Some(seconds) = retentions.health_checks {
             let share = group_deadline(deadline, run.clock.now(), pending);
-            results.extend(self.clean_health_checks(run, seconds, share).await?);
+            let window = GroupWindow {
+                retention_seconds: seconds,
+                deadline: share,
+            };
+            results.extend(self.clean_health_checks(run, window).await?);
             pending = pending.saturating_sub(1);
         }
         if let Some(seconds) = retentions.daily_tags {
-            results.extend(self.clean_daily_tag_spend(run, seconds, deadline).await?);
+            let window = GroupWindow {
+                retention_seconds: seconds,
+                deadline,
+            };
+            results.extend(self.clean_daily_tag_spend(run, window).await?);
         }
         Ok(results)
     }
