@@ -42,4 +42,10 @@ deviations:
   - what: "`betterlite.proxy_auth`, `config_path`, `num_retries` and `adapters` are untyped in the wheel's globals, so this module reads typed `proxy_auth`, `config_path`, `num_retries` and `adapter_entries` seams; `betterlite.adapters` itself is not searched."
     why: The globals module is outside this task's scope, and its None or JSON-list types reject a provider, a retry count or an adapter object; the seams are the hand-off the tests use until those globals are typed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1232-L1233
+  - what: "`LiteLLM()` reads the retry default from `num_retries` when the object is built, where LiteLLM's signature default froze `litellm.num_retries` at import."
+    why: A caller who sets the global after import expects the next client to use it, and the task text asks for the read at construction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L363-L374
+  - what: "A supplied `openai.APIError` mock is raised unchanged, where LiteLLM's completion hands it to `exception_type` and answers `APIConnectionError`."
+    why: The mock rule raises an APIError as is, and keeping the caller's object keeps `except` clauses and identity checks on it working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6076-L6084
 kept_bugs: []

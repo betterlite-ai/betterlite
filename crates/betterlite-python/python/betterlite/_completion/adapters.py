@@ -6,10 +6,7 @@ from pydantic import JsonValue
 
 import betterlite
 from betterlite._completion.arguments import JSON, JSON_OBJECT, CallValue, config_path
-from betterlite._completion.completion import (
-    completion_from_arguments,
-    settle_outcome,
-)
+from betterlite._completion.completion import completion_from_arguments, settle_outcome
 from betterlite._completion.stream import CompletionOutcome, CustomStreamWrapper
 from betterlite.types.utils import ModelResponse
 

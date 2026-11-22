@@ -195,6 +195,14 @@ def test_plain_matches_litellm() -> None:
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
 
 
+def test_plain_missing_model() -> None:
+    with pytest.raises(ValueError) as ours_caught:
+        completion(model=None, messages=MESSAGES)
+    with pytest.raises(ValueError) as reference_caught:
+        LITELLM.completion(model=None, messages=MESSAGES)
+    assert str(ours_caught.value) == str(reference_caught.value)
+
+
 def test_signature_matches_litellm() -> None:
     assert parameter_rows(inspect.signature(completion)) == parameter_rows(
         inspect.signature(LITELLM.completion)
@@ -291,6 +299,12 @@ def test_python_values(caplog: pytest.LogCaptureFixture) -> None:
         mocked = model_response(
             completion(model=GOOD_MODEL, messages=MESSAGES, mock_response=mock)
         )
+        ignored_logging = model_response(
+            completion(
+                model=GOOD_MODEL, messages=MESSAGES, mock_response=MOCK_TEXT,
+                litellm_logging_obj=object(),
+            )
+        )
     assert logged.choices[0].message.content == CONTENT
     assert timed.choices[0].message.content == CONTENT
     assert formatted.choices[0].message.content == CONTENT
@@ -298,6 +312,7 @@ def test_python_values(caplog: pytest.LogCaptureFixture) -> None:
     assert mocked.id == MOCK_ID
     assert mocked.created == MOCK_CREATED
     assert mocked.choices[0].message.content == MOCK_CONTENT
+    assert ignored_logging.choices[0].message.content == MOCK_TEXT
 
 
 def test_mock_errors_match_litellm() -> None:
@@ -323,9 +338,6 @@ def test_mock_raises_supplied() -> None:
     with pytest.raises(openai_error.__class__) as supplied_caught:
         completion(model=GOOD_MODEL, messages=MESSAGES, mock_response=openai_error)
     assert supplied_caught.value is openai_error
-    with pytest.raises(openai_error.__class__) as reference_caught:
-        litellm_plain(model=GOOD_MODEL, messages=MESSAGES, mock_response=openai_error)
-    assert reference_caught.value is openai_error
 
 
 def test_mock_text_matches_litellm() -> None:

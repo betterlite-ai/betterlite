@@ -122,11 +122,6 @@ def chunk_from_wire(wire: WireChunk, first: bool) -> ModelResponseStream:
     )
 
 
-# ast-grep-ignore: no-one-line-functions
-def stream_chunk(text: str, first: bool) -> ModelResponseStream:
-    return chunk_from_wire(CHUNK.validate_json(text), first)
-
-
 class CustomStreamWrapper:
     source: ChunkSource
     closed: bool
@@ -144,7 +139,7 @@ class CustomStreamWrapper:
         # only the first chunk carries the assistant role LiteLLM writes
         first = not self.sent_first
         self.sent_first = True
-        return stream_chunk(text, first)
+        return chunk_from_wire(CHUNK.validate_json(text), first)
 
     def __next__(self) -> ModelResponseStream:
         if self.closed:

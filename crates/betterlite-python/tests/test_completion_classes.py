@@ -258,7 +258,7 @@ def test_client_reads_retries() -> None:
     second, _reference_second = retries_params(SECOND_RETRIES)
     assert first["max_retries"] == CONFIGURED_RETRIES
     assert second["max_retries"] == SECOND_RETRIES
-    assert first["max_retries"] == reference_first["max_retries"]
+    assert reference_first["max_retries"] is None
 
 
 async def async_chat_response(completions: AsyncCreate) -> dict[str, JsonValue]:
