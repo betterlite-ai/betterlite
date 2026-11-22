@@ -131,7 +131,7 @@ impl ClaudePluginStore for PostgresPluginStore {
         let found = session
             .query_opt(FIND_SQL, &[&plugin_name])
             .await
-            .map_err(backend)?;
+            .map_err(|source| TableError::Database(backend(source)))?;
         found.as_ref().map(decode_row).transpose()
     }
 
@@ -176,7 +176,7 @@ impl ClaudePluginStore for PostgresPluginStore {
         let found = session
             .query_opt(UPDATE_SQL, &parameters)
             .await
-            .map_err(backend)?;
+            .map_err(|source| TableError::Database(backend(source)))?;
         found.as_ref().map(decode_row).transpose()
     }
 
@@ -191,7 +191,7 @@ impl ClaudePluginStore for PostgresPluginStore {
         session
             .execute(SET_ENABLED_SQL, &parameters)
             .await
-            .map_err(backend)?;
+            .map_err(|source| TableError::Database(backend(source)))?;
         Ok(())
     }
 
@@ -200,17 +200,27 @@ impl ClaudePluginStore for PostgresPluginStore {
         session
             .execute(DELETE_SQL, &[&plugin_name])
             .await
-            .map_err(backend)?;
+            .map_err(|source| TableError::Database(backend(source)))?;
         Ok(())
     }
 }
 
 fn decode_row(row: &Row) -> Result<StoredPlugin, TableError> {
-    let id: String = row.try_get("id").map_err(backend)?;
-    let name: String = row.try_get("name").map_err(backend)?;
-    let version: Option<String> = row.try_get("version").map_err(backend)?;
-    let description: Option<String> = row.try_get("description").map_err(backend)?;
-    let enabled: bool = row.try_get("enabled").map_err(backend)?;
+    let id: String = row
+        .try_get("id")
+        .map_err(|source| TableError::Database(backend(source)))?;
+    let name: String = row
+        .try_get("name")
+        .map_err(|source| TableError::Database(backend(source)))?;
+    let version: Option<String> = row
+        .try_get("version")
+        .map_err(|source| TableError::Database(backend(source)))?;
+    let description: Option<String> = row
+        .try_get("description")
+        .map_err(|source| TableError::Database(backend(source)))?;
+    let enabled: bool = row
+        .try_get("enabled")
+        .map_err(|source| TableError::Database(backend(source)))?;
     Ok(StoredPlugin {
         id,
         name,

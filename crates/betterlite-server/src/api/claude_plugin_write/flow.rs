@@ -107,7 +107,7 @@ fn registration(
     source: PluginSource,
     action: RegistrationAction,
 ) -> ClaudePluginWriteResult {
-    ClaudePluginWriteResult::Registration(PluginRegistration {
+    ClaudePluginWriteResult::Registration(Box::new(PluginRegistration {
         status: SUCCESS,
         action,
         plugin: PluginView {
@@ -118,7 +118,7 @@ fn registration(
             source,
             enabled: stored.enabled,
         },
-    })
+    }))
 }
 
 pub(super) async fn create(

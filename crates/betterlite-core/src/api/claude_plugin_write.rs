@@ -141,6 +141,6 @@ pub struct PluginMessage {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum ClaudePluginWriteResult {
-    Registration(PluginRegistration),
+    Registration(Box<PluginRegistration>),
     Message(PluginMessage),
 }

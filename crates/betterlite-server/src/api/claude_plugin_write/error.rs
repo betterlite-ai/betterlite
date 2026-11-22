@@ -40,7 +40,7 @@ impl IntoResponse for ClaudePluginWriteError {
     fn into_response(self) -> Response {
         match self {
             Self::Unauthenticated => authentication_error(&AuthenticationFailure::Missing),
-            Self::Policy(error) => policy_response(error),
+            Self::Policy(error) => policy_response(&error),
             missing @ Self::MissingSpec => {
                 detail_response(StatusCode::INTERNAL_SERVER_ERROR, missing.to_string())
             }
@@ -58,7 +58,7 @@ struct DetailBody {
     detail: PluginErrorDetail,
 }
 
-fn policy_response(error: ClaudePluginPolicyError) -> Response {
+fn policy_response(error: &ClaudePluginPolicyError) -> Response {
     let fields = error.fields();
     let status =
         StatusCode::from_u16(fields.status_code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);

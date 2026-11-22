@@ -88,7 +88,7 @@ fn create_accepts_kebab_names(#[case] name: &str) {
 #[case::uppercase("MyPlugin")]
 #[case::space("my plugin")]
 #[case::empty("")]
-#[case::accented("plügin")]
+#[case::accented("pl\u{fc}gin")]
 #[case::slash("org/plugin")]
 fn create_rejects_other_names(#[case] name: &str) {
     let write = create_write(name);
@@ -199,7 +199,7 @@ fn fields_carry_the_spec() {
 
 #[test]
 fn results_serialize_as_litellm_does() {
-    let registration = ClaudePluginWriteResult::Registration(PluginRegistration {
+    let registration = ClaudePluginWriteResult::Registration(Box::new(PluginRegistration {
         status: SUCCESS,
         action: RegistrationAction::Created,
         plugin: PluginView {
@@ -210,7 +210,7 @@ fn results_serialize_as_litellm_does() {
             source: source(r#"{"source":"github","repo":"org/my-plugin"}"#),
             enabled: true,
         },
-    });
+    }));
     assert_eq!(
         serde_json::to_string(&registration).unwrap(),
         r#"{"status":"success","action":"created","plugin":{"id":"plugin-1","name":"my-plugin","version":"1.0.0","description":null,"source":{"source":"github","repo":"org/my-plugin"},"enabled":true}}"#
