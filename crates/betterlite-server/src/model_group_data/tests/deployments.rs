@@ -192,10 +192,7 @@ async fn strip_returns_updated_pair() {
         pair.1,
         json_object(&[("access_groups", list(&["group-b"]))])
     );
-    assert_eq!(
-        database.deployment_info("d1"),
-        Some(Json::Object(pair.1.clone()))
-    );
+    assert_eq!(database.deployment_info("d1"), Some(Json::Object(pair.1)));
     assert_eq!(database.updates().len(), 1);
 }
 

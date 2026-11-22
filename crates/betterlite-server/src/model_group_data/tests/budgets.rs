@@ -8,7 +8,7 @@ use super::super::budgets::{
     budget_or_none, budget_response, delete_group_budget_row, model_access_group_budget_rows,
     with_budget,
 };
-use super::super::ports::{BudgetInclude, GroupDatabase};
+use super::super::ports::{BudgetInclude, GroupDatabase as _};
 use super::super::types::{AccessGroupInfo, ModelAccessGroupBudget};
 use super::fixtures::cache::RecordingCache;
 use super::fixtures::json_object;
@@ -154,6 +154,20 @@ async fn budget_rows_map_by_name_in_one_read() {
     );
     assert_eq!(mapped["group-b"].litellm_budget_table, None);
     assert_eq!(database.budget_reads(), 1);
+}
+
+#[tokio::test]
+async fn budget_find_unique_reads_one_group() {
+    let database = ScriptedDatabase::new(
+        Vec::new(),
+        vec![capped_budget()],
+        vec![linked_group(
+            "group-a",
+            Some(Decimal::new(35, 1)),
+            Some("budget-1"),
+            Some(capped_budget()),
+        )],
+    );
     let include = BudgetInclude {
         litellm_budget_table: true,
     };

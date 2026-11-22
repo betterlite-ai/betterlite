@@ -111,7 +111,7 @@ fn decode_optional<T>(
     decode: fn(&tokio_postgres::Row) -> Result<T, GroupDataError>,
 ) -> Result<Option<T>, GroupDataError> {
     match row {
-        Some(row) => Ok(Some(decode(row)?)),
+        Some(stored) => Ok(Some(decode(stored)?)),
         None => Ok(None),
     }
 }

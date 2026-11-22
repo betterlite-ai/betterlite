@@ -84,12 +84,12 @@ impl SpendCounterCache for NoopSpend {
 }
 
 #[derive(Default)]
-pub struct RecordingTransport {
+pub(crate) struct RecordingTransport {
     broadcasts: Mutex<Vec<Vec<String>>>,
 }
 
 impl RecordingTransport {
-    pub fn broadcasts(&self) -> Vec<Vec<String>> {
+    pub(crate) fn broadcasts(&self) -> Vec<Vec<String>> {
         let broadcasts = self.broadcasts.lock().expect("the recorded broadcasts");
         broadcasts.clone()
     }
@@ -107,7 +107,7 @@ impl InvalidationTransport for RecordingTransport {
     }
 }
 
-pub fn recording_auth_invalidation() -> (Arc<RecordingTransport>, AuthInvalidation) {
+pub(crate) fn recording_auth_invalidation() -> (Arc<RecordingTransport>, AuthInvalidation) {
     let recorder = Arc::new(RecordingTransport::default());
     let transport = Arc::clone(&recorder);
     let invalidation = AuthInvalidation {

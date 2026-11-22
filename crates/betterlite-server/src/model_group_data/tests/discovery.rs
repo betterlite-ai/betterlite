@@ -51,6 +51,10 @@ async fn discovery_bad_row_failure() {
         runtime_message(error),
         "model_info for deployment d1 is not a JSON object"
     );
+}
+
+#[tokio::test]
+async fn discovery_non_list_groups_failure() {
     let string_groups = group_database(vec![deployment(
         "d2",
         "beta",
@@ -66,6 +70,10 @@ async fn discovery_bad_row_failure() {
         runtime_message(error),
         "access_groups for deployment d2 is not a list"
     );
+}
+
+#[tokio::test]
+async fn discovery_non_string_group_failure() {
     let number_group = group_database(vec![deployment(
         "d3",
         "gamma",
@@ -100,10 +108,10 @@ async fn group_existence_from_tags() {
         Vec::new(),
         vec![linked_group("group-a", Some(Decimal::ZERO), None, None)],
     );
-    let error = require_group_exists("group-a", &budget_only)
+    let budget_error = require_group_exists("group-a", &budget_only)
         .await
         .expect_err("the budget row alone");
-    assert_eq!(http_failure(error).status, StatusCode::NOT_FOUND);
+    assert_eq!(http_failure(budget_error).status, StatusCode::NOT_FOUND);
 }
 
 #[test]

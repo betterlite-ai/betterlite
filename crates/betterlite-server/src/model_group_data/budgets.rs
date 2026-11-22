@@ -30,8 +30,9 @@ where
 }
 
 // _budget_or_none: a budget_id without a joined row reads as no budget, not a partial one.
+#[must_use]
 pub fn budget_or_none(row: Option<&GroupBudgetRow>) -> Option<AccessGroupBudget> {
-    let budget = row.and_then(|row| row.litellm_budget_table.as_ref())?;
+    let budget = row.and_then(|linked| linked.litellm_budget_table.as_ref())?;
     Some(AccessGroupBudget {
         budget_id: budget.budget_id.clone(),
         max_budget: budget.max_budget,
@@ -42,8 +43,9 @@ pub fn budget_or_none(row: Option<&GroupBudgetRow>) -> Option<AccessGroupBudget>
 }
 
 // _with_budget: a group without its own row has spent nothing.
+#[must_use]
 pub fn with_budget(info: &AccessGroupInfo, row: Option<&GroupBudgetRow>) -> AccessGroupInfo {
-    let spend = row.map_or(Decimal::ZERO, |row| row.spend.unwrap_or_default());
+    let spend = row.map_or(Decimal::ZERO, |linked| linked.spend.unwrap_or_default());
     AccessGroupInfo {
         access_group: info.access_group.clone(),
         model_names: info.model_names.clone(),
@@ -54,11 +56,12 @@ pub fn with_budget(info: &AccessGroupInfo, row: Option<&GroupBudgetRow>) -> Acce
 }
 
 // _budget_response: the same spend rule for the single-group read.
+#[must_use]
 pub fn budget_response(
     access_group: &str,
     row: Option<&GroupBudgetRow>,
 ) -> AccessGroupBudgetResponse {
-    let spend = row.map_or(Decimal::ZERO, |row| row.spend.unwrap_or_default());
+    let spend = row.map_or(Decimal::ZERO, |linked| linked.spend.unwrap_or_default());
     AccessGroupBudgetResponse {
         access_group: access_group.to_owned(),
         spend,

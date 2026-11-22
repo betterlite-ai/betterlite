@@ -28,7 +28,7 @@ use self::fixtures::json_object;
 use self::fixtures::scripted::ScriptedDatabase;
 use super::deployments::{DeploymentSelection, tag_deployments};
 use super::errors::{GroupDataError, HttpFailure};
-use super::ports::{BudgetInclude, GroupBudgetCreate, GroupBudgetUpdate, GroupDatabase};
+use super::ports::{BudgetInclude, GroupBudgetCreate, GroupBudgetUpdate, GroupDatabase as _};
 use super::store::PostgresGroupData;
 use super::types::{BudgetRow, DeploymentRow, GroupBudgetRow};
 
@@ -104,21 +104,33 @@ fn group_database(deployments: Vec<DeploymentRow>) -> ScriptedDatabase {
 fn http_failure(error: GroupDataError) -> HttpFailure {
     match error {
         GroupDataError::Http(failure) => failure,
-        other => panic!("expected an HTTP failure, got {other:?}"),
+        other @ GroupDataError::ValueError { .. }
+        | other @ GroupDataError::Runtime { .. }
+        | other @ GroupDataError::Database(_)
+        | other @ GroupDataError::Catalog(_)
+        | other @ GroupDataError::Row(_) => panic!("expected an HTTP failure, got {other:?}"),
     }
 }
 
 fn value_error_message(error: GroupDataError) -> String {
     match error {
         GroupDataError::ValueError { message } => message,
-        other => panic!("expected a value error, got {other:?}"),
+        other @ GroupDataError::Http(_)
+        | other @ GroupDataError::Runtime { .. }
+        | other @ GroupDataError::Database(_)
+        | other @ GroupDataError::Catalog(_)
+        | other @ GroupDataError::Row(_) => panic!("expected a value error, got {other:?}"),
     }
 }
 
 fn runtime_message(error: GroupDataError) -> String {
     match error {
         GroupDataError::Runtime { message } => message,
-        other => panic!("expected a runtime error, got {other:?}"),
+        other @ GroupDataError::Http(_)
+        | other @ GroupDataError::ValueError { .. }
+        | other @ GroupDataError::Database(_)
+        | other @ GroupDataError::Catalog(_)
+        | other @ GroupDataError::Row(_) => panic!("expected a runtime error, got {other:?}"),
     }
 }
 
@@ -215,6 +227,18 @@ async fn postgres_pinned_rows() {
     execute(&pool, SEED).await;
     let fixture_store = StoreFixture::new(&pool);
     let database = fixture_store.database();
+    pinned_deployments(&database).await;
+    pinned_model_info_write(&pool, &database).await;
+    pinned_budget_reads(&database).await;
+    pinned_budget_create(&pool, &database).await;
+    pinned_budget_rewrite(&pool, &database).await;
+    pinned_budget_actors(&pool).await;
+    pinned_budget_delete(&pool, &database).await;
+    pool.close();
+    fixture.close_async().await.expect("the fixture teardown");
+}
+
+async fn pinned_deployments(database: &PostgresGroupData<'_>) {
     let deployments = database
         .deployment_find_many(None)
         .await
@@ -248,6 +272,9 @@ async fn postgres_pinned_rows() {
             .expect("the stored row")
             .is_none()
     );
+}
+
+async fn pinned_model_info_write(pool: &Pool, database: &PostgresGroupData<'_>) {
     database
         .update_model_info(
             "d1",
@@ -269,13 +296,16 @@ async fn postgres_pinned_rows() {
     );
     assert_eq!(
         scalar_text(
-            &pool,
+            pool,
             r#"SELECT litellm_params::TEXT FROM "LiteLLM_ProxyModelTable" WHERE model_id = $1"#,
             "d1",
         )
         .await,
         r#"{"api_key": "sk-1"}"#
     );
+}
+
+async fn pinned_budget_reads(database: &PostgresGroupData<'_>) {
     let include = BudgetInclude {
         litellm_budget_table: true,
     };
@@ -312,6 +342,9 @@ async fn postgres_pinned_rows() {
         .await
         .expect("every budget row");
     assert_eq!(every.len(), 2);
+}
+
+async fn pinned_budget_create(pool: &Pool, database: &PostgresGroupData<'_>) {
     let created = database
         .budget_upsert(
             &GroupBudgetCreate {
@@ -324,7 +357,9 @@ async fn postgres_pinned_rows() {
                 budget_id: Some("budget-2".to_owned()),
                 updated_by: "creator".to_owned(),
             },
-            include,
+            BudgetInclude {
+                litellm_budget_table: true,
+            },
         )
         .await
         .expect("the created row");
@@ -337,10 +372,13 @@ async fn postgres_pinned_rows() {
         None
     );
     execute(
-        &pool,
+        pool,
         r#"UPDATE "LiteLLM_ModelAccessGroupBudgetTable" SET spend = 7 WHERE access_group_name = 'group-c'"#,
     )
     .await;
+}
+
+async fn pinned_budget_rewrite(pool: &Pool, database: &PostgresGroupData<'_>) {
     let rewritten = database
         .budget_upsert(
             &GroupBudgetCreate {
@@ -353,7 +391,9 @@ async fn postgres_pinned_rows() {
                 budget_id: Some("budget-1".to_owned()),
                 updated_by: "editor".to_owned(),
             },
-            include,
+            BudgetInclude {
+                litellm_budget_table: true,
+            },
         )
         .await
         .expect("the updated row");
@@ -365,22 +405,26 @@ async fn postgres_pinned_rows() {
             .budget_id,
         "budget-1"
     );
-    let actors: BTreeMap<String, String> = {
-        let client = pool.get().await.expect("the database connection");
-        let row = client
-            .query_one(
-                r#"SELECT created_by, updated_by FROM "LiteLLM_ModelAccessGroupBudgetTable" WHERE access_group_name = 'group-c'"#,
-                &[],
-            )
-            .await
-            .expect("the stored actors");
-        BTreeMap::from([
-            ("created_by".to_owned(), row.get(0)),
-            ("updated_by".to_owned(), row.get(1)),
-        ])
-    };
+}
+
+async fn pinned_budget_actors(pool: &Pool) {
+    let client = pool.get().await.expect("the database connection");
+    let row = client
+        .query_one(
+            r#"SELECT created_by, updated_by FROM "LiteLLM_ModelAccessGroupBudgetTable" WHERE access_group_name = 'group-c'"#,
+            &[],
+        )
+        .await
+        .expect("the stored actors");
+    let actors: BTreeMap<String, String> = BTreeMap::from([
+        ("created_by".to_owned(), row.get(0)),
+        ("updated_by".to_owned(), row.get(1)),
+    ]);
     assert_eq!(actors["created_by"], "creator");
     assert_eq!(actors["updated_by"], "editor");
+}
+
+async fn pinned_budget_delete(pool: &Pool, database: &PostgresGroupData<'_>) {
     let deleted = database
         .budget_delete("group-a")
         .await
@@ -397,15 +441,13 @@ async fn postgres_pinned_rows() {
     );
     assert_eq!(
         scalar_text(
-            &pool,
+            pool,
             r#"SELECT count(*)::TEXT FROM "LiteLLM_BudgetTable" WHERE budget_id = $1"#,
             "budget-1",
         )
         .await,
         "1"
     );
-    pool.close();
-    fixture.close_async().await.expect("the fixture teardown");
 }
 
 const FAILURE_SEED: &str = r#"
@@ -422,7 +464,7 @@ async fn postgres_failure_effects() {
     let fixture_store = StoreFixture::new(&pool);
     let database = fixture_store.database();
     let model_names = names(&["alpha", "missing"]);
-    let error = tag_deployments(
+    let name_error = tag_deployments(
         DeploymentSelection::ByNames(&model_names),
         "group-a",
         &database,
@@ -430,46 +472,34 @@ async fn postgres_failure_effects() {
     .await
     .expect_err("the missing name");
     assert_eq!(
-        http_failure(error).message,
+        http_failure(name_error).message,
         "Can't find model 'missing' in Database. Access group management is only supported for database models."
     );
-    assert_eq!(
-        scalar_text(
-            &pool,
-            r#"SELECT COALESCE(model_info::TEXT, '') FROM "LiteLLM_ProxyModelTable" WHERE model_id = $1"#,
-            "f1",
-        )
-        .await,
-        ""
-    );
+    assert_eq!(stored_info(&pool, "f1").await, "");
     let model_ids = names(&["f1", "missing", "f2"]);
-    let error = tag_deployments(DeploymentSelection::ByIds(&model_ids), "group-a", &database)
+    let id_error = tag_deployments(DeploymentSelection::ByIds(&model_ids), "group-a", &database)
         .await
         .expect_err("the missing id");
     assert_eq!(
-        http_failure(error).message,
+        http_failure(id_error).message,
         "Deployment with model_id 'missing' not found in Database."
     );
     assert_eq!(
-        scalar_text(
-            &pool,
-            r#"SELECT model_info::TEXT FROM "LiteLLM_ProxyModelTable" WHERE model_id = $1"#,
-            "f1",
-        )
-        .await,
+        stored_info(&pool, "f1").await,
         r#"{"access_groups": ["group-a"]}"#
     );
-    assert_eq!(
-        scalar_text(
-            &pool,
-            r#"SELECT COALESCE(model_info::TEXT, '') FROM "LiteLLM_ProxyModelTable" WHERE model_id = $1"#,
-            "f2",
-        )
-        .await,
-        ""
-    );
+    assert_eq!(stored_info(&pool, "f2").await, "");
     pool.close();
     fixture.close_async().await.expect("the fixture teardown");
+}
+
+async fn stored_info(pool: &Pool, model_id: &str) -> String {
+    scalar_text(
+        pool,
+        r#"SELECT COALESCE(model_info::TEXT, '') FROM "LiteLLM_ProxyModelTable" WHERE model_id = $1"#,
+        model_id,
+    )
+    .await
 }
 
 #[tokio::test]
@@ -482,9 +512,12 @@ async fn postgres_missing_client() {
     let failure = http_failure(error);
     assert_eq!(failure.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(failure.message, "Database not connected.");
-    let error = database
+    let delete_error = database
         .budget_delete("group-a")
         .await
         .expect_err("the missing database");
-    assert_eq!(http_failure(error).message, "Database not connected.");
+    assert_eq!(
+        http_failure(delete_error).message,
+        "Database not connected."
+    );
 }

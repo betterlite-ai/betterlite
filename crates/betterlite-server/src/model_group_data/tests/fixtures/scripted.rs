@@ -1,3 +1,4 @@
+use std::future::{Future, ready};
 use std::sync::Mutex;
 
 use betterlite_models::decisions::Json;
@@ -9,25 +10,25 @@ use crate::model_group_data::ports::{
 };
 use crate::model_group_data::types::{BudgetRow, DeploymentRow, GroupBudgetRow};
 
-pub struct ScriptedState {
-    pub deployments: Vec<DeploymentRow>,
-    pub budget_rows: Vec<BudgetRow>,
-    pub budgets: Vec<GroupBudgetRow>,
-    pub updates: Vec<(String, String)>,
-    pub update_calls: usize,
-    pub delete_calls: Vec<String>,
-    pub budget_reads: usize,
+struct ScriptedState {
+    deployments: Vec<DeploymentRow>,
+    budget_rows: Vec<BudgetRow>,
+    budgets: Vec<GroupBudgetRow>,
+    updates: Vec<(String, String)>,
+    update_calls: usize,
+    delete_calls: Vec<String>,
+    budget_reads: usize,
 }
 
 // Stands in for the two Prisma tables, keeping insertion order where Postgres returns it.
-pub struct ScriptedDatabase {
-    pub state: Mutex<ScriptedState>,
-    pub fail_update_at: Option<usize>,
-    pub fail_delete: bool,
+pub(crate) struct ScriptedDatabase {
+    state: Mutex<ScriptedState>,
+    pub(crate) fail_update_at: Option<usize>,
+    pub(crate) fail_delete: bool,
 }
 
 impl ScriptedDatabase {
-    pub fn new(
+    pub(crate) fn new(
         deployments: Vec<DeploymentRow>,
         budget_rows: Vec<BudgetRow>,
         budgets: Vec<GroupBudgetRow>,
@@ -47,17 +48,17 @@ impl ScriptedDatabase {
         }
     }
 
-    pub fn updates(&self) -> Vec<(String, String)> {
+    pub(crate) fn updates(&self) -> Vec<(String, String)> {
         let state = self.state.lock().expect("scripted database");
         state.updates.clone()
     }
 
-    pub fn delete_calls(&self) -> Vec<String> {
+    pub(crate) fn delete_calls(&self) -> Vec<String> {
         let state = self.state.lock().expect("scripted database");
         state.delete_calls.clone()
     }
 
-    pub fn budget(&self, access_group: &str) -> Option<GroupBudgetRow> {
+    pub(crate) fn budget(&self, access_group: &str) -> Option<GroupBudgetRow> {
         let state = self.state.lock().expect("scripted database");
         state
             .budgets
@@ -66,12 +67,12 @@ impl ScriptedDatabase {
             .cloned()
     }
 
-    pub fn budget_reads(&self) -> usize {
+    pub(crate) fn budget_reads(&self) -> usize {
         let state = self.state.lock().expect("scripted database");
         state.budget_reads
     }
 
-    pub fn has_budget_row(&self, budget_id: &str) -> bool {
+    pub(crate) fn has_budget_row(&self, budget_id: &str) -> bool {
         let state = self.state.lock().expect("scripted database");
         state
             .budget_rows
@@ -79,7 +80,7 @@ impl ScriptedDatabase {
             .any(|row| row.budget_id == budget_id)
     }
 
-    pub fn deployment_info(&self, model_id: &str) -> Option<Json> {
+    pub(crate) fn deployment_info(&self, model_id: &str) -> Option<Json> {
         let state = self.state.lock().expect("scripted database");
         state
             .deployments
@@ -120,38 +121,38 @@ impl ScriptedDatabase {
     }
 }
 
-fn joined_budget(budget_rows: &[BudgetRow], budget_id: &Option<String>) -> Option<BudgetRow> {
-    let id = budget_id.as_ref()?;
-    budget_rows.iter().find(|row| &row.budget_id == id).cloned()
+fn joined_budget(budget_rows: &[BudgetRow], budget_id: Option<&str>) -> Option<BudgetRow> {
+    let id = budget_id?;
+    budget_rows.iter().find(|row| row.budget_id == id).cloned()
 }
 
 impl GroupDatabase for ScriptedDatabase {
-    async fn deployment_find_many(
+    fn deployment_find_many(
         &self,
         model_names: Option<&[String]>,
-    ) -> Result<Vec<DeploymentRow>, GroupDataError> {
-        Ok(self.deployments_matching(model_names))
+    ) -> impl Future<Output = Result<Vec<DeploymentRow>, GroupDataError>> + Send {
+        ready(Ok(self.deployments_matching(model_names)))
     }
 
-    async fn deployment_find_unique(
+    fn deployment_find_unique(
         &self,
         model_id: &str,
-    ) -> Result<Option<DeploymentRow>, GroupDataError> {
-        Ok(self.deployment_by_id(model_id))
+    ) -> impl Future<Output = Result<Option<DeploymentRow>, GroupDataError>> + Send {
+        ready(Ok(self.deployment_by_id(model_id)))
     }
 
-    async fn update_model_info(
+    fn update_model_info(
         &self,
         model_id: &str,
         model_info: &str,
-    ) -> Result<(), GroupDataError> {
+    ) -> impl Future<Output = Result<(), GroupDataError>> + Send {
         let mut state = self.state.lock().expect("scripted database");
         let attempt = state.update_calls;
         state.update_calls = attempt.checked_add(1).expect("update calls");
         if self.fail_update_at == Some(attempt) {
-            return Err(GroupDataError::ValueError {
+            return ready(Err(GroupDataError::ValueError {
                 message: "scripted update failure".to_owned(),
-            });
+            }));
         }
         state
             .updates
@@ -164,75 +165,77 @@ impl GroupDatabase for ScriptedDatabase {
         {
             row.model_info = Some(parsed);
         }
-        Ok(())
+        drop(state);
+        ready(Ok(()))
     }
 
-    async fn budget_find_unique(
+    fn budget_find_unique(
         &self,
         access_group: &str,
         include: BudgetInclude,
-    ) -> Result<Option<GroupBudgetRow>, GroupDataError> {
-        let rows = self.budget_rows(include);
-        Ok(rows
+    ) -> impl Future<Output = Result<Option<GroupBudgetRow>, GroupDataError>> + Send {
+        ready(Ok(self
+            .budget_rows(include)
             .into_iter()
-            .find(|row| row.access_group_name == access_group))
+            .find(|row| row.access_group_name == access_group)))
     }
 
-    async fn budget_find_many(
+    fn budget_find_many(
         &self,
         include: BudgetInclude,
-    ) -> Result<Vec<GroupBudgetRow>, GroupDataError> {
-        Ok(self.budget_rows(include))
+    ) -> impl Future<Output = Result<Vec<GroupBudgetRow>, GroupDataError>> + Send {
+        ready(Ok(self.budget_rows(include)))
     }
 
-    async fn budget_upsert(
+    fn budget_upsert(
         &self,
         create: &GroupBudgetCreate,
         update: &GroupBudgetUpdate,
         include: BudgetInclude,
-    ) -> Result<GroupBudgetRow, GroupDataError> {
+    ) -> impl Future<Output = Result<GroupBudgetRow, GroupDataError>> + Send {
         let mut state = self.state.lock().expect("scripted database");
         let existing = state
             .budgets
             .iter()
             .position(|row| row.access_group_name == create.access_group_name);
-        let row = match existing {
-            Some(index) => {
-                let joined = joined_budget(&state.budget_rows, &update.budget_id);
-                state.budgets[index].budget_id = update.budget_id.clone();
-                state.budgets[index].litellm_budget_table = joined;
-                row_with_include(&state.budgets[index], &state.budget_rows, include)
-            }
-            None => {
-                let row = GroupBudgetRow {
-                    access_group_name: create.access_group_name.clone(),
-                    spend: Some(Decimal::ZERO),
-                    budget_id: create.budget_id.clone(),
-                    litellm_budget_table: joined_budget(&state.budget_rows, &create.budget_id),
-                };
-                state.budgets.push(row.clone());
-                row_with_include(&row, &state.budget_rows, include)
-            }
+        if let Some(index) = existing {
+            let joined = joined_budget(&state.budget_rows, update.budget_id.as_deref());
+            state.budgets[index].budget_id = update.budget_id.clone();
+            state.budgets[index].litellm_budget_table = joined;
+            return ready(Ok(row_with_include(
+                &state.budgets[index],
+                &state.budget_rows,
+                include,
+            )));
+        }
+        let created = GroupBudgetRow {
+            access_group_name: create.access_group_name.clone(),
+            spend: Some(Decimal::ZERO),
+            budget_id: create.budget_id.clone(),
+            litellm_budget_table: joined_budget(&state.budget_rows, create.budget_id.as_deref()),
         };
-        Ok(row)
+        state.budgets.push(created.clone());
+        ready(Ok(row_with_include(&created, &state.budget_rows, include)))
     }
 
-    async fn budget_delete(
+    fn budget_delete(
         &self,
         access_group: &str,
-    ) -> Result<Option<GroupBudgetRow>, GroupDataError> {
+    ) -> impl Future<Output = Result<Option<GroupBudgetRow>, GroupDataError>> + Send {
         let mut state = self.state.lock().expect("scripted database");
         state.delete_calls.push(access_group.to_owned());
         if self.fail_delete {
-            return Err(GroupDataError::ValueError {
+            return ready(Err(GroupDataError::ValueError {
                 message: "scripted delete failure".to_owned(),
-            });
+            }));
         }
         let position = state
             .budgets
             .iter()
             .position(|row| row.access_group_name == access_group);
-        Ok(position.map(|index| state.budgets.remove(index)))
+        let removed = position.map(|index| state.budgets.remove(index));
+        drop(state);
+        ready(Ok(removed))
     }
 }
 
@@ -242,9 +245,10 @@ fn row_with_include(
     include: BudgetInclude,
 ) -> GroupBudgetRow {
     let mut found = row.clone();
-    found.litellm_budget_table = include
-        .litellm_budget_table
-        .then(|| joined_budget(budget_rows, &row.budget_id))
-        .flatten();
+    found.litellm_budget_table = if include.litellm_budget_table {
+        joined_budget(budget_rows, row.budget_id.as_deref())
+    } else {
+        None
+    };
     found
 }

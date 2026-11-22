@@ -124,10 +124,10 @@ pub fn validate_models_exist<Source>(
 where
     Source: ModelNameSource + ?Sized,
 {
-    let Some(source) = source else {
+    let Some(installed) = source else {
         return Ok((false, model_names.to_vec()));
     };
-    let Some(served) = source.model_names()? else {
+    let Some(served) = installed.model_names()? else {
         return Ok((false, model_names.to_vec()));
     };
     let known: BTreeSet<String> = served.into_iter().collect();
@@ -153,9 +153,9 @@ where
     if missing.is_empty() {
         return Ok(Vec::new());
     }
-    if let Some(read_through) = read_through {
+    if let Some(reader) = read_through {
         for name in &missing {
-            read_through.attempt_model(name).await;
+            reader.attempt_model(name).await;
         }
     }
     let (_, still_missing) = validate_models_exist(model_names, Some(source))?;

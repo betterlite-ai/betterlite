@@ -7,7 +7,7 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::wildcard_catalog::PatternCatalog;
 use indexmap::IndexMap;
 
-use super::super::ports::{ModelAccessGroupCache, ModelNameSource};
+use super::super::ports::{ModelAccessGroupCache, ModelNameSource as _};
 use super::fixtures::auth::recording_auth_invalidation;
 use super::names;
 
