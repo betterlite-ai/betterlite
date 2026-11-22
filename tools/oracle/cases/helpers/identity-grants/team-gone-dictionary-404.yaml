@@ -1,0 +1,15 @@
+kind: helper
+name: identity-grants-team-gone-dictionary-404
+call:
+  identity_grants:
+    users: []
+    denials:
+      - kind: team_gone
+        user_id: user-1
+        team_id: team-1
+      - kind: team_gone
+        user_id: ""
+        team_id: ""
+    teams: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: auth-errors-route-db-outage-disabled-error
+call:
+  auth_errors:
+    rows:
+      # without the bypass the same outage reaches the failure hook and the client gets its 503
+      - step: handle
+        failure: {kind: connect, message: "All connection attempts failed", type: "", param: null, status_code: 0, marked: false, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: [log_client_error_tracebacks]
+        identity: {user_id: known-user}
+        request_data: {model: gpt-4o, litellm_metadata: {}}
+        route: /v1/responses/resp_abc
+        user_agent: openai-python/1.60.0
+        client_host: 192.0.2.10
+env: {}
+compare:
+  ignore: []
