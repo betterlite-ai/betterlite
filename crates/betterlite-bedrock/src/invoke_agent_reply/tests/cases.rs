@@ -22,8 +22,8 @@ use crate::invoke_agent_reply::error::InvokeAgentReplyError;
 use crate::invoke_agent_reply::events::{AgentEvent, EventHeaders};
 use crate::invoke_agent_reply::extract::{ExtractError, UsageInfo, response_content, usage_info};
 use crate::invoke_agent_reply::tests::support::{
-    bedrock_status, capture, chunk, chunk_body, completed, content, event_frame, events,
-    exception_frame, frame, integer, join, json, run, supplied, text, trace, usage,
+    bedrock_status, capture, chunk, chunk_body, completed, content, event_frame, events, frame,
+    integer, join, json, run, supplied, text, trace, usage,
 };
 
 const USAGE_HEAD: &str =
@@ -181,7 +181,15 @@ fn chunk_parse_and_decode() {
 }
 
 fn agent_error_frame() {
-    let exception = exception_frame("validationException", b"{\"message\":\"bad\"}");
+    let exception = frame(
+        &[
+            (":event-type", text("chunk")),
+            (":content-type", text("application/json")),
+            (":message-type", text("exception")),
+            (":exception-type", text("validationException")),
+        ],
+        b"{\"message\":\"bad\"}",
+    );
     let stream = join(&[exception.clone(), chunk("keep")]);
     let (captured, guard) = capture();
     let response = completed(200, &stream);

@@ -58,18 +58,6 @@ pub(super) fn event_frame(event_type: &str, message_type: &str, payload: &[u8]) 
     )
 }
 
-pub(super) fn exception_frame(exception_type: &str, payload: &[u8]) -> Vec<u8> {
-    frame(
-        &[
-            (":event-type", text("chunk")),
-            (":content-type", text("application/json")),
-            (":message-type", text("exception")),
-            (":exception-type", text(exception_type)),
-        ],
-        payload,
-    )
-}
-
 pub(super) fn join(parts: &[Vec<u8>]) -> Vec<u8> {
     parts.concat()
 }
