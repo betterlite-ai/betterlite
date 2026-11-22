@@ -1,0 +1,30 @@
+task: B1740
+deviations:
+  - what: A retention setting given as a float, a list or a mapping warns and disables only that retention group.
+    why: LiteLLM passes a float, list or mapping on to duration_in_seconds, which raises AttributeError past the ValueError handler and aborts the whole cleanup run on every schedule; no working setup relies on that, so betterlite contains it to the one group.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L229-L232
+  - what: An integer override given as a float outside the 64-bit range, or an integer outside it, warns and uses the default.
+    why: int() of an infinite float raises OverflowError past the TypeError and ValueError handler and aborts the run, and a huge integer reaches LIMIT and fails every batch; betterlite treats both as unusable values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L176-L180
+  - what: A duration override whose seconds overflow a 64-bit integer warns and uses the default.
+    why: B199's duration_in_seconds reports the overflow as an error where Python keeps an unbounded integer; a run budget of more than 292 billion years bounds nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L197-L203
+  - what: The statement and lock timeout of a batch or probe is capped at 2147483647 ms.
+    why: PostgreSQL refuses a statement_timeout above INT_MAX, so LiteLLM fails every batch when both the batch timeout and the remaining budget exceed about 24.8 days; the cap keeps those statements bounded instead of failing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L257-L258
+  - what: A delete batch or probe waits for its statement timeout plus 5 seconds for the commit, not for Prisma's default 5-second interactive transaction.
+    why: prisma_client.db.tx() without arguments ends any transaction after 5 seconds, so a batch timeout above 5 s never applies in LiteLLM; betterlite honours the configured batch timeout and keeps a client-side bound for a stalled connection, as B1739 does for partition statements.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L308-L311
+  - what: There is no abort for a delete result that is not a row count.
+    why: tokio-postgres returns every DELETE's affected rows as a u64 and reports a malformed command tag as an error, so the result LiteLLM guards against cannot reach the loop; a driver failure counts as a batch failure instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L312
+  - what: An infinite or overflowing SPEND_LOG_CLEANUP_*_SECONDS value fails config loading.
+    why: The shared environment parser reads digits, signs, a point and an exponent only, and a Duration holds no infinity; LiteLLM's float('inf') budget then fails every batch when the timeout is converted to an integer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1783-L1787
+kept_bugs:
+  - what: The environment defaults are used as given, so SPEND_LOG_CLEANUP_BATCH_SIZE=0 or SPEND_LOG_RUN_LOOPS=0 ends every table at once and a negative batch size fails every batch.
+    why: Only the general_settings overrides are checked for being positive in LiteLLM; whether a setup relies on an unchecked environment value can't be told, so it is copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1780-L1782
+  - what: A retention of zero, such as "0d" or 0, is honoured and expires every row older than now.
+    why: The task keeps LiteLLM's retention reader without a positive-only restriction, and a zero retention is a value an operator can set on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L215-L235
