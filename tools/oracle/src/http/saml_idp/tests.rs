@@ -295,7 +295,11 @@ fn replay_authn_request_corpus(root: &Path) -> usize {
         } else if path.extension().and_then(|value| value.to_str()) == Some("yaml") {
             assert_case_seed_has_assertion(path, &bytes);
         } else {
-            assert_seed_rejected(path, &bytes);
+            assert!(
+                decode_authn_request_id(&bytes).is_err(),
+                "{} should have been rejected",
+                path.display()
+            );
         }
     }
     decoded
@@ -319,16 +323,6 @@ fn assert_case_seed_has_assertion(path: &Path, bytes: &[u8]) {
         steps.iter().any(|step| step.saml_assertion.is_some()),
         "{} carries no saml assertion",
         path.display()
-    );
-}
-
-fn assert_seed_rejected(path: &Path, bytes: &[u8]) {
-    let decoded_id = decode_authn_request_id(bytes);
-    assert!(
-        decoded_id.is_err(),
-        "{} should be rejected, decoded {}",
-        path.display(),
-        decoded_id.unwrap_or_default()
     );
 }
 
