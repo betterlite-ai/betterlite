@@ -1,3 +1,6 @@
 task: B324
-deviations: []
+deviations:
+  - what: "A caller or session pin whose cache key is longer than the route key's 1024-byte limit is skipped: the filter keeps the healthy pool and the hook writes no pin, where LiteLLM would use the long key."
+    why: "B372's affinity key is a route key with that limit; this check treats the refusal as a best-effort miss instead of failing the request."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/deployment_affinity_check.py#L411-L413"
 kept_bugs: []
