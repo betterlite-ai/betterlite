@@ -1,12 +1,16 @@
+use betterlite_anthropic::chat_call::config::{ChatConfig as _, TransformRequest};
+use betterlite_anthropic::headers::AnthropicHeaders;
+use betterlite_anthropic::request::BillingHeader;
 use betterlite_foundry::anthropic::request::Style;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use super::support::{
     ANTHROPIC_REPLY, ClaudeInputs, Env, HOST, KEY, Ran, field, first_post, run_claude,
 };
 use crate::foundry_dispatch::claude;
-use crate::foundry_dispatch::fixtures::claude::Wire;
+use crate::foundry_dispatch::fixtures::claude::{Mapper, Wire};
 use crate::foundry_dispatch::route;
 
 pub(super) fn anthropic_case() {
@@ -14,6 +18,7 @@ pub(super) fn anthropic_case() {
     async_buffered_call();
     async_stream_call();
     provider_failure();
+    mapper_returns_the_optional_params();
 }
 
 fn buffered_sync_call() {
@@ -71,6 +76,30 @@ fn provider_failure() {
     let (ran, logger) = run_claude(inputs.call(Style::Sync, false), &wire);
     assert_eq!(ran, Ran::Failed);
     assert!(logger.calls.is_empty());
+}
+
+// the composed transform reads transform_outcome, so this trait method gets its own check
+fn mapper_returns_the_optional_params() {
+    let options = IndexMap::from([(
+        String::from("temperature"),
+        Json::Text(String::from("warm")),
+    )]);
+    let messages: &[Json] = &[];
+    let litellm_params: IndexMap<String, Json> = IndexMap::new();
+    let headers = AnthropicHeaders::default();
+    let request = TransformRequest {
+        model: "claude-sonnet-4-5",
+        custom_llm_provider: None,
+        messages,
+        optional_params: &options,
+        litellm_params: &litellm_params,
+        headers: &headers,
+        billing_header: BillingHeader::Strip,
+    };
+    let body = Mapper
+        .transform_request(&request)
+        .expect("the mapper returns the optional params");
+    assert_eq!(body, options);
 }
 
 pub(super) fn claude_missing_base() {
