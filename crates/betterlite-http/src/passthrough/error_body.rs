@@ -1,7 +1,9 @@
+use std::mem::take;
 use std::pin::Pin;
+use std::str::from_utf8;
 use std::task::{Context, Poll};
 
-use futures_util::stream::BoxStream;
+use futures_util::stream::{BoxStream, empty};
 use futures_util::{Stream, StreamExt as _};
 use http::StatusCode;
 use http::header::HeaderMap;
@@ -44,12 +46,12 @@ impl Stream for PrefixReplayStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         if !this.prefix.is_empty() {
-            return Poll::Ready(Some(Ok(std::mem::take(&mut this.prefix))));
+            return Poll::Ready(Some(Ok(take(&mut this.prefix))));
         }
-        match this.rest.as_mut() {
-            Some(rest) => rest.poll_next_unpin(cx),
-            None => Poll::Ready(None),
-        }
+        let Some(rest) = this.rest.as_mut() else {
+            return Poll::Ready(None);
+        };
+        rest.poll_next_unpin(cx)
     }
 }
 
@@ -70,7 +72,7 @@ pub async fn read_error_body_preview(mut stream: ChunkStream) -> (Vec<u8>, Chunk
                     "pass_through_endpoint: upstream error body read failed after {} bytes: {error}",
                     collected.len()
                 );
-                return (collected, futures_util::stream::empty().boxed());
+                return (collected, empty().boxed());
             }
         }
     }
@@ -116,17 +118,14 @@ pub async fn error_body_preview_and_relay(
 fn decode_utf8(mut bytes: &[u8]) -> String {
     let mut decoded = String::with_capacity(bytes.len());
     loop {
-        match std::str::from_utf8(bytes) {
+        match from_utf8(bytes) {
             Ok(text) => {
                 decoded.push_str(text);
                 return decoded;
             }
             Err(error) => {
                 let valid = error.valid_up_to();
-                if let Some(text) = bytes
-                    .get(..valid)
-                    .and_then(|prefix| std::str::from_utf8(prefix).ok())
-                {
+                if let Some(text) = bytes.get(..valid).and_then(|prefix| from_utf8(prefix).ok()) {
                     decoded.push_str(text);
                 }
                 decoded.push(REPLACEMENT);
