@@ -28,9 +28,10 @@ pub struct AdmissionRequest {
 
 // the legacy pre-call hook, run on the handler B3047 owns
 pub struct LegacyAdmission {
-    handler: LegacyRateLimitHandler,
-    tasks: TaskTracker,
-    catalog: Option<Arc<dyn DeploymentLimitCatalog + Send + Sync>>,
+    // B8399 supplies the server's tracker for the detached write and B302's catalog for the deployment defaults
+    pub handler: LegacyRateLimitHandler,
+    pub tasks: TaskTracker,
+    pub catalog: Option<Arc<dyn DeploymentLimitCatalog + Send + Sync>>,
 }
 
 // one request's state across the checks: the six counters read once, the ids they are keyed by, the collected pairs
@@ -44,20 +45,6 @@ struct Call<'call> {
 }
 
 impl LegacyAdmission {
-    // B8399 supplies the server's tracker for the detached write and B302's catalog for the deployment defaults
-    #[must_use]
-    pub fn new(
-        handler: LegacyRateLimitHandler,
-        tasks: TaskTracker,
-        catalog: Option<Arc<dyn DeploymentLimitCatalog + Send + Sync>>,
-    ) -> Self {
-        Self {
-            handler,
-            tasks,
-            catalog,
-        }
-    }
-
     pub async fn pre_call(
         &self,
         principal: &UserAPIKeyAuth,
@@ -92,14 +79,13 @@ impl LegacyAdmission {
         for dimension in checks::other_dimensions(&call) {
             checks::enforce(&self.handler, &mut call, dimension).await?;
         }
-        self.write_counters(&call.counters);
+        self.write_counters(call.counters);
         Ok(())
     }
 
     // LiteLLM's asyncio.create_task: the write outlives the hook, and its failure is only logged
-    fn write_counters(&self, entries: &[(String, LegacyCacheValue)]) {
+    fn write_counters(&self, entries: Vec<(String, LegacyCacheValue)>) {
         let cache = Arc::clone(&self.handler.internal_usage_cache);
-        let entries = entries.to_vec();
         self.tasks.spawn(async move {
             let written = cache
                 .batch_set(&entries, COUNTER_TTL_SECONDS, None, false)

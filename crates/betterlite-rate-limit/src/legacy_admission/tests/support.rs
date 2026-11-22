@@ -294,7 +294,11 @@ pub(crate) fn fixture_with_catalog(
         clock,
         console,
         tasks: tasks.clone(),
-        admission: LegacyAdmission::new(handler, tasks, catalog),
+        admission: LegacyAdmission {
+            handler,
+            tasks,
+            catalog,
+        },
     }
 }
 
