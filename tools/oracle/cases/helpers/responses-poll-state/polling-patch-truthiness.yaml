@@ -2,10 +2,17 @@ kind: helper
 name: polling-patch-truthiness
 call:
   responses_poll_state:
+    now: 1700000000
+    ttl: 3600
+    uuid: "00000000-0000-4000-8000-000000000001"
     calls:
       - op: update
         polling_id: litellm_poll_falsy
+        redis: true
+        ttl: null
+        metadata: null
         seed:
+          raw: null
           response:
             id: litellm_poll_falsy
             object: response
@@ -26,7 +33,11 @@ call:
           incomplete_details: {}
       - op: update
         polling_id: litellm_poll_error
+        redis: true
+        ttl: null
+        metadata: null
         seed:
+          raw: null
           response:
             id: litellm_poll_error
             object: response
@@ -44,7 +55,11 @@ call:
             message: failed
       - op: update
         polling_id: litellm_poll_present
+        redis: true
+        ttl: null
+        metadata: null
         seed:
+          raw: null
           response:
             id: litellm_poll_present
             object: response
@@ -74,8 +89,11 @@ call:
           store: false
       - op: update
         polling_id: litellm_poll_usage
+        redis: true
         ttl: 17
+        metadata: null
         seed:
+          raw: null
           response:
             id: litellm_poll_usage
             object: response
@@ -91,5 +109,6 @@ call:
             total_tokens: 2
           incomplete_details:
             reason: max_output_tokens
+    selections: []
 env: {}
 compare: {ignore: []}

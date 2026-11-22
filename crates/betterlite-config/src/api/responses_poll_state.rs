@@ -14,6 +14,10 @@ pub const NATIVE_BACKGROUND_MODE_PATH: &str =
 pub const TTL_PATH: &str = "litellm_settings.responses.background_mode.ttl";
 pub const DEFAULT_POLLING_TTL: i64 = 3600;
 
+type SelectorResult = Result<PollingSelector, ConfigError>;
+type ProviderNames = Result<Vec<String>, ConfigError>;
+type TtlSeconds = Result<i64, ConfigError>;
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PollingSelector {
     #[default]
@@ -69,122 +73,89 @@ pub fn loads_polling_settings(
     environment: &dyn EnvironmentLookup,
 ) -> Result<PollingSettings, ConfigError> {
     let (raw, _ignored) = parse_view::<Raw>(source)?;
-    raw.convert(environment)
-}
-
-impl Raw {
-    fn convert(self, lookup: &dyn EnvironmentLookup) -> Result<PollingSettings, ConfigError> {
-        let mode = self
-            .litellm_settings
-            .responses
-            .and_then(|responses| responses.background_mode)
-            .unwrap_or_default();
-        Ok(PollingSettings {
-            polling_via_cache: selector(mode.polling_via_cache, lookup)?,
-            native_background_mode: native_background_mode(mode.native_background_mode, lookup)?,
-            ttl: ttl(mode.ttl, lookup)?,
-        })
-    }
+    let mode = raw
+        .litellm_settings
+        .responses
+        .and_then(|responses| responses.background_mode)
+        .unwrap_or_default();
+    Ok(PollingSettings {
+        polling_via_cache: selector(mode.polling_via_cache, environment)?,
+        native_background_mode: native_background_mode(mode.native_background_mode, environment)?,
+        ttl: ttl(mode.ttl, environment)?,
+    })
 }
 
 // false, true and numbers are YAML scalars the source accepts; only "all" and provider lists select
-fn selector(
-    raw: Option<Json>,
-    lookup: &dyn EnvironmentLookup,
-) -> Result<PollingSelector, ConfigError> {
+fn selector(raw: Option<Json>, lookup: &dyn EnvironmentLookup) -> SelectorResult {
     match raw {
         None | Some(Json::Null | Json::Bool(false)) => Ok(PollingSelector::Disabled),
         Some(Json::Bool(true) | Json::Number(_)) => Ok(PollingSelector::Unrecognized),
-        Some(Json::Text(text)) => {
-            let resolved = resolve_string(text, POLLING_VIA_CACHE_PATH, lookup)?;
-            if resolved.is_empty() {
-                return Ok(PollingSelector::Disabled);
-            }
-            Ok(match resolved.as_str() {
-                "all" => PollingSelector::All,
-                _ => PollingSelector::Unrecognized,
-            })
-        }
+        Some(Json::Text(text)) => selector_text(text, lookup),
         Some(Json::List(items)) => {
-            let mut providers = Vec::with_capacity(items.len());
-            for item in items {
-                match item {
-                    Json::Text(text) => {
-                        providers.push(resolve_string(text, POLLING_VIA_CACHE_PATH, lookup)?);
-                    }
-                    value @ (Json::Null
-                    | Json::Bool(_)
-                    | Json::Number(_)
-                    | Json::List(_)
-                    | Json::Object(_)) => {
-                        return Err(invalid_scalar(POLLING_VIA_CACHE_PATH, &value));
-                    }
-                }
-            }
-            Ok(PollingSelector::Providers(providers))
+            resolve_list(items, POLLING_VIA_CACHE_PATH, lookup).map(PollingSelector::Providers)
         }
         Some(value @ Json::Object(_)) => Err(invalid_scalar(POLLING_VIA_CACHE_PATH, &value)),
     }
 }
 
-fn native_background_mode(
-    raw: Option<Json>,
-    lookup: &dyn EnvironmentLookup,
-) -> Result<Vec<String>, ConfigError> {
+fn selector_text(text: String, lookup: &dyn EnvironmentLookup) -> SelectorResult {
+    let resolved = resolve_string(text, POLLING_VIA_CACHE_PATH, lookup)?;
+    Ok(match resolved.as_str() {
+        "" => PollingSelector::Disabled,
+        "all" => PollingSelector::All,
+        _ => PollingSelector::Unrecognized,
+    })
+}
+
+fn native_background_mode(raw: Option<Json>, lookup: &dyn EnvironmentLookup) -> ProviderNames {
     match raw {
         None | Some(Json::Null) => Ok(Vec::new()),
-        Some(Json::List(items)) => {
-            let mut modes = Vec::with_capacity(items.len());
-            for item in items {
-                match item {
-                    Json::Text(text) => {
-                        modes.push(resolve_string(text, NATIVE_BACKGROUND_MODE_PATH, lookup)?);
-                    }
-                    value @ (Json::Null
-                    | Json::Bool(_)
-                    | Json::Number(_)
-                    | Json::List(_)
-                    | Json::Object(_)) => {
-                        return Err(invalid_scalar(NATIVE_BACKGROUND_MODE_PATH, &value));
-                    }
-                }
-            }
-            Ok(modes)
-        }
+        Some(Json::List(items)) => resolve_list(items, NATIVE_BACKGROUND_MODE_PATH, lookup),
         Some(value) => Err(invalid_scalar(NATIVE_BACKGROUND_MODE_PATH, &value)),
     }
 }
 
+fn resolve_list(items: Vec<Json>, path: &str, lookup: &dyn EnvironmentLookup) -> ProviderNames {
+    let mut values = Vec::with_capacity(items.len());
+    for item in &items {
+        let Json::Text(text) = item else {
+            return Err(invalid_scalar(path, item));
+        };
+        values.push(resolve_string(text.clone(), path, lookup)?);
+    }
+    Ok(values)
+}
+
 // the source hands any integer to the cache; only a value that cannot be an integer fails here
-fn ttl(raw: Option<RawNumber>, lookup: &dyn EnvironmentLookup) -> Result<i64, ConfigError> {
-    match raw {
-        None => Ok(DEFAULT_POLLING_TTL),
-        Some(RawNumber::Integer(seconds)) => Ok(seconds),
-        Some(RawNumber::Text(text)) => match text.strip_prefix("os.environ/") {
-            Some(name) => {
-                let Some(raw_value) = lookup.lookup(name) else {
-                    return Err(ConfigError::MissingEnvironment {
-                        variable: name.to_owned(),
-                        path: TTL_PATH.to_owned(),
-                    });
-                };
-                Ok(betterlite_env::number::<i64>(name, &raw_value)?.unwrap_or(DEFAULT_POLLING_TTL))
-            }
-            None => text
-                .parse::<i64>()
-                .map_err(|source| ConfigError::InvalidInteger {
-                    path: TTL_PATH.to_owned(),
-                    source,
-                }),
-        },
-        Some(RawNumber::Float(_)) => Err(ConfigError::InvalidScalar {
+fn ttl(raw: Option<RawNumber>, lookup: &dyn EnvironmentLookup) -> TtlSeconds {
+    let Some(value) = raw else {
+        return Ok(DEFAULT_POLLING_TTL);
+    };
+    match value {
+        RawNumber::Integer(seconds) => Ok(seconds),
+        RawNumber::Text(text) => resolve_ttl_text(text, lookup),
+        RawNumber::Float(_) => Err(invalid_scalar(TTL_PATH, &Json::Null)),
+        RawNumber::Boolean(flag) => Err(invalid_scalar(TTL_PATH, &Json::Bool(flag))),
+    }
+}
+
+fn resolve_ttl_text(text: String, lookup: &dyn EnvironmentLookup) -> TtlSeconds {
+    let Some(name) = text.strip_prefix("os.environ/") else {
+        return text
+            .parse::<i64>()
+            .map_err(|source| ConfigError::InvalidInteger {
+                path: TTL_PATH.to_owned(),
+                source,
+            });
+    };
+    match lookup.lookup(name) {
+        None => Err(ConfigError::MissingEnvironment {
+            variable: name.to_owned(),
             path: TTL_PATH.to_owned(),
-            value: false,
         }),
-        Some(RawNumber::Boolean(flag)) => Err(ConfigError::InvalidScalar {
-            path: TTL_PATH.to_owned(),
-            value: flag,
-        }),
+        Some(raw_value) => {
+            Ok(betterlite_env::number::<i64>(name, &raw_value)?.unwrap_or(DEFAULT_POLLING_TTL))
+        }
     }
 }
 

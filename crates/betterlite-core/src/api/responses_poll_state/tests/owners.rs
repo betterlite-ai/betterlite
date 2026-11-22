@@ -1,9 +1,9 @@
 use betterlite_models::decisions::Json;
 
 use super::super::access::{PollAccess, PollDenial};
-use super::super::decode::StoredPollState;
+use super::super::access::{PollCaller, PollOwner};
 use super::super::get_cache_key;
-use super::super::owner::{PollCaller, PollOwner};
+use super::super::store::StoredPollState;
 use super::super::store::{NewPollRequest, ResponsePollingStore};
 use super::support::{self, CacheOperation, FakeCache};
 

@@ -18,15 +18,15 @@ use tracing_subscriber::registry;
 use crate::api::api_boundaries::ApiLimits;
 
 use super::super::access::{PollAccess, PollDenial};
+use super::super::access::{PollCaller, PollOwner};
 use super::super::cache::{PollingCache, PollingCacheError};
-use super::super::decode::{StoredPollState, decode_responses_poll_state};
 use super::super::error::PollingError;
-use super::super::owner::{PollCaller, PollOwner};
 use super::super::record::{PollMetadata, PollPatch};
 use super::super::selection::{
-    DeploymentProjection, DeploymentProvider, PollingRequest, should_use_polling_for_request,
+    DeploymentProjection, DeploymentProvider, should_use_polling_for_request,
 };
 use super::super::store::{NewPollRequest, ResponsePollingStore};
+use super::super::store::{StoredPollState, decode_responses_poll_state};
 use super::super::{
     CACHE_KEY_PREFIX, DEFAULT_TTL, POLLING_ID_PREFIX, generate_polling_id, get_cache_key,
     is_polling_id,
@@ -113,87 +113,82 @@ impl FakeCache {
         false
     }
 
-    fn record(&self, effect: CacheEffect) {
+    fn record(
+        &self,
+        operation: CacheOperation,
+        key: &str,
+        ttl: Option<i64>,
+        hit: bool,
+        value: Option<String>,
+    ) {
         self.effects
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(effect);
+            .push(CacheEffect {
+                operation,
+                key: key.to_owned(),
+                ttl,
+                hit,
+                value,
+            });
+    }
+
+    fn put(&self, key: &str, value: &str) {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value.as_bytes().to_vec());
+    }
+
+    fn take(&self, key: &str) -> bool {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(key)
+            .is_some()
+    }
+
+    fn check(&self, operation: CacheOperation) -> Result<(), PollingCacheError> {
+        if !self.failing(operation) {
+            return Ok(());
+        }
+        let message = "scripted cache failure".to_owned();
+        match operation {
+            CacheOperation::Read => Err(PollingCacheError::Read(message)),
+            CacheOperation::Write => Err(PollingCacheError::Write(message)),
+            CacheOperation::Delete => Err(PollingCacheError::Delete(message)),
+        }
     }
 }
 
 #[async_trait]
 impl PollingCache for FakeCache {
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>, PollingCacheError> {
-        let value = self
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(key)
-            .cloned();
-        self.record(CacheEffect {
-            operation: CacheOperation::Read,
-            key: key.to_owned(),
-            ttl: None,
-            hit: value.is_some(),
-            value: None,
-        });
-        if self.failing(CacheOperation::Read) {
-            return Err(PollingCacheError::Read {
-                message: "scripted read failure".to_owned(),
-            });
-        }
+        let value = self.entry(key).map(String::into_bytes);
+        self.record(CacheOperation::Read, key, None, value.is_some(), None);
+        self.check(CacheOperation::Read)?;
         Ok(value)
     }
 
     async fn write(&self, key: &str, value: &str, ttl: i64) -> Result<(), PollingCacheError> {
-        let existed = self
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .contains_key(key);
-        self.record(CacheEffect {
-            operation: CacheOperation::Write,
-            key: key.to_owned(),
-            ttl: Some(ttl),
-            hit: existed,
-            value: Some(value.to_owned()),
-        });
-        if self.failing(CacheOperation::Write) {
-            return Err(PollingCacheError::Write {
-                message: "scripted write failure".to_owned(),
-            });
-        }
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), value.as_bytes().to_vec());
+        let hit = self.entry(key).is_some();
+        self.record(
+            CacheOperation::Write,
+            key,
+            Some(ttl),
+            hit,
+            Some(value.to_owned()),
+        );
+        self.check(CacheOperation::Write)?;
+        self.put(key, value);
         Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<i64, PollingCacheError> {
-        let present = self
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .contains_key(key);
-        self.record(CacheEffect {
-            operation: CacheOperation::Delete,
-            key: key.to_owned(),
-            ttl: None,
-            hit: present,
-            value: None,
-        });
-        if self.failing(CacheOperation::Delete) {
-            return Err(PollingCacheError::Delete {
-                message: "scripted delete failure".to_owned(),
-            });
-        }
-        let removed = self
-            .entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(key);
-        Ok(if removed.is_some() { 1 } else { 0 })
+        self.check(CacheOperation::Delete)?;
+        let present = self.take(key);
+        self.record(CacheOperation::Delete, key, None, present, None);
+        Ok(i64::from(present))
     }
 }
 
@@ -260,7 +255,11 @@ pub(super) fn watch() -> (DefaultGuard, Watch) {
 
 pub(super) fn store(cache: Arc<FakeCache>, ttl: i64) -> ResponsePollingStore {
     let handle: Option<Arc<dyn PollingCache>> = Some(cache);
-    ResponsePollingStore::new(handle, ttl, ApiLimits::default())
+    ResponsePollingStore {
+        cache: handle,
+        ttl,
+        limits: ApiLimits::default(),
+    }
 }
 
 pub(super) fn json(source: &str) -> Json {
@@ -347,10 +346,12 @@ pub(super) fn caller(
     fingerprint: Option<&str>,
 ) -> PollCaller {
     PollCaller {
-        user_id: user.map(str::to_owned),
-        team_id: team.map(str::to_owned),
+        identity: PollOwner {
+            user_id: user.unwrap_or_default().to_owned(),
+            team_id: team.unwrap_or_default().to_owned(),
+            key_fingerprint: fingerprint.unwrap_or_default().to_owned(),
+        },
         platform_admin: admin,
-        key_fingerprint: fingerprint.map(str::to_owned),
     }
 }
 
@@ -404,10 +405,6 @@ pub(super) fn providers(names: &[&str]) -> PollingSettings {
     )
 }
 
-pub(super) fn request(background: bool, model: &str) -> PollingRequest<'_> {
-    PollingRequest { background, model }
-}
-
 pub(super) fn deployment_list(
     entries: &[(Option<&str>, Option<&str>)],
 ) -> Vec<DeploymentProvider<'_>> {
@@ -451,9 +448,10 @@ pub(super) fn access(caller: &PollCaller) -> PollAccess<'_> {
 }
 
 pub(super) fn selection_enabled(
-    request: PollingRequest<'_>,
+    background: bool,
+    model: &str,
     settings: &PollingSettings,
     router: Option<&DeploymentProjection<'_>>,
 ) -> bool {
-    should_use_polling_for_request(request, settings, true, router)
+    should_use_polling_for_request(background, model, settings, true, router)
 }

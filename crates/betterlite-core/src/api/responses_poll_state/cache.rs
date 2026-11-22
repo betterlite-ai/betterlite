@@ -10,12 +10,12 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum PollingCacheError {
-    #[error("the polling cache could not be read: {message}")]
-    Read { message: String },
-    #[error("the polling cache could not be written: {message}")]
-    Write { message: String },
-    #[error("the polling cache could not be deleted: {message}")]
-    Delete { message: String },
+    #[error("the polling cache could not be read: {0}")]
+    Read(String),
+    #[error("the polling cache could not be written: {0}")]
+    Write(String),
+    #[error("the polling cache could not be deleted: {0}")]
+    Delete(String),
 }
 
 // get and update need the stored bytes and their errors; B126's async_get_cache turns both into None
@@ -29,41 +29,24 @@ pub trait PollingCache: Send + Sync {
 }
 
 pub struct RedisPollingCache {
-    cache: Arc<RedisCache>,
-}
-
-impl RedisPollingCache {
-    #[must_use]
-    pub const fn new(cache: Arc<RedisCache>) -> Self {
-        Self { cache }
-    }
-
-    fn namespaced(&self, key: &str) -> String {
-        check_and_fix_namespace(self.cache.namespace.as_deref(), Some(key))
-            .unwrap_or_else(|| key.to_owned())
-    }
+    pub cache: Arc<RedisCache>,
 }
 
 #[async_trait]
 impl PollingCache for RedisPollingCache {
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>, PollingCacheError> {
-        let namespaced = self.namespaced(key);
-        let client = self
-            .cache
+        let namespaced = check_and_fix_namespace(self.cache.namespace.as_deref(), Some(key))
+            .unwrap_or_else(|| key.to_owned());
+        let mut command = cmd("GET");
+        command.arg(namespaced);
+        self.cache
             .transport
             .async_client()
             .await
-            .map_err(|source| PollingCacheError::Read {
-                message: source.to_string(),
-            })?;
-        let mut command = cmd("GET");
-        command.arg(namespaced);
-        client
+            .map_err(|source| PollingCacheError::Read(source.to_string()))?
             .query::<Option<Vec<u8>>>(&command)
             .await
-            .map_err(|source| PollingCacheError::Read {
-                message: source.to_string(),
-            })
+            .map_err(|source| PollingCacheError::Read(source.to_string()))
     }
 
     async fn write(&self, key: &str, value: &str, ttl: i64) -> Result<(), PollingCacheError> {
@@ -73,9 +56,7 @@ impl PollingCache for RedisPollingCache {
             .values
             .async_set_cache(Some(key), value, seconds, false)
             .await
-            .map_err(|source| PollingCacheError::Write {
-                message: source.to_string(),
-            })?;
+            .map_err(|source| PollingCacheError::Write(source.to_string()))?;
         Ok(())
     }
 
@@ -84,8 +65,6 @@ impl PollingCache for RedisPollingCache {
             .admin
             .async_delete_cache(key)
             .await
-            .map_err(|source| PollingCacheError::Delete {
-                message: source.to_string(),
-            })
+            .map_err(|source| PollingCacheError::Delete(source.to_string()))
     }
 }

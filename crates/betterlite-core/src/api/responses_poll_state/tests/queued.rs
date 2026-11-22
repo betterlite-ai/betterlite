@@ -109,8 +109,12 @@ pub(super) async fn queued_metadata_null() {
 }
 
 pub(super) async fn queued_without_cache() {
-    let store = ResponsePollingStore::new(None, 3600, ApiLimits::default());
-    assert!(!store.has_cache());
+    let store = ResponsePollingStore {
+        cache: None,
+        ttl: 3600,
+        limits: ApiLimits::default(),
+    };
+    assert!(store.cache.is_none());
     let response = store
         .create_initial_state(support::new_request("litellm_poll_no_cache", None))
         .await

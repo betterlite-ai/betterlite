@@ -51,7 +51,7 @@ pub(super) async fn missing_state(cache: &FakeCache, store: &ResponsePollingStor
     );
 }
 
-pub(super) async fn empty_state(cache: &FakeCache, store: &ResponsePollingStore) {
+pub(super) async fn unreadable_states(cache: &FakeCache, store: &ResponsePollingStore) {
     let id = "litellm_poll_empty";
     cache.seed_bytes(&get_cache_key(id), &[]);
     assert_eq!(
@@ -77,26 +77,49 @@ pub(super) async fn empty_state(cache: &FakeCache, store: &ResponsePollingStore)
             .expect("the empty cancel still succeeds")
     );
     assert_eq!(cache.count(CacheOperation::Write), 0);
+    let corrupt = "litellm_poll_corrupt";
+    for raw in [r#"{"id":"#, r#"[{"id":"one"}]"#, r#"NaN"#, r#""text""#] {
+        cache.seed(&get_cache_key(corrupt), raw);
+        let error = store
+            .get_state(corrupt, PollAccess::AuthDisabled)
+            .await
+            .expect_err("an unreadable cached value is a decode error");
+        assert!(matches!(error, PollingError::Decode(_)));
+    }
+    let error = store
+        .update_state(
+            corrupt,
+            PollAccess::AuthDisabled,
+            &support::patch(r#"{"status":"completed"}"#),
+        )
+        .await
+        .expect_err("an unreadable cached value fails the update too");
+    assert!(matches!(error, PollingError::Decode(_)));
+    assert_eq!(cache.count(CacheOperation::Write), 0);
 }
 
-pub(super) async fn corrupt_state(cache: &FakeCache, store: &ResponsePollingStore) {
-    let id = "litellm_poll_corrupt";
-    cache.seed(&get_cache_key(id), r#"{"id":"#);
-    let error = store
-        .get_state(id, PollAccess::AuthDisabled)
-        .await
-        .expect_err("corrupt JSON is an error");
-    assert!(matches!(error, PollingError::Decode(_)));
-    let error = store
+// deviation: the source raises KeyError or TypeError while it logs; betterlite logs and keeps the write
+pub(super) async fn untyped_state_update(cache: &FakeCache, store: &ResponsePollingStore) {
+    let id = "litellm_poll_untyped";
+    cache.seed(&get_cache_key(id), r#"{"output":{"not":"a list"}}"#);
+    let update = store
         .update_state(
             id,
             PollAccess::AuthDisabled,
             &support::patch(r#"{"status":"completed"}"#),
         )
         .await
-        .expect_err("corrupt JSON is an error for updates too");
-    assert!(matches!(error, PollingError::Decode(_)));
-    assert_eq!(cache.count(CacheOperation::Write), 0);
+        .expect("a state without status or with a non-list output still updates");
+    assert_eq!(update, PollingUpdate::Updated);
+    let written = support::stored(cache, id);
+    assert_eq!(
+        support::field(&written, "status"),
+        support::json("\"completed\"")
+    );
+    assert_eq!(
+        cache.effects().last().expect("the update wrote").ttl,
+        Some(3600)
+    );
 }
 
 pub(super) async fn present_state(cache: &FakeCache, store: &ResponsePollingStore) {
@@ -160,7 +183,7 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
         .expect_err("the read error propagates");
     assert!(matches!(
         error,
-        PollingError::Cache(PollingCacheError::Read { .. })
+        PollingError::Cache(PollingCacheError::Read(_))
     ));
     cache.fail_next(CacheOperation::Read);
     let error = store
@@ -173,7 +196,7 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
         .expect_err("the update read error propagates");
     assert!(matches!(
         error,
-        PollingError::Cache(PollingCacheError::Read { .. })
+        PollingError::Cache(PollingCacheError::Read(_))
     ));
     cache.fail_next(CacheOperation::Write);
     let error = store
@@ -186,7 +209,7 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
         .expect_err("the write error propagates");
     assert!(matches!(
         error,
-        PollingError::Cache(PollingCacheError::Write { .. })
+        PollingError::Cache(PollingCacheError::Write(_))
     ));
     cache.fail_next(CacheOperation::Delete);
     let error = store
@@ -195,7 +218,7 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
         .expect_err("the delete error propagates");
     assert!(matches!(
         error,
-        PollingError::Cache(PollingCacheError::Delete { .. })
+        PollingError::Cache(PollingCacheError::Delete(_))
     ));
     cache.fail_next(CacheOperation::Write);
     let error = store
@@ -204,12 +227,16 @@ pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStor
         .expect_err("the create write error propagates");
     assert!(matches!(
         error,
-        PollingError::Cache(PollingCacheError::Write { .. })
+        PollingError::Cache(PollingCacheError::Write(_))
     ));
 }
 
 pub(super) async fn absent_cache() {
-    let store = ResponsePollingStore::new(None, 3600, ApiLimits::default());
+    let store = ResponsePollingStore {
+        cache: None,
+        ttl: 3600,
+        limits: ApiLimits::default(),
+    };
     let id = "litellm_poll_no_cache";
     assert_eq!(
         store

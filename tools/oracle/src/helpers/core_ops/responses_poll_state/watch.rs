@@ -9,12 +9,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 #[derive(Clone, Default)]
 pub(super) struct Watch {
-    lines: Arc<Mutex<Vec<Line>>>,
-}
-
-pub(super) struct Line {
-    level: &'static str,
-    message: String,
+    lines: Arc<Mutex<Vec<Value>>>,
 }
 
 #[derive(Default)]
@@ -31,44 +26,28 @@ impl Visit for Message {
 impl<Inner: Subscriber> Layer<Inner> for Watch {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
         let level = match *event.metadata().level() {
-            Level::ERROR => "ERROR",
             Level::WARN => "WARNING",
-            Level::INFO => "INFO",
             Level::DEBUG => "DEBUG",
-            Level::TRACE => "TRACE",
+            Level::ERROR | Level::INFO | Level::TRACE => return,
         };
-        if level != "WARNING" && level != "DEBUG" {
-            return;
-        }
         let mut message = Message::default();
         event.record(&mut message);
         self.lines
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(Line {
-                level,
-                message: message.0,
-            });
+            .push(json!({"level": level, "message": message.0}));
     }
 }
 
 impl Watch {
     pub(super) fn line_count(&self) -> usize {
-        self.lines
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
+        let lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
+        lines.len()
     }
 
     pub(super) fn lines_since(&self, start: usize) -> Value {
         let lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
-        Value::Array(
-            lines
-                .iter()
-                .skip(start)
-                .map(|line| json!({"level": line.level, "message": line.message}))
-                .collect(),
-        )
+        Value::Array(lines.iter().skip(start).cloned().collect())
     }
 }
 

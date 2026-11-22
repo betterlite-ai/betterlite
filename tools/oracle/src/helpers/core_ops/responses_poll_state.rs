@@ -6,7 +6,6 @@ mod watch;
 
 use std::sync::Arc;
 
-use betterlite_core::api::responses_poll_state::DEFAULT_TTL;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
@@ -21,17 +20,11 @@ use state::StateCall;
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    #[serde(default = "default_now")]
     now: i64,
-    #[serde(default = "default_ttl")]
     ttl: i64,
-    #[serde(default = "default_uuid")]
     uuid: String,
-    #[serde(default)]
     calls: Vec<StateCall>,
-    #[serde(default)]
     selections: Vec<Selection>,
 }
 
@@ -47,8 +40,14 @@ impl Helper for Op {
         let cache = Arc::new(ScriptedCache::default());
         let (guard, lines) = watch::install();
         let output = runtime.block_on(async {
-            let calls = state::calls(input, uuid, &cache, &lines).await?;
-            let selections = selection::selections(input, &lines)?;
+            let mut calls = Vec::with_capacity(input.calls.len());
+            for call in &input.calls {
+                calls.push(state::call_result(input, uuid, call, &cache, &lines).await?);
+            }
+            let mut selections = Vec::with_capacity(input.selections.len());
+            for selection in &input.selections {
+                selections.push(selection::result(selection, &lines)?);
+            }
             Ok::<Value, Box<HelperError>>(json!({
                 "calls": calls,
                 "selections": selections,
@@ -57,18 +56,6 @@ impl Helper for Op {
         drop(guard);
         output
     }
-}
-
-const fn default_now() -> i64 {
-    1_700_000_000
-}
-
-const fn default_ttl() -> i64 {
-    DEFAULT_TTL
-}
-
-fn default_uuid() -> String {
-    "00000000-0000-4000-8000-000000000001".to_owned()
 }
 
 fn invalid(message: String) -> Box<HelperError> {

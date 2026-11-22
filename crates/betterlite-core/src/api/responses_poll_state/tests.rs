@@ -1,12 +1,15 @@
 #![cfg(test)]
 
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
+
+use rstest::rstest;
 
 use crate::api::api_boundaries::ApiLimits;
 
 use self::support::FakeCache;
-use super::decode::decode_responses_poll_state;
+use super::store::decode_responses_poll_state;
 
 mod missing;
 mod owners;
@@ -45,9 +48,9 @@ async fn polling_missing_cancel_delete() {
     let store = support::store(Arc::clone(&cache), 3600);
     let (guard, watch) = support::watch();
     missing::missing_state(&cache, &store).await;
-    missing::empty_state(&cache, &store).await;
+    missing::unreadable_states(&cache, &store).await;
+    missing::untyped_state_update(&cache, &store).await;
     missing::present_state(&cache, &store).await;
-    missing::corrupt_state(&cache, &store).await;
     missing::failing_cache(&cache, &store).await;
     missing::absent_cache().await;
     drop(guard);
@@ -62,6 +65,7 @@ fn polling_selection() {
     selection::prefixed_models();
     selection::alias_scan();
     selection::bad_index();
+    selection::null_deployment_model();
     drop(guard);
     selection::assert_logs(&watch);
 }
@@ -77,22 +81,13 @@ async fn polling_owner_retention() {
     owners::record_shape_denials(&cache, &store).await;
 }
 
-#[test]
-fn replays_corpus() {
-    let corpus = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/fuzz/corpus/responses_poll_state"
+#[rstest]
+fn replays_corpus(#[files("fuzz/corpus/responses_poll_state/*")] path: PathBuf) {
+    let bytes = fs::read(&path).expect("the seed reads");
+    let decoded = decode_responses_poll_state(&bytes, ApiLimits::default());
+    let rejected = matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("malformed.json" | "array.json" | "scalar.json" | "empty.bin")
     );
-    let mut accepted = 0_usize;
-    let mut rejected = 0_usize;
-    for entry in fs::read_dir(corpus).expect("the corpus directory exists") {
-        let path = entry.expect("the corpus entry reads").path();
-        let bytes = fs::read(&path).expect("the seed reads");
-        match decode_responses_poll_state(&bytes, ApiLimits::default()) {
-            Ok(_state) => accepted = accepted.saturating_add(1),
-            Err(_error) => rejected = rejected.saturating_add(1),
-        }
-    }
-    assert!(accepted > 0, "a stored polling record decodes");
-    assert!(rejected > 0, "a malformed seed is rejected");
+    assert_eq!(decoded.is_err(), rejected, "{}", path.display());
 }

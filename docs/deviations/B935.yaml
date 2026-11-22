@@ -9,22 +9,16 @@ deviations:
   - what: A Redis read or write failure surfaces as a typed error; LiteLLM's RedisCache.async_get_cache swallows every exception and returns None, and async_set_cache swallows every exception after logging, so a broken Redis looks like a cache miss and a failed write still logs success.
     why: A cache outage that silently turns cancels into no-ops and loses state is a lost-data failure; betterlite reports it to the caller instead of returning success.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1676-L1693
-  - what: Updating a stored state that has no "status" key, or whose "output" is not a list, raises KeyError or TypeError in LiteLLM while it builds the debug line after the write; betterlite logs the absent status as None and counts a non-list output as zero.
-    why: The state is already written when the debug line runs, so LiteLLM turns a successful update into a 500; the typed state boundary does not depend on Python's dynamic exceptions.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L210-L212
-  - what: A cached value that is valid JSON but not an object, or that contains NaN or Infinity, is returned as-is by LiteLLM's get_state (Python's json accepts both); betterlite's bounded decoder rejects it with a decode error.
-    why: B1087's decode boundary only admits response objects and standard JSON numbers, so a damaged cache entry fails loudly instead of leaking a non-object state to a route.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L215-L226
+  - what: Damaged cached state behaves differently on both routes; an update whose stored state has no "status" key or a non-list "output" logs None and zero items where LiteLLM raises KeyError or TypeError after the write, and a get of valid JSON that is not an object or holds NaN or Infinity is rejected by the bounded decoder where LiteLLM returns it as-is.
+    why: The write has already happened when LiteLLM's debug line runs, so it turns a successful update into a 500; B1087's decode boundary only admits response objects and standard JSON numbers, so a damaged entry fails loudly instead of leaking a non-object state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L204-L226
   - what: A deployment whose litellm_params.model is present but null aborts LiteLLM's whole alias scan through the broad except, logging "Could not resolve provider"; betterlite treats null as absent and keeps scanning later indices, so a later matching deployment can enable polling.
     why: A null value is a wrong type for the declared str field, and docs/compatibility.md reads a value of the wrong type as an error rather than as a Python TypeError caught by a broad except.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L296-L317
 kept_bugs:
-  - what: cancel_polling returns true even when no Redis cache is configured and when the cached state is missing (update logs a warning and writes nothing), and it never signals a running provider.
-    why: A working proxy setup polls after background requests and treats the boolean as accepted; the task requires the pinned behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L228-L236
-  - what: delete_polling returns true after async_delete_cache even when no key existed, and false only when no cache is configured.
-    why: The task requires the pinned boolean, and clients call delete for idempotent cleanup.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L240-L249
-  - what: A truthy selector that is neither "all" nor a provider list, such as true or "openai", passes the background/Redis gate and then selects nothing while still allowing the native_background_mode skip to log; betterlite loads it as Unrecognized and behaves the same.
+  - what: cancel_polling returns true even when no Redis cache is configured and when the cached state is missing, and delete_polling returns true after async_delete_cache even when no key existed and false only when no cache is configured; neither signals a running provider.
+    why: A working proxy setup polls after background requests and treats the booleans as accepted, and clients call delete for idempotent cleanup; the task requires the pinned booleans.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L228-L249
+  - what: A truthy selector that is neither "all" nor a provider list, such as true or a plain string, passes the background/Redis gate and then selects nothing while still allowing the native_background_mode skip to log; betterlite loads it as Unrecognized and behaves the same.
     why: The task and the source accept these scalar values without error, and a deployment may already pass true.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L275-L293

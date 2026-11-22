@@ -2,14 +2,32 @@ kind: helper
 name: responses_poll_state-generate
 call:
   responses_poll_state:
+    now: 1700000000
+    ttl: 3600
     uuid: "00000000-0000-4000-8000-000000000001"
     calls:
       - op: generate
+        polling_id: ""
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
       - op: create
         polling_id: litellm_poll_seed
+        redis: true
+        ttl: null
         metadata:
           trace: seed
+        patch: {}
+        seed: null
       - op: get
         polling_id: litellm_poll_seed
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+    selections: []
 env: {}
 compare: {ignore: []}
