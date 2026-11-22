@@ -1,0 +1,18 @@
+kind: helper
+name: invoke_agent_reply-chunk-events
+call:
+  invoke_agent_reply:
+    transform:
+      - status: 200
+        headers: [[content-type, application/vnd.amazon.eventstream]]
+        body: '0000006c0000004bd8eedd3d0b3a6576656e742d747970650700056368756e6b0d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b226279746573223a202261476b3d227d778903e60000006c0000004bd8eedd3d0b3a6576656e742d747970650700056368756e6b0d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b226279746573223a202249513d3d227d9db0b6e1'
+        supplied:
+          id: chatcmpl-kept
+          created: 7
+          model: previous-model
+          object: chat.completion
+          system_fingerprint: fp-1
+          service_tier: priority
+          trace: {guardrail: kept}
+env: {}
+compare: {ignore: []}

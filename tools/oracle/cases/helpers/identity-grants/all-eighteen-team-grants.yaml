@@ -1,0 +1,47 @@
+kind: helper
+name: identity-grants-all-eighteen-team-grants
+call:
+  identity_grants:
+    users: []
+    denials: []
+    teams:
+      - team:
+          team_id: team-1
+          team_alias: Team One
+          tpm_limit: 1000
+          rpm_limit: 100
+          tpd_limit: 50000
+          max_budget: 50.5
+          soft_budget: 40.0
+          model_max_budget: {gpt-4o: {max_budget: 1.5, budget_duration: 1d}}
+          spend: 12.25
+          models: [gpt-4o, o3, gpt-4o]
+          blocked: true
+          metadata: {owner: ops, nested: {tags: [a, b], count: 2}}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: {fast: gpt-4o, smart: o3}
+          object_permission_id: perm-1
+          object_permission:
+            object_permission_id: perm-1
+            mcp_servers: [server-1]
+            models: [gpt-4o]
+            mcp_tool_permissions: {server-1: [search]}
+          members_with_roles:
+            - {user_email: user-1@example.com, role: user}
+            - {user_id: user-1, user_email: one@example.com, role: admin}
+            - {user_id: user-1, role: user}
+        membership:
+          user_id: user-1
+          team_id: team-1
+          budget_id: budget-1
+          spend: 3.5
+          litellm_budget_table: {budget_id: budget-1, tpm_limit: 11, rpm_limit: 7, max_budget: 9.0}
+        user_id: user-1
+      - team:
+          team_id: team-2
+        membership: null
+        user_id: user-2
+env: {}
+compare: {ignore: []}

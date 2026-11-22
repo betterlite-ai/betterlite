@@ -1,0 +1,52 @@
+kind: helper
+name: summary-model-limits-unavailable-rate-capabilities
+call:
+  summary_model_limits:
+    summary_model: sum
+    scenarios:
+      - principal: null
+        spend: {}
+        offline: []
+        rate: &one_descriptor
+          hook: limiter
+          missing: []
+          base: [{key: api_key, value: key-1, rate_limit: {requests_per_unit: 1}}]
+          team: []
+          project: []
+          organization: []
+          overall_code: OVER_LIMIT
+          failure: null
+      - principal: {token: key-1}
+        spend: {}
+        offline: []
+        rate: {hook: none, missing: [], base: [{key: api_key, value: key-1, rate_limit: null}], team: [], project: [], organization: [], overall_code: OVER_LIMIT, failure: null}
+      - principal: {token: key-1}
+        spend: {}
+        offline: []
+        rate: {hook: limiter, missing: [should_rate_limit], base: [{key: api_key, value: key-1, rate_limit: null}], team: [], project: [], organization: [], overall_code: OVER_LIMIT, failure: null}
+      - principal: {token: key-1}
+        spend: {}
+        offline: []
+        rate: {hook: limiter, missing: [_create_rate_limit_descriptors], base: [{key: api_key, value: key-1, rate_limit: null}], team: [], project: [], organization: [], overall_code: OVER_LIMIT, failure: null}
+      - principal: {token: key-1}
+        spend: {}
+        offline: []
+        rate: {hook: limiter, missing: [_add_team_model_rate_limit_descriptor_from_metadata], base: [{key: api_key, value: key-1, rate_limit: null}], team: [], project: [], organization: [], overall_code: OVER_LIMIT, failure: null}
+      - principal: {token: key-1}
+        spend: {}
+        offline: []
+        rate: {hook: limiter, missing: [_add_project_model_rate_limit_descriptor_from_metadata], base: [{key: api_key, value: key-1, rate_limit: null}], team: [], project: [], organization: [], overall_code: OVER_LIMIT, failure: null}
+      - principal: {token: key-1}
+        spend: {}
+        offline: []
+        rate: {hook: limiter, missing: [create_organization_rate_limit_descriptor], base: [{key: api_key, value: key-1, rate_limit: null}], team: [], project: [], organization: [], overall_code: OVER_LIMIT, failure: null}
+      - principal: {token: key-1}
+        spend: {}
+        offline: []
+        rate: *one_descriptor
+      - principal: {token: key-1}
+        spend: {}
+        offline: []
+        rate: {hook: raises, missing: [], base: [], team: [], project: [], organization: [], overall_code: OK, failure: {stage: check, kind: offline, detail: offline}}
+env: {}
+compare: {ignore: []}
