@@ -50,9 +50,9 @@ pub trait BatchClaimTable: SpendLogsWriter {
 }
 
 // The prisma_client one request-time write needs: the table the claim reads and the queue an unclaimed row waits in.
-pub struct SpendLogAttachment<'a, Table> {
-    pub table: &'a Table,
-    pub queue: &'a SpendLogQueue,
+pub struct SpendLogAttachment<'source, Table: ?Sized> {
+    pub table: &'source Table,
+    pub queue: &'source SpendLogQueue,
 }
 
 // _is_batch_cost_row: only a retrieve that succeeded charges, so a failed one or any other call type is an ordinary spend log.
@@ -101,7 +101,7 @@ pub fn insert_spend_log_to_db(queue: &SpendLogQueue, payload: &SpendLogRow) {
     tracing::debug!(
         "Writing spend log to db - request_id: {:?}, spend: {:?}",
         text_field(payload, "request_id"),
-        spend_field(payload, "spend"),
+        spend_field(payload),
     );
     queue.enqueue(from_ref(payload), QueuePosition::Tail);
     if text_field(payload, "call_type")

@@ -69,9 +69,7 @@ impl SpendLogQueue {
             (trimmed.rows.len(), trimmed.queued_bytes)
         };
         let dropped = queued.len().saturating_sub(kept);
-        let keep_from = queued.len().saturating_sub(kept);
-        let _removed = queued.drain(..keep_from);
-        state.rows = queued;
+        state.rows = queued.split_off(dropped);
         state.bytes = kept_bytes;
         if let Some(dropped_rows) = NonZeroUsize::new(dropped) {
             let max_bytes = self.max_bytes;

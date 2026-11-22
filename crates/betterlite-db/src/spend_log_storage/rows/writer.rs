@@ -150,35 +150,42 @@ where
     ) -> Result<(), FlushError<Writer::Error, Client::Error>> {
         let mut attempt: u32 = 0;
         loop {
-            match self.write_once(logs).await {
-                Ok(()) => return Ok(()),
-                Err(error) if !error.is_transient() => {
-                    if error.is_database() {
-                        requeue_spend_logs(self.queue, self.redis, logs).await;
-                        let requeued = logs.len();
-                        tracing::warn!(
-                            "Spend tracking - DB error writing spend logs, requeued {requeued} rows for the next flush. error={error}"
-                        );
-                    }
-                    return Err(error);
-                }
-                Err(error) => {
-                    let retry = attempt.saturating_add(1);
-                    let retries = self.policy.retries;
-                    let logs_count = logs.len();
-                    tracing::warn!(
-                        "Spend tracking - transient DB error writing spend logs, retry {retry}/{retries}. logs_count={logs_count}, error={error}"
-                    );
-                    if attempt >= self.policy.retries {
-                        requeue_spend_logs(self.queue, self.redis, logs).await;
-                        return Err(error);
-                    }
-                    // asyncio.sleep(1 << i): the pass waits 1, 2, 4 ... seconds between attempts
-                    let delay = Duration::from_secs(1_u64.checked_shl(attempt).unwrap_or(u64::MAX));
-                    self.pause.pause(delay).await;
-                    attempt = attempt.saturating_add(1);
-                }
+            let Err(error) = self.write_once(logs).await else {
+                return Ok(());
+            };
+            if !error.is_transient() {
+                self.requeue_after_database_error(logs, &error).await;
+                return Err(error);
             }
+            let retry = attempt.saturating_add(1);
+            let retries = self.policy.retries;
+            let logs_count = logs.len();
+            tracing::warn!(
+                "Spend tracking - transient DB error writing spend logs, retry {retry}/{retries}. logs_count={logs_count}, error={error}"
+            );
+            if attempt >= self.policy.retries {
+                requeue_spend_logs(self.queue, self.redis, logs).await;
+                return Err(error);
+            }
+            // asyncio.sleep(1 << i): the pass waits 1, 2, 4 ... seconds between attempts
+            let delay = Duration::from_secs(1_u64.checked_shl(attempt).unwrap_or(u64::MAX));
+            self.pause.pause(delay).await;
+            attempt = attempt.saturating_add(1);
+        }
+    }
+
+    // a settled database error hands its rows back once, while an encoding or external failure keeps LiteLLM's boundary
+    async fn requeue_after_database_error(
+        &self,
+        logs: &[SpendLogRow],
+        error: &FlushError<Writer::Error, Client::Error>,
+    ) {
+        if error.is_database() {
+            requeue_spend_logs(self.queue, self.redis, logs).await;
+            let requeued = logs.len();
+            tracing::warn!(
+                "Spend tracking - DB error writing spend logs, requeued {requeued} rows for the next flush. error={error}"
+            );
         }
     }
 
