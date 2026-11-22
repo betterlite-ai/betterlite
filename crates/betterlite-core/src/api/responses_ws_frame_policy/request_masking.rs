@@ -49,34 +49,34 @@ where
 
     // input is a string or a list of items whose content and output fields carry the text
     async fn input(&self, value: &mut Json) -> Result<bool, Guard::Error> {
-        let items = match value {
-            Json::Text(text) => return self.text(text).await,
-            Json::List(items) => items,
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => return Ok(false),
-        };
+        match value {
+            Json::Text(text) => self.text(text).await,
+            Json::List(items) => self.items(items).await,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => Ok(false),
+        }
+    }
+
+    async fn items(&self, items: &mut [Json]) -> Result<bool, Guard::Error> {
         let mut masked = false;
         for item in items {
             let Json::Object(fields) = item else {
                 continue;
             };
-            if let Some(content) = fields.get_mut("content") {
-                masked |= self.field(content).await?;
-            }
-            if let Some(output) = fields.get_mut("output") {
-                masked |= self.field(output).await?;
+            for key in ["content", "output"] {
+                if let Some(value) = fields.get_mut(key) {
+                    masked |= self.field(value).await?;
+                }
             }
         }
         Ok(masked)
     }
 
     async fn field(&self, value: &mut Json) -> Result<bool, Guard::Error> {
-        if let Json::List(blocks) = value {
-            return self.blocks(blocks).await;
+        match value {
+            Json::Text(text) => self.text(text).await,
+            Json::List(blocks) => self.blocks(blocks).await,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => Ok(false),
         }
-        let Json::Text(text) = value else {
-            return Ok(false);
-        };
-        self.text(text).await
     }
 
     async fn text(&self, text: &mut String) -> Result<bool, Guard::Error> {
