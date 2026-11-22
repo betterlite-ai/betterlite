@@ -12,7 +12,7 @@ use crate::tracing_routes::router::unauthenticated;
 
 use super::aggregation::tag_spend_body;
 use super::caller::team_caller;
-use super::query::{decode_tag_report_query, selected_tags, selects_every_tag};
+use super::query::decode_tag_report_query;
 use super::responses::{self, NO_DATABASE};
 use super::rows::{DailyTagSpend, KeyAliasedUser, TagNamesBody};
 use super::store::{TagReportError, TagReportHandle, TagReportStore};
@@ -101,8 +101,7 @@ pub(super) async fn table_respond(
     }
 }
 
-// view_spend_tags, global_get_all_tag_names and global_view_spend_tags: no tenant scope, and their
-// failures answer through their own ProxyException wrapper
+// view_spend_tags, global_get_all_tag_names and global_view_spend_tags are not tenant scoped and fail through their own ProxyException wrapper
 pub(super) async fn tag_respond(
     State(store): State<TagReportHandle>,
     Extension(report): Extension<TagReport>,
@@ -162,8 +161,8 @@ async fn daily_tags(store: &dyn TagReportStore, raw_query: &str) -> Response {
     else {
         return responses::missing_dates();
     };
-    let tags = selected_tags(query.tags.as_deref());
-    let rows = if selects_every_tag(tags.as_deref()) {
+    let tags = query.selected_tags();
+    let rows = if query.selects_every_tag() {
         store.daily_tag_spend(start_date, end_date, None).await
     } else {
         store

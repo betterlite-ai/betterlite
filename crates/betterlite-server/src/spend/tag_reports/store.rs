@@ -99,18 +99,6 @@ impl PostgresTagReportStore {
         }
         Ok(decoded)
     }
-
-    async fn columns<Item>(
-        &self,
-        sql: &str,
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<Item>, TagReportError>
-    where
-        Item: for<'row> TryFrom<&'row Row, Error = TagReportError>,
-    {
-        let rows = self.query(sql, params).await?;
-        rows.iter().map(Item::try_from).collect()
-    }
 }
 
 #[async_trait]
@@ -137,16 +125,19 @@ impl TagReportStore for PostgresTagReportStore {
     }
 
     async fn raw_tag_spend(&self) -> Result<Vec<RawTagSpend>, TagReportError> {
-        self.columns(RAW_TAGS_SQL, &[]).await
+        let rows = self.query(RAW_TAGS_SQL, &[]).await?;
+        rows.iter().map(RawTagSpend::try_from).collect()
     }
 
     async fn tag_names(&self) -> Result<Option<Vec<Option<String>>>, TagReportError> {
-        let rows: Vec<TagNameRow> = self.columns(TAG_NAMES_SQL, &[]).await?;
-        Ok(Some(
-            rows.into_iter()
-                .map(|row| row.individual_request_tag)
-                .collect(),
-        ))
+        let rows = self.query(TAG_NAMES_SQL, &[]).await?;
+        let mut tag_names = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let tag_name: Option<String> =
+                row.try_get("individual_request_tag").map_err(backend)?;
+            tag_names.push(tag_name);
+        }
+        Ok(Some(tag_names))
     }
 
     async fn daily_tag_spend(
@@ -157,28 +148,18 @@ impl TagReportStore for PostgresTagReportStore {
     ) -> Result<Vec<DailyTagSpend>, TagReportError> {
         match tags {
             None => {
-                self.columns(DAILY_ALL_TAGS_SQL, &[&start_date, &end_date])
-                    .await
+                let rows = self
+                    .query(DAILY_ALL_TAGS_SQL, &[&start_date, &end_date])
+                    .await?;
+                rows.iter().map(DailyTagSpend::try_from).collect()
             }
             Some(tags) => {
-                self.columns(DAILY_TAGS_SQL, &[&start_date, &end_date, &tags])
-                    .await
+                let rows = self
+                    .query(DAILY_TAGS_SQL, &[&start_date, &end_date, &tags])
+                    .await?;
+                rows.iter().map(DailyTagSpend::try_from).collect()
             }
         }
-    }
-}
-
-struct TagNameRow {
-    individual_request_tag: Option<String>,
-}
-
-impl TryFrom<&Row> for TagNameRow {
-    type Error = TagReportError;
-
-    fn try_from(row: &Row) -> Result<Self, Self::Error> {
-        Ok(Self {
-            individual_request_tag: row.try_get("individual_request_tag").map_err(backend)?,
-        })
     }
 }
 

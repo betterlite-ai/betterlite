@@ -1,6 +1,6 @@
 #![no_main]
 
-use betterlite_server::spend::tag_reports::query::{decode_tag_report_query, split_tags};
+use betterlite_server::spend::tag_reports::query::decode_tag_report_query;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
@@ -21,7 +21,11 @@ fuzz_target!(|bytes: &[u8]| {
         decode_tag_report_query(rebuilt.join("&").as_bytes()),
         decoded
     );
-    if let Some(tags) = decoded.tags.as_deref() {
-        assert_eq!(split_tags(tags).join(","), tags);
+    match decoded.selected_tags() {
+        Some(selected) => assert_eq!(
+            selected.join(","),
+            decoded.tags.as_deref().unwrap_or_default()
+        ),
+        None => assert!(decoded.tags.as_deref().is_none_or(str::is_empty)),
     }
 });

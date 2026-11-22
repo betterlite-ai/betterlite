@@ -3,9 +3,14 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use super::super::query::{
-    TagReportQuery, decode_tag_report_query, selected_tags, selects_every_tag, split_tags,
-};
+use super::super::query::{TagReportQuery, decode_tag_report_query};
+
+fn query_with_tags(tags: Option<&str>) -> TagReportQuery {
+    match tags {
+        Some(tags) => decode_tag_report_query(format!("tags={tags}").as_bytes()),
+        None => TagReportQuery::default(),
+    }
+}
 
 #[rstest]
 #[case::empty(b"")]
@@ -77,10 +82,10 @@ fn decodes_the_dates(#[case] raw: &[u8], #[case] expected: &str) {
 #[case::interior_empty("a,,b", &["a", "", "b"])]
 #[case::only_commas(",", &["", ""])]
 #[case::trailing_comma("a,", &["a", ""])]
-#[case::empty_text("", &[""])]
 #[case::underscore_is_ordinary("all_tags", &["all_tags"])]
 fn splits_on_commas_without_trimming(#[case] text: &str, #[case] expected: &[&str]) {
-    assert_eq!(split_tags(text), expected);
+    let expected: Vec<String> = expected.iter().map(|tag| (*tag).to_owned()).collect();
+    assert_eq!(query_with_tags(Some(text)).selected_tags(), Some(expected));
 }
 
 #[rstest]
@@ -95,25 +100,20 @@ fn selects_the_tags_a_nonempty_string_lists(
 ) {
     let expected: Option<Vec<String>> =
         expected.map(|list| list.iter().map(|tag| (*tag).to_owned()).collect());
-    assert_eq!(selected_tags(tags), expected);
+    assert_eq!(query_with_tags(tags).selected_tags(), expected);
 }
 
 #[rstest]
 #[case::absent(None, true)]
-#[case::exact(Some(vec!["all-tags"]), true)]
-#[case::one_of_many(Some(vec!["a", "all-tags"]), true)]
-#[case::underscore(Some(vec!["all_tags"]), false)]
-#[case::capitalized(Some(vec!["All-Tags"]), false)]
-#[case::trailing_space(Some(vec!["all-tags "]), false)]
-#[case::empty_name(Some(vec![""]), false)]
-#[case::no_tags(Some(Vec::new()), false)]
-fn reads_every_tag_only_for_the_exact_element(
-    #[case] tags: Option<Vec<&str>>,
-    #[case] expected: bool,
-) {
-    let owned: Option<Vec<String>> =
-        tags.map(|list| list.iter().map(|tag| (*tag).to_owned()).collect());
-    assert_eq!(selects_every_tag(owned.as_deref()), expected);
+#[case::empty(Some(""), true)]
+#[case::exact(Some("all-tags"), true)]
+#[case::one_of_many(Some("a,all-tags"), true)]
+#[case::underscore(Some("all_tags"), false)]
+#[case::capitalized(Some("All-Tags"), false)]
+#[case::trailing_space(Some("all-tags "), false)]
+#[case::comma_only(Some(","), false)]
+fn reads_every_tag_only_for_the_exact_element(#[case] tags: Option<&str>, #[case] expected: bool) {
+    assert_eq!(query_with_tags(tags).selects_every_tag(), expected);
 }
 
 #[rstest]
@@ -133,7 +133,11 @@ fn replays_the_tag_report_query_corpus(#[files("fuzz/corpus/tag_report_query/*")
         }
     }
     assert_eq!(decode_tag_report_query(rebuilt.join("&").as_bytes()), query);
-    if let Some(tags) = query.tags.as_deref() {
-        assert_eq!(split_tags(tags).join(","), tags);
+    match query.selected_tags() {
+        Some(selected) => assert_eq!(
+            selected.join(","),
+            query.tags.as_deref().unwrap_or_default()
+        ),
+        None => assert!(query.tags.as_deref().is_none_or(str::is_empty)),
     }
 }

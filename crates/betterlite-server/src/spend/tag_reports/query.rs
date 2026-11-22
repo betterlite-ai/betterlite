@@ -26,20 +26,22 @@ pub fn decode_tag_report_query(raw: &[u8]) -> TagReportQuery {
     }
 }
 
-// ui_get_spend_by_tags: an empty tags string never reaches the split
-#[must_use]
-pub fn selected_tags(tags: Option<&str>) -> Option<Vec<String>> {
-    tags.filter(|text| !text.is_empty()).map(split_tags)
-}
+impl TagReportQuery {
+    // ui_get_spend_by_tags: an empty tags string never reaches the split
+    #[must_use]
+    pub fn selected_tags(&self) -> Option<Vec<String>> {
+        match self.tags.as_deref() {
+            None | Some("") => None,
+            Some(tags) => Some(tags.split(',').map(str::to_owned).collect()),
+        }
+    }
 
-// ui_get_spend_by_tags: tags_str.split(",") keeps empty pieces and every space
-#[must_use]
-pub fn split_tags(tags: &str) -> Vec<String> {
-    tags.split(',').map(str::to_owned).collect()
-}
-
-// ui_get_spend_by_tags: only the exact element all-tags reads every stored row
-#[must_use]
-pub fn selects_every_tag(tags: Option<&[String]>) -> bool {
-    tags.is_none_or(|list| list.iter().any(|tag| tag.as_str() == ALL_TAGS))
+    // ui_get_spend_by_tags: only the exact element all-tags reads every stored row
+    #[must_use]
+    pub fn selects_every_tag(&self) -> bool {
+        match self.tags.as_deref() {
+            None | Some("") => true,
+            Some(tags) => tags.split(',').any(|tag| tag == ALL_TAGS),
+        }
+    }
 }
