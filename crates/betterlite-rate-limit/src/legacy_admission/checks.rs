@@ -74,14 +74,14 @@ pub(super) async fn model(
     metadata: &mut JsonMap,
     catalog: Option<&(dyn DeploymentLimitCatalog + Send + Sync)>,
 ) -> Result<(), LegacyAdmissionError> {
-    let Some((tpm_for_model, rpm_for_model)) = requested_limits(call, catalog)? else {
+    let Some(requested) = requested_limits(call, catalog)? else {
         return Ok(());
     };
     let check = KeyLimitCheck {
         limits: DimensionLimits {
             max_parallel_requests: UNLIMITED,
-            tpm_limit: enforced(tpm_for_model),
-            rpm_limit: enforced(rpm_for_model),
+            tpm_limit: enforced(requested.tpm),
+            rpm_limit: enforced(requested.rpm),
         },
         current: minute_counter(call.objects.request_count_api_key_model),
         request_count_api_key: call.ids.key_model_text.clone(),
@@ -95,20 +95,26 @@ pub(super) async fn model(
     let model_text = call.model.unwrap_or(NONE_TEXT);
     metadata.insert(
         format!("litellm-key-remaining-tokens-{model_text}"),
-        remaining(tpm_for_model, counters.current_tpm),
+        remaining(requested.tpm, counters.current_tpm),
     );
     metadata.insert(
         format!("litellm-key-remaining-requests-{model_text}"),
-        remaining(rpm_for_model, counters.current_rpm),
+        remaining(requested.rpm, counters.current_rpm),
     );
     Ok(())
+}
+
+// the per-model limits a present map pair names; absent means the map had no entry for the model
+struct RequestedLimits {
+    tpm: Option<i64>,
+    rpm: Option<i64>,
 }
 
 // step 6's gate and lookup: both maps absent skips the check, and each map's entry for the model is its limit
 fn requested_limits(
     call: &Call<'_>,
     catalog: Option<&(dyn DeploymentLimitCatalog + Send + Sync)>,
-) -> Result<Option<(Option<i64>, Option<i64>)>, LegacyAdmissionError> {
+) -> Result<Option<RequestedLimits>, LegacyAdmissionError> {
     // the query holds the bare trait object, so the auto traits come off here
     let mut query = LimitQuery {
         model_name: call.model,
@@ -122,10 +128,10 @@ fn requested_limits(
     if tpm_limits.is_none() && rpm_limits.is_none() {
         return Ok(None);
     }
-    Ok(Some((
-        limit_for(tpm_limits.as_ref(), call.model),
-        limit_for(rpm_limits.as_ref(), call.model),
-    )))
+    Ok(Some(RequestedLimits {
+        tpm: limit_for(tpm_limits.as_ref(), call.model),
+        rpm: limit_for(rpm_limits.as_ref(), call.model),
+    }))
 }
 
 // Python's `if map:` then `map.get(model)`: a missing model or map entry is unlimited
