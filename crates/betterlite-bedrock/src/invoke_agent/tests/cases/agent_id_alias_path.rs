@@ -14,8 +14,12 @@ const DEFAULT_ENDPOINT: &str = "https://bedrock-agent-runtime.us-west-2.amazonaw
 pub(super) fn agent_id_alias_path() {
     assert_model_shape();
     assert_encoded_segments();
+    assert_segments_are_rejected();
     assert_endpoint_precedence();
+    assert_endpoint_edges();
     assert_region_precedence();
+    assert_region_fallbacks();
+    assert_region_errors();
 }
 
 fn environment(
@@ -82,6 +86,9 @@ fn assert_model_shape() {
         InvokeAgentRequestError::InvalidModelFormat.to_string(),
         "Invalid model format. Expected format: 'model=agent/AGENT_ID/ALIAS_ID'"
     );
+}
+
+fn assert_segments_are_rejected() {
     assert_eq!(
         agent_id_and_alias_id("agent//ALIAS").unwrap(),
         ("", "ALIAS")
@@ -167,6 +174,9 @@ fn assert_endpoint_precedence() {
         .unwrap(),
         format!("https://env.example{}", generated_path())
     );
+}
+
+fn assert_endpoint_edges() {
     assert_eq!(
         try_url(None, &params("{}"), environment(Some(""), None, None, None)).unwrap(),
         format!("{DEFAULT_ENDPOINT}{}", generated_path()),
@@ -194,110 +204,81 @@ fn assert_endpoint_precedence() {
     ));
 }
 
+fn assert_region_host(optional_params: &ParamMap, env: InvokeEnvironment<'_>, host: &str) {
+    assert_eq!(
+        try_url(None, optional_params, env).unwrap(),
+        format!("https://{host}{}", generated_path())
+    );
+}
+
 fn assert_region_precedence() {
-    assert_eq!(
-        url(&params(r#"{"aws_region_name":"eu-west-1"}"#)).unwrap(),
-        format!(
-            "https://bedrock-agent-runtime.eu-west-1.amazonaws.com{}",
-            generated_path()
-        )
-    );
-    assert_eq!(
-        try_url(
-            None,
-            &params("{}"),
-            environment(None, Some("ap-south-1"), None, None)
-        )
-        .unwrap(),
-        format!(
-            "https://bedrock-agent-runtime.ap-south-1.amazonaws.com{}",
-            generated_path()
+    for (optional_params, env, host) in [
+        (
+            r#"{"aws_region_name":"eu-west-1"}"#,
+            InvokeEnvironment::default(),
+            "bedrock-agent-runtime.eu-west-1.amazonaws.com",
         ),
-        "AWS_REGION_NAME is read when no region is explicit"
-    );
-    assert_eq!(
-        try_url(
-            None,
-            &params("{}"),
-            environment(None, None, Some("ca-central-1"), None)
-        )
-        .unwrap(),
-        format!(
-            "https://bedrock-agent-runtime.ca-central-1.amazonaws.com{}",
-            generated_path()
+        (
+            "{}",
+            environment(None, Some("ap-south-1"), None, None),
+            "bedrock-agent-runtime.ap-south-1.amazonaws.com",
         ),
-        "AWS_REGION is read after AWS_REGION_NAME"
-    );
-    assert_eq!(
-        try_url(
-            None,
-            &params("{}"),
-            environment(None, Some("ap-south-1"), Some("ca-central-1"), None)
-        )
-        .unwrap(),
-        format!(
-            "https://bedrock-agent-runtime.ap-south-1.amazonaws.com{}",
-            generated_path()
-        )
-    );
-    assert_eq!(
-        try_url(
-            None,
-            &params("{}"),
-            environment(None, None, None, Some("sa-east-1"))
-        )
-        .unwrap(),
-        format!(
-            "https://bedrock-agent-runtime.sa-east-1.amazonaws.com{}",
-            generated_path()
+        (
+            "{}",
+            environment(None, None, Some("ca-central-1"), None),
+            "bedrock-agent-runtime.ca-central-1.amazonaws.com",
         ),
-        "the session region is read last"
-    );
-    assert_eq!(
-        try_url(None, &params("{}"), environment(None, None, None, Some(""))).unwrap(),
-        format!("{DEFAULT_ENDPOINT}{}", generated_path())
-    );
-    assert_eq!(
-        try_url(
-            None,
-            &params(r#"{"aws_region_name":"eu-west-1"}"#),
-            environment(None, Some("ap-south-1"), None, None)
-        )
-        .unwrap(),
-        format!(
-            "https://bedrock-agent-runtime.eu-west-1.amazonaws.com{}",
-            generated_path()
+        (
+            "{}",
+            environment(None, Some("ap-south-1"), Some("ca-central-1"), None),
+            "bedrock-agent-runtime.ap-south-1.amazonaws.com",
         ),
-        "the explicit region wins over the environment"
+        (
+            "{}",
+            environment(None, None, None, Some("sa-east-1")),
+            "bedrock-agent-runtime.sa-east-1.amazonaws.com",
+        ),
+        (
+            "{}",
+            environment(None, None, None, Some("")),
+            "bedrock-agent-runtime.us-west-2.amazonaws.com",
+        ),
+    ] {
+        assert_region_host(&params(optional_params), env, host);
+    }
+}
+
+fn assert_region_fallbacks() {
+    assert_region_host(
+        &params(r#"{"aws_region_name":"eu-west-1"}"#),
+        environment(None, Some("ap-south-1"), None, None),
+        "bedrock-agent-runtime.eu-west-1.amazonaws.com",
     );
-    assert_eq!(
-        try_url(
-            None,
-            &params("{}"),
-            environment(None, None, None, Some("cn-north-1"))
-        )
-        .unwrap(),
-        format!(
-            "https://bedrock-agent-runtime.cn-north-1.amazonaws.com.cn{}",
-            generated_path()
-        )
+    assert_region_host(
+        &params("{}"),
+        environment(None, None, None, Some("cn-north-1")),
+        "bedrock-agent-runtime.cn-north-1.amazonaws.com.cn",
     );
-    assert_eq!(
-        url(&params(r#"{"aws_region_name":null}"#)).unwrap(),
-        format!("{DEFAULT_ENDPOINT}{}", generated_path())
+    assert_region_host(
+        &params(r#"{"aws_region_name":null}"#),
+        InvokeEnvironment::default(),
+        "bedrock-agent-runtime.us-west-2.amazonaws.com",
     );
-    assert!(matches!(
-        url(&params(r#"{"aws_region_name":"US_EAST"}"#)),
-        Err(InvokeAgentRequestError::Endpoint(
-            AwsEndpointError::Region { region }
-        )) if region == "US_EAST"
-    ));
     assert!(matches!(
         try_url(
             None,
             &params("{}"),
             environment(None, Some("US_EAST"), None, None)
         ),
+        Err(InvokeAgentRequestError::Endpoint(
+            AwsEndpointError::Region { region }
+        )) if region == "US_EAST"
+    ));
+}
+
+fn assert_region_errors() {
+    assert!(matches!(
+        url(&params(r#"{"aws_region_name":"US_EAST"}"#)),
         Err(InvokeAgentRequestError::Endpoint(
             AwsEndpointError::Region { region }
         )) if region == "US_EAST"

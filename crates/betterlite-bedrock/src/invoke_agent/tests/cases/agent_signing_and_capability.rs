@@ -76,6 +76,7 @@ pub(super) fn agent_signing_and_capability() {
     assert_bearer_signing();
     assert_configured_bearer();
     assert_sigv4_signing();
+    assert_empty_key_is_not_a_bearer();
     assert_session_token_signing();
     assert_missing_credentials();
     assert_prepared_pipeline();
@@ -244,6 +245,14 @@ fn assert_sigv4_signing() {
         authorization.contains("SignedHeaders=content-type;host;x-amz-date"),
         "{authorization}"
     );
+}
+
+fn assert_empty_key_is_not_a_bearer() {
+    let data = request_data(r#"{"inputText":"hello"}"#);
+    let supplied = headers(&[("x-request-id", Some("abc"))]);
+    let optional = params(&format!(
+        r#"{{"aws_access_key_id":"AKIDEXAMPLE","aws_secret_access_key":"{AWS_SECRET}","aws_region_name":"us-east-1"}}"#
+    ));
     let empty = secret("");
     let signed_with_empty_key = sign(
         SignCase {
