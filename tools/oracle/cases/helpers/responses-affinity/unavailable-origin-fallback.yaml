@@ -1,0 +1,78 @@
+kind: helper
+name: responses-affinity-unavailable-origin-fallback
+call:
+  responses_affinity:
+    model: gpt-group
+    healthy_deployments:
+      - model_name: gpt-group
+        litellm_params:
+          model: openai/b
+          api_base: https://b.example
+          api_key: sk-b
+        model_info:
+          id: B
+      - model_name: gpt-group
+        litellm_params:
+          model: openai/c
+          api_base: https://c.example
+          api_key: sk-c
+        model_info:
+          id: C
+    request_kwargs:
+      input:
+        - type: reasoning
+          id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+        - type: reasoning
+          id: encitem_bGl0ZWxsbTptb2RlbF9pZDpCO2l0ZW1faWQ6cjE=
+          encrypted_content: litellm_enc:bW9kZWxfaWQ6Qg==;cipher
+        - type: reasoning
+          id: encitem_bGl0ZWxsbTptb2RlbF9pZDpDO2l0ZW1faWQ6cjE=
+          encrypted_content: cipher
+          summary:
+            - type: summary_text
+              text: readable
+        - type: message
+          role: user
+          content: hello
+calls:
+  - responses_affinity:
+      model: other-group
+      model_list:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/a
+            api_base: https://group.example
+            api_key: sk-group
+          model_info:
+            id: A
+      healthy_deployments:
+        - model_name: other-group
+          litellm_params:
+            model: openai/b
+            api_base: https://pool.example
+            api_key: sk-pool
+          model_info:
+            id: B
+      request_kwargs:
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+            encrypted_content: litellm_enc:bW9kZWxfaWQ6QQ==;cipher
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/b
+            api_base: https://b.example
+            api_key: sk-b
+          model_info:
+            id: B
+      request_kwargs:
+        _encrypted_content_affinity_pinned: true
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+            encrypted_content: litellm_enc:bW9kZWxfaWQ6QQ==;cipher
+env: {}
+compare: {ignore: []}
