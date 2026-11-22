@@ -224,7 +224,7 @@ class AsyncStreamOf(Protocol):
     def __aiter__(self) -> AsyncIterator[Dumpable]: ...
 
 
-RefResult: TypeAlias = Dumpable | StreamOf | None
+RefResult: TypeAlias = Dumpable | StreamOf | AsyncStreamOf | None
 
 
 @runtime_checkable
@@ -329,7 +329,6 @@ class ClientFactory(Protocol):
         base_url: JsonValue = None,
         timeout: JsonValue = 600,
         max_retries: JsonValue = None,
-        default_headers: dict[str, JsonValue] | None = None,
     ) -> ReferenceClient: ...
 
 
@@ -411,7 +410,8 @@ def error_view(error: BaseException) -> tuple[str, str, int, str, str]:
                 type(error).__name__, error.message, error.status_code,
                 error.llm_provider, error.model,
             )
-    raise AssertionError("the error does not carry the mock fields")
+        case object():
+            raise AssertionError("the error does not carry the mock fields")
 
 
 def model_response(outcome: OwnResult) -> ModelResponse:
@@ -420,7 +420,8 @@ def model_response(outcome: OwnResult) -> ModelResponse:
             return outcome
         case CustomStreamWrapper():
             raise AssertionError("a plain call answered with a stream")
-    raise AssertionError("a plain call answered with an awaitable or nothing")
+        case object():
+            raise AssertionError("a plain call answered with an awaitable or nothing")
 
 
 def stream_response(outcome: OwnResult) -> CustomStreamWrapper:
@@ -429,7 +430,8 @@ def stream_response(outcome: OwnResult) -> CustomStreamWrapper:
             raise AssertionError("a streaming call answered with a response")
         case CustomStreamWrapper():
             return outcome
-    raise AssertionError("a streaming call answered with an awaitable or nothing")
+        case object():
+            raise AssertionError("a streaming call answered with an awaitable or nothing")
 
 
 def dump_of(outcome: OwnResult | RefResult) -> dict[str, JsonValue]:
@@ -440,7 +442,8 @@ def dump_of(outcome: OwnResult | RefResult) -> dict[str, JsonValue]:
             raise AssertionError("the call answered with a stream")
         case Dumpable():
             return outcome.model_dump()
-    raise AssertionError("the call answered with an awaitable or nothing")
+        case object():
+            raise AssertionError("the call answered with an awaitable or nothing")
 
 
 def litellm_plain(**kwargs: CallArgument) -> dict[str, JsonValue]:
@@ -448,7 +451,8 @@ def litellm_plain(**kwargs: CallArgument) -> dict[str, JsonValue]:
     match result:
         case Dumpable():
             return result.model_dump()
-    raise AssertionError("the reference call answered with no model response")
+        case object():
+            raise AssertionError("the reference call answered with no model response")
 
 
 async def litellm_async_plain(**kwargs: CallArgument) -> dict[str, JsonValue]:
@@ -456,7 +460,8 @@ async def litellm_async_plain(**kwargs: CallArgument) -> dict[str, JsonValue]:
     match result:
         case Dumpable():
             return result.model_dump()
-    raise AssertionError("the reference call answered with no model response")
+        case object():
+            raise AssertionError("the reference call answered with no model response")
 
 
 def litellm_stream_parts(**kwargs: CallArgument) -> StreamParts:
@@ -466,7 +471,8 @@ def litellm_stream_parts(**kwargs: CallArgument) -> StreamParts:
             raise AssertionError("a streaming call answered with a response")
         case StreamOf():
             return [chunk_parts(chunk.model_dump()) for chunk in result]
-    raise AssertionError("the reference call answered with no stream")
+        case object():
+            raise AssertionError("the reference call answered with no stream")
 
 
 async def litellm_async_stream_parts(**kwargs: CallArgument) -> StreamParts:
@@ -479,7 +485,8 @@ async def litellm_async_stream_parts(**kwargs: CallArgument) -> StreamParts:
             async for chunk in result:
                 parts.append(chunk_parts(chunk.model_dump()))
             return parts
-    raise AssertionError("the reference call answered with no stream")
+        case object():
+            raise AssertionError("the reference call answered with no stream")
 
 
 def ours_stream_parts(stream: CustomStreamWrapper) -> StreamParts:

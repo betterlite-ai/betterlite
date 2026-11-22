@@ -33,7 +33,7 @@ from completion_server import (
 from pydantic import JsonValue
 
 from betterlite._completion import adapters, arguments
-from betterlite._completion.arguments import CallValue
+from betterlite._completion.arguments import JSON, CallValue
 from betterlite._completion.retries import (
     acompletion_with_retries,
     attempts_for,
@@ -227,7 +227,7 @@ def plain_reference(server_url: str) -> dict[str, JsonValue]:
 
 def write_config(server_url: str, config_file: Path) -> None:
     config: dict[str, JsonValue] = {
-        "model": GOOD_MODEL, "messages": PLAIN_MESSAGES,
+        "model": GOOD_MODEL, "messages": JSON.validate_python(PLAIN_MESSAGES),
         "api_base": server_url, "api_key": GOOD_KEY,
     }
     config_file.write_text(json.dumps(config))
@@ -334,13 +334,13 @@ def test_client_async_router() -> None:
 
 def test_retries_sync_matches() -> None:
     ours_counter = Counter()
-    with pytest.raises(ValueError) as ours_caught:
+    with pytest.raises(ValueError, match=FAILURE_TEXT) as ours_caught:
         completion_with_retries(
             model=GOOD_MODEL, messages=MESSAGES, num_retries=SYNC_RETRIES,
             original_function=ours_counter.failing,
         )
     reference_counter = Counter()
-    with pytest.raises(ValueError) as reference_caught:
+    with pytest.raises(ValueError, match=FAILURE_TEXT) as reference_caught:
         LITELLM.completion_with_retries(
             model=GOOD_MODEL, messages=PLAIN_MESSAGES, num_retries=SYNC_RETRIES,
             original_function=reference_counter.failing,
@@ -367,9 +367,9 @@ async def reference_async_retries(counter: Counter) -> RefResult:
 def test_retries_async_matches() -> None:
     ours_counter = Counter()
     reference_counter = Counter()
-    with pytest.raises(ValueError) as ours_caught:
+    with pytest.raises(ValueError, match=FAILURE_TEXT) as ours_caught:
         asyncio.run(ours_async_retries(ours_counter))
-    with pytest.raises(ValueError) as reference_caught:
+    with pytest.raises(ValueError, match=FAILURE_TEXT) as reference_caught:
         asyncio.run(reference_async_retries(reference_counter))
     assert ours_counter.calls == reference_counter.calls
     assert len(ours_counter.calls) == ASYNC_RETRIES
@@ -422,9 +422,9 @@ def test_config_matches(tmp_path: Path) -> None:
 
 
 def test_config_without_path() -> None:
-    with pytest.raises(ValueError) as ours_caught:
+    with pytest.raises(ValueError, match="No config path set") as ours_caught:
         config_completion(model=GOOD_MODEL, messages=MESSAGES)
-    with pytest.raises(ValueError) as reference_caught:
+    with pytest.raises(ValueError, match="No config path set") as reference_caught:
         LITELLM.config_completion()
     assert str(ours_caught.value) == str(reference_caught.value) == CONFIG_MESSAGE
 
@@ -479,9 +479,9 @@ def test_adapter_async_matches() -> None:
 
 
 def test_adapter_missing() -> None:
-    with pytest.raises(ValueError) as ours_caught:
+    with pytest.raises(ValueError, match="No matching adapter given") as ours_caught:
         adapter_completion(adapter_id=ADAPTER_ID, model=GOOD_MODEL, messages=MESSAGES)
-    with pytest.raises(ValueError) as reference_caught:
+    with pytest.raises(ValueError, match="No matching adapter given") as reference_caught:
         LITELLM.adapter_completion(
             adapter_id=ADAPTER_ID, model=GOOD_MODEL, messages=PLAIN_MESSAGES
         )

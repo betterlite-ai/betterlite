@@ -8,12 +8,12 @@ from typing import Final, Protocol, TypedDict
 import httpx
 import pytest
 from completion_server import (
+    BAD_KEY,
     CHAT_PATH,
     CONTENT,
     GOOD_KEY,
     GOOD_MODEL,
     LITELLM,
-    LITELLM_ASYNC,
     LITELLM_COUNTS,
     OPENAI,
     RATE_LIMITED_KEY,
@@ -185,7 +185,8 @@ def native_cause(error: BaseException) -> _native.NativeError:
     match cause:
         case _native.NativeError():
             return cause
-    raise AssertionError("the exception does not carry the native error as its cause")
+        case object():
+            raise AssertionError("the exception does not carry the native error as its cause")
 
 
 async def awaited_responses(
@@ -223,9 +224,9 @@ def test_plain_matches_litellm() -> None:
 
 
 def test_plain_missing_model() -> None:
-    with pytest.raises(ValueError) as ours_caught:
+    with pytest.raises(ValueError, match="model param not passed in") as ours_caught:
         completion(model=None, messages=MESSAGES)
-    with pytest.raises(ValueError) as reference_caught:
+    with pytest.raises(ValueError, match="model param not passed in") as reference_caught:
         LITELLM.completion(model=None, messages=MESSAGES)
     assert str(ours_caught.value) == str(reference_caught.value)
 
@@ -488,12 +489,11 @@ def test_errors_unknown_type() -> None:
 
 
 def test_errors_provider_status() -> None:
-    with CompletionServer() as server:
-        with pytest.raises(RateLimitError) as caught:
-            completion(
-                model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
-                api_key=RATE_LIMITED_KEY,
-            )
+    with CompletionServer() as server, pytest.raises(RateLimitError) as caught:
+        completion(
+            model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
+            api_key=RATE_LIMITED_KEY,
+        )
     error = caught.value
     assert error.status_code == RATE_LIMIT_STATUS
     assert "RateLimitError" in str(native_cause(error))
