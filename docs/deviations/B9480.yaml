@@ -20,4 +20,9 @@ deviations:
     why: >-
       Every environment value in betterlite is read by its config section at load, and the fan-out takes the configured Duration, so a change to the variable after startup needs a restart in either setup that sets it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1931-L1931
+  - what: >-
+      PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT set to the empty string resolves to 5 seconds without LiteLLM's invalid-variable debug line. LiteLLM's float("") raises, so it logs the invalid line before returning 5 seconds.
+    why: >-
+      docs/compatibility.md counts an empty environment string as unset, and LiteLLM's unset path logs nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L191-L207
 kept_bugs: []
