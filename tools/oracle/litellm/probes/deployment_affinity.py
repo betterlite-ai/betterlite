@@ -99,7 +99,7 @@ class DeploymentAffinity(Operation):
         if step.kind == "hook":
             if step.model_info is not None:
                 kwargs["model_info"] = step.model_info
-            await check.async_pre_call_deployment_hook(kwargs, None)
+            _ = await check.async_pre_call_deployment_hook(kwargs, None)
             return Observation(action="hook", selected=[])
         pool_deployments: Final[list[Deployment]] = [
             deployment
