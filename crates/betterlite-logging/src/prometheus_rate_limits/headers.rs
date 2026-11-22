@@ -9,6 +9,7 @@ use super::metric::RateLimitType;
 // the v3 parallel-request limiter writes this family for this request's model group, with no model group in the name
 const V3_MODEL_PER_KEY: &str = "x-ratelimit-model_per_key-remaining-";
 
+#[must_use]
 // ast-grep-ignore: no-long-names
 pub fn get_remaining_from_v3_rate_limit_headers(
     payload: Option<&StandardLoggingPayload>,
@@ -20,6 +21,7 @@ pub fn get_remaining_from_v3_rate_limit_headers(
     get_int_from_v3_rate_limit_headers(logged_payload, &header_name)
 }
 
+#[must_use]
 // ast-grep-ignore: no-long-names
 pub fn get_int_from_v3_rate_limit_headers(
     payload: &StandardLoggingPayload,

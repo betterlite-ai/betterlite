@@ -16,6 +16,7 @@ use super::gauge::RateLimitGauges;
 use super::headers::declared_integer;
 use super::metric::RateLimitMetric;
 
+#[derive(Clone, Copy)]
 pub struct DeploymentLimitInputs<'input> {
     pub model_info: &'input JsonObject,
     pub litellm_params: &'input JsonObject,
@@ -43,11 +44,11 @@ where
         settings: inputs.settings,
         end_user_settings: inputs.end_user_settings,
     };
-    for (metric, amount) in [
+    for (metric, maybe_limit) in [
         (RateLimitMetric::DeploymentTpmLimit, tpm),
         (RateLimitMetric::DeploymentRpmLimit, rpm),
     ] {
-        let Some(amount) = amount else {
+        let Some(limit) = maybe_limit else {
             continue;
         };
         let projected = prometheus_label_factory(gauges.supported_labels(metric), &values, source)?;
@@ -55,7 +56,7 @@ where
         gauges
             .gauge(metric)
             .labels(&pairs)
-            .set(MetricValue::Finite(Decimal::from(amount)));
+            .set(MetricValue::Finite(Decimal::from(limit)));
     }
     Ok(())
 }

@@ -48,13 +48,13 @@ where
     let Some(remaining_usage) = fetch_remaining_usage(inputs.payload, inputs.usage).await else {
         return;
     };
-    let source = match inputs.context {
-        Some(context) => LabelSource::Context(context),
-        None => LabelSource::Values {
+    let source = inputs.context.map_or(
+        LabelSource::Values {
             settings: inputs.settings,
             end_user_settings: inputs.end_user_settings,
         },
-    };
+        LabelSource::Context,
+    );
     for (already_have, metric, header) in [
         (
             already_have_tokens,

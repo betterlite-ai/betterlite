@@ -27,6 +27,7 @@ use super::metric::{RateLimitMetric, RateLimitType};
 // Python's f-string renders a missing model group as the text None, and the legacy metadata key keeps it
 const MISSING_MODEL_GROUP: &str = "None";
 
+#[derive(Clone, Copy)]
 pub struct VirtualKeyRateLimitInputs<'input> {
     pub user_api_key: Option<&'input str>,
     pub user_api_key_alias: Option<&'input str>,
