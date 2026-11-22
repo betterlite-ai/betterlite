@@ -35,6 +35,7 @@ use support::days_before;
 use support::fixed_now;
 use support::get;
 use support::instant;
+use support::instant_with_fraction;
 use support::named_latency_series;
 
 const UNAUTHORIZED_BODY: &str = r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":"None","code":"401"}}"#;
@@ -609,9 +610,7 @@ fn query_a_space_separated_datetime_is_read() {
 #[case::unix_timestamp("20260315", instant("1970-08-23 11:51:55"))]
 #[case::nine_fractional_digits(
     "2026-03-15T12:00:00.123456789",
-    DateTime::parse_from_rfc3339("2026-03-15T12:00:00.123456Z")
-        .expect("the expected instant")
-        .with_timezone(&Utc)
+    instant_with_fraction("2026-03-15 12:00:00.123456")
 )]
 fn query_a_pydantic_datetime_form_is_read(#[case] text: &str, #[case] expected: DateTime<Utc>) {
     let request = MetricsQuery::decode(Some(&format!("startTime={text}")));

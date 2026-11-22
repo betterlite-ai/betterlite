@@ -268,6 +268,12 @@ pub(crate) fn instant(text: &str) -> DateTime<Utc> {
         .and_utc()
 }
 
+pub(crate) fn instant_with_fraction(text: &str) -> DateTime<Utc> {
+    NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S%.f")
+        .expect("the calendar instant")
+        .and_utc()
+}
+
 pub(crate) fn days_before(now: DateTime<Utc>, days: i64) -> DateTime<Utc> {
     now.checked_sub_signed(TimeDelta::days(days))
         .expect("the window start")
