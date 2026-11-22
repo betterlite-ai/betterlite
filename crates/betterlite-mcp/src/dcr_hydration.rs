@@ -49,12 +49,27 @@ pub fn parse_persisted_credentials(blob: &JsonValue) -> Option<PersistedDcrCrede
     match blob {
         JsonValue::Null => None,
         JsonValue::Object(fields) if fields.is_empty() => None,
-        JsonValue::String(text) => serde_json::from_str(text).ok(),
-        JsonValue::Object(_) | JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) => {
-            let text = serde_json::to_string(blob).ok()?;
-            serde_json::from_str(&text).ok()
-        }
+        JsonValue::Object(_) => decode_credentials(blob),
+        JsonValue::String(text) => parse_credentials_text(text),
+        JsonValue::Array(_) | JsonValue::Bool(_) | JsonValue::Number(_) => None,
     }
+}
+
+fn parse_credentials_text(text: &str) -> Option<PersistedDcrCredentials> {
+    let parsed = serde_json::from_str::<JsonValue>(text).ok()?;
+    match parsed {
+        JsonValue::Object(_) => serde_json::from_str(text).ok(),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_) => None,
+    }
+}
+
+fn decode_credentials(blob: &JsonValue) -> Option<PersistedDcrCredentials> {
+    let text = serde_json::to_string(blob).ok()?;
+    serde_json::from_str(&text).ok()
 }
 
 #[must_use]
@@ -152,8 +167,7 @@ fn parse_token_auth_method(raw: Option<&str>) -> Option<MCPTokenEndpointAuthMeth
         Ok(method) => Some(method),
         Err(error) => {
             tracing::debug!(
-                method = text,
-                "the stored token_endpoint_auth_method is not one betterlite knows: {error}"
+                "the stored token_endpoint_auth_method {text} is not one betterlite knows: {error}"
             );
             None
         }

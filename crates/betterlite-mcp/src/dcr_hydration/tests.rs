@@ -355,6 +355,8 @@ async fn an_empty_blob_leaves_the_server_alone(#[case] stored: JsonValue) {
 #[case::array(JsonValue::Array(vec![JsonValue::String("stored".to_owned())]), false, None)]
 #[case::empty_string(JsonValue::String(String::new()), false, None)]
 #[case::json_string(JsonValue::String("{\"client_id\": \"stored\"}".to_owned()), true, Some("stored"))]
+#[case::json_string_empty_array(JsonValue::String("[]".to_owned()), false, None)]
+#[case::json_string_array(JsonValue::String("[\"stored-client\"]".to_owned()), false, None)]
 #[case::plain_string(JsonValue::String("garbage".to_owned()), false, None)]
 #[case::number(JsonValue::Number(serde_json::Number::from(5_i32)), false, None)]
 #[case::boolean(JsonValue::Bool(true), false, None)]
