@@ -92,12 +92,9 @@ pub(super) fn succeeded_result() -> AgentKillSwitchResult {
 
 pub(super) fn failed_result() -> AgentKillSwitchResult {
     AgentKillSwitchResult {
-        agent_id: String::from("agent-1"),
-        url: String::from("https://agent.example/stop"),
-        method: AgentKillSwitchMethod::Post,
         status_code: Some(500),
         response_body: Some(String::from("boom")),
-        error: None,
+        ..succeeded_result()
     }
 }
 
@@ -354,13 +351,19 @@ impl Fixture {
     pub(super) fn new() -> Self {
         let steps = new_trace();
         let lookups = new_trace();
+        let registry = FakeRegistry::new(&lookups);
+        let rows = FakeRows::new(&lookups);
+        let groups = FakeGroups::new(&steps);
+        let config = FakeConfig::new(&steps);
+        let trigger = FakeTrigger::new(&steps);
+        let audit = FakeAudit::new(&steps);
         Self {
-            registry: FakeRegistry::new(&lookups),
-            rows: FakeRows::new(&lookups),
-            groups: FakeGroups::new(&steps),
-            config: FakeConfig::new(&steps),
-            trigger: FakeTrigger::new(&steps),
-            audit: FakeAudit::new(&steps),
+            registry,
+            rows,
+            groups,
+            config,
+            trigger,
+            audit,
             steps,
             lookups,
         }

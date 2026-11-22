@@ -54,18 +54,33 @@ pub fn agent_admin_routes(state: AgentAdminState) -> Router {
         .with_state(state)
 }
 
+// every route starts from the auth context the mount inserted: no context answers 401, an unreadable caller 500
+fn admin_for(caller: Option<Extension<AuthContext>>) -> Result<AdminCaller, Response> {
+    let Some(Extension(context)) = caller else {
+        return Err(unauthenticated());
+    };
+    admin_caller(&context.principal).map_err(|error| error.into_response())
+}
+
+// both public-discovery routes: the caller fields and the database their role check answers after
+fn public_access_for<'state>(
+    state: &'state AgentAdminState,
+    caller: Option<Extension<AuthContext>>,
+) -> Result<(AdminCaller, &'state dyn AgentRowLookup), Response> {
+    let admin = admin_for(caller)?;
+    let database = public_access(state, &admin)?;
+    Ok((admin, database))
+}
+
 // LiteLLM's @router.post("/v1/agents/{agent_id}/kill_switch", authenticated before the management check runs
 async fn trigger_agent_kill_switch(
     State(state): State<AgentAdminState>,
     Path(agent_id): Path<String>,
     caller: Option<Extension<AuthContext>>,
 ) -> Response {
-    let Some(Extension(context)) = caller else {
-        return unauthenticated();
-    };
-    let admin = match admin_caller(&context.principal) {
+    let admin = match admin_for(caller) {
         Ok(admin) => admin,
-        Err(error) => return error.into_response(),
+        Err(refusal) => return refusal,
     };
     // LiteLLM's _check_agent_management_permission: B4781's shared predicate over user_api_key_dict.user_role
     if let Some(refusal) = kill_switch_refusal(admin.user_role.as_deref()) {
@@ -80,15 +95,8 @@ async fn make_agent_public(
     Path(agent_id): Path<String>,
     caller: Option<Extension<AuthContext>>,
 ) -> Response {
-    let Some(Extension(context)) = caller else {
-        return unauthenticated();
-    };
-    let admin = match admin_caller(&context.principal) {
-        Ok(admin) => admin,
-        Err(error) => return error.into_response(),
-    };
-    let database = match public_access(&state, &admin) {
-        Ok(database) => database,
+    let (admin, database) = match public_access_for(&state, caller) {
+        Ok(access) => access,
         Err(refusal) => return refusal,
     };
     public_groups::make_single(&state, database, &agent_id, &admin).await
@@ -100,18 +108,12 @@ async fn make_agents_public(
     caller: Option<Extension<AuthContext>>,
     Json(request): Json<MakeAgentsPublicRequest>,
 ) -> Response {
-    let Some(Extension(context)) = caller else {
-        return unauthenticated();
-    };
-    let admin = match admin_caller(&context.principal) {
-        Ok(admin) => admin,
-        Err(error) => return error.into_response(),
-    };
-    let database = match public_access(&state, &admin) {
-        Ok(database) => database,
-        Err(refusal) => return refusal,
-    };
-    public_groups::make_bulk(&state, database, &request.agent_ids, &admin).await
+    match public_access_for(&state, caller) {
+        Ok((admin, database)) => {
+            public_groups::make_bulk(&state, database, &request.agent_ids, &admin).await
+        }
+        Err(refusal) => refusal,
+    }
 }
 
 // both public-discovery routes answer 500 before any lookup when prisma_client is None, then check user_role inline
