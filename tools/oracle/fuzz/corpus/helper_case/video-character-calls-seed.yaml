@@ -1,0 +1,15 @@
+kind: helper
+name: video_character_calls-create-seed
+call:
+  b3341:
+    function: create
+    asynchronous: false
+    litellm_call_id: call-1
+    name: Wren
+    video: clip.mp4
+    timeout: 2.5
+    custom_llm_provider: openai
+    extra_headers: {X-Test: "1"}
+    extra: {api_key: key-1, user: max}
+env: {}
+compare: {ignore: []}

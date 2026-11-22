@@ -3002,6 +3002,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "tokio-tungstenite",
