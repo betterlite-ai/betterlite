@@ -19,8 +19,8 @@ use super::{
     USER, VideoEditCall, VideoEditConfigLookup, VideoEditDeps,
 };
 use crate::api::vector_store_http_write::service::SuppliedClient;
-use crate::api::video_edit_transport::calls::VideoEditHandlers;
 use crate::api::video_edit_transport::config::{BaseVideoConfig, Params};
+use crate::api::video_edit_transport::edits::VideoEditHandlers;
 use crate::api::video_edit_transport::error::VideoClientError;
 use crate::api::video_records::VideoObject;
 use crate::api::video_selection::get_provider_video_config;

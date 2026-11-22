@@ -4,10 +4,9 @@ use super::VideoEditDeps;
 use super::error::{VideoEditCallError, VideoEditFailure, failure};
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::vector_store_http_write::service::SuppliedClient;
-use crate::api::video_edit_transport::calls::{
-    Handled, VideoEditHandlers, VideoEditRequest, VideoPending,
-};
+use crate::api::video_edit_transport::calls::{Handled, VideoEditRequest, VideoPending};
 use crate::api::video_edit_transport::config::{BaseVideoConfig, Headers, Params};
+use crate::api::video_edit_transport::edits::VideoEditHandlers;
 
 // Everything the handler call needs, owned so the pending future can outlive the caller's borrows
 pub(crate) struct Ready<'run, Client> {

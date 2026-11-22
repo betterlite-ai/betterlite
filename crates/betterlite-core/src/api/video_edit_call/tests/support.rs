@@ -19,11 +19,12 @@ use indexmap::IndexMap;
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 use crate::api::video_edit_call::{VideoEditCall, VideoEditConfigLookup, VideoEditDeps};
-use crate::api::video_edit_transport::calls::{Handled, VideoEditHandlers, VideoEditRequest};
+use crate::api::video_edit_transport::calls::{Handled, VideoEditRequest};
 use crate::api::video_edit_transport::config::{
     BaseVideoConfig, Headers, Params, RequestFiles, VideoEditInput, VideoEnvironment,
     VideoExtensionInput, VideoReply, VideoRequestContext,
 };
+use crate::api::video_edit_transport::edits::VideoEditHandlers;
 use crate::api::video_edit_transport::error::{BoxError, FieldTypeError, VideoEditTransportError};
 use crate::api::video_records::VideoObject;
 use crate::api::video_selection::VideoConfigTag;

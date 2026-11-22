@@ -17,8 +17,9 @@ use self::prepare::{Prepared, prepare};
 use self::request::{hand_off, into_pending};
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::vector_store_http_write::service::SuppliedClient;
-use crate::api::video_edit_transport::calls::{Handled, VideoEditHandlers};
+use crate::api::video_edit_transport::calls::Handled;
 use crate::api::video_edit_transport::config::{BaseVideoConfig, Headers, Params};
+use crate::api::video_edit_transport::edits::VideoEditHandlers;
 use crate::api::video_records::VideoObject;
 use crate::api::video_selection::VideoConfigTag;
 
