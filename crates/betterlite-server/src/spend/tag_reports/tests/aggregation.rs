@@ -44,10 +44,11 @@ fn treats_a_null_tag_as_one_bucket() {
         daily_tag(None, "2", 2),
     ];
     let body = tag_spend_body(&rows).unwrap();
-    assert_eq!(body.spend_per_tag[0].name, None);
-    assert_eq!(body.spend_per_tag[0].spend, decimal("3"));
-    assert_eq!(body.spend_per_tag[0].log_count, 3);
-    assert_eq!(body.spend_per_tag[1].name.as_deref(), Some("a"));
+    assert_eq!(body.spend_per_tag[0].name.as_deref(), Some("a"));
+    assert_eq!(body.spend_per_tag[0].spend, decimal("4"));
+    assert_eq!(body.spend_per_tag[1].name, None);
+    assert_eq!(body.spend_per_tag[1].spend, decimal("3"));
+    assert_eq!(body.spend_per_tag[1].log_count, 3);
 }
 
 #[test]

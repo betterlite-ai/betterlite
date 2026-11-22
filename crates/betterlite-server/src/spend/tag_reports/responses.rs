@@ -4,8 +4,6 @@ use axum::response::{IntoResponse as _, Response};
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use serde::Serialize;
 
-pub(super) const NO_DATABASE: &str = "Database not connected. Connect a database to your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys";
-
 #[derive(Serialize)]
 struct DetailMessage<'message> {
     error: &'message str,

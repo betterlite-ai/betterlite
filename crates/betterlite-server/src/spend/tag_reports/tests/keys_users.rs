@@ -4,7 +4,8 @@ use axum::http::StatusCode;
 use betterlite_auth::auth_identity::records::Principal;
 use rstest::rstest;
 
-use super::super::responses::NO_DATABASE;
+use crate::cache_activity_routes::error::DATABASE_MISSING_ERROR;
+
 use super::support::{
     DetailEnvelope, ErrorEnvelope, FakeFailure, KeyBody, UserBody, admin, aliased, call, decimal,
     internal, internal_without_user, key, key_principal, master_key, org_admin, tag_store, user,
@@ -124,7 +125,7 @@ async fn answers_a_missing_database_with_a_bad_request(#[case] uri: &str) {
     let reply = call(uri, Some(&admin()), None).await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST);
     let envelope: DetailEnvelope = reply.decode();
-    assert_eq!(envelope.detail.error, NO_DATABASE);
+    assert_eq!(envelope.detail.error, DATABASE_MISSING_ERROR);
 }
 
 #[tokio::test]
