@@ -21,14 +21,6 @@ deviations:
       client. betterlite treats an amount it cannot represent as unreadable spend
       data and keeps the typed parse cause in the message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4490-L4493
-  - what: >-
-      A failed /global/spend/tags request carries the route prefix and the typed
-      cause in its message, with no Python traceback.
-    why: >-
-      LiteLLM appends traceback.format_exc() to the message, which puts server
-      file paths and source lines into an HTTP response. The wrapper type, param
-      and code stay the same, so a client that reads those fields sees no change.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2188-L2204
 kept_bugs:
   - what: >-
       /spend/tags accepts start_date and end_date and ignores both values.
