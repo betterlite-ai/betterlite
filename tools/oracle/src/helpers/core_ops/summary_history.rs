@@ -1,11 +1,19 @@
+mod counter;
+mod input;
+mod logs;
+mod ops;
+mod translator;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
+use input::Input;
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("summary_history")
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run(input)
     }
 }

@@ -1,0 +1,68 @@
+kind: helper
+name: key-event-sinks-email-settings
+call:
+  key_event_sinks:
+    settings: {store_virtual_keys: false, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+    client: false
+    runtime: ready
+    teams: {}
+    secrets: {}
+    failing: []
+    alerting: [slack, email]
+    steps:
+      - {action: key_created_email, response: {}}
+      - action: key_created_email
+        response: {key: sk-plain-new-key, token: hashed-token, spend: 1.5, max_budget: 25.5, user_id: user-1, team_id: team-eu, key_alias: billing-key}
+      - action: key_created_email
+        response: {key: sk-plain-new-key, token: null, max_budget: null, user_id: null, team_id: null, key_alias: null}
+      - action: key_created_email
+        response: {key: sk-plain-new-key, token: hashed-token, spend: null}
+      - action: key_created_email
+        response: {key: sk-plain-new-key, token: "", spend: 0.0, max_budget: 0.0, team_id: "", key_alias: ""}
+calls:
+  - key_event_sinks:
+      settings: {store_virtual_keys: false, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+      client: false
+      runtime: ready
+      teams: {}
+      secrets: {}
+      failing: []
+      alerting: [email]
+      steps:
+        - action: key_created_email
+          response: {token: hashed-token, spend: 2.25, user_id: user-2}
+  - key_event_sinks:
+      settings: {store_virtual_keys: false, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+      client: false
+      runtime: ready
+      teams: {}
+      secrets: {}
+      failing: []
+      alerting: [slack]
+      steps:
+        - action: key_created_email
+          response: {key: sk-plain-new-key, token: hashed-token, spend: 1.5}
+        - action: key_created_email
+          response: {key: sk-plain-new-key, token: hashed-token, spend: null}
+  - key_event_sinks:
+      settings: {store_virtual_keys: false, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+      client: false
+      runtime: ready
+      teams: {}
+      secrets: {}
+      failing: []
+      alerting: []
+      steps:
+        - {action: key_created_email, response: {}}
+  - key_event_sinks:
+      settings: {store_virtual_keys: false, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+      client: false
+      runtime: ready
+      teams: {}
+      secrets: {}
+      failing: []
+      alerting: [Email, emails, " email"]
+      steps:
+        - {action: key_created_email, response: {}}
+env: {}
+compare: {ignore: []}

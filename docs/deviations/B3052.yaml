@@ -1,0 +1,33 @@
+task: B3052
+deviations:
+  - what: The hook reaches the limiter through the AdmissionLimiter trait, not through a v3_limiter attribute on the handler.
+    why: The rules forbid module-level state and reflection, and the tests need a fake limiter in place of Redis. The two calls, their order and their arguments are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L459-L463
+  - what: Nothing checks LITELLM_LICENSE before reading the priority reservation.
+    why: The 2026-10-24 decision leaves the license check out of betterlite. B3051 already reads the same reservation for the weight without it, so a license check here would change nothing a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L132-L138
+  - what: The hook keeps the request stash through a RequestStashSlot passed to the check, not through a ContextVar.
+    why: betterlite carries per-request state explicitly instead of in module-level ContextVars; the stash it stores and the pre_call claim order are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L559-L570
+  - what: A request whose "model" is absent or not a JSON string returns Ok before the stash is claimed; LiteLLM claims the stash for any request carrying the key and passes the value to the router.
+    why: betterlite's request data is typed JSON, and a non-text model cannot name a model group or a counter key. The request still fails where the route parses the model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L613-L621
+  - what: An x-litellm-priority value that HTTP cannot carry is dropped with a warning and the 429 is still returned; LiteLLM keeps the value in the error's headers and the response send fails later.
+    why: A header encoding failure in the response layer would turn a correct 429 into a 500, and the refusal is what the caller needs. The task text names no error for it, and the tests pin the behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L485-L489
+  - what: The guard's log line spells the dash as "-" and writes the response as compact JSON; LiteLLM's line uses an em dash and Python's dict repr.
+    why: The task text fixes the "-" spelling, and betterlite logs structured JSON rather than a Python repr.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L530-L533
+  - what: build_over_limit_error takes the whole RateLimitResponse; the task text suggested passing a plan kind and the statuses.
+    why: The fail-closed guard needs the first OVER_LIMIT status of the whole answer even when none of its keys is known, so the response itself is the honest input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L469-L547
+  - what: The atomic-response debug log writes compact JSON; LiteLLM's line pretty-prints the same response with json.dumps(indent=2).
+    why: betterlite logs one JSON line per event rather than Python's multi-line dump, and the logged response is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L465-L467
+  - what: The hook reads the model group through the ModelGroupInfoSource port, and a handler with no router returns a typed error instead of LiteLLM's AttributeError from None.get_model_group_info.
+    why: The router is injected at startup and a missing one must fail closed with an error the caller can map, not a panic on None; the read, its place before the error handling and its fail-closed result are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L620-L624
+  - what: No HTTP route calls the hook yet, so its oracle cases are helper cases on _check_rate_limits.
+    why: B3055's server gate runs only the main limiter, and no request reaches this hook until it is registered by name. The cases pin the same calls, the same 429 and the same stash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L381-L441
+kept_bugs: []

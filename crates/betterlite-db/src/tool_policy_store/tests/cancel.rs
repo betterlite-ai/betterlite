@@ -143,6 +143,13 @@ async fn refresh_cancels_a_read_past_the_deadline() {
             .unwrap_or_else(PoisonError::into_inner)
             .initialized
     );
+    let pool = db.store.pool.as_ref().expect("the pool");
+    assert_eq!(
+        pool.status().size,
+        1,
+        "only the table-lock holder stays in the pool"
+    );
+    assert_eq!(pool.status().available, 0);
     release_cancelled_statement(&db, holder).await;
     db.close().await;
 }
@@ -177,8 +184,8 @@ async fn a_tls_required_cancel_stops_the_read_over_tls() {
         .expect("the read after the cancel");
     assert_eq!(
         front.handshakes(),
-        2,
-        "the cancelled session stayed in the pool"
+        3,
+        "the expired session left the pool, so the read opened a new one"
     );
     store.pool.expect("the TLS pool").close();
     yield_now().await;

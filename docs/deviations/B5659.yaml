@@ -1,0 +1,30 @@
+task: B5659
+deviations:
+  - what: A streaming call materializes the chunks B5656's request driver buffers and hands them out from that list, where LiteLLM keeps a live iterator over the provider connection.
+    why: B5654's ChatStream holds a request-scoped &mut CorrelationContext, so a Python object outliving the call cannot own it, and tokio::spawn is banned in this workspace. A stream therefore arrives complete, and close() only stops further reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L420-L740
+  - what: A stream hands out the provider's payloads unchanged, so stream_chunk_size is validated but does not split or pad text deltas.
+    why: The splitting lives in LiteLLM's CustomStreamWrapper over a live iterator, which this bridge does not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py
+  - what: The native call runs one attempt, so num_retries and max_retries in the request reach the SDK's call params but start no retries, where LiteLLM passes them to the provider client as transport retries.
+    why: retry_with_fallbacks and the tenacity wrappers are proxy and router behavior; a plain litellm.completion has no retry loop of its own either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5458
+  - what: A model_list entry and a route_all_to_responses request have no synthesized deployment, so they fail with the SDK's dispatch error instead of reaching a provider.
+    why: Both select a routing table the proxy owns, and a Python session has no model_list configuration to resolve.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L420-L740
+  - what: Two fallback entries that resolve to the same model share the first entry's api_base and api_key.
+    why: The SDK's dispatch looks a deployment up by model id, so one model has one deployment per call; LiteLLM would run each entry with its own override.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_utils.py
+  - what: A text-completion endpoint is never selected; every call goes to the chat endpoint ProviderCalls implements.
+    why: The text endpoint belongs to the proxy's chat route, and betterlite-python carries only the chat call port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L420-L740
+  - what: A provider answer that hits the output limit surfaces as ChatFailure::Mismatched instead of being retried with a larger max_tokens.
+    why: The recovery belongs to the proxy's chat route, and the SDK's request driver reports the provider answer as it arrived.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L420-L740
+  - what: A timeout given as a connect/read/write/pool mapping collapses to its read phase, or to 600 s when the mapping has none, where LiteLLM hands the mapping to the provider's httpx client.
+    why: The shared transport enforces one total deadline per call, so the other phases cannot be honored; the read phase is what LiteLLM itself uses for providers without httpx timeouts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/completion_timeout.py#L33-L70
+  - what: The bridge maps betterlite-provider's OperationError to ChatError in calls.rs instead of reusing the server chat route's chat_error, and builds its provider call in calls.rs's send instead of the route's provider_chat.
+    why: chat_error and provider_chat are private to crates/betterlite-server/src/server/chat_setup/provider_call.rs and answer in the server's own CallError<ChatError>, so betterlite-python can neither import them nor name their type. Moving the mapping into betterlite-openai, which defines ChatError, is impossible because betterlite-provider already depends on betterlite-openai and the reverse edge would be a cycle; the hand-written mapping in calls.rs is the only option inside this task's scope.
+    link: https://github.com/betterlite-ai/betterlite/blob/main/crates/betterlite-server/src/server/chat_setup/provider_call.rs
+kept_bugs: []

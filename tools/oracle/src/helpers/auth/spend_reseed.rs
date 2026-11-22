@@ -44,11 +44,8 @@ async fn execute(input: &Input) -> HelperResult {
         input.batch.clone().filter(|_| input.cache.redis),
     );
     let value = match &input.op {
-        Operation::FromDb => reseed.from_db(&input.counter_key).await.map_err(failure)?,
-        Operation::EndUserFromDb => reseed
-            .end_user_from_db(&input.counter_key)
-            .await
-            .map_err(failure)?,
+        Operation::FromDb => reseed.reader().from_db(&input.counter_key).await,
+        Operation::EndUserFromDb => reseed.reader().end_user_from_db(&input.counter_key).await,
         Operation::IncrementInMemory => increment(input, &reseed, &cache).await?,
         Operation::Coalesced => {
             let warm = input.require_cache_warm.0;

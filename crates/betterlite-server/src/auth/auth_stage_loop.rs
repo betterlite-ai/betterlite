@@ -7,8 +7,9 @@ use axum::response::Response;
 use secrecy::SecretString;
 
 use super::{prefetch_tag_budgets, resolver_for, stage_input};
+use crate::auth::auth_errors::FailureContext;
 use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
+    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, dispatch,
 };
 use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
 use crate::auth::failures::{body_too_large_response, unreadable_body_response};
@@ -36,19 +37,22 @@ pub(crate) async fn run_stages(
                 Err(error) => return Err(Box::new(buffer_failure_response(error, limit))),
             });
         }
-        let input = match stage_input(
+        // the input is built before any await, so no borrow of the request lives across one
+        let staged = stage_input(
             *backend,
             &request,
             authenticated.as_ref(),
             &resolver,
             body.as_ref(),
-        ) {
-            Ok(input) => input,
-            Err(failure) => return Err(Box::new(failure_response(&failure))),
-        };
-        match run_stage(*backend, input, master_key, failure_response).await {
+        );
+        match async { dispatch(*backend, &prefetch_tag_budgets(staged?).await?, master_key) }.await
+        {
             Ok(context) => authenticated = Some(context),
-            Err(response) => return Err(response),
+            Err(failure) => {
+                let context = FailureContext::of(&request, body.as_ref());
+                let response = Box::pin(context.respond(&failure, failure_response)).await;
+                return Err(Box::new(response));
+            }
         }
     }
     Ok((request, authenticated, body))
@@ -84,17 +88,4 @@ pub(crate) async fn forward(
         *request.body_mut() = Body::from(bytes);
     }
     next.run(request).await
-}
-
-async fn run_stage(
-    backend: AuthBackend,
-    input: StageInput,
-    master_key: &SecretString,
-    failure_response: fn(&StageFailure) -> Response,
-) -> Result<AuthContext, Box<Response>> {
-    let prefetched = prefetch_tag_budgets(input)
-        .await
-        .map_err(|failure| Box::new(failure_response(&failure)))?;
-    dispatch(backend, &prefetched, master_key)
-        .map_err(|failure| Box::new(failure_response(&failure)))
 }

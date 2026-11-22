@@ -1,0 +1,21 @@
+kind: helper
+name: human-grants-own-and-team
+call:
+  b4780:
+    operation: human_grants
+    user_id: human
+    team_id: team-1
+    sources:
+      - {team_id: null, agent_ids: [own, shared]}
+      - {team_id: team-1, agent_ids: [a, shared]}
+      - {team_id: team-2, agent_ids: [b, shared]}
+      - {team_id: team-3, agent_ids: []}
+calls:
+  - b4780:
+      operation: human_grants
+      user_id: null
+      team_id: team-1
+      sources: [{team_id: null, agent_ids: [own]}]
+env: {}
+compare:
+  ignore: []
