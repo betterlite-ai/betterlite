@@ -140,13 +140,8 @@ fn attempt_agg_row(row: &Row) -> RepositoryResult<AttemptAggRow> {
         shadow_wins: i64::from(column::<i32>(row, "shadow_wins")?),
         ties: i64::from(column::<i32>(row, "ties")?),
         avg_confidence: column(row, "avg_confidence")?,
-        real_spend: spend_decimal(column(row, "real_spend")?)
-            .ok_or(ShadowResultsError::Unrepresentable { name: "real_spend" })?,
-        shadow_spend: spend_decimal(column(row, "shadow_spend")?).ok_or(
-            ShadowResultsError::Unrepresentable {
-                name: "shadow_spend",
-            },
-        )?,
+        real_spend: spend_decimal(column(row, "real_spend")?, "real_spend")?,
+        shadow_spend: spend_decimal(column(row, "shadow_spend")?, "shadow_spend")?,
         cache_hit_turns: i64::from(column::<i32>(row, "cache_hit_turns")?),
     })
 }
@@ -155,11 +150,7 @@ fn attempt_totals_row(row: &Row) -> RepositoryResult<AttemptTotals> {
     Ok(AttemptTotals {
         judged_count: i64::from(column::<i32>(row, "judged_count")?),
         error_count: i64::from(column::<i32>(row, "error_count")?),
-        judge_spend: spend_decimal(column(row, "judge_spend")?).ok_or(
-            ShadowResultsError::Unrepresentable {
-                name: "judge_spend",
-            },
-        )?,
+        judge_spend: spend_decimal(column(row, "judge_spend")?, "judge_spend")?,
     })
 }
 
@@ -167,8 +158,7 @@ fn attempt_count_row(row: &Row) -> RepositoryResult<LegAttemptCount> {
     Ok(LegAttemptCount {
         job_id: column(row, "job_id")?,
         attempt_count: i64::from(column::<i32>(row, "attempt_count")?),
-        spend: spend_decimal(column(row, "spend")?)
-            .ok_or(ShadowResultsError::Unrepresentable { name: "spend" })?,
+        spend: spend_decimal(column(row, "spend")?, "spend")?,
     })
 }
 

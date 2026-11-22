@@ -28,8 +28,9 @@ fn at(seconds: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, 0).unwrap()
 }
 
+// a JSON float reaches Decimal as its shortest round-trip spelling, the same value a ::float column hands back
 fn money(value: f64) -> Decimal {
-    Decimal::from_f64_retain(value).unwrap()
+    value.to_string().parse().unwrap()
 }
 
 fn spelled(text: &str) -> Decimal {
@@ -197,8 +198,8 @@ struct ResultsExpectation {
     router_groups: Vec<&'static str>,
     overall_shadow_win: f64,
     overall_tie: f64,
-    real_spend: f64,
-    shadow_spend: f64,
+    real_spend: Decimal,
+    shadow_spend: Decimal,
     funnel: Option<(i64, i64, i64, i64)>,
     verdicts: Vec<(ShadowEvalTargetType, &'static str, &'static str)>,
 }
@@ -354,8 +355,8 @@ enum Behavior {
         router_groups: vec!["router-a"],
         overall_shadow_win: 40.0,
         overall_tie: 20.0,
-        real_spend: 0.4_f64,
-        shadow_spend: 0.300_000_000_000_000_04_f64,
+        real_spend: spelled("0.4"),
+        shadow_spend: spelled("0.30000000000000004"),
         funnel: None,
         verdicts: vec![(Key, "k1", "k1"), (Team, "t1", "t1")],
     },
@@ -379,8 +380,8 @@ enum Behavior {
         router_groups: Vec::new(),
         overall_shadow_win: 50.0,
         overall_tie: 0.0,
-        real_spend: 0.0_f64,
-        shadow_spend: 0.0_f64,
+        real_spend: spelled("0"),
+        shadow_spend: spelled("0"),
         funnel: Some((7, 3, 2, 1)),
         verdicts: Vec::new(),
     },
@@ -402,8 +403,8 @@ enum Behavior {
         router_groups: Vec::new(),
         overall_shadow_win: 100.0_f64,
         overall_tie: 0.0_f64,
-        real_spend: 0.6_f64,
-        shadow_spend: 0.6_f64,
+        real_spend: spelled("0.6"),
+        shadow_spend: spelled("0.6"),
         funnel: None,
         verdicts: Vec::new(),
     },
@@ -427,8 +428,8 @@ enum Behavior {
         router_groups: Vec::new(),
         overall_shadow_win: 100.0_f64,
         overall_tie: 0.0_f64,
-        real_spend: 0.123_456_7_f64,
-        shadow_spend: 0.123_456_7_f64,
+        real_spend: spelled("0.1234567"),
+        shadow_spend: spelled("0.1234567"),
         funnel: None,
         verdicts: Vec::new(),
     },
@@ -576,14 +577,8 @@ fn assert_result_totals(result: &ShadowEvalResult, expected: &ResultsExpectation
         result.overall_tie_rate_pct.to_bits(),
         expected.overall_tie.to_bits()
     );
-    assert_eq!(
-        result.sampled_real_spend.as_f64().to_bits(),
-        expected.real_spend.to_bits()
-    );
-    assert_eq!(
-        result.sampled_shadow_spend.as_f64().to_bits(),
-        expected.shadow_spend.to_bits()
-    );
+    assert_eq!(result.sampled_real_spend, expected.real_spend);
+    assert_eq!(result.sampled_shadow_spend, expected.shadow_spend);
     let funnel = expected.funnel;
     assert_eq!(result.not_sampled_count, funnel.map(|counts| counts.0));
     assert_eq!(result.unjudgeable_count, funnel.map(|counts| counts.1));
