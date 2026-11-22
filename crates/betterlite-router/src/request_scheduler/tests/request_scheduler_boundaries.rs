@@ -237,7 +237,12 @@ async fn a_cancelled_wait_leaves_the_queue() {
 // the provider's status and code survive, and the error carries the request's priority
 #[tokio::test(start_paused = true)]
 async fn a_provider_failure_keeps_the_status_code_and_the_stamped_priority() {
-    let service = scheduler(Settings::default());
+    // a configured default_priority is what makes the pin's inner call schedule the same request again
+    let service = scheduler(Settings {
+        polling_interval: 0.03_f64,
+        default_priority: Some(Priority::Medium.value()),
+        local_ttl_seconds: 5.0_f64,
+    });
     let call = ScriptedCall::failed(0, 429, Some("429"));
     let error = service
         .schedule(
