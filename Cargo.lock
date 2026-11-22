@@ -3768,6 +3768,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",
+ "betterlite-router",
  "betterlite-routes",
  "betterlite-secrets",
  "betterlite-semantic",
