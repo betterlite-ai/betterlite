@@ -1,0 +1,5 @@
+task: B1652
+deviations:
+  - what: A boolean password, sentinel_password or url is not scrubbed out of an error message; LiteLLM stringifies it because Python's bool is an int.
+    why: These fields are declared strings, and betterlite reads a bool in one as a value of the wrong type instead of turning True into the text "True".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/coordination_redis_endpoints.py#L106-L110

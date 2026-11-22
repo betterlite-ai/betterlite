@@ -1,0 +1,41 @@
+task: B637
+deviations:
+  - what: >-
+      A model record without output_cost_per_image attaches a 0.0 response-cost header, where LiteLLM attaches no
+      header at all. get_model_info fills every known cost key with None first, so the
+      .get("output_cost_per_image", 0) default never fires and the None value suppresses the header.
+    why: >-
+      The task names this exact distinction: a missing value is zero and an explicit null suppresses the header.
+      The Rust model record keeps absent and null apart, so the declared default applies to the absent key. No
+      working Stability setup depends on a zero-cost header being absent, and an oracle case cannot compare the
+      two implementations on a model the bundled catalog has no price for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L341-L347
+  - what: >-
+      An int or float option whose conversion yields a non-finite number, such as strength "inf", fails with a
+      typed Field error, where LiteLLM's float() accepts it and puts Infinity in the JSON body.
+    why: >-
+      The body is standard JSON, where Infinity has no form; the request cannot be sent, and naming the field
+      beats a body the provider rejects. No working setup sends a non-finite option.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L251-L262
+kept_bugs:
+  - what: >-
+      With drop_params true the unsupported options stay in the mapped parameters even though the source
+      comment says they are dropped, and request building decides whether they are sent.
+    why: >-
+      That copy is how aspect_ratio, negative_prompt and the other Stability-only fields reach the body at all;
+      deleting them would silently drop options working setups send with drop_params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L142-L152
+  - what: >-
+      An errors key raises even when its value is null, false or an empty list, and only the first
+      finish_reasons element is inspected, whatever the later reasons say.
+    why: >-
+      Working Bedrock Stability responses carry errors only for failures and a single finish reason, so the
+      presence check and the first-element check are the contract those setups already see.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L302-L317
+  - what: >-
+      An int or float option whose conversion raises ValueError or TypeError keeps the original value in the
+      body, and a non-200 HTTP status without an errors or finish-reason marker still yields a success reply.
+    why: >-
+      Both outcomes are what working Bedrock Stability setups get today; rejecting the status here would make
+      the provider transform do the transport's job, which B638 owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L253-L262
