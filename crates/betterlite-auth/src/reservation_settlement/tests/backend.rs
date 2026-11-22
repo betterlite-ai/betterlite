@@ -167,11 +167,11 @@ async fn the_backend_reads_and_increments_the_shared_memory_tier() {
         scope: scope.as_ref(),
         redis: None,
     };
-    let found = backend
+    let initial = backend
         .read_cache_value("spend:key:k1")
         .await
         .expect("the read");
-    assert_eq!(found, None);
+    assert_eq!(initial, None);
     backend
         .increment_counter("spend:key:k1", decimal("4"))
         .await

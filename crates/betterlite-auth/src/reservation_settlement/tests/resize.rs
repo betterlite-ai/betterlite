@@ -34,7 +34,7 @@ async fn a_resize_refuses_an_inconsistent_counter() {
         .await
         .expect_err("the refusal");
     assert!(
-        matches!(error, SettlementError::InconsistentCounter { ref counter_key } if counter_key == "spend:key:k2")
+        matches!(&error, SettlementError::InconsistentCounter { counter_key } if counter_key == "spend:key:k2")
     );
     let calls = take_calls(&fake);
     assert!(calls.pipelines.is_empty());
