@@ -1,0 +1,18 @@
+name: genai-count-tokens
+config: 'general_settings: {}'
+env: {}
+request:
+  method: POST
+  path: /v1beta/models/gemini-2.0-flash:countTokens
+  headers: {content-type: application/json}
+  body:
+    contents:
+      - role: user
+        parts:
+          - text: Hello
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {totalTokens: 7, promptTokensDetails: [{modality: TEXT, tokenCount: 7}]}
+    events: null
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
