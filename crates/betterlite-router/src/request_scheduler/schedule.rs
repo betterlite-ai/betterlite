@@ -1,13 +1,9 @@
 use super::error::SchedulerError;
 use super::flow::FlowItem;
-use super::service::RequestScheduler;
 use crate::router_core::headers;
-use crate::routing_timeouts::error::TimeoutError;
-use crate::routing_timeouts::plan::TimeoutPlan;
 use async_trait::async_trait;
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
-use tokio::time::{Instant, sleep};
 // Router.schedule_acompletion adds this header to a response the scheduler let through
 pub const PRIORITIZATION_HEADER: &str = "x-litellm-request-prioritization-used";
 // Router.schedule_acompletion's `_hidden_params["additional_headers"]` update, and whether the response kept it
@@ -36,83 +32,7 @@ pub struct ScheduleOutcome {
     pub response: headers::Response,
     pub prioritized: bool,
 }
-impl RequestScheduler {
-    // Router.schedule_acompletion, with the routing deadline and the caller's cancellation instead of Router.timeout
-    pub async fn schedule<C>(
-        &self,
-        item: &FlowItem,
-        call: &C,
-        plan: &TimeoutPlan,
-    ) -> Result<ScheduleOutcome, SchedulerError>
-    where
-        C: ScheduledCall,
-    {
-        Box::pin(self.add_request(item)).await?;
-        // the await chain nests more generator states than rustc lays out by default, so each long leg lives on the heap
-        let polls = Box::pin(self.wait_for_turn(item, call, plan)).await?;
-        let answered = call.call().await;
-        Box::pin(self.remove_quietly(item)).await;
-        finish(item, polls, answered)
-    }
-    async fn wait_for_turn<C>(
-        &self,
-        item: &FlowItem,
-        call: &C,
-        plan: &TimeoutPlan,
-    ) -> Result<u32, SchedulerError>
-    where
-        C: ScheduledCall,
-    {
-        let mut polls = 0_u32;
-        loop {
-            match plan.remaining(Instant::now().into_std()) {
-                Ok(_remaining) => {}
-                Err(TimeoutError::Cancelled) => {
-                    return Err(Box::pin(self.cancelled(item)).await);
-                }
-                Err(_expired) => {
-                    Box::pin(self.remove_quietly(item)).await;
-                    return Err(SchedulerError::TimedOut {
-                        model: item.model.clone(),
-                        request_id: item.request_id.clone(),
-                    });
-                }
-            }
-            let allowed =
-                Box::pin(self.poll(&item.request_id, &item.model, call.healthy_deployments()))
-                    .await?;
-            if allowed.value {
-                return Ok(polls);
-            }
-            polls = polls.saturating_add(1);
-            let slept = plan
-                .cancellation
-                .run_until_cancelled(sleep(self.polling_interval()))
-                .await;
-            if slept.is_none() {
-                return Err(Box::pin(self.cancelled(item)).await);
-            }
-        }
-    }
-    // the removal after the call and in the deadline arm is best effort: a failure is logged, not returned
-    async fn remove_quietly(&self, item: &FlowItem) {
-        if let Err(error) = Box::pin(self.remove_request(item)).await {
-            tracing::warn!(%error, "the request left a scheduler queue entry behind");
-        }
-    }
-
-    async fn cancelled(&self, item: &FlowItem) -> SchedulerError {
-        let removed = Box::pin(self.remove_request(item)).await;
-        match removed {
-            Ok(_observed) => SchedulerError::Cancelled {
-                request_id: item.request_id.clone(),
-                model: item.model.clone(),
-            },
-            Err(error) => error,
-        }
-    }
-}
-fn finish(
+pub(super) fn finish(
     item: &FlowItem,
     polls: u32,
     answered: Result<headers::Response, Box<ErrorClass>>,

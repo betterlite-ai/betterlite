@@ -193,18 +193,19 @@ where
     F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
 {
     let (entries, fallback) = change_local(scheduler, key, model, change)?;
-    {
-        let mut pending = scheduler
-            .pending
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let recorded = pending.entry(model.to_owned()).or_default();
-        recorded.extend(fallback);
-    }
+    record_changes(scheduler, model, fallback);
     Ok(Observed {
         value: entries,
         warning: Some(warning),
     })
+}
+// the fallback tier's change keeps waiting for the next shared write
+fn record_changes(scheduler: &RequestScheduler, model: &str, changes: PendingChanges) {
+    let mut pending = scheduler
+        .pending
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    pending.entry(model.to_owned()).or_default().extend(changes);
 }
 // the fallback tier of a degraded shared read: one lock serializes this worker's read-modify-write
 fn change_local<F>(
@@ -248,7 +249,7 @@ fn forget_changes(scheduler: &RequestScheduler, model: &str, carried: &PendingCh
     recorded.retain(|member, state| {
         carried
             .get(member)
-            .map_or(true, |carried_state| *state != *carried_state)
+            .is_none_or(|carried_state| *state != *carried_state)
     });
     let emptied = recorded.is_empty();
     if emptied {
