@@ -978,7 +978,9 @@ name = "betterlite"
 version = "0.1.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-cache",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-http",
  "betterlite-models",
@@ -989,6 +991,7 @@ dependencies = [
  "chrono",
  "clap",
  "croner",
+ "jiff",
  "nix",
  "rand 0.10.3",
  "regex",
