@@ -387,27 +387,27 @@ fn finish_reasons() {
 
 // The catalog round trip serializes a declared Decimal as text, which is the shape a real reply reads.
 fn price_values() {
-    let text_price = price_record(&[("output_cost_per_image", Scalar::Text("0.07".to_owned()))]);
-    let decimal_reply = priced_reply(text_price).expect("a text price reads as a decimal");
+    let catalog_text = price_record(&[("output_cost_per_image", Scalar::Text("0.07".to_owned()))]);
+    let text_header = priced_reply(catalog_text).expect("a text price reads as a decimal");
     assert_eq!(
-        decimal_reply.additional_headers.get(COST_HEADER),
+        text_header.additional_headers.get(COST_HEADER),
         Some(&json("0.07"))
     );
-    for (lexeme, expected) in [("  0.5  ", "0.5"), ("5E-2", "0.05")] {
-        let lexeme_price =
-            price_record(&[("output_cost_per_image", Scalar::Text(lexeme.to_owned()))]);
-        let lexeme_reply = priced_reply(lexeme_price).expect("a text price reads as a decimal");
+    for (padded, expected) in [("  0.5  ", "0.5"), ("5E-2", "0.05")] {
+        let padded_price =
+            price_record(&[("output_cost_per_image", Scalar::Text(padded.to_owned()))]);
+        let padded_header = priced_reply(padded_price).expect("a text price reads as a decimal");
         assert_eq!(
-            lexeme_reply.additional_headers.get(COST_HEADER),
+            padded_header.additional_headers.get(COST_HEADER),
             Some(&json(expected)),
-            "{lexeme}"
+            "{padded}"
         );
     }
     for (flag, expected) in [(true, "1.0"), (false, "0.0")] {
-        let bool_price = price_record(&[("output_cost_per_image", Scalar::Bool(flag))]);
-        let bool_reply = priced_reply(bool_price).expect("a bool price reads as a number");
+        let flag_price = price_record(&[("output_cost_per_image", Scalar::Bool(flag))]);
+        let flag_header = priced_reply(flag_price).expect("a bool price reads as a number");
         assert_eq!(
-            bool_reply.additional_headers.get(COST_HEADER),
+            flag_header.additional_headers.get(COST_HEADER),
             Some(&json(expected)),
             "{flag}"
         );
