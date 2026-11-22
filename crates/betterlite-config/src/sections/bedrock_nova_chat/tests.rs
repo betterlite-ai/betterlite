@@ -146,6 +146,7 @@ fn loads_amazon_nova_api_key() {
     assert_eq!(environment_key.expose_secret(), "env-key");
     let resolved = configured.api_key().expect("the environment key resolves");
     assert_eq!(resolved.expose_secret(), "env-key");
+    assert!(!format!("{configured:?}").contains("env-key"));
     let blank = load_with("", &[("AMAZON_NOVA_API_KEY", "")]).unwrap();
     assert!(
         blank.api_key_environment.is_none(),

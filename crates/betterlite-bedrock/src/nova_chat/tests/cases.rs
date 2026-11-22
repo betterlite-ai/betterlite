@@ -418,6 +418,28 @@ fn direct_nova_endpoint() {
         .as_ref()
         .expect("the global key");
     assert_eq!(global_short_choice.expose_secret(), "global-key");
+    // The global key is a value: a reference-looking one is used as written, and the base keeps its trailing slash.
+    let reference = secret("oidc/circleci/nova");
+    let used_as_value = direct::resolve_endpoint(
+        NovaEndpointRequest {
+            api_base: Some("https://explicit.example/v1/"),
+            api_key: None,
+            global_api_key: Some(&reference),
+            litellm_api_key: None,
+        },
+        &empty,
+        &secrets,
+    )
+    .expect("the global key is a value");
+    assert_eq!(used_as_value.api_base, "https://explicit.example/v1/");
+    assert_eq!(
+        used_as_value
+            .api_key
+            .as_ref()
+            .expect("the global key")
+            .expose_secret(),
+        "oidc/circleci/nova"
+    );
     let blank_environment = BTreeMap::from([
         (String::from("AMAZON_NOVA_API_BASE"), String::new()),
         (String::from("AMAZON_NOVA_API_KEY"), String::new()),
