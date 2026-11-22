@@ -8,6 +8,7 @@ use super::error::RewriteError;
 use super::rewind::{RewindOnDrop, settle_spool};
 use super::spool::{OwnedSpool, Spool};
 use crate::api::file_batch_guardrails::SCAN_WINDOW;
+use crate::api::file_batch_guardrails::error::BatchGuardrailError;
 use crate::api::file_batch_guardrails::lines::RawLine;
 use crate::api::file_batch_guardrails::records::{BatchScanResult, RecordChange, RecordRedacted};
 
@@ -77,9 +78,12 @@ where
     let mut first = 1_usize;
     loop {
         let (lines, consumed) = body
-            .window(tasks, first, SCAN_WINDOW, |line_number, bytes| {
-                Ok(RawLine { line_number, bytes })
-            })
+            .window(
+                tasks,
+                first,
+                SCAN_WINDOW,
+                Ok::<RawLine, BatchGuardrailError>,
+            )
             .await?;
         first = first.saturating_add(consumed);
         if lines.is_empty() {

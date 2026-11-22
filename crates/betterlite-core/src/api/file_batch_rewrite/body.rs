@@ -6,7 +6,7 @@ use tokio::task::JoinError;
 use tokio_util::task::TaskTracker;
 
 use crate::api::file_batch_guardrails::error::BatchGuardrailError;
-use crate::api::file_batch_guardrails::lines::iter_lines;
+use crate::api::file_batch_guardrails::lines::{RawLine, iter_lines};
 use crate::api::file_batch_guardrails::record_json::load_record;
 use crate::api::file_batch_guardrails::records::ParsedRecord;
 
@@ -37,10 +37,8 @@ impl<Source> Clone for UploadBody<Source> {
 }
 
 // One non-blank line as the record it must hold, under its physical line number
-pub(super) fn record_of(
-    line_number: usize,
-    bytes: Vec<u8>,
-) -> Result<ParsedRecord, BatchGuardrailError> {
+pub(super) fn record_of(line: RawLine) -> Result<ParsedRecord, BatchGuardrailError> {
+    let RawLine { line_number, bytes } = line;
     let payload = load_record(&bytes).map_err(|source| BatchGuardrailError::Record {
         line_number,
         source,
@@ -73,7 +71,7 @@ where
     where
         Source: BufRead,
         Item: Send + 'static,
-        Parse: Fn(usize, Vec<u8>) -> Result<Item, BatchGuardrailError> + Send + 'static,
+        Parse: Fn(RawLine) -> Result<Item, BatchGuardrailError> + Send + 'static,
     {
         let body = self.clone();
         tasks
@@ -91,7 +89,7 @@ where
     ) -> Result<(Vec<Item>, usize), BatchGuardrailError>
     where
         Source: BufRead,
-        Parse: Fn(usize, Vec<u8>) -> Result<Item, BatchGuardrailError>,
+        Parse: Fn(RawLine) -> Result<Item, BatchGuardrailError>,
     {
         let mut state = self.lock();
         let base = first.saturating_sub(1);
@@ -100,7 +98,11 @@ where
         for line in iter_lines(&mut *state).take(limit) {
             let line = line?;
             consumed = line.line_number;
-            kept.push(parse(line.line_number.saturating_add(base), line.bytes)?);
+            let line_number = line.line_number.saturating_add(base);
+            kept.push(parse(RawLine {
+                line_number,
+                bytes: line.bytes,
+            })?);
         }
         drop(state);
         Ok((kept, consumed))
