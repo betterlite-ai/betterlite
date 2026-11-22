@@ -1,15 +1,18 @@
 use std::time::Duration;
 
-use betterlite_http::interactions::base::Logging;
+use betterlite_error::error::ErrorClass;
+use betterlite_http::interactions::base::{ClientError, Logging};
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 
+use crate::api::interactions::lifecycle::error::{InteractionLifecycleError, failure};
 use crate::api::interactions::lifecycle::{acancel, cancel};
 
 use super::support::{
-    Call, Script, answer, base, deps, fixture, host, redactor, registry_with, state, text,
+    Call, FixtureError, Script, answer, base, deps, fixture, host, redactor, registry_with, state,
+    text,
 };
 
 #[test]
@@ -82,6 +85,54 @@ async fn acancel_keeps_the_callers_logging_details_and_records_its_pre_call() {
     );
     assert_eq!(http.model_call_details.get("seeded"), Some(&details));
     drop(serving.finish().unwrap());
+}
+
+#[test]
+fn cancel_rejects_a_provider_without_an_interactions_api_as_a_bad_request() {
+    let config = fixture();
+    let call = Call::new("int-1").provider("openai");
+    let mut http = Logging::default();
+    let mut logging = state("gemini-2.5-flash", "call-1");
+    let redactor = redactor();
+    let failed = cancel(
+        &config,
+        deps(&mut http, &mut logging, &redactor),
+        &call.request(),
+    )
+    .expect_err("openai has no interactions API");
+    assert_eq!(
+        failed.error.to_string(),
+        "Interactions API not supported for: openai"
+    );
+    let ErrorClass::BadRequest(details) = &failed.class else {
+        panic!("expected a bad request, got {:?}", failed.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(
+        details.message,
+        "Interactions API not supported for: openai"
+    );
+}
+
+#[test]
+fn cancel_maps_a_client_unknown_provider_to_a_bad_request() {
+    let fault: InteractionLifecycleError<FixtureError> =
+        InteractionLifecycleError::Client(Box::new(ClientError::UnknownProvider {
+            provider: "nope".to_owned(),
+        }));
+    let failed = failure(fault, "nope", &redactor());
+    let ErrorClass::BadRequest(details) = &failed.class else {
+        panic!("expected a bad request, got {:?}", failed.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("nope"));
+    assert_eq!(
+        details.message,
+        "\"nope\" is not a provider betterlite knows"
+    );
 }
 
 #[tokio::test]

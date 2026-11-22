@@ -181,17 +181,22 @@ fn create_a_provider_without_a_video_config_is_unsupported() {
         failure.error.to_string(),
         "video create character is not supported for anthropic"
     );
-    let ErrorClass::ApiConnection(context) = &failure.class else {
-        panic!("expected an api connection, got {:?}", failure.class);
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("expected a bad request, got {:?}", failure.class);
     };
-    assert_eq!(context.provider.as_deref(), Some("anthropic"));
-    assert_eq!(context.model.as_deref(), Some(""));
+    assert_eq!(failure.class.metadata().status_code, 400);
+    assert_eq!(
+        details.message,
+        "video create character is not supported for anthropic"
+    );
+    assert_eq!(details.provider.as_deref(), Some("anthropic"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert!(fixture.handler.creates.is_empty());
     assert_eq!(fixture.state().call_type, INITIAL_CALL_TYPE);
 }
 
 #[test]
-fn create_a_provider_betterlite_does_not_know_is_a_value_error() {
+fn create_a_provider_betterlite_does_not_know_answers_400() {
     let mut fixture = Fixture::new();
     let mut call = full_create_call();
     call.custom_llm_provider = "acme".to_owned();
@@ -199,10 +204,15 @@ fn create_a_provider_betterlite_does_not_know_is_a_value_error() {
     let failure = fixture.create(&call).expect_err("acme is no provider");
 
     assert!(failure.error.to_string().contains("acme"));
-    let ErrorClass::ApiConnection(context) = &failure.class else {
-        panic!("expected an api connection, got {:?}", failure.class);
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("expected a bad request, got {:?}", failure.class);
     };
-    assert_eq!(context.provider.as_deref(), Some("acme"));
+    assert_eq!(
+        details.message,
+        "\"acme\" is not a provider betterlite knows"
+    );
+    assert_eq!(details.provider.as_deref(), Some("acme"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert!(fixture.handler.creates.is_empty());
 }
 

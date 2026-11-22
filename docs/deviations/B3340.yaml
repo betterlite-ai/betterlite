@@ -21,6 +21,22 @@ deviations:
   - what: "avideo_remix and avideo_list await the async handler directly instead of running the sync function through partial, contextvars.copy_context and loop.run_in_executor."
     why: "The request, transforms and result are the same; Rust has neither contextvars nor a GIL, and LiteLLM's executor hop exists only to reuse the sync function from its async wrapper."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L482-L500
+  - what: >-
+      A video_remix call whose provider is unknown or has no video config answers a BadRequestError (400) with
+      model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes out as an
+      APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L600-L604
+  - what: >-
+      A video_list call whose provider is unknown or has no video config answers a BadRequestError (400) with
+      model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes out as an
+      APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L812-L816
 kept_bugs:
   - what: "video_remix accepts extra_query and never forwards it, and video_list accepts extra_body and never forwards it."
     why: "LiteLLM's remix handler takes extra_headers and extra_body only, and its list handler takes extra_headers and extra_query only; a working caller passes the parameter the handler reads, so betterlite keeps both keywords accepted and dropped rather than silently forwarding them."

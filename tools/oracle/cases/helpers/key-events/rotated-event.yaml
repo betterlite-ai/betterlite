@@ -1,0 +1,26 @@
+kind: helper
+name: key-events-rotated-event
+call:
+  key_events:
+    event: rotated
+    data: {key: sk-old-token-value, key_alias: requested-alias}
+    response: {key: sk-new-rotated-value, token_id: "", key_alias: resp-alias, spend: 0.5, team_id: team-a, user_id: user-a}
+    row: {token: "", key_alias: old-alias, team_id: team-a}
+    rows: []
+    caller: {user_id: user-a, api_key: sk-caller-api-key, token: null, metadata: {}, team_metadata: null}
+    changed_by: null
+    admin_name: proxy-admin
+    audit: true
+    now: "2026-01-02T03:04:05Z"
+    id: "00000000-0000-4000-8000-000000000789"
+    settings: {store_virtual_keys: true, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+    client: true
+    runtime: ready
+    teams:
+      team-a: {secret_manager_settings: {region: eu-west-1}}
+    secrets: {}
+    failing: []
+    alerting: [email]
+calls: []
+env: {}
+compare: {ignore: []}

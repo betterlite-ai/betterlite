@@ -1,0 +1,20 @@
+kind: probe
+name: shadow-eval-validation-one-to-hundred-targets
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_validation:
+        steps:
+          - parse:
+              text: '{"api_key_ids":["key-0"],"router_names":["shadow-router"],"shadow_percentage":50}'
+          - parse:
+              text: '{"team_ids":["team-0","team-1","team-2","team-3","team-4","team-5","team-6","team-7","team-8","team-9","team-10","team-11","team-12","team-13","team-14","team-15","team-16","team-17","team-18","team-19","team-20","team-21","team-22","team-23","team-24","team-25","team-26","team-27","team-28","team-29","team-30","team-31","team-32","team-33","team-34","team-35","team-36","team-37","team-38","team-39","team-40","team-41","team-42","team-43","team-44","team-45","team-46","team-47","team-48","team-49","team-50","team-51","team-52","team-53","team-54","team-55","team-56","team-57","team-58","team-59","team-60","team-61","team-62","team-63","team-64","team-65","team-66","team-67","team-68","team-69","team-70","team-71","team-72","team-73","team-74","team-75","team-76","team-77","team-78","team-79","team-80","team-81","team-82","team-83","team-84","team-85","team-86","team-87","team-88","team-89","team-90","team-91","team-92","team-93","team-94","team-95","team-96","team-97","team-98","team-99"],"router_names":["shadow-router"],"shadow_percentage":50}'
+          - parse:
+              text: '{"team_ids":["team-0","team-1","team-2","team-3","team-4","team-5","team-6","team-7","team-8","team-9","team-10","team-11","team-12","team-13","team-14","team-15","team-16","team-17","team-18","team-19","team-20","team-21","team-22","team-23","team-24","team-25","team-26","team-27","team-28","team-29","team-30","team-31","team-32","team-33","team-34","team-35","team-36","team-37","team-38","team-39","team-40","team-41","team-42","team-43","team-44","team-45","team-46","team-47","team-48","team-49","team-50","team-51","team-52","team-53","team-54","team-55","team-56","team-57","team-58","team-59","team-60","team-61","team-62","team-63","team-64","team-65","team-66","team-67","team-68","team-69","team-70","team-71","team-72","team-73","team-74","team-75","team-76","team-77","team-78","team-79","team-80","team-81","team-82","team-83","team-84","team-85","team-86","team-87","team-88","team-89","team-90","team-91","team-92","team-93","team-94","team-95","team-96","team-97","team-98","team-99","team-100"],"router_names":["shadow-router"],"shadow_percentage":50}'
+          - parse:
+              text: '{"api_key_ids":["key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0","key-0"],"router_names":["shadow-router"],"shadow_percentage":50}'
+          - parse:
+              text: '{"api_key_ids":["key-0","key-0"],"router_names":["shadow-router"],"shadow_percentage":50}'
+compare:
+  ignore: []
