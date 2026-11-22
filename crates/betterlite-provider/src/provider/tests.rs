@@ -20,7 +20,6 @@ use super::speech_providers::SpeechProviders;
 use super::subscription::Subscription;
 use crate::anthropic_dispatch::Anthropic;
 use crate::anthropic_dispatch::base::Surface;
-use crate::azure_dispatch::Azure;
 use crate::bedrock_dispatch_contract::Bedrock;
 use crate::compatible_providers::Compatible;
 use crate::embedding_rerank_providers::EmbeddingRerank;
@@ -85,7 +84,6 @@ fn client() -> ProxiedClient {
 }
 
 #[rstest]
-#[case::azure(Provider::Azure(Azure), "azure")]
 #[case::azure_ai(Provider::AzureAi(AzureAi), "azure_ai")]
 #[case::anthropic_text(
     Provider::Anthropic(Anthropic {
