@@ -11,18 +11,10 @@ use super::error::ImageEditError;
 pub(crate) fn merged_headers(call: &ImageEditCall) -> Result<Option<ImageHeaders>, ImageEditError> {
     let mut merged = ImageParams::new();
     if let Some(Json::Object(entries)) = call.kwargs.get("headers") {
-        merged.extend(
-            entries
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone())),
-        );
+        merged.extend(entries.to_owned());
     }
     if let Some(extra) = &call.extra_headers {
-        merged.extend(
-            extra
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone())),
-        );
+        merged.extend(extra.to_owned());
     }
     if merged.is_empty() {
         return Ok(None);
@@ -42,12 +34,7 @@ pub(crate) fn form_fields(
     call: &ImageEditCall,
     non_default: &Params,
 ) -> Result<Vec<FormField>, ImageEditError> {
-    let source = JsonValue::Object(
-        non_default
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect(),
-    );
+    let source = JsonValue::Object(non_default.to_owned().into_iter().collect());
     let body = call.extra_body.as_ref().map(|params| {
         JsonValue::Object(
             params

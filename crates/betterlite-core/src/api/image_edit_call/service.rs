@@ -6,7 +6,6 @@ use betterlite_context::non_default_params::Params;
 use betterlite_context::non_default_params::filters::filter_out_litellm_params;
 use betterlite_context::non_default_params::names::is_openai_compatible_provider;
 use betterlite_models::decisions::Json;
-use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{
     ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, resolve,
 };
@@ -132,9 +131,11 @@ impl ImageEdits<'_> {
         let unsupported = || ImageEditError::UnsupportedConfig {
             provider: resolved.provider.clone(),
         };
-        let tag = provider_id(&resolved.identity)
-            .and_then(|provider| select_image_edit(&resolved.model, provider))
-            .ok_or_else(unsupported)?;
+        let tag = match &resolved.identity {
+            ProviderIdentity::Known(id) => select_image_edit(&resolved.model, *id),
+            ProviderIdentity::Anyscale | ProviderIdentity::Custom(_) => None,
+        }
+        .ok_or_else(unsupported)?;
         let provider = self.providers.provider(&tag).ok_or_else(unsupported)?;
         Ok((tag, provider))
     }
@@ -173,12 +174,17 @@ impl ImageEdits<'_> {
         let non_default =
             filter_out_litellm_params(&control_params(&call.kwargs), &OPENAI_EDIT_PARAMS);
         let mut params = self.edit_params(call, resolved, provider, &non_default)?;
+        let mut litellm_params = params.clone();
+        for name in ["litellm_call_id", "model_info"] {
+            let value = call.kwargs.get(name).cloned().unwrap_or(Json::Null);
+            litellm_params.insert(name.to_owned(), value);
+        }
         // the record keeps the options as they stand here, before any branch-specific merge
         logger.update_from_kwargs(PreCallRecord {
             model: resolved.model.clone(),
             user: call.user.clone(),
             optional_params: params.clone(),
-            litellm_params: logged_params(&params, &call.kwargs),
+            litellm_params,
             custom_llm_provider: resolved.provider.clone(),
         })?;
         let timeout = branch_timeout(&tag, call.timeout, self.settings.request_timeout_seconds)?;
@@ -212,27 +218,11 @@ fn client_for(call: &ImageEditCall, asynchronous: bool) -> Option<ImageEditClien
         .filter(|kind| *kind == ImageEditClientKind::of(asynchronous))
 }
 
-fn logged_params(params: &ImageParams, kwargs: &ImageParams) -> ImageParams {
-    let mut logged = params.clone();
-    for name in ["litellm_call_id", "model_info"] {
-        let value = kwargs.get(name).cloned().unwrap_or(Json::Null);
-        logged.insert(name.to_owned(), value);
-    }
-    logged
-}
-
 fn text_param<'params>(params: &'params ImageParams, name: &str) -> Option<&'params str> {
     match params.get(name) {
         Some(Json::Text(text)) => Some(text),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
-    }
-}
-
-const fn provider_id(identity: &ProviderIdentity) -> Option<ProviderId> {
-    match identity {
-        ProviderIdentity::Known(provider) => Some(*provider),
-        ProviderIdentity::Anyscale | ProviderIdentity::Custom(_) => None,
     }
 }
 

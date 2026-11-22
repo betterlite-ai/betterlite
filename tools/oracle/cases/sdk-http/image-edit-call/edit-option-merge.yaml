@@ -24,6 +24,9 @@ call:
         kwargs:
           headers: {x: old}
           settings: {strength: 1}
+      - {recorded: true, model: gemini/gemini-2.5-flash-image, image: abc, prompt: unsupported-n, n: 1}
+      - {recorded: true, model: gemini/gemini-2.5-flash-image, image: abc, prompt: unsupported-background, kwargs: {background: transparent}}
+      - {recorded: true, model: gemini/gemini-2.5-flash-image, image: abc, prompt: null-background, kwargs: {background: null}}
 upstream:
   - status: 200
     headers: {content-type: application/json}
@@ -34,3 +37,7 @@ compare:
   upstream_headers: [authorization, x]
   ignore:
     - {pointer: /upstream/0/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - pointer: /image_edit_call/value/runs/2/failure/message
+      why: "LiteLLM's UnsupportedParamsError constructor prefixes the message with \"litellm.UnsupportedParamsError: \", and betterlite carries the mapper's text without that prefix, while class, status, type, param and code compare"
+    - pointer: /image_edit_call/value/runs/3/failure/message
+      why: "LiteLLM's UnsupportedParamsError constructor prefixes the message with \"litellm.UnsupportedParamsError: \", and betterlite carries the mapper's text without that prefix, while class, status, type, param and code compare"

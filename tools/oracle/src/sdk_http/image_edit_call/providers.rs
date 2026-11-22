@@ -145,9 +145,7 @@ fn received(
         .collect();
     Ok(Received {
         model: model.to_owned(),
-        images: texts.map_err(|error| ImageEditError::Invalid {
-            message: error.to_string(),
-        })?,
+        images: texts.map_err(|error| ImageEditError::Invalid(error.to_string()))?,
         prompt: prompt.map(str::to_owned),
         optional_params: optional_params.clone(),
         timeout: timeout.and_then(Number::from_f64),

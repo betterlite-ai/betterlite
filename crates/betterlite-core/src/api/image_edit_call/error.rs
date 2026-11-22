@@ -1,5 +1,5 @@
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
-use betterlite_error::error::ErrorClass;
+use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::controls::multipart::FormFieldError;
 use betterlite_models::resolution::ResolutionError;
@@ -29,8 +29,8 @@ pub enum ImageEditError {
     HeaderText { name: String },
     #[error("timeout must be a non-negative number of seconds, got {seconds}")]
     InvalidTimeout { seconds: f64 },
-    #[error("{message}")]
-    Invalid { message: String },
+    #[error("{0}")]
+    Invalid(String),
     #[error(transparent)]
     Provider(#[from] ProviderFailure),
     #[error("the image edit transport failed: {message}")]
@@ -64,7 +64,10 @@ impl ImageEditException {
         redactor: &Redactor,
     ) -> Self {
         match error {
-            ImageEditError::Resolution(_) | ImageEditError::UnknownProvider { .. } => {
+            // Invalid is a request value the declared type can't hold: docs/compatibility.md's 400 that names the field
+            ImageEditError::Invalid(_)
+            | ImageEditError::Resolution(_)
+            | ImageEditError::UnknownProvider { .. } => {
                 let message = error.to_string();
                 project(
                     raw_exception(&message, Some(400), false, model, provider),
@@ -84,13 +87,27 @@ impl ImageEditException {
                 &source.message,
                 redactor,
             ),
+            // LiteLLM raises UnsupportedParamsError itself and exception_type passes it through: 400, no type, param null, no code
+            ImageEditError::Options(ImageInputOptionsError::UnsupportedParams { .. }) => {
+                ImageEditException {
+                    class: ErrorClass::UnsupportedParams(Box::new(ErrorContext {
+                        message: error.to_string(),
+                        model: model.map(str::to_owned),
+                        provider: Some(provider.to_owned()),
+                        max_retries: None,
+                        num_retries: None,
+                        body_type: None,
+                        body_param: None,
+                        body_code: None,
+                    })),
+                    message: error.to_string(),
+                }
+            }
             ImageEditError::UnsupportedConfig { .. }
-            | ImageEditError::Options(_)
             | ImageEditError::FormField(_)
             | ImageEditError::Json(_)
             | ImageEditError::HeaderText { .. }
             | ImageEditError::InvalidTimeout { .. }
-            | ImageEditError::Invalid { .. }
             | ImageEditError::Transport { .. }
             | ImageEditError::Logging(_) => {
                 let message = error.to_string();

@@ -69,10 +69,8 @@ impl ImageEditProvider for OpenAiProvider {
         let seconds = request.timeout.unwrap_or_default();
         let timeout = Duration::try_from_secs_f64(seconds)
             .map_err(|_invalid| ImageEditError::InvalidTimeout { seconds })?;
-        let redactor =
-            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| ImageEditError::Invalid {
-                message: error.to_string(),
-            })?;
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+            .map_err(|error| ImageEditError::Invalid(error.to_string()))?;
         let edit = OwnedEdit {
             redactor,
             config: OpenAiConfig {
@@ -148,9 +146,7 @@ fn logging_state(redactor: &Redactor) -> Result<LoggingState, ImageEditError> {
         || String::from("generated"),
         Duration::default,
     )
-    .map_err(|error| ImageEditError::Invalid {
-        message: error.to_string(),
-    })
+    .map_err(|error| ImageEditError::Invalid(error.to_string()))
 }
 
 fn pre_post_env(redactor: &Redactor) -> PrePostEnv<'_> {

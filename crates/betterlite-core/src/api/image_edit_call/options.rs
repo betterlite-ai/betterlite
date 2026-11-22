@@ -2,44 +2,52 @@ use betterlite_context::non_default_params::Params;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageParams};
 use betterlite_openai::image_edits::file::DEFAULT_MASK_NAME;
-use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 
 use super::call::ImageEditCall;
 use super::error::ImageEditError;
 use crate::api::image_input_options::options::ImageEditOptionalRequestParams;
-use crate::api::image_input_options::selection::OptionalParamsPolicy;
+use crate::api::image_input_options::selection::{OptionalParamsPolicy, requested_optional_params};
 
-// the typed ImageEditOptionalRequestParams names, which arrive as named arguments and never through kwargs
-const NAMED_PARAMS: [&str; 6] = ["mask", "n", "quality", "response_format", "size", "user"];
-
-// local_vars.update(kwargs) then get_requested_image_edit_optional_param: the typed fields first, then the supported kwargs in caller order
+// local_vars.update(kwargs) then get_requested_image_edit_optional_param: a kwarg of a declared field fills it, the rest are extensions the provider supports
 pub(crate) fn requested_options(
     call: &ImageEditCall,
     provider_supported: &[String],
 ) -> Result<ImageEditOptionalRequestParams, ImageEditError> {
     let mut options = ImageEditOptionalRequestParams {
-        background: None,
-        input_fidelity: None,
         mask: call.mask.as_ref().map(mask_name),
         count: call.count,
         quality: call.quality,
         response_format: call.response_format,
         size: call.size.clone(),
         user: call.user.clone(),
-        image_config: None,
-        extensions: IndexMap::new(),
+        ..ImageEditOptionalRequestParams::default()
     };
-    for name in provider_supported {
-        if NAMED_PARAMS.contains(&name.as_str()) {
-            continue;
-        }
-        if let Some(value) = call.kwargs.get(name) {
-            options
-                .extensions
-                .insert(name.clone(), serde_json::to_value(value)?);
+    for (name, value) in &call.kwargs {
+        match name.as_str() {
+            "background" => options.background = typed_kwarg(name, value)?,
+            "input_fidelity" => options.input_fidelity = typed_kwarg(name, value)?,
+            "imageConfig" => options.image_config = typed_kwarg(name, value)?,
+            _ => {
+                options
+                    .extensions
+                    .insert(name.clone(), serde_json::to_value(value)?);
+            }
         }
     }
-    Ok(options)
+    Ok(requested_optional_params(&options, provider_supported))
+}
+
+// a declared field a kwarg fills: JSON null counts as absent, and a value the declared type can't hold names the field
+fn typed_kwarg<T: DeserializeOwned>(name: &str, value: &Json) -> Result<Option<T>, ImageEditError> {
+    match value {
+        Json::Null => Ok(None),
+        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+            serde_json::from_value(serde_json::to_value(value)?)
+                .map(Some)
+                .map_err(|error| ImageEditError::Invalid(format!("{name}: {error}")))
+        }
+    }
 }
 
 // litellm.drop_params is True or the call's drop_params is True; additional_drop_params drops by name

@@ -46,6 +46,8 @@ compare:
   headers_present: []
   upstream_headers: [authorization]
   ignore:
+    - {pointer: /upstream/0/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - {pointer: /upstream/1/body, why: a multipart boundary is random on each side so the captured body bytes never match}
     - pointer: /image_edit_call/value/runs/2/failure/class
       why: LiteLLM raises its LiteLLMUnknownProvider subclass of BadRequestError, and the error classes betterlite maps into stop at BadRequestError while status, type, param and code still compare
     - pointer: /image_edit_call/value/runs/2/failure/message
