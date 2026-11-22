@@ -1,7 +1,7 @@
 id: B1617
 milestone: M4 keys, spend and management
 title: Connect SSO identities to agent enrollment and assertion diagnostics
-status: todo
+status: done
 depends_on: [B002, B10011, B4770, B4772, B4773, B171]
 file: tasks/B1617-sso-identity-bridge.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
 parent: B063
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2880

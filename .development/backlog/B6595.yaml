@@ -1,14 +1,14 @@
 id: B6595
 milestone: M9 agents and mcp
 title: MCP discoverable endpoint DCR hydration
-status: todo
+status: done
 depends_on: [B6590, B2303]
 file: tasks/B6595-mcp-discoverable-dcr-hydration.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py"
 parent: null
 split_from: B136
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2882
