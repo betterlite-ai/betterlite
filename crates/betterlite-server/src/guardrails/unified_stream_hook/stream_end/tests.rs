@@ -15,7 +15,7 @@ use betterlite_guardrails::llm_passthrough_dispatch::LlmPassthroughRouteHandler;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 
-use super::StreamEndCheck;
+use super::StreamEndCheck as _;
 use crate::guardrails::a2a_translation::adapter::A2ATranslation;
 use crate::guardrails::bedrock_passthrough::event_stream::hook::PostCallSuccessHook;
 use crate::guardrails::unified_chat::anthropic::AnthropicTranslation;

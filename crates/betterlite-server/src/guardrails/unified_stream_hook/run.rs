@@ -88,9 +88,7 @@ where
     }))
 }
 
-fn plan<'run, T, G, E>(
-    params: StreamHookParams<'run, T, G>,
-) -> Result<Plan<'run, T, G>, StreamHookError<E>> {
+fn plan<T, G, E>(params: StreamHookParams<'_, T, G>) -> Result<Plan<'_, T, G>, StreamHookError<E>> {
     let Some(applied) = params.guardrail else {
         return Ok(Plan::Hook(Stage::PassThrough));
     };
@@ -126,7 +124,7 @@ fn plan<'run, T, G, E>(
 }
 
 // LiteLLM runs incremental_diff only where the request route resolves to the chat-completions translation
-fn transform_plan<'run, T, G>(inputs: BlockOnlyInputs<'run, T, G>) -> Plan<'run, T, G> {
+fn transform_plan<T, G>(inputs: BlockOnlyInputs<'_, T, G>) -> Plan<'_, T, G> {
     let registry = inputs.registry;
     let transform = resolve_transform_call_type(registry, inputs.routes, inputs.request_route)
         .and_then(|call_type| registry.get(call_type));
@@ -222,14 +220,17 @@ where
                         .push_back(Err(StreamHookError::Loop(failure)));
                     self.finished = true;
                 }
-                None => {
-                    if let Stage::Scanning(scanner) = &mut self.stage {
-                        finish_stream(&mut self.window, scanner).await;
-                    }
-                    self.finished = true;
-                }
+                None => self.end_stream().await,
             }
         }
+    }
+
+    // LiteLLM scans everything received so far once the iterator ends; without a translation nothing is scanned
+    async fn end_stream(&mut self) {
+        if let Stage::Scanning(scanner) = &mut self.stage {
+            finish_stream(&mut self.window, scanner).await;
+        }
+        self.finished = true;
     }
 
     async fn consume(&mut self, item: GuardrailValue) {
@@ -253,26 +254,31 @@ fn resolved_stage<'run, T, G>(
     inputs: BlockOnlyInputs<'run, T, G>,
     first: &GuardrailValue,
 ) -> Stage<'run, T, G> {
-    let resolved = resolve_endpoint_translation(
-        inputs.registry,
-        inputs.routes,
-        inputs.request_route,
-        Some(first),
-    );
+    let BlockOnlyInputs {
+        registry,
+        routes,
+        request_route,
+        guardrail,
+        guardrail_name,
+        request_data,
+        user_api_key_dict,
+        settings,
+    } = inputs;
+    let resolved = resolve_endpoint_translation(registry, routes, request_route, Some(first));
     let Some((call_type, translation)) = resolved else {
         return Stage::PassThrough;
     };
     Stage::Scanning(Scanner {
         params: StreamLoopParams {
             translation,
-            guardrail: inputs.guardrail,
-            request_data: inputs.request_data,
-            user_api_key_dict: inputs.user_api_key_dict,
+            guardrail,
+            request_data,
+            user_api_key_dict,
             call_type,
-            sampling_rate: inputs.settings.sampling_rate,
-            end_of_stream_only: inputs.settings.end_of_stream_only,
+            sampling_rate: settings.sampling_rate,
+            end_of_stream_only: settings.end_of_stream_only,
         },
-        buffering: inputs.settings.buffer_until_moderated,
-        guardrail_name: inputs.guardrail_name,
+        buffering: settings.buffer_until_moderated,
+        guardrail_name,
     })
 }

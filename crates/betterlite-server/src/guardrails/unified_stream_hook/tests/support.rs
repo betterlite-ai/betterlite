@@ -85,7 +85,7 @@ pub(crate) fn content(item: &GuardrailValue) -> String {
 }
 
 fn joined(items: &[GuardrailValue]) -> String {
-    items.iter().map(content).collect::<Vec<String>>().join("")
+    items.iter().map(content).collect::<String>()
 }
 
 impl BaseTranslation for FakeTranslation {

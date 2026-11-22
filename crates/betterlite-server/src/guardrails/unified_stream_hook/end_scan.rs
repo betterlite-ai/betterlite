@@ -34,8 +34,8 @@ where
             "Skipping end-of-stream scan for guardrail {name}: the last sampled round already scanned it all"
         );
     } else {
-        let scanned = call_streaming(&mut scanner.params, &mut window.responses_so_far, None).await;
-        if let Err(failure) = scanned {
+        let outcome = call_streaming(&mut scanner.params, &mut window.responses_so_far, None).await;
+        if let Err(failure) = outcome {
             window.terminate(&scanner.params, failure);
             return;
         }

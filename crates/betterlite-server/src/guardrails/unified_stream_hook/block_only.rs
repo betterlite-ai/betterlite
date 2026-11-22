@@ -78,11 +78,10 @@ where
     }
 
     // a chunk after the stream ended waits for the final scan, so a block can replace the finish
-    fn hold_for_end<T: StreamEndCheck, G>(
-        &mut self,
-        scanner: &Scanner<'_, T, G>,
-        item: GuardrailValue,
-    ) {
+    fn hold_for_end<T, G>(&mut self, scanner: &Scanner<'_, T, G>, item: GuardrailValue)
+    where
+        T: StreamEndCheck,
+    {
         if scanner.buffering {
             self.withheld_items.push(item);
         } else if !self.pending_items.is_empty()
@@ -160,8 +159,8 @@ where
             self.chunk_counter,
             scanner.params.sampling_rate
         );
-        let scanned = call_streaming(&mut scanner.params, &mut self.responses_so_far, None).await;
-        if let Err(failure) = scanned {
+        let outcome = call_streaming(&mut scanner.params, &mut self.responses_so_far, None).await;
+        if let Err(failure) = outcome {
             self.terminate(&scanner.params, failure);
             return ControlFlow::Break(());
         }
