@@ -8,7 +8,7 @@ use super::support::{Answer, CountedBody, Probe, RewriteAll, ScriptedHook, timed
 use crate::api::file_batch_guardrails::REWRITE_SPOOL_BYTES;
 use crate::api::file_batch_guardrails::record_json::text::RecordText;
 use crate::api::file_batch_guardrails::record_json::{RecordJson, RecordObject};
-use crate::api::file_batch_guardrails::records::RecordChange;
+use crate::api::file_batch_guardrails::records::{BatchScanResult, RecordChange};
 use crate::api::file_batch_rewrite::rewrite::rewrite_batch_input_file;
 use crate::api::file_batch_rewrite::scan::ScanFile;
 use crate::api::file_batch_rewrite::spool::Spool;
@@ -121,10 +121,8 @@ fn accented() -> RecordObject {
     data
 }
 
-// The scan's RecordRedacted carries the record's physical line, custom_id and the span of the rewritten record's UTF-8 bytes, and the rewrite copies exactly those bytes back
-#[tokio::test]
-async fn scan_spools_the_rewritten_bytes_and_their_span() {
-    let tasks = TaskTracker::new();
+// The scan of a blank line, the rewritten é row and a kept row, which spools the rewritten row at its own span
+async fn scanned_accented_row(tasks: &TaskTracker) -> (CountedBody, BatchScanResult<Spool>) {
     // the blank first line is never a record, but it still makes the rewritten record line 2
     let source = CountedBody::new(format!("\n{ACCENTED_ROW}\n{KEPT_ROW}"));
     let hook = ScriptedHook::with(
@@ -132,12 +130,20 @@ async fn scan_spools_the_rewritten_bytes_and_their_span() {
         Probe::new(Arc::clone(&source.traces.reads)),
     );
     let spool = Spool::default();
-    let outcome = timed_scan(&source.body, &hook, &spool, &tasks)
+    let outcome = timed_scan(&source.body, &hook, &spool, tasks)
         .await
         .expect("a scan answers");
     let ScanFile::Scanned(result) = outcome else {
         panic!("one rewritten row is a scanned file");
     };
+    (source, result)
+}
+
+// The scan's RecordRedacted carries the record's physical line, custom_id and the span of the rewritten record's UTF-8 bytes
+#[tokio::test]
+async fn scan_spools_the_rewritten_bytes_and_their_span() {
+    let tasks = TaskTracker::new();
+    let (_, result) = scanned_accented_row(&tasks).await;
     assert_eq!(result.changes.len(), 1);
     let RecordChange::Redacted(change) = &result.changes[0] else {
         panic!(
@@ -154,7 +160,7 @@ async fn scan_spools_the_rewritten_bytes_and_their_span() {
     );
     assert!(
         ACCENTED_SPOOLED.chars().count() < ACCENTED_SPOOLED.len(),
-        "the fixture's é must make the byte length exceed the character count"
+        "the fixture's \u{e9} must make the byte length exceed the character count"
     );
     assert_eq!(
         result
@@ -164,6 +170,13 @@ async fn scan_spools_the_rewritten_bytes_and_their_span() {
             .unwrap(),
         ACCENTED_SPOOLED.as_bytes()
     );
+}
+
+// The rewrite puts exactly the spooled bytes back in the rewritten row's place and keeps the untouched row
+#[tokio::test]
+async fn rewrite_copies_the_spooled_bytes_of_a_redacted_row() {
+    let tasks = TaskTracker::new();
+    let (source, result) = scanned_accented_row(&tasks).await;
     let output = Spool::default();
     let rewritten = rewrite_batch_input_file(&source.body, &result, &tasks, output)
         .await

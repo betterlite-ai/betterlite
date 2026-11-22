@@ -103,6 +103,7 @@ async fn upload_reads_run_on_the_blocking_port() {
         reads.iter().all(|read| *read != caller),
         "an upload read ran on the async task"
     );
+    drop(reads);
 }
 
 fn window_starts(hook: &ScriptedHook) -> Vec<usize> {

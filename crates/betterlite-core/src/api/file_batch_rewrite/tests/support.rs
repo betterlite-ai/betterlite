@@ -484,6 +484,45 @@ impl ScriptedHook {
         self.behavior = behavior;
         self
     }
+
+    async fn answer(&self, marker: &str, data: RecordObject) -> Result<RecordObject, FakeFailure> {
+        match &self.behavior {
+            Behavior::Answers => match self.answers.get(marker) {
+                Some(Answer::Rewrite) => Ok(rewritten(data)),
+                Some(Answer::Replace(replacement)) => Ok(replacement.clone()),
+                Some(Answer::Raise(failure) | Answer::Block(failure)) => Err(failure.clone()),
+                Some(Answer::RaiseAfter(failure, after)) => {
+                    while !self.earlier_call_done(after) {
+                        yield_now().await;
+                    }
+                    Err(failure.clone())
+                }
+                None => Ok(data),
+            },
+            Behavior::Reverse(reverse) => {
+                let ordinal = ordinal_of(marker);
+                while !reverse.later_rows_done(ordinal) {
+                    yield_now().await;
+                }
+                reverse.done.lock().unwrap().insert(ordinal);
+                Ok(rewritten(data))
+            }
+            Behavior::Cancel(watch) => {
+                let _signal = watch.arm(&self.probe);
+                pending::<()>().await;
+                Ok(data)
+            }
+        }
+    }
+
+    fn earlier_call_done(&self, after: &str) -> bool {
+        self.probe
+            .completed
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|done| done == after)
+    }
 }
 
 fn rewritten(mut data: RecordObject) -> RecordObject {
@@ -500,40 +539,7 @@ impl GuardrailsOnlyPreCall for ScriptedHook {
         if let Some(gate) = &self.gate {
             gate.wait().await;
         }
-        let answer = match &self.behavior {
-            Behavior::Answers => match self.answers.get(&call.marker) {
-                Some(Answer::Rewrite) => Ok(rewritten(input.data)),
-                Some(Answer::Replace(data)) => Ok(data.clone()),
-                Some(Answer::Raise(failure) | Answer::Block(failure)) => Err(failure.clone()),
-                Some(Answer::RaiseAfter(failure, after)) => {
-                    while !self
-                        .probe
-                        .completed
-                        .lock()
-                        .unwrap()
-                        .iter()
-                        .any(|done| done == after)
-                    {
-                        yield_now().await;
-                    }
-                    Err(failure.clone())
-                }
-                None => Ok(input.data),
-            },
-            Behavior::Reverse(reverse) => {
-                let ordinal = ordinal_of(&call.marker);
-                while !reverse.later_rows_done(ordinal) {
-                    yield_now().await;
-                }
-                reverse.done.lock().unwrap().insert(ordinal);
-                Ok(rewritten(input.data))
-            }
-            Behavior::Cancel(watch) => {
-                let _signal = watch.arm(&self.probe);
-                pending::<()>().await;
-                Ok(input.data)
-            }
-        };
+        let answer = self.answer(&call.marker, input.data).await;
         self.probe
             .completed
             .lock()

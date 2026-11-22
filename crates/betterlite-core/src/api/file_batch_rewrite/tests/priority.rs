@@ -59,7 +59,11 @@ async fn worst_problem_priority() {
             panic!("the refusal at line 2 wins, got {other:?}")
         }
     }
-    // Line 5 raises at once and line 2 raises only after that call returned: the earliest line still wins
+}
+
+// Line 5 raises at once and line 2 raises only after that call returned: the earliest line still wins
+#[tokio::test]
+async fn a_slow_earlier_raise_still_wins() {
     let rows = lines_of(5);
     let row_refs: Vec<&str> = rows.split('\n').collect();
     match scan_file(
