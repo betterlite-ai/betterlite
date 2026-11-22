@@ -197,8 +197,8 @@ struct ResultsExpectation {
     router_groups: Vec<&'static str>,
     overall_shadow_win: f64,
     overall_tie: f64,
-    real_spend: Decimal,
-    shadow_spend: Decimal,
+    real_spend: f64,
+    shadow_spend: f64,
     funnel: Option<(i64, i64, i64, i64)>,
     verdicts: Vec<(ShadowEvalTargetType, &'static str, &'static str)>,
 }
@@ -354,8 +354,8 @@ enum Behavior {
         router_groups: vec!["router-a"],
         overall_shadow_win: 40.0,
         overall_tie: 20.0,
-        real_spend: money(0.4),
-        shadow_spend: money(0.300_000_000_000_000_04),
+        real_spend: 0.4_f64,
+        shadow_spend: 0.300_000_000_000_000_04_f64,
         funnel: None,
         verdicts: vec![(Key, "k1", "k1"), (Team, "t1", "t1")],
     },
@@ -379,8 +379,8 @@ enum Behavior {
         router_groups: Vec::new(),
         overall_shadow_win: 50.0,
         overall_tie: 0.0,
-        real_spend: money(0.0),
-        shadow_spend: money(0.0),
+        real_spend: 0.0_f64,
+        shadow_spend: 0.0_f64,
         funnel: Some((7, 3, 2, 1)),
         verdicts: Vec::new(),
     },
@@ -402,8 +402,33 @@ enum Behavior {
         router_groups: Vec::new(),
         overall_shadow_win: 100.0_f64,
         overall_tie: 0.0_f64,
-        real_spend: money(0.6),
-        shadow_spend: money(0.6),
+        real_spend: 0.6_f64,
+        shadow_spend: 0.6_f64,
+        funnel: None,
+        verdicts: Vec::new(),
+    },
+}))]
+#[case::results_print_a_sampled_spend_as_the_python_float(Behavior::Results(ResultsCase {
+    legs: Vec::new(),
+    by_tier: vec![agg(
+        "simple",
+        1,
+        (0, 1, 0, 0),
+        None,
+        (0.123_456_7_f64, 0.123_456_7_f64),
+    )],
+    by_model: Vec::new(),
+    by_leg: Vec::new(),
+    by_router: Vec::new(),
+    funnel: None,
+    expected: ResultsExpectation {
+        tier_groups: vec!["simple"],
+        model_groups: Vec::new(),
+        router_groups: Vec::new(),
+        overall_shadow_win: 100.0_f64,
+        overall_tie: 0.0_f64,
+        real_spend: 0.123_456_7_f64,
+        shadow_spend: 0.123_456_7_f64,
         funnel: None,
         verdicts: Vec::new(),
     },
@@ -551,8 +576,14 @@ fn assert_result_totals(result: &ShadowEvalResult, expected: &ResultsExpectation
         result.overall_tie_rate_pct.to_bits(),
         expected.overall_tie.to_bits()
     );
-    assert_eq!(result.sampled_real_spend, expected.real_spend);
-    assert_eq!(result.sampled_shadow_spend, expected.shadow_spend);
+    assert_eq!(
+        result.sampled_real_spend.as_f64().to_bits(),
+        expected.real_spend.to_bits()
+    );
+    assert_eq!(
+        result.sampled_shadow_spend.as_f64().to_bits(),
+        expected.shadow_spend.to_bits()
+    );
     let funnel = expected.funnel;
     assert_eq!(result.not_sampled_count, funnel.map(|counts| counts.0));
     assert_eq!(result.unjudgeable_count, funnel.map(|counts| counts.1));

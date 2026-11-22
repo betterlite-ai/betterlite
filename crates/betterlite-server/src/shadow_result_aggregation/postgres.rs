@@ -17,7 +17,7 @@ use super::queries::{
 };
 use super::repository::{RepositoryResult, ShadowResultsRepository};
 use super::responses::{AttemptTotals, ErrorAttempt, LegAttemptCount, latest_error};
-use super::results::FunnelTotals;
+use super::results::{FunnelTotals, spend_decimal};
 use super::targets::parse_target_type;
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 
@@ -208,11 +208,10 @@ fn user_label_row(row: &Row) -> RepositoryResult<LabelRow> {
     })
 }
 
-// the column holds the SQL sum's double; retaining that exact value keeps Python's round of it
+// the column holds the SQL sum's double, and this Decimal reads back as that same double
 fn money(row: &Row, name: &'static str) -> RepositoryResult<Decimal> {
     let value: f64 = column(row, name)?;
-    let exact = Decimal::from_f64_retain(value);
-    exact.ok_or(ShadowResultsError::Unrepresentable { name })
+    spend_decimal(value).ok_or(ShadowResultsError::Unrepresentable { name })
 }
 
 fn column<T>(row: &Row, name: &'static str) -> RepositoryResult<T>

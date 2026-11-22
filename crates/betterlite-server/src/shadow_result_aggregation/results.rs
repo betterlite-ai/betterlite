@@ -130,7 +130,18 @@ fn summed_spend(
     if compensation.is_finite() {
         total = total.add(compensation);
     }
-    Decimal::from_f64_retain(total).ok_or(ShadowResultsError::Unrepresentable { name })
+    spend_decimal(total).ok_or(ShadowResultsError::Unrepresentable { name })
+}
+
+// Python hands LiteLLM these spends as floats (a SQL ::float column, a summed double), and serde
+// writes a Decimal back through rust_decimal's as_f64, which rescales by 10^scale and can land one
+// ulp off that double. Take the first scale whose decimal reads back as it, so JSON stays equal.
+pub(super) fn spend_decimal(value: f64) -> Option<Decimal> {
+    let exact = Decimal::from_f64_retain(value)?;
+    let scaled = (0..=Decimal::MAX_SCALE)
+        .map(|places| exact.round_dp(places))
+        .find(|candidate| candidate.as_f64().to_bits() == value.to_bits());
+    Some(scaled.unwrap_or(exact))
 }
 
 // each leg's slice, keyed by the (target_type, target_id) pair so same-id targets never collapse
