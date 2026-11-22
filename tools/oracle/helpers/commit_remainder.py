@@ -15,14 +15,8 @@ from pydantic import JsonValue
 from typing_extensions import override
 
 Token = Literal[
-    "ok",
-    "connect_error",
-    "read_timeout",
-    "read_error",
-    "data_rejected",
-    "deadlock",
-    "unknown_sqlstate",
-    "other_failure",
+    "ok", "connect_error", "read_timeout", "read_error",
+    "data_rejected", "deadlock", "unknown_sqlstate", "other_failure",
 ]
 
 # asyncio.create_task in the source's reporter needs this many turns to run its failure handler
@@ -51,32 +45,20 @@ class ScriptedDataError(ScriptedDatabaseError):
         self.meta = {"code": code}
 
 
-class ScriptedPrismaError(ScriptedDatabaseError):
-    pass
-
-
-class ScriptedOtherError(ScriptedDatabaseError):
-    pass
-
-
-class PrismaErrorsModule(ModuleType):
+class PrismaModule(ModuleType):
+    errors: "PrismaModule"
     PrismaError: type[Exception]
     DataError: type[Exception]
     ClientNotConnectedError: type[Exception]
 
 
-class PrismaModule(ModuleType):
-    errors: PrismaErrorsModule
-
-
 # the source resolves prisma's error classes lazily; the oracle environment has no prisma package
-PRISMA_ERRORS: Final = PrismaErrorsModule("prisma.errors")
-PRISMA_ERRORS.PrismaError = ScriptedPrismaError
-PRISMA_ERRORS.DataError = ScriptedDataError
-PRISMA_ERRORS.ClientNotConnectedError = ScriptedDatabaseError
 PRISMA: Final = PrismaModule("prisma")
-PRISMA.errors = PRISMA_ERRORS
-sys.modules.update({"prisma": PRISMA, "prisma.errors": PRISMA_ERRORS})
+PRISMA.PrismaError = ScriptedDatabaseError
+PRISMA.DataError = ScriptedDataError
+PRISMA.ClientNotConnectedError = ScriptedDatabaseError
+PRISMA.errors = PRISMA
+sys.modules.update({"prisma": PRISMA, "prisma.errors": PRISMA})
 
 
 def scripted_error(token: Token) -> Exception:
@@ -89,10 +71,10 @@ def scripted_error(token: Token) -> Exception:
     if token == "data_rejected":
         return ScriptedDataError("23514", token)
     if token == "deadlock":
-        return ScriptedPrismaError("write conflict or a deadlock detected")
+        return ScriptedDatabaseError("write conflict or a deadlock detected")
     if token == "unknown_sqlstate":
         return ScriptedDataError("42P01", token)
-    return ScriptedOtherError(token)
+    return ScriptedDatabaseError(token)
 
 
 class Session:
@@ -166,12 +148,8 @@ class CaseWriter(DBSpendUpdateWriter):
         transactions: dict[str, DailyUserSpendTransaction],
     ) -> None:
         await self._update_daily_spend(
-            n_retry_times=retries,
-            prisma_client=client,
-            proxy_logging_obj=recorder,
-            daily_spend_transactions=transactions,
-            entity_type="user",
-            entity_id_field="user_id",
+            n_retry_times=retries, prisma_client=client, proxy_logging_obj=recorder,
+            daily_spend_transactions=transactions, entity_type="user", entity_id_field="user_id",
         )
 
 
@@ -185,18 +163,11 @@ def transaction(index: int) -> DailyUserSpendTransaction:
         mcp_namespaced_tool_name=None,
         custom_llm_provider="openai",
         endpoint=None,
-        prompt_tokens=0,
-        completion_tokens=0,
-        cache_read_input_tokens=0,
-        cache_creation_input_tokens=0,
-        compression_saved_tokens=0,
-        compression_savings_spend=0.0,
-        prompt_caching_savings_spend=0.0,
-        gateway_injected_caching_savings_spend=0.0,
-        spend=1.0,
-        api_requests=1,
-        successful_requests=1,
-        failed_requests=0,
+        prompt_tokens=0, completion_tokens=0, cache_read_input_tokens=0,
+        cache_creation_input_tokens=0, compression_saved_tokens=0,
+        compression_savings_spend=0.0, prompt_caching_savings_spend=0.0,
+        gateway_injected_caching_savings_spend=0.0, spend=1.0,
+        api_requests=1, successful_requests=1, failed_requests=0,
     )
 
 
