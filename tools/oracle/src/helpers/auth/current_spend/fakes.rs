@@ -6,10 +6,13 @@ use betterlite_auth::current_spend::cache::{CounterBatch, CounterCache};
 use betterlite_auth::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
 use betterlite_auth::spend_reseed::cache::{ActiveSpendBatch, ReseedCache};
 use betterlite_auth::spend_reseed::rows::{
-    SpendAggregateRow, SpendCounterRows, SpendRow, SpendRowLookup, WindowEntity, WindowSpendRow,
+    SpendAggregateRow, SpendCounterRows, WindowEntity, WindowSpendRow,
 };
 use betterlite_auth::spend_reseed::values::ReseedCacheValue;
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
+use betterlite_db::spend_rows::rows::{
+    SpendCounterRows as DbSpendCounterRows, SpendRow, SpendRowLookup,
+};
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
@@ -223,7 +226,7 @@ pub(crate) struct ScriptedRows {
     pub(crate) window_start: Option<Timestamp>,
 }
 
-impl SpendCounterRows for ScriptedRows {
+impl DbSpendCounterRows for ScriptedRows {
     type Error = ScriptedFailure;
 
     fn spend_row(
@@ -250,9 +253,13 @@ impl SpendCounterRows for ScriptedRows {
             | SpendRowLookup::Project(_) => self.rows.primary,
         };
         ready(Ok(spend.map(|amount| SpendRow {
-            spend: Some(JsonData::String(amount.to_string())),
+            spend: Some(amount),
         })))
     }
+}
+
+impl SpendCounterRows for ScriptedRows {
+    type Error = ScriptedFailure;
 
     fn window_row(
         &self,

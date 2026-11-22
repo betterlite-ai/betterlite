@@ -3,6 +3,9 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::spend_rows::rows::{
+    SpendCounterRows as DbSpendCounterRows, SpendRow, SpendRowLookup,
+};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, Utc};
 use clap::Parser;
@@ -15,7 +18,7 @@ use super::support::{Journal, JournalBatch, Memory, ScriptedCache, money, reseed
 use crate::current_spend::{CurrentSpend, SpendQuery, WindowDescriptors};
 use crate::spend_reseed::reseed::SpendCounterReseed;
 use crate::spend_reseed::rows::{
-    SpendAggregateRow, SpendCounterRows, SpendRow, SpendRowLookup, WindowEntity, WindowSpendRow,
+    SpendAggregateRow, SpendCounterRows, WindowEntity, WindowSpendRow,
 };
 use crate::spend_reseed::sql::{SpendRowsError, SqlSpendCounterRows};
 use crate::spend_reseed::values::ReseedCacheValue;
@@ -39,7 +42,7 @@ struct ResetDuringRead {
     memory: Memory,
 }
 
-impl SpendCounterRows for ResetDuringRead {
+impl DbSpendCounterRows for ResetDuringRead {
     type Error = SpendRowsError;
 
     async fn spend_row(
@@ -53,6 +56,10 @@ impl SpendCounterRows for ResetDuringRead {
         memory.insert(MARKER.to_owned(), ReseedCacheValue::Number(Decimal::ZERO));
         stale
     }
+}
+
+impl SpendCounterRows for ResetDuringRead {
+    type Error = SpendRowsError;
 
     async fn window_row(
         &self,

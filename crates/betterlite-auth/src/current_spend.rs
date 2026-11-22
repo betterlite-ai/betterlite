@@ -2,6 +2,7 @@ pub mod cache;
 mod floor;
 
 use betterlite_db::budget_permission_rows::Timestamp;
+use betterlite_db::spend_rows::rows::SpendCounterRows as DbSpendCounterRows;
 use rust_decimal::Decimal;
 use thiserror::Error;
 
@@ -79,7 +80,7 @@ impl<Cache, Batch, Rows> CurrentSpend<'_, Cache, Batch, Rows>
 where
     Cache: CounterCache + ?Sized,
     Batch: CounterBatch + ?Sized,
-    Rows: SpendCounterRows,
+    Rows: SpendCounterRows + DbSpendCounterRows,
 {
     pub async fn get_current_spend(&self, query: &SpendQuery<'_>) -> SpendResult<Decimal, Cache> {
         let (current, estimate_verified) = self

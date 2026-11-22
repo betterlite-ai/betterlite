@@ -64,7 +64,7 @@ fn reseed_without_database() -> SpendCounterReseed<SqlSpendCounterRows> {
         clock: Box::new(UptimeClock {
             started: Instant::now(),
         }),
-        durations: Box::new(NoDurations),
+        durations: Arc::new(NoDurations),
         tasks: TaskTracker::new(),
         gate: Arc::new(LoopBoundSemaphore {
             value: 25,

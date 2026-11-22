@@ -1,6 +1,7 @@
+use betterlite_db::spend_rows::key::END_USER_COUNTER_PREFIX;
+use betterlite_db::spend_rows::rows::SpendCounterRows as DbSpendCounterRows;
 use rust_decimal::Decimal;
 
-use crate::spend_reseed::reseed::END_USER_COUNTER_PREFIX;
 use crate::spend_reseed::rows::SpendCounterRows;
 use crate::spend_reseed::values::{SpendValueError, cache_amount};
 
@@ -26,7 +27,7 @@ pub(super) async fn recheck_floor<Cache, Batch, Rows>(
 where
     Cache: CounterCache + ?Sized,
     Batch: CounterBatch + ?Sized,
-    Rows: SpendCounterRows,
+    Rows: SpendCounterRows + DbSpendCounterRows,
 {
     let higher_fallback = query.fallback_spend > current;
     if !higher_fallback && query.window.start.is_none() && !spend.fail_closed_budget_enforcement {
@@ -52,7 +53,7 @@ async fn authoritative_floor_spend<Cache, Batch, Rows>(
 where
     Cache: CounterCache + ?Sized,
     Batch: CounterBatch + ?Sized,
-    Rows: SpendCounterRows,
+    Rows: SpendCounterRows + DbSpendCounterRows,
 {
     let marker_key = format!("spend_db_floor:{counter_key}");
     if let Some(cached) = spend.local_amount(&marker_key).await? {
@@ -80,12 +81,13 @@ async fn floor_spend_from_db<Cache, Batch, Rows>(
 where
     Cache: CounterCache + ?Sized,
     Batch: CounterBatch + ?Sized,
-    Rows: SpendCounterRows,
+    Rows: SpendCounterRows + DbSpendCounterRows,
 {
+    let reader = spend.reseed.reader();
     if counter_key.starts_with(END_USER_COUNTER_PREFIX) {
-        return spend.reseed.end_user_from_db(counter_key).await;
+        return Ok(reader.end_user_from_db(counter_key).await);
     }
-    if let Some(entity_spend) = spend.reseed.from_db(counter_key).await? {
+    if let Some(entity_spend) = reader.from_db(counter_key).await {
         return Ok(Some(entity_spend));
     }
     let (Some(entity_type), Some(entity_id), Some(start)) =

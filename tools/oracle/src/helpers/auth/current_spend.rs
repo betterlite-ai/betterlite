@@ -71,7 +71,7 @@ fn case_reseed(rows: Option<ScriptedRows>) -> SpendCounterReseed<ScriptedRows> {
         clock: Box::new(UptimeClock {
             started: Instant::now(),
         }),
-        durations: Box::new(CaseDurations),
+        durations: Arc::new(CaseDurations),
         tasks: TaskTracker::new(),
         gate,
         stall_tracker,

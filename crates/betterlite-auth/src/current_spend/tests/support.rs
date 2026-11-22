@@ -9,6 +9,9 @@ use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_db::database_failures::gate::{
     DbLookupStallTracker, LoopBoundSemaphore, SystemClock,
 };
+use betterlite_db::spend_rows::rows::{
+    SpendCounterRows as DbSpendCounterRows, SpendRow, SpendRowLookup,
+};
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
@@ -26,7 +29,7 @@ use crate::spend_reseed::cache::{ActiveSpendBatch, ReseedCache};
 use crate::spend_reseed::locks::LockRegistry;
 use crate::spend_reseed::reseed::SpendCounterReseed;
 use crate::spend_reseed::rows::{
-    SpendAggregateRow, SpendCounterRows, SpendRow, SpendRowLookup, WindowEntity, WindowSpendRow,
+    SpendAggregateRow, SpendCounterRows, WindowEntity, WindowSpendRow,
 };
 use crate::spend_reseed::values::ReseedCacheValue;
 
@@ -236,7 +239,7 @@ fn window_spend_row(amount: Decimal) -> WindowSpendRow {
     }
 }
 
-impl SpendCounterRows for ScriptedRows {
+impl DbSpendCounterRows for ScriptedRows {
     type Error = ScriptFailure;
 
     fn spend_row(
@@ -254,10 +257,14 @@ impl SpendCounterRows for ScriptedRows {
         };
         ready(self.note(format!("{lookup:?}")).map(|()| {
             spend.map(|amount| SpendRow {
-                spend: Some(JsonData::String(amount.to_string())),
+                spend: Some(amount),
             })
         }))
     }
+}
+
+impl SpendCounterRows for ScriptedRows {
+    type Error = ScriptFailure;
 
     fn window_row(
         &self,
@@ -303,7 +310,7 @@ where
         clock: Box::new(UptimeClock {
             started: Instant::now(),
         }),
-        durations: Box::new(NoDurations),
+        durations: Arc::new(NoDurations),
         tasks: TaskTracker::new(),
         gate: Arc::new(LoopBoundSemaphore {
             value: 25,
