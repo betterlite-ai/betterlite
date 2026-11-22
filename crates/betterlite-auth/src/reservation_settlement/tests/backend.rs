@@ -129,7 +129,8 @@ fn backend_fixture(
     Arc<SpendCounterScope>,
 ) {
     let scope = Arc::new(SpendCounterScope::default());
-    let batch: Arc<dyn CounterBatch> = Arc::clone(&scope);
+    let batch_handle = Arc::clone(&scope);
+    let batch: Arc<dyn CounterBatch> = batch_handle;
     let sources: Arc<dyn SourceSpendCache> = Arc::new(NoSources);
     let reseed = Arc::new(SpendCounterReseed {
         rows: Some(Arc::new(FakeRows {
