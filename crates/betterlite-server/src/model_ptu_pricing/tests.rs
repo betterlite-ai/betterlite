@@ -1,24 +1,20 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-use std::future::{Future, ready};
-use std::sync::Mutex;
-
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_router::deployment_model_info::metadata::ModelMetadataSource;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredValue};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::DeploymentBlobs;
-use super::catalog::{LoadedCatalog, cost_map_entry, loaded_catalog_entry};
+use super::catalog::{cost_map_entry, loaded_catalog_entry};
 use super::delta::{PtuPatch, PtuPricingDelta, ptu_pricing_delta};
 use super::error::PtuPricingError;
 use super::prices::{is_nonzero_price, is_nonzero_rate, is_zero_price};
+use super::testing::CostMap;
 use super::zeroed::{
     check_ptu_unpriced, ptu_priced_deployment, ptu_zeroed_pricing, write_ptu_pricing,
 };
@@ -47,54 +43,16 @@ impl PtuAttribution for Flag {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("the cost map is unreachable")]
-struct Unreachable;
-
-struct CostMap {
-    entries: BTreeMap<String, JsonObject>,
-    broken: bool,
-    lookups: Mutex<Vec<String>>,
-}
-
-impl ModelMetadataSource for CostMap {
-    type Error = Unreachable;
-
-    fn get_model_info(
-        &self,
-        model: &str,
-        _keys: &mut ModelCostKeys,
-    ) -> impl Future<Output = Result<Option<JsonObject>, Unreachable>> + Send {
-        self.lookups.lock().unwrap().push(model.to_owned());
-        let found = if self.broken {
-            Err(Unreachable)
-        } else {
-            Ok(self.entries.get(model).cloned())
-        };
-        ready(found)
-    }
-}
-
-impl LoadedCatalog for CostMap {
-    fn entry(&self, key: &str) -> Option<JsonObject> {
-        self.lookups.lock().unwrap().push(key.to_owned());
-        self.entries.get(key).cloned()
-    }
-}
-
 fn object(text: &str) -> JsonObject {
     serde_json::from_str(text).unwrap()
 }
 
 fn fake_cost_map(entries: &[(&str, &str)], broken: bool) -> CostMap {
-    CostMap {
-        entries: entries
-            .iter()
-            .map(|(model, entry)| ((*model).to_owned(), object(entry)))
-            .collect(),
-        broken,
-        lookups: Mutex::new(Vec::new()),
-    }
+    let entries = entries
+        .iter()
+        .map(|(model, entry)| ((*model).to_owned(), object(entry)))
+        .collect();
+    CostMap::new(entries, broken)
 }
 
 fn cipher() -> DbCipher {
@@ -447,7 +405,7 @@ async fn catalog_price(
         .unwrap_or_default();
     assert_eq!(entry, expected_entry);
     let lookups: Vec<String> = expected_lookup.into_iter().map(str::to_owned).collect();
-    assert_eq!(*cost_map.lookups.lock().unwrap(), lookups);
+    assert_eq!(cost_map.lookups(), lookups);
 }
 
 #[tokio::test]
@@ -480,7 +438,7 @@ async fn catalog_price_survives_an_unreachable_cost_map() {
     let mut keys = ModelCostKeys::default();
     let entry = cost_map_entry(&cost_map, &mut keys, &cipher(), &params, &object("{}")).await;
     assert!(entry.is_empty());
-    assert_eq!(*cost_map.lookups.lock().unwrap(), ["azure/gpt-4o"]);
+    assert_eq!(cost_map.lookups(), ["azure/gpt-4o"]);
 }
 
 #[rstest]
@@ -498,5 +456,5 @@ fn loaded_catalog_price(#[case] incoming: &str, #[case] lookups: &[&str], #[case
         loaded_catalog_entry(&object(incoming), &catalog),
         object(expected)
     );
-    assert_eq!(*catalog.lookups.lock().unwrap(), lookups);
+    assert_eq!(catalog.lookups(), lookups);
 }

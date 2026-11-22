@@ -4,8 +4,12 @@ pub mod catalog;
 pub mod delta;
 pub mod error;
 pub mod prices;
-mod tests;
 pub mod zeroed;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
+
+mod tests;
 
 // LiteLLM's _PTU_PRICED_PAIR: the two fields that make a deployment bill reserved capacity
 pub const PTU_PRICED_PAIR: [&str; 2] = ["ptu_count", "cost_per_ptu_per_hour"];

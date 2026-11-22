@@ -1,8 +1,3 @@
-use std::collections::BTreeMap;
-use std::convert::Infallible;
-use std::future::{Future, ready};
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
@@ -11,20 +6,18 @@ use betterlite_models::ptu_pricing::zeroed::PtuZeroedPricing;
 use betterlite_models::request_pricing::fields::echoed_cost_map_fields;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
-use betterlite_router::deployment_model_info::metadata::ModelMetadataSource;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
 use betterlite_server::jobs::ptu::attribution::PtuAttribution;
 use betterlite_server::model_effective_fields::error::Refusal;
 use betterlite_server::model_ptu_pricing::DeploymentBlobs;
-use betterlite_server::model_ptu_pricing::catalog::{
-    LoadedCatalog, cost_map_entry, loaded_catalog_entry,
-};
+use betterlite_server::model_ptu_pricing::catalog::{cost_map_entry, loaded_catalog_entry};
 use betterlite_server::model_ptu_pricing::delta::{PtuPatch, ptu_pricing_delta};
 use betterlite_server::model_ptu_pricing::error::PtuPricingError;
 use betterlite_server::model_ptu_pricing::prices::{
     is_nonzero_price, is_nonzero_rate, is_zero_price,
 };
+use betterlite_server::model_ptu_pricing::testing::CostMap;
 use betterlite_server::model_ptu_pricing::zeroed::{
     check_ptu_unpriced, ptu_priced_deployment, ptu_zeroed_pricing, write_ptu_pricing,
 };
@@ -39,31 +32,6 @@ struct Attribution(bool);
 impl PtuAttribution for Attribution {
     fn enabled(&self) -> bool {
         self.0
-    }
-}
-
-// a cost map table from the case: get_model_info finds an entry by its name, and LiteLLM's raise for an unmapped one is suppressed like a miss
-struct Table {
-    entries: BTreeMap<String, JsonObject>,
-    reads: AtomicUsize,
-}
-
-impl ModelMetadataSource for Table {
-    type Error = Infallible;
-
-    fn get_model_info(
-        &self,
-        model: &str,
-        _keys: &mut ModelCostKeys,
-    ) -> impl Future<Output = Result<Option<JsonObject>, Infallible>> + Send {
-        ready(Ok(self.entries.get(model).cloned()))
-    }
-}
-
-impl LoadedCatalog for Table {
-    fn entry(&self, key: &str) -> Option<JsonObject> {
-        self.reads.fetch_add(1, Ordering::Relaxed);
-        self.entries.get(key).cloned()
     }
 }
 
@@ -181,14 +149,8 @@ fn deployment_answer(call: &DeploymentCall, attribution: &Attribution) -> Value 
 }
 
 fn catalog_answer(cipher: &DbCipher, runtime: &Runtime, call: &CatalogCall) -> Value {
-    let cost_map = Table {
-        entries: call.cost_map.clone(),
-        reads: AtomicUsize::new(0),
-    };
-    let catalog = Table {
-        entries: call.catalog.clone(),
-        reads: AtomicUsize::new(0),
-    };
+    let cost_map = CostMap::new(call.cost_map.clone(), false);
+    let catalog = CostMap::new(call.catalog.clone(), false);
     let mut stored_params = JsonObject::new();
     stored_params.insert("model".to_owned(), Json::Text(call.model.clone()));
     let mut keys = ModelCostKeys::default();
@@ -203,6 +165,6 @@ fn catalog_answer(cipher: &DbCipher, runtime: &Runtime, call: &CatalogCall) -> V
     json!({
         "echoed": echoed_cost_map_fields(&call.incoming, &[&cost_entry, &catalog_entry]),
         "catalog_entry": catalog_entry,
-        "catalog_loaded": catalog.reads.load(Ordering::Relaxed) > 0,
+        "catalog_loaded": !catalog.lookups().is_empty(),
     })
 }
