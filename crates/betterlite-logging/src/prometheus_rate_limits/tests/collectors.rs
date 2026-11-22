@@ -201,14 +201,14 @@ fn collectors_keep_the_series_tracked_between_calls() {
 fn real_key_and_team_gauges_write_and_remove_series() {
     let (registry, collectors) = registered();
     let fixture = Fixture::new(&[("hashed_api_key", "key-1")]);
-    let payload = with_headers(
+    let limited = with_headers(
         payload(),
         &[
             ("x-ratelimit-api_key-limit-requests", number("100")),
             ("x-ratelimit-api_key-remaining-requests", number("40")),
         ],
     );
-    set_key_and_team_rate_limit_metrics(&collectors, &payload, fixture.inputs()).unwrap();
+    set_key_and_team_rate_limit_metrics(&collectors, &limited, fixture.inputs()).unwrap();
     let series = [Some("key-1".to_owned()), None, Some("requests".to_owned())];
     assert_eq!(
         total(&registry, API_KEY_ALLOWED, &series),
