@@ -33,7 +33,7 @@ fn route_selection() {
 fn deployment_key_reply() {
     let env = Env::with_globals("https://global.example.test", "global-key");
     let deployment = support::deployment(BASE, Some(KEY));
-    let request = support::simple_request("mistral-large");
+    let request = support::simple_request("foundry-alias");
     let call = chat_call(&request, &deployment, "mistral-large", false);
     let (result, logger) = run_chat(call, &env, support::supplied(200, REPLY));
     let outcome = result.expect("the chat dispatch runs");
@@ -42,7 +42,7 @@ fn deployment_key_reply() {
         panic!("the chat dispatch returns a chat reply");
     };
     // the proxy answers the model the client asked for, not the azure_ai-prefixed provider model
-    assert_eq!(completion.model, "mistral-large");
+    assert_eq!(completion.model, "foundry-alias");
     assert_eq!(
         completion.choices[0].message.content.as_deref(),
         Some("hello")
