@@ -1,0 +1,30 @@
+kind: helper
+name: bedrock-s3-signing-kms-encryption-header
+call:
+  bedrock_services_s3_signing:
+    operation: sign
+    signings:
+      - content: "héllo\n{}"
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/k"
+        optional_params:
+          s3_access_key_id: S3K
+          s3_secret_access_key: S3S
+        encryption_key_id: key-1
+      - content: x
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/k"
+        optional_params: {}
+        encryption_key_id: "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+      - content: ""
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/k"
+        optional_params:
+          s3_access_key_id: S3K
+          s3_secret_access_key: S3S
+        encryption_key_id: ""
+      - content: ""
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/k"
+        optional_params:
+          s3_access_key_id: S3K
+          s3_secret_access_key: S3S
+        encryption_key_id: null
+env: {}
+compare: {ignore: []}

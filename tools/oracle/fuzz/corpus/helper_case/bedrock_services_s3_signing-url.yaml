@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-s3-signing-url-seed
+call:
+  bedrock_services_s3_signing:
+    operation: url_conversion
+    urls:
+      - "https://b.s3.us-west-2.amazonaws.com/a/b.jsonl"
+env: {}
+compare: {ignore: []}

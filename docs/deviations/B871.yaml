@@ -1,0 +1,6 @@
+task: B871
+deviations:
+  - what: 'The user_id rebind is logged at debug as "Auth: rebinding user_id to the DB user_id (email/sso match)" with requested_user_id and effective_user_id as structured fields, instead of one formatted line that prints both ids with repr quotes.'
+    why: 'betterlite logs through tracing with typed fields, and docs/compatibility.md does not port Python repr text; the level, the condition and both ids are unchanged.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L209-L214
+kept_bugs: []
