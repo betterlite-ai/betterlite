@@ -10,7 +10,7 @@ use crate::reservation_settlement::entry::{ReservationEntry, counter_to_reservat
 use crate::reservation_settlement::release::release_entries_best_effort;
 
 use super::support::{
-    KEY, USER, WINDOW, amount, entity, request, seeded, take_calls, value_of, window,
+    FakeMemory, KEY, USER, WINDOW, amount, entity, request, seeded, take_calls, value_of, window,
 };
 
 const TEAM: &str = "spend:team:t1";
@@ -278,67 +278,70 @@ async fn an_empty_reservable_list_returns_the_estimate() {
     assert!(applied.is_empty());
 }
 
-// a counter whose entry the group lost is passed over, and the counters after it still settle
-async fn a_lost_entry_does_not_stop_later_counters() {
+// a counter whose entry the group lost, or whose pre-read the map lost, is passed over and the next one settles
+async fn lost_entries_do_not_stop_later_counters() {
     let counters = vec![
         entity(USER, "5", "9", CounterEntityType::User),
         entity(KEY, "8", "10", CounterEntityType::Key),
     ];
-    let references: Vec<&BudgetCounter> = counters.iter().collect();
-    let mut current_spend = BTreeMap::new();
-    let _previous = current_spend.insert(KEY.to_owned(), amount("10"));
-    let fake = seeded(&[(KEY, "10")], &[]);
-    let mut applied = vec![counter_to_reservation_entry(&counters[1], amount("4"))];
-    let charge = GroupCharge {
-        counters: &references,
-        current_spend: &current_spend,
-        cost: amount("4"),
-        reserved_values: vec![Some(amount("9")), Some(amount("10"))],
-    };
-    let cost = settle_group(&fake, &request(&counters, "4"), &charge, &mut applied)
-        .await
-        .expect("the settle");
-    assert_eq!(cost, amount("2"));
-    let calls = take_calls(&fake);
-    assert_eq!(
-        calls.settlements,
-        vec![vec![(KEY.to_owned(), amount("-2"))]]
-    );
-}
-
-// a counter whose reported value landed without a pre-read is passed over the same way
-async fn a_lost_pre_read_does_not_stop_later_counters() {
-    let counters = vec![
-        entity(USER, "5", "9", CounterEntityType::User),
-        entity(KEY, "8", "10", CounterEntityType::Key),
-    ];
-    let references: Vec<&BudgetCounter> = counters.iter().collect();
     let mut current_spend = BTreeMap::new();
     let _previous = current_spend.insert(KEY.to_owned(), amount("10"));
     let fake = seeded(&[(USER, "5"), (KEY, "10")], &[]);
+    let mut applied = vec![counter_to_reservation_entry(&counters[1], amount("4"))];
+    let cost = settle_charge(
+        &counters,
+        &fake,
+        &current_spend,
+        vec![Some(amount("9")), Some(amount("10"))],
+        &mut applied,
+    )
+    .await
+    .expect("the settle");
+    assert_eq!(cost, amount("2"));
+    assert_eq!(
+        take_calls(&fake).settlements,
+        vec![vec![(KEY.to_owned(), amount("-2"))]]
+    );
     let mut applied = vec![
         counter_to_reservation_entry(&counters[0], amount("4")),
         counter_to_reservation_entry(&counters[1], amount("4")),
     ];
-    let charge = GroupCharge {
-        counters: &references,
-        current_spend: &current_spend,
-        cost: amount("4"),
-        reserved_values: vec![None, Some(amount("10"))],
-    };
-    let cost = settle_group(&fake, &request(&counters, "4"), &charge, &mut applied)
-        .await
-        .expect("the settle");
+    let cost = settle_charge(
+        &counters,
+        &fake,
+        &current_spend,
+        vec![None, Some(amount("10"))],
+        &mut applied,
+    )
+    .await
+    .expect("the settle");
     assert_eq!(cost, amount("2"));
-    let calls = take_calls(&fake);
     assert_eq!(
-        calls.settlements,
+        take_calls(&fake).settlements,
         vec![vec![
             (USER.to_owned(), amount("-2")),
             (KEY.to_owned(), amount("-2")),
         ]]
     );
     assert_eq!(value_of(&fake, USER), Some(amount("3")));
+}
+
+// settle_group over a charge the test builds itself, with the reservation cost at the estimate
+async fn settle_charge(
+    counters: &[BudgetCounter],
+    fake: &FakeMemory,
+    current_spend: &BTreeMap<String, Decimal>,
+    reserved_values: Vec<Option<Decimal>>,
+    applied_entries: &mut Vec<ReservationEntry>,
+) -> Result<Decimal, AdmissionError> {
+    let references: Vec<&BudgetCounter> = counters.iter().collect();
+    let charge = GroupCharge {
+        counters: &references,
+        current_spend,
+        cost: amount("4"),
+        reserved_values,
+    };
+    settle_group(fake, &request(counters, "4"), &charge, applied_entries).await
 }
 
 #[tokio::test]
@@ -353,6 +356,5 @@ async fn reservation_admission_engine_boundaries() {
     a_resize_reaches_exactly_the_remaining_headroom().await;
     short_pipeline_answers_fall_back_to_the_pre_read().await;
     an_empty_reservable_list_returns_the_estimate().await;
-    a_lost_entry_does_not_stop_later_counters().await;
-    a_lost_pre_read_does_not_stop_later_counters().await;
+    lost_entries_do_not_stop_later_counters().await;
 }

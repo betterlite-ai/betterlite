@@ -50,17 +50,13 @@ pub(super) fn entity(
 
 // a window counter whose spend loads from the window row under the entity
 pub(super) fn window(counter_key: &str, max_budget: &str) -> BudgetCounter {
-    BudgetCounter {
-        counter_key: counter_key.to_owned(),
-        max_budget: amount(max_budget),
-        fallback_spend: Decimal::ZERO,
-        entity_type: CounterEntityType::Key,
-        entity_id: "k1:1d".to_owned(),
-        source_cache_key: None,
-        spend_log_entity_id: Some("k1".to_owned()),
-        window_duration: Some("1d".to_owned()),
-        window_start: UNIX_EPOCH.checked_add(Duration::from_secs(WINDOW_START_SECONDS)),
-    }
+    let mut counter = entity(counter_key, max_budget, "0", CounterEntityType::Key);
+    counter.entity_id = "k1:1d".to_owned();
+    counter.source_cache_key = None;
+    counter.spend_log_entity_id = Some("k1".to_owned());
+    counter.window_duration = Some("1d".to_owned());
+    counter.window_start = UNIX_EPOCH.checked_add(Duration::from_secs(WINDOW_START_SECONDS));
+    counter
 }
 
 fn counted(value: i64) -> JsonData {

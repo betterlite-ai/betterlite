@@ -31,7 +31,8 @@ struct Headroom {
     remaining: Decimal,
 }
 
-// _apply_over_budget_reservation_policy: a throttled key releases its own reservation, and every other over-budget counter settles or blocks
+// _apply_over_budget_reservation_policy: a throttled key releases its own reservation, and every other over-budget
+// counter blocks when nothing is left, rejects an estimate strict enforcement cannot fit, or resizes to the headroom
 pub(crate) async fn apply_over_budget<C>(
     counters: &C,
     request: &AdmissionRequest<'_>,
@@ -41,25 +42,10 @@ pub(crate) async fn apply_over_budget<C>(
 where
     C: AdmissionCounters,
 {
-    if !release_for_throttle(request, over.counter) {
-        return settle_over_budget(counters, request, over, applied_entries).await;
+    if release_for_throttle(request, over.counter) {
+        release_throttled(counters, over, applied_entries).await;
+        return Ok(over.reservation_cost);
     }
-    let mut entry = over.entry.clone();
-    release_entries_best_effort(counters, slice::from_mut(&mut entry), over.reservation_cost).await;
-    remove_entry(applied_entries, &over.counter.counter_key);
-    Ok(over.reservation_cost)
-}
-
-// a partially remaining budget resizes the reservation down to it, unless strict enforcement will not accept an estimate that already does not fit
-async fn settle_over_budget<C>(
-    counters: &C,
-    request: &AdmissionRequest<'_>,
-    over: &OverBudget<'_>,
-    applied_entries: &mut Vec<ReservationEntry>,
-) -> Result<Decimal, AdmissionError>
-where
-    C: AdmissionCounters,
-{
     let headroom = headroom(over)?;
     if headroom.remaining <= TOLERANCE {
         return Err(budget_exceeded(
@@ -69,11 +55,7 @@ where
             None,
         ));
     }
-    let overshoot = over
-        .current_spend
-        .checked_sub(over.counter.max_budget)
-        .ok_or(AdmissionError::Overflow)?;
-    if request.fail_closed_budget_enforcement && overshoot > TOLERANCE {
+    if strict_rejection(request, over)? {
         return Err(budget_exceeded(
             request,
             over.counter,
@@ -89,6 +71,31 @@ where
     )
     .await?;
     Ok(headroom.remaining)
+}
+
+// the key's own reservation goes back to the rate limiter, and the entry leaves the applied list
+async fn release_throttled<C>(
+    counters: &C,
+    over: &OverBudget<'_>,
+    applied_entries: &mut Vec<ReservationEntry>,
+) where
+    C: AdmissionCounters,
+{
+    let mut entry = over.entry.clone();
+    release_entries_best_effort(counters, slice::from_mut(&mut entry), over.reservation_cost).await;
+    remove_entry(applied_entries, &over.counter.counter_key);
+}
+
+// strict enforcement refuses an estimate that overshoots the budget beyond the tolerance
+fn strict_rejection(
+    request: &AdmissionRequest<'_>,
+    over: &OverBudget<'_>,
+) -> Result<bool, AdmissionError> {
+    let overshoot = over
+        .current_spend
+        .checked_sub(over.counter.max_budget)
+        .ok_or(AdmissionError::Overflow)?;
+    Ok(request.fail_closed_budget_enforcement && overshoot > TOLERANCE)
 }
 
 // _key_reservation_should_release_for_throttle: only the key's own max_budget counter makes way for the rate limiter

@@ -76,27 +76,20 @@ where
     C: AdmissionCounters,
 {
     let Some(source_cache_key) = &counter.source_cache_key else {
-        return seed_window(counters, counter).await;
+        if counter.spend_log_entity_id.is_none() || counter.window_start.is_none() {
+            return SeedAnswer::Loaded;
+        }
+        return match counters.seed_window(counter).await {
+            Ok(true) => SeedAnswer::Loaded,
+            Ok(false) => SeedAnswer::Unavailable,
+            Err(error) => SeedAnswer::Failed(error),
+        };
     };
     match counters
         .seed_source(&counter.counter_key, source_cache_key)
         .await
     {
         Ok(()) => SeedAnswer::Loaded,
-        Err(error) => SeedAnswer::Failed(error),
-    }
-}
-
-async fn seed_window<C>(counters: &C, counter: &BudgetCounter) -> SeedAnswer
-where
-    C: AdmissionCounters,
-{
-    if counter.spend_log_entity_id.is_none() || counter.window_start.is_none() {
-        return SeedAnswer::Loaded;
-    }
-    match counters.seed_window(counter).await {
-        Ok(true) => SeedAnswer::Loaded,
-        Ok(false) => SeedAnswer::Unavailable,
         Err(error) => SeedAnswer::Failed(error),
     }
 }

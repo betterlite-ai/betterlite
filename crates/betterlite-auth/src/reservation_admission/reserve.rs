@@ -31,11 +31,26 @@ where
     C: AdmissionCounters,
 {
     let current_spend = read_current_spend(counters, reservable).await;
+    let groups = reservation_groups(reservable, &current_spend, request.reservation_cost);
+    charge_groups(counters, request, &groups, &current_spend, applied_entries).await
+}
+
+// every group is charged in order, each one starting from the cost the one before it left standing
+async fn charge_groups<C>(
+    counters: &C,
+    request: &AdmissionRequest<'_>,
+    groups: &[Vec<&BudgetCounter>],
+    current_spend: &BTreeMap<String, Decimal>,
+    applied_entries: &mut Vec<ReservationEntry>,
+) -> Result<Decimal, AdmissionError>
+where
+    C: AdmissionCounters,
+{
     let mut reservation_cost = request.reservation_cost;
-    for group in reservation_groups(reservable, &current_spend, reservation_cost) {
+    for group in groups {
         let mut charge = GroupCharge {
-            counters: &group,
-            current_spend: &current_spend,
+            counters: group,
+            current_spend,
             cost: reservation_cost,
             reserved_values: Vec::new(),
         };
@@ -110,26 +125,39 @@ where
 {
     let mut reservation_cost = charge.cost;
     for (index, counter) in charge.counters.iter().enumerate() {
-        let Some(entry) = find_entry(applied_entries, &counter.counter_key) else {
-            continue;
-        };
-        let reserved_value = charge.reserved_values.get(index).copied().flatten();
-        let Some(current_spend) =
-            reserved_spend(counter, charge, reservation_cost, reserved_value)?
-        else {
-            continue;
-        };
-        if current_spend > counter.max_budget {
-            let over = OverBudget {
-                counter: *counter,
-                entry,
-                reservation_cost,
-                current_spend,
-            };
+        if let Some(over) = over_budget(charge, counter, index, reservation_cost, applied_entries)?
+        {
             reservation_cost = apply_over_budget(counters, request, &over, applied_entries).await?;
         }
     }
     Ok(reservation_cost)
+}
+
+// the policy's input when the counter's reservation landed over its budget, and nothing for a counter the group lost
+fn over_budget<'a>(
+    charge: &'a GroupCharge<'_>,
+    counter: &'a BudgetCounter,
+    index: usize,
+    reservation_cost: Decimal,
+    applied_entries: &[ReservationEntry],
+) -> Result<Option<OverBudget<'a>>, AdmissionError> {
+    let Some(entry) = find_entry(applied_entries, &counter.counter_key) else {
+        return Ok(None);
+    };
+    let reserved_value = charge.reserved_values.get(index).copied().flatten();
+    let Some(current_spend) = reserved_spend(counter, charge, reservation_cost, reserved_value)?
+    else {
+        return Ok(None);
+    };
+    if current_spend <= counter.max_budget {
+        return Ok(None);
+    }
+    Ok(Some(OverBudget {
+        counter,
+        entry,
+        reservation_cost,
+        current_spend,
+    }))
 }
 
 // reserved_value - (charged_cost - reservation_cost), or the pre-read plus the standing cost when the pipeline answered nothing
