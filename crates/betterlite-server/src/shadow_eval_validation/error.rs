@@ -59,7 +59,7 @@ pub enum ShadowEvalValidationError {
     JudgeIsCandidate { judge: String, collisions: String },
     #[error("models not served by this proxy: {models}")]
     UnservedModels { models: String },
-    #[error("the router's arm models could not be read: {source}")]
+    #[error("the router's arm models could not be read: {0}")]
     RouterArms(#[source] LookupError),
 }
 

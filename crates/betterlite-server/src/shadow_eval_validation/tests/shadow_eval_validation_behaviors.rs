@@ -226,7 +226,7 @@ fn an_alias_does_not_configure_its_target_as_a_router() {
     let error = validate_with(
         &parsed,
         &deployments(),
-        aliases,
+        &aliases,
         &records(),
         &Credentials::None,
     )
@@ -244,7 +244,7 @@ fn an_alias_naming_a_router_is_still_a_plain_model() {
     validate_with(
         &parsed,
         &deployments(),
-        aliases,
+        &aliases,
         &records(),
         &Credentials::None,
     )
@@ -260,7 +260,7 @@ fn a_malformed_alias_fails_the_start_instead_of_reading_no_arms() {
     let error = validate_with(
         &parsed,
         &deployments(),
-        aliases,
+        &aliases,
         &records(),
         &Credentials::None,
     )
@@ -352,7 +352,7 @@ fn accepts_an_sdk_judge_once_a_key_is_configured() {
     validate_with(
         &parsed,
         &rows,
-        JsonObject::new(),
+        &JsonObject::new(),
         &records(),
         &Credentials::ApiKey("sk-ant-test".to_owned()),
     )
@@ -436,6 +436,6 @@ fn a_hosted_manager_holding_either_anthropic_secret_is_consulted(
         r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"anthropic/claude-sonnet-5","shadow_percentage":50}"#,
     );
     let keys = Credentials::Hosted(vec![hosted.to_owned()]);
-    let result = validate_with(&parsed, &rows, JsonObject::new(), &records(), &keys);
+    let result = validate_with(&parsed, &rows, &JsonObject::new(), &records(), &keys);
     assert_eq!(result.is_ok(), accepted);
 }

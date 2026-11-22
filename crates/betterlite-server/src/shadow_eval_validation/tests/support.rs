@@ -111,7 +111,7 @@ pub(super) fn validate(
     validate_with(
         request,
         deployments,
-        JsonObject::new(),
+        &JsonObject::new(),
         records,
         &Credentials::None,
     )
@@ -179,7 +179,7 @@ fn snapshot(deployments: &[(&str, JsonObject)], aliases: &JsonObject) -> Snapsho
 pub(super) fn validate_with(
     request: &StartShadowEvalRequest,
     deployments: &[(&str, JsonObject)],
-    aliases: JsonObject,
+    aliases: &JsonObject,
     records: &TargetRecords<'_>,
     credentials: &Credentials,
 ) -> Result<(), ShadowEvalValidationError> {
@@ -189,7 +189,7 @@ pub(super) fn validate_with(
     let resolution = resolution_context(catalog.as_ref());
     let cache = ProviderCache::default();
     let sdk = NoSdk;
-    let fixture = snapshot(deployments, &aliases);
+    let fixture = snapshot(deployments, aliases);
     let provider = |_model: &str| -> Option<String> { None };
     let context = StartContext {
         router: Some(ShadowEvalRouter {
