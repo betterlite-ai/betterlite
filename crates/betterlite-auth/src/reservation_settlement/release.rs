@@ -21,8 +21,7 @@ pub async fn release_budget_reservation<C: SettlementCounters>(
     Ok(())
 }
 
-// release_budget_reservation_on_cancel: the provider already billed the input tokens, so a cancel settles at input_cost
-// The caller spawns this on a server-owned task, betterlite's stand-in for asyncio.shield, so a cancelled request cannot drop it
+// release_budget_reservation_on_cancel: a cancel settles at input_cost, on a server-owned task the caller spawns as asyncio.shield's stand-in
 pub async fn release_reservation_on_cancel<C: SettlementCounters>(
     counters: &C,
     handle: &ReservationHandle,
