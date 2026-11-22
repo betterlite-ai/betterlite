@@ -253,8 +253,7 @@ impl MessagesCallError {
             Self::Call(failure) => failure.status.unwrap_or(500),
             Self::Context(context) => context.status,
             Self::Blocked => 403,
-            Self::MissingModel => 400,
-            Self::NotFound(_) | Self::UserConfig => 400,
+            Self::MissingModel | Self::NotFound(_) | Self::UserConfig => 400,
         }
     }
 
