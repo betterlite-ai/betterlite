@@ -2,9 +2,8 @@ use std::future::Future;
 
 use betterlite_auth::auth_invalidation::AuthInvalidation;
 use betterlite_auth::auth_invalidation::transport::InvalidationTransport;
-use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+use betterlite_router::catalog_updates::catalog::CatalogHandle;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
-use betterlite_router::model_catalog_lookup::error::LookupError;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 
@@ -86,20 +85,26 @@ impl ModelAccessGroupCache for AuthInvalidation {
 
 // proxy_server.llm_router read fresh: the names this pod serves now, or none while no router is installed; a reload shows up in the next call.
 pub trait ModelNameSource: Send + Sync {
-    fn model_names(&self) -> Result<Option<Vec<String>>, LookupError>;
+    fn model_names(&self) -> Result<Option<Vec<String>>, GroupDataError>;
 }
 
-impl ModelNameSource for DeploymentCatalog {
-    fn model_names(&self) -> Result<Option<Vec<String>>, LookupError> {
-        let aliases = AliasMap::default();
-        let groups = RoutingGroupIndex::default();
+// The live router state: the catalog behind the reload swap and the alias and routing-group maps the config serves, all borrowed so every call reads what the router holds now.
+pub struct LiveModelNames<'state> {
+    pub catalog: &'state CatalogHandle,
+    pub model_group_alias: &'state AliasMap,
+    pub routing_groups: &'state RoutingGroupIndex,
+}
+
+impl ModelNameSource for LiveModelNames<'_> {
+    fn model_names(&self) -> Result<Option<Vec<String>>, GroupDataError> {
+        let catalog = self.catalog.load();
         let provider = |_model: &str| None;
         let lookup = CatalogLookup {
-            catalog: self,
-            model_group_alias: &aliases,
-            routing_groups: &groups,
+            catalog: catalog.as_ref(),
+            model_group_alias: self.model_group_alias,
+            routing_groups: self.routing_groups,
             inferred_provider: &provider,
         };
-        lookup.get_model_names(None).map(Some)
+        Ok(Some(lookup.get_model_names(None)?))
     }
 }

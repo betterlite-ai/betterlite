@@ -1,14 +1,20 @@
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_router::model_catalog_lookup::alias::AliasMap;
+use betterlite_router::model_catalog_lookup::alias::AliasTarget;
+use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use rust_decimal::Decimal;
 
 use super::super::discovery::{
     get_all_access_groups_from_db, missing_after_read_through, require_group_exists,
     validate_models_exist,
 };
+use super::super::ports::LiveModelNames;
 use super::fixtures::json_object;
-use super::fixtures::router::{FailingRouter, ScriptedRouter};
+use super::fixtures::router::{
+    FailingRouter, InstallingReadThrough, ScriptedRouter, alias_map, catalog_handle, routing_groups,
+};
 use super::fixtures::scripted::ScriptedDatabase;
 use super::{
     deployment, group_database, http_failure, linked_group, names, number, runtime_message,
@@ -133,6 +139,47 @@ fn exact_model_names() {
         validate_models_exist(&names(&["x", "x"]), None::<&ScriptedRouter>).expect("the names"),
         (false, names(&["x", "x"]))
     );
+}
+
+#[test]
+fn alias_and_group_names_count_as_served() {
+    let catalog = catalog_handle(&["gpt-4o"]);
+    let aliases = alias_map(&[("fast", AliasTarget::Name("gpt-4o".to_owned()))]);
+    let groups = routing_groups("pool", &["gpt-4o"]);
+    let source = LiveModelNames {
+        catalog: &catalog,
+        model_group_alias: &aliases,
+        routing_groups: &groups,
+    };
+    assert_eq!(
+        validate_models_exist(&names(&["fast", "pool", "gpt-4o"]), Some(&source))
+            .expect("the served names"),
+        (true, Vec::new())
+    );
+    assert_eq!(
+        validate_models_exist(&names(&["fast", "missing"]), Some(&source))
+            .expect("the missing name"),
+        (false, names(&["missing"]))
+    );
+}
+
+#[tokio::test]
+async fn readthrough_recheck_sees_the_swapped_catalog() {
+    let catalog = catalog_handle(&["alpha"]);
+    let aliases = AliasMap::new();
+    let groups = RoutingGroupIndex::default();
+    let source = LiveModelNames {
+        catalog: &catalog,
+        model_group_alias: &aliases,
+        routing_groups: &groups,
+    };
+    let read_through = InstallingReadThrough::new(&catalog, &["beta"]);
+    let remaining =
+        missing_after_read_through(&names(&["alpha", "beta"]), &source, Some(&read_through))
+            .await
+            .expect("the missing names");
+    assert_eq!(remaining, Vec::<String>::new());
+    assert_eq!(read_through.attempted(), names(&["beta"]));
 }
 
 #[test]

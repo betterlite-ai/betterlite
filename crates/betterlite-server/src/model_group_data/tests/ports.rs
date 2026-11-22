@@ -1,42 +1,57 @@
-use std::collections::{BTreeMap, BTreeSet};
-
 use betterlite_auth::auth_invalidation::AuthInvalidation;
-use betterlite_models::model_registration::JsonObject;
-use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
-use betterlite_router::wildcard_catalog::PatternCatalog;
-use indexmap::IndexMap;
+use betterlite_models::decisions::Json;
+use betterlite_router::model_catalog_lookup::alias::AliasMap;
+use betterlite_router::model_catalog_lookup::alias::AliasTarget;
+use betterlite_router::routing_groups::index::RoutingGroupIndex;
 
-use super::super::ports::{ModelAccessGroupCache, ModelNameSource as _};
+use super::super::ports::{LiveModelNames, ModelAccessGroupCache, ModelNameSource as _};
 use super::fixtures::auth::recording_auth_invalidation;
+use super::fixtures::router::{alias_map, catalog_handle, replace_catalog, routing_groups};
 use super::names;
 
-fn catalog_deployment(model_name: &str) -> DeploymentSpec {
-    DeploymentSpec {
-        model_name: model_name.to_owned(),
-        litellm_params: JsonObject::new(),
-        model_info: JsonObject::new(),
-        extra: JsonObject::new(),
-    }
+#[test]
+fn live_source_reports_catalog_alias_and_group_names() {
+    let catalog = catalog_handle(&["gpt-4o"]);
+    let aliases = alias_map(&[
+        ("fast", AliasTarget::Name("gpt-4o".to_owned())),
+        (
+            "hidden",
+            AliasTarget::Item {
+                model: Some(Json::Text("gpt-4o".to_owned())),
+                hidden: Some(Json::Bool(true)),
+            },
+        ),
+    ]);
+    let groups = routing_groups("pool", &["gpt-4o"]);
+    let source = LiveModelNames {
+        catalog: &catalog,
+        model_group_alias: &aliases,
+        routing_groups: &groups,
+    };
+    assert_eq!(
+        source.model_names().expect("the served names"),
+        Some(names(&["fast", "pool", "gpt-4o"]))
+    );
 }
 
 #[test]
-fn catalog_source_reports_live_names() {
-    let catalog = DeploymentCatalog {
-        models: vec![catalog_deployment("gpt-4o"), catalog_deployment("gpt-4")],
-        model_names: BTreeSet::new(),
-        deployment_names: Vec::new(),
-        provider_default_ids: Vec::new(),
-        provider_unresolved: Vec::new(),
-        pattern_router: PatternCatalog::default(),
-        team_pattern_routers: BTreeMap::new(),
-        id_index: IndexMap::new(),
-        name_index: BTreeMap::new(),
-        team_index: BTreeMap::new(),
+fn live_source_reads_the_swapped_catalog() {
+    let catalog = catalog_handle(&["alpha"]);
+    let aliases = AliasMap::new();
+    let groups = RoutingGroupIndex::default();
+    let source = LiveModelNames {
+        catalog: &catalog,
+        model_group_alias: &aliases,
+        routing_groups: &groups,
     };
     assert_eq!(
-        catalog.model_names().expect("the served names"),
-        Some(names(&["gpt-4o", "gpt-4"]))
+        source.model_names().expect("the first names"),
+        Some(names(&["alpha"]))
+    );
+    replace_catalog(&catalog, &["beta"]);
+    assert_eq!(
+        source.model_names().expect("the rebound names"),
+        Some(names(&["beta"]))
     );
 }
 

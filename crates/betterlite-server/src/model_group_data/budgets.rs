@@ -7,12 +7,6 @@ use super::errors::GroupDataError;
 use super::ports::{BudgetInclude, GroupDatabase, ModelAccessGroupCache};
 use super::types::{AccessGroupBudget, AccessGroupBudgetResponse, AccessGroupInfo, GroupBudgetRow};
 
-const fn joined_budget() -> BudgetInclude {
-    BudgetInclude {
-        litellm_budget_table: true,
-    }
-}
-
 // _model_access_group_budget_rows: every link row in one read, keyed by group.
 pub async fn model_access_group_budget_rows<Database>(
     database: &Database,
@@ -20,8 +14,11 @@ pub async fn model_access_group_budget_rows<Database>(
 where
     Database: GroupDatabase + ?Sized,
 {
-    let include = joined_budget();
-    let rows = database.budget_find_many(include).await?;
+    let rows = database
+        .budget_find_many(BudgetInclude {
+            litellm_budget_table: true,
+        })
+        .await?;
     let mut mapped = BTreeMap::new();
     for row in rows {
         mapped.insert(row.access_group_name.clone(), row);
