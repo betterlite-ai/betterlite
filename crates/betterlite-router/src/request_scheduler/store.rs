@@ -16,6 +16,19 @@ impl From<SchedulerError> for SharedChange {
         Self::Refused(error)
     }
 }
+// the fallback tier's recorded changes: a shared write starts from them and a shared read answers with them
+fn apply_carried(members: &mut BTreeSet<String>, carried: &PendingChanges) {
+    for (member, state) in carried {
+        match state {
+            MemberState::Present => {
+                members.insert(member.clone());
+            }
+            MemberState::Absent => {
+                members.remove(member);
+            }
+        }
+    }
+}
 // one retry loop for the shared tier: a lost compare-and-set re-reads and decides again
 async fn cas<F>(
     store: &RoutingStateStore,
@@ -31,17 +44,7 @@ where
     let mut expected = Box::pin(shared_read(store, &key)).await?;
     for _attempt in 0..MAX_CAS_ATTEMPTS {
         let mut base = queue::members(&expected, model)?;
-        // the fallback tier's changes ride along, so this write can neither drop nor revive them
-        for (member, state) in carried {
-            match state {
-                MemberState::Present => {
-                    base.insert(member.clone());
-                }
-                MemberState::Absent => {
-                    base.remove(member);
-                }
-            }
-        }
+        apply_carried(&mut base, carried);
         let next = change(base)?;
         let outcome = Box::pin(swap(store, &key, &expected, &next, ttl)).await?;
         if outcome.swapped {
@@ -85,7 +88,7 @@ async fn swap(
     let Observed { value, warning } = written;
     warning.map_or(Ok(value), |reason| Err(SharedChange::Unavailable(reason)))
 }
-// Scheduler.get_queue reads the shared tier first and merges this worker's copy when it answers
+// Scheduler.get_queue reads the shared tier first and applies this worker's fallback changes when it answers
 pub(super) async fn queue_members(
     scheduler: &RequestScheduler,
     model: &str,
@@ -100,10 +103,8 @@ pub(super) async fn queue_members(
             warning: None,
         }) => {
             let mut members = queue::members(&value, model)?;
-            // a broken local copy cannot hide a shared answer, while a readable one adds the outage's entries
-            if let Ok(local) = local_members(scheduler, &key, model, None) {
-                members.extend(local.value);
-            }
+            let carried = carried_changes(scheduler, model);
+            apply_carried(&mut members, &carried);
             Ok(Observed {
                 value: members,
                 warning: None,
@@ -227,9 +228,20 @@ where
     for member in next.difference(&queued.value) {
         changes.insert(member.clone(), MemberState::Present);
     }
+    // a member this worker added while the shared tier was down was never in the shared queue, so its removal carries nothing and must leave no record behind
+    let mut pending = scheduler
+        .pending
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let recorded = pending.entry(model.to_owned()).or_default();
     for member in queued.value.difference(&next) {
-        changes.insert(member.clone(), MemberState::Absent);
+        if recorded.get(member) == Some(&MemberState::Present) {
+            recorded.remove(member);
+        } else {
+            changes.insert(member.clone(), MemberState::Absent);
+        }
     }
+    drop(pending);
     let entries = queue::scheduled(&next);
     scheduler
         .local

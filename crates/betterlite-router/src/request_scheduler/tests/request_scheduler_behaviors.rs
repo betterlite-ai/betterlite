@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::sync::PoisonError;
 use std::time::Duration;
 
 use betterlite_config::sections::request_scheduler::Settings;
@@ -374,6 +376,62 @@ async fn a_request_dropped_during_an_outage_stays_out_of_the_shared_tier() {
         service.queue(MODEL).await.expect("the queue reads").value,
         entries(&[(64, "second")])
     );
+}
+
+// a request the fallback tier removed during an outage stays out of the shared answer its worker reads before the next write
+#[tokio::test]
+async fn a_request_removed_during_an_outage_does_not_become_the_head() {
+    let (service, server) = shared_scheduler().await;
+    service
+        .add_request(&item(0, "first", MODEL))
+        .await
+        .expect("the request queues");
+    server.set_down(true);
+    service
+        .remove_request(&item(0, "first", MODEL))
+        .await
+        .expect("the fallback queue removes the request");
+    service
+        .add_request(&item(128, "second", MODEL))
+        .await
+        .expect("the fallback queue accepts the request");
+    server.set_down(false);
+    let allowed = service
+        .poll("second", MODEL, 0)
+        .await
+        .expect("the poll answers");
+    assert!(
+        allowed.value,
+        "the shared queue's removed head must not run before the outage's entry"
+    );
+}
+
+// an add and its removal during an outage leave no record, so the pending map cannot grow past the queue's bound
+#[tokio::test]
+async fn the_pending_changes_stay_bounded_while_the_shared_tier_is_down() {
+    let (service, server) = shared_scheduler().await;
+    server.set_down(true);
+    for index in 0..=queue::MAX_PENDING_REQUESTS {
+        let request_id = format!("outage-{index}");
+        service
+            .add_request(&item(0, &request_id, MODEL))
+            .await
+            .expect("the fallback queue accepts the request");
+        service
+            .remove_request(&item(0, &request_id, MODEL))
+            .await
+            .expect("the fallback queue removes the request");
+    }
+    let pending = service
+        .pending
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let recorded: usize = pending.values().map(BTreeMap::len).sum();
+    assert!(
+        recorded <= queue::MAX_PENDING_REQUESTS,
+        "the pending map holds {recorded} changes, past the queue's bound"
+    );
+    assert_eq!(recorded, 0, "an add and its removal leave no record");
 }
 
 // a change a shared write carried over is not re-applied by the writes after it
