@@ -133,8 +133,9 @@ where
     T: DeserializeOwned,
 {
     match value {
-        Some(Json::Object(_)) => {
-            let text = serde_json::to_string(value).map_err(|_error| StreamCostError::Serialize)?;
+        Some(Json::Object(object)) => {
+            let text =
+                serde_json::to_string(object).map_err(|_error| StreamCostError::Serialize)?;
             let decoded = serde_json::from_str(&text).map_err(|_error| StreamCostError::Usage {
                 reason: format!("the {field} field is not a token details object"),
             })?;

@@ -145,8 +145,8 @@ fn drop_nulls(value: Json) -> Json {
         Json::Object(fields) => Json::Object(
             fields
                 .into_iter()
-                .map(|(name, value)| (name, drop_nulls(value)))
-                .filter(|(_, value)| !matches!(value, Json::Null))
+                .map(|(name, item)| (name, drop_nulls(item)))
+                .filter(|(_, item)| !matches!(item, Json::Null))
                 .collect(),
         ),
         Json::List(items) => Json::List(items.into_iter().map(drop_nulls).collect()),
