@@ -56,7 +56,10 @@ impl OracleProviders {
         }
     }
 
-    async fn config_upload(&self, upload: ConfigUpload<'_, Self>) -> Result<FileObject, WireError> {
+    async fn config_upload(
+        &self,
+        upload: &ConfigUpload<'_, Self>,
+    ) -> Result<FileObject, WireError> {
         let client = anthropic_client(
             upload.config,
             upload.api_key,
@@ -90,7 +93,7 @@ impl FileWriteProviders for OracleProviders {
 
     async fn upload(&self, target: UploadTarget<'_, Self>) -> Result<FileObject, WireError> {
         match target {
-            UploadTarget::Config(upload) => self.config_upload(upload).await,
+            UploadTarget::Config(upload) => self.config_upload(&upload).await,
             UploadTarget::OpenAi { call, data } => Ok(self
                 .openai
                 .create_file(&openai_client(&call)?, &data)
