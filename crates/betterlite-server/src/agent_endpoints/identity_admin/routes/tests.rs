@@ -158,15 +158,14 @@ impl IdentityStatusReads for FakeReads {
         agent_id: &str,
     ) -> impl Future<Output = Result<Option<AgentResponse>, AgentIdentityFailure>> + Send {
         self.reads.lock().unwrap().push(agent_id.to_owned());
-        let answer = match &self.failure {
-            Some(failure) => Err(failure.clone()),
-            None => Ok(self
-                .agent
-                .as_ref()
-                .filter(|agent| agent.agent_id == agent_id)
-                .cloned()),
-        };
-        ready(answer)
+        if let Some(failure) = &self.failure {
+            return ready(Err(failure.clone()));
+        }
+        ready(Ok(self
+            .agent
+            .as_ref()
+            .filter(|agent| agent.agent_id == agent_id)
+            .cloned()))
     }
 }
 

@@ -120,7 +120,7 @@ fn status_body(agent: PolicyAgent) -> Result<ManagedAgentIdentityStatus, Identit
         identity,
         identity_managed: agent.identity_managed,
         enabled: ActiveState(agent.enabled.0),
-        execution_mode: execution_mode(agent.execution_mode),
+        execution_mode: execution_mode(&agent.execution_mode),
         last_authenticated_at,
     })
 }
@@ -132,7 +132,7 @@ fn policy_unreadable() -> IdentityAdminError {
     }
 }
 
-fn execution_mode(mode: AgentExecutionMode) -> ExecutionMode {
+const fn execution_mode(mode: &AgentExecutionMode) -> ExecutionMode {
     match mode {
         AgentExecutionMode::Autonomous => ExecutionMode::Autonomous,
         AgentExecutionMode::Delegated => ExecutionMode::Delegated,

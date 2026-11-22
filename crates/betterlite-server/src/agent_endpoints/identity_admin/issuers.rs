@@ -13,6 +13,7 @@ pub struct IdentitySettings {
     pub microsoft_client_id: Option<String>,
 }
 
+#[must_use]
 pub fn trusted_agent_issuers(settings: &IdentitySettings) -> Vec<String> {
     if !settings.enable_jwt_auth {
         return Vec::new();
