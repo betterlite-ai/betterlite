@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::str::FromStr as _;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_core::api::responses_chat_call::completions::{
-    CompletionArguments, CompletionBody, CompletionClient, CompletionOutput,
+    CompletionBody, CompletionClient, CompletionOutput,
 };
+use betterlite_core::api::responses_chat_call::records::CompletionArguments;
 use betterlite_core::api::responses_chat_output::records::ChatCompletionResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
@@ -157,20 +157,19 @@ impl HttpCompletions {
                 header(organization, "openai-organization")?,
             );
         }
-        if let Some(Value::Object(fields)) = extra {
-            for (name, value) in fields {
-                let Value::String(text) = value else {
-                    return Err(CompletionsError::Request(format!(
-                        "the extra header {name} is not text"
-                    )));
-                };
-                let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|source| {
-                    CompletionsError::Request(format!(
-                        "the header name {name} is invalid: {source}"
-                    ))
-                })?;
-                headers.insert(header_name, header(text, name)?);
-            }
+        let Some(Value::Object(fields)) = extra else {
+            return Ok(headers);
+        };
+        for (name, value) in fields {
+            let Value::String(text) = value else {
+                return Err(CompletionsError::Request(format!(
+                    "the extra header {name} is not text"
+                )));
+            };
+            let header_name = HeaderName::from_bytes(name.as_bytes()).map_err(|source| {
+                CompletionsError::Request(format!("the header name {name} is invalid: {source}"))
+            })?;
+            headers.insert(header_name, header(text, name)?);
         }
         Ok(headers)
     }

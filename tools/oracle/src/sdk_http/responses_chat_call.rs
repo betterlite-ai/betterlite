@@ -35,7 +35,8 @@ use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::kinds::SdkResult;
 use crate::sdk_http::wrapper_stream::NORMALIZED_ID;
 
-pub use call::{Call, Outcome};
+pub type Call = call::Call;
+pub type Outcome = call::Outcome;
 
 use assembly::StreamContext;
 use call::{Mode, StreamView};
