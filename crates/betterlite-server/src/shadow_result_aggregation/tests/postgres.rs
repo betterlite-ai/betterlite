@@ -526,6 +526,7 @@ async fn leg_rows_read_naive_columns_as_utc() {
 }
 
 fn assert_job_config(job: &LegRow) {
+    assert_eq!(job.group_id, "job-1");
     assert_eq!(job.target_type, ShadowEvalTargetType::User);
     assert_eq!(
         job.direction,
