@@ -4,7 +4,6 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_shapes::wire::{
     ShapeDecodeError, WireDecodeLimits, decode_responses_shapes,
 };
-use betterlite_redis::RedisCache;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +12,7 @@ use crate::api::response_synthetic_events::python_value::json_array_or_empty;
 use crate::api::responses_stream_primitives::python_text::value_text;
 
 use super::access::{PollAccess, PollOwner, authorize};
-use super::cache::{PollingCache, RedisPollingCache};
+use super::cache::PollingCache;
 use super::error::PollingError;
 use super::get_cache_key;
 use super::record::{PollMetadata, PollPatch, PollRecord, PolledResponse, queued_response};
@@ -75,16 +74,6 @@ pub struct ResponsePollingStore {
 }
 
 impl ResponsePollingStore {
-    #[must_use]
-    pub fn from_redis(redis: Arc<RedisCache>, ttl: i64, limits: ApiLimits) -> Self {
-        let cache: Arc<dyn PollingCache> = Arc::new(RedisPollingCache { cache: redis });
-        Self {
-            cache: Some(cache),
-            ttl,
-            limits,
-        }
-    }
-
     pub async fn create_initial_state(&self, request: NewPollRequest<'_>) -> Created {
         let response = queued_response(
             request.polling_id,
