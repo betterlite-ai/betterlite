@@ -1,0 +1,18 @@
+kind: helper
+name: cleanup-retries-after-a-failed-reschedule
+call:
+  b8371:
+    operation: apply_retention
+    settings:
+      maximum_spend_logs_retention_period: "30d"
+    previous:
+      maximum_spend_logs_retention_period: "30d"
+    last_attempt: null
+    reschedule_failed: true
+    scheduler: paused
+    job_present: false
+    add_fails: false
+    start: "2026-01-01T00:00:00Z"
+env: {}
+compare:
+  ignore: []

@@ -978,7 +978,9 @@ name = "betterlite"
 version = "0.1.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-cache",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-http",
  "betterlite-models",
@@ -989,6 +991,7 @@ dependencies = [
  "chrono",
  "clap",
  "croner",
+ "jiff",
  "nix",
  "rand 0.10.3",
  "regex",
@@ -1186,6 +1189,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
  "unicode-normalization",
  "url",
  "uuid",
@@ -3601,6 +3605,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
@@ -3609,6 +3614,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -4289,6 +4296,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uuid",

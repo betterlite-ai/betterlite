@@ -8,6 +8,8 @@ description: >-
   Embeddings. The merged embeddings route (crates/betterlite-server/src/routes/embeddings.rs, the `embeddings` handler) gets the same change: keep the step in its route state the same way, run it with route type aembedding before the deployment is picked, route on the returned data's model, and map a `PreCallError` through the embeddings failure function the same way.
 
   HTTP oracle cases in tools/oracle/cases/chat/pre-call/ against the mock provider, plus an embeddings request whose model litellm_settings.model_alias_map aliases, which reaches the provider under the target name: a body whose `model` is a number gets 400 "'model' must be a string." with param model; litellm_settings.model_alias_map sends the aliased model to the provider; an `x-litellm-call-id` header comes back as the call id header; general_settings.always_include_stream_usage true adds `stream_options.include_usage` to the upstream request of a stream.
+
+  Rate-limit cases. B3055 wrote four HTTP cases in tools/oracle/cases/limiter (rpm-limit-429, within-limit-headers, fail-closed-503 and fail-open-passes) and checked them only under --self-check, since no route ran the pre-call step then. They run here against the gateway: B8399 registers the limiter gate as the parallel_request_limiter proxy hook, and this task makes the chat route run the shared pre-call step that calls it. A request over its limit answers B3030's 429 with LiteLLM's body and headers, and with fail-closed enforcement on and an unreachable cache the route answers 503 with {"detail":{"error":...}}. Change a case file only where the gateway config it needs is wrong, never to fit betterlite's answer.
 scope:
   paths:
     - crates/betterlite-server/src/routes/chat.rs
@@ -15,6 +17,7 @@ scope:
     - crates/betterlite-server/src/routes/embeddings.rs
     - crates/betterlite-server/src/routes/embeddings/**
     - tools/oracle/cases/chat/pre-call/**
+    - tools/oracle/cases/limiter/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L2241
@@ -30,6 +33,8 @@ dod:
     proof: [embeddings-tests, oracle]
   - text: A pre-call failure answers with its status, type, param and code, and the call id comes from the step.
     proof: [chat-tests, oracle]
+  - text: A chat request over a rate limit gets LiteLLM's 429 status, body and headers, and with fail-closed enforcement on and an unreachable cache it gets 503 with {"detail":{"error":...}}, in the four limiter cases.
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -45,6 +50,10 @@ oracle_cases:
   - tools/oracle/cases/chat/pre-call/call-id-header.yaml
   - tools/oracle/cases/chat/pre-call/always-include-stream-usage.yaml
   - tools/oracle/cases/chat/pre-call/embeddings-model-alias.yaml
+  - tools/oracle/cases/limiter/rpm-limit-429.yaml
+  - tools/oracle/cases/limiter/within-limit-headers.yaml
+  - tools/oracle/cases/limiter/fail-closed-503.yaml
+  - tools/oracle/cases/limiter/fail-open-passes.yaml
 deviations: []
 out_of_scope:
   - "The step and its ports: B8800, B8801 and B8802. The preparation itself: B1103."

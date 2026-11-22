@@ -1,0 +1,5 @@
+kind: helper
+name: effort-seed
+call: {"bedrock_reasoning_stream": {"step": {"effort": {"model": "openai.gpt-5.6", "params": {"temperature": 0.2, "reasoning_effort": 1}}}}}
+env: {}
+compare: {ignore: []}

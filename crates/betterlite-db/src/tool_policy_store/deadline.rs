@@ -43,7 +43,7 @@ pub(super) enum StatementFailure {
     #[error("{}", driver_detail(.0))]
     Driver(#[source] tokio_postgres::Error),
     #[error("the statement did not finish within {deadline:?}")]
-    Expired { deadline: Duration, cancelled: bool },
+    Expired { deadline: Duration },
 }
 
 // The driver prints only "db error"; the server's severity and message name the failing constraint, while detail and hint can carry row values.
@@ -54,12 +54,9 @@ fn driver_detail(source: &tokio_postgres::Error) -> String {
     )
 }
 
-// A statement past its deadline keeps running on the server, so its client leaves the pool unless the cancel landed.
-pub(super) fn discard_uncancelled(client: Client, failure: &StatementFailure) {
-    if let StatementFailure::Expired {
-        cancelled: false, ..
-    } = failure
-    {
+// The server signals the backend after the cancel returns, so the cancel can hit the connection's next statement.
+pub(super) fn discard_expired(client: Client, failure: &StatementFailure) {
+    if matches!(failure, StatementFailure::Expired { .. }) {
         let detached = deadpool_postgres::Object::take(client);
         drop(detached);
     }
@@ -79,33 +76,23 @@ where
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(StatementFailure::Driver(error)),
         Err(_deadline_elapsed) => {
-            let cancelled = cancel_statement(client, bounds).await;
+            cancel_statement(client, bounds).await;
             Err(StatementFailure::Expired {
                 deadline: bounds.deadline,
-                cancelled,
             })
         }
     }
 }
 
-pub(super) async fn cancel_statement(
-    client: &tokio_postgres::Client,
-    bounds: StatementBounds<'_>,
-) -> bool {
+pub(super) async fn cancel_statement(client: &tokio_postgres::Client, bounds: StatementBounds<'_>) {
     let token = client.cancel_token();
     match timeout(bounds.deadline, bounds.canceller.cancel(&token)).await {
-        Ok(Ok(())) => true,
-        Ok(Err(error)) => {
-            tracing::warn!(
-                "tool_registry_writer: the timed out statement could not be cancelled: {error}"
-            );
-            false
-        }
-        Err(_cancel_elapsed) => {
-            tracing::warn!(
-                "tool_registry_writer: cancelling the timed out statement did not answer in time"
-            );
-            false
-        }
+        Ok(Ok(())) => (),
+        Ok(Err(error)) => tracing::warn!(
+            "tool_registry_writer: the timed out statement could not be cancelled: {error}"
+        ),
+        Err(_cancel_elapsed) => tracing::warn!(
+            "tool_registry_writer: cancelling the timed out statement did not answer in time"
+        ),
     }
 }

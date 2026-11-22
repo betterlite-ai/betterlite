@@ -1,0 +1,51 @@
+kind: helper
+name: summary-history-compaction-trigger-validation
+call:
+  summary_history:
+    action: trigger
+    edit_spec: {}
+calls:
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: null}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: false}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {type: input_tokens}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: "yes"}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {type: tool_uses, value: 60000}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {value: "60000"}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {value: 60000.5}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {type: tool_uses, value: x}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {type: input_tokens, value: 50000}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {value: 49999}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {value: -60000}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {value: true}}
+- summary_history:
+    action: trigger
+    edit_spec: {trigger: {value: false}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,24 @@
+kind: helper
+name: key_and_team_intersection
+call:
+  b4779:
+    operation: grants
+    method: key_team
+    strict: false
+    database: true
+    key:
+      team_id: t1
+      agents: [alpha, beta]
+      agent_access_groups: []
+      access_group_ids: []
+    team:
+      agents: [beta, gamma]
+      agent_access_groups: []
+      access_group_ids: []
+    db_agents: []
+    groups: {}
+    config_agents: []
+    fail: null
+env: {}
+compare:
+  ignore: []
