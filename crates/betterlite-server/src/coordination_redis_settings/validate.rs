@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::iter;
 
 use betterlite_config::sections::settings::JsonValue;
 use thiserror::Error;
@@ -73,7 +74,7 @@ async fn rejected_fields(
     };
     let mut rejected = BTreeSet::new();
     for (name, value) in members {
-        let probe = JsonValue::Object(std::iter::once((name.clone(), value.clone())).collect());
+        let probe = JsonValue::Object(iter::once((name.clone(), value.clone())).collect());
         let block = CoordinationRedisBlock { value: probe };
         match resolve_params(&block, context).await {
             Ok(_) => {}

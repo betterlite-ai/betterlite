@@ -1,3 +1,5 @@
+use std::iter;
+
 use betterlite_config::sections::settings::JsonValue;
 
 use super::{REDACTED_VALUE, SENSITIVE_FIELDS};
@@ -20,7 +22,7 @@ pub fn redact(settings: Option<&JsonValue>, mode: Redaction) -> JsonValue {
             .and_then(JsonValue::as_object),
     };
     let Some(members) = selected else {
-        return JsonValue::Object(std::iter::empty::<(String, JsonValue)>().collect());
+        return JsonValue::Object(iter::empty::<(String, JsonValue)>().collect());
     };
     JsonValue::Object(
         members
@@ -47,7 +49,7 @@ pub fn redact(settings: Option<&JsonValue>, mode: Redaction) -> JsonValue {
 pub fn merge_over_saved(incoming: &JsonValue, saved: Option<&JsonValue>) -> JsonValue {
     let saved_members = saved.and_then(JsonValue::as_object);
     let Some(incoming_members) = incoming.as_object() else {
-        return JsonValue::Object(std::iter::empty::<(String, JsonValue)>().collect());
+        return JsonValue::Object(iter::empty::<(String, JsonValue)>().collect());
     };
     JsonValue::Object(
         incoming_members
