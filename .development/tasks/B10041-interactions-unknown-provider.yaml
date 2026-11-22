@@ -1,0 +1,117 @@
+id: B10041
+title: An unknown or unsupported interactions or agents provider answers 400, not 500
+description: >-
+  Side finding from B3342's review (https://github.com/betterlite-ai/betterlite/pull/2961): the bug decided "fix it"
+  there, in B10034 for search and in B1037 for an unknown custom_llm_provider is also on main in the interactions get,
+  delete and cancel calls and in the managed agents item calls. The provider name is the caller's input and the call
+  can never succeed, so a 500 tells the client the server broke when its own request was wrong.
+
+
+  In crates/betterlite-core/src/api/interactions/get/error.rs, InteractionGetError::Unsupported ("Interactions API
+  not supported for: <provider>") and a carried ClientError::UnknownProvider go through rejected_exception and
+  dispatch, so they come out as ErrorClass::ApiConnection with status 500. LiteLLM's interactions get, delete and
+  cancel raise the same ValueError into exception_type. crates/betterlite-core/src/api/interactions/lifecycle/error.rs
+  does the same for InteractionLifecycleError::Unsupported and ClientError::UnknownProvider through value_error.
+  Each of these answers ErrorClass::BadRequest (status 400) with the message it has today, model "" and the provider,
+  built with ResponseDetails::for_provider, the constructor B10039 adds to
+  crates/betterlite-error/src/error/details.rs.
+
+
+  In crates/betterlite-core/src/api/agents/item/error.rs a carried ClientError::UnknownProvider also answers 500,
+  while LiteLLM's agents calls answer an unsupported provider with BadRequestError (400). That one is a parity fix:
+  it answers ErrorClass::BadRequest the same way, and needs no deviation row. AgentItemError::Unsupported keeps its
+  class. ClientError::Tls and ClientError::Build stay where they are in all three files.
+
+
+  get_reports_an_unsupported_provider_as_a_value_error and aget_reports_an_unsupported_provider_as_a_value_error in
+  interactions/get/tests.rs and delete_rejects_a_provider_without_an_interactions_api in
+  interactions/lifecycle/tests/delete_calls.rs assert ApiConnection today; they assert BadRequest and 400 after this
+  task, under names that say so. Add the same case for cancel to interactions/lifecycle/tests/cancel_calls.rs and an
+  unknown provider case to agents/item/tests/agent_item_calls.rs. Add rows to docs/deviations/B3495.yaml for get and
+  to docs/deviations/B3500.yaml for delete and cancel saying they answer 400 where LiteLLM answers 500, with the links
+  below.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/interactions/get/error.rs
+  - crates/betterlite-core/src/api/interactions/lifecycle/error.rs
+  - crates/betterlite-core/src/api/agents/item/error.rs
+  - crates/betterlite-core/src/api/interactions/get/tests.rs
+  - crates/betterlite-core/src/api/interactions/get/tests/support.rs
+  - crates/betterlite-core/src/api/interactions/lifecycle/tests/delete_calls.rs
+  - crates/betterlite-core/src/api/interactions/lifecycle/tests/cancel_calls.rs
+  - crates/betterlite-core/src/api/interactions/lifecycle/tests/support.rs
+  - crates/betterlite-core/src/api/agents/item/tests/agent_item_calls.rs
+  - docs/deviations/B3495.yaml
+  - docs/deviations/B3500.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L425-L426
+  why: get raises ValueError("Interactions API not supported for ...") when the provider has no interactions config, and exception_type maps it to APIConnectionError (500).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L529-L530
+  why: delete raises the same ValueError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L631-L632
+  why: cancel raises the same ValueError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/main.py#L59-L61
+  why: The agents calls answer a provider without an agents config with BadRequestError (400).
+dod:
+- text: >-
+    An interactions get, delete or cancel call with an unknown provider or one without an interactions config fails
+    with ErrorClass::BadRequest, status 400, the unchanged message, model "" and the provider; every other arm keeps
+    its class.
+  proof: [interactions-tests]
+- text: >-
+    A managed agents item call whose provider the client cannot resolve fails with ErrorClass::BadRequest, status 400,
+    as LiteLLM's agents calls do; every other arm keeps its class.
+  proof: [agents-tests]
+- text: >-
+    All three failure mappings build that class with ResponseDetails::for_provider.
+  proof: [one-constructor]
+- text: >-
+    docs/deviations/B3495.yaml and docs/deviations/B3500.yaml record the 400 where LiteLLM answers 500, each with its
+    pinned LiteLLM link.
+  proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: interactions-tests
+    why: An unknown or unsupported interactions provider still answers 500, or another interactions behavior broke.
+    run: >-
+      grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/interactions/get/tests.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/interactions/lifecycle/tests/delete_calls.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/interactions/lifecycle/tests/cancel_calls.rs
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::interactions::(get|lifecycle)::/)'
+  - id: agents-tests
+    why: An unknown agents provider still answers 500, or another agents item behavior broke.
+    run: >-
+      grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/agents/item/tests/agent_item_calls.rs
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::agents::item::/)'
+  - id: one-constructor
+    why: A failure mapping writes its own ErrorContext literal for the provider mistake instead of the shared constructor.
+    run: >-
+      grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/interactions/get/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/interactions/lifecycle/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/agents/item/error.rs
+  - id: deviation-rows
+    why: A deviation row for the 400 is missing its pinned link.
+    run: >-
+      perl -0ne 'exit !(m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?interactions/main[.]py[#]L425-L426}s)' docs/deviations/B3495.yaml
+      && perl -0ne 'exit !(m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?interactions/main[.]py[#]L529-L530}s
+      && m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?interactions/main[.]py[#]L631-L632}s)' docs/deviations/B3500.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    An interactions get, delete or cancel call whose provider is unknown or has no interactions config answers
+    BadRequestError (400) with model "" and the provider set.
+  why: >-
+    LiteLLM's ValueError goes through exception_type and comes out as an APIConnectionError (500), though the
+    provider name is the caller's input and the call can never succeed.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L425-L426
+out_of_scope:
+- Interactions create, the other video calls and every other error class.
+pitfalls:
+- Split ClientError::UnknownProvider out of the arm it shares with Tls and Build; those two keep their class.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

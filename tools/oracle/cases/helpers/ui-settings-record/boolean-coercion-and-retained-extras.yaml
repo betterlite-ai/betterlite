@@ -1,0 +1,15 @@
+kind: helper
+name: boolean-coercion-and-retained-extras
+call:
+  ui_settings_record:
+    settings:
+      enable_chat_ui: "yes"
+      forward_client_headers_to_llm_api: 1
+      allow_public_health_readiness_details: 1.0
+      disable_agents_for_internal_users: "off"
+      team_admin_editable_team_fields: [max_budget, projects]
+      enable_projects_ui: true
+      ui_theme: {density: compact, columns: [2, null]}
+env: {}
+compare:
+  ignore: []
