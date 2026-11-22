@@ -778,13 +778,18 @@ async fn order_accumulates_every_pair_into_the_final_write() {
         ]
     );
     assert_eq!((ttl, local_only), (60, false));
+    assert_eq!(
+        (sets[0].1, sets[0].2),
+        (600, true),
+        "the global increment keeps the InMemoryCache default ttl"
+    );
     assert!(
-        sets[..6]
+        sets[1..6]
             .iter()
             .all(|(_, written_ttl, written_local_only)| {
                 *written_ttl == 60 && *written_local_only
             }),
-        "every check writes the accumulated list locally under ttl 60"
+        "every accumulated-list check writes locally under ttl 60"
     );
 }
 
