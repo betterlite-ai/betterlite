@@ -1,0 +1,11 @@
+kind: helper
+name: key-access-service-team-validation
+call:
+  key_access:
+    steps:
+      - {"function": "service_team", "config": {"general_settings": {"disable_custom_api_keys": null}, "litellm_settings": {"key_generation_settings": null}}, "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": null, "metadata": {}}, "team": null, "data": {}, "route": "/key/generate", "user_id": null, "custom_key": null, "metadata": null, "team_id": null, "database": true, "teams": ["team-1"], "object_permission": null}
+      - {"function": "service_team", "config": {"general_settings": {"disable_custom_api_keys": null}, "litellm_settings": {"key_generation_settings": null}}, "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": null, "metadata": {}}, "team": null, "data": {}, "route": "/key/generate", "user_id": null, "custom_key": null, "metadata": null, "team_id": "team-1", "database": false, "teams": ["team-1"], "object_permission": null}
+      - {"function": "service_team", "config": {"general_settings": {"disable_custom_api_keys": null}, "litellm_settings": {"key_generation_settings": null}}, "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": null, "metadata": {}}, "team": null, "data": {}, "route": "/key/generate", "user_id": null, "custom_key": null, "metadata": null, "team_id": "team-2", "database": true, "teams": ["team-1"], "object_permission": null}
+      - {"function": "service_team", "config": {"general_settings": {"disable_custom_api_keys": null}, "litellm_settings": {"key_generation_settings": null}}, "caller": {"user_id": "member-1", "user_role": "internal_user", "team_id": null, "metadata": {}}, "team": null, "data": {}, "route": "/key/generate", "user_id": null, "custom_key": null, "metadata": null, "team_id": "team-1", "database": true, "teams": ["team-1"], "object_permission": null}
+env: {}
+compare: {ignore: []}
