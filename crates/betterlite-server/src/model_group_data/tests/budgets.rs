@@ -5,9 +5,10 @@ use serde::Serialize;
 use serde_json::Number;
 
 use super::super::budgets::{
-    budget_or_none, budget_response, delete_group_budget_row, model_access_group_budget_row,
-    model_access_group_budget_rows, with_budget,
+    budget_or_none, budget_response, delete_group_budget_row, model_access_group_budget_rows,
+    with_budget,
 };
+use super::super::ports::{BudgetInclude, GroupDatabase};
 use super::super::types::{AccessGroupInfo, ModelAccessGroupBudget};
 use super::fixtures::cache::RecordingCache;
 use super::fixtures::json_object;
@@ -144,16 +145,22 @@ async fn budget_rows_map_by_name_in_one_read() {
         .expect("the budget rows");
     assert_eq!(mapped.len(), 2);
     assert_eq!(mapped["group-a"].spend, Some(Decimal::new(35, 1)));
+    assert_eq!(mapped["group-a"].litellm_budget_table, Some(capped_budget()));
     assert_eq!(mapped["group-b"].litellm_budget_table, None);
     assert_eq!(database.budget_reads(), 1);
-    let one = model_access_group_budget_row("group-a", &database)
+    let include = BudgetInclude {
+        litellm_budget_table: true,
+    };
+    let one = database
+        .budget_find_unique("group-a", include)
         .await
         .expect("the budget row")
         .expect("the seeded group");
     assert_eq!(one.budget_id.as_deref(), Some("budget-1"));
     assert_eq!(one.litellm_budget_table, Some(capped_budget()));
     assert!(
-        model_access_group_budget_row("missing", &database)
+        database
+            .budget_find_unique("missing", include)
             .await
             .expect("the budget row")
             .is_none()

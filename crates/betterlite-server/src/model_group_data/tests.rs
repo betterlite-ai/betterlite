@@ -26,7 +26,7 @@ use tokio_postgres::NoTls;
 
 use self::fixtures::json_object;
 use self::fixtures::scripted::ScriptedDatabase;
-use super::deployments::{tag_deployments_by_id, tag_deployments_by_name};
+use super::deployments::{DeploymentSelection, tag_deployments};
 use super::errors::{GroupDataError, HttpFailure};
 use super::ports::{BudgetInclude, GroupBudgetCreate, GroupBudgetUpdate, GroupDatabase};
 use super::store::PostgresGroupData;
@@ -421,9 +421,14 @@ async fn postgres_failure_effects() {
     execute(&pool, FAILURE_SEED).await;
     let fixture_store = StoreFixture::new(&pool);
     let database = fixture_store.database();
-    let error = tag_deployments_by_name(&names(&["alpha", "missing"]), "group-a", &database)
-        .await
-        .expect_err("the missing name");
+    let model_names = names(&["alpha", "missing"]);
+    let error = tag_deployments(
+        DeploymentSelection::ByNames(&model_names),
+        "group-a",
+        &database,
+    )
+    .await
+    .expect_err("the missing name");
     assert_eq!(
         http_failure(error).message,
         "Can't find model 'missing' in Database. Access group management is only supported for database models."
@@ -437,7 +442,8 @@ async fn postgres_failure_effects() {
         .await,
         ""
     );
-    let error = tag_deployments_by_id(&names(&["f1", "missing", "f2"]), "group-a", &database)
+    let model_ids = names(&["f1", "missing", "f2"]);
+    let error = tag_deployments(DeploymentSelection::ByIds(&model_ids), "group-a", &database)
         .await
         .expect_err("the missing id");
     assert_eq!(

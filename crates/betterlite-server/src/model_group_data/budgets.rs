@@ -13,18 +13,6 @@ const fn joined_budget() -> BudgetInclude {
     }
 }
 
-// _model_access_group_budget_row: one group's link row with its joined budget.
-pub async fn model_access_group_budget_row<Database>(
-    access_group: &str,
-    database: &Database,
-) -> Result<Option<GroupBudgetRow>, GroupDataError>
-where
-    Database: GroupDatabase + ?Sized,
-{
-    let include = joined_budget();
-    database.budget_find_unique(access_group, include).await
-}
-
 // _model_access_group_budget_rows: every link row in one read, keyed by group.
 pub async fn model_access_group_budget_rows<Database>(
     database: &Database,

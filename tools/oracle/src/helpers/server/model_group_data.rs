@@ -6,7 +6,8 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_router::model_catalog_lookup::error::LookupError;
 use betterlite_server::model_group_data::budgets::{budget_or_none, budget_response, with_budget};
 use betterlite_server::model_group_data::deployments::{
-    add_access_group_to_deployment, readable_model_info_or_raise, remove_group_from_deployment,
+    GroupChange, add_access_group_to_deployment, readable_model_info_or_raise,
+    remove_group_from_deployment,
 };
 use betterlite_server::model_group_data::discovery::validate_models_exist;
 use betterlite_server::model_group_data::errors::GroupDataError;
@@ -130,8 +131,8 @@ fn answer_call(call: &Call) -> Value {
             "value": budget_response(&call.access_group, call.row.as_ref()),
         }),
         Call::ValidateModelsExist(call) => validate_answer(call),
-        Call::AddAccessGroupToDeployment(call) => add_answer(call),
-        Call::RemoveDeploymentGroup(call) => remove_answer(call),
+        Call::AddAccessGroupToDeployment(call) => group_answer(call, GroupChange::Add),
+        Call::RemoveDeploymentGroup(call) => group_answer(call, GroupChange::Remove),
         Call::ReadableModelInfoOrRaise(call) => readable_answer(call),
         Call::RaiseDegradedServing(call) => raise_answer(call),
     }
@@ -148,20 +149,13 @@ fn validate_answer(call: &ValidateCall) -> Value {
     }
 }
 
-fn add_answer(call: &GroupCall) -> Value {
+fn group_answer(call: &GroupCall, change: GroupChange) -> Value {
     let mut model_info = call.model_info.clone();
-    match add_access_group_to_deployment(&mut model_info, &call.access_group) {
-        Ok(modified) => json!({
-            "ok": true,
-            "value": { "model_info": model_info, "modified": modified },
-        }),
-        Err(error) => failure(&error),
-    }
-}
-
-fn remove_answer(call: &GroupCall) -> Value {
-    let mut model_info = call.model_info.clone();
-    match remove_group_from_deployment(&mut model_info, &call.access_group) {
+    let outcome = match change {
+        GroupChange::Add => add_access_group_to_deployment(&mut model_info, &call.access_group),
+        GroupChange::Remove => remove_group_from_deployment(&mut model_info, &call.access_group),
+    };
+    match outcome {
         Ok(modified) => json!({
             "ok": true,
             "value": { "model_info": model_info, "modified": modified },

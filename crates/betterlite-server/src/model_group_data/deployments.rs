@@ -77,47 +77,41 @@ pub fn readable_model_info_or_raise(
     }
 }
 
-// _tag_deployment_with_access_group: the pair comes back only when this call wrote the row.
-pub async fn tag_deployment_with_group<Database>(
-    model_id: &str,
-    model_info: Option<&Json>,
-    access_group: &str,
-    database: &Database,
-) -> Result<Option<(String, JsonObject)>, GroupDataError>
-where
-    Database: GroupDatabase + ?Sized,
-{
-    let mut updated = readable_model_info_or_raise(model_id, model_info)?;
-    if !add_access_group_to_deployment(&mut updated, access_group)? {
-        return Ok(None);
-    }
-    let serialized =
-        serde_json::to_string(&Json::Object(updated.clone())).map_err(GroupDataError::Row)?;
-    database.update_model_info(model_id, &serialized).await?;
-    debug!(
-        model_id,
-        access_group, "Updated deployment with access group"
-    );
-    Ok(Some((model_id.to_owned(), updated)))
+// The two directions a deployment's access_groups list changes.
+#[derive(Clone, Copy)]
+pub enum GroupChange {
+    Add,
+    Remove,
 }
 
-// _strip_access_group_from_deployment: the same write path, without the debug log.
-pub async fn strip_deployment_with_group<Database>(
+// _tag_deployment_with_access_group and _strip_access_group_from_deployment: one write path, and the pair comes back only when this call wrote the row.
+pub async fn update_deployment_group<Database>(
     model_id: &str,
     model_info: Option<&Json>,
     access_group: &str,
+    change: GroupChange,
     database: &Database,
 ) -> Result<Option<(String, JsonObject)>, GroupDataError>
 where
     Database: GroupDatabase + ?Sized,
 {
     let mut updated = readable_model_info_or_raise(model_id, model_info)?;
-    if !remove_group_from_deployment(&mut updated, access_group)? {
+    let modified = match change {
+        GroupChange::Add => add_access_group_to_deployment(&mut updated, access_group)?,
+        GroupChange::Remove => remove_group_from_deployment(&mut updated, access_group)?,
+    };
+    if !modified {
         return Ok(None);
     }
     let serialized =
         serde_json::to_string(&Json::Object(updated.clone())).map_err(GroupDataError::Row)?;
     database.update_model_info(model_id, &serialized).await?;
+    if matches!(change, GroupChange::Add) {
+        debug!(
+            model_id,
+            access_group, "Updated deployment with access group"
+        );
+    }
     Ok(Some((model_id.to_owned(), updated)))
 }
 
@@ -139,12 +133,54 @@ where
     }
 }
 
-// update_deployments_with_access_group: check every requested name first, then tag each row in query order, so a missing name writes nothing.
-pub async fn tag_deployments_by_name<Database>(
-    model_names: &[String],
+// The two selection modes of update_deployments_with_access_group and update_specific_deployments_with_access_group.
+pub enum DeploymentSelection<'a> {
+    ByNames(&'a [String]),
+    ByIds(&'a [String]),
+}
+
+// update_deployments_with_access_group and update_specific_deployments_with_access_group: every name is checked before the first write, while each id is re-read just before its own write.
+pub async fn tag_deployments<Database>(
+    selection: DeploymentSelection<'_>,
     access_group: &str,
     database: &Database,
 ) -> Result<Vec<(String, JsonObject)>, GroupDataError>
+where
+    Database: GroupDatabase + ?Sized,
+{
+    match selection {
+        DeploymentSelection::ByNames(model_names) => {
+            let deployments = named_deployments(model_names, database).await?;
+            let mut tagged = Vec::new();
+            for deployment in &deployments {
+                let pair = update_deployment_group(
+                    &deployment.model_id,
+                    deployment.model_info.as_ref(),
+                    access_group,
+                    GroupChange::Add,
+                    database,
+                )
+                .await?;
+                tagged.extend(pair);
+            }
+            Ok(tagged)
+        }
+        DeploymentSelection::ByIds(model_ids) => {
+            debug!(model_ids = ?model_ids, "Updating specific deployment model ids");
+            let mut tagged = Vec::new();
+            for model_id in model_ids {
+                tagged.extend(tag_one_deployment(model_id, access_group, database).await?);
+            }
+            Ok(tagged)
+        }
+    }
+}
+
+// The by-name rows, once every requested name has been found so a missing one writes nothing.
+async fn named_deployments<Database>(
+    model_names: &[String],
+    database: &Database,
+) -> Result<Vec<DeploymentRow>, GroupDataError>
 where
     Database: GroupDatabase + ?Sized,
 {
@@ -155,20 +191,7 @@ where
         "Found deployments for model names"
     );
     ensure_names_found(&deployments, model_names)?;
-    let mut tagged = Vec::new();
-    for deployment in &deployments {
-        let pair = tag_deployment_with_group(
-            &deployment.model_id,
-            deployment.model_info.as_ref(),
-            access_group,
-            database,
-        )
-        .await?;
-        if let Some(pair) = pair {
-            tagged.push(pair);
-        }
-    }
-    Ok(tagged)
+    Ok(deployments)
 }
 
 // The 400 for a missing model name, checked over every requested name before the first write.
@@ -193,24 +216,22 @@ fn ensure_names_found(
     Ok(())
 }
 
-// update_specific_deployments_with_access_group: look each id up again just before its write, because an earlier duplicate may have changed the row.
-pub async fn tag_deployments_by_id<Database>(
-    model_ids: &[String],
+// One id from update_specific_deployments_with_access_group: the row is read again just before its write, because an earlier duplicate may have changed it.
+async fn tag_one_deployment<Database>(
+    model_id: &str,
     access_group: &str,
     database: &Database,
-) -> Result<Vec<(String, JsonObject)>, GroupDataError>
+) -> Result<Option<(String, JsonObject)>, GroupDataError>
 where
     Database: GroupDatabase + ?Sized,
 {
-    debug!(model_ids = ?model_ids, "Updating specific deployment model ids");
-    let mut tagged = Vec::new();
-    for model_id in model_ids {
-        let model_info = find_deployment_info_or_400(model_id, database).await?;
-        let pair = tag_deployment_with_group(model_id, model_info.as_ref(), access_group, database)
-            .await?;
-        if let Some(pair) = pair {
-            tagged.push(pair);
-        }
-    }
-    Ok(tagged)
+    let model_info = find_deployment_info_or_400(model_id, database).await?;
+    update_deployment_group(
+        model_id,
+        model_info.as_ref(),
+        access_group,
+        GroupChange::Add,
+        database,
+    )
+    .await
 }

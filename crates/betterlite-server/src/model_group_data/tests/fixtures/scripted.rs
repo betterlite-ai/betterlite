@@ -87,6 +87,37 @@ impl ScriptedDatabase {
             .find(|row| row.model_id == model_id)
             .and_then(|row| row.model_info.clone())
     }
+
+    fn deployments_matching(&self, model_names: Option<&[String]>) -> Vec<DeploymentRow> {
+        let state = self.state.lock().expect("scripted database");
+        state
+            .deployments
+            .iter()
+            .filter(|row| {
+                model_names.is_none_or(|names| names.iter().any(|name| name == &row.model_name))
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn deployment_by_id(&self, model_id: &str) -> Option<DeploymentRow> {
+        let state = self.state.lock().expect("scripted database");
+        state
+            .deployments
+            .iter()
+            .find(|row| row.model_id == model_id)
+            .cloned()
+    }
+
+    fn budget_rows(&self, include: BudgetInclude) -> Vec<GroupBudgetRow> {
+        let mut state = self.state.lock().expect("scripted database");
+        state.budget_reads = state.budget_reads.checked_add(1).expect("budget reads");
+        state
+            .budgets
+            .iter()
+            .map(|row| row_with_include(row, &state.budget_rows, include))
+            .collect()
+    }
 }
 
 fn joined_budget(budget_rows: &[BudgetRow], budget_id: &Option<String>) -> Option<BudgetRow> {
@@ -99,29 +130,14 @@ impl GroupDatabase for ScriptedDatabase {
         &self,
         model_names: Option<&[String]>,
     ) -> Result<Vec<DeploymentRow>, GroupDataError> {
-        let state = self.state.lock().expect("scripted database");
-        let found = state
-            .deployments
-            .iter()
-            .filter(|row| {
-                model_names.is_none_or(|names| names.iter().any(|name| name == &row.model_name))
-            })
-            .cloned()
-            .collect();
-        Ok(found)
+        Ok(self.deployments_matching(model_names))
     }
 
     async fn deployment_find_unique(
         &self,
         model_id: &str,
     ) -> Result<Option<DeploymentRow>, GroupDataError> {
-        let state = self.state.lock().expect("scripted database");
-        let found = state
-            .deployments
-            .iter()
-            .find(|row| row.model_id == model_id)
-            .cloned();
-        Ok(found)
+        Ok(self.deployment_by_id(model_id))
     }
 
     async fn update_model_info(
@@ -156,28 +172,17 @@ impl GroupDatabase for ScriptedDatabase {
         access_group: &str,
         include: BudgetInclude,
     ) -> Result<Option<GroupBudgetRow>, GroupDataError> {
-        let mut state = self.state.lock().expect("scripted database");
-        state.budget_reads = state.budget_reads.checked_add(1).expect("budget reads");
-        let found = state
-            .budgets
-            .iter()
-            .find(|row| row.access_group_name == access_group)
-            .map(|row| row_with_include(row, &state.budget_rows, include));
-        Ok(found)
+        let rows = self.budget_rows(include);
+        Ok(rows
+            .into_iter()
+            .find(|row| row.access_group_name == access_group))
     }
 
     async fn budget_find_many(
         &self,
         include: BudgetInclude,
     ) -> Result<Vec<GroupBudgetRow>, GroupDataError> {
-        let mut state = self.state.lock().expect("scripted database");
-        state.budget_reads = state.budget_reads.checked_add(1).expect("budget reads");
-        let found = state
-            .budgets
-            .iter()
-            .map(|row| row_with_include(row, &state.budget_rows, include))
-            .collect();
-        Ok(found)
+        Ok(self.budget_rows(include))
     }
 
     async fn budget_upsert(

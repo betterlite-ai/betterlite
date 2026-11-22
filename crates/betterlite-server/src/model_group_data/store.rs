@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 
 use axum::http::StatusCode;
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
-use betterlite_db::postgres_store::errors::backend;
+use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
 use tokio_postgres::types::ToSql;
@@ -60,8 +60,10 @@ impl<'db> PostgresGroupData<'db> {
     }
 
     fn writer(&self) -> Result<&'db PostgresStore, GroupDataError> {
-        let client = self.client.ok_or_else(database_missing)?;
-        Ok(client.writer)
+        if let Some(client) = self.client {
+            return Ok(client.writer);
+        }
+        Err(database_missing())
     }
 }
 
@@ -89,8 +91,29 @@ fn decode_deployment(row: &tokio_postgres::Row) -> Result<DeploymentRow, GroupDa
 }
 
 fn decode_group_budget(row: &tokio_postgres::Row) -> Result<GroupBudgetRow, GroupDataError> {
-    let text: String = row.try_get(0).map_err(backend)?;
-    serde_json::from_str(&text).map_err(GroupDataError::Row)
+    serde_json::from_str(&row.try_get::<_, String>(0).map_err(backend)?)
+        .map_err(GroupDataError::Row)
+}
+
+// The single-row reads and the delete share one query shape: one optional row, then its decode.
+async fn query_optional(
+    store: &PostgresStore,
+    sql: &str,
+    parameter: &(dyn ToSql + Sync),
+) -> Result<Option<tokio_postgres::Row>, DbError> {
+    let client = store.session().await?;
+    let parameters: [&(dyn ToSql + Sync); 1] = [parameter];
+    client.query_opt(sql, &parameters).await.map_err(backend)
+}
+
+fn decode_optional<T>(
+    row: Option<&tokio_postgres::Row>,
+    decode: fn(&tokio_postgres::Row) -> Result<T, GroupDataError>,
+) -> Result<Option<T>, GroupDataError> {
+    match row {
+        Some(row) => Ok(Some(decode(row)?)),
+        None => Ok(None),
+    }
 }
 
 impl GroupDatabase for PostgresGroupData<'_> {
@@ -121,17 +144,8 @@ impl GroupDatabase for PostgresGroupData<'_> {
         &self,
         model_id: &str,
     ) -> Result<Option<DeploymentRow>, GroupDataError> {
-        let store = self.reader()?;
-        let client = store.session().await?;
-        let parameters: [&(dyn ToSql + Sync); 1] = [&model_id];
-        let row = client
-            .query_opt(DEPLOYMENT_SQL, &parameters)
-            .await
-            .map_err(backend)?;
-        match row.as_ref() {
-            Some(row) => Ok(Some(decode_deployment(row)?)),
-            None => Ok(None),
-        }
+        let row = query_optional(self.reader()?, DEPLOYMENT_SQL, model_id).await?;
+        decode_optional(row.as_ref(), decode_deployment)
     }
 
     async fn update_model_info(
@@ -154,19 +168,13 @@ impl GroupDatabase for PostgresGroupData<'_> {
         access_group: &str,
         include: BudgetInclude,
     ) -> Result<Option<GroupBudgetRow>, GroupDataError> {
-        let store = self.reader()?;
-        let client = store.session().await?;
         let sql = if include.litellm_budget_table {
             GROUP_BUDGET_ONE_SQL
         } else {
             GROUP_BUDGET_ONE_PLAIN_SQL
         };
-        let parameters: [&(dyn ToSql + Sync); 1] = [&access_group];
-        let row = client.query_opt(sql, &parameters).await.map_err(backend)?;
-        match row.as_ref() {
-            Some(row) => Ok(Some(decode_group_budget(row)?)),
-            None => Ok(None),
-        }
+        let row = query_optional(self.reader()?, sql, access_group).await?;
+        decode_optional(row.as_ref(), decode_group_budget)
     }
 
     async fn budget_find_many(
@@ -217,16 +225,7 @@ impl GroupDatabase for PostgresGroupData<'_> {
         &self,
         access_group: &str,
     ) -> Result<Option<GroupBudgetRow>, GroupDataError> {
-        let store = self.writer()?;
-        let client = store.session().await?;
-        let parameters: [&(dyn ToSql + Sync); 1] = [&access_group];
-        let row = client
-            .query_opt(GROUP_BUDGET_DELETE_SQL, &parameters)
-            .await
-            .map_err(backend)?;
-        match row.as_ref() {
-            Some(row) => Ok(Some(decode_group_budget(row)?)),
-            None => Ok(None),
-        }
+        let row = query_optional(self.writer()?, GROUP_BUDGET_DELETE_SQL, access_group).await?;
+        decode_optional(row.as_ref(), decode_group_budget)
     }
 }

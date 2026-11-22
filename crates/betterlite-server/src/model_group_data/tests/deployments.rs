@@ -3,9 +3,9 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::super::deployments::{
-    add_access_group_to_deployment, find_deployment_info_or_400, readable_model_info_or_raise,
-    remove_group_from_deployment, strip_deployment_with_group, tag_deployment_with_group,
-    tag_deployments_by_id, tag_deployments_by_name,
+    DeploymentSelection, GroupChange, add_access_group_to_deployment, find_deployment_info_or_400,
+    readable_model_info_or_raise, remove_group_from_deployment, tag_deployments,
+    update_deployment_group,
 };
 use super::fixtures::json_object;
 use super::{
@@ -98,9 +98,10 @@ fn readable_json_or_absent() {
 async fn unreadable_refuses_write() {
     let stored = Json::Text("not json".to_owned());
     let database = group_database(vec![deployment("d1", "alpha", Some(stored.clone()))]);
-    let error = tag_deployment_with_group("d1", Some(&stored), "group-a", &database)
-        .await
-        .expect_err("the refused write");
+    let error =
+        update_deployment_group("d1", Some(&stored), "group-a", GroupChange::Add, &database)
+            .await
+            .expect_err("the refused write");
     assert_eq!(
         value_error_message(error),
         "model_info for deployment d1 is not a readable JSON object; refusing to rewrite it"
@@ -117,7 +118,7 @@ async fn preserve_other_model_info() {
         ("db_model", Json::Bool(true)),
     ]));
     let database = group_database(vec![deployment("d1", "alpha", Some(stored.clone()))]);
-    let pair = tag_deployment_with_group("d1", Some(&stored), "group-a", &database)
+    let pair = update_deployment_group("d1", Some(&stored), "group-a", GroupChange::Add, &database)
         .await
         .expect("the tag")
         .expect("a written pair");
@@ -143,9 +144,15 @@ async fn preserve_other_model_info() {
 async fn tag_skips_unchanged_write() {
     let stored = tagged_deployment("d1", "alpha", &["group-a"]);
     let database = group_database(vec![stored.clone()]);
-    let pair = tag_deployment_with_group("d1", stored.model_info.as_ref(), "group-a", &database)
-        .await
-        .expect("the tag");
+    let pair = update_deployment_group(
+        "d1",
+        stored.model_info.as_ref(),
+        "group-a",
+        GroupChange::Add,
+        &database,
+    )
+    .await
+    .expect("the tag");
     assert_eq!(pair, None);
     assert!(database.updates().is_empty());
 }
@@ -154,9 +161,15 @@ async fn tag_skips_unchanged_write() {
 async fn strip_skips_unchanged_write() {
     let stored = tagged_deployment("d1", "alpha", &["group-b"]);
     let database = group_database(vec![stored.clone()]);
-    let pair = strip_deployment_with_group("d1", stored.model_info.as_ref(), "group-a", &database)
-        .await
-        .expect("the strip");
+    let pair = update_deployment_group(
+        "d1",
+        stored.model_info.as_ref(),
+        "group-a",
+        GroupChange::Remove,
+        &database,
+    )
+    .await
+    .expect("the strip");
     assert_eq!(pair, None);
     assert!(database.updates().is_empty());
 }
@@ -165,10 +178,16 @@ async fn strip_skips_unchanged_write() {
 async fn strip_returns_updated_pair() {
     let stored = tagged_deployment("d1", "alpha", &["group-a", "group-b"]);
     let database = group_database(vec![stored.clone()]);
-    let pair = strip_deployment_with_group("d1", stored.model_info.as_ref(), "group-a", &database)
-        .await
-        .expect("the strip")
-        .expect("a written pair");
+    let pair = update_deployment_group(
+        "d1",
+        stored.model_info.as_ref(),
+        "group-a",
+        GroupChange::Remove,
+        &database,
+    )
+    .await
+    .expect("the strip")
+    .expect("a written pair");
     assert_eq!(
         pair.1,
         json_object(&[("access_groups", list(&["group-b"]))])
@@ -186,9 +205,14 @@ async fn names_validate_all_before_writes() {
         deployment("d1", "alpha", None),
         deployment("d2", "beta", None),
     ]);
-    let error = tag_deployments_by_name(&names(&["alpha", "missing"]), "group-a", &database)
-        .await
-        .expect_err("the missing name");
+    let model_names = names(&["alpha", "missing"]);
+    let error = tag_deployments(
+        DeploymentSelection::ByNames(&model_names),
+        "group-a",
+        &database,
+    )
+    .await
+    .expect_err("the missing name");
     let failure = http_failure(error);
     assert_eq!(failure.status, StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -204,9 +228,14 @@ async fn names_write_in_query_order() {
         deployment("d2", "beta", None),
         deployment("d1", "alpha", None),
     ]);
-    let tagged = tag_deployments_by_name(&names(&["alpha", "beta", "alpha"]), "group-a", &database)
-        .await
-        .expect("the tags");
+    let model_names = names(&["alpha", "beta", "alpha"]);
+    let tagged = tag_deployments(
+        DeploymentSelection::ByNames(&model_names),
+        "group-a",
+        &database,
+    )
+    .await
+    .expect("the tags");
     let written: Vec<String> = tagged.iter().map(|pair| pair.0.clone()).collect();
     assert_eq!(written, names(&["d2", "d1"]));
     let updated: Vec<String> = database
@@ -230,7 +259,8 @@ async fn ids_partial_write_on_missing() {
         deployment("d1", "alpha", None),
         deployment("d3", "gamma", None),
     ]);
-    let error = tag_deployments_by_id(&names(&["d1", "d2", "d3"]), "group-a", &database)
+    let model_ids = names(&["d1", "d2", "d3"]);
+    let error = tag_deployments(DeploymentSelection::ByIds(&model_ids), "group-a", &database)
         .await
         .expect_err("the missing id");
     let failure = http_failure(error);
@@ -251,7 +281,8 @@ async fn ids_partial_write_on_missing() {
 #[tokio::test]
 async fn duplicate_id_rechecks() {
     let database = group_database(vec![deployment("d1", "alpha", None)]);
-    let tagged = tag_deployments_by_id(&names(&["d1", "d1"]), "group-a", &database)
+    let model_ids = names(&["d1", "d1"]);
+    let tagged = tag_deployments(DeploymentSelection::ByIds(&model_ids), "group-a", &database)
         .await
         .expect("the tags");
     assert_eq!(tagged.len(), 1);
@@ -272,9 +303,14 @@ async fn later_tag_failure() {
         deployment("d2", "beta", None),
     ]);
     database.fail_update_at = Some(1);
-    let error = tag_deployments_by_name(&names(&["alpha", "beta"]), "group-a", &database)
-        .await
-        .expect_err("the later write failure");
+    let model_names = names(&["alpha", "beta"]);
+    let error = tag_deployments(
+        DeploymentSelection::ByNames(&model_names),
+        "group-a",
+        &database,
+    )
+    .await
+    .expect_err("the later write failure");
     assert_eq!(value_error_message(error), "scripted update failure");
     let updated: Vec<String> = database
         .updates()
@@ -302,7 +338,7 @@ async fn missing_deployment_is_400() {
 #[tokio::test]
 async fn absent_model_info_starts_empty() {
     let database = group_database(vec![deployment("d1", "alpha", None)]);
-    let pair = tag_deployment_with_group("d1", None, "group-a", &database)
+    let pair = update_deployment_group("d1", None, "group-a", GroupChange::Add, &database)
         .await
         .expect("the tag")
         .expect("a written pair");
