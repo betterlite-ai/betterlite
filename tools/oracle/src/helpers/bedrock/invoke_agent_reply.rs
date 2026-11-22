@@ -82,10 +82,10 @@ fn transform_case(case: &TransformCase) -> Result<Value, Box<HelperError>> {
 
 fn content_case(case: &ContentCase) -> Value {
     let events = case.events.iter().map(event_of).collect::<Vec<_>>();
-    match response_content(&events) {
-        Ok(content) => json!({ "content": content }),
-        Err(_) => json!({ "failure": "structural" }),
-    }
+    response_content(&events).map_or_else(
+        |_| json!({ "failure": "structural" }),
+        |content| json!({ "content": content }),
+    )
 }
 
 fn event_of(case: &EventCase) -> AgentEvent {
