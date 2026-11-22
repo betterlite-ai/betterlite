@@ -1,0 +1,67 @@
+name: unified-stream-hook-clean-stream-sampled
+config: |
+  model_list:
+    - model_name: oracle-model
+      litellm_params:
+        model: openai/oracle-model
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+  guardrails:
+    - guardrail_name: stream-check
+      litellm_params:
+        guardrail: generic_guardrail_api
+        mode: post_call
+        default_on: true
+        api_base: "{{upstream}}"
+        api_key: guard-key
+        streaming_sampling_rate: 2
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+  body:
+    model: oracle-model
+    messages:
+      - role: user
+        content: Say hello there.
+    stream: true
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"id":"chatcmpl-oracle-stream","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-oracle-stream","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[{"index":0,"delta":{"content":"Hel"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-oracle-stream","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-oracle-stream","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":null}]}'
+      - '{"id":"chatcmpl-oracle-stream","object":"chat.completion.chunk","created":1700000000,"model":"oracle-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+      - '[DONE]'
+  - status: 200
+    headers:
+      content-type: application/json
+    body: {action: NONE}
+  - status: 200
+    headers:
+      content-type: application/json
+    body: {action: NONE}
+compare:
+  headers:
+    - content-type
+  headers_present:
+    - x-litellm-call-id
+  upstream_headers:
+    - content-type
+  ignore:
+    - {pointer: /0/id, why: LiteLLM generates a stream id for each gateway process.}
+    - {pointer: /0/created, why: LiteLLM timestamps stream chunks.}
+    - {pointer: /1/id, why: LiteLLM repeats its generated stream id.}
+    - {pointer: /1/created, why: LiteLLM timestamps stream chunks.}
+    - {pointer: /2/id, why: LiteLLM repeats its generated stream id.}
+    - {pointer: /2/created, why: LiteLLM timestamps stream chunks.}
+    - {pointer: /3/id, why: LiteLLM repeats its generated stream id.}
+    - {pointer: /3/created, why: LiteLLM timestamps stream chunks.}
+    - {pointer: /4/id, why: LiteLLM repeats its generated stream id.}
+    - {pointer: /4/created, why: LiteLLM timestamps stream chunks.}

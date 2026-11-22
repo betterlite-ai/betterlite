@@ -1,0 +1,9 @@
+task: B971
+deviations:
+  - what: A compaction trigger value above the u64 range resolves to u64::MAX tokens instead of the exact integer.
+    why: Python integers have no upper bound; betterlite stores token counts as u64, and any value that large already means the threshold is never reached.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L738-L752
+kept_bugs:
+  - what: When client history ends in a user turn whose only block is a compaction block, the forwarded fallback question is that same turn with the compaction block still in it.
+    why: The fallback picks the last user turn from the unstripped slice, and a working client that sends the summary in a user turn gets this exact request today, so betterlite forwards it the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1149-L1151
