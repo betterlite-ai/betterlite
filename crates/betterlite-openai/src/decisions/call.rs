@@ -47,16 +47,15 @@ pub struct PrepareCall<'call, 'logging> {
 
 impl fmt::Debug for PrepareCall<'_, '_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("PrepareCall")
-            .field("model", &self.model)
-            .field("fields", &self.fields)
-            .field("safety_identifier", &self.safety_identifier)
-            .field("api_base", &self.api_base)
-            .field("timeout", &self.timeout)
-            .field("custom_llm_provider", &self.custom_llm_provider)
-            .field("global_drop_params", &self.global_drop_params)
-            .finish_non_exhaustive()
+        let mut debug = formatter.debug_struct("PrepareCall");
+        let api_key = self.api_key.as_ref().map(|_key| "<redacted>");
+        debug.field("model", &self.model);
+        debug.field("custom_llm_provider", &self.custom_llm_provider);
+        debug.field("safety_identifier", &self.safety_identifier);
+        debug.field("api_key", &api_key);
+        debug.field("api_base", &self.api_base);
+        debug.field("timeout", &self.timeout);
+        debug.finish_non_exhaustive()
     }
 }
 
@@ -96,6 +95,10 @@ impl fmt::Debug for DecisionsCall<'_> {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "prepare_call keeps LiteLLM's one ordered pipeline: resolve, select, validate, credentials, IR, transform, log"
+)]
 pub fn prepare_call<'logging>(
     call: PrepareCall<'_, 'logging>,
 ) -> Result<DecisionsCall<'logging>, PrepareError> {
@@ -216,7 +219,7 @@ fn canonical_model(
             provider: selection.provider.as_str().to_owned(),
         });
     }
-    Ok(selection.config.canonical_model(upstream_model))
+    Ok(selection.config.ops().canonical_model(upstream_model))
 }
 
 fn drops_params(global_drop_params: bool, kwargs: &Extra) -> bool {

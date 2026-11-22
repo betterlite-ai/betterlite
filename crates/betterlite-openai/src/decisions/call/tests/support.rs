@@ -212,46 +212,51 @@ pub(super) fn predicate_question() -> Json {
     json(r#"{"type":"predicate","name":"first","instructions":"Is it true?"}"#)
 }
 
-pub(super) fn good_systemone_fields(state: &str) -> RequestFields {
+fn openai_fields(input: Json, questions: Vec<Json>) -> RequestFields {
+    RequestFields::OpenAi(OpenAiDecisionRequestFields {
+        input: Some(input),
+        questions: Some(questions),
+    })
+}
+
+fn systemone_fields(state: &str, question: Json) -> RequestFields {
     RequestFields::SystemOne(SystemOneRequestFields {
         state: Some(Json::Text(state.to_owned())),
-        questions: Some(question_map(&[("first", noul_question())])),
+        questions: Some(question_map(&[("first", question)])),
     })
+}
+
+pub(super) fn good_systemone_fields(state: &str) -> RequestFields {
+    systemone_fields(state, noul_question())
 }
 
 pub(super) fn openai_predicate_fields(input: &str) -> RequestFields {
-    RequestFields::OpenAi(OpenAiDecisionRequestFields {
-        input: Some(Json::Text(input.to_owned())),
-        questions: Some(vec![predicate_question()]),
-    })
+    openai_fields(Json::Text(input.to_owned()), vec![predicate_question()])
 }
 
 pub(super) fn openai_image_fields() -> RequestFields {
-    RequestFields::OpenAi(OpenAiDecisionRequestFields {
-        input: Some(json(
+    openai_fields(
+        json(
             r#"[{"role":"user","type":"message","content":[{"type":"input_text","text":"look"},{"type":"input_image","image_url":"https://example.com/a.png"}]}]"#,
-        )),
-        questions: Some(vec![predicate_question()]),
-    })
+        ),
+        vec![predicate_question()],
+    )
 }
 
 pub(super) fn openai_empty_name_fields() -> RequestFields {
-    RequestFields::OpenAi(OpenAiDecisionRequestFields {
-        input: Some(Json::Text("state".to_owned())),
-        questions: Some(vec![json(
+    openai_fields(
+        Json::Text("state".to_owned()),
+        vec![json(
             r#"{"type":"predicate","name":"","instructions":"Is it true?"}"#,
-        )]),
-    })
+        )],
+    )
 }
 
 pub(super) fn systemone_single_choice_fields() -> RequestFields {
-    RequestFields::SystemOne(SystemOneRequestFields {
-        state: Some(Json::Text("state".to_owned())),
-        questions: Some(question_map(&[(
-            "first",
-            json(r#"{"type":"choice","instructions":"Pick one","criteria":{"only":null}}"#),
-        )])),
-    })
+    systemone_fields(
+        "state",
+        json(r#"{"type":"choice","instructions":"Pick one","criteria":{"only":null}}"#),
+    )
 }
 
 pub(super) fn systemone_wire(body: &ProviderRequestWire) -> &SystemOneRequestWire {

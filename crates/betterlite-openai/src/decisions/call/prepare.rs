@@ -6,6 +6,8 @@ use betterlite_models::decisions::{Extra, Json, ir};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
+use crate::decisions::openai::config::Credential;
+
 use super::error::PrepareError;
 use super::fields::RequestFormat;
 use super::{CredentialInput, Selection, present, present_secret};
@@ -25,20 +27,22 @@ pub(super) fn credentials(
     let base_argument = present(input.dynamic_api_base).or_else(|| present(input.api_base));
     let resolved_api_base = selection
         .config
-        .resolve_api_base(base_argument, selection.environment)
+        .resolve(Credential::Base, base_argument, selection.environment)
         .ok_or_else(|| PrepareError::MissingApiBase {
             message: selection
                 .config
+                .ops()
                 .missing_api_base_message(selection.provider.as_str()),
             model: selection.model.to_owned(),
             provider: selection.provider.as_str().to_owned(),
         })?;
     let key_argument =
         present_secret(input.dynamic_api_key).or_else(|| present_secret(input.api_key));
-    let resolved_api_key = selection
-        .config
-        .resolve_api_key(key_argument, selection.environment);
-    if resolved_api_key.is_none() && selection.config.api_key_required() {
+    let resolved_api_key =
+        selection
+            .config
+            .resolve(Credential::Key, key_argument, selection.environment);
+    if resolved_api_key.is_none() && selection.config.ops().api_key_required() {
         return Err(PrepareError::MissingApiKey {
             model: selection.model.to_owned(),
             provider: selection.provider.as_str().to_owned(),
@@ -64,7 +68,7 @@ pub(super) fn build_ir(
         }
         RequestFormat::OpenAi(body) => openai_request_to_ir(body),
     };
-    if built.safety_identifier.is_none() || selection.config.supports_safety_identifier() {
+    if built.safety_identifier.is_none() || selection.config.ops().supports_safety_identifier() {
         return Ok(built);
     }
     if dropped {
@@ -86,6 +90,7 @@ pub(super) fn transform_body(
 ) -> Result<ProviderRequestWire, PrepareError> {
     selection
         .config
+        .ops()
         .transform_decisions_request(canonical, request, selection.provider.as_str())
         .map_err(|source| PrepareError::UnsupportedRequest {
             model: selection.model.to_owned(),
@@ -101,7 +106,7 @@ pub(super) fn log_update(
     api_base: &str,
     canonical: &str,
 ) -> Result<(), PrepareError> {
-    let complete_url = selection.config.get_complete_url(api_base, canonical);
+    let complete_url = selection.config.ops().get_complete_url(api_base, canonical);
     let mut litellm_params = IndexMap::new();
     litellm_params.insert(
         "litellm_call_id".to_owned(),

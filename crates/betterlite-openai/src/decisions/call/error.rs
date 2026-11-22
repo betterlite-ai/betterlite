@@ -85,10 +85,11 @@ impl PrepareError {
     }
 
     fn context(&self) -> ErrorContext {
+        let (model, provider) = self.identity();
         ErrorContext {
             message: self.to_string(),
-            model: Some(self.model().to_owned()),
-            provider: self.provider().map(str::to_owned),
+            model: Some(model.to_owned()),
+            provider: provider.map(str::to_owned),
             max_retries: None,
             num_retries: None,
             body_type: None,
@@ -97,33 +98,29 @@ impl PrepareError {
         }
     }
 
-    fn model(&self) -> &str {
+    // LiteLLM's exceptions carry the model they were raised for and the llm_provider, empty for a format mismatch.
+    fn identity(&self) -> (&str, Option<&str>) {
         match self {
-            Self::Resolution { model, .. }
-            | Self::UnknownProvider { model, .. }
-            | Self::ModelRequired { model, .. }
-            | Self::InvalidRequest { model, .. }
-            | Self::MissingApiBase { model, .. }
-            | Self::MissingApiKey { model, .. }
-            | Self::UnsupportedSafetyIdentifier { model, .. }
-            | Self::UnsupportedRequest { model, .. }
-            | Self::OtherFormat { model, .. }
-            | Self::Logging { model, .. } => model,
-        }
-    }
-
-    fn provider(&self) -> Option<&str> {
-        match self {
-            Self::Resolution { .. } => None,
-            Self::OtherFormat { .. } => Some(""),
-            Self::UnknownProvider { provider, .. }
-            | Self::ModelRequired { provider, .. }
-            | Self::InvalidRequest { provider, .. }
-            | Self::MissingApiBase { provider, .. }
-            | Self::MissingApiKey { provider, .. }
-            | Self::UnsupportedSafetyIdentifier { provider, .. }
-            | Self::UnsupportedRequest { provider, .. }
-            | Self::Logging { provider, .. } => Some(provider),
+            Self::Resolution { model, .. } => (model, None),
+            Self::OtherFormat { model, .. } => (model, Some("")),
+            Self::UnknownProvider {
+                model, provider, ..
+            }
+            | Self::InvalidRequest {
+                model, provider, ..
+            }
+            | Self::MissingApiBase {
+                model, provider, ..
+            }
+            | Self::UnsupportedRequest {
+                model, provider, ..
+            }
+            | Self::Logging {
+                model, provider, ..
+            }
+            | Self::ModelRequired { model, provider }
+            | Self::MissingApiKey { model, provider }
+            | Self::UnsupportedSafetyIdentifier { model, provider } => (model, Some(provider)),
         }
     }
 }

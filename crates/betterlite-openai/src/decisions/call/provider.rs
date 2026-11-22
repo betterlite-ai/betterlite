@@ -5,9 +5,9 @@ use betterlite_models::decisions::ir;
 
 use crate::cloudflare_decisions::CloudflareDecisionsConfig;
 use crate::credentials::LiteLlmGlobals;
-use crate::decisions::openai::config::OpenAiDecisionsConfig;
+use crate::decisions::openai::config::{Credential, OpenAiDecisionsConfig};
 use crate::decisions::providers::DecisionsProvider;
-use crate::decisions::transformation::provider_config::DecisionsProviderConfig as _;
+use crate::decisions::transformation::provider_config::DecisionsProviderConfig;
 use crate::decisions::transformation::requests::RequestConversionError;
 use crate::decisions::transformation::wire::ProviderRequestWire;
 use crate::hosted_vllm_media::decisions::HostedVllmDecisionsConfig;
@@ -16,7 +16,9 @@ use crate::perplexity_decisions::PerplexityDecisionsConfig;
 use crate::providers::strands_decider::StrandsDeciderDecisionsConfig;
 use crate::providers::typesafe::decisions::TypeSafeDecisionsConfig;
 
+use self::credentials::combined;
 use super::azure::AzureAiConfig;
+use super::present;
 
 mod credentials;
 
@@ -33,7 +35,121 @@ pub enum ProviderConfig {
     HostedVllm(Box<HostedVllmDecisionsConfig>),
 }
 
+// Every question a selected provider answers. The config trait's associated constants keep it out of a trait
+// object, so this blanket impl reads them and a provider's operations exist once rather than once per variant.
+pub(crate) trait ProviderOps: Send + Sync {
+    fn api_key_required(&self) -> bool;
+
+    fn supports_safety_identifier(&self) -> bool;
+
+    fn api_base_env(&self) -> &'static [&'static str];
+
+    fn api_key_env(&self) -> &'static [&'static str];
+
+    fn canonical_model(&self, model: &str) -> String;
+
+    fn missing_api_base_message(&self, custom_llm_provider: &str) -> String;
+
+    fn get_complete_url(&self, api_base: &str, model: &str) -> String;
+
+    fn transform_decisions_request(
+        &self,
+        model: &str,
+        request: &ir::DecisionRequest,
+        custom_llm_provider: &str,
+    ) -> Result<ProviderRequestWire, RequestConversionError>;
+
+    fn resolve(&self, credential: Credential, value: Option<&str>) -> Option<String>;
+}
+
+impl<T: DecisionsProviderConfig + Send + Sync> ProviderOps for T {
+    fn api_key_required(&self) -> bool {
+        <T as DecisionsProviderConfig>::API_KEY_REQUIRED
+    }
+
+    fn supports_safety_identifier(&self) -> bool {
+        <T as DecisionsProviderConfig>::SUPPORTS_SAFETY_IDENTIFIER
+    }
+
+    fn api_base_env(&self) -> &'static [&'static str] {
+        <T as DecisionsProviderConfig>::API_BASE_ENV
+    }
+
+    fn api_key_env(&self) -> &'static [&'static str] {
+        <T as DecisionsProviderConfig>::API_KEY_ENV
+    }
+
+    fn canonical_model(&self, model: &str) -> String {
+        DecisionsProviderConfig::canonical_model(self, model)
+    }
+
+    fn missing_api_base_message(&self, custom_llm_provider: &str) -> String {
+        DecisionsProviderConfig::missing_api_base_message(self, custom_llm_provider)
+    }
+
+    fn get_complete_url(&self, api_base: &str, model: &str) -> String {
+        DecisionsProviderConfig::get_complete_url(self, api_base, model)
+    }
+
+    fn transform_decisions_request(
+        &self,
+        model: &str,
+        request: &ir::DecisionRequest,
+        custom_llm_provider: &str,
+    ) -> Result<ProviderRequestWire, RequestConversionError> {
+        DecisionsProviderConfig::transform_decisions_request(
+            self,
+            model,
+            request,
+            custom_llm_provider,
+        )
+    }
+
+    fn resolve(&self, credential: Credential, value: Option<&str>) -> Option<String> {
+        let no_secret = |_name: &str| String::new();
+        match credential {
+            Credential::Base => DecisionsProviderConfig::resolve_api_base(self, value, no_secret),
+            Credential::Key => DecisionsProviderConfig::resolve_api_key(self, value, no_secret),
+        }
+    }
+}
+
 impl ProviderConfig {
+    #[must_use]
+    pub(crate) fn ops(&self) -> &dyn ProviderOps {
+        match self {
+            Self::Openai(config) => config.as_ref(),
+            Self::Openrouter(config) => config.as_ref(),
+            Self::AzureAi(config) => config.as_ref(),
+            Self::Perplexity(config) => config.as_ref(),
+            Self::Typesafe(config) => config.as_ref(),
+            Self::StrandsDecider(config) => config.as_ref(),
+            Self::Cloudflare(config) => config.as_ref(),
+            Self::HostedVllm(config) => config.as_ref(),
+        }
+    }
+
+    // OpenAI alone reads globals and environment inside its own resolve, so it gets the environment getter
+    // while the other providers take the value resolved from their env names.
+    #[must_use]
+    pub(crate) fn resolve(
+        &self,
+        credential: Credential,
+        value: Option<&str>,
+        environment: &BTreeMap<String, String>,
+    ) -> Option<String> {
+        if let Self::Openai(openai) = self {
+            let getter = |name: &str| environment.get(name).cloned().unwrap_or_default();
+            return openai.resolve(present(value), credential, &getter);
+        }
+        let names = match credential {
+            Credential::Base => self.ops().api_base_env(),
+            Credential::Key => self.ops().api_key_env(),
+        };
+        let given = combined(value, names, environment);
+        self.ops().resolve(credential, given.as_deref())
+    }
+
     #[must_use]
     pub fn select(
         provider: DecisionsProvider,
@@ -55,82 +171,6 @@ impl ProviderConfig {
                 Self::Cloudflare(Box::new(CloudflareDecisionsConfig::new(account_id)))
             }
             DecisionsProvider::HostedVllm => Self::HostedVllm(Box::new(HostedVllmDecisionsConfig)),
-        }
-    }
-
-    #[must_use]
-    pub fn canonical_model(&self, model: &str) -> String {
-        match self {
-            Self::Openai(config) => config.canonical_model(model),
-            Self::Openrouter(config) => config.canonical_model(model),
-            Self::AzureAi(config) => config.canonical_model(model),
-            Self::Perplexity(config) => config.canonical_model(model),
-            Self::Typesafe(config) => config.canonical_model(model),
-            Self::StrandsDecider(config) => config.canonical_model(model),
-            Self::Cloudflare(config) => config.canonical_model(model),
-            Self::HostedVllm(config) => config.canonical_model(model),
-        }
-    }
-
-    #[must_use]
-    pub fn missing_api_base_message(&self, provider: &str) -> String {
-        match self {
-            Self::Openai(config) => config.missing_api_base_message(provider),
-            Self::Openrouter(config) => config.missing_api_base_message(provider),
-            Self::AzureAi(config) => config.missing_api_base_message(provider),
-            Self::Perplexity(config) => config.missing_api_base_message(provider),
-            Self::Typesafe(config) => config.missing_api_base_message(provider),
-            Self::StrandsDecider(config) => config.missing_api_base_message(provider),
-            Self::Cloudflare(config) => config.missing_api_base_message(provider),
-            Self::HostedVllm(config) => config.missing_api_base_message(provider),
-        }
-    }
-
-    #[must_use]
-    pub fn get_complete_url(&self, api_base: &str, model: &str) -> String {
-        match self {
-            Self::Openai(config) => config.get_complete_url(api_base, model),
-            Self::Openrouter(config) => config.get_complete_url(api_base, model),
-            Self::AzureAi(config) => config.get_complete_url(api_base, model),
-            Self::Perplexity(config) => config.get_complete_url(api_base, model),
-            Self::Typesafe(config) => config.get_complete_url(api_base, model),
-            Self::StrandsDecider(config) => config.get_complete_url(api_base, model),
-            Self::Cloudflare(config) => config.get_complete_url(api_base, model),
-            Self::HostedVllm(config) => config.get_complete_url(api_base, model),
-        }
-    }
-
-    pub fn transform_decisions_request(
-        &self,
-        model: &str,
-        request: &ir::DecisionRequest,
-        custom_llm_provider: &str,
-    ) -> Result<ProviderRequestWire, RequestConversionError> {
-        match self {
-            Self::Openai(config) => {
-                config.transform_decisions_request(model, request, custom_llm_provider)
-            }
-            Self::Openrouter(config) => {
-                config.transform_decisions_request(model, request, custom_llm_provider)
-            }
-            Self::AzureAi(config) => {
-                config.transform_decisions_request(model, request, custom_llm_provider)
-            }
-            Self::Perplexity(config) => {
-                config.transform_decisions_request(model, request, custom_llm_provider)
-            }
-            Self::Typesafe(config) => {
-                config.transform_decisions_request(model, request, custom_llm_provider)
-            }
-            Self::StrandsDecider(config) => {
-                config.transform_decisions_request(model, request, custom_llm_provider)
-            }
-            Self::Cloudflare(config) => {
-                config.transform_decisions_request(model, request, custom_llm_provider)
-            }
-            Self::HostedVllm(config) => {
-                config.transform_decisions_request(model, request, custom_llm_provider)
-            }
         }
     }
 }

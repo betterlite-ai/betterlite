@@ -170,6 +170,7 @@ fn prepare_call_success_cloudflare_account_id_builds_default_base() {
     assert_eq!(exposed(call.api_key.as_ref()), Some("cf-key"));
     let url = call
         .provider_config
+        .ops()
         .get_complete_url(&call.api_base, &call.model);
     assert_eq!(
         url,
@@ -292,6 +293,7 @@ fn prepare_call_success_azure_uses_the_injected_route() {
     let call = fixture.prepare(builder, None).unwrap();
     assert_eq!(
         call.provider_config
+            .ops()
             .get_complete_url(&call.api_base, &call.model),
         "https://res.services.ai.azure.com/providers/microsoft/v1/systemone"
     );
@@ -357,24 +359,21 @@ fn validation_missing_provider_is_a_bad_request() {
     assert!(matches!(error.class(), ErrorClass::BadRequest(_)));
 }
 
-#[rstest]
-#[case::missing_state(None, Some(question_map(&[("first", noul_question())])), "DecisionsJson")]
-#[case::missing_questions(Some(Json::Text("state".to_owned())), None, "expected a map")]
-#[case::empty_questions(Some(Json::Text("state".to_owned())), Some(IndexMap::new()), "expected 1 to 128 entries, found 0")]
-fn validation_systemone_fields_are_required(
-    #[case] state: Option<Json>,
-    #[case] questions: Option<IndexMap<String, Json>>,
-    #[case] expected: &str,
-) {
+fn assert_invalid_request(fields: RequestFields, expected: &str) {
     let fixture = Fixture::default();
-    let builder = CallBuilder::new(
-        "openai/gpt-4o-mini",
-        RequestFields::SystemOne(SystemOneRequestFields { state, questions }),
-    );
+    let builder = CallBuilder::new("openai/gpt-4o-mini", fields);
     let error = fixture.prepare(builder, None).unwrap_err();
     assert!(matches!(&error, PrepareError::InvalidRequest { .. }));
     assert!(error.to_string().starts_with("Invalid Decisions request: "));
     assert!(error.to_string().contains(expected));
+}
+
+#[rstest]
+#[case::missing_state(RequestFields::SystemOne(SystemOneRequestFields { state: None, questions: Some(question_map(&[("first", noul_question())])) }), "DecisionsJson")]
+#[case::missing_questions(RequestFields::SystemOne(SystemOneRequestFields { state: Some(Json::Text("state".to_owned())), questions: None }), "expected a map")]
+#[case::empty_questions(RequestFields::SystemOne(SystemOneRequestFields { state: Some(Json::Text("state".to_owned())), questions: Some(IndexMap::new()) }), "expected 1 to 128 entries, found 0")]
+fn validation_systemone_fields_are_required(#[case] fields: RequestFields, #[case] expected: &str) {
+    assert_invalid_request(fields, expected);
 }
 
 #[test]
@@ -392,22 +391,11 @@ fn validation_systemone_question_names_are_required() {
 }
 
 #[rstest]
-#[case::missing_input(None, Some(vec![predicate_question()]), "DecisionInput")]
-#[case::missing_questions(Some(Json::Text("state".to_owned())), None, "expected a sequence")]
-#[case::empty_questions(Some(Json::Text("state".to_owned())), Some(Vec::new()), "expected 1 to 128 entries, found 0")]
-fn validation_openai_fields_are_required(
-    #[case] input: Option<Json>,
-    #[case] questions: Option<Vec<Json>>,
-    #[case] expected: &str,
-) {
-    let fixture = Fixture::default();
-    let builder = CallBuilder::new(
-        "openai/gpt-4o-mini",
-        RequestFields::OpenAi(OpenAiDecisionRequestFields { input, questions }),
-    );
-    let error = fixture.prepare(builder, None).unwrap_err();
-    assert!(matches!(&error, PrepareError::InvalidRequest { .. }));
-    assert!(error.to_string().contains(expected));
+#[case::missing_input(RequestFields::OpenAi(OpenAiDecisionRequestFields { input: None, questions: Some(vec![predicate_question()]) }), "DecisionInput")]
+#[case::missing_questions(RequestFields::OpenAi(OpenAiDecisionRequestFields { input: Some(Json::Text("state".to_owned())), questions: None }), "expected a sequence")]
+#[case::empty_questions(RequestFields::OpenAi(OpenAiDecisionRequestFields { input: Some(Json::Text("state".to_owned())), questions: Some(Vec::new()) }), "expected 1 to 128 entries, found 0")]
+fn validation_openai_fields_are_required(#[case] fields: RequestFields, #[case] expected: &str) {
+    assert_invalid_request(fields, expected);
 }
 
 #[rstest]
@@ -706,18 +694,23 @@ fn request_format_validates_a_systemone_body() {
     }
 }
 
+fn assert_rejected_fields(fields: RequestFields, expected: &str) {
+    let error = fields.validate(None).unwrap_err();
+    assert!(
+        error.to_string().contains(expected),
+        "expected {expected} in {error}"
+    );
+}
+
 #[rstest]
-#[case::missing_state(None, Some(question_map(&[("first", noul_question())])), "DecisionsJson")]
-#[case::missing_questions(Some(Json::Text("state".to_owned())), None, "expected a map")]
-#[case::empty_questions(Some(Json::Text("state".to_owned())), Some(IndexMap::new()), "expected 1 to 128 entries, found 0")]
+#[case::missing_state(RequestFields::SystemOne(SystemOneRequestFields { state: None, questions: Some(question_map(&[("first", noul_question())])) }), "DecisionsJson")]
+#[case::missing_questions(RequestFields::SystemOne(SystemOneRequestFields { state: Some(Json::Text("state".to_owned())), questions: None }), "expected a map")]
+#[case::empty_questions(RequestFields::SystemOne(SystemOneRequestFields { state: Some(Json::Text("state".to_owned())), questions: Some(IndexMap::new()) }), "expected 1 to 128 entries, found 0")]
 fn request_format_systemone_rejects_an_incomplete_body(
-    #[case] state: Option<Json>,
-    #[case] questions: Option<IndexMap<String, Json>>,
+    #[case] fields: RequestFields,
     #[case] expected: &str,
 ) {
-    let fields = RequestFields::SystemOne(SystemOneRequestFields { state, questions });
-    let error = fields.validate(None).unwrap_err();
-    assert!(error.to_string().contains(expected));
+    assert_rejected_fields(fields, expected);
 }
 
 #[test]
@@ -743,17 +736,14 @@ fn request_format_validates_an_openai_body() {
 }
 
 #[rstest]
-#[case::missing_input(None, Some(vec![predicate_question()]), "DecisionInput")]
-#[case::missing_questions(Some(Json::Text("state".to_owned())), None, "expected a sequence")]
-#[case::empty_questions(Some(Json::Text("state".to_owned())), Some(Vec::new()), "expected 1 to 128 entries, found 0")]
+#[case::missing_input(RequestFields::OpenAi(OpenAiDecisionRequestFields { input: None, questions: Some(vec![predicate_question()]) }), "DecisionInput")]
+#[case::missing_questions(RequestFields::OpenAi(OpenAiDecisionRequestFields { input: Some(Json::Text("state".to_owned())), questions: None }), "expected a sequence")]
+#[case::empty_questions(RequestFields::OpenAi(OpenAiDecisionRequestFields { input: Some(Json::Text("state".to_owned())), questions: Some(Vec::new()) }), "expected 1 to 128 entries, found 0")]
 fn request_format_openai_rejects_an_incomplete_body(
-    #[case] input: Option<Json>,
-    #[case] questions: Option<Vec<Json>>,
+    #[case] fields: RequestFields,
     #[case] expected: &str,
 ) {
-    let fields = RequestFields::OpenAi(OpenAiDecisionRequestFields { input, questions });
-    let error = fields.validate(None).unwrap_err();
-    assert!(error.to_string().contains(expected));
+    assert_rejected_fields(fields, expected);
 }
 
 #[test]
@@ -846,18 +836,21 @@ fn fields_provider_config_answers_its_own_questions() {
     builder.api_key = Some(&key);
     let call = fixture.prepare(builder, None).unwrap();
     assert_eq!(
-        call.provider_config.canonical_model("gpt-4o-mini"),
+        call.provider_config.ops().canonical_model("gpt-4o-mini"),
         "gpt-4o-mini"
     );
     assert_eq!(
         call.provider_config
+            .ops()
             .get_complete_url("https://api.openai.com", "gpt-4o-mini"),
         "https://api.openai.com/v1/decisions"
     );
-    assert!(call.provider_config.api_key_required());
-    assert!(call.provider_config.supports_safety_identifier());
+    assert!(call.provider_config.ops().api_key_required());
+    assert!(call.provider_config.ops().supports_safety_identifier());
     assert_eq!(
-        call.provider_config.missing_api_base_message("openai"),
+        call.provider_config
+            .ops()
+            .missing_api_base_message("openai"),
         "api_base is required for Decisions provider 'openai'"
     );
     let mut hosted_builder = CallBuilder::new(
@@ -866,8 +859,8 @@ fn fields_provider_config_answers_its_own_questions() {
     );
     hosted_builder.api_base = Some("http://vllm.test:8000");
     let hosted = fixture.prepare(hosted_builder, None).unwrap();
-    assert!(!hosted.provider_config.api_key_required());
-    assert!(!hosted.provider_config.supports_safety_identifier());
+    assert!(!hosted.provider_config.ops().api_key_required());
+    assert!(!hosted.provider_config.ops().supports_safety_identifier());
 }
 
 #[test]
