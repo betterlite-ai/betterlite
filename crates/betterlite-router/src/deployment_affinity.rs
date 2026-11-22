@@ -198,8 +198,7 @@ impl DeploymentAffinity {
         } else {
             None
         };
-        // LiteLLM returns here when neither a caller nor a session can claim; each claim below already
-        // needs its own input, so a request with neither writes nothing.
+        // LiteLLM returns here too when neither metadata channel holds a model_info dict
         let Some(model_info) = request
             .model_info
             .or_else(|| json::metadata_model_info(kwargs))

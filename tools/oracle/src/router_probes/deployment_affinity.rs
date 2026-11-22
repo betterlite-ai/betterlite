@@ -104,7 +104,23 @@ pub(crate) fn run(
 
 async fn execute(input: &Input) -> Result<Output, OperationError> {
     let now = Arc::new(Mutex::new(0.0_f64));
-    let handle = Arc::clone(&now);
+    let service = build_service(input, &now)?;
+    let mut steps = Vec::with_capacity(input.steps.len());
+    for step in &input.steps {
+        *now.lock().unwrap_or_else(PoisonError::into_inner) = seconds(step.now_millis);
+        steps.push(match step.kind {
+            StepKind::Filter => filter_step(&service, input, step).await?,
+            StepKind::Hook => hook_step(&service, step).await?,
+        });
+    }
+    Ok(Output { steps })
+}
+
+fn build_service(
+    input: &Input,
+    now: &Arc<Mutex<f64>>,
+) -> Result<DeploymentAffinity, OperationError> {
+    let handle = Arc::clone(now);
     let clock: Clock = Arc::new(move || *handle.lock().unwrap_or_else(PoisonError::into_inner));
     let local =
         LocalPins::new(local_settings(), clock).map_err(|error| invalid(&error.to_string()))?;
@@ -126,7 +142,7 @@ async fn execute(input: &Input) -> Result<Output, OperationError> {
     let names = input.priority_groups.clone();
     let predicate: PriorityGroups =
         Arc::new(move |model: &str| names.iter().any(|group| group == model));
-    let service = DeploymentAffinity::new(
+    Ok(DeploymentAffinity::new(
         AffinityClaims {
             local,
             shared: None,
@@ -137,24 +153,7 @@ async fn execute(input: &Input) -> Result<Output, OperationError> {
             model_group_affinity_config: config,
         },
         Some(predicate),
-    );
-    let mut steps = Vec::with_capacity(input.steps.len());
-    for step in &input.steps {
-        *now.lock().unwrap_or_else(PoisonError::into_inner) = seconds(step.now_millis);
-        steps.push(apply_step(&service, input, step).await?);
-    }
-    Ok(Output { steps })
-}
-
-async fn apply_step(
-    service: &DeploymentAffinity,
-    input: &Input,
-    step: &Step,
-) -> Result<Observation, OperationError> {
-    match step.kind {
-        StepKind::Filter => filter_step(service, input, step).await,
-        StepKind::Hook => hook_step(service, step).await,
-    }
+    ))
 }
 
 async fn filter_step(
@@ -165,22 +164,27 @@ async fn filter_step(
     let deployments = pool(input, step)?;
     let kwargs = request_kwargs(step);
     let model = step.model.as_deref().unwrap_or(&input.model);
-    let selected = service
-        .filter_deployments(&FilterRequest {
-            model,
-            deployments: &deployments,
-            request_kwargs: Some(&kwargs),
-            target_order: step.target_order,
-        })
-        .await
-        .map_err(|error| invalid(&error.to_string()))?;
+    let filter = FilterRequest {
+        model,
+        deployments: &deployments,
+        request_kwargs: Some(&kwargs),
+        target_order: step.target_order,
+    };
+    let chosen = run_filter(service, &filter).await?;
     Ok(Observation {
         action: StepKind::Filter,
-        selected: selected
-            .iter()
-            .filter_map(|deployment| deployment.id().map(str::to_owned))
-            .collect(),
+        selected: selected_ids(&chosen),
     })
+}
+
+async fn run_filter(
+    service: &DeploymentAffinity,
+    filter: &FilterRequest<'_>,
+) -> Result<Vec<DeploymentSpec>, OperationError> {
+    service
+        .filter_deployments(filter)
+        .await
+        .map_err(|error| invalid(&error.to_string()))
 }
 
 async fn hook_step(
@@ -188,17 +192,29 @@ async fn hook_step(
     step: &Step,
 ) -> Result<Observation, OperationError> {
     let kwargs = hook_kwargs(step);
+    let request = PreCallRequest {
+        request_kwargs: &kwargs,
+        model_info: step.model_info.as_ref(),
+    };
     service
-        .pre_call_deployment_hook(&PreCallRequest {
-            request_kwargs: &kwargs,
-            model_info: step.model_info.as_ref(),
-        })
+        .pre_call_deployment_hook(&request)
         .await
         .map_err(|error| invalid(&error.to_string()))?;
-    Ok(Observation {
+    Ok(hook_observation())
+}
+
+const fn hook_observation() -> Observation {
+    Observation {
         action: StepKind::Hook,
         selected: Vec::new(),
-    })
+    }
+}
+
+fn selected_ids(deployments: &[DeploymentSpec]) -> Vec<String> {
+    deployments
+        .iter()
+        .filter_map(|deployment| deployment.id().map(str::to_owned))
+        .collect()
 }
 
 fn pool(input: &Input, step: &Step) -> Result<Vec<DeploymentSpec>, OperationError> {

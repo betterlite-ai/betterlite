@@ -34,7 +34,7 @@ fn section(checks: Option<&[&str]>, groups: Option<&[(&str, &[&str])]>) -> Secti
     SectionSettings {
         optional_pre_call_checks: optional,
         model_group_affinity_config: config,
-        deployment_affinity_ttl_seconds: 900,
+        ttl_seconds: 900,
     }
 }
 

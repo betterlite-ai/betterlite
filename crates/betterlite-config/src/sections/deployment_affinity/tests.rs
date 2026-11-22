@@ -32,7 +32,7 @@ fn the_keys_absent_take_the_defaults() {
     let settings = settings("");
     assert_eq!(settings.optional_pre_call_checks, None);
     assert_eq!(settings.model_group_affinity_config, None);
-    assert_eq!(settings.deployment_affinity_ttl_seconds, 3600);
+    assert_eq!(settings.ttl_seconds, 3600);
 }
 
 // the three keys the deployment affinity check reads load as given
@@ -52,7 +52,7 @@ fn the_three_keys_load_as_given() {
         config.get("gpt-4o"),
         Some(&vec!["session_affinity".to_owned()])
     );
-    assert_eq!(settings.deployment_affinity_ttl_seconds, 120);
+    assert_eq!(settings.ttl_seconds, 120);
 }
 
 // an explicit empty list stays an empty list rather than absence
@@ -69,7 +69,7 @@ fn the_ttl_resolves_from_the_environment() {
         &[("B324_TTL", "42")],
         "router_settings:\n  deployment_affinity_ttl_seconds: os.environ/B324_TTL\n",
     );
-    assert_eq!(settings.deployment_affinity_ttl_seconds, 42);
+    assert_eq!(settings.ttl_seconds, 42);
 }
 
 // a ttl that is not a number stops the load at its path

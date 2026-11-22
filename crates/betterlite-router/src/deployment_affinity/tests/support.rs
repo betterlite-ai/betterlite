@@ -15,6 +15,7 @@ use crate::affinity_claims::identity::{
 use crate::affinity_claims::local::LocalPins;
 use crate::affinity_claims::pin::{AffinityPin, StoredPin};
 use crate::deployment_affinity::error::DeploymentAffinityError;
+use crate::deployment_affinity::json::PREVIOUS_RESPONSE_ID;
 use crate::deployment_affinity::{
     DEFAULT_TTL_SECONDS, DeploymentAffinity, FilterRequest, PreCallRequest, PriorityGroups,
     Settings,
@@ -85,6 +86,10 @@ impl Fixture {
         self.filter_at(MODEL_GROUP, pool, kwargs, None).await
     }
 
+    pub(crate) async fn selected(&self, kwargs: &JsonObject) -> Vec<String> {
+        self.filter(&pool(&["a", "b"]), Some(kwargs)).await
+    }
+
     pub(crate) async fn filter_at(
         &self,
         model: &str,
@@ -145,6 +150,18 @@ impl Fixture {
     pub(crate) fn expiry(&self, key: &AffinityKey) -> Option<f64> {
         self.service.claims.local.expiry_seconds(key).unwrap()
     }
+}
+
+pub(crate) fn fixture(flags: &[AffinityFlag]) -> Fixture {
+    Fixture::new(settings(flags), &[])
+}
+
+pub(crate) fn fixture_ttl(flags: &[AffinityFlag], ttl_seconds: u32) -> Fixture {
+    Fixture::new(settings_with_ttl(flags, ttl_seconds), &[])
+}
+
+pub(crate) fn grouped(defaults: &[AffinityFlag], entries: &[(&str, &[&str])]) -> Fixture {
+    Fixture::new(with_groups(settings(defaults), entries), &[])
 }
 
 pub(crate) fn settings(flags: &[AffinityFlag]) -> Settings {
@@ -237,6 +254,51 @@ pub(crate) fn metadata(fields: &[(&str, Json)]) -> JsonObject {
     request(&[("metadata", Json::Object(request(fields)))])
 }
 
+pub(crate) fn caller_metadata(user_key: &str) -> JsonObject {
+    metadata(&[("user_api_key_hash", text(user_key))])
+}
+
+pub(crate) fn session_metadata(session_id: &str) -> JsonObject {
+    metadata(&[("session_id", text(session_id))])
+}
+
+pub(crate) fn caller_session_metadata(user_key: &str, session_id: &str) -> JsonObject {
+    metadata(&[
+        ("user_api_key_hash", text(user_key)),
+        ("session_id", text(session_id)),
+    ])
+}
+
+pub(crate) fn marked_session_metadata(session_id: &str, ttl_seconds: u64) -> JsonObject {
+    metadata(&[
+        ("session_id", text(session_id)),
+        ("_session_deployment_affinity_ttl", number(ttl_seconds)),
+    ])
+}
+
+pub(crate) fn generated_session_metadata(session_id: &str) -> JsonObject {
+    metadata(&[
+        ("session_id", text(session_id)),
+        ("litellm_session_id_generated", Json::Bool(true)),
+    ])
+}
+
+pub(crate) fn generated_flag_text(session_id: &str) -> JsonObject {
+    metadata(&[
+        ("session_id", text(session_id)),
+        ("litellm_session_id_generated", text("yes")),
+    ])
+}
+
+pub(crate) fn session_and_response(session_id: &str, model_id: &str) -> JsonObject {
+    let mut kwargs = session_metadata(session_id);
+    kwargs.insert(
+        PREVIOUS_RESPONSE_ID.to_owned(),
+        text(&encoded_previous_response_id(model_id)),
+    );
+    kwargs
+}
+
 pub(crate) fn litellm_metadata(fields: &[(&str, Json)]) -> JsonObject {
     request(&[("litellm_metadata", Json::Object(request(fields)))])
 }
@@ -251,6 +313,36 @@ pub(crate) fn hook_request(fields: &[(&str, Json)], model_id: Option<&str>) -> J
         kwargs.insert("model_info".to_owned(), Json::Object(model_info(model_id)));
     }
     kwargs
+}
+
+pub(crate) fn hook_kwargs(identity: (&str, &str), model_id: &str) -> JsonObject {
+    let (field, value) = identity;
+    hook_request(
+        &[
+            ("deployment_model_name", text(MODEL_GROUP)),
+            (field, text(value)),
+        ],
+        Some(model_id),
+    )
+}
+
+pub(crate) fn marked_hook(session_id: &str, marker_ttl: u64, model_id: &str) -> JsonObject {
+    hook_request(
+        &[
+            ("deployment_model_name", text(MODEL_GROUP)),
+            ("session_id", text(session_id)),
+            ("_session_deployment_affinity_ttl", number(marker_ttl)),
+        ],
+        Some(model_id),
+    )
+}
+
+pub(crate) fn litellm_hook(identity: (&str, &str), model_id: &str) -> JsonObject {
+    let (field, value) = identity;
+    let mut fields = request(&[("deployment_model_name", text(MODEL_GROUP))]);
+    fields.insert(field.to_owned(), text(value));
+    fields.insert("model_info".to_owned(), Json::Object(model_info(model_id)));
+    request(&[("litellm_metadata", Json::Object(fields))])
 }
 
 pub(crate) fn encoded_previous_response_id(model_id: &str) -> String {
@@ -293,20 +385,10 @@ pub(crate) fn shared_store(server: &FakeRedis) -> RoutingStateStore {
 }
 
 // claim_affinity_pin's redis script writes the serialized pin into the route value's model_id
-pub(crate) async fn seed_shared(
-    store: &RoutingStateStore,
-    key: &AffinityKey,
-    pin: &StoredPin,
-    ttl_seconds: u32,
-) {
-    seed_shared_value(
-        store,
-        key,
-        RouteValue::Pin(PinValue {
-            model_id: pin.wire_text(),
-        }),
-        ttl_seconds,
-    );
+pub(crate) fn pin_value(stored: &StoredPin) -> RouteValue {
+    RouteValue::Pin(PinValue {
+        model_id: stored.wire_text(),
+    })
 }
 
 pub(crate) async fn seed_shared_value(

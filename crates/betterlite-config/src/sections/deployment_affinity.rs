@@ -22,7 +22,8 @@ pub struct Raw {
 struct RawRouter {
     optional_pre_call_checks: Option<Vec<String>>,
     model_group_affinity_config: Option<IndexMap<String, Vec<String>>>,
-    deployment_affinity_ttl_seconds: Option<RawNumber>,
+    #[serde(rename = "deployment_affinity_ttl_seconds")]
+    ttl_seconds: Option<RawNumber>,
 }
 
 // add_optional_pre_call_checks and _ensure_deployment_affinity_callback read these three keys
@@ -30,7 +31,7 @@ struct RawRouter {
 pub struct Settings {
     pub optional_pre_call_checks: Option<Vec<String>>,
     pub model_group_affinity_config: Option<IndexMap<String, Vec<String>>>,
-    pub deployment_affinity_ttl_seconds: u32,
+    pub ttl_seconds: u32,
 }
 
 impl Default for Settings {
@@ -38,7 +39,7 @@ impl Default for Settings {
         Self {
             optional_pre_call_checks: None,
             model_group_affinity_config: None,
-            deployment_affinity_ttl_seconds: DEFAULT_TTL_SECONDS,
+            ttl_seconds: DEFAULT_TTL_SECONDS,
         }
     }
 }
@@ -51,7 +52,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let ttl = resolve_number(
-            self.router_settings.deployment_affinity_ttl_seconds,
+            self.router_settings.ttl_seconds,
             TTL_PATH,
             lookup,
             parse_integer,
@@ -59,7 +60,7 @@ impl Section for Raw {
         Ok(Settings {
             optional_pre_call_checks: self.router_settings.optional_pre_call_checks,
             model_group_affinity_config: self.router_settings.model_group_affinity_config,
-            deployment_affinity_ttl_seconds: ttl.unwrap_or(DEFAULT_TTL_SECONDS),
+            ttl_seconds: ttl.unwrap_or(DEFAULT_TTL_SECONDS),
         })
     }
 }

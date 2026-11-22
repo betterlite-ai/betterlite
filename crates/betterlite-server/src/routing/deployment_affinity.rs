@@ -5,32 +5,28 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::affinity_claims::AffinityClaims;
 use betterlite_router::affinity_claims::identity::AffinityFlag;
-use betterlite_router::deployment_affinity::flags::warn_on_unknown_model_group_affinity_flags;
+use betterlite_router::deployment_affinity::flags::warn_unknown_affinity_flags;
 use betterlite_router::deployment_affinity::{
     DeploymentAffinity, PreCallRequest, PriorityGroups, Settings,
 };
 
 mod tests;
 
-// the router pieces the server hands the check: the cache claims, the routing group index and whether a
-// complexity router deployment stamps the session-affinity marker
+// the router pieces the server hands the check: claims, the group index and whether a deployment stamps the marker
 pub struct DeploymentAffinityInputs {
     pub claims: AffinityClaims,
     pub is_priority_group: Option<PriorityGroups>,
     pub session_marker_in_use: bool,
 }
 
-// add_optional_pre_call_checks and _ensure_deployment_affinity_callback: the check exists when a global flag
-// is named, when model_group_affinity_config can turn affinity on per group, or for a marker-stamping router
+// add_optional_pre_call_checks and _ensure_deployment_affinity_callback: a global flag, a group entry or a marker-stamping router
 #[must_use]
 pub fn build(
     section: &SectionSettings,
     inputs: DeploymentAffinityInputs,
 ) -> Option<DeploymentAffinity> {
     let defaults = global_flags(section.optional_pre_call_checks.as_deref());
-    for warning in
-        warn_on_unknown_model_group_affinity_flags(section.model_group_affinity_config.as_ref())
-    {
+    for warning in warn_unknown_affinity_flags(section.model_group_affinity_config.as_ref()) {
         tracing::warn!("{}", warning.message());
     }
     let configured = section
@@ -43,7 +39,7 @@ pub fn build(
     Some(DeploymentAffinity::new(
         inputs.claims,
         Settings {
-            ttl_seconds: section.deployment_affinity_ttl_seconds,
+            ttl_seconds: section.ttl_seconds,
             defaults,
             model_group_affinity_config: section.model_group_affinity_config.clone(),
         },

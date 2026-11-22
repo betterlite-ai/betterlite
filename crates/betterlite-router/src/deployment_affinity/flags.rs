@@ -23,16 +23,16 @@ impl UnknownFlags {
     pub fn message(&self) -> String {
         format!(
             "model_group_affinity_config: unknown flag(s) {} for model group '{}'; will be ignored. Valid flags: frozenset({{{}}})",
-            python_set(self.unknown.iter().map(String::as_str)),
+            braced_set(self.unknown.iter().map(String::as_str)),
             self.group,
-            python_set(VALID_FLAGS.into_iter()),
+            braced_set(VALID_FLAGS.into_iter()),
         )
     }
 }
 
 // warn_on_unknown_model_group_affinity_flags: the schema owns typo detection for both affinity consumers
 #[must_use]
-pub fn warn_on_unknown_model_group_affinity_flags(
+pub fn warn_unknown_affinity_flags(
     config: Option<&IndexMap<String, Vec<String>>>,
 ) -> Vec<UnknownFlags> {
     let mut warnings = Vec::new();
@@ -52,7 +52,10 @@ pub fn warn_on_unknown_model_group_affinity_flags(
     warnings
 }
 
-fn python_set<'flag>(flags: impl Iterator<Item = &'flag str>) -> String {
+fn braced_set<'flag, Flags>(flags: Flags) -> String
+where
+    Flags: Iterator<Item = &'flag str>,
+{
     flags
         .map(|flag| format!("'{flag}'"))
         .collect::<Vec<_>>()
