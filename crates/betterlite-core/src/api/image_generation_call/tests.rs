@@ -23,7 +23,7 @@ use betterlite_logging::logging_state::types::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_models::resolution::ProviderIdentity;
+use betterlite_models::resolution::{ProviderIdentity, ResolutionError};
 use betterlite_openai::api::image_contracts::records::{ImageData, ImageResponse, ImageUsage};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
@@ -130,8 +130,14 @@ struct SeenResolution {
     has_key: bool,
 }
 
+// what the fake resolver answers: a resolved model, or the model ResolutionError::MissingProvider names
+enum FakeResult {
+    Resolved(ResolvedImageModel),
+    MissingProvider(String),
+}
+
 struct FakeIdentity {
-    result: Result<ResolvedImageModel, ImageResolutionError>,
+    result: FakeResult,
     seen: Mutex<Vec<SeenResolution>>,
 }
 
@@ -145,16 +151,14 @@ impl FakeIdentity {
         };
         let seen = Mutex::new(Vec::new());
         Self {
-            result: Ok(resolved),
+            result: FakeResult::Resolved(resolved),
             seen,
         }
     }
 
-    fn failing(message: &str) -> Self {
+    fn failing(model: &str) -> Self {
         Self {
-            result: Err(ImageResolutionError::Rejected {
-                message: message.to_owned(),
-            }),
+            result: FakeResult::MissingProvider(model.to_owned()),
             seen: Mutex::new(Vec::new()),
         }
     }
@@ -181,8 +185,16 @@ impl ImageIdentity for FakeIdentity {
                 api_base: request.api_base.map(str::to_owned),
                 has_key: request.api_key.is_some(),
             });
+        let answer = match &self.result {
+            FakeResult::Resolved(resolved) => Ok(resolved.clone()),
+            FakeResult::MissingProvider(model) => Err(ImageResolutionError::Rejected(
+                ResolutionError::MissingProvider {
+                    model: model.clone(),
+                },
+            )),
+        };
+        let mut resolved = answer?;
         // the real resolver answers the caller's api_base, so the fake echoes it too
-        let mut resolved = self.result.clone()?;
         if let Some(api_base) = request.api_base {
             resolved.api_base = Some(api_base.to_owned());
         }

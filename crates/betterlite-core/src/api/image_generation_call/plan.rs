@@ -55,10 +55,10 @@ pub struct ResolvedImageModel {
     pub api_key: Option<SecretString>,
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum ImageResolutionError {
-    #[error("{message}")]
-    Rejected { message: String },
+    #[error(transparent)]
+    Rejected(#[from] ResolutionError),
     #[error("model parameter is required but was None. Please provide a valid model name.")]
     MissingModel,
 }
@@ -90,10 +90,7 @@ impl ImageIdentity for CatalogIdentity<'_, '_> {
                 api_key: request.api_key,
             },
             self.context,
-        )
-        .map_err(|error: ResolutionError| ImageResolutionError::Rejected {
-            message: error.to_string(),
-        })?;
+        )?;
         Ok(ResolvedImageModel {
             model: Some(resolved.model),
             provider: resolved.provider,

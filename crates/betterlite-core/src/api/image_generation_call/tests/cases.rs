@@ -577,10 +577,10 @@ fn resolution_failures_carry_the_wrapped_message() {
     let identity = FakeIdentity::failing("unknown model");
     let case = Case::new(&ops, &identity, Settings::default());
     match case.run(call(Some("missing"), Some("openai"))).0 {
-        Err(ImageGenerationException::Mapped { message, .. }) => {
-            assert!(message.contains("GetLLMProvider Exception - unknown model"));
-            assert!(message.contains("original model: missing"));
-        }
+        Err(ImageGenerationException::Mapped { message, .. }) => assert_eq!(
+            message,
+            "GetLLMProvider Exception - LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=unknown model\n\noriginal model: missing"
+        ),
         other => panic!("expected the provider resolution error, got {other:?}"),
     }
     assert!(ops.sends().is_empty());
