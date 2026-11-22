@@ -187,75 +187,59 @@ pub(crate) fn ids(rows: &[SpendLogRow]) -> Vec<String> {
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 #[error("the scripted spend log insert failed")]
 pub(crate) struct ScriptedFailure {
-    data_rejection: bool,
-    service_unavailable: bool,
-    deadlock: bool,
-    database: bool,
+    flags: u8,
 }
+
+const DATA_REJECTION: u8 = 1;
+const SERVICE_UNAVAILABLE: u8 = 2;
+const DEADLOCK: u8 = 4;
+const DATABASE: u8 = 8;
 
 impl ScriptedFailure {
     pub(crate) const DATA: Self = Self {
-        data_rejection: true,
-        service_unavailable: false,
-        deadlock: false,
-        database: true,
+        flags: DATA_REJECTION | DATABASE,
     };
 
     pub(crate) const OUTAGE: Self = Self {
-        data_rejection: false,
-        service_unavailable: true,
-        deadlock: false,
-        database: true,
+        flags: SERVICE_UNAVAILABLE | DATABASE,
     };
 
     pub(crate) const MISLABELLED_OUTAGE: Self = Self {
-        data_rejection: true,
-        service_unavailable: true,
-        deadlock: false,
-        database: true,
+        flags: DATA_REJECTION | SERVICE_UNAVAILABLE | DATABASE,
     };
 
     pub(crate) const MISLABELLED_DEADLOCK: Self = Self {
-        data_rejection: true,
-        service_unavailable: false,
-        deadlock: true,
-        database: true,
+        flags: DATA_REJECTION | DEADLOCK | DATABASE,
     };
 
-    pub(crate) const DATABASE_ERROR: Self = Self {
-        data_rejection: false,
-        service_unavailable: false,
-        deadlock: false,
-        database: true,
-    };
+    pub(crate) const DATABASE_ERROR: Self = Self { flags: DATABASE };
 
-    pub(crate) const NON_DATABASE: Self = Self {
-        data_rejection: false,
-        service_unavailable: false,
-        deadlock: false,
-        database: false,
-    };
+    pub(crate) const NON_DATABASE: Self = Self { flags: 0 };
+
+    const fn set(&self, flag: u8) -> bool {
+        (self.flags & flag) != 0
+    }
 }
 
 impl SpendLogWriteError for ScriptedFailure {
     fn is_transient(&self) -> bool {
-        self.service_unavailable || self.deadlock
+        self.set(SERVICE_UNAVAILABLE) || self.set(DEADLOCK)
     }
 
     fn is_data_rejection(&self) -> bool {
-        self.data_rejection
+        self.set(DATA_REJECTION)
     }
 
     fn is_service_unavailable(&self) -> bool {
-        self.service_unavailable
+        self.set(SERVICE_UNAVAILABLE)
     }
 
     fn is_deadlock(&self) -> bool {
-        self.deadlock
+        self.set(DEADLOCK)
     }
 
     fn is_database(&self) -> bool {
-        self.database
+        self.set(DATABASE)
     }
 }
 

@@ -30,7 +30,7 @@ struct ScriptedWriter {
 }
 
 impl ScriptedWriter {
-    fn new(poison: BTreeSet<String>, failure: Option<ScriptedFailure>) -> Self {
+    const fn new(poison: BTreeSet<String>, failure: Option<ScriptedFailure>) -> Self {
         Self {
             poison,
             failure,
