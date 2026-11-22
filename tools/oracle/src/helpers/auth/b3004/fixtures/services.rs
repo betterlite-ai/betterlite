@@ -19,7 +19,7 @@ use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 
 // LiteLLM runs the helper with prisma_client=None, so every entity row read misses
-pub(super) struct NoCache;
+pub(crate) struct NoCache;
 
 #[async_trait]
 impl TagBudgetCache for NoCache {
@@ -78,7 +78,7 @@ impl ReservationCounterCache for NoCache {
 }
 
 // with no token tags the batch lookup asks for nothing, so the table behind it can stay empty
-pub(super) struct NoTags;
+pub(crate) struct NoTags;
 
 #[async_trait]
 impl BudgetRows<TagTable> for NoTags {
@@ -91,7 +91,7 @@ impl BudgetRows<TagTable> for NoTags {
     }
 }
 
-pub(super) struct NoGroups;
+pub(crate) struct NoGroups;
 
 #[async_trait]
 impl BudgetRows<ModelAccessGroupBudgetRow> for NoGroups {
@@ -111,7 +111,7 @@ impl BudgetRows<ModelAccessGroupBudgetRow> for NoGroups {
 }
 
 // litellm's duration_in_seconds: a budget window's length in seconds, read with the same parser
-pub(super) struct Durations(pub(super) TimeZoneDatabase);
+pub(crate) struct Durations(pub(crate) TimeZoneDatabase);
 
 impl DurationParser for Durations {
     fn seconds(&self, spec: &str, now: DateTime<Utc>) -> Option<i64> {

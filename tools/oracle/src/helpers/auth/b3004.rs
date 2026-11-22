@@ -1,6 +1,4 @@
-mod fakes;
-mod input;
-mod services;
+mod fixtures;
 
 use std::collections::BTreeMap;
 
@@ -22,9 +20,9 @@ use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
-use self::fakes::ScriptedMemory;
-use self::input::{Input, User};
-use self::services::{Durations, NoCache, NoGroups, NoTags};
+use self::fixtures::fakes::ScriptedMemory;
+use self::fixtures::input::{Input, User};
+use self::fixtures::services::{Durations, NoCache, NoGroups, NoTags};
 
 // litellm.budget_exceeded_status_code's default, the status every BudgetExceededError carries
 const BUDGET_EXCEEDED_STATUS: u16 = 422;

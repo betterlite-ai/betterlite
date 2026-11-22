@@ -6,7 +6,7 @@ use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_oracle_helper_api::error::HelperError;
 use serde::Deserialize;
 
-use super::invalid;
+use super::super::invalid;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

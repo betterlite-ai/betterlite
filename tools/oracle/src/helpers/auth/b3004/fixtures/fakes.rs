@@ -13,11 +13,11 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_redis::request_batch::lock;
 use rust_decimal::Decimal;
 
-use super::invalid;
+use super::super::invalid;
 
 // the helper's in-memory spend counter: the case seeds its values, names the keys whose reads raise,
 // and the recorded pipelines and invalidations come back out in the output
-pub(super) struct ScriptedMemory {
+pub(crate) struct ScriptedMemory {
     values: Mutex<BTreeMap<String, Decimal>>,
     sources: BTreeMap<String, Decimal>,
     failures: BTreeSet<String>,
@@ -27,7 +27,7 @@ pub(super) struct ScriptedMemory {
 }
 
 impl ScriptedMemory {
-    pub(super) fn new(
+    pub(crate) fn new(
         memory: &BTreeMap<String, serde_json::Number>,
         sources: &BTreeMap<String, serde_json::Number>,
         failures: &BTreeSet<String>,
@@ -57,15 +57,15 @@ impl ScriptedMemory {
         })
     }
 
-    pub(super) fn values(&self) -> BTreeMap<String, Decimal> {
+    pub(crate) fn values(&self) -> BTreeMap<String, Decimal> {
         lock(&self.values).clone()
     }
 
-    pub(super) fn pipelines(&self) -> Vec<Vec<(String, Decimal)>> {
+    pub(crate) fn pipelines(&self) -> Vec<Vec<(String, Decimal)>> {
         lock(&self.pipelines).clone()
     }
 
-    pub(super) fn invalidated(&self) -> Vec<String> {
+    pub(crate) fn invalidated(&self) -> Vec<String> {
         lock(&self.invalidated).clone()
     }
 
