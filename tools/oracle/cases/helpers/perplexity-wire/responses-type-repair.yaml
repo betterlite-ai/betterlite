@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-responses-type-repair
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "responses", "headers": [], "urls": [], "requests": [{"model": "sonar", "input": "hi", "params": {}}, {"model": "sonar", "input": [{"role": "user", "content": "hi"}, {"type": "message", "role": "assistant", "content": "ok"}], "params": {"max_output_tokens": 50}}, {"model": "sonar-pro", "input": [{"role": "user", "content": [{"type": "input_text", "text": "hi"}]}], "params": {"temperature": 0.2}}], "replies": []}

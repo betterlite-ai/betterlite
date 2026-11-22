@@ -1,0 +1,36 @@
+task: B3686
+deviations:
+  - what: The guardrail params and info are stored as plain JSON text of the body's map, without LiteLLM's `safe_dumps` depth marker ("MaxDepthExceeded" past depth 100).
+    why: The JSON decoder already refuses nesting past 128 levels with a 422, so LiteLLM's marker cannot be reached from a register body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L778-L784
+  - what: A non-text `litellm_params.api_base` in a register body is answered as 400 "litellm_params.api_base must use http or https scheme".
+    why: LiteLLM passes any value to `urlparse` after its truthiness check and fails with an unhandled error (500) for a non-empty one; docs/compatibility.md leaves types outside the declared ones undefined, and 400 names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L741-L757
+  - what: An `api_base` the `url` crate parses with a hostname but `urlparse` sees as having none (`http:/guard.example.com`, `http:guard.example.com`, `https:///check`) is accepted, where LiteLLM answers 400 "litellm_params.api_base must contain a valid hostname".
+    why: The task asks for the `url` crate parse, and the WHATWG parser it implements treats a special scheme without `//` as an authority and skips extra slashes before it. LiteLLM's `urlparse` leaves the netloc empty for the same text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L747-L757
+  - what: An `api_base` the `url` crate refuses over its port (a non-numeric or out-of-range one, such as `http://guard.example.com:abc` or `http://guard.example.com:99999`) is answered 400 "litellm_params.api_base must contain a valid hostname", where LiteLLM's `parsed.hostname` passes and the registration is stored.
+    why: The hostname check is the only host error the route has, and a refused parse carries no hostname. LiteLLM never reads `parsed.port`, so a port it cannot use is stored unchallenged; a setup that registered such a URL cannot be reached in betterlite, and the 400 names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L747-L757
+  - what: An `api_base` that makes Python's `urlparse` raise (an invalid IPv6 bracket, such as `http://[::1`) is answered 400 "litellm_params.api_base must contain a valid hostname"; LiteLLM lets the ValueError leave the handler and answers 500.
+    why: A malformed URL is the client's error, so the 400 keeps the classified failure and names the field instead of copying an unhandled 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L747-L753
+  - what: A failed team lookup during register or list answers 500 with the lookup error text; LiteLLM calls `_get_user_team_ids` outside any try block at those two points, so FastAPI answers a generic "Internal Server Error" body. The single read does catch it, so its 500 carries the text in both.
+    why: The status is 500 either way, and the error text is what an operator needs to see the missing database or failed user row. No working setup depends on the generic body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L907
+  - what: A `guardrail_info.description` that is not a string does not match `search`; LiteLLM runs `str()` over it, so a numeric description of 5 matches `search=5`.
+    why: docs/compatibility.md keeps Python's `str` text out of parity, and the description a register body writes is a string; searching a rendered number or nested object would invent text no caller wrote.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L946-L949
+  - what: A stored `submitted_by_user_id` or `submitted_by_email` that is not a string is projected as null; LiteLLM's pydantic response model rejects it and answers 500.
+    why: The columns hold whatever an earlier writer put there, and the register route only ever writes a string or null. Answering the item with the field null keeps a single bad row from breaking a whole listing, and no working setup reads a non-string submitter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L863-L864
+  - what: A guardrail row whose `litellm_params` or `guardrail_info` JSON column holds neither text nor an object (a number, boolean or array) fails the row read and answers 500; LiteLLM's `_parse_json_field` treats such a value as absent and returns the row.
+    why: The seam's `ColumnJson` is the two shapes the task names and a serde untagged decode rejects the rest; the register route and LiteLLM only ever write JSON text, so a working setup's rows decode, and a row another tool broke stays visible as a store error instead of being projected silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L811-L821
+kept_bugs:
+  - what: A register body whose `team_id` is an empty string falls back to the API key's team instead of being refused, because `request.team_id or user_api_key_dict.team_id` treats an empty string as absent.
+    why: The task pins this Python `or`, and a setup whose client sends an empty team id relies on the key's team being used.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L717-L723
+  - what: A summary counts a row with a null status as active, but `status=active` does not match that row, because the filter compares the raw column.
+    why: The task pins both rules, and LiteLLM's own writers always store a status; a row without one can only come from another tool, and a setup that lists by a status it wrote is unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L928-L951
