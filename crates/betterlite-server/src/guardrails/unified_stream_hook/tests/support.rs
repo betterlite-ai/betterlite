@@ -198,8 +198,9 @@ impl BaseTranslation for FakeTranslation {
 }
 
 impl StreamEndCheck for FakeTranslation {
+    // the fake probes only the last chunk, like the responses translation, so a pending chunk can outlive the end
     fn streaming_has_ended(&self, items: &[GuardrailValue]) -> bool {
-        items.iter().any(chunk_has_finish_reason)
+        items.last().is_some_and(chunk_has_finish_reason)
     }
 }
 
