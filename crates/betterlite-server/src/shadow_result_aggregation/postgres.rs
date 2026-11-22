@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 use tokio_postgres::Row;
 use tokio_postgres::types::{FromSql, ToSql};
 
-use super::aggregation::{AttemptAggRow, GroupBy};
+use super::aggregation::{AttemptAggRow, GroupBy, round_to};
 use super::error::ShadowResultsError;
 use super::labels::{LabelKind, LabelRow};
 use super::legs::LegRow;
@@ -150,7 +150,7 @@ fn attempt_totals_row(row: &Row) -> RepositoryResult<AttemptTotals> {
     Ok(AttemptTotals {
         judged_count: i64::from(column::<i32>(row, "judged_count")?),
         error_count: i64::from(column::<i32>(row, "error_count")?),
-        judge_spend: spend_decimal(column(row, "judge_spend")?, "judge_spend")?,
+        judge_spend: round_to(column(row, "judge_spend")?, 6, "judge_spend")?,
     })
 }
 
@@ -158,7 +158,7 @@ fn attempt_count_row(row: &Row) -> RepositoryResult<LegAttemptCount> {
     Ok(LegAttemptCount {
         job_id: column(row, "job_id")?,
         attempt_count: i64::from(column::<i32>(row, "attempt_count")?),
-        spend: spend_decimal(column(row, "spend")?, "spend")?,
+        spend: round_to(column(row, "spend")?, 6, "spend")?,
     })
 }
 

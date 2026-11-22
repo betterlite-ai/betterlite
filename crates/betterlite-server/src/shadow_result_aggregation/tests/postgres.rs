@@ -16,10 +16,10 @@ use super::super::labels::{LabelKind, LabelRow};
 use super::super::legs::LegRow;
 use super::super::postgres::{PgShadowResults, leg_row};
 use super::super::repository::ShadowResultsRepository as _;
-use super::super::responses::{LegCounts, group_response};
-use super::super::results::{FunnelTotals, TargetVerdicts};
+use super::super::responses::{LegCounts, detail_response, group_response};
+use super::super::results::{FunnelTotals, JobResults, TargetVerdicts};
 use super::super::targets::TargetKey;
-use super::{agg, assert_unrepresentable, money};
+use super::{agg, assert_unrepresentable, money, spelled};
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_models::ShadowEvalTargetType;
 use crate::shadow_eval_models::ShadowEvalTargetType::{Key as KeyTarget, Team as TeamTarget};
@@ -596,6 +596,32 @@ async fn job_results_carry_a_funnel_only_when_every_leg_reported() {
     assert_eq!(fully.results.unwrap().not_sampled_count, Some(0));
     assert_eq!(none.results, None);
     assert!(none.verdicts.is_empty());
+}
+
+#[tokio::test]
+async fn judge_and_leg_spends_round_the_exact_double() {
+    let (fixture, pool) = database().await;
+    execute(&pool, JOBS).await;
+    execute(
+        &pool,
+        r#"INSERT INTO "LiteLLM_ShadowEvalAttempt"
+            ("id", "job_id", "request_id", "outcome", "judge_cost")
+           VALUES ('a1', 'leg-a', 'r1', 'real', 0.0000035)"#,
+    )
+    .await;
+    let repo = repository(&pool);
+    let totals = repo.attempt_totals(&["leg-a".to_owned()]).await.unwrap();
+    let counted = legs(&pool, &["leg-a"]).await;
+    let counts = repo.leg_attempt_counts(&counted).await.unwrap();
+    pool.close();
+    fixture.close_async().await.unwrap();
+    let group = group_response("job-1", &counted, &counts).unwrap();
+    let detail = detail_response(&group, totals, None, &JobResults::default());
+    assert_eq!(detail.judge_spend, Some(spelled("0.000003")));
+    assert_eq!(
+        detail.targets.first().unwrap().spend,
+        Some(spelled("0.000003"))
+    );
 }
 
 #[tokio::test]

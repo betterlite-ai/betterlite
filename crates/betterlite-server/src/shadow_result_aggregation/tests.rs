@@ -33,6 +33,11 @@ fn money(value: f64) -> Decimal {
     value.to_string().parse().unwrap()
 }
 
+// the row decoders round the exact column double, the binary value Python's round sees
+fn retained(value: f64) -> Decimal {
+    Decimal::from_f64_retain(value).unwrap()
+}
+
 fn spelled(text: &str) -> Decimal {
     text.parse().unwrap()
 }
@@ -51,7 +56,7 @@ fn leg(id: &str, target_type: ShadowEvalTargetType, target_id: &str) -> LegRow {
         judge_model: "anthropic/claude-sonnet-5".to_owned(),
         shadow_percentage: 10.0,
         max_turns: 10_000,
-        max_budget: Some(money(5.0)),
+        max_budget: Some(retained(5.0)),
         created_at: at(0),
         ends_at: at(1_000),
         stopped_at: None,
@@ -63,7 +68,7 @@ fn count(job_id: &str, attempt_count: i64, spend: f64) -> LegAttemptCount {
     LegAttemptCount {
         job_id: job_id.to_owned(),
         attempt_count,
-        spend: money(spend),
+        spend: retained(spend),
     }
 }
 
@@ -291,6 +296,16 @@ enum Behavior {
         ],
     },
 }))]
+#[case::group_response_rounds_a_leg_spend_from_the_exact_double(Behavior::Group(GroupCase {
+    legs: vec![leg("leg-key", Key, "k1")],
+    counts: vec![count("leg-key", 1, 0.000_003_5)],
+    expected: GroupExpectation {
+        job_id: "job-8",
+        router_names: vec!["router-a"],
+        stopped_by: None,
+        targets: vec![(Key, "k1", 1, spelled("0.000003"))],
+    },
+}))]
 #[case::slices_rank_the_busiest_group_first(Behavior::Slices(SlicesCase {
     rows: vec![
         agg("simple", 4, (3, 1, 0, 1), Some(0.875_1_f64), (0.1_f64, 0.2_f64)),
@@ -471,7 +486,7 @@ enum Behavior {
     totals: AttemptTotals {
         judged_count: 7,
         error_count: 2,
-        judge_spend: money(0.123_456_7),
+        judge_spend: retained(0.123_456_7),
     },
     last_error: Some("judge timed out"),
     by_tier: vec![agg("simple", 5, (2, 2, 1, 0), Some(0.9_f64), (0.4_f64, 0.3_f64))],
@@ -486,6 +501,25 @@ enum Behavior {
         last_error: Some("judge timed out"),
         overall_shadow_win: 40.0,
         verdicts: vec![(Key, "k1", Some("k1")), (Team, "t1", Some("t1"))],
+    },
+}))]
+#[case::detail_rounds_a_judge_spend_from_the_exact_double(Behavior::Detail(DetailCase {
+    legs: vec![leg("leg-key", Key, "k1")],
+    totals: AttemptTotals {
+        judged_count: 1,
+        error_count: 0,
+        judge_spend: retained(0.000_003_5),
+    },
+    last_error: None,
+    by_tier: vec![agg("simple", 1, (0, 1, 0, 0), Some(0.5_f64), (0.0_f64, 0.0_f64))],
+    by_leg: vec![agg("leg-key", 1, (0, 1, 0, 0), Some(0.5_f64), (0.0_f64, 0.0_f64))],
+    expected: DetailExpectation {
+        judged_count: 1,
+        error_count: 0,
+        judge_spend: spelled("0.000003"),
+        last_error: None,
+        overall_shadow_win: 100.0,
+        verdicts: vec![(Key, "k1", Some("k1"))],
     },
 }))]
 fn shadow_result_aggregation_behaviors(#[case] behavior: Behavior) {
