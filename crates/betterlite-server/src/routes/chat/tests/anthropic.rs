@@ -11,6 +11,7 @@ use betterlite_openai::chat::execution::ChatExecutor;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
+use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
@@ -45,6 +46,33 @@ struct Answer<'body> {
     status: u16,
     headers: &'static str,
     body: &'body str,
+}
+
+#[derive(Deserialize)]
+struct Reply {
+    object: String,
+    model: String,
+    choices: Vec<Choice>,
+}
+
+#[derive(Deserialize)]
+struct Choice {
+    message: Message,
+}
+
+#[derive(Deserialize)]
+struct Message {
+    content: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ErrorReply {
+    error: ErrorFields,
+}
+
+#[derive(Deserialize)]
+struct ErrorFields {
+    code: String,
 }
 
 // the booted chat router over one config; the loaded Config drops here, not across the exchange's awaits
@@ -157,12 +185,12 @@ async fn exchange(
 async fn buffered_reply() {
     let answered = exchange("", &local_environment(), CHAT, reply()).await;
     assert_eq!(answered.status, 200);
-    let body: serde_json::Value = serde_json::from_slice(&answered.body).unwrap();
-    assert_eq!(body["object"], "chat.completion");
-    assert_eq!(body["model"], "g");
+    let body: Reply = serde_json::from_slice(&answered.body).unwrap();
+    assert_eq!(body.object, "chat.completion");
+    assert_eq!(body.model, "g");
     assert_eq!(
-        body["choices"][0]["message"]["content"],
-        "hello over anthropic"
+        body.choices[0].message.content.as_deref(),
+        Some("hello over anthropic")
     );
     assert_eq!(
         header(&answered.headers, "llm_provider-request-id"),
@@ -213,8 +241,8 @@ async fn upstream_error() {
     };
     let answered = exchange("", &local_environment(), CHAT, answer).await;
     assert_eq!(answered.status, 429);
-    let body: serde_json::Value = serde_json::from_slice(&answered.body).unwrap();
-    assert_eq!(body["error"]["code"], "429");
+    let body: ErrorReply = serde_json::from_slice(&answered.body).unwrap();
+    assert_eq!(body.error.code, "429");
 }
 
 async fn own_key_only() {

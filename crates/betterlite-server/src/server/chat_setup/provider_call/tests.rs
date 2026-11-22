@@ -70,6 +70,21 @@ async fn upstream(listener: TcpListener, reply: (u16, &str)) -> String {
     String::from_utf8(received).unwrap().to_lowercase()
 }
 
+fn chat_calls(source: &str, environment: &BTreeMap<String, String>) -> ChatCalls {
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load(source)
+    .unwrap();
+    let executor = chat_executor(&config, environment, StdRng::seed_from_u64(3)).unwrap();
+    let shared = Shared {
+        bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
+    };
+    let slot = anthropic_runtime::Slot::new(&config, &shared);
+    ChatCalls::new(&config, Arc::new(executor), &slot).unwrap()
+}
+
 async fn call(
     model: &str,
     sent_body: &'static str,
@@ -89,19 +104,7 @@ async fn call(
         ),
         ("OPENAI_ORGANIZATION".to_owned(), "org-9".to_owned()),
     ]);
-    let loader = ConfigLoader {
-        lookup: environment.clone(),
-    };
-    let calls = {
-        let config = loader.load(&source).unwrap();
-        let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
-        let shared = Shared {
-            bundled_catalog: Arc::clone(&executor.bundled_catalog),
-            client: executor.client.clone(),
-        };
-        let slot = anthropic_runtime::Slot::new(&config, &shared);
-        ChatCalls::new(&config, Arc::new(executor), &slot).unwrap()
-    };
+    let calls = chat_calls(&source, &environment);
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")
         .body(Body::from(sent_body))

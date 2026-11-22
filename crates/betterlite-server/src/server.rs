@@ -186,47 +186,36 @@ pub(crate) fn application(
         client: executor.client.clone(),
     });
     let state = Arc::new(ServerState::new(config, Arc::clone(&executor), shared));
-    let calls = Arc::new(ChatCalls::new(
-        config,
-        Arc::clone(&executor),
-        &state.anthropic_runtime,
-    )?);
+    let slot = &state.anthropic_runtime;
+    let calls = Arc::new(ChatCalls::new(config, Arc::clone(&executor), slot)?);
     let counter = Arc::clone(&calls.counter);
     let vertex = vertex_embedding_calls(config, &executor, tasks)?;
     let read_through = state.model_read_through.read_through.clone();
-    let routed = router(
-        state,
-        shutting_down,
-        chat_routes_with_call_id(
-            calls,
-            config
-                .sections
-                .error_body_call_id
-                .include_call_id_in_error_body,
-        )?,
-        embedding_routes(executor, vertex, read_through),
-    )
+    let include_call_id = config
+        .sections
+        .error_body_call_id
+        .include_call_id_in_error_body;
+    let routes = chat_routes_with_call_id(calls, include_call_id)?;
+    let embeddings = embedding_routes(executor, vertex, read_through);
     // the completion route recovers an output-limit 400 with the counter the chat route counts prompts with
-    .layer(Extension(counter));
+    let routed = router(state, shutting_down, routes, embeddings).layer(Extension(counter));
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
         routed.route_layer(from_fn(filter_route)),
         &config.sections.request_size_limit,
         &config.sections.security_headers,
     );
+    let admission = AdmissionControl::from_settings(&config.sections.admission_control);
     let stack = AdmissionStack {
-        admission: Arc::new(AdmissionControl::from_settings(
-            &config.sections.admission_control,
-        )),
+        admission: Arc::new(admission),
         in_flight: Arc::new(InFlightRequests::default()),
     };
     let application = stack.wrap(stacked);
-    Ok(
-        match RootPaths::from_settings(&config.sections.request_root_paths) {
-            Some(paths) => paths.wrap(application),
-            None => application,
-        },
-    )
+    let rooted = RootPaths::from_settings(&config.sections.request_root_paths);
+    Ok(match rooted {
+        Some(paths) => paths.wrap(application),
+        None => application,
+    })
 }
 // the OpenAI-shaped error body every route renders, and the projections that fill it
 #[derive(serde::Serialize)]
