@@ -48,4 +48,7 @@ deviations:
   - what: "A supplied `openai.APIError` mock is raised unchanged, where LiteLLM's completion hands it to `exception_type` and answers `APIConnectionError`."
     why: The mock rule raises an APIError as is, and keeping the caller's object keeps `except` clauses and identity checks on it working.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6076-L6084
+  - what: "`config_completion` merges the config over the supplied arguments, where LiteLLM's `completion(**kwargs, **config_args)` raises `TypeError` on a key both carry."
+    why: The merge keeps LiteLLM's stated intent that config args overwrite supplied ones, and a config that works against LiteLLM passes each key only once.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8845-L8853
 kept_bugs: []
