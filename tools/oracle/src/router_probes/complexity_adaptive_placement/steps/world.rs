@@ -11,7 +11,6 @@ use betterlite_router::affinity_claims::local::LocalPins;
 use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::complexity_adaptive_placement::facts::{ModelDeclaration, ModelFacts};
 use betterlite_router::complexity_placement::TierPlacement;
-use betterlite_router::complexity_scoring::tier::{ComplexityTier, Tier};
 use betterlite_router::context_placement::ContextPlacement;
 use betterlite_router::context_placement::error::PlacementError;
 use betterlite_router::context_placement::facts::{ModelLimitKey, RouterModelInfo};
@@ -28,10 +27,6 @@ use crate::router_probes::error::OperationError;
 const MODEL_NAME: &str = "probe";
 const AFFINITY_CONFIG: &str = "probe-affinity";
 const SESSION_TTL: u32 = 3600;
-
-pub(super) fn tier(name: &str) -> Tier {
-    ComplexityTier::built_in(name).map_or_else(|| Tier::Named(name.to_owned()), Tier::BuiltIn)
-}
 
 // the case's pools as the tier set the router reads; its name order is the case's order
 fn tier_set(pools: &[PoolInput]) -> TierSet {

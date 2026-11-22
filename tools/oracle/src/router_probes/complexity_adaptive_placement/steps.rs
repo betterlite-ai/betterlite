@@ -12,11 +12,12 @@ use betterlite_router::complexity_adaptive_placement::facts::ModelFacts;
 use betterlite_router::complexity_adaptive_placement::pick::{PickRequest, Placed};
 use betterlite_router::complexity_adaptive_placement::settings::PlacementSettings;
 use betterlite_router::complexity_adaptive_placement::{AdaptivePlacement, PlacementSnapshot};
+use betterlite_router::complexity_scoring::tier::{ComplexityTier, Tier};
 use betterlite_router::router_predicates::JsonMap;
 use betterlite_router::tier_definitions::model::TierSet;
 use rust_decimal::Decimal;
 
-use self::world::{World, tier};
+use self::world::World;
 use super::wire::{DecisionOutput, Fields, Payload, PreferenceOutput};
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
@@ -88,9 +89,7 @@ pub(super) fn fields_for(
     warm(&mut router, payload)?;
     let context = world.context();
     let placement = world.placement(&context);
-    let classified = tier(&payload.classified_tier);
-    let floor = payload.hard_floor.as_deref().map(tier);
-    let ceiling = payload.hard_ceiling.as_deref().map(tier);
+    let (classified, floor, ceiling) = request_tiers(payload);
     let fit = fit_filter(payload);
     let mut kwargs = payload.kwargs_present.unwrap_or(true).then(JsonMap::new);
     let request = PickRequest {
@@ -151,6 +150,21 @@ fn fit_filter(payload: &Payload) -> Option<BTreeSet<String>> {
         .fit_filter
         .as_ref()
         .map(|models| models.iter().cloned().collect())
+}
+
+// the request's tiers: the classified one, then the optional floor and ceiling bounds
+fn request_tiers(payload: &Payload) -> (Tier, Option<Tier>, Option<Tier>) {
+    let classified = ComplexityTier::built_in(&payload.classified_tier).map_or_else(
+        || Tier::Named(payload.classified_tier.clone()),
+        Tier::BuiltIn,
+    );
+    let floor = payload.hard_floor.as_deref().map(|name| {
+        ComplexityTier::built_in(name).map_or_else(|| Tier::Named(name.to_owned()), Tier::BuiltIn)
+    });
+    let ceiling = payload.hard_ceiling.as_deref().map(|name| {
+        ComplexityTier::built_in(name).map_or_else(|| Tier::Named(name.to_owned()), Tier::BuiltIn)
+    });
+    (classified, floor, ceiling)
 }
 
 fn service(
