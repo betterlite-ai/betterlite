@@ -221,24 +221,10 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
             })
     }
 
-    // track_deployment_metrics.increment_deployment_successes_for_current_minute, which the probe seeds
-    pub fn increment_minute_successes(
-        &self,
-        deployment_id: &str,
-    ) -> Result<(), CooldownPolicyError> {
-        self.counters
-            .increment_successes_for_minute(deployment_id)
-            .map_err(|source| CooldownPolicyError::Counter {
-                model_id: deployment_id.to_owned(),
-                source,
-            })
-            .map(drop)
-    }
-
-    // track_deployment_metrics.get_deployment_failures_for_current_minute, which the probe reports
+    // B304's minute counters, which the probe seeds and reports through
     #[must_use]
-    pub fn failures_for_minute(&self, deployment_id: &str) -> i64 {
-        self.counters.failures_for_minute(deployment_id)
+    pub const fn counters(&self) -> &RouterCounters<S> {
+        &self.counters
     }
 }
 
