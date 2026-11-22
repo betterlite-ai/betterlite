@@ -1,0 +1,18 @@
+kind: helper
+name: responses-session-history-session-merge-no-messages
+call:
+  responses_session_history:
+    previous_response_id: ''
+    database: false
+    disable_spend_logs: false
+    replies: []
+    cold_storage: false
+    cold_objects: {}
+    cold_failures: []
+    request:
+      messages: []
+      model: gpt-4o
+      custom_llm_provider: openai
+env: {}
+compare:
+  ignore: []

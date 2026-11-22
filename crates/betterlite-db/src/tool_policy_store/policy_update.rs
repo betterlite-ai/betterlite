@@ -7,7 +7,7 @@ use crate::tool_records::queries::get_tool;
 use crate::tool_records::records::{LiteLLMToolTableRow, ToolInputPolicy, ToolOutputPolicy};
 
 use super::deadline::{
-    StatementBounds, StatementFailure, bounded_statement, cancel_statement, discard_uncancelled,
+    StatementBounds, StatementFailure, bounded_statement, cancel_statement, discard_expired,
 };
 use super::records::{ToolIdGenerator, ToolPolicyUpdate};
 
@@ -35,7 +35,7 @@ pub async fn update_tool_policy(
         Ok(()) => (),
         Err(failure) => {
             tracing::error!("tool_registry_writer update_tool_policy error: {failure}");
-            discard_uncancelled(connected, &failure);
+            discard_expired(connected, &failure);
             return None;
         }
     }
@@ -43,7 +43,7 @@ pub async fn update_tool_policy(
         Ok(row) => row,
         Err(failure) => {
             tracing::error!("tool_registry_writer update_tool_policy error: {failure}");
-            discard_uncancelled(connected, &failure);
+            discard_expired(connected, &failure);
             None
         }
     }
@@ -84,10 +84,12 @@ async fn read_back(
 ) -> Result<Option<LiteLLMToolTableRow>, StatementFailure> {
     match timeout(bounds.deadline, get_tool(Some(client), tool_name)).await {
         Ok(row) => Ok(row),
-        Err(_deadline_elapsed) => Err(StatementFailure::Expired {
-            deadline: bounds.deadline,
-            cancelled: cancel_statement(client, bounds).await,
-        }),
+        Err(_deadline_elapsed) => {
+            cancel_statement(client, bounds).await;
+            Err(StatementFailure::Expired {
+                deadline: bounds.deadline,
+            })
+        }
     }
 }
 
