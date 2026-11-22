@@ -1,0 +1,20 @@
+name: perplexity-embedding-extra-field
+config: |
+  model_list:
+    - model_name: pplx-embed
+      litellm_params:
+        model: perplexity/pplx-embed-v1-0.6b
+        api_base: "{{upstream}}"
+        api_key: oracle-perplexity-key
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/embeddings
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: pplx-embed, input: hello, encoding_format: float, foo: bar, extra_body: {baz: 1}}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, embedding: AH+B, index: 0}], model: pplx-embed-v1-0.6b, usage: {total_tokens: 2}}
+compare: {headers: [content-type], headers_present: [], upstream_headers: [authorization, content-type], ignore: []}
