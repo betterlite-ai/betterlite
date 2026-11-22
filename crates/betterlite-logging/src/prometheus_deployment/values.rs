@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_prometheus::label_value_record::LabelDumpValue;
+use rust_decimal::Decimal;
 
 use crate::prometheus::failure::exception::LabelException;
 
@@ -77,6 +78,15 @@ pub(super) fn failure_exception_status(exception: &LabelException) -> String {
     match exception.code.as_deref() {
         Some(code) if missing => code.to_owned(),
         Some(_) | None => status,
+    }
+}
+
+// a header value arrives as a JSON number or a numeric string
+pub(super) fn decimal_text(text: &str) -> Option<Decimal> {
+    if text.contains(['e', 'E']) {
+        Decimal::from_scientific(text).ok()
+    } else {
+        text.parse().ok()
     }
 }
 

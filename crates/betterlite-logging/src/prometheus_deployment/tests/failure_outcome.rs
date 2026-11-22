@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_prometheus::collector_factory::collector::{MetricUpdate, MetricValue};
@@ -14,8 +12,8 @@ use super::failure::set_llm_deployment_failure_metrics;
 use super::metric::DeploymentMetric;
 use super::requests::FailureRequest;
 use super::support::{
-    FakeCatalog, ProbeGauges, Recorded, call, capture_logs, exception, expected_labels, inc_amount,
-    json_object, labels_of, metric_of, now, payload_with, update_of,
+    FakeCatalog, ProbeGauges, assert_label_pairs, assert_labels, call, capture_logs, exception,
+    inc_amount, json_object, labels_of, metric_of, now, payload_with, update_of,
 };
 
 fn params(entries: &[(&str, Json)]) -> JsonObject {
@@ -30,69 +28,32 @@ fn selected_payload() -> StandardLoggingPayload {
     ])
 }
 
-fn total_labels(overrides: &[(&str, &str)]) -> BTreeMap<String, String> {
-    expected_labels("litellm_deployment_total_requests", overrides)
-}
+const STATE_LABELS: [(&str, &str); 4] = [
+    ("litellm_model_name", "gpt-4o"),
+    ("model_id", "model-1"),
+    ("api_base", "https://api.example"),
+    ("api_provider", "openai"),
+];
 
-fn failure_labels(overrides: &[(&str, &str)]) -> BTreeMap<String, String> {
-    expected_labels("litellm_deployment_failure_responses", overrides)
-}
+const SELECTED_FAILURE_LABELS: [(&str, &str); 8] = [
+    ("model_group", "group-a"),
+    ("requested_model", "group-a"),
+    ("litellm_model_name", "gpt-4o"),
+    ("model_id", "model-1"),
+    ("api_base", "https://api.example"),
+    ("api_provider", "openai"),
+    ("exception_status", "400"),
+    ("exception_class", "BadRequestError"),
+];
 
-fn assert_selected_state(events: &[Recorded]) {
-    assert_eq!(metric_of(&events[0]), "litellm_deployment_state");
-    assert_eq!(
-        update_of(&events[0]),
-        MetricUpdate::Set(MetricValue::Finite(Decimal::ONE))
-    );
-    assert_eq!(
-        labels_of(&events[0]),
-        &expected_labels(
-            "litellm_deployment_state",
-            &[
-                ("litellm_model_name", "gpt-4o"),
-                ("model_id", "model-1"),
-                ("api_base", "https://api.example"),
-                ("api_provider", "openai"),
-            ],
-        )
-    );
-}
-
-fn assert_selected_failure_labels(events: &[Recorded]) {
-    assert_eq!(
-        metric_of(&events[1]),
-        "litellm_deployment_failure_responses"
-    );
-    assert_eq!(update_of(&events[1]), inc_amount());
-    assert_eq!(
-        labels_of(&events[1]),
-        &failure_labels(&[
-            ("model_group", "group-a"),
-            ("requested_model", "group-a"),
-            ("litellm_model_name", "gpt-4o"),
-            ("model_id", "model-1"),
-            ("api_base", "https://api.example"),
-            ("api_provider", "openai"),
-            ("exception_status", "400"),
-            ("exception_class", "BadRequestError"),
-        ])
-    );
-}
-
-fn assert_selected_total_labels(events: &[Recorded]) {
-    assert_eq!(metric_of(&events[2]), "litellm_deployment_total_requests");
-    assert_eq!(
-        labels_of(&events[2]),
-        &total_labels(&[
-            ("model_group", "group-a"),
-            ("requested_model", "group-a"),
-            ("litellm_model_name", "gpt-4o"),
-            ("model_id", "model-1"),
-            ("api_base", "https://api.example"),
-            ("api_provider", "openai"),
-        ])
-    );
-}
+const SELECTED_TOTAL_LABELS: [(&str, &str); 6] = [
+    ("model_group", "group-a"),
+    ("requested_model", "group-a"),
+    ("litellm_model_name", "gpt-4o"),
+    ("model_id", "model-1"),
+    ("api_base", "https://api.example"),
+    ("api_provider", "openai"),
+];
 
 #[test]
 fn a_selected_failure_sets_partial_outage_then_the_counters() {
@@ -113,9 +74,24 @@ fn a_selected_failure_sets_partial_outage_then_the_counters() {
     );
     let events = gauges.updates();
     assert_eq!(events.len(), 3);
-    assert_selected_state(&events);
-    assert_selected_failure_labels(&events);
-    assert_selected_total_labels(&events);
+    assert_labels(&events, 0, "litellm_deployment_state", &STATE_LABELS);
+    assert_eq!(
+        update_of(&events[0]),
+        MetricUpdate::Set(MetricValue::Finite(Decimal::ONE))
+    );
+    assert_labels(
+        &events,
+        1,
+        "litellm_deployment_failure_responses",
+        &SELECTED_FAILURE_LABELS,
+    );
+    assert_eq!(update_of(&events[1]), inc_amount());
+    assert_labels(
+        &events,
+        2,
+        "litellm_deployment_total_requests",
+        &SELECTED_TOTAL_LABELS,
+    );
 }
 
 #[test]
@@ -142,23 +118,14 @@ fn a_selected_failure_without_an_exception_skips_the_failure_counter() {
     assert!(!labels_of(&events[1]).contains_key("exception_class"));
 }
 
-fn assert_rejected_deployment_labels(labels: &BTreeMap<String, String>) {
-    assert_eq!(
-        labels.get("litellm_model_name").map(String::as_str),
-        Some("")
-    );
-    assert_eq!(labels.get("model_id").map(String::as_str), Some(""));
-    assert_eq!(labels.get("api_base").map(String::as_str), Some(""));
-    assert_eq!(labels.get("api_provider").map(String::as_str), Some(""));
-    assert_eq!(
-        labels.get("requested_model").map(String::as_str),
-        Some("gpt-4o")
-    );
-    assert_eq!(
-        labels.get("model_group").map(String::as_str),
-        Some("group-a")
-    );
-}
+const REJECTED_LABELS: [(&str, &str); 6] = [
+    ("litellm_model_name", ""),
+    ("model_id", ""),
+    ("api_base", ""),
+    ("api_provider", ""),
+    ("requested_model", "gpt-4o"),
+    ("model_group", "group-a"),
+];
 
 #[test]
 fn proxy_rejected_before_routing_leaves_the_deployment_labels_empty() {
@@ -186,7 +153,7 @@ fn proxy_rejected_before_routing_leaves_the_deployment_labels_empty() {
         metric_of(&events[0]),
         "litellm_deployment_failure_responses"
     );
-    assert_rejected_deployment_labels(labels_of(&events[0]));
+    assert_label_pairs(labels_of(&events[0]), &REJECTED_LABELS);
 }
 
 #[test]
@@ -391,26 +358,14 @@ fn identity_metadata_payload() -> StandardLoggingPayload {
     ])
 }
 
-fn assert_payload_identity(labels: &BTreeMap<String, String>) {
-    assert_eq!(
-        labels.get("api_key_alias").map(String::as_str),
-        Some("payload-alias")
-    );
-    assert_eq!(labels.get("team").map(String::as_str), Some("auth-team"));
-    assert_eq!(
-        labels.get("team_alias").map(String::as_str),
-        Some("payload-team-alias")
-    );
-    assert_eq!(
-        labels.get("hashed_api_key").map(String::as_str),
-        Some("payload-hash")
-    );
-    assert_eq!(labels.get("client_ip").map(String::as_str), Some("1.2.3.4"));
-    assert_eq!(
-        labels.get("user_agent").map(String::as_str),
-        Some("test-agent")
-    );
-}
+const PAYLOAD_IDENTITY_LABELS: [(&str, &str); 6] = [
+    ("api_key_alias", "payload-alias"),
+    ("team", "auth-team"),
+    ("team_alias", "payload-team-alias"),
+    ("hashed_api_key", "payload-hash"),
+    ("client_ip", "1.2.3.4"),
+    ("user_agent", "test-agent"),
+];
 
 #[test]
 fn identity_labels_fall_through_a_falsy_b3880_result_to_the_payload_metadata() {
@@ -429,7 +384,7 @@ fn identity_labels_fall_through_a_falsy_b3880_result_to_the_payload_metadata() {
         },
     );
     let events = gauges.updates();
-    assert_payload_identity(labels_of(&events[1]));
+    assert_label_pairs(labels_of(&events[1]), &PAYLOAD_IDENTITY_LABELS);
     assert!(gauges.calls().contains(&call("failure_labels", "")));
 }
 

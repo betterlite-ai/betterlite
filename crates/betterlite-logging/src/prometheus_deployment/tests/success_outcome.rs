@@ -11,8 +11,9 @@ use super::metric::DeploymentMetric;
 use super::requests::SuccessRequest;
 use super::success::set_llm_deployment_success_metrics;
 use super::support::{
-    Fixture, ProbeGauges, Recorded, capture_logs, expected_labels, hidden_params, inc_amount,
-    json_object, labels_of, metric_of, now, number, payload_with, update_of,
+    Fixture, ProbeGauges, Recorded, assert_label_pairs, assert_labels, capture_logs,
+    expected_labels, hidden_params, inc_amount, json_object, labels_of, metric_of, now, number,
+    payload_with, update_of,
 };
 
 fn params(entries: &[(&str, Json)]) -> JsonObject {
@@ -80,6 +81,28 @@ struct Timing {
     completion_start_time: Option<Decimal>,
     output_tokens: Option<Decimal>,
 }
+
+const TPM_LIMIT_LABELS: [(&str, &str); 5] = [
+    ("model_group", "group-a"),
+    ("litellm_model_name", "gpt-4o"),
+    ("model_id", "model-1"),
+    ("api_base", "https://api.example"),
+    ("api_provider", "openai"),
+];
+
+const HEALTHY_STATE_LABELS: [(&str, &str); 4] = [
+    ("litellm_model_name", "gpt-4o"),
+    ("model_id", "model-1"),
+    ("api_base", "https://api.example"),
+    ("api_provider", "openai"),
+];
+
+const IDENTITY_LABELS: [(&str, &str); 4] = [
+    ("model_group", "group-a"),
+    ("hashed_api_key", "hash-1"),
+    ("api_key_alias", "alias-1"),
+    ("model_id", "value-model-id"),
+];
 
 fn request<'request>(
     values: &'request UserApiKeyLabelValues,
@@ -173,22 +196,6 @@ fn assert_success_metric_order(events: &[Recorded]) {
     );
 }
 
-fn assert_tpm_limit_labels(events: &[Recorded]) {
-    assert_eq!(
-        labels_of(&events[0]),
-        &expected_labels(
-            "litellm_deployment_tpm_limit",
-            &[
-                ("model_group", "group-a"),
-                ("litellm_model_name", "gpt-4o"),
-                ("model_id", "model-1"),
-                ("api_base", "https://api.example"),
-                ("api_provider", "openai"),
-            ],
-        )
-    );
-}
-
 fn assert_limit_updates(events: &[Recorded]) {
     assert_eq!(
         update_of(&events[0]),
@@ -213,21 +220,6 @@ fn assert_limit_updates(events: &[Recorded]) {
     assert_eq!(
         update_of(&events[5]),
         MetricUpdate::Set(MetricValue::Finite(Decimal::from(7_i64)))
-    );
-}
-
-fn assert_healthy_state_labels(events: &[Recorded]) {
-    assert_eq!(
-        labels_of(&events[6]),
-        &expected_labels(
-            "litellm_deployment_state",
-            &[
-                ("litellm_model_name", "gpt-4o"),
-                ("model_id", "model-1"),
-                ("api_base", "https://api.example"),
-                ("api_provider", "openai"),
-            ],
-        )
     );
 }
 
@@ -258,9 +250,19 @@ fn assert_success_and_total(events: &[Recorded]) {
 fn a_full_success_writes_every_metric_in_order() {
     let events = full_success_events();
     assert_success_metric_order(&events);
-    assert_tpm_limit_labels(&events);
+    assert_labels(
+        &events,
+        0,
+        "litellm_deployment_tpm_limit",
+        &TPM_LIMIT_LABELS,
+    );
     assert_limit_updates(&events);
-    assert_healthy_state_labels(&events);
+    assert_labels(
+        &events,
+        6,
+        "litellm_deployment_state",
+        &HEALTHY_STATE_LABELS,
+    );
     assert_success_and_total(&events);
     assert_eq!(
         update_of(&events[9]),
@@ -483,8 +485,9 @@ fn zero_output_tokens_are_not_an_error() {
             &litellm_params,
             Some(&payload),
             Timing {
+                stream: None,
+                completion_start_time: None,
                 output_tokens: Some(Decimal::ZERO),
-                ..Timing::default()
             },
         ),
     );
@@ -614,18 +617,7 @@ fn remaining_values_are_set_rather_than_incremented() {
         update_of(&event),
         MetricUpdate::Set(MetricValue::Finite(Decimal::from(11_i64)))
     );
-    assert_eq!(
-        labels_of(&event),
-        &expected_labels(
-            "litellm_remaining_requests_metric",
-            &[
-                ("model_group", "group-a"),
-                ("hashed_api_key", "hash-1"),
-                ("api_key_alias", "alias-1"),
-                ("model_id", "value-model-id"),
-            ],
-        )
-    );
+    assert_label_pairs(labels_of(&event), &IDENTITY_LABELS);
 }
 
 #[test]
@@ -699,21 +691,6 @@ fn overhead_and_token_header_payload() -> StandardLoggingPayload {
     ])
 }
 
-fn assert_overhead_metric_labels(events: &[Recorded]) {
-    assert_eq!(
-        labels_of(&events[0]),
-        &expected_labels(
-            "litellm_overhead_latency_metric",
-            &[
-                ("model_group", "group-a"),
-                ("hashed_api_key", "hash-1"),
-                ("api_key_alias", "alias-1"),
-                ("model_id", "value-model-id"),
-            ],
-        )
-    );
-}
-
 #[test]
 fn an_observed_header_and_overhead_use_the_metric_label_lists() {
     let gauges = ProbeGauges::new();
@@ -730,8 +707,12 @@ fn an_observed_header_and_overhead_use_the_metric_label_lists() {
         ),
     );
     let events = gauges.updates();
-    assert_eq!(metric_of(&events[0]), "litellm_overhead_latency_metric");
-    assert_overhead_metric_labels(&events);
+    assert_labels(
+        &events,
+        0,
+        "litellm_overhead_latency_metric",
+        &IDENTITY_LABELS,
+    );
     assert_eq!(
         update_of(&events[0]),
         MetricUpdate::Observe(MetricValue::Finite(Decimal::new(2, 3)))

@@ -3,13 +3,13 @@ use rust_decimal::Decimal;
 
 use super::metric::{DeploymentMetric, DeploymentState};
 use super::metrics::{DeploymentMetrics, DeploymentResult};
-use super::requests::DeploymentLabels;
+use super::requests::DeploymentLabels as Labels;
 use super::values::push_text;
 
 pub fn set_litellm_deployment_state<G>(
     metrics: &G,
     state: DeploymentState,
-    labels: DeploymentLabels<'_>,
+    labels: Labels<'_>,
 ) -> DeploymentResult<G>
 where
     G: DeploymentMetrics,
@@ -33,7 +33,7 @@ where
 }
 
 // ast-grep-ignore: no-one-line-functions - the three named setters are LiteLLM's entry points
-pub fn set_deployment_healthy<G>(metrics: &G, labels: DeploymentLabels<'_>) -> DeploymentResult<G>
+pub fn set_deployment_healthy<G>(metrics: &G, labels: Labels<'_>) -> DeploymentResult<G>
 where
     G: DeploymentMetrics,
 {
@@ -41,10 +41,7 @@ where
 }
 
 // ast-grep-ignore: no-one-line-functions - the three named setters are LiteLLM's entry points
-pub fn set_deployment_partial_outage<G>(
-    metrics: &G,
-    labels: DeploymentLabels<'_>,
-) -> DeploymentResult<G>
+pub fn set_deployment_partial_outage<G>(metrics: &G, labels: Labels<'_>) -> DeploymentResult<G>
 where
     G: DeploymentMetrics,
 {
@@ -52,10 +49,7 @@ where
 }
 
 // ast-grep-ignore: no-one-line-functions - the three named setters are LiteLLM's entry points
-pub fn set_deployment_complete_outage<G>(
-    metrics: &G,
-    labels: DeploymentLabels<'_>,
-) -> DeploymentResult<G>
+pub fn set_deployment_complete_outage<G>(metrics: &G, labels: Labels<'_>) -> DeploymentResult<G>
 where
     G: DeploymentMetrics,
 {

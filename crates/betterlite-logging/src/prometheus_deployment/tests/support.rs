@@ -92,23 +92,16 @@ impl RemovableMetric for ProbeMetric {
     }
 }
 
-// a bool on the test wire; the newtype keeps struct_excessive_bools off the three catalog answers
-#[derive(Clone, Copy)]
-pub(crate) struct Answer(bool);
-
+// one answer per catalog question: recognized, public and pattern route
 pub(crate) struct FakeCatalog {
-    pub(crate) recognized: Answer,
-    pub(crate) public: Answer,
-    pub(crate) pattern: Answer,
-    pub(crate) calls: Mutex<Vec<String>>,
+    answers: [bool; 3],
+    calls: Mutex<Vec<String>>,
 }
 
 impl FakeCatalog {
     pub(crate) fn rejecting() -> Self {
         Self {
-            recognized: Answer(false),
-            public: Answer(false),
-            pattern: Answer(false),
+            answers: [false; 3],
             calls: Mutex::new(Vec::new()),
         }
     }
@@ -127,15 +120,15 @@ impl RequestedModelCatalog for FakeCatalog {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(model.to_owned());
-        self.recognized.0
+        self.answers[0]
     }
 
     fn is_team_public_model(&self, _model: &str) -> bool {
-        self.public.0
+        self.answers[1]
     }
 
     fn matches_pattern_route(&self, _model: &str) -> bool {
-        self.pattern.0
+        self.answers[2]
     }
 }
 
@@ -599,6 +592,29 @@ pub(crate) fn expected_labels(
         labels.insert((*name).to_owned(), (*value).to_owned());
     }
     labels
+}
+
+pub(crate) fn assert_labels(
+    events: &[Recorded],
+    index: usize,
+    metric: &str,
+    overrides: &[(&str, &str)],
+) {
+    assert_eq!(metric_of(&events[index]), metric);
+    assert_eq!(
+        labels_of(&events[index]),
+        &expected_labels(metric, overrides)
+    );
+}
+
+pub(crate) fn assert_label_pairs(labels: &BTreeMap<String, String>, expected: &[(&str, &str)]) {
+    for (name, value) in expected {
+        assert_eq!(
+            labels.get(*name).map(String::as_str),
+            Some(*value),
+            "label {name}"
+        );
+    }
 }
 
 pub(crate) fn metric_of(record: &Recorded) -> &'static str {

@@ -1,15 +1,18 @@
-use std::str::FromStr as _;
+use std::time::Instant;
 
 use betterlite_models::call_helpers::metadata::{
     CallParams, InternalMetadata, litellm_metadata_from_params,
 };
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
 use rust_decimal::Decimal;
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::prometheus::failure::text_field;
-use crate::prometheus_label_projection::prometheus_label_factory::prometheus_label_factory;
+use crate::prometheus_label_projection::prometheus_label_factory::{
+    LabelSource, prometheus_label_factory,
+};
 use crate::prometheus_latency::guardrail_overhead::{
     GuardrailRecords, OverheadObservation, set_guardrail_overhead_metric,
 };
@@ -24,7 +27,7 @@ use super::metric::DeploymentMetric;
 use super::metrics::{DeploymentMetrics, DeploymentResult};
 use super::requests::{DeploymentLabels, SuccessRequest};
 use super::state::set_deployment_healthy;
-use super::values::object_field;
+use super::values::{decimal_text, object_field};
 
 const REMAINING_REQUESTS_HEADER: &str = "x_ratelimit_remaining_requests";
 const REMAINING_TOKENS_HEADER: &str = "x_ratelimit_remaining_tokens";
@@ -69,7 +72,9 @@ where
         api_provider: fields.llm_provider.as_deref().unwrap_or_default(),
     };
     set_deployment_healthy(metrics, outage)?;
-    record_success_totals(metrics, request)
+    let source = metrics.label_source(request.context);
+    record_success_totals(metrics, request.values, source, request.now)?;
+    record_latency(metrics, request, source)
 }
 
 fn success_fields(request: &SuccessRequest<'_>) -> SuccessFields {
@@ -92,24 +97,22 @@ fn success_fields(request: &SuccessRequest<'_>) -> SuccessFields {
     }
 }
 
-fn record_success_totals<G>(metrics: &G, request: &SuccessRequest<'_>) -> DeploymentResult<G>
+fn record_success_totals<G>(
+    metrics: &G,
+    values: &UserApiKeyLabelValues,
+    source: LabelSource<'_>,
+    now: Instant,
+) -> DeploymentResult<G>
 where
     G: DeploymentMetrics,
 {
-    let source = metrics.label_source(request.context);
-    metrics.increment_counter(
+    for metric in [
         DeploymentMetric::SuccessResponses,
-        request.values,
-        source,
-        request.now,
-    )?;
-    metrics.increment_counter(
         DeploymentMetric::TotalRequests,
-        request.values,
-        source,
-        request.now,
-    )?;
-    record_latency(metrics, request)
+    ] {
+        metrics.increment_counter(metric, values, source, now)?;
+    }
+    Ok(())
 }
 
 fn record_limits<G>(
@@ -253,15 +256,11 @@ fn header_amount(value: Option<&Json>, field: &str) -> Result<Option<Decimal>, H
     }
 }
 
-fn decimal_text(text: &str) -> Option<Decimal> {
-    if text.contains(['e', 'E']) {
-        Decimal::from_scientific(text).ok()
-    } else {
-        Decimal::from_str(text).ok()
-    }
-}
-
-fn record_latency<G>(metrics: &G, request: &SuccessRequest<'_>) -> DeploymentResult<G>
+fn record_latency<G>(
+    metrics: &G,
+    request: &SuccessRequest<'_>,
+    source: LabelSource<'_>,
+) -> DeploymentResult<G>
 where
     G: DeploymentMetrics,
 {
@@ -292,7 +291,7 @@ where
     let labels = prometheus_label_factory(
         metrics.labels_for(DeploymentMetric::LatencyPerOutputToken),
         request.values,
-        metrics.label_source(request.context),
+        source,
     )?;
     metrics.observe_histogram(DeploymentMetric::LatencyPerOutputToken, &labels, per_token);
     Ok(())
