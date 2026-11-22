@@ -146,9 +146,9 @@ fn grants_money_serializes_as_floats() {
         serde_json::from_str(r#"{"user_id": "u", "team_id": "t"}"#).unwrap();
     let team = team_row(r#"{"team_id": "t", "max_budget": 50, "spend": 12.25}"#);
     let value = serde_json::to_value(team_grants(&team, Some(&no_spend), None)).unwrap();
-    assert_eq!(value["team_member_spend"], serde_json::json!(0.0));
-    assert_eq!(value["team_max_budget"], serde_json::json!(50.0));
-    assert_eq!(value["team_spend"], serde_json::json!(12.25));
+    assert_eq!(value["team_member_spend"], serde_json::json!(0.0_f64));
+    assert_eq!(value["team_max_budget"], serde_json::json!(50.0_f64));
+    assert_eq!(value["team_spend"], serde_json::json!(12.25_f64));
     assert_eq!(value["team_soft_budget"], serde_json::Value::Null);
 }
 
