@@ -16,21 +16,22 @@ use indexmap::IndexMap;
 use super::{AuthenticatedRequest, DeploymentAffinityInputs, build, record_selection};
 
 fn section(checks: Option<&[&str]>, groups: Option<&[(&str, &[&str])]>) -> SectionSettings {
-    let mut optional: Option<Vec<String>> = None;
-    if let Some(checks) = checks {
-        optional = Some(checks.iter().map(|check| (*check).to_owned()).collect());
-    }
-    let mut config = None;
-    if let Some(groups) = groups {
-        let mut entries = IndexMap::with_capacity(groups.len());
-        for (group, flags) in groups {
-            entries.insert(
+    let optional = checks.map(|names| {
+        names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<String>>()
+    });
+    let config = groups.map(|entries| {
+        let mut map = IndexMap::with_capacity(entries.len());
+        for (group, flags) in entries {
+            map.insert(
                 (*group).to_owned(),
                 flags.iter().map(|flag| (*flag).to_owned()).collect(),
             );
         }
-        config = Some(entries);
-    }
+        map
+    });
     SectionSettings {
         optional_pre_call_checks: optional,
         model_group_affinity_config: config,
