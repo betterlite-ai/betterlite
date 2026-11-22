@@ -30,7 +30,10 @@ impl Composition {
     pub fn from_environment(environment: BTreeMap<String, String>) -> Self {
         Self {
             environment,
-            ..Self::default()
+            globals: Globals::default(),
+            chat_defaults: AzureChatSettings::default(),
+            o_series_defaults: OpenAiSettings::default(),
+            openai_system_messages_first: false,
         }
     }
     // the process environment is not a test's to set, so no test can change what this reads

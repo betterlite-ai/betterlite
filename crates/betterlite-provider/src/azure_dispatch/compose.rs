@@ -69,9 +69,7 @@ fn check_supplied(call: &ChatCall) {
     if check_dynamic_azure_params(call.credentials.api_version.as_deref(), query.as_ref())
         == Ok(true)
     {
-        tracing::debug!(
-            "the supplied Azure client's api_version changed, so the client is rebuilt"
-        );
+        tracing::debug!("the supplied Azure client's api_version changed, so it is rebuilt");
     }
 }
 fn chat_part(composition: &Composition, call: &ChatCall) -> Result<Prepared, AzureProviderError> {
