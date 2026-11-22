@@ -31,8 +31,5 @@ pub fn is_zero_price(value: &Json) -> bool {
 }
 
 fn is_zero_rate(number: &Number) -> bool {
-    match parse_decimal_lexeme(&number.to_string()) {
-        Ok(rate) => rate.is_zero(),
-        Err(_) => false,
-    }
+    parse_decimal_lexeme(&number.to_string()).is_ok_and(|rate| rate.is_zero())
 }
