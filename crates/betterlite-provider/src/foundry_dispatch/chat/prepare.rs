@@ -106,10 +106,8 @@ pub fn prepare(call: &Call<'_>, globals: &Globals<'_>) -> Result<Plan, PrepareEr
     let mut leaf = leaf_chat(call, globals, &resolved, &wire)?;
     // LiteLLM adds the stream flag after the provider transform, so a caller's extra_body cannot turn it off
     if call.stream {
-        leaf.body.insert(
-            String::from("stream"),
-            serde_json::to_value(JsonValue::Bool(true)).map_err(encode)?,
-        );
+        let flag = serde_json::to_value(JsonValue::Bool(true))?;
+        leaf.body.insert(String::from("stream"), flag);
     }
     let chat = assembled(&leaf, call, extra_headers.as_ref())?;
     let prepared = if call.stream {
