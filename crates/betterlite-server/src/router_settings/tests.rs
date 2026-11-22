@@ -38,6 +38,16 @@ fn response(document: &str) -> RouterSettingsResponse {
     settings_response(current_values(&config), &store)
 }
 
+fn assert_value_and_source(
+    answer: &RouterSettingsResponse,
+    key: &str,
+    expected_json: &str,
+    expected_source: FieldSource,
+) {
+    assert_eq!(answer.current_values.get(key), Some(&json(expected_json)));
+    assert_eq!(answer.source.get(key), Some(&expected_source));
+}
+
 #[rstest]
 #[case::strategy_default(
     "router_settings: {}",
@@ -208,16 +218,14 @@ fn router_settings_behaviors(
     #[case] expected_json: &str,
     #[case] expected_source: FieldSource,
 ) {
-    let expected = json(expected_json);
     let answer = response(document);
-    assert_eq!(answer.current_values.get(key), Some(&expected));
-    assert_eq!(answer.source.get(key), Some(&expected_source));
+    assert_value_and_source(&answer, key, expected_json, expected_source);
     let field = answer
         .fields
         .iter()
         .find(|field| field.field_name == key)
         .unwrap();
-    assert_eq!(field.field_value, expected);
+    assert_eq!(field.field_value, json(expected_json));
 }
 
 #[rstest]
@@ -294,9 +302,7 @@ fn router_settings_boundaries(
     #[case] expected_json: &str,
     #[case] expected_source: FieldSource,
 ) {
-    let answer = response(document);
-    assert_eq!(answer.current_values.get(key), Some(&json(expected_json)));
-    assert_eq!(answer.source.get(key), Some(&expected_source));
+    assert_value_and_source(&response(document), key, expected_json, expected_source);
 }
 
 #[test]
