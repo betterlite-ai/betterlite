@@ -11,6 +11,16 @@ deviations:
       param and code are the same; only the provider named on the exception can differ, and only when the caller
       passes a custom_llm_provider the model's own prefix contradicts.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2366-L2367
+  - what: >-
+      A provider call that times out inside aspeech reaches the caller as APIConnectionError with status 500. In
+      LiteLLM the OpenAI SDK raises APITimeoutError("Request timed out."), and exception_type's timeout preamble
+      turns it into litellm.Timeout with status 408.
+    why: >-
+      B1084's speech() reports a read deadline or connect timeout as the same Sdk APIConnectionError it reports for
+      any other transport failure, with betterlite's own text, so the wrapper has nothing that marks it as a
+      timeout. aspeech maps an Sdk APITimeoutError carrying the SDK's "Request timed out." to Timeout 408
+      (a_timed_out_transport_maps_as_a_timeout), so the gap closes once speech()'s sdk() keeps that class and text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2442-L2456
 kept_bugs:
   - what: >-
       When speech() returns a finished value instead of a coroutine, as chat-bridged Gemini TTS always does,

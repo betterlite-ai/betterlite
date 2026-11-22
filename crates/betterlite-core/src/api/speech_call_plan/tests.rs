@@ -432,6 +432,28 @@ async fn a_status_less_failure_maps_as_an_api_connection(
     assert_eq!(exception.message, error.to_string());
 }
 
+#[tokio::test]
+async fn a_timed_out_transport_maps_as_a_timeout() {
+    let timed_out = SpeechCallError::Sdk {
+        class: "APITimeoutError",
+        message: String::from("Request timed out."),
+    };
+    let outcome = run(call(NATIVE), vec![Scripted::Raise(timed_out)]).await;
+    let exception = outcome
+        .result
+        .as_ref()
+        .err()
+        .and_then(|thrown| thrown.exception(&redactor()))
+        .expect("a failure inside the try has a litellm class");
+    let SpeechFailure::Mapped(class @ ErrorClass::Timeout(_)) = &exception.failure else {
+        panic!("the SDK's timeout text reaches exception_type's timeout preamble");
+    };
+    let metadata = class.metadata();
+    assert_eq!(metadata.status_code, 408_u16);
+    assert_eq!(metadata.provider.as_deref(), Some("openai"));
+    assert_eq!(outcome.invocations, vec![invocation(NATIVE, None)]);
+}
+
 #[rstest]
 #[case::api_base_names_the_provider(
     supplied("tts-1", |speech| speech.api_base = Some(String::from(GROQ_BASE))),
