@@ -26,6 +26,8 @@ const INSERT_ROWS: &str =
 const CLEAR_ROW: &str =
     r#"UPDATE "LiteLLM_UISettings" SET ui_settings = NULL WHERE id = 'ui_settings'"#;
 
+const ROW_SETTINGS: &str = r#"{"enable_chat_ui": true}"#;
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -55,12 +57,7 @@ async fn database_repository_reads_the_ui_settings_row() {
     client
         .execute(
             INSERT_ROWS,
-            &[
-                &"user_banner",
-                &"{}",
-                &"ui_settings",
-                &r#"{"enable_chat_ui": true}"#,
-            ],
+            &[&"user_banner", &"{}", &"ui_settings", &ROW_SETTINGS],
         )
         .await
         .unwrap();
@@ -69,11 +66,11 @@ async fn database_repository_reads_the_ui_settings_row() {
     let text = found.expect("the row exists");
     assert_eq!(
         decode_stored_ui_settings(text.as_bytes()).unwrap(),
-        settings(r#"{"enable_chat_ui": true}"#)
+        settings(ROW_SETTINGS)
     );
-    let client = pool.get().await.unwrap();
-    client.execute(CLEAR_ROW, &[]).await.unwrap();
-    drop(client);
+    let updater = pool.get().await.unwrap();
+    updater.execute(CLEAR_ROW, &[]).await.unwrap();
+    drop(updater);
     assert_eq!(repository.stored_ui_settings().await.unwrap(), None);
     fixture.close_async().await.unwrap();
 }

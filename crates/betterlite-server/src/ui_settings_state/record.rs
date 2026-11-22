@@ -214,10 +214,7 @@ fn number_bool(name: &'static str, number: &Number) -> Result<UiSettingFlag, UiS
         }
         // pydantic turns an integral float into a bool only while it still fits an i64
         let bound = 2.0_f64.powi(63_i32);
-        if value.fract().partial_cmp(&0.0_f64) == Some(Ordering::Equal)
-            && value > -bound
-            && value < bound
-        {
+        if value.fract().partial_cmp(&0.0_f64) == Some(Ordering::Equal) && value.abs() < bound {
             return Err(UiSettingsError {
                 kind: UiSettingErrorKind::BoolParsing,
                 field: name,
