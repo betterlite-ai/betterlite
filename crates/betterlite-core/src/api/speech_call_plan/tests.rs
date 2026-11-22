@@ -423,7 +423,7 @@ async fn a_status_less_failure_maps_as_an_api_connection(
         .result
         .as_ref()
         .err()
-        .and_then(|failure| failure.exception(&redactor()))
+        .and_then(|thrown| thrown.exception(&redactor()))
         .expect("a failure inside the try has a litellm class");
     let SpeechFailure::Mapped(class @ ErrorClass::ApiConnection(_)) = &exception.failure else {
         panic!("a status-less failure becomes an APIConnectionError");

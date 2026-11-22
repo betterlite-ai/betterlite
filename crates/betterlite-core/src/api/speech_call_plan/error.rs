@@ -52,6 +52,8 @@ fn mapped(
                 message: message.clone(),
             }
         }
-        other => exception(other, model, provider, redactor),
+        other @ (SpeechCallError::Resolution(_)
+        | SpeechCallError::BadRequest { .. }
+        | SpeechCallError::Provider { .. }) => exception(other, model, provider, redactor),
     }
 }
