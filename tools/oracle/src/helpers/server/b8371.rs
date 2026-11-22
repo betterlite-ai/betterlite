@@ -18,8 +18,6 @@ use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use serde::Deserialize;
 
-const RETENTION_INTERVAL_KEY: &str = "maximum_spend_logs_retention_interval";
-
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
@@ -70,7 +68,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::CleanupTrigger { settings, start } => trigger_outcome(settings, *start),
+            Input::CleanupTrigger { settings, start } => Ok(trigger_outcome(settings, *start)),
             Input::ApplyRetention {
                 settings,
                 previous,
@@ -80,7 +78,7 @@ impl Helper for Op {
                 job_present,
                 add_fails,
                 start,
-            } => retention_outcome(&RetentionSetup {
+            } => Ok(retention_outcome(&RetentionSetup {
                 settings,
                 previous,
                 last_attempt: last_attempt.as_ref(),
@@ -89,7 +87,7 @@ impl Helper for Op {
                 presence: JobPresence::from(*job_present),
                 add_fails: *add_fails,
                 start: *start,
-            }),
+            })),
         }
     }
 }
@@ -112,7 +110,7 @@ struct ScheduleFixture {
 }
 
 impl ScheduleFixture {
-    fn context(&self) -> ScheduleContext<'_> {
+    const fn context(&self) -> ScheduleContext<'_> {
         ScheduleContext {
             stagger: &self.stagger,
             identity: "oracle",
@@ -123,7 +121,7 @@ impl ScheduleFixture {
     }
 }
 
-fn trigger_outcome(values: &BTreeMap<String, JsonValue>, start: DateTime<Utc>) -> HelperResult {
+fn trigger_outcome(values: &BTreeMap<String, JsonValue>, start: DateTime<Utc>) -> JsonValue {
     let fixture = ScheduleFixture {
         stagger: StaggerSettings::default(),
         database: TimeZoneDatabase::from_env(),
@@ -134,10 +132,10 @@ fn trigger_outcome(values: &BTreeMap<String, JsonValue>, start: DateTime<Utc>) -
     let trigger = cleanup_trigger(&settings, &context);
     let interval = interval_seconds(&settings, &context);
     let (kind, gap) = classification(trigger.as_deref(), interval, context.now);
-    Ok(serde_json::json!({ "kind": kind, "gap_seconds": gap }))
+    serde_json::json!({ "kind": kind, "gap_seconds": gap })
 }
 
-fn retention_outcome(setup: &RetentionSetup<'_>) -> HelperResult {
+fn retention_outcome(setup: &RetentionSetup<'_>) -> JsonValue {
     let fixture = ScheduleFixture {
         stagger: StaggerSettings::default(),
         database: TimeZoneDatabase::from_env(),
@@ -169,13 +167,13 @@ fn retention_outcome(setup: &RetentionSetup<'_>) -> HelperResult {
     );
     let interval = interval_seconds(&settings, &context);
     let (kind, gap) = classification(recording.trigger.as_deref(), interval, context.now);
-    Ok(serde_json::json!({
+    serde_json::json!({
         "added": recording.added,
         "removed": recording.removed,
         "job_present": recording.job_present,
         "kind": kind,
         "gap_seconds": gap,
-    }))
+    })
 }
 
 fn recording_scheduler(setup: &RetentionSetup<'_>) -> RecordingScheduler {
@@ -208,11 +206,11 @@ fn scheduler_option(
 
 // The trigger trait exposes only fire times, so the interval schedule is the one whose fire gap is the configured period.
 fn classification(
-    trigger: Option<&dyn Trigger>,
+    scheduled: Option<&dyn Trigger>,
     interval: Option<u64>,
     now: DateTime<Utc>,
 ) -> (Option<&'static str>, Option<u64>) {
-    let Some(trigger) = trigger else {
+    let Some(trigger) = scheduled else {
         return (None, None);
     };
     let gap = fire_gap(trigger, now);
