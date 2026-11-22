@@ -1,0 +1,5 @@
+kind: helper
+name: buffered-seed
+call: {"bedrock_reasoning_stream": {"step": {"buffered": {"reply": {"id": "chatcmpl-1", "created": 1700000000, "model": "m", "object": "chat.completion", "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "<reasoning>x</reasoning> y"}}]}, "headers": {"x-request-id": "r1"}}}}}
+env: {}
+compare: {ignore: []}
