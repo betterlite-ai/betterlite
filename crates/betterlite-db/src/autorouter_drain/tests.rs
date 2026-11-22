@@ -452,8 +452,13 @@ async fn close(fixture: PostgresFixture, store: PostgresStore) {
     fixture.close_async().await.expect("the fixture teardown");
 }
 
-async fn keyed_rows(session: &Client) -> Vec<(String, i32)> {
-    session
+struct RollupRows {
+    keyed: Vec<(String, i32)>,
+    users: Vec<(String, String, i32)>,
+}
+
+async fn rollup_rows(session: &Client) -> RollupRows {
+    let keyed = session
         .query(
             "SELECT api_key, turns FROM \"LiteLLM_AutoRouterSession\"",
             &[],
@@ -462,11 +467,8 @@ async fn keyed_rows(session: &Client) -> Vec<(String, i32)> {
         .unwrap()
         .iter()
         .map(|row| (row.get::<_, String>(0), row.get::<_, i32>(1)))
-        .collect()
-}
-
-async fn user_rows(session: &Client) -> Vec<(String, String, i32)> {
-    session
+        .collect();
+    let users = session
         .query(
             "SELECT user_id, api_key, turns FROM \"LiteLLM_AutoRouterUserSession\" ORDER BY user_id",
             &[],
@@ -481,7 +483,8 @@ async fn user_rows(session: &Client) -> Vec<(String, String, i32)> {
                 row.get::<_, i32>(2),
             )
         })
-        .collect()
+        .collect();
+    RollupRows { keyed, users }
 }
 
 #[tokio::test]
@@ -500,12 +503,10 @@ async fn postgres_flush_advances_both_session_scopes() {
         ])
         .await;
     let session = store.session().await.expect("the rollup session");
+    let rows = rollup_rows(&session).await;
+    assert_eq!(rows.keyed, vec![("key-a".to_owned(), 1_i32)]);
     assert_eq!(
-        keyed_rows(&session).await,
-        vec![("key-a".to_owned(), 1_i32)]
-    );
-    assert_eq!(
-        user_rows(&session).await,
+        rows.users,
         vec![
             ("user-a".to_owned(), "key-a".to_owned(), 1_i32),
             ("user-b".to_owned(), String::new(), 1_i32),
@@ -537,9 +538,10 @@ async fn postgres_failed_key_partition_still_writes_other_user_histories() {
             turn("key-a", "user-c", "session-1", 4),
         ])
         .await;
-    assert!(keyed_rows(&probe).await.is_empty());
+    let rows = rollup_rows(&probe).await;
+    assert!(rows.keyed.is_empty());
     assert_eq!(
-        user_rows(&probe).await,
+        rows.users,
         vec![
             ("user-b".to_owned(), "key-a".to_owned(), 1_i32),
             ("user-c".to_owned(), "key-a".to_owned(), 1_i32),
