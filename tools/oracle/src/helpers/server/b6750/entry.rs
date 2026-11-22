@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_models::resolution::{
     ProviderIdentity, ResolutionError, ResolutionRequest, ResolvedModel,
 };
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_redact::secret::Redactor;
 use betterlite_server::health_check_entry::ports::{CatalogMode, CatalogModes, ProviderResolver};
 use betterlite_server::health_check_entry::{
@@ -31,6 +31,7 @@ pub(super) struct ScriptedResolver {
     pub(super) requested: Mutex<Option<Requested>>,
 }
 
+#[derive(Clone)]
 pub(super) struct Requested {
     pub(super) model: String,
     pub(super) custom_llm_provider: Option<String>,
@@ -148,24 +149,29 @@ fn resolution_view(resolver: &ScriptedResolver) -> Value {
     let requested = resolver
         .requested
         .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let Some(call) = requested.as_ref() else {
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let Some(call) = requested else {
         return Value::Null;
     };
     json!({
-        "model": call.model.clone(),
-        "custom_llm_provider": call.custom_llm_provider.clone(),
-        "api_base": call.api_base.clone(),
-        "api_key": call.api_key.clone(),
+        "model": call.model,
+        "custom_llm_provider": call.custom_llm_provider,
+        "api_base": call.api_base,
+        "api_key": call.api_key,
     })
 }
 
 fn probe_view(recorder: &ProbeRecorder) -> Value {
-    let call = recorder.call.lock().unwrap_or_else(PoisonError::into_inner);
-    let Some(record) = call.as_ref() else {
+    let recorded = recorder
+        .call
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let Some(record) = recorded else {
         return Value::Null;
     };
-    json!({"name": record.name, "arguments": without_metadata(record.arguments.clone())})
+    json!({"name": record.name, "arguments": without_metadata(record.arguments)})
 }
 
 fn without_metadata(mut arguments: Value) -> Value {

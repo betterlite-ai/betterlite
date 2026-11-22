@@ -23,6 +23,7 @@ use super::RawRequest;
 const RAW_REQUEST_KEY: &str = "raw_request_typed_dict";
 
 // one probe call as the case observes it: which operation ran, with what arguments, through which logging object
+#[derive(Clone)]
 pub(super) struct ProbeRecord {
     pub(super) name: &'static str,
     pub(super) arguments: Value,

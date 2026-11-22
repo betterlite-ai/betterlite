@@ -42,9 +42,12 @@ pub(crate) struct Resolution {
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub(crate) struct RawRequest {
-    pub(crate) raw_request_api_base: Option<String>,
-    pub(crate) raw_request_body: Option<Value>,
-    pub(crate) raw_request_headers: Option<Value>,
+    #[serde(rename = "raw_request_api_base")]
+    pub(crate) api_base: Option<String>,
+    #[serde(rename = "raw_request_body")]
+    pub(crate) body: Option<Value>,
+    #[serde(rename = "raw_request_headers")]
+    pub(crate) headers: Option<Value>,
     pub(crate) error: Option<String>,
 }
 
