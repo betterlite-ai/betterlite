@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::types::RoutingStrategy;
 
@@ -20,7 +22,7 @@ impl DefaultValue {
             Self::Integer(value) => JsonValue::from(value),
             Self::Boolean(flag) => JsonValue::Bool(flag),
             Self::List => JsonValue::Array(Vec::new()),
-            Self::Map => JsonValue::Object(Default::default()),
+            Self::Map => JsonValue::Object(BTreeMap::new().into_iter().collect()),
         }
     }
 }

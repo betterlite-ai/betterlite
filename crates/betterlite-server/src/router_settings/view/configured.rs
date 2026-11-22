@@ -8,126 +8,169 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::types::Config;
 
 use self::strategy_arguments::strategy_args;
-use super::{number, serialized, text};
+use super::number;
 use crate::router_settings::catalog::strategy_name;
 
 mod strategy_arguments;
 
+type Writer = fn(&Config) -> Option<(&'static str, JsonValue)>;
+
 // the router_settings keys the loaded config proves were written, in the shape the config merge reports
-pub(super) fn configured_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    for written in [
-        router_values(config),
-        fallback_values(config),
-        timeout_values(config),
-        retry_values(config),
-        alias_values(config),
-        switch_values(config),
-        routing_group_values(config),
-        strategy_values(config),
-        parallel_values(config),
-    ] {
-        values.extend(written);
-    }
-    values
-}
-
-fn router_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    let router = &config.router_settings;
-    if let Some(strategy) = router.routing_strategy {
-        values.insert(
-            String::from("routing_strategy"),
-            text(strategy_name(strategy)),
-        );
-    }
-    if let Some(retries) = router.num_retries {
-        values.insert(String::from("num_retries"), JsonValue::from(retries));
-    }
-    if let Some(timeout) = router.timeout {
-        values.insert(String::from("timeout"), number(timeout));
-    }
-    if let Some(fails) = router.allowed_fails {
-        values.insert(String::from("allowed_fails"), JsonValue::from(fails));
-    }
-    if let Some(cooldown) = router.cooldown_time {
-        values.insert(String::from("cooldown_time"), number(cooldown));
-    }
-    values
-}
-
-fn fallback_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    let plans = &config.sections.fallback_plans;
-    if !config.router_settings.fallbacks.is_empty() {
+static WRITERS: [Writer; 17] = [
+    |config| {
+        config
+            .router_settings
+            .routing_strategy
+            .map(|strategy| ("routing_strategy", JsonValue::from(strategy_name(strategy))))
+    },
+    |config| {
+        config
+            .router_settings
+            .num_retries
+            .map(|retries| ("num_retries", JsonValue::from(retries)))
+    },
+    |config| {
+        config
+            .router_settings
+            .timeout
+            .map(|timeout| ("timeout", number(timeout)))
+    },
+    |config| {
+        config
+            .router_settings
+            .allowed_fails
+            .map(|fails| ("allowed_fails", JsonValue::from(fails)))
+    },
+    |config| {
+        config
+            .router_settings
+            .cooldown_time
+            .map(|cooldown| ("cooldown_time", number(cooldown)))
+    },
+    |config| {
         let fallbacks = &config.router_settings.fallbacks;
-        values.insert(String::from("fallbacks"), serialized(fallbacks));
-    }
-    if !plans.context_window_fallbacks.is_empty() {
-        let entries = &plans.context_window_fallbacks;
-        values.insert(
-            String::from("context_window_fallbacks"),
-            serialized(entries),
-        );
-    }
-    if !plans.content_policy_fallbacks.is_empty() {
-        let entries = &plans.content_policy_fallbacks;
-        values.insert(
-            String::from("content_policy_fallbacks"),
-            serialized(entries),
-        );
-    }
-    values
-}
+        (!fallbacks.is_empty()).then(|| {
+            (
+                "fallbacks",
+                serde_json::to_value(fallbacks).unwrap_or(JsonValue::Null),
+            )
+        })
+    },
+    |config| {
+        let entries = &config.sections.fallback_plans.context_window_fallbacks;
+        (!entries.is_empty()).then(|| {
+            (
+                "context_window_fallbacks",
+                serde_json::to_value(entries).unwrap_or(JsonValue::Null),
+            )
+        })
+    },
+    |config| {
+        let entries = &config.sections.fallback_plans.content_policy_fallbacks;
+        (!entries.is_empty()).then(|| {
+            (
+                "content_policy_fallbacks",
+                serde_json::to_value(entries).unwrap_or(JsonValue::Null),
+            )
+        })
+    },
+    |config| {
+        config
+            .sections
+            .routing_timeouts
+            .router
+            .stream_timeout
+            .map(|timeout| ("stream_timeout", number(timeout)))
+    },
+    |config| {
+        let timeouts = &config.sections.routing_timeouts.router;
+        let configured =
+            timeouts.default_timeout.is_some() || timeouts.default_stream_timeout.is_some();
+        configured.then(|| {
+            (
+                "default_litellm_params",
+                configured_default_params(timeouts),
+            )
+        })
+    },
+    |config| {
+        config
+            .sections
+            .retry_policy
+            .retry_policy
+            .as_ref()
+            .map(|policy| ("retry_policy", policy_value(policy)))
+    },
+    |config| {
+        let aliases = &config.sections.deployment_catalog.model_group_alias;
+        (!aliases.is_empty()).then(|| {
+            (
+                "model_group_alias",
+                JsonValue::Object(
+                    aliases
+                        .iter()
+                        .map(|(name, alias)| (name.clone(), alias_value(alias)))
+                        .collect(),
+                ),
+            )
+        })
+    },
+    |config| {
+        config
+            .sections
+            .static_eligibility
+            .enable_pre_call_checks
+            .then_some(("enable_pre_call_checks", JsonValue::Bool(true)))
+    },
+    |config| {
+        config
+            .sections
+            .cooldown_decisions
+            .disable_cooldowns
+            .then_some(("disable_cooldowns", JsonValue::Bool(true)))
+    },
+    |config| {
+        config.sections.routing_groups.as_ref().map(|groups| {
+            (
+                "routing_groups",
+                JsonValue::Array(groups.groups.iter().map(group_value).collect()),
+            )
+        })
+    },
+    |config| {
+        let args = strategy_args(config);
+        (!args.is_empty()).then(|| {
+            (
+                "routing_strategy_args",
+                JsonValue::Object(args.into_iter().collect()),
+            )
+        })
+    },
+    |config| {
+        config
+            .sections
+            .deployment_clients
+            .default_max_parallel_requests
+            .map(|parallel| ("default_max_parallel_requests", JsonValue::from(parallel)))
+    },
+];
 
-fn timeout_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    let timeouts = &config.sections.routing_timeouts.router;
-    if let Some(stream_timeout) = timeouts.stream_timeout {
-        values.insert(String::from("stream_timeout"), number(stream_timeout));
-    }
-    if timeouts.default_timeout.is_some() || timeouts.default_stream_timeout.is_some() {
-        values.insert(
-            String::from("default_litellm_params"),
-            configured_default_params(timeouts),
-        );
-    }
-    values
-}
-
-fn retry_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    if let Some(policy) = &config.sections.retry_policy.retry_policy {
-        values.insert(String::from("retry_policy"), policy_value(policy));
-    }
-    values
-}
-
-fn alias_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    let aliases = &config.sections.deployment_catalog.model_group_alias;
-    if aliases.is_empty() {
-        return values;
-    }
-    let written = aliases
-        .iter()
-        .map(|(name, alias)| (name.clone(), alias_value(alias)))
-        .collect();
-    values.insert(
-        String::from("model_group_alias"),
-        JsonValue::Object(written),
-    );
-    values
+pub(super) fn configured_values(config: &Config) -> BTreeMap<String, JsonValue> {
+    WRITERS
+        .into_iter()
+        .filter_map(|writer| writer(config))
+        .map(|(key, value)| (String::from(key), value))
+        .collect()
 }
 
 // a string alias stays a string, and an item that hides the alias keeps its two declared keys
 fn alias_value(alias: &GroupAlias) -> JsonValue {
     if !alias.hidden {
-        return text(&alias.model);
+        return JsonValue::from(alias.model.as_str());
     }
     JsonValue::Object(
         [
-            (String::from("model"), text(&alias.model)),
+            (String::from("model"), JsonValue::from(alias.model.as_str())),
             (String::from("hidden"), JsonValue::Bool(true)),
         ]
         .into_iter()
@@ -135,72 +178,31 @@ fn alias_value(alias: &GroupAlias) -> JsonValue {
     )
 }
 
-fn switch_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    if config.sections.static_eligibility.enable_pre_call_checks {
-        values.insert(
-            String::from("enable_pre_call_checks"),
-            JsonValue::Bool(true),
-        );
-    }
-    if config.sections.cooldown_decisions.disable_cooldowns {
-        values.insert(String::from("disable_cooldowns"), JsonValue::Bool(true));
-    }
-    values
-}
-
-fn routing_group_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    if let Some(groups) = &config.sections.routing_groups {
-        values.insert(String::from("routing_groups"), group_values(&groups.groups));
-    }
-    values
-}
-
-fn strategy_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    let args = strategy_args(config);
-    if !args.is_empty() {
-        values.insert(
-            String::from("routing_strategy_args"),
-            JsonValue::Object(args.into_iter().collect()),
-        );
-    }
-    values
-}
-
-fn parallel_values(config: &Config) -> BTreeMap<String, JsonValue> {
-    let mut values = BTreeMap::new();
-    if let Some(parallel) = config
-        .sections
-        .deployment_clients
-        .default_max_parallel_requests
-    {
-        values.insert(
-            String::from("default_max_parallel_requests"),
-            JsonValue::from(parallel),
-        );
-    }
-    values
-}
-
-fn group_values(groups: &[RoutingGroupSettings]) -> JsonValue {
-    JsonValue::Array(groups.iter().map(group_value).collect())
-}
-
 fn group_value(group: &RoutingGroupSettings) -> JsonValue {
     let mut value = BTreeMap::new();
-    value.insert(String::from("group_name"), text(&group.group_name));
+    value.insert(
+        String::from("group_name"),
+        JsonValue::from(group.group_name.as_str()),
+    );
     value.insert(
         String::from("models"),
-        JsonValue::Array(group.models.iter().map(|model| text(model)).collect()),
+        JsonValue::Array(
+            group
+                .models
+                .iter()
+                .map(|model| JsonValue::from(model.as_str()))
+                .collect(),
+        ),
     );
     value.insert(
         String::from("routing_strategy"),
-        text(&group.routing_strategy),
+        JsonValue::from(group.routing_strategy.as_str()),
     );
     if let Some(args) = &group.routing_strategy_args {
-        value.insert(String::from("routing_strategy_args"), serialized(args));
+        value.insert(
+            String::from("routing_strategy_args"),
+            serde_json::to_value(args).unwrap_or(JsonValue::Null),
+        );
     }
     if let Some(priorities) = &group.model_priorities {
         value.insert(

@@ -71,13 +71,14 @@ pub(crate) fn run(
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let config = load(&input.router_settings)?;
-    let answer = match input.endpoint {
-        Endpoint::Settings => as_json(&settings_response(
-            current_values(&config),
-            &settings_store(&config),
-        ))?,
-        Endpoint::Fields => as_json(&fields_response())?,
+    let serialized = match input.endpoint {
+        Endpoint::Settings => {
+            let response = settings_response(current_values(&config), &settings_store(&config));
+            serde_json::to_string(&response).map_err(invalid)?
+        }
+        Endpoint::Fields => serde_json::to_string(&fields_response()).map_err(invalid)?,
     };
+    let answer = serde_json::from_str(&serialized).map_err(invalid)?;
     Ok(ProbeOutput::RouterSettings(answer))
 }
 
@@ -111,11 +112,6 @@ fn without_nulls(value: JsonValue) -> JsonValue {
         JsonValue::Array(items) => JsonValue::Array(items.into_iter().map(without_nulls).collect()),
         other => other,
     }
-}
-
-fn as_json<T: Serialize>(answer: &T) -> Result<Json, OperationError> {
-    let text = serde_json::to_string(answer).map_err(invalid)?;
-    serde_json::from_str(&text).map_err(invalid)
 }
 
 fn invalid<E: Display>(error: E) -> OperationError {

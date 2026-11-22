@@ -41,7 +41,7 @@ pub struct RouterFieldsResponse {
 pub fn fields_response() -> RouterFieldsResponse {
     RouterFieldsResponse {
         fields: catalog_fields(),
-        routing_strategy_descriptions: descriptions(),
+        routing_strategy_descriptions: STRATEGY_DESCRIPTIONS.into_iter().collect(),
         routing_group_strategies: group_strategies(),
     }
 }
@@ -68,7 +68,7 @@ pub fn settings_response(
     RouterSettingsResponse {
         fields,
         current_values,
-        routing_strategy_descriptions: descriptions(),
+        routing_strategy_descriptions: STRATEGY_DESCRIPTIONS.into_iter().collect(),
         routing_group_strategies: group_strategies(),
         source,
     }
@@ -120,8 +120,4 @@ fn group_strategies() -> Vec<&'static str> {
     let mut strategies = strategy_options();
     strategies.push(PRIORITY_GROUP_STRATEGY);
     strategies
-}
-
-fn descriptions() -> BTreeMap<&'static str, &'static str> {
-    STRATEGY_DESCRIPTIONS.into_iter().collect()
 }

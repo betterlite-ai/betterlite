@@ -5,9 +5,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use betterlite_config::types::Config;
 
-use crate::router_settings::response::{
-    RouterFieldsResponse, RouterSettingsResponse, fields_response, settings_response,
-};
+use crate::router_settings::response::{fields_response, settings_response};
 use crate::router_settings::view::{current_values, settings_store};
 use crate::state::ServerState;
 
@@ -20,20 +18,17 @@ struct SettingsState {
 #[cfg_attr(test, mutants::skip)]
 pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
     Router::new()
-        .route("/router/settings", get(settings))
-        .route("/router/fields", get(fields))
+        .route(
+            "/router/settings",
+            get(|State(state): State<SettingsState>| async move {
+                Json(settings_response(
+                    current_values(&state.config),
+                    &settings_store(&state.config),
+                ))
+            }),
+        )
+        .route("/router/fields", get(|| async { Json(fields_response()) }))
         .with_state(SettingsState {
             config: Arc::new(state.config.clone()),
         })
-}
-
-#[cfg_attr(test, mutants::skip)]
-async fn settings(State(state): State<SettingsState>) -> Json<RouterSettingsResponse> {
-    let store = settings_store(&state.config);
-    Json(settings_response(current_values(&state.config), &store))
-}
-
-#[cfg_attr(test, mutants::skip)]
-async fn fields() -> Json<RouterFieldsResponse> {
-    Json(fields_response())
 }
