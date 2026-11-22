@@ -432,3 +432,60 @@ fn create_outcome_debug_names_the_form() {
     let done = direct.create(&create_call()).expect("the handler answers");
     assert!(format!("{done:?}").starts_with("Done("));
 }
+
+// kwargs.get("mock_response", None) is None for an explicit null, so the provider runs
+#[test]
+fn create_a_null_mock_response_is_absent() {
+    let mut fixture = Fixture::new();
+    let mut call = create_call();
+    call.mock_response = Some(Json::Null);
+
+    let outcome = fixture.create(&call).expect("the handler answers");
+
+    let CharacterOutcome::Done(character) = outcome else {
+        panic!("the handler answers directly");
+    };
+    assert_eq!(character, super::support::character());
+    assert_eq!(fixture.handler.creates.len(), 1);
+}
+
+// a timeout that is no usable duration is refused after the logging update and before the handler
+#[test]
+fn create_an_unusable_timeout_is_refused_after_logging() {
+    let mut fixture = Fixture::new();
+    let mut call = create_call();
+    call.timeout = Some(-1.0_f64);
+
+    let failure = fixture
+        .create(&call)
+        .expect_err("a negative deadline is unusable");
+
+    assert_eq!(
+        failure.error.to_string(),
+        "the request timeout of -1 seconds is not a usable duration"
+    );
+    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    assert!(fixture.handler.creates.is_empty());
+    assert_eq!(fixture.state().call_type, "video_create_character");
+}
+
+// extra_query and extra_body are accepted and never forwarded on a character call
+#[test]
+fn create_extra_query_and_body_are_not_forwarded() {
+    let mut fixture = Fixture::new();
+    let mut call = create_call();
+    call.extra_query = Some(indexmap::IndexMap::from([(
+        "api-version".to_owned(),
+        Json::Text("2024-01-01".to_owned()),
+    )]));
+    call.extra_body = Some(indexmap::IndexMap::from([(
+        "metadata".to_owned(),
+        Json::Bool(true),
+    )]));
+
+    fixture.create(&call).expect("the handler answers");
+
+    let params = &fixture.handler.creates[0].litellm_params;
+    assert!(!params.contains_key("api-version"));
+    assert!(!params.contains_key("metadata"));
+}
