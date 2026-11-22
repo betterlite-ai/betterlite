@@ -132,7 +132,7 @@ impl RequestScheduler {
             warning,
         })
     }
-    // save_queue against the tier that answered the read
+    // save_queue against the tier that answered the read; the callers box this future because the scheduler's await chain nests deeply
     pub(super) async fn change<F>(
         &self,
         model: &str,
@@ -141,27 +141,16 @@ impl RequestScheduler {
     where
         F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
     {
-        Box::pin(self.apply_change(model, &change)).await
-    }
-    // a shared answer mirrors into this worker's copy; a degraded one retries there instead
-    async fn apply_change<F>(
-        &self,
-        model: &str,
-        change: &F,
-    ) -> Result<Observed<Vec<SchedulerTuple>>, SchedulerError>
-    where
-        F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
-    {
         let key = queue::key(model)?;
         let Some(shared) = &self.shared else {
-            let (entries, _) = self.change_local(&key, model, change)?;
-            return Ok(Observed {
-                value: entries,
-                warning: None,
-            });
+            return self.change_without_shared(&key, model, &change);
         };
-        let carried = self.pending_changes(model);
-        match Box::pin(cas(shared, &key, model, change, self.local_ttl(), &carried)).await {
+        let carried = {
+            let guard = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.get(model).cloned().unwrap_or_default()
+        };
+        let ttl = self.local_ttl();
+        match Box::pin(cas(shared, &key, model, &change, ttl, &carried)).await {
             Ok(entries) => {
                 self.forget_changes(model, &carried);
                 self.mirror_local(&key, &entries)?;
@@ -172,14 +161,32 @@ impl RequestScheduler {
             }
             Err(SharedChange::Refused(error)) => Err(error),
             Err(SharedChange::Unavailable(warning)) => {
-                let (entries, fallback) = self.change_local(&key, model, change)?;
-                self.record_changes(model, fallback);
+                let (entries, fallback) = self.change_local(&key, model, &change)?;
+                let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+                let recorded = pending.entry(model.to_owned()).or_default();
+                recorded.extend(fallback);
                 Ok(Observed {
                     value: entries,
                     warning: Some(warning),
                 })
             }
         }
+    }
+    // the local tier of a scheduler with no shared store
+    fn change_without_shared<F>(
+        &self,
+        key: &RouteKey,
+        model: &str,
+        change: &F,
+    ) -> Result<Observed<Vec<SchedulerTuple>>, SchedulerError>
+    where
+        F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
+    {
+        let (entries, _) = self.change_local(key, model, change)?;
+        Ok(Observed {
+            value: entries,
+            warning: None,
+        })
     }
     // the fallback tier of a degraded shared read: one lock serializes this worker's read-modify-write
     fn change_local<F>(
@@ -209,16 +216,6 @@ impl RequestScheduler {
             .set(key, &RouteValue::Members(next), self.local_ttl())
             .map_err(|source| SchedulerError::Local { source })?;
         Ok((entries, changes))
-    }
-    // what the fallback tier changed while the shared tier was down, waiting for the next shared write
-    fn pending_changes(&self, model: &str) -> PendingChanges {
-        let pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
-        pending.get(model).cloned().unwrap_or_default()
-    }
-    // a fallback change stays recorded, the last one per member, until a shared write carries it over
-    fn record_changes(&self, model: &str, changes: PendingChanges) {
-        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
-        pending.entry(model.to_owned()).or_default().extend(changes);
     }
     // a shared write that carried the recorded changes leaves only what changed while it ran
     fn forget_changes(&self, model: &str, carried: &PendingChanges) {
