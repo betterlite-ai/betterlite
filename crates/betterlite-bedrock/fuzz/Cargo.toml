@@ -36,6 +36,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_reasoning_stream"
+path = "fuzz_targets/bedrock_reasoning_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_converse_content"
 path = "fuzz_targets/bedrock_converse_content.rs"
 test = false
@@ -150,6 +157,13 @@ bench = false
 [[bin]]
 name = "bedrock_other_rerank"
 path = "fuzz_targets/bedrock_other_rerank.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_other_stability_edits"
+path = "fuzz_targets/bedrock_other_stability_edits.rs"
 test = false
 doc = false
 bench = false

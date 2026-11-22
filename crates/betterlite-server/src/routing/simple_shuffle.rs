@@ -14,7 +14,17 @@ pub fn pick_deployment<'executor>(
         .iter()
         .filter(|deployment| deployment.model_group == model)
         .collect();
-    let candidates: Vec<Candidate> = group
+    pick_matching(executor, model, &group, "a model group")
+}
+
+// Router picks a model-group deployment and a litellm-model deployment with the same weighted shuffle
+pub fn pick_matching<'executor>(
+    executor: &'executor ChatExecutor,
+    model: &str,
+    matching: &[&'executor ChatDeployment],
+    subject: &str,
+) -> Result<&'executor ChatDeployment, ChatError> {
+    let candidates: Vec<Candidate> = matching
         .iter()
         .map(|deployment| Candidate {
             weight: deployment.weight,
@@ -36,11 +46,11 @@ pub fn pick_deployment<'executor>(
         Ok(index) => index,
         Err(ShuffleError::NoCandidates) => return Err(unknown()),
         Err(error @ ShuffleError::Weights { .. }) => {
-            tracing::error!(%error, model, "the deployments of a model group could not be weighed");
+            tracing::error!(%error, model, "the deployments of {subject} could not be weighed");
             return Err(unknown());
         }
     };
-    group.get(index).copied().ok_or_else(unknown)
+    matching.get(index).copied().ok_or_else(unknown)
 }
 
 mod tests;
