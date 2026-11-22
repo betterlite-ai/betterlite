@@ -1,0 +1,28 @@
+kind: helper
+name: dynamic-admission-at-threshold-enforces
+call:
+  b3052:
+    model: gpt-4
+    rpm: 100
+    tpm: 1000
+    window_size: 60
+    priority: prod
+    priority_reservation:
+      prod: 0.5
+    default_priority: 0.25
+    saturation_threshold: 0.5
+    saturation: 0.5
+    atomic:
+      overall_code: OK
+      statuses:
+        - code: OK
+          current_limit: 100
+          limit_remaining: 99
+          rate_limit_type: requests
+          descriptor_key: model_saturation_check
+          descriptor_value: gpt-4
+    tracking:
+      overall_code: OK
+      statuses: []
+env: {}
+compare: {ignore: []}

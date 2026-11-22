@@ -1,0 +1,1 @@
+{"object":"list","model":"pplx-embed-v1-0.6b","data":[{"object":"embedding","index":0,"embedding":"AH+B"}],"usage":{"prompt_tokens":0,"total_tokens":3}}

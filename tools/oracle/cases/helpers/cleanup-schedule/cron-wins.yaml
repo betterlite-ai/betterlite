@@ -1,0 +1,13 @@
+kind: helper
+name: cleanup-cron-wins-over-interval
+call:
+  b8371:
+    operation: cleanup_trigger
+    settings:
+      maximum_spend_logs_retention_period: "30d"
+      maximum_spend_logs_cleanup_cron: "* * * * *"
+      maximum_spend_logs_retention_interval: "30d"
+    start: "2026-01-01T00:00:00Z"
+env: {}
+compare:
+  ignore: []

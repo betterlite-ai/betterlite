@@ -1,0 +1,6 @@
+task: B620
+deviations:
+  - what: The buffered Amazon Bedrock runtime Chat Completions reply reports the reasoning text it split out of each string message content in RuntimeReply.choices, next to the ChatResponse, instead of on the response's message.reasoning_content field.
+    why: B004's ChatResponse and AssistantMessage have no reasoning_content field, so the shared reply type cannot carry it. The sidecar keeps the LiteLLM behavior of removing the tag block from content and appending the extracted reasoning to any reasoning already on the message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/chat_completions/transformation.py#L478-L487
+kept_bugs: []

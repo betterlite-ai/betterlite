@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-embedding-list-passthrough-and-usage
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "embedding", "urls": [], "headers": [], "requests": [], "replies": [{"body": "{\"data\": [{\"index\": 0, \"embedding\": [0.5, -0.25], \"object\": \"embedding\", \"extra\": \"kept\"}], \"usage\": {\"prompt_tokens\": 0, \"total_tokens\": 7}}", "status": 200, "headers": {}}, {"body": "{\"object\": \"list\", \"model\": \"served\", \"data\": [{\"index\": 0, \"embedding\": 5}, {\"index\": 1}], \"usage\": {\"total_tokens\": 9}}", "status": 200, "headers": {}}, {"body": "{\"data\": [{\"index\": 0, \"embedding\": null}], \"usage\": {\"prompt_tokens\": null, \"total_tokens\": 2}}", "status": 200, "headers": {}}, {"body": "{\"model\": \"pplx-embed-v1-0.6b\"}", "status": 200, "headers": {}}, {"body": "{\"data\": [\"ab\"]}", "status": 200, "headers": {}}, {"body": "upstream broke", "status": 502, "headers": {}}, {"body": "", "status": 500, "headers": {}}], "errors": []}

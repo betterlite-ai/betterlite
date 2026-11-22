@@ -1,0 +1,22 @@
+kind: helper
+name: unterminated-tag-flush
+call:
+  bedrock_reasoning_stream:
+    step:
+      split:
+        fragments: ["<reasoning>abc</rea"]
+        messages: ["<reasoning>abc", "<reason", "<reasoning>a</reasoning"]
+calls:
+  - bedrock_reasoning_stream:
+      step:
+        split:
+          fragments: ["<reason", "in"]
+          messages: []
+  - bedrock_reasoning_stream:
+      step:
+        chunks:
+          chunks:
+            - {id: c1, created: 10, model: m, choices: [{index: 0, delta: {content: "<reasoning>abc</rea"}}]}
+            - {id: c1, created: 10, model: m, choices: [{index: 0, delta: {}, finish_reason: stop}]}
+env: {}
+compare: {ignore: []}
