@@ -1,0 +1,21 @@
+task: B2209
+deviations:
+  - what: Provider payload and trace debug records omit the raw frame bytes, payload and trace contents; each warn-and-drop branch keeps its warning text and level.
+    why: Repository redaction rules prohibit logging raw trace or user payloads that LiteLLM includes in its Response dict, Parsed response and Trace event debug messages.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L226-L341
+  - what: Token counts are i64; a pre-processing sum or a prompt-plus-completion total that leaves the i64 range fails the response with a B682 BedrockError, where LiteLLM's Python ints grow without bound.
+    why: betterlite's usage wire record types every token count as i64, and a total outside i64 cannot be held or serialized for the gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L418-L426
+  - what: A trace event whose JSON nests deeper than serde_json's default recursion limit is dropped with the Failed to parse trace event JSON warning; LiteLLM's json.loads accepts deeper documents, and past the interpreter's own limit its per-frame catch logs Error processing event and drops that frame.
+    why: serde_json bounds nesting at parse time where Python's json module recurses on the C stack, so the depth at which each implementation gives up differs; betterlite keeps every parse failure a warn-and-drop frame.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L214-L222
+kept_bugs:
+  - what: A mid-stream exception or error frame is debug-logged and discarded, so the response succeeds with the content of the other frames.
+    why: A working InvokeAgent setup can rely on a stream that carries an error frame still returning its text rather than a client error, and the agent_error_frame case requires it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L262-L264
+  - what: The reply's model is always the trace's foundationModel, even when that is None, so the model passed to transform_response never survives.
+    why: LiteLLM reads usage_info.get("model", model) from a record that always carries the key; a working setup sees model null in the completion when no orchestration trace names one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L415
+  - what: A non-200 buffered response whose body decodes as event frames becomes a successful completion; the HTTP status is reused only when parsing fails.
+    why: LiteLLM has no status guard before parsing and uses the raw status only on failure, so a working setup reads the frames whenever they parse, whatever the status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L444-L473

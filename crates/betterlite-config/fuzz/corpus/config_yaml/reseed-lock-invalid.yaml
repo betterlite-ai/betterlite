@@ -1,0 +1,4 @@
+environment_variables:
+  SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE: "many"
+litellm_settings:
+  callbacks: ["gcs_bucket"]

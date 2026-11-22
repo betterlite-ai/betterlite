@@ -1,14 +1,14 @@
 id: B2209
 milestone: M3 providers
 title: Bedrock InvokeAgent event and trace decoding
-status: todo
+status: done
 depends_on: [B599, B682, B004, B171]
 file: tasks/B2209-invoke-agent-reply.yaml
 covers:
   - "litellm/llms/bedrock/chat/invoke_agent/transformation.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2890
