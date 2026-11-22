@@ -1,0 +1,28 @@
+kind: helper
+name: realtime-backend-size-limit
+call:
+  realtime_backend_transport_websocket:
+    provider:
+      kind: setup
+      setup: |
+        {"setup": {"model": "models/gemini-test", "generationConfig": {"responseModalities": ["AUDIO"]}, "inputAudioTranscription": {}}}
+      synthetic: null
+      error: null
+    model: gemini-test
+    url: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=key-1
+    api_base: null
+    api_key: key-1
+    headers:
+      Authorization: Bearer test
+    ssl_verify: true
+    max_message_size_bytes: 1024
+    dials:
+    - kind: connect
+    send_error: null
+    close_error: null
+    metadata: null
+    intent: null
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: '1024'
+compare:
+  ignore: []
