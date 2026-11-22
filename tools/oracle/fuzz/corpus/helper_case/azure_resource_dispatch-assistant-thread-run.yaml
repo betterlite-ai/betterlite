@@ -1,0 +1,8 @@
+kind: helper
+name: azure-resource-dispatch-assistant-thread-run-seed
+call:
+  azure_resource_dispatch:
+    case: assistant_thread_run
+    steps: []
+env: {}
+compare: {ignore: []}

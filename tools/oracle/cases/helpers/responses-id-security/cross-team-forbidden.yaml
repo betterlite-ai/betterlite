@@ -1,0 +1,63 @@
+kind: helper
+name: responses-id-security-cross-team-forbidden
+call:
+  responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_BHrmZ2bB6eh7R7gMGhG0T8AD1ADGFVMlvdYGYXMOTWSj-f-8MCrfZFpF9RBdG2Yf1oo-QXyTIZwr3KGnLq58g06wCMssuvJpLh6SpJNcB6A2bR9RLNwpoVL3HDi5aZTfwABfWbx5Lqn8hPuQxmSGZ2Jtfilx-58=
+calls:
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: null
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_BHrmZ2bB6eh7R7gMGhG0T8AD1ADGFVMlvdYGYXMOTWSj-f-8MCrfZFpF9RBdG2Yf1oo-QXyTIZwr3KGnLq58g06wCMssuvJpLh6SpJNcB6A2bR9RLNwpoVL3HDi5aZTfwABfWbx5Lqn8hPuQxmSGZ2Jtfilx-58=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aresponses
+    data:
+      previous_response_id: resp_BHrmZ2bB6eh7R7gMGhG0T8AD1ADGFVMlvdYGYXMOTWSj-f-8MCrfZFpF9RBdG2Yf1oo-QXyTIZwr3KGnLq58g06wCMssuvJpLh6SpJNcB6A2bR9RLNwpoVL3HDi5aZTfwABfWbx5Lqn8hPuQxmSGZ2Jtfilx-58=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: null
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: alist_input_items
+    data:
+      response_id: resp_BHrmZ2bB6eh7R7gMGhG0T8AD1ADGFVMlvdYGYXMOTWSj-f-8MCrfZFpF9RBdG2Yf1oo-QXyTIZwr3KGnLq58g06wCMssuvJpLh6SpJNcB6A2bR9RLNwpoVL3HDi5aZTfwABfWbx5Lqn8hPuQxmSGZ2Jtfilx-58=
+env: {}
+compare:
+  ignore: []

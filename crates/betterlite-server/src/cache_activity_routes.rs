@@ -1,7 +1,7 @@
 pub mod store;
 
 mod date;
-mod error;
+pub(crate) mod error;
 pub mod model;
 mod query;
 mod sql;

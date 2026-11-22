@@ -10,7 +10,9 @@ use axum::http::{Request, StatusCode};
 use betterlite_auth::auth_model_lists::access_groups::AccessGroupScope;
 use betterlite_auth::auth_model_lists::complete_list::{ListingFlags, ListingRequest};
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::types::Config;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::{Config, ProxyTrust};
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use indexmap::IndexMap;
@@ -237,6 +239,7 @@ fn listing_has_no_deployment_rows() {
         &config,
         &Shared {
             bundled_catalog: BundledCatalog::default().get(),
+            client: transport(),
         },
     );
     let groups = IndexMap::new();
@@ -252,4 +255,9 @@ fn listing_has_no_deployment_rows() {
         expanded.is_empty(),
         "the slot hands the listing no deployment rows, so a row's provider wildcard is never expanded"
     );
+}
+
+fn transport() -> ProxiedClient {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    ProxiedClient::outbound(&Arc::new(policy)).unwrap()
 }

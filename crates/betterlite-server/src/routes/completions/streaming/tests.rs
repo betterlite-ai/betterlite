@@ -34,7 +34,7 @@ use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
-use super::{StreamUsage, provider_stream, render};
+use super::{StreamRoute, StreamUsage, provider_stream, render};
 use crate::routes::completions::bridge::chat_stream_answer;
 use crate::server::application;
 use crate::server::chat_setup::chat_executor;
@@ -233,7 +233,10 @@ async fn provider_body(usage: StreamUsage, request: &str) -> Json {
         &deployment,
         &parsed,
         ControlOptions::default(),
-        usage,
+        StreamRoute {
+            usage,
+            anthropic: None,
+        },
     )
     .await
     .expect("provider stream");
@@ -318,7 +321,10 @@ async fn chat_stream_answer_decodes_the_chat_events() {
         &deployment,
         &parsed,
         ControlOptions::default(),
-        StreamUsage::Text,
+        StreamRoute {
+            usage: StreamUsage::Text,
+            anthropic: None,
+        },
     )
     .await
     .expect("provider stream");

@@ -1,0 +1,15 @@
+# AMAZON_NOVA_API_BASE and AMAZON_NOVA_API_KEY are read directly from the process environment
+model_list:
+  - model_name: nova
+    litellm_params:
+      model: amazon_nova/amazon.nova-pro-v1:0
+      amazon_nova:
+        max_completion_tokens: 64
+        max_tokens: 32
+        temperature: 1
+        top_p: 0
+        metadata: 7
+        tools:
+          - type: function
+            function:
+              name: lookup

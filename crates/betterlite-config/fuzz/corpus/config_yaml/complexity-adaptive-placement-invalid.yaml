@@ -1,0 +1,8 @@
+model_list:
+  - model_name: adaptive-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        adaptive: yes-please
+        tier_distance_penalty: -0.5
+        adaptive_eligible: every_tier

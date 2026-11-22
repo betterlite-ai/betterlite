@@ -1,0 +1,15 @@
+kind: helper
+name: b3340-remix-timeout-default-600
+call:
+  b3340:
+    operation: remix
+    litellm_call_id: call-remix-default
+    video_id: video_123
+    prompt: make it better
+    custom_llm_provider: openai
+    api_base: https://api.openai.com/v1
+    api_key: test-key
+    status: 200
+    body: '{"id": "video_123", "object": "video", "status": "completed", "seconds": "4", "model": "sora-2"}'
+env: {}
+compare: {ignore: []}

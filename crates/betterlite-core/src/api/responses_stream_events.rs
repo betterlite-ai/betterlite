@@ -44,7 +44,7 @@ pub trait ProjectQuotaCallback: Send + Sync {
         requested_model: Option<&str>,
         estimated_input_tokens: i64,
         estimated_output_tokens: i64,
-    );
+    ) -> Result<(), ErrorClass>;
 }
 
 // B509's OpenAI config answers this through B1114's ResponsesProviderConfig

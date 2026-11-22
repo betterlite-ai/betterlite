@@ -249,10 +249,16 @@ fn a_provider_without_a_container_config_is_a_clear_error() {
         failure.error.to_string(),
         "Container provider config not found for provider: acme"
     );
-    let ErrorClass::ApiConnection(context) = &failure.class else {
-        panic!("expected an api connection, got {:?}", failure.class);
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("expected a bad request, got {:?}", failure.class);
     };
-    assert_eq!(context.provider.as_deref(), Some("acme"));
+    assert_eq!(details.status.0, 400);
+    assert_eq!(
+        details.message,
+        "Container provider config not found for provider: acme"
+    );
+    assert_eq!(details.provider.as_deref(), Some("acme"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert!(fixture.lookup.providers().is_empty());
     assert!(fixture.requests().is_empty());
 }
@@ -268,6 +274,16 @@ fn a_provider_whose_config_is_missing_is_the_same_error() {
         failure.error.to_string(),
         "Container provider config not found for provider: openai"
     );
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("expected a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(
+        details.message,
+        "Container provider config not found for provider: openai"
+    );
+    assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(fixture.lookup.providers(), vec![ProviderId::Openai]);
     assert!(fixture.requests().is_empty());
 }

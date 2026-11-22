@@ -1,0 +1,14 @@
+kind: helper
+name: b3340-list-call-type-video-list
+call:
+  b3340:
+    operation: list
+    litellm_call_id: call-list-logging
+    custom_llm_provider: openai
+    api_base: https://api.openai.com/v1
+    api_key: test-key
+    user: user-1
+    status: 200
+    body: '{"object": "list", "data": [{"id": "video_123", "object": "video", "status": "completed", "seconds": "4", "model": "sora-2"}], "has_more": false}'
+env: {}
+compare: {ignore: []}

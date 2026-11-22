@@ -1,0 +1,40 @@
+kind: helper
+name: responses-ws-frame-policy-seed
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: quota
+      message: '{"type": "response.create", "input": [{"content": "abcd"}], "max_output_tokens": 7}'
+      authorized_model: gpt-4o
+      verdicts: [accept, rate_limit]
+      refuse_send: false
+    - kind: create
+      message: '{"type": "response.create", "model": "client", "input": "a@example.com"}'
+      authorized_model: gpt-4o
+      defaults:
+        fill_missing: {temperature: 0.2}
+        overrides: {}
+      guardrails:
+      - {a@example.com: <EMAIL_ADDRESS_1>}
+      request_data: {}
+    - kind: unmask
+      message: '{"type": "response.output_text.delta", "delta": "<EMAIL_ADDRESS_1>"}'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: completed
+      message: '{"type": "response.completed", "response": {"output": [{"content": [{"text": "a@example.com"}]}]}}'
+      guardrails:
+      - {a@example.com: <EMAIL_ADDRESS_1>}
+      request_data: {}
+    - kind: failure
+      events:
+      - {type: error, error: {code: rate_limit_exceeded}}
+    - kind: wrap
+      litellm_metadata: {encrypted_content_affinity_enabled: true, model_info: {id: m}}
+      event: {type: response.output_item.added, item: {encrypted_content: cipher}}
+    - kind: sets
+      candidates: [error, response.output_item.done]
+env: {}
+compare:
+  ignore: []
