@@ -139,9 +139,9 @@ async fn peek(service: &RequestScheduler, model: &str, request_id: &str) -> Repl
         head: observed.value,
     }))
 }
-struct Queued<'a> {
+struct Queued<'queued> {
     priority: u8,
-    request_id: &'a str,
+    request_id: &'queued str,
     healthy: usize,
 }
 // the scripted provider is reached only after the queue lets the request run
