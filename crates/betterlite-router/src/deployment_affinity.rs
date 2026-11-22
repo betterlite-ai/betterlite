@@ -198,7 +198,11 @@ impl DeploymentAffinity {
         } else {
             None
         };
-        // LiteLLM returns here too when neither metadata channel holds a model_info dict
+        let caller_key = user_key.as_deref().filter(|_| user_key_enabled);
+        // LiteLLM returns here too when no caller or session identity can claim
+        if caller_key.is_none() && session_id.is_none() {
+            return Ok(());
+        }
         let Some(model_info) = request
             .model_info
             .or_else(|| json::metadata_model_info(kwargs))
@@ -219,7 +223,7 @@ impl DeploymentAffinity {
             }
         };
         let pin = AffinityPin(IndexMap::from([("model_id".to_owned(), model_id.clone())]));
-        if user_key_enabled && let Some(caller) = user_key.as_deref() {
+        if let Some(caller) = caller_key {
             let key = affinity_cache_key(model_group, caller);
             self.claim_pin(key, &pin, self.settings.ttl_seconds).await;
         }
