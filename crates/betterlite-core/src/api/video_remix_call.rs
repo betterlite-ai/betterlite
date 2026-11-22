@@ -268,3 +268,6 @@ mod async_wrapper;
 
 #[path = "video_remix_call/tests/unsupported_provider.rs"]
 mod unsupported_provider;
+
+#[path = "video_remix_call/tests/extra_params.rs"]
+mod extra_params;
