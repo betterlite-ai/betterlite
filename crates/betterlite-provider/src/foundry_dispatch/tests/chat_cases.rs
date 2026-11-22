@@ -1,5 +1,6 @@
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
+use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::message_content::Content;
 use indexmap::IndexMap;
@@ -13,6 +14,7 @@ use crate::foundry_dispatch::fixtures::logger::RecordingLogger;
 use crate::foundry_dispatch::route::{self, Route};
 use crate::openai_dispatch::logging::LoggedCall;
 use crate::operation::{ChatCompletion, OperationError, OperationResult};
+use crate::prepared::deployment::Deployment;
 
 const STREAM_REPLY: &str = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\ndata: {\"id\":\"chatcmpl-foundry\"}\n\n";
 
@@ -21,7 +23,6 @@ pub(super) fn chat_case() {
     deployment_key_reply();
     global_key_fallback();
     stream_body_carries_stream();
-    buffered_body_carries_stream();
     other_routes_skip_chat();
 }
 
@@ -81,60 +82,44 @@ fn global_key_fallback() {
     );
 }
 
-// a streamed azure_ai body forces stream true after the transform, so a caller's extra_body cannot turn it off
+// a streamed body forces stream true after the transform, while a buffered body carries stream false
 fn stream_body_carries_stream() {
     let env = Env::default();
     let deployment = support::deployment(BASE, Some(KEY));
-    let request = support::simple_request("mistral-large");
-    let streaming = chat::prepare::prepare(
-        &chat_call(&request, &deployment, "mistral-large", true),
-        &env.globals(),
-    )
-    .expect("the stream plan");
-    let sent: JsonValue =
-        serde_json::from_slice(&stream_http(&streaming.prepared).body).expect("the stream body");
-    assert_eq!(field(&sent, "stream"), &JsonValue::Bool(true));
-    // the flag lands after the leaf merges extra_body, so a false value there cannot turn the stream off
-    let with_extra_body = support::request(
+    let plain = support::simple_request("mistral-large");
+    let streamed = prepared_body(&plain, &deployment, true, &env);
+    assert_eq!(field(&streamed, "stream"), &JsonValue::Bool(true));
+    let buffered = prepared_body(&plain, &deployment, false, &env);
+    assert_eq!(field(&buffered, "stream"), &JsonValue::Bool(false));
+    // the streamed flag lands after the leaf merges extra_body, so a false value there cannot turn the stream off
+    let false_extra = support::request(
         r#"{"model":"mistral-large","messages":[{"role":"user","content":"hi"}],"extra_body":{"stream":false}}"#,
     );
-    let overridden = chat::prepare::prepare(
-        &chat_call(&with_extra_body, &deployment, "mistral-large", true),
-        &env.globals(),
-    )
-    .expect("the overridden stream plan");
-    let overridden_sent: JsonValue =
-        serde_json::from_slice(&stream_http(&overridden.prepared).body)
-            .expect("the overridden stream body");
-    assert_eq!(field(&overridden_sent, "stream"), &JsonValue::Bool(true));
-}
-
-// a buffered azure_ai call carries stream false, and its extra_body still overrides the flag
-fn buffered_body_carries_stream() {
-    let env = Env::default();
-    let deployment = support::deployment(BASE, Some(KEY));
-    let request = support::simple_request("mistral-large");
-    let buffered = chat::prepare::prepare(
-        &chat_call(&request, &deployment, "mistral-large", false),
-        &env.globals(),
-    )
-    .expect("the buffered plan");
-    let body: JsonValue =
-        serde_json::from_slice(&chat_http(&buffered.prepared).body).expect("the buffered body");
-    assert_eq!(field(&body, "stream"), &JsonValue::Bool(false));
-    // a buffered call's extra_body still overrides the flag the params carry
-    let buffered_override = support::request(
+    let forced = prepared_body(&false_extra, &deployment, true, &env);
+    assert_eq!(field(&forced, "stream"), &JsonValue::Bool(true));
+    // a buffered call's extra_body still overrides the flag the optional params carry
+    let true_extra = support::request(
         r#"{"model":"mistral-large","messages":[{"role":"user","content":"hi"}],"extra_body":{"stream":true}}"#,
     );
-    let buffered_overridden = chat::prepare::prepare(
-        &chat_call(&buffered_override, &deployment, "mistral-large", false),
-        &env.globals(),
-    )
-    .expect("the buffered override plan");
-    let overridden_body: JsonValue =
-        serde_json::from_slice(&chat_http(&buffered_overridden.prepared).body)
-            .expect("the buffered override body");
-    assert_eq!(field(&overridden_body, "stream"), &JsonValue::Bool(true));
+    let overridden = prepared_body(&true_extra, &deployment, false, &env);
+    assert_eq!(field(&overridden, "stream"), &JsonValue::Bool(true));
+}
+
+// The body the chat dispatch sends for this request and stream flag
+fn prepared_body(
+    request: &ChatRequest,
+    deployment: &Deployment,
+    stream: bool,
+    env: &Env,
+) -> JsonValue {
+    let call = chat_call(request, deployment, "mistral-large", stream);
+    let plan = chat::prepare::prepare(&call, &env.globals()).expect("the chat plan");
+    let http = if stream {
+        stream_http(&plan.prepared)
+    } else {
+        chat_http(&plan.prepared)
+    };
+    serde_json::from_slice(&http.body).expect("the sent body")
 }
 
 // neither the agents nor the claude model reaches the chat leaf
