@@ -198,11 +198,13 @@ impl PreCallHookError {
     // a batch limiter reports through the same rejection types this hook raises
     fn from_limiter_error(error: CallTypeRateLimitError) -> Self {
         match error {
-            CallTypeRateLimitError::RateLimited(error) => Self::RateLimited(Box::new(error)),
-            CallTypeRateLimitError::Unverifiable(error) => {
-                Self::Admission(WindowedAdmissionError::Unverifiable(error))
+            CallTypeRateLimitError::RateLimited(rate_limited) => {
+                Self::RateLimited(Box::new(rate_limited))
             }
-            CallTypeRateLimitError::Hook(error) => error,
+            CallTypeRateLimitError::Unverifiable(unverifiable) => {
+                Self::Admission(WindowedAdmissionError::Unverifiable(unverifiable))
+            }
+            CallTypeRateLimitError::Hook(hook) => hook,
         }
     }
 
@@ -214,11 +216,11 @@ impl PreCallHookError {
             | Self::Project(ProjectAdmissionError::RateLimited(error)) => {
                 Some(PreCallHookRejection::RateLimited(error))
             }
-            Self::Admission(WindowedAdmissionError::Unverifiable(error))
-            | Self::Admission(WindowedAdmissionError::Gauges(GaugeError::Unverifiable(error)))
-            | Self::Admission(WindowedAdmissionError::Settlement(SettlementError::Unverifiable(
-                error,
-            )))
+            Self::Admission(
+                WindowedAdmissionError::Unverifiable(error)
+                | WindowedAdmissionError::Gauges(GaugeError::Unverifiable(error))
+                | WindowedAdmissionError::Settlement(SettlementError::Unverifiable(error)),
+            )
             | Self::Reservation(TokenReservationError::Settlement(
                 SettlementError::Unverifiable(error),
             ))

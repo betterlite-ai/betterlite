@@ -9,7 +9,6 @@ use crate::pre_call_hook::common::{parallel_counter_keys, project_rate_limit};
 use crate::pre_call_hook::{PreCallHookError, RateLimitPreCallHook, RequestCapacityGuard};
 use crate::request_stash::RequestStashSlot;
 use crate::token_estimation::RequestData;
-use crate::windowed_admission::SlotIdGenerator as _;
 use crate::windowed_admission::{
     AdmissionRequest, OK_CODE, OVER_LIMIT_CODE, WindowedAdmission, WindowedAdmissionError,
 };
@@ -174,22 +173,18 @@ impl ReleaseTask {
 }
 
 async fn admitted(status: &mut watch::Receiver<AdmissionStatus>) -> bool {
-    match status
+    status
         .wait_for(|value| !matches!(value, AdmissionStatus::Pending))
         .await
-    {
-        Ok(value) => matches!(*value, AdmissionStatus::Finished { admitted: true }),
-        Err(_) => false,
-    }
+        .is_ok_and(|value| matches!(*value, AdmissionStatus::Finished { admitted: true }))
 }
 
 async fn release_capacity_slot(gauges: &ConcurrencyGauges, acquisition: &ParallelSlotAcquisition) {
     let slot = RequestStashSlot::default();
     let stash = slot.get_or_create();
-    {
-        let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.parallel_slot = Some(acquisition.clone());
-    }
+    let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+    state.parallel_slot = Some(acquisition.clone());
+    drop(state);
     gauges
         .release_stashed_parallel_slot(Some(&stash), false)
         .await;

@@ -107,7 +107,7 @@ pub(super) async fn reserve_project_io(
 }
 
 async fn reject(
-    context: &mut FlowContext<'_>,
+    context: &FlowContext<'_>,
     response: &RateLimitResponse,
 ) -> Result<TpmReservationState, PreCallHookError> {
     context

@@ -12,7 +12,7 @@ use super::support::{
     proxy_rate_limit, requests_key, scopes, snapshot, token_window,
 };
 use crate::fail_closed::RateLimitUnverifiableError;
-use crate::limiter_assembly::{CallTypeRateLimitError, CallTypeRateLimiter as _};
+use crate::limiter_assembly::{CallTypeRateLimitError, CallTypeRateLimiter};
 use crate::limiter_records::{RateLimitResponse, RateLimitType, RateLimitedModel};
 use crate::pre_call_hook::{PreCallHookError, PreCallHookRejection};
 use crate::project_admission::ProjectAdmissionError;
@@ -24,7 +24,9 @@ use crate::windowed_admission::WindowedAdmissionError;
 async fn hook_hands_a_batch_call_to_the_batch_limiter() {
     let batch = BatchLimiter::succeeding();
     let mut parts = Parts::new(Vec::new(), Vec::new(), None);
-    parts.batch_limiter = Some(Arc::clone(&batch));
+    let batch_clone = Arc::clone(&batch);
+    let batch_limiter: Arc<dyn CallTypeRateLimiter> = batch_clone;
+    parts.batch_limiter = Some(batch_limiter);
     let fixture = Fixture::new(&parts);
     let auth = support::auth(r#"{"api_key": "key-1", "rpm_limit": 10}"#);
     let mut data = support::data(r#"{"model": "gpt4"}"#);
@@ -471,11 +473,11 @@ async fn hook_trait_impl_returns_the_proxy_error_for_a_rejected_request() {
         .await
         .expect_err("the first pass is over the request limit");
 
-    let CallTypeRateLimitError::RateLimited(error) = error else {
+    let CallTypeRateLimitError::RateLimited(rate_limited) = error else {
         panic!("the first pass rejection is the 429");
     };
     assert!(
-        error
+        rate_limited
             .message
             .starts_with("Rate limit exceeded for api_key: key-1")
     );
@@ -494,11 +496,11 @@ async fn hook_trait_impl_returns_the_missing_batch_limiter_error() {
         .await
         .expect_err("the batch call needs a batch limiter");
 
-    let CallTypeRateLimitError::Hook(error) = error else {
+    let CallTypeRateLimitError::Hook(hook) = error else {
         panic!("the missing batch limiter is not a rate-limit rejection");
     };
     assert!(matches!(
-        error,
+        hook,
         PreCallHookError::MissingBatchLimiter {
             call_type: CallType::AcreateBatch
         }

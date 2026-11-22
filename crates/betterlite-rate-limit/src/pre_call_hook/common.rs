@@ -7,9 +7,9 @@ use betterlite_error::proxy_rate_limit_error::{
 use betterlite_error::rate_limit::ProxyRateLimitError;
 
 use crate::limiter_records::{
-    LimiterClock as _, PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_OTPM_DESCRIPTOR_KEY,
-    ParallelSlotAcquisition, RateLimitDescriptor, RateLimitResponse, RateLimitType,
-    RateLimitedModel, create_rate_limit_keys,
+    PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_OTPM_DESCRIPTOR_KEY, ParallelSlotAcquisition,
+    RateLimitDescriptor, RateLimitResponse, RateLimitType, RateLimitedModel,
+    create_rate_limit_keys,
 };
 use crate::model_descriptors::ModelDescriptorBuilder;
 use crate::pre_call_hook::RateLimitPreCallHook;

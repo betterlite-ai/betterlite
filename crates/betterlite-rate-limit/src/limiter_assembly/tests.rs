@@ -120,10 +120,10 @@ async fn assembly_batch_limiter_returns_the_proxy_rate_limit_error() {
         .async_pre_call_hook(&user, &RequestData::new(), CallType::AcreateBatch, &stash)
         .await
         .unwrap_err();
-    let CallTypeRateLimitError::RateLimited(error) = error else {
+    let CallTypeRateLimitError::RateLimited(rate_limited) = error else {
         panic!("the fake limiter reports the rate-limited rejection");
     };
-    assert_eq!(error.category, RateLimitCategory::LitellmRateLimit);
+    assert_eq!(rate_limited.category, RateLimitCategory::LitellmRateLimit);
 }
 
 #[test]

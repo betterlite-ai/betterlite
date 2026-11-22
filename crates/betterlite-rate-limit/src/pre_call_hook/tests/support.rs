@@ -359,7 +359,7 @@ impl Fixture {
         let health = Arc::clone(&probes.health_handle);
         let tasks = Arc::new(TaskTracker::new());
         let assembly = assembly(parts, wiring);
-        let hook = hook(parts, assembly, probes, Arc::clone(&tasks));
+        let hook = hook(assembly, probes, Arc::clone(&tasks));
         Self {
             hook,
             recorder,
@@ -431,8 +431,10 @@ fn probes(parts: &Parts) -> Probes {
         .collect();
     let tags = Arc::new(MapResolver::new(&tag_pairs));
     let health = Arc::new(health_source(parts.failing_health));
-    let tag_handle: Arc<dyn TagRateLimitResolver> = Arc::clone(&tags);
-    let health_handle: Arc<dyn DeploymentHealthSource> = Arc::clone(&health);
+    let tag_clone = Arc::clone(&tags);
+    let tag_handle: Arc<dyn TagRateLimitResolver> = tag_clone;
+    let health_clone = Arc::clone(&health);
+    let health_handle: Arc<dyn DeploymentHealthSource> = health_clone;
     Probes {
         model_groups: Arc::new(GroupMap::from_pairs(&parts.groups)),
         agents: Arc::new(FixedRegistry(parts.agents.clone())),
@@ -465,7 +467,6 @@ fn assembly(parts: &Parts, wiring: Wiring) -> Arc<RateLimiterAssembly> {
 }
 
 fn hook(
-    parts: &Parts,
     assembly: Arc<RateLimiterAssembly>,
     probes: Probes,
     tasks: Arc<TaskTracker>,
@@ -733,8 +734,8 @@ impl Captured {
     }
 
     pub(crate) fn text(&self) -> String {
-        let bytes = self.0.lock().map(|bytes| bytes.clone());
-        String::from_utf8_lossy(&bytes.unwrap_or_default()).into_owned()
+        let bytes = self.0.lock().map(|bytes| bytes.clone()).unwrap_or_default();
+        String::from_utf8(bytes).unwrap_or_default()
     }
 }
 

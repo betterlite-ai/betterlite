@@ -2,7 +2,6 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_core::routes::CallType;
 
-use crate::limiter_assembly::CallTypeRateLimiter as _;
 use crate::limiter_assembly::selection::{LimiterChoice, select_call_type_limiter};
 use crate::limiter_records::{ParallelSlotAcquisition, RateLimitDescriptor, RateLimitResponse};
 use crate::model_descriptors::ModelDescriptorBuilder;
@@ -14,7 +13,6 @@ use crate::pre_call_hook::{PreCallHookError, PreCallHookRequest, RateLimitPreCal
 use crate::request_scopes::body_text;
 use crate::request_stash::{RequestStash, RequestStashSlot};
 use crate::token_estimation::output_cap::CapEndpoint;
-use crate::windowed_admission::SlotIdGenerator as _;
 use crate::windowed_admission::{AdmissionRequest, OVER_LIMIT_CODE};
 
 use super::reservation;
@@ -123,8 +121,8 @@ async fn first_pass(
     if response.overall_code == OVER_LIMIT_CODE {
         return reject_first_pass(hook, &response, descriptors, requested_model);
     }
-    let slot = slot_id.map(|slot_id| ParallelSlotAcquisition {
-        slot_id,
+    let slot = slot_id.map(|id| ParallelSlotAcquisition {
+        slot_id: id,
         counter_keys,
     });
     store_first_pass(stash, &response, slot);
