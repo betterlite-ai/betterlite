@@ -113,6 +113,10 @@ async fn a_rejection_stops_before_later_groups() {
             vec![(USER.to_owned(), amount("4"))],
         ]
     );
+    assert_eq!(
+        calls.spends,
+        vec![KEY.to_owned(), USER.to_owned(), TEAM.to_owned()]
+    );
     release_entries_best_effort(&fake, &mut applied, amount("4")).await;
     assert_eq!(value_of(&fake, KEY), Some(Decimal::ZERO));
     assert_eq!(value_of(&fake, USER), Some(amount("3")));
