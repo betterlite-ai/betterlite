@@ -89,6 +89,7 @@ fn cross_user_forbidden(#[case] user: Option<&str>, #[case] team: Option<&str>) 
     ));
     assert_eq!(error.status_code(), 403);
     assert_eq!(error.to_string(), USER_DETAIL);
+    assert_eq!(Forbidden::User.detail(), USER_DETAIL);
     assert_eq!(payload, before);
 
     // the user check runs before the team check, so a wrong team alone gives the user detail
@@ -130,6 +131,7 @@ fn cross_team_forbidden(#[case] team: Option<&str>) {
     ));
     assert_eq!(error.status_code(), 403);
     assert_eq!(error.to_string(), TEAM_DETAIL);
+    assert_eq!(Forbidden::Team.detail(), TEAM_DETAIL);
     assert_eq!(payload, before);
 
     // an owner id with no team id never reaches the team check
@@ -451,6 +453,7 @@ fn default_unmanaged_denial(#[case] unmanaged_id: &str) {
     ));
     assert_eq!(error.status_code(), 403);
     assert_eq!(error.to_string(), UNMANAGED_DETAIL);
+    assert_eq!(Forbidden::Unmanaged.detail(), UNMANAGED_DETAIL);
     assert_eq!(payload, before);
 }
 
@@ -931,6 +934,19 @@ fn id_at_the_size_limit_still_decodes() {
     let over = format!("{wire}a");
     assert_eq!(
         decode_owned_response_id(over.as_bytes(), &cipher, limits).unwrap(),
+        DecodedResponseId::Unmanaged
+    );
+
+    // a tiny limit rejects an over-limit id whose ciphertext is still intact
+    let tiny = ApiLimits {
+        max_json_bytes: 8,
+        max_event_bytes: 8,
+        max_items: 1,
+    };
+    let prefixed = format!("prefix{owned}");
+    assert!(prefixed.len() > tiny.max_json_bytes);
+    assert_eq!(
+        decode_owned_response_id(prefixed.as_bytes(), &cipher, tiny).unwrap(),
         DecodedResponseId::Unmanaged
     );
 }
