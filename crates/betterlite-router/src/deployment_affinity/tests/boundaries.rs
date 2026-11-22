@@ -168,7 +168,7 @@ pub(super) async fn hook_session_only_with_marker() {
     );
     fixture.hook(&hook_kwargs, None).await.unwrap();
     let healthy = pool(&["a", "b"]);
-    let kwargs = metadata(&[("session_id", text("s1"))]);
+    let kwargs = marked_session_metadata("s1", 30);
     assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["a"]);
 }
 
