@@ -368,7 +368,7 @@ fn stream_of(
     let CallOutcome::Stream(stream) = outcome else {
         panic!("a provider stream becomes the Responses iterator");
     };
-    stream
+    *stream
 }
 
 fn messages_of(arguments: &IndexMap<String, Value>) -> Vec<Value> {

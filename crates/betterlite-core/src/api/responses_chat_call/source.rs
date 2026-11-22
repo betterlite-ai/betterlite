@@ -79,15 +79,8 @@ impl ResponsesChunkSource {
 
     async fn advance(&mut self) -> Result<Option<Json>, StreamFailure> {
         loop {
-            if let Some(payload) = self.pending.pop_front() {
-                if payload.trim_ascii() == DONE_SENTINEL {
-                    self.phase = Phase::Done;
-                    continue;
-                }
-                match self.shape(&payload)? {
-                    Some(chunk) => return Ok(Some(chunk)),
-                    None => continue,
-                }
+            if let Some(chunk) = self.take_pending()? {
+                return Ok(Some(chunk));
             }
             if self.phase == Phase::Done || self.phase == Phase::Exhausted {
                 return self.closing();
@@ -104,6 +97,20 @@ impl ResponsesChunkSource {
                 .map_err(|error| unclassified(&error))?;
             self.pending.extend(events);
         }
+    }
+
+    // A queued payload latches [DONE], shapes a chunk, or shapes nothing, in which case the next one is tried.
+    fn take_pending(&mut self) -> Result<Option<Json>, StreamFailure> {
+        while let Some(payload) = self.pending.pop_front() {
+            if payload.trim_ascii() == DONE_SENTINEL {
+                self.phase = Phase::Done;
+                continue;
+            }
+            if let Some(chunk) = self.shape(&payload)? {
+                return Ok(Some(chunk));
+            }
+        }
+        Ok(None)
     }
 
     // None means the payload shaped no chunk, after the wrapper stripped a usage-only one.

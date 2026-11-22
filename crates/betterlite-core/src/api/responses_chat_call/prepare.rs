@@ -20,10 +20,15 @@ pub fn prepare<Completions, Context>(
     call: &mut ResponseCall<'_, Context>,
 ) -> Result<Prepared, PreparationError> {
     let (bridged, input) = hoisted_request(call)?;
-    let request = serde_json::to_value(&bridged).map_err(|source| PreparationError::Encode {
+    let encoded = serde_json::to_value(&bridged).map_err(|source| PreparationError::Encode {
         field: "request",
         source,
     })?;
+    let request: Json =
+        serde_json::from_value(encoded).map_err(|source| PreparationError::Encode {
+            field: "request",
+            source,
+        })?;
     let (mapped, mapped_json) = mapped_request(deps, call, &bridged)?;
     Ok(Prepared {
         input,
@@ -78,12 +83,13 @@ fn mapped_request<Completions, Context>(
     call: &mut ResponseCall<'_, Context>,
     bridged: &ResponsesApiRequestParams,
 ) -> Result<(ChatCompletionRequest, Map<String, Value>), PreparationError> {
+    let logging = call.logging.take();
     let mut assembly = RequestAssembly {
         limits: deps.limits,
         cache: deps.cache,
         parameters: deps.parameters,
         probe: deps.probe,
-        logging: call.logging.as_deref_mut(),
+        logging,
         route_all_openai_to_responses: deps.route_all_openai_to_responses,
     };
     let context = RequestContext {
