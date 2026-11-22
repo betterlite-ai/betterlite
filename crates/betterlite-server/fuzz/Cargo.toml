@@ -482,3 +482,10 @@ path = "fuzz_targets/guardrail_register.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "stored_ui_settings"
+path = "fuzz_targets/stored_ui_settings.rs"
+test = false
+doc = false
+bench = false
