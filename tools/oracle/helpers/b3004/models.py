@@ -1,4 +1,5 @@
-from typing import Final, NotRequired, Protocol, TypedDict
+from collections.abc import Awaitable, Callable
+from typing import Final, NotRequired, Protocol, TypedDict, runtime_checkable
 
 from litellm.proxy._types import LiteLLM_TeamTable, LiteLLM_UserTable, UserAPIKeyAuth
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
@@ -55,20 +56,27 @@ class Reservation(TypedDict):
 RESERVATION: Final[TypeAdapter[Reservation]] = TypeAdapter(Reservation)
 
 
-# reserve_budget_for_request as the case calls it: nine positional arguments, then the enforcement flag
+# reserve_budget_for_request's positional parameters, through fail_closed_budget_enforcement
+ReserveBudget = Callable[
+    [
+        dict[str, JsonValue],
+        str,
+        Router | None,
+        UserAPIKeyAuth | None,
+        LiteLLM_TeamTable | None,
+        LiteLLM_UserTable | None,
+        PrismaClient | None,
+        UserApiKeyCache,
+        ProxyLogging,
+        str | None,
+        None,
+        bool,
+        bool,
+    ],
+    Awaitable[dict[str, JsonValue] | None],
+]
+
+
+@runtime_checkable
 class BudgetReservation(Protocol):
-    async def reserve_budget_for_request(
-        self,
-        request_body: dict[str, JsonValue],
-        route: str,
-        llm_router: Router | None,
-        valid_token: UserAPIKeyAuth | None,
-        team_object: LiteLLM_TeamTable | None,
-        user_object: LiteLLM_UserTable | None,
-        prisma_client: PrismaClient | None,
-        user_api_key_cache: UserApiKeyCache,
-        proxy_logging_obj: ProxyLogging,
-        /,
-        *,
-        fail_closed_budget_enforcement: bool = False,
-    ) -> dict[str, JsonValue] | None: ...
+    reserve_budget_for_request: ReserveBudget

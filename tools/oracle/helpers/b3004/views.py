@@ -1,23 +1,20 @@
 from collections.abc import Mapping
 
-from fastapi import HTTPException
 from litellm.exceptions import BudgetExceededError
-from litellm.models.team import BudgetLimitEntry
 from litellm.proxy._types import LiteLLM_UserTable, UserAPIKeyAuth
 from pydantic import JsonValue
+from starlette.exceptions import HTTPException
 
 from .fakes import ScriptedMemory
 from .models import RESERVATION, Entry, TokenInput, UserInput
 
 
 def token_object(data: TokenInput) -> UserAPIKeyAuth:
-    limits: list[BudgetLimitEntry] | None = None
+    limits: list[dict[str, JsonValue]] | None = None
     budget_limits = data.get("budget_limits")
     if budget_limits is not None:
         limits = [
-            BudgetLimitEntry(
-                budget_duration=limit["budget_duration"], max_budget=limit["max_budget"]
-            )
+            {"budget_duration": limit["budget_duration"], "max_budget": limit["max_budget"]}
             for limit in budget_limits
         ]
     metadata: dict[str, JsonValue] = {"throttle_on_budget_exceeded": data["throttle"]}
@@ -71,10 +68,8 @@ def error_json(error: BudgetExceededError | HTTPException) -> JsonValue:
 
 
 def memory_json(memory: ScriptedMemory) -> JsonValue:
-    described: dict[str, JsonValue] = {
-        key: amount for key, amount in sorted(memory.values.items())
-    }
-    return described
+    amounts: Mapping[str, JsonValue] = memory.values
+    return dict(amounts)
 
 
 def invalidated_json(memory: ScriptedMemory) -> JsonValue:

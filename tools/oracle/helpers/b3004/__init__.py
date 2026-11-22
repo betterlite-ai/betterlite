@@ -2,12 +2,12 @@ import asyncio
 from typing import Final
 
 import litellm
-from fastapi import HTTPException
 from litellm.exceptions import BudgetExceededError
 from litellm.proxy import proxy_server
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.spend_tracking import budget_reservation
-from pydantic import JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 from .fakes import InputCost, InputTokens, MaxCost, Pipeline, ScriptedMemory, ScriptedSources
 from .models import BudgetReservation, Input
@@ -23,6 +23,11 @@ from .views import (
 ROUTE: Final[str] = "/v1/chat/completions"
 REQUEST_BODY: Final[dict[str, JsonValue]] = {"model": "gpt-4o"}
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+ARBITRARY: Final[ConfigDict] = ConfigDict(arbitrary_types_allowed=True)
+# the LiteLLM module the case drives, read through the protocol its call is typed against
+ENGINE: Final[BudgetReservation] = TypeAdapter(
+    BudgetReservation, config=ARBITRARY
+).validate_python(budget_reservation)
 
 
 async def execute(data: Input) -> dict[str, JsonValue]:
@@ -55,12 +60,10 @@ async def execute(data: Input) -> dict[str, JsonValue]:
     budget_reservation.estimate_request_input_cost = InputCost()
     budget_reservation.count_request_input_tokens = InputTokens()
     proxy_server.run_spend_counter_pipeline = pipeline
-    # the module object is the entry point the case exercises, read through the protocol
-    budget: BudgetReservation = budget_reservation
     reservation: dict[str, JsonValue] | None = None
     failure: JsonValue = None
     try:
-        reservation = await budget.reserve_budget_for_request(
+        reservation = await ENGINE.reserve_budget_for_request(
             REQUEST_BODY,
             ROUTE,
             None,
@@ -70,7 +73,10 @@ async def execute(data: Input) -> dict[str, JsonValue]:
             None,
             source_cache,
             proxy_server.proxy_logging_obj,
-            fail_closed_budget_enforcement=data["fail_closed"],
+            None,
+            None,
+            False,  # apply_user_budget_to_team_keys
+            data["fail_closed"],
         )
     except (BudgetExceededError, HTTPException) as error:
         failure = error_json(error)
