@@ -70,10 +70,10 @@ struct CallParts<'call> {
 
 impl<'call> CharacterCall<'call> {
     // the declared provider, which the call's own default made openai
-    pub(crate) fn provider(self) -> &'call str {
+    pub(crate) const fn provider(self) -> &'call str {
         match self {
-            Self::Create(call) => &call.custom_llm_provider,
-            Self::Get(call) => &call.custom_llm_provider,
+            Self::Create(call) => call.custom_llm_provider.as_str(),
+            Self::Get(call) => call.custom_llm_provider.as_str(),
         }
     }
 

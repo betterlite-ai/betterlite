@@ -54,7 +54,7 @@ pub(crate) fn headers() -> BTreeMap<String, String> {
 }
 
 // the collaborators every fixture call runs with: its redactor and B198's REQUEST_TIMEOUT seconds
-fn deps(redactor: &Redactor) -> CharacterCallDeps<'_> {
+const fn deps(redactor: &Redactor) -> CharacterCallDeps<'_> {
     CharacterCallDeps {
         redactor,
         request_timeout_seconds: REQUEST_TIMEOUT_SECONDS,
