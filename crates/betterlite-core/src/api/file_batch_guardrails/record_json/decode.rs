@@ -1,0 +1,74 @@
+pub const MAX_CODE_POINT: u32 = 0x0010_FFFF;
+
+// json.loads(bytes) picks the codec with json.detect_encoding and decodes with surrogatepass
+#[must_use]
+pub fn line_code_points(line: &[u8]) -> Option<Vec<u32>> {
+    match line {
+        [0x00, 0x00, 0xFE, 0xFF, rest @ ..] => wide_code_points(rest, u32::from_be_bytes),
+        [0xFF, 0xFE, 0x00, 0x00, rest @ ..] => wide_code_points(rest, u32::from_le_bytes),
+        [0xFE, 0xFF, rest @ ..] => utf16_code_points(rest, u16::from_be_bytes),
+        [0xFF, 0xFE, rest @ ..] => utf16_code_points(rest, u16::from_le_bytes),
+        [0xEF, 0xBB, 0xBF, rest @ ..] => utf8_code_points(rest),
+        [0x00, 0x00, _, _, ..] => wide_code_points(line, u32::from_be_bytes),
+        [0x00, _, _, _, ..] | [0x00, _] => utf16_code_points(line, u16::from_be_bytes),
+        [_, 0x00, 0x00, 0x00, ..] => wide_code_points(line, u32::from_le_bytes),
+        [_, 0x00, _, _, ..] | [_, 0x00] => utf16_code_points(line, u16::from_le_bytes),
+        _ => utf8_code_points(line),
+    }
+}
+
+#[must_use]
+pub fn utf8_code_points(bytes: &[u8]) -> Option<Vec<u32>> {
+    let mut code_points = Vec::with_capacity(bytes.len());
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        let (code_point, tail) = utf8_sequence(rest)?;
+        code_points.push(code_point);
+        rest = tail;
+    }
+    Some(code_points)
+}
+
+// surrogatepass lets a surrogate through like any other three-byte form; overlong and out-of-range forms still fail
+fn utf8_sequence(bytes: &[u8]) -> Option<(u32, &[u8])> {
+    let (&lead, tail) = bytes.split_first()?;
+    let (extra, payload, minimum) = match lead.leading_ones() {
+        0 => (0_usize, lead, 0_u32),
+        2 => (1, lead & 0x1F, 0x80),
+        3 => (2, lead & 0x0F, 0x0800),
+        4 => (3, lead & 0x07, 0x0001_0000),
+        _ => return None,
+    };
+    let (continuation, rest) = tail.split_at_checked(extra)?;
+    let code_point = continuation
+        .iter()
+        .try_fold(u32::from(payload), |value, byte| {
+            let low_bits = u32::from(byte & 0x3F);
+            (byte.leading_ones() == 1).then(|| value.wrapping_shl(6).wrapping_add(low_bits))
+        })?;
+    (minimum..=MAX_CODE_POINT)
+        .contains(&code_point)
+        .then_some((code_point, rest))
+}
+
+fn utf16_code_points(bytes: &[u8], read: fn([u8; 2]) -> u16) -> Option<Vec<u32>> {
+    let (pairs, remainder) = bytes.as_chunks::<2>();
+    let units = pairs.iter().map(|pair| read(*pair));
+    let decoded = char::decode_utf16(units)
+        .map(|unit| unit.map_or_else(|lone| u32::from(lone.unpaired_surrogate()), u32::from));
+    remainder.is_empty().then(|| decoded.collect())
+}
+
+fn wide_code_points(bytes: &[u8], read: fn([u8; 4]) -> u32) -> Option<Vec<u32>> {
+    let (quads, remainder) = bytes.as_chunks::<4>();
+    if !remainder.is_empty() {
+        return None;
+    }
+    quads
+        .iter()
+        .map(|quad| {
+            let code_point = read(*quad);
+            (code_point <= MAX_CODE_POINT).then_some(code_point)
+        })
+        .collect()
+}

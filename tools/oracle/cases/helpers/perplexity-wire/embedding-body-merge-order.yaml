@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-embedding-body-merge-order
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "embedding", "urls": [], "headers": [], "requests": [{"model": "pplx-embed-v1-0.6b", "input": "hello", "non_default_params": {"dimensions": 512, "user": "u1", "encoding_format": "base64_int8"}}, {"model": "pplx-embed-v1-0.6b", "input": ["a", "b"], "non_default_params": {"encoding_format": "float", "dimensions": 256}}, {"model": "pplx-embed-v1-4b", "input": [1, 2, 3], "non_default_params": {}}, {"model": "pplx-embed-v1-0.6b", "input": [[1, 2], [3]], "non_default_params": {"user": "u1", "extra_body": {"x": 1}}}], "replies": [], "errors": []}

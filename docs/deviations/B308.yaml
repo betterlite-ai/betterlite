@@ -1,0 +1,23 @@
+task: B308
+deviations:
+  - what: >-
+      The cooldown event carries the api_base a deployment declares, the base_url alias, or https://api.openai.com for an openai model, and its provider is custom_llm_provider or the model prefix. LiteLLM also synthesizes provider URLs for gemini and vertex, reads an azure dynamic api base, and infers a provider for an unprefixed known model name through get_llm_provider.
+    why: >-
+      The event is a typed observer payload, and betterlite does not build provider client configuration on the failure-callback path; a deployment that declares api_base, which every router config that names a custom endpoint does, reports the same value on both sides, and the single-event-per-failure case keeps its deployments on a declared api_base.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_callbacks.py#L53-L60
+  - what: >-
+      A deployment_callback_on_failure whose deployment id is not in the catalog answers false before counting the minute failure, where LiteLLM increments the counter for any id the caller's model_info carries and then writes a cooldown entry the event callback cannot resolve.
+    why: >-
+      The typed call takes the attempted deployment's catalog id, and a deployment the catalog does not know was never attempted, so the record-and-skip path LiteLLM reaches only from a hand-built model_info is unreachable in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8303-L8330
+  - what: >-
+      A cooldown event reaches the typed CooldownObserver list synchronously inside the failure callback and an observer's error is logged and dropped, where LiteLLM schedules router_cooldown_event_callback as a detached asyncio task and calls only the one Prometheus logger it finds.
+    why: >-
+      The observer trait is the seam B111 exports through, a caller-owned list has no single Prometheus type to select, and awaiting keeps the event out of a task that a short-lived process can drop; a notification failure still never reaches the provider error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_callbacks.py#L21-L78
+kept_bugs:
+  - what: >-
+      A negative cooldown_time in model_info is the first present value, so it hides a positive cooldown_time in litellm_params and the response header or router default answers instead.
+    why: >-
+      This task reads the first present value and then applies the >= 0 check, which is what a working deployment with an unusable model_info value sees, and the boundaries case a_negative_model_info_value_hides_a_positive_params_value pins it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8289-L8296

@@ -1,0 +1,14 @@
+kind: helper
+name: dynamic-callbacks-priority-latin1-encodable
+call:
+  b3053:
+    function: post_call
+    team_metadata: null
+    key_metadata:
+      priority: "prïority"
+    statuses: []
+    hidden_params: true
+    headers: {}
+    probe_raises: false
+env: {}
+compare: {ignore: []}

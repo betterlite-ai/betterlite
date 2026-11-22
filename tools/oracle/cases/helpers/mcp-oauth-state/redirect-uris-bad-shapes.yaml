@@ -1,0 +1,42 @@
+kind: helper
+name: mcp-oauth-state-redirect-uris-bad-shapes
+call:
+  b7530:
+    function: client_supplied_redirect_uris
+    value: []
+calls:
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: [""]
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: ["https://client.example/cb", ""]
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: ["https://client.example/cb", 5]
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: ["https://client.example/cb", null]
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: ["https://client.example/cb", {}]
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: [["https://client.example/cb"]]
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: "https://client.example/cb"
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: 5
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: true
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: null
+  - b7530:
+      function: client_supplied_redirect_uris
+      value: {redirect_uris: []}
+env: {}
+compare: {ignore: []}
