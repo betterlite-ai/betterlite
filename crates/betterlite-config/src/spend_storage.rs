@@ -1,6 +1,8 @@
+mod partition_switch;
 mod queue;
 pub mod retention;
 mod tests;
+use self::partition_switch::load_switch;
 use self::queue::{logs_url, max_bytes};
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::raw::RawNumber;
@@ -88,6 +90,9 @@ impl Section for Raw {
     {
         let general = self.general_settings;
         let litellm = self.litellm_settings;
+        let mut retention = general.retention;
+        retention.use_spend_logs_partitioning =
+            load_switch(retention.use_spend_logs_partitioning.take())?;
         let use_redis = redis_transaction_buffer(&general.use_redis_transaction_buffer)?;
         let dequeue_count =
             initial_environment_integer(lookup, ENV_DEQUEUE_COUNT, DEFAULT_DEQUEUE_COUNT)?;
@@ -122,7 +127,7 @@ impl Section for Raw {
             spend_log_queue_max_bytes: max_bytes(lookup)?,
             spend_logs_url: logs_url(lookup),
             retention: CleanupSettings {
-                general: general.retention,
+                general: retention,
                 defaults: retention::cleanup_defaults(lookup)?,
             },
         })

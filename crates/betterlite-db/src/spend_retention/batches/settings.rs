@@ -61,6 +61,8 @@ pub struct CleanupGeneralSettings {
     pub health_check_retention: Option<SettingValue>,
     #[serde(rename = "maximum_daily_tag_spend_retention_period")]
     pub tag_spend_retention: Option<SettingValue>,
+    #[serde(rename = "use_spend_logs_partitioning")]
+    pub use_spend_logs_partitioning: Option<SettingValue>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
