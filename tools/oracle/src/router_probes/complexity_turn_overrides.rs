@@ -226,7 +226,8 @@ fn parsed_messages(input: &Input) -> Result<Option<Vec<ChatMessage>>, OperationE
     let mut messages = Vec::with_capacity(input.messages.len());
     for message in &input.messages {
         messages.push(
-            serde_json::from_value(message.clone())
+            serde_json::to_value(message)
+                .and_then(serde_json::from_value::<ChatMessage>)
                 .map_err(|source| invalid(&source.to_string()))?,
         );
     }

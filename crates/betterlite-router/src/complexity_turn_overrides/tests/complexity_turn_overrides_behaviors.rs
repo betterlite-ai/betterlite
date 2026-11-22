@@ -13,7 +13,6 @@ use super::support::{
     FakeEmbedder, base_settings, catalog, chat, json_list, json_number, json_object, json_text,
     request_kwargs, rule, rules, semantic_settings, tier,
 };
-use crate::classifier_verdict::call::RequestKwargs;
 use crate::complexity_config::Resolved;
 use crate::complexity_turn_overrides::housekeeping::{
     cheapest_configured_tier, matched_housekeeping_sentinel,
@@ -420,7 +419,7 @@ fn the_lexical_matcher_wins_while_semantic_matching_is_off() {
             &settings,
             &all_pools(),
             &lexical,
-            None,
+            None::<&SemanticKeywordIndex<FakeEmbedder>>,
             &request,
         ))
         .unwrap();
@@ -477,7 +476,7 @@ fn the_turn_carries_every_observation_together() {
             &settings,
             &all_pools(),
             &lexical,
-            None,
+            None::<&SemanticKeywordIndex<FakeEmbedder>>,
             &request,
         ))
         .unwrap();

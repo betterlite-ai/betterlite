@@ -28,8 +28,8 @@ pub enum SemanticError {
     Config(#[from] serde_json::Error),
     #[error("the semantic keyword route index is unusable: {0}")]
     Index(#[from] RouteIndexError),
-    #[error("the {stage} embedding call failed: {source}")]
-    Embedding { stage: &'static str, source: String },
+    #[error("the {stage} embedding call failed: {detail}")]
+    Embedding { stage: &'static str, detail: String },
     #[error("the {stage} embedding call did not finish within {seconds} seconds")]
     Timeout { stage: &'static str, seconds: u64 },
     #[error("the {stage} embedding call returned {found} vectors for {expected} inputs")]
@@ -168,7 +168,7 @@ where
             Ok(Ok(vectors)) => Ok(vectors),
             Ok(Err(source)) => Err(SemanticError::Embedding {
                 stage,
-                source: source.to_string(),
+                detail: source.to_string(),
             }),
             Err(_elapsed) => Err(SemanticError::Timeout {
                 stage,

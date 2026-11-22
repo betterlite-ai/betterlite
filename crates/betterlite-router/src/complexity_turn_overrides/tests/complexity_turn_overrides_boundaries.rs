@@ -6,8 +6,8 @@ use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
 
 use super::support::{
-    FakeEmbedder, base_settings, catalog, chat, custom_catalog, json_list, json_object, json_text,
-    parts, rule, rules, semantic_settings, text_part, tier,
+    FakeEmbedder, base_settings, catalog, custom_catalog, json_list, json_object, json_text, parts,
+    rule, rules, semantic_settings, text_part, tier,
 };
 use crate::classifier_message_text::error::ClassifierTextError;
 use crate::complexity_scoring::tier::Tier;
@@ -73,10 +73,9 @@ fn an_unknown_tier_names_itself_in_the_error() {
         floor_error,
         TurnOverrideError::UnknownTier { ref tier } if tier.as_str() == "DEEP"
     ));
-    let rule_error = LexicalRules::compile(&all_pools(), &[rule(&["x"], "DEEP")]).unwrap_err();
     assert!(matches!(
-        rule_error,
-        TurnOverrideError::UnknownTier { ref tier } if tier.as_str() == "DEEP"
+        LexicalRules::compile(&all_pools(), &[rule(&["x"], "DEEP")]),
+        Err(TurnOverrideError::UnknownTier { ref tier }) if tier.as_str() == "DEEP"
     ));
     let custom = custom_catalog(&["cheap"], &[("cheap", &["a"])]);
     let custom_error = active_tier(&custom, "deep").unwrap_err();
@@ -303,7 +302,10 @@ fn empty_inputs_stay_inert() {
         cheapest_configured_tier(&catalog(&[("SIMPLE", &[])])).unwrap(),
         None
     );
-    let messages = vec![chat(Role::User, "hi")];
+    let messages = vec![json_object(&[
+        ("role", json_text("user")),
+        ("content", json_text("hi")),
+    ])];
     assert!(!detect_stalled_task(Some(&messages), 6, 3));
 }
 
