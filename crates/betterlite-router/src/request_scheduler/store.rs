@@ -1,6 +1,6 @@
 use super::error::SchedulerError;
 use super::queue;
-use super::service::{MAX_CAS_ATTEMPTS, RequestScheduler};
+use super::service::{MAX_CAS_ATTEMPTS, MemberState, PendingChanges, RequestScheduler};
 use crate::routing_state_store::RoutingStateStore;
 use crate::routing_state_store::error::{Observed, StoreWarning};
 use crate::routing_value_store::{CompareOutcome, RouteKey, RouteValue, SchedulerTuple, StoreRead};
@@ -23,20 +23,31 @@ async fn cas<F>(
     model: &str,
     change: &F,
     ttl: Option<f64>,
+    carried: &PendingChanges,
 ) -> Result<Vec<SchedulerTuple>, SharedChange>
 where
     F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
 {
-    let mut expected = shared_read(store, key).await?;
+    let mut expected = Box::pin(shared_read(store, key)).await?;
     for _attempt in 0..MAX_CAS_ATTEMPTS {
-        let next = change(queue::members(&expected, model)?)?;
-        match swap(store, key, &expected, &next, ttl).await? {
-            CompareOutcome { swapped: true, .. } => return Ok(queue::scheduled(&next)),
-            CompareOutcome {
-                swapped: false,
-                current,
-            } => expected = current,
+        let mut base = queue::members(&expected, model)?;
+        // the fallback tier's changes ride along, so this write can neither drop nor revive them
+        for (member, state) in carried {
+            match state {
+                MemberState::Present => {
+                    base.insert(member.clone());
+                }
+                MemberState::Absent => {
+                    base.remove(member);
+                }
+            }
         }
+        let next = change(base)?;
+        let outcome = Box::pin(swap(store, key, &expected, &next, ttl)).await?;
+        if outcome.swapped {
+            return Ok(queue::scheduled(&next));
+        }
+        expected = outcome.current;
     }
     Err(SharedChange::Refused(SchedulerError::Contended {
         model: model.to_owned(),
@@ -84,7 +95,7 @@ impl RequestScheduler {
         let Some(shared) = &self.shared else {
             return self.local_members(&key, model, None);
         };
-        match shared.get(&key).await {
+        match Box::pin(shared.get(&key)).await {
             Ok(Observed {
                 value,
                 warning: None,
@@ -130,37 +141,42 @@ impl RequestScheduler {
     where
         F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
     {
-        let key = queue::key(model)?;
-        let Some(shared) = &self.shared else {
-            return Ok(Observed {
-                value: self.change_local(&key, model, &change)?,
-                warning: None,
-            });
-        };
-        self.change_shared(shared, &key, model, &change).await
+        Box::pin(self.apply_change(model, &change)).await
     }
     // a shared answer mirrors into this worker's copy; a degraded one retries there instead
-    async fn change_shared<F>(
+    async fn apply_change<F>(
         &self,
-        shared: &RoutingStateStore,
-        key: &RouteKey,
         model: &str,
         change: &F,
     ) -> Result<Observed<Vec<SchedulerTuple>>, SchedulerError>
     where
         F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
     {
-        match cas(shared, key, model, change, self.local_ttl()).await {
-            Err(SharedChange::Refused(error)) => Err(error),
-            Err(SharedChange::Unavailable(warning)) => Ok(Observed {
-                value: self.change_local(key, model, change)?,
-                warning: Some(warning),
-            }),
+        let key = queue::key(model)?;
+        let Some(shared) = &self.shared else {
+            let (entries, _) = self.change_local(&key, model, change)?;
+            return Ok(Observed {
+                value: entries,
+                warning: None,
+            });
+        };
+        let carried = self.pending_changes(model);
+        match Box::pin(cas(shared, &key, model, change, self.local_ttl(), &carried)).await {
             Ok(entries) => {
-                self.mirror_local(key, &entries)?;
+                self.forget_changes(model, &carried);
+                self.mirror_local(&key, &entries)?;
                 Ok(Observed {
                     value: entries,
                     warning: None,
+                })
+            }
+            Err(SharedChange::Refused(error)) => Err(error),
+            Err(SharedChange::Unavailable(warning)) => {
+                let (entries, fallback) = self.change_local(&key, model, change)?;
+                self.record_changes(model, fallback);
+                Ok(Observed {
+                    value: entries,
+                    warning: Some(warning),
                 })
             }
         }
@@ -171,7 +187,7 @@ impl RequestScheduler {
         key: &RouteKey,
         model: &str,
         change: &F,
-    ) -> Result<Vec<SchedulerTuple>, SchedulerError>
+    ) -> Result<(Vec<SchedulerTuple>, PendingChanges), SchedulerError>
     where
         F: Fn(BTreeSet<String>) -> Result<BTreeSet<String>, SchedulerError>,
     {
@@ -180,12 +196,44 @@ impl RequestScheduler {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let queued = self.local_members(key, model, None)?;
-        let next = change(queued.value)?;
+        let next = change(queued.value.clone())?;
+        let mut changes = PendingChanges::new();
+        for member in next.difference(&queued.value) {
+            changes.insert(member.clone(), MemberState::Present);
+        }
+        for member in queued.value.difference(&next) {
+            changes.insert(member.clone(), MemberState::Absent);
+        }
         let entries = queue::scheduled(&next);
         self.local
             .set(key, &RouteValue::Members(next), self.local_ttl())
             .map_err(|source| SchedulerError::Local { source })?;
-        Ok(entries)
+        Ok((entries, changes))
+    }
+    // what the fallback tier changed while the shared tier was down, waiting for the next shared write
+    fn pending_changes(&self, model: &str) -> PendingChanges {
+        let pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        pending.get(model).cloned().unwrap_or_default()
+    }
+    // a fallback change stays recorded, the last one per member, until a shared write carries it over
+    fn record_changes(&self, model: &str, changes: PendingChanges) {
+        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        pending.entry(model.to_owned()).or_default().extend(changes);
+    }
+    // a shared write that carried the recorded changes leaves only what changed while it ran
+    fn forget_changes(&self, model: &str, carried: &PendingChanges) {
+        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(recorded) = pending.get_mut(model) else {
+            return;
+        };
+        recorded.retain(|member, state| match carried.get(member) {
+            Some(carried_state) => *state != *carried_state,
+            None => true,
+        });
+        let emptied = recorded.is_empty();
+        if emptied {
+            pending.remove(model);
+        }
     }
     // DualCache.async_set_cache writes both tiers, so a shared answer leaves the same queue in this worker's copy
     fn mirror_local(

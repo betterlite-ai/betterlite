@@ -5,10 +5,18 @@ use crate::routing_state_store::RoutingStateStore;
 use crate::routing_state_store::error::Observed;
 use crate::routing_value_store::{RoutingValueStore, SchedulerTuple};
 use betterlite_config::sections::request_scheduler::Settings;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 // Router.schedule_acompletion's `str(uuid.uuid4())`, injected so a test or a probe decides the id
 pub type RequestIdSource = Arc<dyn Fn() -> String + Send + Sync>;
+// the fallback tier's last change per queue member, waiting for the next shared write
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum MemberState {
+    Present,
+    Absent,
+}
+pub(super) type PendingChanges = BTreeMap<String, MemberState>;
 // a shared queue changes under a compare-and-set; another worker may win a few times before this one does
 pub(super) const MAX_CAS_ATTEMPTS: u32 = 8;
 // Router.scheduler over B360's store: this worker's queue, and the shared queue when Redis is configured
@@ -17,6 +25,8 @@ pub struct RequestScheduler {
     pub(super) shared: Option<RoutingStateStore>,
     pub(super) settings: Settings,
     pub(super) local_lock: Mutex<()>,
+    // what the fallback tier changed while the shared tier was down, waiting for the next shared write
+    pub(super) pending: Mutex<BTreeMap<String, PendingChanges>>,
     request_ids: RequestIdSource,
 }
 impl RequestScheduler {
@@ -32,6 +42,7 @@ impl RequestScheduler {
             shared,
             settings,
             local_lock: Mutex::new(()),
+            pending: Mutex::new(BTreeMap::new()),
             request_ids,
         }
     }
@@ -64,34 +75,32 @@ impl RequestScheduler {
             });
         }
         let model = item.model.as_str();
-        let changed = self
-            .change(model, |members| {
-                if members.len() >= queue::MAX_PENDING_REQUESTS {
-                    return Err(SchedulerError::QueueFull {
-                        model: model.to_owned(),
-                        limit: queue::MAX_PENDING_REQUESTS,
-                    });
-                }
-                let entry = SchedulerTuple {
-                    priority: item.priority,
-                    request_id: item.request_id.clone(),
-                };
-                let mut next = members;
-                next.extend(queue::encoded(&[entry]));
-                Ok(next)
-            })
-            .await?;
+        let changed = Box::pin(self.change(model, |members| {
+            if members.len() >= queue::MAX_PENDING_REQUESTS {
+                return Err(SchedulerError::QueueFull {
+                    model: model.to_owned(),
+                    limit: queue::MAX_PENDING_REQUESTS,
+                });
+            }
+            let entry = SchedulerTuple {
+                priority: item.priority,
+                request_id: item.request_id.clone(),
+            };
+            let mut next = members;
+            next.extend(queue::encoded(&[entry]));
+            Ok(next)
+        }))
+        .await?;
         Ok(Observed {
             value: (),
             warning: changed.warning,
         })
     }
     pub async fn remove_request(&self, item: &FlowItem) -> Result<Observed<()>, SchedulerError> {
-        let changed = self
-            .change(&item.model, |members| {
-                Ok(queue::without(&members, &item.request_id))
-            })
-            .await?;
+        let changed = Box::pin(self.change(&item.model, |members| {
+            Ok(queue::without(&members, &item.request_id))
+        }))
+        .await?;
         Ok(Observed {
             value: (),
             warning: changed.warning,
@@ -153,9 +162,9 @@ impl RequestScheduler {
                 warning: queued.warning,
             });
         }
-        let removed = self
-            .change(model, |members| Ok(queue::without(&members, request_id)))
-            .await?;
+        let removed =
+            Box::pin(self.change(model, |members| Ok(queue::without(&members, request_id))))
+                .await?;
         Ok(Observed {
             value: true,
             warning: removed.warning.or(queued.warning),

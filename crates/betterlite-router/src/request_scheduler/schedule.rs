@@ -47,11 +47,11 @@ impl RequestScheduler {
     where
         C: ScheduledCall,
     {
-        self.add_request(item).await?;
-        // the poll loop nests more generator states than rustc lays out by default, so its future lives on the heap
+        Box::pin(self.add_request(item)).await?;
+        // the await chain nests more generator states than rustc lays out by default, so each long leg lives on the heap
         let polls = Box::pin(self.wait_for_turn(item, call, plan)).await?;
         let answered = call.call().await;
-        self.remove_quietly(item).await;
+        Box::pin(self.remove_quietly(item)).await;
         finish(item, polls, answered)
     }
     async fn wait_for_turn<C>(
@@ -67,9 +67,11 @@ impl RequestScheduler {
         loop {
             match plan.remaining(Instant::now().into_std()) {
                 Ok(_remaining) => {}
-                Err(TimeoutError::Cancelled) => return Err(self.cancelled(item).await),
+                Err(TimeoutError::Cancelled) => {
+                    return Err(Box::pin(self.cancelled(item)).await);
+                }
                 Err(_expired) => {
-                    self.remove_quietly(item).await;
+                    Box::pin(self.remove_quietly(item)).await;
                     return Err(SchedulerError::TimedOut {
                         model: item.model.clone(),
                         request_id: item.request_id.clone(),
@@ -88,19 +90,19 @@ impl RequestScheduler {
                 .run_until_cancelled(sleep(self.polling_interval()))
                 .await;
             if slept.is_none() {
-                return Err(self.cancelled(item).await);
+                return Err(Box::pin(self.cancelled(item)).await);
             }
         }
     }
     // the removal after the call and in the deadline arm is best effort: a failure is logged, not returned
     async fn remove_quietly(&self, item: &FlowItem) {
-        if let Err(error) = self.remove_request(item).await {
+        if let Err(error) = Box::pin(self.remove_request(item)).await {
             tracing::warn!(%error, "the request left a scheduler queue entry behind");
         }
     }
 
     async fn cancelled(&self, item: &FlowItem) -> SchedulerError {
-        let removed = self.remove_request(item).await;
+        let removed = Box::pin(self.remove_request(item)).await;
         match removed {
             Ok(_observed) => SchedulerError::Cancelled {
                 request_id: item.request_id.clone(),

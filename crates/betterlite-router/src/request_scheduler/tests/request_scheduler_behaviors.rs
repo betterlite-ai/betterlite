@@ -10,6 +10,7 @@ use crate::request_scheduler::queue;
 use crate::request_scheduler::schedule::PRIORITIZATION_HEADER;
 use crate::router_core::headers::Response;
 use crate::routing_state_store::error::StoreWarning;
+use crate::routing_value_store::RouteValue;
 
 use super::{MODEL, ScriptedCall, entries, item, plan, queue_all, scheduler, shared_scheduler};
 
@@ -311,6 +312,67 @@ async fn a_request_accepted_during_an_outage_survives_the_recovery() {
         "the recovered read answers from the shared tier"
     );
     assert_eq!(recovered.value, entries(&[(0, "second"), (128, "first")]));
+}
+
+// the next successful shared write carries the entry the fallback tier accepted, so its mirror cannot erase it
+#[tokio::test]
+async fn an_outage_entry_reaches_the_shared_tier_on_the_next_write() {
+    let (service, server) = shared_scheduler().await;
+    service
+        .add_request(&item(128, "first", MODEL))
+        .await
+        .expect("the request queues");
+    server.set_down(true);
+    service
+        .add_request(&item(0, "second", MODEL))
+        .await
+        .expect("the fallback queue accepts the request");
+    server.set_down(false);
+    let written = service
+        .add_request(&item(64, "third", MODEL))
+        .await
+        .expect("the shared tier takes the write");
+    assert!(written.warning.is_none(), "the shared tier answered");
+    assert_eq!(
+        service.queue(MODEL).await.expect("the queue reads").value,
+        entries(&[(0, "second"), (64, "third"), (128, "first")])
+    );
+    let stored = server
+        .raw(queue::key(MODEL).expect("the queue key").as_ref())
+        .expect("the shared tier holds the queue");
+    let RouteValue::Members(members) =
+        serde_json::from_slice::<RouteValue>(&stored.0).expect("the shared queue decodes")
+    else {
+        panic!("the queue is a member set");
+    };
+    assert_eq!(
+        queue::scheduled(&members),
+        entries(&[(0, "second"), (64, "third"), (128, "first")])
+    );
+}
+
+// a request that left the fallback tier during an outage does not come back with the next shared write
+#[tokio::test]
+async fn a_request_dropped_during_an_outage_stays_out_of_the_shared_tier() {
+    let (service, server) = shared_scheduler().await;
+    service
+        .add_request(&item(0, "first", MODEL))
+        .await
+        .expect("the request queues");
+    server.set_down(true);
+    service
+        .remove_request(&item(0, "first", MODEL))
+        .await
+        .expect("the fallback queue removes the request");
+    server.set_down(false);
+    service
+        .add_request(&item(64, "second", MODEL))
+        .await
+        .expect("the shared tier takes the write");
+    assert_eq!(
+        service.queue(MODEL).await.expect("the queue reads").value,
+        entries(&[(64, "second")])
+    );
 }
 
 // an empty queue is the setup error Scheduler.poll and Scheduler.peek raise, told apart from the wait
