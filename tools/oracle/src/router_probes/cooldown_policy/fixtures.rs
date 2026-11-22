@@ -37,9 +37,13 @@ pub(super) fn spec(input: &DeploymentInput) -> Result<DeploymentSpec, String> {
         params,
         info,
         JsonObject::new(),
-        "generated".to_owned(),
+        generated_id,
     )
     .map_err(|error| error.to_string())
+}
+
+fn generated_id() -> String {
+    "generated".to_owned()
 }
 
 // router_cooldown_event_callback's five values, recorded from the one typed observer hook

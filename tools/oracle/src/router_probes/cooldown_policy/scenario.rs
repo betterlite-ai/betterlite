@@ -44,8 +44,7 @@ pub(super) async fn scenario(payload: &Payload) -> Result<Output, String> {
     let (service, recorder) = build_service(payload, &clock_fn)?;
     for _ in 0..payload.minute.successes {
         service
-            .counters
-            .increment_successes_for_minute(&payload.target)
+            .increment_minute_successes(&payload.target)
             .map_err(|error| error.to_string())?;
     }
     let mut cooled = Vec::new();
@@ -88,7 +87,7 @@ pub(super) async fn scenario(payload: &Payload) -> Result<Output, String> {
         cooled,
         events: recorder.events(),
         active,
-        failures_for_minute: service.counters.failures_for_minute(&payload.target),
+        failures_for_minute: service.failures_for_minute(&payload.target),
     })
 }
 
@@ -96,8 +95,7 @@ fn build_service(
     payload: &Payload,
     clock_fn: &Clock,
 ) -> Result<(CooldownPolicyService<RoutingStateStore>, Arc<Recorder>), String> {
-    let shared = Arc::new(FakeCooldowns::default());
-    let shared_cooldowns: Arc<dyn SharedCooldowns> = Arc::clone(&shared);
+    let shared_cooldowns: Arc<dyn SharedCooldowns> = Arc::new(FakeCooldowns::default());
     let cooldowns = CooldownCache::new(
         &CooldownSettings::default(),
         shared_cooldowns,
@@ -125,7 +123,7 @@ fn build_service(
         None,
     );
     let recorder = Arc::new(Recorder::default());
-    let observer: Arc<dyn CooldownObserver> = Arc::clone(&recorder);
+    let observer: Arc<dyn CooldownObserver> = Arc::<Recorder>::clone(&recorder);
     let policy = CooldownPolicy {
         allowed_fails: payload.router.allowed_fails,
         default_allowed_fails: payload.router.default_allowed_fails,

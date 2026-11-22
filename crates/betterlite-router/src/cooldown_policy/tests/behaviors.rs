@@ -96,11 +96,11 @@ pub(super) async fn fallback_cools_the_server_stamped_deployment() {
 }
 
 pub(super) async fn generic_404_and_caller_timeout_never_cool() {
-    let failure = rate_limit(404);
+    let not_found = rate_limit(404);
     let harness = harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
     let generic = FallbackFailure {
         original_generic_function: true,
-        ..fallback(Some("a"), &failure)
+        ..fallback(Some("a"), &not_found)
     };
     assert!(!fallback_cools(&harness, &generic).await);
     // a background response cost poll's 404 says nothing about deployment health either
@@ -111,7 +111,7 @@ pub(super) async fn generic_404_and_caller_timeout_never_cool() {
     assert!(!callback_cools(&harness, "a", &poll, None).await);
     // the 404 guard covers only the generic calls a caller-supplied id can 404 on its own
     let direct = support::harness(Fixture::new(vec![deployment("gpt", "a")]), policy(0_u32));
-    assert!(fallback_cools(&direct, &fallback(Some("a"), &failure)).await);
+    assert!(fallback_cools(&direct, &fallback(Some("a"), &not_found)).await);
     let timed_out = FailureFacts {
         caller_timeout: Some(TimeoutFacts {
             client_side_timeout: true,
@@ -121,6 +121,8 @@ pub(super) async fn generic_404_and_caller_timeout_never_cool() {
         ..failure(FailureClass::Timeout, ErrorStatus::Code(408))
     };
     assert!(!callback_cools(&harness, "a", &timed_out, None).await);
+    // the fallback path applies the same caller-timeout guard before it counts anything
+    assert!(!fallback_cools(&harness, &fallback(Some("a"), &timed_out)).await);
     assert_eq!(harness.service.counters.failures_for_minute("a"), 0);
     assert!(harness.events.recorded().is_empty());
 }
@@ -350,27 +352,35 @@ pub(super) async fn a_team_id_without_a_public_name_does_not_lift_the_net() {
 pub(super) async fn shared_fail_counts_answer_across_workers() {
     let server = FakeRedis::try_start().await.unwrap();
     let failure = rate_limit(429);
-    let harness = harness_sharing(
+    let worker_a = harness_sharing(
         Fixture::new(vec![deployment("gpt", "a")]),
         policy(1_u32),
         &server,
     );
-    let lookup = harness.fixture.lookup();
-    let attempt = attempt("a", &failure);
+    let lookup_a = worker_a.fixture.lookup();
     assert!(
-        !harness
+        !worker_a
             .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt))
+            .cool_deployment(&lookup_a, CooldownSource::Callback(&attempt("a", &failure)))
             .await
             .unwrap()
     );
+    // worker A's failure left the shared count at 1, while B's own count is 1 after its first failure,
+    // so only the shared count of 2 cools B
+    let worker_b = harness_sharing(
+        Fixture::new(vec![deployment("gpt", "a")]),
+        policy(1_u32),
+        &server,
+    );
+    let lookup_b = worker_b.fixture.lookup();
     assert!(
-        harness
+        worker_b
             .service
-            .cool_deployment(&lookup, CooldownSource::Callback(&attempt))
+            .cool_deployment(&lookup_b, CooldownSource::Callback(&attempt("a", &failure)))
             .await
             .unwrap()
     );
+    assert_eq!(worker_b.service.counters.failures_for_minute("a"), 1);
 }
 
 pub(super) async fn unknown_deployments_never_cool() {

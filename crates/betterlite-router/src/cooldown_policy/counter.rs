@@ -42,16 +42,16 @@ impl AllowedFailsStore {
             .increment(&route, &RouteIncrement::Counter(1), Some(ttl_seconds))
             .await
         {
-            Ok(observed) => match counter_of(key, &observed.value) {
-                Some(fails) => CounterObservation {
-                    fails,
-                    local_only: false,
-                },
-                None => CounterObservation {
+            Ok(observed) => counter_of(key, &observed.value).map_or(
+                CounterObservation {
                     fails: local,
                     local_only: true,
                 },
-            },
+                |fails| CounterObservation {
+                    fails,
+                    local_only: false,
+                },
+            ),
             Err(error) => shared_error(key, local, &error),
         }
     }

@@ -24,7 +24,7 @@ from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnknownMemberType=false
 
 _MESSAGE: Final = "probe failure"
 _PROVIDER: Final = "openai"
@@ -100,7 +100,7 @@ class Recorder:
 
 class RecordCooldown:
     def __init__(self, recorder: Recorder) -> None:
-        self.recorder = recorder
+        self.recorder: Recorder = recorder
 
     def __call__(
         self,
