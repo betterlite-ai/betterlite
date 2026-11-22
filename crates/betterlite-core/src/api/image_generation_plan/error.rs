@@ -83,7 +83,7 @@ pub(super) fn refused(
 }
 
 // exception_type's own line: custom_llm_provider = custom_llm_provider or "openai"
-fn attributed(provider: &str) -> &str {
+const fn attributed(provider: &str) -> &str {
     if provider.is_empty() {
         FALLBACK_PROVIDER
     } else {

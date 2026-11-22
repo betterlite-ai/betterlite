@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -284,22 +284,20 @@ fn scripted_return<'call>(
     script: Option<Script>,
 ) -> impl Future<Output = Result<GenerationReturn<'call>, ImageGenerationException>> + Send + 'call
 {
-    async move {
-        match script {
-            None => panic!("the scripted entry runs once"),
-            Some(Script::Response(response)) => Ok(GenerationReturn::Response(Box::new(response))),
-            Some(Script::Mapping(mapping)) => Ok(GenerationReturn::Mapping(mapping)),
-            Some(Script::Coroutine(response, awaits)) => {
-                let pending: PendingGeneration<'call> = Box::pin(async move {
-                    awaits.fetch_add(1, Ordering::SeqCst);
-                    Ok(response)
-                });
-                Ok(GenerationReturn::Coroutine(pending))
-            }
-            Some(Script::Unexpected) => Ok(GenerationReturn::Unexpected),
-            Some(Script::Failure(failure)) => Err(failure),
+    ready(match script {
+        None => panic!("the scripted entry runs once"),
+        Some(Script::Response(response)) => Ok(GenerationReturn::Response(Box::new(response))),
+        Some(Script::Mapping(mapping)) => Ok(GenerationReturn::Mapping(mapping)),
+        Some(Script::Coroutine(response, awaits)) => {
+            let pending: PendingGeneration<'call> = Box::pin(async move {
+                awaits.fetch_add(1, Ordering::SeqCst);
+                Ok(response)
+            });
+            Ok(GenerationReturn::Coroutine(pending))
         }
-    }
+        Some(Script::Unexpected) => Ok(GenerationReturn::Unexpected),
+        Some(Script::Failure(failure)) => Err(failure),
+    })
 }
 
 struct ScriptedCase {
@@ -375,7 +373,7 @@ fn mapping_is_built_into_a_response() {
 fn coroutine_is_awaited_once() {
     let awaits = Arc::new(AtomicUsize::new(0));
     let (result, entry) = scripted(
-        Script::Coroutine(empty_created_and_data(), awaits.clone()),
+        Script::Coroutine(empty_created_and_data(), Arc::clone(&awaits)),
         keyword_call(Some("openai/dall-e-2")),
     );
     assert_eq!(
@@ -616,7 +614,7 @@ impl FixtureOps {
     async fn openai(
         &self,
         request: OpenAiRequest<'_>,
-        logging: &mut LoggingState,
+        logging: &LoggingState,
     ) -> Result<BranchAnswer, Box<RawException>> {
         // the wrapper runs the entry inside the slot LoggingState captured, so a fresh scope answers that slot
         let (active, ()) = request_slot_scope(async {}).await;
