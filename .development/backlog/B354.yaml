@@ -1,14 +1,14 @@
 id: B354
 milestone: M2 routing
 title: Adaptive soft-floor placement for complexity tiers
-status: todo
+status: done
 depends_on: [B339, B334, B374, B301, B361, B002]
 file: tasks/B354-complexity-adaptive-placement.yaml
 covers:
   - "litellm/router_strategy/complexity_router/complexity_router.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2921
