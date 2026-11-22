@@ -122,6 +122,38 @@ fn prepared_embedding(
         .map_err(|source| OperationError::Encode { source })?;
     let call = embedding_call(operation, &requested, deployment);
     let resolved = embedding(&call);
+    check_embedding_params(operation, deployment, &resolved.model)?;
+    let mut body = perplexity_embedding::transform_embedding_request(
+        &resolved.model,
+        &resolved.input,
+        &resolved.optional_params,
+    )
+    .map_err(|error| OperationError::Encode {
+        source: serde_json::Error::io(IoError::other(LeafError::Transform(error))),
+    })?;
+    body.extend(embedding_extra_body(&requested)?);
+    let http = PreparedHttp {
+        method: Method::POST,
+        url: embedding_url(&resolved)?,
+        headers: embedding_headers(resolved.api_key.as_ref())?,
+        body: serde_json::to_vec(&body).map_err(|source| OperationError::Encode { source })?,
+        deadline: resolved.timeout,
+        body_limit: None,
+    };
+    let client_model = operation.request.model.clone().unwrap_or(resolved.model);
+    Ok(PreparedRequest::Embedding(Box::new(PreparedChat {
+        http,
+        retry: TransformRetry::DISABLED,
+        client_model: Some(client_model),
+    })))
+}
+
+// LiteLLM's _check_valid_arg over OPENAI_EMBEDDING_PARAMS: only dimensions and encoding_format pass, and drop_params allows the rest to be dropped
+fn check_embedding_params(
+    operation: &EmbeddingOperation,
+    deployment: &Deployment,
+    model: &str,
+) -> Result<(), OperationError> {
     let drop_params = deployment.global_drop_params
         || normalize_drop_params(deployment.drop_params.as_ref()).unwrap_or(false);
     let unsupported: Vec<String> = [
@@ -136,22 +168,19 @@ fn prepared_embedding(
     .filter(|(name, set)| *set && !perplexity_embedding::SUPPORTED_OPENAI_PARAMS.contains(name))
     .map(|(name, _set)| String::from(name))
     .collect();
-    if !unsupported.is_empty() && !drop_params {
-        return Err(OperationError::Parameters {
-            source: ParameterError::Unsupported {
-                model: resolved.model.clone(),
-                names: unsupported,
-            },
-        });
+    if unsupported.is_empty() || drop_params {
+        return Ok(());
     }
-    let mut body = perplexity_embedding::transform_embedding_request(
-        &resolved.model,
-        &resolved.input,
-        &resolved.optional_params,
-    )
-    .map_err(|error| OperationError::Encode {
-        source: serde_json::Error::io(IoError::other(LeafError::Transform(error))),
-    })?;
+    Err(OperationError::Parameters {
+        source: ParameterError::Unsupported {
+            model: String::from(model),
+            names: unsupported,
+        },
+    })
+}
+
+// LiteLLM's add_provider_specific_params_to_optional_params: the client extra_body and every field outside the defaults, merged over the body after the transform
+fn embedding_extra_body(requested: &Object) -> Result<Object, OperationError> {
     let mut extra_body = Object::new();
     match requested.get("extra_body") {
         None | Some(Json::Null) => {}
@@ -171,7 +200,7 @@ fn prepared_embedding(
             });
         }
     }
-    for (name, value) in &requested {
+    for (name, value) in requested {
         // LiteLLM drops a null extra and never collects a named embedding param into extra_body
         if name == "extra_body"
             || *value == Json::Null
@@ -181,28 +210,17 @@ fn prepared_embedding(
         }
         extra_body.insert(name.clone(), value.clone());
     }
-    // the handler merges extra_body into the transformed body, so it can replace one of its fields
-    body.extend(extra_body);
-    let url = Url::parse(&perplexity_embedding::get_complete_url(
+    Ok(extra_body)
+}
+
+// the embedding URL rules of get_complete_url, with a parse failure as a typed encode cause
+fn embedding_url(resolved: &EmbeddingCall) -> Result<Url, OperationError> {
+    Url::parse(&perplexity_embedding::get_complete_url(
         resolved.api_base.as_deref(),
     ))
     .map_err(|source| OperationError::Encode {
         source: serde_json::Error::io(IoError::other(LeafError::Url(source))),
-    })?;
-    let http = PreparedHttp {
-        method: Method::POST,
-        url,
-        headers: embedding_headers(resolved.api_key.as_ref())?,
-        body: serde_json::to_vec(&body).map_err(|source| OperationError::Encode { source })?,
-        deadline: resolved.timeout,
-        body_limit: None,
-    };
-    let client_model = operation.request.model.clone().unwrap_or(resolved.model);
-    Ok(PreparedRequest::Embedding(Box::new(PreparedChat {
-        http,
-        retry: TransformRetry::DISABLED,
-        client_model: Some(client_model),
-    })))
+    })
 }
 
 fn embedding_call(
