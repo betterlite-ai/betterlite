@@ -136,11 +136,9 @@ fn list_or_null(entries: &[FallbackChainEntry]) -> JsonValue {
 
 // a whole value is the YAML integer Python reports, and a fraction stays a float
 pub(super) fn number(value: f64) -> JsonValue {
-    let integer = value.is_finite() && value.fract() == 0.0;
-    if integer {
-        if let Ok(whole) = format!("{value:.0}").parse::<i64>() {
-            return JsonValue::from(whole);
-        }
+    let integer = value.is_finite() && value.fract() == 0.0_f64;
+    if integer && let Ok(whole) = format!("{value:.0}").parse::<i64>() {
+        return JsonValue::from(whole);
     }
     JsonValue::from(value)
 }

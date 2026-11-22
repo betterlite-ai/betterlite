@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::iter::once;
 
 use betterlite_config::sections::deployment_catalog::GroupAlias;
 use betterlite_config::sections::retry_policy::RetryPolicySettings;
@@ -224,11 +225,7 @@ pub(super) fn default_litellm_params(config: &Config) -> JsonValue {
     params.insert(String::from("max_retries"), JsonValue::from(0_i64));
     params.insert(
         String::from("metadata"),
-        JsonValue::Object(
-            [(String::from("caching_groups"), JsonValue::Null)]
-                .into_iter()
-                .collect(),
-        ),
+        JsonValue::Object(once((String::from("caching_groups"), JsonValue::Null)).collect()),
     );
     let timeout = config
         .router_settings
@@ -263,8 +260,8 @@ fn policy_value(policy: &RetryPolicySettings) -> JsonValue {
         ("DefaultRetries", policy.fallback),
     ];
     for (name, retries) in fields {
-        if let Some(retries) = retries {
-            value.insert(String::from(name), JsonValue::from(retries));
+        if let Some(count) = retries {
+            value.insert(String::from(name), JsonValue::from(count));
         }
     }
     JsonValue::Object(value.into_iter().collect())

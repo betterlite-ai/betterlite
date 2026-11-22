@@ -12,7 +12,6 @@ use betterlite_config::sections::settings::{FieldSource, JsonValue};
 use betterlite_config::types::Config;
 use rstest::rstest;
 use serde::Deserialize;
-use serde_json::json;
 use tower::ServiceExt as _;
 
 use crate::routes::router;
@@ -21,6 +20,10 @@ use crate::routes::tests::state_for;
 use super::catalog::field_default;
 use super::response::{RouterSettingsResponse, fields_response, settings_response};
 use super::view::{current_values, settings_store};
+
+fn json(text: &str) -> JsonValue {
+    serde_json::from_str(text).unwrap()
+}
 
 fn load(document: &str) -> Config {
     let loader = ConfigLoader {
@@ -40,125 +43,146 @@ fn value(document: &str, key: &str) -> JsonValue {
 }
 
 #[rstest]
-#[case::strategy_default("router_settings: {}", "routing_strategy", json!("simple-shuffle"), FieldSource::Default)]
+#[case::strategy_default(
+    "router_settings: {}",
+    "routing_strategy",
+    "simple-shuffle",
+    FieldSource::Default
+)]
 #[case::strategy_configured(
     "router_settings: {routing_strategy: least-busy}",
     "routing_strategy",
-    json!("least-busy"),
+    "least-busy",
     FieldSource::Config
 )]
-#[case::retries_default("router_settings: {}", "num_retries", json!(2), FieldSource::Default)]
+#[case::retries_default("router_settings: {}", "num_retries", "2", FieldSource::Default)]
 #[case::retries_configured(
     "router_settings: {num_retries: 4}",
     "num_retries",
-    json!(4),
+    "4",
     FieldSource::Config
 )]
-#[case::timeout_default("router_settings: {}", "timeout", json!(6000.0), FieldSource::Default)]
+#[case::timeout_default("router_settings: {}", "timeout", "6000.0", FieldSource::Default)]
 #[case::timeout_configured(
     "router_settings: {timeout: 30.5}",
     "timeout",
-    json!(30.5),
+    "30.5",
     FieldSource::Config
 )]
-#[case::stream_timeout_unset("router_settings: {}", "stream_timeout", json!(null), FieldSource::Unset)]
+#[case::stream_timeout_unset("router_settings: {}", "stream_timeout", "null", FieldSource::Unset)]
 #[case::stream_timeout_configured(
     "router_settings: {stream_timeout: 7.5}",
     "stream_timeout",
-    json!(7.5),
+    "7.5",
     FieldSource::Config
 )]
-#[case::max_fallbacks_default("router_settings: {}", "max_fallbacks", json!(5), FieldSource::Default)]
-#[case::fallbacks_unset("router_settings: {}", "fallbacks", json!(null), FieldSource::Default)]
+#[case::max_fallbacks_default("router_settings: {}", "max_fallbacks", "5", FieldSource::Default)]
+#[case::fallbacks_unset("router_settings: {}", "fallbacks", "null", FieldSource::Default)]
 #[case::fallbacks_configured(
     "router_settings: {fallbacks: [{gpt-4: [gpt-3.5-turbo]}]}",
     "fallbacks",
-    json!([{"gpt-4": ["gpt-3.5-turbo"]}]),
+    r#"[{"gpt-4": ["gpt-3.5-turbo"]}]"#,
     FieldSource::Config
 )]
 #[case::context_window_default(
     "router_settings: {}",
     "context_window_fallbacks",
-    json!(null),
+    "null",
     FieldSource::Default
 )]
 #[case::context_window_configured(
     "router_settings: {context_window_fallbacks: [{gpt-4: [gpt-3.5-turbo]}]}",
     "context_window_fallbacks",
-    json!([{"gpt-4": ["gpt-3.5-turbo"]}]),
+    r#"[{"gpt-4": ["gpt-3.5-turbo"]}]"#,
     FieldSource::Config
 )]
 #[case::content_policy_default(
     "router_settings: {}",
     "content_policy_fallbacks",
-    json!(null),
+    "null",
     FieldSource::Default
 )]
 #[case::content_policy_configured(
     "router_settings: {content_policy_fallbacks: [{gpt-4: [gpt-3.5-turbo]}]}",
     "content_policy_fallbacks",
-    json!([{"gpt-4": ["gpt-3.5-turbo"]}]),
+    r#"[{"gpt-4": ["gpt-3.5-turbo"]}]"#,
     FieldSource::Config
 )]
-#[case::allowed_fails_default("router_settings: {}", "allowed_fails", json!(3), FieldSource::Default)]
+#[case::allowed_fails_default("router_settings: {}", "allowed_fails", "3", FieldSource::Default)]
 #[case::allowed_fails_zero(
     "router_settings: {allowed_fails: 0}",
     "allowed_fails",
-    json!(0),
+    "0",
     FieldSource::Config
 )]
-#[case::cooldown_default("router_settings: {}", "cooldown_time", json!(5), FieldSource::Default)]
+#[case::cooldown_default("router_settings: {}", "cooldown_time", "5", FieldSource::Default)]
 #[case::cooldown_configured(
     "router_settings: {cooldown_time: 2.5}",
     "cooldown_time",
-    json!(2.5),
+    "2.5",
     FieldSource::Config
 )]
-#[case::retry_after_default("router_settings: {}", "retry_after", json!(0), FieldSource::Default)]
-#[case::retry_policy_unset("router_settings: {}", "retry_policy", json!(null), FieldSource::Unset)]
+#[case::retry_after_default("router_settings: {}", "retry_after", "0", FieldSource::Default)]
+#[case::retry_policy_unset("router_settings: {}", "retry_policy", "null", FieldSource::Unset)]
 #[case::retry_policy_configured(
     "router_settings: {retry_policy: {BadRequestErrorRetries: 2}}",
     "retry_policy",
-    json!({"BadRequestErrorRetries": 2}),
+    r#"{"BadRequestErrorRetries": 2}"#,
     FieldSource::Config
 )]
-#[case::alias_unset("router_settings: {}", "model_group_alias", json!({}), FieldSource::Default)]
+#[case::alias_unset("router_settings: {}", "model_group_alias", "{}", FieldSource::Default)]
 #[case::alias_configured(
     "router_settings: {model_group_alias: {gpt-4: gpt-3.5-turbo}}",
     "model_group_alias",
-    json!({"gpt-4": "gpt-3.5-turbo"}),
+    r#"{"gpt-4": "gpt-3.5-turbo"}"#,
     FieldSource::Config
 )]
-#[case::pre_call_checks_default("router_settings: {}", "enable_pre_call_checks", json!(false), FieldSource::Default)]
+#[case::pre_call_checks_default(
+    "router_settings: {}",
+    "enable_pre_call_checks",
+    "false",
+    FieldSource::Default
+)]
 #[case::pre_call_checks_configured(
     "router_settings: {enable_pre_call_checks: true}",
     "enable_pre_call_checks",
-    json!(true),
+    "true",
     FieldSource::Config
 )]
-#[case::max_parallel_unset("router_settings: {}", "default_max_parallel_requests", json!(null), FieldSource::Unset)]
+#[case::max_parallel_unset(
+    "router_settings: {}",
+    "default_max_parallel_requests",
+    "null",
+    FieldSource::Unset
+)]
 #[case::max_parallel_configured(
     "router_settings: {default_max_parallel_requests: 8}",
     "default_max_parallel_requests",
-    json!(8),
+    "8",
     FieldSource::Config
 )]
-#[case::verbose_default("router_settings: {}", "set_verbose", json!(false), FieldSource::Default)]
-#[case::tag_filtering_default("router_settings: {}", "tag_filtering_match_any", json!(true), FieldSource::Default)]
-#[case::cooldowns_unset("router_settings: {}", "disable_cooldowns", json!(null), FieldSource::Unset)]
-#[case::groups_unset("router_settings: {}", "routing_groups", json!([]), FieldSource::Default)]
+#[case::verbose_default("router_settings: {}", "set_verbose", "false", FieldSource::Default)]
+#[case::tag_filtering_default(
+    "router_settings: {}",
+    "tag_filtering_match_any",
+    "true",
+    FieldSource::Default
+)]
+#[case::cooldowns_unset("router_settings: {}", "disable_cooldowns", "null", FieldSource::Unset)]
+#[case::groups_unset("router_settings: {}", "routing_groups", "[]", FieldSource::Default)]
 #[case::strategy_args_unset(
     "router_settings: {}",
     "routing_strategy_args",
-    json!({}),
+    "{}",
     FieldSource::Default
 )]
 fn router_settings_behaviors(
     #[case] document: &str,
     #[case] key: &str,
-    #[case] expected: JsonValue,
+    #[case] expected_json: &str,
     #[case] expected_source: FieldSource,
 ) {
+    let expected = json(expected_json);
     let answer = response(document);
     assert_eq!(answer.current_values.get(key), Some(&expected));
     assert_eq!(answer.source.get(key), Some(&expected_source));
@@ -171,34 +195,34 @@ fn router_settings_behaviors(
 }
 
 #[rstest]
-#[case::zero_retries("router_settings: {num_retries: 0}", "num_retries", json!(0))]
-#[case::zero_fails("router_settings: {allowed_fails: 0}", "allowed_fails", json!(0))]
-#[case::zero_max_fallbacks("router_settings: {max_fallbacks: 0}", "max_fallbacks", json!(0))]
-#[case::zero_cooldown("router_settings: {cooldown_time: 0}", "cooldown_time", json!(0))]
-#[case::zero_timeout("router_settings: {timeout: 0}", "timeout", json!(0))]
+#[case::zero_retries("router_settings: {num_retries: 0}", "num_retries", "0")]
+#[case::zero_fails("router_settings: {allowed_fails: 0}", "allowed_fails", "0")]
+#[case::zero_max_fallbacks("router_settings: {max_fallbacks: 0}", "max_fallbacks", "0")]
+#[case::zero_cooldown("router_settings: {cooldown_time: 0}", "cooldown_time", "0")]
+#[case::zero_timeout("router_settings: {timeout: 0}", "timeout", "0")]
 #[case::largest_allowed_fails(
     "router_settings: {allowed_fails: 4294967295}",
     "allowed_fails",
-    json!(4294967295_u32)
+    "4294967295"
 )]
 #[case::largest_max_fallbacks(
     "router_settings: {max_fallbacks: 9223372036854775807}",
     "max_fallbacks",
-    json!(9223372036854775807_i64)
+    "9223372036854775807"
 )]
-#[case::empty_alias("router_settings: {model_group_alias: {gpt-4: ''}}", "model_group_alias", json!({"gpt-4": ""}))]
-#[case::empty_groups("router_settings: {routing_groups: []}", "routing_groups", json!([]))]
-#[case::fractional_retry_after(
-    "router_settings: {retry_after: 0.5}",
-    "retry_after",
-    json!(0.5)
+#[case::empty_alias(
+    "router_settings: {model_group_alias: {gpt-4: ''}}",
+    "model_group_alias",
+    r#"{"gpt-4": ""}"#
 )]
+#[case::empty_groups("router_settings: {routing_groups: []}", "routing_groups", "[]")]
+#[case::fractional_retry_after("router_settings: {retry_after: 0.5}", "retry_after", "0.5")]
 fn router_settings_boundaries(
     #[case] document: &str,
     #[case] key: &str,
-    #[case] expected: JsonValue,
+    #[case] expected_json: &str,
 ) {
-    assert_eq!(value(document, key), expected);
+    assert_eq!(value(document, key), json(expected_json));
 }
 
 #[test]
@@ -238,6 +262,11 @@ fn fields_endpoint_reports_the_reviewed_catalog_without_values() {
             .iter()
             .all(|field| field.field_value.is_null())
     );
+}
+
+#[test]
+fn only_the_routing_strategy_field_lists_options() {
+    let answer = fields_response();
     let strategy = &answer.fields[0];
     assert_eq!(
         strategy.options.as_deref(),
@@ -261,6 +290,11 @@ fn fields_endpoint_reports_the_reviewed_catalog_without_values() {
             .skip(1)
             .all(|field| field.options.is_none())
     );
+}
+
+#[test]
+fn the_fields_response_lists_the_routing_strategies_and_descriptions() {
+    let answer = fields_response();
     assert_eq!(
         answer.routing_group_strategies,
         [
@@ -281,6 +315,11 @@ fn fields_endpoint_reports_the_reviewed_catalog_without_values() {
             &"Routes group calls to the lowest-priority-number available model, with failover to higher numbers. Equal priorities share traffic. Direct member calls keep their existing policy."
         )
     );
+}
+
+#[test]
+fn only_the_tag_filtering_field_carries_a_documentation_link() {
+    let answer = fields_response();
     let tag = answer
         .fields
         .iter()
@@ -306,18 +345,18 @@ fn field_defaults_are_read_from_the_reviewed_catalog() {
         .collect();
     assert_eq!(
         defaults.get("routing_strategy"),
-        Some(&json!("simple-shuffle"))
+        Some(&json("simple-shuffle"))
     );
-    assert_eq!(defaults.get("routing_groups"), Some(&json!([])));
-    assert_eq!(defaults.get("routing_strategy_args"), Some(&json!({})));
-    assert_eq!(defaults.get("num_retries"), Some(&json!(0)));
-    assert_eq!(defaults.get("max_fallbacks"), Some(&json!(5)));
-    assert_eq!(defaults.get("retry_after"), Some(&json!(0)));
-    assert_eq!(defaults.get("enable_pre_call_checks"), Some(&json!(false)));
-    assert_eq!(defaults.get("tag_filtering_match_any"), Some(&json!(true)));
-    assert_eq!(defaults.get("timeout"), Some(&json!(null)));
-    assert_eq!(field_default("num_retries"), json!(0));
-    assert_eq!(field_default("not_a_router_setting"), json!(null));
+    assert_eq!(defaults.get("routing_groups"), Some(&json("[]")));
+    assert_eq!(defaults.get("routing_strategy_args"), Some(&json("{}")));
+    assert_eq!(defaults.get("num_retries"), Some(&json("0")));
+    assert_eq!(defaults.get("max_fallbacks"), Some(&json("5")));
+    assert_eq!(defaults.get("retry_after"), Some(&json("0")));
+    assert_eq!(defaults.get("enable_pre_call_checks"), Some(&json("false")));
+    assert_eq!(defaults.get("tag_filtering_match_any"), Some(&json("true")));
+    assert_eq!(defaults.get("timeout"), Some(&json("null")));
+    assert_eq!(field_default("num_retries"), json("0"));
+    assert_eq!(field_default("not_a_router_setting"), json("null"));
 }
 
 #[test]
@@ -326,19 +365,17 @@ fn settings_endpoint_reports_the_router_defaults() {
     assert_eq!(answer.current_values.len(), 22);
     assert_eq!(
         answer.current_values.get("default_litellm_params"),
-        Some(&json!({
-            "max_retries": 0,
-            "metadata": {"caching_groups": null},
-            "timeout": null,
-        }))
+        Some(&json(
+            r#"{"max_retries": 0, "metadata": {"caching_groups": null}, "timeout": null}"#
+        ))
     );
     assert_eq!(
         answer.current_values.get("enable_tag_filtering"),
-        Some(&json!(false))
+        Some(&json("false"))
     );
     assert_eq!(
         answer.current_values.get("routing_strategy_args"),
-        Some(&json!({}))
+        Some(&json("{}"))
     );
 }
 
@@ -346,10 +383,10 @@ fn settings_endpoint_reports_the_router_defaults() {
 fn litellm_settings_feed_the_router_defaults() {
     let document = "litellm_settings: {num_retries: 6, fallbacks: [{gpt-4: [gpt-3.5-turbo]}]}";
     let answer = response(document);
-    assert_eq!(answer.current_values.get("num_retries"), Some(&json!(6)));
+    assert_eq!(answer.current_values.get("num_retries"), Some(&json("6")));
     assert_eq!(
         answer.current_values.get("fallbacks"),
-        Some(&json!([{"gpt-4": ["gpt-3.5-turbo"]}]))
+        Some(&json(r#"[{"gpt-4": ["gpt-3.5-turbo"]}]"#))
     );
     assert_eq!(
         answer.source.get("num_retries"),
@@ -362,7 +399,7 @@ fn default_fallbacks_append_to_the_configured_chains() {
     let document = "router_settings: {default_fallbacks: [gpt-3.5-turbo]}";
     assert_eq!(
         value(document, "fallbacks"),
-        json!([{"*": ["gpt-3.5-turbo"]}])
+        json(r#"[{"*": ["gpt-3.5-turbo"]}]"#)
     );
 }
 
@@ -372,20 +409,9 @@ fn routing_groups_keep_their_configured_shape() {
     let answer = response(document);
     assert_eq!(
         answer.current_values.get("routing_groups"),
-        Some(&json!([
-            {
-                "group_name": "fast",
-                "models": ["gpt-4"],
-                "routing_strategy": "priority",
-                "model_priorities": {"gpt-4": 1},
-            },
-            {
-                "group_name": "slow",
-                "models": ["gpt-3.5-turbo"],
-                "routing_strategy": "simple-shuffle",
-                "routing_strategy_args": {"ttl": 60},
-            },
-        ]))
+        Some(&json(
+            r#"[{"group_name": "fast", "models": ["gpt-4"], "routing_strategy": "priority", "model_priorities": {"gpt-4": 1}}, {"group_name": "slow", "models": ["gpt-3.5-turbo"], "routing_strategy": "simple-shuffle", "routing_strategy_args": {"ttl": 60}}]"#
+        ))
     );
     assert_eq!(
         answer.source.get("routing_groups"),
@@ -399,12 +425,9 @@ fn latency_arguments_are_reported_as_configured() {
     let answer = response(document);
     assert_eq!(
         answer.current_values.get("routing_strategy_args"),
-        Some(&json!({
-            "ttl": 60,
-            "lowest_latency_buffer": 0.1,
-            "max_latency_list_size": 2048,
-            "ttft_percentile": 0.95,
-        }))
+        Some(&json(
+            r#"{"ttl": 60, "lowest_latency_buffer": 0.1, "max_latency_list_size": 2048, "ttft_percentile": 0.95}"#
+        ))
     );
     assert_eq!(
         answer.source.get("routing_strategy_args"),
@@ -418,7 +441,7 @@ fn usage_arguments_are_reported_as_configured() {
     let answer = response(document);
     assert_eq!(
         answer.current_values.get("routing_strategy_args"),
-        Some(&json!({"ttl": 120}))
+        Some(&json(r#"{"ttl": 120}"#))
     );
     assert_eq!(
         answer.source.get("routing_strategy_args"),
@@ -432,11 +455,9 @@ fn lar1_thresholds_are_reported_as_configured() {
     let answer = response(document);
     assert_eq!(
         answer.current_values.get("routing_strategy_args"),
-        Some(&json!({
-            "confidence_threshold_low": 0.4,
-            "confidence_threshold_medium": 0.6,
-            "confidence_threshold_high": 0.8,
-        }))
+        Some(&json(
+            r#"{"confidence_threshold_low": 0.4, "confidence_threshold_medium": 0.6, "confidence_threshold_high": 0.8}"#
+        ))
     );
     assert_eq!(
         answer.source.get("routing_strategy_args"),
@@ -451,7 +472,7 @@ fn configured_default_params_replace_the_computed_object() {
     let answer = response(document);
     assert_eq!(
         answer.current_values.get("default_litellm_params"),
-        Some(&json!({"stream_timeout": 1.5}))
+        Some(&json(r#"{"stream_timeout": 1.5}"#))
     );
     assert_eq!(
         answer.source.get("default_litellm_params"),
@@ -463,21 +484,19 @@ fn configured_default_params_replace_the_computed_object() {
 fn an_unset_router_timeout_leaves_the_computed_default_params_timed_by_the_global() {
     let document = "litellm_settings: {request_timeout: 45.5}";
     let answer = response(document);
-    assert_eq!(answer.current_values.get("timeout"), Some(&json!(45.5)));
+    assert_eq!(answer.current_values.get("timeout"), Some(&json("45.5")));
     assert_eq!(
         answer.current_values.get("default_litellm_params"),
-        Some(&json!({
-            "max_retries": 0,
-            "metadata": {"caching_groups": null},
-            "timeout": null,
-        }))
+        Some(&json(
+            r#"{"max_retries": 0, "metadata": {"caching_groups": null}, "timeout": null}"#
+        ))
     );
 }
 
 #[test]
 fn a_written_whole_float_is_reported_as_an_integer() {
     let answer = response("router_settings: {timeout: 5.0}");
-    assert_eq!(answer.current_values.get("timeout"), Some(&json!(5)));
+    assert_eq!(answer.current_values.get("timeout"), Some(&json("5")));
     assert_eq!(answer.source.get("timeout"), Some(&FieldSource::Config));
 }
 
@@ -486,7 +505,7 @@ fn a_configured_disable_cooldowns_false_reads_back_as_null() {
     let answer = response("router_settings: {disable_cooldowns: false}");
     assert_eq!(
         answer.current_values.get("disable_cooldowns"),
-        Some(&json!(null))
+        Some(&json("null"))
     );
     assert_eq!(
         answer.source.get("disable_cooldowns"),
@@ -497,7 +516,7 @@ fn a_configured_disable_cooldowns_false_reads_back_as_null() {
 #[test]
 fn an_explicitly_empty_fallback_list_reads_back_as_null() {
     let answer = response("router_settings: {fallbacks: []}");
-    assert_eq!(answer.current_values.get("fallbacks"), Some(&json!(null)));
+    assert_eq!(answer.current_values.get("fallbacks"), Some(&json("null")));
     assert_eq!(answer.source.get("fallbacks"), Some(&FieldSource::Default));
 }
 

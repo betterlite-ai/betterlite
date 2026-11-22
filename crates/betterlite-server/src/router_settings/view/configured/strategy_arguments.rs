@@ -45,18 +45,24 @@ pub(super) fn strategy_args(config: &Config) -> BTreeMap<String, JsonValue> {
 }
 
 fn insert_number(args: &mut BTreeMap<String, JsonValue>, key: &str, value: Option<f64>) {
-    if let Some(value) = value {
-        args.insert(String::from(key), number(value));
+    if let Some(amount) = value {
+        args.insert(String::from(key), number(amount));
     }
 }
 
-fn insert_decimal<T: Display>(args: &mut BTreeMap<String, JsonValue>, key: &str, value: Option<T>) {
-    if let Some(value) = value {
-        args.insert(String::from(key), decimal(value));
+fn insert_decimal<T>(args: &mut BTreeMap<String, JsonValue>, key: &str, value: Option<T>)
+where
+    T: Display,
+{
+    if let Some(amount) = value {
+        args.insert(String::from(key), decimal(amount));
     }
 }
 
-fn decimal<T: Display>(value: T) -> JsonValue {
+fn decimal<T>(value: T) -> JsonValue
+where
+    T: Display,
+{
     value
         .to_string()
         .parse::<f64>()
