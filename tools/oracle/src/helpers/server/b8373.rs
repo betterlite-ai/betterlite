@@ -96,14 +96,13 @@ where
         .with_level(false)
         .with_writer(buffer.clone())
         .finish();
-    {
-        let _guard = set_default(subscriber);
-        emit();
-    }
-    match buffer.first_line() {
-        Some(message) => json!({"warned": true, "message": message}),
-        None => json!({"warned": false, "message": Value::Null}),
-    }
+    let guard = set_default(subscriber);
+    emit();
+    drop(guard);
+    buffer.first_line().map_or_else(
+        || json!({"warned": false, "message": Value::Null}),
+        |message| json!({"warned": true, "message": message}),
+    )
 }
 
 const fn presence(configured: bool) -> RedisPresence {
@@ -156,14 +155,14 @@ impl Helper for Op {
                     DatabasePresence::Absent
                 };
                 Ok(warned_message(|| {
-                    warn_budget_without_db(Some(budget), database)
+                    warn_budget_without_db(Some(budget), database);
                 }))
             }
             Input::FailClosedWarning {
                 enabled,
                 redis_configured,
             } => Ok(warned_message(|| {
-                warn_fail_closed_without_redis(*enabled, presence(*redis_configured))
+                warn_fail_closed_without_redis(*enabled, presence(*redis_configured));
             })),
             Input::BaselineRow { row } => baseline_row(row),
         }
