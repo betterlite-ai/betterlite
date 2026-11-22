@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_config::loader::ConfigLoader;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json as LogJson;
@@ -229,6 +230,24 @@ fn vercel_key_stops_at_the_gateway_key_and_never_reads_the_oidc_token() {
     assert_eq!(
         secret_text(vercel(&fixture).api_key.as_ref()),
         Some(String::from("sk-global"))
+    );
+}
+
+#[test]
+fn the_vercel_chat_arm_never_falls_back_to_an_openai_key() {
+    let lookup: BTreeMap<String, String> =
+        BTreeMap::from([(String::from("OPENAI_API_KEY"), String::from("sk-openai"))]);
+    let mut fixture = Fixture::new();
+    fixture.provider = String::from(VERCEL_PROVIDER);
+    fixture.settings = ConfigLoader { lookup }
+        .load("")
+        .expect("the fixture config loads")
+        .sections
+        .gateway_provider_keys;
+    assert_eq!(
+        secret_text(vercel(&fixture).api_key.as_ref()),
+        None,
+        "an OpenAI key is never sent to the Vercel gateway"
     );
 }
 
