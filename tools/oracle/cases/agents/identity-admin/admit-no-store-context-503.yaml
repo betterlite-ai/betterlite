@@ -1,0 +1,22 @@
+kind: helper
+name: admit-no-store-context-503
+call:
+  b4781:
+    operation: admit
+    auth:
+      user_id: human
+      team_id: null
+      agent_id: agent-1
+      context:
+        agent_id: agent-1
+        binding_revision: rev-1
+        mode: delegated
+        user_id: human
+        subject_oid: null
+    registry: []
+    store: null
+    retired: false
+    granted: []
+env: {}
+compare:
+  ignore: []
