@@ -1,7 +1,7 @@
 id: B048
 milestone: M3 providers
 title: Web search and crawl providers
-status: todo
+status: done
 depends_on: [B002, B3270, B171, B206, B1552, B1553, B1554, B1555, B8020, B8021, B8022, B8023, B8024, B8025, B5834]
 file: tasks/B048-tinyfish-search-registry.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/tinyfish/**"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2992
