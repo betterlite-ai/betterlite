@@ -89,11 +89,13 @@ def _response(payload: ErrorPayload) -> Response:
     )
 
 
-def _response_errors(payload: ErrorPayload) -> BaseException | None:
+# one dispatch over the native error types: each class is built with its own constructor's fields
+def _build_error(payload: ErrorPayload) -> BaseException:
     message = _text_value(payload.get("message"))
     model = _text_value(payload.get("model"))
     provider = _text_value(payload.get("llm_provider"))
     body = payload.get("body")
+    headers = payload.get("headers")
     response = _response(payload)
     error: BaseException | None = None
     match payload["type"]:
@@ -108,115 +110,66 @@ def _response_errors(payload: ErrorPayload) -> BaseException | None:
         case "UnprocessableEntityError":
             error = exceptions.UnprocessableEntityError(message, model, provider, response)
         case "Timeout":
-            error = exceptions.Timeout(message, model, provider, headers=payload.get("headers"))
+            error = exceptions.Timeout(message, model, provider, headers=headers)
         case "RateLimitError":
             error = exceptions.RateLimitError(
-                message, provider, model, headers=payload.get("headers"), body=body
+                message, provider, model, headers=headers, body=body
             )
-        case object():
-            pass
-    return error
-
-
-def _status_errors(payload: ErrorPayload) -> BaseException | None:
-    error: BaseException | None = None
-    match payload["type"]:
         case "BudgetExceededError":
             error = exceptions.BudgetExceededError(
-                current_cost=0.0,
-                max_budget=0.0,
-                message=_text_value(payload.get("message")),
-                llm_provider=_text_value(payload.get("llm_provider")),
+                current_cost=0.0, max_budget=0.0, message=message, llm_provider=provider
             )
         case "ContextWindowExceededError":
             error = exceptions.ContextWindowExceededError(
-                message=_text_value(payload.get("message")),
-                model=_text_value(payload.get("model")),
-                llm_provider=_text_value(payload.get("llm_provider")),
+                message=message, model=model, llm_provider=provider
             )
         case "ContentPolicyViolationError":
             error = exceptions.ContentPolicyViolationError(
-                message=_text_value(payload.get("message")),
-                model=_text_value(payload.get("model")),
-                llm_provider=_text_value(payload.get("llm_provider")),
-                body=payload.get("body"),
+                message=message, model=model, llm_provider=provider, body=body
             )
         case "GuardrailRaisedException":
             error = exceptions.GuardrailRaisedException(
-                message=_text_value(payload.get("message")),
+                message=message,
                 should_wrap_with_default_message=False,
                 status_code=_status_value(payload.get("status_code")),
             )
         case "ServiceUnavailableError":
             error = exceptions.ServiceUnavailableError(
-                message=_text_value(payload.get("message")),
-                llm_provider=_text_value(payload.get("llm_provider")),
-                model=_text_value(payload.get("model")),
+                message=message, llm_provider=provider, model=model
             )
         case "BadGatewayError":
             error = exceptions.BadGatewayError(
-                message=_text_value(payload.get("message")),
-                llm_provider=_text_value(payload.get("llm_provider")),
-                model=_text_value(payload.get("model")),
+                message=message, llm_provider=provider, model=model
             )
         case "InternalServerError":
             error = exceptions.InternalServerError(
-                message=_text_value(payload.get("message")),
-                llm_provider=_text_value(payload.get("llm_provider")),
-                model=_text_value(payload.get("model")),
-                body=payload.get("body"),
+                message=message, llm_provider=provider, model=model, body=body
             )
         case "APIError":
             error = exceptions.APIError(
                 status_code=_status_value(payload.get("status_code")),
-                message=_text_value(payload.get("message")),
-                llm_provider=_text_value(payload.get("llm_provider")),
-                model=_text_value(payload.get("model")),
-                body=payload.get("body"),
+                message=message,
+                llm_provider=provider,
+                model=model,
+                body=body,
             )
+        case "JSONSchemaValidationError":
+            error = exceptions.JSONSchemaValidationError(model, provider, message, "")
+        case "MidStreamFallbackError":
+            error = exceptions.MidStreamFallbackError(message, model, provider)
+        case "Exception":
+            error = Exception(message)
+        case "APIConnectionError":
+            error = exceptions.APIConnectionError(message, provider, model)
+        case "APIResponseValidationError":
+            error = exceptions.APIResponseValidationError(message, provider, model)
+        case "UnsupportedParamsError":
+            error = exceptions.UnsupportedParamsError(message, provider, model)
         case object():
             pass
+    if error is None:
+        raise UnknownNativeError(payload["type"])
     return error
-
-
-# the three failures below take LiteLLM's (message, llm_provider, model) order positionally
-PLAIN_ERRORS: Final[dict[str, type[BaseException]]] = {
-    "APIConnectionError": exceptions.APIConnectionError,
-    "APIResponseValidationError": exceptions.APIResponseValidationError,
-    "UnsupportedParamsError": exceptions.UnsupportedParamsError,
-}
-
-
-def _plain_errors(payload: ErrorPayload) -> BaseException | None:
-    name = payload["type"]
-    message = _text_value(payload.get("message"))
-    if name == "JSONSchemaValidationError":
-        return exceptions.JSONSchemaValidationError(
-            _text_value(payload.get("model")),
-            _text_value(payload.get("llm_provider")),
-            message,
-            "",
-        )
-    if name == "MidStreamFallbackError":
-        return exceptions.MidStreamFallbackError(
-            message, _text_value(payload.get("model")), _text_value(payload.get("llm_provider"))
-        )
-    if name == "Exception":
-        return Exception(message)
-    if name in PLAIN_ERRORS:
-        return PLAIN_ERRORS[name](
-            message, _text_value(payload.get("llm_provider")), _text_value(payload.get("model"))
-        )
-    return None
-
-
-def _build_error(payload: ErrorPayload) -> BaseException:
-    # the table is split so each dispatch stays under ruff's branch and complexity limits
-    for builder in (_response_errors, _status_errors, _plain_errors):
-        error = builder(payload)
-        if error is not None:
-            return error
-    raise UnknownNativeError(payload["type"])
 
 
 def raise_native_error(error: NativeError) -> NoReturn:
