@@ -1,0 +1,85 @@
+task: B3610
+deviations:
+  - what: >-
+      The upstream error preview always decodes as UTF-8. LiteLLM decodes with the
+      response's declared charset (response.encoding), which httpx reads from the
+      Content-Type header.
+    why: >-
+      The preview only feeds a log line and the failure exception's detail, and no
+      betterlite response body decodes by charset today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L926-L938
+  - what: >-
+      A pass-through body whose metadata or litellm_metadata value is not a JSON
+      object is a typed error naming the field. LiteLLM skips a falsy value and would
+      raise TypeError merging a truthy non-mapping.
+    why: >-
+      docs/compatibility.md makes a value of the wrong type an error that names the
+      field instead of porting Python truthiness.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L603-L608
+  - what: >-
+      Guardrail logging info is carried only when it is a non-empty list. LiteLLM
+      treats any falsy value as absent and copies any other iterable through list(),
+      which would split a string into characters.
+    why: >-
+      A typed model has no iterable that is not a list, and a string is not the
+      entries shape any guardrail writes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L759-L768
+  - what: >-
+      A tags value in the merged metadata that is not a list is replaced by the new
+      tag list. LiteLLM would let the extend raise AttributeError.
+    why: >-
+      A client-supplied scalar must not fail an otherwise valid pass-through request,
+      and the tags it sent are what the operator asked to log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1910-L1913
+  - what: >-
+      Callback resolution cannot tell an absent callback list from an empty one:
+      B1109's CallbackSettings stores success_callback and failure_callback as Vec,
+      so every branch reports Some([]) where LiteLLM keeps None for an unset list.
+    why: >-
+      B1109's CallbackSettings stores the lists as Vec, so the wiring receives
+      success_callbacks Some([]) rather than None for that branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L844-L860
+  - what: >-
+      The failure request payload carries the logging object as its model_call_details
+      JSON, and failure hooks get no Python traceback string.
+    why: >-
+      betterlite hooks take typed request data, and a Python traceback has no Rust
+      equivalent to format.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L971-L989
+  - what: >-
+      Header values that are not valid UTF-8 are skipped when the request headers are
+      copied into proxy_server_request.
+    why: >-
+      betterlite's request headers are strings, so an opaque header value has no
+      place in the logged request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L650-L664
+  - what: >-
+      A failed preview read logs the transport error's message, not Python's exception
+      class name.
+    why: >-
+      The typed HttpError carries the reason where Python's httpx error carries only
+      its class name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L903-L916
+  - what: >-
+      The already-consumed-response branch of _error_body_preview_and_relay has no
+      Rust counterpart; the replay stream is the only body source, so a consumed body
+      is an empty one.
+    why: >-
+      betterlite never hands a consumed response to the failure path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L926-L931
+  - what: >-
+      An upstream response_cost that is NaN or infinite is reported as 0.0 in the
+      failure payload. LiteLLM writes the float unchanged, and its JSON output spells
+      those values NaN and Infinity.
+    why: >-
+      betterlite emits standard JSON only, where neither value is a number, and a
+      non-finite cost cannot be charged anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L771-L800
+  - what: >-
+      A mid-stream relay error reaches the failure hook as ProxyHookError::Other with
+      the transport error's message; LiteLLM passes the original exception object.
+    why: >-
+      betterlite's failure hook takes a typed proxy error, and an HttpError has no
+      matching ProxyHookError variant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L993-L1019
+kept_bugs: []
