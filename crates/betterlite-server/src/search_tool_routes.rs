@@ -1,8 +1,8 @@
-mod body;
-mod connection;
+pub mod body;
+pub mod connection;
 mod error;
 mod list;
-mod records;
+pub mod records;
 pub mod state;
 
 mod tests;

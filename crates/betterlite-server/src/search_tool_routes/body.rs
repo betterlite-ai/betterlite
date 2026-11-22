@@ -14,7 +14,7 @@ const JSON_DECODE_ERROR: &str = "JSON decode error";
 // FastAPI's request validation error: one issue with the path into the body that failed
 #[derive(Debug, Error, Serialize)]
 #[error("{msg}")]
-pub(super) struct BodyError {
+pub struct BodyError {
     #[serde(rename = "type")]
     issue_type: &'static str,
     loc: Vec<Location>,
@@ -34,7 +34,7 @@ struct ValidationBody {
 }
 
 // FastAPI reads an empty or null body as a missing one, and any other bytes as JSON
-pub(super) fn decode_body<Body>(bytes: &[u8]) -> Result<Body, BodyError>
+pub fn decode_body<Body>(bytes: &[u8]) -> Result<Body, BodyError>
 where
     Body: DeserializeOwned,
 {

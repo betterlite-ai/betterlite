@@ -5,7 +5,7 @@ use betterlite_db::search_tools::delete::DeletedSearchTool;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
-pub(super) struct WriteBody {
+pub struct WriteBody {
     pub(super) search_tool: SearchTool,
 }
 

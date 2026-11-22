@@ -39,7 +39,7 @@ pub(super) const SEARCH_PROVIDERS: [&str; 20] = [
 ];
 
 #[derive(Deserialize)]
-pub(super) struct ConnectionBody {
+pub struct ConnectionBody {
     litellm_params: ConnectionParams,
 }
 

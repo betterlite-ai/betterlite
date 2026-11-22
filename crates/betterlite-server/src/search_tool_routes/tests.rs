@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod corpus;
 mod support;
 
 use std::mem::take;
