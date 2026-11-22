@@ -1,6 +1,5 @@
 use std::mem::take;
 use std::pin::Pin;
-use std::str::from_utf8;
 use std::task::{Context, Poll};
 
 use futures_util::stream::{BoxStream, empty};
@@ -12,7 +11,6 @@ use crate::error::HttpError;
 
 pub const PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS: usize = 4096; // ast-grep-ignore: no-long-names
 const BODY_FRAMING_HEADERS: [&str; 2] = ["content-encoding", "content-length"];
-const REPLACEMENT: char = '\u{FFFD}';
 
 // the upstream body as it arrives; a stream item's error is the transport raising mid-read
 pub type ChunkStream = BoxStream<'static, Result<Vec<u8>, HttpError>>;
@@ -105,38 +103,17 @@ pub async fn error_body_preview_and_relay(
     body: ChunkStream,
 ) -> RelayedErrorBody {
     let (prefix, rest) = read_error_body_preview(body).await;
-    let preview = decode_utf8(&prefix);
+    // bytes.decode("utf-8", errors="replace"): an invalid sequence becomes one replacement character
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "LiteLLM decodes the preview with errors=replace"
+    )]
+    let preview = String::from_utf8_lossy(&prefix).into_owned();
     RelayedErrorBody {
         preview,
         status,
         headers: headers_without_body_framing(headers),
         stream: PrefixReplayStream::new(prefix, rest),
-    }
-}
-
-// bytes.decode("utf-8", errors="replace"): an invalid sequence becomes one replacement character
-fn decode_utf8(mut bytes: &[u8]) -> String {
-    let mut decoded = String::with_capacity(bytes.len());
-    loop {
-        match from_utf8(bytes) {
-            Ok(text) => {
-                decoded.push_str(text);
-                return decoded;
-            }
-            Err(error) => {
-                let valid = error.valid_up_to();
-                if let Some(text) = bytes.get(..valid).and_then(|prefix| from_utf8(prefix).ok()) {
-                    decoded.push_str(text);
-                }
-                decoded.push(REPLACEMENT);
-                let Some(invalid) = error.error_len() else {
-                    return decoded;
-                };
-                bytes = bytes
-                    .get(valid.saturating_add(invalid)..)
-                    .unwrap_or_default();
-            }
-        }
     }
 }
 

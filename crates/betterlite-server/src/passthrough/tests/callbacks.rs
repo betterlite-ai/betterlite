@@ -70,10 +70,9 @@ fn assert_key_level() {
 }
 
 fn assert_without_vars_and_unconfigured() {
-    // no callback vars leaves logging_kwargs unset but keeps the callback lists
+    // AddTeamCallback makes callback_vars required, so an entry that omits them is skipped like any invalid one
     let without_vars = wiring(r#"{"metadata": {"logging": [{"callback_name": "langfuse"}]}}"#);
-    assert_eq!(without_vars.success_callbacks, Some(names(&["langfuse"])));
-    assert!(without_vars.logging_kwargs.is_none());
+    assert_eq!(without_vars, TeamCallbackWiring::default());
 
     let unconfigured = wiring("{}");
     assert_eq!(unconfigured, TeamCallbackWiring::default());
@@ -112,7 +111,9 @@ fn team_callback_wiring() {
     assert!(empty.logging_kwargs.is_none());
 
     // Logging.__init__ copies these values out of the kwargs and may overwrite them
-    let mut resolved = wiring(r#"{"metadata": {"logging": [{"callback_name": "langfuse"}]}}"#);
+    let mut resolved = wiring(
+        r#"{"metadata": {"logging": [{"callback_name": "langfuse", "callback_vars": {"langfuse_host": "https://key"}}]}}"#,
+    );
     resolved.success_callbacks = Some(names(&["datadog"]));
     assert_eq!(resolved.success_callbacks, Some(names(&["datadog"])));
     assert_eq!(resolved.failure_callbacks, Some(names(&["langfuse"])));
