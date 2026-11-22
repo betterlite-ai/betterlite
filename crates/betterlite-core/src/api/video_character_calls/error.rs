@@ -8,7 +8,7 @@ use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
-use crate::api::video_selection::VideoSelectionError;
+use crate::api::video_selection::error::VideoSelectionError;
 
 // exception_type() maps every create and get failure with model "" and the caller's custom_llm_provider
 const MODEL: &str = "";

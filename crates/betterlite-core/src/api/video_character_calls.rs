@@ -130,8 +130,8 @@ impl fmt::Debug for CharacterOutcome<'_> {
 }
 
 // ast-grep-ignore: no-one-line-functions - LiteLLM's video_create_character: mock first, then one call
-pub fn video_create_character<'call, H: CharacterHandler>(
-    handler: &'call mut H,
+pub fn video_create_character<'call>(
+    handler: &'call mut dyn CharacterHandler,
     deps: CharacterCallDeps<'call>,
     call: &CreateCharacterCall,
 ) -> Result<CharacterOutcome<'call>, CharacterCallFailure> {
@@ -139,8 +139,8 @@ pub fn video_create_character<'call, H: CharacterHandler>(
 }
 
 // ast-grep-ignore: no-one-line-functions - LiteLLM's avideo_create_character: the whole flow is awaited
-pub async fn avideo_create_character<'call, H: CharacterHandler>(
-    handler: &'call mut H,
+pub async fn avideo_create_character<'call>(
+    handler: &'call mut dyn CharacterHandler,
     deps: CharacterCallDeps<'call>,
     call: &CreateCharacterCall,
 ) -> Result<CharacterObject, CharacterCallFailure> {
@@ -148,8 +148,8 @@ pub async fn avideo_create_character<'call, H: CharacterHandler>(
 }
 
 // ast-grep-ignore: no-one-line-functions - LiteLLM's video_get_character: mock first, then one call
-pub fn video_get_character<'call, H: CharacterHandler>(
-    handler: &'call mut H,
+pub fn video_get_character<'call>(
+    handler: &'call mut dyn CharacterHandler,
     deps: CharacterCallDeps<'call>,
     call: &GetCharacterCall,
 ) -> Result<CharacterOutcome<'call>, CharacterCallFailure> {
@@ -157,8 +157,8 @@ pub fn video_get_character<'call, H: CharacterHandler>(
 }
 
 // ast-grep-ignore: no-one-line-functions - LiteLLM's avideo_get_character: the whole flow is awaited
-pub async fn avideo_get_character<'call, H: CharacterHandler>(
-    handler: &'call mut H,
+pub async fn avideo_get_character<'call>(
+    handler: &'call mut dyn CharacterHandler,
     deps: CharacterCallDeps<'call>,
     call: &GetCharacterCall,
 ) -> Result<CharacterObject, CharacterCallFailure> {
@@ -166,8 +166,8 @@ pub async fn avideo_get_character<'call, H: CharacterHandler>(
 }
 
 // the steps both operations run, shared so the two entry points only name their call
-fn character_call<'call, H: CharacterHandler>(
-    handler: &'call mut H,
+fn character_call<'call>(
+    handler: &'call mut dyn CharacterHandler,
     deps: CharacterCallDeps<'call>,
     call: CharacterCall<'_>,
     asynchronous: bool,
@@ -187,8 +187,8 @@ fn character_call<'call, H: CharacterHandler>(
 }
 
 // the async entry resolves whatever form the handler answered in
-async fn awaited<'call, H: CharacterHandler>(
-    handler: &'call mut H,
+async fn awaited<'call>(
+    handler: &'call mut dyn CharacterHandler,
     deps: CharacterCallDeps<'call>,
     call: CharacterCall<'_>,
     asynchronous: bool,
