@@ -573,7 +573,16 @@ async fn realtime_vertex_credentials_and_refresh() {
     ]);
     let dispatch = Recorder::with_tokens(Arc::clone(&tokens));
     let (settings, connect, named_credentials, query) = vertex_setup();
-    let connection = vertex_connection(&dispatch, &settings, &connect, &query).await;
+    let litellm_params = IndexMap::new();
+    let call = call(
+        "vertex_ai/gemini-live",
+        &connect,
+        Some(&query),
+        &litellm_params,
+        false,
+    );
+    let (_, result) = run(&dispatch, &settings, &call).await;
+    let connection = result.unwrap();
     assert_vertex_connection(&settings, &connection, tokens.as_ref(), &named_credentials).await;
     assert_vertex_token_failures(tokens.as_ref()).await;
     vertex_settings_credentials().await;
@@ -633,24 +642,6 @@ fn vertex_setup() -> (
     connect.timeout = Some(4.0_f64);
     let query = IndexMap::from([(String::from("model"), String::from("gemini-live"))]);
     (settings, connect, named_credentials, query)
-}
-
-async fn vertex_connection(
-    dispatch: &Recorder,
-    settings: &RealtimeConnectionSettings,
-    connect: &RealtimeConnectParams,
-    query: &IndexMap<String, String>,
-) -> RealtimeConnection<TestConfig> {
-    let litellm_params = IndexMap::new();
-    let call = call(
-        "vertex_ai/gemini-live",
-        connect,
-        Some(query),
-        &litellm_params,
-        false,
-    );
-    let (_, result) = run(dispatch, settings, &call).await;
-    result.unwrap()
 }
 
 async fn assert_vertex_connection(
