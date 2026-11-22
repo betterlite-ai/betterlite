@@ -15,8 +15,16 @@ const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 #[case::empty_verifier("", "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU", true)]
 #[case::empty_verifier_wrong_challenge("", CHALLENGE, false)]
 #[case::empty_challenge(VERIFIER, "", false)]
-#[case::non_ascii_verifier("üñïçødé", "CRq1B87KKMcG1TcI6MGzKFE7NtDLjfpfofPinwjxMOs", true)]
-#[case::non_ascii_verifier_wrong_challenge("üñïçødé", CHALLENGE, false)]
+#[case::non_ascii_verifier(
+    "\u{fc}\u{f1}\u{ef}\u{e7}\u{f8}d\u{e9}",
+    "CRq1B87KKMcG1TcI6MGzKFE7NtDLjfpfofPinwjxMOs",
+    true
+)]
+#[case::non_ascii_verifier_wrong_challenge(
+    "\u{fc}\u{f1}\u{ef}\u{e7}\u{f8}d\u{e9}",
+    CHALLENGE,
+    false
+)]
 #[case::challenge_is_case_sensitive(VERIFIER, "e9melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", false)]
 fn verify_pkce_matches_litellm(
     #[case] code_verifier: &str,

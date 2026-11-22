@@ -22,12 +22,13 @@ pub struct SessionClaims {
     pub exp: u64,
 }
 
+// both payloads are boxed so neither variant is over 3x the other, the limit variant_size_differences enforces
 #[derive(Debug, Error)]
 pub enum SessionTokenError {
     #[error("the session token issue time is not a Unix timestamp")]
-    IssuedAt(#[source] TryFromFloatSecsError),
+    IssuedAt(#[source] Box<TryFromFloatSecsError>),
     #[error("the session token could not be signed")]
-    Encode(#[source] JwtError),
+    Encode(#[source] Box<JwtError>),
 }
 
 pub fn issue_session_token(
@@ -37,7 +38,7 @@ pub fn issue_session_token(
     iat: f64,
 ) -> Result<String, SessionTokenError> {
     let issued_at = Duration::try_from_secs_f64(iat)
-        .map_err(SessionTokenError::IssuedAt)?
+        .map_err(|source| SessionTokenError::IssuedAt(Box::new(source)))?
         .as_secs();
     let claims = SessionClaims {
         user_id: user_id.to_owned(),
@@ -51,5 +52,5 @@ pub fn issue_session_token(
         &claims,
         &EncodingKey::from_secret(master_key.expose_secret().as_bytes()),
     )
-    .map_err(SessionTokenError::Encode)
+    .map_err(|source| SessionTokenError::Encode(Box::new(source)))
 }

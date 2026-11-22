@@ -35,7 +35,6 @@ pub fn authorization_server_document(base_url: &str, issuer: &str) -> Authorizat
     }
 }
 
-#[must_use]
 pub fn protected_resource_document(
     base_url: &str,
 ) -> Result<ProtectedResourceDocument, UrlParseError> {
@@ -46,7 +45,6 @@ pub fn protected_resource_document(
     })
 }
 
-#[must_use]
 pub fn prefixed_base_url(base_url: &str, prefix: &str) -> Result<String, UrlParseError> {
     python_url::parse(base_url)
         .map(|parsed| format!("{}://{}{prefix}", parsed.scheme, parsed.netloc))

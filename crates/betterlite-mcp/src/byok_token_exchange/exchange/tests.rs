@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use jsonwebtoken::errors::ErrorKind;
@@ -137,10 +137,7 @@ impl FakeSink {
             SinkCall::Invalidate { .. } => self.invalidate_failure(),
         };
         self.lock().calls.push(call);
-        std::future::ready(match failure {
-            Some(error) => Err(error),
-            None => Ok(()),
-        })
+        ready(failure.map_or(Ok(()), Err))
     }
 
     fn store_failure(&self) -> Option<SinkError> {

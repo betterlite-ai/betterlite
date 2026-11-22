@@ -5,6 +5,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::request::Parts;
 use axum::http::{Request, StatusCode};
+use axum::response::Response;
 
 use super::super::tests::{Built, FakeCodes, FakeSink, TestApp, get, header, send, text};
 use super::super::{ByokOauthRoutes, RequestBaseUrl, routes};
@@ -22,7 +23,7 @@ impl RequestBaseUrl for HeaderBaseUrl {
     }
 }
 
-async fn fetch(app: TestApp, uri: &str) -> axum::response::Response {
+async fn fetch(app: TestApp, uri: &str) -> Response {
     let Built { router, .. } = app.build();
     send(router, get(uri)).await
 }

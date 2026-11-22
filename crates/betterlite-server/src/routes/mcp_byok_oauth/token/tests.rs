@@ -2,6 +2,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use axum::response::Response;
 use betterlite_mcp::byok_token_exchange::ports::AuthCodeRecord;
 use serde::Deserialize;
 
@@ -32,7 +33,7 @@ fn post_with(content_type: &str, body: &str) -> Request<Body> {
         .unwrap()
 }
 
-async fn exchange(app: TestApp, body: &str) -> (StatusCode, axum::response::Response) {
+async fn exchange(app: TestApp, body: &str) -> (StatusCode, Response) {
     let Built { router, .. } = app.build();
     let response = send(router, post_form(TOKEN_URI, body)).await;
     (response.status(), response)
@@ -244,7 +245,7 @@ async fn unknown_fields_are_ignored() {
 
 #[tokio::test]
 async fn more_than_a_thousand_fields_answer_the_starlette_error() {
-    let extras: Vec<String> = (0..998).map(|index| format!("x{index}=y")).collect();
+    let extras: Vec<String> = (0_usize..998).map(|index| format!("x{index}=y")).collect();
     let body = format!("{}&{}", valid_body(), extras.join("&"));
     let (status, response) = exchange(TestApp::with_record(), &body).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -256,7 +257,7 @@ async fn more_than_a_thousand_fields_answer_the_starlette_error() {
 
 #[tokio::test]
 async fn exactly_a_thousand_fields_is_accepted() {
-    let extras: Vec<String> = (0..997).map(|index| format!("x{index}=y")).collect();
+    let extras: Vec<String> = (0_usize..997).map(|index| format!("x{index}=y")).collect();
     let body = format!("{}&{}", valid_body(), extras.join("&"));
     let (status, _response) = exchange(TestApp::with_record(), &body).await;
     assert_eq!(status, StatusCode::OK);
@@ -289,7 +290,7 @@ async fn a_percent_encoded_unicode_verifier_is_decoded_as_utf8() {
 async fn a_raw_utf8_verifier_is_read_as_latin1() {
     let mut body =
         format!("grant_type=authorization_code&code=auth-code-1&code_verifier=").into_bytes();
-    body.extend_from_slice("üñïçødé".as_bytes());
+    body.extend_from_slice("\u{fc}\u{f1}\u{ef}\u{e7}\u{f8}d\u{e9}".as_bytes());
     let Built { router, .. } = TestApp::with_record().build();
     let request = Request::builder()
         .method("POST")
@@ -305,8 +306,8 @@ async fn a_raw_utf8_verifier_is_read_as_latin1() {
 #[test]
 fn decodes_form_components_like_starlette() {
     assert_eq!(decode_form_component(b"a+b"), "a b");
-    assert_eq!(decode_form_component(b"%C3%BC"), "ü");
-    assert_eq!(decode_form_component(b"\xC3\xBC"), "Ã¼");
+    assert_eq!(decode_form_component(b"%C3%BC"), "\u{fc}");
+    assert_eq!(decode_form_component(b"\xC3\xBC"), "\u{c3}\u{bc}");
     assert_eq!(decode_form_component(b"%FF%FE"), "\u{FFFD}\u{FFFD}");
     assert_eq!(decode_form_component(b"%C3"), "\u{FFFD}");
     assert_eq!(decode_form_component(b"%ZZ"), "%ZZ");

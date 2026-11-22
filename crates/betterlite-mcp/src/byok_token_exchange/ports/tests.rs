@@ -25,7 +25,8 @@ fn auth_code_record_debug_redacts_the_api_key() {
 
 #[test]
 fn auth_code_record_clone_keeps_the_api_key() {
-    let cloned = record().clone();
+    let original = record();
+    let cloned = original.clone();
     assert_eq!(cloned.api_key.expose_secret(), "sk-user-secret");
 }
 

@@ -43,17 +43,19 @@ where
             let issuer = format!("{request_base}/v1/mcp/oauth");
             Json(authorization_server_document(&request_base, &issuer)).into_response()
         }
-        DocumentKind::Prefixed(prefix) => match prefixed_base_url(&request_base, &prefix) {
-            Ok(base_url) => {
-                let issuer = format!("{base_url}/v1/mcp/oauth");
-                Json(authorization_server_document(&base_url, &issuer)).into_response()
-            }
-            Err(_error) => internal_server_error(),
-        },
-        DocumentKind::ProtectedResource => match protected_resource_document(&request_base) {
-            Ok(document) => Json(document).into_response(),
-            Err(_error) => internal_server_error(),
-        },
+        DocumentKind::Prefixed(prefix) => {
+            let Ok(base_url) = prefixed_base_url(&request_base, &prefix) else {
+                return internal_server_error();
+            };
+            let issuer = format!("{base_url}/v1/mcp/oauth");
+            Json(authorization_server_document(&base_url, &issuer)).into_response()
+        }
+        DocumentKind::ProtectedResource => {
+            let Ok(document) = protected_resource_document(&request_base) else {
+                return internal_server_error();
+            };
+            Json(document).into_response()
+        }
     }
 }
 

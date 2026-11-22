@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -108,10 +108,7 @@ impl FakeSink {
         failure: Option<SinkError>,
     ) -> impl Future<Output = Result<(), SinkError>> + Send {
         self.lock().calls.push(call);
-        std::future::ready(match failure {
-            Some(error) => Err(error),
-            None => Ok(()),
-        })
+        ready(failure.map_or(Ok(()), Err))
     }
 
     fn store_failure(&self) -> Option<SinkError> {

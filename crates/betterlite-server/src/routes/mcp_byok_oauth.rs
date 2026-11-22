@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::Extension;
+use axum::http::request::Parts;
 use axum::routing::{get, post};
 use betterlite_mcp::byok_token_exchange::ports::{AuthCodeLookup, ByokCredentialSink};
 use betterlite_mcp::oauth_resource::challenge::BYOK_RESOURCE_METADATA_PATH;
@@ -24,7 +25,7 @@ pub(crate) const TOKEN_PATH: &str = "/v1/mcp/oauth/token";
 
 // B8624 implements this over get_request_base_url, the normalized PROXY_BASE_URL and the trusted-proxy decision.
 pub(crate) trait RequestBaseUrl: Send + Sync {
-    fn base_url(&self, parts: &axum::http::request::Parts) -> String;
+    fn base_url(&self, parts: &Parts) -> String;
 }
 
 pub(crate) struct ByokOauthRoutes<C, S, B> {

@@ -1,5 +1,6 @@
 mod tests;
 
+use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -120,17 +121,15 @@ fn parse_form(bytes: &[u8]) -> Vec<(String, String)> {
     bytes
         .split(|byte| *byte == b'&')
         .filter(|segment| !segment.is_empty())
-        .map(
-            |segment| match segment.iter().position(|byte| *byte == b'=') {
-                Some(index) => (
-                    decode_form_component(segment.get(..index).unwrap_or_default()),
-                    decode_form_component(
-                        segment.get(index.saturating_add(1)..).unwrap_or_default(),
-                    ),
-                ),
-                None => (decode_form_component(segment), String::new()),
-            },
-        )
+        .map(|segment| {
+            let Some(index) = segment.iter().position(|byte| *byte == b'=') else {
+                return (decode_form_component(segment), String::new());
+            };
+            (
+                decode_form_component(segment.get(..index).unwrap_or_default()),
+                decode_form_component(segment.get(index.saturating_add(1)..).unwrap_or_default()),
+            )
+        })
         .collect()
 }
 
@@ -178,16 +177,14 @@ fn hex_pair(tail: &[u8]) -> Option<(u8, u8)> {
 fn push_utf8_replacing(output: &mut String, bytes: &[u8]) {
     let mut remaining = bytes;
     while !remaining.is_empty() {
-        match std::str::from_utf8(remaining) {
+        match from_utf8(remaining) {
             Ok(valid) => {
                 output.push_str(valid);
                 return;
             }
             Err(error) => {
                 let valid_up_to = error.valid_up_to();
-                if let Ok(valid) =
-                    std::str::from_utf8(remaining.get(..valid_up_to).unwrap_or_default())
-                {
+                if let Ok(valid) = from_utf8(remaining.get(..valid_up_to).unwrap_or_default()) {
                     output.push_str(valid);
                 }
                 output.push(char::REPLACEMENT_CHARACTER);
