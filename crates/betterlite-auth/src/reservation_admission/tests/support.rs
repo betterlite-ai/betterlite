@@ -9,7 +9,7 @@ use betterlite_redis::request_batch::lock;
 use rust_decimal::Decimal;
 
 use crate::budget_counter::{BudgetCounter, CounterEntityType};
-use crate::reservation_admission::counters::AdmissionCounters;
+use crate::reservation_admission::counters::{AdmissionCounters, WindowSeed};
 use crate::reservation_admission::engine::AdmissionRequest;
 use crate::reservation_settlement::counters::{ScopeHold, SettlementCounters};
 use crate::reservation_settlement::error::{CounterReadError, SettlementError};
@@ -255,12 +255,12 @@ impl AdmissionCounters for FakeMemory {
         Ok(())
     }
 
-    async fn seed_window(&self, counter: &BudgetCounter) -> Result<bool, SpendWriteError> {
-        lock(&self.calls).windows.push(counter.counter_key.clone());
-        if self.failed_seeds.contains(&counter.counter_key) {
+    async fn seed_window(&self, seed: WindowSeed<'_>) -> Result<bool, SpendWriteError> {
+        lock(&self.calls).windows.push(seed.counter_key.to_owned());
+        if self.failed_seeds.contains(seed.counter_key) {
             return Err(seed_failure());
         }
-        Ok(lock(&self.values).contains_key(&counter.counter_key))
+        Ok(lock(&self.values).contains_key(seed.counter_key))
     }
 
     async fn current_spend(&self, counter_key: &str, fallback_spend: Decimal) -> Decimal {

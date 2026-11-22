@@ -13,8 +13,6 @@ from .fakes import InputCost, InputTokens, MaxCost, Pipeline, ScriptedMemory, Sc
 from .models import BudgetReservation, Input
 from .views import (
     error_json,
-    invalidated_json,
-    memory_json,
     reservation_json,
     token_object,
     user_object,
@@ -84,9 +82,9 @@ async def execute(data: Input) -> dict[str, JsonValue]:
     output: dict[str, JsonValue] = {
         "reservation": reservation_json(reservation),
         "error": failure,
-        "memory": memory_json(memory),
+        "memory": {**memory.values},
         "pipelines": pipeline.calls,
-        "invalidated": invalidated_json(memory),
+        "invalidated": [*memory.deleted],
     }
     return output
 

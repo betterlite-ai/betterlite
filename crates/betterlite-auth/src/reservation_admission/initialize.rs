@@ -1,7 +1,7 @@
 use crate::budget_counter::BudgetCounter;
 use crate::spend_writes::error::SpendWriteError;
 
-use super::counters::AdmissionCounters;
+use super::counters::{AdmissionCounters, WindowSeed};
 use super::error::{AdmissionError, unavailable};
 
 // the three answers _initialize_reservation_counter gives: loaded, unloadable without an error, or a failed seed
@@ -76,10 +76,20 @@ where
     C: AdmissionCounters,
 {
     let Some(source_cache_key) = &counter.source_cache_key else {
-        if counter.spend_log_entity_id.is_none() || counter.window_start.is_none() {
+        let Some(entity_id) = counter.spend_log_entity_id.as_deref() else {
             return SeedAnswer::Loaded;
-        }
-        return match counters.seed_window(counter).await {
+        };
+        let Some(window_start) = counter.window_start else {
+            return SeedAnswer::Loaded;
+        };
+        let window = WindowSeed {
+            counter_key: &counter.counter_key,
+            entity_type: &counter.entity_type,
+            entity_id,
+            window_duration: counter.window_duration.as_deref(),
+            window_start,
+        };
+        return match counters.seed_window(window).await {
             Ok(true) => SeedAnswer::Loaded,
             Ok(false) => SeedAnswer::Unavailable,
             Err(error) => SeedAnswer::Failed(error),

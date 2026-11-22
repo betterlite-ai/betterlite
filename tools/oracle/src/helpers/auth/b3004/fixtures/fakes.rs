@@ -2,9 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use betterlite_auth::budget_counter::BudgetCounter;
 use betterlite_auth::model_budget_values::amount_text::amount_from_text;
-use betterlite_auth::reservation_admission::counters::AdmissionCounters;
+use betterlite_auth::reservation_admission::counters::{AdmissionCounters, WindowSeed};
 use betterlite_auth::reservation_settlement::counters::{ScopeHold, SettlementCounters};
 use betterlite_auth::reservation_settlement::error::{CounterReadError, SettlementError};
 use betterlite_auth::spend_counter_batch::batch::PendingSpendIncrement;
@@ -169,11 +168,11 @@ impl AdmissionCounters for ScriptedMemory {
     }
 
     // _ensure_window_spend_counter_initialized: without a DB row a cold window answers false
-    async fn seed_window(&self, counter: &BudgetCounter) -> Result<bool, SpendWriteError> {
-        if self.failures.contains(&counter.counter_key) {
+    async fn seed_window(&self, seed: WindowSeed<'_>) -> Result<bool, SpendWriteError> {
+        if self.failures.contains(seed.counter_key) {
             return Err(SpendWriteError::from(LayersError::Unavailable));
         }
-        Ok(lock(&self.values).contains_key(&counter.counter_key))
+        Ok(lock(&self.values).contains_key(seed.counter_key))
     }
 
     async fn current_spend(&self, counter_key: &str, fallback_spend: Decimal) -> Decimal {

@@ -19,11 +19,11 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
 
-use crate::budget_counter::CounterEntityType;
+use crate::budget_counter::{BudgetCounter, CounterEntityType};
 use crate::budget_primitives::window_start::DurationParser;
 use crate::model_budget_limiter::clock::BudgetClock;
 use crate::reservation_admission::backend::SeedBatch;
-use crate::reservation_admission::counters::AdmissionCounters as _;
+use crate::reservation_admission::counters::{AdmissionCounters as _, WindowSeed};
 use crate::reservation_settlement::backend::SpendCounterBackend;
 use crate::reservation_settlement::counters::SettlementCounters as _;
 use crate::spend_counter_batch::batch::CounterValue;
@@ -215,6 +215,20 @@ async fn the_backend_seeds_a_source_counter_from_the_auth_cache() {
     assert_eq!(found, Some(amount("1.5")));
 }
 
+// the window seed initialize.rs resolves from a counter whose entity and start are both set
+fn window_seed(counter: &BudgetCounter) -> WindowSeed<'_> {
+    WindowSeed {
+        counter_key: &counter.counter_key,
+        entity_type: &counter.entity_type,
+        entity_id: counter
+            .spend_log_entity_id
+            .as_deref()
+            .expect("the fixture's spend log entity"),
+        window_duration: counter.window_duration.as_deref(),
+        window_start: counter.window_start.expect("the fixture's window start"),
+    }
+}
+
 // seed_window: a key window loads from its rows, while an entity without window rows reports cold
 #[tokio::test]
 async fn the_backend_seeds_a_window_counter_or_reports_a_cold_window() {
@@ -227,7 +241,7 @@ async fn the_backend_seeds_a_window_counter_or_reports_a_cold_window() {
     let key_window = window(WINDOW, "5");
     assert!(
         backend
-            .seed_window(&key_window)
+            .seed_window(window_seed(&key_window))
             .await
             .expect("the key window seed")
     );
@@ -236,7 +250,7 @@ async fn the_backend_seeds_a_window_counter_or_reports_a_cold_window() {
     user_window.entity_type = CounterEntityType::User;
     assert!(
         !backend
-            .seed_window(&user_window)
+            .seed_window(window_seed(&user_window))
             .await
             .expect("the user window seed")
     );

@@ -5,7 +5,6 @@ from litellm.proxy._types import LiteLLM_UserTable, UserAPIKeyAuth
 from pydantic import JsonValue
 from starlette.exceptions import HTTPException
 
-from .fakes import ScriptedMemory
 from .models import RESERVATION, Entry, TokenInput, UserInput
 
 
@@ -65,14 +64,3 @@ def error_json(error: BudgetExceededError | HTTPException) -> JsonValue:
         "status": error.status_code,
     }
     return described
-
-
-def memory_json(memory: ScriptedMemory) -> JsonValue:
-    amounts: Mapping[str, JsonValue] = memory.values
-    return dict(amounts)
-
-
-def invalidated_json(memory: ScriptedMemory) -> JsonValue:
-    listed: list[JsonValue] = []
-    listed.extend(memory.deleted)
-    return listed

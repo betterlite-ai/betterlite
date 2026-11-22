@@ -7,7 +7,6 @@ use betterlite_db::spend_rows::rows::SpendCounterRows as DbSpendCounterRows;
 use chrono::DateTime;
 use rust_decimal::Decimal;
 
-use crate::budget_counter::BudgetCounter;
 use crate::reservation_settlement::backend::SpendCounterBackend;
 use crate::reservation_settlement::error::SettlementError;
 use crate::spend_counter_batch::batch::CounterValue;
@@ -29,7 +28,7 @@ use crate::spend_writes::layers::CounterLayers;
 use crate::spend_writes::pipeline::run_spend_counter_pipeline;
 use crate::spend_writes::warm::is_spend_counter_cache_warm;
 
-use super::counters::AdmissionCounters;
+use super::counters::{AdmissionCounters, WindowSeed};
 
 // the writes' dyn batch implements ActiveSpendBatch only for the 'static object, which rustc cannot generalize in the reservation's Send future (rust-lang/rust#130113); an owned newtype covers every batch
 pub(super) struct SeedBatch(pub(super) Arc<dyn CounterBatch>);
@@ -79,18 +78,15 @@ where
         Ok(())
     }
 
-    async fn seed_window(&self, counter: &BudgetCounter) -> Result<bool, SpendWriteError> {
-        let Some(start) = counter.window_start.and_then(window_timestamp) else {
+    async fn seed_window(&self, seed: WindowSeed<'_>) -> Result<bool, SpendWriteError> {
+        let Some(start) = window_timestamp(seed.window_start) else {
             return Ok(false);
         };
         let request = WindowReseed {
-            counter_key: &counter.counter_key,
-            entity_type: &counter.entity_type,
-            entity_id: counter
-                .spend_log_entity_id
-                .as_deref()
-                .unwrap_or(&counter.entity_id),
-            window_duration: counter.window_duration.as_deref(),
+            counter_key: seed.counter_key,
+            entity_type: seed.entity_type,
+            entity_id: seed.entity_id,
+            window_duration: seed.window_duration,
             window_start: start,
         };
         if is_spend_counter_cache_warm(self.writes, request.counter_key).await? {
