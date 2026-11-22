@@ -58,5 +58,12 @@ calls:
       global_api_key: null
       litellm_api_key: null
       environment: {AMAZON_NOVA_API_BASE: oidc/circleci/nova, AMAZON_NOVA_API_KEY: oidc/circleci/nova}
+  - bedrock_nova_chat:
+      function: endpoint
+      api_base: null
+      api_key: null
+      global_api_key: null
+      litellm_api_key: null
+      environment: {AMAZON_NOVA_API_BASE: '', AMAZON_NOVA_API_KEY: ''}
 env: {}
 compare: {ignore: []}
