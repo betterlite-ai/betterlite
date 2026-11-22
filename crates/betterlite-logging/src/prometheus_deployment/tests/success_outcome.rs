@@ -11,9 +11,8 @@ use super::metric::DeploymentMetric;
 use super::requests::SuccessRequest;
 use super::success::set_llm_deployment_success_metrics;
 use super::support::{
-    Fixture, ProbeGauges, Recorded, assert_label_pairs, assert_labels, capture_logs,
-    expected_labels, hidden_params, inc_amount, json_object, labels_of, metric_of, now, number,
-    payload_with, update_of,
+    Fixture, ProbeGauges, Recorded, assert_labels, capture_logs, expected_labels, hidden_params,
+    inc_amount, json_object, labels_of, metric_of, now, number, payload_with, update_of,
 };
 
 fn params(entries: &[(&str, Json)]) -> JsonObject {
@@ -617,7 +616,10 @@ fn remaining_values_are_set_rather_than_incremented() {
         update_of(&event),
         MetricUpdate::Set(MetricValue::Finite(Decimal::from(11_i64)))
     );
-    assert_label_pairs(labels_of(&event), &IDENTITY_LABELS);
+    assert_eq!(
+        labels_of(&event),
+        &expected_labels("litellm_remaining_requests_metric", &IDENTITY_LABELS)
+    );
 }
 
 #[test]
