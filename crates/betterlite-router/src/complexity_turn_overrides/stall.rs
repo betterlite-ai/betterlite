@@ -2,56 +2,23 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 
+use crate::prompt_affinity::canonical::canonical_bytes;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ToolCallEvent {
     name: String,
-    arguments: String,
+    arguments: Vec<u8>,
     is_error: Option<bool>,
 }
 
 // _json_arguments and _tool_call_signature: both tool-call surfaces canonicalize to one shape
-fn canonical_arguments(value: &Json) -> String {
+fn canonical_arguments(value: &Json) -> Vec<u8> {
     if let Json::Text(text) = value
         && let Ok(parsed) = serde_json::from_str::<Json>(text)
     {
-        return canonical(&parsed);
+        return canonical_bytes(&parsed);
     }
-    canonical(value)
-}
-
-// a length-prefixed encoding keeps nested values unambiguous without serializing through serde
-fn canonical(value: &Json) -> String {
-    match value {
-        Json::Null => "n".to_owned(),
-        Json::Bool(true) => "t".to_owned(),
-        Json::Bool(false) => "f".to_owned(),
-        Json::Number(number) => format!("d{number}"),
-        Json::Text(text) => format!("s{}:{text}", text.chars().count()),
-        Json::List(items) => {
-            let mut encoded = format!("l{}", items.len());
-            for item in items {
-                encoded.push('(');
-                encoded.push_str(&canonical(item));
-                encoded.push(')');
-            }
-            encoded
-        }
-        Json::Object(fields) => {
-            let mut sorted: Vec<(&String, &Json)> = fields.iter().collect();
-            sorted.sort_by(|left, right| left.0.cmp(right.0));
-            let mut encoded = format!("o{}", sorted.len());
-            for (key, item) in sorted {
-                encoded.push_str("(s");
-                encoded.push_str(&key.chars().count().to_string());
-                encoded.push(':');
-                encoded.push_str(key);
-                encoded.push(':');
-                encoded.push_str(&canonical(item));
-                encoded.push(')');
-            }
-            encoded
-        }
-    }
+    canonical_bytes(value)
 }
 
 // the last result for a call id wins, as the source dict construction does
@@ -128,7 +95,7 @@ fn tool_use_event(part: &Json, errors: &BTreeMap<String, bool>, events: &mut Vec
         name: name.clone(),
         arguments: fields
             .get("input")
-            .map_or_else(|| canonical(&Json::Null), canonical_arguments),
+            .map_or_else(|| canonical_bytes(&Json::Null), canonical_arguments),
         is_error,
     });
 }
@@ -148,7 +115,7 @@ fn tool_call_event(call: &Json, events: &mut Vec<ToolCallEvent>) {
         name: name.clone(),
         arguments: function
             .get("arguments")
-            .map_or_else(|| canonical(&Json::Null), canonical_arguments),
+            .map_or_else(|| canonical_bytes(&Json::Null), canonical_arguments),
         is_error: None,
     });
 }
