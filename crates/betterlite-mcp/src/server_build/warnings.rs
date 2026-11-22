@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_db::mcp_stored_contracts::MCPAuth;
 
 use crate::server_payload::names::validate_tool_name;
+use crate::server_payload::quoted_list;
 use crate::server_record::MCPServer;
 use crate::server_utils::prefixes::{PrefixPolicy, get_server_prefix};
 
@@ -55,22 +56,11 @@ pub fn warn_on_shared_identifier_prefixes(servers: &[MCPServer]) {
             server_ids.sort();
             tracing::warn!(
                 "MCP servers {} share the identifier '{}'; tool routing for that prefix is ambiguous. Rename or delete all but one.",
-                list_repr(&server_ids),
+                quoted_list(&server_ids),
                 identifier
             );
         }
     }
-}
-
-fn list_repr(values: &[String]) -> String {
-    format!(
-        "[{}]",
-        values
-            .iter()
-            .map(|value| format!("'{value}'"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
 }
 
 // ast-grep-ignore: no-long-names
