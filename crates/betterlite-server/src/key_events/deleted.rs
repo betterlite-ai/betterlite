@@ -23,34 +23,38 @@ pub(super) async fn run<Manager>(
     event: &DeletedEvent,
     caller: &KeyEventCaller,
     litellm_changed_by: Option<&str>,
-) -> Result<(), KeyEventError>
+) -> Result<(), KeyEventError<Manager>>
 where
     Manager: BaseSecretManager,
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
     <Manager::Params as TryFrom<TeamSecretSettings>>::Error: Error + Send + Sync + 'static,
 {
     if audit.settings.is_audit_logging_enabled(None) {
-        audit_rows(audit, event, caller, litellm_changed_by)?;
+        audit_rows::<Manager>(audit, event, caller, litellm_changed_by)?;
     }
     let rows = event
         .rows
         .iter()
-        .map(sink_row)
-        .collect::<Result<Vec<_>, KeyEventError>>()?;
+        .map(sink_row::<Manager>)
+        .collect::<Result<Vec<_>, KeyEventError<Manager>>>()?;
     effects
         .secrets
         .delete(&rows)
         .await
-        .map_err(KeyEventError::sink::<Manager>)?;
+        .map_err(|source| KeyEventError::Sink { source })?;
     Ok(())
 }
 
-fn audit_rows(
+fn audit_rows<Manager>(
     audit: &KeyEventAudit,
     event: &DeletedEvent,
     caller: &KeyEventCaller,
     litellm_changed_by: Option<&str>,
-) -> Result<(), KeyEventError> {
+) -> Result<(), KeyEventError<Manager>>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
     for row in &event.rows {
         let value = serde_json::to_value(row).map_err(KeyEventError::Row)?;
         let key: LiteLLMVerificationToken =
@@ -76,7 +80,11 @@ fn audit_rows(
 }
 
 // the secret manager reads only the alias, team and token, so a malformed row it never needs still deletes
-fn sink_row(row: &JsonData) -> Result<LiteLLMVerificationToken, KeyEventError> {
+fn sink_row<Manager>(row: &JsonData) -> Result<LiteLLMVerificationToken, KeyEventError<Manager>>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
     let value = serde_json::to_value(row).map_err(KeyEventError::Row)?;
     let fields = match value {
         JsonValue::Object(fields) => fields,

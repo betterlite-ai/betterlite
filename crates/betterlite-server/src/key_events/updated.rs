@@ -24,7 +24,7 @@ pub(super) async fn run<Manager>(
     event: &UpdatedEvent,
     caller: &KeyEventCaller,
     litellm_changed_by: Option<&str>,
-) -> Result<(), KeyEventError>
+) -> Result<(), KeyEventError<Manager>>
 where
     Manager: BaseSecretManager,
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
@@ -34,7 +34,7 @@ where
         warn!("Failed to rename virtual key in secret manager: {error}");
     }
     if audit.settings.is_audit_logging_enabled(None) {
-        audit_update(audit, event, caller, litellm_changed_by)?;
+        audit_update::<Manager>(audit, event, caller, litellm_changed_by)?;
     }
     Ok(())
 }
@@ -42,7 +42,7 @@ where
 async fn rename<Manager>(
     effects: &KeyEventEffects<'_, Manager>,
     event: &UpdatedEvent,
-) -> Result<(), KeyEventError>
+) -> Result<(), KeyEventError<Manager>>
 where
     Manager: BaseSecretManager,
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
@@ -69,16 +69,20 @@ where
             event.row.team_id.as_deref(),
         )
         .await
-        .map_err(KeyEventError::sink::<Manager>)?;
+        .map_err(|source| KeyEventError::Sink { source })?;
     Ok(())
 }
 
-fn audit_update(
+fn audit_update<Manager>(
     audit: &KeyEventAudit,
     event: &UpdatedEvent,
     caller: &KeyEventCaller,
     litellm_changed_by: Option<&str>,
-) -> Result<(), KeyEventError> {
+) -> Result<(), KeyEventError<Manager>>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
     let key = event
         .data
         .base

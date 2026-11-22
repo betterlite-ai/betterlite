@@ -22,7 +22,7 @@ pub(super) async fn run<Manager>(
     event: &RotatedEvent,
     caller: &KeyEventCaller,
     litellm_changed_by: Option<&str>,
-) -> Result<(), KeyEventError>
+) -> Result<(), KeyEventError<Manager>>
 where
     Manager: BaseSecretManager,
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
@@ -33,11 +33,11 @@ where
     {
         warn!("Failed to rotate virtual key in secret manager: {error}");
     }
-    if let Err(error) = send_rotated_email(effects.email, event).await {
+    if let Err(error) = send_rotated_email::<Manager>(effects.email, event).await {
         warn!("Failed to send key rotated email: {error}");
     }
     if audit.settings.is_audit_logging_enabled(None) && event.row.token.is_some() {
-        audit_rotated(audit, event, caller, litellm_changed_by)?;
+        audit_rotated::<Manager>(audit, event, caller, litellm_changed_by)?;
     }
     Ok(())
 }
@@ -45,7 +45,7 @@ where
 async fn rotate<Manager>(
     effects: &KeyEventEffects<'_, Manager>,
     event: &RotatedEvent,
-) -> Result<(), KeyEventError>
+) -> Result<(), KeyEventError<Manager>>
 where
     Manager: BaseSecretManager,
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
@@ -58,11 +58,11 @@ where
         .rotate(
             &initial,
             &new_name,
-            response_key(&event.response)?,
+            response_key::<Manager>(&event.response)?,
             event.row.team_id.as_deref(),
         )
         .await
-        .map_err(KeyEventError::sink::<Manager>)?;
+        .map_err(|source| KeyEventError::Sink { source })?;
     Ok(())
 }
 
@@ -87,10 +87,14 @@ fn new_name(event: &RotatedEvent, initial: &str) -> String {
     alias.clone()
 }
 
-async fn send_rotated_email(
+async fn send_rotated_email<Manager>(
     email: &dyn KeyEventEmail,
     event: &RotatedEvent,
-) -> Result<(), KeyEventError> {
+) -> Result<(), KeyEventError<Manager>>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
     let dump = encode::response_dump(&event.response).map_err(KeyEventError::Encode)?;
     email
         .send_rotated(&dump, event.row.key_alias.as_deref())
@@ -98,12 +102,16 @@ async fn send_rotated_email(
         .map_err(KeyEventError::Email)
 }
 
-fn audit_rotated(
+fn audit_rotated<Manager>(
     audit: &KeyEventAudit,
     event: &RotatedEvent,
     caller: &KeyEventCaller,
     litellm_changed_by: Option<&str>,
-) -> Result<(), KeyEventError> {
+) -> Result<(), KeyEventError<Manager>>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
     let Some(token) = event.row.token.as_ref() else {
         return Ok(());
     };

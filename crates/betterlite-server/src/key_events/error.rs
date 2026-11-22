@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use betterlite_secret_managers::secret_contracts::BaseSecretManager;
 
@@ -9,9 +9,13 @@ use crate::key_fields::error::DecodeError;
 
 use super::effects::KeyEmailError;
 
-// Preparing an event can fail and the hook then propagates the failure; a sink failure that LiteLLM swallows is a warning inside the hook and never reaches this type. The secret manager's own error type is a parameter of B898's sink, so the effect failure carries it as a boxed source.
-#[derive(Debug, thiserror::Error)]
-pub enum KeyEventError {
+// Preparing an event can fail and the hook then propagates the failure; a sink failure that LiteLLM swallows is a warning inside the hook and never reaches this type. The secret manager's own error type is a parameter of B898's sink, so the effect failure carries the sink's typed error.
+#[derive(thiserror::Error)]
+pub enum KeyEventError<Manager>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
     #[error("the key event cannot be encoded")]
     Encode(#[source] DecodeError),
     #[error("the key row cannot be encoded")]
@@ -29,20 +33,29 @@ pub enum KeyEventError {
     #[error("the secret manager effect failed: {source}")]
     Sink {
         #[source]
-        source: Box<dyn Error + Send + Sync>,
+        source: SinkError<Manager>,
     },
 }
 
-impl KeyEventError {
-    // SinkError names the secret manager's own error types, which B898's sink owns, so a trait From impl cannot carry it and the effect failure is boxed here
-    pub(super) fn sink<Manager>(source: SinkError<Manager>) -> Self
-    where
-        Manager: BaseSecretManager,
-        Manager::Params: TryFrom<TeamSecretSettings>,
-        <Manager::Params as TryFrom<TeamSecretSettings>>::Error: Error + Send + Sync + 'static,
-    {
-        Self::Sink {
-            source: Box::new(source),
+// the manager is the error's type parameter, not one of its fields, so a derived Debug would demand Manager: Debug and the scripted managers are not
+impl<Manager> Debug for KeyEventError<Manager>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Self::Encode(source) => formatter.debug_tuple("Encode").field(source).finish(),
+            Self::Row(source) => formatter.debug_tuple("Row").field(source).finish(),
+            Self::EmailEvent(source) => formatter.debug_tuple("EmailEvent").field(source).finish(),
+            Self::Email(source) => formatter.debug_tuple("Email").field(source).finish(),
+            Self::Audit(source) => formatter.debug_tuple("Audit").field(source).finish(),
+            Self::MissingUpdateKey => formatter.write_str("MissingUpdateKey"),
+            Self::MissingResponseKey => formatter.write_str("MissingResponseKey"),
+            Self::Sink { source } => formatter
+                .debug_struct("Sink")
+                .field("source", &format_args!("{source}"))
+                .finish(),
         }
     }
 }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_auth::resolved_key::credential::safe_hash_api_key;
 use betterlite_config::sections::key_event_sinks::Settings;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -153,15 +154,26 @@ fn audit_clock(input: &Input) -> Reply<FixedClock> {
     Ok(FixedClock(moment))
 }
 
+// UserAPIKeyAuth.check_api_key hashes a present api_key and mirrors it into token, so the hook receives hashed credentials
 fn key_event_caller(call: &Caller) -> KeyEventCaller {
+    let (api_key, token) = match call.api_key.as_deref() {
+        Some(raw) => {
+            let hashed = safe_hash_api_key(raw);
+            (
+                Some(SecretString::from(hashed.clone())),
+                Some(SecretString::from(hashed)),
+            )
+        }
+        None => (None, call.token.clone().map(SecretString::from)),
+    };
     KeyEventCaller {
         identity: CallerIdentity {
             user_id: call.user_id.clone(),
-            api_key: call.api_key.clone().map(SecretString::from),
+            api_key,
             metadata: call.metadata.clone(),
             team_metadata: call.team_metadata.clone(),
         },
-        token: call.token.clone().map(SecretString::from),
+        token,
     }
 }
 

@@ -9,6 +9,7 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::{Expiry, LiteLLMVerificationToken};
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use betterlite_secret_managers::secret_contracts::RotationError;
 use chrono::DateTime;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
@@ -18,13 +19,14 @@ use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use self::support::{
-    AUDIT, BOTH, Call, Lines, NOW, RecordingMailer, STORE, caller, harness, lock, sink_fixture,
-    wired,
+    AUDIT, BOTH, Call, FakeManager, Lines, NOW, RecordingMailer, STORE, caller, harness, lock,
+    sink_fixture, wired,
 };
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
+use crate::audit_events::record::AuditRecordError;
 use crate::key_event_sinks::email::{CreatedKey, LegacyEmail, Reported};
-use crate::key_event_sinks::error::EmailError;
+use crate::key_event_sinks::error::{EmailError, SecretSinkError};
 use crate::key_event_sinks::ports::KeyCreatedMailer;
 use crate::key_events::effects::{KeyEmailError, KeyEventEmail};
 use crate::key_events::error::KeyEventError;
@@ -32,6 +34,7 @@ use crate::key_events::types::{
     DeletedEvent, GeneratedEvent, KeyEvent, KeyEventCaller, RotatedEvent, UpdatedEvent,
 };
 use crate::key_fields::decode::TypedValue;
+use crate::key_fields::error::DecodeError;
 use crate::key_fields::regenerate::RegenerateKeyRequest;
 use crate::key_fields::request::GenerateKeyRequest;
 use crate::key_fields::response::GenerateKeyResponse;
@@ -903,5 +906,35 @@ async fn legacy_email_effects_created_and_rotated() {
             Level::DEBUG,
             "Enterprise package not installed, skipping key rotated email".to_owned(),
         )]
+    );
+}
+
+// the manager is not a field, so the Debug impl is hand-written and must still name every variant
+#[test]
+fn error_debug_names_the_variant() {
+    let encoded = KeyEventError::<FakeManager>::Encode(DecodeError::NotAnObject);
+    let audited = KeyEventError::<FakeManager>::Audit(AuditRecordError::NotAnObject);
+    let emailed =
+        KeyEventError::<FakeManager>::Email(KeyEmailError::Rejected(EmailError::NullSpend));
+    let no_key = KeyEventError::<FakeManager>::MissingUpdateKey;
+    let no_response = KeyEventError::<FakeManager>::MissingResponseKey;
+    let row_json = serde_json::from_str::<u8>("\"x\"").unwrap_err();
+    let rowed = KeyEventError::<FakeManager>::Row(row_json);
+    let event_json = serde_json::from_str::<u8>("\"x\"").unwrap_err();
+    let evented = KeyEventError::<FakeManager>::EmailEvent(event_json);
+    let sink_error = SecretSinkError::Rotation {
+        source: RotationError::SameName,
+    };
+    let sunk = KeyEventError::<FakeManager>::Sink { source: sink_error };
+    assert_eq!(format!("{encoded:?}"), "Encode(NotAnObject)");
+    assert_eq!(format!("{audited:?}"), "Audit(NotAnObject)");
+    assert_eq!(format!("{emailed:?}"), "Email(Rejected(NullSpend))");
+    assert_eq!(format!("{no_key:?}"), "MissingUpdateKey");
+    assert_eq!(format!("{no_response:?}"), "MissingResponseKey");
+    assert!(format!("{rowed:?}").starts_with("Row("));
+    assert!(format!("{evented:?}").starts_with("EmailEvent("));
+    assert_eq!(
+        format!("{sunk:?}"),
+        "Sink { source: \"the secret manager rotation failed\" }"
     );
 }

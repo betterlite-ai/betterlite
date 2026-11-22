@@ -543,7 +543,7 @@ impl Harness {
         &self,
         event: &KeyEvent,
         caller: &KeyEventCaller,
-    ) -> Result<(), KeyEventError> {
+    ) -> Result<(), KeyEventError<FakeManager>> {
         self.dispatch_as(event, caller, None).await
     }
 
@@ -552,7 +552,7 @@ impl Harness {
         event: &KeyEvent,
         caller: &KeyEventCaller,
         litellm_changed_by: Option<&str>,
-    ) -> Result<(), KeyEventError> {
+    ) -> Result<(), KeyEventError<FakeManager>> {
         KeyEvents {
             audit: &self.audit,
             effects: self.effects(),

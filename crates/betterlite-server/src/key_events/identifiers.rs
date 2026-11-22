@@ -1,6 +1,8 @@
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
+use betterlite_secret_managers::secret_contracts::BaseSecretManager;
 use secrecy::{ExposeSecret, SecretString};
 
+use crate::key_event_sinks::team_params::TeamSecretSettings;
 use crate::key_fields::response::GenerateKeyResponse;
 
 use super::error::KeyEventError;
@@ -15,7 +17,13 @@ pub(super) fn token_id(response: &GenerateKeyResponse) -> Option<&str> {
 }
 
 // response.key; the response model rejects a key response without one, so this only guards a hand-built event
-pub(super) fn response_key(response: &GenerateKeyResponse) -> Result<&SecretString, KeyEventError> {
+pub(super) fn response_key<Manager>(
+    response: &GenerateKeyResponse,
+) -> Result<&SecretString, KeyEventError<Manager>>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
     response
         .response
         .key

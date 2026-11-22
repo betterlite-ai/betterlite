@@ -39,7 +39,7 @@ where
         event: &KeyEvent,
         caller: &KeyEventCaller,
         litellm_changed_by: Option<&str>,
-    ) -> Result<(), KeyEventError> {
+    ) -> Result<(), KeyEventError<Manager>> {
         let effects = &self.effects;
         let audit = self.audit;
         match event {

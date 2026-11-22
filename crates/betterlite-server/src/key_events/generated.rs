@@ -22,14 +22,14 @@ pub(super) async fn run<Manager>(
     event: &GeneratedEvent,
     caller: &KeyEventCaller,
     litellm_changed_by: Option<&str>,
-) -> Result<(), KeyEventError>
+) -> Result<(), KeyEventError<Manager>>
 where
     Manager: BaseSecretManager,
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
     <Manager::Params as TryFrom<TeamSecretSettings>>::Error: Error + Send + Sync + 'static,
 {
     if matches!(event.data.generate.send_invite_email, Some(Some(true)))
-        && let Err(error) = send_created_email(effects.email, event).await
+        && let Err(error) = send_created_email::<Manager>(effects.email, event).await
     {
         warn!("Failed to send key created email: {error}");
     }
@@ -63,10 +63,14 @@ where
     Ok(())
 }
 
-async fn send_created_email(
+async fn send_created_email<Manager>(
     email: &dyn KeyEventEmail,
     event: &GeneratedEvent,
-) -> Result<(), KeyEventError> {
+) -> Result<(), KeyEventError<Manager>>
+where
+    Manager: BaseSecretManager,
+    Manager::Params: TryFrom<TeamSecretSettings>,
+{
     let dump = encode::response_dump(&event.response).map_err(KeyEventError::Encode)?;
     let response: CreatedKey = serde_json::from_str(&dump).map_err(KeyEventError::EmailEvent)?;
     email
@@ -78,7 +82,7 @@ async fn send_created_email(
 async fn store_secret<Manager>(
     effects: &KeyEventEffects<'_, Manager>,
     event: &GeneratedEvent,
-) -> Result<(), KeyEventError>
+) -> Result<(), KeyEventError<Manager>>
 where
     Manager: BaseSecretManager,
     Manager::Params: TryFrom<TeamSecretSettings> + Send,
@@ -95,9 +99,13 @@ where
         .map(String::as_str);
     effects
         .secrets
-        .store(&secret_name, response_key(&event.response)?, team_id)
+        .store(
+            &secret_name,
+            response_key::<Manager>(&event.response)?,
+            team_id,
+        )
         .await
-        .map_err(KeyEventError::sink::<Manager>)?;
+        .map_err(|source| KeyEventError::Sink { source })?;
     Ok(())
 }
 
