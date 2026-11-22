@@ -1,10 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::mem;
 
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_core::api::response_id_traversal::reasoning::strip_encrypted_reasoning as strip_input_reasoning;
 use betterlite_core::api::response_id_traversal::record::Record;
-use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::{Content, ContentPart, Message};
 use betterlite_prompts::reasoning_fields::strip_encrypted::strip_encrypted_reasoning as strip_message_blocks;
 
@@ -40,7 +38,7 @@ pub(crate) fn strip_for_targets(
     };
     let item_selected: Option<&dyn Fn(&Record) -> bool> = Some(&item_predicate);
     if let Some(input) = history.input.as_deref_mut() {
-        strip_input(input, item_selected);
+        strip_input_reasoning(input, item_selected);
     }
     let block_predicate = |block: &ContentPart| {
         block_model_id(block).is_some_and(|origin| origins.get(&origin).copied() != Some(true))
@@ -52,7 +50,7 @@ pub(crate) fn strip_for_targets(
 // The fallback path strips every bridged reason: no configured deployment can decrypt any of it.
 pub(crate) fn strip_all(history: &mut History<'_>) {
     if let Some(input) = history.input.as_deref_mut() {
-        strip_input(input, None);
+        strip_input_reasoning(input, None);
     }
     strip_messages(history, None);
 }
@@ -108,12 +106,6 @@ fn origin_decryptable(
     };
     let boundary = encryption_boundary(&deployment.litellm_params, credentials);
     Ok(boundary.is_some_and(|boundary| target_boundaries.contains(&boundary)))
-}
-
-fn strip_input(input: &mut Json, predicate: Option<&dyn Fn(&Record) -> bool>) {
-    let mut record = Record::from_json(mem::replace(input, Json::Null));
-    strip_input_reasoning(&mut record, predicate);
-    *input = record.into_json();
 }
 
 fn strip_messages(history: &mut History<'_>, predicate: Option<&dyn Fn(&ContentPart) -> bool>) {

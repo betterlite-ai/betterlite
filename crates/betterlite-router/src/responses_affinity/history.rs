@@ -1,4 +1,4 @@
-use betterlite_models::decisions::Json;
+use betterlite_core::api::response_id_traversal::record::Record;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_prompts::message_content::Message;
 
@@ -13,8 +13,8 @@ pub enum MetadataSlot<'metadata> {
 
 // The request state the check rewrites in place, so the router's fallback snapshot replays the stripped history.
 pub struct History<'request> {
-    // request_kwargs["input"]
-    pub input: Option<&'request mut Json>,
+    // request_kwargs["input"], parsed once so the marker scan and the in-place strip share one tree
+    pub input: Option<&'request mut Record>,
     // the messages argument
     pub messages: Option<&'request mut Vec<Message>>,
     // request_kwargs["messages"]

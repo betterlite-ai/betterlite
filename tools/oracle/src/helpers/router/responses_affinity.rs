@@ -3,6 +3,7 @@ mod logs;
 use std::collections::BTreeMap;
 
 use betterlite_auth::auth_model_lists::credential::{CredentialEntry, CredentialSnapshot};
+use betterlite_core::api::response_id_traversal::record::Record;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
@@ -166,6 +167,7 @@ fn filter_request<'request>(
     check: &AffinityCheck<'_, '_>,
     healthy: &'request [DeploymentSpec],
 ) -> Result<Vec<DeploymentSpec>, Failure> {
+    let mut record = state.input.take().map(Record::from_json);
     let metadata = match state.metadata.as_mut() {
         None => MetadataSlot::Absent,
         Some(Json::Object(fields)) => MetadataSlot::Object(fields),
@@ -174,19 +176,21 @@ fn filter_request<'request>(
         },
     };
     let history = History {
-        input: state.input.as_mut(),
+        input: record.as_mut(),
         messages: state.messages.as_mut(),
         request_messages: state.request_messages.as_mut(),
         metadata,
         pinned: &mut state.pinned,
     };
-    check
+    let outcome = check
         .filter(FilterRequest {
             model: &input.model,
             deployments: healthy,
             history,
         })
-        .map_err(Failure::from)
+        .map_err(Failure::from);
+    state.input = record.map(Record::into_json);
+    outcome
 }
 
 // request_kwargs as the check reads it: input, litellm_metadata, messages, and the pin flag it may add.

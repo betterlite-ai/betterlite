@@ -8,6 +8,7 @@ use betterlite_auth::auth_model_lists::credential::{CredentialEntry, CredentialS
 use betterlite_core::api::response_id_codecs::encrypted::{
     build_encrypted_item_id, wrap_encrypted_content,
 };
+use betterlite_core::api::response_id_traversal::record::Record;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptObject};
@@ -296,7 +297,8 @@ impl Request {
         model: &str,
         deployments: &[DeploymentSpec],
     ) -> Result<Vec<DeploymentSpec>, AffinityError> {
-        let mut metadata = match self.metadata.as_mut() {
+        let mut input = self.input.take().map(Record::from_json);
+        let metadata = match self.metadata.as_mut() {
             None => MetadataSlot::Absent,
             Some(Json::Object(fields)) => MetadataSlot::Object(fields),
             Some(value) => MetadataSlot::NotAnObject {
@@ -304,17 +306,19 @@ impl Request {
             },
         };
         let history = History {
-            input: self.input.as_mut(),
+            input: input.as_mut(),
             messages: self.messages.as_mut(),
             request_messages: self.request_messages.as_mut(),
             metadata,
             pinned: &mut self.pinned,
         };
-        check.filter(FilterRequest {
+        let outcome = check.filter(FilterRequest {
             model,
             deployments,
             history,
-        })
+        });
+        self.input = input.map(Record::into_json);
+        outcome
     }
 }
 
