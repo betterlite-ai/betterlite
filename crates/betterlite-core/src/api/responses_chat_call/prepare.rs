@@ -78,7 +78,7 @@ fn hoisted_request<Context>(
     Ok((bridged, input))
 }
 
-// B908 gives the assembly one lifetime, so the call's sink is reborrowed through this local wrapper, not at the call's own
+// the assembly takes one lifetime for its references, so the call's sink is reborrowed through this wrapper
 struct ReborrowedSink<'sink, 'object> {
     sink: Option<&'sink mut (dyn StreamOptionsSink + 'object)>,
 }
