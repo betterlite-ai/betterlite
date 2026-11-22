@@ -138,11 +138,8 @@ pub fn seal_bridge_code(
 
 #[must_use]
 pub fn open_bridge_code(code: &str, cipher: &dyn SealCipher) -> Option<BridgeAuthorizationCode> {
-    let opened = open_payload(BRIDGE_CODE_PREFIX, BRIDGE_CODE_LABEL, code, cipher)?;
-    if !opened.has_all_required_fields() {
-        return None;
-    }
-    Some(opened)
+    open_payload(BRIDGE_CODE_PREFIX, BRIDGE_CODE_LABEL, code, cipher)
+        .filter(RequiredFields::has_all_required_fields)
 }
 
 #[must_use]
@@ -159,16 +156,13 @@ pub fn open_passthrough_code(
     code: &str,
     cipher: &dyn SealCipher,
 ) -> Option<PassthroughAuthorizationCode> {
-    let opened = open_payload(
+    open_payload(
         PASSTHROUGH_CODE_PREFIX,
         PASSTHROUGH_CODE_LABEL,
         code,
         cipher,
-    )?;
-    if !opened.has_all_required_fields() {
-        return None;
-    }
-    Some(opened)
+    )
+    .filter(RequiredFields::has_all_required_fields)
 }
 
 pub fn redeem_passthrough_code(
