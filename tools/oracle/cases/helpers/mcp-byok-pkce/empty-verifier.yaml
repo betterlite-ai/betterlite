@@ -1,0 +1,8 @@
+kind: helper
+name: empty-verifier
+call:
+  b4678:
+    code_verifier: ""
+    code_challenge: 47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU
+env: {}
+compare: {ignore: []}

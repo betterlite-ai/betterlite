@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::credential_headers::{CREDENTIAL_HEADER_NAMES, REDACTED_VALUE};
+
 const SPECIAL_HEADER_NAMES: &[&str] = &[
     "authorization",
     "api-key",
@@ -11,21 +13,10 @@ const SPECIAL_HEADER_NAMES: &[&str] = &[
     "x-mcp-servers",
     "x-mcp-access-groups",
 ];
-const CREDENTIAL_HEADER_NAMES: &[&str] = &[
-    "authorization",
-    "api-key",
-    "x-api-key",
-    "x-goog-api-key",
-    "ocp-apim-subscription-key",
-    "x-litellm-api-key",
-    "cookie",
-    "proxy-authorization",
-];
 const MCP_SERVER_AUTH_HEADER_PREFIX: &str = "x-mcp-";
 const MCP_SERVERS_HEADER: &str = "x-mcp-servers";
 const MCP_ACCESS_GROUPS_HEADER: &str = "x-mcp-access-groups";
 const DISABLE_REDACTION_HEADER: &str = "litellm-disable-message-redaction";
-const REDACTED_VALUE: &str = "***REDACTED***";
 
 pub struct HeaderSanitizeContext<'context> {
     pub upstream_credential_names: &'context [String],

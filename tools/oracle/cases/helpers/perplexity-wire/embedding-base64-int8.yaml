@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-embedding-base64-int8
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "embedding", "urls": [], "headers": [], "requests": [], "replies": [{"body": "{\"object\": \"list\", \"model\": \"pplx-embed-v1-0.6b\", \"data\": [{\"object\": \"embedding\", \"index\": 0, \"embedding\": \"AH+BgA==\"}], \"usage\": {\"prompt_tokens\": 3, \"total_tokens\": 3}}", "status": 200, "headers": {}}, {"body": "{\"object\": \"list\", \"model\": \"pplx-embed-v1-0.6b\", \"data\": [{\"object\": \"embedding\", \"index\": 0, \"embedding\": \"AH+B\"}, {\"object\": \"embedding\", \"index\": 1, \"embedding\": \"\"}], \"usage\": {\"prompt_tokens\": 2, \"total_tokens\": 4}}", "status": 200, "headers": {}}, {"body": "{\"data\": [{\"index\": 0, \"embedding\": \"A\"}]}", "status": 200, "headers": {}}, {"body": "{\"data\": [{\"index\": 0, \"embedding\": \"AH+BgA\"}]}", "status": 200, "headers": {}}], "errors": [{"message": "upstream down", "status": 503}, {"message": "", "status": 400}]}

@@ -1,0 +1,134 @@
+id: B10043
+title: An unknown or unconfigured provider on video status, content, remix, list and character calls answers 400, not 500
+description: >-
+  LiteLLM bug, decided "fix it" with B10039 (https://github.com/betterlite-ai/betterlite/pull/2966), which fixes the
+  same answer for video edit and extension. B3339, B3340 and B3341 landed with it. A video_status, video_content,
+  video_remix, video_list, video_create_character or video_get_character call whose custom_llm_provider is unknown
+  ("bogus") or known without a video config fails with an error that goes through exception_type's ValueError path,
+  so it comes out as ErrorClass::ApiConnection with status 500. The provider name is the caller's input and the call
+  can never succeed, so a 500 tells the client the server broke when its own request was wrong.
+
+
+  These arms answer ErrorClass::BadRequest (status 400) with the message they have today, model "" and the caller's
+  provider, built with ResponseDetails::for_provider from B10039 (crates/betterlite-error/src/error/details.rs):
+  VideoStatusCallError::UnknownProvider and ::Unsupported, and VideoStatusError::UnknownProvider in status_failure,
+  in crates/betterlite-core/src/api/video_status_call/error.rs; VideoContentCallError::UnknownProvider and
+  ::Unsupported in crates/betterlite-core/src/api/video_content_call/error.rs; VideoCallError::UnknownProvider,
+  ::Unsupported and ::ConfigMissing, and VideoRemixListTransportError::UnknownProvider in transport_class, in
+  crates/betterlite-core/src/api/video_remix_call/error.rs (video_list shares it); CharacterCallError::UnknownProvider,
+  ::CreateUnsupported and ::GetUnsupported in crates/betterlite-core/src/api/video_character_calls/error.rs. A Selection
+  error answers 400 only where it means the provider has no video config, the case the unsupported_provider tests
+  drive; any other selection failure keeps its class. Every other arm keeps its class too.
+
+
+  The tests that assert the 500 today assert ErrorClass::BadRequest, status 400, the unchanged message, model "" and
+  the provider after this task: video_status_call/tests/unknown_provider.rs and unsupported_provider.rs, the same two
+  files under video_content_call/tests, video_remix_call/tests/remix_provider.rs and unsupported_provider.rs,
+  video_list_call/tests/unsupported_provider.rs, and create_a_provider_without_a_video_config_is_unsupported and
+  get_a_provider_without_a_video_config_is_unsupported under video_character_calls/tests. If the character calls have
+  no unknown-name case, add one to those two files. Add a row to docs/deviations/B3339.yaml, B3340.yaml and
+  B3341.yaml for the calls each task built, saying they answer 400 where LiteLLM answers 500, with the pinned links
+  below, and rewrite any row there that says these failures answer 500.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/video_status_call/error.rs
+  - crates/betterlite-core/src/api/video_status_call/tests/**
+  - crates/betterlite-core/src/api/video_content_call/error.rs
+  - crates/betterlite-core/src/api/video_content_call/tests/**
+  - crates/betterlite-core/src/api/video_remix_call/error.rs
+  - crates/betterlite-core/src/api/video_remix_call/tests/**
+  - crates/betterlite-core/src/api/video_list_call/tests/**
+  - crates/betterlite-core/src/api/video_character_calls/error.rs
+  - crates/betterlite-core/src/api/video_character_calls/tests/**
+  - docs/deviations/B3339.yaml
+  - docs/deviations/B3340.yaml
+  - docs/deviations/B3341.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1033-L1037
+  why: video_status raises ValueError for an unknown provider or one without a video config, and exception_type turns it into a 500.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L331-L335
+  why: video_content does the same.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L600-L604
+  why: video_remix does the same.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L812-L816
+  why: video_list does the same.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1174-L1178
+  why: video_create_character does the same.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1299-L1303
+  why: video_get_character does the same.
+dod:
+- text: >-
+    A video status, content, remix, list, create-character or get-character call with an unknown provider or one
+    without a video config answers ErrorClass::BadRequest with status 400, its message, model "" and the caller's
+    provider, and every other failure keeps its class.
+  proof: [error-tests, call-tests]
+- text: >-
+    The four video error modules build that answer with ResponseDetails::for_provider.
+  proof: [one-constructor]
+- text: >-
+    docs/deviations/B3339.yaml, B3340.yaml and B3341.yaml record the 400 with the pinned LiteLLM links.
+  proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: error-tests
+    why: An unknown or unconfigured provider still answers 500 on one of these calls.
+    run: >-
+      grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/video_status_call/tests/unknown_provider.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/video_content_call/tests/unknown_provider.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/video_remix_call/tests/unsupported_provider.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/video_list_call/tests/unsupported_provider.rs
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?(unknown|unsupported)_provider_/) | test(/^api::video_remix_call::(remix_provider|unsupported_provider)/) | test(/^api::video_list_call::unsupported_provider/) | test(/^api::video_character_calls::tests::.*a_provider_without_a_video_config_is_unsupported$/)'
+  - id: call-tests
+    why: The change broke another behavior of these video calls.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(status|content|remix|list)_call::/) | test(/^api::video_character_calls::tests::/)'
+  - id: one-constructor
+    why: A video error module still writes its own details for the provider mistake instead of the shared constructor.
+    run: >-
+      grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/video_status_call/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/video_content_call/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/video_remix_call/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/video_character_calls/error.rs
+  - id: deviation-rows
+    why: A deviation row for the 400 is missing its pinned link.
+    run: >-
+      perl -0ne 'exit !(m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?videos/main[.]py[#]L1033-L1037}s
+      && m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?videos/main[.]py[#]L331-L335}s)' docs/deviations/B3339.yaml
+      && perl -0ne 'exit !(m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?videos/main[.]py[#]L600-L604}s
+      && m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?videos/main[.]py[#]L812-L816}s)' docs/deviations/B3340.yaml
+      && perl -0ne 'exit !(m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?videos/main[.]py[#]L1174-L1178}s
+      && m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?videos/main[.]py[#]L1299-L1303}s)' docs/deviations/B3341.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    A video status or content call with an unknown provider or one without a video config answers 400 BadRequest.
+  why: >-
+    LiteLLM raises a ValueError that exception_type turns into a 500, though the caller's provider name is the
+    mistake.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1033-L1037
+- what: >-
+    A video remix or list call with an unknown provider or one without a video config answers 400 BadRequest.
+  why: >-
+    LiteLLM raises a ValueError that exception_type turns into a 500, though the caller's provider name is the
+    mistake.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L600-L604
+- what: >-
+    A video create or get character call with an unknown provider or one without a video config answers 400
+    BadRequest.
+  why: >-
+    LiteLLM raises a ValueError that exception_type turns into a 500, though the caller's provider name is the
+    mistake.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1174-L1178
+out_of_scope:
+- Video edit and extension, which B10039 fixes.
+- Video generation, which has no unsupported-provider arm on main yet.
+pitfalls:
+- A mock_response still wins over an unsupported provider (mock_response_wins_over_an_unsupported_provider), so that test keeps its answer.
+review_level: standard
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
