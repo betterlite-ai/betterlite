@@ -54,6 +54,28 @@ fn unsupported_remix_provider_is_a_bad_request() {
     assert_eq!(details.provider.as_deref(), Some("groq"));
 }
 
+#[test]
+fn remix_config_missing_provider_answers_400() {
+    let mut bench = Bench::new(200, VIDEO_BODY);
+    let mut call = remix_call();
+    call.custom_llm_provider = Some("gemini".to_owned());
+    let failure = bench
+        .video_answer(Plan::seconds(Case::Remix(&call), REQUEST_TIMEOUT))
+        .expect_err("the test bench installs only the openai config");
+    assert!(matches!(
+        failure.error,
+        VideoCallError::ConfigMissing { .. }
+    ));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a missing config answers 400, got {:?}", failure.class);
+    };
+    assert_eq!(failure.class.metadata().status_code, 400);
+    assert_eq!(details.message, "no video config is installed for 'gemini'");
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("gemini"));
+    assert!(bench.requests().is_empty());
+}
+
 // the transport's async client parses the provider again, and its own failure answers 400 for it
 #[test]
 fn transport_unknown_provider_answers_400() {
