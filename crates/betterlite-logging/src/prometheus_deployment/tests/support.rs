@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
@@ -28,7 +29,6 @@ use crate::prometheus::failure::model_cardinality::bounded_requested_model_label
 use crate::prometheus_helpers::bounded_series_tracker::{
     BoundedPrometheusSeriesTracker, ChildRemoval, RemovableMetric, SeriesLimits,
 };
-use crate::prometheus_label_projection::label_factory_context::PrometheusLabelFactoryContext;
 use crate::prometheus_label_projection::prometheus_label_factory::LabelSource;
 use crate::prometheus_label_schema::{PrometheusLabelSettings, get_labels};
 use crate::prometheus_rate_limits::gauge::RateLimitGauges;
@@ -85,7 +85,7 @@ impl Collector for ProbeMetric {
 }
 
 impl RemovableMetric for ProbeMetric {
-    type Error = std::convert::Infallible;
+    type Error = Infallible;
 
     fn remove_child(&self, _label_values: &[Option<String>]) -> Result<ChildRemoval, Self::Error> {
         Ok(ChildRemoval::Unsupported)
@@ -143,7 +143,6 @@ pub(crate) struct ProbeGauges {
     limits: SeriesLimits,
     skip_invalid_key: bool,
     failing: Option<DeploymentMetric>,
-    bounded_override: Option<String>,
     failure_labels_override: Option<DeploymentFailureLabels>,
     exception_class_override: Option<String>,
 }
@@ -190,7 +189,6 @@ impl ProbeGauges {
             limits: SeriesLimits::default(),
             skip_invalid_key: false,
             failing: None,
-            bounded_override: None,
             failure_labels_override: None,
             exception_class_override: None,
         }
@@ -203,11 +201,6 @@ impl ProbeGauges {
 
     pub(crate) fn failing_on(mut self, metric: DeploymentMetric) -> Self {
         self.failing = Some(metric);
-        self
-    }
-
-    pub(crate) fn bounding_to(mut self, label: &str) -> Self {
-        self.bounded_override = Some(label.to_owned());
         self
     }
 
@@ -226,11 +219,6 @@ impl ProbeGauges {
             metric.to_owned(),
             labels.iter().map(|label| (*label).to_owned()).collect(),
         );
-        self
-    }
-
-    pub(crate) fn with_limits(mut self, limits: SeriesLimits) -> Self {
-        self.limits = limits;
         self
     }
 
@@ -333,9 +321,7 @@ impl DeploymentMetrics for ProbeGauges {
             None => "absent".to_owned(),
         };
         self.record("bounded_model_label", &detail);
-        self.bounded_override
-            .clone()
-            .or_else(|| bounded_requested_model_label(requested_model, router_originated, catalog))
+        bounded_requested_model_label(requested_model, router_originated, catalog)
     }
 
     fn exception_class(&self, exception: &LabelException) -> String {
@@ -371,24 +357,12 @@ impl DeploymentMetrics for ProbeGauges {
 
 pub(crate) struct Fixture {
     pub(crate) values: UserApiKeyLabelValues,
-    pub(crate) context: PrometheusLabelFactoryContext,
-    pub(crate) settings: PrometheusLabelSettings,
 }
 
 impl Fixture {
     pub(crate) fn new(pairs: &[(&str, &str)]) -> Self {
-        let values = label_values(pairs);
-        let settings = PrometheusLabelSettings::with_defaults();
-        let context = PrometheusLabelFactoryContext::new(
-            &values,
-            &settings,
-            EndUserCostTrackingSettings::default(),
-        )
-        .unwrap();
         Self {
-            values,
-            context,
-            settings,
+            values: label_values(pairs),
         }
     }
 }

@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_prometheus::collector_factory::collector::{MetricUpdate, MetricValue};
+use rust_decimal::Decimal;
 
+use crate::fields::payload::StandardLoggingPayload;
 use crate::prometheus::failure::deployment_labels::DeploymentFailureLabels;
 
 use super::failure::set_llm_deployment_failure_metrics;
@@ -19,7 +22,7 @@ fn params(entries: &[(&str, Json)]) -> JsonObject {
     json_object(entries)
 }
 
-fn selected_payload() -> crate::fields::payload::StandardLoggingPayload {
+fn selected_payload() -> StandardLoggingPayload {
     super::support::payload_with(&[
         ("model_id", Json::Text("model-1".to_owned())),
         ("model_group", Json::Text("group-a".to_owned())),
@@ -57,11 +60,7 @@ fn a_selected_failure_sets_partial_outage_then_the_counters() {
     assert_eq!(metric_of(&events[0]), "litellm_deployment_state");
     assert_eq!(
         update_of(&events[0]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Set(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(
-                rust_decimal::Decimal::ONE
-            )
-        )
+        MetricUpdate::Set(MetricValue::Finite(Decimal::ONE))
     );
     assert_eq!(
         labels_of(&events[0]),
@@ -274,7 +273,7 @@ fn model_id_falls_back_to_litellm_metadata_then_metadata() {
         "model_info",
         Json::Object(json_object(&[("id", Json::Text("caller-id".to_owned()))])),
     )]));
-    let litellm_params = params(&[
+    let caller_params = params(&[
         ("litellm_metadata", empty_internal),
         ("metadata", caller_info),
     ]);
@@ -283,16 +282,16 @@ fn model_id_falls_back_to_litellm_metadata_then_metadata() {
         &FailureRequest {
             model: Some("gpt-4o"),
             exception: None,
-            litellm_params: &litellm_params,
+            litellm_params: &caller_params,
             payload: Some(&payload),
             catalog: None,
             now: now(),
         },
     );
-    let events = caller.updates();
-    let labels = labels_of(&events[0]);
+    let caller_events = caller.updates();
+    let caller_labels = labels_of(&caller_events[0]);
     assert_eq!(
-        labels.get("model_id").map(String::as_str),
+        caller_labels.get("model_id").map(String::as_str),
         Some("caller-id")
     );
 }

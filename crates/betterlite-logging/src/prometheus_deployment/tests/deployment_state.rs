@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_prometheus::collector_factory::collector::MetricUpdate;
+use betterlite_prometheus::collector_factory::collector::{MetricUpdate, MetricValue};
 use rust_decimal::Decimal;
 
 use super::metric::{DeploymentMetric, DeploymentState};
@@ -26,11 +26,7 @@ fn assert_state(gauges: &ProbeGauges, state: i64) {
     assert_eq!(metric_of(&events[0]), "litellm_deployment_state");
     assert_eq!(
         update_of(&events[0]),
-        MetricUpdate::Set(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(
-                Decimal::from(state)
-            )
-        )
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(state)))
     );
     let expected = expected_labels(
         "litellm_deployment_state",

@@ -21,15 +21,15 @@ pub enum FallbackEvent {
 impl FallbackEvent {
     fn metric(self) -> DeploymentMetric {
         match self {
-            FallbackEvent::Success => DeploymentMetric::SuccessfulFallbacks,
-            FallbackEvent::Failure => DeploymentMetric::FailedFallbacks,
+            Self::Success => DeploymentMetric::SuccessfulFallbacks,
+            Self::Failure => DeploymentMetric::FailedFallbacks,
         }
     }
 
     fn entry_point(self) -> &'static str {
         match self {
-            FallbackEvent::Success => "log_success_fallback_event",
-            FallbackEvent::Failure => "log_failure_fallback_event",
+            Self::Success => "log_success_fallback_event",
+            Self::Failure => "log_failure_fallback_event",
         }
     }
 }
@@ -71,8 +71,8 @@ fn fallback_values<G: DeploymentMetrics>(
 ) -> UserApiKeyLabelValues {
     let mut entries: Vec<(String, LabelDumpValue)> = Vec::new();
     let requested = Json::Text(request.original_model_group.to_owned());
-    let requested = metrics.bounded_model_label(Some(&requested), true, request.catalog);
-    push_text(&mut entries, "requested_model", requested.as_deref());
+    let bounded = metrics.bounded_model_label(Some(&requested), true, request.catalog);
+    push_text(&mut entries, "requested_model", bounded.as_deref());
     push_text(&mut entries, "fallback_model", request.model);
     push_identity(
         &mut entries,

@@ -73,12 +73,11 @@ pub(super) fn fallback_exception_status(exception: &LabelException) -> String {
 
 pub(super) fn failure_exception_status(exception: &LabelException) -> String {
     let status = fallback_exception_status(exception);
-    if status == MISSING_LABEL_VALUE || status.is_empty() {
-        if let Some(code) = exception.code.as_deref() {
-            return code.to_owned();
-        }
+    let missing = status == MISSING_LABEL_VALUE || status.is_empty();
+    match exception.code.as_deref() {
+        Some(code) if missing => code.to_owned(),
+        Some(_) | None => status,
     }
-    status
 }
 
 // prometheus_client refuses a keyword call whose names differ from the declared ones

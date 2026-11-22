@@ -1,7 +1,9 @@
 #![cfg(test)]
 
+use crate::fields::payload::StandardLoggingPayload;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_prometheus::collector_factory::collector::{MetricUpdate, MetricValue};
 use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
 use rust_decimal::Decimal;
 
@@ -32,11 +34,11 @@ fn model_info_params() -> JsonObject {
     ])
 }
 
-fn success_payload(extra: &[(&str, Json)]) -> crate::fields::payload::StandardLoggingPayload {
+fn success_payload(extra: &[(&str, Json)]) -> StandardLoggingPayload {
     super::support::payload_with(extra)
 }
 
-fn full_payload() -> crate::fields::payload::StandardLoggingPayload {
+fn full_payload() -> StandardLoggingPayload {
     let headers = Json::Object(json_object(&[
         ("x_ratelimit_remaining_requests", number("5")),
         ("x_ratelimit_remaining_tokens", Json::Text("7".to_owned())),
@@ -72,18 +74,23 @@ fn fixture() -> Fixture {
     ])
 }
 
-fn request<'request>(
-    values: &'request UserApiKeyLabelValues,
-    litellm_params: &'request JsonObject,
-    payload: Option<&'request crate::fields::payload::StandardLoggingPayload>,
+#[derive(Clone, Copy, Default)]
+struct Timing {
     stream: Option<bool>,
     completion_start_time: Option<Decimal>,
     output_tokens: Option<Decimal>,
+}
+
+fn request<'request>(
+    values: &'request UserApiKeyLabelValues,
+    litellm_params: &'request JsonObject,
+    payload: Option<&'request StandardLoggingPayload>,
+    timing: Timing,
 ) -> SuccessRequest<'request> {
     SuccessRequest {
         model: Some("gpt-4o"),
-        stream,
-        completion_start_time,
+        stream: timing.stream,
+        completion_start_time: timing.completion_start_time,
         litellm_params,
         payload,
         exception: None,
@@ -91,7 +98,7 @@ fn request<'request>(
         context: None,
         start_time: Decimal::ZERO,
         end_time: Decimal::from(2),
-        output_tokens,
+        output_tokens: timing.output_tokens,
         now: now(),
     }
 }
@@ -103,7 +110,7 @@ fn a_success_without_a_payload_records_nothing() {
     let litellm_params = model_info_params();
     set_llm_deployment_success_metrics(
         &gauges,
-        &request(&fixture.values, &litellm_params, None, None, None, None),
+        &request(&fixture.values, &litellm_params, None, Timing::default()),
     );
     assert!(gauges.updates().is_empty());
 }
@@ -120,9 +127,7 @@ fn an_invalid_key_success_records_nothing() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            None,
-            None,
-            None,
+            Timing::default(),
         ),
     );
     assert!(gauges.updates().is_empty());
@@ -140,9 +145,11 @@ fn a_full_success_writes_every_metric_in_order() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            Some(true),
-            Some(Decimal::ONE),
-            Some(Decimal::from(4)),
+            Timing {
+                stream: Some(true),
+                completion_start_time: Some(Decimal::ONE),
+                output_tokens: Some(Decimal::from(4)),
+            },
         ),
     );
     let events = gauges.updates();
@@ -177,51 +184,27 @@ fn a_full_success_writes_every_metric_in_order() {
     );
     assert_eq!(
         update_of(&events[0]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Set(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(
-                Decimal::from(100)
-            )
-        )
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(100)))
     );
     assert_eq!(
         update_of(&events[1]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Set(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(
-                Decimal::from(10)
-            )
-        )
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(10)))
     );
     assert_eq!(
         update_of(&events[2]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Observe(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(Decimal::new(
-                12, 3
-            ))
-        )
+        MetricUpdate::Observe(MetricValue::Finite(Decimal::new(12, 3)))
     );
     assert_eq!(
         update_of(&events[3]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Observe(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(Decimal::new(
-                15, 3
-            ))
-        )
+        MetricUpdate::Observe(MetricValue::Finite(Decimal::new(15, 3)))
     );
     assert_eq!(
         update_of(&events[4]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Set(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(
-                Decimal::from(5)
-            )
-        )
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(5)))
     );
     assert_eq!(
         update_of(&events[5]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Set(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(
-                Decimal::from(7)
-            )
-        )
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(7)))
     );
     assert_eq!(
         labels_of(&events[6]),
@@ -257,11 +240,7 @@ fn a_full_success_writes_every_metric_in_order() {
     );
     assert_eq!(
         update_of(&events[9]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Observe(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(Decimal::new(
-                25, 2
-            ))
-        )
+        MetricUpdate::Observe(MetricValue::Finite(Decimal::new(25, 2)))
     );
 }
 
@@ -290,9 +269,7 @@ fn absent_or_zero_values_skip_the_overhead_and_remaining_gauges() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            None,
-            None,
-            None,
+            Timing::default(),
         ),
     );
     let names: Vec<&'static str> = gauges.updates().iter().map(metric_of).collect();
@@ -326,9 +303,7 @@ fn guardrail_only_overhead_is_still_recorded() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            None,
-            None,
-            None,
+            Timing::default(),
         ),
     );
     let events = gauges.updates();
@@ -338,11 +313,7 @@ fn guardrail_only_overhead_is_still_recorded() {
     );
     assert_eq!(
         update_of(&events[0]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Observe(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(Decimal::new(
-                4, 3
-            ))
-        )
+        MetricUpdate::Observe(MetricValue::Finite(Decimal::new(4, 3)))
     );
 }
 
@@ -361,9 +332,11 @@ fn latency_value(
         &fixture.values,
         &litellm_params,
         Some(&payload),
-        stream,
-        completion_start_time,
-        output_tokens,
+        Timing {
+            stream,
+            completion_start_time,
+            output_tokens,
+        },
     );
     success.start_time = start;
     success.end_time = end;
@@ -372,11 +345,11 @@ fn latency_value(
         .updates()
         .into_iter()
         .find(|event| metric_of(event) == "litellm_deployment_latency_per_output_token")
-        .map(|event| match update_of(&event) {
-            betterlite_prometheus::collector_factory::collector::MetricUpdate::Observe(
-                betterlite_prometheus::collector_factory::collector::MetricValue::Finite(value),
-            ) => value,
-            _ => panic!("expected a finite observation"),
+        .map(|event| {
+            let MetricUpdate::Observe(MetricValue::Finite(value)) = update_of(&event) else {
+                panic!("expected a finite observation");
+            };
+            value
         })
 }
 
@@ -477,9 +450,7 @@ fn a_non_numeric_header_is_logged_at_error_and_stops_later_writes() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            None,
-            None,
-            None,
+            Timing::default(),
         ),
     );
     let names: Vec<&'static str> = gauges.updates().iter().map(metric_of).collect();
@@ -505,9 +476,7 @@ fn a_success_error_is_logged_at_error_and_stops_later_writes() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            None,
-            None,
-            None,
+            Timing::default(),
         ),
     );
     let names: Vec<&'static str> = gauges.updates().iter().map(metric_of).collect();
@@ -543,9 +512,7 @@ fn remaining_values_are_set_rather_than_incremented() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            None,
-            None,
-            None,
+            Timing::default(),
         ),
     );
     let event = gauges
@@ -555,11 +522,7 @@ fn remaining_values_are_set_rather_than_incremented() {
         .expect("the remaining requests gauge is set");
     assert_eq!(
         update_of(&event),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Set(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(
-                Decimal::from(11)
-            )
-        )
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(11)))
     );
     assert_eq!(
         labels_of(&event),
@@ -590,9 +553,7 @@ fn the_success_state_label_uses_the_model_info_id() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            None,
-            None,
-            None,
+            Timing::default(),
         ),
     );
     let event = gauges
@@ -606,9 +567,7 @@ fn the_success_state_label_uses_the_model_info_id() {
     );
     assert_eq!(
         update_of(&event),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Set(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(Decimal::ZERO)
-        )
+        MetricUpdate::Set(MetricValue::Finite(Decimal::ZERO))
     );
 }
 
@@ -624,9 +583,7 @@ fn the_plain_overhead_histogram_is_skipped_when_guardrails_are_absent() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            None,
-            None,
-            None,
+            Timing::default(),
         ),
     );
     let names: Vec<&'static str> = gauges.updates().iter().map(metric_of).collect();
@@ -660,9 +617,7 @@ fn an_observed_header_and_overhead_use_the_metric_label_lists() {
             &fixture.values,
             &litellm_params,
             Some(&payload),
-            None,
-            None,
-            None,
+            Timing::default(),
         ),
     );
     let events = gauges.updates();
@@ -681,11 +636,7 @@ fn an_observed_header_and_overhead_use_the_metric_label_lists() {
     );
     assert_eq!(
         update_of(&events[0]),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Observe(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(Decimal::new(
-                2, 3
-            ))
-        )
+        MetricUpdate::Observe(MetricValue::Finite(Decimal::new(2, 3)))
     );
     let tokens = events
         .iter()
@@ -693,10 +644,6 @@ fn an_observed_header_and_overhead_use_the_metric_label_lists() {
         .expect("the tokens gauge is set");
     assert_eq!(
         update_of(tokens),
-        betterlite_prometheus::collector_factory::collector::MetricUpdate::Set(
-            betterlite_prometheus::collector_factory::collector::MetricValue::Finite(
-                Decimal::from(9)
-            )
-        )
+        MetricUpdate::Set(MetricValue::Finite(Decimal::from(9)))
     );
 }
