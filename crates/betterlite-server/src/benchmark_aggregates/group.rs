@@ -111,37 +111,46 @@ pub fn benchmark_group(row: &SessionAggRow) -> BenchmarkGroup {
     }
 }
 
-fn summed_counts<F>(rows: &[SessionAggRow], field: F) -> i64
-where
-    F: Fn(&SessionAggRow) -> i64,
-{
-    let mut total = 0_i64;
-    for row in rows {
-        total = total.saturating_add(field(row));
-    }
-    total
+// A measure's zero and saturating add, so one loop sums counters, money and absent money
+trait Summed: Copy {
+    const ZERO: Self;
+
+    fn plus(self, amount: Self) -> Self;
 }
 
-fn summed_money<F>(rows: &[SessionAggRow], field: F) -> Decimal
-where
-    F: Fn(&SessionAggRow) -> Decimal,
-{
-    let mut total = Decimal::ZERO;
-    for row in rows {
-        total = total.saturating_add(field(row));
+impl Summed for i64 {
+    const ZERO: Self = 0;
+
+    fn plus(self, amount: Self) -> Self {
+        self.saturating_add(amount)
     }
-    total
 }
 
-fn summed_optional_money<F>(rows: &[SessionAggRow], field: F) -> Option<Decimal>
+impl Summed for Decimal {
+    const ZERO: Self = Decimal::ZERO;
+
+    fn plus(self, amount: Self) -> Self {
+        self.saturating_add(amount)
+    }
+}
+
+impl Summed for Option<Decimal> {
+    const ZERO: Self = Some(Decimal::ZERO);
+
+    fn plus(self, amount: Self) -> Self {
+        self.zip(amount)
+            .map(|(total, value)| total.saturating_add(value))
+    }
+}
+
+fn summed<F, T>(rows: &[SessionAggRow], field: F) -> T
 where
-    F: Fn(&SessionAggRow) -> Option<Decimal>,
+    F: Fn(&SessionAggRow) -> T,
+    T: Summed,
 {
-    let mut total = Some(Decimal::ZERO);
+    let mut total = T::ZERO;
     for row in rows {
-        total = total
-            .zip(field(row))
-            .map(|(summed, amount)| summed.saturating_add(amount));
+        total = total.plus(field(row));
     }
     total
 }
@@ -152,35 +161,31 @@ pub fn summed_agg_row(rows: &[SessionAggRow]) -> SessionAggRow {
         router_name: String::new(),
         router_type: String::new(),
         tier_turns: BTreeMap::new(),
-        sessions: summed_counts(rows, |row| row.sessions),
-        turns: summed_counts(rows, |row| row.turns),
-        unordered_turns: summed_counts(rows, |row| row.unordered_turns),
-        covered_turns: summed_counts(rows, |row| row.covered_turns),
-        cache_hits: summed_counts(rows, |row| row.cache_hits),
-        same_model_turns: summed_counts(rows, |row| row.same_model_turns),
-        same_model_hits: summed_counts(rows, |row| row.same_model_hits),
-        first_visit_turns: summed_counts(rows, |row| row.first_visit_turns),
-        first_visit_hits: summed_counts(rows, |row| row.first_visit_hits),
-        return_turns: summed_counts(rows, |row| row.return_turns),
-        return_hits: summed_counts(rows, |row| row.return_hits),
-        return_expired_misses: summed_counts(rows, |row| row.return_expired_misses),
-        return_within_ttl_misses: summed_counts(rows, |row| row.return_within_ttl_misses),
-        ttl_5m_turns: summed_counts(rows, |row| row.ttl_5m_turns),
-        ttl_1h_turns: summed_counts(rows, |row| row.ttl_1h_turns),
-        total_tokens: summed_counts(rows, |row| row.total_tokens),
-        spend: summed_money(rows, |row| row.spend),
-        saved_spend: summed_money(rows, |row| row.saved_spend),
-        savings_estimated_turns: summed_counts(rows, |row| row.savings_estimated_turns),
-        savings_estimated_actual_spend: summed_money(rows, |row| {
-            row.savings_estimated_actual_spend
-        }),
-        savings_classifier_cost: summed_optional_money(rows, |row| row.savings_classifier_cost),
-        savings_estimated_saved_spend: summed_money(rows, |row| row.savings_estimated_saved_spend),
-        classifier_cost: summed_money(rows, |row| row.classifier_cost),
-        classifier_cost_recorded_turns: summed_counts(rows, |row| {
-            row.classifier_cost_recorded_turns
-        }),
-        session_seconds: summed_money(rows, |row| row.session_seconds),
+        sessions: summed(rows, |row| row.sessions),
+        turns: summed(rows, |row| row.turns),
+        unordered_turns: summed(rows, |row| row.unordered_turns),
+        covered_turns: summed(rows, |row| row.covered_turns),
+        cache_hits: summed(rows, |row| row.cache_hits),
+        same_model_turns: summed(rows, |row| row.same_model_turns),
+        same_model_hits: summed(rows, |row| row.same_model_hits),
+        first_visit_turns: summed(rows, |row| row.first_visit_turns),
+        first_visit_hits: summed(rows, |row| row.first_visit_hits),
+        return_turns: summed(rows, |row| row.return_turns),
+        return_hits: summed(rows, |row| row.return_hits),
+        return_expired_misses: summed(rows, |row| row.return_expired_misses),
+        return_within_ttl_misses: summed(rows, |row| row.return_within_ttl_misses),
+        ttl_5m_turns: summed(rows, |row| row.ttl_5m_turns),
+        ttl_1h_turns: summed(rows, |row| row.ttl_1h_turns),
+        total_tokens: summed(rows, |row| row.total_tokens),
+        spend: summed(rows, |row| row.spend),
+        saved_spend: summed(rows, |row| row.saved_spend),
+        savings_estimated_turns: summed(rows, |row| row.savings_estimated_turns),
+        savings_estimated_actual_spend: summed(rows, |row| row.savings_estimated_actual_spend),
+        savings_classifier_cost: summed(rows, |row| row.savings_classifier_cost),
+        savings_estimated_saved_spend: summed(rows, |row| row.savings_estimated_saved_spend),
+        classifier_cost: summed(rows, |row| row.classifier_cost),
+        classifier_cost_recorded_turns: summed(rows, |row| row.classifier_cost_recorded_turns),
+        session_seconds: summed(rows, |row| row.session_seconds),
     }
 }
 
