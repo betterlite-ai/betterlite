@@ -36,7 +36,7 @@ pub struct ProxyBudget<'input> {
 }
 
 pub fn seed_proxy_budget(
-    budget: ProxyBudget<'_>,
+    budget: &ProxyBudget<'_>,
     store: Arc<dyn ProxyBudgetStore>,
     reset_calculator: Arc<dyn BudgetResetCalculator>,
     tasks: &TaskTracker,
@@ -47,11 +47,12 @@ pub fn seed_proxy_budget(
     let Some(budget_duration) = budget.budget_duration.map(str::to_owned) else {
         return Err(StartupCheckError::BudgetDurationNotSet);
     };
+    let max_budget = budget.max_budget;
     tasks.spawn(async move {
         write_proxy_budget(
             store.as_ref(),
             reset_calculator.as_ref(),
-            budget.max_budget,
+            max_budget,
             &budget_duration,
         )
         .await;

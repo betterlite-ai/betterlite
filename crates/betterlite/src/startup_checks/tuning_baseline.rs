@@ -75,12 +75,13 @@ async fn read_baselines(
             info!("Recorded heuristic-v1 tuning baseline for {count} auto-router(s)");
             Ok(snapshot)
         }
-        Err(BaselineWriteError::UniqueViolation) => {
-            match store.find_baseline(TUNING_BASELINE_PARAM_NAME).await? {
-                Some(row) => decode_tuning_baselines(&row).map_err(BaselineLoadError::Decode),
-                None => Ok(TuningBaselines::new()),
-            }
-        }
+        Err(BaselineWriteError::UniqueViolation) => store
+            .find_baseline(TUNING_BASELINE_PARAM_NAME)
+            .await?
+            .map_or_else(
+                || Ok(TuningBaselines::new()),
+                |row| decode_tuning_baselines(&row).map_err(BaselineLoadError::Decode),
+            ),
         Err(BaselineWriteError::Database(error)) => Err(BaselineLoadError::Database(error)),
     }
 }

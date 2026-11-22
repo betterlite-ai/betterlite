@@ -5,6 +5,9 @@ use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
 use serde_json::Number;
 
+// one list entry's model_dump(mode="json", include=...) form, or None when the entry cannot be dumped
+type EntryConvert = fn(&Json) -> Option<Json>;
+
 // the ComplexityRouterConfig.model_dump(mode="json", include=..., exclude=...) fields tuning_fingerprint hashes
 pub(super) fn payload(fields: &JsonObject) -> Option<IndexMap<String, Json>> {
     let mut payload = IndexMap::new();
@@ -23,7 +26,7 @@ pub(super) fn payload(fields: &JsonObject) -> Option<IndexMap<String, Json>> {
             float_option(value)?,
         );
     }
-    let entry_lists: [(&str, fn(&Json) -> Option<Json>); 2] = [
+    let entry_lists: [(&str, EntryConvert); 2] = [
         ("custom_dimensions", dimension_payload),
         ("keyword_tier_rules", keyword_rule),
     ];

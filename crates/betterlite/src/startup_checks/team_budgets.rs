@@ -134,8 +134,8 @@ fn number_to_decimal(number: &Number) -> Option<Decimal> {
 
 // NewUserRequestTeam.max_budget_in_team is a Python float, so the log line carries its repr
 fn budget_text(budget: Option<Decimal>) -> String {
-    match budget {
-        Some(value) => value.to_f64().map_or_else(|| value.to_string(), float_text),
-        None => "None".to_owned(),
-    }
+    budget.map_or_else(
+        || "None".to_owned(),
+        |value| value.to_f64().map_or_else(|| value.to_string(), float_text),
+    )
 }

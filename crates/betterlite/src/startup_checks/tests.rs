@@ -145,11 +145,11 @@ fn params_with_teams(teams: JsonData) -> DefaultUserParams {
 #[test]
 fn budget_warning_fires_only_without_database_and_above_zero() {
     let (logs, _guard) = capture_logs();
-    warn_budget_without_db(Some(10.0), DatabasePresence::Absent);
+    warn_budget_without_db(Some(10.0_f64), DatabasePresence::Absent);
     warn_budget_without_db(None, DatabasePresence::Absent);
-    warn_budget_without_db(Some(0.0), DatabasePresence::Absent);
-    warn_budget_without_db(Some(-1.0), DatabasePresence::Absent);
-    warn_budget_without_db(Some(10.0), DatabasePresence::Present);
+    warn_budget_without_db(Some(0.0_f64), DatabasePresence::Absent);
+    warn_budget_without_db(Some(-1.0_f64), DatabasePresence::Absent);
+    warn_budget_without_db(Some(10.0_f64), DatabasePresence::Present);
     let contents = logs.contents();
     assert_eq!(contents.matches("A proxy-wide budget").count(), 1);
     assert!(contents.contains("litellm.max_budget=10.0"));
@@ -158,7 +158,7 @@ fn budget_warning_fires_only_without_database_and_above_zero() {
 #[test]
 fn budget_warning_keeps_litellm_text() {
     let (logs, _guard) = capture_logs();
-    warn_budget_without_db(Some(3.0), DatabasePresence::Absent);
+    warn_budget_without_db(Some(3.0_f64), DatabasePresence::Absent);
     let expected = "A proxy-wide budget (litellm.max_budget=3.0) is configured but no database is connected, so the budget will NOT be enforced and requests will never be blocked. Set DATABASE_URL or general_settings.database_url and restart. Redis and fail_closed_budget_enforcement do not cover the proxy-wide budget because there is no global spend counter; Redis alone is not a substitute.";
     assert!(logs.contents().contains(expected));
 }
@@ -358,10 +358,7 @@ impl ProxyBudgetStore for BudgetStore {
             budget_duration.to_owned(),
         ));
         let failure = self.upsert_error.lock().unwrap().clone();
-        match failure {
-            Some(message) => Err(PortError::new(&message)),
-            None => Ok(()),
-        }
+        failure.map_or_else(|| Ok(()), |message| Err(PortError::new(&message)))
     }
 
     async fn backfill_null_budget_reset(
@@ -374,10 +371,7 @@ impl ProxyBudgetStore for BudgetStore {
             .unwrap()
             .push((user_id.to_owned(), reset_at));
         let failure = self.backfill_error.lock().unwrap().clone();
-        match failure {
-            Some(message) => Err(PortError::new(&message)),
-            None => Ok(()),
-        }
+        failure.map_or_else(|| Ok(()), |message| Err(PortError::new(&message)))
     }
 }
 
@@ -418,7 +412,7 @@ async fn seed_proxy_budget_refuses_missing_duration() {
     });
     let tasks = TaskTracker::new();
     let error = seed_proxy_budget(
-        budget(Decimal::from(5_i32), None, DatabasePresence::Present),
+        &budget(Decimal::from(5_i32), None, DatabasePresence::Present),
         Arc::<BudgetStore>::clone(&store),
         reset,
         &tasks,
@@ -446,7 +440,7 @@ async fn seed_proxy_budget_skips_without_database_or_positive_budget(
     let store = Arc::new(BudgetStore::default());
     let tasks = TaskTracker::new();
     seed_proxy_budget(
-        budget(max_budget, duration, database),
+        &budget(max_budget, duration, database),
         Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset {
             outcome: Ok(fixed_reset()),
@@ -465,7 +459,7 @@ async fn seed_proxy_budget_upserts_then_backfills_the_reset() {
     let store = Arc::new(BudgetStore::default());
     let tasks = TaskTracker::new();
     seed_proxy_budget(
-        budget(Decimal::from(5_i32), Some("30d"), DatabasePresence::Present),
+        &budget(Decimal::from(5_i32), Some("30d"), DatabasePresence::Present),
         Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset {
             outcome: Ok(fixed_reset()),
@@ -496,7 +490,7 @@ async fn seed_proxy_budget_warns_and_skips_the_backfill_when_the_upsert_fails() 
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
     seed_proxy_budget(
-        budget(Decimal::from(5_i32), Some("30d"), DatabasePresence::Present),
+        &budget(Decimal::from(5_i32), Some("30d"), DatabasePresence::Present),
         Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset {
             outcome: Ok(fixed_reset()),
@@ -521,7 +515,7 @@ async fn seed_proxy_budget_warns_when_the_backfill_fails() {
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
     seed_proxy_budget(
-        budget(Decimal::from(5_i32), Some("30d"), DatabasePresence::Present),
+        &budget(Decimal::from(5_i32), Some("30d"), DatabasePresence::Present),
         Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset {
             outcome: Ok(fixed_reset()),
@@ -544,7 +538,7 @@ async fn seed_proxy_budget_warns_when_the_reset_time_cannot_be_computed() {
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
     seed_proxy_budget(
-        budget(Decimal::from(5_i32), Some("bad"), DatabasePresence::Present),
+        &budget(Decimal::from(5_i32), Some("bad"), DatabasePresence::Present),
         Arc::<BudgetStore>::clone(&store),
         Arc::new(FixedReset { outcome: Err(()) }),
         &tasks,
@@ -572,10 +566,7 @@ impl GlobalSpendFetch for RecordingFetch {
     async fn fetch_global_spend(&self) -> Result<(), PortError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let failure = self.error.lock().unwrap().clone();
-        match failure {
-            Some(message) => Err(PortError::new(&message)),
-            None => Ok(()),
-        }
+        failure.map_or_else(|| Ok(()), |message| Err(PortError::new(&message)))
     }
 }
 
@@ -636,10 +627,7 @@ struct SettingsRepo {
 impl UiSettingsRepository for SettingsRepo {
     async fn stored_ui_settings(&self) -> Result<Option<String>, TableError> {
         let stored = self.row.lock().unwrap().clone();
-        match stored {
-            Some(text) => Ok(Some(text)),
-            None => Err(TableError::MissingRow),
-        }
+        stored.map_or_else(|| Err(TableError::MissingRow), |text| Ok(Some(text)))
     }
 }
 
