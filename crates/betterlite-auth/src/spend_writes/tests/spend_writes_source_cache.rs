@@ -41,7 +41,8 @@ async fn no_source_at_all_answers_zero() {
 async fn a_non_object_source_answers_zero() {
     let fx = fixture(false);
     fx.sources.put(KEY, source_json("\"text\""));
-    assert_eq!(base_of(&fx, &[KEY]).await, decimal("0"));
+    fx.sources.put(OTHER_KEY, source_json("{\"spend\": 4}"));
+    assert_eq!(base_of(&fx, &[KEY, OTHER_KEY]).await, decimal("0"));
     let fx = fixture(false);
     fx.sources.put(KEY, source_json("7"));
     assert_eq!(base_of(&fx, &[KEY]).await, decimal("0"));
@@ -51,7 +52,8 @@ async fn a_non_object_source_answers_zero() {
 async fn a_source_without_the_spend_field_answers_zero() {
     let fx = fixture(false);
     fx.sources.put(KEY, source_json("{\"total\": 4}"));
-    assert_eq!(base_of(&fx, &[KEY]).await, decimal("0"));
+    fx.sources.put(OTHER_KEY, source_json("{\"spend\": 4}"));
+    assert_eq!(base_of(&fx, &[KEY, OTHER_KEY]).await, decimal("0"));
 }
 
 #[tokio::test]
