@@ -74,7 +74,8 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Call {
-    CallType {
+    #[serde(rename = "call_type")]
+    Route {
         url: Json,
         body: IndexMap<String, Json>,
     },
@@ -117,7 +118,7 @@ impl Helper for Op {
 
 fn answer(call: &Call) -> HelperResult {
     match call {
-        Call::CallType { url, body } => call_type(url, body),
+        Call::Route { url, body } => call_type(url, body),
         Call::ScanMetadata { metadata } => {
             let narrowed = RecordJson::Object(build_scan_metadata(metadata));
             serde_json::from_str(&dumps(&narrowed, Rendering::AsRead)).or_value_error()
@@ -135,7 +136,9 @@ fn answer(call: &Call) -> HelperResult {
             let same = fingerprint(&left_payload, &keys) == fingerprint(&right_payload, &keys);
             Ok(json!({"same": same}))
         }
-        Call::ContentBlock { raised } => raised::content_block(raised),
+        Call::ContentBlock { raised } => {
+            serde_json::to_value(raised::content_block(raised)).or_value_error()
+        }
         Call::Report {
             scanned_records,
             changes,

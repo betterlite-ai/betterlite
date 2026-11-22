@@ -8,9 +8,7 @@ use betterlite_guardrails::guardrail_base::failure::{
     GuardrailFailure, ModifyResponseFailure, SensitiveDataRouteFailure,
 };
 use indexmap::IndexMap;
-use serde_json::json;
-
-use betterlite_oracle_helper_api::helper::HelperResult;
+use serde::Serialize;
 
 use super::{Cause, Item, Raise};
 
@@ -56,13 +54,22 @@ impl RaisedGuardrail for Raised<'_> {
     }
 }
 
-pub(super) fn content_block(item: &Item<Raise>) -> HelperResult {
+// Whether the exception blocks and which guardrail it names, the two answers the content-block case reads
+#[derive(Serialize)]
+pub(super) struct ContentBlock {
+    blocked: bool,
+    guardrail: Option<String>,
+}
+
+pub(super) fn content_block(item: &Item<Raise>) -> ContentBlock {
     let raised = Raised {
         failure: failure(item),
         item,
     };
-    let blocked = is_content_block(&raised);
-    Ok(json!({"blocked": blocked, "guardrail": naming_guardrail(&raised)}))
+    ContentBlock {
+        blocked: is_content_block(&raised),
+        guardrail: naming_guardrail(&raised),
+    }
 }
 
 // The exception LiteLLM's classifier sees, built with the defaults its constructors use
