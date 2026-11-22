@@ -27,6 +27,7 @@ use betterlite_provider::operation::OperationResult;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
 
+// ast-grep-ignore: no-long-names
 use crate::model_listing::response::model_dump_with_preserved_fields;
 use crate::routes::completions::streaming::pump::{FrameSource, Pump, next_frame};
 use crate::stream_chunks::serialize::serialize_chunk;
@@ -227,6 +228,7 @@ fn reply_body(reply: &AnthropicReply) -> Result<Vec<u8>, ChatFailure> {
     let original: JsonObject = serde_json::to_value(reply)
         .and_then(serde_json::from_value::<JsonObject>)
         .map_err(|source| ChatFailure::Route(ChatError::Encode { source }))?;
+    // ast-grep-ignore: no-long-names
     let body = model_dump_with_preserved_fields(model_dump(&original)?, &choice_objects(&original));
     serde_json::to_vec(&body).map_err(|source| ChatFailure::Route(ChatError::Encode { source }))
 }
