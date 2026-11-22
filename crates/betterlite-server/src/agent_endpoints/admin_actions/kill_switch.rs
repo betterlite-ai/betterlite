@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
+use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::{AgentKillSwitchConfig, AgentKillSwitchResult};
 use serde::Serialize;
 
@@ -18,6 +19,13 @@ struct FailureBody {
     detail: AgentKillSwitchResult,
 }
 
+// what the kill switch lookup found: no such agent answers 404, an agent with no switch answers 400
+enum Resolution {
+    Missing,
+    NoSwitch,
+    Switch(Box<AgentKillSwitchConfig>),
+}
+
 // the route body: _resolve_agent_kill_switch, the webhook attempt, the audit row, then 200 or 502 with the same result
 pub(super) async fn trigger(
     state: &AgentAdminState,
@@ -28,16 +36,17 @@ pub(super) async fn trigger(
         Ok(resolved) => resolved,
         Err(error) => return error.into_response(),
     };
-    let Some(switch) = resolved else {
-        return missing_agent(agent_id).into_response();
-    };
-    let Some(configured) = switch else {
-        let detail = format!("Agent with ID {agent_id} has no kill_switch configured");
-        let error = IdentityAdminError {
-            status: 400,
-            detail: Detail::Text(detail),
-        };
-        return error.into_response();
+    let configured = match resolved {
+        Resolution::Missing => return missing_agent(agent_id).into_response(),
+        Resolution::NoSwitch => {
+            let detail = format!("Agent with ID {agent_id} has no kill_switch configured");
+            let error = IdentityAdminError {
+                status: 400,
+                detail: Detail::Text(detail),
+            };
+            return error.into_response();
+        }
+        Resolution::Switch(configured) => configured,
     };
     let result = state.kill_switch.fire(agent_id, &configured).await;
     record_attempt(state, &result, caller).await;
@@ -48,25 +57,31 @@ pub(super) async fn trigger(
     (StatusCode::BAD_GATEWAY, Json(body)).into_response()
 }
 
-// the DB row wins over this replica's registry; a config.yaml agent has no row and falls back to the registry.
-// outer None is no such agent, inner None an agent with no kill_switch: the route answers 404 and 400 apart
+// the DB row wins over this replica's registry; a config.yaml agent has no row and falls back to the registry
 async fn resolve(
     state: &AgentAdminState,
     agent_id: &str,
-) -> Result<Option<Option<AgentKillSwitchConfig>>, IdentityAdminError> {
+) -> Result<Resolution, IdentityAdminError> {
     if let Some(database) = state.database.as_deref() {
         let found = database
             .agent_row(agent_id)
             .await
             .map_err(unexpected_failure)?;
         if let Some(stored) = found {
-            return Ok(Some(parse_agent_kill_switch(stored.kill_switch.as_ref())));
+            return Ok(resolution(stored.kill_switch.as_ref()));
         }
     }
     let Some(agent) = state.registry.agent_by_id(agent_id) else {
-        return Ok(None);
+        return Ok(Resolution::Missing);
     };
-    Ok(Some(parse_agent_kill_switch(agent.kill_switch.as_ref())))
+    Ok(resolution(agent.kill_switch.as_ref()))
+}
+
+fn resolution(stored: Option<&AgentJson>) -> Resolution {
+    match parse_agent_kill_switch(stored) {
+        Some(config) => Resolution::Switch(Box::new(config)),
+        None => Resolution::NoSwitch,
+    }
 }
 
 // the audit row comes after the attempt, so a failed webhook leaves one too, and its write never changes the answer
