@@ -103,12 +103,15 @@ fn without_nulls(value: JsonValue) -> JsonValue {
         JsonValue::Object(entries) => JsonValue::Object(
             entries
                 .into_iter()
-                .filter(|(_, value)| *value != JsonValue::Null)
-                .map(|(key, value)| (key, without_nulls(value)))
+                .filter(|(_, entry)| *entry != JsonValue::Null)
+                .map(|(key, entry)| (key, without_nulls(entry)))
                 .collect(),
         ),
         JsonValue::Array(items) => JsonValue::Array(items.into_iter().map(without_nulls).collect()),
-        other => other,
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)) => other,
     }
 }
 

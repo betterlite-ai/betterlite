@@ -12,7 +12,7 @@ from litellm.proxy.management_endpoints.router_settings_endpoints import (
 )
 from litellm.router import Router
 from litellm.types.litellm_params import RoutingStrategyName
-from litellm.types.router import RouterModelGroupAliasItem
+from litellm.types.router import RouterModelGroupAliasItem, RoutingGroup
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -28,7 +28,7 @@ AliasMap = dict[str, str | RouterModelGroupAliasItem]
 class RouterSettingsInput(Strict):
     routing_strategy: RoutingStrategyName | None = None
     routing_strategy_args: dict[str, JsonValue] | None = None
-    routing_groups: list[dict[str, JsonValue]] | None = None
+    routing_groups: list[RoutingGroup | dict[str, JsonValue]] | None = None
     num_retries: int | None = None
     timeout: float | None = None
     stream_timeout: float | None = None
@@ -87,12 +87,15 @@ class ProxyServer(ModuleType):
     llm_router: Router
     proxy_config: FakeProxyConfig
 
+    def __init__(self, name: str, router: Router, config: FakeProxyConfig) -> None:
+        super().__init__(name)
+        self.llm_router = router
+        self.proxy_config = config
+
 
 @contextmanager
 def fake_proxy(router: Router, config: FakeProxyConfig) -> Generator[None]:
-    proxy_server = ProxyServer(PROXY_MODULE)
-    proxy_server.llm_router = router
-    proxy_server.proxy_config = config
+    proxy_server = ProxyServer(PROXY_MODULE, router, config)
     saved = sys.modules.get(PROXY_MODULE)
     sys.modules[PROXY_MODULE] = proxy_server
     try:
@@ -119,9 +122,9 @@ def build_router(settings: RouterSettingsInput) -> Router:
         timeout=settings.timeout,
         stream_timeout=settings.stream_timeout,
         max_fallbacks=settings.max_fallbacks,
-        fallbacks=settings.fallbacks,
-        context_window_fallbacks=settings.context_window_fallbacks,
-        content_policy_fallbacks=settings.content_policy_fallbacks,
+        fallbacks=settings.fallbacks or [],
+        context_window_fallbacks=settings.context_window_fallbacks or [],
+        content_policy_fallbacks=settings.content_policy_fallbacks or [],
         allowed_fails=settings.allowed_fails,
         cooldown_time=settings.cooldown_time,
         # the proxy omits a key the config lacks, and Router's own default for this one is 0 rather than None
