@@ -1,14 +1,14 @@
 id: B8371
 milestone: M8 platform
 title: Spend log cleanup schedule and settings-change hooks
-status: todo
+status: done
 depends_on: [B8370, B4172, B733, B199]
 file: tasks/B8371-cleanup-schedule.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2928

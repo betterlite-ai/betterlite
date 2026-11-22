@@ -1,0 +1,81 @@
+kind: helper
+name: request-headers-forwarded-header-cleaning
+call:
+  request_headers:
+    clean:
+      - headers:
+          - [Authorization, Bearer sk-proxy-1]
+          - [Content-Type, application/json]
+          - [x-api-key, provider-key]
+          - [X-Custom-Trace, abc]
+          - [cookie, session=1]
+          - [x-litellm-api-key, sk-proxy-2]
+          - [x-mcp-servers, github]
+        litellm_key_header_name: null
+        forward_auth_headers: false
+        authenticated_with_header: null
+      - headers:
+          - [Authorization, Bearer sk-proxy-1]
+          - [x-api-key, provider-key]
+          - [api-key, azure-key]
+          - [x-goog-api-key, google-key]
+          - [Ocp-Apim-Subscription-Key, apim-key]
+          - [x-litellm-api-key, sk-proxy-2]
+          - [x-mcp-servers, github]
+          - [Proxy-Authorization, Basic abc]
+        litellm_key_header_name: null
+        forward_auth_headers: true
+        authenticated_with_header: authorization
+      - headers:
+          - [x-api-key, sk-proxy-1]
+          - [api-key, azure-key]
+        litellm_key_header_name: null
+        forward_auth_headers: true
+        authenticated_with_header: X-API-Key
+      - headers:
+          - [X-My-Key, sk-proxy-1]
+          - [x-goog-api-key, google-key]
+          - [X-Other, kept]
+        litellm_key_header_name: x-my-key
+        forward_auth_headers: false
+        authenticated_with_header: null
+      - headers:
+          - [x-goog-api-key, sk-proxy-1]
+          - [api-key, azure-key]
+        litellm_key_header_name: X-Goog-Api-Key
+        forward_auth_headers: true
+        authenticated_with_header: x-goog-api-key
+      - headers:
+          - [Authorization, Bearer sk-ant-oat01-subscription]
+          - [anthropic-beta, oauth-2025-04-20]
+        litellm_key_header_name: null
+        forward_auth_headers: false
+        authenticated_with_header: x-litellm-api-key
+      - headers:
+          - [Authorization, Bearer sk-ant-oat01-subscription]
+        litellm_key_header_name: null
+        forward_auth_headers: true
+        authenticated_with_header: Authorization
+      - headers: []
+        litellm_key_header_name: null
+        forward_auth_headers: true
+        authenticated_with_header: null
+    backend: []
+    model_group: []
+    metadata: []
+    otel_trace_id: []
+    traceparent: []
+    user: []
+    provider:
+      - - [anthropic-version, "2023-06-01"]
+        - [anthropic-beta, prompt-caching-2024-07-31]
+        - [x-other, ignored]
+      - - [Authorization, Bearer sk-ant-oat01-subscription]
+      - - [anthropic-beta, tools-2024-04-04]
+        - [authorization, Bearer sk-ant-oat01-subscription]
+      - - [Authorization, Bearer sk-proxy-1]
+        - [Anthropic-Version, "2023-06-01"]
+      - []
+    cache_control: []
+env: {}
+compare: {ignore: []}

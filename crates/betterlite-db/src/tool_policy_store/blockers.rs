@@ -1,6 +1,6 @@
 use deadpool_postgres::Client;
 
-use super::deadline::{StatementBounds, StatementFailure, bounded_statement, discard_uncancelled};
+use super::deadline::{StatementBounds, StatementFailure, bounded_statement, discard_expired};
 
 const FIND_SQL: &str = "SELECT COALESCE(\"blocked_tools\", ARRAY[]::text[]) AS blocked_tools FROM \"LiteLLM_ObjectPermissionTable\" WHERE \"object_permission_id\" = $1";
 const UPDATE_SQL: &str = "UPDATE \"LiteLLM_ObjectPermissionTable\" SET \"blocked_tools\" = $2 WHERE \"object_permission_id\" = $1";
@@ -40,7 +40,7 @@ pub async fn change_blocked_tools(
         Ok(None) => return false,
         Err(failure) => {
             tracing::error!("tool_registry_writer {operation} error: {failure}");
-            discard_uncancelled(connected, &failure);
+            discard_expired(connected, &failure);
             return false;
         }
     };
@@ -73,7 +73,7 @@ async fn write_blocked_list(
         Ok(_) => true,
         Err(failure) => {
             tracing::error!("tool_registry_writer {operation} error: {failure}");
-            discard_uncancelled(connected, &failure);
+            discard_expired(connected, &failure);
             false
         }
     }
