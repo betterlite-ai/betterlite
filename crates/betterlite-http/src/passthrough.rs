@@ -145,6 +145,8 @@ pub fn join_base_and_endpoint_path(base_url: &str, endpoint_path: &str) -> Strin
     combined
 }
 
+pub mod error_body;
+
 mod tests;
 
 // Same result as posixpath.normpath for a path that starts with a slash.
