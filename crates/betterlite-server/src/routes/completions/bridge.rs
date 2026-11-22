@@ -78,14 +78,13 @@ pub(super) async fn chat_bridge(
                 answer_chat(executor, &chat, &call.deployment, control, Some(runtime)).await;
             let (result, headers, time) =
                 answered.map_err(|error| chat_call_failure(error, calls))?;
-            let answer = match result {
-                OperationResult::Anthropic(anthropic) => match anthropic {
-                    AnthropicResult::Reply(reply) => anthropic_converted(reply, headers, time)?,
-                    AnthropicResult::Stream(_) => {
-                        return Err(TextCompletionFailure::internal(MISMATCHED));
-                    }
-                },
-                other => streaming::buffered(calls, call.request, (other, headers, time)).await?,
+            let answer = if let OperationResult::Anthropic(anthropic) = result {
+                let AnthropicResult::Reply(reply) = anthropic else {
+                    return Err(TextCompletionFailure::internal(MISMATCHED));
+                };
+                anthropic_converted(reply, headers, time)?
+            } else {
+                streaming::buffered(calls, call.request, (result, headers, time)).await?
             };
             Ok(ChatCallAnswer::Buffered(text_result(answer)))
         }
@@ -130,7 +129,7 @@ pub(super) fn anthropic_converted(
     upstream_headers: HeaderMap,
     upstream_time: Duration,
 ) -> Result<CompletionAnswer, TextCompletionFailure> {
-    let mut written = serde_json::to_value(reply.as_ref())
+    let mut written = serde_json::to_value(reply)
         .map_err(|source| TextCompletionFailure::internal(&source.to_string()))?;
     // the chat response cannot read Anthropic's usage details and would drop its extras, so the reply's own dump is restored
     let usage = written
