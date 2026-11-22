@@ -1,8 +1,11 @@
 task: B1746
 deviations:
-  - what: A statement error carrying a connection-class SQLSTATE (08xxx) counts as a proved-unapplied connection failure, so the daily writer retries it and keeps its chunk; LiteLLM retries only an httpx.ConnectError and, for a prisma error with SQLSTATE 08xxx, only treats it as requeue-safe.
-    why: betterlite reads the database's own SQLSTATE for connection certainty instead of porting prisma's Python exception hierarchy, and a server-reported connection failure before the statement ran is exactly what the retry rule exists for.
+  - what: Every failure that proves the statement never reached the server (no connection, a pool wait timeout or closed pool, a refused pool connection, a connection-class SQLSTATE) is retried and its chunk kept; LiteLLM retries only an httpx.ConnectError and merely keeps a prisma error carrying the same SQLSTATE.
+    why: betterlite reads the database's own SQLSTATE and pool state for connection certainty instead of porting prisma's Python exception hierarchy, and a failure that proves nothing ran is exactly what the retry rule exists for.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2010
+  - what: A driver-level transport failure while a statement or commit runs, carrying no SQLSTATE, is ambiguous: the daily writer drops the chunk and the turn drain stops the partition. LiteLLM matches neither of its error tuples, reads no SQLSTATE off such an error, and so keeps the chunk without retrying it.
+    why: betterlite cannot prove from a raw I/O error whether Postgres applied the statement, and dropping an ambiguous increment is safer than replaying it, which is the source's own rule for post-session failures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4562-L4573
   - what: A unique violation (SQLSTATE 23505) is a data rejection, so the chunk's rows are dropped and reported; LiteLLM's postgres_sqlstate reads no code off prisma's unique-violation subclass and treats it as requeue-safe.
     why: betterlite classifies every SQLSTATE class 23 refusal the same way, so a refused daily upsert never re-sends rows that the database will refuse again.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L240-L251
