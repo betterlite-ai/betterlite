@@ -1,0 +1,9 @@
+kind: helper
+name: azure-resource-dispatch-container-video-vector-seed
+call:
+  azure_resource_dispatch:
+    case: container_video_vector
+    urls: []
+    video: []
+env: {}
+compare: {ignore: []}

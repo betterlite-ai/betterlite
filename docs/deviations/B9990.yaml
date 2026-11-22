@@ -1,0 +1,13 @@
+task: B9990
+deviations:
+  - what: >-
+      x-litellm-model-api-base is not shaped exactly like LiteLLM's: a deployment whose api_base is absent or empty
+      answers with an empty header value where LiteLLM omits the header, and a configured api_base keeps its query
+      string where LiteLLM cuts it off at the first "?".
+    why: >-
+      routes/chat/headers.rs writes the header from ChatDeployment.api_base on every success and serves every
+      chat provider. This task keeps that shared helper's shape, since changing it would move every provider's
+      header contract, and keeps the configured base itself, so the value matches LiteLLM's in the common case
+      that the route case and the oracle case compare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1782-L1784
+kept_bugs: []

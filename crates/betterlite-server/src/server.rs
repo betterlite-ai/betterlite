@@ -36,8 +36,8 @@ use betterlite_logging::registry::CallbackRegistry;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::execution::ChatExecutor;
-use betterlite_tokenizer::count::error::CountError;
 use chat_setup::vertex_embedding::{VertexEmbeddingSetupError, vertex_embedding_calls};
+use error::ChatCallsError;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -73,10 +73,10 @@ pub enum ServerError {
         #[source]
         source: io::Error,
     },
-    #[error("the token counter limits are invalid: {source}")]
-    TokenCounter {
+    #[error(transparent)]
+    ChatCalls {
         #[from]
-        source: CountError,
+        source: ChatCallsError,
     },
     #[error(transparent)]
     VertexEmbedding(#[from] VertexEmbeddingSetupError),
@@ -181,47 +181,41 @@ pub(crate) fn application(
     tasks: &TaskTracker,
 ) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
-    let calls = Arc::new(ChatCalls::new(config, Arc::clone(&executor))?);
-    let counter = Arc::clone(&calls.counter);
-    let vertex = vertex_embedding_calls(config, &executor, tasks)?;
     let shared = Arc::new(Shared {
         bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
     });
     let state = Arc::new(ServerState::new(config, Arc::clone(&executor), shared));
+    let slot = &state.anthropic_runtime;
+    let calls = Arc::new(ChatCalls::new(config, Arc::clone(&executor), slot)?);
+    let counter = Arc::clone(&calls.counter);
+    let vertex = vertex_embedding_calls(config, &executor, tasks)?;
     let read_through = state.model_read_through.read_through.clone();
-    let routed = router(
-        state,
-        shutting_down,
-        chat_routes_with_call_id(
-            calls,
-            config
-                .sections
-                .error_body_call_id
-                .include_call_id_in_error_body,
-        )?,
-        embedding_routes(executor, vertex, read_through),
-    )
+    let include_call_id = config
+        .sections
+        .error_body_call_id
+        .include_call_id_in_error_body;
+    let endpoints = chat_routes_with_call_id(calls, include_call_id)?;
+    let embeddings = embedding_routes(executor, vertex, read_through);
     // the completion route recovers an output-limit 400 with the counter the chat route counts prompts with
-    .layer(Extension(counter));
+    let routed = router(state, shutting_down, endpoints, embeddings).layer(Extension(counter));
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
         routed.route_layer(from_fn(filter_route)),
         &config.sections.request_size_limit,
         &config.sections.security_headers,
     );
+    let admission = AdmissionControl::from_settings(&config.sections.admission_control);
     let stack = AdmissionStack {
-        admission: Arc::new(AdmissionControl::from_settings(
-            &config.sections.admission_control,
-        )),
+        admission: Arc::new(admission),
         in_flight: Arc::new(InFlightRequests::default()),
     };
     let application = stack.wrap(stacked);
-    Ok(
-        match RootPaths::from_settings(&config.sections.request_root_paths) {
-            Some(paths) => paths.wrap(application),
-            None => application,
-        },
-    )
+    let prefixed = RootPaths::from_settings(&config.sections.request_root_paths);
+    Ok(match prefixed {
+        Some(paths) => paths.wrap(application),
+        None => application,
+    })
 }
 // the OpenAI-shaped error body every route renders, and the projections that fill it
 #[derive(serde::Serialize)]
@@ -283,6 +277,7 @@ pub(crate) fn failure(
 
 pub mod component;
 pub(crate) mod connections;
+pub mod error;
 pub mod filter;
 pub mod inputs;
 pub mod listener;

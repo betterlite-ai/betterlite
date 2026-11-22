@@ -1,0 +1,18 @@
+task: B929
+deviations:
+  - what: A decrypted managed payload with exactly two fields returns a typed internal failure in betterlite instead of the Python IndexError that LiteLLM raises, and consuming routes keep status=500, type=internal_server_error, param=null, code="500".
+    why: The no-panics rule forbids reproducing the unchecked third-field access; the oracle case normalizes the diagnostic class while the status and envelope stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L250-L260
+  - what: An addressed id longer than the request JSON limit counts as unmanaged before any decryption, so an oversized managed id is denied instead of decrypted.
+    why: B1087 bounds untrusted ids before they reach the cipher; LiteLLM decrypts any length.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L229-L241
+kept_bugs:
+  - what: A ciphertext that fails to open is treated as an unmanaged id rather than a decryption error, so a tampered id takes the unmanaged 403 instead of a 500.
+    why: LiteLLM's decrypt_value_helper returns the original text and the managed-prefix check decides, and clients that send provider ids rely on that path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L214-L227
+  - what: A managed payload with fewer than two fields falls back to the addressed wire id with no owner check at all.
+    why: LiteLLM's fallback branch returns the id with absent owners, and ids written by earlier LiteLLM versions can have the one-field shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L244-L267
+  - what: Only the first segment after resp_ is decrypted, so text before the marker and any suffix after the ciphertext are ignored.
+    why: LiteLLM splits on resp_ and takes index 1, and proxy deployments have rewritten ids with prefixes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L236-L241

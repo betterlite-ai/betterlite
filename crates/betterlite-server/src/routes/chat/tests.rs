@@ -9,7 +9,6 @@ use std::sync::atomic::AtomicBool;
 use tokio::task::JoinSet;
 
 use crate::routes::chat::chat_routes_with_call_id;
-use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -42,6 +41,7 @@ struct Exchange {
     headers: HeaderMap,
     body: Vec<u8>,
     sent: String,
+    base: String,
 }
 
 #[derive(Deserialize)]
@@ -126,6 +126,7 @@ async fn exchange(
         headers,
         body,
         sent,
+        base,
     }
 }
 
@@ -136,7 +137,7 @@ fn booted(source: &str, environment: &BTreeMap<String, String>) -> Router {
     };
     let config = loader.load(source).unwrap();
     let executor = chat_executor(&config, environment, StdRng::seed_from_u64(3)).unwrap();
-    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    let calls = anthropic::calls(&config, executor);
     chat_routes_with_call_id(Arc::new(calls), false).unwrap()
 }
 
@@ -214,7 +215,7 @@ async fn mock_calls_behavior_tests_behavior() {
     .load(&source)
     .unwrap();
     let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
-    let calls = ChatCalls::new(&config, Arc::new(executor)).unwrap();
+    let calls = anthropic::calls(&config, executor);
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")
         .header("x-litellm-call-id", "mock-call")
@@ -255,7 +256,7 @@ async fn mock_reply(source: &str, path: &str, body: &str) -> (StatusCode, Vec<u8
         .load(source)
         .unwrap();
         let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
-        ChatCalls::new(&config, Arc::new(executor)).unwrap()
+        anthropic::calls(&config, executor)
     };
     let request = Request::post(path)
         .header("content-type", "application/json")
@@ -664,6 +665,7 @@ async fn answers_failures_in_litellm_shape(
     assert!(header(&answered.headers, "x-ratelimit-reset-requests").is_none());
 }
 
+mod anthropic;
 #[path = "tests/stream/tests.rs"]
 mod stream;
 mod unknown_model_cases;

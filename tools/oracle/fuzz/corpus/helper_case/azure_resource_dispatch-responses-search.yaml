@@ -1,0 +1,8 @@
+kind: helper
+name: azure-resource-dispatch-responses-search-seed
+call:
+  azure_resource_dispatch:
+    case: responses_search
+    steps: []
+env: {}
+compare: {ignore: []}

@@ -61,7 +61,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::saml_idp::/) - test(replays_the_saml_oracle_input_corpus)'
     - id: saml-fixture-python
       why: The independent signer lacks a strictly checked Python driver.
-      run: test -f tools/oracle/fixtures/saml-idp/driver.py && uv run --locked --project tools/oracle/litellm ruff check --config tools/oracle/helpers/ruff.toml tools/oracle/fixtures/saml-idp && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/fixtures/saml-idp/pyrightconfig.json
+      run: test -f tools/oracle/fixtures/saml-idp/driver.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/fixtures/saml-idp && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/fixtures/saml-idp/pyrightconfig.json
     - id: saml-fixture-corpora
       why: AuthnRequest parsing and the new assertion-body case variant have no added replay coverage.
       run: test -f tools/oracle/fuzz/fuzz_targets/saml_oracle_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/saml_oracle_input)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/saml-assertion-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_saml_oracle_input_corpus) | test(replays_the_http_case_corpus)'

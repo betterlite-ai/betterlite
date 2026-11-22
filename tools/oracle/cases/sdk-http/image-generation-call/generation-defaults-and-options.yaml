@@ -1,0 +1,25 @@
+kind: sdk_http
+name: image-generation-call-generation-defaults-and-options
+env: {}
+call:
+  image_generation_call:
+    prompt: cat
+    model: openai/dall-e-3
+    api_key: sk-test
+    organization: org_test
+    n: 1
+    quality: hd
+    response_format: b64_json
+    size: 1024x1024
+    style: natural
+    user: u
+    headers: {X-One: base}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {created: 7, data: [{url: "https://example.test/a.png"}]}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, openai-organization, content-type, x-one]
+  ignore: []

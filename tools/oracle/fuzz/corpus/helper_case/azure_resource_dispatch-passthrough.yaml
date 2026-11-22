@@ -1,0 +1,9 @@
+kind: helper
+name: azure-resource-dispatch-passthrough-seed
+call:
+  azure_resource_dispatch:
+    case: passthrough
+    streaming_steps: []
+    url_steps: []
+env: {}
+compare: {ignore: []}

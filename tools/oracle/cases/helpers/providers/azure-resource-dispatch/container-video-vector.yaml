@@ -1,0 +1,28 @@
+kind: helper
+name: azure-resource-dispatch-container-video-vector
+call:
+  azure_resource_dispatch:
+    case: container_video_vector
+    urls:
+      - api_base: "https://res.test/openai/responses?api-version=2024-10-21"
+        api_version: null
+        module: {}
+        environment: {}
+      - api_base: null
+        api_version: "2024-10-21"
+        module:
+          api_base: "https://module.test"
+        environment: {}
+    video:
+      - drop_params: false
+        options:
+          model: "sora-2"
+          prompt: "a cat"
+          seconds: "8"
+          size: "720x1280"
+          user: "u1"
+          input_reference: "file-1"
+          characters:
+            - id: "c"
+env: {}
+compare: {ignore: []}
