@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::error::StabilityEditError;
-use super::error::provider_error;
-use crate::bedrock_settings::ErrorHeaders;
+use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput};
 
 // The native Bedrock transport builds the endpoint, so the shared config only answers its placeholder.
 pub const COMPLETE_URL: &str = "bedrock://image-edit";
@@ -27,5 +26,20 @@ pub fn get_error_class(
     status_code: u16,
     headers: Vec<(String, String)>,
 ) -> StabilityEditError {
-    provider_error(status_code, message, Some(ErrorHeaders::Http(headers)))
+    let input = ErrorInput {
+        status_code,
+        message,
+        request: None,
+        body: None,
+        status_code_is_synthesized: false,
+        headers: Some(ErrorHeaders::Http(headers)),
+        response: None,
+    };
+    match BedrockError::try_from(input) {
+        Ok(error) => StabilityEditError::Provider {
+            status: status_code,
+            error: Box::new(error),
+        },
+        Err(source) => StabilityEditError::Header(source),
+    }
 }

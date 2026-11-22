@@ -5,9 +5,12 @@ import httpx
 import litellm
 import typing_extensions
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.base_llm.image_edit.transformation import BaseImageEditConfig
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.image_edit.amazon_nova_canvas_image_edit_transformation import (
     BedrockAmazonNovaCanvasImageEditConfig as NovaConfig,
+)
+from litellm.llms.bedrock.image_edit.amazon_nova_canvas_image_edit_transformation import (
     get_bedrock_image_edit_config_for_model as edit_config_for,
 )
 from litellm.llms.bedrock.image_edit.stability_transformation import (
@@ -63,8 +66,8 @@ class ModelSelectionCall(TypedDict):
     models: list[str]
 
 
-class SupportedParamsCall(TypedDict):
-    function: Literal["supported_params"]
+class FlagCall(TypedDict):
+    function: Literal["supported_params", "multipart", "url"]
 
 
 class MapCall(TypedDict):
@@ -90,14 +93,6 @@ class ResponseCall(TypedDict):
     body: str
 
 
-class MultipartCall(TypedDict):
-    function: Literal["multipart"]
-
-
-class UrlCall(TypedDict):
-    function: Literal["url"]
-
-
 class EnvironmentCall(TypedDict):
     function: Literal["environment"]
     headers: dict[str, str] | None
@@ -107,12 +102,10 @@ class ErrorClassCall(TypedDict):
     function: Literal["error_class"]
     message: str
     status: int
-    headers: dict[str, object]  # ast-grep-ignore: no-loose-types
+    headers: dict[str, str]
 
 
-ConfigurationCall = (
-    ModelSelectionCall | SupportedParamsCall | MultipartCall | UrlCall | EnvironmentCall
-)
+ConfigurationCall = ModelSelectionCall | FlagCall | EnvironmentCall
 ExchangeCall = MapCall | RequestCall | ResponseCall | ErrorClassCall
 Call = ConfigurationCall | ExchangeCall
 
@@ -127,9 +120,15 @@ class Hidden(TypedDict):
 
 OPTIONS: Final = TypeAdapter(EditOptions)
 MAPPED: Final = TypeAdapter(dict[str, JsonValue])
-SUPPORTED: Final = TypeAdapter(list[str])
+SUPPORTED: Final = TypeAdapter(list[JsonValue])
 FORM: Final = TypeAdapter(tuple[dict[str, JsonValue], dict[str, JsonValue]])
 HIDDEN: Final = TypeAdapter(Hidden)
+
+
+class ErrorView(Protocol):
+    status_code: int
+    message: str
+    headers: dict[str, str] | httpx.Headers | None
 
 
 class EditConfig(Protocol):
@@ -137,9 +136,7 @@ class EditConfig(Protocol):
     def get_supported_openai_params(self) -> Callable[[str], list[str]]: ...
 
     @property
-    def get_error_class(
-        self,
-    ) -> Callable[[str, int, dict[str, object]], BedrockError]: ...  # ast-grep-ignore: no-loose-types
+    def get_error_class(self) -> Callable[[str, int, dict[str, str]], ErrorView]: ...
 
     @property
     def map_openai_params(
@@ -156,7 +153,7 @@ class EditConfig(Protocol):
             GenericLiteLLMParams,
             dict[str, JsonValue],
         ],
-        tuple[dict[str, JsonValue], dict[str, JsonValue]],
+        tuple[dict[str, JsonValue], object],  # ast-grep-ignore: no-loose-types
     ]: ...
 
     @property
@@ -178,9 +175,6 @@ class EditConfig(Protocol):
     ) -> Callable[[dict[str, str], str, str | None], dict[str, JsonValue]]: ...
 
 
-CONFIG: Final[EditConfig] = StabilityConfig()
-
-
 class Sink(Logging):
     def __init__(self) -> None:
         pass
@@ -194,15 +188,8 @@ def stability_edit_model(model: str) -> bool:
     match config:
         case StabilityConfig():
             return True
-        case NovaConfig():
+        case NovaConfig() | BaseImageEditConfig():
             return False
-    return False
-
-
-def image_value(spec: ImageSpec | None) -> bytes | None:
-    if spec is None:
-        return None
-    return spec["value"].encode()
 
 
 def image_entries(response: ImageResponse) -> list[JsonValue]:
@@ -214,33 +201,33 @@ def image_entries(response: ImageResponse) -> list[JsonValue]:
     ]
 
 
-def map_answer(call: MapCall) -> JsonValue:
+def map_answer(config: EditConfig, call: MapCall) -> JsonValue:
     options = OPTIONS.validate_python(call["options"])
     try:
         mapped = MAPPED.validate_python(
-            CONFIG.map_openai_params(options, call["model"], call["drop_params"])
+            config.map_openai_params(options, call["model"], call["drop_params"])
         )
     except ValueError:
         return {"unsupported": True}
     return {"mapped": mapped}
 
 
-def request_answer(call: RequestCall) -> JsonValue:
+def request_answer(config: EditConfig, call: RequestCall) -> JsonValue:
     options = OPTIONS.validate_python(call["options"])
     try:
         mapped = MAPPED.validate_python(
-            CONFIG.map_openai_params(options, call["model"], call["drop_params"])
+            config.map_openai_params(options, call["model"], call["drop_params"])
         )
     except ValueError:
         return {"unsupported": True}
-    form: dict[str, JsonValue] = {}
-    form.update(mapped)
+    spec = call.get("image")
+    image = None if spec is None else spec["value"].encode()
     body, files = FORM.validate_python(
-        CONFIG.transform_image_edit_request(
+        config.transform_image_edit_request(
             call["model"],
             call.get("prompt"),
-            image_value(call.get("image")),
-            form,
+            image,
+            mapped,
             GenericLiteLLMParams(),
             NO_HEADERS,
         )
@@ -248,14 +235,10 @@ def request_answer(call: RequestCall) -> JsonValue:
     return {"body": body, "files": len(files)}
 
 
-def response_answer(call: ResponseCall) -> JsonValue:
-    upstream = httpx.Response(
-        call["status"], headers=None, content=call["body"].encode()
-    )
+def response_answer(config: EditConfig, call: ResponseCall) -> JsonValue:
+    upstream = httpx.Response(call["status"], headers=None, content=call["body"].encode())
     try:
-        response = CONFIG.transform_image_edit_response(
-            call["model"], upstream, Sink()
-        )
+        response = config.transform_image_edit_response(call["model"], upstream, Sink())
     except BedrockError as error:
         return {"ok": False, "status": error.status_code}
     hidden = HIDDEN.validate_python(get_hidden_params_dict(response))
@@ -266,16 +249,14 @@ def response_answer(call: ResponseCall) -> JsonValue:
     }
 
 
-def environment_answer(call: EnvironmentCall) -> JsonValue:
+def environment_answer(config: EditConfig, call: EnvironmentCall) -> JsonValue:
     given = call["headers"]
     headers: dict[str, str] = {} if given is None else given
-    return {"headers": CONFIG.validate_environment(headers, MODEL, None)}
+    return {"headers": config.validate_environment(headers, MODEL, None)}
 
 
-def error_class_answer(call: ErrorClassCall) -> JsonValue:
-    carried = CONFIG.get_error_class(
-        call["message"], call["status"], call["headers"]
-    )
+def error_class_answer(config: EditConfig, call: ErrorClassCall) -> JsonValue:
+    carried = config.get_error_class(call["message"], call["status"], call["headers"])
     return {
         "status": carried.status_code,
         "message": carried.message,
@@ -283,43 +264,35 @@ def error_class_answer(call: ErrorClassCall) -> JsonValue:
     }
 
 
-def configuration_call(call: ConfigurationCall) -> JsonValue:
+def call_value(call: Call) -> JsonValue:
+    config: EditConfig = edit_config_for(MODEL)
     match call["function"]:
         case "model_selection":
-            return [stability_edit_model(model) for model in call["models"]]
+            answer: JsonValue = [
+                stability_edit_model(model) for model in call["models"]
+            ]
         case "supported_params":
             supported = SUPPORTED.validate_python(
-                CONFIG.get_supported_openai_params(MODEL)
+                config.get_supported_openai_params(MODEL)
             )
-            return {"supported": supported}
+            answer = {"supported": supported}
         case "multipart":
-            return {"multipart": CONFIG.use_multipart_form_data()}
+            answer = {"multipart": config.use_multipart_form_data()}
         case "url":
-            return {"url": CONFIG.get_complete_url(MODEL, None, {})}
+            answer = {"url": config.get_complete_url(MODEL, None, {})}
         case "environment":
-            return environment_answer(call)
-
-
-def exchange_call(call: ExchangeCall) -> JsonValue:
-    match call["function"]:
+            answer = environment_answer(config, call)
         case "map":
-            return map_answer(call)
+            answer = map_answer(config, call)
         case "request":
-            return request_answer(call)
+            answer = request_answer(config, call)
         case "response":
-            return response_answer(call)
+            answer = response_answer(config, call)
         case "error_class":
-            return error_class_answer(call)
-
-
-def call_value(call: Call) -> JsonValue:
-    match call["function"]:
-        case "model_selection" | "supported_params" | "multipart" | "url" | "environment":
-            return configuration_call(call)
-        case "map" | "request" | "response" | "error_class":
-            return exchange_call(call)
+            answer = error_class_answer(config, call)
+    return answer
 
 
 def run(input_value: Input) -> JsonValue:
-    answers: list[JsonValue] = [call_value(call) for call in input_value["calls"]]
-    return answers
+    calls = input_value["calls"]
+    return [call_value(call) for call in calls]

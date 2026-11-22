@@ -1,7 +1,7 @@
 use betterlite_models::image_cost::error::ImageCostError;
 use thiserror::Error;
 
-use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput, HeaderError};
+use crate::bedrock_settings::{BedrockError, HeaderError};
 
 #[derive(Debug, Error)]
 pub enum StabilityReplyError {
@@ -52,30 +52,5 @@ impl StabilityEditError {
             | Self::Reply(_)
             | Self::Header(_) => None,
         }
-    }
-}
-
-// B682 BedrockError.__init__, which keeps the message, the status and the headers as given
-#[must_use]
-pub(super) fn provider_error(
-    status_code: u16,
-    message: String,
-    headers: Option<ErrorHeaders>,
-) -> StabilityEditError {
-    let input = ErrorInput {
-        status_code,
-        message,
-        request: None,
-        body: None,
-        status_code_is_synthesized: false,
-        headers,
-        response: None,
-    };
-    match BedrockError::try_from(input) {
-        Ok(error) => StabilityEditError::Provider {
-            status: status_code,
-            error: Box::new(error),
-        },
-        Err(source) => StabilityEditError::Header(source),
     }
 }

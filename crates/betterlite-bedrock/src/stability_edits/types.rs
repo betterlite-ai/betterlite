@@ -52,7 +52,7 @@ impl EditValue {
 
 // Python's str() for the values a Stability message carries; a list or mapping prints as object.
 #[must_use]
-pub(crate) fn python_str(value: &Json) -> String {
+pub(crate) fn text_of(value: &Json) -> String {
     match value {
         Json::Null => "None".to_owned(),
         Json::Bool(flag) => (if *flag { "True" } else { "False" }).to_owned(),

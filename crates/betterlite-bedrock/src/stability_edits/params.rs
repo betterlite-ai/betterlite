@@ -6,7 +6,7 @@ use super::types::{EditOptions, EditValue};
 pub const SUPPORTED_OPENAI_PARAMS: [&str; 4] = ["n", "size", "response_format", "mask"];
 
 // The native Stability aspect-ratio table B1522 owns; a provider leaf cannot import betterlite-core
-const OPENAI_SIZE_TO_STABILITY_ASPECT_RATIO: [(&str, &str); 5] = [
+const SIZE_TO_ASPECT_RATIO: [(&str, &str); 5] = [
     ("1024x1024", "1:1"),
     ("1792x1024", "16:9"),
     ("1024x1792", "9:16"),
@@ -63,7 +63,7 @@ fn map_size(value: &EditValue, mapped: &mut EditOptions) -> Result<(), Stability
 }
 
 fn aspect_ratio(size: &str) -> Option<&'static str> {
-    OPENAI_SIZE_TO_STABILITY_ASPECT_RATIO
+    SIZE_TO_ASPECT_RATIO
         .iter()
         .find_map(|(key, ratio)| (*key == size).then_some(*ratio))
 }

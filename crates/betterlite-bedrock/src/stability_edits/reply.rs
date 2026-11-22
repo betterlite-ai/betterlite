@@ -9,9 +9,9 @@ use betterlite_openai::api::image_contracts::records::{
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-use super::error::{StabilityEditError, StabilityReplyError, provider_error};
-use super::types::python_str;
-use crate::bedrock_settings::ErrorHeaders;
+use super::environment::get_error_class;
+use super::error::{StabilityEditError, StabilityReplyError};
+use super::types::text_of;
 
 pub const COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
 
@@ -62,7 +62,7 @@ fn first_finish_reason(value: Option<Json>) -> Result<Option<Json>, StabilityRep
             .next()
             .map(|character| Json::Text(character.to_string()))),
         Some(value @ (Json::Bool(_) | Json::Number(_))) => {
-            if truthy(&value) {
+            if has_content(&value) {
                 Err(StabilityReplyError::Field {
                     field: "finish_reasons".to_owned(),
                 })
@@ -94,7 +94,7 @@ fn image_values(value: Option<Json>) -> Result<Vec<String>, StabilityReplyError>
     };
     let mut images = Vec::new();
     for entry in entries {
-        if !truthy(&entry) {
+        if !has_content(&entry) {
             continue;
         }
         let Json::Text(image) = entry else {
@@ -107,7 +107,7 @@ fn image_values(value: Option<Json>) -> Result<Vec<String>, StabilityReplyError>
     Ok(images)
 }
 
-fn truthy(value: &Json) -> bool {
+fn has_content(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
@@ -130,19 +130,19 @@ where
     let artifacts =
         decode_stability_reply(&upstream.body).map_err(|source| reply_error(upstream, source))?;
     if let Some(errors) = &artifacts.errors {
-        return Err(provider_error(
+        return Err(get_error_class(
+            format!("Bedrock Stability error: {}", text_of(errors)),
             upstream.status_code,
-            format!("Bedrock Stability error: {}", python_str(errors)),
-            Some(upstream_headers(upstream)),
+            upstream_headers(upstream),
         ));
     }
     if let Some(reason) = &artifacts.finish_reason
-        && truthy(reason)
+        && has_content(reason)
     {
-        return Err(provider_error(
+        return Err(get_error_class(
+            format!("Bedrock Stability error: {}", text_of(reason)),
             400,
-            format!("Bedrock Stability error: {}", python_str(reason)),
-            Some(upstream_headers(upstream)),
+            upstream_headers(upstream),
         ));
     }
     let data = artifacts
@@ -176,10 +176,10 @@ where
 // Only a JSON parse failure becomes BedrockError; a parsed record of the wrong shape keeps its Python error type.
 fn reply_error(upstream: &ImageHttpResponse, source: StabilityReplyError) -> StabilityEditError {
     match source {
-        StabilityReplyError::Json { .. } => provider_error(
-            upstream.status_code,
+        StabilityReplyError::Json { .. } => get_error_class(
             format!("Error parsing Bedrock Stability response: {source}"),
-            Some(upstream_headers(upstream)),
+            upstream.status_code,
+            upstream_headers(upstream),
         ),
         other => StabilityEditError::Reply(other),
     }
@@ -193,12 +193,10 @@ fn cost_header(record: &PriceRecord) -> Result<Option<Json>, StabilityEditError>
     Ok(raw_price(record, OUTPUT_COST_PER_IMAGE)?.map(cost_value))
 }
 
-fn upstream_headers(upstream: &ImageHttpResponse) -> ErrorHeaders {
-    ErrorHeaders::Http(
-        upstream
-            .headers
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect(),
-    )
+fn upstream_headers(upstream: &ImageHttpResponse) -> Vec<(String, String)> {
+    upstream
+        .headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
 }

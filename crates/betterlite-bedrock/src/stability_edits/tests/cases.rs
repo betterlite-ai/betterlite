@@ -144,12 +144,66 @@ pub(super) fn native_edit_options() {
     preserved();
 }
 
+fn converted(entries: &[(&str, Json)]) -> Json {
+    transform_image_edit_request(INPAINT, None, None, &options(entries))
+        .expect("the numeric fields convert")
+        .body
+}
+
+fn field(body: &Json, name: &str) -> Json {
+    let Json::Object(fields) = body else {
+        return Json::Null;
+    };
+    fields.get(name).cloned().unwrap_or(Json::Null)
+}
+
 fn conversions() {
-    int_conversions();
-    python_int_edges();
-    float_conversions();
-    text_conversions();
+    conversion_values();
+    int_big();
     non_finite();
+}
+
+fn int_big() {
+    let body = converted(&[("left", json("123456789012345678"))]);
+    assert_eq!(field(&body, "left"), json("123456789012345678"));
+}
+
+fn conversion_values() {
+    let cases = [
+        ("left", text("12"), json("12")),
+        ("left", text("-0"), json("0")),
+        ("right", json("12.7"), json("12")),
+        ("right", text("-"), json("-")),
+        ("up", Json::Bool(true), json("1")),
+        ("up", text("_5"), json("_5")),
+        ("down", text("bad"), json("bad")),
+        ("down", Json::Bool(false), json("0")),
+        ("down", text("5_"), json("5_")),
+        ("seed", text("1_0"), json("10")),
+        ("seed", json("-0.5"), json("0")),
+        ("strength", text("0.5"), json("0.5")),
+        ("creativity", integer(2), json("2.0")),
+        ("control_strength", text("bad"), json("bad")),
+        ("grow_mask", json("0.25"), json("0.25")),
+        ("fidelity", text("0.75"), json("0.75")),
+        ("composition_fidelity", Json::Bool(true), json("1.0")),
+        ("style_strength", text("0.25"), json("0.25")),
+        ("change_strength", integer(2), json("2.0")),
+        ("change_strength", Json::Bool(false), json("0.0")),
+        ("negative_prompt", text("no"), json("no")),
+        ("aspect_ratio", text("1:1"), json("1:1")),
+        ("output_format", text("jpeg"), json("jpeg")),
+        ("model", text("m"), json("m")),
+        ("mode", text("x"), json("x")),
+        ("style_preset", text("y"), json("y")),
+        ("select_prompt", text("s"), json("s")),
+        ("search_prompt", text("q"), json("q")),
+        ("quality", text("high"), Json::Null),
+    ];
+    for (name, value, expected) in cases {
+        let body = converted(&[(name, value)]);
+        assert_eq!(field(&body, name), expected, "{name}");
+    }
 }
 
 fn non_finite() {
@@ -157,109 +211,6 @@ fn non_finite() {
         transform_image_edit_request(INPAINT, None, None, &options(&[("strength", text("inf"))]))
             .expect_err("a non-finite float has no JSON form");
     assert!(matches!(error, StabilityEditError::Field { .. }));
-}
-
-fn int_conversions() {
-    let ints = transform_image_edit_request(
-        INPAINT,
-        None,
-        None,
-        &options(&[
-            ("left", text("12")),
-            ("right", json("12.7")),
-            ("up", Json::Bool(true)),
-            ("down", text("bad")),
-            ("seed", text("1_0")),
-        ]),
-    )
-    .expect("the int fields convert");
-    assert_eq!(
-        ints.body,
-        json(r#"{"output_format":"png","left":12,"right":12,"up":1,"down":"bad","seed":10}"#)
-    );
-    let odd = transform_image_edit_request(
-        INPAINT,
-        None,
-        None,
-        &options(&[
-            ("left", text("-0")),
-            ("right", text("-")),
-            ("up", text("_5")),
-            ("down", text("5_")),
-            ("seed", json("-0.5")),
-        ]),
-    )
-    .expect("the odd int lexemes keep Python's int() outcome");
-    assert_eq!(
-        odd.body,
-        json(r#"{"output_format":"png","left":0,"right":"-","up":"_5","down":"5_","seed":0}"#)
-    );
-}
-
-fn python_int_edges() {
-    let big = transform_image_edit_request(
-        INPAINT,
-        None,
-        None,
-        &options(&[("left", json("123456789012345678"))]),
-    )
-    .expect("an integer lexeme keeps its exact digits");
-    assert_eq!(
-        big.body,
-        json(r#"{"output_format":"png","left":123456789012345678}"#)
-    );
-}
-
-fn float_conversions() {
-    let floats = transform_image_edit_request(
-        INPAINT,
-        None,
-        None,
-        &options(&[
-            ("strength", text("0.5")),
-            ("creativity", integer(2)),
-            ("control_strength", text("bad")),
-            ("grow_mask", json("0.25")),
-            ("fidelity", text("0.75")),
-            ("composition_fidelity", integer(1)),
-            ("style_strength", text("0.25")),
-            ("change_strength", integer(2)),
-        ]),
-    )
-    .expect("the float fields convert");
-    assert_eq!(
-        floats.body,
-        json(
-            r#"{"output_format":"png","strength":0.5,"creativity":2.0,"control_strength":"bad","grow_mask":0.25,"fidelity":0.75,"composition_fidelity":1.0,"style_strength":0.25,"change_strength":2.0}"#
-        )
-    );
-}
-
-fn text_conversions() {
-    let texts = transform_image_edit_request(
-        INPAINT,
-        None,
-        None,
-        &options(&[
-            ("negative_prompt", text("no")),
-            ("aspect_ratio", text("1:1")),
-            ("output_format", text("jpeg")),
-            ("model", text("m")),
-            ("mode", text("x")),
-            ("style_preset", text("y")),
-            ("select_prompt", text("s")),
-            ("search_prompt", text("q")),
-            ("quality", text("high")),
-        ]),
-    )
-    .expect("the text fields pass through");
-    assert_eq!(
-        texts.body,
-        json(
-            r#"{"output_format":"jpeg","negative_prompt":"no","aspect_ratio":"1:1","model":"m","mode":"x","style_preset":"y","select_prompt":"s","search_prompt":"q"}"#
-        )
-    );
-    assert!(texts.files.is_empty());
 }
 
 fn preserved() {

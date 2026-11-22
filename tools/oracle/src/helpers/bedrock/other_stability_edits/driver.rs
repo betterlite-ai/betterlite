@@ -15,10 +15,7 @@ use betterlite_openai::api::image_contracts::records::{
 };
 use serde_json::{Value, json};
 
-use super::input::{
-    Call, EnvironmentCall, ErrorClassCall, ImageSpec, MapCall, ModelSelectionCall, RequestCall,
-    ResponseCall,
-};
+use super::input::{Call, ErrorClassCall, MapCall, ModelSelectionCall, RequestCall, ResponseCall};
 use super::price::Catalog;
 
 // A supplied clock keeps the ImageResponse timestamp out of the comparison.
@@ -33,7 +30,9 @@ pub(super) fn observe(call: &Call) -> Value {
         Call::Response(response) => response_answer(response),
         Call::Multipart => json!({"multipart": USE_MULTIPART_FORM_DATA}),
         Call::Url => json!({"url": COMPLETE_URL}),
-        Call::Environment(environment) => environment_answer(environment),
+        Call::Environment(environment) => {
+            json!({"headers": validate_environment(environment.headers.clone())})
+        }
         Call::ErrorClass(error) => error_class_answer(error),
     }
 }
@@ -60,7 +59,10 @@ fn request_answer(call: &RequestCall) -> Value {
     let Ok(mapped) = map_openai_params(&options, &call.model, call.drop_params) else {
         return json!({"unsupported": true});
     };
-    let image = image_input(call.image.as_ref());
+    let image = call
+        .image
+        .as_ref()
+        .map(|spec| ImageInput::Bytes(spec.value.as_bytes().to_vec()));
     transform_image_edit_request(&call.model, call.prompt.as_deref(), image.as_ref(), &mapped)
         .map_or_else(
             |_| json!({"invalid": true}),
@@ -83,10 +85,6 @@ fn response_answer(call: &ResponseCall) -> Value {
         }),
         Err(error) => json!({"ok": false, "status": error.status()}),
     }
-}
-
-fn environment_answer(call: &EnvironmentCall) -> Value {
-    json!({"headers": validate_environment(call.headers.clone())})
 }
 
 fn error_class_answer(call: &ErrorClassCall) -> Value {
@@ -139,8 +137,4 @@ fn mapped_json(options: &EditOptions) -> Json {
             .filter_map(|(name, value)| value.to_json().map(|json| (name.clone(), json)))
             .collect(),
     )
-}
-
-fn image_input(spec: Option<&ImageSpec>) -> Option<ImageInput> {
-    spec.map(|spec| ImageInput::Bytes(spec.value.as_bytes().to_vec()))
 }

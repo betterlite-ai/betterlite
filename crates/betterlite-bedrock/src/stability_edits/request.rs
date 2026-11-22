@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use serde_json::Number;
 
 use super::error::StabilityEditError;
-use super::types::{EditOptions, EditValue, EditedImageRequest, ImageInput, python_str};
+use super::types::{EditOptions, EditValue, EditedImageRequest, ImageInput, text_of};
 
 const FILE_FIELDS: [&str; 3] = ["mask", "init_image", "style_image"];
 const INT_FIELDS: [&str; 5] = ["left", "right", "up", "down", "seed"];
@@ -82,10 +82,10 @@ fn option_entry(name: &str, value: &EditValue) -> Result<Option<Json>, Stability
         return Ok(Some(Json::Text(file_text(value))));
     }
     if INT_FIELDS.contains(&name) {
-        return Ok(Some(int_field(name, value)?));
+        return Ok(Some(numeric_field(name, value, Numeric::Int)?));
     }
     if FLOAT_FIELDS.contains(&name) {
-        return Ok(Some(float_field(name, value)?));
+        return Ok(Some(numeric_field(name, value, Numeric::Float)?));
     }
     if TEXT_FIELDS.contains(&name) {
         let text = value.to_json().ok_or_else(|| field_error(name))?;
@@ -104,56 +104,66 @@ fn file_text(value: &EditValue) -> String {
     match item {
         EditValue::Bytes(content) => BASE64.encode(content),
         EditValue::Json(Json::Text(text)) => text.clone(),
-        EditValue::Json(json) => python_str(json),
+        EditValue::Json(json) => text_of(json),
         EditValue::List(_) => "object".to_owned(),
     }
 }
 
-fn int_field(name: &str, value: &EditValue) -> Result<Json, StabilityEditError> {
+#[derive(Clone, Copy)]
+enum Numeric {
+    Int,
+    Float,
+}
+
+// A ValueError or TypeError keeps the original value; a number the range cannot hold is a conversion error.
+fn numeric_field(name: &str, value: &EditValue, kind: Numeric) -> Result<Json, StabilityEditError> {
     match value {
-        EditValue::Json(Json::Text(text)) => {
-            Ok(parse_python_int(text).unwrap_or_else(|| Json::Text(text.clone())))
-        }
-        EditValue::Json(Json::Number(number)) => int_number(name, number),
-        EditValue::Json(Json::Bool(flag)) => Ok(Json::Number(Number::from(u8::from(*flag)))),
+        EditValue::Json(Json::Text(text)) => match kind {
+            Numeric::Int => Ok(parse_int_text(text).unwrap_or_else(|| Json::Text(text.clone()))),
+            Numeric::Float => match underscore_removed(text.trim())
+                .and_then(|normalized| normalized.parse::<f64>().ok())
+            {
+                Some(parsed) => float_number(name, parsed),
+                None => Ok(Json::Text(text.clone())),
+            },
+        },
+        EditValue::Json(Json::Number(number)) => match kind {
+            Numeric::Int => int_number(name, number),
+            Numeric::Float => {
+                let parsed = number.as_f64().ok_or_else(|| field_error(name))?;
+                float_number(name, parsed)
+            }
+        },
+        EditValue::Json(Json::Bool(flag)) => match kind {
+            Numeric::Int => Ok(Json::Number(Number::from(u8::from(*flag)))),
+            Numeric::Float => float_number(name, f64::from(u8::from(*flag))),
+        },
         EditValue::Json(Json::Null | Json::Object(_) | Json::List(_))
         | EditValue::Bytes(_)
         | EditValue::List(_) => value.to_json().ok_or_else(|| field_error(name)),
     }
 }
 
-// A ValueError or TypeError keeps the original value; a number the range cannot hold is a conversion error.
+// Python's int() truncates toward zero, and a value the range cannot hold raises.
 fn int_number(name: &str, number: &Number) -> Result<Json, StabilityEditError> {
     let lexeme = number.to_string();
-    if is_integer_lexeme(&lexeme) {
+    let digits = lexeme.strip_prefix('-').unwrap_or(lexeme.as_str());
+    if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return Ok(Json::Number(number.clone()));
     }
     let truncated = number.as_f64().ok_or_else(|| field_error(name))?.trunc();
     if !truncated.is_finite() {
         return Err(field_error(name));
     }
-    let digits = format!("{truncated:.0}");
-    let normalized = if digits == "-0" { "0" } else { digits.as_str() };
+    let rendered = format!("{truncated:.0}");
+    let normalized = if rendered == "-0" {
+        "0"
+    } else {
+        rendered.as_str()
+    };
     Number::from_str(normalized)
         .map(Json::Number)
         .map_err(|_error| field_error(name))
-}
-
-fn float_field(name: &str, value: &EditValue) -> Result<Json, StabilityEditError> {
-    match value {
-        EditValue::Json(Json::Text(text)) => match parse_python_float(text) {
-            Some(parsed) => float_number(name, parsed),
-            None => Ok(Json::Text(text.clone())),
-        },
-        EditValue::Json(Json::Number(number)) => {
-            let parsed = number.as_f64().ok_or_else(|| field_error(name))?;
-            float_number(name, parsed)
-        }
-        EditValue::Json(Json::Bool(flag)) => float_number(name, f64::from(u8::from(*flag))),
-        EditValue::Json(Json::Null | Json::Object(_) | Json::List(_))
-        | EditValue::Bytes(_)
-        | EditValue::List(_) => value.to_json().ok_or_else(|| field_error(name)),
-    }
 }
 
 // Python's json writes a whole float with its fraction, and Infinity has no standard JSON form.
@@ -163,12 +173,7 @@ fn float_number(name: &str, value: f64) -> Result<Json, StabilityEditError> {
         .ok_or_else(|| field_error(name))
 }
 
-fn is_integer_lexeme(lexeme: &str) -> bool {
-    let digits = lexeme.strip_prefix('-').unwrap_or(lexeme);
-    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-fn parse_python_int(text: &str) -> Option<Json> {
+fn parse_int_text(text: &str) -> Option<Json> {
     let trimmed = text.trim();
     let (negative, digits) = match trimmed.strip_prefix('-') {
         Some(rest) => (true, rest),
@@ -190,10 +195,6 @@ fn parse_python_int(text: &str) -> Option<Json> {
         magnitude.to_owned()
     };
     Number::from_str(&signed).ok().map(Json::Number)
-}
-
-fn parse_python_float(text: &str) -> Option<f64> {
-    underscore_removed(text.trim())?.parse::<f64>().ok()
 }
 
 // PEP 515: an underscore may only sit between two digits, so "1_0.5" reads as 10.5.
