@@ -6,7 +6,6 @@ use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 
 use crate::auth::auth_identity::AuthContext;
-use crate::cache_activity_routes::error::DATABASE_MISSING_ERROR;
 use crate::spend::visibility::roles::is_admin_view_safe;
 use crate::team_access::caller::TeamCaller;
 use crate::tracing_routes::router::unauthenticated;
@@ -14,7 +13,7 @@ use crate::tracing_routes::router::unauthenticated;
 use super::aggregation::tag_spend_body;
 use super::caller::team_caller;
 use super::query::decode_tag_report_query;
-use super::responses;
+use super::responses::{self, NO_DATABASE};
 use super::rows::{DailyTagSpend, KeyAliasedUser, TagNamesBody};
 use super::store::{TagReportError, TagReportHandle, TagReportStore};
 
@@ -71,7 +70,7 @@ pub(super) async fn table_respond(
         return unauthenticated();
     };
     let Some(store) = handle.as_deref() else {
-        return responses::detail_error(StatusCode::BAD_REQUEST, DATABASE_MISSING_ERROR);
+        return responses::detail_error(StatusCode::BAD_REQUEST, NO_DATABASE);
     };
     let caller = match team_caller(&context.principal) {
         Ok(caller) => caller,
@@ -113,7 +112,7 @@ pub(super) async fn tag_respond(
         return unauthenticated();
     }
     let Some(store) = handle.as_deref() else {
-        return responses::wrapped_error(format!("{}{DATABASE_MISSING_ERROR}", report.prefix()));
+        return responses::wrapped_error(format!("{}{NO_DATABASE}", report.prefix()));
     };
     report.answer(store, raw_query.as_deref()).await
 }

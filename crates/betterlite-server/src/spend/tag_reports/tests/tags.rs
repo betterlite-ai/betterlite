@@ -3,8 +3,7 @@ use std::sync::Arc;
 use axum::http::StatusCode;
 use rstest::rstest;
 
-use crate::cache_activity_routes::error::DATABASE_MISSING_ERROR;
-
+use super::super::responses::NO_DATABASE;
 use super::support::{
     ErrorEnvelope, FakeFailure, RawTagBody, SpendPerTagBody, TagNamesBody, call, daily_tag,
     decimal, internal, raw_tag, tag_store,
@@ -112,10 +111,7 @@ async fn answers_a_missing_tag_database_through_the_proxy_boundary(
     let reply = call(uri, Some(&internal("u1")), None).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     let envelope: ErrorEnvelope = reply.decode();
-    assert_eq!(
-        envelope.error.message,
-        format!("{prefix}{DATABASE_MISSING_ERROR}")
-    );
+    assert_eq!(envelope.error.message, format!("{prefix}{NO_DATABASE}"));
     assert_eq!(envelope.error.code, "500");
 }
 
