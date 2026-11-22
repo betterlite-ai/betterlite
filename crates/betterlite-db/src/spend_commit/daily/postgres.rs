@@ -5,7 +5,7 @@ use crate::daily_spend_sql::write::{DailyWriteError, write_bulk_upsert};
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::PostgresStore;
 
-use super::super::phase::{CommitPhase, CommitPhaseError};
+use super::super::phase::{CommitPhase, CommitPhaseError, CommitTransition};
 use super::super::policy::{SpendFailure, SpendUpdateFailure, classify_spend_failure};
 use super::super::transaction::{SpendDeadline, SpendTransactionError};
 use super::{ChunkFuture, DailyChunkFailure, DailyChunkWriter};
@@ -61,12 +61,12 @@ impl PostgresDailyChunks {
             .await
             .map_err(|source| DailyChunkError::from(backend(source)))?;
         write_bulk_upsert(&transaction, entity, rows, Uuid::new_v4).await?;
-        phase.begin_commit()?;
+        phase.apply(CommitTransition::Begin)?;
         transaction
             .commit()
             .await
             .map_err(|source| DailyChunkError::from(backend(source)))?;
-        phase.finish_commit()?;
+        phase.apply(CommitTransition::Finish)?;
         Ok(())
     }
 }

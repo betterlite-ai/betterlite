@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::fmt::Display;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -84,21 +84,16 @@ impl ScriptToken {
     }
 }
 
-impl Display for ScriptToken {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        formatter.write_str(self.name())
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
-#[error("{token}")]
+#[error("{name}")]
 struct ScriptedFailure {
-    token: ScriptToken,
+    name: &'static str,
+    failure: SpendFailure,
 }
 
 impl SpendUpdateFailure for ScriptedFailure {
     fn spend_failure(&self) -> SpendFailure {
-        self.token.failure()
+        self.failure
     }
 }
 
@@ -133,7 +128,10 @@ impl DailyChunkWriter for ScriptedWriter {
             let token = script.pop_front().unwrap_or(ScriptToken::Ok);
             match token {
                 ScriptToken::Ok => Ok(()),
-                failed => Err(ScriptedFailure { token: failed }),
+                failed => Err(ScriptedFailure {
+                    name: failed.name(),
+                    failure: failed.failure(),
+                }),
             }
         })
     }

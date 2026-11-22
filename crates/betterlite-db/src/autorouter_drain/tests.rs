@@ -95,7 +95,7 @@ struct ScriptedWriter {
 impl ScriptedWriter {
     fn with_script(steps: Vec<Option<TurnWriteError>>) -> Self {
         Self {
-            script: Mutex::new(steps.into()),
+            script: Mutex::new(VecDeque::from(steps)),
             writes: Mutex::new(Vec::new()),
         }
     }
@@ -223,22 +223,18 @@ async fn ambiguous_failure() -> TurnWriteError {
 fn partition_of_keeps_key_histories_apart_from_user_histories() {
     let keyed = partition_of(&turn("key-a", "user-a", "session", 1));
     let user = partition_of(&turn("", "user-a", "session", 1));
-    assert_eq!(
-        keyed,
-        partition::DrainPartition::Key {
-            api_key: "key-a".to_owned(),
-            session_id: "session".to_owned(),
-            router_name: "router".to_owned(),
-        }
-    );
-    assert_eq!(
-        user,
-        partition::DrainPartition::User {
-            user_id: "user-a".to_owned(),
-            session_id: "session".to_owned(),
-            router_name: "router".to_owned(),
-        }
-    );
+    let expected_key = partition::DrainPartition::Key {
+        api_key: "key-a".to_owned(),
+        session_id: "session".to_owned(),
+        router_name: "router".to_owned(),
+    };
+    let expected_user = partition::DrainPartition::User {
+        user_id: "user-a".to_owned(),
+        session_id: "session".to_owned(),
+        router_name: "router".to_owned(),
+    };
+    assert!(keyed == expected_key);
+    assert!(user == expected_user);
     assert!(keyed < user);
 }
 

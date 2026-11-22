@@ -1,8 +1,7 @@
 import asyncio
 import sys
-import types
 from datetime import timedelta
-from types import TracebackType, ModuleType
+from types import ModuleType, TracebackType
 from typing import Final, Literal, Self, TypedDict
 
 import httpx
@@ -61,22 +60,6 @@ PRISMA.errors = PRISMA
 sys.modules.update({"prisma": PRISMA, "prisma.errors": PRISMA})
 
 
-def scripted_error(token: Token) -> Exception:
-    if token == "connect_error":
-        return httpx.ConnectError(token)
-    if token == "read_timeout":
-        return httpx.ReadTimeout(token)
-    if token == "read_error":
-        return httpx.ReadError(token)
-    if token == "data_rejected":
-        return ScriptedDataError("23514", token)
-    if token == "deadlock":
-        return ScriptedDatabaseError("write conflict or a deadlock detected")
-    if token == "unknown_sqlstate":
-        return ScriptedDataError("42P01", token)
-    return ScriptedDatabaseError(token)
-
-
 class Session:
     def __init__(self, script: list[Token]) -> None:
         self.script = script
@@ -115,12 +98,24 @@ class ScriptedTransaction:
         _traceback: TracebackType | None,
     ) -> None: ...
 
-    async def execute_raw(self, _query: str, *_args: object) -> int:
+    async def execute_raw(self, _query: str, *_args: JsonValue) -> int:
         self.session.attempts += 1
-        token: Token = self.session.script.pop(0) if self.session.script else "ok"
-        if token == "ok":
-            return 0
-        raise scripted_error(token)
+        step: Token = self.session.script.pop(0) if self.session.script else "ok"
+        if step == "connect_error":
+            raise httpx.ConnectError(step)
+        if step == "read_timeout":
+            raise httpx.ReadTimeout(step)
+        if step == "read_error":
+            raise httpx.ReadError(step)
+        if step == "data_rejected":
+            raise ScriptedDataError("23514", step)
+        if step == "deadlock":
+            raise ScriptedDatabaseError("write conflict or a deadlock detected")
+        if step == "unknown_sqlstate":
+            raise ScriptedDataError("42P01", step)
+        if step == "other_failure":
+            raise ScriptedDatabaseError(step)
+        return 0
 
 
 class FakeDb(PrismaWrapper):
@@ -171,36 +166,36 @@ def transaction(index: int) -> DailyUserSpendTransaction:
     )
 
 
-async def run_calls(input_value: Input) -> dict[str, JsonValue]:
-    calls: list[JsonValue] = []
-    writer = CaseWriter()
-    for call in input_value["calls"]:
-        session = Session(list(call["script"]))
-        transactions = {
-            f"row-{index:03d}": transaction(index) for index in range(call["rows"])
-        }
-        message = ""
-        try:
-            await writer.update_daily(
-                retries=call["retries"],
-                client=FakeClient(session),
-                recorder=Recorder(session),
-                transactions=transactions,
-            )
-        except (httpx.HTTPError, ScriptedDatabaseError) as error:
-            message = str(error)
-        for _ in range(DRAIN_TICKS):
-            await asyncio.sleep(0)
-        remaining: list[JsonValue] = [key for key in sorted(transactions)]
-        report: dict[str, JsonValue] = {
-            "attempts": session.attempts,
-            "remaining": remaining,
-            "reported": session.reported,
-            "error": message,
-        }
-        calls.append(report)
-    return {"calls": calls}
+async def replay_call(call: Call) -> dict[str, JsonValue]:
+    session = Session(list(call["script"]))
+    transactions = {
+        f"row-{index:03d}": transaction(index) for index in range(call["rows"])
+    }
+    message = ""
+    try:
+        await CaseWriter().update_daily(
+            retries=call["retries"],
+            client=FakeClient(session),
+            recorder=Recorder(session),
+            transactions=transactions,
+        )
+    except (httpx.HTTPError, ScriptedDatabaseError) as error:
+        message = str(error)
+    for _ in range(DRAIN_TICKS):
+        await asyncio.sleep(0)
+    remaining: list[JsonValue] = []
+    remaining.extend(sorted(transactions))
+    return {
+        "attempts": session.attempts,
+        "remaining": remaining,
+        "reported": session.reported,
+        "error": message,
+    }
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
-    return asyncio.run(run_calls(input_value))
+    calls: list[JsonValue] = []
+    for call in input_value["calls"]:
+        report = asyncio.run(replay_call(call))
+        calls.append(report)
+    return {"calls": calls}

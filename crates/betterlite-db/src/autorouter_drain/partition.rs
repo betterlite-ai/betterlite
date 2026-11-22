@@ -1,7 +1,7 @@
 use crate::autorouter_turn_sql::transaction::{AutoRouterTurnTransaction, TurnTime};
 
 // _session_partition: a nonempty api_key gives the key its own history, and a turn without one partitions by user.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DrainPartition {
     Key {
         api_key: String,

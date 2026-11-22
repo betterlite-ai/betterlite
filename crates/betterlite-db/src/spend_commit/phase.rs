@@ -27,6 +27,14 @@ pub enum CommitPhaseError {
     Cancelled,
 }
 
+// The source's event covers three state changes: entering the commit, leaving it, and the shutdown's cancel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitTransition {
+    Begin,
+    Finish,
+    Cancel,
+}
+
 // The source's per-chunk Event: the moment between execute_raw returning and the transaction leaving.
 pub struct CommitPhase {
     state: AtomicU8,
@@ -50,38 +58,21 @@ impl CommitPhase {
         }
     }
 
-    // _mark_daily_spend_commit_started: entering the commit is a compare-and-set against a cancellation, so the two can never both win
-    pub fn begin_commit(&self) -> Result<(), CommitPhaseError> {
+    // _mark_daily_spend_commit_started and _mark_daily_spend_commit_finished: entering the commit and cancelling it are compare-and-sets on the same byte, so the two can never both win
+    pub fn apply(&self, transition: CommitTransition) -> Result<(), CommitPhaseError> {
+        let (from, to) = match transition {
+            CommitTransition::Begin => (WAITING, COMMITTING),
+            CommitTransition::Finish => (COMMITTING, WAITING),
+            CommitTransition::Cancel => (WAITING, CANCELLED),
+        };
         match self
             .state
-            .compare_exchange(WAITING, COMMITTING, Ordering::SeqCst, Ordering::SeqCst)
+            .compare_exchange(from, to, Ordering::SeqCst, Ordering::SeqCst)
         {
             Ok(_previous) => Ok(()),
             Err(COMMITTING) => Err(CommitPhaseError::AlreadyCommitting),
-            Err(_cancelled) => Err(CommitPhaseError::Cancelled),
-        }
-    }
-
-    // _mark_daily_spend_commit_finished: only a committed transaction clears the phase, and the next chunk starts from waiting
-    pub fn finish_commit(&self) -> Result<(), CommitPhaseError> {
-        match self
-            .state
-            .compare_exchange(COMMITTING, WAITING, Ordering::SeqCst, Ordering::SeqCst)
-        {
-            Ok(_previous) => Ok(()),
+            Err(CANCELLED) => Err(CommitPhaseError::Cancelled),
             Err(_other) => Err(CommitPhaseError::NotCommitting),
-        }
-    }
-
-    // The shutdown coordinator's half: it wins only while no commit has begun, so a successful cancel meets no COMMIT
-    pub fn cancel_while_waiting(&self) -> Result<(), CommitPhaseError> {
-        match self
-            .state
-            .compare_exchange(WAITING, CANCELLED, Ordering::SeqCst, Ordering::SeqCst)
-        {
-            Ok(_previous) => Ok(()),
-            Err(COMMITTING) => Err(CommitPhaseError::AlreadyCommitting),
-            Err(_cancelled) => Err(CommitPhaseError::Cancelled),
         }
     }
 }
@@ -122,7 +113,7 @@ where
 impl<T> StartedDailyCommit<T> {
     // The shutdown path cancels work that never reached its commit, and owns the rest until its definitive result.
     pub async fn settle_for_shutdown(self) -> DailyCommitSettlement<T> {
-        match self.phase.cancel_while_waiting() {
+        match self.phase.apply(CommitTransition::Cancel) {
             Ok(()) => {
                 self.task.abort();
                 DailyCommitSettlement::Cancelled

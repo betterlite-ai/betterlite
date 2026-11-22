@@ -27,7 +27,7 @@ use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::migration_ledger::lock::JitterSource;
 use crate::postgres_store::session::PostgresStore;
 use crate::spend_commit::phase::{
-    CommitPhase, CommitPhaseError, CommitPhaseState, DailyCommitSettlement,
+    CommitPhase, CommitPhaseError, CommitPhaseState, CommitTransition, DailyCommitSettlement,
     start_daily_spend_commit,
 };
 use crate::spend_commit::policy::{SpendFailure, SpendRetryPolicy, SpendUpdateFailure};
@@ -121,7 +121,7 @@ struct ScriptedWriter {
 impl ScriptedWriter {
     fn new(steps: Vec<Step>) -> Self {
         Self {
-            script: Mutex::new(steps.into()),
+            script: Mutex::new(VecDeque::from(steps)),
             chunks: Mutex::new(Vec::new()),
         }
     }
@@ -159,13 +159,13 @@ impl DailyChunkWriter for ScriptedWriter {
                 .push(rows.iter().map(|row| field_text(row, id_field)).collect());
             match self.next_step() {
                 Step::Ok => {
-                    phase.begin_commit().unwrap();
-                    phase.finish_commit().unwrap();
+                    phase.apply(CommitTransition::Begin).unwrap();
+                    phase.apply(CommitTransition::Finish).unwrap();
                     Ok(())
                 }
-                Step::Cancelled => match phase.begin_commit() {
+                Step::Cancelled => match phase.apply(CommitTransition::Begin) {
                     Ok(()) => {
-                        phase.finish_commit().unwrap();
+                        phase.apply(CommitTransition::Finish).unwrap();
                         Ok(())
                     }
                     Err(_cancelled) => Err(ScriptedFailure::cancelled()),
@@ -458,7 +458,7 @@ async fn cancelled_phase_keeps_the_rows_and_skips_the_report() {
     let writer = ScriptedWriter::new(vec![Step::Cancelled]);
     let ports = Ports::new();
     let phase = Arc::new(CommitPhase::new());
-    phase.cancel_while_waiting().unwrap();
+    phase.apply(CommitTransition::Cancel).unwrap();
     let commit = DailyChunkCommit {
         writer: &writer,
         policy: ports.policy(0),
@@ -511,28 +511,28 @@ fn only_the_cancelled_phase_counts_as_a_cancellation() {
 fn phase_transitions_are_compare_and_swap() {
     let phase = CommitPhase::new();
     assert_eq!(phase.state(), CommitPhaseState::Waiting);
-    phase.begin_commit().unwrap();
+    phase.apply(CommitTransition::Begin).unwrap();
     assert_eq!(
-        phase.begin_commit().unwrap_err(),
+        phase.apply(CommitTransition::Begin).unwrap_err(),
         CommitPhaseError::AlreadyCommitting
     );
     assert_eq!(
-        phase.cancel_while_waiting().unwrap_err(),
+        phase.apply(CommitTransition::Cancel).unwrap_err(),
         CommitPhaseError::AlreadyCommitting
     );
-    phase.finish_commit().unwrap();
+    phase.apply(CommitTransition::Finish).unwrap();
     assert_eq!(
-        phase.finish_commit().unwrap_err(),
+        phase.apply(CommitTransition::Finish).unwrap_err(),
         CommitPhaseError::NotCommitting
     );
-    phase.cancel_while_waiting().unwrap();
+    phase.apply(CommitTransition::Cancel).unwrap();
     assert_eq!(phase.state(), CommitPhaseState::Cancelled);
     assert_eq!(
-        phase.cancel_while_waiting().unwrap_err(),
+        phase.apply(CommitTransition::Cancel).unwrap_err(),
         CommitPhaseError::Cancelled
     );
     assert_eq!(
-        phase.begin_commit().unwrap_err(),
+        phase.apply(CommitTransition::Begin).unwrap_err(),
         CommitPhaseError::Cancelled
     );
 }
@@ -545,7 +545,7 @@ async fn shutdown_cancels_a_commit_that_never_reached_its_phase() {
     let started = start_daily_spend_commit(&commits, move |phase| async move {
         entered.send(()).unwrap();
         let _released = release_wait.await;
-        phase.begin_commit().unwrap();
+        phase.apply(CommitTransition::Begin).unwrap();
     });
     entered_wait.await.unwrap();
     let settlement = started.settle_for_shutdown().await;
@@ -561,10 +561,10 @@ async fn shutdown_waits_for_a_commit_that_entered_its_phase() {
     let (entered, entered_wait) = oneshot::channel();
     let (release, release_wait) = oneshot::channel::<()>();
     let started = start_daily_spend_commit(&commits, move |phase| async move {
-        phase.begin_commit().unwrap();
+        phase.apply(CommitTransition::Begin).unwrap();
         entered.send(()).unwrap();
         let _released = release_wait.await;
-        phase.finish_commit().unwrap();
+        phase.apply(CommitTransition::Finish).unwrap();
         7_u32
     });
     let phase = Arc::clone(&started.phase);
