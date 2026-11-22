@@ -9,7 +9,7 @@ use betterlite_prompts::reasoning_fields::strip_encrypted::strip_encrypted_reaso
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::lookup::CatalogLookup;
-use crate::responses_affinity::boundary::{Boundary, encryption_boundary};
+use crate::responses_affinity::boundary::{Boundary, encryption_boundary, same_boundary};
 use crate::responses_affinity::error::AffinityError;
 use crate::responses_affinity::history::History;
 use crate::responses_affinity::identity::deployment_id;
@@ -23,7 +23,7 @@ pub(crate) fn strip_for_targets(
     credentials: &CredentialSnapshot,
 ) -> Result<(), AffinityError> {
     let target_ids: BTreeSet<String> = targets.iter().filter_map(deployment_id).collect();
-    let target_boundaries: BTreeSet<Boundary> = targets
+    let target_boundaries: Vec<Boundary> = targets
         .iter()
         .filter_map(|target| encryption_boundary(&target.litellm_params, credentials))
         .collect();
@@ -63,7 +63,7 @@ pub(crate) fn strip_all(history: &mut History<'_>) {
 fn decryptable_origins(
     history: &History<'_>,
     target_ids: &BTreeSet<String>,
-    target_boundaries: &BTreeSet<Boundary>,
+    target_boundaries: &[Boundary],
     router: Option<&CatalogLookup<'_>>,
     credentials: &CredentialSnapshot,
 ) -> Result<BTreeMap<String, bool>, AffinityError> {
@@ -102,7 +102,7 @@ fn add_message_origins(messages: &[Message], origins: &mut BTreeSet<String>) {
 // The catalog half of target_can_decrypt, resolved once per distinct origin.
 fn origin_decryptable(
     origin: &str,
-    target_boundaries: &BTreeSet<Boundary>,
+    target_boundaries: &[Boundary],
     router: Option<&CatalogLookup<'_>>,
     credentials: &CredentialSnapshot,
 ) -> Result<bool, AffinityError> {
@@ -113,7 +113,11 @@ fn origin_decryptable(
         return Ok(false);
     };
     let boundary = encryption_boundary(&deployment.litellm_params, credentials);
-    Ok(boundary.is_some_and(|candidate| target_boundaries.contains(&candidate)))
+    Ok(boundary.is_some_and(|candidate| {
+        target_boundaries
+            .iter()
+            .any(|target| same_boundary(&candidate, target))
+    }))
 }
 
 fn strip_messages(history: &mut History<'_>, predicate: Option<&dyn Fn(&ContentPart) -> bool>) {

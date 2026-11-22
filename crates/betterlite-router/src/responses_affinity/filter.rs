@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::lookup::CatalogLookup;
-use crate::responses_affinity::boundary::encryption_boundary;
+use crate::responses_affinity::boundary::{encryption_boundary, same_boundary};
 use crate::responses_affinity::config::{AffinitySettings, ENABLED_FLAG};
 use crate::responses_affinity::error::AffinityError;
 use crate::responses_affinity::history::{FilterRequest, History, MetadataSlot};
@@ -95,7 +95,7 @@ impl<'check, 'catalog> AffinityCheck<'check, 'catalog> {
             .iter()
             .filter(|deployment| {
                 encryption_boundary(&deployment.litellm_params, self.credentials)
-                    .is_some_and(|candidate| candidate == boundary)
+                    .is_some_and(|candidate| same_boundary(&candidate, &boundary))
             })
             .cloned()
             .collect();
