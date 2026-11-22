@@ -47,7 +47,7 @@ class UnknownNativeError(Exception):
         super().__init__(payload)
 
 
-class UnsupportedCallArgument(Exception):
+class UnsupportedCallArgumentError(Exception):
     argument: str
 
     def __init__(self, argument: str) -> None:
@@ -55,6 +55,9 @@ class UnsupportedCallArgument(Exception):
         super().__init__(
             f"{argument} is not supported by betterlite: the completion call runs in Rust"
         )
+
+
+UnsupportedCallArgument = UnsupportedCallArgumentError
 
 
 # ast-grep-ignore: no-one-line-functions
@@ -86,65 +89,130 @@ def _response(payload: ErrorPayload) -> Response:
     )
 
 
-def _build_error(payload: ErrorPayload) -> BaseException:
+def _response_errors(payload: ErrorPayload) -> BaseException | None:
     message = _text_value(payload.get("message"))
     model = _text_value(payload.get("model"))
     provider = _text_value(payload.get("llm_provider"))
     body = payload.get("body")
     response = _response(payload)
+    error: BaseException | None = None
     match payload["type"]:
         case "AuthenticationError":
-            return exceptions.AuthenticationError(message, provider, model, response)
+            error = exceptions.AuthenticationError(message, provider, model, response)
         case "NotFoundError":
-            return exceptions.NotFoundError(message, model, provider, response)
+            error = exceptions.NotFoundError(message, model, provider, response)
         case "PermissionDeniedError":
-            return exceptions.PermissionDeniedError(message, provider, model, response)
+            error = exceptions.PermissionDeniedError(message, provider, model, response)
         case "BadRequestError":
-            return exceptions.BadRequestError(message, model, provider, response, body=body)
+            error = exceptions.BadRequestError(message, model, provider, response, body=body)
         case "UnprocessableEntityError":
-            return exceptions.UnprocessableEntityError(message, model, provider, response)
+            error = exceptions.UnprocessableEntityError(message, model, provider, response)
         case "Timeout":
-            return exceptions.Timeout(message, model, provider, headers=payload.get("headers"))
+            error = exceptions.Timeout(message, model, provider, headers=payload.get("headers"))
         case "RateLimitError":
-            return exceptions.RateLimitError(
+            error = exceptions.RateLimitError(
                 message, provider, model, headers=payload.get("headers"), body=body
             )
+    return error
+
+
+def _status_errors(payload: ErrorPayload) -> BaseException | None:
+    error: BaseException | None = None
+    match payload["type"]:
         case "BudgetExceededError":
-            return exceptions.BudgetExceededError(0.0, 0.0, message, provider)
-        case "ContextWindowExceededError":
-            return exceptions.ContextWindowExceededError(message, model, provider)
-        case "ContentPolicyViolationError":
-            return exceptions.ContentPolicyViolationError(message, model, provider, body=body)
-        case "ServiceUnavailableError":
-            return exceptions.ServiceUnavailableError(message, provider, model)
-        case "BadGatewayError":
-            return exceptions.BadGatewayError(message, provider, model)
-        case "InternalServerError":
-            return exceptions.InternalServerError(message, provider, model, body=body)
-        case "APIError":
-            return exceptions.APIError(
-                _status_value(payload.get("status_code")), message, provider, model, body=body
+            error = exceptions.BudgetExceededError(
+                current_cost=0.0,
+                max_budget=0.0,
+                message=_text_value(payload.get("message")),
+                llm_provider=_text_value(payload.get("llm_provider")),
             )
-        case "APIConnectionError":
-            return exceptions.APIConnectionError(message, provider, model)
-        case "APIResponseValidationError":
-            return exceptions.APIResponseValidationError(message, provider, model)
-        case "JSONSchemaValidationError":
-            return exceptions.JSONSchemaValidationError(model, provider, message, "")
-        case "UnsupportedParamsError":
-            return exceptions.UnsupportedParamsError(message, provider, model)
+        case "ContextWindowExceededError":
+            error = exceptions.ContextWindowExceededError(
+                message=_text_value(payload.get("message")),
+                model=_text_value(payload.get("model")),
+                llm_provider=_text_value(payload.get("llm_provider")),
+            )
+        case "ContentPolicyViolationError":
+            error = exceptions.ContentPolicyViolationError(
+                message=_text_value(payload.get("message")),
+                model=_text_value(payload.get("model")),
+                llm_provider=_text_value(payload.get("llm_provider")),
+                body=payload.get("body"),
+            )
         case "GuardrailRaisedException":
-            return exceptions.GuardrailRaisedException(
-                message=message,
+            error = exceptions.GuardrailRaisedException(
+                message=_text_value(payload.get("message")),
                 should_wrap_with_default_message=False,
                 status_code=_status_value(payload.get("status_code")),
             )
-        case "MidStreamFallbackError":
-            return exceptions.MidStreamFallbackError(message, model, provider)
-        case "Exception":
-            return Exception(message)
-        case _:
-            raise UnknownNativeError(payload["type"])
+        case "ServiceUnavailableError":
+            error = exceptions.ServiceUnavailableError(
+                message=_text_value(payload.get("message")),
+                llm_provider=_text_value(payload.get("llm_provider")),
+                model=_text_value(payload.get("model")),
+            )
+        case "BadGatewayError":
+            error = exceptions.BadGatewayError(
+                message=_text_value(payload.get("message")),
+                llm_provider=_text_value(payload.get("llm_provider")),
+                model=_text_value(payload.get("model")),
+            )
+        case "InternalServerError":
+            error = exceptions.InternalServerError(
+                message=_text_value(payload.get("message")),
+                llm_provider=_text_value(payload.get("llm_provider")),
+                model=_text_value(payload.get("model")),
+                body=payload.get("body"),
+            )
+        case "APIError":
+            error = exceptions.APIError(
+                status_code=_status_value(payload.get("status_code")),
+                message=_text_value(payload.get("message")),
+                llm_provider=_text_value(payload.get("llm_provider")),
+                model=_text_value(payload.get("model")),
+                body=payload.get("body"),
+            )
+    return error
+
+
+# the three failures below take LiteLLM's (message, llm_provider, model) order positionally
+PLAIN_ERRORS: Final[dict[str, type[BaseException]]] = {
+    "APIConnectionError": exceptions.APIConnectionError,
+    "APIResponseValidationError": exceptions.APIResponseValidationError,
+    "UnsupportedParamsError": exceptions.UnsupportedParamsError,
+}
+
+
+def _plain_errors(payload: ErrorPayload) -> BaseException | None:
+    name = payload["type"]
+    message = _text_value(payload.get("message"))
+    if name == "JSONSchemaValidationError":
+        return exceptions.JSONSchemaValidationError(
+            _text_value(payload.get("model")),
+            _text_value(payload.get("llm_provider")),
+            message,
+            "",
+        )
+    if name == "MidStreamFallbackError":
+        return exceptions.MidStreamFallbackError(
+            message, _text_value(payload.get("model")), _text_value(payload.get("llm_provider"))
+        )
+    if name == "Exception":
+        return Exception(message)
+    if name in PLAIN_ERRORS:
+        return PLAIN_ERRORS[name](
+            message, _text_value(payload.get("llm_provider")), _text_value(payload.get("model"))
+        )
+    return None
+
+
+def _build_error(payload: ErrorPayload) -> BaseException:
+    # the table is split so each dispatch stays under ruff's branch and complexity limits
+    for builder in (_response_errors, _status_errors, _plain_errors):
+        error = builder(payload)
+        if error is not None:
+            return error
+    raise UnknownNativeError(payload["type"])
 
 
 def raise_native_error(error: NativeError) -> NoReturn:
