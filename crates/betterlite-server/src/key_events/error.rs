@@ -52,10 +52,7 @@ where
             Self::Audit(source) => formatter.debug_tuple("Audit").field(source).finish(),
             Self::MissingUpdateKey => formatter.write_str("MissingUpdateKey"),
             Self::MissingResponseKey => formatter.write_str("MissingResponseKey"),
-            Self::Sink { source } => formatter
-                .debug_struct("Sink")
-                .field("source", &format_args!("{source}"))
-                .finish(),
+            Self::Sink { source } => write!(formatter, "Sink {{ source: {source} }}"),
         }
     }
 }

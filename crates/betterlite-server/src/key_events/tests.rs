@@ -935,6 +935,6 @@ fn error_debug_names_the_variant() {
     assert!(format!("{evented:?}").starts_with("EmailEvent("));
     assert_eq!(
         format!("{sunk:?}"),
-        "Sink { source: \"the secret manager rotation failed\" }"
+        "Sink { source: the secret manager rotation failed }"
     );
 }
