@@ -363,6 +363,7 @@ async fn a_valid_price_is_read_from_the_effective_agent(
 #[case::nan(r#"{"cost_per_query":"nan"}"#)]
 #[case::infinity(r#"{"cost_per_query":"inf"}"#)]
 #[case::not_a_number(r#"{"cost_per_query":"abc"}"#)]
+#[case::out_of_range(r#"{"cost_per_query":"1e40"}"#)]
 #[tokio::test]
 async fn an_invalid_price_is_policy_unavailable(#[case] params: &str) {
     let registry = registry(&[MANAGED]);
