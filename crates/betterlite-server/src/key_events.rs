@@ -40,46 +40,20 @@ where
         caller: &KeyEventCaller,
         litellm_changed_by: Option<&str>,
     ) -> Result<(), KeyEventError> {
+        let effects = &self.effects;
+        let audit = self.audit;
         match event {
             KeyEvent::Generated(generated_event) => {
-                generated::run(
-                    &self.effects,
-                    self.audit,
-                    generated_event,
-                    caller,
-                    litellm_changed_by,
-                )
-                .await
+                generated::run(effects, audit, generated_event, caller, litellm_changed_by).await
             }
             KeyEvent::Updated(updated_event) => {
-                updated::run(
-                    &self.effects,
-                    self.audit,
-                    updated_event,
-                    caller,
-                    litellm_changed_by,
-                )
-                .await
+                updated::run(effects, audit, updated_event, caller, litellm_changed_by).await
             }
             KeyEvent::Rotated(rotated_event) => {
-                rotated::run(
-                    &self.effects,
-                    self.audit,
-                    rotated_event,
-                    caller,
-                    litellm_changed_by,
-                )
-                .await
+                rotated::run(effects, audit, rotated_event, caller, litellm_changed_by).await
             }
             KeyEvent::Deleted(deleted_event) => {
-                deleted::run(
-                    &self.effects,
-                    self.audit,
-                    deleted_event,
-                    caller,
-                    litellm_changed_by,
-                )
-                .await
+                deleted::run(effects, audit, deleted_event, caller, litellm_changed_by).await
             }
         }
     }

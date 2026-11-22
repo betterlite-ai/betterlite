@@ -2,13 +2,13 @@
 
 mod support;
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::{Expiry, LiteLLMVerificationToken};
+use betterlite_openai::openai_base_config::Object as JsonMap;
 use chrono::DateTime;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
@@ -634,7 +634,7 @@ async fn delete_audit_first() {
     assert_eq!(records[0].action, AuditAction::Deleted);
     assert_eq!(
         records[0].updated_values,
-        Some(JsonValue::Object(BTreeMap::new()))
+        Some(JsonValue::Object(JsonMap::new()))
     );
     assert_eq!(
         exposed(records[0].changed_by_api_key.as_ref()),

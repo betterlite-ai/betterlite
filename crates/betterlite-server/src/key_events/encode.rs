@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::{Expiry, LiteLLMVerificationToken};
+use betterlite_openai::openai_base_config::Object as JsonMap;
 use chrono::{DateTime, FixedOffset, NaiveDateTime};
 
 use crate::audit_events::record::timestamp_text;
@@ -98,7 +99,7 @@ fn exclude_none(value: &mut JsonValue) {
         router.retain(|_, field| !field.is_null());
         router
             .entry("model_group_alias".to_owned())
-            .or_insert_with(|| JsonValue::Object(BTreeMap::new()));
+            .or_insert_with(|| JsonValue::Object(JsonMap::new()));
     }
     if let Some(JsonValue::Array(entries)) = fields.get_mut("budget_limits") {
         for entry in entries {
