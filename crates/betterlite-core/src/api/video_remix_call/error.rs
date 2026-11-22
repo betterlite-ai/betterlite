@@ -90,13 +90,10 @@ pub fn failure(error: VideoCallError, provider: &str, redactor: &Redactor) -> Vi
                 redactor,
             )
         }
-        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
         VideoCallError::UnknownProvider { .. }
         | VideoCallError::Unsupported { .. }
         | VideoCallError::ConfigMissing { .. }
-        | VideoCallError::Selection(_) => ErrorClass::BadRequest(Box::new(
-            ResponseDetails::for_provider(error.to_string(), Some(MODEL.to_owned()), provider),
-        )),
+        | VideoCallError::Selection(_) => provider_class(error.to_string(), provider),
         VideoCallError::Mock(_)
         | VideoCallError::Params(_)
         | VideoCallError::Timeout { .. }
@@ -128,10 +125,9 @@ fn transport_class(
         VideoRemixListTransportError::Field(FieldError::Type { field, .. }) => {
             named_field_class(error.to_string(), field, provider)
         }
-        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
-        VideoRemixListTransportError::UnknownProvider { .. } => ErrorClass::BadRequest(Box::new(
-            ResponseDetails::for_provider(error.to_string(), Some(MODEL.to_owned()), provider),
-        )),
+        VideoRemixListTransportError::UnknownProvider { .. } => {
+            provider_class(error.to_string(), provider)
+        }
         VideoRemixListTransportError::Client { .. }
         | VideoRemixListTransportError::Prepare { .. }
         | VideoRemixListTransportError::Logging(_)
@@ -140,6 +136,15 @@ fn transport_class(
             value_error(error.to_string(), provider, redactor)
         }
     }
+}
+
+// the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+fn provider_class(message: String, provider: &str) -> ErrorClass {
+    ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
+        message,
+        Some(MODEL.to_owned()),
+        provider,
+    )))
 }
 
 fn value_error(message: String, provider: &str, redactor: &Redactor) -> ErrorClass {
