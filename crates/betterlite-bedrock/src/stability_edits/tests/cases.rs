@@ -250,7 +250,6 @@ pub(super) fn stability_artifact_results() {
     empty_images();
     error_markers();
     finish_reasons();
-    price_values();
 }
 
 fn edit_reply(model: &str, status: u16, body: &str) -> Result<ImageEditReply, StabilityEditError> {
@@ -418,6 +417,7 @@ fn price_values() {
 pub(super) fn filtered_result_error() {
     parse_failures();
     record_failures();
+    price_values();
     price_failures();
 }
 
