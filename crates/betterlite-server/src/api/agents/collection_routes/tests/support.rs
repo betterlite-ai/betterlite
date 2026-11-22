@@ -8,7 +8,7 @@ use axum::Json;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
@@ -27,7 +27,6 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
-use serde_json::json;
 use tower::ServiceExt as _;
 
 use crate::api::agents::collection_routes::processing::{AgentCall, AgentRequestProcessing};
@@ -105,21 +104,25 @@ pub(crate) fn master_key() -> AuthContext {
     context("master_key", &[])
 }
 
-pub(crate) fn map(value: JsonValue) -> JsonMap {
-    match value {
-        JsonValue::Object(fields) => fields,
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Array(_) => {
-            panic!("the fixture must be a JSON object")
-        }
-    }
-}
-
 pub(crate) fn json_map(text: &str) -> JsonMap {
     serde_json::from_str(text).unwrap()
+}
+
+// a whole answer is JSON text, so the object's value is the parsed map
+pub(crate) fn json_object(text: &str) -> JsonValue {
+    JsonValue::Object(json_map(text))
+}
+
+pub(crate) fn json_text(value: &str) -> JsonValue {
+    JsonValue::String(value.to_owned())
+}
+
+pub(crate) fn json_strings(fields: &[(&str, &str)]) -> JsonValue {
+    let mut object = JsonMap::new();
+    for (name, value) in fields {
+        object.insert(String::from(*name), JsonValue::String(String::from(*value)));
+    }
+    JsonValue::Object(object)
 }
 
 pub(crate) fn query(pairs: &[(&str, &str)]) -> String {
@@ -338,8 +341,8 @@ impl AgentRequestProcessing<TestKey> for FakeProcessing {
             });
         match &self.reply {
             ProcessReply::Answer { status, body } => {
-                let status = StatusCode::from_u16(*status).unwrap_or(StatusCode::OK);
-                Ok((status, Json(body.clone())).into_response())
+                let answered = StatusCode::from_u16(*status).unwrap_or(StatusCode::OK);
+                Ok((answered, Json(body.clone())).into_response())
             }
             ProcessReply::Fail(failure) => Err(failure.clone()),
         }
@@ -358,11 +361,17 @@ impl AgentRequestProcessing<TestKey> for FakeProcessing {
                 failure: failure.clone(),
                 data: data.clone(),
             });
-        let body = json!({
-            "handled": true,
-            "message": failure_message(&failure),
-            "team": key.team_id(),
-        });
+        let team = match key.team_id() {
+            Some(team) => JsonValue::String(team.to_owned()),
+            None => JsonValue::Null,
+        };
+        let mut body = JsonMap::new();
+        body.insert(String::from("handled"), JsonValue::Bool(true));
+        body.insert(
+            String::from("message"),
+            JsonValue::String(failure_message(&failure)),
+        );
+        body.insert(String::from("team"), team);
         (StatusCode::BAD_GATEWAY, Json(body)).into_response()
     }
 }

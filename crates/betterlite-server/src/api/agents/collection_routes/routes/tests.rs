@@ -5,12 +5,12 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use betterlite_core::agents::json::AgentJson as JsonValue;
-use serde_json::json;
 
 use crate::api::agents::collection_routes::AGENTS_PATH;
 use crate::api::agents::collection_routes::merge::TEMPLATE_FIELD;
 use crate::api::agents::collection_routes::tests::support::{
-    FakePreCall, FakeProcessing, TEAM, VERSION, admin, call, json_map, key, query, request, router,
+    FakePreCall, FakeProcessing, TEAM, VERSION, admin, call, json_map, json_object, json_text, key,
+    query, request, router,
 };
 use crate::pre_call::failure::{PreCallFailure, ProxyFailure};
 use crate::pre_call::route_type::RouteType;
@@ -27,7 +27,7 @@ fn failure() -> PreCallFailure {
 #[tokio::test]
 async fn create_runs_the_pre_call_with_the_body_and_the_call_after_it() {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({"name": "agent"}));
+    let processing = FakeProcessing::answering(json_object(r#"{"name": "agent"}"#));
     let (status, body) = call(
         router(Arc::clone(&pre_call), Arc::clone(&processing)),
         request(
@@ -40,12 +40,14 @@ async fn create_runs_the_pre_call_with_the_body_and_the_call_after_it() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({"name": "agent"}));
+    assert_eq!(body, json_object(r#"{"name": "agent"}"#));
     let pre_calls = pre_call.calls();
     assert_eq!(pre_calls.len(), 1);
     assert_eq!(
-        JsonValue::Object(pre_calls[0].data.clone()),
-        json!({"name": "agent", "service_account": "sa@example.test", "custom_llm_provider": "gemini"})
+        pre_calls[0].data,
+        json_map(
+            r#"{"name": "agent", "service_account": "sa@example.test", "custom_llm_provider": "gemini"}"#
+        )
     );
     assert_eq!(pre_calls[0].route_type, RouteType::CreateAgent);
     assert_eq!(pre_calls[0].version.as_deref(), Some(VERSION));
@@ -66,7 +68,10 @@ async fn create_runs_the_pre_call_with_the_body_and_the_call_after_it() {
 async fn create_merges_the_body_template_with_body_precedence_and_drops_it() {
     let pre_call = FakePreCall::passing();
     let (status, _body) = call(
-        router(Arc::clone(&pre_call), FakeProcessing::answering(json!({}))),
+        router(
+            Arc::clone(&pre_call),
+            FakeProcessing::answering(json_object("{}")),
+        ),
         request(
             Method::POST,
             AGENTS_PATH,
@@ -78,8 +83,8 @@ async fn create_merges_the_body_template_with_body_precedence_and_drops_it() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let data = &pre_call.calls()[0].data;
-    assert_eq!(data.get("name"), Some(&json!("agent")));
-    assert_eq!(data.get("api_key"), Some(&json!("AIza")));
+    assert_eq!(data.get("name"), Some(&json_text("agent")));
+    assert_eq!(data.get("api_key"), Some(&json_text("AIza")));
     assert!(!data.contains_key(TEMPLATE_FIELD));
 }
 
@@ -87,7 +92,10 @@ async fn create_merges_the_body_template_with_body_precedence_and_drops_it() {
 async fn create_lets_the_template_pick_the_provider_when_the_body_does_not() {
     let pre_call = FakePreCall::passing();
     let (status, _body) = call(
-        router(Arc::clone(&pre_call), FakeProcessing::answering(json!({}))),
+        router(
+            Arc::clone(&pre_call),
+            FakeProcessing::answering(json_object("{}")),
+        ),
         request(
             Method::POST,
             AGENTS_PATH,
@@ -100,7 +108,7 @@ async fn create_lets_the_template_pick_the_provider_when_the_body_does_not() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         pre_call.calls()[0].data.get("custom_llm_provider"),
-        Some(&json!("vertex"))
+        Some(&json_text("vertex"))
     );
 }
 
@@ -108,14 +116,17 @@ async fn create_lets_the_template_pick_the_provider_when_the_body_does_not() {
 async fn create_of_an_empty_body_still_defaults_the_provider() {
     let pre_call = FakePreCall::passing();
     let (status, _body) = call(
-        router(Arc::clone(&pre_call), FakeProcessing::answering(json!({}))),
+        router(
+            Arc::clone(&pre_call),
+            FakeProcessing::answering(json_object("{}")),
+        ),
         request(Method::POST, AGENTS_PATH, None, admin(), key()),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        JsonValue::Object(pre_call.calls()[0].data.clone()),
-        json!({"custom_llm_provider": "gemini"})
+        pre_call.calls()[0].data,
+        json_map(r#"{"custom_llm_provider": "gemini"}"#)
     );
 }
 
@@ -125,7 +136,10 @@ async fn create_reads_only_the_body_template_and_ignores_the_query_one() {
     let encoded = query(&[(TEMPLATE_FIELD, r#"{"api_key":"query-key"}"#)]);
     let uri = format!("{AGENTS_PATH}?{encoded}");
     let (status, _body) = call(
-        router(Arc::clone(&pre_call), FakeProcessing::answering(json!({}))),
+        router(
+            Arc::clone(&pre_call),
+            FakeProcessing::answering(json_object("{}")),
+        ),
         request(
             Method::POST,
             &uri,
@@ -138,7 +152,7 @@ async fn create_reads_only_the_body_template_and_ignores_the_query_one() {
     assert_eq!(status, StatusCode::OK);
     let data = &pre_call.calls()[0].data;
     assert!(!data.contains_key("api_key"));
-    assert_eq!(data.get("custom_llm_provider"), Some(&json!("gemini")));
+    assert_eq!(data.get("custom_llm_provider"), Some(&json_text("gemini")));
 }
 
 // the route hands the request media type to _read_request_body, so a form body decodes into its fields
@@ -154,30 +168,33 @@ async fn create_reads_a_form_body_through_the_request_content_type() {
         .body(Body::from("name=agent&api_key=AIza"))
         .unwrap();
     let (status, _body) = call(
-        router(Arc::clone(&pre_call), FakeProcessing::answering(json!({}))),
+        router(
+            Arc::clone(&pre_call),
+            FakeProcessing::answering(json_object("{}")),
+        ),
         form_request,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     let data = &pre_call.calls()[0].data;
-    assert_eq!(data.get("name"), Some(&json!("agent")));
-    assert_eq!(data.get("api_key"), Some(&json!("AIza")));
-    assert_eq!(data.get("custom_llm_provider"), Some(&json!("gemini")));
+    assert_eq!(data.get("name"), Some(&json_text("agent")));
+    assert_eq!(data.get("api_key"), Some(&json_text("AIza")));
+    assert_eq!(data.get("custom_llm_provider"), Some(&json_text("gemini")));
 }
 
 #[tokio::test]
 async fn create_rejects_a_body_that_is_not_json_before_the_pre_call() {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let (status, body) = call(
         router(Arc::clone(&pre_call), Arc::clone(&processing)),
         request(Method::POST, AGENTS_PATH, Some("{not json"), admin(), key()),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["error"]["type"], json!("invalid_request_error"));
-    assert_eq!(body["error"]["param"], json!("request_body"));
-    assert_eq!(body["error"]["code"], json!("400"));
+    assert_eq!(body["error"]["type"], json_text("invalid_request_error"));
+    assert_eq!(body["error"]["param"], json_text("request_body"));
+    assert_eq!(body["error"]["code"], json_text("400"));
     assert!(pre_call.calls().is_empty());
     assert!(processing.calls().is_empty());
 }
@@ -186,19 +203,22 @@ async fn create_rejects_a_body_that_is_not_json_before_the_pre_call() {
 async fn create_rejects_a_body_that_is_not_an_object() {
     let pre_call = FakePreCall::passing();
     let (status, body) = call(
-        router(Arc::clone(&pre_call), FakeProcessing::answering(json!({}))),
+        router(
+            Arc::clone(&pre_call),
+            FakeProcessing::answering(json_object("{}")),
+        ),
         request(Method::POST, AGENTS_PATH, Some("[1,2]"), admin(), key()),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["error"]["param"], json!("request_body"));
+    assert_eq!(body["error"]["param"], json_text("request_body"));
     assert!(pre_call.calls().is_empty());
 }
 
 #[tokio::test]
 async fn list_starts_from_the_provider_and_merges_the_query_template() {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({"agents": []}));
+    let processing = FakeProcessing::answering(json_object(r#"{"agents": []}"#));
     let encoded = query(&[(TEMPLATE_FIELD, r#"{"api_key":"AIza","page":"2"}"#)]);
     let uri = format!("{AGENTS_PATH}?{encoded}");
     let (status, body) = call(
@@ -207,12 +227,12 @@ async fn list_starts_from_the_provider_and_merges_the_query_template() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({"agents": []}));
+    assert_eq!(body, json_object(r#"{"agents": []}"#));
     let pre_calls = pre_call.calls();
     assert_eq!(pre_calls[0].route_type, RouteType::ListAgents);
     assert_eq!(
-        JsonValue::Object(pre_calls[0].data.clone()),
-        json!({"custom_llm_provider": "gemini", "api_key": "AIza", "page": "2"})
+        pre_calls[0].data,
+        json_map(r#"{"custom_llm_provider": "gemini", "api_key": "AIza", "page": "2"}"#)
     );
     assert_eq!(processing.calls()[0].route_type, RouteType::ListAgents);
     assert_eq!(processing.calls()[0].method, "GET");
@@ -222,21 +242,24 @@ async fn list_starts_from_the_provider_and_merges_the_query_template() {
 async fn list_without_a_query_string_sends_only_the_provider() {
     let pre_call = FakePreCall::passing();
     let (status, _body) = call(
-        router(Arc::clone(&pre_call), FakeProcessing::answering(json!({}))),
+        router(
+            Arc::clone(&pre_call),
+            FakeProcessing::answering(json_object("{}")),
+        ),
         request(Method::GET, AGENTS_PATH, None, admin(), key()),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        JsonValue::Object(pre_call.calls()[0].data.clone()),
-        json!({"custom_llm_provider": "gemini"})
+        pre_call.calls()[0].data,
+        json_map(r#"{"custom_llm_provider": "gemini"}"#)
     );
 }
 
 #[tokio::test]
 async fn get_names_the_agent_from_the_path() {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({"name": "model-a"}));
+    let processing = FakeProcessing::answering(json_object(r#"{"name": "model-a"}"#));
     let uri = "/v1beta/agents/model-a";
     let (status, _body) = call(
         router(Arc::clone(&pre_call), Arc::clone(&processing)),
@@ -245,8 +268,8 @@ async fn get_names_the_agent_from_the_path() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
-        JsonValue::Object(pre_call.calls()[0].data.clone()),
-        json!({"name": "model-a", "custom_llm_provider": "gemini"})
+        pre_call.calls()[0].data,
+        json_map(r#"{"name": "model-a", "custom_llm_provider": "gemini"}"#)
     );
     assert_eq!(pre_call.calls()[0].route_type, RouteType::GetAgent);
     assert_eq!(processing.calls()[0].path, uri);
@@ -256,7 +279,7 @@ async fn get_names_the_agent_from_the_path() {
 #[tokio::test]
 async fn delete_names_the_agent_and_uses_the_delete_route_type() {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let (status, _body) = call(
         router(Arc::clone(&pre_call), Arc::clone(&processing)),
         request(
@@ -271,8 +294,8 @@ async fn delete_names_the_agent_and_uses_the_delete_route_type() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(pre_call.calls()[0].route_type, RouteType::DeleteAgent);
     assert_eq!(
-        JsonValue::Object(pre_call.calls()[0].data.clone()),
-        json!({"name": "model-a", "custom_llm_provider": "gemini"})
+        pre_call.calls()[0].data,
+        json_map(r#"{"name": "model-a", "custom_llm_provider": "gemini"}"#)
     );
     assert_eq!(processing.calls()[0].method, "DELETE");
 }
@@ -280,7 +303,7 @@ async fn delete_names_the_agent_and_uses_the_delete_route_type() {
 #[tokio::test]
 async fn versions_names_the_agent_and_uses_the_versions_route_type() {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let uri = "/v1beta/agents/model-a/versions";
     let (status, _body) = call(
         router(Arc::clone(&pre_call), Arc::clone(&processing)),
@@ -290,8 +313,8 @@ async fn versions_names_the_agent_and_uses_the_versions_route_type() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(pre_call.calls()[0].route_type, RouteType::ListAgentVersions);
     assert_eq!(
-        JsonValue::Object(pre_call.calls()[0].data.clone()),
-        json!({"name": "model-a", "custom_llm_provider": "gemini"})
+        pre_call.calls()[0].data,
+        json_map(r#"{"name": "model-a", "custom_llm_provider": "gemini"}"#)
     );
     assert_eq!(processing.calls()[0].path, uri);
 }
@@ -299,22 +322,22 @@ async fn versions_names_the_agent_and_uses_the_versions_route_type() {
 #[tokio::test]
 async fn a_pre_call_failure_goes_to_the_exception_mapping_with_the_held_data() {
     let pre_call = FakePreCall::failing(failure());
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let (status, body) = call(
         router(pre_call, Arc::clone(&processing)),
         request(Method::GET, AGENTS_PATH, None, admin(), key()),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_eq!(body["handled"], json!(true));
-    assert_eq!(body["message"], json!("boom"));
+    assert_eq!(body["handled"], JsonValue::Bool(true));
+    assert_eq!(body["message"], json_text("boom"));
     assert!(processing.calls().is_empty());
     let failures = processing.failures();
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].failure, failure());
     assert_eq!(
-        JsonValue::Object(failures[0].data.clone()),
-        json!({"custom_llm_provider": "gemini"})
+        failures[0].data,
+        json_map(r#"{"custom_llm_provider": "gemini"}"#)
     );
 }
 
@@ -336,7 +359,7 @@ async fn a_processing_failure_goes_to_the_exception_mapping_with_the_post_pre_ca
     )
     .await;
     assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_eq!(body["handled"], json!(true));
+    assert_eq!(body["handled"], JsonValue::Bool(true));
     let failures = processing.failures();
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].failure, failure());
@@ -345,20 +368,23 @@ async fn a_processing_failure_goes_to_the_exception_mapping_with_the_post_pre_ca
 
 #[tokio::test]
 async fn the_processing_answer_is_the_route_answer() {
-    let processing = FakeProcessing::answering(json!({"agents": [{"name": "model-a"}]}));
+    let processing = FakeProcessing::answering(json_object(r#"{"agents": [{"name": "model-a"}]}"#));
     let (status, body) = call(
         router(FakePreCall::passing(), processing),
         request(Method::GET, AGENTS_PATH, None, admin(), key()),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({"agents": [{"name": "model-a"}]}));
+    assert_eq!(body, json_object(r#"{"agents": [{"name": "model-a"}]}"#));
 }
 
 #[tokio::test]
 async fn an_unknown_method_on_the_collection_path_is_not_allowed() {
     let (status, _body) = call(
-        router(FakePreCall::passing(), FakeProcessing::answering(json!({}))),
+        router(
+            FakePreCall::passing(),
+            FakeProcessing::answering(json_object("{}")),
+        ),
         request(Method::PUT, AGENTS_PATH, None, admin(), key()),
     )
     .await;
@@ -368,7 +394,10 @@ async fn an_unknown_method_on_the_collection_path_is_not_allowed() {
 #[tokio::test]
 async fn an_unknown_agent_subpath_is_not_found() {
     let (status, _body) = call(
-        router(FakePreCall::passing(), FakeProcessing::answering(json!({}))),
+        router(
+            FakePreCall::passing(),
+            FakeProcessing::answering(json_object("{}")),
+        ),
         request(Method::GET, "/v1beta/agents/a/b", None, admin(), key()),
     )
     .await;

@@ -6,7 +6,6 @@ use betterlite_auth::auth_identity::roles::Role;
 use betterlite_core::agents::json::AgentJson as JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use rstest::rstest;
-use serde_json::json;
 
 use super::guards::{CallerKeyMissing, MISSING_KEY_DETAIL, enforce_provider_key, is_proxy_admin};
 use super::merge::{
@@ -14,7 +13,7 @@ use super::merge::{
     query_values,
 };
 
-use support::{json_map, map, principal, query};
+use support::{json_map, principal, query};
 
 #[rstest]
 #[case::proxy_admin(&[Role::PlatformAdmin], true)]
@@ -47,21 +46,21 @@ fn a_rejected_caller_gets_the_credential_detail_and_a_401() {
 }
 
 #[rstest]
-#[case::absent(json!({}), false)]
-#[case::null(json!({"api_key": null}), false)]
-#[case::empty_string(json!({"api_key": ""}), false)]
-#[case::false_value(json!({"api_key": false}), false)]
-#[case::zero(json!({"api_key": 0}), false)]
-#[case::zero_float(json!({"api_key": 0.0}), false)]
-#[case::empty_array(json!({"api_key": []}), false)]
-#[case::empty_object(json!({"api_key": {}}), false)]
-#[case::text(json!({"api_key": "AIza"}), true)]
-#[case::true_value(json!({"api_key": true}), true)]
-#[case::nonzero(json!({"api_key": 1}), true)]
-#[case::array(json!({"api_key": ["AIza"]}), true)]
-#[case::object(json!({"api_key": {"token": "AIza"}}), true)]
-fn the_api_key_check_follows_python_truthiness(#[case] data: JsonValue, #[case] expected: bool) {
-    let checked = enforce_provider_key(&map(data), &principal("user-1", &[]));
+#[case::absent("{}", false)]
+#[case::null(r#"{"api_key": null}"#, false)]
+#[case::empty_string(r#"{"api_key": ""}"#, false)]
+#[case::false_value(r#"{"api_key": false}"#, false)]
+#[case::zero(r#"{"api_key": 0}"#, false)]
+#[case::zero_float(r#"{"api_key": 0.0}"#, false)]
+#[case::empty_array(r#"{"api_key": []}"#, false)]
+#[case::empty_object(r#"{"api_key": {}}"#, false)]
+#[case::text(r#"{"api_key": "AIza"}"#, true)]
+#[case::true_value(r#"{"api_key": true}"#, true)]
+#[case::nonzero(r#"{"api_key": 1}"#, true)]
+#[case::array(r#"{"api_key": ["AIza"]}"#, true)]
+#[case::object(r#"{"api_key": {"token": "AIza"}}"#, true)]
+fn the_api_key_check_follows_python_truthiness(#[case] data: &str, #[case] expected: bool) {
+    let checked = enforce_provider_key(&json_map(data), &principal("user-1", &[]));
     assert_eq!(checked.is_ok(), expected);
 }
 
@@ -79,10 +78,7 @@ fn a_query_template_merges_its_entries() {
     let raw = query(&[(TEMPLATE_FIELD, r#"{"api_key":"AIza","project":"p1"}"#)]);
     let mut data = JsonMap::new();
     merge_query_params_into_data(&mut data, &query_values(Some(raw.as_str())));
-    assert_eq!(
-        JsonValue::Object(data),
-        json!({"api_key": "AIza", "project": "p1"})
-    );
+    assert_eq!(data, json_map(r#"{"api_key": "AIza", "project": "p1"}"#));
 }
 
 #[test]
@@ -91,31 +87,28 @@ fn a_query_template_never_replaces_a_key_already_in_data() {
         TEMPLATE_FIELD,
         r#"{"custom_llm_provider":"vertex","api_key":"AIza"}"#,
     )]);
-    let mut data = map(json!({"custom_llm_provider": "gemini"}));
+    let mut data = json_map(r#"{"custom_llm_provider": "gemini"}"#);
     merge_query_params_into_data(&mut data, &query_values(Some(raw.as_str())));
     assert_eq!(
-        JsonValue::Object(data),
-        json!({"custom_llm_provider": "gemini", "api_key": "AIza"})
+        data,
+        json_map(r#"{"custom_llm_provider": "gemini", "api_key": "AIza"}"#)
     );
 }
 
 #[test]
 fn a_query_template_does_not_replace_a_null_value() {
     let raw = query(&[(TEMPLATE_FIELD, r#"{"api_key":"AIza"}"#)]);
-    let mut data = map(json!({"api_key": null}));
+    let mut data = json_map(r#"{"api_key": null}"#);
     merge_query_params_into_data(&mut data, &query_values(Some(raw.as_str())));
-    assert_eq!(JsonValue::Object(data), json!({"api_key": null}));
+    assert_eq!(data, json_map(r#"{"api_key": null}"#));
 }
 
 #[test]
 fn a_malformed_query_template_merges_nothing() {
     let raw = query(&[(TEMPLATE_FIELD, "{not json")]);
-    let mut data = map(json!({"custom_llm_provider": "gemini"}));
+    let mut data = json_map(r#"{"custom_llm_provider": "gemini"}"#);
     merge_query_params_into_data(&mut data, &query_values(Some(raw.as_str())));
-    assert_eq!(
-        JsonValue::Object(data),
-        json!({"custom_llm_provider": "gemini"})
-    );
+    assert_eq!(data, json_map(r#"{"custom_llm_provider": "gemini"}"#));
 }
 
 #[rstest]
@@ -134,12 +127,9 @@ fn a_decoded_query_template_that_is_not_an_object_merges_nothing(#[case] templat
 #[test]
 fn an_empty_query_template_merges_nothing() {
     let raw = query(&[(TEMPLATE_FIELD, "")]);
-    let mut data = map(json!({"custom_llm_provider": "gemini"}));
+    let mut data = json_map(r#"{"custom_llm_provider": "gemini"}"#);
     merge_query_params_into_data(&mut data, &query_values(Some(raw.as_str())));
-    assert_eq!(
-        JsonValue::Object(data),
-        json!({"custom_llm_provider": "gemini"})
-    );
+    assert_eq!(data, json_map(r#"{"custom_llm_provider": "gemini"}"#));
 }
 
 #[test]
@@ -177,12 +167,9 @@ fn a_query_template_value_is_percent_decoded() {
 
 #[test]
 fn a_query_string_without_the_template_leaves_data_alone() {
-    let mut data = map(json!({"custom_llm_provider": "gemini"}));
+    let mut data = json_map(r#"{"custom_llm_provider": "gemini"}"#);
     merge_query_params_into_data(&mut data, &query_values(Some("page=2&limit=10")));
-    assert_eq!(
-        JsonValue::Object(data),
-        json!({"custom_llm_provider": "gemini"})
-    );
+    assert_eq!(data, json_map(r#"{"custom_llm_provider": "gemini"}"#));
 }
 
 #[test]
@@ -208,7 +195,8 @@ fn a_body_template_fills_missing_keys_and_the_body_keeps_precedence() {
 #[case::null("null")]
 #[case::false_value("false")]
 fn a_body_template_that_is_not_an_object_is_dropped_without_merging(#[case] template: &str) {
-    let mut data = map(json!({"litellm_params_template": template}));
+    let body = format!(r#"{{"litellm_params_template":{template}}}"#);
+    let mut data = json_map(&body);
     merge_body_template(&mut data);
     assert!(data.is_empty());
 }
@@ -250,7 +238,7 @@ fn a_body_provider_wins_over_the_template_and_the_default() {
 
 #[test]
 fn an_explicit_null_provider_is_kept_as_python_setdefault_keeps_it() {
-    let mut data = map(json!({"custom_llm_provider": null}));
+    let mut data = json_map(r#"{"custom_llm_provider": null}"#);
     default_provider(&mut data);
     assert_eq!(data.get("custom_llm_provider"), Some(&JsonValue::Null));
 }

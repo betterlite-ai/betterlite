@@ -83,7 +83,7 @@ where
     let data = if matches!(route, AgentRoute::Create) {
         match create_data(request_body, &parts, &query_params, state).await {
             Ok(data) => data,
-            Err(response) => return response,
+            Err(response) => return *response,
         }
     } else {
         route_data(route, &query_params)
@@ -98,13 +98,13 @@ where
     guarded(call, data).await
 }
 
-// create reads the body before the guard, through _read_request_body's content-type rules
+// create reads the body through _read_request_body's rules first; its refusal is boxed because a Response dwarfs the data
 async fn create_data<K>(
     request_body: Body,
     parts: &Parts,
     query_params: &BTreeMap<String, String>,
     state: &AgentCollectionState<K>,
-) -> Result<JsonMap, Response>
+) -> Result<JsonMap, Box<Response>>
 where
     K: PreCallKey,
 {
@@ -112,9 +112,11 @@ where
     let bytes = match read_body(request_body, limit).await {
         Ok(bytes) => bytes,
         Err(BufferError::TooLarge { observed }) => {
-            return Err(body_too_large_response(observed, limit));
+            return Err(Box::new(body_too_large_response(observed, limit)));
         }
-        Err(BufferError::Unreadable(_reason)) => return Err(unreadable_body_response()),
+        Err(BufferError::Unreadable(_reason)) => {
+            return Err(Box::new(unreadable_body_response()));
+        }
     };
     let mut data = match body::read_json_body(
         parts,
@@ -124,7 +126,7 @@ where
         &state.limits,
     ) {
         Ok(data) => data,
-        Err(error) => return Err(body::failure(&error)),
+        Err(error) => return Err(Box::new(body::failure(&error))),
     };
     merge::merge_body_template(&mut data);
     merge::default_provider(&mut data);

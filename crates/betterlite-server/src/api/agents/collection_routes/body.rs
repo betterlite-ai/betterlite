@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use axum::Json;
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::request_body::Settings;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_body::{RequestBodyError, RequestBodyInput};

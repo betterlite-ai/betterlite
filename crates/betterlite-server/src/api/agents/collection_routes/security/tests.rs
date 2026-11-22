@@ -6,13 +6,13 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use betterlite_core::agents::json::AgentJson as JsonValue;
 use rstest::rstest;
-use serde_json::json;
 
 use crate::api::agents::collection_routes::AGENTS_PATH;
 use crate::api::agents::collection_routes::guards::MISSING_KEY_DETAIL;
 use crate::api::agents::collection_routes::merge::TEMPLATE_FIELD;
 use crate::api::agents::collection_routes::tests::support::{
-    FakePreCall, FakeProcessing, admin, call, key, master_key, query, request, router, user,
+    FakePreCall, FakeProcessing, admin, call, json_object, json_strings, json_text, key,
+    master_key, query, request, router, user,
 };
 use crate::auth::auth_identity::AuthContext;
 
@@ -41,7 +41,7 @@ async fn a_non_admin_without_a_key_is_refused_before_the_call(
     #[case] path: &str,
 ) {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let (status, body) = send(
         Arc::clone(&pre_call),
         Arc::clone(&processing),
@@ -49,7 +49,7 @@ async fn a_non_admin_without_a_key_is_refused_before_the_call(
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(body, json!({"detail": MISSING_KEY_DETAIL}));
+    assert_eq!(body, json_strings(&[("detail", MISSING_KEY_DETAIL)]));
     assert!(pre_call.calls().is_empty());
     assert!(processing.calls().is_empty());
     assert!(processing.failures().is_empty());
@@ -61,12 +61,12 @@ async fn a_malformed_body_is_refused_before_the_credential_guard() {
     let pre_call = FakePreCall::passing();
     let (status, body) = send(
         Arc::clone(&pre_call),
-        FakeProcessing::answering(json!({})),
+        FakeProcessing::answering(json_object("{}")),
         request(Method::POST, AGENTS_PATH, Some("{not json"), user(), key()),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(body["error"]["param"], json!("request_body"));
+    assert_eq!(body["error"]["param"], json_text("request_body"));
     assert!(pre_call.calls().is_empty());
 }
 
@@ -74,19 +74,19 @@ async fn a_malformed_body_is_refused_before_the_credential_guard() {
 async fn the_401_body_is_the_plain_detail_envelope() {
     let (status, body) = send(
         FakePreCall::passing(),
-        FakeProcessing::answering(json!({})),
+        FakeProcessing::answering(json_object("{}")),
         request(Method::GET, AGENTS_PATH, None, user(), key()),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     let object = body.as_object().unwrap();
     assert_eq!(object.len(), 1);
-    assert_eq!(object.get("detail"), Some(&json!(MISSING_KEY_DETAIL)));
+    assert_eq!(object.get("detail"), Some(&json_text(MISSING_KEY_DETAIL)));
 }
 
 async fn reaches_the_call(caller: AuthContext) {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let (status, _body) = send(
         Arc::clone(&pre_call),
         Arc::clone(&processing),
@@ -99,7 +99,7 @@ async fn reaches_the_call(caller: AuthContext) {
     assert_eq!(calls.len(), 1);
     assert_eq!(
         calls[0].data.get("custom_llm_provider"),
-        Some(&json!("gemini"))
+        Some(&json_text("gemini"))
     );
     assert!(!calls[0].data.contains_key("api_key"));
 }
@@ -117,7 +117,7 @@ async fn the_master_key_without_a_key_reaches_the_call() {
 #[tokio::test]
 async fn a_body_api_key_lets_a_non_admin_through() {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let (status, _body) = send(
         Arc::clone(&pre_call),
         Arc::clone(&processing),
@@ -134,14 +134,14 @@ async fn a_body_api_key_lets_a_non_admin_through() {
     assert_eq!(pre_call.calls().len(), 1);
     assert_eq!(
         processing.calls()[0].data.get("api_key"),
-        Some(&json!("AIza"))
+        Some(&json_text("AIza"))
     );
 }
 
 #[tokio::test]
 async fn a_body_template_api_key_lets_a_non_admin_through() {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let (status, _body) = send(
         Arc::clone(&pre_call),
         Arc::clone(&processing),
@@ -157,14 +157,14 @@ async fn a_body_template_api_key_lets_a_non_admin_through() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         processing.calls()[0].data.get("api_key"),
-        Some(&json!("AIza"))
+        Some(&json_text("AIza"))
     );
 }
 
 #[tokio::test]
 async fn a_query_template_api_key_lets_a_non_admin_through() {
     let pre_call = FakePreCall::passing();
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let (status, _body) = send(
         Arc::clone(&pre_call),
         Arc::clone(&processing),
@@ -181,7 +181,7 @@ async fn a_query_template_api_key_lets_a_non_admin_through() {
     assert_eq!(pre_call.calls().len(), 1);
     assert_eq!(
         processing.calls()[0].data.get("api_key"),
-        Some(&json!("AIza"))
+        Some(&json_text("AIza"))
     );
 }
 
@@ -190,7 +190,7 @@ async fn a_flat_api_key_query_parameter_does_not_let_a_non_admin_through() {
     let uri = format!("{AGENTS_PATH}?api_key=AIza");
     let (status, _body) = send(
         FakePreCall::passing(),
-        FakeProcessing::answering(json!({})),
+        FakeProcessing::answering(json_object("{}")),
         request(Method::GET, &uri, None, user(), key()),
     )
     .await;
@@ -198,19 +198,18 @@ async fn a_flat_api_key_query_parameter_does_not_let_a_non_admin_through() {
 }
 
 #[rstest]
-#[case::empty(json!({"api_key": ""}))]
-#[case::null(json!({"api_key": null}))]
-#[case::false_value(json!({"api_key": false}))]
-#[case::zero(json!({"api_key": 0}))]
-#[case::empty_object(json!({"api_key": {}}))]
+#[case::empty(r#"{"api_key": ""}"#)]
+#[case::null(r#"{"api_key": null}"#)]
+#[case::false_value(r#"{"api_key": false}"#)]
+#[case::zero(r#"{"api_key": 0}"#)]
+#[case::empty_object(r#"{"api_key": {}}"#)]
 #[tokio::test]
-async fn a_falsy_body_api_key_is_refused(#[case] body: JsonValue) {
+async fn a_falsy_body_api_key_is_refused(#[case] body: &str) {
     let pre_call = FakePreCall::passing();
-    let text = body.to_string();
     let (status, _body) = send(
         Arc::clone(&pre_call),
-        FakeProcessing::answering(json!({})),
-        request(Method::POST, AGENTS_PATH, Some(&text), user(), key()),
+        FakeProcessing::answering(json_object("{}")),
+        request(Method::POST, AGENTS_PATH, Some(body), user(), key()),
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -219,7 +218,7 @@ async fn a_falsy_body_api_key_is_refused(#[case] body: JsonValue) {
 
 #[tokio::test]
 async fn a_query_template_cannot_override_the_fixed_provider_on_admin_list() {
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let (status, _body) = send(
         FakePreCall::passing(),
         Arc::clone(&processing),
@@ -235,13 +234,13 @@ async fn a_query_template_cannot_override_the_fixed_provider_on_admin_list() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         processing.calls()[0].data.get("custom_llm_provider"),
-        Some(&json!("gemini"))
+        Some(&json_text("gemini"))
     );
 }
 
 #[tokio::test]
 async fn the_item_route_keeps_the_path_name_over_a_query_template() {
-    let processing = FakeProcessing::answering(json!({}));
+    let processing = FakeProcessing::answering(json_object("{}"));
     let encoded = query(&[(TEMPLATE_FIELD, r#"{"name":"other","api_key":"AIza"}"#)]);
     let uri = format!("/v1beta/agents/model-a?{encoded}");
     let (status, _body) = send(
@@ -252,6 +251,6 @@ async fn the_item_route_keeps_the_path_name_over_a_query_template() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let data = &processing.calls()[0].data;
-    assert_eq!(data.get("name"), Some(&json!("model-a")));
-    assert_eq!(data.get("api_key"), Some(&json!("AIza")));
+    assert_eq!(data.get("name"), Some(&json_text("model-a")));
+    assert_eq!(data.get("api_key"), Some(&json_text("AIza")));
 }
