@@ -1,0 +1,29 @@
+kind: sdk_http
+name: async-rerank-preserves-defaults
+env: {}
+call:
+  rerank_call:
+    runs:
+      - model: cohere/rerank-english-v3.0
+        query: q
+        documents: [a, b]
+        kwargs:
+          arerank: false
+          max_tokens_per_doc: 8
+          api_key: sk-call
+          api_base: "{mock}"
+upstream:
+  - status: 200
+    headers: {content-type: application/json, x-request-id: req-1}
+    body:
+      id: r
+      results:
+        - index: 1
+          relevance_score: 0.5
+        - index: 0
+          relevance_score: 0.25
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, accept, content-type]
+  ignore: []

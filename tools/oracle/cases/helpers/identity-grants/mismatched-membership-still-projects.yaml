@@ -1,0 +1,27 @@
+kind: helper
+name: identity-grants-mismatched-membership-still-projects
+call:
+  identity_grants:
+    users: []
+    denials: []
+    teams:
+      - team:
+          team_id: team-1
+          members_with_roles:
+            - {user_id: user-1, role: user}
+        membership:
+          user_id: other-user
+          team_id: other-team
+          spend: 9.0
+          litellm_budget_table: {tpm_limit: 30, rpm_limit: 3}
+        user_id: user-1
+      - team:
+          team_id: team-1
+          members_with_roles: []
+        membership:
+          user_id: user-1
+          team_id: team-1
+          spend: 4.0
+        user_id: user-1
+env: {}
+compare: {ignore: []}

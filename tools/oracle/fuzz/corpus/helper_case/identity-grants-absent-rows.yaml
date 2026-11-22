@@ -1,0 +1,20 @@
+kind: helper
+name: identity-grants-absent-rows-seed
+call:
+  identity_grants:
+    users:
+      - user: null
+        user_id: null
+    denials:
+      - kind: user_gone
+        user_id: ""
+        team_id: ""
+    teams:
+      - team: null
+        membership: null
+        user_id: null
+      - team: {team_id: team-1, metadata: '[1]'}
+        membership: null
+        user_id: null
+env: {}
+compare: {ignore: []}

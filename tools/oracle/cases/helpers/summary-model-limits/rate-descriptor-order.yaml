@@ -1,0 +1,39 @@
+kind: helper
+name: summary-model-limits-rate-descriptor-order
+call:
+  summary_model_limits:
+    summary_model: sum
+    scenarios:
+      - principal:
+          token: key-1
+          team_id: team-1
+          metadata: {rpm_limit_type: guaranteed_throughput, tpm_limit_type: best_effort_throughput}
+        spend: {}
+        offline: []
+        rate:
+          hook: limiter
+          missing: []
+          base: [{key: api_key, value: key-1, rate_limit: {requests_per_unit: 10, window_size: 60}}]
+          team: [{key: model_per_team, value: team-1:sum, rate_limit: {tokens_per_unit: 100}}]
+          project: [{key: model_per_project, value: project-1:sum, rate_limit: null}]
+          organization: [{key: organization, value: org-1, rate_limit: {requests_per_unit: 50}}]
+          overall_code: OK
+          failure: null
+      - principal: {token: key-1, metadata: {}}
+        spend: {}
+        offline: []
+        rate: {hook: limiter, missing: [], base: [], team: [], project: [], organization: [], overall_code: OVER_LIMIT, failure: null}
+      - principal: {token: key-1, metadata: {rpm_limit_type: dynamic}}
+        spend: {}
+        offline: []
+        rate:
+          hook: limiter
+          missing: []
+          base: []
+          team: []
+          project: []
+          organization: [{key: organization, value: org-1, rate_limit: {requests_per_unit: 50}}]
+          overall_code: OK
+          failure: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,35 @@
+kind: helper
+name: delegated-team-allowed-filter
+call:
+  b4780:
+    operation: delegated_team
+    user_id: human
+    team_id: null
+    sources:
+      - {team_id: team-1, agent_ids: [shared]}
+      - {team_id: team-2, agent_ids: [shared]}
+    agent_id: shared
+    explicit_team: false
+    allowed_team_ids: [team-2]
+calls:
+  - b4780:
+      operation: delegated_team
+      user_id: human
+      team_id: team-1
+      sources:
+        - {team_id: team-1, agent_ids: [shared]}
+        - {team_id: team-2, agent_ids: [shared]}
+      agent_id: shared
+      explicit_team: true
+      allowed_team_ids: [team-2]
+  - b4780:
+      operation: delegated_team
+      user_id: human
+      team_id: null
+      sources: [{team_id: team-1, agent_ids: [shared]}]
+      agent_id: shared
+      explicit_team: false
+      allowed_team_ids: []
+env: {}
+compare:
+  ignore: []

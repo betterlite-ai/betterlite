@@ -1,0 +1,22 @@
+kind: helper
+name: sso-identity-bridge-empty-google-id-masks-generic
+call:
+  sso_identity_bridge:
+    function: provider
+    environment:
+      GOOGLE_CLIENT_ID: ""
+      GENERIC_CLIENT_ID: generic-client-id
+calls:
+  - sso_identity_bridge:
+      function: gap
+      environment:
+        GOOGLE_CLIENT_ID: ""
+        GENERIC_CLIENT_ID: generic-client-id
+  - sso_identity_bridge:
+      function: startup_gap
+      environment:
+        GOOGLE_CLIENT_ID: ""
+        GENERIC_CLIENT_ID: generic-client-id
+env: {}
+compare:
+  ignore: []
