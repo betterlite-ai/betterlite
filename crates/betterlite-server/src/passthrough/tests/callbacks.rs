@@ -43,16 +43,16 @@ fn wiring(text: &str) -> TeamCallbackWiring {
     resolve_team_callback_wiring(&service(), &principal(text), "test route")
 }
 
-fn names(items: &[&str]) -> Option<Vec<String>> {
-    Some(items.iter().map(|name| (*name).to_owned()).collect())
+fn names(items: &[&str]) -> Vec<String> {
+    items.iter().map(|name| (*name).to_owned()).collect()
 }
 
 fn assert_key_level() {
     let key_level = wiring(
         r#"{"metadata": {"logging": [{"callback_name": "langfuse", "callback_vars": {"langfuse_host": "https://key"}}]}}"#,
     );
-    assert_eq!(key_level.success_callbacks, names(&["langfuse"]));
-    assert_eq!(key_level.failure_callbacks, names(&["langfuse"]));
+    assert_eq!(key_level.success_callbacks, Some(names(&["langfuse"])));
+    assert_eq!(key_level.failure_callbacks, Some(names(&["langfuse"])));
     let kwargs = key_level.logging_kwargs.unwrap();
     assert_eq!(
         kwargs["langfuse_host"],
@@ -72,7 +72,7 @@ fn assert_key_level() {
 fn assert_without_vars_and_unconfigured() {
     // no callback vars leaves logging_kwargs unset but keeps the callback lists
     let without_vars = wiring(r#"{"metadata": {"logging": [{"callback_name": "langfuse"}]}}"#);
-    assert_eq!(without_vars.success_callbacks, names(&["langfuse"]));
+    assert_eq!(without_vars.success_callbacks, Some(names(&["langfuse"])));
     assert!(without_vars.logging_kwargs.is_none());
 
     let unconfigured = wiring("{}");
@@ -96,7 +96,7 @@ fn assert_deprecated() {
     let deprecated = wiring(
         r#"{"team_metadata": {"callback_settings": {"success_callback": ["langfuse"], "callback_vars": {"langfuse_host": "https://team"}}}}"#,
     );
-    assert_eq!(deprecated.success_callbacks, names(&["langfuse"]));
+    assert_eq!(deprecated.success_callbacks, Some(names(&["langfuse"])));
     assert_eq!(deprecated.failure_callbacks, Some(Vec::new()));
     assert_eq!(
         deprecated.logging_kwargs.unwrap()["langfuse_host"],
@@ -113,9 +113,9 @@ fn team_callback_wiring() {
 
     // Logging.__init__ copies these values out of the kwargs and may overwrite them
     let mut resolved = wiring(r#"{"metadata": {"logging": [{"callback_name": "langfuse"}]}}"#);
-    resolved.success_callbacks = names(&["datadog"]);
-    assert_eq!(resolved.success_callbacks, names(&["datadog"]));
-    assert_eq!(resolved.failure_callbacks, names(&["langfuse"]));
+    resolved.success_callbacks = Some(names(&["datadog"]));
+    assert_eq!(resolved.success_callbacks, Some(names(&["datadog"])));
+    assert_eq!(resolved.failure_callbacks, Some(names(&["langfuse"])));
 }
 
 #[test]

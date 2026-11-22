@@ -180,7 +180,6 @@ pub async fn log_upstream_failure(
 }
 
 // _relay_reporting_failures: chunks pass through, and a mid-stream error is reported once unless upstream already failed
-#[must_use]
 pub fn relay_reporting_failures(
     mut stream: ChunkStream,
     upstream_status: u16,
