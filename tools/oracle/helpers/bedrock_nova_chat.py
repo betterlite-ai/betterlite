@@ -133,7 +133,7 @@ DECLARED: type[Declared] = AmazonNovaChatConfig
 # The private cache-point pass is reachable through a subclass, the seam ruff and pyright allow.
 class InvokeConfig(AmazonInvokeNovaConfig):
     def __init__(self) -> None:
-        super().__init__()  # type: ignore[misc, no-untyped-call]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py#L83-L84
+        super().__init__()  # type: ignore[no-untyped-call]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py#L83-L84
 
     def inline(self, request: InvokeRequest) -> Json:
         return JSON.validate_python(self._inline_cache_points(request))  # type: ignore[arg-type, misc]  # pyright: ignore[reportAny, reportArgumentType, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py#L150-L170
@@ -206,7 +206,7 @@ def delegation(case: DelegationCase) -> Json:
         drop_params,
     )
     supported = config.supported(case["model"])
-    answer: dict[str, Json] = {"supported": supported, "params": mapped}
+    answer: dict[str, Json] = {"supported": JSON.validate_python(supported), "params": mapped}
     return JSON.validate_python(answer)
 
 
@@ -222,7 +222,7 @@ def defaults(arguments: Arguments) -> Json:
     )
     rendered: dict[str, Json] = {
         "config": DECLARED.get_config(),
-        "supported": DirectConfig().supported("amazon.nova-pro-v1:0"),
+        "supported": JSON.validate_python(DirectConfig().supported("amazon.nova-pro-v1:0")),
     }
     return JSON.validate_python(rendered)
 
@@ -255,15 +255,12 @@ def run(input_value: Input) -> Json:
     litellm.bedrock_request_metadata_fields = None
     if input_value["function"] == "inline_cache_points":
         return inline_points(input_value)
-    if (
-        input_value["function"] == "filter_allowed_fields"
-        or input_value["function"] == "tool_config_injection"
-    ):
-        return invoke_body(input_value)
     if input_value["function"] == "endpoint":
         return endpoint(input_value)
     if input_value["function"] == "converse_delegation":
         return delegation(input_value)
     if input_value["function"] == "defaults":
         return defaults(input_value["arguments"])
-    return response_model(input_value)
+    if input_value["function"] == "response_model":
+        return response_model(input_value)
+    return invoke_body(input_value)
