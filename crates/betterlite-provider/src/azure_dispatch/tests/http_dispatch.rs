@@ -97,29 +97,29 @@ async fn exchange(
 ) -> (Result<OperationResult, OperationError>, String) {
     let (listener, api_base) = loopback().await;
     let composition = support::composition(&[]);
-    let prepared = prepare(
+    let composed = prepare(
         &composition,
         Request::Chat(Box::new(chat(api_base.clone()))),
     )
     .expect("the chat request");
-    let expected = prepared.http.body.clone();
+    let expected = composed.http.body.clone();
     let response = format!(
         "HTTP/1.1 {status}\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n{body}",
         body.len()
     );
     let deployment = deployment(&api_base);
-    let prepared = prepared_request(prepared);
+    let request = prepared_request(composed);
     let client = client();
     let executed = async {
         let upstream = Azure
-            .execute(&client, &prepared, &deployment)
+            .execute(&client, &request, &deployment)
             .await
             .expect("the upstream answer");
-        Azure.decode(&prepared, upstream)
+        Azure.decode(&request, upstream)
     };
-    let (result, request) = tokio::join!(executed, serve_once(listener, &expected, &response));
-    assert!(request.ends_with(str::from_utf8(&expected).expect("the prepared body")));
-    (result, request)
+    let (result, raw) = tokio::join!(executed, serve_once(listener, &expected, &response));
+    assert!(raw.ends_with(str::from_utf8(&expected).expect("the prepared body")));
+    (result, raw)
 }
 
 // The composed request reaches the loopback server with its deployment URL, auth and body, and the answer decodes through the adapter.
@@ -153,7 +153,9 @@ pub(super) async fn check_failure() {
     assert!(request.starts_with(
         "POST /openai/deployments/gpt-http-upstream/chat/completions?api-version=2024-10-21 HTTP/1.1\r\n"
     ));
-    let error = result.expect_err("the provider refusal");
+    let Err(error) = result else {
+        panic!("the provider refusal");
+    };
     let OperationError::Provider { response } = error else {
         panic!("the provider's own error");
     };

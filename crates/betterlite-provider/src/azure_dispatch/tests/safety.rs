@@ -39,14 +39,15 @@ fn azure_provider_credential_identity_isolation() {
 
 fn call_identities(composition: &Composition) {
     let first = Fixture::ok(support::CHAT_REPLY);
-    let call = support::chat(
+    let first_call = support::chat(
         "first-model",
         support::object("{}"),
         identity("https://first.test", "2024-01-01", "first-key", None),
     );
-    dispatch(composition, Request::Chat(Box::new(call)), &first);
+    let first_result = dispatch(composition, Request::Chat(Box::new(first_call)), &first);
+    assert_eq!(support::error_status(&first_result), None);
     let second = Fixture::ok(support::CHAT_REPLY);
-    let call = support::chat(
+    let second_call = support::chat(
         "second-model",
         support::object("{}"),
         identity(
@@ -56,7 +57,12 @@ fn call_identities(composition: &Composition) {
             Some("second-token"),
         ),
     );
-    dispatch(composition, Request::Chat(Box::new(call)), &second);
+    let second_result = dispatch(composition, Request::Chat(Box::new(second_call)), &second);
+    assert_eq!(support::error_status(&second_result), None);
+    assert_identities(&first, &second);
+}
+
+fn assert_identities(first: &Fixture, second: &Fixture) {
     let first_sent = first.sent();
     let second_sent = second.sent();
     assert_eq!(first_sent.len(), 1);
@@ -88,11 +94,13 @@ fn global_identities() {
     let left = composition_with("https://left.test", "left-key");
     let right = composition_with("https://right.test", "right-key");
     let left_answer = Fixture::ok(support::CHAT_REPLY);
-    let call = support::chat("gpt-4o", support::object("{}"), support::credentials());
-    dispatch(&left, Request::Chat(Box::new(call)), &left_answer);
+    let left_call = support::chat("gpt-4o", support::object("{}"), support::credentials());
+    let left_result = dispatch(&left, Request::Chat(Box::new(left_call)), &left_answer);
+    assert_eq!(support::error_status(&left_result), None);
     let right_answer = Fixture::ok(support::CHAT_REPLY);
-    let call = support::chat("gpt-4o", support::object("{}"), support::credentials());
-    dispatch(&right, Request::Chat(Box::new(call)), &right_answer);
+    let right_call = support::chat("gpt-4o", support::object("{}"), support::credentials());
+    let right_result = dispatch(&right, Request::Chat(Box::new(right_call)), &right_answer);
+    assert_eq!(support::error_status(&right_result), None);
     assert_eq!(
         support::header(&right_answer.sent()[0], "api-key"),
         Some("right-key")

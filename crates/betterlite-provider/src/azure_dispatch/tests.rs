@@ -34,14 +34,14 @@ enum Family {
 #[tokio::test]
 async fn azure_dispatch_cases(#[case] family: Family) {
     match family {
-        Family::Chat => cases::chat_dispatch().await,
-        Family::Embedding => cases::embedding_dispatch().await,
-        Family::Text => cases::text_dispatch().await,
-        Family::OpenAiRegression => cases::openai_regression().await,
-        Family::MissingBase => cases::missing_base().await,
-        Family::ConfigRanks => cases::config_ranks().await,
-        Family::OSeries => cases::o_series_dispatch().await,
+        Family::Chat => cases::chat_dispatch(),
+        Family::Embedding => cases::embedding_dispatch(),
+        Family::Text => cases::text_dispatch(),
+        Family::OpenAiRegression => cases::openai_regression(),
+        Family::MissingBase => cases::missing_base(),
+        Family::ConfigRanks => cases::config_ranks(),
+        Family::OSeries => cases::o_series_dispatch(),
         Family::Http => http_dispatch::check_all().await,
-        Family::HeaderRetryMerge => cases::header_retry_merge().await,
+        Family::HeaderRetryMerge => cases::header_retry_merge(),
     }
 }

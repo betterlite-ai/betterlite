@@ -9,7 +9,7 @@ use betterlite_openai::openai_base_config::{CatalogCapabilities, OpenAiSettings}
 use betterlite_openai::text_completion_policy::TextCompletionSettings;
 use betterlite_prompts::arguments::json::{Json, Object};
 use http::HeaderMap;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_dispatch::call::{
     Composition, Credentials, Globals, Operation, Request, SuppliedClient, TextCall,
@@ -64,7 +64,7 @@ fn extra_credentials(body: &str) -> Credentials {
 }
 
 // Chat composes the deployment URL and auth, the caller's token wins as the SDK's does, and the reply is projected to the chat-shaped view.
-pub(super) async fn chat_dispatch() {
+pub(super) fn chat_dispatch() {
     let composition = support::composition(&[]);
     let mut credentials = base_credentials();
     credentials.azure_ad_token = Some(support::key("param-token"));
@@ -137,11 +137,12 @@ fn chat_stream_and_supplied(composition: &Composition) {
         api_version: Some(String::from("2024-10-21")),
     });
     let stream_answer = Fixture::ok(support::CHAT_REPLY);
-    dispatch(
+    let stream_result = dispatch(
         composition,
         Request::Chat(Box::new(stream_call)),
         &stream_answer,
     );
+    assert_eq!(stream_result.error, Json::Null);
     assert_eq!(
         support::body_at(&stream_answer.sent()[0], "stream"),
         Some(&Json::Bool(true))
@@ -182,7 +183,7 @@ fn deployment_route_base() {
 }
 
 // Embeddings keep their own endpoint, key rank and SDK defaults: no chat token pop, no config merge.
-pub(super) async fn embedding_dispatch() {
+pub(super) fn embedding_dispatch() {
     let mut composition = support::composition(&[
         ("AZURE_API_KEY", "env-azure-key"),
         ("AZURE_OPENAI_API_KEY", "env-openai-key"),
@@ -251,7 +252,7 @@ fn embedding_reply(result: &AzureResult) {
 }
 
 // Text reads the environment, merges the Azure config defaults, never sends headers or max_retries, and applies the SDK default.
-pub(super) async fn text_dispatch() {
+pub(super) fn text_dispatch() {
     let mut composition = support::composition(&[
         ("AZURE_API_BASE", AZURE_BASE),
         ("AZURE_API_KEY", "env-key"),
@@ -328,16 +329,17 @@ fn text_post_call(composition: &Composition) {
 }
 
 // An Azure call and an OpenAI call keep their own bases, versions, keys and headers, and the Azure token removal leaves OpenAI alone.
-pub(super) async fn openai_regression() {
+pub(super) fn openai_regression() {
     let azure_composition = support::composition(&[]);
     let credentials = extra_credentials(r#"{"azure_ad_token":"body-token","x-extra":1}"#);
     let azure_answer = Fixture::ok(support::CHAT_REPLY);
-    let call = support::chat("gpt-4o", Object::new(), credentials);
-    dispatch(
+    let azure_call = support::chat("gpt-4o", Object::new(), credentials);
+    let azure_result = dispatch(
         &azure_composition,
-        Request::Chat(Box::new(call)),
+        Request::Chat(Box::new(azure_call)),
         &azure_answer,
     );
+    assert_eq!(azure_result.error, Json::Null);
     let azure_sent = azure_answer.sent();
     let azure_request = &azure_sent[0];
     assert_eq!(support::header(azure_request, "api-key"), Some("call-key"));
@@ -346,12 +348,13 @@ pub(super) async fn openai_regression() {
 
     // the Azure resolution stays per call: the next Azure call composes the same request again
     let repeat_answer = Fixture::ok(support::CHAT_REPLY);
-    let call = support::chat("gpt-4o", Object::new(), base_credentials());
-    dispatch(
+    let repeat_call = support::chat("gpt-4o", Object::new(), base_credentials());
+    let repeat_result = dispatch(
         &azure_composition,
-        Request::Chat(Box::new(call)),
+        Request::Chat(Box::new(repeat_call)),
         &repeat_answer,
     );
+    assert_eq!(repeat_result.error, Json::Null);
     assert_eq!(repeat_answer.sent()[0].url, azure_request.url);
     assert_eq!(
         support::header(&repeat_answer.sent()[0], "api-key"),
@@ -412,7 +415,7 @@ fn openai_side() {
 }
 
 // Only text owns a missing-base error, and an empty environment base passes that guard and fails while the URL is composed instead.
-pub(super) async fn missing_base() {
+pub(super) fn missing_base() {
     let composition = support::composition(&[]);
     text_missing_base(&composition);
     embedding_message();
@@ -519,7 +522,7 @@ fn ranks_composition() -> Composition {
 }
 
 // Every rank main.py applies, the token pop with its mutation, and the malformed-body failures.
-pub(super) async fn config_ranks() {
+pub(super) fn config_ranks() {
     let mut composition = ranks_composition();
     explicit_ranks(&composition);
     global_ranks(&composition);
@@ -546,7 +549,7 @@ fn explicit_ranks(composition: &Composition) {
     assert_eq!(resolved.api_base.as_deref(), Some("explicit-base"));
     assert_eq!(resolved.api_version.as_deref(), Some("explicit-version"));
     assert_eq!(
-        resolved.api_key.as_ref().map(ExposeSecret::expose_secret),
+        resolved.api_key.as_ref().map(SecretString::expose_secret),
         Some("explicit-key")
     );
     assert_eq!(resolved.api_type, "custom");
@@ -554,7 +557,7 @@ fn explicit_ranks(composition: &Composition) {
         resolved
             .azure_ad_token
             .as_ref()
-            .map(ExposeSecret::expose_secret),
+            .map(SecretString::expose_secret),
         Some("body-token")
     );
     assert!(resolved.auth_token.is_none());
@@ -573,14 +576,14 @@ fn global_ranks(composition: &Composition) {
     assert_eq!(resolved.api_base.as_deref(), Some("global-base"));
     assert_eq!(resolved.api_version.as_deref(), Some("global-version"));
     assert_eq!(
-        resolved.api_key.as_ref().map(ExposeSecret::expose_secret),
+        resolved.api_key.as_ref().map(SecretString::expose_secret),
         Some("global-key")
     );
     assert_eq!(
         resolved
             .azure_ad_token
             .as_ref()
-            .map(ExposeSecret::expose_secret),
+            .map(SecretString::expose_secret),
         Some("env-token")
     );
 }
@@ -588,51 +591,26 @@ fn global_ranks(composition: &Composition) {
 // azure_key beats the environment keys, and AZURE_OPENAI_API_KEY beats AZURE_API_KEY
 fn key_ranks(composition: &mut Composition) {
     composition.globals.api_key = None;
-    let azure_resolved = resolve(
-        composition,
-        support::credentials(),
-        Operation::Chat,
-        Some("gpt-4o"),
-    )
-    .expect("the azure key");
-    assert_eq!(
-        azure_resolved
-            .api_key
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("azure-key")
-    );
+    assert_key_rank(composition, "azure-key");
     composition.globals.azure_key = None;
-    let env_resolved = resolve(
+    assert_key_rank(composition, "env-openai-key");
+    let only_azure = support::composition(&[("AZURE_API_KEY", "only-azure-key")]);
+    assert_key_rank(&only_azure, "only-azure-key");
+    assert_eq!(DEFAULT_API_TYPE, "azure");
+}
+
+fn assert_key_rank(composition: &Composition, expected: &str) {
+    let resolved = resolve(
         composition,
         support::credentials(),
         Operation::Chat,
         Some("gpt-4o"),
     )
-    .expect("the env keys");
+    .expect("the key rank");
     assert_eq!(
-        env_resolved
-            .api_key
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("env-openai-key")
+        resolved.api_key.as_ref().map(SecretString::expose_secret),
+        Some(expected)
     );
-    let only_azure = support::composition(&[("AZURE_API_KEY", "only-azure-key")]);
-    let only_resolved = resolve(
-        &only_azure,
-        support::credentials(),
-        Operation::Chat,
-        Some("gpt-4o"),
-    )
-    .expect("the azure key");
-    assert_eq!(
-        only_resolved
-            .api_key
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
-        Some("only-azure-key")
-    );
-    assert_eq!(DEFAULT_API_TYPE, "azure");
 }
 
 // an empty explicit value is not a rank: the environment fills it
@@ -680,20 +658,25 @@ fn token_pop() {
         resolved
             .azure_ad_token
             .as_ref()
-            .map(ExposeSecret::expose_secret),
+            .map(SecretString::expose_secret),
         Some("body-token")
     );
-    let credentials = Credentials {
+    let fallback_credentials = Credentials {
         api_base: Some(String::from(AZURE_BASE)),
         ..support::credentials()
     };
-    let resolved = resolve(&environment, credentials, Operation::Chat, Some("gpt-4o"))
-        .expect("the environment token");
+    let fallback_resolved = resolve(
+        &environment,
+        fallback_credentials,
+        Operation::Chat,
+        Some("gpt-4o"),
+    )
+    .expect("the environment token");
     assert_eq!(
-        resolved
+        fallback_resolved
             .azure_ad_token
             .as_ref()
-            .map(ExposeSecret::expose_secret),
+            .map(SecretString::expose_secret),
         Some("env-token")
     );
 }
@@ -742,7 +725,7 @@ fn keyless_call() {
 }
 
 // The o-series branch is selected by the detection model and merges the O1 defaults instead.
-pub(super) async fn o_series_dispatch() {
+pub(super) fn o_series_dispatch() {
     let mut composition = support::composition(&[]);
     composition.chat_defaults = support::azure_defaults(r#"{"temperature":1}"#);
     composition.o_series_defaults = support::o_series_defaults(r#"{"max_tokens":32}"#);
@@ -803,15 +786,15 @@ fn decode_stamps_provider(composition: &Composition) {
         ..support::credentials()
     };
     let call = support::chat("deployment-1", Object::new(), credentials);
-    let prepared = prepare(composition, Request::Chat(Box::new(call))).expect("the o-series call");
-    let prepared = prepared_request(prepared);
+    let composed = prepare(composition, Request::Chat(Box::new(call))).expect("the o-series call");
+    let request = prepared_request(composed);
     let response = UpstreamResponse {
         status: 200,
         headers: HeaderMap::new(),
         body: br#"{"id":"chatcmpl-o1","object":"chat.completion","created":1700000000,"model":"o1-preview-2024-12-17","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#.to_vec(),
     };
     let OperationResult::Chat(ChatCompletion::OpenAi(completion)) =
-        reply::decode(&prepared, Upstream::Buffered(response)).expect("the o-series reply")
+        reply::decode(&request, Upstream::Buffered(response)).expect("the o-series reply")
     else {
         panic!("a chat completion");
     };
@@ -819,7 +802,7 @@ fn decode_stamps_provider(composition: &Composition) {
 }
 
 // Headers merge as completion() merges them, and chat alone inserts max_retries; defaults only fill absent keys.
-pub(super) async fn header_retry_merge() {
+pub(super) fn header_retry_merge() {
     let mut composition = support::composition(&[]);
     composition.globals.headers = Some(support::headers(&[("x-global", "g")]));
     header_merge(&composition);
@@ -837,7 +820,8 @@ fn header_merge(composition: &Composition) {
     credentials.extra_headers = Some(support::headers(&[("x-call", "extra"), ("x-extra", "e")]));
     let answer = Fixture::ok(support::CHAT_REPLY);
     let call = support::chat("gpt-4o", Object::new(), credentials);
-    dispatch(composition, Request::Chat(Box::new(call)), &answer);
+    let result = dispatch(composition, Request::Chat(Box::new(call)), &answer);
+    assert_eq!(result.error, Json::Null);
     let request = &answer.sent()[0];
     assert_eq!(support::header(request, "x-call"), Some("extra"));
     assert_eq!(support::header(request, "x-only"), Some("h"));
@@ -849,7 +833,8 @@ fn header_merge(composition: &Composition) {
 fn global_header_fallback(composition: &Composition) {
     let answer = Fixture::ok(support::CHAT_REPLY);
     let call = support::chat("gpt-4o", Object::new(), base_credentials());
-    dispatch(composition, Request::Chat(Box::new(call)), &answer);
+    let result = dispatch(composition, Request::Chat(Box::new(call)), &answer);
+    assert_eq!(result.error, Json::Null);
     assert_eq!(support::header(&answer.sent()[0], "x-global"), Some("g"));
 }
 
@@ -860,7 +845,8 @@ fn empty_extra_headers(composition: &Composition) {
     let answer = Fixture::ok(support::CHAT_REPLY);
     let optional = support::object(r#"{"extra_headers":{"x-body":"1"}}"#);
     let call = support::chat("gpt-4o", optional, credentials);
-    dispatch(composition, Request::Chat(Box::new(call)), &answer);
+    let result = dispatch(composition, Request::Chat(Box::new(call)), &answer);
+    assert_eq!(result.error, Json::Null);
     let sent = answer.sent();
     assert!(support::header(&sent[0], "x-body").is_none());
     assert!(support::body_at(&sent[0], "extra_headers").is_none());
@@ -876,7 +862,8 @@ fn text_headers(composition: &Composition) {
     };
     let answer = Fixture::ok(support::TEXT_REPLY);
     let call = text_call(Object::new(), credentials, false);
-    dispatch(composition, Request::Text(Box::new(call)), &answer);
+    let result = dispatch(composition, Request::Text(Box::new(call)), &answer);
+    assert_eq!(result.error, Json::Null);
     let request = &answer.sent()[0];
     assert_eq!(support::header(request, "x-extra"), Some("e"));
     assert!(support::header(request, "x-call").is_none());
@@ -890,7 +877,8 @@ fn retries_acceptance(composition: &Composition) {
         credentials.max_retries = Some(retries);
         let answer = Fixture::ok(support::CHAT_REPLY);
         let call = support::chat("gpt-4o", Object::new(), credentials);
-        dispatch(composition, Request::Chat(Box::new(call)), &answer);
+        let result = dispatch(composition, Request::Chat(Box::new(call)), &answer);
+        assert_eq!(result.error, Json::Null);
         assert!(support::body_at(&answer.sent()[0], "max_retries").is_none());
     }
     let mut credentials = base_credentials();

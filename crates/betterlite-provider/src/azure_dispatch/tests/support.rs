@@ -60,7 +60,7 @@ pub(crate) fn messages() -> Vec<Message> {
 }
 
 // The empty credential map, so a case names only the values it exercises.
-pub(crate) fn credentials() -> Credentials {
+pub(crate) const fn credentials() -> Credentials {
     Credentials {
         api_base: None,
         api_version: None,
@@ -95,11 +95,11 @@ pub(crate) fn embedding(model: &str, body: &str, credentials: Credentials) -> Em
     }
 }
 
-pub(crate) fn at<'a>(value: &'a Json, name: &str) -> Option<&'a Json> {
+pub(crate) fn at<'value>(value: &'value Json, name: &str) -> Option<&'value Json> {
     value.as_object().and_then(|fields| fields.get(name))
 }
 
-pub(crate) fn text_at<'a>(value: &'a Json, name: &str) -> Option<&'a str> {
+pub(crate) fn text_at<'value>(value: &'value Json, name: &str) -> Option<&'value str> {
     at(value, name).and_then(Json::as_str)
 }
 
@@ -118,11 +118,17 @@ pub(crate) fn item(value: &Json, index: usize) -> Option<&Json> {
     }
 }
 
-pub(crate) fn body_at<'a>(request: &'a RecordedRequest, name: &str) -> Option<&'a Json> {
+pub(crate) fn body_at<'request>(
+    request: &'request RecordedRequest,
+    name: &str,
+) -> Option<&'request Json> {
     at(&request.body, name)
 }
 
-pub(crate) fn body_text<'a>(request: &'a RecordedRequest, name: &str) -> Option<&'a str> {
+pub(crate) fn body_text<'request>(
+    request: &'request RecordedRequest,
+    name: &str,
+) -> Option<&'request str> {
     text_at(&request.body, name)
 }
 
@@ -134,7 +140,10 @@ pub(crate) fn parse(body: &[u8]) -> Json {
     serde_json::from_slice(body).expect("a JSON body")
 }
 
-pub(crate) fn header<'a>(request: &'a RecordedRequest, name: &str) -> Option<&'a str> {
+pub(crate) fn header<'request>(
+    request: &'request RecordedRequest,
+    name: &str,
+) -> Option<&'request str> {
     request.headers.get(name).map(String::as_str)
 }
 
@@ -146,7 +155,10 @@ pub(crate) fn sent_text(request: &RecordedRequest) -> String {
     serde_json::to_string(request).expect("the recorded request")
 }
 
-pub(crate) fn reply_text<'a>(result: &'a AzureResult, name: &str) -> Option<&'a str> {
+pub(crate) fn reply_text<'result>(
+    result: &'result AzureResult,
+    name: &str,
+) -> Option<&'result str> {
     text_at(&result.reply, name)
 }
 
