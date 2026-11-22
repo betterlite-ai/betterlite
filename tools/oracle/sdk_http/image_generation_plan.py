@@ -6,21 +6,16 @@ import openai
 from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-from image_generation_call import (
-    Call as ImageGenerationCall,
-    Outcome,
-    apply_settings,
-    call_kwargs,
-    resolved_settings,
-    run as run_image_generation,
-)
+from image_generation_call import Call as ImageGenerationCall
+from image_generation_call import Outcome, apply_settings, call_kwargs, resolved_settings
+from image_generation_call import run as run_image_generation
 from image_variations import api_failure
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 IMAGE: TypeAdapter[ImageResponse] = TypeAdapter(ImageResponse)
 
 
-# litellm's client decorator leaves aimage_generation untyped, so the module is read through this protocol
+# litellm's client decorator leaves aimage_generation untyped; this protocol carries its shape
 class AsyncImageEntry(Protocol):
     async def aimage_generation(self, /, **kwargs: JsonValue) -> ImageResponse: ...
 
