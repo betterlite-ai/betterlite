@@ -118,19 +118,17 @@ impl ScriptedTable {
     }
 
     fn take(&self, data: &SpendLogRow, request_id: &str) -> usize {
-        let mut stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut updated = 0_usize;
-        for entry in stored
+        self.rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .iter_mut()
             .filter(|entry| claimable(entry, request_id))
-        {
-            for (field, value) in data {
-                let _replaced = entry.insert(field.clone(), value.clone());
-            }
-            updated = updated.saturating_add(1);
-        }
-        drop(stored);
-        updated
+            .fold(0_usize, |updated, entry| {
+                for (field, value) in data {
+                    let _replaced = entry.insert(field.clone(), value.clone());
+                }
+                updated.saturating_add(1)
+            })
     }
 }
 
