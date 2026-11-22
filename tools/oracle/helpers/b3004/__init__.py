@@ -28,6 +28,7 @@ ARBITRARY: Final[ConfigDict] = ConfigDict(arbitrary_types_allowed=True)
 ENGINE: Final[BudgetReservation] = TypeAdapter(
     BudgetReservation, config=ARBITRARY
 ).validate_python(budget_reservation)
+APPLY_USER_BUDGET_TO_TEAM_KEYS: Final[bool] = False
 
 
 async def execute(data: Input) -> dict[str, JsonValue]:
@@ -75,7 +76,7 @@ async def execute(data: Input) -> dict[str, JsonValue]:
             proxy_server.proxy_logging_obj,
             None,
             None,
-            False,  # apply_user_budget_to_team_keys
+            APPLY_USER_BUDGET_TO_TEAM_KEYS,
             data["fail_closed"],
         )
     except (BudgetExceededError, HTTPException) as error:
