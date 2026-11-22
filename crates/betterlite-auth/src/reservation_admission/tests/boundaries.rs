@@ -58,6 +58,21 @@ async fn a_window_without_a_start_is_loaded() {
     assert!(take_calls(&fake).windows.is_empty());
 }
 
+// a rejected window counter names the entity whose window it holds, not the counter key
+async fn a_window_rejection_names_the_window_entity() {
+    let counters = vec![window(WINDOW, "5")];
+    let fake = seeded(&[(WINDOW, "5")], &[]);
+    let error = admit(&fake, &request(&counters, "4"), &mut Vec::new())
+        .await
+        .expect_err("the block");
+    let AdmissionError::BudgetExceeded { details } = &error else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(details.current_cost, amount("9"));
+    assert_eq!(details.entity_type.as_deref(), Some("key"));
+    assert_eq!(details.entity_id.as_deref(), Some("k1"));
+}
+
 // a window whose seed failed is invalidated and skipped, and strict enforcement rejects the request
 async fn a_failed_window_seed_invalidates_and_rejects() {
     let counters = vec![window(WINDOW, "5")];
@@ -384,6 +399,7 @@ async fn settle_charge(
 async fn reservation_admission_engine_boundaries() {
     a_cold_window_is_skipped_without_invalidating().await;
     a_window_without_a_start_is_loaded().await;
+    a_window_rejection_names_the_window_entity().await;
     a_failed_window_seed_invalidates_and_rejects().await;
     a_rejection_stops_before_later_groups().await;
     a_failed_pipeline_rolls_back_only_its_group().await;
