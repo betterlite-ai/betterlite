@@ -80,6 +80,9 @@ where
 #[case::one_routable_team_sibling_keeps_the_net(
     boundaries::a_team_with_one_routable_sibling_keeps_the_net()
 )]
+#[case::fallback_trigger_swallows_a_classification_error(
+    boundaries::the_fallback_trigger_swallows_a_classification_error()
+)]
 #[tokio::test]
 async fn cooldown_policy_boundaries<Fut>(#[case] case: Fut)
 where

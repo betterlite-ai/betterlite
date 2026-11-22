@@ -6,8 +6,8 @@ use crate::cooldown_policy::service::CooldownSource;
 use crate::deployment_identity::spec::DeploymentSpec;
 
 use super::support::{
-    self, Fixture, attempt, attempt_with, deployment, deployment_with, float, harness, policy,
-    rate_limit, ratio_policy, stored_record, text,
+    self, Fixture, attempt, attempt_with, deployment, deployment_with, fallback, float, harness,
+    policy, rate_limit, ratio_policy, stored_record, text,
 };
 
 pub(super) async fn the_fail_count_is_strict_at_the_threshold() {
@@ -181,6 +181,20 @@ pub(super) async fn deployment_value_types_are_classified() {
             .cool_deployment(&lookup, CooldownSource::Callback(&attempt("a", &failure)),)
             .await
             .unwrap()
+    );
+}
+
+pub(super) async fn the_fallback_trigger_swallows_a_classification_error() {
+    let failure = rate_limit(429);
+    let broken = deployment_with("gpt", "d", Vec::new(), vec![("allowed_fails", text("2"))]);
+    let harness = harness(Fixture::new(vec![broken]), policy(0_u32));
+    let lookup = harness.fixture.lookup();
+    let fallback_failure = fallback(Some("d"), &failure);
+    assert!(
+        !harness
+            .service
+            .trigger_for_failed_deployment(&lookup, &fallback_failure)
+            .await
     );
 }
 
