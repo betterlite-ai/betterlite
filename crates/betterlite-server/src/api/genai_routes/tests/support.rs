@@ -338,6 +338,16 @@ pub(super) fn gen_router(generation: Arc<FakeGeneration>) -> Router {
         generation,
         translator: FakeTranslator::silent(),
         token_counter: FakeCounter::silent(),
+        include_call_id_in_error_body: false,
+    })
+}
+
+pub(super) fn gen_router_with_call_id_in_errors(generation: Arc<FakeGeneration>) -> Router {
+    routes(GenaiRoutesState {
+        generation,
+        translator: FakeTranslator::silent(),
+        token_counter: FakeCounter::silent(),
+        include_call_id_in_error_body: true,
     })
 }
 
@@ -346,6 +356,7 @@ pub(super) fn count_router(translator: Arc<FakeTranslator>, counter: Arc<FakeCou
         generation: FakeGeneration::silent(),
         translator,
         token_counter: counter,
+        include_call_id_in_error_body: false,
     })
 }
 
@@ -398,10 +409,12 @@ pub(super) fn parse(source: &str) -> Json {
 }
 
 pub(super) fn error_body(message: &str, error_type: &str, param: Option<&str>, code: &str) -> Json {
-    let mut fields = Object::new();
-    fields.insert("message".to_owned(), text(message));
-    fields.insert("type".to_owned(), text(error_type));
-    fields.insert("param".to_owned(), param.map_or(Json::Null, text));
-    fields.insert("code".to_owned(), text(code));
-    Json::Object(fields)
+    let mut error = Object::new();
+    error.insert("message".to_owned(), text(message));
+    error.insert("type".to_owned(), text(error_type));
+    error.insert("param".to_owned(), param.map_or(Json::Null, text));
+    error.insert("code".to_owned(), text(code));
+    let mut body = Object::new();
+    body.insert("error".to_owned(), Json::Object(error));
+    Json::Object(body)
 }

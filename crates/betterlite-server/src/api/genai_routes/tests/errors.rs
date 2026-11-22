@@ -7,8 +7,9 @@ use rstest::rstest;
 use crate::api::genai_routes::ports::GenerationBody;
 
 use super::support::{
-    FakeGeneration, answer, call, error_body, failure, gen_router, json_body, object, post,
-    post_bytes, text, with_header,
+    FakeGeneration, answer, call, error_body, failure, gen_router,
+    gen_router_with_call_id_in_errors, json_body, object, parse, post, post_bytes, text,
+    with_header,
 };
 
 const GEMINI: &str = "gemini-2.0-flash";
@@ -112,6 +113,28 @@ async fn a_pipeline_error_keeps_its_status_type_param_and_code_and_headers() {
             "rate_limit_error",
             Some("model"),
             "429"
+        )
+    );
+}
+
+#[tokio::test]
+async fn a_pipeline_error_carries_the_call_id_when_the_setting_is_on() {
+    let exception = with_header(
+        failure("429", "rate_limit_error", Some("model")),
+        "x-litellm-call-id",
+        "call-1",
+    );
+    let generation = FakeGeneration::failing(exception);
+    let (status, _headers, body) = call(
+        gen_router_with_call_id_in_errors(generation),
+        post(GENERATE, "{}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        json_body(&body),
+        parse(
+            r#"{"error":{"message":"the provider refused","type":"rate_limit_error","param":"model","code":"429","litellm_call_id":"call-1"}}"#
         )
     );
 }

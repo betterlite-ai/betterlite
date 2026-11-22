@@ -17,6 +17,8 @@ pub struct GenaiRoutesState {
     pub generation: Arc<dyn GenerateContentDispatch>,
     pub translator: Arc<dyn TranslateContents>,
     pub token_counter: Arc<dyn TokenCounter>,
+    // general_settings.include_call_id_in_error_body: openai_exception_handler copies x-litellm-call-id into the error body
+    pub include_call_id_in_error_body: bool,
 }
 
 // one call of Processor.base_process_llm_request: the body after the model and stream fields are set, the path model, the caller and the request headers

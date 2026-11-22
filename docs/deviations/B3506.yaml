@@ -22,7 +22,9 @@ deviations:
       instead of being raised again to FastAPI's ProxyException handler.
     why: >-
       The Rust pipeline returns the error as a value. Rendering it here produces the same
-      {"error": to_dict()} body at int(code), with the exception's headers copied over.
+      {"error": with_call_id(to_dict())} body at int(code), with the exception's headers copied
+      over, so general_settings.include_call_id_in_error_body also adds x-litellm-call-id to the
+      body as litellm_call_id.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1893-L1910
   - what: >-
       A ProxyException whose code is not an HTTP status answers a structured 500 that keeps

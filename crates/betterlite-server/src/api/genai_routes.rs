@@ -100,18 +100,22 @@ async fn dispatch(
     };
     match outcome {
         Ok(answer) => response::generation(answer),
-        Err(exception) => error::failure_response(&exception),
+        Err(exception) => error::failure_response(&exception, state.include_call_id_in_error_body),
     }
 }
 
 async fn count_tokens(state: &GenaiRoutesState, model: &str, data: &Object) -> Response {
     let contents = match request::contents(data) {
         Ok(contents) => contents,
-        Err(exception) => return error::failure_response(&exception),
+        Err(exception) => {
+            return error::failure_response(&exception, state.include_call_id_in_error_body);
+        }
     };
     let messages = match state.translator.messages(model, &contents) {
         Ok(messages) => messages,
-        Err(exception) => return error::failure_response(&exception),
+        Err(exception) => {
+            return error::failure_response(&exception, state.include_call_id_in_error_body);
+        }
     };
     let request = TokenCountRequest {
         model: model.to_owned(),
@@ -120,6 +124,6 @@ async fn count_tokens(state: &GenaiRoutesState, model: &str, data: &Object) -> R
     };
     match state.token_counter.count_tokens(&request, true).await {
         Ok(counted) => response::token_count(counted),
-        Err(exception) => error::failure_response(&exception),
+        Err(exception) => error::failure_response(&exception, state.include_call_id_in_error_body),
     }
 }
