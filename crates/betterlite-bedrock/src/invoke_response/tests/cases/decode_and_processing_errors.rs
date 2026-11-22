@@ -156,7 +156,9 @@ fn debug_log_carries_the_rendered_reply() {
     assert!(messages[0].contains("outputText"));
     assert!(messages[0].contains("the answer"));
     assert!(
-        messages[0].contains("\"outputText\": \"the answer\""),
-        "the reply is logged as JSON"
+        messages[0].contains(
+            "\n    \"results\": [\n        {\n            \"outputText\": \"the answer\"\n        }\n    ]\n}"
+        ),
+        "the reply is logged with indent=4"
     );
 }

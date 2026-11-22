@@ -18,13 +18,14 @@ macro_rules! choices_json {
 
 // The four usage wires carry the same three token fields.
 macro_rules! usage_json {
-    ($usage:expr) => {
+    ($usage:expr) => {{
+        let tokens = $usage;
         json!({
-            "prompt_tokens": $usage.prompt_tokens,
-            "completion_tokens": $usage.completion_tokens,
-            "total_tokens": $usage.total_tokens,
+            "prompt_tokens": tokens.prompt_tokens,
+            "completion_tokens": tokens.completion_tokens,
+            "total_tokens": tokens.total_tokens,
         })
-    };
+    }};
 }
 
 pub(super) fn reply_json(reply: &InvokeReply) -> Value {
@@ -33,7 +34,7 @@ pub(super) fn reply_json(reply: &InvokeReply) -> Value {
             "id": response.id,
             "created": response.created,
             "model": response.model,
-            "usage": usage_json!(response.usage),
+            "usage": usage_json!(&response.usage),
             "choices": choices_json!(response.choices),
         }),
         InvokeReply::Anthropic(envelope) => json!({
@@ -54,7 +55,7 @@ pub(super) fn reply_json(reply: &InvokeReply) -> Value {
             "id": response.id,
             "created": response.created,
             "model": response.model,
-            "usage": usage_json!(response.usage),
+            "usage": usage_json!(&response.usage),
             "choices": choices_json!(response.choices),
         }),
     }

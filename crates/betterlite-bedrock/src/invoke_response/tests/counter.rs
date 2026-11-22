@@ -26,10 +26,10 @@ pub(super) struct FixtureCounter {
 }
 
 impl FixtureCounter {
-    pub(super) const fn counting(text: i64, messages: i64) -> Self {
+    pub(super) const fn counting(prompt: i64, completion: i64) -> Self {
         Self {
-            text: Some(text),
-            messages: Some(messages),
+            text: Some(completion),
+            messages: Some(prompt),
             calls: Mutex::new(Vec::new()),
         }
     }

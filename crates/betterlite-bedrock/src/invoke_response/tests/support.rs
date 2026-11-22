@@ -116,7 +116,7 @@ pub(super) fn decode_with(fixture: &Fixture, body: &[u8], counter: &FixtureCount
         },
         &redactor,
         || String::from("generated"),
-        Duration::default(),
+        Duration::default,
     )
     .expect("the logging fixture builds");
     let env = PrePostEnv {

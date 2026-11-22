@@ -1,10 +1,14 @@
 use betterlite_models::call_helpers::finish_reason::map_finish_reason;
 use betterlite_openai::chat::response::ChatChoice;
 use betterlite_prompts::arguments::json::{Json, Object};
+use serde::Serialize as _;
+use serde_json::ser::PrettyFormatter;
 use thiserror::Error;
 
 use crate::invoke_response::error::ContentReason;
-use crate::legacy_models::mistral::{MistralOutputError, output_text};
+use crate::legacy_models::mistral::{MistralOutputError, output_text as mistral_text};
+
+const INDENT: &[u8] = b"    ";
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Family {
@@ -29,9 +33,15 @@ pub(super) enum FamilyError {
     NotObject,
 }
 
-// LiteLLM logs json.dumps(completion_response); Python's indent=4 form is not ported.
+// LiteLLM logs json.dumps(completion_response, indent=4, default=str)
 pub(super) fn debug_log(record: &Json) {
-    let Ok(rendered) = serde_json::to_string_pretty(record) else {
+    let mut bytes = Vec::new();
+    let mut serializer =
+        serde_json::Serializer::with_formatter(&mut bytes, PrettyFormatter::with_indent(INDENT));
+    if record.serialize(&mut serializer).is_err() {
+        return;
+    }
+    let Ok(rendered) = String::from_utf8(bytes) else {
         return;
     };
     tracing::debug!("bedrock invoke response {rendered}");
@@ -106,7 +116,7 @@ fn ai21(fields: &Object) -> Result<Json, FamilyError> {
 }
 
 fn mistral(fields: &Object, choices: &mut [ChatChoice]) -> Result<Json, FamilyError> {
-    let output = output_text(fields)?;
+    let output = mistral_text(fields)?;
     let choice = choices.first_mut().ok_or(FamilyError::MissingChoice)?;
     choice.finish_reason = match output.finish_reason {
         Json::Text(text) => Some(text),
