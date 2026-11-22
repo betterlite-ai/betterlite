@@ -41,10 +41,9 @@ pub(super) async fn scenario(payload: &Payload) -> Result<Output, String> {
         routing_groups: &groups,
         inferred_provider: &*inferred,
     };
-    let (service, recorder) = build_service(payload, &clock_fn)?;
+    let (service, minute_counters, recorder) = build_service(payload, &clock_fn)?;
     for _ in 0..payload.minute.successes {
-        service
-            .counters()
+        minute_counters
             .increment_successes_for_minute(&payload.target)
             .map_err(|error| error.to_string())?;
     }
@@ -88,14 +87,21 @@ pub(super) async fn scenario(payload: &Payload) -> Result<Output, String> {
         cooled,
         events: recorder.events(),
         active,
-        failures_for_minute: service.counters().failures_for_minute(&payload.target),
+        failures_for_minute: minute_counters.failures_for_minute(&payload.target),
     })
 }
 
 fn build_service(
     payload: &Payload,
     clock_fn: &Clock,
-) -> Result<(CooldownPolicyService<RoutingStateStore>, Arc<Recorder>), String> {
+) -> Result<
+    (
+        CooldownPolicyService<RoutingStateStore>,
+        RouterCounters<RoutingStateStore>,
+        Arc<Recorder>,
+    ),
+    String,
+> {
     let shared_cooldowns: Arc<dyn SharedCooldowns> = Arc::new(FakeCooldowns::default());
     let cooldowns = CooldownCache::new(
         &CooldownSettings::default(),
@@ -114,15 +120,19 @@ fn build_service(
         )
         .map_err(|error| error.to_string())?,
     );
+    let counter_settings = CounterSettings {
+        sync_interval: None,
+        default_sync_interval: Duration::from_secs(60),
+        should_batch_redis_writes: false,
+    };
     let counters = RouterCounters::<RoutingStateStore>::new(
-        CounterSettings {
-            sync_interval: None,
-            default_sync_interval: Duration::from_secs(60),
-            should_batch_redis_writes: false,
-        },
+        counter_settings.clone(),
         Arc::clone(&local),
         None,
     );
+    // the probe seeds and reads B304's minute counters through the same local store the service counts in
+    let minute_counters =
+        RouterCounters::<RoutingStateStore>::new(counter_settings, Arc::clone(&local), None);
     let recorder = Arc::new(Recorder::default());
     let observer: Arc<dyn CooldownObserver> = Arc::<Recorder>::clone(&recorder);
     let policy = CooldownPolicy {
@@ -143,5 +153,5 @@ fn build_service(
         },
         vec![observer],
     );
-    Ok((service, recorder))
+    Ok((service, minute_counters, recorder))
 }

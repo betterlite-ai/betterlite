@@ -365,8 +365,7 @@ pub(super) async fn shared_fail_counts_answer_across_workers() {
             .await
             .unwrap()
     );
-    // worker A's failure left the shared count at 1, while B's own count is 1 after its first failure,
-    // so only the shared count of 2 cools B
+    // worker A leaves the shared count at 1, so only a shared read of 2 cools worker B
     let worker_b = harness_sharing(
         Fixture::new(vec![deployment("gpt", "a")]),
         policy(1_u32),

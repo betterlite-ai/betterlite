@@ -220,12 +220,6 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
                     .map_err(CooldownPolicyError::from)
             })
     }
-
-    // B304's minute counters, which the probe seeds and reports through
-    #[must_use]
-    pub const fn counters(&self) -> &RouterCounters<S> {
-        &self.counters
-    }
 }
 
 fn prepare<S>(
