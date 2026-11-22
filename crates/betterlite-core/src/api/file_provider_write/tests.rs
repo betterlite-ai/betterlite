@@ -16,7 +16,7 @@ use betterlite_openai::files::records::{
 };
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -120,15 +120,14 @@ impl Recorder {
     }
 }
 
-fn exposed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|secret| secret.expose_secret().to_owned())
-}
-
 fn credentials(call: &ProviderCall) -> Credentials {
     Credentials {
         mode: call.mode,
         api_base: call.api_base.clone(),
-        api_key: exposed(call.api_key.as_ref()),
+        api_key: call
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret().to_owned()),
         api_version: call.api_version.clone(),
         organization: call.organization.clone(),
         timeout: call.timeout,
@@ -164,7 +163,7 @@ fn seen(target: Target<'_>) -> Seen {
             data: upload.data,
             headers: upload.headers,
             api_base: upload.api_base.map(str::to_owned),
-            api_key: exposed(upload.api_key),
+            api_key: upload.api_key.map(|key| key.expose_secret().to_owned()),
             logger: upload.logger.clone(),
             client: upload.client.cloned(),
             timeout: upload.timeout,
@@ -184,7 +183,7 @@ fn seen(target: Target<'_>) -> Seen {
             file_id,
             client,
             params,
-        }) => seen_azure_delete(&call, file_id, client, params),
+        }) => seen_azure_delete(&call, file_id, client, &params),
     }
 }
 
@@ -192,13 +191,13 @@ fn seen_azure_delete(
     call: &ProviderCall,
     file_id: &str,
     client: Option<&SuppliedClient<&'static str>>,
-    params: DeleteParams<'_>,
+    params: &DeleteParams<'_>,
 ) -> Seen {
     Seen::AzureDelete {
         call: credentials(call),
         file_id: file_id.to_owned(),
         client: client.cloned(),
-        api_key: exposed(params.api_key),
+        api_key: params.api_key.map(|key| key.expose_secret().to_owned()),
         api_base: params.api_base.map(str::to_owned),
     }
 }
@@ -208,7 +207,10 @@ fn config_delete_seen(delete: ConfigDelete<'_, Recorder>) -> Seen {
         config: delete.config,
         mode: delete.mode,
         file_id: delete.file_id.to_owned(),
-        api_key: exposed(delete.params.api_key),
+        api_key: delete
+            .params
+            .api_key
+            .map(|key| key.expose_secret().to_owned()),
         api_base: delete.params.api_base.map(str::to_owned),
         trusted: delete
             .params
@@ -352,17 +354,17 @@ enum Answer {
 }
 
 impl Answer {
-    fn file(self) -> Outcome<FileObject> {
+    fn file(self) -> Option<Outcome<FileObject>> {
         match self {
-            Self::File(outcome) => outcome,
-            Self::Deleted(_) => panic!("the case uploads"),
+            Self::File(outcome) => Some(outcome),
+            Self::Deleted(_) => None,
         }
     }
 
-    fn deleted(self) -> Outcome<FileDeleted> {
+    fn deleted(self) -> Option<Outcome<FileDeleted>> {
         match self {
-            Self::File(_) => panic!("the case deletes"),
-            Self::Deleted(outcome) => outcome,
+            Self::File(_) => None,
+            Self::Deleted(outcome) => Some(outcome),
         }
     }
 }
@@ -448,28 +450,35 @@ fn upload(mode: Mode, input: UploadRequest) -> (Outcome<FileObject>, Vec<Seen>) 
     let recorder = Recorder::default();
     let configured = ConfiguredSettings::default();
     let answer = write_with(&recorder, &configured, mode, Request::Upload(input));
-    (answer.file(), recorder.seen())
+    (answer.file().expect("the case uploads"), recorder.seen())
 }
 
 fn delete(mode: Mode, input: DeleteRequest) -> (Outcome<FileDeleted>, Vec<Seen>) {
     let recorder = Recorder::default();
     let configured = ConfiguredSettings::default();
     let answer = write_with(&recorder, &configured, mode, Request::Delete(input));
-    (answer.deleted(), recorder.seen())
+    (answer.deleted().expect("the case deletes"), recorder.seen())
 }
 
 fn sent_data(seen: &[Seen]) -> FileCreate {
     match seen {
-        [Seen::OpenAiUpload(_, data) | Seen::AzureUpload(_, data)] => data.clone(),
-        [Seen::ConfigUpload { data, .. }] => data.clone(),
+        [
+            Seen::OpenAiUpload(_, data)
+            | Seen::AzureUpload(_, data)
+            | Seen::ConfigUpload { data, .. },
+        ] => data.clone(),
         other => panic!("expected one upload, saw {other:?}"),
     }
 }
 
 fn sent_call(seen: &[Seen]) -> Credentials {
     match seen {
-        [Seen::OpenAiUpload(call, _) | Seen::AzureUpload(call, _)] => call.clone(),
-        [Seen::OpenAiDelete(call, _) | Seen::AzureDelete { call, .. }] => call.clone(),
+        [
+            Seen::OpenAiUpload(call, _)
+            | Seen::AzureUpload(call, _)
+            | Seen::OpenAiDelete(call, _)
+            | Seen::AzureDelete { call, .. },
+        ] => call.clone(),
         other => panic!("expected one sdk call, saw {other:?}"),
     }
 }

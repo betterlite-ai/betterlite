@@ -14,7 +14,6 @@ use super::super::error::SdkHttpError;
 use super::outcome::step_outcome;
 use super::providers::OracleProviders;
 use super::{Params, Purpose, Step, StepOutcome, UploadStep};
-
 pub(super) async fn run_step(
     write: &FileWrite<'_, OracleProviders>,
     step: &Step,

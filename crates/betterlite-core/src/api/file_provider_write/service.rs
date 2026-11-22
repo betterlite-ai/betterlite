@@ -58,8 +58,8 @@ impl<Providers: FileWriteProviders> FileWrite<'_, Providers> {
         let invocation = Invocation { mode, timeout };
         let data = create_request(input);
         let id = provider_id::<Providers::Error>(named)?;
-        let config = self.providers.files_config(id);
-        let target = match config {
+        let configured = self.providers.files_config(id);
+        let target = match configured {
             Some(config) => UploadTarget::Config(ConfigUpload {
                 config,
                 mode,

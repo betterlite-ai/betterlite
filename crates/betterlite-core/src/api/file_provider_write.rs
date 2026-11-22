@@ -35,7 +35,7 @@ pub enum SuppliedClient<Client> {
 }
 impl<Client> SuppliedClient<Client> {
     // the generic handler takes a supplied client only when it is an httpx handler
-    fn as_handler(&self) -> Option<&Self> {
+    const fn as_handler(&self) -> Option<&Self> {
         match self {
             Self::Handler { .. } => Some(self),
             Self::Sdk(_) => None,

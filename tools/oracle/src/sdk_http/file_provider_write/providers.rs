@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 use betterlite_anthropic::credentials::AnthropicSettings;
@@ -25,7 +26,6 @@ use http::header::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use uuid::Uuid;
-
 #[derive(Debug, thiserror::Error)]
 pub(super) enum WireError {
     #[error(transparent)]
@@ -55,7 +55,6 @@ impl OracleProviders {
             },
         }
     }
-
     async fn anthropic_upload(
         &self,
         upload: &ConfigUpload<'_, Self>,
@@ -78,19 +77,17 @@ impl OracleProviders {
             boundary: Uuid::new_v4().simple().to_string(),
             headers: &headers,
         };
-        Ok(self.anthropic.create_file(&client, &call).await?)
+        let created = self.anthropic.create_file(&client, &call).await;
+        created.map_err(WireError::from)
     }
-
     async fn openai_upload(
         &self,
         call: &ProviderCall,
         data: &FileCreate,
     ) -> Result<FileObject, WireError> {
         let client = openai_client(call)?;
-        self.openai
-            .create_file(&client, data)
-            .await
-            .map_err(WireError::from)
+        let created = self.openai.create_file(&client, data).await;
+        created.map_err(WireError::from)
     }
 }
 impl FileWriteProviders for OracleProviders {
@@ -98,40 +95,49 @@ impl FileWriteProviders for OracleProviders {
     type Logger = ();
     type Client = ();
     type Error = WireError;
-
     fn files_config(&self, provider: ProviderId) -> Option<FileProviderConfig> {
         file_config_selection("", provider)
     }
-
-    async fn upload(&self, target: UploadTarget<'_, Self>) -> Result<FileObject, WireError> {
-        match target {
-            UploadTarget::Config(upload) => self.anthropic_upload(&upload).await,
-            UploadTarget::OpenAi { call, data } => self.openai_upload(&call, &data).await,
-            UploadTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
+    fn upload(
+        &self,
+        target: UploadTarget<'_, Self>,
+    ) -> impl Future<Output = Result<FileObject, WireError>> + Send {
+        async move {
+            match target {
+                UploadTarget::Config(upload) => self.anthropic_upload(&upload).await,
+                UploadTarget::OpenAi { call, data } => self.openai_upload(&call, &data).await,
+                UploadTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
+            }
         }
     }
-
-    async fn delete(&self, target: DeleteTarget<'_, Self>) -> Result<FileDeleted, WireError> {
-        match target {
-            DeleteTarget::Config(delete) => {
-                let (client, headers) = anthropic_transport(
-                    delete.config,
-                    delete.params.api_key,
-                    delete.params.api_base,
-                    delete.timeout,
-                    &delete.headers,
-                )?;
-                let call = FileCall {
-                    file_id: delete.file_id,
-                    headers: &headers,
-                };
-                Ok(self.anthropic.delete_file(&client, &call).await?)
+    fn delete(
+        &self,
+        target: DeleteTarget<'_, Self>,
+    ) -> impl Future<Output = Result<FileDeleted, WireError>> + Send {
+        async move {
+            match target {
+                DeleteTarget::Config(delete) => {
+                    let (client, headers) = anthropic_transport(
+                        delete.config,
+                        delete.params.api_key,
+                        delete.params.api_base,
+                        delete.timeout,
+                        &delete.headers,
+                    )?;
+                    let call = FileCall {
+                        file_id: delete.file_id,
+                        headers: &headers,
+                    };
+                    let deleted = self.anthropic.delete_file(&client, &call).await;
+                    deleted.map_err(WireError::from)
+                }
+                DeleteTarget::OpenAi { call, file_id } => {
+                    let client = openai_client(&call)?;
+                    let deleted = self.openai.delete_file(&client, file_id).await;
+                    deleted.map_err(WireError::from)
+                }
+                DeleteTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
             }
-            DeleteTarget::OpenAi { call, file_id } => {
-                let client = openai_client(&call)?;
-                Ok(self.openai.delete_file(&client, file_id).await?)
-            }
-            DeleteTarget::Azure { .. } => Err(WireError::NotWired("AzureOpenAIFilesAPI")),
         }
     }
 }
@@ -155,19 +161,14 @@ fn anthropic_transport(
     timeout: FineTuningTimeout,
     headers: &IndexMap<String, String>,
 ) -> Result<(AnthropicClient, HeaderMap), WireError> {
-    let client = match config {
-        FileProviderConfig::Anthropic => AnthropicClient {
-            api_key: api_key.cloned(),
-            api_base: api_base.map(str::to_owned),
-            settings: AnthropicSettings::default(),
-            timeout: deadline(timeout),
-        },
-        FileProviderConfig::GoogleAiStudio
-        | FileProviderConfig::VertexAi
-        | FileProviderConfig::Bedrock
-        | FileProviderConfig::Manus
-        | FileProviderConfig::Mistral
-        | FileProviderConfig::Xai => return Err(WireError::NotWired(config.class_name())),
+    if config != FileProviderConfig::Anthropic {
+        return Err(WireError::NotWired(config.class_name()));
+    }
+    let client = AnthropicClient {
+        api_key: api_key.cloned(),
+        api_base: api_base.map(str::to_owned),
+        settings: AnthropicSettings::default(),
+        timeout: deadline(timeout),
     };
     let mut map = HeaderMap::new();
     for (name, value) in headers {

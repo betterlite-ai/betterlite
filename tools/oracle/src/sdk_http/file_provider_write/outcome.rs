@@ -7,7 +7,6 @@ use super::super::error::SdkHttpError;
 use super::super::result::Failure;
 use super::providers::WireError;
 use super::{Rejection, StepOutcome};
-
 pub(super) fn step_outcome<Value>(
     result: Result<Value, FileWriteError<WireError>>,
 ) -> Result<StepOutcome, SdkHttpError>

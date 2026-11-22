@@ -19,10 +19,6 @@ use super::{
 
 const DEFAULT_TIMEOUT: FineTuningTimeout = FineTuningTimeout::Seconds(600.0_f64);
 
-fn secret(text: &str) -> Option<SecretString> {
-    Some(SecretString::from(text.to_owned()))
-}
-
 fn configured() -> ConfiguredSettings {
     ConfiguredSettings {
         api_base: None,
@@ -36,12 +32,12 @@ fn configured() -> ConfiguredSettings {
         vertex_location: None,
         openai_base_url: None,
         openai_api_base: None,
-        openai_api_key: secret("sk-env"),
+        openai_api_key: Some(SecretString::from("sk-env")),
         openai_organization: Some("org-env".to_owned()),
         azure_api_base: Some("https://azure.example".to_owned()),
         azure_api_version: Some("2024-06-01".to_owned()),
         azure_openai_api_key: None,
-        azure_api_key: secret("az-env"),
+        azure_api_key: Some(SecretString::from("az-env")),
         vertexai_project: None,
         vertexai_location: None,
         vertexai_credentials: None,
@@ -96,7 +92,7 @@ fn config_first_upload_takes_the_files_config() {
     let mut input = upload_input(Presence::Value("anthropic"));
     input.extra_headers = Some(IndexMap::from([("X-Trace".to_owned(), "t1".to_owned())]));
     input.params.api_base = Some("https://anthropic.example".to_owned());
-    input.params.api_key = secret("sk-ant");
+    input.params.api_key = Some(SecretString::from("sk-ant"));
     input.params.client = Some(handler());
     let (_, seen) = upload(Mode::Asynchronous, input);
     let [
@@ -157,6 +153,7 @@ fn write_provider_dispatch(#[case] provider: &str) {
     let upload_request = Request::Upload(uploading);
     write_with(&recorder, &configured(), Mode::Sync, upload_request)
         .file()
+        .expect("the case uploads")
         .unwrap();
     let mut deleting = delete_input(Some(provider));
     deleting.params.max_retries = Some(1);
@@ -164,6 +161,7 @@ fn write_provider_dispatch(#[case] provider: &str) {
     let delete_request = Request::Delete(deleting);
     write_with(&recorder, &configured(), Mode::Asynchronous, delete_request)
         .deleted()
+        .expect("the case deletes")
         .unwrap();
     let expected = vec![
         Seen::OpenAiUpload(
@@ -179,10 +177,10 @@ fn write_provider_dispatch(#[case] provider: &str) {
 }
 
 #[test]
-fn azure_receives_version_retries_and_its_delete_client() {
+fn azure_upload_receives_version_and_retries() {
     let recorder = Recorder::default();
     let mut uploading = upload_input(Presence::Value("azure"));
-    uploading.params.api_key = secret("az-request");
+    uploading.params.api_key = Some(SecretString::from("az-request"));
     uploading.params.api_version = Some("2024-10-21".to_owned());
     uploading.params.max_retries = Some(3);
     let sent = write_with(
@@ -191,10 +189,20 @@ fn azure_receives_version_retries_and_its_delete_client() {
         Mode::Sync,
         Request::Upload(uploading),
     )
-    .file();
+    .file()
+    .expect("the case uploads");
     assert_eq!(sent.unwrap().id, "file-abc");
+    let seen = recorder.seen();
+    assert!(
+        matches!(seen.first(), Some(Seen::AzureUpload(call, _)) if *call == sdk_credentials(Cloud::Azure, Mode::Sync, "2024-10-21"))
+    );
+}
+
+#[test]
+fn azure_delete_forwards_its_client() {
+    let recorder = Recorder::default();
     let mut deleting = delete_input(Some("azure"));
-    deleting.params.api_key = secret("az-request");
+    deleting.params.api_key = Some(SecretString::from("az-request"));
     deleting.params.max_retries = Some(3);
     deleting.params.client = Some(SuppliedClient::Sdk("azure-client"));
     write_with(
@@ -204,18 +212,16 @@ fn azure_receives_version_retries_and_its_delete_client() {
         Request::Delete(deleting),
     )
     .deleted()
+    .expect("the case deletes")
     .unwrap();
     let seen = recorder.seen();
-    assert!(
-        matches!(seen.first(), Some(Seen::AzureUpload(call, _)) if *call == sdk_credentials(Cloud::Azure, Mode::Sync, "2024-10-21"))
-    );
     let Some(Seen::AzureDelete {
         call,
         file_id,
         client,
         api_key,
         api_base,
-    }) = seen.get(1)
+    }) = seen.first()
     else {
         panic!("expected the azure delete, saw {seen:?}");
     };
@@ -274,11 +280,15 @@ fn provider_failures_pass_through_unchanged() {
         failure: Some(failure.clone()),
     };
     let upload_request = Request::Upload(upload_input(Presence::Value("anthropic")));
-    let uploaded = write_with(&recorder, &configured(), Mode::Sync, upload_request).file();
-    assert!(matches!(uploaded, Err(FileWriteError::Provider(ref seen)) if *seen == failure));
+    let uploaded = write_with(&recorder, &configured(), Mode::Sync, upload_request)
+        .file()
+        .expect("the case uploads");
+    assert!(matches!(&uploaded, Err(FileWriteError::Provider(seen)) if *seen == failure));
     let delete_request = Request::Delete(delete_input(None));
-    let deleted = write_with(&recorder, &configured(), Mode::Sync, delete_request).deleted();
-    assert!(matches!(deleted, Err(FileWriteError::Provider(ref seen)) if *seen == failure));
+    let deleted = write_with(&recorder, &configured(), Mode::Sync, delete_request)
+        .deleted()
+        .expect("the case deletes");
+    assert!(matches!(&deleted, Err(FileWriteError::Provider(seen)) if *seen == failure));
 }
 
 #[rstest]
