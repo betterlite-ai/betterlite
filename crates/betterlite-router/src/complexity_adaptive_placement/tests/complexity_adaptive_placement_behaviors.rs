@@ -360,6 +360,27 @@ fn a_custom_tier_name_falls_back_to_the_default_model() {
     assert_eq!(harness.decision(), None);
 }
 
+// a custom ladder builds where LiteLLM raises ValueError; its classified tier still takes the fallback
+#[test]
+fn an_adaptive_custom_ladder_builds_and_keeps_the_named_tier_fallback() {
+    let pools: &[(&str, &[&str])] = &[("basic", &["mini"]), ("advanced", &["big"])];
+    let facts = priced(&[("mini", 1), ("big", 2)]);
+    let mut harness = Harness::new(
+        adaptive_settings(true),
+        pools,
+        &facts,
+        &[],
+        Some("openai/fallback"),
+    )
+    .expect("an adaptive router over a custom ladder builds");
+    assert!(harness.router.snapshot().is_some());
+    let classified = tier("advanced");
+    let placed = harness
+        .pick(&request(&classified, "hello"))
+        .expect("the pick succeeds");
+    assert_eq!(placed.decision, None);
+}
+
 #[test]
 fn adaptive_off_places_the_tier_fallback() {
     let facts = priced(&[("mini", 1), ("mid", 2), ("big", 3)]);

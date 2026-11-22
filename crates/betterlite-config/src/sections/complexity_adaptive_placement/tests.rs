@@ -97,6 +97,15 @@ fn an_environment_reference_resolves_into_the_declared_type() {
 }
 
 #[test]
+fn a_declared_or_environment_false_stays_false() {
+    let literal = router("        adaptive: false\n");
+    assert!(!deployment(&settings(&literal, &[]).unwrap()).adaptive);
+    let referenced = router("        adaptive: os.environ/ADAPTIVE\n");
+    let resolved = settings(&referenced, &[("ADAPTIVE", "false")]).unwrap();
+    assert!(!deployment(&resolved).adaptive);
+}
+
+#[test]
 fn an_empty_environment_value_takes_the_default() {
     let source = router("        tier_distance_penalty: os.environ/PENALTY\n");
     let resolved = deployment(&settings(&source, &[("PENALTY", "")]).unwrap());
