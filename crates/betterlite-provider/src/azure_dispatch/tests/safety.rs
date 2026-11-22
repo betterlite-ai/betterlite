@@ -1,171 +1,176 @@
 #![cfg(test)]
 
-use crate::azure_dispatch::call::{Credentials, Globals};
-use crate::azure_dispatch::compose::prepare_chat_http;
-use crate::azure_dispatch::dispatch::dispatch_chat;
+use crate::azure_dispatch::call::{Composition, Credentials, Globals, Request};
+use crate::azure_dispatch::compose::prepare;
 use crate::azure_dispatch::error::AzureProviderError;
+use crate::azure_dispatch::fixtures::execution::dispatch;
 
 use super::support::{self, Fixture};
 
-// Two configured identities never share a base, a version, a key or a header map, and the same
-// identity composes the same request again with no cache in between.
+fn first_identity() -> Credentials {
+    Credentials {
+        api_base: Some(String::from("https://first.test")),
+        api_version: Some(String::from("2024-01-01")),
+        api_key: Some(support::key("first-key")),
+        ..support::credentials()
+    }
+}
+
+fn second_identity() -> Credentials {
+    Credentials {
+        api_base: Some(String::from("https://second.test")),
+        api_version: Some(String::from("2025-05-05")),
+        api_key: Some(support::key("second-key")),
+        azure_ad_token: Some(support::key("second-token")),
+        ..support::credentials()
+    }
+}
+
+fn composition_with(base: &str, key: &str) -> Composition {
+    let mut composition = support::composition(&[]);
+    composition.globals = Globals {
+        api_base: Some(String::from(base)),
+        api_key: Some(support::key(key)),
+        api_version: None,
+        azure_key: None,
+        headers: None,
+        azure_default_api_version: None,
+    };
+    composition
+}
+
+// Two configured identities never share a base, a version, a key or a header map, and the same identity composes the same request again.
 #[test]
 fn azure_provider_credential_identity_isolation() {
-    let composition = support::composition(&[]);
+    call_identities(&support::composition(&[]));
+    global_identities();
+}
+
+fn call_identities(composition: &Composition) {
     let first = Fixture::ok(support::CHAT_REPLY);
-    dispatch_chat(
-        &composition,
-        support::chat(
-            "first-model",
-            support::object("{}"),
-            Credentials {
-                api_base: Some(String::from("https://first.test")),
-                api_version: Some(String::from("2024-01-01")),
-                api_key: Some(support::key("first-key")),
-                ..Credentials::default()
-            },
-        ),
-        &first,
-    );
+    let call = support::chat("first-model", support::object("{}"), first_identity());
+    dispatch(composition, Request::Chat(Box::new(call)), &first);
     let second = Fixture::ok(support::CHAT_REPLY);
-    dispatch_chat(
-        &composition,
-        support::chat(
-            "second-model",
-            support::object("{}"),
-            Credentials {
-                api_base: Some(String::from("https://second.test")),
-                api_version: Some(String::from("2025-05-05")),
-                api_key: Some(support::key("second-key")),
-                azure_ad_token: Some(support::key("second-token")),
-                ..Credentials::default()
-            },
-        ),
-        &second,
-    );
+    let call = support::chat("second-model", support::object("{}"), second_identity());
+    dispatch(composition, Request::Chat(Box::new(call)), &second);
     let first_sent = first.sent();
     let second_sent = second.sent();
     assert_eq!(first_sent.len(), 1);
     assert_eq!(second_sent.len(), 1);
     assert_eq!(
-        first_sent[0]["url"],
+        first_sent[0].url,
         "https://first.test/openai/deployments/first-model/chat/completions?api-version=2024-01-01"
     );
-    assert_eq!(first_sent[0]["headers"]["api-key"], "first-key");
-    assert!(first_sent[0]["headers"].get("authorization").is_none());
     assert_eq!(
-        second_sent[0]["url"],
+        support::header(&first_sent[0], "api-key"),
+        Some("first-key")
+    );
+    assert!(support::header(&first_sent[0], "authorization").is_none());
+    assert_eq!(
+        second_sent[0].url,
         "https://second.test/openai/deployments/second-model/chat/completions?api-version=2025-05-05"
     );
     assert_eq!(
-        second_sent[0]["headers"]["authorization"],
-        "Bearer second-token"
+        support::header(&second_sent[0], "authorization"),
+        Some("Bearer second-token")
     );
-    assert!(second_sent[0]["headers"].get("api-key").is_none());
-    assert!(!first_sent[0].to_string().contains("second"));
-    assert!(!second_sent[0].to_string().contains("first-key"));
+    assert!(support::header(&second_sent[0], "api-key").is_none());
+    assert!(!support::sent_text(&first_sent[0]).contains("second"));
+    assert!(!support::sent_text(&second_sent[0]).contains("first-key"));
+}
 
-    // the module globals are a second identity source, resolved per composition
-    let mut left = support::composition(&[]);
-    left.globals = Globals {
-        api_base: Some(String::from("https://left.test")),
-        api_key: Some(support::key("left-key")),
-        ..Globals::default()
-    };
-    let mut right = support::composition(&[]);
-    right.globals = Globals {
-        api_base: Some(String::from("https://right.test")),
-        api_key: Some(support::key("right-key")),
-        ..Globals::default()
-    };
+// the module globals are a second identity source, resolved per composition
+fn global_identities() {
+    let left = composition_with("https://left.test", "left-key");
+    let right = composition_with("https://right.test", "right-key");
     let left_answer = Fixture::ok(support::CHAT_REPLY);
-    dispatch_chat(
-        &left,
-        support::chat("gpt-4o", support::object("{}"), Credentials::default()),
-        &left_answer,
-    );
+    let call = support::chat("gpt-4o", support::object("{}"), support::credentials());
+    dispatch(&left, Request::Chat(Box::new(call)), &left_answer);
     let right_answer = Fixture::ok(support::CHAT_REPLY);
-    dispatch_chat(
-        &right,
-        support::chat("gpt-4o", support::object("{}"), Credentials::default()),
-        &right_answer,
-    );
-    assert_eq!(right_answer.sent()[0]["headers"]["api-key"], "right-key");
+    let call = support::chat("gpt-4o", support::object("{}"), support::credentials());
+    dispatch(&right, Request::Chat(Box::new(call)), &right_answer);
     assert_eq!(
-        right_answer.sent()[0]["url"],
+        support::header(&right_answer.sent()[0], "api-key"),
+        Some("right-key")
+    );
+    assert_eq!(
+        right_answer.sent()[0].url,
         "https://right.test/openai/deployments/gpt-4o/chat/completions?api-version=2025-02-01-preview"
     );
-    assert_eq!(left_answer.sent()[0]["headers"]["api-key"], "left-key");
-    assert!(!left_answer.sent()[0].to_string().contains("right"));
+    assert_eq!(
+        support::header(&left_answer.sent()[0], "api-key"),
+        Some("left-key")
+    );
+    assert!(!support::sent_text(&left_answer.sent()[0]).contains("right"));
 }
 
 // Debug output and every owned failure path keep fixture credentials out of sight.
 #[test]
 fn azure_provider_secret_safe_failure() {
+    debug_redaction();
+    failed_dispatch();
+    invalid_header();
+    globals_redaction();
+}
+
+fn debug_redaction() {
     let composition = support::composition(&[]);
-    let (prepared, _json_mode) = prepare_chat_http(
-        &composition,
-        support::chat(
-            "gpt-4o",
-            support::object("{}"),
-            Credentials {
-                api_base: Some(String::from("https://secret.test")),
-                api_version: Some(String::from("2024-10-21")),
-                api_key: Some(support::key("fixture-secret-key")),
-                azure_ad_token: Some(support::key("fixture-secret-token")),
-                ..Credentials::default()
-            },
-        ),
-    )
-    .expect("the chat request");
-    let debug = format!("{prepared:?}");
+    let credentials = Credentials {
+        api_base: Some(String::from("https://secret.test")),
+        api_version: Some(String::from("2024-10-21")),
+        api_key: Some(support::key("fixture-secret-key")),
+        azure_ad_token: Some(support::key("fixture-secret-token")),
+        ..support::credentials()
+    };
+    let call = support::chat("gpt-4o", support::object("{}"), credentials);
+    let prepared = prepare(&composition, Request::Chat(Box::new(call))).expect("the chat request");
+    let debug = format!("{:?}", prepared.http);
     assert!(!debug.contains("fixture-secret-key"));
     assert!(!debug.contains("fixture-secret-token"));
-    assert!(prepared.headers["authorization"].is_sensitive());
+    assert!(prepared.http.headers["authorization"].is_sensitive());
+}
 
-    // a failed dispatch reports the status and nothing else
+// a failed dispatch reports the status and nothing else
+fn failed_dispatch() {
+    let credentials = Credentials {
+        api_key: Some(support::key("fixture-secret-key")),
+        ..support::credentials()
+    };
     let answer = Fixture::ok(support::CHAT_REPLY);
-    let result = dispatch_chat(
-        &composition,
-        support::chat(
-            "gpt-4o",
-            support::object("{}"),
-            Credentials {
-                api_key: Some(support::key("fixture-secret-key")),
-                ..Credentials::default()
-            },
-        ),
-        &answer,
-    );
+    let composition = support::composition(&[]);
+    let call = support::chat("gpt-4o", support::object("{}"), credentials);
+    let result = dispatch(&composition, Request::Chat(Box::new(call)), &answer);
     assert!(answer.sent().is_empty());
-    let value = support::value(&result);
-    assert_eq!(value["error"]["status"], 500);
-    assert!(!value.to_string().contains("fixture-secret-key"));
+    assert_eq!(support::error_status(&result), Some(500));
+    assert!(!support::rendered(&result).contains("fixture-secret-key"));
+}
 
-    // a header HTTP cannot carry fails without echoing its value
-    let error = prepare_chat_http(
-        &composition,
-        support::chat(
-            "gpt-4o",
-            support::object("{}"),
-            Credentials {
-                api_base: Some(String::from("https://secret.test")),
-                api_version: Some(String::from("2024-10-21")),
-                extra_headers: Some(support::headers(&[("x-call", "fixture-secret-key\n")])),
-                ..Credentials::default()
-            },
-        ),
-    )
-    .err()
-    .expect("the invalid header");
-    assert!(matches!(error, AzureProviderError::Header { .. }));
+// a header HTTP cannot carry fails without echoing its value
+fn invalid_header() {
+    let credentials = Credentials {
+        api_base: Some(String::from("https://secret.test")),
+        api_version: Some(String::from("2024-10-21")),
+        extra_headers: Some(support::headers(&[("x-call", "fixture-secret-key\n")])),
+        ..support::credentials()
+    };
+    let composition = support::composition(&[]);
+    let call = support::chat("gpt-4o", support::object("{}"), credentials);
+    let error = prepare(&composition, Request::Chat(Box::new(call)))
+        .err()
+        .expect("the invalid header");
     assert!(!error.to_string().contains("fixture-secret-key"));
+    assert!(matches!(error, AzureProviderError::Header { .. }));
+}
 
-    // the module globals redact their secrets in Debug too
+// the module globals redact their secrets in Debug too
+fn globals_redaction() {
     let globals = Globals {
         api_key: Some(support::key("fixture-secret-key")),
         azure_key: Some(support::key("fixture-secret-token")),
-        ..Globals::default()
+        api_base: None,
+        api_version: None,
+        headers: None,
+        azure_default_api_version: None,
     };
     let debug = format!("{globals:?}");
     assert!(!debug.contains("fixture-secret-key"));

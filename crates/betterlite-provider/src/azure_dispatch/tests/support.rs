@@ -8,11 +8,10 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
 use http::HeaderMap;
 use secrecy::SecretString;
-use serde_json::{Map, Value, json};
 
-use crate::azure_dispatch::AzureResult;
-use crate::azure_dispatch::call::{ChatCall, Composition, Credentials, EmbeddingCall, TextCall};
-use crate::azure_dispatch::dispatch::{Answer, AnswerReply};
+use crate::azure_dispatch::call::{ChatCall, Composition, Credentials, EmbeddingCall};
+use crate::azure_dispatch::fixtures::execution::recorded;
+use crate::azure_dispatch::fixtures::types::{Answer, AnswerReply, AzureResult, RecordedRequest};
 use crate::prepared::PreparedHttp;
 
 pub(crate) const CHAT_REPLY: &str = r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"gpt-4o-2024-08-06","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
@@ -60,6 +59,22 @@ pub(crate) fn messages() -> Vec<Message> {
     serde_json::from_str(USER).expect("the user message")
 }
 
+// The empty credential map, so a case names only the values it exercises.
+pub(crate) fn credentials() -> Credentials {
+    Credentials {
+        api_base: None,
+        api_version: None,
+        api_key: None,
+        headers: None,
+        extra_headers: None,
+        max_retries: None,
+        extra_body: None,
+        azure_ad_token: None,
+        base_model: None,
+        timeout: None,
+    }
+}
+
 pub(crate) fn chat(model: &str, optional: Object, credentials: Credentials) -> ChatCall {
     ChatCall {
         model: model.to_owned(),
@@ -68,16 +83,6 @@ pub(crate) fn chat(model: &str, optional: Object, credentials: Credentials) -> C
         credentials,
         stream: false,
         supplied: None,
-    }
-}
-
-pub(crate) fn text(model: &str, optional: Object, credentials: Credentials) -> TextCall {
-    TextCall {
-        model: model.to_owned(),
-        messages: messages(),
-        optional,
-        credentials,
-        acompletion: false,
     }
 }
 
@@ -90,15 +95,70 @@ pub(crate) fn embedding(model: &str, body: &str, credentials: Credentials) -> Em
     }
 }
 
-pub(crate) fn value(result: &AzureResult) -> Value {
-    serde_json::to_value(result).expect("the dispatch result")
+pub(crate) fn at<'a>(value: &'a Json, name: &str) -> Option<&'a Json> {
+    value.as_object().and_then(|fields| fields.get(name))
+}
+
+pub(crate) fn text_at<'a>(value: &'a Json, name: &str) -> Option<&'a str> {
+    at(value, name).and_then(Json::as_str)
+}
+
+pub(crate) fn number_at(value: &Json, name: &str) -> Option<u64> {
+    match at(value, name) {
+        Some(Json::Number(number)) => number.as_u64(),
+        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    }
+}
+
+pub(crate) fn item(value: &Json, index: usize) -> Option<&Json> {
+    match value {
+        Json::List(items) => items.get(index),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => None,
+    }
+}
+
+pub(crate) fn body_at<'a>(request: &'a RecordedRequest, name: &str) -> Option<&'a Json> {
+    at(&request.body, name)
+}
+
+pub(crate) fn body_text<'a>(request: &'a RecordedRequest, name: &str) -> Option<&'a str> {
+    text_at(&request.body, name)
+}
+
+pub(crate) fn body_number(request: &RecordedRequest, name: &str) -> Option<i64> {
+    number_at(&request.body, name).and_then(|value| i64::try_from(value).ok())
+}
+
+pub(crate) fn parse(body: &[u8]) -> Json {
+    serde_json::from_slice(body).expect("a JSON body")
+}
+
+pub(crate) fn header<'a>(request: &'a RecordedRequest, name: &str) -> Option<&'a str> {
+    request.headers.get(name).map(String::as_str)
+}
+
+pub(crate) fn rendered(result: &AzureResult) -> String {
+    serde_json::to_string(result).expect("the dispatch result")
+}
+
+pub(crate) fn sent_text(request: &RecordedRequest) -> String {
+    serde_json::to_string(request).expect("the recorded request")
+}
+
+pub(crate) fn reply_text<'a>(result: &'a AzureResult, name: &str) -> Option<&'a str> {
+    text_at(&result.reply, name)
+}
+
+pub(crate) fn error_status(result: &AzureResult) -> Option<u64> {
+    number_at(&result.error, "status")
 }
 
 // The answer port a case supplies: one fixed reply, and every request it was handed.
 pub(crate) struct Fixture {
     status: u16,
     body: Vec<u8>,
-    sent: Mutex<Vec<Value>>,
+    sent: Mutex<Vec<RecordedRequest>>,
 }
 
 impl Fixture {
@@ -114,7 +174,7 @@ impl Fixture {
         Self::new(200, body)
     }
 
-    pub(crate) fn sent(&self) -> Vec<Value> {
+    pub(crate) fn sent(&self) -> Vec<RecordedRequest> {
         self.sent
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -122,29 +182,25 @@ impl Fixture {
     }
 }
 
+// A body the dispatch wrote is always JSON; a malformed one is recorded as null so the request still shows.
+fn entry(request: &PreparedHttp) -> RecordedRequest {
+    match recorded(request) {
+        Ok(record) => record,
+        Err(_) => RecordedRequest {
+            method: request.method.as_str().to_owned(),
+            url: request.url.to_string(),
+            headers: BTreeMap::new(),
+            body: Json::Null,
+        },
+    }
+}
+
 impl Answer for Fixture {
     fn answer(&self, request: &PreparedHttp) -> AnswerReply {
-        let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
-        let headers: Map<String, Value> = request
-            .headers
-            .iter()
-            .map(|(name, value)| {
-                (
-                    name.as_str().to_owned(),
-                    Value::String(value.to_str().unwrap_or_default().to_owned()),
-                )
-            })
-            .collect();
-        let entry = json!({
-            "method": request.method.as_str(),
-            "url": request.url.as_str(),
-            "headers": headers,
-            "body": body,
-        });
         self.sent
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(entry);
+            .push(entry(request));
         AnswerReply {
             status: self.status,
             headers: HeaderMap::new(),

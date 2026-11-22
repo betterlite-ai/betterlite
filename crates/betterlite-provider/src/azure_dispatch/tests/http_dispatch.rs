@@ -14,8 +14,8 @@ use tokio::net::TcpListener;
 
 use super::support;
 use crate::azure_dispatch::Azure;
-use crate::azure_dispatch::call::Credentials;
-use crate::azure_dispatch::compose::{chat_request, prepare_chat_http};
+use crate::azure_dispatch::call::{ChatCall, Credentials, Request};
+use crate::azure_dispatch::compose::{prepare, prepared_request};
 use crate::operation::{ChatCompletion, OperationError, OperationResult};
 use crate::prepared::deployment::Deployment;
 use crate::provider::Adapter as _;
@@ -69,12 +69,12 @@ fn deployment(api_base: &str) -> Deployment {
     Deployment::from_params(params).expect("the deployment")
 }
 
-fn chat(api_base: String) -> crate::azure_dispatch::call::ChatCall {
+fn chat(api_base: String) -> ChatCall {
     let credentials = Credentials {
         api_base: Some(api_base),
         api_version: Some(String::from("2024-10-21")),
         api_key: Some(support::key("http-key")),
-        ..Credentials::default()
+        ..support::credentials()
     };
     support::chat(
         "gpt-http-upstream",
@@ -83,38 +83,49 @@ fn chat(api_base: String) -> crate::azure_dispatch::call::ChatCall {
     )
 }
 
-// The composed request reaches the loopback server with its deployment URL, auth and body, and the
-// answer decodes through the production adapter.
-pub(super) async fn check_round_trip() {
+// One composed chat request against a loopback server: the adapter executes it and decodes the answer.
+async fn exchange(
+    status: &str,
+    headers: &str,
+    body: &str,
+) -> (Result<OperationResult, OperationError>, String) {
     let (listener, api_base) = loopback().await;
     let composition = support::composition(&[]);
-    let (http, _json_mode) =
-        prepare_chat_http(&composition, chat(api_base.clone())).expect("the chat request");
-    let expected = http.body.clone();
-    let reply = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-request-id: upstream-http-1\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{REPLY}",
-        REPLY.len()
+    let prepared = prepare(
+        &composition,
+        Request::Chat(Box::new(chat(api_base.clone()))),
+    )
+    .expect("the chat request");
+    let expected = prepared.http.body.clone();
+    let response = format!(
+        "HTTP/1.1 {status}\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
     );
     let deployment = deployment(&api_base);
-    let prepared = chat_request(http, false);
-    let (result, request) = tokio::join!(
-        async {
-            let client = client();
-            let upstream = Azure
-                .execute(&client, &prepared, &deployment)
-                .await
-                .expect("the upstream answer");
-            Azure.decode(&prepared, upstream)
-        },
-        serve_once(listener, &expected, &reply),
-    );
+    let prepared = prepared_request(prepared);
+    let client = client();
+    let executed = async {
+        let upstream = Azure
+            .execute(&client, &prepared, &deployment)
+            .await
+            .expect("the upstream answer");
+        Azure.decode(&prepared, upstream)
+    };
+    let (result, request) = tokio::join!(executed, serve_once(listener, &expected, &response));
+    assert!(request.ends_with(str::from_utf8(&expected).expect("the prepared body")));
+    (result, request)
+}
+
+// The composed request reaches the loopback server with its deployment URL, auth and body, and the answer decodes through the adapter.
+pub(super) async fn check_round_trip() {
+    let headers = "content-type: application/json\r\nx-request-id: upstream-http-1\r\n";
+    let (result, request) = exchange("200 OK", headers, REPLY).await;
     assert!(request.starts_with(
         "POST /openai/deployments/gpt-http-upstream/chat/completions?api-version=2024-10-21 HTTP/1.1\r\n"
     ));
     let lowercase = request.to_ascii_lowercase();
     assert!(lowercase.contains("api-key: http-key"));
     assert!(lowercase.contains("content-type: application/json"));
-    assert!(request.ends_with(str::from_utf8(&expected).expect("the prepared body")));
     let OperationResult::Chat(ChatCompletion::OpenAi(completion)) =
         result.expect("the chat completion")
     else {
@@ -131,28 +142,8 @@ pub(super) async fn check_round_trip() {
 
 // An upstream refusal keeps the provider's status, body and error fields for the route to render.
 pub(super) async fn check_failure() {
-    let (listener, api_base) = loopback().await;
-    let composition = support::composition(&[]);
-    let (http, _json_mode) =
-        prepare_chat_http(&composition, chat(api_base.clone())).expect("the chat request");
-    let expected = http.body.clone();
-    let reply = format!(
-        "HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{ERROR_BODY}",
-        ERROR_BODY.len()
-    );
-    let deployment = deployment(&api_base);
-    let prepared = chat_request(http, false);
-    let (result, request) = tokio::join!(
-        async {
-            let client = client();
-            let upstream = Azure
-                .execute(&client, &prepared, &deployment)
-                .await
-                .expect("the upstream answer");
-            Azure.decode(&prepared, upstream)
-        },
-        serve_once(listener, &expected, &reply),
-    );
+    let headers = "content-type: application/json\r\n";
+    let (result, request) = exchange("400 Bad Request", headers, ERROR_BODY).await;
     assert!(request.starts_with(
         "POST /openai/deployments/gpt-http-upstream/chat/completions?api-version=2024-10-21 HTTP/1.1\r\n"
     ));
@@ -162,10 +153,14 @@ pub(super) async fn check_failure() {
     };
     assert_eq!(response.status, 400);
     assert_eq!(response.body, ERROR_BODY.as_bytes());
-    let body: serde_json::Value = serde_json::from_slice(&response.body).expect("the error body");
-    assert_eq!(body["error"]["type"], "invalid_request_error");
-    assert_eq!(body["error"]["param"], "temperature");
-    assert_eq!(body["error"]["code"], "unsupported_value");
+    let body = support::parse(&response.body);
+    let failure = support::at(&body, "error").expect("the error object");
+    assert_eq!(
+        support::text_at(failure, "type"),
+        Some("invalid_request_error")
+    );
+    assert_eq!(support::text_at(failure, "param"), Some("temperature"));
+    assert_eq!(support::text_at(failure, "code"), Some("unsupported_value"));
 }
 
 pub(super) async fn check_all() {
