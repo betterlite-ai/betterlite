@@ -44,4 +44,12 @@ deviations:
       The tolerance exists so a floated estimate and its settle cancel exactly; the decimal
       floor keeps the same accept and reject boundary for every decimal input.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1200-L1203
+  - what: >-
+      A resize against an inconsistent counter fails with
+      SettlementError::InconsistentCounter, whose counter_key field names the first
+      inconsistent counter, where LiteLLM raises RuntimeError with that key in the message.
+    why: >-
+      betterlite reports failures as typed errors, so a caller matches the variant and reads the
+      key instead of parsing a message; the refusal and the counter it names are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1162-L1164
 kept_bugs: []
