@@ -140,6 +140,6 @@ fn item_keeps_the_stored_timestamps() {
         .with_timezone(&Utc);
     assert_eq!(created, fixed_now());
     assert_eq!(field(&value, "reviewed_at"), &JsonData::Null);
-    assert!(field(&value, "submitted_at") != &JsonData::Null);
-    assert!(field(&value, "updated_at") != &JsonData::Null);
+    assert_ne!(field(&value, "submitted_at"), &JsonData::Null);
+    assert_ne!(field(&value, "updated_at"), &JsonData::Null);
 }

@@ -119,40 +119,52 @@ async fn register_requires_a_mode(#[case] stored: &str) {
     assert_error(&answer, StatusCode::BAD_REQUEST, MODE_REQUIRED);
 }
 
+const BEDROCK_NO_TEAM: &str = r#"{"guardrail":"bedrock"}"#;
+const BEDROCK_FTP: &str = r#"{"guardrail":"bedrock","api_base":"ftp://guard.example.com"}"#;
+const GENERIC_FTP_NO_MODE: &str =
+    r#"{"guardrail":"generic_guardrail_api","api_base":"ftp://guard.example.com"}"#;
+const GENERIC_HOSTED_NO_MODE: &str =
+    r#"{"guardrail":"generic_guardrail_api","api_base":"https://guard.example.com/check"}"#;
+
+// the team check comes first, then membership, then the params, then the name lookup
 #[tokio::test]
 async fn register_runs_the_checks_in_the_order_litellm_does() {
     let harness = harness();
-    let no_team = register(
-        &harness,
+    assert_team_before_params(&harness).await;
+    harness.teams.allow("alice", &["team-a"]);
+    assert_membership_before_params(&harness).await;
+    assert_params_before_the_name_lookup(&harness).await;
+}
+
+async fn assert_team_before_params(harness: &Harness) {
+    let answer = register(
+        harness,
         user_key(None, "alice"),
-        &register_request("guard", r#"{"guardrail":"bedrock"}"#, None),
+        &register_request("guard", BEDROCK_NO_TEAM, None),
     )
     .await;
-    assert_error(&no_team, StatusCode::BAD_REQUEST, TEAM_REQUIRED);
-    harness.teams.allow("alice", &["team-a"]);
-    let outsider = register(
-        &harness,
+    assert_error(&answer, StatusCode::BAD_REQUEST, TEAM_REQUIRED);
+}
+
+async fn assert_membership_before_params(harness: &Harness) {
+    let answer = register(
+        harness,
         user_key(Some("team-a"), "alice"),
-        &register_request(
-            "guard",
-            r#"{"guardrail":"bedrock","api_base":"ftp://guard.example.com"}"#,
-            Some("team-b"),
-        ),
+        &register_request("guard", BEDROCK_FTP, Some("team-b")),
     )
     .await;
     assert_error(
-        &outsider,
+        &answer,
         StatusCode::FORBIDDEN,
         "You are not a member of team 'team-b'",
     );
+}
+
+async fn assert_params_before_the_name_lookup(harness: &Harness) {
     let scheme_first = register(
-        &harness,
+        harness,
         admin(),
-        &register_request(
-            "guard",
-            r#"{"guardrail":"generic_guardrail_api","api_base":"ftp://guard.example.com"}"#,
-            Some("team-a"),
-        ),
+        &register_request("guard", GENERIC_FTP_NO_MODE, Some("team-a")),
     )
     .await;
     assert_error(&scheme_first, StatusCode::BAD_REQUEST, API_BASE_SCHEME);
@@ -160,13 +172,9 @@ async fn register_runs_the_checks_in_the_order_litellm_does() {
         .rows
         .insert(row("g1", "guard", Some("active"), Some("team-b")));
     let mode_first = register(
-        &harness,
+        harness,
         admin(),
-        &register_request(
-            "guard",
-            r#"{"guardrail":"generic_guardrail_api","api_base":"https://guard.example.com/check"}"#,
-            Some("team-a"),
-        ),
+        &register_request("guard", GENERIC_HOSTED_NO_MODE, Some("team-a")),
     )
     .await;
     assert_error(&mode_first, StatusCode::BAD_REQUEST, MODE_REQUIRED);

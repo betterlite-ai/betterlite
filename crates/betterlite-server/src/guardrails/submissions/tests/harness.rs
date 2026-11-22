@@ -1,5 +1,5 @@
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Failure {
+pub(super) enum Failure {
     Create,
     Find,
     Name,
@@ -403,10 +403,7 @@ pub(super) fn first_issue(body: &str) -> JsonData {
 }
 
 pub(super) fn register_request(name: &str, params: &str, team: Option<&str>) -> String {
-    let team_field = match team {
-        Some(team) => format!(r#", "team_id": "{team}""#),
-        None => String::new(),
-    };
+    let team_field = team.map_or_else(String::new, |chosen| format!(r#", "team_id": "{chosen}""#));
     format!(r#"{{"guardrail_name": "{name}", "litellm_params": {params}{team_field}}}"#)
 }
 
