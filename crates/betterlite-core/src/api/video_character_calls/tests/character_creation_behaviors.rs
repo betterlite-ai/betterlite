@@ -9,8 +9,8 @@ use betterlite_openai::video_edits::response::CharacterKind;
 use rstest::rstest;
 
 use super::support::{
-    CALL_ID, Fixture, INITIAL_CALL_TYPE, MOCK_JSON, REQUEST_TIMEOUT_SECONDS, Reply, create_call,
-    headers, json, video,
+    CALL_ID, Fixture, INITIAL_CALL_TYPE, MOCK_JSON, REQUEST_TIMEOUT_SECONDS, Reply,
+    full_create_call, headers, json, video,
 };
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_character_calls::{CharacterOutcome, DEFAULT_TIMEOUT_SECONDS};
@@ -21,7 +21,7 @@ fn name_params(name: &str) -> indexmap::IndexMap<String, Json> {
 
 #[test]
 fn video_create_character_mock_string_and_object() {
-    let mut from_string = create_call();
+    let mut from_string = full_create_call();
     from_string.name = "Mocked".to_owned();
     from_string.mock_response = Some(Json::Text(MOCK_JSON.to_owned()));
     let mut fixture = Fixture::new();
@@ -37,7 +37,7 @@ fn video_create_character_mock_string_and_object() {
     assert_eq!(fixture.state().call_type, INITIAL_CALL_TYPE);
     assert!(fixture.state().optional_params.is_empty());
 
-    let mut from_object = create_call();
+    let mut from_object = full_create_call();
     from_object.name = "Mocked".to_owned();
     from_object.mock_response = Some(json(MOCK_JSON));
     let mut object_fixture = Fixture::answering(Reply::Failed {
@@ -56,18 +56,19 @@ fn video_create_character_mock_string_and_object() {
 }
 
 #[test]
-fn video_create_character_openai_fallback() {
+fn video_create_character_carries_the_callers_provider() {
     let mut fixture = Fixture::new();
-    let call = create_call();
+    let mut call = full_create_call();
+    call.custom_llm_provider = "azure".to_owned();
 
-    let outcome = fixture.create(&call).expect("the handler answers");
-
-    let CharacterOutcome::Done(character) = outcome else {
-        panic!("a direct answer is done");
+    let character = match fixture.create(&call).expect("the handler answers") {
+        CharacterOutcome::Done(character) => character,
+        CharacterOutcome::Pending(_) => panic!("a direct answer is done"),
     };
     assert_eq!(character, super::support::character());
     let seen = &fixture.handler.creates[0];
-    assert_eq!(seen.provider, "openai");
+    assert_eq!(seen.provider, "azure");
+    assert_eq!(seen.logged.custom_llm_provider.as_deref(), Some("azure"));
     assert_eq!(seen.name, "Wren");
     assert_eq!(seen.video, video());
     assert!(!seen.is_async);
@@ -78,7 +79,7 @@ fn video_create_character_openai_fallback() {
 #[tokio::test]
 async fn avideo_create_character_defaults_and_openai() {
     let mut fixture = Fixture::new();
-    let call = create_call();
+    let call = full_create_call();
 
     let character = fixture.acreate(&call).await.expect("the handler answers");
 
@@ -92,7 +93,7 @@ async fn avideo_create_character_defaults_and_openai() {
 #[tokio::test]
 async fn avideo_create_character_context_propagation() {
     let mut fixture = Fixture::answering(Reply::Deferred);
-    let call = create_call();
+    let call = full_create_call();
 
     let character = fixture.acreate(&call).await.expect("the future answers");
 
@@ -115,7 +116,7 @@ async fn avideo_create_character_context_propagation() {
 #[test]
 fn create_character_request_params() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.extra_headers = Some(headers());
     call.extra.insert("mockless".to_owned(), Json::Bool(true));
 
@@ -149,15 +150,17 @@ fn create_character_request_params() {
 #[test]
 fn create_character_logging_updates() {
     let mut fixture = Fixture::new();
-    let call = create_call();
+    let mut call = full_create_call();
+    call.custom_llm_provider = "azure".to_owned();
 
     fixture.create(&call).expect("the handler answers");
 
+    assert_eq!(fixture.handler.creates[0].provider, "azure");
     let state = fixture.state();
     assert_eq!(state.model, "");
     assert_eq!(state.call_type, "video_create_character");
     assert_eq!(state.user.as_deref(), Some("max"));
-    assert_eq!(state.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(state.custom_llm_provider.as_deref(), Some("azure"));
     assert_eq!(state.optional_params, name_params("Wren"));
     assert_eq!(
         state.litellm_params,
@@ -171,7 +174,7 @@ fn create_character_logging_updates() {
 #[test]
 fn create_a_provider_without_a_video_config_is_unsupported() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.custom_llm_provider = "anthropic".to_owned();
 
     let failure = fixture.create(&call).expect_err("no video config answers");
@@ -192,7 +195,7 @@ fn create_a_provider_without_a_video_config_is_unsupported() {
 #[test]
 fn create_a_provider_betterlite_does_not_know_is_a_value_error() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.custom_llm_provider = "acme".to_owned();
 
     let failure = fixture.create(&call).expect_err("acme is no provider");
@@ -208,7 +211,7 @@ fn create_a_provider_betterlite_does_not_know_is_a_value_error() {
 #[test]
 fn create_edenai_is_unavailable_until_its_config_is_installed() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.custom_llm_provider = "edenai".to_owned();
 
     let failure = fixture
@@ -231,7 +234,7 @@ fn create_edenai_is_unavailable_until_its_config_is_installed() {
 #[case::absent(None)]
 fn create_falsey_timeout_falls_back_to_the_request_timeout(#[case] timeout: Option<f64>) {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.timeout = timeout;
 
     fixture.create(&call).expect("the handler answers");
@@ -246,7 +249,7 @@ fn create_falsey_timeout_falls_back_to_the_request_timeout(#[case] timeout: Opti
 #[test]
 fn create_truthy_timeout_passes_through() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.timeout = Some(2.5_f64);
 
     fixture.create(&call).expect("the handler answers");
@@ -265,7 +268,7 @@ fn create_handler_failure_with_status_keeps_its_class() {
     });
 
     let failure = fixture
-        .create(&create_call())
+        .create(&full_create_call())
         .expect_err("the handler fails");
 
     let ErrorClass::RateLimit(details) = &failure.class else {
@@ -285,7 +288,7 @@ fn create_handler_failure_without_status_is_an_api_connection() {
     });
 
     let failure = fixture
-        .create(&create_call())
+        .create(&full_create_call())
         .expect_err("the handler fails");
 
     let ErrorClass::ApiConnection(context) = &failure.class else {
@@ -298,7 +301,7 @@ fn create_handler_failure_without_status_is_an_api_connection() {
 #[test]
 fn create_a_wrongly_typed_user_is_a_bad_request() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.extra.insert(
         "user".to_owned(),
         Json::Number(serde_json::Number::from(5_i64)),
@@ -320,7 +323,7 @@ fn create_a_wrongly_typed_user_is_a_bad_request() {
 #[test]
 fn create_mock_invalid_json_is_a_value_error() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.mock_response = Some(Json::Text("not json".to_owned()));
 
     let failure = fixture.create(&call).expect_err("the mock is no JSON");
@@ -339,7 +342,7 @@ fn create_mock_invalid_json_is_a_value_error() {
 #[test]
 fn create_mock_with_the_wrong_shape_is_a_value_error() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.mock_response = Some(json(r#"{"id":1}"#));
 
     let failure = fixture.create(&call).expect_err("the id is not text");
@@ -357,14 +360,13 @@ fn create_mock_with_the_wrong_shape_is_a_value_error() {
 #[test]
 fn create_mock_answers_before_the_provider_is_read() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.custom_llm_provider = "acme".to_owned();
     call.mock_response = Some(json(MOCK_JSON));
 
-    let outcome = fixture.create(&call).expect("the mock answers first");
-
-    let CharacterOutcome::Done(character) = outcome else {
-        panic!("a mock answers directly");
+    let character = match fixture.create(&call).expect("the mock answers first") {
+        CharacterOutcome::Done(character) => character,
+        CharacterOutcome::Pending(_) => panic!("a mock answers directly"),
     };
     assert_eq!(character.name, "Mocked");
     assert!(fixture.handler.creates.is_empty());
@@ -373,14 +375,13 @@ fn create_mock_answers_before_the_provider_is_read() {
 #[tokio::test]
 async fn create_with_the_async_flag_returns_the_pending_future() {
     let mut fixture = Fixture::answering(Reply::Deferred);
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.is_async = true;
 
-    let outcome = fixture.create(&call).expect("the handler raises a future");
-    let CharacterOutcome::Pending(pending) = outcome else {
-        panic!("the async flag asks for the future");
+    let character = match fixture.create(&call).expect("the handler raises a future") {
+        CharacterOutcome::Pending(pending) => pending.await.expect("the future answers"),
+        CharacterOutcome::Done(_) => panic!("the async flag asks for the future"),
     };
-    let character = pending.await.expect("the future answers");
     assert_eq!(character, super::support::character());
     assert!(fixture.handler.creates[0].is_async);
 }
@@ -391,7 +392,7 @@ async fn create_a_pending_failure_is_mapped() {
         status_code: Some(400),
         message: "the future failed",
     });
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.is_async = true;
 
     let outcome = fixture.create(&call).expect("the handler raises a future");
@@ -410,7 +411,7 @@ async fn create_a_pending_failure_is_mapped() {
 #[test]
 fn create_extra_headers_and_the_video_reach_the_handler() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.extra_headers = Some(headers());
 
     fixture.create(&call).expect("the handler answers");
@@ -424,13 +425,15 @@ fn create_extra_headers_and_the_video_reach_the_handler() {
 #[test]
 fn create_outcome_debug_names_the_form() {
     let mut deferred = Fixture::answering(Reply::Deferred);
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.is_async = true;
     let pending = deferred.create(&call).expect("the handler raises a future");
     assert_eq!(format!("{pending:?}"), "Pending(<future>)");
 
     let mut direct = Fixture::new();
-    let done = direct.create(&create_call()).expect("the handler answers");
+    let done = direct
+        .create(&full_create_call())
+        .expect("the handler answers");
     assert!(format!("{done:?}").starts_with("Done("));
 }
 
@@ -438,13 +441,12 @@ fn create_outcome_debug_names_the_form() {
 #[test]
 fn create_a_null_mock_response_is_absent() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.mock_response = Some(Json::Null);
 
-    let outcome = fixture.create(&call).expect("the handler answers");
-
-    let CharacterOutcome::Done(character) = outcome else {
-        panic!("the handler answers directly");
+    let character = match fixture.create(&call).expect("the handler answers") {
+        CharacterOutcome::Done(character) => character,
+        CharacterOutcome::Pending(_) => panic!("the handler answers directly"),
     };
     assert_eq!(character, super::support::character());
     assert_eq!(fixture.handler.creates.len(), 1);
@@ -454,7 +456,7 @@ fn create_a_null_mock_response_is_absent() {
 #[test]
 fn create_an_unusable_timeout_is_refused_after_logging() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.timeout = Some(-1.0_f64);
 
     let failure = fixture
@@ -474,7 +476,7 @@ fn create_an_unusable_timeout_is_refused_after_logging() {
 #[test]
 fn create_extra_query_and_body_are_not_forwarded() {
     let mut fixture = Fixture::new();
-    let mut call = create_call();
+    let mut call = full_create_call();
     call.extra_query = Some(indexmap::IndexMap::from([(
         "api-version".to_owned(),
         Json::Text("2024-01-01".to_owned()),

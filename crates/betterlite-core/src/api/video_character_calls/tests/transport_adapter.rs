@@ -395,12 +395,11 @@ fn transport_adapter_create_answers_in_place() {
     );
     let call = create_call();
 
-    let outcome =
-        video_create_character(&mut transport, deps, &call).expect("the transport answers");
-
-    let CharacterOutcome::Done(object) = outcome else {
-        panic!("a blocking transport answers directly");
-    };
+    let object =
+        match video_create_character(&mut transport, deps, &call).expect("the transport answers") {
+            CharacterOutcome::Done(object) => object,
+            CharacterOutcome::Pending(_) => panic!("a blocking transport answers directly"),
+        };
     assert_eq!(object, character());
     drop(transport);
     assert_eq!(
@@ -484,11 +483,11 @@ fn transport_adapter_get_answers_in_place() {
     );
     let call = get_call();
 
-    let outcome = video_get_character(&mut transport, deps, &call).expect("the transport answers");
-
-    let CharacterOutcome::Done(object) = outcome else {
-        panic!("a blocking transport answers directly");
-    };
+    let object =
+        match video_get_character(&mut transport, deps, &call).expect("the transport answers") {
+            CharacterOutcome::Done(object) => object,
+            CharacterOutcome::Pending(_) => panic!("a blocking transport answers directly"),
+        };
     assert_eq!(object, character());
     drop(transport);
     assert_eq!(
@@ -573,12 +572,11 @@ fn transport_adapter_passes_the_resolved_fallback_timeout() {
     let mut call = create_call();
     call.timeout = Some(0.0_f64);
 
-    let outcome =
-        video_create_character(&mut transport, deps, &call).expect("the transport answers");
-
-    let CharacterOutcome::Done(object) = outcome else {
-        panic!("a blocking transport answers directly");
-    };
+    let object =
+        match video_create_character(&mut transport, deps, &call).expect("the transport answers") {
+            CharacterOutcome::Done(object) => object,
+            CharacterOutcome::Pending(_) => panic!("a blocking transport answers directly"),
+        };
     assert_eq!(object, character());
     drop(transport);
     assert_eq!(

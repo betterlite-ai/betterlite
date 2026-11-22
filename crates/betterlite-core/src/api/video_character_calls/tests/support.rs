@@ -20,9 +20,8 @@ use thiserror::Error;
 use super::super::error::{CharacterCallFailure, CharacterHandlerFailure};
 use super::super::handler::{CharacterAnswered, CharacterHandler, HandlerArguments, HandlerCall};
 use super::super::{
-    CharacterCallDeps, CharacterOutcome, CreateCharacterCall, DEFAULT_PROVIDER,
-    DEFAULT_TIMEOUT_SECONDS, GetCharacterCall, avideo_create_character, avideo_get_character,
-    video_create_character, video_get_character,
+    CharacterCallDeps, CharacterOutcome, CreateCharacterCall, GetCharacterCall,
+    avideo_create_character, avideo_get_character, video_create_character, video_get_character,
 };
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_records::CharacterObject;
@@ -77,45 +76,37 @@ struct Calls {
 }
 
 fn calls() -> Calls {
-    let mut extra = extra_map();
-    extra.insert(
+    let mut create = create_call();
+    create.name = "Wren".to_owned();
+    create.video = video();
+    create.litellm_call_id = Some(CALL_ID.to_owned());
+    create.extra = extra_map();
+    create.extra.insert(
         "api_base".to_owned(),
         Json::Text("https://api.openai.com/v1".to_owned()),
     );
-    let create = CreateCharacterCall {
-        name: "Wren".to_owned(),
-        video: video(),
-        timeout: Some(DEFAULT_TIMEOUT_SECONDS),
-        custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
-        extra_headers: None,
-        extra_query: None,
-        extra_body: None,
-        mock_response: None,
-        litellm_call_id: Some(CALL_ID.to_owned()),
-        extra,
-        is_async: false,
-    };
-    let get = GetCharacterCall {
-        character_id: "char-1".to_owned(),
-        timeout: Some(DEFAULT_TIMEOUT_SECONDS),
-        custom_llm_provider: DEFAULT_PROVIDER.to_owned(),
-        extra_headers: None,
-        extra_query: None,
-        extra_body: None,
-        mock_response: None,
-        litellm_call_id: Some(CALL_ID.to_owned()),
-        extra: extra_map(),
-        is_async: false,
-    };
+    let mut get = get_call();
+    get.character_id = "char-1".to_owned();
+    get.litellm_call_id = Some(CALL_ID.to_owned());
+    get.extra = extra_map();
     Calls { create, get }
 }
 
-// the call with every keyword a case cares about
+// the timeout and the provider stay at the Default values, so the openai and 600 assertions prove them
 pub(crate) fn create_call() -> CreateCharacterCall {
-    calls().create
+    CreateCharacterCall::default()
 }
 
 pub(crate) fn get_call() -> GetCharacterCall {
+    GetCharacterCall::default()
+}
+
+// the call with every keyword a case cares about
+pub(crate) fn full_create_call() -> CreateCharacterCall {
+    calls().create
+}
+
+pub(crate) fn full_get_call() -> GetCharacterCall {
     calls().get
 }
 

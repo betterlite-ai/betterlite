@@ -9,7 +9,7 @@ use betterlite_openai::video_edits::response::CharacterKind;
 use rstest::rstest;
 
 use super::support::{
-    CALL_ID, Fixture, INITIAL_CALL_TYPE, MOCK_JSON, REQUEST_TIMEOUT_SECONDS, Reply, get_call,
+    CALL_ID, Fixture, INITIAL_CALL_TYPE, MOCK_JSON, REQUEST_TIMEOUT_SECONDS, Reply, full_get_call,
     headers, json,
 };
 use crate::api::video_character_calls::CharacterOutcome;
@@ -23,7 +23,7 @@ fn id_params(character_id: &str) -> indexmap::IndexMap<String, Json> {
 
 #[test]
 fn video_get_character_mock_string_and_object() {
-    let mut from_string = get_call();
+    let mut from_string = full_get_call();
     from_string.character_id = "Mocked".to_owned();
     from_string.mock_response = Some(Json::Text(MOCK_JSON.to_owned()));
     let mut fixture = Fixture::new();
@@ -38,7 +38,7 @@ fn video_get_character_mock_string_and_object() {
     assert_eq!(fixture.state().call_type, INITIAL_CALL_TYPE);
     assert!(fixture.state().optional_params.is_empty());
 
-    let mut from_object = get_call();
+    let mut from_object = full_get_call();
     from_object.mock_response = Some(json(MOCK_JSON));
     let mut object_fixture = Fixture::answering(Reply::Failed {
         status_code: Some(500),
@@ -53,19 +53,20 @@ fn video_get_character_mock_string_and_object() {
 }
 
 #[test]
-fn video_get_character_openai_fallback() {
+fn video_get_character_carries_the_callers_provider() {
     let mut fixture = Fixture::new();
-    let call = get_call();
+    let mut call = full_get_call();
+    call.custom_llm_provider = "azure".to_owned();
 
-    let outcome = fixture.get(&call).expect("the handler answers");
-
-    let CharacterOutcome::Done(character) = outcome else {
-        panic!("a direct answer is done");
+    let character = match fixture.get(&call).expect("the handler answers") {
+        CharacterOutcome::Done(character) => character,
+        CharacterOutcome::Pending(_) => panic!("a direct answer is done"),
     };
     assert_eq!(character, super::support::character());
     let seen = &fixture.handler.gets[0];
     assert_eq!(seen.character_id, "char-1");
-    assert_eq!(seen.provider, "openai");
+    assert_eq!(seen.provider, "azure");
+    assert_eq!(seen.logged.custom_llm_provider.as_deref(), Some("azure"));
     assert!(!seen.is_async);
     assert_eq!(seen.timeout, Duration::from_secs(600));
 }
@@ -73,7 +74,7 @@ fn video_get_character_openai_fallback() {
 #[tokio::test]
 async fn avideo_get_character_defaults_and_openai() {
     let mut fixture = Fixture::new();
-    let call = get_call();
+    let call = full_get_call();
 
     let character = fixture.aget(&call).await.expect("the handler answers");
 
@@ -87,7 +88,7 @@ async fn avideo_get_character_defaults_and_openai() {
 #[tokio::test]
 async fn avideo_get_character_context_propagation() {
     let mut fixture = Fixture::answering(Reply::Deferred);
-    let call = get_call();
+    let call = full_get_call();
 
     let character = fixture.aget(&call).await.expect("the future answers");
 
@@ -110,7 +111,7 @@ async fn avideo_get_character_context_propagation() {
 #[test]
 fn get_character_request_params() {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.extra_headers = Some(headers());
     call.extra.insert("mockless".to_owned(), Json::Bool(true));
 
@@ -143,15 +144,17 @@ fn get_character_request_params() {
 #[test]
 fn get_character_logging_updates() {
     let mut fixture = Fixture::new();
-    let call = get_call();
+    let mut call = full_get_call();
+    call.custom_llm_provider = "azure".to_owned();
 
     fixture.get(&call).expect("the handler answers");
 
+    assert_eq!(fixture.handler.gets[0].provider, "azure");
     let state = fixture.state();
     assert_eq!(state.model, "");
     assert_eq!(state.call_type, "video_get_character");
     assert_eq!(state.user.as_deref(), Some("max"));
-    assert_eq!(state.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(state.custom_llm_provider.as_deref(), Some("azure"));
     assert_eq!(state.optional_params, id_params("char-1"));
     assert_eq!(
         state.litellm_params,
@@ -165,7 +168,7 @@ fn get_character_logging_updates() {
 #[test]
 fn get_a_provider_without_a_video_config_is_unsupported() {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.custom_llm_provider = "anthropic".to_owned();
 
     let failure = fixture.get(&call).expect_err("no video config answers");
@@ -186,7 +189,7 @@ fn get_a_provider_without_a_video_config_is_unsupported() {
 #[test]
 fn get_a_provider_betterlite_does_not_know_is_a_value_error() {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.custom_llm_provider = "acme".to_owned();
 
     let failure = fixture.get(&call).expect_err("acme is no provider");
@@ -202,7 +205,7 @@ fn get_a_provider_betterlite_does_not_know_is_a_value_error() {
 #[test]
 fn get_edenai_is_unavailable_until_its_config_is_installed() {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.custom_llm_provider = "edenai".to_owned();
 
     let failure = fixture.get(&call).expect_err("B5838 installs the config");
@@ -220,7 +223,7 @@ fn get_edenai_is_unavailable_until_its_config_is_installed() {
 #[case::absent(None)]
 fn get_falsey_timeout_falls_back_to_the_request_timeout(#[case] timeout: Option<f64>) {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.timeout = timeout;
 
     fixture.get(&call).expect("the handler answers");
@@ -235,7 +238,7 @@ fn get_falsey_timeout_falls_back_to_the_request_timeout(#[case] timeout: Option<
 #[test]
 fn get_truthy_timeout_passes_through() {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.timeout = Some(2.5_f64);
 
     fixture.get(&call).expect("the handler answers");
@@ -250,7 +253,9 @@ fn get_handler_failure_with_status_keeps_its_class() {
         message: "slow down",
     });
 
-    let failure = fixture.get(&get_call()).expect_err("the handler fails");
+    let failure = fixture
+        .get(&full_get_call())
+        .expect_err("the handler fails");
 
     let ErrorClass::RateLimit(details) = &failure.class else {
         panic!("expected a rate limit, got {:?}", failure.class);
@@ -267,7 +272,9 @@ fn get_handler_failure_without_status_is_an_api_connection() {
         message: "the client broke",
     });
 
-    let failure = fixture.get(&get_call()).expect_err("the handler fails");
+    let failure = fixture
+        .get(&full_get_call())
+        .expect_err("the handler fails");
 
     let ErrorClass::ApiConnection(context) = &failure.class else {
         panic!("expected an api connection, got {:?}", failure.class);
@@ -279,7 +286,7 @@ fn get_handler_failure_without_status_is_an_api_connection() {
 #[test]
 fn get_a_wrongly_typed_user_is_a_bad_request() {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.extra.insert(
         "user".to_owned(),
         Json::Number(serde_json::Number::from(5_i64)),
@@ -300,7 +307,7 @@ fn get_a_wrongly_typed_user_is_a_bad_request() {
 #[test]
 fn get_mock_invalid_json_is_a_value_error() {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.mock_response = Some(Json::Text("not json".to_owned()));
 
     let failure = fixture.get(&call).expect_err("the mock is no JSON");
@@ -316,7 +323,7 @@ fn get_mock_invalid_json_is_a_value_error() {
 #[test]
 fn get_mock_with_the_wrong_shape_is_a_value_error() {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.mock_response = Some(json(r#"{"created_at":"yesterday"}"#));
 
     let failure = fixture
@@ -336,14 +343,13 @@ fn get_mock_with_the_wrong_shape_is_a_value_error() {
 #[test]
 fn get_mock_answers_before_the_provider_is_read() {
     let mut fixture = Fixture::new();
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.custom_llm_provider = "acme".to_owned();
     call.mock_response = Some(json(MOCK_JSON));
 
-    let outcome = fixture.get(&call).expect("the mock answers first");
-
-    let CharacterOutcome::Done(character) = outcome else {
-        panic!("a mock answers directly");
+    let character = match fixture.get(&call).expect("the mock answers first") {
+        CharacterOutcome::Done(character) => character,
+        CharacterOutcome::Pending(_) => panic!("a mock answers directly"),
     };
     assert_eq!(character.name, "Mocked");
     assert!(fixture.handler.gets.is_empty());
@@ -352,14 +358,13 @@ fn get_mock_answers_before_the_provider_is_read() {
 #[tokio::test]
 async fn get_with_the_async_flag_returns_the_pending_future() {
     let mut fixture = Fixture::answering(Reply::Deferred);
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.is_async = true;
 
-    let outcome = fixture.get(&call).expect("the handler raises a future");
-    let CharacterOutcome::Pending(pending) = outcome else {
-        panic!("the async flag asks for the future");
+    let character = match fixture.get(&call).expect("the handler raises a future") {
+        CharacterOutcome::Pending(pending) => pending.await.expect("the future answers"),
+        CharacterOutcome::Done(_) => panic!("the async flag asks for the future"),
     };
-    let character = pending.await.expect("the future answers");
     assert_eq!(character, super::support::character());
     assert!(fixture.handler.gets[0].is_async);
 }
@@ -370,7 +375,7 @@ async fn get_a_pending_failure_is_mapped() {
         status_code: Some(401),
         message: "the future failed",
     });
-    let mut call = get_call();
+    let mut call = full_get_call();
     call.is_async = true;
 
     let outcome = fixture.get(&call).expect("the handler raises a future");
@@ -387,4 +392,25 @@ async fn get_a_pending_failure_is_mapped() {
     };
     assert_eq!(details.status.0, 401);
     assert!(details.message.contains("the future failed"));
+}
+
+// extra_query and extra_body are accepted and never forwarded on a character call
+#[test]
+fn get_extra_query_and_body_are_not_forwarded() {
+    let mut fixture = Fixture::new();
+    let mut call = full_get_call();
+    call.extra_query = Some(indexmap::IndexMap::from([(
+        "api-version".to_owned(),
+        Json::Text("2024-01-01".to_owned()),
+    )]));
+    call.extra_body = Some(indexmap::IndexMap::from([(
+        "metadata".to_owned(),
+        Json::Bool(true),
+    )]));
+
+    fixture.get(&call).expect("the handler answers");
+
+    let params = &fixture.handler.gets[0].litellm_params;
+    assert!(!params.contains_key("api-version"));
+    assert!(!params.contains_key("metadata"));
 }
