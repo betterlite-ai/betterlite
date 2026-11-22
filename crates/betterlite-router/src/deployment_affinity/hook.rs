@@ -46,13 +46,10 @@ pub(super) fn hook_identities(
 // model_info's id, with LiteLLM's warning when the router attached no usable one
 pub(super) fn selected_model_id(request: &PreCallRequest<'_>) -> Option<String> {
     let kwargs = request.request_kwargs;
-    let Some(model_info) = request
+    let model_info = request
         .model_info
         .or_else(|| json::request_model_info(kwargs))
-        .or_else(|| json::metadata_model_info(kwargs))
-    else {
-        return None;
-    };
+        .or_else(|| json::metadata_model_info(kwargs))?;
     match model_info.get("id") {
         Some(Json::Text(model_id)) if !model_id.is_empty() => Some(model_id.clone()),
         None

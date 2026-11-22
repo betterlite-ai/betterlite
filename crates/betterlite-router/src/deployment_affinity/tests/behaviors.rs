@@ -36,7 +36,7 @@ pub(super) async fn shared_pin_selects() {
     let healthy = pool(&["a", "b"]);
     assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["b"]);
     // the mirror carries DualCache's own 600s default, not the pin's remaining lifetime
-    assert_eq!(fixture.expiry(&key), Some(600.0));
+    assert_eq!(fixture.expiry(&key), Some(600.0_f64));
     server.set_down(true);
     assert_eq!(fixture.filter(&healthy, Some(&kwargs)).await, ["b"]);
 }
@@ -177,10 +177,10 @@ pub(super) async fn hook_scopes_the_session_pin_by_caller() {
         Some("a"),
     );
     fixture.hook(&kwargs, None).await.unwrap();
-    assert_eq!(fixture.expiry(&user_pin("key")), Some(3600.0));
+    assert_eq!(fixture.expiry(&user_pin("key")), Some(3_600.0_f64));
     assert_eq!(
         fixture.expiry(&scoped_session_pin("key", "s1")),
-        Some(3600.0)
+        Some(3_600.0_f64)
     );
     let owner = caller_session_metadata("key", "s1");
     assert_eq!(fixture.selected(&owner).await, ["a"]);
@@ -218,7 +218,7 @@ pub(super) async fn hook_first_writer_wins() {
 pub(super) async fn expired_pin_is_replaced() {
     let fixture = Fixture::new(settings_with_ttl(&[AffinityFlag::Deployment], 10), &[]);
     fixture.seed(&user_pin("key"), &pin("a"), 10);
-    fixture.advance(20.0);
+    fixture.set(20.0);
     let kwargs = hook_request(
         &[
             ("deployment_model_name", text(MODEL_GROUP)),

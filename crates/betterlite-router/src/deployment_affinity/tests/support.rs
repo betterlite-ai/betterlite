@@ -73,9 +73,8 @@ impl Fixture {
         }
     }
 
-    pub(crate) fn advance(&self, seconds: f64) {
-        let mut now = self.now.lock().unwrap_or_else(PoisonError::into_inner);
-        *now += seconds;
+    pub(crate) fn set(&self, seconds: f64) {
+        *self.now.lock().unwrap_or_else(PoisonError::into_inner) = seconds;
     }
 
     pub(crate) async fn filter(
@@ -313,8 +312,8 @@ pub(crate) fn model_info(model_id: &str) -> JsonObject {
 
 pub(crate) fn hook_request(fields: &[(&str, Json)], model_id: Option<&str>) -> JsonObject {
     let mut kwargs = metadata(fields);
-    if let Some(model_id) = model_id {
-        kwargs.insert("model_info".to_owned(), Json::Object(model_info(model_id)));
+    if let Some(id) = model_id {
+        kwargs.insert("model_info".to_owned(), Json::Object(model_info(id)));
     }
     kwargs
 }

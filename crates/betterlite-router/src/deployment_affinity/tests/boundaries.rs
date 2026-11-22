@@ -177,7 +177,7 @@ pub(super) async fn hook_marker_sets_session_ttl() {
     let fixture = fixture_ttl(&[], 3600);
     let kwargs = marked_hook("s1", 5, "a");
     fixture.hook(&kwargs, None).await.unwrap();
-    assert_eq!(fixture.expiry(&session_pin("s1")), Some(5.0));
+    assert_eq!(fixture.expiry(&session_pin("s1")), Some(5.0_f64));
 }
 
 // the router ttl bounds the caller pin
@@ -185,7 +185,7 @@ pub(super) async fn hook_user_ttl_uses_settings() {
     let fixture = fixture_ttl(&[AffinityFlag::Deployment], 120);
     let kwargs = hook_kwargs(("user_api_key_hash", "key"), "a");
     fixture.hook(&kwargs, None).await.unwrap();
-    assert_eq!(fixture.expiry(&user_pin("key")), Some(120.0));
+    assert_eq!(fixture.expiry(&user_pin("key")), Some(120.0_f64));
 }
 
 // without any model_info the hook writes no pin
