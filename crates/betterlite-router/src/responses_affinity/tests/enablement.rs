@@ -24,6 +24,18 @@ fn a_disabled_check_returns_the_candidates_unchanged() {
 }
 
 #[test]
+fn a_disabled_check_does_not_touch_a_non_object_metadata() {
+    let deployments = vec![spec("A", params(Some("u"), Some("k")))];
+    let credentials = CredentialSnapshot::default();
+    let check = check(settings(false, &[]), &credentials);
+    let mut request = Request::with_items(vec![reasoning_item("A")]);
+    request.metadata = Some(Json::Null);
+    let returned = request.filter(&check, "gpt-group", &deployments).unwrap();
+    assert_eq!(ids(&returned), ids(&deployments));
+    assert_eq!(request.metadata, Some(Json::Null));
+}
+
+#[test]
 fn global_affinity_enables_every_group() {
     let deployments = vec![spec("A", params(Some("u"), Some("k")))];
     let credentials = CredentialSnapshot::default();

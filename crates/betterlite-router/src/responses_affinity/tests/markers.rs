@@ -50,6 +50,15 @@ fn an_empty_decoded_id_stops_the_input_scan() {
 }
 
 #[test]
+fn a_plain_item_id_falls_through_to_the_wrapped_content() {
+    let item = Json::Object(object(&[
+        ("id", text("msg_123")),
+        ("encrypted_content", text(&wrapped_marker("A"))),
+    ]));
+    assert_eq!(item_model_id(&record(item)), Some("A".to_owned()));
+}
+
+#[test]
 fn an_item_with_only_wrapped_content_carries_the_marker() {
     let item = Json::Object(object(&[("encrypted_content", text(&wrapped_marker("A")))]));
     assert_eq!(item_model_id(&record(item)), Some("A".to_owned()));
