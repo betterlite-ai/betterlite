@@ -6,7 +6,7 @@ use super::ports::{CleanupScheduler, GeneralSettingsView, cleanup_job_spec};
 use super::schedule::{CleanupSchedule, cleanup_schedule_of, wants_cleanup_job};
 use super::trigger::{ScheduleContext, cleanup_trigger, trigger_text};
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CleanupScheduleState {
     pub last_attempt: Option<CleanupSchedule>,
     pub reschedule_failed: bool,
