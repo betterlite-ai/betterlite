@@ -66,7 +66,7 @@ deviations:
     why: >-
       betterlite's alias type keeps only the target and the hidden flag, so an item that does not hide the
       alias is indistinguishable from the string form and routes the same way.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1207-L1211
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L993-L995
   - what: >-
       A retry_policy entry written with an explicit null is dropped from the reported mapping.
     why: >-
