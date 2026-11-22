@@ -1,4 +1,7 @@
 use betterlite_logging::private_json::error::PrivateJsonError;
+use betterlite_router::model_catalog_lookup::error::LookupError;
+
+use crate::team_access::error::TeamAccessError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ShadowEvalRequestError {
@@ -27,16 +30,15 @@ pub enum AccessError {
     ViewerForbidden { action: String },
     #[error("only a proxy admin can {action}")]
     WriterForbidden { action: String },
-    #[error("the caller's role could not be read: {message}")]
-    Caller { message: String },
+    #[error("the caller's role could not be read")]
+    Caller(#[source] TeamAccessError),
 }
 
 impl AccessError {
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
-            Self::ViewerForbidden { .. } | Self::WriterForbidden { .. } => 403,
-            Self::Caller { .. } => 500,
+            Self::ViewerForbidden { .. } | Self::WriterForbidden { .. } | Self::Caller(_) => 403,
         }
     }
 }
@@ -57,12 +59,15 @@ pub enum ShadowEvalValidationError {
     JudgeIsCandidate { judge: String, collisions: String },
     #[error("models not served by this proxy: {models}")]
     UnservedModels { models: String },
+    #[error("the router's arm models could not be read: {source}")]
+    RouterArms(#[source] LookupError),
 }
 
 impl ShadowEvalValidationError {
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
+            Self::RouterArms(_) => 500,
             Self::UnconfiguredRouters { .. }
             | Self::UnknownTargets { .. }
             | Self::AutoRouterModel { .. }

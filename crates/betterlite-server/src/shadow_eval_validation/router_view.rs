@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::deployment_catalog::scope::litellm_model;
 use betterlite_router::model_catalog_lookup::alias::AliasMap;
+use betterlite_router::model_catalog_lookup::listing::get_all_deployments;
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_secret_managers::secret_helpers::SecretManagerReadState;
@@ -24,36 +25,27 @@ pub struct ShadowEvalRouter<'router> {
 
 impl ShadowEvalRouter<'_> {
     #[must_use]
-    pub fn with_lookup<T, F>(&self, read: F) -> T
-    where
-        F: for<'read> FnOnce(CatalogLookup<'read>) -> T,
-    {
-        let inferred_provider = |model: &str| (self.inferred_provider)(model);
-        let lookup = CatalogLookup {
+    pub fn lookup(&self) -> CatalogLookup<'_> {
+        CatalogLookup {
             catalog: self.catalog,
             model_group_alias: self.model_group_alias,
             routing_groups: self.routing_groups,
-            inferred_provider: &inferred_provider,
-        };
-        read(lookup)
+            inferred_provider: self.inferred_provider,
+        }
     }
 
     // _is_configured_pre_routing_strategy: a registry holds a deployment whose model names one of the four routers.
+    // The registries are keyed by deployment.model_name, so only the exact-name rows answer, never an alias.
     #[must_use]
     pub fn has_strategy_deployment(&self, name: &str) -> bool {
-        self.with_lookup(|lookup| {
-            // a stale index or a malformed alias reads as empty, which rejects the start
-            lookup
-                .get_model_list(Some(name), None)
-                .unwrap_or_default()
-                .iter()
-                .any(|row| {
-                    matches!(
-                        row.litellm_params.get("model"),
-                        Some(Json::Text(model)) if classify_strategy_router_model(model).is_some()
-                    )
-                })
-        })
+        get_all_deployments(self.catalog, name, None, None)
+            .iter()
+            .any(|row| {
+                matches!(
+                    row.litellm_params.get("model"),
+                    Some(Json::Text(model)) if classify_strategy_router_model(model).is_some()
+                )
+            })
     }
 }
 
@@ -61,16 +53,14 @@ impl ShadowEvalRouter<'_> {
 #[async_trait]
 impl JudgeRouter for ShadowEvalRouter<'_> {
     fn resolved_litellm_models(&self, model: &str, team_id: Option<&str>) -> Vec<String> {
-        self.with_lookup(|lookup| {
-            lookup
-                .get_model_list(Some(model), team_id)
-                .unwrap_or_default()
-                .iter()
-                .map(litellm_model)
-                .filter(|served| !served.is_empty())
-                .map(str::to_owned)
-                .collect()
-        })
+        self.lookup()
+            .get_model_list(Some(model), team_id)
+            .unwrap_or_default()
+            .iter()
+            .map(litellm_model)
+            .filter(|served| !served.is_empty())
+            .map(str::to_owned)
+            .collect()
     }
 
     async fn acompletion(&self, _call: JudgeCall) -> Result<Json, JudgeDispatchError> {

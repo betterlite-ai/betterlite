@@ -117,7 +117,22 @@ pub(super) fn validate_with(
     records: &TargetRecords<'_>,
     credentials: &Credentials,
 ) -> Result<(), ShadowEvalValidationError> {
-    run_validation(request, deployments, records, credentials)
+    run_validation(
+        request,
+        deployments,
+        JsonObject::new(),
+        records,
+        credentials,
+    )
+}
+
+pub(super) fn validate_with_aliases(
+    request: &StartShadowEvalRequest,
+    deployments: &[(&str, JsonObject)],
+    aliases: JsonObject,
+    records: &TargetRecords<'_>,
+) -> Result<(), ShadowEvalValidationError> {
+    run_validation(request, deployments, aliases, records, &Credentials::None)
 }
 
 fn unconsulted_manager() -> SecretManagerReadState<'static> {
@@ -166,7 +181,7 @@ fn resolution_context(catalog: &ModelCatalog) -> ResolutionContext<'_> {
     }
 }
 
-fn snapshot(deployments: &[(&str, JsonObject)]) -> Snapshot {
+fn snapshot(deployments: &[(&str, JsonObject)], aliases: &JsonObject) -> Snapshot {
     let info = Json::Object(JsonObject::new());
     let rows: Vec<Row<'_>> = deployments
         .iter()
@@ -176,12 +191,13 @@ fn snapshot(deployments: &[(&str, JsonObject)]) -> Snapshot {
             model_info: &info,
         })
         .collect();
-    Snapshot::build(&rows, &JsonObject::new()).unwrap()
+    Snapshot::build(&rows, aliases).unwrap()
 }
 
 fn run_validation(
     request: &StartShadowEvalRequest,
     deployments: &[(&str, JsonObject)],
+    aliases: JsonObject,
     records: &TargetRecords<'_>,
     credentials: &Credentials,
 ) -> Result<(), ShadowEvalValidationError> {
@@ -191,7 +207,7 @@ fn run_validation(
     let resolution = resolution_context(catalog.as_ref());
     let cache = ProviderCache::default();
     let sdk = NoSdk;
-    let fixture = snapshot(deployments);
+    let fixture = snapshot(deployments, &aliases);
     let provider = |_model: &str| -> Option<String> { None };
     let context = StartContext {
         router: Some(ShadowEvalRouter {

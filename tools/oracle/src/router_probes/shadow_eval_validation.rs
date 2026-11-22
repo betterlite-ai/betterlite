@@ -21,7 +21,6 @@ use betterlite_server::shadow_eval_validation::{
     router_view::{AnthropicCredentials, ShadowEvalRouter},
     start::{StartContext, TargetKey, TargetRecords, validate_start},
 };
-use rust_decimal::prelude::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
@@ -31,6 +30,7 @@ static NO_ENVIRONMENT: BTreeMap<String, String> = BTreeMap::new();
 #[serde(default)]
 pub struct Input {
     pub router: Vec<Deployment>,
+    pub model_group_alias: JsonObject,
     pub rows: Rows,
     pub steps: Vec<Step>,
 }
@@ -166,7 +166,7 @@ fn view(request: &StartShadowEvalRequest) -> RequestView {
         shadow_percentage: format!("{:.2}", request.shadow_percentage),
         judge_model: request.judge_model.clone(),
         duration_days: request.duration_days,
-        max_budget: format!("{:.15}", request.max_budget.to_f64().unwrap_or_default()),
+        max_budget: format!("{:.15}", request.max_budget),
     }
 }
 fn parse_result(body: &Body) -> Result<ParseResult, OperationError> {
@@ -266,7 +266,7 @@ pub(crate) fn run(
     let (sdk, cache) = (NoSdk, ProviderCache::default());
     let info = Json::Object(JsonObject::new());
     let fixture =
-        Snapshot::build(&probe_rows(input, &info), &JsonObject::new()).map_err(invalid)?;
+        Snapshot::build(&probe_rows(input, &info), &input.model_group_alias).map_err(invalid)?;
     let settings = AnthropicSettings::default();
     let provider = |_model: &str| -> Option<String> { None };
     let (keys, teams, users) = probe_records(input);

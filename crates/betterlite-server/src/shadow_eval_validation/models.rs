@@ -144,21 +144,20 @@ pub fn validate_model_scope(
     Err(ShadowEvalValidationError::UnservedModels { models: listed })
 }
 
-#[must_use]
 pub fn router_arm_models(
     context: &StartContext<'_>,
     router_name: &str,
-) -> Vec<(StrategyRouterDependencyRole, String)> {
+) -> Result<Vec<(StrategyRouterDependencyRole, String)>, ShadowEvalValidationError> {
     let Some(router) = context.router.as_ref() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let rows = router.with_lookup(|lookup| {
-        lookup
-            .get_model_list(Some(router_name), None)
-            .unwrap_or_default()
-    });
+    let rows = router
+        .lookup()
+        .get_model_list(Some(router_name), None)
+        .map_err(ShadowEvalValidationError::RouterArms)?;
     let mut seen = BTreeSet::new();
-    rows.iter()
+    Ok(rows
+        .iter()
         .flat_map(|row| strategy_router_dependencies(&row.litellm_params))
         .filter(|dependency| {
             dependency.role == StrategyRouterDependencyRole::Tier
@@ -166,7 +165,7 @@ pub fn router_arm_models(
         })
         .filter(|dependency| seen.insert((dependency.role, dependency.model_name.clone())))
         .map(|dependency| (dependency.role, dependency.model_name))
-        .collect()
+        .collect())
 }
 
 // _reject_judge_collision: a judge scoring its own arm measures the judge, not the models.
@@ -177,7 +176,7 @@ pub fn reject_judge_collision(
 ) -> Result<(), ShadowEvalValidationError> {
     let mut arms: Vec<(String, String)> = Vec::new();
     for name in &request.router_names {
-        for (role, model) in router_arm_models(context, name) {
+        for (role, model) in router_arm_models(context, name)? {
             arms.push((role.name().to_owned(), model));
         }
     }

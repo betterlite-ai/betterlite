@@ -1,3 +1,5 @@
+use std::error::Error as _;
+
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
@@ -13,10 +15,11 @@ use crate::shadow_eval_validation::request::{
 };
 use crate::shadow_eval_validation::router_view::ShadowEvalRouter;
 use crate::shadow_eval_validation::start::{TargetKey, TargetRecords};
+use crate::team_access::error::TeamAccessError;
 
 use super::support::{
     Credentials, JUDGE, JUDGE_MODEL, ROUTER, TIER, TIER_MODEL, auth, deployments, params, parse,
-    records, router_params, validate, validate_with, validation_field,
+    records, router_params, validate, validate_with, validate_with_aliases, validation_field,
 };
 
 #[test]
@@ -142,10 +145,14 @@ fn access_errors_carry_the_endpoint_status_codes_and_wording() {
         viewer.to_string(),
         "only proxy admin roles can view shadow evals"
     );
-    let unreadable = AccessError::Caller {
-        message: "bad role".to_owned(),
-    };
-    assert_eq!(unreadable.status_code(), 500);
+    let unreadable = AccessError::Caller(TeamAccessError::Caller(
+        serde_json::from_str::<u8>("not a role").unwrap_err(),
+    ));
+    assert_eq!(unreadable.status_code(), 403);
+    assert_eq!(
+        unreadable.to_string(),
+        "the caller's role could not be read"
+    );
 }
 
 #[test]
@@ -208,6 +215,42 @@ fn rejects_an_auto_router_as_a_plain_model() {
         error.to_string(),
         "judge_model 'shadow-router' is an auto-router; it must be a plain model"
     );
+}
+
+#[test]
+fn an_alias_does_not_configure_its_target_as_a_router() {
+    let parsed = parse(
+        r#"{"team_ids":["team-1"],"router_names":["smart"],"judge_model":"judge-model","shadow_percentage":50}"#,
+    );
+    let aliases = JsonObject::from([("smart".to_owned(), Json::Text(ROUTER.to_owned()))]);
+    let error = validate_with_aliases(&parsed, &deployments(), aliases, &records()).unwrap_err();
+    assert_eq!(error.status_code(), 400);
+    assert_eq!(error.to_string(), "Not a configured auto-router: 'smart'");
+}
+
+#[test]
+fn an_alias_naming_a_router_is_still_a_plain_model() {
+    let parsed = parse(
+        r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"smart","shadow_percentage":50}"#,
+    );
+    let aliases = JsonObject::from([("smart".to_owned(), Json::Text(ROUTER.to_owned()))]);
+    validate_with_aliases(&parsed, &deployments(), aliases, &records()).unwrap();
+}
+
+#[test]
+fn a_malformed_alias_fails_the_start_instead_of_reading_no_arms() {
+    let parsed = parse(
+        r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"judge-model","shadow_percentage":50}"#,
+    );
+    let aliases = JsonObject::from([(ROUTER.to_owned(), Json::Object(JsonObject::new()))]);
+    let error = validate_with_aliases(&parsed, &deployments(), aliases, &records()).unwrap_err();
+    assert_eq!(error.status_code(), 500);
+    assert!(
+        error
+            .to_string()
+            .starts_with("the router's arm models could not be read")
+    );
+    assert!(error.source().is_some());
 }
 
 #[test]

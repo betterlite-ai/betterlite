@@ -14,6 +14,7 @@ from litellm.proxy.management_endpoints.auto_router_endpoints import (
 )
 from litellm.router import Router
 from litellm.types.management_endpoints.auto_router_endpoints import StartShadowEvalRequest
+from litellm.types.router import RouterModelGroupAliasItem
 from pydantic import Field, JsonValue, ValidationError
 from typing_extensions import override
 
@@ -170,12 +171,12 @@ def unconfigured() -> None:
     _ = os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 
-def router_of(deployments: list[Deployment]) -> Router:
+def router_of(deployments: list[Deployment], aliases: dict[str, str | RouterModelGroupAliasItem]) -> Router:
     model_list: list[dict[str, JsonValue]] = [
         {"model_name": deployment.model_name, "litellm_params": deployment.litellm_params}
         for deployment in deployments
     ]
-    return Router(model_list=model_list)
+    return Router(model_list=model_list, model_group_alias=aliases)
 
 
 def caller(role: Role) -> UserAPIKeyAuth:
@@ -271,12 +272,13 @@ def start_result(body: Body, router: Router, rows: Targets) -> Validated | Start
 
 class ShadowEvalValidation(Operation):
     router: list[Deployment] = Field(default_factory=list)
+    model_group_alias: dict[str, str | RouterModelGroupAliasItem] = Field(default_factory=dict)
     rows: Targets = Field(default_factory=Targets)
     steps: list[Step]
 
     @override
     def run(self) -> Strict:
-        router = router_of(self.router)
+        router = router_of(self.router, self.model_group_alias)
         steps: list[StepOutput] = []
         unconfigured()
         for step in self.steps:

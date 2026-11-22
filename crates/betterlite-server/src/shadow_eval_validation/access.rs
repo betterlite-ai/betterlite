@@ -19,9 +19,7 @@ pub fn require_admin(
     match role {
         AdminRole::Viewer if user_api_key_has_admin_view(auth) => Ok(()),
         AdminRole::Writer => {
-            let caller = TeamCaller::try_from(auth).map_err(|source| AccessError::Caller {
-                message: source.to_string(),
-            })?;
+            let caller = TeamCaller::try_from(auth).map_err(AccessError::Caller)?;
             if caller.user_role == Some(UserRole::ProxyAdmin) {
                 return Ok(());
             }
