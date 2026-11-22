@@ -160,9 +160,13 @@ fn loads_ui_setting_flags_default_to_the_model_field_default(
 
 #[test]
 fn loads_ui_setting_flags_keep_config_and_db_provenance() {
-    let store = general_store(
+    let mut store = general_store(
         "general_settings:\n  enable_chat_ui: true\n",
-        r#"{"forward_client_headers_to_llm_api": true, "scope_user_search_to_org": false}"#,
+        r#"{"forward_client_headers_to_llm_api": true}"#,
+    );
+    store.apply_db_row(
+        DbRow::GeneralSettings,
+        values(r#"{"scope_user_search_to_org": false}"#),
     );
     assert_eq!(
         source_for(&store, "enable_chat_ui", &field_default("enable_chat_ui")),
@@ -204,15 +208,16 @@ fn loads_ui_setting_flags_drop_keys_outside_the_allowlist() {
 }
 
 #[test]
-fn loads_ui_setting_flags_treat_a_null_config_value_as_unset() {
+fn loads_ui_setting_flags_keep_a_null_config_value_as_config() {
     let settings =
         load_ui_settings("general_settings:\n  enable_chat_ui: null\n").expect("the config loads");
+    assert_eq!(settings.get("enable_chat_ui"), Some(&JsonValue::Null));
     let mut store = SettingsStore::from(Section::GeneralSettings);
     store.load_yaml(settings);
-    assert!(store.get("enable_chat_ui").is_none());
+    assert_eq!(store.get("enable_chat_ui"), Some(&JsonValue::Null));
     assert_eq!(
         source_for(&store, "enable_chat_ui", &field_default("enable_chat_ui")),
-        FieldSource::Default
+        FieldSource::Config
     );
 }
 
