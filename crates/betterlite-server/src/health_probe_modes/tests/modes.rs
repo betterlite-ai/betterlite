@@ -1,5 +1,4 @@
 use betterlite_openai::api::audio_file_input::HEALTH_CHECK_AUDIO;
-use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
 use self::support::{DOCUMENT_URL, FakeDocuments, with_input};

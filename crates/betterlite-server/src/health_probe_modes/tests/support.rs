@@ -437,7 +437,7 @@ fn health_logging_init() -> LoggingInit {
 
 pub(super) fn probe_params<T>(entries: T) -> HealthProbeParams
 where
-    T: serde::Serialize,
+    T: Serialize,
 {
     let map = serde_json::from_value(serde_json::to_value(entries).unwrap()).unwrap();
     HealthProbeParams::from_map(map).unwrap()

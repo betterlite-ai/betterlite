@@ -462,13 +462,14 @@ async fn batch_other_providers_send_the_full_chat_call(#[case] provider: &str) {
 async fn batch_updates_the_logging_object_before_the_call() {
     let backend = FakeBackend::new();
     let logging = Arc::new(FakeLogging::new(backend.events(), false));
+    let handle: Arc<dyn HealthProbeLogging> = Arc::<FakeLogging>::clone(&logging);
     let entries =
         r#"{"model":"m","api_base":"https://api.test","messages":[],"api_key":"sk-test"}"#;
     let params = probe_params_from_json(entries);
     run_mode(
         "batch",
         "openai",
-        with_logging(params, Arc::clone(&logging)),
+        with_logging(params, handle),
         HealthProbeArguments::default(),
         &backend,
     )
@@ -499,11 +500,12 @@ async fn batch_updates_the_logging_object_before_the_call() {
 async fn batch_logging_update_skips_a_falsy_api_base(#[case] entries: &str) {
     let backend = FakeBackend::new();
     let logging = Arc::new(FakeLogging::new(backend.events(), false));
+    let handle: Arc<dyn HealthProbeLogging> = Arc::<FakeLogging>::clone(&logging);
     let params = probe_params_from_json(entries);
     run_mode(
         "batch",
         "openai",
-        with_logging(params, Arc::clone(&logging)),
+        with_logging(params, handle),
         HealthProbeArguments::default(),
         &backend,
     )

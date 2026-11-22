@@ -21,7 +21,7 @@ pub(super) async fn mode_step(step: &ModeStep) -> Value {
     };
     let updates = Arc::new(UpdateRecorder::default());
     if step.logging {
-        let logging: Arc<dyn HealthProbeLogging> = Arc::clone(&updates);
+        let logging: Arc<dyn HealthProbeLogging> = Arc::<UpdateRecorder>::clone(&updates);
         params.litellm_logging_obj = Some(logging);
     }
     let arguments = HealthProbeArguments {
