@@ -32,10 +32,8 @@ use tokio_util::task::TaskTracker;
 use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use super::fixtures::{
-    Board, Levels, RecordingScheduler, ScriptedManager, ScriptedTeams, WaitingEmail,
-};
 use super::types::{Caller, EventKind, Input, Runtime, failure};
+use super::{Board, Levels, RecordingScheduler, ScriptedManager, ScriptedTeams, WaitingEmail};
 
 // litellm.store_audit_logs with the environment unset and the OSS proxy's premium_user false
 struct EnabledAudit {
@@ -64,7 +62,7 @@ impl AuditClock for FixedClock {
     }
 }
 
-pub(super) async fn answer(input: &Input) -> HelperResult {
+pub(crate) async fn answer(input: &Input) -> HelperResult {
     let board = Arc::new(Board::default());
     let _logging = set_default(tracing_subscriber::registry().with(Levels {
         board: Arc::clone(&board),

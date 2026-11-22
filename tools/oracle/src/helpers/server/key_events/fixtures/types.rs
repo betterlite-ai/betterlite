@@ -72,7 +72,7 @@ pub(super) enum Runtime {
     Ready,
 }
 
-pub(super) fn failure<Message>(class: &str, message: Message) -> Box<HelperError>
+pub(crate) fn failure<Message>(class: &str, message: Message) -> Box<HelperError>
 where
     Message: Display,
 {
