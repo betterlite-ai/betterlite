@@ -17,6 +17,7 @@ use betterlite_streaming::stream_chunk_shaping::records::StreamOptions as Wrappe
 use betterlite_streaming::streamed_response_assembly::AssemblyError;
 use betterlite_streaming::streamed_response_assembly::response::Response as StreamResponseRecord;
 use futures_util::StreamExt as _;
+use futures_util::stream::iter;
 use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Value;
@@ -166,8 +167,7 @@ impl CompletionClient for FakeCompletions {
             Answer::Stream(chunks) => {
                 let frames = chunks.clone();
                 Ok(CompletionOutput::Stream(CompletionBody(
-                    futures_util::stream::iter(frames.into_iter().map(Ok::<Vec<u8>, HttpError>))
-                        .boxed(),
+                    iter(frames.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed(),
                 )))
             }
             Answer::Failure(message) => Err(FakeError(message.clone())),
@@ -620,9 +620,7 @@ async fn chat_stream_dispatch() {
 }
 
 fn chunk_source(frames: Vec<Vec<u8>>) -> ResponsesChunkSource {
-    let body = CompletionBody(
-        futures_util::stream::iter(frames.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed(),
-    );
+    let body = CompletionBody(iter(frames.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed());
     ResponsesChunkSource::new(
         ChunkSourceConfig {
             provider: "openai".to_owned(),
@@ -806,6 +804,7 @@ async fn tools_must_be_a_list() {
         panic!("tools that are not a list are refused before the completion call");
     };
     assert!(matches!(error, CallError::Preparation(_)));
-    assert!(error.to_string().contains("tools"));
+    // B908 names the same field for a tools value it cannot map, so only the exact message proves the handler refused it
+    assert_eq!(error.to_string(), "the tools field must be a list");
     assert!(completions.calls().is_empty());
 }
