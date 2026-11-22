@@ -46,6 +46,11 @@ fn split([scheme, netloc, path, query, fragment]: [&str; 5]) -> SplitUrl {
     "https://h.example/a;b/c",
     parts(["https", "h.example", "/a;b/c", "", "", ""])
 )]
+#[case::empty_params_after_the_semicolon(
+    "https://h.example/api;",
+    parts(["https", "h.example", "/api", "", "", ""])
+)]
+#[case::params_ignored_by_the_scheme("custom:/a;b", parts(["custom", "", "/a;b", "", "", ""]))]
 #[case::scheme_without_authority(
     "https:app.example/api",
     parts(["https", "", "app.example/api", "", "", ""])
@@ -184,6 +189,14 @@ fn parse_accepts_a_netloc_whose_nfkc_form_stays_a_host(
 #[case::semicolon_before_the_last_slash_is_path_text(
     "https://h.example/a;b/c",
     split(["https", "h.example", "/a;b/c", "", ""])
+)]
+#[case::empty_params_keep_the_semicolon(
+    "https://h.example/api;",
+    split(["https", "h.example", "/api;", "", ""])
+)]
+#[case::params_stay_with_a_scheme_that_ignores_them(
+    "custom:/a;b",
+    split(["custom", "", "/a;b", "", ""])
 )]
 #[case::scheme_is_lowercased_and_the_query_kept(
     "HTTPS://Tenant.DataRobot.com/api/v2?x=1",

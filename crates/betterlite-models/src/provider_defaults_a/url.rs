@@ -42,8 +42,8 @@ const USES_NETLOC: [&str; 26] = [
     "git+ssh", "ws", "wss",
 ];
 
-// Ports urllib.parse.urlparse: leading spaces dropped, tabs and newlines dropped, then the components split.
-pub fn parse(url: &str) -> Result<UrlParts, UrlError> {
+// Ports urllib.parse.urlsplit: leading spaces dropped, tabs and newlines dropped, then the components split.
+pub fn urlsplit(url: &str) -> Result<SplitUrl, UrlError> {
     let stripped =
         url.trim_start_matches(|character: char| matches!(character, '\u{0}'..='\u{20}'));
     let cleaned: String = stripped
@@ -58,34 +58,36 @@ pub fn parse(url: &str) -> Result<UrlParts, UrlError> {
     let (before_query, query) = before_fragment
         .split_once('?')
         .unwrap_or((before_fragment, ""));
-    let (path, params) = if USES_PARAMS.contains(&scheme.as_str()) {
-        split_params(before_query)
+    Ok(SplitUrl {
+        scheme,
+        netloc,
+        path: before_query.to_owned(),
+        query: query.to_owned(),
+        fragment: fragment.to_owned(),
+    })
+}
+
+// Ports urllib.parse.urlparse: urlsplit, then the last segment's params split off for the schemes that use them.
+pub fn parse(url: &str) -> Result<UrlParts, UrlError> {
+    let SplitUrl {
+        scheme,
+        netloc,
+        path: full_path,
+        query,
+        fragment,
+    } = urlsplit(url)?;
+    let (path, params) = if USES_PARAMS.contains(&scheme.as_str()) && full_path.contains(';') {
+        split_params(&full_path)
     } else {
-        (before_query, "")
+        (full_path.as_str(), "")
     };
     Ok(UrlParts {
         scheme,
         netloc,
         path: path.to_owned(),
         params: params.to_owned(),
-        query: query.to_owned(),
-        fragment: fragment.to_owned(),
-    })
-}
-
-// Ports urllib.parse.urlsplit: urlparse's components with the last segment's params left on the path.
-pub fn urlsplit(url: &str) -> Result<SplitUrl, UrlError> {
-    let parts = parse(url)?;
-    let mut path = parts.path;
-    if !parts.params.is_empty() {
-        path = format!("{path};{}", parts.params);
-    }
-    Ok(SplitUrl {
-        scheme: parts.scheme,
-        netloc: parts.netloc,
-        path,
-        query: parts.query,
-        fragment: parts.fragment,
+        query,
+        fragment,
     })
 }
 
