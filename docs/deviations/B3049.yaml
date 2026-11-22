@@ -18,8 +18,8 @@ deviations:
   - what: The global counter is incremented by a read and a batch_set with ttl 600 and local_only true, because the trait has no increment call. LiteLLM calls async_increment_cache, which keeps a live ttl and otherwise uses InMemoryCache.default_ttl, 600.
     why: B3047's trait offers no increment, so the same local-only write produces the same value and ttl.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L565-L604
-  - what: The global read and increment, the six-key read and the final write pass no parent_otel_span. UserAPIKeyAuth keeps it in a pub(crate) field with no public reader.
-    why: LiteLLM threads user_api_key_dict.parent_otel_span into every cache call for tracing. The B2314 record and B3047's handler seam are out of this task's scope, so the calls carry None. B3036 records the same trade for its seams.
+  - what: Every cache call the hook drives passes no parent_otel_span, the per-check writes B3047 performs included. UserAPIKeyAuth keeps the span in a pub(crate) field with no public reader.
+    why: LiteLLM threads user_api_key_dict.parent_otel_span into the global read and increment, the six-key read, each check_key_in_limits call and the final write for tracing. The B2314 record and B3047's handler seam are out of this task's scope, so the calls carry None. B3036 records the same trade for its seams.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L310-L335
   - what: A cache value of the wrong shape for its key (a bare number where a minute counter belongs, or a counter where the global count belongs) counts as a missing counter and is logged at error level, where LiteLLM raises a TypeError out of the comparison.
     why: The hook's reads fail open on cache errors as DualCache does, and a wrong shape means a broken writer; a 500 there would refuse every request of that dimension.
