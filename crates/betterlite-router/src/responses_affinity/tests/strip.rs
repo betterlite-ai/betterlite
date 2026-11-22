@@ -124,6 +124,25 @@ fn the_targets_own_message_block_is_kept_without_input_markers() {
 }
 
 #[test]
+fn origins_the_catalog_cannot_place_are_stripped() {
+    let target = target();
+    let boundaryless = spec("N", object(&[("model", text("openai/n"))]));
+    let fixture = Fixture::new(vec![target.clone(), boundaryless]);
+    let lookup = fixture.lookup();
+    let credentials = CredentialSnapshot::default();
+    let check = catalog_check(settings(true, &[]), &lookup, &credentials);
+    let mut request = Request::with_items(vec![
+        reasoning_item("A"),
+        reasoning_item("N"),
+        reasoning_item("U"),
+    ]);
+    let _returned = request
+        .filter(&check, "gpt-group", from_ref(&target))
+        .unwrap();
+    assert_eq!(request.input, Some(Json::List(vec![reasoning_item("A")])));
+}
+
+#[test]
 fn a_same_id_origin_keeps_its_reasoning_without_a_router() {
     let deployments = vec![target()];
     let credentials = CredentialSnapshot::default();

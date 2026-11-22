@@ -94,6 +94,26 @@ fn an_empty_credential_name_keeps_the_deployment_values() {
 }
 
 #[test]
+fn a_non_text_credential_name_keeps_the_deployment_values() {
+    let credentials = credentials(&[(
+        "5",
+        object(&[
+            ("api_base", text("cred-base")),
+            ("api_key", text("cred-key")),
+        ]),
+    )]);
+    let mut params = params_with_credential("5");
+    params.insert(
+        "litellm_credential_name".to_owned(),
+        Json::Number(serde_json::Number::from(5_i32)),
+    );
+    assert_eq!(
+        encryption_boundary(&params, &credentials),
+        pair("deployment-base", "deployment-key")
+    );
+}
+
+#[test]
 fn non_text_values_have_no_boundary() {
     let credentials = CredentialSnapshot::default();
     let mut params = params(Some("u"), Some("k"));

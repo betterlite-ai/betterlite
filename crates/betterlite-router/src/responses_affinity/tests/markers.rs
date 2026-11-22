@@ -56,6 +56,20 @@ fn an_item_with_only_wrapped_content_carries_the_marker() {
 }
 
 #[test]
+fn a_non_text_or_empty_item_id_falls_through_to_the_wrapped_content() {
+    let numeric_id = Json::Object(object(&[
+        ("id", Json::Number(serde_json::Number::from(5_i32))),
+        ("encrypted_content", text(&wrapped_marker("A"))),
+    ]));
+    assert_eq!(item_model_id(&record(numeric_id)), Some("A".to_owned()));
+    let empty_id = Json::Object(object(&[
+        ("id", text("")),
+        ("encrypted_content", text(&wrapped_marker("B"))),
+    ]));
+    assert_eq!(item_model_id(&record(empty_id)), Some("B".to_owned()));
+}
+
+#[test]
 fn an_empty_wrapped_id_is_not_a_marker() {
     assert_eq!(wrapped_model_id(&wrapped_marker("")), None);
     let item = Json::Object(object(&[("encrypted_content", text(&wrapped_marker("")))]));
