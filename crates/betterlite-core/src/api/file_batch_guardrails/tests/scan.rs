@@ -11,8 +11,8 @@ use crate::api::file_batch_guardrails::record_json::dumps::{Rendering, dumps};
 use crate::api::file_batch_guardrails::record_json::text::RecordText;
 use crate::api::file_batch_guardrails::record_json::{RecordJson, RecordObject};
 use crate::api::file_batch_guardrails::records::{
-    BatchScanFailure, ParsedRecord, RecordDropped, Redaction, ScanOutcome, UnparseableRecord,
-    UnroutableRecord, UnscannableRecord,
+    BatchRejection, BatchScanFailure, ParsedRecord, RecordDropped, Redaction, ScanOutcome,
+    UnparseableRecord, UnroutableRecord, UnscannableRecord,
 };
 use crate::api::file_batch_guardrails::scan_record::{ScanContext, scan_record};
 use crate::routes::CallType;
@@ -183,6 +183,26 @@ async fn a_rerouted_record_cannot_ship(
         guardrail: guardrail.map(str::to_owned),
     });
     assert_eq!(result.outcome, Ok(Some(ScanOutcome::Failure(failure))));
+}
+
+#[tokio::test]
+async fn a_guardrail_name_with_a_surrogate_shows_a_question_mark_in_the_400() {
+    let metadata =
+        r#"{"sensitive_data_routing_applied":true,"sensitive_data_routing_guardrail":"a\ud800b"}"#;
+    let result = scanned(CHAT, Answer::Insert("metadata", metadata)).await;
+    let failure = BatchScanFailure::Unroutable(UnroutableRecord {
+        line_number: 2,
+        custom_id: Some("a".to_owned()),
+        guardrail: Some("a?b".to_owned()),
+    });
+    assert_eq!(
+        result.outcome,
+        Ok(Some(ScanOutcome::Failure(failure.clone())))
+    );
+    assert_eq!(
+        BatchRejection::Failure(failure).to_string(),
+        "Batch input line 2 (custom_id a) was routed to a different model by a?b, and every record of a batch file goes to one provider, so the file cannot be submitted. Send that record outside the batch"
+    );
 }
 
 #[rstest]
