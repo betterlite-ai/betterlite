@@ -48,7 +48,7 @@ description: >-
   pre-call hooks. B8399 registers this gate as the parallel_request_limiter proxy hook in init_callbacks, so proxy_logging's pre-call hook runs it on those routes. A limiter error becomes the HTTP
   answer of B3030: 429 with LiteLLM's body, and 503 with `{"detail":{"error":...}}` when fail-closed
   enforcement is on and the cache cannot be read. The gate also has a public accessor `main_limiter(&self) -> Option<&RateLimitPreCallHook>`, the replacement for `get_proxy_hook("parallel_request_limiter")` that B3124 needs for `request_capacity`. It answers None when B8399 selected the legacy limiter, so there is no v3 limiter to hand over (cache_aware_routing.py L290-L292). Add the HTTP oracle cases listed below. Each one has a
-  config, one request and a mock upstream, and compares status, body and headers with LiteLLM.
+  config, one request and a mock upstream, and compares status, body and headers with LiteLLM. Here the cases pass under --self-check only. B8803 lists them as its oracle cases and runs them against the gateway, once B8399 registers this gate and the chat route runs the pre-call step.
 
   Native tests live under `pre_call_hook::tests` and are grouped as `descriptors_`, `hook_` and
   `capacity_`. They cover: the descriptor order, a non-text limit type counted as absent, dynamic limiting
@@ -94,7 +94,7 @@ dod:
   - text: A request with no descriptors passes and writes nothing to the stash.
     proof: [hook-tests]
   - text: An OVER_LIMIT first pass raises the 429 of B3030 and saves nothing to the stash, and a passing first pass saves the response and the slot.
-    proof: [hook-tests, limiter-flow-oracle]
+    proof: [hook-tests]
   - text: With reservation off the project ITPM and OTPM descriptors are left out of the first pass, and with it on they are included and skip_tpm_check is true.
     proof: [hook-tests]
   - text: A token reservation over the limit releases the stashed slot before raising, and a successful one fills reserved_tokens, reserved_model and reserved_scopes and adds the token statuses to the stored response.
@@ -102,10 +102,8 @@ dod:
   - text: request_capacity charges one request, raises on OVER_LIMIT, and releases the slots after a normal exit, an error and a cancelled caller.
     proof: [capacity-tests]
   - text: One RequestStashSlot is made per proxy request and the same slot reaches the pre-call hook and the callbacks.
-    proof: [hook-tests, limiter-flow-oracle]
-  - text: A request over a rate limit gets LiteLLM's 429 status, body and headers through a real route.
-    proof: [limiter-flow-oracle]
-  - text: With fail-closed enforcement on and an unreachable cache the route answers 503 with a body of the form {"detail":{"error":...}}.
+    proof: [hook-tests]
+  - text: The four cases in tools/oracle/cases/limiter (rpm-limit-429, within-limit-headers, fail-closed-503 and fail-open-passes) pass under --self-check. B8803 runs them against the gateway.
     proof: [limiter-flow-oracle]
 
 checks:
@@ -124,16 +122,12 @@ checks:
       why: the server gate or per-request stash tests are missing or fail
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^hooks::rate_limit_pre_call::tests::/)'
     - id: limiter-flow-oracle
-      why: the 429 and 503 HTTP cases are missing or differ from LiteLLM
+      why: the limiter cases are missing or fail under --self-check
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/limiter)" &&
         cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/limiter
 
-oracle_cases:
-  - tools/oracle/cases/limiter/rpm-limit-429.yaml
-  - tools/oracle/cases/limiter/within-limit-headers.yaml
-  - tools/oracle/cases/limiter/fail-closed-503.yaml
-  - tools/oracle/cases/limiter/fail-open-passes.yaml
+oracle_cases: []
 
 deviations:
   - what: The per-request stash is a RequestStashSlot passed down from the server gate, not a ContextVar that child tasks inherit.
@@ -147,7 +141,8 @@ out_of_scope:
   - "Descriptor builders: B3038, B3039 and B3040. Token estimates and the output cap: B3041. Reservation and project admission: B3042 and B3043. This task only calls them."
   - "should_rate_limit, the gauges and the settlement refunds: B3036, B3035 and B3034."
   - "Post-call success, failure and reconciliation callbacks and the quota headers: B3045 and B3046."
-  - "Rate-limit error bodies and the 503 mapping: B3030. This task only checks them over HTTP."
+  - "Rate-limit error bodies and the 503 mapping: B3030."
+  - "Running the limiter cases against the gateway: B8803, after B8399 registers this gate and the chat route runs the pre-call step."
 
 pitfalls:
   - The slot id is made only when some descriptor has max_parallel_requests, and the slot is saved to the stash only after the first pass passes. Saving it on OVER_LIMIT would leave a slot nobody releases.
