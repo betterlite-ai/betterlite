@@ -50,29 +50,27 @@ fn decrypted_other(text: &str, cipher: &Cipher) -> Option<String> {
     Some(plaintext)
 }
 
-pub(crate) fn project_nested(value: &Json, cipher: &Cipher) -> Result<String, Box<HelperError>> {
-    if let Json::Object(fields) = value
-        && let Some(id) = fields.get("id")
-    {
-        return project(id, cipher);
-    }
-    project(value, cipher)
+// a nested response object projects its own id, and anything else projects itself
+pub(crate) fn nested_id(value: &Json) -> &Json {
+    let Json::Object(fields) = value else {
+        return value;
+    };
+    fields.get("id").unwrap_or(value)
 }
 
 pub(crate) fn view_event(event: &Value, cipher: &Cipher) -> Result<EventView, Box<HelperError>> {
-    let top = match event.get("id") {
-        Some(id) => Some(project(&as_json(id)?, cipher)?),
-        None => None,
-    };
-    let nested = match event.get("response") {
-        Some(response) => Some(project_nested(&as_json(response)?, cipher)?),
-        None => None,
-    };
-    Ok(EventView {
-        top,
-        nested,
+    let mut view = EventView {
+        top: None,
+        nested: None,
         advertised: advertised_id(event),
-    })
+    };
+    if let Some(id) = event.get("id") {
+        view.top = Some(project(&as_json(id)?, cipher)?);
+    }
+    if let Some(response) = event.get("response") {
+        view.nested = Some(project(nested_id(&as_json(response)?), cipher)?);
+    }
+    Ok(view)
 }
 
 // the id a client sees on the event: a top-level string id, else the nested response id

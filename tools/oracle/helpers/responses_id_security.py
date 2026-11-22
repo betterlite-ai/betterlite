@@ -175,11 +175,7 @@ async def chunk_source(chunks: list[EventBase]) -> AsyncGenerator[EventBase, Non
         yield chunk
 
 
-async def collect_chunks(stream: AsyncGenerator[EventBase, None]) -> list[EventBase]:
-    return [chunk async for chunk in stream]
-
-
-def stream_run(
+async def stream_run(
     hook: ResponsesIDSecurity,
     user: UserAPIKeyAuth,
     events: list[dict[str, JsonValue]],
@@ -187,7 +183,7 @@ def stream_run(
     chunks = [parse_event(event) for event in events]
     request_data: dict[str, JsonValue] = {}
     stream = hook.async_post_call_streaming_iterator_hook(user, chunk_source(chunks), request_data)  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L328
-    produced = asyncio.run(collect_chunks(stream))
+    produced = [chunk async for chunk in stream]
     views: list[JsonValue] = []
     raw: list[str] = []
     advertised: list[str | None] = []
@@ -242,18 +238,20 @@ def call_answer(
 
 def authorize_answer(case: CallInput) -> JsonValue:
     data = case["data"]
-    field_name = addressed_field(case["call_type"])
+    call_type = case["call_type"]
+    field_name = addressed_field(call_type)
     scope = (data, field_name)
     with hook_session(case["settings"], case["principal"], None) as (hook, user):
+        cache = DualCache()
         try:
-            changed = asyncio.run(hook.async_pre_call_hook(user, DualCache(), data, case["call_type"]))  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L116
+            no_result = asyncio.run(hook.async_pre_call_hook(user, cache, data, call_type)) is None  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L116
         except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L171
             detail = error.detail
             return call_answer(forbidden_kind(detail), detail, error.status_code, None, scope)
         except IndexError:
             return call_answer("internal_error", None, 500, "IndexError", scope)
-    if changed is None:
-        return call_answer("not_responses_call", None, None, None, scope)
+        if no_result:
+            return call_answer("not_responses_call", None, None, None, scope)
     kind = "authorized" if text_or_none(data.get(ADDRESSED_RESPONSE_ID_FIELD)) else "unchanged"
     return call_answer(kind, None, None, None, scope)
 
@@ -270,8 +268,8 @@ def success_answer(case: CallInput) -> JsonValue:
 
 def stream_answer(case: CallInput) -> JsonValue:
     with hook_session(case["settings"], case["principal"], case["route"]) as (hook, user):
-        first = stream_run(hook, user, case["events"])
-        second = stream_run(hook, user, case["events"])
+        first = asyncio.run(stream_run(hook, user, case["events"]))
+        second = asyncio.run(stream_run(hook, user, case["events"]))
     head = first[2][0] if first[2] else None
     shared = head is not None and all(value == head for value in first[2])
     return {

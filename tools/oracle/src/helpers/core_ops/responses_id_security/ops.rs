@@ -13,7 +13,7 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use super::values::{EventView, project, project_nested, project_text, view_event};
+use super::values::{EventView, nested_id, project, project_text, view_event};
 use super::{Cipher, PrincipalInput, SettingsInput, failure, principal, session};
 
 pub(crate) fn authorize(
@@ -45,7 +45,7 @@ pub(crate) fn success(
         .encrypt_response(&mut response, &caller)
         .map_err(|error| internal_failure(&error))?;
     let nested = match response.extra.get("response") {
-        Some(value) => Some(project_nested(value, &state.cipher)?),
+        Some(value) => Some(project(nested_id(value), &state.cipher)?),
         None => None,
     };
     let id = project_text(&response.id, &state.cipher);
