@@ -218,10 +218,10 @@ impl GroupDatabase for ScriptedDatabase {
             .position(|row| row.access_group_name == create.access_group_name);
         let row = match existing {
             Some(index) => {
-                let row = &mut state.budgets[index];
-                row.budget_id = update.budget_id.clone();
-                row.litellm_budget_table = joined_budget(&state.budget_rows, &update.budget_id);
-                row_with_include(row, &state.budget_rows, include)
+                let joined = joined_budget(&state.budget_rows, &update.budget_id);
+                state.budgets[index].budget_id = update.budget_id.clone();
+                state.budgets[index].litellm_budget_table = joined;
+                row_with_include(&state.budgets[index], &state.budget_rows, include)
             }
             None => {
                 let row = GroupBudgetRow {

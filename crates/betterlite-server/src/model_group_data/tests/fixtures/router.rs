@@ -52,6 +52,15 @@ impl ModelNameSource for ScriptedRouter {
     }
 }
 
+// A catalog whose index is already stale, the lookup failure a validation must propagate.
+pub struct FailingRouter;
+
+impl ModelNameSource for FailingRouter {
+    fn model_names(&self) -> Result<Option<Vec<String>>, LookupError> {
+        Err(LookupError::InvalidRow { index: 3 })
+    }
+}
+
 #[async_trait]
 impl ModelReadThrough for ScriptedRouter {
     async fn attempt_model(&self, model: &str) -> bool {

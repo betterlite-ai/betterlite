@@ -8,7 +8,7 @@ use super::super::discovery::{
     validate_models_exist,
 };
 use super::fixtures::json_object;
-use super::fixtures::router::ScriptedRouter;
+use super::fixtures::router::{FailingRouter, ScriptedRouter};
 use super::fixtures::scripted::ScriptedDatabase;
 use super::{
     deployment, group_database, http_failure, linked_group, names, number, runtime_message,
@@ -125,6 +125,16 @@ fn exact_model_names() {
     assert_eq!(
         validate_models_exist(&names(&["x", "x"]), None::<&ScriptedRouter>).expect("the names"),
         (false, names(&["x", "x"]))
+    );
+}
+
+#[test]
+fn lookup_failure_propagates() {
+    let error = validate_models_exist(&names(&["alpha"]), Some(&FailingRouter))
+        .expect_err("the stale catalog");
+    assert_eq!(
+        error.to_string(),
+        "the catalog index points at row 3, which is not in the model list"
     );
 }
 

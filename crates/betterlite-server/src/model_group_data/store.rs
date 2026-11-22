@@ -1,12 +1,13 @@
 use std::sync::atomic::Ordering;
 
+use axum::http::StatusCode;
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
-use betterlite_db::postgres_store::errors::{DbError, backend};
+use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
 use tokio_postgres::types::ToSql;
 
-use super::errors::GroupDataError;
+use super::errors::{GroupDataError, HttpFailure};
 use super::ports::{BudgetInclude, GroupBudgetCreate, GroupBudgetUpdate, GroupDatabase};
 use super::types::{DeploymentRow, GroupBudgetRow};
 
@@ -46,8 +47,8 @@ pub struct PostgresGroupData<'db> {
 }
 
 impl<'db> PostgresGroupData<'db> {
-    fn reader(&self) -> Result<&'db PostgresStore, DbError> {
-        let client = self.client.ok_or(DbError::NoDbConnected)?;
+    fn reader(&self) -> Result<&'db PostgresStore, GroupDataError> {
+        let client = self.client.ok_or_else(database_missing)?;
         if client
             .availability
             .reader_unavailable
@@ -58,10 +59,18 @@ impl<'db> PostgresGroupData<'db> {
         Ok(client.reader)
     }
 
-    fn writer(&self) -> Result<&'db PostgresStore, DbError> {
-        let client = self.client.ok_or(DbError::NoDbConnected)?;
+    fn writer(&self) -> Result<&'db PostgresStore, GroupDataError> {
+        let client = self.client.ok_or_else(database_missing)?;
         Ok(client.writer)
     }
+}
+
+// _prisma_client_or_500: a pod with no database answers this module's 500, not a driver error.
+fn database_missing() -> GroupDataError {
+    GroupDataError::Http(HttpFailure {
+        status: StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Database not connected.".to_owned(),
+    })
 }
 
 fn decode_deployment(row: &tokio_postgres::Row) -> Result<DeploymentRow, GroupDataError> {

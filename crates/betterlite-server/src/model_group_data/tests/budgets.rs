@@ -31,11 +31,11 @@ fn flattened_budget_defaults() {
     assert_eq!(defaults.max_budget, None);
     assert_eq!(
         encoded(&defaults),
-        json_object(&[
+        Json::Object(json_object(&[
             ("access_group_name", text("group-a")),
             ("spend", number(0.0)),
             ("max_budget", Json::Null),
-        ])
+        ]))
     );
     let explicit: ModelAccessGroupBudget = serde_json::from_str(
         r#"{"access_group_name": "group-b", "spend": 2.5, "max_budget": 10.0}"#,

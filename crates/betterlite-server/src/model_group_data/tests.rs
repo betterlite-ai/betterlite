@@ -9,6 +9,7 @@ mod reload;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use axum::http::StatusCode;
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::Timestamp;
 use betterlite_db::database_replica::availability::Availability;
@@ -27,7 +28,7 @@ use self::fixtures::json_object;
 use self::fixtures::scripted::ScriptedDatabase;
 use super::deployments::{tag_deployments_by_id, tag_deployments_by_name};
 use super::errors::{GroupDataError, HttpFailure};
-use super::ports::{BudgetInclude, GroupBudgetCreate, GroupBudgetUpdate};
+use super::ports::{BudgetInclude, GroupBudgetCreate, GroupBudgetUpdate, GroupDatabase};
 use super::store::PostgresGroupData;
 use super::types::{BudgetRow, DeploymentRow, GroupBudgetRow};
 
@@ -463,4 +464,21 @@ async fn postgres_failure_effects() {
     );
     pool.close();
     fixture.close_async().await.expect("the fixture teardown");
+}
+
+#[tokio::test]
+async fn postgres_missing_client() {
+    let database: PostgresGroupData<'_> = PostgresGroupData { client: None };
+    let error = database
+        .deployment_find_many(None)
+        .await
+        .expect_err("the missing database");
+    let failure = http_failure(error);
+    assert_eq!(failure.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(failure.message, "Database not connected.");
+    let error = database
+        .budget_delete("group-a")
+        .await
+        .expect_err("the missing database");
+    assert_eq!(http_failure(error).message, "Database not connected.");
 }
