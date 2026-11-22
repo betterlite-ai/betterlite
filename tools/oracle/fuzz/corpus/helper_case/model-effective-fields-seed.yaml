@@ -1,0 +1,5 @@
+kind: helper
+name: model-effective-fields-seed
+call: {model_effective_fields: {salt_key: b1213-salt, ptu_enabled: false, calls: [{function: rate_limits, enforced: true, litellm_params: {model: gpt-4o, rpm: 1}}]}}
+env: {LITELLM_SALT_KEY: b1213-salt}
+compare: {ignore: []}

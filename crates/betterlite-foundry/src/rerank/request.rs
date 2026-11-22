@@ -16,7 +16,7 @@ pub struct FoundryRerankRequest {
     pub max_chunks_per_doc: Option<i64>,
 }
 
-// Foundry inherits Cohere's v1 params: absent options leave the key out of the body and return_documents defaults to true
+// Foundry inherits Cohere's v1 params: absent options leave the key out of the body, and an unset return_documents is rerank's default true
 pub fn transform_request(
     request: &FoundryRerankRequest,
 ) -> Result<RerankParams, FoundryRerankError> {
@@ -57,7 +57,7 @@ fn request_options(request: &FoundryRerankRequest) -> RerankParams {
         ),
         (
             "return_documents".to_owned(),
-            request.return_documents.map_or(Json::Null, Json::Bool),
+            Json::Bool(request.return_documents.unwrap_or(true)),
         ),
         (
             "max_chunks_per_doc".to_owned(),
