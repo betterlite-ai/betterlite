@@ -160,20 +160,30 @@ async fn a_marker_row_keeps_the_schema_default_in_its_text_columns() {
         )
         .await
         .expect("the marker row read back");
-    for column in [
-        "model_id",
-        "model_group",
-        "custom_llm_provider",
-        "api_base",
-        "user",
-        "cache_hit",
-        "cache_key",
-    ] {
-        assert_eq!(
-            found.get::<_, Option<String>>(column),
-            Some(String::new()),
-            "column {column}"
-        );
-    }
+    assert_eq!(
+        found.get::<_, Option<String>>("model_id"),
+        Some(String::new())
+    );
+    assert_eq!(
+        found.get::<_, Option<String>>("model_group"),
+        Some(String::new())
+    );
+    assert_eq!(
+        found.get::<_, Option<String>>("custom_llm_provider"),
+        Some(String::new())
+    );
+    assert_eq!(
+        found.get::<_, Option<String>>("api_base"),
+        Some(String::new())
+    );
+    assert_eq!(found.get::<_, Option<String>>("user"), Some(String::new()));
+    assert_eq!(
+        found.get::<_, Option<String>>("cache_hit"),
+        Some(String::new())
+    );
+    assert_eq!(
+        found.get::<_, Option<String>>("cache_key"),
+        Some(String::new())
+    );
     case.close().await;
 }

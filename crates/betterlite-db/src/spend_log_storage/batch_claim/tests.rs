@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use rstest::rstest;
 use rust_decimal::Decimal;
 use tokio::sync::Notify;
 use tokio::time::timeout;
@@ -532,35 +533,35 @@ async fn a_disabled_ordinary_log_is_not_queued() {
     assert!(table.rows().is_empty());
 }
 
-#[test]
-fn the_insert_statement_defaults_every_prisma_defaulted_column() {
+#[rstest]
+#[case::api_key("api_key", "''")]
+#[case::spend("spend", "0.0")]
+#[case::total_tokens("total_tokens", "0")]
+#[case::prompt_tokens("prompt_tokens", "0")]
+#[case::completion_tokens("completion_tokens", "0")]
+#[case::model("model", "''")]
+#[case::model_id("model_id", "''")]
+#[case::model_group("model_group", "''")]
+#[case::custom_llm_provider("custom_llm_provider", "''")]
+#[case::api_base("api_base", "''")]
+#[case::user("user", "''")]
+#[case::cache_hit("cache_hit", "''")]
+#[case::cache_key("cache_key", "''")]
+#[case::metadata("metadata", "'{}'::jsonb")]
+#[case::request_tags("request_tags", "'[]'::jsonb")]
+#[case::messages("messages", "'{}'::jsonb")]
+#[case::response("response", "'{}'::jsonb")]
+#[case::proxy_server_request("proxy_server_request", "'{}'::jsonb")]
+fn the_insert_statement_defaults_every_prisma_defaulted_column(
+    #[case] column: &str,
+    #[case] default: &str,
+) {
+    let expected = format!(r#"COALESCE(src."{column}", {default})"#);
     let statement = insert_statement();
-    for (column, default) in [
-        ("api_key", "''"),
-        ("spend", "0.0"),
-        ("total_tokens", "0"),
-        ("prompt_tokens", "0"),
-        ("completion_tokens", "0"),
-        ("model", "''"),
-        ("model_id", "''"),
-        ("model_group", "''"),
-        ("custom_llm_provider", "''"),
-        ("api_base", "''"),
-        ("user", "''"),
-        ("cache_hit", "''"),
-        ("cache_key", "''"),
-        ("metadata", "'{}'::jsonb"),
-        ("request_tags", "'[]'::jsonb"),
-        ("messages", "'{}'::jsonb"),
-        ("response", "'{}'::jsonb"),
-        ("proxy_server_request", "'{}'::jsonb"),
-    ] {
-        let expected = format!(r#"COALESCE(src."{column}", {default})"#);
-        assert!(
-            statement.contains(&expected),
-            "{expected} is missing from {statement}"
-        );
-    }
+    assert!(
+        statement.contains(&expected),
+        "{expected} is missing from {statement}"
+    );
 }
 
 #[test]
