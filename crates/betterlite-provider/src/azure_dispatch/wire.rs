@@ -46,11 +46,9 @@ fn auth_headers(resolved: &Resolved, version: Option<&str>) -> BTreeMap<String, 
         .map(SecretString::expose_secret);
     let v1 = version.is_some_and(|text| V1_API_VERSIONS.contains(&text));
     let bearer = if v1 { key.or(token) } else { token };
-    if let Some(value) = bearer {
-        headers.insert(String::from("authorization"), format!("Bearer {value}"));
-    } else if let Some(value) = key {
-        headers.insert(String::from("api-key"), value.to_owned());
-    }
+    let auth = bearer.map(|value| (String::from("authorization"), format!("Bearer {value}")));
+    let chosen = auth.or_else(|| key.map(|value| (String::from("api-key"), value.to_owned())));
+    headers.extend(chosen);
     headers
 }
 // main.py merges kwargs.headers with kwargs.extra_headers, extra_headers winning, and sends the map only when non-empty

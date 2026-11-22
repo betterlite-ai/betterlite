@@ -38,7 +38,7 @@ use self::subscription::Subscription;
 pub enum Provider {
     OpenAi(OpenAi),
     AiohttpOpenAi(AiohttpOpenAi),
-    Azure(Azure),
+    Azure(Box<Azure>),
     AzureAi(AzureAi),
     Anthropic(Anthropic),
     Bedrock(Bedrock),
@@ -158,7 +158,7 @@ impl Provider {
             "aiohttp_openai" => Ok(Self::AiohttpOpenAi(AiohttpOpenAi)),
             "azure" | "azure_text" => {
                 let composition = Composition::from_environment(process_environment());
-                Ok(Self::Azure(Azure { composition }))
+                Ok(Self::Azure(Box::new(Azure { composition })))
             }
             "azure_ai" => Ok(Self::AzureAi(AzureAi)),
             "anthropic" => Ok(Self::Anthropic(Anthropic {

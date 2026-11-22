@@ -1,4 +1,4 @@
-use std::{fmt, mem::discriminant};
+use std::fmt;
 
 use crate::operation::{
     ChatOperation, EmbeddingOperation, OperationError, OperationRequest, OperationResult,
@@ -51,14 +51,14 @@ pub struct Azure {
 // the composition is the environment the adapter reads, not its identity, and its values stay out of Debug output
 impl fmt::Debug for Azure {
     #[cfg_attr(test, mutants::skip)]
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("Azure").finish_non_exhaustive()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Azure").finish_non_exhaustive()
     }
 }
 impl PartialEq for Azure {
     #[cfg_attr(test, mutants::skip)]
-    fn eq(&self, other: &Self) -> bool {
-        discriminant(self) == discriminant(other)
+    fn eq(&self, _other: &Self) -> bool {
+        true
     }
 }
 impl Eq for Azure {}
