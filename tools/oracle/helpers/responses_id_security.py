@@ -236,24 +236,34 @@ def call_answer(
     return {"call": call}
 
 
+def authorize_outcome(
+    data: dict[str, JsonValue],
+    call_type: str,
+    hook: ResponsesIDSecurity,
+    user: UserAPIKeyAuth,
+) -> tuple[str, str | None, int | None, str | None]:
+    cache = DualCache()
+    try:
+        no_result = asyncio.run(hook.async_pre_call_hook(user, cache, data, call_type)) is None  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L116
+    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L171
+        detail = error.detail
+        return forbidden_kind(detail), detail, error.status_code, None
+    except IndexError:
+        return "internal_error", None, 500, "IndexError"
+    if no_result:
+        return "not_responses_call", None, None, None
+    kind = "authorized" if text_or_none(data.get(ADDRESSED_RESPONSE_ID_FIELD)) else "unchanged"
+    return kind, None, None, None
+
+
 def authorize_answer(case: CallInput) -> JsonValue:
     data = case["data"]
-    call_type = case["call_type"]
-    field_name = addressed_field(call_type)
-    scope = (data, field_name)
+    field_name = addressed_field(case["call_type"])
     with hook_session(case["settings"], case["principal"], None) as (hook, user):
-        cache = DualCache()
-        try:
-            no_result = asyncio.run(hook.async_pre_call_hook(user, cache, data, call_type)) is None  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L116
-        except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/responses_id_security.py#L171
-            detail = error.detail
-            return call_answer(forbidden_kind(detail), detail, error.status_code, None, scope)
-        except IndexError:
-            return call_answer("internal_error", None, 500, "IndexError", scope)
-        if no_result:
-            return call_answer("not_responses_call", None, None, None, scope)
-        kind = "authorized" if text_or_none(data.get(ADDRESSED_RESPONSE_ID_FIELD)) else "unchanged"
-        return call_answer(kind, None, None, None, scope)
+        kind, detail, status, class_name = authorize_outcome(
+            data, case["call_type"], hook, user
+        )
+        return call_answer(kind, detail, status, class_name, (data, field_name))
 
 
 def success_answer(case: CallInput) -> JsonValue:
