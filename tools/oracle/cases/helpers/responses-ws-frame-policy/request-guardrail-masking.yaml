@@ -31,7 +31,7 @@ call:
       authorized_model: null
       defaults: null
       guardrails:
-      - {n: N}
+      - {"n": "N"}
       request_data: {}
     - kind: create
       message: '{"type": "response.create", "input": [{"content": "c"}]}'
