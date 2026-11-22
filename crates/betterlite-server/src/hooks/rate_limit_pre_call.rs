@@ -68,7 +68,7 @@ struct ProxyErrorEnvelope {
 
 impl RateLimitPreCallGate {
     #[must_use]
-    pub fn main_limiter(&self) -> Option<&RateLimitPreCallHook> {
+    pub const fn main_limiter(&self) -> Option<&RateLimitPreCallHook> {
         match &self.selection {
             LimiterSelection::V3(limiter) => Some(limiter),
             LimiterSelection::Legacy => None,
@@ -120,12 +120,12 @@ impl IntoResponse for RateLimitPreCallError {
                 )
                     .into_response()
             }
-            Self::Hook(error) => hook_response(error),
+            Self::Hook(error) => hook_response(&error),
         }
     }
 }
 
-fn hook_response(error: PreCallHookError) -> Response {
+fn hook_response(error: &PreCallHookError) -> Response {
     match error.rejection() {
         Some(PreCallHookRejection::RateLimited(rate_limited)) => {
             rate_limited.clone().into_response()

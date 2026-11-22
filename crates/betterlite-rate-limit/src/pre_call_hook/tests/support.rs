@@ -740,13 +740,12 @@ impl Captured {
 }
 
 impl Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let mut bytes = self
-            .0
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
             .lock()
-            .map_err(|poisoned| io::Error::other(poisoned.to_string()))?;
-        bytes.extend_from_slice(buffer);
-        Ok(buffer.len())
+            .map_err(|poisoned| io::Error::other(poisoned.to_string()))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

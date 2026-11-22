@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use tokio::sync::Semaphore;
+use tokio::time::timeout;
 
 use super::support::{
     self, Fixture, Parts, count, entries, occupied_registry, parallel_key, request_window,
@@ -168,10 +169,11 @@ async fn failing_provider_call(
     fixture: &Fixture,
     auth: &UserAPIKeyAuth,
 ) -> Result<(), &'static str> {
-    match fixture.hook.request_capacity(auth, "gpt4", None).await {
-        Ok(_guard) => Err("the provider call failed"),
-        Err(_) => Ok(()),
-    }
+    fixture
+        .hook
+        .request_capacity(auth, "gpt4", None)
+        .await
+        .map_or(Ok(()), |_guard| Err("the provider call failed"))
 }
 
 #[tokio::test]
@@ -184,7 +186,7 @@ async fn capacity_releases_the_slot_after_the_caller_is_cancelled() {
     ));
     let auth = limited_auth();
 
-    let cancelled = tokio::time::timeout(
+    let cancelled = timeout(
         Duration::from_millis(10),
         fixture.hook.request_capacity(&auth, "gpt4", None),
     )

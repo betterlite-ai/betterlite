@@ -44,7 +44,8 @@ use betterlite_rate_limit::windowed_admission::{
 };
 use betterlite_redact::structured::Payload;
 use betterlite_redis::cache_primitives::pipeline_increment::IncrementOperation;
-use serde_json::json;
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
 use tokio_util::task::TaskTracker;
 
@@ -298,11 +299,35 @@ async fn run(
     .await
 }
 
-async fn body_of(response: Response) -> Payload {
+async fn body_of<Body: DeserializeOwned>(response: Response) -> Body {
     let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("the error body reads");
-    serde_json::from_slice::<Payload>(&bytes).expect("the error body is JSON")
+    serde_json::from_slice(&bytes).expect("the error body is JSON")
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+struct DetailBody<Detail> {
+    detail: Detail,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+struct ErrorDetail {
+    error: String,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+struct ProxyErrorEnvelope {
+    error: ProxyErrorFields,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+struct ProxyErrorFields {
+    message: String,
+    #[serde(rename = "type")]
+    error_type: String,
+    param: Option<String>,
+    code: String,
 }
 
 #[tokio::test]
@@ -370,8 +395,10 @@ async fn batch_call_without_a_batch_limiter_maps_to_503() {
     let response = error.into_response();
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
-        body_of(response).await,
-        json!({"detail": {"error": message}})
+        body_of::<DetailBody<ErrorDetail>>(response).await,
+        DetailBody {
+            detail: ErrorDetail { error: message },
+        }
     );
 }
 
@@ -399,8 +426,10 @@ async fn rate_limited_hook_error_maps_to_429_with_its_headers() {
         Some(&HeaderValue::from_static("0"))
     );
     assert_eq!(
-        body_of(response).await,
-        json!({"detail": "Rate limit exceeded for api_key: key-1"})
+        body_of::<DetailBody<String>>(response).await,
+        DetailBody {
+            detail: String::from("Rate limit exceeded for api_key: key-1"),
+        }
     );
 }
 
@@ -417,8 +446,12 @@ async fn unverifiable_hook_error_maps_to_503() {
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
-        body_of(response).await,
-        json!({"detail": {"error": "counters unavailable"}})
+        body_of::<DetailBody<ErrorDetail>>(response).await,
+        DetailBody {
+            detail: ErrorDetail {
+                error: String::from("counters unavailable"),
+            },
+        }
     );
 }
 
@@ -436,15 +469,17 @@ async fn unverifiable_hook_error_with_an_unusable_status_maps_to_500() {
 
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
-        body_of(response).await,
-        json!({
-            "error": {
-                "message": format!("the fail-closed rate-limit rejection carries status 7000 that HTTP cannot carry: {cause}"),
-                "type": "internal_server_error",
-                "param": null,
-                "code": "500",
-            }
-        })
+        body_of::<ProxyErrorEnvelope>(response).await,
+        ProxyErrorEnvelope {
+            error: ProxyErrorFields {
+                message: format!(
+                    "the fail-closed rate-limit rejection carries status 7000 that HTTP cannot carry: {cause}"
+                ),
+                error_type: String::from("internal_server_error"),
+                param: None,
+                code: String::from("500"),
+            },
+        }
     );
 }
 
@@ -457,15 +492,15 @@ async fn other_hook_errors_map_to_500() {
 
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
-        body_of(response).await,
-        json!({
-            "error": {
-                "message": message,
-                "type": "internal_server_error",
-                "param": null,
-                "code": "500",
-            }
-        })
+        body_of::<ProxyErrorEnvelope>(response).await,
+        ProxyErrorEnvelope {
+            error: ProxyErrorFields {
+                message,
+                error_type: String::from("internal_server_error"),
+                param: None,
+                code: String::from("500"),
+            },
+        }
     );
 }
 
