@@ -82,7 +82,8 @@ async fn release_throttled<C>(
 {
     let mut entry = over.entry.clone();
     release_entries_best_effort(counters, slice::from_mut(&mut entry), over.reservation_cost).await;
-    remove_entry(applied_entries, &over.counter.counter_key);
+    applied_entries
+        .retain(|held| held.counter_key.as_deref() != Some(over.counter.counter_key.as_str()));
 }
 
 // strict enforcement refuses an estimate that overshoots the budget beyond the tolerance
@@ -174,8 +175,4 @@ const fn litellm_entity_name(entity_type: &CounterEntityType) -> &'static str {
         CounterEntityType::Organization => "Organization",
         CounterEntityType::Project => "Project",
     }
-}
-
-fn remove_entry(applied_entries: &mut Vec<ReservationEntry>, counter_key: &str) {
-    applied_entries.retain(|entry| entry.counter_key.as_deref() != Some(counter_key));
 }
