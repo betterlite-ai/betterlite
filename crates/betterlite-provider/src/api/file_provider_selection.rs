@@ -50,5 +50,8 @@ pub fn file_config_selection(_model: &str, provider: ProviderId) -> Option<FileP
 // LiteLLM's supports_httpx_timeout: an HTTP timeout object survives only for the exact three names, and an absent provider keeps none
 #[must_use]
 pub fn file_timeout_capability(provider: Option<&str>) -> bool {
-    matches!(provider, Some("openai" | "azure" | "bedrock"))
+    match provider {
+        Some("openai" | "azure" | "bedrock") => true,
+        Some(_) | None => false,
+    }
 }
