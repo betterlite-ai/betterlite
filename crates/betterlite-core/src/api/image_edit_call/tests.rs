@@ -883,17 +883,25 @@ async fn edit_option_merge_passes_the_drop_policy() {
 }
 
 #[rstest]
-#[case::openai_without_multipart(gpt_image_tag(), "openai/gpt-image-1", false)]
+#[case::openai_without_multipart(gpt_image_tag(), "openai/gpt-image-1", false, false)]
 #[case::gemini_with_multipart(
     ImageEditConfigTag::Gemini(String::from("edit-model")),
     "gemini/edit-model",
+    true,
+    false
+)]
+#[case::hosted_vllm_with_multipart(
+    ImageEditConfigTag::HostedVllm(String::from("my-model")),
+    "hosted_vllm/my-model",
+    true,
     true
 )]
 #[tokio::test]
-async fn edit_option_merge_form_fields_need_an_openai_multipart_config(
+async fn edit_option_merge_form_fields_need_a_multipart_openai_family(
     #[case] tag: ImageEditConfigTag,
     #[case] model: &str,
     #[case] multipart: bool,
+    #[case] merged: bool,
 ) {
     let world = World::new();
     let context = world.context();
@@ -925,7 +933,7 @@ async fn edit_option_merge_form_fields_need_an_openai_multipart_config(
     let [sent] = recorded.as_slice() else {
         panic!("exactly one send");
     };
-    assert!(!sent.optional_params.contains_key("tags"));
+    assert_eq!(sent.optional_params.contains_key("tags"), merged);
 }
 
 #[tokio::test]
