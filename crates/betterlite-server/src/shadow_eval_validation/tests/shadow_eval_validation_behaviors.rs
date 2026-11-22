@@ -19,7 +19,7 @@ use crate::team_access::error::TeamAccessError;
 
 use super::support::{
     Credentials, JUDGE, JUDGE_MODEL, ROUTER, TIER, TIER_MODEL, auth, deployments, params, parse,
-    records, router_params, validate, validate_with, validate_with_aliases, validation_field,
+    records, router_params, validate, validate_with, validation_field,
 };
 
 #[test]
@@ -223,7 +223,14 @@ fn an_alias_does_not_configure_its_target_as_a_router() {
         r#"{"team_ids":["team-1"],"router_names":["smart"],"judge_model":"judge-model","shadow_percentage":50}"#,
     );
     let aliases = JsonObject::from([("smart".to_owned(), Json::Text(ROUTER.to_owned()))]);
-    let error = validate_with_aliases(&parsed, &deployments(), aliases, &records()).unwrap_err();
+    let error = validate_with(
+        &parsed,
+        &deployments(),
+        aliases,
+        &records(),
+        &Credentials::None,
+    )
+    .unwrap_err();
     assert_eq!(error.status_code(), 400);
     assert_eq!(error.to_string(), "Not a configured auto-router: 'smart'");
 }
@@ -234,7 +241,14 @@ fn an_alias_naming_a_router_is_still_a_plain_model() {
         r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"smart","shadow_percentage":50}"#,
     );
     let aliases = JsonObject::from([("smart".to_owned(), Json::Text(ROUTER.to_owned()))]);
-    validate_with_aliases(&parsed, &deployments(), aliases, &records()).unwrap();
+    validate_with(
+        &parsed,
+        &deployments(),
+        aliases,
+        &records(),
+        &Credentials::None,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -243,7 +257,14 @@ fn a_malformed_alias_fails_the_start_instead_of_reading_no_arms() {
         r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"judge-model","shadow_percentage":50}"#,
     );
     let aliases = JsonObject::from([(ROUTER.to_owned(), Json::Object(JsonObject::new()))]);
-    let error = validate_with_aliases(&parsed, &deployments(), aliases, &records()).unwrap_err();
+    let error = validate_with(
+        &parsed,
+        &deployments(),
+        aliases,
+        &records(),
+        &Credentials::None,
+    )
+    .unwrap_err();
     assert_eq!(error.status_code(), 500);
     assert!(
         error
@@ -331,6 +352,7 @@ fn accepts_an_sdk_judge_once_a_key_is_configured() {
     validate_with(
         &parsed,
         &rows,
+        JsonObject::new(),
         &records(),
         &Credentials::ApiKey("sk-ant-test".to_owned()),
     )
@@ -414,6 +436,6 @@ fn a_hosted_manager_holding_either_anthropic_secret_is_consulted(
         r#"{"team_ids":["team-1"],"router_names":["shadow-router"],"judge_model":"anthropic/claude-sonnet-5","shadow_percentage":50}"#,
     );
     let keys = Credentials::Hosted(vec![hosted.to_owned()]);
-    let result = validate_with(&parsed, &rows, &records(), &keys);
+    let result = validate_with(&parsed, &rows, JsonObject::new(), &records(), &keys);
     assert_eq!(result.is_ok(), accepted);
 }

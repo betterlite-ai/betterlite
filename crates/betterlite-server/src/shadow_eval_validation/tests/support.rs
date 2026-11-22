@@ -108,31 +108,13 @@ pub(super) fn validate(
     deployments: &[(&str, JsonObject)],
     records: &TargetRecords<'_>,
 ) -> Result<(), ShadowEvalValidationError> {
-    validate_with(request, deployments, records, &Credentials::None)
-}
-
-pub(super) fn validate_with(
-    request: &StartShadowEvalRequest,
-    deployments: &[(&str, JsonObject)],
-    records: &TargetRecords<'_>,
-    credentials: &Credentials,
-) -> Result<(), ShadowEvalValidationError> {
-    run_validation(
+    validate_with(
         request,
         deployments,
         JsonObject::new(),
         records,
-        credentials,
+        &Credentials::None,
     )
-}
-
-pub(super) fn validate_with_aliases(
-    request: &StartShadowEvalRequest,
-    deployments: &[(&str, JsonObject)],
-    aliases: JsonObject,
-    records: &TargetRecords<'_>,
-) -> Result<(), ShadowEvalValidationError> {
-    run_validation(request, deployments, aliases, records, &Credentials::None)
 }
 
 fn unconsulted_manager() -> SecretManagerReadState<'static> {
@@ -194,7 +176,7 @@ fn snapshot(deployments: &[(&str, JsonObject)], aliases: &JsonObject) -> Snapsho
     Snapshot::build(&rows, aliases).unwrap()
 }
 
-fn run_validation(
+pub(super) fn validate_with(
     request: &StartShadowEvalRequest,
     deployments: &[(&str, JsonObject)],
     aliases: JsonObject,

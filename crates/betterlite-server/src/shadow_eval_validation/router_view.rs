@@ -34,8 +34,7 @@ impl ShadowEvalRouter<'_> {
         }
     }
 
-    // _is_configured_pre_routing_strategy: a registry holds a deployment whose model names one of the four routers.
-    // The registries are keyed by deployment.model_name, so only the exact-name rows answer, never an alias.
+    // _is_configured_pre_routing_strategy: the registries are keyed by deployment.model_name, so only exact-name rows answer.
     #[must_use]
     pub fn has_strategy_deployment(&self, name: &str) -> bool {
         get_all_deployments(self.catalog, name, None, None)
