@@ -155,6 +155,7 @@ impl RawRouterConfig {
                 .adaptive
                 .map(|flag| flag.into_bool(&format!("{prefix}.{ADAPTIVE_KEY}"), lookup))
                 .transpose()?
+                .flatten()
                 .unwrap_or(DEFAULT_ADAPTIVE),
             weights: self
                 .adaptive_weights
