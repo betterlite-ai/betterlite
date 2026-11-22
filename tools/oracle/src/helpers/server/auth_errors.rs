@@ -55,7 +55,7 @@ async fn answer(row: &Row, routes: &RouteNormalizer, redactor: &Redactor) -> Hel
     };
     let resolved = row.identity.as_ref().map(identity).transpose()?;
     if matches!(row.step, Step::Unparsable) {
-        return unparsable(row, ports, resolved).await;
+        return Box::pin(unparsable(row, ports, resolved)).await;
     }
     let mut headers = HeaderMap::new();
     if let Some(agent) = &row.user_agent {

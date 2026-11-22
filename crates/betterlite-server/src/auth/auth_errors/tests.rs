@@ -92,14 +92,15 @@ async fn send(hook: Option<&Arc<Hook>>, key: &str) -> (StatusCode, String, bool)
 async fn send_with(hook: Option<&Arc<Hook>>, key: &str, extra: &str) -> (StatusCode, String, bool) {
     let state = state_for(&config(extra));
     if let Some(installed) = hook {
-        let installed: Arc<dyn AuthFailureHook> = Arc::clone(installed);
+        let cloned = Arc::clone(installed);
+        let stored: Arc<dyn AuthFailureHook> = cloned;
         assert!(
             state
                 .auth_errors
                 .hook
                 .lock()
                 .unwrap()
-                .replace(installed)
+                .replace(stored)
                 .is_none(),
             "a fresh slot takes the hook"
         );
