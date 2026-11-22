@@ -102,6 +102,12 @@ pub(super) async fn require_present(
 
 // register, update and the lifecycle routes each wrap a table failure with their own prefix
 pub(super) fn table_failure(prefix: Option<&str>, source: &TableError) -> ClaudePluginWriteError {
-    let message = prefix.map_or_else(|| source.to_string(), |label| format!("{label}: {source}"));
-    ClaudePluginWriteError::Backend { message }
+    match prefix {
+        Some(label) => ClaudePluginWriteError::Backend {
+            message: format!("{label}: {source}"),
+        },
+        None => ClaudePluginWriteError::Backend {
+            message: source.to_string(),
+        },
+    }
 }
