@@ -1,9 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter::once;
 
-use betterlite_azure::azure_chat_base_policy::AzureChatSettings;
 use betterlite_openai::embedding::EmbeddingRequest;
-use betterlite_openai::openai_base_config::OpenAiSettings;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::Message;
@@ -39,34 +37,21 @@ impl Answer for Reply {
     }
 }
 
-// A configuration section is the same JSON in both languages: main.py's class defaults merge only absent keys.
-fn composition(case: &Case) -> Result<Composition, Box<HelperError>> {
-    let chat_defaults = match case.chat_defaults.as_ref() {
-        Some(value) => {
-            serde_json::from_value(value.clone()).map_err(|error| failure("ValueError", error))?
-        }
-        None => AzureChatSettings::default(),
-    };
-    let o_series_defaults = match case.o_series_defaults.as_ref() {
-        Some(value) => {
-            serde_json::from_value(value.clone()).map_err(|error| failure("ValueError", error))?
-        }
-        None => OpenAiSettings::default(),
-    };
-    Ok(Composition {
-        environment: case.environment.clone(),
-        globals: Globals {
-            api_base: case.globals.api_base.clone(),
-            api_version: case.globals.api_version.clone(),
-            api_key: case.globals.api_key.clone().map(SecretString::from),
-            azure_key: case.globals.azure_key.clone().map(SecretString::from),
-            headers: case.globals.headers.clone(),
-            azure_default_api_version: case.globals.azure_default_api_version.clone(),
-        },
-        chat_defaults,
-        o_series_defaults,
-        openai_system_messages_first: false,
-    })
+// A default arrives either as the value the case names or as the class defaults, which merge only absent keys.
+fn defaults<T: DeserializeOwned + Default>(value: Option<&Value>) -> Result<T, Box<HelperError>> {
+    match value {
+        Some(value) => decode(value),
+        None => Ok(T::default()),
+    }
+}
+
+fn decode_optional<T: DeserializeOwned>(
+    value: Option<&Value>,
+) -> Result<Option<T>, Box<HelperError>> {
+    match value {
+        Some(value) => Ok(Some(decode(value)?)),
+        None => Ok(None),
+    }
 }
 
 fn decode<T: DeserializeOwned>(value: &Value) -> Result<T, Box<HelperError>> {
@@ -85,29 +70,19 @@ fn optional(case: &Case) -> Result<Object, Box<HelperError>> {
     }
 }
 
-fn call_credentials(case: &Case) -> Result<Credentials, Box<HelperError>> {
-    Ok(Credentials {
+fn request(case: &Case) -> Result<Request, Box<HelperError>> {
+    let credentials = Credentials {
         api_base: case.api_base.clone(),
         api_version: case.api_version.clone(),
         api_key: case.api_key.clone().map(SecretString::from),
         headers: case.headers.clone(),
         extra_headers: case.extra_headers.clone(),
-        max_retries: match case.max_retries.as_ref() {
-            Some(value) => Some(decode(value)?),
-            None => None,
-        },
-        extra_body: match case.extra_body.as_ref() {
-            Some(value) => Some(decode(value)?),
-            None => None,
-        },
+        max_retries: decode_optional(case.max_retries.as_ref())?,
+        extra_body: decode_optional(case.extra_body.as_ref())?,
         azure_ad_token: case.azure_ad_token.clone().map(SecretString::from),
         base_model: None,
         timeout: None,
-    })
-}
-
-fn request(case: &Case) -> Result<Request, Box<HelperError>> {
-    let credentials = call_credentials(case)?;
+    };
     match case.operation {
         Operation::Chat => Ok(Request::Chat(Box::new(ChatCall {
             model: case.model.clone(),
@@ -185,7 +160,21 @@ pub(crate) struct Observation {
 
 // The two-step replay: each call composes against the same configuration and the module globals.
 pub(crate) fn run(case: &Case) -> Result<Observation, Box<HelperError>> {
-    let composition = composition(case)?;
+    // The configuration section is the same JSON in both languages, so both sides deserialize it the same way.
+    let composition = Composition {
+        environment: case.environment.clone(),
+        globals: Globals {
+            api_base: case.globals.api_base.clone(),
+            api_version: case.globals.api_version.clone(),
+            api_key: case.globals.api_key.clone().map(SecretString::from),
+            azure_key: case.globals.azure_key.clone().map(SecretString::from),
+            headers: case.globals.headers.clone(),
+            azure_default_api_version: case.globals.azure_default_api_version.clone(),
+        },
+        chat_defaults: defaults(case.chat_defaults.as_ref())?,
+        o_series_defaults: defaults(case.o_series_defaults.as_ref())?,
+        openai_system_messages_first: false,
+    };
     let body = serde_json::to_vec(&case.reply).map_err(|error| failure("ValueError", error))?;
     let answer = Reply {
         status: case.status,

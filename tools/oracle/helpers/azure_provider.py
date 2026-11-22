@@ -200,7 +200,9 @@ def dispatch_case(case: ProviderCase) -> JsonValue:
     litellm.api_version = module["api_version"]
     litellm.api_key = module["api_key"]
     litellm.azure_key = module["azure_key"]
-    litellm.AZURE_DEFAULT_API_VERSION = module["azure_default_api_version"] or "2025-02-01-preview"
+    default_api_version = module["azure_default_api_version"]
+    if default_api_version is not None:
+        litellm.AZURE_DEFAULT_API_VERSION = default_api_version
     chat_defaults = case["chat_defaults"]
     if chat_defaults is not None:
         litellm.AzureOpenAIConfig(**chat_defaults)
@@ -228,4 +230,5 @@ def dispatch_case(case: ProviderCase) -> JsonValue:
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    return dispatch_case(TypeAdapter(ProviderCase).validate_python(input_value))
+    case = TypeAdapter(ProviderCase).validate_python(input_value)
+    return dispatch_case(case)
