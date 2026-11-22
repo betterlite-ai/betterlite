@@ -38,12 +38,13 @@ pub fn cold_payload_owner(payload: &JsonData) -> OwnerPair {
 }
 
 fn string_field(fields: &BTreeMap<String, JsonData>, name: &str) -> Option<String> {
-    fields.get(name).and_then(|value| match value {
+    let value = fields.get(name)?;
+    match value {
         JsonData::String(text) => Some(text.clone()),
         JsonData::Null
         | JsonData::Bool(_)
         | JsonData::Number(_)
         | JsonData::Array(_)
         | JsonData::Object(_) => None,
-    })
+    }
 }
