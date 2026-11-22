@@ -95,6 +95,16 @@ async fn a_root_prefix_rebuilds_the_base_from_scheme_and_netloc() {
 }
 
 #[tokio::test]
+async fn a_trailing_slash_is_not_found() {
+    let response = fetch(
+        TestApp::with_record(),
+        "/.well-known/oauth-authorization-server/",
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn the_protected_resource_path_drops_the_base_path() {
     let mut app = TestApp::with_record();
     app.base_url = "https://proxy.test/root".to_owned();

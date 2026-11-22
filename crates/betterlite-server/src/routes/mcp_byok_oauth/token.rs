@@ -143,16 +143,15 @@ fn decode_form_component(raw: &[u8]) -> String {
                 bytes.push(b' ');
                 rest = tail;
             }
-            b'%' => match hex_pair(tail) {
-                Some((high, low)) => {
+            b'%' => {
+                if let Some((high, low)) = hex_pair(tail) {
                     bytes.push(high.saturating_mul(16).saturating_add(low));
                     rest = tail.get(2..).unwrap_or_default();
-                }
-                None => {
+                } else {
                     bytes.push(b'%');
                     rest = tail;
                 }
-            },
+            }
             byte => {
                 let mut buffer = [0_u8; 4];
                 bytes.extend_from_slice(char::from(byte).encode_utf8(&mut buffer).as_bytes());

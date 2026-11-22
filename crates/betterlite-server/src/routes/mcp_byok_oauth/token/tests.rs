@@ -215,6 +215,14 @@ async fn a_content_type_with_a_charset_is_accepted() {
 }
 
 #[tokio::test]
+async fn a_multipart_body_is_treated_as_an_empty_form() {
+    let Built { router, .. } = TestApp::with_record().build();
+    let request = post_with("multipart/form-data; boundary=frame", &valid_body());
+    let response = send(router, request).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
 async fn a_duplicated_field_uses_the_last_value() {
     let body = format!(
         "grant_type=authorization_code&code=wrong&code=auth-code-1&code_verifier={VERIFIER}"
