@@ -47,10 +47,11 @@ pub struct CooldownCall<'failure> {
     pub requested_model_group: Option<&'failure str>,
 }
 
-// the two production entries that share the Router callback's pipeline: a failed attempt and the direct set call
+// the three production entries that share the Router callback's pipeline: a failed attempt, the fallback trigger and the direct set call
 #[derive(Clone, Copy)]
 pub enum CooldownSource<'failure> {
     Callback(&'failure CooldownAttempt<'failure>),
+    Fallback(&'failure FallbackFailure<'failure>),
     Direct(&'failure CooldownCall<'failure>),
 }
 
@@ -102,17 +103,9 @@ impl<S: DeltaStore + 'static> CooldownPolicyService<S> {
         lookup: &CatalogLookup<'_>,
         failure: &FallbackFailure<'_>,
     ) -> impl Future<Output = bool> + Send + 'call {
-        let resolution = prepare_fallback(&self.counters, &self.settings, lookup, failure);
+        let triggered = self.cool_deployment(lookup, CooldownSource::Fallback(failure));
         async move {
-            let prepared = match resolution {
-                Ok(Some(prepared)) => prepared,
-                Ok(None) => return false,
-                Err(error) => {
-                    tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
-                    return false;
-                }
-            };
-            match self.finish_cooldown(&prepared).await {
+            match triggered.await {
                 Ok(cooled) => cooled,
                 Err(error) => {
                     tracing::debug!("Error triggering cooldown for fallback deployment: {error}");
@@ -240,6 +233,7 @@ where
 {
     match source {
         CooldownSource::Callback(attempt) => prepare_callback(counters, settings, lookup, attempt),
+        CooldownSource::Fallback(failure) => prepare_fallback(counters, settings, lookup, failure),
         CooldownSource::Direct(call) => {
             let Some(deployment) = lookup.get_deployment(call.deployment_id)? else {
                 return Ok(None);
