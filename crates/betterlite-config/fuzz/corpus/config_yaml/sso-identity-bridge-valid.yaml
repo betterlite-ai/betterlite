@@ -1,0 +1,7 @@
+model_list:
+  - model_name: sso-identity-bridge-seed
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/SSO_IDENTITY_BRIDGE_SEED_KEY
+general_settings:
+  master_key: sk-sso-identity-bridge-seed
