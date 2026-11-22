@@ -187,7 +187,7 @@ impl GrantSources for FakeGrants {
         auth: &UserAPIKeyAuth,
     ) -> impl Future<Output = Result<AgentAccess, AgentAccessError>> + Send {
         let permission = auth.view.token.object_permission.as_ref();
-        let declared = permission.map(|table| table.agents.0.clone());
+        let declared = permission.and_then(|table| table.agents.0.clone());
         let call = format!("key_strict {} agents={declared:?}", label(Some(auth)));
         ready(answer(&self.calls, call, &self.key_strict))
     }
