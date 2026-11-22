@@ -1,0 +1,7 @@
+general_settings:
+  enable_chat_ui: true
+  enable_projects_ui: true
+  enable_ptu_cost_attribution: true
+  apply_user_budget_to_team_keys: true
+  ui_settings:
+    enable_chat_ui: false

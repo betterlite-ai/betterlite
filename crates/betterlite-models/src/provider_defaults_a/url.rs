@@ -14,6 +14,15 @@ pub struct UrlParts {
     pub fragment: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SplitUrl {
+    pub scheme: String,
+    pub netloc: String,
+    pub path: String,
+    pub query: String,
+    pub fragment: String,
+}
+
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum UrlError {
     #[error("invalid IPv6 URL")]
@@ -33,8 +42,8 @@ const USES_NETLOC: [&str; 26] = [
     "git+ssh", "ws", "wss",
 ];
 
-// Ports urllib.parse.urlparse: leading spaces dropped, tabs and newlines dropped, then the components split.
-pub fn parse(url: &str) -> Result<UrlParts, UrlError> {
+// Ports urllib.parse.urlsplit: leading spaces dropped, tabs and newlines dropped, then the components split.
+pub fn urlsplit(url: &str) -> Result<SplitUrl, UrlError> {
     let stripped =
         url.trim_start_matches(|character: char| matches!(character, '\u{0}'..='\u{20}'));
     let cleaned: String = stripped
@@ -49,18 +58,36 @@ pub fn parse(url: &str) -> Result<UrlParts, UrlError> {
     let (before_query, query) = before_fragment
         .split_once('?')
         .unwrap_or((before_fragment, ""));
-    let (path, params) = if USES_PARAMS.contains(&scheme.as_str()) {
-        split_params(before_query)
+    Ok(SplitUrl {
+        scheme,
+        netloc,
+        path: before_query.to_owned(),
+        query: query.to_owned(),
+        fragment: fragment.to_owned(),
+    })
+}
+
+// Ports urllib.parse.urlparse: urlsplit, then the last segment's params split off for the schemes that use them.
+pub fn parse(url: &str) -> Result<UrlParts, UrlError> {
+    let SplitUrl {
+        scheme,
+        netloc,
+        path: full_path,
+        query,
+        fragment,
+    } = urlsplit(url)?;
+    let (path, params) = if USES_PARAMS.contains(&scheme.as_str()) && full_path.contains(';') {
+        split_params(&full_path)
     } else {
-        (before_query, "")
+        (full_path.as_str(), "")
     };
     Ok(UrlParts {
         scheme,
         netloc,
         path: path.to_owned(),
         params: params.to_owned(),
-        query: query.to_owned(),
-        fragment: fragment.to_owned(),
+        query,
+        fragment,
     })
 }
 
@@ -162,7 +189,13 @@ fn check_brackets(netloc: &str) -> Result<(), UrlError> {
     }
     let hostinfo = netloc.rsplit_once('@').map_or(netloc, |(_, after)| after);
     let Some((before, bracketed)) = hostinfo.split_once('[') else {
-        return Ok(());
+        // a bracket in the userinfo still leaves the host after it to the bracketed-host check
+        let host = hostinfo.split_once(':').map_or(hostinfo, |(name, _)| name);
+        return if is_bracketed_host(host) {
+            Ok(())
+        } else {
+            Err(UrlError::InvalidIpv6)
+        };
     };
     if !before.is_empty() {
         return Err(UrlError::InvalidIpv6);
@@ -196,7 +229,7 @@ fn check_netloc(netloc: &str) -> Result<(), UrlError> {
 
 // urllib.parse's ipaddress check also accepts an IPvFuture literal and an IPv6 scope id.
 fn is_bracketed_host(host: &str) -> bool {
-    if let Some(future) = host.strip_prefix('v') {
+    if let Some(future) = host.strip_prefix(['v', 'V']) {
         let Some((hex, suffix)) = future.split_once('.') else {
             return false;
         };

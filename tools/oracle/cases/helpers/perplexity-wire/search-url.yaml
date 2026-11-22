@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-search-url
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "search", "headers": [], "urls": [{"api_base": null, "env": {}}, {"api_base": null, "env": {"PERPLEXITY_API_BASE": "https://env.example"}}, {"api_base": "", "env": {"PERPLEXITY_API_BASE": "https://env.example"}}, {"api_base": "https://mock.example", "env": {}}, {"api_base": "https://mock.example/search", "env": {}}, {"api_base": "https://mock.example/", "env": {}}], "requests": [], "replies": []}

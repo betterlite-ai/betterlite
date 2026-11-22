@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-responses-failed-status
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "responses", "headers": [], "urls": [], "requests": [], "replies": [{"body": "{\"id\": \"resp_1\", \"status\": \"failed\", \"error\": {\"message\": \"quota exceeded\", \"code\": \"rate_limit\"}}", "status": 200, "headers": {}}, {"body": "{\"id\": \"resp_2\", \"status\": \"failed\"}", "status": 202, "headers": {}}, {"body": "{\"id\": \"resp_3\", \"status\": \"failed\", \"error\": {\"code\": \"x\"}}", "status": 200, "headers": {}}, {"body": "{\"id\": \"resp_4\", \"object\": \"response\", \"created_at\": 1700000000, \"status\": \"completed\", \"model\": \"sonar\", \"output\": []}", "status": 200, "headers": {}}]}

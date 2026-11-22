@@ -1,0 +1,18 @@
+kind: helper
+name: admit-no-store-plain-ok
+call:
+  b4781:
+    operation: admit
+    auth:
+      user_id: human
+      team_id: null
+      agent_id: plain
+      context: null
+    registry:
+      - '{"agent_id":"plain","agent_name":"plain-agent","agent_card_params":{}}'
+    store: null
+    retired: false
+    granted: []
+env: {}
+compare:
+  ignore: []
