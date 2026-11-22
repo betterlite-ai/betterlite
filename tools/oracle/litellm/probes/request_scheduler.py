@@ -2,6 +2,7 @@ import asyncio
 import time
 from typing import Annotated, Final, Literal, Protocol
 from unittest.mock import patch
+
 from litellm.exceptions import Timeout
 from litellm.router import Router
 from litellm.router_utils.add_retry_fallback_headers import get_hidden_params_dict
@@ -10,7 +11,9 @@ from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import ModelResponse
 from pydantic import Field, TypeAdapter
 from typing_extensions import TypedDict, override
+
 from probes.protocol import Operation, Strict
+
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 _MODEL: Final = "gpt-4o"
 _MESSAGES: Final[list[AllMessageValues]] = [{"role": "user", "content": "hi"}]
