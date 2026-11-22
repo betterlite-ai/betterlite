@@ -8,19 +8,19 @@ use std::time::Duration;
 
 use betterlite_prometheus::collector_registry::CollectorRegistry;
 use rstest::rstest;
-use tokio::time::Instant;
+use tokio::time::{Instant, sleep};
 use tokio_postgres::Client;
 
 use crate::cleanup_metrics::{CleanupMetrics, RunOutcome};
 use crate::postgres_store::session::PostgresStore;
-use crate::spend_retention::batches::deadline::MonotonicClock;
+use crate::spend_retention::batches::deadline::MonotonicClock as _;
 use crate::spend_retention::batches::settings::CleanupSettings;
 use crate::spend_retention::batches::table::CleanupTable;
 use crate::spend_retention::batches::{SpendLogCleanup, StopReason, TableCleanupResult};
-use crate::spend_retention::runner::clock::{CleanupClock, SystemCleanupClock};
+use crate::spend_retention::runner::clock::{CleanupClock as _, SystemCleanupClock};
 use crate::spend_retention::runner::error::{LockReleaseError, RunError};
 use crate::spend_retention::runner::job::SpendLogCleanupJob;
-use crate::spend_retention::runner::lock::CleanupLock;
+use crate::spend_retention::runner::lock::CleanupLock as _;
 use crate::spend_retention::runner::support::{
     FakeLock, FakePartitions, FixedCleanupClock, HEALTH_IDS, LeaseCache, SESSION_COUNT,
     SESSION_IDS, SPEND_COUNT, SPEND_IDS, SlowLock, StepCleanupClock, TAG_IDS, TestDurations,
@@ -64,7 +64,7 @@ fn step_cleanup(
     )
 }
 
-fn stopped(reason: StopReason) -> TableCleanupResult {
+const fn stopped(reason: StopReason) -> TableCleanupResult {
     TableCleanupResult {
         table: CleanupTable::SpendLogs,
         rows_deleted: 0,
@@ -72,7 +72,11 @@ fn stopped(reason: StopReason) -> TableCleanupResult {
     }
 }
 
-fn deleted(table: CleanupTable, rows_deleted: u64, stop_reason: StopReason) -> TableCleanupResult {
+const fn deleted(
+    table: CleanupTable,
+    rows_deleted: u64,
+    stop_reason: StopReason,
+) -> TableCleanupResult {
     TableCleanupResult {
         table,
         rows_deleted,
@@ -88,12 +92,12 @@ fn position(contents: &str, needle: &str) -> usize {
 
 async fn run_until_rows_are_deleted<Run>(mut run: Pin<&mut Run>, observer: &Client, before: i64)
 where
-    Run: Future,
+    Run: Future + Send,
 {
     loop {
         tokio::select! {
             _finished = &mut run => panic!("the cleanup finished before it could be cancelled"),
-            () = tokio::time::sleep(Duration::from_millis(5)) => {
+            () = sleep(Duration::from_millis(5)) => {
                 if count_rows(observer, SPEND_COUNT).await < before {
                     return;
                 }
@@ -615,11 +619,12 @@ async fn cancellation_records_aborted_with_the_progress_so_far() {
     assert_eq!(runs(&registry, "aborted"), Some(1));
     assert_eq!(runs(&registry, "completed"), None);
     let remaining = count_rows(&observer, SPEND_COUNT).await;
-    let deleted = 1_000 - remaining;
+    let deleted = 1_000_i64.saturating_sub(remaining);
+    let batches = deleted.checked_div(2).expect("two rows per batch");
     let contents = logs.contents();
     assert!(contents.contains("Spend log cleanup cancelled after"));
     assert!(contents.contains(&format!("rows_deleted={deleted},")));
-    assert!(contents.contains(&format!("batches={})", deleted / 2)));
+    assert!(contents.contains(&format!("batches={batches})")));
     let lock = cleanup.pod_lock.as_ref().expect("the lock manager");
     assert_eq!(lock.calls(), vec!["acquire"]);
     case.close().await;

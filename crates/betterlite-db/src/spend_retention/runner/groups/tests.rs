@@ -17,11 +17,11 @@ use crate::spend_retention::batches::table::CleanupTable;
 use crate::spend_retention::batches::{SpendLogCleanup, StopReason};
 use crate::spend_retention::runner::progress::RunProgress;
 use crate::spend_retention::runner::support::{
-    FakeLock, FakePartitions, FixedCleanupClock, PARTITION_NAMES, SESSION_IDS, SPEND_IDS,
-    StepCleanupClock, TAG_IDS, TOOL_IDS, TestDurations, USER_SESSION_IDS, group_run, install_logs,
-    moment, naive, provision, retention_settings, seed_daily_tag, seed_health_check, seed_session,
-    seed_sessions, seed_spend_logs, seed_tool_index, seed_tool_indexes, seed_user_session,
-    seed_user_sessions, text_join,
+    FakeLock, FakePartitions, FixedCleanupClock, HEALTH_IDS, PARTITION_NAMES, SESSION_IDS,
+    SPEND_IDS, StepCleanupClock, TAG_IDS, TOOL_IDS, TestDurations, USER_SESSION_IDS, group_run,
+    install_logs, moment, naive, provision, retention_settings, seed_daily_tag, seed_health_check,
+    seed_session, seed_sessions, seed_spend_logs, seed_tool_index, seed_tool_indexes,
+    seed_user_session, seed_user_sessions, text_join,
 };
 
 use super::{GroupPlan, GroupWindow};
