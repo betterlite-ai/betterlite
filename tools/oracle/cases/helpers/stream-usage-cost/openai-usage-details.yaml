@@ -1,0 +1,52 @@
+kind: helper
+name: stream-usage-cost-openai-usage-details
+call:
+  b8930:
+    chunk:
+      kind: object
+      value:
+        id: chunk-details
+        object: chat.completion.chunk
+        service_tier: flex
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 5
+          total_tokens: 15
+          prompt_tokens_details:
+            cached_tokens: 3
+          completion_tokens_details:
+            reasoning_tokens: 2
+      text: null
+    enabled: true
+    model_name: gpt-4o
+    prices:
+      recorder: 0.25
+      completion: 0.5
+    log:
+      model: gpt-4o
+      call_type: acompletion
+      details: {}
+calls:
+  - b8930:
+      chunk:
+        kind: object
+        value:
+          id: chunk-fallback-tier
+          object: chat.completion.chunk
+          service_tier: flex
+          usage:
+            prompt_tokens: 2
+            completion_tokens: 1
+        text: null
+      enabled: true
+      model_name: gpt-4o
+      prices:
+        recorder: null
+        completion: 0.5
+      log:
+        model: gpt-4o
+        call_type: acompletion
+        details: {}
+env: {}
+compare:
+  ignore: []

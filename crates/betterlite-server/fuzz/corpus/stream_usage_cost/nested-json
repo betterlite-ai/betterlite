@@ -1,0 +1,2 @@
+data: {"object":"chat.completion.chunk","usage":{"prompt_tokens":1,"completion_tokens":1,"prompt_tokens_details":{"cached_tokens":1,"text_tokens":0},"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":1},"meta":{"nested":{"deep":[1,2,{"x":null}]}}}}
+
