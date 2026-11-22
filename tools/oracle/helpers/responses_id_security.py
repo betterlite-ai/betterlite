@@ -238,7 +238,7 @@ def call_answer(
 
 def authorize_outcome(
     data: dict[str, JsonValue],
-    call_type: str,
+    call_type: CallTypesLiteral,
     hook: ResponsesIDSecurity,
     user: UserAPIKeyAuth,
 ) -> tuple[str, str | None, int | None, str | None]:
