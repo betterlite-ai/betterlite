@@ -150,14 +150,12 @@ fn the_issuer_is_built_from_the_normalized_tenant() {
 }
 
 #[rstest]
-#[case::no_sso(None)]
-#[case::empty_tenant(Some(""))]
-#[case::another_tenant(Some("00000000-0000-0000-0000-0000000000ff"))]
-fn delegated_mode_without_matching_sso_is_refused(#[case] tenant: Option<&str>) {
-    let settings = match tenant {
-        Some(tenant) => sso(tenant, Some("client-1")),
-        None => trusting(ISSUER),
-    };
+#[case::no_sso(trusting(ISSUER))]
+#[case::empty_tenant(sso("", Some("client-1")))]
+#[case::another_tenant(sso("00000000-0000-0000-0000-0000000000ff", Some("client-1")))]
+#[case::no_client(sso(TENANT, None))]
+#[case::empty_client(sso(TENANT, Some("")))]
+fn delegated_mode_without_matching_sso_is_refused(#[case] settings: IdentitySettings) {
     assert_eq!(
         refusal(
             &request(
@@ -166,26 +164,6 @@ fn delegated_mode_without_matching_sso_is_refused(#[case] tenant: Option<&str>) 
             ),
             None,
             &settings,
-        ),
-        (
-            400,
-            String::from("Delegated agents require Microsoft SSO for the same trusted tenant")
-        )
-    );
-}
-
-#[rstest]
-#[case::no_client(None)]
-#[case::empty_client(Some(""))]
-fn delegated_mode_without_a_client_is_refused(#[case] client: Option<&str>) {
-    assert_eq!(
-        refusal(
-            &request(
-                IdentityField::Value(configured(TENANT)),
-                Some(ExecutionMode::Delegated),
-            ),
-            None,
-            &sso(TENANT, client),
         ),
         (
             400,

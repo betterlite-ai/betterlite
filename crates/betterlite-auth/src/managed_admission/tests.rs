@@ -81,26 +81,22 @@ impl AdmissionStore for FakeStore {
         &self,
         agent_id: &str,
     ) -> impl Future<Output = Result<Option<AgentResponse>, AgentIdentityFailure>> + Send {
-        let answer = match &self.failure {
-            Some(failure) => Err(failure.clone()),
-            None => Ok(self
-                .agents
-                .iter()
-                .find(|agent| agent.agent_id == agent_id)
-                .cloned()),
-        };
-        ready(answer)
+        if let Some(failure) = self.failure.clone() {
+            return ready(Err(failure));
+        }
+        let found = self
+            .agents
+            .iter()
+            .find(|agent| agent.agent_id == agent_id)
+            .cloned();
+        ready(Ok(found))
     }
 
     fn retired_agent(
         &self,
         _agent_id: &str,
     ) -> impl Future<Output = Result<bool, AgentIdentityFailure>> + Send {
-        let answer = match &self.retired_failure {
-            Some(failure) => Err(failure.clone()),
-            None => Ok(self.retired),
-        };
-        ready(answer)
+        ready(self.retired_failure.clone().map_or(Ok(self.retired), Err))
     }
 }
 
@@ -232,6 +228,20 @@ pub(super) struct FakeTargets {
     pub(super) registry: Option<Arc<AgentRegistry>>,
 }
 
+impl FakeTargets {
+    fn known(&self, agent_id: &str) -> Option<AgentResponse> {
+        self.agent
+            .as_ref()
+            .filter(|agent| agent.agent_id == agent_id)
+            .cloned()
+            .or_else(|| {
+                self.registry
+                    .as_ref()
+                    .and_then(|registry| registry.get_agent_by_id(agent_id))
+            })
+    }
+}
+
 impl TargetAgents for FakeTargets {
     fn has_database(&self) -> bool {
         true
@@ -241,17 +251,7 @@ impl TargetAgents for FakeTargets {
         &self,
         agent_id: &str,
     ) -> impl Future<Output = Result<Option<AgentResponse>, AgentIdentityFailure>> + Send {
-        let found = self
-            .agent
-            .as_ref()
-            .filter(|agent| agent.agent_id == agent_id)
-            .cloned()
-            .or_else(|| {
-                self.registry
-                    .as_ref()
-                    .and_then(|registry| registry.get_agent_by_id(agent_id))
-            });
-        ready(Ok(found))
+        ready(Ok(self.known(agent_id)))
     }
 }
 

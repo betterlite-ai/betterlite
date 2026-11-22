@@ -220,31 +220,26 @@ def answer(auth: UserAPIKeyAuth, verdict: Literal["ok"] | Denial) -> JsonValue:
     return JSON.validate_python(result)
 
 
-def admit(call: AdmitCall) -> JsonValue:
-    install(call["registry"], call["granted"])
-    auth = token_of(call["auth"])
-    store = store_of(call["store"], retired=call["retired"])
-    try:
-        asyncio.run(admit_managed_actor(auth, store))
-    except HTTPException as error:
-        return answer(auth, Denial(status=error.status_code, detail=error.detail))
-    return answer(auth, "ok")
-
-
-def invoke(call: InvokeCall) -> JsonValue:
-    install(call["registry"], call["granted"])
-    auth = token_of(call["auth"])
-    store = store_of(call["store"], retired=False)
-    try:
-        asyncio.run(
-            prepare_agent_invocation(auth, call["target_name"], store, billable=call["billable"])
-        )
-    except HTTPException as error:
-        return answer(auth, Denial(status=error.status_code, detail=error.detail))
-    return answer(auth, "ok")
-
-
 def run(input_value: Input) -> JsonValue:
-    if input_value["operation"] == "admit":
-        return admit(input_value)
-    return invoke(input_value)
+    install(input_value["registry"], input_value["granted"])
+    auth = token_of(input_value["auth"])
+    try:
+        if input_value["operation"] == "admit":
+            asyncio.run(
+                admit_managed_actor(
+                    auth,
+                    store_of(input_value["store"], retired=input_value["retired"]),
+                )
+            )
+        else:
+            asyncio.run(
+                prepare_agent_invocation(
+                    auth,
+                    input_value["target_name"],
+                    store_of(input_value["store"], retired=False),
+                    billable=input_value["billable"],
+                )
+            )
+    except HTTPException as error:
+        return answer(auth, Denial(status=error.status_code, detail=error.detail))
+    return answer(auth, "ok")

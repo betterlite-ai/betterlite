@@ -45,6 +45,20 @@ where
         .with_state(IdentityAdminState { settings, reads })
 }
 
+// the prologue both routes share: the key behind the auth context, then the admin-only check
+fn admitted_caller(caller: Option<Extension<AuthContext>>) -> Result<(), Response> {
+    let Some(Extension(context)) = caller else {
+        return Err(unauthenticated());
+    };
+    let Some(key) = context.principal.source_key.0 else {
+        return Err(unauthenticated());
+    };
+    match require_agent_admin(&key) {
+        Ok(()) => Ok(()),
+        Err(error) => Err(error.into_response()),
+    }
+}
+
 async fn get_agent_identity_providers<Reads>(
     State(state): State<IdentityAdminState<Reads>>,
     caller: Option<Extension<AuthContext>>,
@@ -52,16 +66,10 @@ async fn get_agent_identity_providers<Reads>(
 where
     Reads: IdentityStatusReads + Send + Sync,
 {
-    let Some(Extension(context)) = caller else {
-        return unauthenticated();
-    };
-    let Some(key) = context.principal.source_key.0 else {
-        return unauthenticated();
-    };
-    match require_agent_admin(&key) {
-        Ok(()) => Json(trusted_agent_issuers(&state.settings)).into_response(),
-        Err(error) => error.into_response(),
+    if let Err(refusal) = admitted_caller(caller) {
+        return refusal;
     }
+    Json(trusted_agent_issuers(&state.settings)).into_response()
 }
 
 async fn get_agent_identity_status<Reads>(
@@ -72,14 +80,8 @@ async fn get_agent_identity_status<Reads>(
 where
     Reads: IdentityStatusReads + Send + Sync,
 {
-    let Some(Extension(context)) = caller else {
-        return unauthenticated();
-    };
-    let Some(key) = context.principal.source_key.0 else {
-        return unauthenticated();
-    };
-    if let Err(error) = require_agent_admin(&key) {
-        return error.into_response();
+    if let Err(refusal) = admitted_caller(caller) {
+        return refusal;
     }
     match state.reads.agent(&agent_id).await {
         Err(failure) => IdentityAdminError::from(AgentIdentityError::from(failure)).into_response(),

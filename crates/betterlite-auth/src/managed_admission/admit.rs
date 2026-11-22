@@ -108,15 +108,22 @@ where
     auth.extra.managed_agent_policy = Some(agent.clone());
     auth.extra.billing_agent_policy = Some(agent.clone());
     auth.extra.requires_fresh_policy = true;
-    delegated_grant(auth, &agent, context, delegation_verified, access).await
+    delegated_grant(
+        &agent.agent_id,
+        context,
+        delegation_verified,
+        auth.view.token.team_id.as_deref(),
+        access,
+    )
+    .await
 }
 
 // step j: a delegated context the flag did not verify needs the agent in the human's grants
 async fn delegated_grant<Grants, Targets, Humans>(
-    auth: &UserAPIKeyAuth,
-    agent: &AgentResponse,
+    agent_id: &str,
     context: Option<&ManagedAgentContext>,
     delegation_verified: bool,
+    team_id: Option<&str>,
     access: &AgentAccessResolver<Grants, Targets, Humans>,
 ) -> Result<(), AdmissionError>
 where
@@ -130,13 +137,8 @@ where
     if context.mode != ManagedAgentMode::Delegated || delegation_verified {
         return Ok(());
     }
-    let grants = verified_human_agent_grants(
-        access,
-        context.user_id.as_deref(),
-        auth.view.token.team_id.as_deref(),
-    )
-    .await?;
-    if grants.contains(&agent.agent_id) {
+    let grants = verified_human_agent_grants(access, context.user_id.as_deref(), team_id).await?;
+    if grants.contains(agent_id) {
         return Ok(());
     }
     Err(AdmissionError::from(AgentIdentityFailure {

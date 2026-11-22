@@ -42,12 +42,8 @@ impl AdmissionStore for CaseStore {
         &self,
         agent_id: &str,
     ) -> impl Future<Output = Result<Option<AgentResponse>, AgentIdentityFailure>> + Send {
-        let found = self
-            .agents
-            .iter()
-            .find(|agent| agent.agent_id == agent_id)
-            .cloned();
-        ready(Ok(found))
+        let found = self.agents.iter().find(|agent| agent.agent_id == agent_id);
+        ready(Ok(found.cloned()))
     }
 
     fn retired_agent(
