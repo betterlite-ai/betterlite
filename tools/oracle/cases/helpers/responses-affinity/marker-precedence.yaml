@@ -1,0 +1,119 @@
+kind: helper
+name: responses-affinity-marker-precedence
+call:
+  responses_affinity:
+    model: gpt-group
+    healthy_deployments:
+      - model_name: gpt-group
+        litellm_params:
+          model: openai/a
+          api_base: https://a.example
+          api_key: sk-a
+        model_info:
+          id: A
+      - model_name: gpt-group
+        litellm_params:
+          model: openai/b
+          api_base: https://b.example
+          api_key: sk-b
+        model_info:
+          id: B
+    messages:
+      - role: assistant
+        content:
+          - type: thinking
+            thinking: t
+            signature: litellm_encrypted_reasoning:litellm_enc:bW9kZWxfaWQ6Qg==;cipher
+          - type: text
+            text: keep
+    request_kwargs:
+      input:
+        - plain
+        - type: reasoning
+          id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+          encrypted_content: litellm_enc:bW9kZWxfaWQ6Qg==;cipher
+        - type: message
+          role: user
+          content: hello
+calls:
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/b
+            api_base: https://b.example
+            api_key: sk-b
+          model_info:
+            id: B
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/c
+            api_base: https://c.example
+            api_key: sk-c
+          model_info:
+            id: C
+      messages:
+        - role: assistant
+          content:
+            - type: thinking
+              thinking: t
+              signature: litellm_encrypted_reasoning:litellm_enc:bW9kZWxfaWQ6Qw==;cipher
+            - type: text
+              text: keep
+      request_kwargs:
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDo7aXRlbV9pZDpyMQ==
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDpCO2l0ZW1faWQ6cjE=
+            encrypted_content: litellm_enc:bW9kZWxfaWQ6Qg==;cipher
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/a
+            api_base: https://a.example
+            api_key: sk-a
+          model_info:
+            id: A
+      messages:
+        - role: assistant
+          content:
+            - type: thinking
+              thinking: t
+              signature: litellm_encrypted_reasoning:litellm_enc:bW9kZWxfaWQ6QQ==;cipher
+            - type: text
+              text: keep
+      request_kwargs:
+        input: hello
+        messages:
+          - role: assistant
+            content:
+              - type: thinking
+                thinking: t
+                signature: litellm_encrypted_reasoning:litellm_enc:bW9kZWxfaWQ6Qg==;cipher
+              - type: text
+                text: keep
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/b
+            api_base: https://b.example
+            api_key: sk-b
+          model_info:
+            id: B
+      messages: []
+      request_kwargs:
+        messages:
+          - role: assistant
+            content:
+              - type: redacted_thinking
+                data: litellm_encrypted_reasoning:litellm_enc:bW9kZWxfaWQ6Qg==;cipher
+              - type: text
+                text: keep
+env: {}
+compare: {ignore: []}

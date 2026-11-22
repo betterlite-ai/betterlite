@@ -1,0 +1,91 @@
+task: B3506
+deviations:
+  - what: >-
+      The route module dispatches to three injected ports, GenerateContentDispatch,
+      TranslateContents and TokenCounter, instead of reading the proxy's module-level
+      llm_router and internal token_counter and constructing GoogleGenAIAdapter per call.
+      B8774 wires the production implementations.
+    why: >-
+      Rust has no module-level globals here (clippy denies OnceLock and LazyLock), the
+      generation pipeline needs state built at startup, and the route stays testable through
+      its own Router with fake ports. What the handlers put on the wire is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L36-L51
+  - what: >-
+      Error messages are betterlite's own; the status, type, param, code and headers are the
+      ones LiteLLM sends for the same failure.
+    why: >-
+      Rule errors-match-litellm: LiteLLM builds its messages from Python exception text, and
+      docs/compatibility.md keeps runtime text out of the wire contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3758-L3768
+  - what: >-
+      A dispatch error is rendered by the route from the ProxyException the pipeline returns,
+      instead of being raised again to FastAPI's ProxyException handler.
+    why: >-
+      The Rust pipeline returns the error as a value. Rendering it here produces the same
+      {"error": with_call_id(to_dict())} body at int(code), with the exception's headers copied
+      over, so general_settings.include_call_id_in_error_body also adds x-litellm-call-id to the
+      body as litellm_call_id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1893-L1910
+  - what: >-
+      A ProxyException whose code is not an HTTP status answers a structured 500 that keeps
+      the code field as sent. LiteLLM's int(exc.code) raises inside openai_exception_handler,
+      so Starlette answers a plain 500.
+    why: >-
+      A code that is not a status has no status to name, and an unhandled ValueError in the
+      error handler is a bug no working setup can rely on. The status, type, param and code
+      rule still gives the caller every field of the error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1901
+  - what: >-
+      An original_response whose totalTokens is null, or whose promptTokensDetails is absent,
+      answers totalTokens 0 and an empty promptTokensDetails list.
+    why: >-
+      LiteLLM's .get hands None to TokenCountDetailsResponse, whose TypedDict declares int and
+      list, so FastAPI's response model raises and the caller gets a 500. The task's pitfall
+      says missing or None fields take the defaults and do not raise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L191-L198
+  - what: >-
+      A contents value that is not a list and not null is a 400 invalid_request_error with
+      param contents, and neither the translator nor the token counter runs.
+    why: >-
+      LiteLLM passes the value to the adapter and then into TokenCountRequest, whose declared
+      type is list[dict] | None; pydantic rejects it and the handler, which has no try/except,
+      ends in an unhandled 500. docs/compatibility.md reports a value of the wrong type as an
+      error naming the field, and a 4xx belongs where that 500 is.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L173-L184
+  - what: >-
+      A request body over B1100's 16 MiB JSON limit answers 413 invalid_request_error with
+      param body and code request_too_large.
+    why: >-
+      B1100's decoder owns the limit and its facts, and these are the fields the auth
+      body-limit path already answers. The route disables axum's own 2 MB extractor default so
+      B1100 answers the boundary instead of the framework. LiteLLM's _read_request_body has no
+      size cap for a JSON body; its only size check skips the surrogate repair and raises a 400.
+    link: ""
+  - what: >-
+      A body that is valid JSON but not an object answers 400 invalid_request_error with param
+      request_body.
+    why: >-
+      The task parses the body with B1100's decoder, which reports NotAnObject. LiteLLM's
+      orjson.loads accepts any JSON value and returns it; the handler's `"model" not in data`
+      test and `data["model"] = model_name` write then raise outside its try, so Starlette
+      answers a 500. docs/compatibility.md reports a value of the wrong type as an error
+      naming the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L231-L271
+  - what: >-
+      The body is decoded as JSON whatever its content type; a form or binary body does not get
+      its own parser.
+    why: >-
+      The task parses the JSON body with B1100's JSON decoder. LiteLLM's _read_request_body
+      branches on content type first and parses form and binary bodies before falling back to
+      JSON; the Google GenAI SDK sends JSON bodies to these routes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L200-L224
+kept_bugs:
+  - what: >-
+      The path model is written into the request data only when the body has no model key, so
+      a body that sends model null keeps null and the path model is not used.
+    why: >-
+      LiteLLM's handlers test `if "model" not in data`, and the task's pitfall asks for any
+      existing model field to be preserved. A caller that sends a model in the body has always
+      had that value win, so the membership check is copied rather than the null treated as
+      absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L45-L47
