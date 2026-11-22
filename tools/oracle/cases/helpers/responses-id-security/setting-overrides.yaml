@@ -128,6 +128,20 @@ calls:
         id: resp_test
         created_at: 0
         output: []
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: true
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: chatcmpl-1
 env: {}
 compare:
   ignore: []

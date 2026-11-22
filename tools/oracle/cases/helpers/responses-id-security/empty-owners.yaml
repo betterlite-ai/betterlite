@@ -44,6 +44,22 @@ calls:
     call_type: aget_responses
     data:
       response_id: resp_H8pXgVmOvYwTRoauzdQVbFhZ4rxzUWdYIXfs-urqw6hEm2Av66_DODDv5-pxiklz4vPXIjO1_kSAFBUMzduMYKRxPJNOeQq1JNrozJyLyBPPM1tuQrMiJDPF8YM6Xy6ivP_cMrsIaHFCvXI=
+- responses_id_security:
+    operation: success
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: null
+      team_id: null
+      role: null
+      role_form: value
+    route: /v1/responses
+    response:
+      id: resp_test
+      created_at: 0
+      output: []
 env: {}
 compare:
   ignore: []
