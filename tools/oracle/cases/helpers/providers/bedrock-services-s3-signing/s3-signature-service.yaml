@@ -1,0 +1,51 @@
+kind: helper
+name: bedrock-s3-signing-signature-service
+call:
+  bedrock_services_s3_signing:
+    operation: sign
+    signings:
+      - content: x
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/k"
+        optional_params: {}
+        encryption_key_id: null
+      - content: x
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/k"
+        optional_params:
+          aws_access_key_id: AKIDSESSION
+          aws_secret_access_key: sessionsecret
+          aws_session_token: token-1
+          aws_region_name: us-east-1
+        encryption_key_id: null
+      - content: x
+        api_base: "https://bkt.s3.eu-west-1.amazonaws.com/a%20b/c.jsonl?x=1"
+        optional_params:
+          s3_access_key_id: S3K
+          s3_secret_access_key: S3S
+          aws_region_name: eu-west-1
+        encryption_key_id: null
+      - content: "héllo\n{}"
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/litellm-bedrock-files/11111111222243338444555555555555-a_b.jsonl"
+        optional_params:
+          s3_access_key_id: S3K
+          s3_secret_access_key: S3S
+        encryption_key_id: null
+      - content: "{\"recordId\": \"1\", \"modelInput\": {}}\n"
+        api_base: "https://s3.cn-north-1.amazonaws.com.cn/bkt/k.jsonl"
+        optional_params:
+          s3_access_key_id: S3K
+          s3_secret_access_key: S3S
+          aws_region_name: cn-north-1
+        encryption_key_id: null
+      - content: x
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/k"
+        optional_params:
+          s3_access_key_id: S3K
+          s3_secret_access_key: ""
+        encryption_key_id: null
+      - content: x
+        api_base: "https://s3.us-west-2.amazonaws.com/bkt/k"
+        optional_params:
+          aws_region_name: Bad
+        encryption_key_id: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: cleanup-removes-the-job-when-no-retention-key-remains
+call:
+  b8371:
+    operation: apply_retention
+    settings: {}
+    previous:
+      maximum_spend_logs_retention_period: "30d"
+    last_attempt: null
+    reschedule_failed: false
+    scheduler: paused
+    job_present: true
+    add_fails: false
+    start: "2026-01-01T00:00:00Z"
+env: {}
+compare:
+  ignore: []

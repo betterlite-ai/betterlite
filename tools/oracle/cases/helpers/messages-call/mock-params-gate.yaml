@@ -1,0 +1,5 @@
+kind: helper
+name: b9800-mock-params-gated-in-constant-order
+call: {b9800: {gate: mock_params, data: {mock_delay: null, mock_testing_fallbacks: 5}, allowed: false}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,72 @@
+kind: helper
+name: identity-grants-alias-json-invalid-keeps-metadata
+call:
+  identity_grants:
+    users: []
+    denials: []
+    teams:
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: 'not json'
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: '{"fast": 1}'
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: '{"fast": {"model": "gpt-4o"}}'
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: '["gpt-4o"]'
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: '"gpt-4o"'
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: 'null'
+        membership: null
+        user_id: null
+      - team:
+          team_id: team-1
+          metadata: {owner: ops}
+          litellm_model_table:
+            created_by: admin
+            updated_by: admin
+            model_aliases: ''
+        membership: null
+        user_id: null
+env: {}
+compare: {ignore: []}
