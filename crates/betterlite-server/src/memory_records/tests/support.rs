@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
@@ -11,6 +12,10 @@ use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::team_repository::repository::TeamQueryError;
 use betterlite_db::team_rows::member::{Member, MemberBase, MemberRole};
 use betterlite_db::team_rows::team::TeamBase;
+use tracing::Level;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt;
+use tracing_subscriber::fmt::MakeWriter;
 
 use crate::memory_records::access::TeamRows;
 use crate::memory_records::caller::MemoryCaller;
@@ -23,6 +28,54 @@ use crate::team_access::error::TeamAccessError;
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    pub(crate) fn text(&self) -> String {
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).expect("the captured log lines are UTF-8")
+    }
+}
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl MakeWriter<'_> for Captured {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
+    }
+}
+
+pub(crate) fn capture() -> (Captured, DefaultGuard) {
+    let captured = Captured::default();
+    let subscriber = fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_max_level(Level::DEBUG)
+        .with_writer(captured.clone())
+        .finish();
+    (captured, set_default(subscriber))
 }
 
 pub(crate) fn store_failure() -> TableError {
@@ -138,8 +191,7 @@ impl OrgRoles for CaseOrgRoles {
         organization_id: &str,
     ) -> Result<bool, TeamAccessError> {
         if self.fail {
-            let failure = serde_json::from_str::<JsonData>("{").expect_err("invalid JSON fails");
-            return Err(TeamAccessError::Caller(failure));
+            return Err(TeamAccessError::Denied);
         }
         Ok(self
             .admins

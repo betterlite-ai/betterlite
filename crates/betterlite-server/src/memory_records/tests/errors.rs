@@ -1,12 +1,11 @@
 use axum::http::StatusCode;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 
-use super::support::{FakeRows, caller, store_failure};
+use super::support::{FakeRows, caller, capture, store_failure};
 use crate::memory_records::error::{internal_error, require_database};
 use crate::memory_records::store::{
     MemoryLookupError, find_memory_for_caller, find_visible_memory_or_none,
 };
-use crate::python_hooks::test_support::capture;
 
 #[test]
 fn missing_database_500() {

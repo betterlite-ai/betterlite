@@ -1,11 +1,10 @@
 use axum::http::StatusCode;
 use betterlite_auth::user_roles::UserRole;
 
-use super::support::{FakeTeams, access, auth, caller, org_admins, row, team};
+use super::support::{FakeTeams, access, auth, caller, capture, org_admins, row, team};
 use crate::memory_records::access::assert_write_access;
 use crate::memory_records::caller::{MemoryCaller, is_admin};
 use crate::memory_records::filter::{MemoryWhere, visibility_filter};
-use crate::python_hooks::test_support::capture;
 
 fn wire(filter: &MemoryWhere) -> String {
     serde_json::to_string(filter).unwrap()
