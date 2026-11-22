@@ -9,8 +9,7 @@ impl Helper for Op {
     type Input = fixtures::case::Case;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let observations = fixtures::execute::run(input)
-            .map_err(|error| fixtures::case::failure("ValueError", error))?;
+        let observations = fixtures::execute::run(input)?;
         serde_json::to_value(observations)
             .map_err(|error| fixtures::case::failure("ValueError", error))
     }

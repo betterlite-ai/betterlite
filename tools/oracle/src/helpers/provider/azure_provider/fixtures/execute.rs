@@ -35,7 +35,10 @@ impl Answer for Reply {
 }
 
 // A default arrives either as the value the case names or as the class defaults, which merge only absent keys.
-fn defaults<T: DeserializeOwned + Default>(value: Option<&Value>) -> Result<T, Box<HelperError>> {
+fn defaults<T>(value: Option<&Value>) -> Result<T, Box<HelperError>>
+where
+    T: DeserializeOwned + Default,
+{
     let Some(named) = value else {
         return Ok(T::default());
     };

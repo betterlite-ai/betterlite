@@ -11,13 +11,17 @@ use serde_json::Value;
 
 use super::case::{Case, Operation, failure};
 
-pub(crate) fn decode<T: DeserializeOwned>(value: &Value) -> Result<T, Box<HelperError>> {
+pub(crate) fn decode<T>(value: &Value) -> Result<T, Box<HelperError>>
+where
+    T: DeserializeOwned,
+{
     serde_json::from_value(value.clone()).map_err(|error| failure("ValueError", error))
 }
 
-fn decode_optional<T: DeserializeOwned>(
-    value: Option<&Value>,
-) -> Result<Option<T>, Box<HelperError>> {
+fn decode_optional<T>(value: Option<&Value>) -> Result<Option<T>, Box<HelperError>>
+where
+    T: DeserializeOwned,
+{
     let Some(named) = value else {
         return Ok(None);
     };
