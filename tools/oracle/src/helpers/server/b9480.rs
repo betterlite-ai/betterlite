@@ -42,7 +42,7 @@ enum GaugeGroup {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FanOutCall {
+pub(crate) struct FanOutCall {
     team: Option<String>,
     team_alias: Option<String>,
     key: Option<String>,
@@ -57,7 +57,7 @@ struct FanOutCall {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-enum Input {
+pub(crate) enum Input {
     Timeout { values: Vec<Option<String>> },
     // boxed so the two variants stay close in size
     FanOut(Box<FanOutCall>),
