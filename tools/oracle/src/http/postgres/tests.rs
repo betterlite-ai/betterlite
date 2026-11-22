@@ -1,4 +1,8 @@
 #![cfg(test)]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "The replay writes its expected provider wire JSON with serde_json::json!."
+)]
 use crate::OracleError;
 use crate::case::Compare;
 use crate::case::HttpCase;
@@ -835,7 +839,10 @@ fn auth_context() -> AuthContext {
     AuthContext { principal }
 }
 
-fn single_call<T: Clone>(calls: &Mutex<Vec<T>>, what: &str) -> T {
+fn single_call<T>(calls: &Mutex<Vec<T>>, what: &str) -> T
+where
+    T: Clone,
+{
     let recorded = calls.lock().unwrap_or_else(PoisonError::into_inner);
     assert_eq!(recorded.len(), 1, "one {what}");
     recorded.first().cloned().expect("one recorded call")
@@ -889,7 +896,7 @@ fn assert_pipeline_headers(replay: &GenaiReplay, upstream: &UpstreamAnswer) {
                 Some(value.as_str()),
                 "{name}"
             );
-            checked += 1;
+            checked = checked.saturating_add(1);
         }
     }
     assert!(checked > 0, "the seed scripts an x-litellm-* header");
