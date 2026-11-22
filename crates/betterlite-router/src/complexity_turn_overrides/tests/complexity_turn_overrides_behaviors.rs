@@ -11,7 +11,7 @@ use tokio::runtime::Builder;
 
 use super::support::{
     FakeEmbedder, base_settings, catalog, chat, json_list, json_number, json_object, json_text,
-    request_kwargs, rules, semantic_settings, tier,
+    request_kwargs, rule, rules, semantic_settings, tier,
 };
 use crate::classifier_verdict::call::RequestKwargs;
 use crate::complexity_config::Resolved;

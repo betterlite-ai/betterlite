@@ -30,7 +30,9 @@ fn canonical(value: &Json) -> String {
         Json::List(items) => {
             let mut encoded = format!("l{}", items.len());
             for item in items {
-                encoded.push_str(&format!("({})", canonical(item)));
+                encoded.push('(');
+                encoded.push_str(&canonical(item));
+                encoded.push(')');
             }
             encoded
         }
@@ -39,11 +41,13 @@ fn canonical(value: &Json) -> String {
             sorted.sort_by(|left, right| left.0.cmp(right.0));
             let mut encoded = format!("o{}", sorted.len());
             for (key, item) in sorted {
-                encoded.push_str(&format!(
-                    "(s{}:{key}:{})",
-                    key.chars().count(),
-                    canonical(item)
-                ));
+                encoded.push_str("(s");
+                encoded.push_str(&key.chars().count().to_string());
+                encoded.push(':');
+                encoded.push_str(key);
+                encoded.push(':');
+                encoded.push_str(&canonical(item));
+                encoded.push(')');
             }
             encoded
         }

@@ -185,10 +185,11 @@ where
     };
     match raw {
         RawFlag::Literal(found) => Ok(found),
+        RawFlag::Text(text) if !text.starts_with(ENV_MARKER) => Err(invalid(path)),
         RawFlag::Text(text) => {
             let name = text.strip_prefix(ENV_MARKER).unwrap_or(path).to_owned();
             let resolved = resolve_string(text, path, lookup)?;
-            betterlite_env::flag(&name, &resolved)
+            Ok(betterlite_env::flag(&name, &resolved)?.unwrap_or(default))
         }
     }
 }

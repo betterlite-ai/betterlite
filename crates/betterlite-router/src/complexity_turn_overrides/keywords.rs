@@ -87,7 +87,7 @@ pub fn matched_escalation_keyword(
         None => DEFAULT_ESCALATION_KEYWORDS
             .iter()
             .copied()
-            .find(|keyword| user_message.contains(keyword))
+            .find(|keyword| user_message.contains(*keyword))
             .map(str::to_owned),
     }
 }

@@ -193,6 +193,13 @@ fn a_quoted_number_is_rejected_as_the_wrong_type() {
 }
 
 #[test]
+fn a_quoted_boolean_is_rejected_as_the_wrong_type() {
+    let fields = "        stall_escalation_enabled: \"true\"\n";
+    let error = configured(fields, &[]).unwrap_err();
+    assert!(error.contains("stall_escalation_enabled"), "{error}");
+}
+
+#[test]
 fn a_repeat_threshold_above_the_window_is_left_to_the_cross_field_checks() {
     let fields =
         "        stall_escalation_window: 2\n        stall_escalation_repeat_threshold: 3\n";
