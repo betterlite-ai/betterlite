@@ -7,19 +7,72 @@ call:
     seed:
       - request_id: batch-seed-2
         call_type: aretrieve_batch
-        status: success
-        spend: 0
+        api_key: ""
+        spend: 0.0
+        total_tokens: 0
+        prompt_tokens: 0
+        completion_tokens: 0
         startTime: "2026-01-02T06:04:05+00:00"
         endTime: "2026-01-02T06:04:06+00:00"
+        completionStartTime: null
+        model: gpt-4o
+        model_id: null
+        model_group: null
+        mcp_namespaced_tool_name: null
+        agent_id: null
+        api_base: ""
+        user: ""
+        metadata: "{}"
+        cache_hit: ""
+        cache_key: ""
+        request_tags: "[]"
+        team_id: null
+        organization_id: null
+        end_user: null
+        requester_ip_address: null
+        custom_llm_provider: null
+        messages: null
+        response: null
+        proxy_server_request: null
+        session_id: null
+        request_duration_ms: null
+        status: success
+        litellm_call_id: null
     calls:
       - payload:
           request_id: batch-seed-2
           call_type: aretrieve_batch
-          status: success
+          api_key: ""
           spend: 0.5
+          total_tokens: 0
+          prompt_tokens: 0
+          completion_tokens: 0
           startTime: "2026-01-02T06:04:05+00:00"
           endTime: "2026-01-02T06:04:06+00:00"
+          completionStartTime: null
           model: gpt-4o
+          model_id: null
+          model_group: null
+          mcp_namespaced_tool_name: null
+          agent_id: null
+          api_base: ""
+          user: ""
+          metadata: "{}"
+          cache_hit: ""
+          cache_key: ""
+          request_tags: "[]"
+          team_id: null
+          organization_id: null
+          end_user: null
+          requester_ip_address: null
+          custom_llm_provider: null
+          messages: null
+          response: null
+          proxy_server_request: null
+          session_id: null
+          request_duration_ms: null
+          status: success
+          litellm_call_id: null
 env: {}
 compare:
   ignore: []

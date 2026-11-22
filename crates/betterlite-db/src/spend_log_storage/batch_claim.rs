@@ -12,7 +12,6 @@ mod tests;
 
 // CallTypes.aretrieve_batch: the only call whose successful row charges a batch
 pub const ARETRIEVE_BATCH: &str = "aretrieve_batch";
-
 pub const SUCCESS: &str = "success";
 
 // RESPONSES_SESSION_CALL_TYPES: a responses call wakes the monitor so its row is written before the next lookup
@@ -33,7 +32,7 @@ const BATCH_COST_CLAIM_FIELDS: [&str; 6] = [
 pub struct BatchChargeRow {
     pub call_type: Option<String>,
     pub status: Option<String>,
-    pub spend: f64,
+    pub spend: Decimal,
 }
 
 // SpendLogsRepository's create_many, find_unique and update_many over one batch's cost row.
@@ -157,15 +156,15 @@ where
         );
         return true;
     };
-    if claimed_row.spend > 0.0 {
+    if claimed_row.spend > Decimal::ZERO {
         tracing::debug!("Cost tracking skipped: spend row {request_id} already charged this batch");
         return false;
     }
-    take_over_uncharged_batch_cost_row(table, payload, request_id, &row).await
+    take_over_uncharged_row(table, payload, request_id, &row).await
 }
 
 // _take_over_uncharged_batch_cost_row: the zero row an older proxy left behind still needs the charge, and only one retrieve may write it.
-async fn take_over_uncharged_batch_cost_row<Table>(
+async fn take_over_uncharged_row<Table>(
     table: &Table,
     payload: &SpendLogRow,
     request_id: &str,

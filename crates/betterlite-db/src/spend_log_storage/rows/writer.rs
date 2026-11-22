@@ -10,9 +10,7 @@ use crate::tool_spend::RetryPause;
 
 use super::parking::requeue_spend_logs;
 use super::{MAX_LOGS_PER_INTERVAL, SpendLogQueue};
-use crate::spend_log_storage::poison::{
-    MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH, create_spend_logs_with_poison_isolation,
-};
+use crate::spend_log_storage::poison::{MAX_ISOLATION_FAILURES, create_logs_isolating_poison};
 use crate::spend_log_storage::{SpendLogFuture, SpendLogWriteError, SpendLogsWriter};
 
 mod tests;
@@ -175,7 +173,9 @@ where
                         requeue_spend_logs(self.queue, self.redis, logs).await;
                         return Err(error);
                     }
-                    self.pause.pause(retry_delay(attempt)).await;
+                    // asyncio.sleep(1 << i): the pass waits 1, 2, 4 ... seconds between attempts
+                    let delay = Duration::from_secs(1_u64.checked_shl(attempt).unwrap_or(u64::MAX));
+                    self.pause.pause(delay).await;
                     attempt = attempt.saturating_add(1);
                 }
             }
@@ -195,9 +195,9 @@ where
             return self.post_external(client, base_url, logs).await;
         }
         for group in logs.chunks(BATCH_SIZE) {
-            let mut budget = MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH;
+            let mut budget = MAX_ISOLATION_FAILURES;
             for statement in spend_log_write_batches(group, self.policy.limits) {
-                budget = create_spend_logs_with_poison_isolation(self.writer, statement, budget)
+                budget = create_logs_isolating_poison(self.writer, statement, budget)
                     .await
                     .map_err(FlushError::Store)?;
             }
@@ -233,11 +233,6 @@ where
             .map_err(FlushError::External)?;
         Ok(())
     }
-}
-
-// asyncio.sleep(1 << i): the pass waits 1, 2, 4 ... seconds between attempts
-const fn retry_delay(attempt: u32) -> Duration {
-    Duration::from_secs(1_u64.checked_shl(attempt).unwrap_or(u64::MAX))
 }
 
 // _raise_failed_update_spend_exception: report the non-blocking failure and hand the original error back

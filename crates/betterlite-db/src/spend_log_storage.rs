@@ -4,9 +4,7 @@ pub mod postgres;
 pub mod rows;
 pub mod sql;
 
-#[cfg(test)]
 mod tests;
-
 use std::error::Error as StdError;
 use std::future::Future;
 use std::pin::Pin;

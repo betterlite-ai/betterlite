@@ -141,15 +141,27 @@ impl ScriptedLists {
             .collect();
         Self {
             parked: Mutex::new(values),
-            ..Self::default()
+            pops: Mutex::new(Vec::new()),
+            pushes: Mutex::new(Vec::new()),
+            fail_read: false,
         }
     }
 
     fn unreadable() -> Self {
-        Self {
-            fail_read: true,
-            ..Self::default()
-        }
+        Self::default().refusing_reads()
+    }
+
+    fn refusing_reads(mut self) -> Self {
+        self.fail_read = true;
+        self
+    }
+
+    fn record(&self, values: &[String]) -> i64 {
+        self.pushes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(values.to_vec());
+        i64::try_from(values.len()).unwrap_or(i64::MAX)
     }
 
     fn pops(&self) -> Vec<(String, Option<i64>)> {
@@ -203,13 +215,7 @@ impl SpendBufferLists for ScriptedLists {
         values: &'call [String],
         _max_len: i64,
     ) -> SpendListFuture<'call, i64> {
-        Box::pin(async move {
-            self.pushes
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(values.to_vec());
-            Ok(i64::try_from(values.len()).unwrap_or(i64::MAX))
-        })
+        Box::pin(async move { Ok(self.record(values)) })
     }
 }
 

@@ -3,11 +3,11 @@ use crate::spend_log_storage::{SpendLogWriteError, SpendLogsWriter};
 
 mod tests;
 
-// MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH: how many failed inserts one 1000-row group may issue
-pub const MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH: u32 = 256;
+// _create_spend_logs_with_poison_isolation's 256 attempts per group: how many failed inserts one 1000-row group may issue
+pub const MAX_ISOLATION_FAILURES: u32 = 256;
 
 // _create_spend_logs_with_poison_isolation: a data rejection bisects the statement so good rows still persist, and an outage never does
-pub async fn create_spend_logs_with_poison_isolation<Writer>(
+pub async fn create_logs_isolating_poison<Writer>(
     writer: &Writer,
     rows: &[SpendLogRow],
     failure_budget: u32,
@@ -41,12 +41,7 @@ where
     }
     let mid = rows.len().saturating_div(2);
     let (left, right) = rows.split_at(mid);
-    let remaining = Box::pin(create_spend_logs_with_poison_isolation(
-        writer,
-        left,
-        budget_left,
-    ))
-    .await?;
+    let remaining = Box::pin(create_logs_isolating_poison(writer, left, budget_left)).await?;
     if remaining == 0 {
         let abandoned = right.len();
         tracing::error!(
@@ -54,8 +49,5 @@ where
         );
         return Ok(0);
     }
-    Box::pin(create_spend_logs_with_poison_isolation(
-        writer, right, remaining,
-    ))
-    .await
+    Box::pin(create_logs_isolating_poison(writer, right, remaining)).await
 }

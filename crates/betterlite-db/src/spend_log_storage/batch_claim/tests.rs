@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
 use tokio::sync::Notify;
 use tokio::time::timeout;
 
@@ -65,14 +64,16 @@ impl ScriptedTable {
     fn seeded(rows: &[SpendLogRow]) -> Self {
         Self {
             rows: Mutex::new(rows.to_vec()),
-            ..Self::default()
+            failures: Mutex::new(BTreeSet::new()),
+            take_overs: Mutex::new(Vec::new()),
         }
     }
 
     fn failing(operation: &'static str) -> Self {
         Self {
+            rows: Mutex::new(Vec::new()),
             failures: Mutex::new(BTreeSet::from([operation])),
-            ..Self::default()
+            take_overs: Mutex::new(Vec::new()),
         }
     }
 
@@ -132,9 +133,7 @@ impl ScriptedTable {
             .map(|candidate| BatchChargeRow {
                 call_type: text_of(candidate, "call_type"),
                 status: text_of(candidate, "status"),
-                spend: decimal_of(candidate, "spend")
-                    .and_then(|amount| amount.to_f64())
-                    .unwrap_or_default(),
+                spend: decimal_of(candidate, "spend").unwrap_or(Decimal::ZERO),
             }))
     }
 
@@ -490,17 +489,22 @@ async fn a_disabled_ordinary_log_is_not_queued() {
 #[test]
 fn the_insert_statement_defaults_every_prisma_defaulted_column() {
     let statement = insert_statement();
-    for fragment in [
-        r#"COALESCE(src."api_key", '')"#,
-        r#"COALESCE(src."spend", 0.0)"#,
-        r#"COALESCE(src."metadata", '{}'::jsonb)"#,
-        r#"COALESCE(src."request_tags", '[]'::jsonb)"#,
-    ] {
-        assert!(
-            statement.contains(fragment),
-            "{fragment} missing from {statement}"
-        );
-    }
+    assert!(
+        statement.contains(r#"COALESCE(src."api_key", '')"#),
+        "{statement}"
+    );
+    assert!(
+        statement.contains(r#"COALESCE(src."spend", 0.0)"#),
+        "{statement}"
+    );
+    assert!(
+        statement.contains(r#"COALESCE(src."metadata", '{}'::jsonb)"#),
+        "{statement}"
+    );
+    assert!(
+        statement.contains(r#"COALESCE(src."request_tags", '[]'::jsonb)"#),
+        "{statement}"
+    );
 }
 
 #[test]

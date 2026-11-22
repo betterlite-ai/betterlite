@@ -32,8 +32,7 @@ impl SpendLogStoreError {
     }
 }
 
-// is_prisma_data_error: Postgres read the statement and refused the data itself, so one row may be poison.
-// SQLSTATE class 22 is that rejection; a unique violation, a foreign key or a missing required value is its own prisma error and keeps its own meaning.
+// is_prisma_data_error: SQLSTATE class 22 is the data rejection, while a unique violation or a missing value keeps its own prisma meaning
 fn native_data_rejection<E>(error: &DbError<E>) -> bool {
     match error {
         DbError::SqlState { code, .. } => code.code().starts_with("22"),
@@ -46,14 +45,13 @@ fn native_data_rejection<E>(error: &DbError<E>) -> bool {
     }
 }
 
-fn native_deadlock<E>(error: &DbError<E>) -> bool {
-    native_sqlstate(error).is_some_and(|code| classify_sqlstate(&code) == NativeFault::Deadlock)
-}
-
 impl SpendLogWriteError for SpendLogStoreError {
     fn is_transient(&self) -> bool {
-        self.database()
-            .is_some_and(|error| native_deadlock(error) || is_native_transport_error(error))
+        self.database().is_some_and(|error| {
+            native_sqlstate(error)
+                .is_some_and(|code| classify_sqlstate(&code) == NativeFault::Deadlock)
+                || is_native_transport_error(error)
+        })
     }
 
     fn is_data_rejection(&self) -> bool {
@@ -65,7 +63,10 @@ impl SpendLogWriteError for SpendLogStoreError {
     }
 
     fn is_deadlock(&self) -> bool {
-        self.database().is_some_and(native_deadlock)
+        self.database().is_some_and(|error| {
+            native_sqlstate(error)
+                .is_some_and(|code| classify_sqlstate(&code) == NativeFault::Deadlock)
+        })
     }
 
     fn is_database(&self) -> bool {
@@ -115,7 +116,8 @@ impl BatchClaimTable for PostgresSpendLogsWriter {
                 .session()
                 .await
                 .map_err(SpendLogStoreError::Database)?;
-            let payload = encode_rows(from_ref(data))?;
+            let payload =
+                serde_json::to_string(from_ref(data)).map_err(SpendLogStoreError::Json)?;
             let statement = takeover_statement(data);
             let params = [
                 SqlBind::Text(Some(payload)),
@@ -141,7 +143,7 @@ pub async fn insert_spend_log_rows(
         .session()
         .await
         .map_err(SpendLogStoreError::Database)?;
-    let payload = encode_rows(rows)?;
+    let payload = serde_json::to_string(rows).map_err(SpendLogStoreError::Json)?;
     let inserted = execute(
         &client,
         &insert_statement(),
@@ -169,8 +171,4 @@ where
         status: found.get("status"),
         spend: found.get("spend"),
     }))
-}
-
-fn encode_rows(rows: &[SpendLogRow]) -> Result<String, SpendLogStoreError> {
-    serde_json::to_string(rows).map_err(SpendLogStoreError::Json)
 }

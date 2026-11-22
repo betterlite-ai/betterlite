@@ -2,8 +2,7 @@ use crate::redis_spend::log_row::SpendLogRow;
 
 use super::batch_claim::{ARETRIEVE_BATCH, SUCCESS};
 
-// LiteLLM_SpendLogs after the pinned migrations: the physical column and the type jsonb_to_recordset reads it as.
-// created_at and updated_at keep their database defaults, as prisma's client-side create leaves them unset.
+// LiteLLM_SpendLogs after the pinned migrations, with the type jsonb_to_recordset reads each column as; created_at and updated_at keep their database defaults.
 pub const COLUMNS: [(&str, &str); 34] = [
     ("request_id", "text"),
     ("call_type", "text"),
@@ -56,17 +55,19 @@ const DEFAULTED: [(&str, &str); 11] = [
     ("proxy_server_request", "'{}'::jsonb"),
 ];
 
-pub const SELECT_BATCH_ROW: &str =
-    r#"SELECT "call_type", "status", "spend" FROM "LiteLLM_SpendLogs" WHERE "request_id" = $1"#;
+pub const SELECT_BATCH_ROW: &str = r#"SELECT "call_type", "status", "spend"::numeric AS "spend" FROM "LiteLLM_SpendLogs" WHERE "request_id" = $1"#;
 
 // create_many(skip_duplicates=True): ON CONFLICT takes no target so a partitioned deployment keeps working
 #[must_use]
 pub fn insert_statement() -> String {
-    let columns: Vec<String> = COLUMNS.iter().map(|(name, _)| quote(name)).collect();
+    let columns: Vec<String> = COLUMNS
+        .iter()
+        .map(|(name, _)| format!("\"{name}\""))
+        .collect();
     let values: Vec<String> = COLUMNS
         .iter()
         .map(|(name, _)| {
-            let column = quote(name);
+            let column = format!("\"{name}\"");
             match default_of(name) {
                 Some(default) => format!("COALESCE(src.{column}, {default})"),
                 None => format!("src.{column}"),
@@ -88,7 +89,7 @@ pub fn takeover_statement(data: &SpendLogRow) -> String {
         .iter()
         .filter(|(name, _)| *name != "request_id" && data.contains_key(*name))
         .map(|(name, _)| {
-            let column = quote(name);
+            let column = format!("\"{name}\"");
             format!("{column} = src.{column}")
         })
         .collect();
@@ -103,16 +104,11 @@ pub fn takeover_statement(data: &SpendLogRow) -> String {
     )
 }
 
-// Only the whitelisted names above reach a statement, so a payload key can never become SQL text.
-fn quote(name: &str) -> String {
-    format!("\"{name}\"")
-}
-
 fn recordset_columns() -> String {
     COLUMNS
         .iter()
         .map(|(name, kind)| {
-            let column = quote(name);
+            let column = format!("\"{name}\"");
             format!("{column} {kind}")
         })
         .collect::<Vec<_>>()

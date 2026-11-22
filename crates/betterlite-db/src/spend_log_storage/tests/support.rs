@@ -194,59 +194,47 @@ pub(crate) struct ScriptedFailure {
 }
 
 impl ScriptedFailure {
-    pub(crate) const fn data() -> Self {
-        Self {
-            data_rejection: true,
-            service_unavailable: false,
-            deadlock: false,
-            database: true,
-        }
-    }
+    pub(crate) const DATA: Self = Self {
+        data_rejection: true,
+        service_unavailable: false,
+        deadlock: false,
+        database: true,
+    };
 
-    pub(crate) const fn outage() -> Self {
-        Self {
-            data_rejection: false,
-            service_unavailable: true,
-            deadlock: false,
-            database: true,
-        }
-    }
+    pub(crate) const OUTAGE: Self = Self {
+        data_rejection: false,
+        service_unavailable: true,
+        deadlock: false,
+        database: true,
+    };
 
-    pub(crate) const fn mislabelled_outage() -> Self {
-        Self {
-            data_rejection: true,
-            service_unavailable: true,
-            deadlock: false,
-            database: true,
-        }
-    }
+    pub(crate) const MISLABELLED_OUTAGE: Self = Self {
+        data_rejection: true,
+        service_unavailable: true,
+        deadlock: false,
+        database: true,
+    };
 
-    pub(crate) const fn mislabelled_deadlock() -> Self {
-        Self {
-            data_rejection: true,
-            service_unavailable: false,
-            deadlock: true,
-            database: true,
-        }
-    }
+    pub(crate) const MISLABELLED_DEADLOCK: Self = Self {
+        data_rejection: true,
+        service_unavailable: false,
+        deadlock: true,
+        database: true,
+    };
 
-    pub(crate) const fn database_error() -> Self {
-        Self {
-            data_rejection: false,
-            service_unavailable: false,
-            deadlock: false,
-            database: true,
-        }
-    }
+    pub(crate) const DATABASE_ERROR: Self = Self {
+        data_rejection: false,
+        service_unavailable: false,
+        deadlock: false,
+        database: true,
+    };
 
-    pub(crate) const fn non_database() -> Self {
-        Self {
-            data_rejection: false,
-            service_unavailable: false,
-            deadlock: false,
-            database: false,
-        }
-    }
+    pub(crate) const NON_DATABASE: Self = Self {
+        data_rejection: false,
+        service_unavailable: false,
+        deadlock: false,
+        database: false,
+    };
 }
 
 impl SpendLogWriteError for ScriptedFailure {

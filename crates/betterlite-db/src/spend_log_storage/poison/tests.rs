@@ -19,7 +19,7 @@ use crate::spend_log_storage::tests::support::{
 };
 use crate::spend_log_storage::{SpendLogFuture, SpendLogWriteError, SpendLogsWriter};
 
-use super::{MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH, create_spend_logs_with_poison_isolation};
+use super::{MAX_ISOLATION_FAILURES, create_logs_isolating_poison};
 
 #[derive(Default)]
 struct ScriptedWriter {
@@ -30,6 +30,15 @@ struct ScriptedWriter {
 }
 
 impl ScriptedWriter {
+    fn new(poison: BTreeSet<String>, failure: Option<ScriptedFailure>) -> Self {
+        Self {
+            poison,
+            failure,
+            attempts: Mutex::new(Vec::new()),
+            persisted: Mutex::new(Vec::new()),
+        }
+    }
+
     fn attempt(&self, rows: &[SpendLogRow]) -> Result<usize, ScriptedFailure> {
         let attempted = ids(rows);
         self.attempts
@@ -40,7 +49,7 @@ impl ScriptedWriter {
             return Err(failure);
         }
         if attempted.iter().any(|id| self.poison.contains(id)) {
-            return Err(ScriptedFailure::data());
+            return Err(ScriptedFailure::DATA);
         }
         self.persisted
             .lock()
@@ -105,18 +114,11 @@ impl SpendLogsWriter for CountingWriter {
 
 #[tokio::test]
 async fn a_poison_row_is_isolated_and_its_neighbours_persist() {
-    let writer = ScriptedWriter {
-        poison: BTreeSet::from(["b".to_owned()]),
-        ..ScriptedWriter::default()
-    };
+    let writer = ScriptedWriter::new(BTreeSet::from(["b".to_owned()]), None);
     let rows = [ordinary_row("a"), ordinary_row("b"), ordinary_row("c")];
-    let budget = create_spend_logs_with_poison_isolation(
-        &writer,
-        &rows,
-        MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH,
-    )
-    .await
-    .expect("the isolation settles");
+    let budget = create_logs_isolating_poison(&writer, &rows, MAX_ISOLATION_FAILURES)
+        .await
+        .expect("the isolation settles");
     assert_eq!(writer.attempted(), ["a,b,c", "a", "b,c", "b", "c"]);
     assert_eq!(writer.persisted(), ["a", "c"]);
     assert_eq!(budget, 253);
@@ -124,17 +126,14 @@ async fn a_poison_row_is_isolated_and_its_neighbours_persist() {
 
 #[tokio::test]
 async fn an_outage_is_never_bisected() {
-    let writer = ScriptedWriter {
-        failure: Some(ScriptedFailure::outage()),
-        ..ScriptedWriter::default()
-    };
+    let writer = ScriptedWriter::new(BTreeSet::new(), Some(ScriptedFailure::OUTAGE));
     let rows = [
         ordinary_row("a"),
         ordinary_row("b"),
         ordinary_row("c"),
         ordinary_row("d"),
     ];
-    let error = create_spend_logs_with_poison_isolation(&writer, &rows, 256)
+    let error = create_logs_isolating_poison(&writer, &rows, 256)
         .await
         .expect_err("the outage propagates");
     assert_eq!(writer.attempted_count(), 1);
@@ -144,16 +143,13 @@ async fn an_outage_is_never_bisected() {
 }
 
 #[rstest::rstest]
-#[case::an_outage(ScriptedFailure::mislabelled_outage())]
-#[case::a_deadlock(ScriptedFailure::mislabelled_deadlock())]
+#[case::an_outage(ScriptedFailure::MISLABELLED_OUTAGE)]
+#[case::a_deadlock(ScriptedFailure::MISLABELLED_DEADLOCK)]
 #[tokio::test]
 async fn a_data_error_that_is_an_outage_is_not_bisected(#[case] failure: ScriptedFailure) {
-    let writer = ScriptedWriter {
-        failure: Some(failure),
-        ..ScriptedWriter::default()
-    };
+    let writer = ScriptedWriter::new(BTreeSet::new(), Some(failure));
     let rows = [ordinary_row("a"), ordinary_row("b")];
-    let error = create_spend_logs_with_poison_isolation(&writer, &rows, 256)
+    let error = create_logs_isolating_poison(&writer, &rows, 256)
         .await
         .expect_err("the outage propagates");
     assert_eq!(writer.attempted_count(), 1);
@@ -165,7 +161,7 @@ async fn a_data_error_that_is_an_outage_is_not_bisected(#[case] failure: Scripte
 async fn a_clean_statement_keeps_the_whole_budget() {
     let writer = ScriptedWriter::default();
     let rows = [ordinary_row("a"), ordinary_row("b")];
-    let budget = create_spend_logs_with_poison_isolation(&writer, &rows, 7)
+    let budget = create_logs_isolating_poison(&writer, &rows, 7)
         .await
         .expect("the statement lands");
     assert_eq!(budget, 7);
@@ -174,11 +170,8 @@ async fn a_clean_statement_keeps_the_whole_budget() {
 
 #[tokio::test]
 async fn a_singleton_poison_row_costs_one_attempt() {
-    let writer = ScriptedWriter {
-        poison: BTreeSet::from(["b".to_owned()]),
-        ..ScriptedWriter::default()
-    };
-    let budget = create_spend_logs_with_poison_isolation(&writer, &[ordinary_row("b")], 5)
+    let writer = ScriptedWriter::new(BTreeSet::from(["b".to_owned()]), None);
+    let budget = create_logs_isolating_poison(&writer, &[ordinary_row("b")], 5)
         .await
         .expect("the singleton is dropped");
     assert_eq!(budget, 4);
@@ -188,17 +181,14 @@ async fn a_singleton_poison_row_costs_one_attempt() {
 
 #[tokio::test]
 async fn an_exhausted_budget_drops_the_remainder_without_more_attempts() {
-    let writer = ScriptedWriter {
-        poison: BTreeSet::from(["a".to_owned()]),
-        ..ScriptedWriter::default()
-    };
+    let writer = ScriptedWriter::new(BTreeSet::from(["a".to_owned()]), None);
     let rows = [
         ordinary_row("a"),
         ordinary_row("b"),
         ordinary_row("c"),
         ordinary_row("d"),
     ];
-    let budget = create_spend_logs_with_poison_isolation(&writer, &rows, 0)
+    let budget = create_logs_isolating_poison(&writer, &rows, 0)
         .await
         .expect("the remainder is dropped");
     assert_eq!(budget, 0);
@@ -211,10 +201,7 @@ async fn a_healthy_group_after_an_exhausted_group_still_persists() {
     let poison: BTreeSet<String> = (0..1000).map(|index| format!("poison-{index}")).collect();
     let mut rows: Vec<SpendLogRow> = poison.iter().map(|id| ordinary_row(id)).collect();
     rows.push(ordinary_row("healthy"));
-    let writer = ScriptedWriter {
-        poison,
-        ..ScriptedWriter::default()
-    };
+    let writer = ScriptedWriter::new(poison, None);
     let queue = SpendLogQueue::new(usize::MAX);
     let redis = RedisUpdateBuffer {
         lists: None,
@@ -259,13 +246,9 @@ async fn a_data_rejection_is_isolated_and_the_good_rows_persist() {
     let mut poison = ordinary_row("poison-1");
     let _replaced = poison.insert("model".to_owned(), text("gpt-4o\u{0}"));
     let rows = [ordinary_row("good-1"), poison, ordinary_row("good-2")];
-    let budget = create_spend_logs_with_poison_isolation(
-        &table,
-        &rows,
-        MAX_SPEND_LOG_ISOLATION_FAILURES_PER_BATCH,
-    )
-    .await
-    .expect("the isolation settles");
+    let budget = create_logs_isolating_poison(&table, &rows, MAX_ISOLATION_FAILURES)
+        .await
+        .expect("the isolation settles");
     assert_eq!(budget, 253);
     let persisted: Vec<String> = case
         .rows()
@@ -286,7 +269,7 @@ async fn an_outage_is_not_mistaken_for_a_poison_row() {
         attempts: AtomicUsize::new(0),
     };
     let rows = [ordinary_row("a"), ordinary_row("b")];
-    let error = create_spend_logs_with_poison_isolation(&writer, &rows, 256)
+    let error = create_logs_isolating_poison(&writer, &rows, 256)
         .await
         .expect_err("the outage propagates");
     assert_eq!(writer.attempts.load(Ordering::SeqCst), 1);
@@ -298,12 +281,9 @@ async fn an_outage_is_not_mistaken_for_a_poison_row() {
 
 #[tokio::test]
 async fn a_plain_database_error_is_not_bisected() {
-    let writer = ScriptedWriter {
-        failure: Some(ScriptedFailure::database_error()),
-        ..ScriptedWriter::default()
-    };
+    let writer = ScriptedWriter::new(BTreeSet::new(), Some(ScriptedFailure::DATABASE_ERROR));
     let rows = [ordinary_row("a"), ordinary_row("b")];
-    let error = create_spend_logs_with_poison_isolation(&writer, &rows, 256)
+    let error = create_logs_isolating_poison(&writer, &rows, 256)
         .await
         .expect_err("the database error propagates");
     assert_eq!(writer.attempted_count(), 1);

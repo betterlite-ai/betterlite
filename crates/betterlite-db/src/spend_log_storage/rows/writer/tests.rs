@@ -38,7 +38,7 @@ impl ScriptedWriter {
     fn failing(failure: ScriptedFailure, times: usize) -> Self {
         Self {
             failures: Mutex::new(repeat_n(failure, times).collect()),
-            ..Self::default()
+            attempts: Mutex::new(Vec::new()),
         }
     }
 
@@ -292,7 +292,7 @@ async fn an_external_transport_error_propagates_without_a_retry_or_a_requeue() {
 #[tokio::test]
 async fn a_transient_error_is_retried_after_one_then_two_seconds() {
     let harness = Harness {
-        writer: ScriptedWriter::failing(ScriptedFailure::outage(), 2),
+        writer: ScriptedWriter::failing(ScriptedFailure::OUTAGE, 2),
         ..Harness::new()
     };
     let rows = [ordinary_row("request-1"), ordinary_row("request-2")];
@@ -311,7 +311,7 @@ async fn a_transient_error_is_retried_after_one_then_two_seconds() {
 #[tokio::test]
 async fn a_transient_error_that_never_settles_is_requeued_after_the_last_attempt() {
     let harness = Harness {
-        writer: ScriptedWriter::failing(ScriptedFailure::outage(), 4),
+        writer: ScriptedWriter::failing(ScriptedFailure::OUTAGE, 4),
         ..Harness::new()
     };
     let rows = [ordinary_row("request-1"), ordinary_row("request-2")];
@@ -340,7 +340,7 @@ async fn a_transient_error_that_never_settles_is_requeued_after_the_last_attempt
 #[tokio::test]
 async fn a_database_error_that_is_not_transient_is_requeued_once() {
     let harness = Harness {
-        writer: ScriptedWriter::failing(ScriptedFailure::database_error(), 1),
+        writer: ScriptedWriter::failing(ScriptedFailure::DATABASE_ERROR, 1),
         ..Harness::new()
     };
     let rows = [ordinary_row("request-1")];
@@ -358,7 +358,7 @@ async fn a_database_error_that_is_not_transient_is_requeued_once() {
 #[tokio::test]
 async fn an_unrelated_error_propagates_without_a_database_replay() {
     let harness = Harness {
-        writer: ScriptedWriter::failing(ScriptedFailure::non_database(), 1),
+        writer: ScriptedWriter::failing(ScriptedFailure::NON_DATABASE, 1),
         ..Harness::new()
     };
     let rows = [ordinary_row("request-1")];

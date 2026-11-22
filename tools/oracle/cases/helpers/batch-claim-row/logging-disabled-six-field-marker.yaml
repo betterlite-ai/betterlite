@@ -9,30 +9,105 @@ call:
       - payload:
           request_id: batch-marker-1
           call_type: aretrieve_batch
-          status: success
+          api_key: ""
           spend: 0.5
+          total_tokens: 7
+          prompt_tokens: 5
+          completion_tokens: 2
           startTime: "2026-01-02T04:04:05.000000+00:00"
           endTime: "2026-01-02T04:04:06.000000+00:00"
+          completionStartTime: null
           model: gpt-4o-mini
-          total_tokens: 7
+          model_id: null
+          model_group: null
+          mcp_namespaced_tool_name: null
+          agent_id: null
+          api_base: ""
+          user: ""
+          metadata: "{}"
+          cache_hit: ""
+          cache_key: ""
+          request_tags: "[]"
+          team_id: null
+          organization_id: null
+          end_user: null
+          requester_ip_address: null
+          custom_llm_provider: null
+          messages: null
+          response: null
+          proxy_server_request: null
+          session_id: null
+          request_duration_ms: null
+          status: success
+          litellm_call_id: null
       - payload:
           request_id: batch-marker-1
           call_type: aretrieve_batch
-          status: success
+          api_key: ""
           spend: 0.5
+          total_tokens: 7
+          prompt_tokens: 5
+          completion_tokens: 2
           startTime: "2026-01-02T04:04:05.000000+00:00"
           endTime: "2026-01-02T04:04:06.000000+00:00"
+          completionStartTime: null
           model: gpt-4o-mini
-          total_tokens: 7
+          model_id: null
+          model_group: null
+          mcp_namespaced_tool_name: null
+          agent_id: null
+          api_base: ""
+          user: ""
+          metadata: "{}"
+          cache_hit: ""
+          cache_key: ""
+          request_tags: "[]"
+          team_id: null
+          organization_id: null
+          end_user: null
+          requester_ip_address: null
+          custom_llm_provider: null
+          messages: null
+          response: null
+          proxy_server_request: null
+          session_id: null
+          request_duration_ms: null
+          status: success
+          litellm_call_id: null
       - payload:
           request_id: batch-marker-1
           call_type: aretrieve_batch
-          status: failure
+          api_key: ""
           spend: 0.5
+          total_tokens: 0
+          prompt_tokens: 0
+          completion_tokens: 0
           startTime: "2026-01-02T04:05:05.000000+00:00"
           endTime: "2026-01-02T04:05:06.000000+00:00"
+          completionStartTime: null
           model: gpt-4o-mini
-          total_tokens: 0
+          model_id: null
+          model_group: null
+          mcp_namespaced_tool_name: null
+          agent_id: null
+          api_base: ""
+          user: ""
+          metadata: "{}"
+          cache_hit: ""
+          cache_key: ""
+          request_tags: "[]"
+          team_id: null
+          organization_id: null
+          end_user: null
+          requester_ip_address: null
+          custom_llm_provider: null
+          messages: null
+          response: null
+          proxy_server_request: null
+          session_id: null
+          request_duration_ms: null
+          status: failure
+          litellm_call_id: null
 env: {}
 compare:
   ignore: []

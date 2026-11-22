@@ -1,5 +1,7 @@
+mod queue;
 pub mod retention;
 mod tests;
+use self::queue::{logs_url, max_bytes};
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_money, resolve_number};
@@ -19,9 +21,6 @@ pub const DEFAULT_DEQUEUE_COUNT: i64 = 100;
 pub const ENV_PARTITION_INTERVAL: &str = "SPEND_LOG_PARTITION_INTERVAL";
 pub const ENV_PRECREATE_AHEAD: &str = "SPEND_LOG_PARTITION_PRECREATE_AHEAD";
 pub const DEFAULT_PRECREATE_AHEAD: i64 = 7;
-pub const ENV_SPEND_LOG_QUEUE_MAX_BYTES: &str = "SPEND_LOG_QUEUE_MAX_BYTES";
-pub const DEFAULT_SPEND_LOG_QUEUE_MAX_BYTES: usize = 64_000_000;
-pub const ENV_SPEND_LOGS_URL: &str = "SPEND_LOGS_URL";
 const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
 const USE_REDIS_BUFFER_PATH: &str = "general_settings.use_redis_transaction_buffer";
 const MAX_BUDGET_PATH: &str = "litellm_settings.max_budget";
@@ -96,7 +95,7 @@ impl Section for Raw {
         let interval = partition_interval(lookup.lookup(ENV_PARTITION_INTERVAL).as_deref());
         let ahead =
             initial_environment_integer(lookup, ENV_PRECREATE_AHEAD, DEFAULT_PRECREATE_AHEAD)?;
-        let queue_max_bytes = spend_log_queue_max_bytes(lookup)?;
+        let queue_max_bytes = max_bytes(lookup)?;
         let retention_defaults = retention::cleanup_defaults(lookup)?;
         Ok(Settings {
             store_prompts_in_spend_logs: store_prompts(
@@ -124,7 +123,7 @@ impl Section for Raw {
             partition_interval: interval,
             precreate_ahead: ahead,
             spend_log_queue_max_bytes: queue_max_bytes,
-            spend_logs_url: spend_logs_url(lookup),
+            spend_logs_url: logs_url(lookup),
             retention: CleanupSettings {
                 general: general.retention,
                 defaults: retention_defaults,
@@ -189,32 +188,6 @@ where
             .map_err(|source| ConfigError::Environment { source })?;
         Ok(number.unwrap_or(fallback))
     })
-}
-
-// SPEND_LOG_QUEUE_MAX_BYTES is max(1, int(...)) at import, so zero and negative budgets load as one byte
-fn spend_log_queue_max_bytes<L>(lookup: &L) -> Result<usize, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(text) = lookup.lookup(ENV_SPEND_LOG_QUEUE_MAX_BYTES) else {
-        return Ok(DEFAULT_SPEND_LOG_QUEUE_MAX_BYTES);
-    };
-    let number = betterlite_env::number::<i64>(ENV_SPEND_LOG_QUEUE_MAX_BYTES, &text)
-        .map_err(|source| ConfigError::Environment { source })?;
-    Ok(match number {
-        Some(parsed) => usize::try_from(parsed.max(1)).unwrap_or(usize::MAX),
-        None => DEFAULT_SPEND_LOG_QUEUE_MAX_BYTES,
-    })
-}
-
-// SPEND_LOGS_URL: an empty value counts as unset, so the database branch runs instead
-fn spend_logs_url<L>(lookup: &L) -> Option<String>
-where
-    L: EnvironmentLookup,
-{
-    lookup
-        .lookup(ENV_SPEND_LOGS_URL)
-        .filter(|url| !url.is_empty())
 }
 #[must_use]
 pub fn runtime_max_prompt_length(initial: i64, snapshot: Option<&str>) -> i64 {

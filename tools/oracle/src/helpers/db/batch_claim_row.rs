@@ -13,7 +13,6 @@ use betterlite_db::spend_log_storage::{SpendLogFuture, SpendLogsWriter};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -50,9 +49,7 @@ impl Helper for Op {
                 .iter()
                 .map(log_row)
                 .collect::<Result<Vec<_>, _>>()?;
-            let table = ScriptedTable {
-                rows: Mutex::new(seed),
-            };
+            let table = ScriptedTable::new(seed);
             let queue = SpendLogQueue::new(usize::MAX);
             let mut calls = Vec::with_capacity(input.calls.len());
             for call in &input.calls {
@@ -68,13 +65,7 @@ impl Helper for Op {
                     "queued": queue.dequeue(usize::MAX).iter().map(row_view).collect::<Vec<_>>(),
                 }));
             }
-            let rows = table
-                .rows
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .iter()
-                .map(row_view)
-                .collect::<Vec<_>>();
+            let rows = table.rows().iter().map(row_view).collect::<Vec<_>>();
             Ok(json!({"calls": calls, "rows": rows}))
         })
     }
@@ -84,6 +75,63 @@ struct ScriptedTable {
     rows: Mutex<Vec<SpendLogRow>>,
 }
 
+impl ScriptedTable {
+    fn new(rows: Vec<SpendLogRow>) -> Self {
+        Self {
+            rows: Mutex::new(rows),
+        }
+    }
+
+    fn rows(&self) -> Vec<SpendLogRow> {
+        self.rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn insert(&self, rows: &[SpendLogRow]) -> Result<usize, SpendLogStoreError> {
+        let mut stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut inserted = 0;
+        for row in rows {
+            let Some(request_id) = text_field(row, "request_id") else {
+                continue;
+            };
+            if stored
+                .iter()
+                .any(|existing| request_id_is(existing, request_id))
+            {
+                continue;
+            }
+            stored.push(row.clone());
+            inserted = inserted.saturating_add(1);
+        }
+        Ok(inserted)
+    }
+
+    fn find(&self, request_id: &str) -> Result<Option<BatchChargeRow>, SpendLogStoreError> {
+        let stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(stored
+            .iter()
+            .find(|candidate| request_id_is(candidate, request_id))
+            .map(charge_row))
+    }
+
+    fn take(&self, data: &SpendLogRow, request_id: &str) -> Result<usize, SpendLogStoreError> {
+        let mut stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut updated = 0;
+        for entry in stored
+            .iter_mut()
+            .filter(|entry| claimable(entry, request_id))
+        {
+            for (field, value) in data {
+                let _replaced = entry.insert(field.clone(), value.clone());
+            }
+            updated = updated.saturating_add(1);
+        }
+        Ok(updated)
+    }
+}
+
 impl SpendLogsWriter for ScriptedTable {
     type Error = SpendLogStoreError;
 
@@ -91,24 +139,7 @@ impl SpendLogsWriter for ScriptedTable {
         &'call self,
         rows: &'call [SpendLogRow],
     ) -> SpendLogFuture<'call, Result<usize, SpendLogStoreError>> {
-        Box::pin(async move {
-            let mut stored = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-            let mut inserted = 0;
-            for row in rows {
-                let Some(request_id) = text_field(row, "request_id") else {
-                    continue;
-                };
-                if stored
-                    .iter()
-                    .any(|existing| text_field(existing, "request_id") == Some(request_id))
-                {
-                    continue;
-                }
-                stored.push(row.clone());
-                inserted = inserted.saturating_add(1);
-            }
-            Ok(inserted)
-        })
+        Box::pin(async move { self.insert(rows) })
     }
 }
 
@@ -117,22 +148,7 @@ impl BatchClaimTable for ScriptedTable {
         &'call self,
         request_id: &'call str,
     ) -> SpendLogFuture<'call, Result<Option<BatchChargeRow>, SpendLogStoreError>> {
-        Box::pin(async move {
-            let found = self
-                .rows
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .iter()
-                .find(|candidate| text_field(candidate, "request_id") == Some(request_id))
-                .map(|found| BatchChargeRow {
-                    call_type: text_field(found, "call_type").map(str::to_owned),
-                    status: text_field(found, "status").map(str::to_owned),
-                    spend: amount_field(found, "spend")
-                        .and_then(|amount| amount.to_f64())
-                        .unwrap_or_default(),
-                });
-            Ok(found)
-        })
+        Box::pin(async move { self.find(request_id) })
     }
 
     fn take_over<'call>(
@@ -140,31 +156,14 @@ impl BatchClaimTable for ScriptedTable {
         data: &'call SpendLogRow,
         request_id: &'call str,
     ) -> SpendLogFuture<'call, Result<usize, SpendLogStoreError>> {
-        Box::pin(async move {
-            let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-            let mut updated = 0;
-            for entry in &mut *rows {
-                if text_field(entry, "request_id") != Some(request_id)
-                    || text_field(entry, "call_type") != Some(ARETRIEVE_BATCH)
-                    || text_field(entry, "status") != Some(SUCCESS)
-                    || amount_field(entry, "spend") != Some(Decimal::ZERO)
-                {
-                    continue;
-                }
-                for (field, value) in data {
-                    let _replaced = entry.insert(field.clone(), value.clone());
-                }
-                updated = updated.saturating_add(1);
-            }
-            Ok(updated)
-        })
+        Box::pin(async move { self.take(data, request_id) })
     }
 }
 
 fn row_view(row: &SpendLogRow) -> Value {
     let mut view = serde_json::to_value(row).unwrap_or(Value::Null);
     if let Value::Object(fields) = &mut view
-        && let Some(amount) = amount_field(row, "spend").and_then(|amount| amount.to_f64())
+        && let Some(amount) = amount_field(row, "spend")
     {
         let _replaced = fields.insert("spend".to_owned(), Value::String(format!("{amount:.10}")));
     }
@@ -177,6 +176,25 @@ fn log_row(value: &JsonData) -> Result<SpendLogRow, Box<HelperError>> {
     decode_log_record(&bytes)
         .map_err(failure)?
         .ok_or_else(|| failure("the spend log row is not an object"))
+}
+
+fn request_id_is(row: &SpendLogRow, request_id: &str) -> bool {
+    text_field(row, "request_id") == Some(request_id)
+}
+
+fn claimable(row: &SpendLogRow, request_id: &str) -> bool {
+    request_id_is(row, request_id)
+        && text_field(row, "call_type") == Some(ARETRIEVE_BATCH)
+        && text_field(row, "status") == Some(SUCCESS)
+        && amount_field(row, "spend") == Some(Decimal::ZERO)
+}
+
+fn charge_row(row: &SpendLogRow) -> BatchChargeRow {
+    BatchChargeRow {
+        call_type: text_field(row, "call_type").map(str::to_owned),
+        status: text_field(row, "status").map(str::to_owned),
+        spend: amount_field(row, "spend").unwrap_or(Decimal::ZERO),
+    }
 }
 
 fn text_field<'row>(row: &'row SpendLogRow, field: &str) -> Option<&'row str> {

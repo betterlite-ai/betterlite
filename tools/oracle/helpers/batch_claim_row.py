@@ -7,6 +7,7 @@ from litellm.proxy.db.db_spend_update_writer import DBSpendUpdateWriter
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.utils import PrismaClient, dequeue_spend_logs
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 ARETRIEVE_BATCH = "aretrieve_batch"
 SUCCESS = "success"
@@ -15,34 +16,44 @@ DEQUEUE_LIMIT = 1000
 TEXT = TypeAdapter(str)
 OPTIONAL_TEXT = TypeAdapter(str | None)
 NUMBER = TypeAdapter(int | float)
-VALUE = TypeAdapter(JsonValue)
+ROW = TypeAdapter(dict[str, JsonValue])
+
+
+class Payload(SpendLogsPayload):
+    messages: str | list[JsonValue] | dict[str, JsonValue] | None
+    response: str | list[JsonValue] | dict[str, JsonValue] | None
+
+
+PAYLOAD = TypeAdapter(Payload)
 
 
 class Call(TypedDict):
-    payload: SpendLogsPayload
+    payload: Payload
 
 
 class Input(TypedDict):
     disable_spend_logs: bool
     database: bool
-    seed: list[SpendLogsPayload]
+    seed: list[Payload]
     calls: list[Call]
 
 
 class StoredRow:
-    def __init__(self, row: dict[str, object]) -> None:
-        self.values = row
-        self.request_id = TEXT.validate_python(row["request_id"])
-        self.call_type = OPTIONAL_TEXT.validate_python(row.get("call_type"))
-        self.status = OPTIONAL_TEXT.validate_python(row.get("status"))
-        self.spend = NUMBER.validate_python(row.get("spend"))
+    def __init__(self, row: Mapping[str, JsonValue]) -> None:
+        self.values: dict[str, JsonValue] = dict(row)
+        self.request_id: str = TEXT.validate_python(self.values["request_id"])
+        self.call_type: str | None = OPTIONAL_TEXT.validate_python(self.values.get("call_type"))
+        self.status: str | None = OPTIONAL_TEXT.validate_python(self.values.get("status"))
+        self.spend: int | float = NUMBER.validate_python(self.values.get("spend"))
 
 
 class FakeSpendLogs:
-    def __init__(self, seeded: Sequence[Mapping[str, object]]) -> None:
-        self.stored: list[StoredRow] = [StoredRow(dict(row)) for row in seeded]
+    def __init__(self, seeded: Sequence[Payload]) -> None:
+        self.stored: list[StoredRow] = [StoredRow(ROW.validate_python(row)) for row in seeded]
 
-    async def create_many(self, *, data: list[dict[str, object]], skip_duplicates: bool) -> int:
+    async def create_many(
+        self, *, data: Sequence[Mapping[str, JsonValue]], skip_duplicates: bool
+    ) -> int:
         inserted = 0
         for row in data:
             candidate = StoredRow(row)
@@ -54,11 +65,13 @@ class FakeSpendLogs:
             inserted += 1
         return inserted
 
-    async def find_unique(self, *, where: dict[str, object]) -> StoredRow | None:
+    async def find_unique(self, *, where: Mapping[str, JsonValue]) -> StoredRow | None:
         request_id = TEXT.validate_python(where["request_id"])
         return next((row for row in self.stored if row.request_id == request_id), None)
 
-    async def update_many(self, *, data: dict[str, object], where: dict[str, object]) -> int:
+    async def update_many(
+        self, *, data: Mapping[str, JsonValue], where: Mapping[str, JsonValue]
+    ) -> int:
         request_id = TEXT.validate_python(where["request_id"])
         matching = [
             row
@@ -75,11 +88,12 @@ class FakeSpendLogs:
         return len(matching)
 
 
-# SpendLogsRepository reads prisma_client.db.litellm_spendlogs, so the db wrapper hands out the one scripted table.
+# SpendLogsRepository reads db.litellm_spendlogs, so the wrapper hands out the one scripted table.
 class FakeDb(PrismaWrapper):
     def __init__(self, table: FakeSpendLogs) -> None:
         self.table = table
 
+    @override
     def __getattr__(self, name: str) -> FakeSpendLogs:
         if name == "litellm_spendlogs":
             return self.table
@@ -95,7 +109,7 @@ class CaseWriter(DBSpendUpdateWriter):
     async def record(
         self,
         *,
-        payload: SpendLogsPayload,
+        payload: Payload,
         client: PrismaClient | None,
         disabled: bool,
     ) -> bool:
@@ -106,34 +120,39 @@ class CaseWriter(DBSpendUpdateWriter):
         )
 
 
-def row_view(row: dict[str, object]) -> dict[str, JsonValue]:
+def row_view(row: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
     view: dict[str, JsonValue] = {}
     for field, value in row.items():
-        view[field] = VALUE.validate_python(value)
+        view[field] = value
     spend = row.get("spend")
     if spend is not None:
         view["spend"] = f"{NUMBER.validate_python(spend):.10f}"
     return view
 
 
-async def record_calls(input_value: Input) -> dict[str, JsonValue]:
-    table = FakeSpendLogs(input_value["seed"])
+async def record_calls(
+    input_value: Input, seed: list[Payload], payloads: list[Payload]
+) -> dict[str, JsonValue]:
+    table = FakeSpendLogs(seed)
     writer = CaseWriter()
-    client = None if input_value["database"] is False else FakeClient(table)
+    client = FakeClient(table) if input_value["database"] else None
     calls: list[JsonValue] = []
-    for call in input_value["calls"]:
+    for payload in payloads:
         recorded = await writer.record(
-            payload=call["payload"],
+            payload=payload,
             client=client,
             disabled=input_value["disable_spend_logs"],
         )
         queued: list[JsonValue] = []
         if client is not None:
-            queued = [row_view(row) for row in await dequeue_spend_logs(client, DEQUEUE_LIMIT)]
+            popped = await dequeue_spend_logs(client, DEQUEUE_LIMIT)
+            queued = [row_view(ROW.validate_python(row)) for row in popped]
         calls.append({"recorded": recorded, "queued": queued})
     rows: list[JsonValue] = [row_view(row.values) for row in table.stored]
     return {"calls": calls, "rows": rows}
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
-    return asyncio.run(record_calls(input_value))
+    seed = [PAYLOAD.validate_python(row) for row in input_value["seed"]]
+    payloads = [PAYLOAD.validate_python(call["payload"]) for call in input_value["calls"]]
+    return asyncio.run(record_calls(input_value, seed, payloads))

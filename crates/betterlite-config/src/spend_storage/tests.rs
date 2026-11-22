@@ -17,16 +17,16 @@ use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
+use super::queue::{DEFAULT_QUEUE_MAX_BYTES, ENV_SPEND_LOG_QUEUE_MAX_BYTES, ENV_SPEND_LOGS_URL};
 use super::retention::{
     ENV_BATCH_SIZE, ENV_BATCH_TIMEOUT, ENV_COUNT_CAP, ENV_FAILURE_BACKOFF, ENV_MAX_FAILURES,
     ENV_RUN_BUDGET, ENV_RUN_LOOPS,
 };
 use super::{
-    DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, DEFAULT_PRECREATE_AHEAD,
-    DEFAULT_SPEND_LOG_QUEUE_MAX_BYTES, ENV_DEQUEUE_COUNT, ENV_PARTITION_INTERVAL,
-    ENV_PRECREATE_AHEAD, ENV_SPEND_LOG_QUEUE_MAX_BYTES, ENV_SPEND_LOGS_URL, MissingSessionId,
-    Settings, SpendUpdates, decode_spend_storage_policy, load_spend_storage_policy,
-    runtime_dequeue_count, runtime_max_prompt_length,
+    DEFAULT_DEQUEUE_COUNT, DEFAULT_MAX_PROMPT_LENGTH, DEFAULT_PRECREATE_AHEAD, ENV_DEQUEUE_COUNT,
+    ENV_PARTITION_INTERVAL, ENV_PRECREATE_AHEAD, MissingSessionId, Settings, SpendUpdates,
+    decode_spend_storage_policy, load_spend_storage_policy, runtime_dequeue_count,
+    runtime_max_prompt_length,
 };
 use crate::loader::ConfigLoader;
 
@@ -682,10 +682,7 @@ fn loads_spend_retention_settings_from_a_stored_row() {
 #[test]
 fn loads_spend_log_storage_settings() {
     let defaults = load("general_settings: {}\n", &[]);
-    assert_eq!(
-        defaults.spend_log_queue_max_bytes,
-        DEFAULT_SPEND_LOG_QUEUE_MAX_BYTES
-    );
+    assert_eq!(defaults.spend_log_queue_max_bytes, DEFAULT_QUEUE_MAX_BYTES);
     assert_eq!(defaults.spend_logs_url, None);
     let configured = load(
         "general_settings: {}\n",

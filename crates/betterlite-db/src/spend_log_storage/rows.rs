@@ -103,7 +103,11 @@ impl SpendLogQueue {
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .rows
+            .is_empty()
     }
 
     #[must_use]
