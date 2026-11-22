@@ -6,7 +6,7 @@ use betterlite::cleanup_schedule::changes::{
     CleanupScheduleState, ScheduleChange, on_settings_changed,
 };
 use betterlite::cleanup_schedule::ports::CleanupScheduler;
-use betterlite::cleanup_schedule::schedule::cleanup_schedule_of;
+use betterlite::cleanup_schedule::schedule::{CleanupSchedule, cleanup_schedule_of};
 use betterlite::cleanup_schedule::trigger::{ScheduleContext, cleanup_trigger};
 use betterlite::job_scheduler::{BoxFuture, JobFn, JobSpec, SchedulerError, SchedulerState};
 use betterlite::scheduled_job_stagger::Trigger;
@@ -167,13 +167,27 @@ fn retention_outcome(setup: &RetentionSetup<'_>) -> JsonValue {
     );
     let interval = interval_seconds(&settings, &context);
     let (kind, gap) = classification(recording.trigger.as_deref(), interval, context.now);
+    let recorded = state.last_attempt.as_ref().map(schedule_values);
     serde_json::json!({
         "added": recording.added,
         "removed": recording.removed,
         "job_present": recording.job_present,
         "kind": kind,
         "gap_seconds": gap,
+        "last_attempt": recorded,
+        "reschedule_failed": state.reschedule_failed,
     })
+}
+
+const fn schedule_values(schedule: &CleanupSchedule) -> [Option<&JsonValue>; 6] {
+    [
+        schedule.spend_logs_retention.as_ref(),
+        schedule.autorouter_sessions_retention.as_ref(),
+        schedule.health_checks_retention.as_ref(),
+        schedule.tag_spend_retention.as_ref(),
+        schedule.cleanup_cron.as_ref(),
+        schedule.cleanup_interval.as_ref(),
+    ]
 }
 
 fn recording_scheduler(setup: &RetentionSetup<'_>) -> RecordingScheduler {

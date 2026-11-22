@@ -6,7 +6,7 @@ from typing import Final, Literal, TypedDict
 import litellm
 from litellm.proxy import proxy_server
 from litellm.proxy.common_utils.scheduled_job_stagger import Trigger
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
@@ -118,24 +118,32 @@ def trigger_outcome(trigger: Trigger | None) -> JsonValue:
     return {"kind": str(trigger).split("[", 1)[0], "gap_seconds": trigger_gap(trigger)}
 
 
-def retention_outcome(stub: SchedulerStub | None, trigger: Trigger | None) -> JsonValue:
+def retention_outcome(
+    stub: SchedulerStub | None,
+    trigger: Trigger | None,
+    config: proxy_server.ProxyConfig,
+) -> JsonValue:
     added = 0 if stub is None else stub.added
     removed = 0 if stub is None else stub.removed
     present = False if stub is None else stub.job_present
     kind = None if trigger is None else str(trigger).split("[", 1)[0]
     gap = None if trigger is None else trigger_gap(trigger)
+    last = config._last_cleanup_schedule_attempt  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5404
+    recorded = None if last is None else TypeAdapter(list[JsonValue]).validate_python(last)
     return {
         "added": added,
         "removed": removed,
         "job_present": present,
         "kind": kind,
         "gap_seconds": gap,
+        "last_attempt": recorded,
+        "reschedule_failed": config._cleanup_reschedule_failed,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5405
     }
 
 
 async def apply_retention(
     settings: dict[str, JsonValue], state: RetentionState
-) -> SchedulerStub | None:
+) -> tuple[proxy_server.ProxyConfig, SchedulerStub | None]:
     config = proxy_server.ProxyConfig()
     config.settings.load_yaml(settings)
     proxy_server.general_settings = settings
@@ -156,12 +164,14 @@ async def apply_retention(
     config._last_cleanup_schedule_attempt = None if last is None else schedule_of(last)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5404
     config._cleanup_reschedule_failed = state["reschedule_failed"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5405
     await config._apply_retention_settings({}, previous)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7963
-    return stub
+    return config, stub
 
 
 def run(input_value: TriggerInput | RetentionInput) -> JsonValue:
-    stub = asyncio.run(apply_retention(input_value["settings"], retention_state(input_value)))
+    config, stub = asyncio.run(
+        apply_retention(input_value["settings"], retention_state(input_value))
+    )
     trigger = None if stub is None else stub.trigger
     if input_value["operation"] == "cleanup_trigger":
         return trigger_outcome(trigger)
-    return retention_outcome(stub, trigger)
+    return retention_outcome(stub, trigger, config)
