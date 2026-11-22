@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 
 use async_trait::async_trait;
+use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::stream::SseParser;
 use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
@@ -79,29 +80,16 @@ impl ResponsesChunkSource {
 
     async fn advance(&mut self) -> Result<Option<Json>, StreamFailure> {
         loop {
-            if let Some(chunk) = self.take_pending()? {
-                return Ok(Some(chunk));
-            }
-            if self.phase == Phase::Done || self.phase == Phase::Exhausted {
+            if self.pending.is_empty()
+                && (self.phase == Phase::Done || self.phase == Phase::Exhausted)
+            {
                 return self.closing();
             }
-            let Some(read) = self.body.0.next().await else {
-                self.pending.extend(self.parser.finish());
-                self.phase = Phase::Exhausted;
+            let Some(payload) = self.pending.pop_front() else {
+                let read = self.body.0.next().await;
+                self.queue_item(read)?;
                 continue;
             };
-            let bytes = read.map_err(|error| unclassified(&error))?;
-            let events = self
-                .parser
-                .push(&bytes)
-                .map_err(|error| unclassified(&error))?;
-            self.pending.extend(events);
-        }
-    }
-
-    // A queued payload latches [DONE], shapes a chunk, or shapes nothing, in which case the next one is tried.
-    fn take_pending(&mut self) -> Result<Option<Json>, StreamFailure> {
-        while let Some(payload) = self.pending.pop_front() {
             if payload.trim_ascii() == DONE_SENTINEL {
                 self.phase = Phase::Done;
                 continue;
@@ -110,7 +98,25 @@ impl ResponsesChunkSource {
                 return Ok(Some(chunk));
             }
         }
-        Ok(None)
+    }
+
+    // One body item into the queue, or the parsed tail of the stream when the bytes end.
+    fn queue_item(
+        &mut self,
+        read: Option<Result<Vec<u8>, HttpError>>,
+    ) -> Result<(), StreamFailure> {
+        let Some(read) = read else {
+            self.pending.extend(self.parser.finish());
+            self.phase = Phase::Exhausted;
+            return Ok(());
+        };
+        let bytes = read.map_err(|error| unclassified(&error))?;
+        let events = self
+            .parser
+            .push(&bytes)
+            .map_err(|error| unclassified(&error))?;
+        self.pending.extend(events);
+        Ok(())
     }
 
     // None means the payload shaped no chunk, after the wrapper stripped a usage-only one.
