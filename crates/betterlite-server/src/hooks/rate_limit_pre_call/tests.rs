@@ -423,6 +423,32 @@ async fn unverifiable_hook_error_maps_to_503() {
 }
 
 #[tokio::test]
+async fn unverifiable_hook_error_with_an_unusable_status_maps_to_500() {
+    let error = PreCallHookError::Admission(WindowedAdmissionError::Unverifiable(
+        RateLimitUnverifiableError {
+            status_code: 7000,
+            detail: BTreeMap::from([(String::from("error"), String::from("counters unavailable"))]),
+        },
+    ));
+    let cause = StatusCode::from_u16(7000).expect_err("7000 is not an HTTP status");
+
+    let response = RateLimitPreCallError::from(error).into_response();
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        body_of(response).await,
+        json!({
+            "error": {
+                "message": format!("the fail-closed rate-limit rejection carries status 7000 that HTTP cannot carry: {cause}"),
+                "type": "internal_server_error",
+                "param": null,
+                "code": "500",
+            }
+        })
+    );
+}
+
+#[tokio::test]
 async fn other_hook_errors_map_to_500() {
     let message = PreCallHookError::AdmissionTaskLost.to_string();
     let error = PreCallHookError::AdmissionTaskLost;
@@ -432,7 +458,14 @@ async fn other_hook_errors_map_to_500() {
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
         body_of(response).await,
-        json!({"detail": {"error": message}})
+        json!({
+            "error": {
+                "message": message,
+                "type": "internal_server_error",
+                "param": null,
+                "code": "500",
+            }
+        })
     );
 }
 

@@ -1,9 +1,14 @@
+use std::collections::BTreeMap;
+
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_core::routes::CallType;
+use betterlite_error::proxy_error_types::ProxyErrorTypes;
+use betterlite_error::proxy_exception::body::ProxyErrorBody;
+use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_rate_limit::fail_closed::RateLimitUnverifiableError;
 use betterlite_rate_limit::limiter_assembly::selection::{LimiterChoice, select_call_type_limiter};
 use betterlite_rate_limit::pre_call_hook::{
@@ -54,6 +59,12 @@ struct DetailBody<Detail> {
 #[derive(Serialize)]
 struct ErrorDetail {
     error: String,
+}
+
+// _handle_llm_api_exception re-raises an unhandled pre-call exception as the OpenAI error object
+#[derive(Serialize)]
+struct ProxyErrorEnvelope {
+    error: ProxyErrorBody,
 }
 
 impl RateLimitPreCallGate {
@@ -123,25 +134,38 @@ fn hook_response(error: PreCallHookError) -> Response {
         Some(PreCallHookRejection::Unverifiable(unverifiable)) => {
             unverifiable_response(unverifiable)
         }
-        None => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(DetailBody {
-                detail: ErrorDetail {
-                    error: error.to_string(),
-                },
-            }),
-        )
-            .into_response(),
+        None => internal_error_response(error.to_string()),
     }
 }
 
+fn internal_error_response(message: String) -> Response {
+    let exception = ProxyException::new(ProxyExceptionInit {
+        message,
+        error_type: ProxyErrorTypes::InternalServerError.to_string(),
+        param: None,
+        code: ExceptionCode::Status(500),
+        headers: BTreeMap::new(),
+        openai_code: None,
+        provider_specific_fields: BTreeMap::new(),
+    });
+    let body = ProxyErrorEnvelope {
+        error: exception.to_body(),
+    };
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+}
+
 fn unverifiable_response(error: &RateLimitUnverifiableError) -> Response {
-    let status = StatusCode::from_u16(error.status_code).unwrap_or(StatusCode::SERVICE_UNAVAILABLE);
-    (
-        status,
-        Json(DetailBody {
-            detail: &error.detail,
-        }),
-    )
-        .into_response()
+    match StatusCode::from_u16(error.status_code) {
+        Ok(status) => (
+            status,
+            Json(DetailBody {
+                detail: &error.detail,
+            }),
+        )
+            .into_response(),
+        Err(source) => internal_error_response(format!(
+            "the fail-closed rate-limit rejection carries status {} that HTTP cannot carry: {source}",
+            error.status_code
+        )),
+    }
 }
