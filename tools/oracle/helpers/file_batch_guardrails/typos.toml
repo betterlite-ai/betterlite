@@ -1,4 +1,0 @@
-[default.extend-words]
-# LiteLLM's UnparseableRecord keeps this spelling
-Unparseable = "Unparseable"
-unparseable = "unparseable"
