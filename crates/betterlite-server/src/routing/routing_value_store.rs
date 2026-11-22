@@ -59,7 +59,7 @@ pub fn shared_store(
     }
 }
 
-// the shared tier's ttl counts from wall time, while the breaker measures the time since it opened
+// the local tier's ttl counts from wall time, while the breaker measures the time since it opened
 #[must_use]
 pub fn wall_clock() -> Clock {
     Arc::new(|| {
