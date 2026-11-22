@@ -24,8 +24,6 @@ pub enum StabilityEditError {
     UnsupportedParameter { parameter: String, model: String },
     #[error("the {field} value has a type the Stability transform does not declare")]
     Field { field: String },
-    #[error("Bedrock has no image price entry for {model}")]
-    ModelInfo { model: String },
     #[error(transparent)]
     Price(#[from] ImageCostError),
     #[error(transparent)]
@@ -47,7 +45,6 @@ impl StabilityEditError {
             Self::Provider { status, .. } => Some(*status),
             Self::UnsupportedParameter { .. }
             | Self::Field { .. }
-            | Self::ModelInfo { .. }
             | Self::Price(_)
             | Self::Reply(_)
             | Self::Header(_) => None,
