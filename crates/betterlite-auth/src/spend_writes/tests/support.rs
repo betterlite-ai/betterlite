@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -53,6 +53,9 @@ use crate::spend_writes::batch::CounterBatch;
 use crate::spend_writes::error::LayersError;
 use crate::spend_writes::layers::{CounterLayers, CounterWriteBatch, PostCallBatch};
 use crate::spend_writes::source::SourceSpendCache;
+
+// the ReseedCache impls answer at once, so one concrete future type keeps each wrapper short
+type CacheReady<T> = Ready<Result<T, ReseedCacheError>>;
 
 pub(crate) const KEY: &str = "spend:key:k1";
 pub(crate) const OTHER_KEY: &str = "spend:key:k2";
@@ -420,10 +423,7 @@ impl ReseedCache for FakeLayers {
         self.redis_configured
     }
 
-    fn redis_get(
-        &self,
-        counter_key: &str,
-    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
+    fn redis_get(&self, counter_key: &str) -> CacheReady<Option<ReseedCacheValue>> {
         ready(
             self.cache_op(counter_key, "redis_get", Fault::RedisGet, || {
                 self.redis_value()
@@ -431,51 +431,28 @@ impl ReseedCache for FakeLayers {
         )
     }
 
-    fn redis_set_nx(
-        &self,
-        counter_key: &str,
-        value: Decimal,
-    ) -> impl Future<Output = Result<Option<bool>, ReseedCacheError>> + Send {
+    fn redis_set_nx(&self, counter_key: &str, value: Decimal) -> CacheReady<Option<bool>> {
         self.journal.push(format!("redis_set_nx:{counter_key}"));
         self.put_redis(ReseedCacheValue::Number(value));
         ready(Ok(Some(true)))
     }
 
-    fn memory_get(
-        &self,
-        counter_key: &str,
-    ) -> impl Future<Output = Result<Option<ReseedCacheValue>, ReseedCacheError>> + Send {
-        if let Err(error) = self.begin_cache(format!("memory_get:{counter_key}"), Fault::MemoryGet)
-        {
-            return ready(Err(error));
-        }
-        ready(Ok(self.memory_value(counter_key)))
+    fn memory_get(&self, counter_key: &str) -> CacheReady<Option<ReseedCacheValue>> {
+        let event = format!("memory_get:{counter_key}");
+        let value = self.memory_value(counter_key);
+        ready(self.begin_cache(event, Fault::MemoryGet).map(|()| value))
     }
 
-    fn memory_set(
-        &self,
-        counter_key: &str,
-        value: Decimal,
-    ) -> impl Future<Output = Result<(), ReseedCacheError>> + Send {
-        if let Err(error) = self.begin_cache(format!("memory_set:{counter_key}"), Fault::MemorySet)
-        {
-            return ready(Err(error));
-        }
-        self.put_memory(counter_key, ReseedCacheValue::Number(value));
-        ready(Ok(()))
+    fn memory_set(&self, counter_key: &str, value: Decimal) -> CacheReady<()> {
+        let event = format!("memory_set:{counter_key}");
+        let stored = self.begin_cache(event, Fault::MemorySet);
+        ready(stored.map(|()| self.put_memory(counter_key, ReseedCacheValue::Number(value))))
     }
 
-    fn increment_local(
-        &self,
-        counter_key: &str,
-        increment: Decimal,
-    ) -> impl Future<Output = Result<Option<Decimal>, ReseedCacheError>> + Send {
-        let counted = self.cache_op(
-            counter_key,
-            "increment_local",
-            Fault::IncrementLocal,
-            || self.bump(counter_key, increment),
-        );
+    fn increment_local(&self, key: &str, increment: Decimal) -> CacheReady<Option<Decimal>> {
+        let counted = self.cache_op(key, "increment_local", Fault::IncrementLocal, || {
+            self.bump(key, increment)
+        });
         ready(counted.map(Some))
     }
 }
