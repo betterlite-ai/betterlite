@@ -1,0 +1,15 @@
+task: B4781
+deviations:
+  - what: admit_managed_actor and prepare_agent_invocation take the registry, the grant resolver and the read-through as arguments, packed with the store in InvocationSources where both are needed, and return AdmissionError { status, detail } instead of raising HTTPException.
+    why: betterlite has no global registry and no exceptions; the caller turns the error into the same status and string detail. Packing the invoked call's sources keeps the argument count under the workspace limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L142-L189
+  - what: A JSON bool in cost_per_query is an invalid price (503), and a numeric string is accepted.
+    why: Pydantic's lax float mode decides bool handling beyond the declared type, and the worker writes no case for it. The numeric string is kept so a price an admin saved as text still works.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L209-L209
+  - what: A cost_per_query outside rust_decimal's range, such as 1e40 or 1e-40, is an invalid price (503), where LiteLLM's pydantic float accepts it.
+    why: B2314 types agent_invocation_cost as rust_decimal::Decimal and this task may not change that type; a price the field cannot hold is refused instead of silently rounded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L209-L256
+  - what: validate_managed_identity_request takes an IdentityRequest with an explicit Absent, Null or Value identity, not LiteLLM's TypedDict key test.
+    why: A typed record cannot test for a missing key. The three states give LiteLLM's results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L519-L551
+kept_bugs: []
