@@ -67,7 +67,7 @@ where
     if current <= max_budget {
         return Ok(());
     }
-    Err(EndUserBudgetExceeded {
+    Err(EndUserBudgetError::from(EndUserBudgetExceeded {
         details: BudgetExceededDetails {
             current_cost: current,
             max_budget,
@@ -80,6 +80,5 @@ where
             entity_id: Some(end_user.user_id.clone()),
             status_code: BUDGET_EXCEEDED_STATUS,
         },
-    }
-    .into())
+    }))
 }
