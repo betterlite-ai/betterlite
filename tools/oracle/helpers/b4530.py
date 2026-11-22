@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Final, Literal, TypedDict
 
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
@@ -174,7 +175,8 @@ async def answer(step: Step, caller: UserAPIKeyAuth) -> Answer:
         matched = memory_endpoints._key_filter(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L113-L124
             step["search"], step["key_prefix"], step["key"]
         )
-        value = JSON.validate_python(matched)
+        # _key_filter puts a tuple in the dict; JSON serialization is what turns it into an array
+        value = JSON.validate_json(json.dumps(matched))
     elif function == "scope":
         user_id, team_id = memory_endpoints._resolve_scope(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L238-L282
             caller, step["requested_user_id"], step["requested_team_id"]
