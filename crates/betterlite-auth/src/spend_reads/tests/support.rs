@@ -71,11 +71,11 @@ pub(crate) fn aggregate(spend: &str) -> SpendAggregateRow {
     }
 }
 
-pub(crate) fn request<'request>(
-    counter_key: &'request str,
+pub(crate) fn request(
+    counter_key: &str,
     fallback_spend: Decimal,
     max_budget: Option<Decimal>,
-) -> SpendReadRequest<'request> {
+) -> SpendReadRequest<'_> {
     SpendReadRequest {
         counter_key,
         fallback_spend,
@@ -85,10 +85,7 @@ pub(crate) fn request<'request>(
     }
 }
 
-pub(crate) fn key_window<'window>(
-    entity: &'window CounterEntityType,
-    start: Timestamp,
-) -> SpendWindow<'window> {
+pub(crate) fn key_window(entity: &CounterEntityType, start: Timestamp) -> SpendWindow<'_> {
     SpendWindow {
         entity_type: entity,
         entity_id: "token",
@@ -201,15 +198,14 @@ impl FakeRows {
         if let Some(write) = race {
             write.cache.seed_memory(&write.marker_key, write.floor);
         }
-        Ok(
-            match *self.entity.lock().unwrap_or_else(PoisonError::into_inner) {
-                RowAnswer::Missing => None,
-                RowAnswer::Null => Some(DbSpendRow { spend: None }),
-                RowAnswer::Spent(amount) => Some(DbSpendRow {
-                    spend: Some(amount),
-                }),
-            },
-        )
+        let answer = *self.entity.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(match answer {
+            RowAnswer::Missing => None,
+            RowAnswer::Null => Some(DbSpendRow { spend: None }),
+            RowAnswer::Spent(amount) => Some(DbSpendRow {
+                spend: Some(amount),
+            }),
+        })
     }
 
     fn window_answer(
@@ -690,11 +686,14 @@ impl Fixture {
         self.reads_with(None, fail_closed)
     }
 
-    fn reads_with<'reads, Batch: SpendBatch>(
+    fn reads_with<'reads, Batch>(
         &'reads self,
         batch: Option<&'reads Batch>,
         fail_closed: bool,
-    ) -> SpendReads<'reads, FakeRows, FakeCache, Batch> {
+    ) -> SpendReads<'reads, FakeRows, FakeCache, Batch>
+    where
+        Batch: SpendBatch,
+    {
         SpendReads {
             reseed: &self.reseed,
             cache: self.cache.as_ref(),
@@ -749,8 +748,9 @@ impl io::Write for Captured {
         let mut log = self
             .0
             .lock()
-            .map_err(|_| io::Error::other("the captured log lock"))?;
+            .map_err(|_error| io::Error::other("the captured log lock"))?;
         log.extend_from_slice(buf);
+        drop(log);
         Ok(buf.len())
     }
 

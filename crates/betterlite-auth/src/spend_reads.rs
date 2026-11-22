@@ -172,10 +172,9 @@ where
         if let Some(current) = cached {
             return (current, authoritative);
         }
-        match self.coalesced_spend(counter_key).await {
-            Some(db_spend) => (db_spend, true),
-            None => (fallback_spend, false),
-        }
+        self.coalesced_spend(counter_key)
+            .await
+            .map_or((fallback_spend, false), |db_spend| (db_spend, true))
     }
 
     pub async fn authoritative_floor_spend(
@@ -213,16 +212,14 @@ where
         if let Some(entity_spend) = reader.from_db(counter_key).await {
             return Some(entity_spend);
         }
-        let Some(window) = window else {
-            return None;
-        };
+        let floor_window = window?;
         match self
             .reseed
             .window_from_db(
-                window.entity_type,
-                window.entity_id,
-                window.window_duration,
-                window.window_start,
+                floor_window.entity_type,
+                floor_window.entity_id,
+                floor_window.window_duration,
+                floor_window.window_start,
             )
             .await
         {
@@ -239,18 +236,15 @@ where
     }
 
     async fn coalesced_spend(&self, counter_key: &str) -> Option<Decimal> {
-        let outcome = match self.batch {
-            Some(batch) => {
-                self.reseed
-                    .coalesced(self.cache, batch, counter_key, false)
-                    .await
-            }
-            None => {
-                let absent = NoSpendBatch;
-                self.reseed
-                    .coalesced(self.cache, &absent, counter_key, false)
-                    .await
-            }
+        let outcome = if let Some(batch) = self.batch {
+            self.reseed
+                .coalesced(self.cache, batch, counter_key, false)
+                .await
+        } else {
+            let absent = NoSpendBatch;
+            self.reseed
+                .coalesced(self.cache, &absent, counter_key, false)
+                .await
         };
         outcome.unwrap_or_else(|error| {
             tracing::error!(
