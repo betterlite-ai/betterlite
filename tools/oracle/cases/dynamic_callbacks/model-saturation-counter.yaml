@@ -1,0 +1,15 @@
+kind: helper
+name: dynamic-callbacks-model-saturation-counter
+call:
+  b3053:
+    function: log_success
+    auth_metadata:
+      priority: medium
+    model_group: claude-3
+    usage: {prompt_tokens: 3, completion_tokens: 2, total_tokens: 5}
+    rate_limit_type: total
+    window_size: 120
+    priority_reservation:
+      medium: 1.0
+env: {}
+compare: {ignore: []}

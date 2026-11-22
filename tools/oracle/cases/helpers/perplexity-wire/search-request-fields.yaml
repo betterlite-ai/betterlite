@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-search-request-fields
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "search", "headers": [], "urls": [], "requests": [{"query": "rust", "optional_params": {}}, {"query": ["rust", "serde"], "optional_params": {"max_results": 3, "search_domain_filter": ["docs.rs"], "max_tokens_per_page": 512, "country": "DE", "search_recency_filter": "week"}}, {"query": "rust", "optional_params": {"max_results": null, "country": null, "max_tokens_per_page": 0, "search_domain_filter": []}}], "replies": []}

@@ -1,0 +1,13 @@
+id: B10040
+milestone: R2 bug fixes
+title: An unknown or unconfigured container provider answers 400, not 500
+status: todo
+depends_on: [B10039, B3366, B3367, B3368, B3369, B3370]
+file: tasks/B10040-container-unknown-provider.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

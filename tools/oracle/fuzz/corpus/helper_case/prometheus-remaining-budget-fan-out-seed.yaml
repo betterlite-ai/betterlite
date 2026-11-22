@@ -1,0 +1,21 @@
+kind: helper
+name: prometheus-remaining-budget-fan-out-seed
+call:
+  b9480:
+    function: fan_out
+    team: team-1
+    team_alias: Team One
+    key: sk-hashed-1
+    key_alias: Key One
+    user_id: user-1
+    org_id: org-1
+    end_user_id: end-user-1
+    response_cost: 0.5
+    metadata:
+      user_api_key_team_spend: 1.25
+      user_api_key_team_max_budget: 10.0
+      user_api_key_budget_reset_at: "2026-11-20T02:00:00Z"
+      user_api_key_org_spend: 2.5
+    noop_groups: [customer]
+env: {}
+compare: {ignore: []}

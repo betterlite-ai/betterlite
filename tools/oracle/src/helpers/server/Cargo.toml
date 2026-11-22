@@ -33,10 +33,12 @@ betterlite-ocr = { path = "../../../../../crates/betterlite-ocr" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-policy = { path = "../../../../../crates/betterlite-policy" }
+betterlite-prometheus = { path = "../../../../../crates/betterlite-prometheus" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../../../../crates/betterlite-redis" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
 betterlite-routes = { path = "../../../../../crates/betterlite-routes" }
+betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
 betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../../../../crates/betterlite-server", features = ["testing"] }

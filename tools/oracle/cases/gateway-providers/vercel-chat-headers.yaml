@@ -1,0 +1,14 @@
+kind: helper
+name: vercel-chat-headers
+call:
+  b8311:
+    op: chat
+    provider: vercel_ai_gateway
+    model: anthropic/claude-sonnet-4
+    messages: [{role: user, content: hi}]
+    api_base: "{{upstream}}/passed"
+    api_key: "sk-passed"
+    headers: {http-referer: "https://caller.example"}
+    env: {VERCEL_SITE_URL: "https://env.example", VERCEL_APP_NAME: "env-app"}
+env: {}
+compare: {ignore: []}

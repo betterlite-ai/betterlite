@@ -1,0 +1,9 @@
+task: B10037
+deviations:
+  - what: >-
+      A /v1/messages body with no model answers 400 with "model is a required field". LiteLLM answers 500 with the
+      KeyError text "'model'".
+    why: >-
+      A missing required field is the caller's error, and no working setup can rely on a 500 for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L638-L647
+kept_bugs: []

@@ -1,0 +1,47 @@
+kind: helper
+name: responses-file-search-no-tool-call-final
+call:
+  responses_file_search_loop:
+    input: question
+    model: gpt-test
+    tools:
+      - {type: file_search, vector_store_ids: ["vs_1"]}
+    kwargs: {}
+    provider:
+      - id: resp_direct
+        created_at: 1700000000
+        model: gpt-test
+        status: completed
+        output:
+          - type: message
+            id: msg_1
+            status: completed
+            role: assistant
+            content:
+              - {type: output_text, text: Direct answer, annotations: []}
+    searches: []
+calls:
+  - responses_file_search_loop:
+      input: question
+      model: gpt-test
+      tools:
+        - {type: file_search, vector_store_ids: ["vs_1"]}
+      kwargs: {include: ["file_search_call.results"]}
+      provider:
+        - id: resp_direct
+          created_at: 1700000003
+          model: gpt-test
+          status: completed
+          output:
+            - type: message
+              id: msg_4
+              status: completed
+              role: assistant
+              content:
+                - {type: output_text, text: Still direct, annotations: []}
+      searches: []
+env: {}
+compare:
+  ignore:
+    - pointer: /value/response/output/0/id
+      why: LiteLLM mints the file_search_call id from uuid.uuid4, so only the fields around it are comparable
