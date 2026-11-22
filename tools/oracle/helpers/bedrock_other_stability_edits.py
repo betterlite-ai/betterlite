@@ -259,8 +259,7 @@ def error_class_answer(config: EditConfig, call: ErrorClassCall) -> JsonValue:
     }
 
 
-def call_value(call: Call) -> JsonValue:
-    config: EditConfig = edit_config_for(MODEL)
+def call_value(call: Call, config: EditConfig) -> JsonValue:
     answer: JsonValue = None
     match call["function"]:
         case "model_selection":
@@ -289,4 +288,5 @@ def call_value(call: Call) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     calls = input_value["calls"]
-    return [call_value(call) for call in calls]
+    config = edit_config_for(MODEL)
+    return [call_value(call, config) for call in calls]
