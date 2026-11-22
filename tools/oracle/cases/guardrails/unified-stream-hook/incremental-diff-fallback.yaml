@@ -1,0 +1,50 @@
+name: unified-stream-hook-incremental-diff-fallback
+config: |
+  model_list:
+    - model_name: oracle-model
+      litellm_params:
+        model: openai/oracle-model
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+  guardrails:
+    - guardrail_name: stream-check
+      litellm_params:
+        guardrail: generic_guardrail_api
+        mode: post_call
+        default_on: true
+        api_base: "{{upstream}}"
+        api_key: guard-key
+        streaming_transform_mode: incremental_diff
+env: {}
+request:
+  method: POST
+  path: /v1/responses
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+  body:
+    model: oracle-model
+    input: Say hello.
+    stream: true
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+    events:
+      - '{"type":"response.created","sequence_number":0,"response":{"id":"resp_oracle","object":"response","created_at":1700000000,"status":"in_progress","model":"oracle-model","output":[]}}'
+      - '{"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_oracle","output_index":0,"content_index":0,"delta":"Hello!"}'
+      - '{"type":"response.completed","sequence_number":2,"response":{"id":"resp_oracle","object":"response","created_at":1700000000,"status":"completed","model":"oracle-model","output":[{"type":"message","id":"msg_oracle","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Hello!","annotations":[]}]}]}}'
+  - status: 200
+    headers:
+      content-type: application/json
+    body: {action: NONE}
+compare:
+  headers:
+    - content-type
+  headers_present:
+    - x-litellm-call-id
+  upstream_headers:
+    - content-type
+  ignore:
+    - {pointer: /0/response/created_at, why: LiteLLM may stamp the response creation time.}
+    - {pointer: /2/response/created_at, why: LiteLLM may stamp the response creation time.}
