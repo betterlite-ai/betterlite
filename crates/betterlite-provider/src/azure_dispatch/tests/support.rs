@@ -76,19 +76,18 @@ pub(crate) const fn credentials() -> Credentials {
     }
 }
 
-pub(crate) fn base_credentials() -> Credentials {
-    Credentials {
-        api_base: Some(String::from(AZURE_BASE)),
-        api_version: Some(String::from("2024-10-21")),
-        api_key: Some(key("call-key")),
-        ..credentials()
-    }
-}
-
 pub(crate) fn base_only() -> Credentials {
     Credentials {
         api_base: Some(String::from(AZURE_BASE)),
         ..credentials()
+    }
+}
+
+pub(crate) fn base_credentials() -> Credentials {
+    Credentials {
+        api_version: Some(String::from("2024-10-21")),
+        api_key: Some(key("call-key")),
+        ..base_only()
     }
 }
 
