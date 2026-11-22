@@ -9,7 +9,6 @@ use betterlite_core::routes::CallType;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::body::ProxyErrorBody;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
-use betterlite_rate_limit::fail_closed::RateLimitUnverifiableError;
 use betterlite_rate_limit::limiter_assembly::selection::{LimiterChoice, select_call_type_limiter};
 use betterlite_rate_limit::pre_call_hook::{
     PreCallHookError, PreCallHookRejection, PreCallHookRequest, RateLimitPreCallHook,
@@ -132,7 +131,22 @@ fn hook_response(error: PreCallHookError) -> Response {
             rate_limited.clone().into_response()
         }
         Some(PreCallHookRejection::Unverifiable(unverifiable)) => {
-            unverifiable_response(unverifiable)
+            let status = match StatusCode::from_u16(unverifiable.status_code) {
+                Ok(status) => status,
+                Err(source) => {
+                    return internal_error_response(format!(
+                        "the fail-closed rate-limit rejection carries status {} that HTTP cannot carry: {source}",
+                        unverifiable.status_code
+                    ));
+                }
+            };
+            (
+                status,
+                Json(DetailBody {
+                    detail: &unverifiable.detail,
+                }),
+            )
+                .into_response()
         }
         None => internal_error_response(error.to_string()),
     }
@@ -152,20 +166,4 @@ fn internal_error_response(message: String) -> Response {
         error: exception.to_body(),
     };
     (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
-}
-
-fn unverifiable_response(error: &RateLimitUnverifiableError) -> Response {
-    match StatusCode::from_u16(error.status_code) {
-        Ok(status) => (
-            status,
-            Json(DetailBody {
-                detail: &error.detail,
-            }),
-        )
-            .into_response(),
-        Err(source) => internal_error_response(format!(
-            "the fail-closed rate-limit rejection carries status {} that HTTP cannot carry: {source}",
-            error.status_code
-        )),
-    }
 }
