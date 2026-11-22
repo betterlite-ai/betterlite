@@ -7,7 +7,7 @@ use crate::memory_records::store::{
 };
 
 #[tokio::test]
-async fn scoped_lookup_ands_the_key_with_visibility() {
+async fn scoped_lookup_keeps_key_inside_visibility() {
     let rows = FakeRows::new(Some(row("mem-1", "note", Some("alice"), None)));
     let customer = caller(Some("alice"), Some("team-a"), None);
     let found = find_memory_for_caller(&rows, "note", &customer)
