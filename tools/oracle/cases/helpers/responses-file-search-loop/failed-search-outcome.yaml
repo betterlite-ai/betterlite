@@ -38,5 +38,5 @@ call:
 env: {}
 compare:
   ignore:
-    - pointer: /response/output/0/id
-      reason: LiteLLM mints the file_search_call id from uuid.uuid4, so only the fields around it are comparable
+    - pointer: /value/response/output/0/id
+      why: LiteLLM mints the file_search_call id from uuid.uuid4, so only the fields around it are comparable

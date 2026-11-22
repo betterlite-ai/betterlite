@@ -2,8 +2,8 @@ import asyncio
 import logging
 from typing import Final, Literal, TypeAlias, TypedDict
 
-import litellm.responses.main as responses_main
 import litellm.vector_stores.main as vector_stores_main
+from litellm.responses import main as responses_main
 from litellm.responses.file_search import emulated_handler
 from litellm.types.llms.openai import ResponsesAPIResponse
 from openai.types.responses.tool_param import ToolParam
