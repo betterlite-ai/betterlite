@@ -22,7 +22,7 @@ pub(super) struct Credentials {
 
 pub(super) fn credentials(
     selection: &Selection<'_>,
-    input: CredentialInput<'_>,
+    input: &CredentialInput<'_>,
 ) -> Result<Credentials, PrepareError> {
     let base_argument = input
         .dynamic_api_base

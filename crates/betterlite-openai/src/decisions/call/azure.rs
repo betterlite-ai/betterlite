@@ -5,15 +5,15 @@ use crate::decisions::transformation::provider_config::DecisionsProviderConfig;
 pub const MISSING_API_BASE_MESSAGE: &str = "Missing AZURE_AI_API_BASE - set AZURE_AI_API_BASE or pass api_base, e.g. https://<resource>.services.ai.azure.com";
 
 // betterlite-foundry owns the real Azure AI config and depends on this crate, so the route builder arrives as a closure
+pub type CompleteUrlBuilder = Box<dyn Fn(&str, &str) -> String + Send + Sync>;
+
 pub struct AzureAiConfig {
-    pub complete_url: Box<dyn Fn(&str, &str) -> String + Send + Sync>,
+    pub complete_url: CompleteUrlBuilder,
 }
 
 impl fmt::Debug for AzureAiConfig {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("AzureAiConfig")
-            .finish_non_exhaustive()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AzureAiConfig").finish_non_exhaustive()
     }
 }
 

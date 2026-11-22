@@ -46,7 +46,7 @@ struct OpenAiEnvelope<'fields> {
 impl RequestFields {
     // Both TypeAdapters LiteLLM builds validate a dict whose required values may be absent, so the envelope is serialized first
     pub fn validate(
-        &self,
+        self,
         safety_identifier: Option<&str>,
     ) -> Result<RequestFormat, serde_json::Error> {
         match self {

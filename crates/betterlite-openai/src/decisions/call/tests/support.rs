@@ -16,7 +16,7 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::credentials::LiteLlmGlobals;
 use crate::decisions::call::azure::AzureAiConfig;
@@ -164,10 +164,7 @@ pub(super) fn secret(value: &str) -> SecretString {
 }
 
 pub(super) fn exposed(key: Option<&SecretString>) -> Option<&str> {
-    match key {
-        Some(secret) => Some(secret.expose_secret()),
-        None => None,
-    }
+    key.map(ExposeSecret::expose_secret)
 }
 
 pub(super) fn globals(api_base: &str, api_key: SecretString) -> LiteLlmGlobals {

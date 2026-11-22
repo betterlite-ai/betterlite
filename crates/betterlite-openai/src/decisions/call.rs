@@ -46,8 +46,8 @@ pub struct PrepareCall<'call, 'logging> {
 }
 
 impl fmt::Debug for PrepareCall<'_, '_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut debug = formatter.debug_struct("PrepareCall");
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug = f.debug_struct("PrepareCall");
         let api_key = self.api_key.as_ref().map(|_key| "<redacted>");
         debug.field("model", &self.model);
         debug.field("custom_llm_provider", &self.custom_llm_provider);
@@ -77,9 +77,8 @@ pub struct DecisionsCall<'logging> {
 }
 
 impl fmt::Debug for DecisionsCall<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("DecisionsCall")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DecisionsCall")
             .field("model", &self.model)
             .field("requested_model", &self.requested_model)
             .field("custom_llm_provider", &self.custom_llm_provider)
@@ -118,7 +117,7 @@ pub fn prepare_call<'logging>(
     let request = validate_fields(&selection, call.fields, call.safety_identifier)?;
     let resolved_credentials = credentials(
         &selection,
-        CredentialInput {
+        &CredentialInput {
             api_base: call.api_base,
             api_key: call.api_key,
             dynamic_api_base: resolved.api_base.as_deref(),

@@ -159,9 +159,7 @@ impl ProviderConfig {
             DecisionsProvider::AzureAi => Self::AzureAi(Box::new(azure_ai)),
             DecisionsProvider::Perplexity => Self::Perplexity(Box::new(PerplexityDecisionsConfig)),
             DecisionsProvider::Typesafe => Self::Typesafe(Box::new(TypeSafeDecisionsConfig)),
-            DecisionsProvider::StrandsDecider => {
-                Self::StrandsDecider(Box::new(StrandsDeciderDecisionsConfig::default()))
-            }
+            DecisionsProvider::StrandsDecider => Self::StrandsDecider(Box::default()),
             DecisionsProvider::Cloudflare => {
                 let account_id = environment.get("CLOUDFLARE_ACCOUNT_ID").cloned();
                 Self::Cloudflare(Box::new(CloudflareDecisionsConfig::new(account_id)))
@@ -172,7 +170,7 @@ impl ProviderConfig {
 }
 
 impl fmt::Debug for ProviderConfig {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
             Self::Openai(_config) => "Openai",
             Self::Openrouter(_config) => "Openrouter",
@@ -183,6 +181,6 @@ impl fmt::Debug for ProviderConfig {
             Self::Cloudflare(_config) => "Cloudflare",
             Self::HostedVllm(_config) => "HostedVllm",
         };
-        formatter.write_str(name)
+        f.write_str(name)
     }
 }

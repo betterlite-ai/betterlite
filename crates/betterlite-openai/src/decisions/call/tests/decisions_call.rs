@@ -41,6 +41,16 @@ fn prepare_call_success_builds_the_call() {
     assert!(call.timeout.is_none());
     assert!(call.logging_obj.is_none());
     assert!(matches!(&call.request, RequestFormat::OpenAi(_)));
+}
+
+#[test]
+fn prepare_call_success_transforms_the_wire_body() {
+    let fixture = Fixture::default();
+    let key = secret("sk-explicit");
+    let mut builder =
+        CallBuilder::new("openai/gpt-4o-mini", openai_predicate_fields("Is it true?"));
+    builder.api_key = Some(&key);
+    let call = fixture.prepare(builder, None).unwrap();
     let wire = openai_wire(&call.body);
     assert_eq!(wire.model, "gpt-4o-mini");
     match &wire.input {
@@ -310,13 +320,12 @@ fn validation_requires_a_model_name() {
         error.to_string(),
         "A model name is required for the Decisions API"
     );
-    match error.class() {
-        ErrorClass::BadRequest(details) => {
-            assert_eq!(details.provider.as_deref(), Some("openai"));
-            assert_eq!(details.model.as_deref(), Some(""));
-        }
-        other => panic!("expected a bad request, got {other:?}"),
-    }
+    let class = error.class();
+    let ErrorClass::BadRequest(details) = &class else {
+        panic!("expected a bad request, got {class:?}");
+    };
+    assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(details.model.as_deref(), Some(""));
 }
 
 #[test]
@@ -422,12 +431,11 @@ fn validation_missing_api_base_uses_the_provider_message(
     let error = fixture.prepare(builder, None).unwrap_err();
     assert!(matches!(&error, PrepareError::MissingApiBase { .. }));
     assert_eq!(error.to_string(), expected);
-    match error.class() {
-        ErrorClass::BadRequest(details) => {
-            assert_eq!(details.model.as_deref(), Some(model));
-        }
-        other => panic!("expected a bad request, got {other:?}"),
-    }
+    let class = error.class();
+    let ErrorClass::BadRequest(details) = &class else {
+        panic!("expected a bad request, got {class:?}");
+    };
+    assert_eq!(details.model.as_deref(), Some(model));
 }
 
 #[test]
@@ -440,14 +448,13 @@ fn validation_missing_api_key_is_authentication() {
         error.to_string(),
         "Missing API key for Decisions provider 'typesafe'"
     );
-    match error.class() {
-        ErrorClass::Authentication(details) => {
-            assert_eq!(details.status.0, 401);
-            assert_eq!(details.provider.as_deref(), Some("typesafe"));
-            assert_eq!(details.model.as_deref(), Some("typesafe/gpt-4o"));
-        }
-        other => panic!("expected authentication, got {other:?}"),
-    }
+    let class = error.class();
+    let ErrorClass::Authentication(details) = &class else {
+        panic!("expected authentication, got {class:?}");
+    };
+    assert_eq!(details.status.0, 401);
+    assert_eq!(details.provider.as_deref(), Some("typesafe"));
+    assert_eq!(details.model.as_deref(), Some("typesafe/gpt-4o"));
 }
 
 #[test]
@@ -474,12 +481,11 @@ fn errors_image_input_is_refused_by_a_systemone_provider() {
         error.to_string(),
         "Decisions provider 'perplexity' cannot serve this request: input_image content parts are not supported because System One providers accept text input only"
     );
-    match error.class() {
-        ErrorClass::BadRequest(details) => {
-            assert_eq!(details.provider.as_deref(), Some("perplexity"));
-        }
-        other => panic!("expected a bad request, got {other:?}"),
-    }
+    let class = error.class();
+    let ErrorClass::BadRequest(details) = &class else {
+        panic!("expected a bad request, got {class:?}");
+    };
+    assert_eq!(details.provider.as_deref(), Some("perplexity"));
 }
 
 #[test]
@@ -524,13 +530,12 @@ fn safety_identifier_rejected_when_the_provider_does_not_support_it() {
         error.to_string(),
         "typesafe does not support parameters: ['safety_identifier'], for model=typesafe/gpt-4o. To drop these, set `litellm.drop_params=True` or for proxy:\n\n`litellm_settings:\n drop_params: true`\n"
     );
-    match error.class() {
-        ErrorClass::UnsupportedParams(context) => {
-            assert_eq!(context.provider.as_deref(), Some("typesafe"));
-            assert_eq!(context.model.as_deref(), Some("typesafe/gpt-4o"));
-        }
-        other => panic!("expected unsupported params, got {other:?}"),
-    }
+    let class = error.class();
+    let ErrorClass::UnsupportedParams(context) = &class else {
+        panic!("expected unsupported params, got {class:?}");
+    };
+    assert_eq!(context.provider.as_deref(), Some("typesafe"));
+    assert_eq!(context.model.as_deref(), Some("typesafe/gpt-4o"));
 }
 
 #[rstest]
@@ -660,13 +665,12 @@ fn reject_format_rejects_the_other_formats_field(
         error.to_string(),
         format!("Requests with '{field}' go through litellm.{other_function}")
     );
-    match error.class() {
-        ErrorClass::BadRequest(details) => {
-            assert_eq!(details.provider.as_deref(), Some(""));
-            assert_eq!(details.model.as_deref(), Some("gpt-4o-mini"));
-        }
-        other => panic!("expected a bad request, got {other:?}"),
-    }
+    let class = error.class();
+    let ErrorClass::BadRequest(details) = &class else {
+        panic!("expected a bad request, got {class:?}");
+    };
+    assert_eq!(details.provider.as_deref(), Some(""));
+    assert_eq!(details.model.as_deref(), Some("gpt-4o-mini"));
 }
 
 #[test]
