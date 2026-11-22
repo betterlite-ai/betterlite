@@ -2,7 +2,6 @@ pub mod authn_request;
 pub(crate) mod driver;
 pub(crate) mod runner;
 
-#[cfg(test)]
 mod tests;
 
 use std::io;
