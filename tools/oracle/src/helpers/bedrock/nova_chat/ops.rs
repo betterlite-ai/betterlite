@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use betterlite_bedrock::converse_request::{CommonRequest, ConverseRequestBody};
+use betterlite_bedrock::image_call::plan::LogContext;
 use betterlite_bedrock::nova_chat::direct::{
     NovaChatArgs, NovaChatConfig, NovaEndpointRequest, SUPPORTED_OPENAI_PARAMS, resolve_endpoint,
     transform_response,
@@ -143,7 +144,7 @@ fn endpoint(case: &EndpointInput) -> HelperResult {
         litellm_api_key: litellm_key.as_ref(),
     };
     let resolved =
-        resolve_endpoint(request, &case.environment, &secrets()).map_err(helper_error)?;
+        resolve_endpoint(&request, &case.environment, &secrets()).map_err(helper_error)?;
     Ok(json!({
         "api_base": resolved.api_base,
         "api_key": resolved.api_key.map(|key| key.expose_secret().to_owned()),
@@ -225,8 +226,10 @@ fn response_model(case: &ResponseModelInput) -> HelperResult {
         &case.model,
         case.body.as_bytes(),
         &options,
-        &mut state,
-        &env,
+        LogContext {
+            state: &mut state,
+            env: &env,
+        },
         input,
     )
     .map_err(helper_error)?;

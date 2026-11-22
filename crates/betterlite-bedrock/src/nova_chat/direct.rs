@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::base_helpers::provider_config;
 use betterlite_openai::compatible_wire::{self, CompatibleReply, LogInput, ReplyOptions};
@@ -12,6 +10,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
 use super::error::NovaChatError;
+use crate::image_call::plan::LogContext;
 
 pub const CUSTOM_LLM_PROVIDER: ProviderId = ProviderId::AmazonNova;
 pub const DEFAULT_API_BASE: &str = "https://api.nova.amazon.com/v1";
@@ -78,25 +77,22 @@ pub struct NovaEndpoint {
 }
 
 pub fn resolve_endpoint(
-    request: NovaEndpointRequest<'_>,
+    request: &NovaEndpointRequest<'_>,
     environment: &BTreeMap<String, String>,
     secrets: &SecretLookup,
 ) -> Result<NovaEndpoint, NovaChatError> {
     let api_base = match non_empty_text(request.api_base) {
         Some(base) => base,
-        None => match environment_text(secrets, environment, API_BASE_VARIABLE)? {
-            Some(configured) => configured,
-            None => DEFAULT_API_BASE.to_owned(),
-        },
+        None => environment_text(secrets, environment, API_BASE_VARIABLE)?
+            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
     };
     // The `or` chain reads the environment only when an explicit and a global key are both absent.
     let mut api_key =
         non_empty_secret(request.api_key).or_else(|| non_empty_secret(request.global_api_key));
     if api_key.is_none() {
-        api_key = match environment_text(secrets, environment, API_KEY_VARIABLE)? {
-            Some(configured) => Some(SecretString::from(configured)),
-            None => non_empty_secret(request.litellm_api_key),
-        };
+        api_key = environment_text(secrets, environment, API_KEY_VARIABLE)?
+            .map(SecretString::from)
+            .or_else(|| non_empty_secret(request.litellm_api_key));
     }
     Ok(NovaEndpoint { api_base, api_key })
 }
@@ -134,11 +130,10 @@ pub fn transform_response(
     model: &str,
     bytes: &[u8],
     options: &ReplyOptions<'_>,
-    state: &mut LoggingState,
-    env: &PrePostEnv<'_>,
+    log: LogContext<'_, '_>,
     input: LogInput,
 ) -> Result<CompatibleReply, NovaChatError> {
-    let mut reply = compatible_wire::transform_response(bytes, options, state, env, input)?;
+    let mut reply = compatible_wire::transform_response(bytes, options, log.state, log.env, input)?;
     reply.response.model = format!("{RESPONSE_MODEL_PREFIX}{model}");
     Ok(reply)
 }

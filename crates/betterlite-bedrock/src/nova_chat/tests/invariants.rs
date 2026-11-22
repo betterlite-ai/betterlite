@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::support::{json, secret, secret_lookup};
 use crate::nova_chat::direct::{self, NovaEndpointRequest};
@@ -9,84 +9,36 @@ use crate::nova_chat::invoke::{self, InlineRequest};
 
 const SECRET_TEXT: &str = "sk-nova-secret-value";
 
+fn resolved_key(
+    api_key: Option<&SecretString>,
+    environment: &BTreeMap<String, String>,
+) -> Option<String> {
+    let endpoint = direct::resolve_endpoint(
+        &NovaEndpointRequest {
+            api_base: None,
+            api_key,
+            global_api_key: None,
+            litellm_api_key: None,
+        },
+        environment,
+        &secret_lookup(),
+    )
+    .expect("the endpoint resolves");
+    endpoint.api_key.map(|key| key.expose_secret().to_owned())
+}
+
 // Every credential enters through the call, so one call's key never reaches another endpoint and an earlier key never stands in for a later keyless call.
 #[test]
 fn nova_chat_credential_identity_isolation() {
-    let secrets = secret_lookup();
-    let first_key = secret("first-key");
-    let second_key = secret("second-key");
     let empty = BTreeMap::new();
-    let first = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: None,
-            api_key: Some(&first_key),
-            global_api_key: None,
-            litellm_api_key: None,
-        },
-        &empty,
-        &secrets,
-    )
-    .expect("the endpoint resolves");
-    assert_eq!(
-        first
-            .api_key
-            .as_ref()
-            .expect("the first key")
-            .expose_secret(),
-        "first-key"
-    );
-    let second = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: None,
-            api_key: Some(&second_key),
-            global_api_key: None,
-            litellm_api_key: None,
-        },
-        &empty,
-        &secrets,
-    )
-    .expect("the endpoint resolves");
-    assert_eq!(
-        second
-            .api_key
-            .as_ref()
-            .expect("the second key")
-            .expose_secret(),
-        "second-key"
-    );
+    let first = resolved_key(Some(&secret("first-key")), &empty);
+    assert_eq!(first.as_deref(), Some("first-key"));
+    let second = resolved_key(Some(&secret("second-key")), &empty);
+    assert_eq!(second.as_deref(), Some("second-key"));
     let environment =
         BTreeMap::from([(String::from("AMAZON_NOVA_API_KEY"), String::from("env-key"))]);
-    let with_environment = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: None,
-            api_key: None,
-            global_api_key: None,
-            litellm_api_key: None,
-        },
-        &environment,
-        &secrets,
-    )
-    .expect("the endpoint resolves");
-    assert_eq!(
-        with_environment
-            .api_key
-            .as_ref()
-            .expect("the environment key")
-            .expose_secret(),
-        "env-key"
-    );
-    let unkeyed = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: None,
-            api_key: None,
-            global_api_key: None,
-            litellm_api_key: None,
-        },
-        &empty,
-        &secrets,
-    )
-    .expect("the endpoint resolves");
-    assert!(unkeyed.api_key.is_none());
+    assert_eq!(resolved_key(None, &environment).as_deref(), Some("env-key"));
+    assert_eq!(resolved_key(None, &empty), None);
 }
 
 // A failure names the request member it refused, never the configured credential.
@@ -95,7 +47,7 @@ fn nova_chat_secret_safe_failure() {
     let secrets = secret_lookup();
     let key = secret(SECRET_TEXT);
     let endpoint = direct::resolve_endpoint(
-        NovaEndpointRequest {
+        &NovaEndpointRequest {
             api_base: None,
             api_key: Some(&key),
             global_api_key: None,

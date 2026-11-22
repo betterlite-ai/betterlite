@@ -115,6 +115,143 @@ const CHAT_BODY: &str = r#"{
     "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
 }"#;
 
+const INLINE_REFUSALS: [(&str, &str, &str); 4] = [
+    ("[]", r#"[{"content": []}]"#, "role"),
+    ("[]", r#"[{"role": "user", "content": "hi"}]"#, "content"),
+    (r#"["not a block"]"#, "[]", "system"),
+    ("[]", "[3]", "messages"),
+];
+
+const READABLE_ENVIRONMENT: &[(&str, &str)] = &[
+    ("AMAZON_NOVA_API_BASE", "https://env.example/v1"),
+    ("AMAZON_NOVA_API_KEY", "env-key"),
+];
+
+// A reference-looking value that would fail to resolve if the chain ever read it.
+const BROKEN_ENVIRONMENT: &[(&str, &str)] = &[
+    ("AMAZON_NOVA_API_BASE", "oidc/circleci/nova"),
+    ("AMAZON_NOVA_API_KEY", "oidc/circleci/nova"),
+];
+
+const BLANK_ENVIRONMENT: &[(&str, &str)] =
+    &[("AMAZON_NOVA_API_BASE", ""), ("AMAZON_NOVA_API_KEY", "")];
+
+const DEFAULT_BASE: &str = "https://api.nova.amazon.com/v1";
+const EXPLICIT_BASE: &str = "https://explicit.example/v1";
+
+#[derive(Debug)]
+struct EndpointCase {
+    api_base: Option<&'static str>,
+    api_key: Option<&'static str>,
+    global_api_key: Option<&'static str>,
+    litellm_api_key: Option<&'static str>,
+    environment: &'static [(&'static str, &'static str)],
+    expected_base: &'static str,
+    expected_key: Option<&'static str>,
+}
+
+const ENDPOINT_CASES: [EndpointCase; 11] = [
+    EndpointCase {
+        api_base: None,
+        api_key: None,
+        global_api_key: None,
+        litellm_api_key: None,
+        environment: &[],
+        expected_base: DEFAULT_BASE,
+        expected_key: None,
+    },
+    EndpointCase {
+        api_base: Some(EXPLICIT_BASE),
+        api_key: Some("explicit-key"),
+        global_api_key: Some("global-key"),
+        litellm_api_key: Some("litellm-key"),
+        environment: READABLE_ENVIRONMENT,
+        expected_base: EXPLICIT_BASE,
+        expected_key: Some("explicit-key"),
+    },
+    EndpointCase {
+        api_base: Some(""),
+        api_key: Some(""),
+        global_api_key: Some("global-key"),
+        litellm_api_key: Some("litellm-key"),
+        environment: READABLE_ENVIRONMENT,
+        expected_base: "https://env.example/v1",
+        expected_key: Some("global-key"),
+    },
+    EndpointCase {
+        api_base: None,
+        api_key: None,
+        global_api_key: None,
+        litellm_api_key: Some("litellm-key"),
+        environment: &[],
+        expected_base: DEFAULT_BASE,
+        expected_key: Some("litellm-key"),
+    },
+    EndpointCase {
+        api_base: None,
+        api_key: None,
+        global_api_key: Some(""),
+        litellm_api_key: Some("litellm-key"),
+        environment: &[],
+        expected_base: DEFAULT_BASE,
+        expected_key: Some("litellm-key"),
+    },
+    EndpointCase {
+        api_base: Some(EXPLICIT_BASE),
+        api_key: Some("explicit-key"),
+        global_api_key: None,
+        litellm_api_key: None,
+        environment: BROKEN_ENVIRONMENT,
+        expected_base: EXPLICIT_BASE,
+        expected_key: Some("explicit-key"),
+    },
+    EndpointCase {
+        api_base: Some(EXPLICIT_BASE),
+        api_key: None,
+        global_api_key: Some("global-key"),
+        litellm_api_key: None,
+        environment: BROKEN_ENVIRONMENT,
+        expected_base: EXPLICIT_BASE,
+        expected_key: Some("global-key"),
+    },
+    EndpointCase {
+        api_base: Some("https://explicit.example/v1/"),
+        api_key: None,
+        global_api_key: Some("oidc/circleci/nova"),
+        litellm_api_key: None,
+        environment: &[],
+        expected_base: "https://explicit.example/v1/",
+        expected_key: Some("oidc/circleci/nova"),
+    },
+    EndpointCase {
+        api_base: None,
+        api_key: None,
+        global_api_key: None,
+        litellm_api_key: None,
+        environment: BLANK_ENVIRONMENT,
+        expected_base: DEFAULT_BASE,
+        expected_key: None,
+    },
+    EndpointCase {
+        api_base: None,
+        api_key: None,
+        global_api_key: None,
+        litellm_api_key: Some("litellm-key"),
+        environment: READABLE_ENVIRONMENT,
+        expected_base: "https://env.example/v1",
+        expected_key: Some("env-key"),
+    },
+    EndpointCase {
+        api_base: None,
+        api_key: None,
+        global_api_key: None,
+        litellm_api_key: Some("litellm-key"),
+        environment: BLANK_ENVIRONMENT,
+        expected_base: DEFAULT_BASE,
+        expected_key: Some("litellm-key"),
+    },
+];
+
 #[derive(Clone, Copy, Debug)]
 enum Scenario {
     NovaInlineCachePoints,
@@ -150,8 +287,13 @@ fn objects(source: &str) -> Vec<Object> {
     serde_json::from_str(source).expect("the object fixtures parse")
 }
 
-// A standalone point moves behind the last text block, overwriting one already there, and a point with no text before it is dropped with the extra message field.
 fn nova_inline_cache_points() {
+    nova_inline_inlines();
+    nova_inline_refusals();
+}
+
+// A standalone point moves behind the last text block, overwriting one already there, and a point with no text before it is dropped with the extra message field.
+fn nova_inline_inlines() {
     let Json::List(system) = json(INLINE_SYSTEM) else {
         panic!("the system fixture is a list");
     };
@@ -165,55 +307,39 @@ fn nova_inline_cache_points() {
     .expect("the blocks inline");
     assert_eq!(body.system, objects(INLINE_SYSTEM_EXPECTED));
     assert_eq!(body.messages, objects(INLINE_MESSAGES_EXPECTED));
-    let missing_role = [json(r#"{"content": []}"#)];
-    let role_error = invoke::inline_cache_points(&InlineRequest {
-        system: &[],
-        messages: &missing_role,
-    })
-    .expect_err("a message without a role is refused");
-    assert!(matches!(
-        &role_error,
-        NovaChatError::BodyField { field: "role", .. }
-    ));
-    let text_content = [json(r#"{"role": "user", "content": "hi"}"#)];
-    let content_error = invoke::inline_cache_points(&InlineRequest {
-        system: &[],
-        messages: &text_content,
-    })
-    .expect_err("a message content that is not a list is refused");
-    assert!(matches!(
-        &content_error,
-        NovaChatError::BodyField {
-            field: "content",
-            ..
-        }
-    ));
-    let text_system = [json(r#""not a block""#)];
-    let system_error = invoke::inline_cache_points(&InlineRequest {
-        system: &text_system,
-        messages: &[],
-    })
-    .expect_err("a system block that is not an object is refused");
-    assert!(matches!(
-        &system_error,
-        NovaChatError::BodyField {
-            field: "system",
-            ..
-        }
-    ));
-    let not_a_message = [json("3")];
-    let message_error = invoke::inline_cache_points(&InlineRequest {
-        system: &[],
-        messages: &not_a_message,
-    })
-    .expect_err("a message that is not an object is refused");
-    assert!(matches!(
-        &message_error,
-        NovaChatError::BodyField {
-            field: "messages",
-            ..
-        }
-    ));
+}
+
+// A message without a role, a content that is not a list, and a system block or message that is not an object are each refused by member name.
+fn nova_inline_refusals() {
+    for (system, messages, member) in INLINE_REFUSALS {
+        let error = invoke::inline_cache_points(&InlineRequest {
+            system: &serde_json::from_str::<Vec<Json>>(system).expect("the system parses"),
+            messages: &serde_json::from_str::<Vec<Json>>(messages).expect("the messages parse"),
+        })
+        .expect_err("the body is refused");
+        assert!(
+            matches!(&error, NovaChatError::BodyField { field, .. } if *field == member),
+            "{member}: {error}"
+        );
+    }
+}
+
+fn converse_body() -> ConverseRequestBody {
+    ConverseRequestBody {
+        messages: vec![json(r#"{"role": "user", "content": [{"text": "hi"}]}"#)],
+        common: CommonRequest {
+            inference_config: object(r#"{"maxTokens": 8}"#),
+            additional_fields: None,
+            response_paths: None,
+            system: Vec::new(),
+            guardrail_config: Some(json(r#"{"guardrailIdentifier": "g"}"#)),
+            performance_config: None,
+            service_tier: None,
+            tool_config: Some(json(r#"{"tools": []}"#)),
+            request_metadata: None,
+            output_config: None,
+        },
+    }
 }
 
 // /bedrock/invoke/ takes the five BedrockInvokeNovaRequest members, keeps the inference fields and drops an empty system.
@@ -237,22 +363,7 @@ fn nova_filter_allowed_fields() {
     for allowed in ["inferenceConfig", "messages", "system"] {
         assert!(fields.contains_key(allowed));
     }
-    let converse = ConverseRequestBody {
-        messages: vec![json(r#"{"role": "user", "content": [{"text": "hi"}]}"#)],
-        common: CommonRequest {
-            inference_config: object(r#"{"maxTokens": 8}"#),
-            additional_fields: None,
-            response_paths: None,
-            system: Vec::new(),
-            guardrail_config: Some(json(r#"{"guardrailIdentifier": "g"}"#)),
-            performance_config: None,
-            service_tier: None,
-            tool_config: Some(json(r#"{"tools": []}"#)),
-            request_metadata: None,
-            output_config: None,
-        },
-    };
-    let converted = invoke::transform_converse(&converse).expect("the body converts");
+    let converted = invoke::transform_converse(&converse_body()).expect("the body converts");
     assert_eq!(
         value(&converted),
         json(
@@ -289,178 +400,34 @@ fn nova_tool_config_injection() {
 // api_base or AMAZON_NOVA_API_BASE or the default; api_key or the global key or AMAZON_NOVA_API_KEY or litellm.api_key, each empty value falling through.
 fn direct_nova_endpoint() {
     let secrets = secret_lookup();
-    let empty = BTreeMap::new();
-    let defaulted = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: None,
-            api_key: None,
-            global_api_key: None,
-            litellm_api_key: None,
-        },
-        &empty,
-        &secrets,
-    )
-    .expect("the endpoint resolves");
-    assert_eq!(defaulted.api_base, "https://api.nova.amazon.com/v1");
-    assert!(defaulted.api_key.is_none());
-    let environment = BTreeMap::from([
-        (
-            String::from("AMAZON_NOVA_API_BASE"),
-            String::from("https://env.example/v1"),
-        ),
-        (String::from("AMAZON_NOVA_API_KEY"), String::from("env-key")),
-    ]);
-    let explicit_key = secret("explicit-key");
-    let global_key = secret("global-key");
-    let litellm_key = secret("litellm-key");
-    let explicit = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: Some("https://explicit.example/v1"),
-            api_key: Some(&explicit_key),
-            global_api_key: Some(&global_key),
-            litellm_api_key: Some(&litellm_key),
-        },
-        &environment,
-        &secrets,
-    )
-    .expect("the endpoint resolves");
-    assert_eq!(explicit.api_base, "https://explicit.example/v1");
-    let explicit_choice = explicit.api_key.as_ref().expect("the explicit key wins");
-    assert_eq!(explicit_choice.expose_secret(), "explicit-key");
-    let blank = secret("");
-    let from_environment = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: Some(""),
-            api_key: Some(&blank),
-            global_api_key: Some(&global_key),
-            litellm_api_key: Some(&litellm_key),
-        },
-        &environment,
-        &secrets,
-    )
-    .expect("the endpoint resolves");
-    assert_eq!(from_environment.api_base, "https://env.example/v1");
-    let global_choice = from_environment
-        .api_key
-        .as_ref()
-        .expect("the global key beats the environment one");
-    assert_eq!(global_choice.expose_secret(), "global-key");
-    let from_litellm = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: None,
-            api_key: None,
-            global_api_key: None,
-            litellm_api_key: Some(&litellm_key),
-        },
-        &empty,
-        &secrets,
-    )
-    .expect("the endpoint resolves");
-    let litellm_choice = from_litellm
-        .api_key
-        .as_ref()
-        .expect("the litellm key is last");
-    assert_eq!(litellm_choice.expose_secret(), "litellm-key");
-    let empty_global = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: None,
-            api_key: None,
-            global_api_key: Some(&blank),
-            litellm_api_key: Some(&litellm_key),
-        },
-        &empty,
-        &secrets,
-    )
-    .expect("the endpoint resolves");
-    let empty_global_choice = empty_global
-        .api_key
-        .as_ref()
-        .expect("an empty global key falls through");
-    assert_eq!(empty_global_choice.expose_secret(), "litellm-key");
-    assert_eq!(direct::CUSTOM_LLM_PROVIDER.to_string(), "amazon_nova");
-    // The chain is Python's `or`: a value never reached is never read, so a broken reference does not fail a call that supplies its own.
-    let broken = BTreeMap::from([
-        (
-            String::from("AMAZON_NOVA_API_BASE"),
-            String::from("oidc/circleci/nova"),
-        ),
-        (
-            String::from("AMAZON_NOVA_API_KEY"),
-            String::from("oidc/circleci/nova"),
-        ),
-    ]);
-    let short_circuited = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: Some("https://explicit.example/v1"),
-            api_key: Some(&explicit_key),
-            global_api_key: None,
-            litellm_api_key: None,
-        },
-        &broken,
-        &secrets,
-    )
-    .expect("an explicit pair never reads the environment");
-    assert_eq!(short_circuited.api_base, "https://explicit.example/v1");
-    let short_circuit_key = short_circuited.api_key.as_ref().expect("the explicit key");
-    assert_eq!(short_circuit_key.expose_secret(), "explicit-key");
-    let global_short_circuit = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: Some("https://explicit.example/v1"),
-            api_key: None,
-            global_api_key: Some(&global_key),
-            litellm_api_key: None,
-        },
-        &broken,
-        &secrets,
-    )
-    .expect("a global key never reads the environment");
-    let global_short_choice = global_short_circuit
-        .api_key
-        .as_ref()
-        .expect("the global key");
-    assert_eq!(global_short_choice.expose_secret(), "global-key");
-    // The global key is a value: a reference-looking one is used as written, and the base keeps its trailing slash.
-    let reference = secret("oidc/circleci/nova");
-    let used_as_value = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: Some("https://explicit.example/v1/"),
-            api_key: None,
-            global_api_key: Some(&reference),
-            litellm_api_key: None,
-        },
-        &empty,
-        &secrets,
-    )
-    .expect("the global key is a value");
-    assert_eq!(used_as_value.api_base, "https://explicit.example/v1/");
-    assert_eq!(
-        used_as_value
+    for case in &ENDPOINT_CASES {
+        let environment: BTreeMap<String, String> = case
+            .environment
+            .iter()
+            .map(|&(name, value)| (String::from(name), String::from(value)))
+            .collect();
+        let api_key = case.api_key.map(secret);
+        let global_api_key = case.global_api_key.map(secret);
+        let litellm_api_key = case.litellm_api_key.map(secret);
+        let endpoint = direct::resolve_endpoint(
+            &NovaEndpointRequest {
+                api_base: case.api_base,
+                api_key: api_key.as_ref(),
+                global_api_key: global_api_key.as_ref(),
+                litellm_api_key: litellm_api_key.as_ref(),
+            },
+            &environment,
+            &secrets,
+        )
+        .expect("the endpoint resolves");
+        assert_eq!(endpoint.api_base, case.expected_base, "{case:?}");
+        let key = endpoint
             .api_key
             .as_ref()
-            .expect("the global key")
-            .expose_secret(),
-        "oidc/circleci/nova"
-    );
-    let blank_environment = BTreeMap::from([
-        (String::from("AMAZON_NOVA_API_BASE"), String::new()),
-        (String::from("AMAZON_NOVA_API_KEY"), String::new()),
-    ]);
-    let from_blank_environment = direct::resolve_endpoint(
-        NovaEndpointRequest {
-            api_base: None,
-            api_key: None,
-            global_api_key: None,
-            litellm_api_key: None,
-        },
-        &blank_environment,
-        &secrets,
-    )
-    .expect("an empty variable is unset");
-    assert_eq!(
-        from_blank_environment.api_base,
-        "https://api.nova.amazon.com/v1"
-    );
-    assert!(from_blank_environment.api_key.is_none());
+            .map(|key| key.expose_secret().to_owned());
+        assert_eq!(key.as_deref(), case.expected_key, "{case:?}");
+    }
+    assert_eq!(direct::CUSTOM_LLM_PROVIDER.to_string(), "amazon_nova");
 }
 
 fn nova_converse_delegation() {
@@ -522,17 +489,12 @@ fn converse_params_mapping() {
 
 // The reply conversion is the Converse one: a Converse body becomes the same ModelResponse.
 fn converse_reply_delegation() {
-    let logs = Logs::new();
-    let Logs { mut state, parts } = logs;
+    let Logs { mut state, parts } = Logs::new();
     let env = parts.env();
     let messages = metadata_json(r#"[{"role": "user", "content": "hi"}]"#);
     let data: RawBody = serde_json::from_str(r#"{"model": "amazon.nova-pro-v1:0"}"#)
         .expect("the request data parses");
     let optional = OptionalParams::default();
-    let mappings: IndexMap<String, String> = IndexMap::new();
-    let headers: Vec<(String, String)> = Vec::new();
-    let ids = FixedIds;
-    let counter = NoReasoning;
     let reply = invoke::transform_response(
         TransformCall {
             request: ReplyRequest {
@@ -541,7 +503,7 @@ fn converse_reply_delegation() {
                 data,
                 json_mode: None,
                 optional: &optional,
-                tool_name_mappings: &mappings,
+                tool_name_mappings: &IndexMap::new(),
             },
             log: LogContext {
                 state: &mut state,
@@ -550,12 +512,12 @@ fn converse_reply_delegation() {
             now: SystemTime::UNIX_EPOCH,
         },
         &RawReply {
-            headers: &headers,
+            headers: &[],
             body: CONVERSE_REPLY.as_bytes(),
         },
         supplied("chatcmpl-supplied"),
-        &ids,
-        &counter,
+        &FixedIds,
+        &NoReasoning,
     )
     .expect("the reply converts");
     assert_eq!(reply.choices[0].message.content.as_deref(), Some("done"));
@@ -565,8 +527,13 @@ fn converse_reply_delegation() {
     );
 }
 
-// get_config reads the class dict: the six constructor fields, with metadata only when it was set.
 fn direct_nova_defaults() {
+    direct_nova_config_fields();
+    direct_nova_supported_params();
+}
+
+// get_config reads the class dict: the six constructor fields, with metadata only when it was set.
+fn direct_nova_config_fields() {
     let unset = NovaChatConfig::default();
     assert!(unset.config().expect("the config renders").is_empty());
     let configured = NovaChatConfig {
@@ -600,6 +567,10 @@ fn direct_nova_defaults() {
     };
     let configured_metadata = value(&with_metadata.config().expect("the config renders"));
     assert_eq!(field(&configured_metadata, "metadata"), Some(&json("7")));
+}
+
+// get_supported_openai_params returns one fixed list whatever the model is.
+fn direct_nova_supported_params() {
     assert_eq!(
         direct::SUPPORTED_OPENAI_PARAMS,
         [
@@ -620,8 +591,7 @@ fn direct_nova_defaults() {
 
 // The reply names amazon-nova/<model> so the cost lookup finds the direct provider's price.
 fn direct_nova_response_model() {
-    let logs = Logs::new();
-    let Logs { mut state, parts } = logs;
+    let Logs { mut state, parts } = Logs::new();
     let env = parts.env();
     let options = ReplyOptions {
         json_mode: false,
@@ -634,8 +604,10 @@ fn direct_nova_response_model() {
         NOVA_PRO,
         CHAT_BODY.as_bytes(),
         &options,
-        &mut state,
-        &env,
+        LogContext {
+            state: &mut state,
+            env: &env,
+        },
         LogInput {
             messages: metadata_json(r#"[{"role": "user", "content": "hi"}]"#),
             data: RawBody::default(),

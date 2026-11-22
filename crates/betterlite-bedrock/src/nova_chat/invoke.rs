@@ -99,7 +99,6 @@ where
 }
 
 // _inline_cache_points, _remove_empty_system_messages and _filter_allowed_fields in one pass.
-#[must_use]
 pub fn transform_converse(body: &ConverseRequestBody) -> Result<InvokeNovaBody, NovaChatError> {
     let inline = inline_cache_points(&InlineRequest {
         system: &body.common.system,
@@ -147,7 +146,7 @@ fn inline_message(message: &Json) -> Result<Object, NovaChatError> {
         });
     };
     let blocks = inline_block_cache_points(&block_objects(content, CONTENT_FIELD)?);
-    let fields: Object = [
+    let record: Object = [
         (ROLE_FIELD.to_owned(), role.clone()),
         (
             CONTENT_FIELD.to_owned(),
@@ -156,7 +155,7 @@ fn inline_message(message: &Json) -> Result<Object, NovaChatError> {
     ]
     .into_iter()
     .collect();
-    Ok(fields)
+    Ok(record)
 }
 
 // A standalone point moves back to the last text block, across any image, toolUse or toolResult.
