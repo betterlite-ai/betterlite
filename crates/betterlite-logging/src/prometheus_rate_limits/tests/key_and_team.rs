@@ -3,7 +3,8 @@
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    FakeGauges, Fixture, RATE_LIMIT_LABELS, number, payload, removal_event, set_event, with_headers,
+    FakeGauges, Fixture, RATE_LIMIT_LABELS, Recorded, number, payload, removal_event, set_event,
+    with_headers,
 };
 use crate::prometheus_rate_limits::error::PrometheusRateLimitError;
 use crate::prometheus_rate_limits::key_and_team::{
@@ -110,47 +111,49 @@ fn key_and_team_sets_all_eight_series() {
     );
 }
 
+// the emitter's order: api_key then team, requests then tokens, allowed then used
+fn every_series_removed() -> Vec<Recorded> {
+    vec![
+        removal_event(
+            RateLimitMetric::ApiKeyRateLimitAllowed,
+            &[Some("key-1"), Some("alias-1"), Some("requests")],
+        ),
+        removal_event(
+            RateLimitMetric::ApiKeyRateLimitUsed,
+            &[Some("key-1"), Some("alias-1"), Some("requests")],
+        ),
+        removal_event(
+            RateLimitMetric::ApiKeyRateLimitAllowed,
+            &[Some("key-1"), Some("alias-1"), Some("tokens")],
+        ),
+        removal_event(
+            RateLimitMetric::ApiKeyRateLimitUsed,
+            &[Some("key-1"), Some("alias-1"), Some("tokens")],
+        ),
+        removal_event(
+            RateLimitMetric::TeamRateLimitAllowed,
+            &[Some("team-1"), Some("team-alias"), Some("requests")],
+        ),
+        removal_event(
+            RateLimitMetric::TeamRateLimitUsed,
+            &[Some("team-1"), Some("team-alias"), Some("requests")],
+        ),
+        removal_event(
+            RateLimitMetric::TeamRateLimitAllowed,
+            &[Some("team-1"), Some("team-alias"), Some("tokens")],
+        ),
+        removal_event(
+            RateLimitMetric::TeamRateLimitUsed,
+            &[Some("team-1"), Some("team-alias"), Some("tokens")],
+        ),
+    ]
+}
+
 #[test]
 fn key_and_team_removes_every_series_without_limits() {
     let gauges = FakeGauges::with_labels(&RATE_LIMIT_LABELS);
     set_key_and_team_rate_limit_metrics(&gauges, &payload(), fixture().inputs()).unwrap();
-    assert_eq!(
-        gauges.events(),
-        vec![
-            removal_event(
-                RateLimitMetric::ApiKeyRateLimitAllowed,
-                &[Some("key-1"), Some("alias-1"), Some("requests")]
-            ),
-            removal_event(
-                RateLimitMetric::ApiKeyRateLimitUsed,
-                &[Some("key-1"), Some("alias-1"), Some("requests")]
-            ),
-            removal_event(
-                RateLimitMetric::ApiKeyRateLimitAllowed,
-                &[Some("key-1"), Some("alias-1"), Some("tokens")]
-            ),
-            removal_event(
-                RateLimitMetric::ApiKeyRateLimitUsed,
-                &[Some("key-1"), Some("alias-1"), Some("tokens")]
-            ),
-            removal_event(
-                RateLimitMetric::TeamRateLimitAllowed,
-                &[Some("team-1"), Some("team-alias"), Some("requests")]
-            ),
-            removal_event(
-                RateLimitMetric::TeamRateLimitUsed,
-                &[Some("team-1"), Some("team-alias"), Some("requests")]
-            ),
-            removal_event(
-                RateLimitMetric::TeamRateLimitAllowed,
-                &[Some("team-1"), Some("team-alias"), Some("tokens")]
-            ),
-            removal_event(
-                RateLimitMetric::TeamRateLimitUsed,
-                &[Some("team-1"), Some("team-alias"), Some("tokens")]
-            ),
-        ]
-    );
+    assert_eq!(gauges.events(), every_series_removed());
 }
 
 #[test]
