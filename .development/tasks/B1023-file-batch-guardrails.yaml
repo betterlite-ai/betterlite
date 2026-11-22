@@ -37,6 +37,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/file_batch_guardrails.rs
   - crates/betterlite-core/src/api/file_batch_guardrails/**
+  - crates/betterlite-models/src/provider_defaults_a/url.rs
+  - crates/betterlite-models/src/provider_defaults_a/url/tests.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/file_batch_guardrails.rs
   - tools/oracle/src/helpers/core_ops/file_batch_guardrails/**
