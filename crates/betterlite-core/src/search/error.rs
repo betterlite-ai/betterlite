@@ -2,8 +2,8 @@ use std::error::Error;
 use std::time::TryFromFloatSecsError;
 
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
+use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::ResponseDetails;
-use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
@@ -64,18 +64,12 @@ where
         error,
         SearchCallError::Query(_) | SearchCallError::Unsupported { .. }
     ) {
-        let context = ErrorContext {
-            message: error.to_string(),
-            model: Some(model),
-            provider: Some(provider.to_owned()),
-            max_retries: None,
-            num_retries: None,
-            body_type: None,
-            body_param: None,
-            body_code: None,
-        };
         return SearchFailure {
-            class: ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None))),
+            class: ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
+                error.to_string(),
+                Some(model),
+                provider,
+            ))),
             error,
             response_headers: Vec::new(),
         };

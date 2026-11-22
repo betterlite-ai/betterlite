@@ -1,0 +1,56 @@
+kind: sdk_http
+name: image-edit-call-custom-and-async
+env: {}
+call:
+  image_edit_call:
+    runs:
+      - model: my-provider/my-model
+        image: [abc, def]
+        prompt: custom
+        client: async
+        kwargs: {settings: {strength: 1}, api_key: sk-test, async_call: 1}
+        custom_providers:
+          - {name: my-provider, handlers: [first, second]}
+      - asynchronous: true
+        model: my-provider/my-model
+        image: abc
+        prompt: custom
+        client: async
+        kwargs: {settings: {strength: 1}}
+        custom_providers:
+          - {name: my-provider, handlers: [first, second]}
+      - asynchronous: true
+        model: ghost-provider/ghost-model
+        prompt: ghost
+        custom_providers:
+          - {name: ghost-provider}
+      - asynchronous: true
+        model: openai/gpt-image-1
+        image: abc
+        prompt: async
+        kwargs: {api_key: sk-test}
+      - asynchronous: true
+        model: openai/gpt-image-1
+        image: abc
+        prompt: rejected
+        kwargs: {api_key: sk-test}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {created: 3, data: [{b64_json: YQ==}]}
+  - status: 400
+    headers: {content-type: application/json}
+    body: {error: {message: bad edit, type: invalid_request_error, param: null, code: null}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - {pointer: /upstream/0/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - {pointer: /upstream/1/body, why: a multipart boundary is random on each side so the captured body bytes never match}
+    - pointer: /image_edit_call/value/runs/2/failure/class
+      why: LiteLLM raises its LiteLLMUnknownProvider subclass of BadRequestError, and the error classes betterlite maps into stop at BadRequestError while status, type, param and code still compare
+    - pointer: /image_edit_call/value/runs/2/failure/message
+      why: "LiteLLM's exception constructors prefix the message with \"litellm.BadRequestError: \", and betterlite carries the mapper's text without that prefix"
+    - pointer: /image_edit_call/value/runs/4/failure/message
+      why: "LiteLLM's exception constructors prefix the message with \"litellm.BadRequestError: \", and betterlite carries the mapper's text without that prefix"

@@ -1,0 +1,31 @@
+kind: helper
+name: azure-resource-dispatch-responses-search
+call:
+  azure_resource_dispatch:
+    case: responses_search
+    steps:
+      - kind: responses_url
+        api_base: "https://res.test"
+        api_version: "2025-04-01-preview"
+      - kind: responses_transform
+        model: "gpt-4.1"
+        input: "hello world"
+      - kind: responses_resource
+        endpoint: "get"
+        api_base: "https://res.test"
+        response_id: "resp_1"
+      - kind: responses_input_items
+        api_base: "https://res.test"
+        response_id: "resp_1"
+        after: "item_1"
+        include:
+          - "message"
+        limit: 5
+        order: "desc"
+      - kind: search_url
+        api_base: "https://res.test"
+      - kind: search_request
+        model: "gpt-4.1"
+        query: "azure grounding"
+env: {}
+compare: {ignore: []}

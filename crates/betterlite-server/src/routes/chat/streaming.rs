@@ -19,39 +19,42 @@ use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
 use betterlite_openai::completion_chat_bridge::{
-    ChatEndpoint, answer, chat_endpoint, text_endpoint_model, text_request,
+    ChatEndpoint, chat_endpoint, text_endpoint_model, text_request,
 };
 use betterlite_openai::text_completion_execution::failure::CompletionFailure;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_execution::{
-    CompletionAnswer, CompletionCallAnswer, CompletionExecutor, CompletionSend,
-    CompletionStreamAnswer,
+    CompletionCallAnswer, CompletionExecutor, CompletionSend,
 };
+use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use betterlite_provider::operation::OperationResult;
 use betterlite_tokenizer::count::Counter;
-use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::runtime::runtime_counter;
-use futures_util::StreamExt as _;
-use futures_util::stream;
 use tokio::sync::OnceCell;
 
 use super::CallContext;
 use super::headers::stream_headers;
-use crate::routes::completions::streaming::pump::{Pump, next_frame};
-use crate::routes::completions::streaming::{StreamUsage, provider_stream};
+use crate::routes::completions::streaming::{StreamRoute, StreamUsage, provider_stream};
 use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
+use crate::server::error::ChatCallsError;
+use crate::state::anthropic_runtime::Slot;
 
 use self::mock::mock_stream;
-use self::relay::{TextSource, relay_bytes};
+use self::relay::{AnthropicAnswer, answered_result, anthropic_answer, relay_bytes};
 
 // the existing chat implementation, reached through the dispatch pipeline's port
 pub(crate) struct ChatCalls {
     pub(crate) executor: Arc<ChatExecutor>,
     pub(crate) counter: Arc<Counter>,
+    pub(crate) anthropic: Arc<AnthropicRuntime>,
 }
 
 impl ChatCalls {
-    pub(crate) fn new(config: &Config, executor: Arc<ChatExecutor>) -> Result<Self, CountError> {
+    pub(crate) fn new(
+        config: &Config,
+        executor: Arc<ChatExecutor>,
+        anthropic: &Slot,
+    ) -> Result<Self, ChatCallsError> {
         let counter = runtime_counter(
             config,
             &Arc::new(executor.client.clone()),
@@ -60,6 +63,7 @@ impl ChatCalls {
         Ok(Self {
             executor,
             counter: Arc::new(counter),
+            anthropic: anthropic.runtime.clone()?,
         })
     }
 }
@@ -85,10 +89,23 @@ impl ChatCall for ChatCalls {
         call: ChatCallInput<'_>,
         control: ControlOptions,
     ) -> Result<ChatCompletionAnswer, ChatFailure> {
-        let (result, upstream_headers, upstream_time) =
-            answer_chat(&self.executor, call.request, &call.deployment, control)
-                .await
-                .map_err(chat_failure)?;
+        let (result, upstream_headers, upstream_time) = answer_chat(
+            &self.executor,
+            call.request,
+            &call.deployment,
+            control,
+            Some(&self.anthropic),
+        )
+        .await
+        .map_err(chat_failure)?;
+        if matches!(result, OperationResult::Anthropic(_)) {
+            let AnthropicAnswer::Reply(answer) =
+                anthropic_answer(result, upstream_headers, upstream_time)?
+            else {
+                return Err(ChatFailure::Mismatched);
+            };
+            return Ok(answer);
+        }
         let (completion, recovered) = recovery::completed(
             self,
             result,
@@ -111,18 +128,8 @@ impl ChatCall for ChatCalls {
         control: ControlOptions,
     ) -> Result<ChatStreamAnswer, ChatFailure> {
         let executor = &self.executor;
-        let (client_response, client_tool_calls) =
-            client_mock(&call.request.passthrough, executor.mock.permission).map_err(|source| {
-                ChatFailure::Route(ChatError::from(RequestError::Body { source }))
-            })?;
-        let resolved = resolve_mock(
-            executor.mock.responses.get(&call.deployment.model_id),
-            client_response.as_ref(),
-            client_tool_calls.as_deref(),
-            call.request.choice_count,
-        );
-        if let Some(plan) = resolved {
-            return mock_stream(executor, &call.deployment, call.request, &plan);
+        if let Some(answered) = resolved_stream(executor, &call)? {
+            return Ok(answered);
         }
         let started = Instant::now();
         let (result, upstream_headers) = provider_stream(
@@ -130,11 +137,22 @@ impl ChatCall for ChatCalls {
             &call.deployment,
             call.request,
             control,
-            StreamUsage::Chat,
+            StreamRoute {
+                usage: StreamUsage::Chat,
+                anthropic: Some(&self.anthropic),
+            },
         )
         .await
         .map_err(chat_failure)?;
         let upstream_time = started.elapsed();
+        if matches!(result, OperationResult::Anthropic(_)) {
+            let AnthropicAnswer::Stream(answer) =
+                anthropic_answer(result, upstream_headers, upstream_time)?
+            else {
+                return Err(ChatFailure::Mismatched);
+            };
+            return Ok(answer);
+        }
         if let OperationResult::OutputLimit { sent } = &result {
             return recovery::stream(self, sent, upstream_headers, upstream_time).await;
         }
@@ -165,65 +183,24 @@ impl ChatCall for ChatCalls {
     }
 }
 
-fn answered_result(
+// the frames a mock answers a streaming call with, when this deployment has one
+fn resolved_stream(
     executor: &ChatExecutor,
-    mode: TextCallMode,
-    answered: CompletionCallAnswer,
-    request: &ChatRequest,
-) -> Result<ChatResult, ChatFailure> {
-    match (mode, answered) {
-        (TextCallMode::Buffered { convert }, CompletionCallAnswer::Buffered(answer)) => {
-            let created = i64::try_from((executor.clock)()).unwrap_or(i64::MAX);
-            buffered_result(&answer, convert, request.model.as_deref(), created)
-        }
-        (TextCallMode::Streamed, CompletionCallAnswer::Streamed(answer)) => {
-            let include_usage = request
-                .stream_options
-                .as_ref()
-                .is_some_and(|chosen| chosen.include_usage);
-            let model = request.model.clone().unwrap_or_default();
-            Ok(streamed_result(answer, model, include_usage))
-        }
-        _ => Err(ChatFailure::Mismatched),
-    }
-}
-
-fn buffered_result(
-    answer: &CompletionAnswer,
-    convert: bool,
-    asked: Option<&str>,
-    created: i64,
-) -> Result<ChatResult, ChatFailure> {
-    let body = if convert {
-        answer::chat_completion_body(&answer.response, created, asked)
-    } else {
-        answer::text_completion_body(&answer.response, asked)
-    }
-    .map_err(completion_failure)?;
-    Ok(ChatResult::Completion(ChatCompletionAnswer {
-        body,
-        upstream_headers: HeaderMap::new(),
-        upstream_time: answer.upstream_time,
-    }))
-}
-
-fn streamed_result(
-    answer: CompletionStreamAnswer,
-    model: String,
-    include_usage: bool,
-) -> ChatResult {
-    let source = TextSource {
-        stream: answer.stream,
-        model,
-        include_usage,
+    call: &ChatCallInput<'_>,
+) -> Result<Option<ChatStreamAnswer>, ChatFailure> {
+    let (client_response, client_tool_calls) =
+        client_mock(&call.request.passthrough, executor.mock.permission)
+            .map_err(|source| ChatFailure::Route(ChatError::from(RequestError::Body { source })))?;
+    let resolved = resolve_mock(
+        executor.mock.responses.get(&call.deployment.model_id),
+        client_response.as_ref(),
+        client_tool_calls.as_deref(),
+        call.request.choice_count,
+    );
+    let Some(plan) = resolved else {
+        return Ok(None);
     };
-    ChatResult::Stream(ChatStreamAnswer {
-        body: stream::unfold(Pump::new(source), next_frame)
-            .map(|item| item.map(|bytes| bytes.to_vec()))
-            .boxed(),
-        upstream_headers: HeaderMap::new(),
-        upstream_time: answer.upstream_time,
-    })
+    mock_stream(executor, &call.deployment, call.request, &plan).map(Some)
 }
 
 async fn bridged_send(

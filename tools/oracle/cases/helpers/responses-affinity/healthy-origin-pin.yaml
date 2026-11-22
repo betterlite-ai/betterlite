@@ -1,0 +1,103 @@
+kind: helper
+name: responses-affinity-healthy-origin-pin
+call:
+  responses_affinity:
+    model: gpt-group
+    healthy_deployments:
+      - model_name: gpt-group
+        litellm_params:
+          model: openai/b
+          api_base: https://b.example
+          api_key: sk-b
+        model_info:
+          id: B
+      - model_name: gpt-group
+        litellm_params:
+          model: openai/a
+          api_base: https://a.example
+          api_key: sk-a
+        model_info:
+          id: A
+    request_kwargs:
+      input:
+        - type: reasoning
+          id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+          encrypted_content: litellm_enc:bW9kZWxfaWQ6QQ==;cipher
+        - type: message
+          role: user
+          content: hello
+calls:
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/seven
+          model_info:
+            id: 7
+      request_kwargs:
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDo3O2l0ZW1faWQ6cjE=
+      messages:
+        - role: assistant
+          content:
+            - type: thinking
+              thinking: t
+              signature: litellm_encrypted_reasoning:litellm_enc:bW9kZWxfaWQ6Nw==;cipher
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/null
+          model_info:
+            id: null
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/missing
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/a
+            api_base: https://a.example
+            api_key: sk-a
+          model_info:
+            id: A
+      request_kwargs:
+        input:
+          - type: reasoning
+            id: encitem_bGl0ZWxsbTptb2RlbF9pZDpBO2l0ZW1faWQ6cjE=
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/b
+          model_info:
+            id: B
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/a
+          model_info:
+            id: A
+      request_kwargs:
+        input:
+          - type: message
+            role: user
+            content: hello
+  - responses_affinity:
+      model: gpt-group
+      healthy_deployments:
+        - model_name: gpt-group
+          litellm_params:
+            model: openai/b
+          model_info:
+            id: B
+      request_kwargs:
+        _encrypted_content_affinity_pinned: true
+        input:
+          - type: message
+            role: user
+            content: hello
+env: {}
+compare: {ignore: []}

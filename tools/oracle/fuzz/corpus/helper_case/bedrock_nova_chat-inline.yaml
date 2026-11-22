@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock_nova_chat-inline
+call:
+  bedrock_nova_chat:
+    function: inline_cache_points
+    system:
+      - {text: filler}
+      - {cachePoint: {type: default}}
+    messages:
+      - role: user
+        content:
+          - {text: first}
+          - {cachePoint: {type: default, ttl: 1h}}
+env: {}
+compare: {ignore: []}

@@ -12,7 +12,7 @@ use std::thread::{self, JoinHandle};
 use std::{env, fs, process};
 
 use axum::Router;
-use axum::body::Body;
+use axum::body::{Body, to_bytes};
 use axum::extract::{Request as AxumRequest, State};
 use axum::http::{Response as AxumResponse, StatusCode};
 use betterlite_postgres_fixture::connection::{
@@ -64,7 +64,7 @@ fn redacts_a_secret_capture_from_debug_output() {
     assert_eq!(format!("{value:?}"), "CapturedValue(redacted)");
 }
 
-struct StubAnswer {
+pub(crate) struct StubAnswer {
     status: u16,
     headers: Vec<(&'static str, String)>,
     body: String,
@@ -73,17 +73,18 @@ struct StubAnswer {
 struct StubState {
     answers: Mutex<VecDeque<StubAnswer>>,
     received: Mutex<Vec<(String, BTreeMap<String, String>)>>,
+    bodies: Mutex<Vec<Vec<u8>>>,
 }
 
-struct StubServer {
-    base_url: String,
+pub(crate) struct StubServer {
+    pub(crate) base_url: String,
     state: Arc<StubState>,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<JoinHandle<Result<(), Error>>>,
 }
 
 impl StubServer {
-    fn start(answers: Vec<StubAnswer>) -> Self {
+    pub(crate) fn start(answers: Vec<StubAnswer>) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0)).expect("stub listener binds");
         listener
             .set_nonblocking(true)
@@ -96,6 +97,7 @@ impl StubServer {
         let state = Arc::new(StubState {
             answers: Mutex::new(VecDeque::from(answers)),
             received: Mutex::new(Vec::new()),
+            bodies: Mutex::new(Vec::new()),
         });
         let router = Router::new()
             .fallback(respond)
@@ -139,7 +141,16 @@ impl StubServer {
         self.received(index).map(|(path, _headers)| path)
     }
 
-    fn received_header(&self, index: usize, name: &str) -> Option<String> {
+    pub(crate) fn received_body(&self, index: usize) -> Option<Vec<u8>> {
+        self.state
+            .bodies
+            .lock()
+            .expect("stub state lock")
+            .get(index)
+            .cloned()
+    }
+
+    pub(crate) fn received_header(&self, index: usize, name: &str) -> Option<String> {
         let (_path, headers) = self.received(index)?;
         headers.get(name).cloned()
     }
@@ -156,10 +167,7 @@ impl Drop for StubServer {
     }
 }
 
-async fn respond(
-    State(state): State<Arc<StubState>>,
-    request: AxumRequest<Body>,
-) -> AxumResponse<Body> {
+async fn record_request(state: &StubState, request: AxumRequest<Body>) {
     let path = request
         .uri()
         .path_and_query()
@@ -181,6 +189,21 @@ async fn respond(
         .lock()
         .expect("stub state lock")
         .push((path, headers));
+    let body = to_bytes(request.into_body(), 1024 * 1024)
+        .await
+        .expect("the stub request body reads");
+    state
+        .bodies
+        .lock()
+        .expect("stub state lock")
+        .push(body.to_vec());
+}
+
+async fn respond(
+    State(state): State<Arc<StubState>>,
+    request: AxumRequest<Body>,
+) -> AxumResponse<Body> {
+    record_request(&state, request).await;
     let Some(answer) = state.answers.lock().expect("stub state lock").pop_front() else {
         return AxumResponse::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -197,7 +220,7 @@ async fn respond(
         .expect("stub response builds")
 }
 
-fn answer(status: u16, headers: Vec<(&'static str, String)>, body: &str) -> StubAnswer {
+pub(crate) fn answer(status: u16, headers: Vec<(&'static str, String)>, body: &str) -> StubAnswer {
     StubAnswer {
         status,
         headers,
@@ -217,6 +240,7 @@ fn step(path: &str, headers: BTreeMap<String, String>, captures: Vec<Capture>, f
         compare: Compare::default(),
         captures,
         form,
+        saml_assertion: None,
     }
 }
 
