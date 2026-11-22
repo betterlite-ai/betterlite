@@ -13,15 +13,13 @@ from litellm.proxy.hooks.parallel_request_limiter_v3 import (
     RateLimitStatus,
     get_request_stash_for_call,
 )
-from litellm.proxy.hooks.parallel_request_limiter_v3 import (
-    RateLimitDescriptorRateLimitObject as RateLimitObject,
-)
-from litellm.router import Router
 from litellm.types.router import ModelGroupInfo
 from litellm.types.utils import PriorityReservationDict, PriorityReservationSettings
 from opentelemetry.trace import Span
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
+
+from b3051 import DescriptorJson, FixedRouter, descriptor_json, model_group_info
 
 _HANDLER_CLASS = dynamic_rate_limiter_v3._PROXY_DynamicRateLimitHandlerV3  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L66
 _STUB_BASE = parallel_request_limiter_v3._PROXY_MaxParallelRequestsHandler_v3  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L751
@@ -40,19 +38,6 @@ class AdmissionInput(TypedDict):
     saturation: float
     atomic: RateLimitResponse
     tracking: RateLimitResponse
-
-
-class RateLimitJson(TypedDict):
-    requests_per_unit: int | None
-    tokens_per_unit: int | None
-    max_parallel_requests: int | None
-    window_size: int | None
-
-
-class DescriptorJson(TypedDict):
-    key: str
-    value: str
-    rate_limit: RateLimitJson | None
 
 
 class IncrementJson(TypedDict):
@@ -98,13 +83,6 @@ class CheckCall(TypedDict):
     saturation: float
 
 
-class ModelInfoPayload(TypedDict):
-    model_group: str
-    providers: list[str]
-    rpm: int | None
-    tpm: int | None
-
-
 class CheckHandler(_HANDLER_CLASS):
     async def check(self, call: CheckCall) -> None:
         await self._check_rate_limits(
@@ -114,16 +92,6 @@ class CheckHandler(_HANDLER_CLASS):
             priority=call["priority"],
             saturation=call["saturation"],
         )
-
-
-class FixedRouter(Router):
-    def __init__(self, info: ModelGroupInfo) -> None:
-        self.model_group_info = info
-
-    @override
-    def get_model_group_info(self, model_group: str) -> ModelGroupInfo | None:
-        del model_group
-        return self.model_group_info
 
 
 class StubLimiter(_STUB_BASE):
@@ -172,37 +140,6 @@ class StubLimiter(_STUB_BASE):
             )
         )
         return self.tracking
-
-
-def model_group_info(model: str, rpm: int | None, tpm: int | None) -> ModelGroupInfo:
-    payload = ModelInfoPayload(model_group=model, providers=[], rpm=rpm, tpm=tpm)
-    return TypeAdapter(ModelGroupInfo).validate_python(payload)
-
-
-def rate_limit_json(rate_limit: RateLimitObject) -> RateLimitJson:
-    canonical = RateLimitJson(
-        requests_per_unit=None,
-        tokens_per_unit=None,
-        max_parallel_requests=None,
-        window_size=None,
-    )
-    if "requests_per_unit" in rate_limit:
-        canonical["requests_per_unit"] = rate_limit["requests_per_unit"]
-    if "tokens_per_unit" in rate_limit:
-        canonical["tokens_per_unit"] = rate_limit["tokens_per_unit"]
-    if "max_parallel_requests" in rate_limit:
-        canonical["max_parallel_requests"] = rate_limit["max_parallel_requests"]
-    if "window_size" in rate_limit:
-        canonical["window_size"] = rate_limit["window_size"]
-    return canonical
-
-
-def descriptor_json(descriptor: RateLimitDescriptor) -> DescriptorJson:
-    rate_limit = descriptor["rate_limit"]
-    canonical: RateLimitJson | None = None
-    if rate_limit is not None:
-        canonical = rate_limit_json(rate_limit)
-    return DescriptorJson(key=descriptor["key"], value=descriptor["value"], rate_limit=canonical)
 
 
 def status_json(status: RateLimitStatus) -> StatusJson:

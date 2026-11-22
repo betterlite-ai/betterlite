@@ -1,5 +1,6 @@
 {
   "include": ["../b3052.py"],
+  "extraPaths": [".."],
   "typeCheckingMode": "strict",
   "reportAny": "error",
   "reportMissingTypeStubs": "none"
