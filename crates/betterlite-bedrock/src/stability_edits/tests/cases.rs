@@ -585,10 +585,10 @@ fn unsupported() {
         .expect("drop_params keeps the initial copy");
     assert_eq!(dropped.get("quality"), Some(&EditValue::Json(text("high"))));
     for name in ["aspect_ratio", "init_image", "_n"] {
-        let error = map_openai_params(&options(&[(name, text("x"))]), INPAINT, false)
+        let failure = map_openai_params(&options(&[(name, text("x"))]), INPAINT, false)
             .expect_err("a native or internal key is not an OpenAI param");
         assert!(
-            matches!(&error, StabilityEditError::UnsupportedParameter { .. }),
+            matches!(&failure, StabilityEditError::UnsupportedParameter { .. }),
             "{name}"
         );
     }

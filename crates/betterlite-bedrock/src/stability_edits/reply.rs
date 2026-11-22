@@ -7,7 +7,6 @@ use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHttpResponse, ImageResponse,
 };
 use rust_decimal::Decimal;
-use thiserror::Error;
 
 use super::environment::get_error_class;
 use super::error::{StabilityEditError, StabilityReplyError};
@@ -61,8 +60,8 @@ fn first_finish_reason(value: Option<Json>) -> Result<Option<Json>, StabilityRep
             .chars()
             .next()
             .map(|character| Json::Text(character.to_string()))),
-        Some(value @ (Json::Bool(_) | Json::Number(_))) => {
-            if has_content(&value) {
+        Some(reason @ (Json::Bool(_) | Json::Number(_))) => {
+            if has_content(&reason) {
                 Err(StabilityReplyError::Field {
                     field: "finish_reasons".to_owned(),
                 })
@@ -111,7 +110,7 @@ fn has_content(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|float| float != 0.0),
+        Json::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
         Json::Object(fields) => !fields.is_empty(),
@@ -129,22 +128,7 @@ where
 {
     let artifacts =
         decode_stability_reply(&upstream.body).map_err(|source| reply_error(upstream, source))?;
-    if let Some(errors) = &artifacts.errors {
-        return Err(get_error_class(
-            format!("Bedrock Stability error: {}", text_of(errors)),
-            upstream.status_code,
-            upstream_headers(upstream),
-        ));
-    }
-    if let Some(reason) = &artifacts.finish_reason
-        && has_content(reason)
-    {
-        return Err(get_error_class(
-            format!("Bedrock Stability error: {}", text_of(reason)),
-            400,
-            upstream_headers(upstream),
-        ));
-    }
+    reject_artifact_errors(upstream, &artifacts)?;
     let data = artifacts
         .images
         .into_iter()
@@ -173,6 +157,30 @@ where
     })
 }
 
+// An errors key fails whatever the images hold; only the first finish reason is inspected, and it reports status 400.
+fn reject_artifact_errors(
+    upstream: &ImageHttpResponse,
+    artifacts: &StabilityArtifacts,
+) -> Result<(), StabilityEditError> {
+    if let Some(errors) = &artifacts.errors {
+        return Err(get_error_class(
+            format!("Bedrock Stability error: {}", text_of(errors)),
+            upstream.status_code,
+            upstream_headers(upstream),
+        ));
+    }
+    if let Some(reason) = &artifacts.finish_reason
+        && has_content(reason)
+    {
+        return Err(get_error_class(
+            format!("Bedrock Stability error: {}", text_of(reason)),
+            400,
+            upstream_headers(upstream),
+        ));
+    }
+    Ok(())
+}
+
 // Only a JSON parse failure becomes BedrockError; a parsed record of the wrong shape keeps its Python error type.
 fn reply_error(upstream: &ImageHttpResponse, source: StabilityReplyError) -> StabilityEditError {
     match source {
@@ -181,7 +189,9 @@ fn reply_error(upstream: &ImageHttpResponse, source: StabilityReplyError) -> Sta
             upstream.status_code,
             upstream_headers(upstream),
         ),
-        other => StabilityEditError::Reply(other),
+        other @ (StabilityReplyError::NotAnObject | StabilityReplyError::Field { .. }) => {
+            StabilityEditError::Reply(other)
+        }
     }
 }
 

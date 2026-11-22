@@ -29,7 +29,11 @@ impl From<Json> for EditValue {
     fn from(value: Json) -> Self {
         match value {
             Json::List(items) => Self::List(items.into_iter().map(Self::from).collect()),
-            other => Self::Json(other),
+            other @ (Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::Object(_)) => Self::Json(other),
         }
     }
 }

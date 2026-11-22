@@ -11,8 +11,8 @@ const CONTENT_TYPE: &str = "Content-Type";
 
 // Bedrock authenticates with AWS credentials, so this only guarantees the JSON content type.
 #[must_use]
-pub fn validate_environment(headers: Option<BTreeMap<String, String>>) -> BTreeMap<String, String> {
-    let mut headers = headers.unwrap_or_default();
+pub fn validate_environment(given: Option<BTreeMap<String, String>>) -> BTreeMap<String, String> {
+    let mut headers = given.unwrap_or_default();
     if !headers.contains_key(CONTENT_TYPE) {
         headers.insert(CONTENT_TYPE.to_owned(), "application/json".to_owned());
     }

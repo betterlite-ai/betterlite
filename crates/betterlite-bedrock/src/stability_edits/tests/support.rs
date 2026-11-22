@@ -49,8 +49,15 @@ pub(super) fn upstream(status: u16, body: &str) -> ImageHttpResponse {
 
 pub(super) fn provider_message(error: &StabilityEditError) -> &str {
     match error {
-        StabilityEditError::Provider { error, .. } => &error.error.message,
-        other => panic!("expected a provider error, got {other}"),
+        StabilityEditError::Provider {
+            error: provider, ..
+        } => &provider.error.message,
+        other @ (StabilityEditError::UnsupportedParameter { .. }
+        | StabilityEditError::Field { .. }
+        | StabilityEditError::ModelInfo { .. }
+        | StabilityEditError::Price(_)
+        | StabilityEditError::Reply(_)
+        | StabilityEditError::Header(_)) => panic!("expected a provider error, got {other}"),
     }
 }
 

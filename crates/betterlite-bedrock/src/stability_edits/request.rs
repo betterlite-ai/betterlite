@@ -46,8 +46,8 @@ pub fn transform_image_edit_request(
     {
         body.insert("prompt".to_owned(), Json::Text(text.to_owned()));
     }
-    if let Some(image) = image {
-        insert_image(&mut body, model, image);
+    if let Some(source) = image {
+        insert_image(&mut body, model, source);
     }
     for (name, value) in options {
         if name.starts_with('_') || matches!(value, EditValue::Json(Json::Null)) {
@@ -99,7 +99,7 @@ fn file_text(value: &EditValue) -> String {
     let item = match value {
         EditValue::List(items) if items.is_empty() => return "[]".to_owned(),
         EditValue::List(items) => items.first().unwrap_or(value),
-        other => other,
+        other @ (EditValue::Json(_) | EditValue::Bytes(_)) => other,
     };
     match item {
         EditValue::Bytes(content) => BASE64.encode(content),
@@ -120,12 +120,12 @@ fn numeric_field(name: &str, value: &EditValue, kind: Numeric) -> Result<Json, S
     match value {
         EditValue::Json(Json::Text(text)) => match kind {
             Numeric::Int => Ok(parse_int_text(text).unwrap_or_else(|| Json::Text(text.clone()))),
-            Numeric::Float => match underscore_removed(text.trim())
+            Numeric::Float => underscore_removed(text.trim())
                 .and_then(|normalized| normalized.parse::<f64>().ok())
-            {
-                Some(parsed) => float_number(name, parsed),
-                None => Ok(Json::Text(text.clone())),
-            },
+                .map_or_else(
+                    || Ok(Json::Text(text.clone())),
+                    |parsed| float_number(name, parsed),
+                ),
         },
         EditValue::Json(Json::Number(number)) => match kind {
             Numeric::Int => int_number(name, number),
@@ -175,10 +175,10 @@ fn float_number(name: &str, value: f64) -> Result<Json, StabilityEditError> {
 
 fn parse_int_text(text: &str) -> Option<Json> {
     let trimmed = text.trim();
-    let (negative, digits) = match trimmed.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-    };
+    let (negative, digits) = trimmed.strip_prefix('-').map_or_else(
+        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+        |rest| (true, rest),
+    );
     let lexeme = underscore_removed(digits)?;
     if lexeme.is_empty() || !lexeme.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
@@ -204,7 +204,7 @@ fn underscore_removed(text: &str) -> Option<String> {
     let mut previous_digit = false;
     while let Some(character) = characters.next() {
         if character == '_' {
-            if !previous_digit || !characters.peek().is_some_and(|next| next.is_ascii_digit()) {
+            if !previous_digit || !characters.peek().is_some_and(char::is_ascii_digit) {
                 return None;
             }
             previous_digit = false;
