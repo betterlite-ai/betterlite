@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 use crate::api::codex_history_tools::hoist_additional_tools;
 use crate::api::responses_chat_options::records::ChatCompletionRequest;
 use crate::api::responses_chat_options::{
-    RequestAssembly, RequestContext, chat_completion_request,
+    RequestAssembly, RequestContext, StreamOptionsSink, chat_completion_request,
 };
 
 use super::error::PreparationError;
@@ -83,7 +83,8 @@ fn mapped_request<Completions, Context>(
     call: &mut ResponseCall<'_, Context>,
     bridged: &ResponsesApiRequestParams,
 ) -> Result<(ChatCompletionRequest, Map<String, Value>), PreparationError> {
-    let logging = call.logging.take();
+    let logging: Option<&mut dyn StreamOptionsSink> =
+        call.logging.as_deref_mut().map(|sink| &mut *sink);
     let mut assembly = RequestAssembly {
         limits: deps.limits,
         cache: deps.cache,
