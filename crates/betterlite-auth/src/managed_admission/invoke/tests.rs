@@ -19,6 +19,7 @@ use crate::managed_admission::tests::{
 
 const PLAIN_COPY: &str = r#"{"agent_id":"agent-1","agent_name":"stale","agent_card_params":{}}"#;
 const STALE_ID: &str = r#"{"agent_id":"id-1","agent_name":"card-name","agent_card_params":{},"identity_managed":true,"identity":{"agent_id":"id-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}"#;
+const IDENTITY_ONLY: &str = r#"{"agent_id":"bound","agent_name":"bound-agent","agent_card_params":{},"identity":{"agent_id":"bound","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}"#;
 
 fn priced(params: Option<&str>) -> AgentResponse {
     let mut fields = String::from(
@@ -92,9 +93,15 @@ async fn a_registry_agent_found_by_name_is_prepared() {
     assert!(through.attempts.lock().unwrap().is_empty());
 }
 
+#[rstest]
+#[case::managed(MANAGED, "managed-agent")]
+#[case::with_an_identity(IDENTITY_ONLY, "bound-agent")]
 #[tokio::test]
-async fn a_managed_target_without_a_database_is_policy_unavailable() {
-    let registry = registry(&[MANAGED]);
+async fn a_managed_target_without_a_database_is_policy_unavailable(
+    #[case] fields: &str,
+    #[case] target: &str,
+) {
+    let registry = registry(&[fields]);
     let through = MissedReadThrough::default();
     let access = resolver(&registry, &[], None);
     let mut auth = key(r#"{"user_id":"human"}"#);
@@ -104,9 +111,7 @@ async fn a_managed_target_without_a_database_is_policy_unavailable() {
         read_through: &through,
     };
     assert_eq!(
-        refusal(
-            prepare_agent_invocation(&mut auth, "managed-agent", true, &sources, &access).await
-        ),
+        refusal(prepare_agent_invocation(&mut auth, target, true, &sources, &access).await),
         (
             503,
             String::from("Managed agent policy requires a database")

@@ -5,6 +5,7 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use betterlite_db::budget_permission_rows::JsonData;
+use rust_decimal::Decimal;
 
 use crate::agent_access::error::AgentAccessError;
 use crate::agent_access::reads::{GrantSources, HumanSources, TargetAgents};
@@ -17,6 +18,7 @@ use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
 use super::error::AdmissionError;
 use super::ports::{AdmissionStore, ReadThrough};
+use super::{managed_marks, managed_token};
 
 pub(super) const MANAGED: &str = r#"{"agent_id":"agent-1","agent_name":"managed-agent","agent_card_params":{},"identity_managed":true,"execution_mode":"delegated","identity":{"agent_id":"agent-1","provider":"microsoft_entra","tenant_id":"tenant","client_id":"client","issuer":"issuer","revision":"rev-1"}}"#;
 pub(super) const PLAIN: &str =
@@ -272,4 +274,38 @@ pub(super) fn resolver(
         },
         humans: FakeHumans::default(),
     }
+}
+
+#[test]
+fn managed_token_keeps_the_context_the_key_view_drops() {
+    let mut fields = BTreeMap::new();
+    fields.insert(
+        String::from("user_id"),
+        JsonData::String(String::from("human")),
+    );
+    fields.insert(
+        String::from("agent_id"),
+        JsonData::String(String::from("agent-1")),
+    );
+    let auth = managed_token(fields, Some(context(ManagedAgentMode::Autonomous, None))).unwrap();
+    assert_eq!(auth.view.token.agent_id.as_deref(), Some("agent-1"));
+    assert_eq!(
+        auth.extra.managed_agent_context.map(|given| given.agent_id),
+        Some(String::from("agent-1"))
+    );
+}
+
+#[test]
+fn managed_marks_read_the_policy_the_fresh_flag_and_the_price() {
+    let mut auth = key(r#"{"user_id":"human"}"#);
+    auth.extra.billing_agent_policy = Some(agent(PLAIN));
+    auth.extra.requires_fresh_policy = true;
+    auth.extra.agent_invocation_cost = Some(Decimal::ONE);
+    let marks = managed_marks(&auth);
+    assert_eq!(
+        marks.billing_agent_policy.map(|agent| agent.agent_id),
+        Some(String::from("plain"))
+    );
+    assert!(marks.requires_fresh_policy);
+    assert_eq!(marks.agent_invocation_cost, Some(Decimal::ONE));
 }
