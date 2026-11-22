@@ -45,6 +45,12 @@ pub(super) enum Function {
     Get,
 }
 
+// the call the input names; both carry the same keywords, differing in the primary argument
+pub(super) enum RequestCall {
+    Create(CreateCharacterCall),
+    Get(GetCharacterCall),
+}
+
 impl Input {
     fn provider(&self) -> String {
         self.custom_llm_provider
@@ -52,34 +58,33 @@ impl Input {
             .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned())
     }
 
-    pub(super) fn create_call(&self) -> CreateCharacterCall {
-        CreateCharacterCall {
-            name: self.name.clone().unwrap_or_default(),
-            video: SuppliedMedia::Text(self.video.clone().unwrap_or_default()),
-            timeout: self.timeout.unwrap_or(Some(DEFAULT_TIMEOUT_SECONDS)),
-            custom_llm_provider: self.provider(),
-            extra_headers: self.extra_headers.clone(),
-            extra_query: None,
-            extra_body: None,
-            mock_response: None,
-            litellm_call_id: Some(self.litellm_call_id.clone()),
-            extra: self.extra.clone(),
-            is_async: false,
-        }
-    }
-
-    pub(super) fn get_call(&self) -> GetCharacterCall {
-        GetCharacterCall {
-            character_id: self.character_id.clone().unwrap_or_default(),
-            timeout: self.timeout.unwrap_or(Some(DEFAULT_TIMEOUT_SECONDS)),
-            custom_llm_provider: self.provider(),
-            extra_headers: self.extra_headers.clone(),
-            extra_query: None,
-            extra_body: None,
-            mock_response: None,
-            litellm_call_id: Some(self.litellm_call_id.clone()),
-            extra: self.extra.clone(),
-            is_async: false,
+    pub(super) fn call(&self) -> RequestCall {
+        match self.function {
+            Function::Create => RequestCall::Create(CreateCharacterCall {
+                name: self.name.clone().unwrap_or_default(),
+                video: SuppliedMedia::Text(self.video.clone().unwrap_or_default()),
+                timeout: self.timeout.unwrap_or(Some(DEFAULT_TIMEOUT_SECONDS)),
+                custom_llm_provider: self.provider(),
+                extra_headers: self.extra_headers.clone(),
+                extra_query: None,
+                extra_body: None,
+                mock_response: None,
+                litellm_call_id: Some(self.litellm_call_id.clone()),
+                extra: self.extra.clone(),
+                is_async: false,
+            }),
+            Function::Get => RequestCall::Get(GetCharacterCall {
+                character_id: self.character_id.clone().unwrap_or_default(),
+                timeout: self.timeout.unwrap_or(Some(DEFAULT_TIMEOUT_SECONDS)),
+                custom_llm_provider: self.provider(),
+                extra_headers: self.extra_headers.clone(),
+                extra_query: None,
+                extra_body: None,
+                mock_response: None,
+                litellm_call_id: Some(self.litellm_call_id.clone()),
+                extra: self.extra.clone(),
+                is_async: false,
+            }),
         }
     }
 

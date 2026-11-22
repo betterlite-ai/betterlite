@@ -13,7 +13,7 @@ use tokio::runtime::Builder;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-use self::input::{Function, Input};
+use self::input::{Input, RequestCall};
 use self::record::{LoggingView, Output, Recorder};
 
 // B198's DEFAULT_REQUEST_TIMEOUT with REQUEST_TIMEOUT unset, the value the cases run under
@@ -40,21 +40,15 @@ async fn answer(input: &Input) -> HelperResult {
         redactor: &redactor,
         request_timeout_seconds: REQUEST_TIMEOUT_SECONDS,
     };
-    let character = match (input.function, input.asynchronous) {
-        (Function::Create, false) => direct(video_create_character(
-            &mut recorder,
-            deps,
-            &input.create_call(),
-        ))?,
-        (Function::Create, true) => {
-            avideo_create_character(&mut recorder, deps, &input.create_call())
-                .await
-                .map_err(|error| helper_failure(error.to_string()))?
+    let character = match (input.call(), input.asynchronous) {
+        (RequestCall::Create(call), false) => {
+            direct(video_create_character(&mut recorder, deps, &call))?
         }
-        (Function::Get, false) => {
-            direct(video_get_character(&mut recorder, deps, &input.get_call()))?
-        }
-        (Function::Get, true) => avideo_get_character(&mut recorder, deps, &input.get_call())
+        (RequestCall::Create(call), true) => avideo_create_character(&mut recorder, deps, &call)
+            .await
+            .map_err(|error| helper_failure(error.to_string()))?,
+        (RequestCall::Get(call), false) => direct(video_get_character(&mut recorder, deps, &call))?,
+        (RequestCall::Get(call), true) => avideo_get_character(&mut recorder, deps, &call)
             .await
             .map_err(|error| helper_failure(error.to_string()))?,
     };
