@@ -302,3 +302,200 @@ fn registry_keeps_headers_when_a_wrapper_cannot_validate() {
     let validated = config.validate_environment(headers, None, None);
     assert_eq!(validated.get("X-Trace").map(String::as_str), Some("abc"));
 }
+
+#[test]
+fn registry_forwards_the_linkup_hooks() {
+    let environment = environment(&[("LINKUP_API_KEY", "key")]);
+    let registry = SearchRegistry {
+        environment: &environment,
+    };
+    let config = registry.search_config("linkup").unwrap();
+    assert_eq!(config.http_method(), HttpMethod::Post);
+    let headers = config.validate_environment(Headers::new(), None, None);
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer key")
+    );
+    let optional_params = params(r#"{"depth":"deep"}"#);
+    let body = config
+        .transform_search_request(&input(&single("q"), &optional_params, &headers))
+        .unwrap();
+    let expected = serde_json::from_str::<JsonValue>(
+        r#"{"q":"q","depth":"deep","outputType":"searchResults"}"#,
+    )
+    .unwrap();
+    assert_eq!(body.0, expected);
+    let url = config
+        .complete_url(None, &optional_params, Some(&body), None)
+        .unwrap();
+    assert_eq!(url, "https://api.linkup.so/v1/search");
+    let reply = config
+        .transform_search_response(&response(
+            200,
+            &headers,
+            r#"{"results":[{"name":"t","url":"https://example.test/1","content":"c"}]}"#,
+        ))
+        .unwrap();
+    assert_eq!(reply.results.len(), 1);
+    assert_eq!(reply.results[0].title, "t");
+    let mut passed = Headers::new();
+    passed.insert("X-Trace".to_owned(), "abc".to_owned());
+    let (signed, encoded) = config
+        .sign_request(
+            passed,
+            &OutboundSearch {
+                api_base: "https://api.linkup.so/v1",
+                api_key: None,
+                optional_params: &optional_params,
+                body: &body,
+            },
+        )
+        .unwrap();
+    assert_eq!(signed.get("X-Trace").map(String::as_str), Some("abc"));
+    assert!(encoded.is_none());
+}
+
+#[test]
+fn registry_forwards_the_searxng_hooks() {
+    let environment = environment(&[("SEARXNG_API_BASE", "https://searx.test")]);
+    let registry = SearchRegistry {
+        environment: &environment,
+    };
+    let config = registry.search_config("searxng").unwrap();
+    assert_eq!(config.http_method(), HttpMethod::Get);
+    let headers = config.validate_environment(Headers::new(), None, None);
+    assert_eq!(
+        headers.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
+    let optional_params = params(r#"{"country":"US"}"#);
+    let body = config
+        .transform_search_request(&input(&single("q"), &optional_params, &headers))
+        .unwrap();
+    let url = config
+        .complete_url(None, &optional_params, Some(&body), None)
+        .unwrap();
+    assert!(url.starts_with("https://searx.test/search?"));
+    assert!(url.contains("q=q"));
+    assert!(url.contains("format=json"));
+    let reply = config
+        .transform_search_response(&response(
+            200,
+            &headers,
+            r#"{"results":[{"title":"t","url":"https://example.test/1","content":"c"}]}"#,
+        ))
+        .unwrap();
+    assert_eq!(reply.results.len(), 1);
+    assert_eq!(reply.results[0].url, "https://example.test/1");
+}
+
+#[test]
+fn registry_forwards_the_google_pse_hooks() {
+    let environment = environment(&[
+        ("GOOGLE_PSE_API_KEY", "key"),
+        ("GOOGLE_PSE_ENGINE_ID", "engine"),
+    ]);
+    let registry = SearchRegistry {
+        environment: &environment,
+    };
+    let config = registry.search_config("google_pse").unwrap();
+    assert_eq!(config.http_method(), HttpMethod::Get);
+    let mut passed = Headers::new();
+    passed.insert("X-Trace".to_owned(), "abc".to_owned());
+    let headers = config.validate_environment(passed, None, None);
+    assert_eq!(headers.get("X-Trace").map(String::as_str), Some("abc"));
+    assert_eq!(
+        headers.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
+    let optional_params = Object::new();
+    let body = config
+        .transform_search_request(&input(&single("q"), &optional_params, &headers))
+        .unwrap();
+    let record = body.0.get("_google_pse_params").unwrap();
+    assert_eq!(record.get("q").and_then(JsonValue::as_str), Some("q"));
+    assert_eq!(record.get("cx").and_then(JsonValue::as_str), Some("engine"));
+    let url = config
+        .complete_url(None, &optional_params, Some(&body), None)
+        .unwrap();
+    assert!(url.starts_with("https://www.googleapis.com/customsearch/v1?"));
+    assert!(url.contains("cx=engine"));
+    let reply = config
+        .transform_search_response(&response(
+            200,
+            &headers,
+            r#"{"items":[{"title":"t","link":"https://example.test/1","snippet":"s"}]}"#,
+        ))
+        .unwrap();
+    assert_eq!(reply.results.len(), 1);
+    assert_eq!(reply.results[0].url, "https://example.test/1");
+    let mut signed_input = Headers::new();
+    signed_input.insert("X-Trace".to_owned(), "abc".to_owned());
+    let (signed, encoded) = config
+        .sign_request(
+            signed_input,
+            &OutboundSearch {
+                api_base: "https://www.googleapis.com/customsearch/v1",
+                api_key: None,
+                optional_params: &optional_params,
+                body: &body,
+            },
+        )
+        .unwrap();
+    assert_eq!(signed.get("X-Trace").map(String::as_str), Some("abc"));
+    assert!(encoded.is_none());
+}
+
+#[test]
+fn registry_forwards_the_searchapi_hooks() {
+    let environment = environment(&[("SEARCHAPI_API_KEY", "key")]);
+    let registry = SearchRegistry {
+        environment: &environment,
+    };
+    let config = registry.search_config("searchapi").unwrap();
+    assert_eq!(config.http_method(), HttpMethod::Get);
+    let headers = config.validate_environment(Headers::new(), None, None);
+    assert_eq!(
+        headers.get("Content-Type").map(String::as_str),
+        Some("application/json")
+    );
+    let optional_params = Object::new();
+    let body = config
+        .transform_search_request(&input(&single("q"), &optional_params, &headers))
+        .unwrap();
+    let record = body.0.get("_searchapi_params").unwrap();
+    assert_eq!(record.get("q").and_then(JsonValue::as_str), Some("q"));
+    assert_eq!(
+        record.get("engine").and_then(JsonValue::as_str),
+        Some("google")
+    );
+    let url = config
+        .complete_url(None, &optional_params, Some(&body), None)
+        .unwrap();
+    assert!(url.starts_with("https://www.searchapi.io/api/v1/search?"));
+    assert!(url.contains("engine=google"));
+    let reply = config
+        .transform_search_response(&response(
+            200,
+            &headers,
+            r#"{"organic_results":[{"title":"t","link":"https://example.test/1","snippet":"s"}]}"#,
+        ))
+        .unwrap();
+    assert_eq!(reply.results.len(), 1);
+    assert_eq!(reply.results[0].url, "https://example.test/1");
+    let mut passed = Headers::new();
+    passed.insert("X-Trace".to_owned(), "abc".to_owned());
+    let (signed, encoded) = config
+        .sign_request(
+            passed,
+            &OutboundSearch {
+                api_base: "https://www.searchapi.io/api/v1/search",
+                api_key: None,
+                optional_params: &optional_params,
+                body: &body,
+            },
+        )
+        .unwrap();
+    assert_eq!(signed.get("X-Trace").map(String::as_str), Some("abc"));
+    assert!(encoded.is_none());
+}
