@@ -61,7 +61,7 @@ where
                     body,
                 },
             )
-            .map_err(SearchConfigError::provider)
+            .map_err(|source| SearchConfigError::Provider(Box::new(source)))
     }
     fn complete_url(
         &self,
@@ -73,7 +73,7 @@ where
         let stored = self.body.lock().unwrap_or_else(PoisonError::into_inner);
         self.provider
             .complete_url(api_base, optional_params, stored.as_ref(), api_key)
-            .map_err(SearchConfigError::provider)
+            .map_err(|source| SearchConfigError::Provider(Box::new(source)))
     }
     fn transform_search_request(
         &self,
@@ -82,7 +82,7 @@ where
         let typed = self
             .provider
             .transform_search_request(input)
-            .map_err(SearchConfigError::provider)?;
+            .map_err(|source| SearchConfigError::Provider(Box::new(source)))?;
         let encoded =
             serde_json::to_value(&typed).map_err(|source| SearchConfigError::Encode { source })?;
         *self.body.lock().unwrap_or_else(PoisonError::into_inner) = Some(typed);
@@ -94,7 +94,7 @@ where
     ) -> Result<SearchResponse, SearchConfigError> {
         self.provider
             .transform_search_response(response)
-            .map_err(SearchConfigError::provider)
+            .map_err(|source| SearchConfigError::Provider(Box::new(source)))
     }
     fn http_error(&self, response: &ProviderResponse<'_>) -> ProviderError {
         self.provider.http_error(response)

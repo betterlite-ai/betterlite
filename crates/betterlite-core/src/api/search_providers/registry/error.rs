@@ -13,8 +13,3 @@ pub enum SearchConfigError {
         source: serde_json::Error,
     },
 }
-impl SearchConfigError {
-    pub(crate) fn provider(error: impl StdError + Send + Sync + 'static) -> Self {
-        Self::Provider(Box::new(error))
-    }
-}

@@ -67,14 +67,14 @@ impl SearchHooks for UrlKeyedProvider<'_> {
                 search_engine_id: None,
             }
             .complete_url(api_base, stored.as_ref())
-            .map_err(SearchConfigError::provider),
+            .map_err(|source| SearchConfigError::Provider(Box::new(source))),
             UrlKeyedFlavor::SearchApi(stored) => SearchApiSearch {
                 lookup: self.environment,
                 api_key: api_key.cloned(),
                 api_base: api_base.map(str::to_owned),
             }
             .complete_url(api_base, stored.as_ref())
-            .map_err(SearchConfigError::provider),
+            .map_err(|source| SearchConfigError::Provider(Box::new(source))),
         }
     }
     fn transform_search_request(
@@ -91,7 +91,7 @@ impl SearchHooks for UrlKeyedProvider<'_> {
                     search_engine_id: None,
                 }
                 .transform_search_request(input.query, input.optional_params)
-                .map_err(SearchConfigError::provider)?;
+                .map_err(|source| SearchConfigError::Provider(Box::new(source)))?;
                 let body = encoded_body(&typed)?;
                 *stored = Some(typed);
                 Ok(body)
@@ -103,7 +103,7 @@ impl SearchHooks for UrlKeyedProvider<'_> {
                     api_base: input.api_base.map(str::to_owned),
                 }
                 .transform_search_request(input.query, input.optional_params)
-                .map_err(SearchConfigError::provider)?;
+                .map_err(|source| SearchConfigError::Provider(Box::new(source)))?;
                 let body = encoded_body(&typed)?;
                 *stored = Some(typed);
                 Ok(body)
@@ -116,12 +116,10 @@ impl SearchHooks for UrlKeyedProvider<'_> {
     ) -> Result<SearchResponse, SearchConfigError> {
         let flavor = self.flavor.lock().unwrap_or_else(PoisonError::into_inner);
         match &*flavor {
-            UrlKeyedFlavor::GooglePse(_) => {
-                decode_google_pse_reply(response.text).map_err(SearchConfigError::provider)
-            }
-            UrlKeyedFlavor::SearchApi(_) => {
-                decode_searchapi_reply(response.text).map_err(SearchConfigError::provider)
-            }
+            UrlKeyedFlavor::GooglePse(_) => decode_google_pse_reply(response.text)
+                .map_err(|source| SearchConfigError::Provider(Box::new(source))),
+            UrlKeyedFlavor::SearchApi(_) => decode_searchapi_reply(response.text)
+                .map_err(|source| SearchConfigError::Provider(Box::new(source))),
         }
     }
 }

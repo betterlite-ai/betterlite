@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::str::FromStr;
 
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::{Headers, Object};
@@ -15,33 +16,6 @@ use super::error::SearchConfigError;
 use super::names::SearchProviderName;
 use crate::api::search_providers::tinyfish::TINYFISH_RESULT_CAP;
 use crate::search::SearchConfigLookup as _;
-
-// what LiteLLM's ProviderConfigManager reports for each SearchProviders value
-const EXPECTED: [(&str, &str, HttpMethod, bool); 18] = [
-    ("perplexity", "Perplexity", HttpMethod::Post, false),
-    ("tavily", "Tavily", HttpMethod::Post, false),
-    ("parallel_ai", "Parallel AI", HttpMethod::Post, true),
-    ("exa_ai", "Exa AI", HttpMethod::Post, false),
-    ("brave", "Brave Search", HttpMethod::Get, false),
-    ("google_pse", "Google PSE", HttpMethod::Get, false),
-    ("dataforseo", "DataForSEO", HttpMethod::Post, false),
-    ("firecrawl", "Firecrawl", HttpMethod::Post, false),
-    ("fastcrw", "fastCRW", HttpMethod::Post, false),
-    ("searxng", "SearXNG", HttpMethod::Get, false),
-    ("linkup", "Linkup", HttpMethod::Post, false),
-    ("duckduckgo", "DuckDuckGo", HttpMethod::Get, false),
-    (
-        "searchapi",
-        "SearchAPI.io (Google Search)",
-        HttpMethod::Get,
-        false,
-    ),
-    ("serper", "Serper", HttpMethod::Post, false),
-    ("you_com", "You.com", HttpMethod::Post, false),
-    ("apiserpent", "APISerpent", HttpMethod::Get, false),
-    ("tinyfish", "TinyFish", HttpMethod::Get, false),
-    ("nimble", "Nimble", HttpMethod::Post, false),
-];
 
 fn environment(values: &[(&str, &str)]) -> BTreeMap<String, String> {
     values
@@ -93,22 +67,55 @@ fn reply_with_results(count: usize) -> String {
     format!(r#"{{"results":[{}]}}"#, items.join(","))
 }
 
-#[test]
-fn every_registered_name_maps_to_its_config() {
+// each case is one row of what LiteLLM's ProviderConfigManager reports for a SearchProviders value
+#[rstest]
+#[case::perplexity(0, "perplexity", "Perplexity", HttpMethod::Post, false)]
+#[case::tavily(1, "tavily", "Tavily", HttpMethod::Post, false)]
+#[case::parallel_ai(2, "parallel_ai", "Parallel AI", HttpMethod::Post, true)]
+#[case::exa_ai(3, "exa_ai", "Exa AI", HttpMethod::Post, false)]
+#[case::brave(4, "brave", "Brave Search", HttpMethod::Get, false)]
+#[case::google_pse(5, "google_pse", "Google PSE", HttpMethod::Get, false)]
+#[case::dataforseo(6, "dataforseo", "DataForSEO", HttpMethod::Post, false)]
+#[case::firecrawl(7, "firecrawl", "Firecrawl", HttpMethod::Post, false)]
+#[case::fastcrw(8, "fastcrw", "fastCRW", HttpMethod::Post, false)]
+#[case::searxng(9, "searxng", "SearXNG", HttpMethod::Get, false)]
+#[case::linkup(10, "linkup", "Linkup", HttpMethod::Post, false)]
+#[case::duckduckgo(11, "duckduckgo", "DuckDuckGo", HttpMethod::Get, false)]
+#[case::searchapi(
+    12,
+    "searchapi",
+    "SearchAPI.io (Google Search)",
+    HttpMethod::Get,
+    false
+)]
+#[case::serper(13, "serper", "Serper", HttpMethod::Post, false)]
+#[case::you_com(14, "you_com", "You.com", HttpMethod::Post, false)]
+#[case::apiserpent(15, "apiserpent", "APISerpent", HttpMethod::Get, false)]
+#[case::tinyfish(16, "tinyfish", "TinyFish", HttpMethod::Get, false)]
+#[case::nimble(17, "nimble", "Nimble", HttpMethod::Post, false)]
+fn every_registered_name_maps_to_its_config(
+    #[case] position: usize,
+    #[case] name: &str,
+    #[case] display: &str,
+    #[case] method: HttpMethod,
+    #[case] rich: bool,
+) {
     let environment = environment(&[]);
     let registry = SearchRegistry {
         environment: &environment,
     };
-    assert_eq!(EXPECTED.len(), SearchProviderName::iter().count());
-    for (index, (name, display, method, rich)) in EXPECTED.into_iter().enumerate() {
-        let known = SearchProviderName::from_name(name).unwrap();
-        assert_eq!(known, SearchProviderName::iter().nth(index).unwrap());
-        assert_eq!(known.display_name(), display);
-        let config = registry.search_config(name).unwrap();
-        assert_eq!(config.display_name(), display);
-        assert_eq!(config.http_method(), method);
-        assert_eq!(config.supports_rich_search_input(), rich);
-    }
+    let known = SearchProviderName::from_str(name).unwrap();
+    assert_eq!(known, SearchProviderName::iter().nth(position).unwrap());
+    assert_eq!(known.display_name(), display);
+    let config = registry.search_config(name).unwrap();
+    assert_eq!(config.name.display_name(), display);
+    assert_eq!(config.http_method(), method);
+    assert_eq!(config.supports_rich_search_input(), rich);
+}
+
+#[test]
+fn the_registry_table_names_eighteen_providers() {
+    assert_eq!(SearchProviderName::iter().count(), 18);
 }
 
 #[rstest]
@@ -124,7 +131,7 @@ fn registry_returns_none_for_an_unregistered_name(#[case] name: &str) {
         environment: &environment,
     };
     assert!(registry.search_config(name).is_none());
-    assert!(SearchProviderName::from_name(name).is_none());
+    assert!(SearchProviderName::from_str(name).is_err());
 }
 
 #[test]

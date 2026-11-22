@@ -10,12 +10,14 @@ from litellm.types.utils import SearchProviders
 from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
+from xai_files import LOG
+
 Params: TypeAlias = dict[str, JsonValue]
 Headers: TypeAlias = dict[str, str]
 Validate: TypeAlias = Callable[[Headers, str | None, str | None], Headers]
 Url: TypeAlias = Callable[[str | None, Params, Params], str]
 TransformRequest: TypeAlias = Callable[[str | list[str], Params], object]  # ast-grep-ignore
-TransformReply: TypeAlias = Callable[[httpx.Response, Logging | None], BaseModel]
+TransformReply: TypeAlias = Callable[[httpx.Response, Logging], BaseModel]
 
 JSON: Final = TypeAdapter(JsonValue)
 PARAMS: Final[TypeAdapter[Params]] = TypeAdapter(Params)
@@ -87,11 +89,12 @@ def reply_value(search: TinyfishConfig, call: ReplyCall) -> JsonValue:
         request=httpx.Request("GET", "https://api.search.tinyfish.ai"),
     )
     try:
-        parsed = search.transform_search_response(response, None)
+        parsed = search.transform_search_response(response, LOG)
     except PROVIDER_ERROR as error:
         record = ErrorRecord.model_validate(error, from_attributes=True)
         failure: dict[str, JsonValue] = {"status": record.status_code, "message": record.message}
-        return JSON.validate_python({"error": failure})
+        body: JsonValue = {"error": failure}
+        return JSON.validate_python(body)
     return JSON.validate_json(parsed.model_dump_json())
 
 

@@ -17,12 +17,6 @@ pub struct SearchConfig<'env> {
     pub name: SearchProviderName,
     pub(crate) hooks: Box<dyn SearchHooks + 'env>,
 }
-impl SearchConfig<'_> {
-    #[must_use]
-    pub fn display_name(&self) -> &'static str {
-        self.name.display_name()
-    }
-}
 impl SearchProvider for SearchConfig<'_> {
     type Body = SearchBody;
     type Error = SearchConfigError;

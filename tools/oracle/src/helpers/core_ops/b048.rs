@@ -127,7 +127,7 @@ fn registry_value(registry: &SearchRegistry<'_>, provider: &str) -> Value {
         HttpMethod::Post => "POST",
     };
     json!({
-        "display": config.display_name(),
+        "display": config.name.display_name(),
         "method": method,
         "rich": config.supports_rich_search_input(),
     })

@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use strum::{EnumIter, EnumString};
 // the SearchProviders values LiteLLM maps to a search config, in LiteLLM's declaration order
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, EnumString)]
@@ -41,10 +40,6 @@ pub enum SearchProviderName {
     Nimble,
 }
 impl SearchProviderName {
-    #[must_use]
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::from_str(name).ok()
-    }
     // the provider config's ui_friendly_name, which is what LiteLLM reports to a client
     #[must_use]
     pub const fn display_name(self) -> &'static str {
