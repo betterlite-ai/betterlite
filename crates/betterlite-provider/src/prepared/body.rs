@@ -1,7 +1,13 @@
 use std::io::Error as IoError;
 
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_models::controls::call_params::normalize_drop_params;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::params::classification::RESERVED_PARAMETER_NAMES;
+use betterlite_models::params::{
+    CallType, ChatParameters, ParameterError, ParameterMapping, ParameterPolicy,
+    map_listed_parameters,
+};
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers as OpenAiHeaders, OpenAiConfig, OpenAiSettings,
@@ -13,6 +19,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Error as JsonError;
 
 use crate::operation::{OperationError, success};
+use crate::prepared::deployment::Deployment;
 
 // LiteLLM's DEFAULT_CHAT_COMPLETION_PARAM_VALUES: these go through the OpenAI parameter policy, the rest are forwarded
 const KNOWN_PARAMS: &str = "functions function_call temperature top_p n stream stream_options stop max_tokens max_completion_tokens modalities prediction audio presence_penalty frequency_penalty logit_bias user model custom_llm_provider response_format seed tools tool_choice max_retries logprobs top_logprobs extra_headers api_version parallel_tool_calls drop_params allowed_openai_params additional_drop_params messages reasoning_effort verbosity thinking web_search_options include_server_side_tool_invocations service_tier safety_identifier prompt_cache_key prompt_cache_retention store metadata context_management";
@@ -24,6 +31,8 @@ const REMOVED_KEYS: [&str; 5] = [
     "mock_tool_calls",
     "stream_chunk_size",
 ];
+// get_non_default_completion_params drops LiteLLM's own kwargs before the check, and metadata is one of them
+const OWNED_PARAMETER_NAMES: [&str; 1] = ["metadata"];
 
 pub(crate) struct ChatRequestFields {
     pub(crate) messages: JsonValue,
@@ -50,11 +59,9 @@ pub(crate) fn chat_fields(
     request: &ChatRequest,
     model: &str,
     catalog: &CatalogCapabilities,
+    deployment: &Deployment,
 ) -> Result<IndexMap<String, JsonValue>, OperationError> {
     let ChatRequestFields { messages, params } = chat_request_fields(request)?;
-    let (known, forwarded): (IndexMap<String, JsonValue>, IndexMap<String, JsonValue>) = params
-        .into_iter()
-        .partition(|(name, _value)| KNOWN_PARAMS.split(' ').any(|known| known == name));
     let policy = OpenAiConfig {
         family: ConfigFamily::OpenAi,
         api_key: None,
@@ -62,19 +69,98 @@ pub(crate) fn chat_fields(
         settings: OpenAiSettings::default(),
     };
     let supported = policy.supported_params(model, catalog);
+    // _check_valid_arg runs before the body is built, so an unsupported name answers 400 here
+    let mapping = listed_parameters(&params, &supported, model, deployment)?;
+    let (known, forwarded): (IndexMap<String, JsonValue>, IndexMap<String, JsonValue>) = params
+        .into_iter()
+        .partition(|(name, _value)| KNOWN_PARAMS.split(' ').any(|known| known == name));
     let mut optional: IndexMap<String, JsonValue> = IndexMap::new();
     for (name, value) in known {
-        if supported.contains(&name.as_str()) {
+        // the mapping holds exactly the names the supported list or an allowed list kept
+        if mapping.standard.contains_key(&name) {
             optional.insert(name, value);
         }
     }
     append_stream_options(request, &mut optional);
-    optional.extend(forwarded);
+    for (name, value) in forwarded {
+        // a provider-specific name the drop list names is not sent either, as LiteLLM's extra_body merge drops it
+        if !mapping.dropped_fields.contains(&name) {
+            optional.insert(name, value);
+        }
+    }
     let mut body: IndexMap<String, JsonValue> = IndexMap::new();
     body.insert(String::from("model"), JsonValue::Text(model.to_owned()));
     body.insert(String::from("messages"), messages);
     body.extend(optional);
     Ok(body)
+}
+
+// get_optional_params at the pin: the request's kwargs and the deployment's policy decide which names the provider gets.
+pub(crate) fn listed_parameters(
+    fields: &IndexMap<String, JsonValue>,
+    supported: &[&'static str],
+    model: &str,
+    deployment: &Deployment,
+) -> Result<ParameterMapping, OperationError> {
+    let (policy, _call_drop) = parameter_policy(fields, deployment)?;
+    let parameters = chat_parameters(fields)?;
+    map_listed_parameters(
+        supported,
+        model,
+        CallType::ChatCompletion,
+        &parameters,
+        &policy,
+    )
+    .map_err(|source| OperationError::Parameters { source })
+}
+
+// The router spreads the deployment's litellm_params under the request's kwargs, so a value the request sends wins.
+pub(crate) fn parameter_policy(
+    fields: &IndexMap<String, JsonValue>,
+    deployment: &Deployment,
+) -> Result<(ParameterPolicy, bool), OperationError> {
+    let call_drop = match fields.get("drop_params") {
+        None | Some(JsonValue::Null) => normalize_drop_params(deployment.drop_params.as_ref()),
+        Some(value) => Some(convert(value)?),
+    };
+    let dropped = match fields.get("additional_drop_params") {
+        None | Some(JsonValue::Null) => deployment.additional_drop_params.clone(),
+        Some(value) => convert(value)?,
+    };
+    let allowed = match fields.get("allowed_openai_params") {
+        None | Some(JsonValue::Null) => Vec::new(),
+        Some(value) => convert(value)?,
+    };
+    let policy = ParameterPolicy {
+        // _check_valid_arg reads the global flag and the call's flag as an OR
+        drop_params: call_drop == Some(true) || deployment.global_drop_params,
+        additional_drop_params: dropped,
+        allowed_openai_params: allowed,
+    };
+    Ok((policy, call_drop == Some(true)))
+}
+
+fn chat_parameters(fields: &IndexMap<String, JsonValue>) -> Result<ChatParameters, OperationError> {
+    let listed = fields
+        .iter()
+        .filter(|(name, _value)| {
+            !RESERVED_PARAMETER_NAMES.contains(&name.as_str())
+                && !OWNED_PARAMETER_NAMES.contains(&name.as_str())
+        })
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    convert(JsonValue::Object(listed))
+}
+
+fn convert<T, U>(value: T) -> Result<U, OperationError>
+where
+    T: Serialize,
+    U: DeserializeOwned,
+{
+    let wire = serde_json::to_value(value).map_err(|source| OperationError::Encode { source })?;
+    serde_json::from_value(wire).map_err(|source| OperationError::Parameters {
+        source: ParameterError::Encode { source },
+    })
 }
 
 pub(crate) fn encode(fields: IndexMap<String, JsonValue>) -> Result<Vec<u8>, OperationError> {
