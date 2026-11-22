@@ -3,7 +3,6 @@ use std::collections::BTreeSet;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_router::model_catalog_lookup::error::LookupError;
 use betterlite_server::model_group_data::budgets::{budget_or_none, budget_response, with_budget};
 use betterlite_server::model_group_data::deployments::{
     GroupChange, add_access_group_to_deployment, readable_model_info_or_raise,
@@ -100,7 +99,7 @@ struct RaiseCall {
 struct SuppliedNames(Option<Vec<String>>);
 
 impl ModelNameSource for SuppliedNames {
-    fn model_names(&self) -> Result<Option<Vec<String>>, LookupError> {
+    fn model_names(&self) -> Result<Option<Vec<String>>, GroupDataError> {
         Ok(self.0.clone())
     }
 }
