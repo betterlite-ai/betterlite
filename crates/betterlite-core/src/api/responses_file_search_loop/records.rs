@@ -26,7 +26,7 @@ pub struct SearchAuthorization {
 }
 
 // one provider call with the arguments it carried and is_internal_call as the provider saw it
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FollowUpCall {
     pub input: Json,
     pub model: String,
@@ -49,7 +49,7 @@ impl FollowUpCall {
 }
 
 // what _execute_file_search_tool_calls (L440-L486) returns, with the id the round reports under
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutedToolCalls {
     pub call_id: String,
     pub queries: Vec<String>,

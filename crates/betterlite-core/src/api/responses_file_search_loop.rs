@@ -56,11 +56,7 @@ pub struct ResponsesFileSearchLoopResult {
     pub diagnostics: Vec<FileSearchDiagnostic>,
 }
 
-pub struct ResponsesFileSearchLoop<'deps, FollowUp, Searches>
-where
-    FollowUp: ?Sized,
-    Searches: ?Sized,
-{
+pub struct ResponsesFileSearchLoop<'deps, FollowUp, Searches> {
     pub follow_up: &'deps FollowUp,
     pub searches: &'deps Searches,
     pub limits: ApiLimits,
@@ -112,8 +108,8 @@ pub enum DecodeError {
 
 impl<FollowUp, Searches> ResponsesFileSearchLoop<'_, FollowUp, Searches>
 where
-    FollowUp: ResponsesFollowUp + ?Sized,
-    Searches: VectorStoreSearches + ?Sized,
+    FollowUp: ResponsesFollowUp,
+    Searches: VectorStoreSearches,
 {
     pub async fn run(
         &self,
@@ -125,7 +121,7 @@ where
             input: input.input.clone(),
             model: input.model.clone(),
             tools: (!tools.is_empty()).then_some(tools),
-            kwargs: prepared.updated_kwargs.clone(),
+            kwargs: prepared.updated_kwargs,
             internal: true,
         };
         let first_response = self
@@ -220,8 +216,7 @@ where
             None,
             || (self.ids)(),
             || (self.clock)(),
-        )
-        .map_err(widen)?;
+        )?;
         Ok(ResponsesFileSearchLoopResult {
             response: synthesized.response,
             hidden_params: synthesized.hidden_params,

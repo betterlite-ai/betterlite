@@ -8,11 +8,11 @@ use tracing::warn;
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::chat_response_stream_tools::fields::string_value;
+use crate::api::responses_file_search_tools::preparation::{
+    extract_tool_call_fields, resolve_queries_from_args,
+};
 use crate::api::responses_file_search_tools::results::{
     NO_DEFAULT, field, format_results_as_tool_output,
-};
-use crate::api::responses_file_search_tools::tools::{
-    extract_tool_call_fields, resolve_queries_from_args,
 };
 use crate::api::responses_tool_namespaces::values::Fields;
 

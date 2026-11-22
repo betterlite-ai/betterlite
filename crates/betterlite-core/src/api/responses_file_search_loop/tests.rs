@@ -212,7 +212,7 @@ impl ResponsesFollowUp for FakeFollowUp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct RecordedSearch {
     vector_store_id: String,
     query: String,
@@ -232,12 +232,12 @@ impl FakeSearches {
     fn scripted(
         scripted: Vec<(&str, &str, Result<Vec<VectorStoreSearchResult>, FakeError>)>,
     ) -> Self {
-        let scripted = scripted
+        let entries = scripted
             .into_iter()
             .map(|(store, query, found)| (String::from(store), String::from(query), found))
             .collect();
         Self {
-            scripted,
+            scripted: entries,
             requests: Mutex::new(Vec::new()),
         }
     }
