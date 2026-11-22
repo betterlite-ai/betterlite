@@ -52,6 +52,7 @@ from betterlite.main import (
     acreate,
     check_valid_key,
     completion,
+    completion_with_retries,
     valid_model,
 )
 from betterlite.types.utils import Message, ModelResponse
@@ -341,6 +342,31 @@ def test_python_values(caplog: pytest.LogCaptureFixture) -> None:
     assert mocked.created == MOCK_CREATED
     assert mocked.choices[0].message.content == MOCK_CONTENT
     assert ignored_logging.choices[0].message.content == MOCK_TEXT
+
+
+def test_python_values_entries() -> None:
+    # the class conversion sits in completion_from_arguments, so acreate and the retry loop share it
+    with CompletionServer() as server:
+        awaited = acreate(
+            model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
+            api_key=GOOD_KEY, response_format=Answer,
+        )
+        asyncio.run(settle_outcome(awaited))
+        awaited_body = server.calls[-1]["body"]
+        completion_with_retries(
+            model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
+            api_key=GOOD_KEY, response_format=Answer,
+        )
+        retried_body = server.calls[-1]["body"]
+        litellm_plain(
+            model=GOOD_MODEL, messages=MESSAGES, api_base=server.url,
+            api_key=GOOD_KEY, response_format=Answer,
+        )
+        reference_body = server.calls[-1]["body"]
+    expected = reference_body.get("response_format")
+    assert expected is not None
+    assert awaited_body.get("response_format") == expected
+    assert retried_body.get("response_format") == expected
 
 
 def test_mock_errors_match_litellm() -> None:
