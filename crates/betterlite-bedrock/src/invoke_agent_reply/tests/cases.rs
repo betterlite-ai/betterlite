@@ -1,6 +1,7 @@
 #![cfg_attr(
     test,
     expect(
+        clippy::cognitive_complexity,
         clippy::too_many_lines,
         reason = "each case states one LiteLLM behavior as a scenario, so its function reads top to bottom as the fixture steps"
     )
@@ -21,13 +22,13 @@ use crate::invoke_agent_reply::error::InvokeAgentReplyError;
 use crate::invoke_agent_reply::events::{AgentEvent, EventHeaders};
 use crate::invoke_agent_reply::extract::{ExtractError, UsageInfo, response_content, usage_info};
 use crate::invoke_agent_reply::tests::support::{
-    Header, bedrock_status, capture, chunk, chunk_body, completed, content, event_frame, events,
-    frame, join, json, run, supplied, trace, usage,
+    bedrock_status, capture, chunk, chunk_body, completed, content, event_frame, events,
+    exception_frame, frame, integer, join, json, run, supplied, text, trace, usage,
 };
 
 const USAGE_HEAD: &str =
     r#"{"trace":{"preProcessingTrace":{"modelInvocationOutput":{"metadata":{"usage":"#;
-const USAGE_TAIL: &str = "}}}}}}";
+const USAGE_TAIL: &str = "}}}}}";
 const MODEL_HEAD: &str =
     r#"{"trace":{"orchestrationTrace":{"modelInvocationInput":{"foundationModel":"#;
 const MODEL_TAIL: &str = "}}}}";
@@ -84,10 +85,7 @@ fn agent_event_stream_content() {
 
     let bare = frame(&[], b"{\"bytes\":\"aGk=\"}");
     assert!(events(&bare).is_empty());
-    let only_event_type = frame(
-        &[Header::Text(":event-type", "chunk")],
-        b"{\"bytes\":\"aGk=\"}",
-    );
+    let only_event_type = frame(&[(":event-type", text("chunk"))], b"{\"bytes\":\"aGk=\"}");
     let defaulted = events(&only_event_type);
     assert_eq!(defaulted.len(), 1);
     assert_eq!(defaulted[0].headers.content_type, "");
@@ -96,9 +94,9 @@ fn agent_event_stream_content() {
     let (captured, guard) = capture();
     let integer_type = frame(
         &[
-            Header::Integer(":event-type", 5),
-            Header::Text(":content-type", "application/json"),
-            Header::Text(":message-type", "event"),
+            (":event-type", integer(5)),
+            (":content-type", text("application/json")),
+            (":message-type", text("event")),
         ],
         b"{\"bytes\":\"aGk=\"}",
     );
@@ -183,7 +181,7 @@ fn chunk_parse_and_decode() {
 }
 
 fn agent_error_frame() {
-    let exception = event_frame("chunk", "exception", b"{\"message\":\"bad\"}");
+    let exception = exception_frame("validationException", b"{\"message\":\"bad\"}");
     let stream = join(&[exception.clone(), chunk("keep")]);
     let (captured, guard) = capture();
     let response = completed(200, &stream);
@@ -200,26 +198,24 @@ fn agent_error_frame() {
 
     let mut buffer = BytesMut::from(exception.as_slice());
     let single = decode_aws_event_frame(&mut buffer).unwrap().unwrap();
-    let error = parse_message_from_event(Some(&ResponseStreamShape::bedrock_runtime()), &single)
+    let failure = parse_message_from_event(Some(&ResponseStreamShape::bedrock_runtime()), &single)
         .unwrap_err();
-    match error {
-        EventFrameError::Bedrock { status, error } => {
-            assert_eq!(status, 400);
-            assert_eq!(
-                error.error.message,
-                "validationException {\"message\":\"bad\"}"
-            );
-        }
-        other => panic!("expected a bedrock frame error, got {other:?}"),
-    }
+    let EventFrameError::Bedrock { status, error } = failure else {
+        panic!("expected a bedrock frame error, got {failure:?}");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(
+        error.error.message,
+        "validationException {\"message\":\"bad\"}"
+    );
 
     let mut broken_crc = chunk("ok");
     *broken_crc.last_mut().unwrap() ^= 0xFF;
-    assert!(decode_agent_trace(&broken_crc).is_err());
+    decode_agent_trace(&broken_crc).unwrap_err();
     assert_eq!(bedrock_status(run(200, &broken_crc).0), 200);
 
     let mut broken_prelude = chunk("ok");
-    *broken_prelude.get_mut(8).unwrap() ^= 0xFF;
+    broken_prelude[8] ^= 0xFF;
     assert!(matches!(
         decode_agent_trace(&broken_prelude).unwrap_err(),
         EventFrameError::PreludeChecksum { .. }
@@ -444,7 +440,7 @@ fn agent_reply_and_failure() {
     assert_eq!(bedrock_status(run(500, &broken).0), 500);
 
     let mut broken_prelude = chunk("ok");
-    *broken_prelude.get_mut(8).unwrap() ^= 0xFF;
+    broken_prelude[8] ^= 0xFF;
     assert_eq!(bedrock_status(run(200, &broken_prelude).0), 200);
     assert_eq!(bedrock_status(run(502, &broken_prelude).0), 502);
 }

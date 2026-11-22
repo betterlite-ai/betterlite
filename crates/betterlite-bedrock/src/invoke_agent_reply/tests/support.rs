@@ -1,6 +1,9 @@
 use std::io;
 use std::sync::{Arc, Mutex};
 
+use aws_smithy_eventstream::frame::write_message_to;
+use aws_smithy_types::event_stream::{Header, HeaderValue, Message};
+use aws_smithy_types::str_bytes::StrBytes;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
@@ -13,35 +16,27 @@ use crate::invoke_agent_reply::events::AgentEvent;
 use crate::invoke_agent_reply::reply::transform_response;
 use crate::invoke_agent_reply::wire::ModelResponse;
 
-const TEXT_HEADER: u8 = 7;
-const INTEGER_HEADER: u8 = 4;
-
-pub(super) enum Header<'name> {
-    Text(&'name str, &'name str),
-    Integer(&'name str, i32),
+pub(super) fn frame(entries: &[(&str, HeaderValue)], payload: &[u8]) -> Vec<u8> {
+    let headers = entries
+        .iter()
+        .map(|(name, value)| Header::new((*name).to_owned(), value.clone()))
+        .collect();
+    let message = Message::new_from_parts(headers, payload.to_vec());
+    let mut out = Vec::new();
+    write_message_to(&message, &mut out).unwrap();
+    out
 }
 
-pub(super) fn frame(headers: &[Header<'_>], payload: &[u8]) -> Vec<u8> {
-    let encoded_headers = encoded_headers(headers);
-    let total = 12_usize
-        .checked_add(encoded_headers.len())
-        .and_then(|value| value.checked_add(payload.len()))
-        .and_then(|value| value.checked_add(4))
-        .unwrap();
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&u32::try_from(total).unwrap().to_be_bytes());
-    bytes.extend_from_slice(&u32::try_from(encoded_headers.len()).unwrap().to_be_bytes());
-    let prelude_crc = crc32fast::hash(&bytes);
-    bytes.extend_from_slice(&prelude_crc.to_be_bytes());
-    bytes.extend_from_slice(&encoded_headers);
-    bytes.extend_from_slice(payload);
-    let message_crc = crc32fast::hash(&bytes);
-    bytes.extend_from_slice(&message_crc.to_be_bytes());
-    bytes
+pub(super) fn text(value: &str) -> HeaderValue {
+    HeaderValue::String(StrBytes::from(value.to_owned()))
 }
 
-pub(super) fn chunk(text: &str) -> Vec<u8> {
-    chunk_body(&format!("{{\"bytes\":\"{}\"}}", STANDARD.encode(text)))
+pub(super) const fn integer(value: i32) -> HeaderValue {
+    HeaderValue::Int32(value)
+}
+
+pub(super) fn chunk(body: &str) -> Vec<u8> {
+    chunk_body(&format!("{{\"bytes\":\"{}\"}}", STANDARD.encode(body)))
 }
 
 pub(super) fn chunk_body(body: &str) -> Vec<u8> {
@@ -55,9 +50,21 @@ pub(super) fn trace(body: &str) -> Vec<u8> {
 pub(super) fn event_frame(event_type: &str, message_type: &str, payload: &[u8]) -> Vec<u8> {
     frame(
         &[
-            Header::Text(":event-type", event_type),
-            Header::Text(":content-type", "application/json"),
-            Header::Text(":message-type", message_type),
+            (":event-type", text(event_type)),
+            (":content-type", text("application/json")),
+            (":message-type", text(message_type)),
+        ],
+        payload,
+    )
+}
+
+pub(super) fn exception_frame(exception_type: &str, payload: &[u8]) -> Vec<u8> {
+    frame(
+        &[
+            (":event-type", text("chunk")),
+            (":content-type", text("application/json")),
+            (":message-type", text("exception")),
+            (":exception-type", text(exception_type)),
         ],
         payload,
     )
@@ -148,32 +155,6 @@ pub(super) fn bedrock_status(outcome: Result<(), InvokeAgentReplyError>) -> u16 
         }
         Ok(()) | Err(_) => panic!("expected a bedrock failure"),
     }
-}
-
-fn encoded_headers(headers: &[Header<'_>]) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for header in headers {
-        match header {
-            Header::Text(name, value) => text_header(&mut bytes, name, value),
-            Header::Integer(name, value) => integer_header(&mut bytes, name, *value),
-        }
-    }
-    bytes
-}
-
-fn text_header(bytes: &mut Vec<u8>, name: &str, value: &str) {
-    bytes.push(u8::try_from(name.len()).unwrap());
-    bytes.extend_from_slice(name.as_bytes());
-    bytes.push(TEXT_HEADER);
-    bytes.extend_from_slice(&u16::try_from(value.len()).unwrap().to_be_bytes());
-    bytes.extend_from_slice(value.as_bytes());
-}
-
-fn integer_header(bytes: &mut Vec<u8>, name: &str, value: i32) {
-    bytes.push(u8::try_from(name.len()).unwrap());
-    bytes.extend_from_slice(name.as_bytes());
-    bytes.push(INTEGER_HEADER);
-    bytes.extend_from_slice(&value.to_be_bytes());
 }
 
 #[derive(Clone, Default)]

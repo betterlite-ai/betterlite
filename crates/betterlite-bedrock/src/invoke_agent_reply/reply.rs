@@ -41,7 +41,7 @@ fn build(
         },
     }];
     // _build_model_response reads usage_info.get("model", model); the key is always set, so the supplied model never wins.
-    response.model = usage.model.clone();
+    response.model.clone_from(&usage.model);
     response.usage = Some(Usage {
         prompt_tokens: usage.input_tokens,
         completion_tokens: usage.output_tokens,

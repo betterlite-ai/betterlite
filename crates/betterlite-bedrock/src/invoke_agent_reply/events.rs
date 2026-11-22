@@ -1,3 +1,4 @@
+use aws_smithy_types::event_stream::HeaderValue;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
@@ -30,7 +31,10 @@ pub struct AgentEvent {
 #[derive(Debug, Error)]
 pub enum HeaderTextError {
     #[error("event-stream header {name} is not a string")]
-    NotText { name: &'static str },
+    NotText {
+        name: &'static str,
+        value: HeaderValue,
+    },
 }
 
 // _extract_headers_from_event: the three categorization headers, an absent one reading as the empty string.
@@ -75,7 +79,10 @@ fn header_text(frame: &AwsEvent, name: &'static str) -> Result<String, HeaderTex
     value
         .as_string()
         .map(|text| text.as_str().to_owned())
-        .map_err(|_| HeaderTextError::NotText { name })
+        .map_err(|other| HeaderTextError::NotText {
+            name,
+            value: other.clone(),
+        })
 }
 
 // _parse_message_from_event returns None for an empty or failed message, and the frame's inner catch swallows every parser error.

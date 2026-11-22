@@ -36,8 +36,9 @@ fn expects_success(name: &str) -> bool {
 
 fn check_events(name: &str, events: &[AgentEvent]) {
     match name {
-        "valid-chunks" | "valid-trace-usage" => assert_eq!(events.len(), 2, "{name}"),
-        "valid-unknown-events" => assert_eq!(events.len(), 1, "{name}"),
+        "valid-chunks" | "valid-trace-usage" | "valid-unknown-events" => {
+            assert_eq!(events.len(), 2, "{name}");
+        }
         "swallowed-exception-frame" => assert_eq!(events.len(), 1, "{name}"),
         "boundary-empty-frame" => assert!(events.is_empty(), "{name}"),
         _ => {}

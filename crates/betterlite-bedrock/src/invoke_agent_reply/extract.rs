@@ -148,12 +148,12 @@ fn usable_object<'value>(
     field: &'static str,
 ) -> Result<Option<&'value IndexMap<String, Json>>, ExtractError> {
     value
-        .filter(|value| non_empty(value))
-        .map(|value| object(value).ok_or(ExtractError::NotObject { field }))
+        .filter(|candidate| non_empty(candidate))
+        .map(|candidate| object(candidate).ok_or(ExtractError::NotObject { field }))
         .transpose()
 }
 
-const fn object<'value>(value: &'value Json) -> Option<&'value IndexMap<String, Json>> {
+const fn object(value: &Json) -> Option<&IndexMap<String, Json>> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
