@@ -13,7 +13,6 @@ use super::failures::stage_failure_response;
 use super::route_match::{RouteMatchError, decoded_route_path};
 use crate::cache_activity_routes::CACHE_ACTIVITY_PATH;
 use crate::error_body::AuthenticationFailure;
-use crate::router_settings::ROUTE_PATHS;
 use crate::tracing_routes::router::unauthenticated;
 
 mod tests;
@@ -44,12 +43,11 @@ pub(crate) async fn stage(
     if check_configured_public_routes(&route, Ok(&settings.routes.public_routes)) {
         next.run(request).await
     } else {
-        let failure_response: fn(&StageFailure) -> Response =
-            if path == CACHE_ACTIVITY_PATH || ROUTE_PATHS.contains(&path.as_str()) {
-                dependency_failure_response
-            } else {
-                stage_failure_response
-            };
+        let failure_response: fn(&StageFailure) -> Response = if path == CACHE_ACTIVITY_PATH {
+            dependency_failure_response
+        } else {
+            stage_failure_response
+        };
         Box::pin(super::authenticate(
             State(settings.master_key),
             request,

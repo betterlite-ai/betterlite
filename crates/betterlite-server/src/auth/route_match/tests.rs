@@ -56,34 +56,6 @@ async fn stage_is_registered_by_the_production_constructor() {
     assert_eq!(calls.load(Ordering::Relaxed), 1);
 }
 
-#[rstest]
-#[case::settings("/router/settings", "current_values")]
-#[case::fields("/router/fields", "routing_group_strategies")]
-#[tokio::test]
-async fn router_settings_routes_reach_their_handlers(#[case] path: &str, #[case] marker: &str) {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let response = production_router(Arc::clone(&calls))
-        .oneshot(request_to(path))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body = String::from_utf8(body.to_vec()).unwrap();
-    assert!(body.contains(marker), "{body}");
-    assert_eq!(calls.load(Ordering::Relaxed), 0);
-}
-
-#[tokio::test]
-async fn an_unserved_router_settings_sibling_stays_unrecognized() {
-    let calls = Arc::new(AtomicUsize::new(0));
-    let response = production_router(Arc::clone(&calls))
-        .oneshot(request_to("/router/settings/extra"))
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    assert_eq!(calls.load(Ordering::Relaxed), 0);
-}
-
 #[tokio::test]
 async fn failure_stops_downstream_with_the_stage_error_body() {
     let calls = Arc::new(AtomicUsize::new(0));

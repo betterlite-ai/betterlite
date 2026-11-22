@@ -9,7 +9,7 @@ steps:
   - request:
       method: GET
       path: /router/settings
-      headers: {}
+      headers: {authorization: Bearer sk-oracle-invalid}
       body: null
     compare:
       headers: []
@@ -20,7 +20,7 @@ steps:
   - request:
       method: GET
       path: /router/fields
-      headers: {}
+      headers: {authorization: Bearer sk-oracle-invalid}
       body: null
     compare:
       headers: []

@@ -1,12 +1,22 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
+use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::settings::{FieldSource, JsonValue};
 use betterlite_config::types::Config;
 use rstest::rstest;
+use serde::Deserialize;
 use serde_json::json;
+use tower::ServiceExt as _;
+
+use crate::routes::router;
+use crate::routes::tests::state_for;
 
 use super::catalog::field_default;
 use super::response::{RouterSettingsResponse, fields_response, settings_response};
@@ -489,4 +499,85 @@ fn an_explicitly_empty_fallback_list_reads_back_as_null() {
     let answer = response("router_settings: {fallbacks: []}");
     assert_eq!(answer.current_values.get("fallbacks"), Some(&json!(null)));
     assert_eq!(answer.source.get("fallbacks"), Some(&FieldSource::Default));
+}
+
+fn application(config: &Config) -> Router {
+    router(
+        state_for(config),
+        Arc::new(AtomicBool::new(false)),
+        Router::new(),
+        Router::new(),
+    )
+}
+
+#[rstest]
+#[case::settings("/router/settings")]
+#[case::fields("/router/fields")]
+#[tokio::test]
+async fn router_settings_routes_reject_an_invalid_key(#[case] path: &str) {
+    let config = load("general_settings:\n  master_key: secret\n  public_routes: []\n");
+    let response = application(&config)
+        .oneshot(
+            Request::get(path)
+                .header("authorization", "Bearer rejected")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let bytes = to_bytes(response.into_body(), 8192).await.unwrap();
+    let body: ErrorResponse = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body.error.error_type, "no_db_connection");
+    assert_eq!(body.error.param, None);
+    assert_eq!(body.error.code, "400");
+}
+
+#[rstest]
+#[case::settings("/router/settings", "current_values")]
+#[case::fields("/router/fields", "routing_group_strategies")]
+#[tokio::test]
+async fn router_settings_routes_answer_the_master_key(#[case] path: &str, #[case] marker: &str) {
+    let config = load("general_settings:\n  master_key: secret\n  public_routes: []\n");
+    let response = application(&config)
+        .oneshot(
+            Request::get(path)
+                .header("authorization", "Bearer secret")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(body.contains(marker), "{body}");
+}
+
+#[rstest]
+#[case::settings("/router/settings")]
+#[case::fields("/router/fields")]
+#[tokio::test]
+async fn router_settings_routes_inherit_the_shared_missing_key_failure(#[case] path: &str) {
+    let config = load("general_settings:\n  master_key: secret\n  public_routes: []\n");
+    let response = application(&config)
+        .oneshot(Request::get(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let bytes = to_bytes(response.into_body(), 8192).await.unwrap();
+    assert_eq!(&*bytes, b"Internal Server Error");
+}
+
+#[derive(Deserialize)]
+struct ErrorResponse {
+    error: ErrorFields,
+}
+
+#[derive(Deserialize)]
+struct ErrorFields {
+    #[serde(rename = "type")]
+    error_type: String,
+    param: Option<String>,
+    code: String,
 }
