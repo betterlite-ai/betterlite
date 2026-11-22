@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value};
 
 use crate::api::codex_history_tools::hoist_additional_tools;
-use crate::api::responses_chat_options::records::ChatCompletionRequest;
+use crate::api::responses_chat_options::records::{ChatCompletionRequest, StreamOptions};
 use crate::api::responses_chat_options::{
     RequestAssembly, RequestContext, StreamOptionsSink, chat_completion_request,
 };
@@ -78,19 +78,33 @@ fn hoisted_request<Context>(
     Ok((bridged, input))
 }
 
+// B908 gives the assembly one lifetime, so the call's sink is reborrowed through this local wrapper, not at the call's own
+struct ReborrowedSink<'sink, 'object> {
+    sink: Option<&'sink mut (dyn StreamOptionsSink + 'object)>,
+}
+
+impl StreamOptionsSink for ReborrowedSink<'_, '_> {
+    fn set_stream_options(&mut self, options: &StreamOptions) {
+        if let Some(sink) = self.sink.as_deref_mut() {
+            sink.set_stream_options(options);
+        }
+    }
+}
+
 fn mapped_request<Completions, Context>(
     deps: &ResponseChatCall<'_, Completions>,
     call: &mut ResponseCall<'_, Context>,
     bridged: &ResponsesApiRequestParams,
 ) -> Result<(ChatCompletionRequest, Map<String, Value>), PreparationError> {
-    let logging: Option<&mut dyn StreamOptionsSink> =
-        call.logging.as_deref_mut().map(|sink| &mut *sink);
+    let mut sink = ReborrowedSink {
+        sink: call.logging.as_deref_mut(),
+    };
     let mut assembly = RequestAssembly {
         limits: deps.limits,
         cache: deps.cache,
         parameters: deps.parameters,
         probe: deps.probe,
-        logging,
+        logging: Some(&mut sink),
         route_all_openai_to_responses: deps.route_all_openai_to_responses,
     };
     let context = RequestContext {
