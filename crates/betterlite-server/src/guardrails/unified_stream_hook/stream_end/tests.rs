@@ -11,6 +11,7 @@ use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
+use betterlite_guardrails::llm_passthrough_dispatch::LlmPassthroughRouteHandler;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 
@@ -24,6 +25,7 @@ use crate::guardrails::unified_guardrail::other_adapters::RerankTranslation;
 use crate::guardrails::unified_guardrail::other_adapters::google_genai::GoogleGenAiTranslation;
 use crate::guardrails::unified_guardrail::other_adapters::mcp::McpTranslation;
 use crate::guardrails::unified_guardrail::translation::UnifiedTranslation;
+use crate::guardrails::unified_passthrough::endpoint::PassthroughEndpointTranslation;
 use crate::guardrails::unified_simple::completion::CompletionTranslation;
 use crate::guardrails::unified_simple::embeddings::EmbeddingsTranslation;
 use crate::guardrails::unified_simple::image::ImageTranslation;
@@ -100,6 +102,7 @@ fn chat() -> Probe {
 
 #[rstest]
 #[case::chat_any_choice_finished(chat(), &[CHAT_OPEN, CHAT_DONE], true)]
+#[case::chat_finished_before_the_last_item(chat(), &[CHAT_DONE, CHAT_OPEN], true)]
 #[case::chat_still_open(chat(), &[CHAT_OPEN, CHAT_OPEN], false)]
 #[case::chat_nothing_yet(chat(), &[], false)]
 #[case::responses_terminal_last(responses(), &[RESPONSES_OPEN, RESPONSES_DONE], true)]
@@ -152,6 +155,16 @@ fn chat() -> Probe {
 )]
 #[case::mcp(
     UnifiedTranslation::Mcp(McpTranslation(PhantomData)),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::endpoint(
+    UnifiedTranslation::Endpoint(PassthroughEndpointTranslation::new(None, None)),
+    ENDED_EVERYWHERE,
+    false
+)]
+#[case::llm_route(
+    UnifiedTranslation::LlmRoute(LlmPassthroughRouteHandler::new(Vec::new())),
     ENDED_EVERYWHERE,
     false
 )]
