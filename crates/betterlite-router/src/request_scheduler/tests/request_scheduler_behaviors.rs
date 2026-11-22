@@ -160,6 +160,20 @@ async fn a_scheduled_request_reports_the_prioritization_header() {
     );
 }
 
+// Router.schedule_acompletion writes the header onto a response object; a call without one comes back untouched
+#[tokio::test(start_paused = true)]
+async fn a_call_without_a_response_object_answers_without_the_header() {
+    let service = scheduler(Settings::default());
+    let call = ScriptedCall::unanswered(0);
+    let outcome = service
+        .schedule(&item(0, "quiet", MODEL), &call, &plan(0.5))
+        .await
+        .expect("the request is scheduled");
+    assert!(!outcome.prioritized);
+    assert_eq!(outcome.response, Response::Absent);
+    assert_eq!(call.calls(), 1);
+}
+
 // a healthy deployment lets a queued request run while the head waits, and only that request leaves the queue
 #[tokio::test(start_paused = true)]
 async fn a_healthy_deployment_bypasses_the_queue_head() {
@@ -291,10 +305,12 @@ async fn a_request_accepted_during_an_outage_survives_the_recovery() {
         .await
         .expect("the fallback queue accepts the request");
     server.set_down(false);
-    assert_eq!(
-        service.queue(MODEL).await.expect("the queue reads").value,
-        entries(&[(0, "second"), (128, "first")])
+    let served = service.queue(MODEL).await.expect("the queue reads");
+    assert!(
+        served.warning.is_none(),
+        "the recovered read answers from the shared tier"
     );
+    assert_eq!(served.value, entries(&[(0, "second"), (128, "first")]));
 }
 
 // an empty queue is the setup error Scheduler.poll and Scheduler.peek raise, told apart from the wait

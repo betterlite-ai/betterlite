@@ -179,6 +179,16 @@ impl ScriptedCall {
         }
     }
 
+    pub(super) fn unanswered(healthy: usize) -> Self {
+        Self {
+            healthy,
+            answer: Ok(headers::Response::Absent),
+            flip: None,
+            cancel: None,
+            calls: AtomicUsize::new(0),
+        }
+    }
+
     pub(super) fn answered_flipping(healthy: usize, flip: Arc<AtomicBool>) -> Self {
         Self {
             healthy,
