@@ -1,0 +1,12 @@
+kind: helper
+name: b3340-list-async-inference-empty-model
+call:
+  b3340:
+    operation: avideo_list
+    litellm_call_id: call-list-inference
+    custom_llm_provider: null
+    api_key: test-key
+    status: 200
+    body: '{"object": "list", "data": []}'
+env: {}
+compare: {ignore: []}

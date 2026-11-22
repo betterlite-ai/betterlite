@@ -1,0 +1,42 @@
+kind: helper
+name: image_edit_moderation
+call:
+  b4440:
+    mode:
+      - mode: image_edit
+        model: gpt-image-1
+        custom_llm_provider: openai
+        params: {model: gpt-image-1}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: {class_name: content_policy, message: moderation_blocked request rejected}
+      - mode: image_edit
+        model: gpt-image-1
+        custom_llm_provider: openai
+        params: {model: gpt-image-1}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: {class_name: bad_request, message: moderation_blocked but a bare bad request}
+      - mode: image_edit
+        model: gpt-image-1
+        custom_llm_provider: openai
+        params: {model: gpt-image-1}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: {class_name: bad_request, message: bad image size}
+      - mode: image_edit
+        model: gpt-image-1
+        custom_llm_provider: openai
+        params: {model: gpt-image-1}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: {class_name: unsupported_params, message: no such parameter}
+    wildcard: []
+    tracking: []
+    response: []
+env: {}
+compare: {ignore: []}

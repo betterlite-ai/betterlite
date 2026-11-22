@@ -1,0 +1,7 @@
+{
+  "include": ["driver.py", "validate.py", "keypair.py"],
+  "typeCheckingMode": "strict",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "stubPath": "stubs"
+}

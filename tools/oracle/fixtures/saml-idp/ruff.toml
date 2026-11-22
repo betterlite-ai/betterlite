@@ -1,0 +1,5 @@
+extend = "../../../../ruff.toml"
+
+[lint.per-file-ignores]
+"__init__.py" = ["N999"] # the fixture directory is named saml-idp by the task's scope
+"**/stubs/onelogin/saml2/*.pyi" = ["N801"] # the stubs mirror OneLogin's fixed public class names

@@ -1,0 +1,33 @@
+kind: helper
+name: model-group-data-reload-metadata-only
+call:
+  model_group_data:
+    calls:
+      - function: raise_http_if_reload_degraded_serving
+        before: [d1]
+        written:
+          - id: d1
+            model_info:
+              access_groups: [group-a]
+        access_group: group-a
+        still_desired: null
+        live_after: [d1]
+calls:
+  - model_group_data:
+      calls:
+        - function: raise_http_if_reload_degraded_serving
+          before: []
+          written:
+            - id: d9
+              model_info: {}
+          access_group: group-a
+          still_desired: null
+          live_after: []
+        - function: raise_http_if_reload_degraded_serving
+          before: [d1, d2]
+          written: []
+          access_group: group-a
+          still_desired: [d1, d2]
+          live_after: [d1, d2]
+env: {}
+compare: {ignore: []}

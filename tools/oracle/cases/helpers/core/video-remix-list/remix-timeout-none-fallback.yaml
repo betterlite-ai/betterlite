@@ -1,0 +1,19 @@
+kind: helper
+name: b3340-remix-timeout-none-fallback
+call:
+  b3340:
+    operation: remix
+    litellm_call_id: call-remix-fallback
+    video_id: video_123
+    prompt: make it better
+    custom_llm_provider: openai
+    api_base: https://api.openai.com/v1
+    api_key: test-key
+    timeout: null
+    timeout_explicitly_none: true
+    request_timeout_seconds: 30.0
+    status: 200
+    body: '{"id": "video_123", "object": "video", "status": "completed", "seconds": "4", "model": "sora-2"}'
+env:
+  REQUEST_TIMEOUT: '30'
+compare: {ignore: []}

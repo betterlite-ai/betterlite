@@ -141,6 +141,8 @@ if grep -q -i -E "scope blocker|scope\.paths|widen [^.]*scope|outside ([a-z0-9']
   mapfile -t paths <<< "${found}"
   for path in "${paths[@]}"; do
     grep -q -x -F "${path}" <<< "${scope}" && continue
+    # a folder name matches no file under it in the gate's globs, and a whole folder is too wide to grant (B324, 11-22)
+    [[ -d ${path} ]] && continue
     covered=
     while read -r glob; do
       # the scope glob as a regex, where * also crosses / as it does in [[ == ]]
