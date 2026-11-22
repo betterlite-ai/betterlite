@@ -1,7 +1,7 @@
 id: B871
 milestone: M4 keys, spend and management
 title: Resolve user and membership authentication grants
-status: done
+status: todo
 depends_on: [B171, B720, B732, B736, B737, B856, B859, B860, B2310, B2318]
 file: tasks/B871-identity-grants.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/auth/team_grants.py"
 parent: B052
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2872
+pr: null
