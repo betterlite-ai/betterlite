@@ -4,8 +4,10 @@ use std::sync::Arc;
 
 use betterlite_config::sections::settings::JsonValue;
 
-use super::plan::{MessagesRoute, plan_messages_route};
-use super::{FakeDispatch, call_steps, empty_routing, input, names, object, text};
+use super::{
+    FakeDispatch, MessagesRoute, call_steps, empty_routing, input, names, object,
+    plan_messages_route, text,
+};
 
 #[tokio::test]
 async fn the_override_is_not_merged_when_the_body_carries_an_api_key() {

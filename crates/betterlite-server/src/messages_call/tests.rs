@@ -67,7 +67,7 @@ struct FakeRouting {
     a2a_calls: Mutex<Vec<JsonMap>>,
 }
 
-fn empty_routing() -> FakeRouting {
+const fn empty_routing() -> FakeRouting {
     FakeRouting {
         blocked: Flag(false),
         blocked_queries: Mutex::new(Vec::new()),
@@ -191,15 +191,15 @@ impl ModelReadThrough for FakeReadThrough {
 
 fn call_steps(
     dispatch: Arc<FakeDispatch>,
-    routing: Option<Arc<FakeRouting>>,
-    read_through: Option<Arc<FakeReadThrough>>,
+    routing: Option<Arc<dyn MessagesRouting>>,
+    read_through: Option<Arc<dyn ModelReadThrough>>,
     allowed: bool,
     user_model: Option<&str>,
 ) -> MessagesCallSteps {
     MessagesCallSteps::new(
         dispatch,
-        routing.map(|routing| -> Arc<dyn MessagesRouting> { routing }),
-        read_through.map(|read_through| -> Arc<dyn ModelReadThrough> { read_through }),
+        routing,
+        read_through,
         MockTestingParams { allowed },
         user_model.map(str::to_owned),
     )
@@ -218,7 +218,7 @@ fn input(model: Option<&str>, has_model: bool) -> MessagesRouteInput {
     }
 }
 
-fn router_plan(specific_deployment: bool) -> MessagesRoute {
+const fn router_plan(specific_deployment: bool) -> MessagesRoute {
     MessagesRoute::Router {
         specific_deployment,
     }
@@ -678,9 +678,10 @@ async fn the_team_map_is_written_into_the_router_call_only_from_the_router_branc
         ),
     ]);
     steps.call(data, false).await.unwrap();
-    let calls = routing.router_calls.lock().unwrap();
-    assert_eq!(calls[0].0.get("model"), Some(&text("internal")));
-    drop(calls);
+    {
+        let calls = routing.router_calls.lock().unwrap();
+        assert_eq!(calls[0].0.get("model"), Some(&text("internal")));
+    }
     let keyed = object(&[
         ("model", text("public")),
         ("api_key", text("k")),
@@ -690,9 +691,10 @@ async fn the_team_map_is_written_into_the_router_call_only_from_the_router_branc
         ),
     ]);
     steps.call(keyed, false).await.unwrap();
-    let calls = routing.router_calls.lock().unwrap();
-    assert_eq!(calls[1].0.get("model"), Some(&text("public")));
-    drop(calls);
+    {
+        let calls = routing.router_calls.lock().unwrap();
+        assert_eq!(calls[1].0.get("model"), Some(&text("public")));
+    }
     assert_eq!(routing.team_queries.lock().unwrap().len(), 2);
 }
 
@@ -743,14 +745,14 @@ async fn call_reaches_the_a2a_port_and_not_found_when_it_answers_none() {
         .unwrap();
     assert_eq!(answering.a2a_calls.lock().unwrap().len(), 1);
     let silent = Arc::new(empty_routing());
-    let steps = call_steps(
+    let silent_steps = call_steps(
         Arc::new(FakeDispatch::default()),
         Some(Arc::clone(&silent)),
         None,
         false,
         None,
     );
-    let Err(error) = steps
+    let Err(error) = silent_steps
         .call(object(&[("model", text("a2a/agent"))]), false)
         .await
     else {
@@ -960,9 +962,9 @@ fn a_call_failure_keeps_its_status_and_a_context_keeps_its_own() {
         status: 503,
         message: "polyfill failed".to_owned(),
     };
-    let error = MessagesCallError::Context(context);
-    assert_eq!(error.status(), 503);
-    assert_eq!(error.to_string(), "polyfill failed");
+    let context_error = MessagesCallError::Context(context);
+    assert_eq!(context_error.status(), 503);
+    assert_eq!(context_error.to_string(), "polyfill failed");
 }
 
 #[test]

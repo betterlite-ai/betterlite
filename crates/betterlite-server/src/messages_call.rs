@@ -44,7 +44,7 @@ pub struct MessagesCallSteps {
 
 impl MessagesCallSteps {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         dispatch: Arc<dyn MessagesDispatch>,
         routing: Option<Arc<dyn MessagesRouting>>,
         read_through: Option<Arc<dyn ModelReadThrough>>,
@@ -146,14 +146,14 @@ impl MessagesCallSteps {
         let Some(routing) = self.routing.as_deref() else {
             return Err(routing_missing());
         };
-        match routing.a2a_agent(data).await {
-            Some(result) => result,
-            None => Err(MessagesCallError::NotFound(ProxyModelNotFoundError::new(
+        let Some(result) = routing.a2a_agent(data).await else {
+            return Err(MessagesCallError::NotFound(ProxyModelNotFoundError::new(
                 route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE),
                 input.model.as_deref().unwrap_or_default(),
                 true,
-            ))),
-        }
+            )));
+        };
+        result
     }
 }
 
@@ -243,7 +243,7 @@ pub enum MessagesCallError {
 
 impl MessagesCallError {
     #[must_use]
-    pub const fn status(&self) -> u16 {
+    pub fn status(&self) -> u16 {
         match self {
             Self::Steps(step) => match step {
                 CallStepError::MissingParam { .. } | CallStepError::MockParamsDisabled { .. } => {
@@ -254,8 +254,7 @@ impl MessagesCallError {
             Self::Context(context) => context.status,
             Self::Blocked => 403,
             Self::MissingModel => 500,
-            Self::NotFound(_) => 400,
-            Self::UserConfig => 400,
+            Self::NotFound(_) | Self::UserConfig => 400,
         }
     }
 

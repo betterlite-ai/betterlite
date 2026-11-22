@@ -10,10 +10,9 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 
-use super::plan::{MessagesRoute, plan_messages_route};
-use super::standalone::standalone_routing;
-use super::{FakeDispatch, input, object, router_plan, text};
+use super::{FakeDispatch, MessagesRoute, input, object, plan_messages_route, router_plan, text};
 use crate::keepalive_interval::DeploymentLookup;
+use crate::messages_call::standalone::standalone_routing;
 use crate::server::chat_setup::chat_executor;
 
 fn standalone_executor(params: &str) -> Arc<ChatExecutor> {

@@ -20,7 +20,7 @@ pub enum MessagesOutcome {
 impl MessagesOutcome {
     // LiteLLM's _hidden_params, which every route shape carries
     #[must_use]
-    pub fn hidden_mut(&mut self) -> &mut JsonMap {
+    pub const fn hidden_mut(&mut self) -> &mut JsonMap {
         match self {
             Self::Message { hidden, .. } | Self::Stream { hidden, .. } => hidden,
         }

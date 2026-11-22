@@ -24,6 +24,7 @@ struct StandaloneRouting {
 }
 
 // What B081's routes(state) builds until the production router replaces it
+#[must_use]
 pub fn standalone_routing(
     executor: Arc<ChatExecutor>,
     dispatch: Arc<dyn MessagesDispatch>,
@@ -98,32 +99,15 @@ impl MessagesRouting for StandaloneRouting {
             .and_then(JsonValue::as_str)
             .unwrap_or_default()
             .to_owned();
-        let deployment = pick(&self.executor, &model, specific_deployment).map_err(|_error| {
-            MessagesCallError::NotFound(ProxyModelNotFoundError::new(
-                route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE),
-                &model,
-                true,
-            ))
-        })?;
-        data.insert(
-            "model".to_owned(),
-            JsonValue::String(deployment.litellm_model.clone()),
-        );
-        data.insert(
-            "api_base".to_owned(),
-            JsonValue::String(deployment.api_base.clone()),
-        );
-        if let Some(api_key) = &deployment.api_key {
-            data.insert(
-                "api_key".to_owned(),
-                JsonValue::String(api_key.expose_secret().to_owned()),
-            );
-        }
-        data.insert(
-            "timeout".to_owned(),
-            JsonValue::from(deployment.timeout_seconds),
-        );
-        write_model_info(&mut data, &deployment.model_id);
+        let deployment =
+            choose_deployment(&self.executor, &model, specific_deployment).map_err(|_error| {
+                MessagesCallError::NotFound(ProxyModelNotFoundError::new(
+                    route_endpoint(ROUTE_TYPE).unwrap_or(ROUTE_TYPE),
+                    &model,
+                    true,
+                ))
+            })?;
+        write_deployment(&mut data, deployment);
         let mut outcome = self.dispatch.dispatch(data).await?;
         let hidden = outcome.hidden_mut();
         hidden.insert(
@@ -184,7 +168,7 @@ fn pick_specific_deployment<'executor>(
     matching.get(index).copied().ok_or_else(unknown)
 }
 
-fn pick<'executor>(
+fn choose_deployment<'executor>(
     executor: &'executor ChatExecutor,
     model: &str,
     specific_deployment: bool,
@@ -193,6 +177,29 @@ fn pick<'executor>(
         return pick_specific_deployment(executor, model);
     }
     pick_deployment(executor, model)
+}
+
+// Router hands the picked deployment's wire settings to the provider call
+fn write_deployment(data: &mut JsonMap, deployment: &ChatDeployment) {
+    data.insert(
+        "model".to_owned(),
+        JsonValue::String(deployment.litellm_model.clone()),
+    );
+    data.insert(
+        "api_base".to_owned(),
+        JsonValue::String(deployment.api_base.clone()),
+    );
+    if let Some(api_key) = &deployment.api_key {
+        data.insert(
+            "api_key".to_owned(),
+            JsonValue::String(api_key.expose_secret().to_owned()),
+        );
+    }
+    data.insert(
+        "timeout".to_owned(),
+        JsonValue::from(deployment.timeout_seconds),
+    );
+    write_model_info(data, &deployment.model_id);
 }
 
 // Router sets litellm_metadata.model_info.id so the provider call finds the deployment it picked

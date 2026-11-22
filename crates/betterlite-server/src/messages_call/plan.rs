@@ -134,15 +134,15 @@ fn plan_unlisted(routing: &dyn MessagesRouting, model: Option<&str>) -> Messages
             specific_deployment: false,
         };
     }
-    let Some(model) = model else {
+    let Some(name) = model else {
         return MessagesRoute::NotFound;
     };
-    if routing.is_deployment_name(model) {
+    if routing.is_deployment_name(name) {
         return MessagesRoute::Router {
             specific_deployment: true,
         };
     }
-    if model.starts_with("a2a/") {
+    if name.starts_with("a2a/") {
         return MessagesRoute::A2aAgent;
     }
     MessagesRoute::NotFound

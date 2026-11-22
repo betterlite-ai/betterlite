@@ -53,7 +53,7 @@ impl CallStepError {
     }
 
     #[must_use]
-    pub const fn param(&self) -> Option<&str> {
+    pub fn param(&self) -> Option<&str> {
         match self {
             Self::MissingParam { param, .. } => Some(param),
             Self::MockParamsDisabled { .. } => None,
