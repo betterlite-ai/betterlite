@@ -2,7 +2,6 @@ pub mod buffered;
 pub mod refusals;
 pub mod stream;
 
-#[cfg(test)]
 mod tests;
 
 pub const REASONING_OPEN_TAG: &str = "<reasoning>";
