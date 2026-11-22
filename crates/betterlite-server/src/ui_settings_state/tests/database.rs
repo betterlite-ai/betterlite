@@ -20,8 +20,7 @@ CREATE TABLE "LiteLLM_UISettings" (
 );
 "#;
 
-const INSERT_ROWS: &str =
-    r#"INSERT INTO "LiteLLM_UISettings" (id, ui_settings) VALUES ($1, $2::jsonb), ($3, $4::jsonb)"#;
+const INSERT_ROWS: &str = r#"INSERT INTO "LiteLLM_UISettings" (id, ui_settings) VALUES ($1, $2::text::jsonb), ($3, $4::text::jsonb)"#;
 
 const CLEAR_ROW: &str =
     r#"UPDATE "LiteLLM_UISettings" SET ui_settings = NULL WHERE id = 'ui_settings'"#;

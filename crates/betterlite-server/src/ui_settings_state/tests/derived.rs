@@ -58,21 +58,26 @@ fn derived_budget_flag_requires_the_exact_boolean_true(
 }
 
 #[rstest]
-#[case::configured("false", true, "false", FieldSource::Config)]
-#[case::value_true("false", false, "true", FieldSource::Config)]
-#[case::unconfigured("false", false, "false", FieldSource::Default)]
+#[case::configured("false", true, FieldSource::Config)]
+#[case::value_true("true", false, FieldSource::Config)]
+#[case::unconfigured("false", false, FieldSource::Default)]
 fn ptu_source_is_config_when_configured_or_true(
-    #[case] value: &str,
-    #[case] configured: bool,
     #[case] resolved: &str,
+    #[case] configured: bool,
     #[case] source: FieldSource,
 ) {
     let ptu = FakePtuFlag {
         enabled: resolved == "true",
         configured,
     };
+    // LiteLLM passes is_ptu_cost_attribution_enabled() as the value it compares to true.
     assert_eq!(
-        ui_setting_source(PTU_COST_ATTRIBUTION_SETTING, &json(value), &store(), &ptu),
+        ui_setting_source(
+            PTU_COST_ATTRIBUTION_SETTING,
+            &json(resolved),
+            &store(),
+            &ptu
+        ),
         source
     );
 }
