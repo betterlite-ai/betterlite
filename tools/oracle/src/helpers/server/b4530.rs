@@ -11,7 +11,7 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::memory_records::access::assert_write_access;
 use betterlite_server::memory_records::caller::{MemoryCaller, is_admin};
-use betterlite_server::memory_records::error::MemoryHttpError;
+use betterlite_server::memory_records::error::{MemoryHttpError, internal_error};
 use betterlite_server::memory_records::filter::{key_filter, visibility_filter};
 use betterlite_server::memory_records::scope::resolve_scope;
 use betterlite_server::memory_records::unique::is_unique_violation;
@@ -21,8 +21,8 @@ use serde_json::Value;
 use tokio::runtime::Builder;
 
 use self::fakes::{NoOrgRoles, RefusingTeams, case_row};
-use self::inputs::{CallerInput, RowInput};
-use self::values::{internal_error_value, model_value, request_value};
+use self::inputs::{CallerInput, CaseError, InternalErrorValue, RowInput};
+use self::values::{model_value, request_value};
 
 pub(crate) struct Op;
 
@@ -192,7 +192,17 @@ async fn answer(step: &Step, caller: &MemoryCaller) -> Result<Value, StepFailure
             step.code.as_deref(),
             &step.message,
         ))?),
-        Function::InternalError => internal_error_value(step),
+        Function::InternalError => {
+            let source = CaseError {
+                message: step.message.clone(),
+            };
+            let error = internal_error(&step.log_message, &source, &step.detail);
+            let value = InternalErrorValue {
+                status: error.status.as_u16(),
+                detail: error.detail,
+            };
+            Ok(serde_json::to_value(value)?)
+        }
         Function::Request => request_value(step),
         Function::Model => model_value(step),
     }
