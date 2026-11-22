@@ -1,0 +1,24 @@
+kind: helper
+name: cleanup-bounds-integer-days-and-invalid-retention
+call:
+  cleanup_bounds:
+    general_settings:
+      maximum_spend_logs_retention_period: 7
+      maximum_autorouter_session_retention_period: hourly
+      maximum_health_check_retention_period: forever
+      maximum_daily_tag_spend_retention_period: 0d
+    retention:
+      - maximum_spend_logs_retention_period
+      - maximum_autorouter_session_retention_period
+      - maximum_health_check_retention_period
+      - maximum_daily_tag_spend_retention_period
+    now_ms: 0
+    deadlines_ms: []
+    groups: []
+    timestamps:
+      - "2026-01-02T03:04:05Z"
+      - "2026-01-02T03:04:05.000123Z"
+    days:
+      - "2026-01-02"
+env: {}
+compare: {ignore: []}

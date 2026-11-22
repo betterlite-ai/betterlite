@@ -19,5 +19,26 @@ call:
         non_default: {}
         responses:
           - {status: 500, body: '{"id":"r1","results":[{"index":0,"relevance_score":0.5}]}'}
+      - version: v2
+        model: rerank-v3.5
+        api_key: test-key
+        headers: {}
+        settings: {}
+        options:
+          query: why
+          documents: [first]
+          return_documents: true
+        non_default: {}
+        responses: []
+      - version: v1
+        model: rerank-v3.0
+        api_key: test-key
+        headers: {}
+        settings: {}
+        options:
+          query: why
+          documents: [first]
+        non_default: {}
+        responses: []
 compare: {ignore: []}
 env: {}
