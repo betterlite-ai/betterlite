@@ -8,8 +8,13 @@
     )
 )]
 
+mod callbacks;
+mod error_relay;
+mod failure_payload;
+mod metadata_tags;
 mod multipart;
 mod non_streaming;
+mod request_context;
 mod request_data;
 mod vertex_setup;
 mod websocket;
