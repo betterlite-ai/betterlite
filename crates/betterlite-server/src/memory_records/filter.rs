@@ -23,11 +23,11 @@ pub enum MemoryWhere {
     },
     AnyOf {
         #[serde(rename = "OR")]
-        any_of: Vec<MemoryWhere>,
+        any_of: Vec<Self>,
     },
     AllOf {
         #[serde(rename = "AND")]
-        all_of: Vec<MemoryWhere>,
+        all_of: Vec<Self>,
     },
 }
 
@@ -74,28 +74,28 @@ pub fn key_filter(
     key_prefix: Option<&str>,
     key: Option<&str>,
 ) -> Option<MemoryWhere> {
-    if let Some(search) = search {
+    if let Some(text) = search {
         return Some(MemoryWhere::AnyOf {
             any_of: vec![
                 MemoryWhere::Key {
                     key: KeyMatch::StartsWith {
-                        starts_with: search.to_owned(),
+                        starts_with: text.to_owned(),
                     },
                 },
                 MemoryWhere::MemoryId {
-                    memory_id: search.to_owned(),
+                    memory_id: text.to_owned(),
                 },
             ],
         });
     }
-    if let Some(key_prefix) = key_prefix {
+    if let Some(prefix) = key_prefix {
         return Some(MemoryWhere::Key {
             key: KeyMatch::StartsWith {
-                starts_with: key_prefix.to_owned(),
+                starts_with: prefix.to_owned(),
             },
         });
     }
-    key.map(|key| MemoryWhere::Key {
-        key: KeyMatch::Exact(key.to_owned()),
+    key.map(|exact| MemoryWhere::Key {
+        key: KeyMatch::Exact(exact.to_owned()),
     })
 }

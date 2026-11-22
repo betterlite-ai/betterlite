@@ -1,5 +1,6 @@
 use axum::http::StatusCode;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
+use std::error::Error;
 
 // the HTTPException LiteLLM raises: a status and the detail FastAPI answers
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -39,7 +40,7 @@ pub fn require_database<T>(database: Option<T>) -> Result<T, MemoryHttpError> {
 #[must_use]
 pub fn internal_error(
     log_message: &str,
-    source: &(dyn std::error::Error + 'static),
+    source: &(dyn Error + 'static),
     default_detail: &str,
 ) -> MemoryHttpError {
     tracing::error!("{log_message}: {source}");

@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use axum::http::StatusCode;
-use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::team_repository::repository::{TeamQueryError, TeamRepository};
 use betterlite_db::team_rows::team::TeamBase;
 
@@ -41,7 +40,7 @@ async fn is_team_admin_for(
             return false;
         }
     };
-    let Some(team) = team else {
+    let Some(found) = team else {
         return false;
     };
     let team_caller = TeamCaller {
@@ -50,7 +49,10 @@ async fn is_team_admin_for(
         team_id: caller.team_id.clone(),
         team_service_account: caller.service_account,
     };
-    match access.allows(&team_caller, &team, &TEAM_OR_ORG_ADMIN).await {
+    match access
+        .allows(&team_caller, &found, &TEAM_OR_ORG_ADMIN)
+        .await
+    {
         Ok(allowed) => allowed,
         Err(error) => {
             tracing::debug!(
@@ -78,9 +80,8 @@ pub async fn assert_write_access(
     if personal {
         return Ok(());
     }
-    let team_id = match (row.user_id.as_deref(), row.team_id.as_deref()) {
-        (None, Some(team_id)) => team_id,
-        (Some(_), _) | (None, None) => return Err(write_denied()),
+    let (None, Some(team_id)) = (row.user_id.as_deref(), row.team_id.as_deref()) else {
+        return Err(write_denied());
     };
     if is_team_admin_for(teams, access, caller, team_id).await {
         return Ok(());

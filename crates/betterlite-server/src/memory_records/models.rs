@@ -78,6 +78,15 @@ impl UpdateRequest {
         sent.sort_unstable();
         sent
     }
+
+    // memory_endpoints.py upsert_memory: an absent key leaves the column alone, and a present one writes JSON text where an explicit null becomes the literal null
+    pub fn metadata_column(&self) -> Result<Option<String>, serde_json::Error> {
+        let Some(metadata) = self.metadata.as_ref() else {
+            return Ok(None);
+        };
+        let value = metadata.as_ref().unwrap_or(&JsonData::Null);
+        Ok(Some(serde_json::to_string(value)?))
+    }
 }
 
 // types/memory_management.py MemoryListResponse
@@ -101,16 +110,5 @@ impl CreateRequest {
             return Ok(None);
         };
         Ok(Some(serde_json::to_string(metadata)?))
-    }
-}
-
-impl UpdateRequest {
-    // memory_endpoints.py upsert_memory: an absent key leaves the column alone, and a present one writes JSON text where an explicit null becomes the literal null
-    pub fn metadata_column(&self) -> Result<Option<String>, serde_json::Error> {
-        let Some(metadata) = self.metadata.as_ref() else {
-            return Ok(None);
-        };
-        let value = metadata.as_ref().unwrap_or(&JsonData::Null);
-        Ok(Some(serde_json::to_string(value)?))
     }
 }

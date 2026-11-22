@@ -32,8 +32,16 @@ impl TryFrom<&UserAPIKeyAuth> for MemoryCaller {
 // memory_endpoints.py _is_admin: only PROXY_ADMIN writes, while the admin view also covers the viewer
 #[must_use]
 pub const fn is_admin(caller: &MemoryCaller) -> bool {
-    if let Some(UserRole::ProxyAdmin) = caller.user_role {
-        return true;
+    match caller.user_role {
+        Some(UserRole::ProxyAdmin) => true,
+        Some(
+            UserRole::ProxyAdminViewer
+            | UserRole::OrgAdmin
+            | UserRole::InternalUser
+            | UserRole::InternalUserViewer
+            | UserRole::Team
+            | UserRole::Customer,
+        )
+        | None => false,
     }
-    false
 }
