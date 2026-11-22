@@ -13,6 +13,9 @@ use serde::Deserialize;
 const CHARACTER_ID: &str = "char-1";
 const CHARACTER_CREATED_AT: i64 = 1_700_000_000;
 
+// absent keeps the declared 600, null falls back to REQUEST_TIMEOUT and a number is the caller's
+type DeclaredTimeout = Option<Option<f64>>;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -25,9 +28,8 @@ pub(crate) struct Input {
     video: Option<String>,
     #[serde(default)]
     character_id: Option<String>,
-    // absent keeps the declared 600, null falls back to REQUEST_TIMEOUT and a number is the caller's
     #[serde(default, with = "serde_with::rust::double_option")]
-    timeout: Option<Option<f64>>,
+    timeout: DeclaredTimeout,
     #[serde(default)]
     custom_llm_provider: Option<String>,
     #[serde(default)]
