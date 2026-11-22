@@ -122,15 +122,14 @@ impl UiSettings {
         }
         values.insert(
             PAGES_SETTING.to_owned(),
-            match &self.pages {
-                Some(pages) => JsonValue::Array(
+            self.pages.as_ref().map_or(JsonValue::Null, |pages| {
+                JsonValue::Array(
                     pages
                         .iter()
                         .map(|page| JsonValue::String(page.clone()))
                         .collect(),
-                ),
-                None => JsonValue::Null,
-            },
+                )
+            }),
         );
         values.insert(
             EDITABLE_FIELDS_SETTING.to_owned(),
@@ -168,10 +167,9 @@ fn setting_flag(
     input: &UiSettingsDict,
     name: &'static str,
 ) -> Result<UiSettingFlag, UiSettingsError> {
-    match input.get(name) {
-        None => Ok(UiSettingFlag(false)),
-        Some(value) => boolean(name, value),
-    }
+    input
+        .get(name)
+        .map_or(Ok(UiSettingFlag(false)), |value| boolean(name, value))
 }
 
 fn boolean(name: &'static str, value: &JsonValue) -> Result<UiSettingFlag, UiSettingsError> {
@@ -208,15 +206,17 @@ fn number_bool(name: &'static str, number: &Number) -> Result<UiSettingFlag, UiS
     }
     if number.is_f64() {
         let value = number.as_f64().unwrap_or(f64::NAN);
-        if value.partial_cmp(&0.0) == Some(Ordering::Equal) {
+        if value.partial_cmp(&0.0_f64) == Some(Ordering::Equal) {
             return Ok(UiSettingFlag(false));
         }
-        if value.partial_cmp(&1.0) == Some(Ordering::Equal) {
+        if value.partial_cmp(&1.0_f64) == Some(Ordering::Equal) {
             return Ok(UiSettingFlag(true));
         }
-        if value.fract().partial_cmp(&0.0) == Some(Ordering::Equal)
-            && value > -9_223_372_036_854_775_808.0_f64
-            && value < 9_223_372_036_854_775_808.0_f64
+        // pydantic turns an integral float into a bool only while it still fits an i64
+        let bound = 2.0_f64.powi(63_i32);
+        if value.fract().partial_cmp(&0.0_f64) == Some(Ordering::Equal)
+            && value > -bound
+            && value < bound
         {
             return Err(UiSettingsError {
                 kind: UiSettingErrorKind::BoolParsing,

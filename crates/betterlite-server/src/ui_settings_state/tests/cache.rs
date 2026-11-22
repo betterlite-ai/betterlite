@@ -258,8 +258,8 @@ async fn sync_updates_only_present_entries_in_a_plain_map() {
         )
     );
     repository.remove_row();
-    let applied = sync_ui_settings(&repository, GeneralSettingsTarget::Map(&mut map)).await;
-    assert_eq!(applied, UiSettingsDict::new());
+    let removed = sync_ui_settings(&repository, GeneralSettingsTarget::Map(&mut map)).await;
+    assert_eq!(removed, UiSettingsDict::new());
     assert_eq!(
         map,
         settings(

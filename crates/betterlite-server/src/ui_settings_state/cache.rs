@@ -34,10 +34,10 @@ where
     if let Some(settings) = cached.and_then(cached_settings) {
         return Ok(settings);
     }
-    let Some(repository) = repository else {
+    let Some(store) = repository else {
         return Ok(UiSettingsDict::new());
     };
-    let stored = match repository.stored_ui_settings().await? {
+    let stored = match store.stored_ui_settings().await? {
         Some(text) => decode_stored_ui_settings(text.as_bytes())?,
         None => UiSettingsDict::new(),
     };

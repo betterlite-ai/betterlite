@@ -9,9 +9,9 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::support::{FakePtuFlag, json, settings};
-use crate::jobs::ptu::attribution::{EnvironmentAttribution, PtuAttribution};
+use crate::jobs::ptu::attribution::{EnvironmentAttribution, PtuAttribution as _};
 use crate::ui_settings_state::derived::{
-    DerivedUiSettings, PtuCostFlag, derived_ui_settings, ui_setting_source,
+    DerivedUiSettings, PtuCostFlag as _, derived_ui_settings, ui_setting_source,
 };
 
 fn store() -> SettingsStore {

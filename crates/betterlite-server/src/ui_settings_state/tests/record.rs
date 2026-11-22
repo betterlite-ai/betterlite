@@ -268,7 +268,8 @@ fn record_exclude_unset_keeps_a_field_the_caller_sent_at_its_default() {
 #[test]
 fn schema_reports_the_pydantic_property_entries() {
     let schema = serde_json::to_value(ui_settings_schema()).expect("the schema serializes");
-    assert_eq!(schema.as_object().map(|entries| entries.len()), Some(16));
+    let entries = schema.as_object().expect("the schema is an object");
+    assert_eq!(entries.len(), 16);
     assert_eq!(
         schema["enable_chat_ui"],
         json(

@@ -50,7 +50,7 @@ fn settings_value(value: JsonData) -> JsonValue {
         JsonData::Object(entries) => JsonValue::Object(
             entries
                 .into_iter()
-                .map(|(key, value)| (key, settings_value(value)))
+                .map(|(key, entry)| (key, settings_value(entry)))
                 .collect(),
         ),
     }

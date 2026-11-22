@@ -8,7 +8,9 @@ use tokio_postgres::NoTls;
 
 use super::support::settings;
 use crate::ui_settings_state::decode::decode_stored_ui_settings;
-use crate::ui_settings_state::repository::{DatabaseUiSettingsRepository, UiSettingsRepository};
+use crate::ui_settings_state::repository::{
+    DatabaseUiSettingsRepository, UiSettingsRepository as _,
+};
 
 const SCHEMA: &str = r#"
 CREATE TABLE "LiteLLM_UISettings" (
