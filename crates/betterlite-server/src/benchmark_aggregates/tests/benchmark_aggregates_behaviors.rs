@@ -350,7 +350,8 @@ fn a_summed_row_is_unavailable_when_any_classifier_cost_is() {
     let mut partial = complexity_row();
     partial.classifier_cost_recorded_turns = 3;
     let rows = [complexity_row(), partial];
-    assert_eq!(summed_agg_row(&rows).savings_classifier_cost, None);
+    let compared: Vec<SessionAggRow> = rows.iter().map(compared_row).collect();
+    assert_eq!(summed_agg_row(&compared).savings_classifier_cost, None);
     let response = benchmarks(&window(), &rows, None);
     assert_eq!(response.totals.savings_classifier_cost, None);
     assert_eq!(response.totals.classifier_cost, None);
