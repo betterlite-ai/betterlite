@@ -23,6 +23,9 @@ CREATE TABLE "LiteLLM_UISettings" (
 const INSERT_ROWS: &str =
     r#"INSERT INTO "LiteLLM_UISettings" (id, ui_settings) VALUES ($1, $2::jsonb), ($3, $4::jsonb)"#;
 
+const CLEAR_ROW: &str =
+    r#"UPDATE "LiteLLM_UISettings" SET ui_settings = NULL WHERE id = 'ui_settings'"#;
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -68,5 +71,9 @@ async fn database_repository_reads_the_ui_settings_row() {
         decode_stored_ui_settings(text.as_bytes()).unwrap(),
         settings(r#"{"enable_chat_ui": true}"#)
     );
+    let client = pool.get().await.unwrap();
+    client.execute(CLEAR_ROW, &[]).await.unwrap();
+    drop(client);
+    assert_eq!(repository.stored_ui_settings().await.unwrap(), None);
     fixture.close_async().await.unwrap();
 }

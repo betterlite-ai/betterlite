@@ -45,9 +45,9 @@ impl UiSettingsRepository for DatabaseUiSettingsRepository<'_> {
         let Some(found) = row else {
             return Ok(None);
         };
-        let text: String = found
+        // LiteLLM's db_record.ui_settings is nullable, and a NULL column reads as the empty settings.
+        found
             .try_get(0)
-            .map_err(|source| TableError::Database(backend(source)))?;
-        Ok(Some(text))
+            .map_err(|source| TableError::Database(backend(source)))
     }
 }
