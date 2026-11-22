@@ -270,6 +270,7 @@ fn foundry_caller_authorization() {
     let mut lowered = call(Some("flux"), Some("azure_ai"));
     lowered.kwargs = kwargs(vec![("headers", object(&[("API-KEY", "caller")]))]);
     case.run(lowered).0.unwrap();
+    assert!(ops.foundry().is_empty());
     let mut based = call(Some("flux"), Some("azure_ai"));
     based.kwargs = kwargs(vec![(
         "base_model",
@@ -286,7 +287,6 @@ fn foundry_caller_authorization() {
     assert_eq!(sent[1].header("API-KEY"), Some("caller"));
     assert!(sent[1].header("api-key").is_none());
     assert_eq!(sent[2].base_model.as_deref(), Some("azure-ai/base"));
-    assert!(ops.foundry().is_empty());
     foundry_injected_auth();
 }
 

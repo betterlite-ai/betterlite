@@ -328,22 +328,26 @@ fn special_branches_need_a_model(
     assert_eq!(sent[0].asynchronous, asynchronous);
 }
 
-// LiteLLM's openai branch takes api_key or the resolver's dynamic key, and no other branch reads that key
+// LiteLLM's openai branch takes api_key or the resolver's dynamic key
 #[test]
-fn resolved_key_reaches_only_the_openai_branch() {
+fn resolved_key_reaches_the_openai_branch() {
     let openai = FakeOps::new(Some(ImageGenerationConfigTag::OpenAi(String::from(
         "dall-e-3",
     ))));
-    let openai_identity = FakeIdentity::keyed(
+    let identity = FakeIdentity::keyed(
         Some("dall-e-3"),
         ProviderIdentity::Known(ProviderId::Openai),
     );
-    Case::new(&openai, &openai_identity, Settings::default())
+    Case::new(&openai, &identity, Settings::default())
         .run(call(Some("dall-e-3"), Some("openai")))
         .0
         .unwrap();
     assert_eq!(openai.sends()[0].api_key.as_deref(), Some("resolved-key"));
+}
 
+// no other branch reads the resolver's dynamic key
+#[test]
+fn resolved_key_skips_the_other_branches() {
     let azure = FakeOps::new(Some(ImageGenerationConfigTag::Azure(String::from("dep"))));
     let azure_identity =
         FakeIdentity::keyed(Some("dep"), ProviderIdentity::Known(ProviderId::Azure));

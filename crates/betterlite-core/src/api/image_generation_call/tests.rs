@@ -656,7 +656,7 @@ impl FakeOps {
             config,
             supported: supported.clone(),
             bedrock: TestMapper {
-                supported: supported.clone(),
+                supported,
                 models: None,
             },
             configs_seen: Mutex::new(Vec::new()),
