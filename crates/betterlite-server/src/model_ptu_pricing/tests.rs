@@ -260,6 +260,26 @@ fn price_delta() {
     assert_eq!(written(outcome), expected);
 }
 
+#[test]
+fn price_delta_releases_nothing_while_ptu_stays() {
+    let model_info = object(
+        r#"{"id": "m1", "ptu_count": 2, "cost_per_ptu_per_hour": 1.5, "input_cost_per_token": 0.0}"#,
+    );
+    let params = object(r#"{"model": "azure/gpt-4o", "input_cost_per_token": 0.0}"#);
+    let blobs = DeploymentBlobs {
+        model_info: &model_info,
+        litellm_params: &params,
+    };
+    let clears = object(r#"{"ptu_count": null}"#);
+    let patch = PtuPatch {
+        litellm_params: None,
+        model_info: Some(&clears),
+    };
+    let outcome = ptu_pricing_delta(&object(PTU_INFO), blobs, patch, &Flag(true));
+    assert!(outcome.as_ref().unwrap().released.is_empty());
+    assert_eq!(written(outcome), object(ZEROED));
+}
+
 #[rstest]
 #[case::attribution_off(PTU_INFO, false)]
 #[case::not_ptu(r#"{"id": "m1", "input_cost_per_token": 0.000002}"#, true)]
