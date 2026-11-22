@@ -12,6 +12,8 @@ use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
+use betterlite_streaming::stream_chunk_shaping::creation::system_instant;
+use betterlite_streaming::stream_chunk_shaping::records::StreamOptions as WrapperStreamOptions;
 use betterlite_streaming::streamed_response_assembly::AssemblyError;
 use betterlite_streaming::streamed_response_assembly::response::Response as StreamResponseRecord;
 use futures_util::StreamExt as _;
@@ -19,10 +21,12 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Value;
 use tracing::subscriber::{DefaultGuard, set_default};
+use uuid::Uuid;
 
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::bfl::poll::PollSleeper;
 use crate::api::chat_response_stream::driver::ChatResponseStream;
+use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::chat_response_stream_items::snapshot::StreamAssembly;
 use crate::api::chat_response_stream_items::sources::EventSources;
 use crate::api::responses_chat_output::records::AssembledResponse;
@@ -36,7 +40,7 @@ use super::completions::{CompletionBody, CompletionClient, CompletionOutput};
 use super::error::CallError;
 use super::handler::{async_response_handler, response_handler};
 use super::records::{CallOutcome, CompletionArguments, ResponseCall, ResponseChatCall};
-use super::source::ResponsesChunkSource;
+use super::source::{ChunkSourceConfig, ResponsesChunkSource};
 
 const NORMALIZED_ID: &str = "msg_00000000-0000-0000-0000-000000000000";
 const DELTA: &str = "data: {\"id\":\"chat_a\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"gpt-4o-mini\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n";
@@ -612,6 +616,53 @@ async fn chat_stream_dispatch() {
         events += 1;
     }
     assert!(events > 0);
+}
+
+fn chunk_source(frames: Vec<Vec<u8>>) -> ResponsesChunkSource {
+    let body = CompletionBody(
+        futures_util::stream::iter(frames.into_iter().map(Ok::<Vec<u8>, HttpError>)).boxed(),
+    );
+    ResponsesChunkSource::new(
+        ChunkSourceConfig {
+            provider: "openai".to_owned(),
+            model: "gpt-4o-mini".to_owned(),
+            stream_options: Some(WrapperStreamOptions {
+                include_usage: true,
+            }),
+            now: system_instant,
+            next_id: Uuid::new_v4,
+        },
+        body,
+    )
+}
+
+async fn drained(source: &mut ResponsesChunkSource) -> Vec<Value> {
+    let mut chunks = Vec::new();
+    while let Some(chunk) = source.next_chunk().await.unwrap() {
+        chunks.push(serde_json::to_value(&chunk).unwrap());
+    }
+    chunks
+}
+
+#[tokio::test]
+async fn source_chunks_end_with_the_usage_chunk() {
+    let mut source = chunk_source(stream_chunks());
+    let chunks = drained(&mut source).await;
+    assert_eq!(chunks[0]["choices"][0]["delta"]["content"], json("\"hi\""));
+    assert_eq!(chunks[1]["choices"][0]["finish_reason"], json("\"stop\""));
+    assert!(
+        chunks.iter().any(|chunk| !chunk["usage"].is_null()),
+        "the wrapper's closing usage chunk goes out: {chunks:?}"
+    );
+}
+
+#[tokio::test]
+async fn source_stops_reading_after_done() {
+    let mut frames = stream_chunks();
+    frames.push(b"data: {broken\n\n".to_vec());
+    let mut source = chunk_source(frames);
+    let chunks = drained(&mut source).await;
+    assert!(chunks.iter().any(|chunk| !chunk["usage"].is_null()));
 }
 
 #[rstest]
