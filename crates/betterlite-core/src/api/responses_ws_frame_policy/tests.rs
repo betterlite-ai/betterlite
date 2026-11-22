@@ -121,7 +121,11 @@ const EXPECTED_OUTPUT_DONE: [&str; 6] = [
     1,
     1024
 )]
-#[case::code_points(r#"{"type":"response.create","input":"éééééééé"}"#, 2, 1024)]
+#[case::code_points(
+    r#"{"type":"response.create","input":"\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"}"#,
+    2,
+    1024
+)]
 fn quota_estimation_shapes(
     #[case] frame: &str,
     #[case] input_tokens: i64,
@@ -572,7 +576,8 @@ async fn request_guardrail_masking(
         .map(|text| (1_usize, text.replace("a@example.com", "<EMAIL_ADDRESS_1>")));
     let expected_calls: Vec<MaskCall> = first_texts
         .iter()
-        .map(|text| (0_usize, (*text).to_owned()))
+        .copied()
+        .map(|text| (0_usize, text.to_owned()))
         .chain(chained)
         .map(|(guard, text)| MaskCall {
             guard,
@@ -690,7 +695,8 @@ async fn completed_output_masking(
         .map(|text| (1_usize, text.replace("secret", "[S]")));
     let expected_calls: Vec<MaskCall> = first_texts
         .iter()
-        .map(|text| (0_usize, (*text).to_owned()))
+        .copied()
+        .map(|text| (0_usize, text.to_owned()))
         .chain(second_texts)
         .map(|(guard, text)| MaskCall {
             guard,
