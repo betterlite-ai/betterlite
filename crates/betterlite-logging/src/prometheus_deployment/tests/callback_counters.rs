@@ -12,6 +12,8 @@ use super::counters::{
     increment_callback_logging_failure, increment_deployment_cooled_down,
     record_managed_batch_created,
 };
+use super::metric::DeploymentMetric;
+use super::metrics::DeploymentMetrics as _;
 use super::requests::{BatchCreatedLabels, CooledDownLabels};
 use super::support::{
     ProbeGauges, capture_logs, expected_labels, inc_amount, labels_of, metric_of, update_of,
@@ -223,4 +225,20 @@ fn cooled_down_amount_is_one() {
         update_of(&gauges.updates()[0]),
         MetricUpdate::Inc(MetricValue::Finite(Decimal::ONE))
     );
+}
+
+#[test]
+fn increment_fixed_accepts_the_declared_labels_of_one_series() {
+    let gauges =
+        ProbeGauges::new().replacing_labels("litellm_managed_batch_created_total", &["model"]);
+    gauges
+        .increment_fixed(
+            DeploymentMetric::ManagedBatchCreated,
+            &[("model", "gpt-4o")],
+        )
+        .unwrap();
+    let events = gauges.updates();
+    assert_eq!(events.len(), 1);
+    assert_eq!(metric_of(&events[0]), "litellm_managed_batch_created_total");
+    assert_eq!(update_of(&events[0]), inc_amount());
 }
