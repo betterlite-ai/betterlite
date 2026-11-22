@@ -43,7 +43,11 @@ fn false_and_absent_preserve_fallback(#[case] source: &str) {
 fn invalid_bool_rejected(#[case] source: &str) {
     let error = load(source).unwrap_err();
     assert!(
-        error.to_string().contains("fail_closed_budget_enforcement"),
+        matches!(
+            &error,
+            ConfigError::InvalidScalar { path, value: false }
+                if path == "general_settings.fail_closed_budget_enforcement"
+        ),
         "{error}"
     );
 }
