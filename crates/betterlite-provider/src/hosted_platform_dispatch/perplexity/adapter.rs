@@ -112,8 +112,7 @@ fn unsupported() -> OperationError {
     }
 }
 
-// LiteLLM's get_optional_params_embeddings: a set `user` is refused unless drop_params allows the drop, and every
-// request field outside DEFAULT_EMBEDDING_PARAMS plus the client's extra_body is merged over the transformed body
+// LiteLLM's get_optional_params_embeddings: a set user is refused unless drop_params drops it, and every other request field plus a client extra_body is merged over the transformed body
 fn prepared_embedding(
     operation: &EmbeddingOperation,
     deployment: &Deployment,
