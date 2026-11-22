@@ -198,6 +198,37 @@ async fn threads_rows() {
     assert_eq!(seen[0].method, "POST");
 }
 
+async fn thread_get_row() {
+    let fake = Arc::new(AssistantsFake::new(vec![Planned::json(200, THREAD)]));
+    let fixture = Fixture::new();
+    let request = fixture.request();
+    let api = ThreadMessagesApi {
+        transport: Arc::clone(&fake),
+    };
+    let result = dispatch(AzureResourceOperation::AssistantThreads(Box::pin(
+        ThreadsDispatch {
+            api: &api,
+            request: &request,
+            supplied: None,
+            flag: None,
+            call: ThreadOperation::Retrieve("thread_1"),
+        }
+        .run(),
+    )))
+    .await
+    .expect("the retrieve reaches its leaf");
+    let AzureResourceResult::AssistantThreads(reply) = result else {
+        panic!("the threads dispatch returns its reply");
+    };
+    assert_eq!(reply.thread.id, "thread_1");
+    let seen = fake.requests();
+    assert_eq!(
+        seen[0].url,
+        "https://example.test/openai/threads/thread_1?api-version=2024-02-01"
+    );
+    assert_eq!(seen[0].method, "GET");
+}
+
 async fn messages_rows() {
     let fake = Arc::new(AssistantsFake::new(vec![Planned::json(200, MESSAGE)]));
     let fixture = Fixture::new();
@@ -304,6 +335,7 @@ async fn failure_rows() {
 pub(super) async fn check() {
     definitions_rows().await;
     threads_rows().await;
+    thread_get_row().await;
     messages_rows().await;
     runs_polled_row().await;
     runs_streaming_row().await;
