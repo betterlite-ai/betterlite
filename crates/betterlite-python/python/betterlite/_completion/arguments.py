@@ -33,7 +33,7 @@ class _ProxyAuthHeadersProvider(Protocol):
     def get_auth_headers(self) -> Mapping[str, str]: ...
 
 
-CallValue: TypeAlias = JsonValue | SessionLike
+CallValue: TypeAlias = JsonValue | SessionLike | type[ResponseFormatModel]
 
 # untyped betterlite globals (proxy_auth, config_path, num_retries) get a typed seam here
 proxy_auth: _ProxyAuthHeadersProvider | None = None
@@ -86,8 +86,12 @@ def timeout_value(value: CallValue | TimeoutValues) -> JsonValue:
             raise UnsupportedCallArgument("timeout")
 
 
-def response_format_value(value: JsonValue | type[ResponseFormatModel]) -> JsonValue:
-    formatted = type_to_response_format_param(value)
+def response_format_value(value: CallValue) -> JsonValue:
+    # a pydantic class becomes its json_schema; every other value must already be JSON
+    if isinstance(value, type):  # ast-grep-ignore: no-isinstance
+        formatted = type_to_response_format_param(value)
+    else:
+        formatted = type_to_response_format_param(JSON.validate_python(value))
     if formatted is None:
         raise UnsupportedCallArgument("response_format")
     return formatted

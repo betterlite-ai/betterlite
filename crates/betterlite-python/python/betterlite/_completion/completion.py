@@ -86,6 +86,13 @@ def call_arguments_from(
     return {**kwargs, **positional}
 
 
+def reject_unsupported_arguments(values: dict[str, CallValue]) -> None:
+    # the completion runs in Rust, so LiteLLM's Python client and session cannot be passed on
+    for name in ("shared_session", "client"):
+        if values.pop(name, None) is not None:
+            raise UnsupportedCallArgument(name)
+
+
 def completion_from_arguments(
     arguments: Mapping[str, CallValue],
 ) -> CompletionOutcome | Awaitable[CompletionOutcome]:
@@ -93,10 +100,7 @@ def completion_from_arguments(
     model = MODEL.validate_python(values.pop("model", None))
     if model is None:
         raise ValueError("model param not passed in.")
-    if values.pop("shared_session", None) is not None:
-        raise UnsupportedCallArgument("shared_session")
-    if values.get("client") is not None:
-        raise UnsupportedCallArgument("client")
+    reject_unsupported_arguments(values)
     logger_fn = values.pop("logger_fn", None)
     if logger_fn is not None:
         LOGGER.warning("logger_fn is not called: the completion runs in Rust")
@@ -114,7 +118,7 @@ def completion_from_arguments(
     }
     response_format = values.pop("response_format", None)
     if response_format is not None:
-        forwarded["response_format"] = JSON.validate_python(response_format)
+        forwarded["response_format"] = response_format_value(response_format)
     if forwarded_timeout is not None:
         forwarded["timeout"] = forwarded_timeout
     mock_response = values.pop("mock_response", None)
