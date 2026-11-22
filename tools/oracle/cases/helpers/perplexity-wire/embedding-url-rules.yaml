@@ -1,0 +1,6 @@
+kind: helper
+name: perplexity-embedding-url-rules
+env: {}
+compare: {ignore: []}
+call:
+  b5834: {"op": "embedding", "urls": [null, "", "https://mock.example", "https://mock.example/", "https://mock.example/v1", "https://mock.example/v1/embeddings", "https://mock.example/custom/embeddings"], "headers": [], "requests": [], "replies": [], "errors": []}

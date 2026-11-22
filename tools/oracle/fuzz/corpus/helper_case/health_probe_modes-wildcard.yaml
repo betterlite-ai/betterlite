@@ -1,0 +1,22 @@
+kind: helper
+name: health-probe-modes-wildcard-seed
+call:
+  b4440:
+    mode:
+      - mode: image_edit
+        model: gpt-image-1
+        custom_llm_provider: openai
+        params: {model: gpt-image-1}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: {class_name: content_policy, message: moderation_blocked}
+    wildcard:
+      - model: "*"
+        custom_llm_provider: openai
+        params: {model: "*"}
+        cheapest: []
+    tracking: []
+    response: []
+env: {}
+compare: {ignore: []}

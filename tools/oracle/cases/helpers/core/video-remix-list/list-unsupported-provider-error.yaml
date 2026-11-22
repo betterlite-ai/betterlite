@@ -1,0 +1,12 @@
+kind: helper
+name: b3340-list-unsupported-provider-error
+call:
+  b3340:
+    operation: list
+    litellm_call_id: call-list-unsupported
+    custom_llm_provider: groq
+    api_key: test-key
+    status: 200
+    body: '{}'
+env: {}
+compare: {ignore: []}

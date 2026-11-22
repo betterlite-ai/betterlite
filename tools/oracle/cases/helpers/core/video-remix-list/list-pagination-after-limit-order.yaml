@@ -1,0 +1,20 @@
+kind: helper
+name: b3340-list-pagination-after-limit-order
+call:
+  b3340:
+    operation: list
+    litellm_call_id: call-list-pagination
+    after: cursor_1
+    limit: 5
+    order: desc
+    custom_llm_provider: openai
+    api_base: https://api.openai.com/v1
+    api_key: test-key
+    extra_query:
+      foo: bar
+    extra_headers:
+      x-trace: t1
+    status: 200
+    body: '{"object": "list", "data": [{"id": "video_124", "object": "video", "status": "completed", "seconds": "4"}], "first_id": "video_124", "last_id": "video_124", "has_more": true}'
+env: {}
+compare: {ignore: []}

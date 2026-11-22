@@ -1,0 +1,66 @@
+id: B10038
+title: A Bedrock Stability edit for an unmapped model returns its image
+description: >-
+  Fix a lost-data bug that B637 ports from LiteLLM. The Bedrock Stability edit reply in
+  crates/betterlite-bedrock/src/stability_edits/reply.rs decodes the provider's images and then looks up the model's
+  price record. For a model with no record it fails with StabilityEditError::ModelInfo, so the provider has already
+  billed an image the client never gets. LiteLLM does the same: get_model_info raises for an unmapped model after
+  the reply is parsed. B637's reviewer found it and the architect decided to fix it, since no working setup can
+  rely on losing a billed image.
+
+
+  B1523 fixed the same bug for the native Stability edit: a model with no catalog entry returns the decoded image
+  with a zero response-cost header (docs/deviations/B1523.yaml). The Bedrock edit does the same. A missing price
+  record is treated like a record without output_cost_per_image, so the reply keeps its images and carries the
+  zero header that case already gets. StabilityEditError::ModelInfo has no other use and goes. The other price
+  failures (a text price, a price of the wrong shape) stay as B637 built them.
+scope:
+  paths:
+  - crates/betterlite-bedrock/src/stability_edits/reply.rs
+  - crates/betterlite-bedrock/src/stability_edits/error.rs
+  - crates/betterlite-bedrock/src/stability_edits/tests/cases.rs
+  - crates/betterlite-bedrock/src/stability_edits/tests/support.rs
+  - docs/deviations/B10038.yaml
+  lint_tables: false
+references:
+- why: LiteLLM reads the model's price with get_model_info after the Bedrock Stability reply is parsed.
+  url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L341-L347
+dod:
+- text: >-
+    An edit reply for a model with no price record returns the decoded images with the same zero response-cost
+    header a record without output_cost_per_image gets, and unmapped_model_price in tests/cases.rs asserts the
+    images and the header.
+  proof: [stability-edit-cases]
+- text: >-
+    StabilityEditError::ModelInfo is gone, and the other price failure cases still pass.
+  proof: [stability-edit-cases]
+- text: >-
+    docs/deviations/B10038.yaml has one row: a Bedrock Stability edit for a model with no price record returns its
+    image with a zero response-cost header, where LiteLLM fails after the provider billed the image, linking the
+    reference above.
+  proof: [stability-edit-cases]
+checks:
+  optional: []
+  commands:
+  - id: stability-edit-cases
+    why: The Bedrock Stability edit cases are missing or fail.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::stability_edits_cases::/)'
+oracle_cases: []
+deviations:
+- what: >-
+    A Bedrock Stability edit for a model with no price record returns the decoded image with a zero response-cost
+    header. LiteLLM's get_model_info raises for the unmapped model after the reply is parsed, so the image is lost.
+  why: >-
+    The provider has already returned and billed the image, so failing loses data no working setup can rely on.
+    B1523 fixed the native Stability edit the same way.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L341-L347
+out_of_scope:
+- The native Stability edit in betterlite-core. B1523 already fixed it.
+- Other Bedrock image replies that read a price record. Their own tasks decide.
+pitfalls:
+- Keep the lookup before the header is built, so a record with a text or wrongly shaped price still fails as B637's cases expect.
+review_level: standard
+budget:
+  max_changed_lines: 70
+  max_new_expects: 0

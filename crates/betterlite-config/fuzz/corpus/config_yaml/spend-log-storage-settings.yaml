@@ -1,0 +1,10 @@
+# the spend log storage section reads these general_settings keys; the byte budget and external writer URL are environment only
+general_settings:
+  store_prompts_in_spend_logs: true
+  missing_session_id: generate
+  use_redis_transaction_buffer: true
+  maximum_spend_logs_retention_period: 7
+  maximum_spend_logs_cleanup_batch_size: 2
+litellm_settings:
+  disable_end_user_cost_tracking: false
+model_list: []

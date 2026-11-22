@@ -1,0 +1,41 @@
+kind: helper
+name: mcp-oauth-state-token-rules-dot-path
+call:
+  b7530:
+    function: validate_token_response
+    token_response: {team: {enterprise_id: e1}}
+    rules: {team.enterprise_id: e1}
+    server_id: srv-1
+calls:
+  - b7530:
+      function: validate_token_response
+      token_response: {team: {enterprise_id: nested}, team.enterprise_id: flat}
+      rules: {team.enterprise_id: flat}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {team: {enterprise_id: nested}, team.enterprise_id: null}
+      rules: {team.enterprise_id: nested}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {a: {b: {c: deep}}}
+      rules: {a.b.c: deep}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {team: text}
+      rules: {team.enterprise_id: e1}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {team: {}}
+      rules: {team.enterprise_id: e1}
+      server_id: srv-1
+  - b7530:
+      function: validate_token_response
+      token_response: {team: {enterprise_id: null}}
+      rules: {team.enterprise_id: e1}
+      server_id: srv-1
+env: {}
+compare: {ignore: []}

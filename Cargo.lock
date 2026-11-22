@@ -978,7 +978,9 @@ name = "betterlite"
 version = "0.1.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-cache",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-http",
  "betterlite-models",
@@ -989,6 +991,7 @@ dependencies = [
  "chrono",
  "clap",
  "croner",
+ "jiff",
  "nix",
  "rand 0.10.3",
  "regex",
@@ -1186,6 +1189,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
  "unicode-normalization",
  "url",
  "uuid",
@@ -1665,6 +1669,7 @@ dependencies = [
  "betterlite-pyhost",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-streaming",
  "betterlite-test-ports",
@@ -1724,10 +1729,12 @@ dependencies = [
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-secrets",
  "chrono",
  "http 1.5.0",
  "jiff",
  "libfuzzer-sys",
+ "secrecy",
  "serde_json",
  "uuid",
 ]
@@ -2982,6 +2989,7 @@ dependencies = [
  "betterlite-provider",
  "betterlite-redact",
  "betterlite-secret-managers",
+ "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-streaming",
  "betterlite-tokenizer",
@@ -3001,6 +3009,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "tokio-tungstenite",
@@ -3604,6 +3613,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
@@ -3612,6 +3622,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3770,6 +3782,7 @@ dependencies = [
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-policy",
+ "betterlite-prometheus",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",
@@ -4292,6 +4305,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -4451,6 +4465,7 @@ dependencies = [
  "serde_with",
  "sha2 0.11.1",
  "strum",
+ "subtle",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -4633,6 +4648,7 @@ dependencies = [
  "betterlite-openapi",
  "betterlite-policy",
  "betterlite-postgres-fixture",
+ "betterlite-prometheus",
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-pyhost",
@@ -4732,6 +4748,7 @@ dependencies = [
  "betterlite-server",
  "form_urlencoded",
  "libfuzzer-sys",
+ "rust_decimal",
  "serde_json",
 ]
 
@@ -6451,9 +6468,9 @@ checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -11783,9 +11800,9 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",

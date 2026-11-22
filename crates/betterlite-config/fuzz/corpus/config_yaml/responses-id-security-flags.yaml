@@ -1,0 +1,4 @@
+general_settings:
+  disable_responses_id_security: true
+  allow_unmanaged_response_ids: true
+  master_key: test-master

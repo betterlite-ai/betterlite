@@ -1,0 +1,12 @@
+kind: helper
+name: b3340-list-sync-defaults-openai
+call:
+  b3340:
+    operation: list
+    litellm_call_id: call-list-defaults
+    custom_llm_provider: null
+    api_key: test-key
+    status: 200
+    body: '{"object": "list", "data": [{"id": "video_123", "object": "video", "status": "completed", "seconds": "4", "model": "sora-2"}], "first_id": "video_123", "last_id": "video_123", "has_more": false}'
+env: {}
+compare: {ignore: []}

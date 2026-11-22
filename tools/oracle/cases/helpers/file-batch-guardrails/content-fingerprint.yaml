@@ -1,0 +1,21 @@
+kind: helper
+name: file-batch-guardrails-content-fingerprint
+call:
+  file_batch_guardrails:
+    calls:
+      - {"function": "fingerprint", "left": "{\"x\":1,\"y\":{\"a\":1,\"b\":2}}", "right": "{\"y\":{\"b\":2,\"a\":1},\"x\":1}"}
+      - {"function": "fingerprint", "left": "{\"y\":1}", "right": "{\"x\":null,\"y\":1}"}
+      - {"function": "fingerprint", "left": "{\"x\":1}", "right": "{\"x\":1,\"z\":null}"}
+      - {"function": "fingerprint", "left": "{\"x\":1,\"z\":null}", "right": "{\"x\":1}"}
+      - {"function": "fingerprint", "left": "{\"x\":1}", "right": "{\"x\":2}"}
+      - {"function": "fingerprint", "left": "{\"x\":[1,2]}", "right": "{\"x\":[2,1]}"}
+      - {"function": "fingerprint", "left": "{\"x\":\"1\"}", "right": "{\"x\":1}"}
+      - {"function": "fingerprint", "left": "{\"x\":1e2}", "right": "{\"x\":100.0}"}
+      - {"function": "fingerprint", "left": "{\"x\":[1.50]}", "right": "{\"x\":[1.5]}"}
+      - {"function": "fingerprint", "left": "{\"x\":{\"y\":-0}}", "right": "{\"x\":{\"y\":0}}"}
+      - {"function": "fingerprint", "left": "{\"x\":1}", "right": "{\"x\":1.0}"}
+      - {"function": "fingerprint", "left": "{\"metadata\":{}}", "right": "{\"metadata\":{\"a\":1}}"}
+      - {"function": "fingerprint", "left": "{\"guardrails\":[]}", "right": "{}"}
+      - {"function": "fingerprint", "left": "{}", "right": "{}"}
+env: {}
+compare: {ignore: []}
