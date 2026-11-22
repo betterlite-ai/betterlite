@@ -83,10 +83,10 @@ impl Write for LogBuffer {
     }
 }
 
-impl<'writer> MakeWriter<'writer> for LogBuffer {
+impl MakeWriter<'_> for LogBuffer {
     type Writer = Self;
 
-    fn make_writer(&'writer self) -> Self::Writer {
+    fn make_writer(&self) -> Self::Writer {
         self.clone()
     }
 }
