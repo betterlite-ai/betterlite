@@ -8,6 +8,7 @@ mod call_type;
 mod error_mapping;
 mod forwarded_arguments;
 mod logging_update;
+mod mock;
 mod provider_decode;
 mod suspension;
 mod timeout_fallback;

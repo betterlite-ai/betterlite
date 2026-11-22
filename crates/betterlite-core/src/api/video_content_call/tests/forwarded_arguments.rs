@@ -86,6 +86,29 @@ fn forwarded_arguments_content_transport_reaches_the_provider() {
     assert_provider_reached(&caller, &wire);
 }
 
+// LiteLLM never hands the call an api_key, so a request's own api_key never reaches the provider config
+#[test]
+fn forwarded_arguments_content_never_hands_the_caller_api_key_to_the_config() {
+    let journal = Journal::new();
+    let caller = transport_caller(&journal, RecordingConfig::new());
+    let mut fixture = Fixture::new();
+    let wire = Wire::new();
+    let mut request = request(VIDEO_ID);
+    request.kwargs = kwargs(&[("api_key", text("sk-caller"))]);
+    let work = caller.video_content(
+        request,
+        Some(SuppliedClient {
+            kind: ClientKind::Sync,
+            transport: &wire,
+        }),
+        &mut fixture.state,
+    );
+    assert_eq!(ready(work), WIRE_BODY.as_bytes().to_vec());
+    let environments = caller.providers.config.environments();
+    assert_eq!(environments.len(), 1);
+    assert_eq!(environments[0].api_key, None);
+}
+
 #[tokio::test]
 async fn forwarded_arguments_content_transport_uses_the_async_client() {
     let journal = Journal::new();

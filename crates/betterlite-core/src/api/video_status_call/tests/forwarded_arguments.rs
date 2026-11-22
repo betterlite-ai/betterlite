@@ -25,6 +25,24 @@ fn forwarded_arguments_status_reach_the_handler() {
     assert_eq!(handling.client, Some("sync"));
 }
 
+// LiteLLM never hands the call an api_key, so a request's own api_key never reaches validate_environment
+#[test]
+fn forwarded_arguments_status_never_hands_the_caller_api_key_to_the_config() {
+    let journal = Journal::new();
+    let wiring = Wiring::new(&journal);
+    let environment = Environment::new();
+    let prepost = environment.prepost();
+    let mut production =
+        Production::new(&journal, Behavior::Found, Mode::Answers, &wiring, &prepost);
+    let mut request = request(VIDEO_ID);
+    request.kwargs = kwargs(&[("api_key", text("sk-caller"))]);
+    let work = production
+        .caller
+        .video_status(request, None, &mut production.fixture.state);
+    assert_eq!(ready(work).id, VIDEO_ID);
+    assert_eq!(validations(&journal), vec![(headers(&[]), false)]);
+}
+
 #[test]
 fn forwarded_arguments_status_transport_reaches_the_provider() {
     let journal = Journal::new();
