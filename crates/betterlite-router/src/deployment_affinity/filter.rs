@@ -4,12 +4,13 @@ use betterlite_core::api::response_id_codecs::response::get_model_id_from_respon
 use betterlite_models::model_registration::JsonObject;
 
 use super::DeploymentAffinity;
+use super::affinity_inputs;
 use super::error::DeploymentAffinityError;
 use super::json::previous_response_id;
 use super::read::pinned_model_id;
 use crate::affinity_claims::identity::{
-    AffinityFlag, affinity_cache_key, find_deployment_by_model_id, marker_session_affinity_ttl,
-    session_affinity_cache_key, session_id_from_request_kwargs, user_key_from_request_kwargs,
+    AffinityFlag, affinity_cache_key, find_deployment_by_model_id, session_affinity_cache_key,
+    session_id_from_request_kwargs, user_key_from_request_kwargs,
 };
 use crate::deployment_identity::spec::DeploymentSpec;
 
@@ -46,21 +47,15 @@ pub(super) async fn session_deployment<'pool>(
     deployments: &'pool [DeploymentSpec],
     model_group: &str,
 ) -> Result<Option<&'pool DeploymentSpec>, DeploymentAffinityError> {
-    let marker_ttl = marker_session_affinity_ttl(kwargs)?;
-    let session_active = flags.contains(&AffinityFlag::Session) || marker_ttl.is_some();
-    let user_key_enabled = flags.contains(&AffinityFlag::Deployment);
-    let user_key = if session_active || user_key_enabled {
-        user_key_from_request_kwargs(kwargs)?
-    } else {
-        None
-    };
-    if !session_active {
+    let inputs = affinity_inputs(flags, kwargs)?;
+    if !inputs.session_active {
         return Ok(None);
     }
     let Some(session_id) = session_id_from_request_kwargs(kwargs)? else {
         return Ok(None);
     };
-    let Ok(key) = session_affinity_cache_key(model_group, &session_id, user_key.as_deref()) else {
+    let scope = inputs.user_key.as_deref();
+    let Ok(key) = session_affinity_cache_key(model_group, &session_id, scope) else {
         return Ok(None);
     };
     let Some(model_id) = pinned_model_id(service, &key).await else {

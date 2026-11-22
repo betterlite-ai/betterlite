@@ -4,12 +4,10 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::PreCallRequest;
+use super::affinity_inputs;
 use super::error::DeploymentAffinityError;
 use super::json;
-use crate::affinity_claims::identity::{
-    AffinityFlag, marker_session_affinity_ttl, session_id_from_request_kwargs,
-    user_key_from_request_kwargs,
-};
+use crate::affinity_claims::identity::{AffinityFlag, session_id_from_request_kwargs};
 
 // the identities async_pre_call_deployment_hook can claim for, and the ttl the session claim takes
 pub(super) struct HookIdentities {
@@ -24,27 +22,24 @@ pub(super) fn hook_identities(
     flags: &BTreeSet<AffinityFlag>,
     kwargs: &JsonObject,
 ) -> Result<Option<HookIdentities>, DeploymentAffinityError> {
-    let marker_ttl = marker_session_affinity_ttl(kwargs)?;
-    let session_active = flags.contains(&AffinityFlag::Session) || marker_ttl.is_some();
-    let user_key_enabled = flags.contains(&AffinityFlag::Deployment);
-    if !user_key_enabled && !session_active {
+    let inputs = affinity_inputs(flags, kwargs)?;
+    if !inputs.user_key_enabled && !inputs.session_active {
         return Ok(None);
     }
-    let user_key = user_key_from_request_kwargs(kwargs)?;
-    let session_id = if session_active {
+    let session_id = if inputs.session_active {
         session_id_from_request_kwargs(kwargs)?
     } else {
         None
     };
-    let caller_key = user_key.clone().filter(|_| user_key_enabled);
+    let caller_key = inputs.user_key.clone().filter(|_| inputs.user_key_enabled);
     if caller_key.is_none() && session_id.is_none() {
         return Ok(None);
     }
     Ok(Some(HookIdentities {
-        user_key,
+        user_key: inputs.user_key,
         caller_key,
         session_id,
-        marker_ttl,
+        marker_ttl: inputs.marker_ttl,
     }))
 }
 

@@ -18,8 +18,8 @@ use self::hook::{HookIdentities, hook_identities, selected_model_id};
 use crate::affinity_claims::AffinityClaims;
 use crate::affinity_claims::error::AffinityError;
 use crate::affinity_claims::identity::{
-    AffinityFlag, AffinityKey, affinity_cache_key, effective_flags, session_affinity_cache_key,
-    stable_model_map_key,
+    AffinityFlag, AffinityKey, affinity_cache_key, effective_flags, marker_session_affinity_ttl,
+    session_affinity_cache_key, stable_model_map_key, user_key_from_request_kwargs,
 };
 use crate::affinity_claims::pin::AffinityPin;
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -184,4 +184,33 @@ impl DeploymentAffinity {
             tracing::debug!(%error, "deployment affinity: the pin claim failed");
         }
     }
+}
+
+// the marker ttl, the effective flags and the caller identity both the filter and the hook read
+struct AffinityInputs {
+    marker_ttl: Option<u32>,
+    session_active: bool,
+    user_key_enabled: bool,
+    user_key: Option<String>,
+}
+
+// _should_use_session_affinity's inputs, in LiteLLM's read order, including the scoped caller key
+fn affinity_inputs(
+    flags: &BTreeSet<AffinityFlag>,
+    kwargs: &JsonObject,
+) -> Result<AffinityInputs, DeploymentAffinityError> {
+    let marker_ttl = marker_session_affinity_ttl(kwargs)?;
+    let session_active = flags.contains(&AffinityFlag::Session) || marker_ttl.is_some();
+    let user_key_enabled = flags.contains(&AffinityFlag::Deployment);
+    let user_key = if session_active || user_key_enabled {
+        user_key_from_request_kwargs(kwargs)?
+    } else {
+        None
+    };
+    Ok(AffinityInputs {
+        marker_ttl,
+        session_active,
+        user_key_enabled,
+        user_key,
+    })
 }
