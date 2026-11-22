@@ -283,6 +283,10 @@ fn infinite_timeout_is_rejected(#[case] timeout: TimeoutValue) {
 fn write_mode_reaches_the_provider(#[case] mode: Mode) {
     let (_, uploaded) = upload(mode, upload_input(Presence::Value("openai")));
     assert!(matches!(uploaded.as_slice(), [Seen::OpenAiUpload(call, _)] if call.mode == mode));
+    let (_, configured) = upload(mode, upload_input(Presence::Value("anthropic")));
+    assert!(
+        matches!(configured.as_slice(), [Seen::ConfigUpload { mode: sent, .. }] if *sent == mode)
+    );
     let (_, deleted) = delete(mode, delete_input(Some("anthropic")));
     assert!(
         matches!(deleted.as_slice(), [Seen::ConfigDelete { mode: sent, config: ProviderId::Anthropic, .. }] if *sent == mode)
@@ -331,6 +335,34 @@ fn unknown_provider_text_fails_conversion() {
         upload_error.to_string(),
         "'not-a-provider' is not a valid LlmProviders"
     );
+    assert_eq!(delete_error.to_string(), upload_error.to_string());
+    assert_eq!(delete_error.bad_request(), None);
+    assert!(upload_calls.is_empty() && delete_calls.is_empty());
+}
+
+// the registry's eight extra slugs are not LlmProviders members, so LiteLLM's own conversion rejects them
+#[rstest]
+#[case::abliteration("abliteration")]
+#[case::aihubmix("aihubmix")]
+#[case::crusoe("crusoe")]
+#[case::empiriolabs("empiriolabs")]
+#[case::gmi("gmi")]
+#[case::llamagate("llamagate")]
+#[case::sarvam("sarvam")]
+#[case::veniceai("veniceai")]
+fn registry_only_provider_fails_conversion(#[case] slug: &str) {
+    let (uploaded, upload_calls) = upload(Mode::Asynchronous, upload_input(Presence::Value(slug)));
+    let (deleted, delete_calls) = delete(Mode::Asynchronous, delete_input(Some(slug)));
+    let upload_error = uploaded.unwrap_err();
+    assert!(matches!(
+        upload_error,
+        FileWriteError::UnknownProvider { .. }
+    ));
+    assert_eq!(
+        upload_error.to_string(),
+        format!("'{slug}' is not a valid LlmProviders")
+    );
+    let delete_error = deleted.unwrap_err();
     assert_eq!(delete_error.to_string(), upload_error.to_string());
     assert_eq!(delete_error.bad_request(), None);
     assert!(upload_calls.is_empty() && delete_calls.is_empty());

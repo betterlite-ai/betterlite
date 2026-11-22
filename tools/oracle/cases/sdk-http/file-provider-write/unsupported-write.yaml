@@ -19,6 +19,9 @@ call:
       - file_delete:
           file_id: file-abc
           custom_llm_provider: not-a-provider
+      - file_delete:
+          file_id: file-abc
+          custom_llm_provider: gmi
 upstream: []
 compare:
   headers: []

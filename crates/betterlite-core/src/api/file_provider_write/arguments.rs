@@ -56,6 +56,12 @@ pub(super) fn delete_params<Logger, Client>(
         credentials: params.credentials.as_ref(),
     }
 }
+// providers.json registers these slugs, but litellm.types.utils.LlmProviders does not, and LlmProviders() rejects them
+#[rustfmt::skip]
+const REGISTRY_ONLY_PROVIDERS: [ProviderId; 8] = [
+    ProviderId::Abliteration, ProviderId::Aihubmix, ProviderId::Crusoe, ProviderId::Empiriolabs,
+    ProviderId::Gmi, ProviderId::Llamagate, ProviderId::Sarvam, ProviderId::Veniceai,
+];
 // LlmProviders(custom_llm_provider): an unknown or missing name is a ValueError naming its repr
 pub(super) fn provider_id<ProviderError>(
     provider: Option<&str>,
@@ -64,7 +70,11 @@ pub(super) fn provider_id<ProviderError>(
         provider: provider.map_or_else(|| "None".to_owned(), |name| format!("'{name}'")),
     };
     let name = provider.ok_or_else(unknown)?;
-    ProviderId::from_str(name).map_err(|_unparsed| unknown())
+    let id = ProviderId::from_str(name).map_err(|_unparsed| unknown())?;
+    if REGISTRY_ONLY_PROVIDERS.contains(&id) {
+        return Err(unknown());
+    }
+    Ok(id)
 }
 // optional_params.timeout or request_timeout or 600, where zero and empty fall through; an httpx.Timeout keeps its phases only for openai, azure and bedrock
 pub(super) fn write_timeout<Logger, Client, ProviderError>(
