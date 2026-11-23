@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use betterlite_core::api::assistant_read_delete::request::AssistantReadDeleteInput;
-use betterlite_core::api::assistant_records::AssistantCreateInput;
 use betterlite_models::decisions::Json;
 use betterlite_openai::threads::records::ThreadMessageData;
 use serde::Deserialize;

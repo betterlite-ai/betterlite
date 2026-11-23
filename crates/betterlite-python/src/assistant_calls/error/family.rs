@@ -40,7 +40,7 @@ fn wire_body(fields: &[(&str, &WireField)]) -> Option<Json> {
     }
 }
 
-const fn text_field(value: Option<String>) -> WireField {
+fn text_field(value: Option<String>) -> WireField {
     match value {
         Some(text) => WireField::Text(text),
         None => WireField::MISSING,
@@ -120,8 +120,8 @@ pub(crate) enum ThreadOutcome {
 }
 
 // What both thread maps know before they build their payload.
-struct ThreadFields<'a> {
-    class: &'a str,
+struct ThreadFields<'class> {
+    class: &'class str,
     status: Option<u16>,
     fields: [WireField; 3],
     message: String,

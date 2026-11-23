@@ -6,7 +6,6 @@ use betterlite_core::api::assistant_read_delete::request::{
 };
 use betterlite_core::api::assistant_read_delete::sdk_dispatch::AssistantSdkError;
 use betterlite_core::api::assistant_records::AssistantCreateInput;
-use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::ExposeSecret as _;
 
@@ -35,7 +34,10 @@ fn request_read_delete_keeps_the_flag_params_and_pagination() {
     let input: AssistantReadDeleteInput =
         read("assistant read or delete request", READ_DELETE).unwrap();
     assert_eq!(input.operation, AssistantOperation::List);
-    assert_eq!(input.aget_assistants, Some(Json::Bool(true)));
+    assert_eq!(
+        serde_json::to_string(&input.aget_assistants).unwrap(),
+        "true"
+    );
     assert_eq!(input.async_delete_assistants, None);
     assert_eq!(input.limit, Some(20));
     assert_eq!(input.order.as_deref(), Some("desc"));

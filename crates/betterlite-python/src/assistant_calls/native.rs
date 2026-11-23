@@ -177,7 +177,10 @@ fn thread_text(answer: Result<Option<ThreadRecord>, ThreadOutcome>, provider: &s
     }
 }
 
-fn encode<T: Serialize>(value: &T) -> Encoded {
+fn encode<T>(value: &T) -> Encoded
+where
+    T: Serialize,
+{
     serde_json::to_string(value)
         .map_err(|source| CallError::Encode { source })
         .map_err(PyErr::from)
