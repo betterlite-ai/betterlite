@@ -126,7 +126,7 @@ fn finish_render(
     let _sent = sender.send(Ok(Bytes::from(rendered)));
 }
 
-fn poll_finished(tasks: &mut JoinSet<()>) {
+pub(crate) fn poll_finished(tasks: &mut JoinSet<()>) {
     while let Some(outcome) = tasks.try_join_next() {
         if let Err(error) = outcome {
             tracing::warn!(%error, "a scrape render task stopped without sending a body");

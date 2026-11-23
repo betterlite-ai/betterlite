@@ -22,7 +22,9 @@ use crate::collector_registry::CollectorRegistry;
 use crate::collector_registry::metric::{Bucket, CollectorKind, PrometheusMetric, prepare_buckets};
 use crate::scrape_endpoint::app::{make_metrics_app, scrape};
 use crate::scrape_endpoint::float::float_to_go_string;
-use crate::scrape_endpoint::renderer::{CoalescedScrapeRenderer, InFlight, shared_render};
+use crate::scrape_endpoint::renderer::{
+    CoalescedScrapeRenderer, InFlight, poll_finished, shared_render,
+};
 use crate::scrape_endpoint::{
     Encoder, RESPONSE_CHUNK_SIZE_BYTES, ScrapeRenderError, ScrapeRequest, parse_scrape_request,
     render_scrape,
@@ -645,6 +647,18 @@ async fn coalesced_finished_render_is_forgotten() {
     );
     let second = renderer.render(scrape).await.unwrap();
     assert_eq!(first, second);
+}
+
+#[tokio::test]
+async fn coalesced_finished_renders_are_reaped() {
+    let mut tasks = JoinSet::new();
+    let (sender, receiver) = oneshot::channel();
+    let _spawned = tasks.spawn(async move {
+        let _sent = sender.send(());
+    });
+    receiver.await.unwrap();
+    poll_finished(&mut tasks);
+    assert!(tasks.is_empty());
 }
 
 #[tokio::test]
