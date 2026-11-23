@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::skills::wire::{DeleteSkillResponse, ListSkillsResponse, Skill};
@@ -19,20 +20,27 @@ use betterlite_core::api::skills::get_delete::error::{
 use betterlite_core::api::skills::get_delete::hosted::HostedSkillsHandlers;
 use betterlite_core::api::skills::get_delete::service::SkillsService;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_logging::logging_state::LoggingState;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::types::{
+    CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState, LoggingStateError};
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use chrono::Utc;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::skill_calls::convert;
 use crate::skill_calls::error::{SessionError, SkillFailure, no_database_failure};
-use crate::skill_calls::hosted::{NoDatabaseSkills, handlers};
+use crate::skill_calls::hosted::NoDatabaseSkills;
 use crate::skill_calls::transport::HttpSkills;
 
 mod create;
 mod list;
-mod logging;
 
 // The one answer a skill operation produces; untagged, so Python sees the provider's own JSON object.
 #[derive(Debug, Serialize)]
@@ -70,6 +78,45 @@ fn setup<E: Display>(error: E) -> SessionError {
     }
 }
 
+// The pre-call update every service runs needs a logging state; the Python package registers no callbacks.
+pub(super) fn call_logging(
+    redactor: &Redactor,
+    call_type: &str,
+    kwargs: &IndexMap<String, Json>,
+    litellm_call_id: Option<&str>,
+) -> Result<LoggingState, LoggingStateError> {
+    let init = LoggingInit {
+        model: String::new(),
+        call_type: call_type.to_owned(),
+        start_time: Utc::now().fixed_offset(),
+        litellm_call_id: litellm_call_id.map_or_else(|| Uuid::new_v4().to_string(), str::to_owned),
+        function_id: String::new(),
+        messages: None,
+        stream: None,
+        litellm_trace_id: None,
+        kwargs: kwargs.clone(),
+        litellm_params: IndexMap::new(),
+        callback_dynamic_params: IndexMap::new(),
+        trusted_callback_vars: Vec::new(),
+        standard_built_in_tools_params: IndexMap::new(),
+        dynamic_callbacks: DynamicCallbacks::default(),
+        applied_guardrails: None,
+        request_logging: RequestLoggingFlags::default(),
+        callback_policy: CallbackPolicy::default(),
+    };
+    let mut context = CorrelationContext::default();
+    LoggingState::new(
+        init,
+        CorrelationSetup {
+            context: &mut context,
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || Uuid::new_v4().to_string(),
+        Duration::default,
+    )
+}
+
 // Everything one Python native session owns: the clients, the resolved credentials and the services' clock settings.
 pub(super) struct SkillCore {
     http: HttpSkills,
@@ -95,7 +142,10 @@ impl SkillCore {
                 client: client.clone(),
             },
             client,
-            hosted: handlers(),
+            hosted: HostedSkillsHandlers {
+                create: Box::new(|| Arc::new(NoDatabaseSkills)),
+                cached: Mutex::new(None),
+            },
             anthropic: AnthropicSettings {
                 api_key: credentials.api_key,
                 auth_token: credentials.auth_token,
@@ -170,7 +220,7 @@ impl SkillCore {
         if call.params.provider() == LITELLM_PROXY_PROVIDER {
             return Err(no_database_failure(&self.redactor));
         }
-        logging::state(&self.redactor, call_type, kwargs, call.litellm_call_id).map_err(|error| {
+        call_logging(&self.redactor, call_type, kwargs, call.litellm_call_id).map_err(|error| {
             SkillFailure {
                 class: skill_failure(SkillsCallError::from(error), call, &self.redactor).class,
             }

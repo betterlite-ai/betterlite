@@ -112,10 +112,10 @@ impl Field for IndexMap<String, Json> {
 
 impl Field for f64 {
     fn take(json: Json) -> Option<Self> {
-        let Json::Number(number) = json else {
-            return None;
-        };
-        number.as_f64()
+        match json {
+            Json::Number(number) => number.as_f64(),
+            Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
+        }
     }
 }
 

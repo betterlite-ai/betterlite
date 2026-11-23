@@ -8,13 +8,12 @@ use betterlite_core::api::skills::create::handler::{
 use betterlite_core::api::skills::get_delete::handler::SkillsHandlerError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::RequestBody;
+use http::Method;
 use http::header::{CONTENT_TYPE, HeaderMap};
 use uuid::Uuid;
 
 use crate::skill_calls::convert;
-use crate::skill_calls::transport::{
-    Call, Exchange, Transform, answered, multipart, provider_failure,
-};
+use crate::skill_calls::transport::{Call, Transform, answered, multipart, provider_failure};
 
 // The create call, holding this call's blobs until the assembled body resolves its $file markers.
 pub(in crate::skill_calls) struct CreateTransport {
@@ -28,30 +27,24 @@ impl SkillsCreateHttpHandler for CreateTransport {
         request: CreateSkillHttpRequest<'_>,
     ) -> impl Future<Output = Result<Skill, SkillsHandlerError>> + Send {
         async move {
-            let call = create_call(request, &self.blobs)?;
+            let config = request.config;
+            let (headers, body) = create_body(&request, &self.blobs)?;
+            let call = Call {
+                method: Method::POST,
+                url: request.url,
+                headers,
+                query: Vec::new(),
+                body,
+                config,
+                after: request.timeout,
+                timeout_status: Some(408_u16),
+            };
             answered(&self.client, call, CREATE_SKILL).await
         }
     }
 }
 
 const CREATE_SKILL: Transform<Skill> = |config, body| config.transform_create_skill_response(body);
-
-fn create_call<'request>(
-    request: CreateSkillHttpRequest<'request>,
-    blobs: &Mutex<Vec<Vec<u8>>>,
-) -> Result<Call<'request>, SkillsHandlerError> {
-    let config = request.config;
-    let (headers, body) = create_body(&request, blobs)?;
-    let exchange = Exchange::create(request.timeout);
-    Ok(Call {
-        url: request.url,
-        headers,
-        query: Vec::new(),
-        body,
-        config,
-        exchange,
-    })
-}
 
 // LiteLLM sends multipart only when files is non-empty, and the body JSON otherwise.
 pub(super) fn create_body(
@@ -74,10 +67,9 @@ pub(super) fn create_body(
         })?;
         return Ok((headers, RequestBody::Json(encoded)));
     };
-    let mut owned = match blobs.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let mut owned = blobs
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let resolved = convert::files(request.custom_llm_provider, files, owned.as_mut_slice())
         .map_err(|error| provider_failure(400, error.to_string(), false))?;
     drop(owned);

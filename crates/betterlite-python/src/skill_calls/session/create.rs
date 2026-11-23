@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 
 use crate::skill_calls::convert;
 use crate::skill_calls::error::{SkillFailure, no_database_failure};
-use crate::skill_calls::session::logging;
+use crate::skill_calls::session::call_logging;
 use crate::skill_calls::session::{SkillCore, SkillOutcome};
 use crate::skill_calls::transport::create::CreateTransport;
 
@@ -32,7 +32,7 @@ pub(super) async fn skill(
     if call.params.provider() == LITELLM_PROXY_PROVIDER {
         return Err(no_database_failure(&session.redactor));
     }
-    let mut logging = logging::state(
+    let mut logging = call_logging(
         &session.redactor,
         "create_skill",
         &arguments.kwargs,

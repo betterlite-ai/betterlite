@@ -1,12 +1,9 @@
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
 
 use betterlite_anthropic::skills::wire::{DeleteSkillResponse, ListSkillsResponse, Skill};
 use betterlite_core::api::skills::create::hosted::{HostedCreateSkillRequest, HostedSkillsCreator};
 use betterlite_core::api::skills::get_delete::handler::SkillsHandlerError;
-use betterlite_core::api::skills::get_delete::hosted::{
-    HostedSkillRequest, HostedSkillsHandler, HostedSkillsHandlers,
-};
+use betterlite_core::api::skills::get_delete::hosted::{HostedSkillRequest, HostedSkillsHandler};
 use betterlite_core::api::skills::list::hosted::{HostedListSkillsRequest, HostedSkillsLister};
 
 use crate::skill_calls::error::NO_DATABASE;
@@ -57,12 +54,5 @@ impl HostedSkillsLister for NoDatabaseSkills {
         _request: HostedListSkillsRequest<'_>,
     ) -> impl Future<Output = Result<ListSkillsResponse, SkillsHandlerError>> + Send {
         ready(Err(Self::failure()))
-    }
-}
-
-pub(crate) fn handlers() -> HostedSkillsHandlers<NoDatabaseSkills> {
-    HostedSkillsHandlers {
-        create: Box::new(|| Arc::new(NoDatabaseSkills)),
-        cached: Mutex::new(None),
     }
 }

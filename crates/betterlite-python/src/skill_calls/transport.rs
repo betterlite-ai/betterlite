@@ -25,102 +25,51 @@ mod tests;
 // LiteLLM's get and list go through the cached httpx client, whose 600 second total applies whatever REQUEST_TIMEOUT says
 const GET_SKILLS_TIMEOUT: Duration = Duration::from_secs(600);
 
-// The verb one skill call sends: read is what both get and list use.
-#[derive(Clone, Copy)]
-enum Action {
-    Read,
-    Post,
-    Delete,
-}
-
-impl Action {
-    const fn method(self) -> Method {
-        match self {
-            Self::Read => Method::GET,
-            Self::Post => Method::POST,
-            Self::Delete => Method::DELETE,
-        }
-    }
-}
-
-// The deadline LiteLLM gives one call and the status its timeouts take: the httpx handler answers APITimeoutError.
-#[derive(Clone, Copy)]
-struct Exchange {
-    action: Action,
-    after: Duration,
-    timeout_status: Option<u16>,
-}
-
-impl Exchange {
-    const READ: Self = Self {
-        action: Action::Read,
-        after: GET_SKILLS_TIMEOUT,
-        timeout_status: None,
-    };
-
-    const fn delete(timeout: Duration) -> Self {
-        Self {
-            action: Action::Delete,
-            after: timeout,
-            timeout_status: Some(408_u16),
-        }
-    }
-
-    const fn create(timeout: Duration) -> Self {
-        Self {
-            action: Action::Post,
-            after: timeout,
-            timeout_status: Some(408_u16),
-        }
-    }
-}
-
-// One upstream call: the parts each operation assembles, the config that reads its answer, and its deadline.
+// One upstream call: what the operation assembles, the config that reads its answer, its verb and its deadline.
 struct Call<'request> {
+    method: Method,
     url: String,
     headers: HeaderMap,
     query: Vec<(String, String)>,
     body: RequestBody,
     config: &'request dyn BaseSkillsApiConfig,
-    exchange: Exchange,
+    after: Duration,
+    timeout_status: Option<u16>,
 }
 
 impl<'request> Call<'request> {
+    // A get or delete call: the skill request's parts under the verb and deadline given, with no body.
     const fn new(
-        url: String,
-        headers: HeaderMap,
-        query: Vec<(String, String)>,
-        config: &'request dyn BaseSkillsApiConfig,
-        exchange: Exchange,
+        request: SkillHttpRequest<'request>,
+        method: Method,
+        after: Duration,
+        timeout_status: Option<u16>,
     ) -> Self {
         Self {
-            url,
-            headers,
-            query,
+            method,
+            url: request.url,
+            headers: request.headers,
+            query: Vec::new(),
             body: RequestBody::Empty,
-            config,
-            exchange,
+            config: request.config,
+            after,
+            timeout_status,
         }
     }
 }
 
-// A get or delete call: the skill request's parts under the verb its exchange names, with no body.
-impl<'request> From<(Exchange, SkillHttpRequest<'request>)> for Call<'request> {
-    fn from((exchange, request): (Exchange, SkillHttpRequest<'request>)) -> Self {
-        Self::new(
-            request.url,
-            request.headers,
-            Vec::new(),
-            request.config,
-            exchange,
-        )
-    }
-}
-
+// A list call: the list request's own query under the cached client's 600 second total, with no body.
 const fn list_call(request: ListSkillsHttpRequest<'_>) -> Call<'_> {
-    let config = request.config;
-    let query = request.query_params;
-    Call::new(request.url, request.headers, query, config, Exchange::READ)
+    Call {
+        method: Method::GET,
+        url: request.url,
+        headers: request.headers,
+        query: request.query_params,
+        body: RequestBody::Empty,
+        config: request.config,
+        after: GET_SKILLS_TIMEOUT,
+        timeout_status: None,
+    }
 }
 
 // The transform each operation applies to the provider's answer body.
@@ -141,7 +90,7 @@ impl SkillsHttpHandler for HttpSkills {
         &self,
         request: SkillHttpRequest<'_>,
     ) -> impl Future<Output = Result<Skill, SkillsHandlerError>> + Send {
-        let call = Call::from((Exchange::READ, request));
+        let call = Call::new(request, Method::GET, GET_SKILLS_TIMEOUT, None);
         answered(&self.client, call, GET_SKILL)
     }
 
@@ -149,7 +98,8 @@ impl SkillsHttpHandler for HttpSkills {
         &self,
         request: SkillHttpRequest<'_>,
     ) -> impl Future<Output = Result<DeleteSkillResponse, SkillsHandlerError>> + Send {
-        let call = Call::from((Exchange::delete(request.timeout), request));
+        let after = request.timeout;
+        let call = Call::new(request, Method::DELETE, after, Some(408_u16));
         answered(&self.client, call, DELETE_SKILL)
     }
 }
@@ -181,25 +131,23 @@ async fn exchange(
     call: Call<'_>,
 ) -> Result<UpstreamResponse, SkillsHandlerError> {
     let url = Url::parse(&call.url).map_err(|_invalid| {
-        provider_failure(
-            500,
-            format!("the skills url {} is not a URL", call.url),
-            true,
-        )
+        let message = format!("the skills url {} is not a URL", call.url);
+        provider_failure(500, message, true)
     })?;
-    let exchange = call.exchange;
+    let after = call.after;
+    let timeout_status = call.timeout_status;
     let request = OutboundRequest {
-        method: exchange.action.method(),
+        method: call.method,
         url,
         query: call.query,
         headers: call.headers,
         body: call.body,
-        deadline: exchange.after,
+        deadline: after,
     };
     client
         .send_buffered(request)
         .await
-        .map_err(|error| transport_failure(&error, exchange))
+        .map_err(|error| transport_failure(&error, after, timeout_status))
 }
 
 fn ensure_success(
@@ -209,28 +157,29 @@ fn ensure_success(
     if (200_u16..300_u16).contains(&response.status) {
         return Ok(());
     }
-    let class = config.get_error_class(
-        &body_text(&response.body),
-        response.status,
-        &BTreeMap::new(),
-    );
+    let body = body_text(&response.body);
+    let class = config.get_error_class(&body, response.status, &BTreeMap::new());
     Err(SkillsHandlerError::from(class))
 }
 
-fn transport_failure(error: &TransportError, deadline: Exchange) -> SkillsHandlerError {
+// The status LiteLLM gives one call's timeout: the httpx handler answers APITimeoutError, everything else is a server error.
+fn transport_failure(
+    error: &TransportError,
+    after: Duration,
+    timeout_status: Option<u16>,
+) -> SkillsHandlerError {
     let timed_out = matches!(
         error,
         TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
     );
-    match deadline.timeout_status {
-        Some(status) if timed_out => provider_failure(
-            status,
-            format!(
+    match timeout_status {
+        Some(status) if timed_out => {
+            let message = format!(
                 "Connection timed out after {} seconds.",
-                deadline.after.as_secs_f64()
-            ),
-            false,
-        ),
+                after.as_secs_f64()
+            );
+            provider_failure(status, message, false)
+        }
         Some(_status) | None => provider_failure(500, error.to_string(), true),
     }
 }
