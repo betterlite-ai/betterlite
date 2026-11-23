@@ -33,8 +33,12 @@ impl CredentialSource for FakeSource {
         model_id: &str,
         team_id: Option<&str>,
     ) -> Result<Option<JsonObject>, FakeFailure> {
-        let mut asked = self.asked.lock().unwrap();
+        let mut asked = match self.asked.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         asked.push((model_id.to_owned(), team_id.map(str::to_owned)));
+        drop(asked);
         match &self.answer {
             Ok(answer) => Ok(answer.clone()),
             Err(error) => Err(FakeFailure(error.0.clone())),

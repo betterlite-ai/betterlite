@@ -81,6 +81,7 @@ impl CredentialSource for ScriptedSource {
             Err(poisoned) => poisoned.into_inner(),
         };
         *slot = Some(asked);
+        drop(slot);
         Ok(answer)
     }
 }
@@ -143,10 +144,7 @@ fn merge_answer(
     let internal_key = merged.contains_key(TRUSTED_CREDENTIALS_KEY);
     // the answer carries the merged data without the snapshot, which the adapter read back above
     merged.shift_remove(TRUSTED_CREDENTIALS_KEY);
-    let snapshot_json = match &snapshot {
-        Some(taken) => snapshot_view(taken),
-        None => Value::Null,
-    };
+    let snapshot_json = snapshot.as_ref().map_or(Value::Null, snapshot_view);
     json!({
         "function": "merge",
         "data": merged,
