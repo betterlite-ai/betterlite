@@ -132,6 +132,8 @@ pub(crate) fn resolve_settings(
     let requested = wire
         .protocol_version
         .unwrap_or_else(|| AUTO_PROTOCOL_VERSION.to_owned());
+    let version = ProtocolVersion::try_from(requested)
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Value, error.to_string()))?;
     Ok(ResolvedSettings {
         server_url: wire.server_url.unwrap_or_default(),
         transport_type: wire.transport_type.unwrap_or_default(),
@@ -145,7 +147,7 @@ pub(crate) fn resolve_settings(
         environment: environment.clone(),
         npm_cache_dir: npm_cache_dir(environment),
         ssl_verify: wire.ssl_verify.map(ssl_setting),
-        protocol_version: protocol_version(requested)?,
+        protocol_version: version,
         aws,
     })
 }
@@ -157,10 +159,6 @@ fn client_timeout(
         || environment_duration(CLIENT_TIMEOUT_VARIABLE, environment, CLIENT_TIMEOUT_SECONDS),
         |seconds| seconds_duration("timeout", seconds),
     )
-}
-fn protocol_version(requested: String) -> Result<ProtocolVersion, NativeMcpErrorPayload> {
-    let version = ProtocolVersion::try_from(requested);
-    version.map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Value, error.to_string()))
 }
 fn ssl_setting(verify: SslVerifyWire) -> VerifySetting {
     match verify {
