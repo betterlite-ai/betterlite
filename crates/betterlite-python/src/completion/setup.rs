@@ -63,7 +63,10 @@ impl ModuleCredentials for CompletionSettings {
     }
 }
 // litellm.api_key and litellm.api_base reach resolution as the module-level credentials
-pub(crate) fn global_credentials<S: ModuleCredentials>(settings: &S) -> GlobalCredentials {
+pub(crate) fn global_credentials<S>(settings: &S) -> GlobalCredentials
+where
+    S: ModuleCredentials,
+{
     GlobalCredentials {
         api_key: settings.api_key(),
         api_base: settings.api_base(),

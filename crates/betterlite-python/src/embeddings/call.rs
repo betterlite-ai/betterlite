@@ -8,12 +8,14 @@ use super::session::{
     DeploymentInputs, EmbeddingSession, deployment, header_map, secret_text, with_headers,
 };
 use crate::completion::setup::global_credentials;
+use betterlite_config::loader::startup::process_environment;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolvedModel;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::embedding::{EmbeddingRequest, EmbeddingResponse};
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::operation::{
     EmbeddingOperation, OperationError, OperationRequest, OperationResult,
 };
@@ -23,6 +25,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::Number;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Instant;
 const MOCK_ERROR: &str = "Mock error";
 const MOCK_PROMPT_TOKENS: u32 = 10;
@@ -115,7 +118,9 @@ async fn provider_answer(
     let facts = &context.facts;
     let failed = |error: OperationError| operation_failure(error, facts, &context.session.redactor);
     let inputs = Deployment::from_chat(resolved);
-    let adapter = Provider::from_deployment(resolved).map_err(failed)?;
+    // an SDK user can set os.environ after import, so the azure composition is read at the call
+    let composition = Arc::new(Composition::from_environment(process_environment()));
+    let adapter = Provider::from_deployment(resolved, &composition).map_err(failed)?;
     let operation = OperationRequest::Embedding(Box::new(EmbeddingOperation {
         model: inputs.model.clone(),
         request,

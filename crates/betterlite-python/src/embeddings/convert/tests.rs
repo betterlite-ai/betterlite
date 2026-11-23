@@ -6,8 +6,9 @@ use super::super::request::{build, requested_encoding};
 use super::super::response::{
     EmbeddingAnswer, HiddenFacts, hidden_params, mock_usage, record_json, response_cost,
 };
-use super::super::session::{EmbeddingSession, header_map, openai_defaults, secret_text};
+use super::super::session::{EmbeddingSession, header_map, secret_text};
 use super::{EmbeddingArguments, EmbeddingCallWire, NativeEmbeddingErrorPayload};
+use crate::completion::setup::openai_defaults;
 use betterlite_context::non_default_params::Params;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::ErrorContext;
