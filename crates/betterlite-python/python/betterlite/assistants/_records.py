@@ -205,7 +205,7 @@ async def aget_assistants(
     return AssistantPage.model_validate(answer)
 
 
-def create_assistants(
+def create_assistants(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L230
     custom_llm_provider: str, model: str,
     name: CallValue = None, description: CallValue = None, instructions: CallValue = None,
     tools: CallValue = None, tool_resources: CallValue = None, metadata: CallValue = None,
@@ -237,7 +237,7 @@ async def acreate_assistants(
     return Assistant.model_validate(answer)
 
 
-def delete_assistant(
+def delete_assistant(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L410
     custom_llm_provider: str, assistant_id: str, client: CallValue = None,
     api_key: CallValue = None, api_base: CallValue = None, api_version: CallValue = None,
     **kwargs: CallValue) -> DeletedAnswer:
