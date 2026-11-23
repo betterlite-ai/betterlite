@@ -227,7 +227,7 @@ fn apply_reasoning(
     if let Some(reasoning) = parsed_reasoning.filter(|reasoning| !reasoning.is_empty()) {
         fields.insert(String::from("reasoning_content"), Json::Text(reasoning));
     }
-    choice.message.provider_specific_fields = Some(fields);
+    choice.message.provider_specific_fields = (!fields.is_empty()).then_some(fields);
     Ok(())
 }
 

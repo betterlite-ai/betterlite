@@ -122,14 +122,16 @@ fn split_reasoning_and_content() {
     );
     assert_eq!(
         plain.reply().choices[0].message.provider_specific_fields,
-        Some(object("{}")),
-        "a triggered reply always carries a fields map"
+        None,
+        "an empty map is left unset, since the Message constructor skips it"
     );
 }
 
 fn empty_reasoning_keeps_the_key() {
     let mut case = deepseek_fixture();
     case.request_data = object(r#"{"prompt": "go<think>"}"#);
+    case.response.choices[0].message.provider_specific_fields =
+        Some(object(r#"{"existing": "kept"}"#));
     let run = deepseek(&case, r#"{"generation": "</think>tail"}"#);
     assert_eq!(
         run.reply().choices[0].message.content.as_deref(),
@@ -137,8 +139,8 @@ fn empty_reasoning_keeps_the_key() {
     );
     assert_eq!(
         run.reply().choices[0].message.provider_specific_fields,
-        Some(object("{}")),
-        "an empty reasoning adds no key and leaves the map"
+        Some(object(r#"{"existing": "kept"}"#)),
+        "an empty reasoning adds no key and keeps the seeded map"
     );
 
     let closing = deepseek(&case, r#"{"generation": "thought</think>"}"#);
@@ -149,7 +151,9 @@ fn empty_reasoning_keeps_the_key() {
     );
     assert_eq!(
         closing.reply().choices[0].message.provider_specific_fields,
-        Some(object(r#"{"reasoning_content": "thought"}"#))
+        Some(object(
+            r#"{"existing": "kept", "reasoning_content": "thought"}"#
+        ))
     );
 }
 
