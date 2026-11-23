@@ -221,12 +221,7 @@ fn real_answer(
         .elapsed()
         .as_secs_f64()
         .mul_add(1000.0_f64, 0.0_f64);
-    let hidden = real_hidden(
-        context,
-        response_ms,
-        provider_ms,
-        response.usage.prompt_tokens,
-    );
+    let hidden = real_hidden(context, response_ms, provider_ms, &response);
     let usage = serde_json::to_string(&response.usage)
         .and_then(|text| serde_json::from_str::<Json>(&text))
         .map_err(|error| CallFailure::Invalid(error.to_string()))?;
@@ -245,7 +240,7 @@ fn real_hidden(
     context: &CallContext<'_>,
     response_ms: f64,
     provider_ms: f64,
-    prompt_tokens: u32,
+    response: &EmbeddingResponse,
 ) -> HiddenParams {
     let facts = &context.facts;
     let overhead = provider_ms.mul_add(-1.0_f64, response_ms).max(0.0_f64);
@@ -254,7 +249,7 @@ fn real_hidden(
         &context.session.catalog,
         facts.model,
         facts.provider,
-        prompt_tokens,
+        response.usage.prompt_tokens,
     );
     let api_base = hidden_api_base(context);
     let hidden_facts = HiddenFacts {
