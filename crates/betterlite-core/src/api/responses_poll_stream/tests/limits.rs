@@ -19,8 +19,9 @@ async fn run_with_limits(events: &[&str], limits: ApiLimits) -> Scenario {
 #[tokio::test]
 async fn items_over_the_bound_fail_the_record() {
     let limits = ApiLimits {
+        max_json_bytes: 16 * 1024 * 1024,
+        max_event_bytes: 1024 * 1024,
         max_items: 2,
-        ..ApiLimits::default()
     };
     let scenario = run_with_limits(
         &[
@@ -38,7 +39,8 @@ async fn items_over_the_bound_fail_the_record() {
 async fn text_over_the_bound_fails_the_record() {
     let limits = ApiLimits {
         max_json_bytes: 512,
-        ..ApiLimits::default()
+        max_event_bytes: 1024 * 1024,
+        max_items: 64 * 1024,
     };
     let delta = format!(
         r#"{{"content_index":0,"delta":"{}","item_id":"m1","type":"response.output_text.delta"}}"#,

@@ -133,8 +133,7 @@ pub(super) fn assert_error_logged(messages: &[String]) {
 pub(super) fn assert_write_error(scenario: &Scenario, error: &PollStreamError) {
     assert!(matches!(error, PollStreamError::Polling(_)));
     assert_eq!(scenario.cache.writes().len(), 1);
-    // a retried final write would succeed now that the scripted failure is spent, so the attempt count
-    // proves the worker tried that write once and no record landed after it
+    // a retried final write would succeed, so the attempt count proves it was tried only once
     assert_eq!(scenario.cache.attempted.load(Ordering::SeqCst), 2);
 }
 

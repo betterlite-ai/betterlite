@@ -476,8 +476,9 @@ fn absent_optional_keys_take_the_source_defaults() {
 #[test]
 fn items_stop_at_the_items_bound() {
     let limits = ApiLimits {
+        max_json_bytes: 16 * 1024 * 1024,
+        max_event_bytes: 1024 * 1024,
         max_items: 2,
-        ..ApiLimits::default()
     };
     let clock = support::clock(&[0]);
     let mut accumulator = OutputAccumulator::started(&clock);
