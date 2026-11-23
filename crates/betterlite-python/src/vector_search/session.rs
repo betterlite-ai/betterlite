@@ -69,7 +69,7 @@ pub(crate) struct SessionCore {
 
 impl SessionCore {
     pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
-        let wire: SessionWire = parse(text, &[])?;
+        let wire: SessionWire = parse(text, 0)?;
         let environment = wire.environment.unwrap_or_else(process_environment);
         let config = ConfigLoader {
             lookup: environment.clone(),
