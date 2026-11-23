@@ -21,7 +21,7 @@ use betterlite_models::catalog_generalizations::CatalogGeneralizations;
 use betterlite_models::fetch_policy::outcome::Unavailable;
 use betterlite_models::reload::ReloadOutcome;
 use betterlite_models::source::{CatalogProvenance, CatalogSnapshot, SourceKind};
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, TimeZone as _, Utc};
 use indexmap::IndexMap;
 use tower::ServiceExt as _;
 
@@ -236,6 +236,7 @@ impl FakeStore {
 
     fn record<Value, Change>(&self, change: Change) -> StoreFuture<'_, Value>
     where
+        Value: Send,
         Change: FnOnce(&mut StoreState) -> Value,
     {
         let answer = {

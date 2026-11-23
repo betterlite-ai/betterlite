@@ -40,10 +40,10 @@ pub(super) async fn cost_map_reload_status(
 ) -> Result<Json<StatusBody>, ReloadError> {
     let snapshot = admin_read_snapshot(&state, caller)?;
     let provenance = &snapshot.provenance;
-    let mut schedule = None;
-    if let Some(store) = state.config.as_deref() {
-        schedule = Some(store_call(store.read_schedule(), STATUS_FAILED).await?);
-    }
+    let schedule = match state.config.as_deref() {
+        Some(store) => store_call(store.read_schedule(), STATUS_FAILED).await?,
+        None => None,
+    };
     let status = reload_schedule_status(schedule.as_ref());
     Ok(Json(StatusBody {
         scheduled: status.scheduled,
