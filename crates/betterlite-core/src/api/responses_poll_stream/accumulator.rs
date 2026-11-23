@@ -22,8 +22,12 @@ impl OutputAccumulator {
     #[must_use]
     pub fn started(clock: &dyn PollClock) -> Self {
         Self {
+            output_items: IndexMap::new(),
+            accumulated_text: IndexMap::new(),
+            terminal: None,
+            error: None,
+            dirty: false,
             last_update_millis: clock.now_millis(),
-            ..Self::default()
         }
     }
 
@@ -135,8 +139,7 @@ impl OutputAccumulator {
         for name in TERMINAL_FIELDS.split(' ') {
             let value = terminal
                 .and_then(|record| record.fields.get(name))
-                .cloned()
-                .unwrap_or(Json::Null);
+                .map_or(Json::Null, Json::clone);
             fields.insert(name.to_owned(), value);
         }
         let error = self.error.clone().unwrap_or(Json::Null);

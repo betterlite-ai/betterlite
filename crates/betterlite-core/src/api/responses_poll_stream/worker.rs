@@ -62,9 +62,7 @@ impl BackgroundStreaming<'_> {
             error
         );
         let message = bounded_text(&self.redactor.redact_internal_details(&error.to_string()));
-        self.write_patch(&failure_patch(&message))
-            .await
-            .map_err(PollStreamError::from)
+        self.write_patch(&failure_patch(&message)).await
     }
 
     async fn stream(&self) -> Result<(), PollStreamError> {
@@ -93,7 +91,8 @@ impl BackgroundStreaming<'_> {
         };
         self.consume(chunks.as_mut(), &mut state).await?;
         if let Some(output) = state.flush_forced(self.clock) {
-            self.write_patch(&output_patch(output)).await?;
+            let patch = PollPatch(IndexMap::from([(String::from("output"), output)]));
+            self.write_patch(&patch).await?;
         }
         self.finish(&state).await
     }
@@ -127,7 +126,8 @@ impl BackgroundStreaming<'_> {
         }
         state.apply(event)?;
         if let Some(output) = state.flush_if_due(self.clock) {
-            self.write_patch(&output_patch(output)).await?;
+            let patch = PollPatch(IndexMap::from([(String::from("output"), output)]));
+            self.write_patch(&patch).await?;
         }
         Ok(())
     }
@@ -142,7 +142,7 @@ impl BackgroundStreaming<'_> {
         Ok(())
     }
 
-    async fn write_patch(&self, patch: &PollPatch) -> Result<(), PollingError> {
+    async fn write_patch(&self, patch: &PollPatch) -> Result<(), PollStreamError> {
         let update = self
             .store
             .update_state(self.polling_id, PollAccess::AuthDisabled, patch)
@@ -158,10 +158,6 @@ fn status_patch(status: &str) -> PollPatch {
     PollPatch(fields)
 }
 
-fn output_patch(output: Json) -> PollPatch {
-    PollPatch(IndexMap::from([(String::from("output"), output)]))
-}
-
 // the source's failed record: type, message and code, and no param
 fn failure_patch(message: &str) -> PollPatch {
     let error = Json::Object(IndexMap::from([
@@ -169,11 +165,12 @@ fn failure_patch(message: &str) -> PollPatch {
         (String::from("message"), Json::Text(message.to_owned())),
         (String::from("code"), Json::Text(String::from(ERROR_CODE))),
     ]));
-    let mut patch = IndexMap::with_capacity(2);
-    patch.insert(
-        String::from("status"),
-        Json::Text(String::from(FAILED_STATUS)),
-    );
-    patch.insert(String::from("error"), error);
-    PollPatch(patch)
+    let fields = IndexMap::from([
+        (
+            String::from("status"),
+            Json::Text(String::from(FAILED_STATUS)),
+        ),
+        (String::from("error"), error),
+    ]);
+    PollPatch(fields)
 }

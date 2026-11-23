@@ -113,13 +113,8 @@ fn terminal_kind(name: &str) -> Option<TerminalKind> {
     }
 }
 
-// an absent or null member is absent; any other value is handed on as given
-fn member<'fields>(fields: &'fields Fields, name: &str) -> Option<&'fields Json> {
-    fields.get(name).filter(|value| **value != Json::Null)
-}
-
 fn text_field(fields: &Fields, name: &'static str) -> Result<Option<String>, PollEventError> {
-    match member(fields, name) {
+    match fields.get(name).filter(|entry| **entry != Json::Null) {
         None => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(_) => Err(PollEventError::Field(name)),
@@ -127,7 +122,7 @@ fn text_field(fields: &Fields, name: &'static str) -> Result<Option<String>, Pol
 }
 
 fn item_of(fields: &Fields) -> Result<Item, PollEventError> {
-    let Some(value) = member(fields, "item") else {
+    let Some(value) = fields.get("item").filter(|entry| **entry != Json::Null) else {
         return Ok(Item::default());
     };
     item_value(value, "item")
@@ -148,7 +143,10 @@ fn item_value(value: &Json, field: &'static str) -> Result<Item, PollEventError>
 }
 
 fn index_of(fields: &Fields) -> Result<i64, PollEventError> {
-    match member(fields, "content_index") {
+    match fields
+        .get("content_index")
+        .filter(|entry| **entry != Json::Null)
+    {
         None => Ok(0),
         Some(Json::Number(number)) => number
             .as_i64()
@@ -159,18 +157,18 @@ fn index_of(fields: &Fields) -> Result<i64, PollEventError> {
 
 // the source's default for an absent or null part is {}
 fn part_of(fields: &Fields) -> Json {
-    member(fields, "part")
-        .cloned()
+    let part = fields.get("part").filter(|entry| **entry != Json::Null);
+    part.cloned()
         .unwrap_or_else(|| Json::Object(IndexMap::new()))
 }
 
 fn terminal_of(kind: TerminalKind, fields: &Fields) -> Result<Terminal, PollEventError> {
-    let response = match member(fields, "response") {
+    let response = match fields.get("response").filter(|entry| **entry != Json::Null) {
         None => IndexMap::new(),
         Some(Json::Object(response)) => response.clone(),
         Some(_) => return Err(PollEventError::Field("response")),
     };
-    let output = match member(&response, "output") {
+    let output = match response.get("output").filter(|entry| **entry != Json::Null) {
         None => None,
         Some(Json::List(items)) => Some(
             items
