@@ -22,7 +22,7 @@ impl PollClock for ScriptedClock {
         let index = self.read.fetch_add(1, Ordering::Relaxed);
         self.readings
             .get(index)
-            .or(self.readings.last())
+            .or_else(|| self.readings.last())
             .copied()
             .unwrap_or_default()
     }

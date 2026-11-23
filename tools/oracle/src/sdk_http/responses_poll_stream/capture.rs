@@ -22,9 +22,8 @@ impl CaptureCache {
         cancel_after_write: Option<usize>,
     ) -> Result<Self, SdkHttpError> {
         let encoded = serde_json::to_string(seed).map_err(SdkHttpError::Serialize)?;
-        let entries = Mutex::new(BTreeMap::from([(seed_key, encoded)]));
         Ok(Self {
-            entries,
+            entries: Mutex::new(BTreeMap::from([(seed_key, encoded)])),
             writes: Mutex::new(Vec::new()),
             cancel_after_write,
         })
@@ -75,11 +74,14 @@ fn cancel(cache: &CaptureCache, key: &str) -> Result<(), PollingCacheError> {
     let Some(stored) = entries.get(key).cloned() else {
         return Ok(());
     };
+    drop(entries);
     let mut response: IndexMap<String, Json> = serde_json::from_str(&stored)
         .map_err(|error| PollingCacheError::Write(error.to_string()))?;
     response.insert("status".to_owned(), Json::Text("cancelled".to_owned()));
     let encoded = serde_json::to_string(&Json::Object(response))
         .map_err(|error| PollingCacheError::Write(error.to_string()))?;
-    entries.insert(key.to_owned(), encoded);
+    let mut written = cache.entries.lock().unwrap_or_else(PoisonError::into_inner);
+    written.insert(key.to_owned(), encoded);
+    drop(written);
     Ok(())
 }

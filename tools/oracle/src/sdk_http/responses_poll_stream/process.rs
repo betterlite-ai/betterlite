@@ -86,9 +86,9 @@ impl PollRequestProcessor for ProviderProcessor {
 fn request_headers(headers: &[(String, String)]) -> Result<HeaderMap, PollProcessorError> {
     let mut map = HeaderMap::with_capacity(headers.len());
     for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes()).processor_failure()?;
-        let value = HeaderValue::from_bytes(value.as_bytes()).processor_failure()?;
-        map.insert(name, value);
+        let header_name = HeaderName::from_bytes(name.as_bytes()).processor_failure()?;
+        let header_value = HeaderValue::from_bytes(value.as_bytes()).processor_failure()?;
+        map.insert(header_name, header_value);
     }
     Ok(map)
 }
