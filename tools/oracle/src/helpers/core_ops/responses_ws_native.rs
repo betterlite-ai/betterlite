@@ -52,14 +52,12 @@ impl FakeSocket {
         }
     }
 
-    fn pop_frame(&self) -> Result<String, BackendError<IoError>> {
+    fn pop_frame(&self) -> Result<String, IoError> {
         self.frames
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
-            .ok_or_else(|| BackendError::Closed {
-                source: IoError::new(ErrorKind::BrokenPipe, "the socket closed"),
-            })
+            .ok_or_else(|| IoError::new(ErrorKind::BrokenPipe, "the socket closed"))
     }
 
     fn record(&self, text: &str) {
@@ -72,7 +70,7 @@ impl FakeSocket {
 
 // the pinned service awaits sleep(0) in every socket method, so the fake yields once per call too
 impl ResponsesClientWebSocket for FakeSocket {
-    type Error = BackendError<IoError>;
+    type Error = IoError;
 
     fn send_text<'call>(
         &'call self,
@@ -102,7 +100,8 @@ impl NativeWsBackend for FakeSocket {
     {
         async move {
             yield_now().await;
-            self.pop_frame().map(ResponsesWebSocketMessage::Text)
+            let frame = self.pop_frame().map_err(BackendError::<IoError>::Closed)?;
+            Ok(ResponsesWebSocketMessage::Text(frame))
         }
     }
 
@@ -117,11 +116,7 @@ impl NativeWsBackend for FakeSocket {
         &'call self,
         message: &'call str,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'call {
-        async move {
-            yield_now().await;
-            self.record(message);
-            Ok(())
-        }
+        self.send_text(message)
     }
 
     fn close(&self) -> impl Future<Output = Result<(), Self::Error>> + Send + '_ {
