@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use betterlite_config::loader::startup::process_environment;
 use betterlite_core::operation::chat::{
     ChatCall, ChatCallInput, ChatCompletionAnswer, ChatFailure, ChatStreamAnswer,
 };
@@ -12,12 +13,14 @@ use betterlite_models::params::ParameterError;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::{ChatRequest, RequestError};
 use betterlite_openai::openai_base_config::CatalogCapabilities;
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::operation::{
     ChatOperation, OperationError, OperationRequest, OperationResult,
 };
 use betterlite_provider::prepared::deployment::Deployment;
 use betterlite_provider::provider::Provider;
 use http::HeaderMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 // The provider framework the server's chat route uses, reached from a Python session instead of a router.
 pub(crate) struct ProviderCalls {
@@ -32,7 +35,9 @@ impl ProviderCalls {
         streaming: bool,
     ) -> Result<(OperationResult, HeaderMap, Duration), ChatFailure> {
         let deployment = &call.deployment;
-        let provider = Provider::from_deployment(deployment).map_err(chat_failure)?;
+        // an SDK user can set os.environ after import, so the composition is read at the call
+        let composition = Arc::new(Composition::from_environment(process_environment()));
+        let provider = Provider::from_deployment(deployment, &composition).map_err(chat_failure)?;
         let inputs = Deployment::from_chat(deployment);
         let operation = ChatOperation {
             model: inputs.model.clone(),

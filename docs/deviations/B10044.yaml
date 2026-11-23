@@ -1,0 +1,8 @@
+task: B10044
+deviations:
+  - what: >-
+      The server reads AZURE_API_BASE, AZURE_API_VERSION, AZURE_API_KEY, AZURE_OPENAI_API_KEY, AZURE_AD_TOKEN and AZURE_API_TYPE once, when the config loads at startup, where LiteLLM's completion path reads them with get_secret or get_secret_str on every call.
+    why: >-
+      No provider request may read the process environment (the task's no-env-read check), so the startup composition is the only environment the adapter sees; a running proxy cannot have its environment changed from outside, so no deployed setup relies on LiteLLM re-reading it. The Python binding keeps the per-call read, because an SDK user can set os.environ after import.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1367-L1379"
+kept_bugs: []

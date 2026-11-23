@@ -1,0 +1,39 @@
+name: claude-plugin-write-name-conflict
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+database:
+  seed:
+    dashboard: {logs: []}
+    users: [{user_id: alice}]
+    keys: [{token: sk-alice-token, user_id: alice}]
+    teams: [{team_id: team-red}]
+steps:
+  - request:
+      method: POST
+      path: /claude-code/plugins
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        name: conflict-plugin
+        source: {source: github, repo: org/conflict-plugin}
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugin/id, why: each peer generates its own plugin id}
+  - request:
+      method: POST
+      path: /claude-code/plugins
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        name: conflict-plugin
+        source: {source: github, repo: org/conflict-plugin}
+        description: the second registration
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []

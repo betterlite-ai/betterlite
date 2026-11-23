@@ -1,0 +1,21 @@
+name: claude-plugin-write-auth-invalid
+config: |
+  general_settings:
+    master_key: oracle-master-auth
+env: {}
+upstream: []
+request:
+  method: POST
+  path: /claude-code/plugins
+  headers:
+    content-type: application/json
+    x-api-key: wrong-key
+  body:
+    name: auth-plugin
+    source: {source: github, repo: org/auth-plugin}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

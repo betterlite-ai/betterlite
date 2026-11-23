@@ -24,6 +24,7 @@ use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
 use crate::state::anthropic_runtime;
+use crate::state::azure_runtime;
 use crate::state::shared::Shared;
 
 const CHAT: &str = r#"{"model":"g","messages":[{"role":"user","content":"hi"}]}"#;
@@ -189,7 +190,8 @@ fn chat_calls(config: &Config, executor: ChatExecutor) -> ChatCalls {
         client: executor.client.clone(),
     };
     let slot = anthropic_runtime::Slot::new(config, &shared);
-    ChatCalls::new(config, Arc::new(executor), &slot).unwrap()
+    let azure = azure_runtime::Slot::new(config);
+    ChatCalls::new(config, Arc::new(executor), &slot, &azure).unwrap()
 }
 
 // one booted chat router whose deployment points at a loopback provider answering the given replies in order

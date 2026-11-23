@@ -18,14 +18,17 @@ use crate::jobs::ptu::attribution::NoOidc;
 use crate::state::ServerState;
 
 pub(crate) fn mount(router: Router, state: &Arc<ServerState>) -> Router {
-    match cache_activity_store(state) {
-        Some(store) => router.merge(cache_activity_routes::routes(Some(store))),
+    match cli_writer_store(state) {
+        Some(store) => {
+            let cache: Arc<dyn CacheActivityStore> = Arc::new(DatabaseCacheActivityStore { store });
+            router.merge(cache_activity_routes::routes(Some(cache)))
+        }
         None => router.merge(cache_activity_routes::routes(None)),
     }
 }
 
 // The proxy reads the URL the CLI wrote before Prisma starts: general_settings.database_url, else DATABASE_URL, else the DATABASE_* parts.
-fn cache_activity_store(state: &Arc<ServerState>) -> Option<Arc<dyn CacheActivityStore>> {
+pub(crate) fn cli_writer_store(state: &Arc<ServerState>) -> Option<Arc<PostgresStore>> {
     let secrets = SecretLookup {
         manager: None,
         oidc_http: Arc::new(NoOidc),
@@ -47,18 +50,14 @@ fn cache_activity_store(state: &Arc<ServerState>) -> Option<Arc<dyn CacheActivit
         }
     };
     let pool = postgres_pool(url.expose_secret())?;
-    let postgres = PostgresStore { pool: Some(pool) };
-    let store: Arc<dyn CacheActivityStore> = Arc::new(DatabaseCacheActivityStore {
-        store: Arc::new(postgres),
-    });
-    Some(store)
+    Some(Arc::new(PostgresStore { pool: Some(pool) }))
 }
 
 fn postgres_pool(database_url: &str) -> Option<Pool> {
     let options = match native_connection_options(database_url) {
         Ok(options) => options,
         Err(error) => {
-            tracing::error!(%error, "the database URL cannot open the cache activity pool");
+            tracing::error!(%error, "the database URL cannot open the proxy pool");
             return None;
         }
     };
@@ -66,7 +65,7 @@ fn postgres_pool(database_url: &str) -> Option<Pool> {
     match Pool::builder(manager).build() {
         Ok(pool) => Some(pool),
         Err(error) => {
-            tracing::error!(%error, "the cache activity pool cannot be built");
+            tracing::error!(%error, "the proxy pool cannot be built");
             None
         }
     }

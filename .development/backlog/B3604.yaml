@@ -2,7 +2,7 @@ id: B3604
 milestone: M5 api families
 title: Pass-through base logging contract
 status: todo
-depends_on: [B3600, B068, B190, B880]
+depends_on: [B3600, B068, B190, B10050]
 file: tasks/B3604-passthrough-base-logging.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py"
