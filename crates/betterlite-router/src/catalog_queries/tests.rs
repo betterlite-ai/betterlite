@@ -844,17 +844,6 @@ struct InfoProvider {
     answers: BTreeMap<String, (String, String)>,
 }
 
-impl InfoProvider {
-    fn new() -> Self {
-        Self {
-            answers: BTreeMap::from([(
-                "openai/m".to_owned(),
-                ("m".to_owned(), "openai".to_owned()),
-            )]),
-        }
-    }
-}
-
 impl ProviderResolver for InfoProvider {
     type Error = Infallible;
 
@@ -903,7 +892,9 @@ fn cached_model_group_info_answers_from_the_cache() {
         answer: Some(object(vec![("mode", text("chat"))])),
         calls: Arc::new(AtomicU64::new(0)),
     };
-    let providers = InfoProvider::new();
+    let providers = InfoProvider {
+        answers: BTreeMap::from([("openai/m".to_owned(), ("m".to_owned(), "openai".to_owned()))]),
+    };
     let parameters = UnitParams;
     let cost_map = ModelCostMap::parse(b"{}").expect("the empty cost map");
     let fast_mode = RawCatalog::default();

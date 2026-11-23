@@ -19,20 +19,21 @@ impl CatalogQueries<'_> {
         team_model_name: Option<&str>,
         team_id: &str,
     ) -> Result<Option<String>, CatalogQueryError> {
-        for deployment in self.lookup.get_model_list(team_model_name, Some(team_id))? {
-            if text(&deployment.model_info, "team_id") != Some(team_id) {
-                continue;
-            }
-            if let Some(name) = team_model_name {
-                return Ok(Some(name.to_owned()));
-            }
-            let public = text(&deployment.model_info, "team_public_model_name")
-                .filter(|name| !name.is_empty());
-            return Ok(Some(
-                public.map_or_else(|| deployment.model_name.clone(), str::to_owned),
-            ));
+        let rows = self.lookup.get_model_list(team_model_name, Some(team_id))?;
+        let Some(row) = rows
+            .iter()
+            .find(|found| text(&found.model_info, "team_id") == Some(team_id))
+        else {
+            return Ok(None);
+        };
+        if let Some(name) = team_model_name {
+            return Ok(Some(name.to_owned()));
         }
-        Ok(None)
+        let public =
+            text(&row.model_info, "team_public_model_name").filter(|name| !name.is_empty());
+        Ok(Some(
+            public.map_or_else(|| row.model_name.clone(), str::to_owned),
+        ))
     }
 
     // Router.resolved_litellm_models: the provider model of every row the name reaches, in listing order.
@@ -41,13 +42,14 @@ impl CatalogQueries<'_> {
         model_name: &str,
         team_id: Option<&str>,
     ) -> Result<Vec<String>, CatalogQueryError> {
-        let deployments = self.lookup.get_model_list(Some(model_name), team_id)?;
-        Ok(deployments
-            .iter()
-            .map(litellm_model)
-            .filter(|model| !model.is_empty())
-            .map(str::to_owned)
-            .collect())
+        let mut models = Vec::new();
+        for row in self.lookup.get_model_list(Some(model_name), team_id)? {
+            let provider_model = litellm_model(&row);
+            if !provider_model.is_empty() {
+                models.push(provider_model.to_owned());
+            }
+        }
+        Ok(models)
     }
 
     // Router._is_model_access_group_for_wildcard_route: a wildcard group holds a model the pattern router matches.
