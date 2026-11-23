@@ -66,7 +66,8 @@ out_of_scope:
 pitfalls:
 - "`get_run`, `cancel_run` and `delete_run` need both `eval_id` and `run_id`, in that order."
 - "`create_run` and `create_eval` share a name stem, so keep `betterlite.evals.create_run` and `create_eval` distinct in `__init__`."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, ASYNC109). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 15

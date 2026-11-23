@@ -35,7 +35,7 @@ description: >-
 
 
   C. Register (register.rs, L2944-L3010). POST /register and POST /{mcp_server_name}/register; no auth, no required body. Read the body with B1100 (an empty body is {}). client_redirect_uris is B7530's client_supplied_redirect_uris(body.redirect_uris), through the OauthFlows port. request_base_url comes from the port as well. The dummy reply is 200 JSON {"client_id": mcp_server_name or "dummy_client", "client_secret": "dummy", "redirect_uris": client_redirect_uris or ["<base>/callback"]}. Order:
-  1. No path name and body.redirect_uris is truthy (a non-empty list; any non-empty value counts, even one client_supplied_redirect_uris rejects): B4674's register_aggregate_client(body, token_exchange_available, now, cipher). Registered gives status 201 with its response body; Refused gives the OauthError reply. token_exchange_available comes from a field B8702 fills (B4663's token_exchange_available).
+  1. No path name and body.redirect_uris is truthy (a non-empty list; any non-empty value counts, even one client_supplied_redirect_uris rejects): B4674's register_aggregate_client(body, token_exchange_available, now, cipher, native_callbacks). Registered gives status 201 with its response body; Refused gives the OauthError reply. token_exchange_available and native_callbacks come from fields B8702 fills: B4663's token_exchange_available, and `native_callbacks: Vec<String>`, the native_callbacks of the RedirectAllowlists B8623 builds (B10062's list from MCP_TRUSTED_NATIVE_REDIRECT_URIS), so an allowlisted native callback registers here as LiteLLM's does.
   2. No path name otherwise: the single OAuth2 server for root endpoints as in B. When found, OauthFlows::register_client_with_server with client_name body.client_name or "" (a missing key only; an explicit null stays null), grant_types and response_types default empty list, token_endpoint_auth_method default "", fallback_client_id server_name or name, client_redirect_uris, and persist_credentials false. Not found: the dummy reply.
   3. With a path name: server_by_name then server_by_id with the client ip. Not found is the dummy reply. Found: register_client_with_server with the same arguments and fallback_client_id the path name.
   This route does not call ensure_oauth2 itself (the flow does) and never sets persist_credentials.
@@ -96,7 +96,7 @@ dod:
     proof: [callback-tests]
   - text: Authorize sends gateway DCR client ids without a path name to the native or aggregate flow, and everything else through the name-then-id lookup, the single-OAuth2-server fallback, ensure_oauth2 and the client_id rule with LiteLLM's 404 and 400 bodies.
     proof: [authorize-tests]
-  - text: Register returns the dummy reply for an unknown server, routes redirect_uris requests without a name to register_aggregate_client with a 201, and passes the right fallback_client_id and defaults to the flow.
+  - text: Register returns the dummy reply for an unknown server, routes redirect_uris requests without a name to register_aggregate_client with a 201 (a redirect_uri in the native_callbacks field included), and passes the right fallback_client_id and defaults to the flow.
     proof: [register-tests]
   - text: The connect flow routes pass the session user, the lookups and the form values to B4675, with 422 for a missing flow, and the vendor credential state maps absent, valid, refreshable and read failures as LiteLLM does.
     proof: [connect-tests]

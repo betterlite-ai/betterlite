@@ -26,10 +26,10 @@ description: >-
   string, so video_id becomes "" and the file is dropped. data["seconds"] and data["prompt"] stay in data as the body gave them, and
   seconds is never parsed or checked here.
 
-  Provider and model, the same for both routes. The provider is the first truthy of: B2400's header getter (custom-llm-provider), B2400's
+  Provider and model, the same for both routes. The provider is the first truthy of: B10059's header getter (custom-llm-provider), B10059's
   query getter (custom_llm_provider), B3330's get_custom_provider_from_data(data) (the body field custom_llm_provider, then the same key
   inside extra_body, which may be a JSON string), the provider decoded from the id, and the literal "openai". It is always written to
-  data["custom_llm_provider"]. Unlike the video content route, these routes never call B2400's body getter. When the decoded model_id
+  data["custom_llm_provider"]. Unlike the video content route, these routes never call B10059's body getter. When the decoded model_id
   is truthy and a router exists, ask B844's resolve_model_name_from_model_id for a public name and, when the answer is truthy, store it
   as data["model"], replacing a body model. With no router, or with no answer, data["model"] stays as the body had it.
 
@@ -80,7 +80,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L14-L47
     why: video_reference_to_id and get_custom_provider_from_data, owned by B3330 and called by both routes.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L84
-    why: The header and query provider getters, owned by B2400.
+    why: The header and query provider getters, owned by B10059.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L612-L636
     why: avideo_edit and avideo_extension with an empty model go straight to the SDK function.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L695-L705
@@ -168,13 +168,13 @@ out_of_scope:
   - "video_create, video_list, video_status (endpoints.py 33-305): B3343. video_content and video_remix (308-514): B3344. The character routes (516-723): B3345."
   - "video_reference_to_id, get_custom_provider_from_data and extract_model_from_target_model_names in video_endpoints/utils.py: B3330. This task calls the first two."
   - "avideo_edit and avideo_extension, the SDK calls: B3342. The transport behind them: B3336. The OpenAI edit and extension request transforms: B526."
-  - "common_processing_pre_call_logic: B8801. The rest of ProxyBaseLLMRequestProcessing and its exception handler: B004. Body reading: B1100. Form parsing: B1101. Provider getters: B2400. Model-id lookup: B844. Authentication: B052. batch_to_bytesio: B082."
+  - "common_processing_pre_call_logic: B8801. The rest of ProxyBaseLLMRequestProcessing and its exception handler: B004. Body reading: B1100. Form parsing: B1101. Provider getters: B10059. Model-id lookup: B844. Authentication: B052. batch_to_bytesio: B082."
   - "route_llm_request itself and the router factory wiring of avideo_edit, video_edit, avideo_extension and video_extension (router.py 2136-2141): B9944 owns the route choice, B6460 the wrappers and B016 the router call pipeline."
 pitfalls:
   - "Edit sets video_id to the empty string for any uploaded file, even when batch_to_bytesio returns an empty list, and then sets no video key. Extension has no such branch."
   - "A file part is only an upload when it is a file. A plain string under video in a multipart form is a reference and goes through video_reference_to_id like a JSON value."
   - "The key video is removed from data in both routes, so a map under video never reaches the call as video, only its id does, as video_id."
-  - "The provider order here has no body getter (B2400's body reader) and reads the body field through get_custom_provider_from_data, which also looks inside extra_body, so a body custom_llm_provider beats the id's provider but loses to header and query."
+  - "The provider order here has no body getter (B10059's body reader) and reads the body field through get_custom_provider_from_data, which also looks inside extra_body, so a body custom_llm_provider beats the id's provider but loses to header and query."
   - "data[custom_llm_provider] is written even when it is the literal default openai, so the call never infers a provider for these routes."
   - "A resolved model replaces a body model, but nothing is written when the resolver gives an empty answer or no router exists."
   - "base_process_llm_request gets model=None on both routes. The model travels only inside data."

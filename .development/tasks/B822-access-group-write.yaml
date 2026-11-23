@@ -176,7 +176,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B2340 owns assignment loops, agent detachment and cache patches at access_group_endpoints.py L317-L500.
-  - 'litellm/proxy/management_endpoints/access_group_endpoints.py: B821 owns _AccessGroupRecord.access_group_id
+  - 'litellm/proxy/management_endpoints/access_group_endpoints.py: B10056 owns _AccessGroupRecord.access_group_id
     (L49-L49), _AccessGroupRecord.access_mcp_server_ids (L52-L52), _AccessGroupRecord.access_agent_ids
     (L55-L55), _AccessGroupRecord.assigned_team_ids (L58-L58), _AccessGroupRecord.assigned_key_ids (L61-L61),
     _AccessGroupRecord.dict (L63-L63), _TeamRecord.team_id (L68-L68), _TeamRecord.team_alias (L71-L71),
@@ -188,7 +188,7 @@ out_of_scope:
     (L115-L115), _AgentRecord.access_group_ids (L118-L118), _AgentTable.find_many (L122-L122), _AgentTable.update
     (L124-L124), _AccessGroupTx.litellm_accessgrouptable (L145-L145), _AccessGroupTx.litellm_teamtable
     (L148-L148), _AccessGroupTx.litellm_verificationtoken (L151-L151), _AccessGroupTx.litellm_agentstable
-    (L154-L154), _require_proxy_admin (L157-L162), _require_admin_view (L165-L173), _label (L184-L185),
+    (L154-L154); B821 owns _require_proxy_admin (L157-L162), _require_admin_view (L165-L173), _label (L184-L185),
     _record_to_response (L188-L201), _ids_across (L204-L207), _responses_for (L210-L237), _response_for
     (L240-L242), _attached_team_ids_by_group (L245-L256), _teams_touching (L259-L265), _attached_team_ids_for
     (L268-L273), _require_teams_exist (L276-L286), _record_to_access_group_table (L289-L291), _cache_access_group_record
