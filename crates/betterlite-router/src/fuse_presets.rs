@@ -66,19 +66,13 @@ impl TryFrom<RawFuseModelPreset> for FuseModelPreset {
     type Error = FusePresetsError;
 
     fn try_from(raw: RawFuseModelPreset) -> Result<Self, FusePresetsError> {
-        let RawFuseModelPreset {
-            id,
-            label,
-            text,
-            sources,
-            model,
-        } = raw;
+        let (id, label, text, sources) = checked_parts(raw.id, raw.label, raw.text, raw.sources)?;
         Ok(Self {
             id,
             label,
             text,
-            sources: checked_sources(sources)?,
-            model,
+            sources,
+            model: raw.model,
         })
     }
 }
@@ -102,22 +96,23 @@ struct RawFuseHarnessPreset {
     sources: Vec<String>,
 }
 
-impl TryFrom<RawFuseHarnessPreset> for FuseHarnessPreset {
-    type Error = FusePresetsError;
-
-    fn try_from(raw: RawFuseHarnessPreset) -> Result<Self, FusePresetsError> {
-        let RawFuseHarnessPreset {
+impl FuseHarnessPreset {
+    const fn assemble(id: String, label: String, text: ProfileText, sources: Vec<String>) -> Self {
+        Self {
             id,
             label,
             text,
             sources,
-        } = raw;
-        Ok(Self {
-            id,
-            label,
-            text,
-            sources: checked_sources(sources)?,
-        })
+        }
+    }
+}
+
+impl TryFrom<RawFuseHarnessPreset> for FuseHarnessPreset {
+    type Error = FusePresetsError;
+
+    fn try_from(raw: RawFuseHarnessPreset) -> Result<Self, FusePresetsError> {
+        let (id, label, text, sources) = checked_parts(raw.id, raw.label, raw.text, raw.sources)?;
+        Ok(Self::assemble(id, label, text, sources))
     }
 }
 
@@ -175,11 +170,17 @@ pub fn resolve_fuse_profile(
     Ok(Some(text.cloned().unwrap_or(preset_text)))
 }
 
-fn checked_sources(sources: Vec<String>) -> Result<Vec<String>, FusePresetsError> {
+// both preset kinds carry these four fields, so the emptiness check runs once here
+fn checked_parts(
+    id: String,
+    label: String,
+    text: ProfileText,
+    sources: Vec<String>,
+) -> Result<(String, String, ProfileText, Vec<String>), FusePresetsError> {
     if sources.is_empty() {
         return Err(FusePresetsError::SourcesEmpty);
     }
-    Ok(sources)
+    Ok((id, label, text, sources))
 }
 
 mod tests;
