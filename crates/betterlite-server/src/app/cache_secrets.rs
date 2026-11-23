@@ -8,14 +8,12 @@ use axum::Router;
 use crate::state::ServerState;
 
 #[cfg_attr(test, mutants::skip)]
-#[must_use]
 pub fn mount(router: Router, _state: &Arc<ServerState>) -> Router {
     // the area owner adds its keyed routes
     router.merge(Router::new())
 }
 
 #[cfg_attr(test, mutants::skip)]
-#[must_use]
 pub fn mount_public(router: Router, _state: &Arc<ServerState>) -> Router {
     // the area owner adds its public routes
     router.merge(Router::new())

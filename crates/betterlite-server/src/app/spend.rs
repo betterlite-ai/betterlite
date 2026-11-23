@@ -29,7 +29,6 @@ pub(crate) fn mount(router: Router, state: &Arc<ServerState>) -> Router {
 }
 
 #[cfg_attr(test, mutants::skip)]
-#[must_use]
 pub fn mount_public(router: Router, _state: &Arc<ServerState>) -> Router {
     // the area owner adds its public routes
     router.merge(Router::new())

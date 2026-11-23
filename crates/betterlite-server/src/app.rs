@@ -19,7 +19,6 @@ use axum::Router;
 
 use crate::state::ServerState;
 
-#[must_use]
 pub fn mount(application: Router, state: &Arc<ServerState>) -> Router {
     let mut router = mcp::mount(application, state);
     router = inference::mount(router, state);
@@ -35,7 +34,6 @@ pub fn mount(application: Router, state: &Arc<ServerState>) -> Router {
     edge::mount(router, state)
 }
 
-#[must_use]
 pub fn mount_public(application: Router, state: &Arc<ServerState>) -> Router {
     let with_mcp = mcp::mount_public(application, state);
     let with_inference = inference::mount_public(with_mcp, state);
@@ -67,7 +65,6 @@ pub async fn start(state: &Arc<ServerState>) {
     edge::start(state).await;
 }
 
-#[must_use]
 pub fn wrap(router: Router, state: &Arc<ServerState>) -> Router {
     // the edge area installs the layers that sit outside every route
     edge::wrap(router, state)

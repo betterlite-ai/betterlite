@@ -292,16 +292,18 @@ pub(crate) fn router(
         .merge(embeddings)
         .merge(stub_router!(&state))
         .merge(scim_router(&state));
+    // the extension layer takes the owned handle, so the calls after it reuse a clone
+    let public_state = Arc::clone(&state);
     let mut router = app::mount(application, &state)
         .layer(middleware::from_fn_with_state(
             auth,
             auth_route_patterns::stage,
         ))
         .layer(middleware::from_fn(stage))
-        .layer(Extension(Arc::clone(&state)))
+        .layer(Extension(state))
         .merge(outside_gate);
-    router = router.merge(app::mount_public(Router::new(), &state));
-    app::wrap(router, &state)
+    router = router.merge(app::mount_public(Router::new(), &public_state));
+    app::wrap(router, &public_state)
 }
 
 fn base_application(shutting_down: Arc<AtomicBool>) -> Router {
