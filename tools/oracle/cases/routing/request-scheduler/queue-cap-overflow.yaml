@@ -1,0 +1,31 @@
+kind: probe
+name: request-scheduler-queue-cap-overflow
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      request_scheduler:
+        timeout: "1.0"
+        fill: {count: 1024, prefix: fill, priority: 255}
+        steps:
+          - {op: add, priority: 0, request_id: last}
+compare:
+  expected_difference:
+    - pointer: /output/request_scheduler/steps/0/outcome
+      reference: {result: added}
+      rust: {result: error}
+      why: the pin's heap is unbounded, while betterlite refuses the request past its declared 1024-entry per-model cap
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L42-L50
+    - pointer: /output/request_scheduler/steps/0/error
+      reference: null
+      rust: {status: 429, code: null, priority: null}
+      why: a queue overflow is declared as a 429 rate-limit error, where the pin has no bound and no error to raise
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L42-L50
+    - pointer: /output/request_scheduler/steps/0/depth
+      reference: 1025
+      rust: 1024
+      why: the refused request never enters the queue, so betterlite's queue stays at its cap
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L42-L50
+  ignore:
+    - pointer: /output/request_scheduler/steps/0/queue
+      why: the 1025-entry queue is the same list the depth assertion reads, and spelling it out twice adds nothing

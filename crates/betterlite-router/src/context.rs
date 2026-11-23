@@ -14,7 +14,7 @@ pub mod routing_groups;
 pub mod routing_plugins;
 pub mod tag_routing;
 
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 
 use crate::router_core::candidates::CandidateSet;
@@ -68,7 +68,7 @@ pub async fn apply(
         RouteStage::RoutingGroups => Box::pin(routing_groups::apply(candidates, route)),
         RouteStage::DeploymentAffinity => Box::pin(deployment_affinity::apply(candidates, route)),
         RouteStage::PromptAffinity => Box::pin(prompt_affinity::apply(candidates, route)),
-        RouteStage::RequestScheduler => Box::pin(request_scheduler::apply(candidates, route)),
+        RouteStage::RequestScheduler => Box::pin(ready(Ok(candidates))),
         RouteStage::RoutingPlugins => Box::pin(routing_plugins::apply(candidates, route)),
         RouteStage::ResponsesStreamFallback => {
             Box::pin(responses_stream_fallback::apply(candidates, route))
