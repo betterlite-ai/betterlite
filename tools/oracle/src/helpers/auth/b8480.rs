@@ -99,7 +99,7 @@ async fn execute(input: &Input) -> HelperResult {
     for route in &input.routes {
         *lock(&costs.counted) = false;
         let request = build_request(&body, route, &token, &decoders);
-        reserve_budget_for_request(&request, &services)
+        let _reservation = reserve_budget_for_request(&request, &services)
             .await
             .map_err(|error| invalid(error.to_string()))?;
         counted.push(*lock(&costs.counted));
