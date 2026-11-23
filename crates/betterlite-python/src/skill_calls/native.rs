@@ -53,41 +53,49 @@ impl NativeSkillSession {
 
     fn create_skill(&self, py: Python<'_>, request: &str, blobs: Blobs) -> PyResult<String> {
         let call = parse(request, blobs)?;
-        native_answer(py.detach(|| get_runtime().block_on(self.core.execute(Mode::Create, call))))
+        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::Create, call)));
+        native_answer(outcome)
     }
 
     fn list_skills(&self, py: Python<'_>, request: &str, blobs: Blobs) -> PyResult<String> {
         let call = parse(request, blobs)?;
-        native_answer(py.detach(|| get_runtime().block_on(self.core.execute(Mode::List, call))))
+        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::List, call)));
+        native_answer(outcome)
     }
 
     fn get_skill(&self, py: Python<'_>, request: &str, blobs: Blobs) -> PyResult<String> {
         let call = parse(request, blobs)?;
-        native_answer(py.detach(|| get_runtime().block_on(self.core.execute(Mode::Get, call))))
+        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::Get, call)));
+        native_answer(outcome)
     }
 
     fn delete_skill(&self, py: Python<'_>, request: &str, blobs: Blobs) -> PyResult<String> {
         let call = parse(request, blobs)?;
-        native_answer(py.detach(|| get_runtime().block_on(self.core.execute(Mode::Delete, call))))
+        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::Delete, call)));
+        native_answer(outcome)
     }
 
     fn acreate_skill<'py>(&self, py: Python<'py>, request: &str, blobs: Blobs) -> Answer<'py> {
         let call = parse(request, blobs)?;
-        prompt(py, Arc::clone(&self.core), Mode::Create, call)
+        let core = Arc::clone(&self.core);
+        prompt(py, core, Mode::Create, call)
     }
 
     fn alist_skills<'py>(&self, py: Python<'py>, request: &str, blobs: Blobs) -> Answer<'py> {
         let call = parse(request, blobs)?;
-        prompt(py, Arc::clone(&self.core), Mode::List, call)
+        let core = Arc::clone(&self.core);
+        prompt(py, core, Mode::List, call)
     }
 
     fn aget_skill<'py>(&self, py: Python<'py>, request: &str, blobs: Blobs) -> Answer<'py> {
         let call = parse(request, blobs)?;
-        prompt(py, Arc::clone(&self.core), Mode::Get, call)
+        let core = Arc::clone(&self.core);
+        prompt(py, core, Mode::Get, call)
     }
 
     fn adelete_skill<'py>(&self, py: Python<'py>, request: &str, blobs: Blobs) -> Answer<'py> {
         let call = parse(request, blobs)?;
-        prompt(py, Arc::clone(&self.core), Mode::Delete, call)
+        let core = Arc::clone(&self.core);
+        prompt(py, core, Mode::Delete, call)
     }
 }

@@ -13,6 +13,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::transport_error::TransportError::{ConnectTimeout, Deadline};
 use betterlite_openai::watsonx_audio::error::body_text;
 use http::Method;
 use http::header::HeaderMap;
@@ -133,20 +134,18 @@ async fn exchange(
         let message = format!("the skills url {} is not a URL", call.url);
         provider_failure(500, message, true)
     })?;
-    let after = call.after;
-    let timeout_status = call.timeout_status;
     let request = OutboundRequest {
         method: call.method,
         url,
         query: call.query,
         headers: call.headers,
         body: call.body,
-        deadline: after,
+        deadline: call.after,
     };
     client
         .send_buffered(request)
         .await
-        .map_err(|error| transport_failure(&error, after, timeout_status))
+        .map_err(|error| transport_failure(&error, call.after, call.timeout_status))
 }
 
 fn ensure_success(
@@ -167,10 +166,7 @@ fn transport_failure(
     after: Duration,
     timeout_status: Option<u16>,
 ) -> SkillsHandlerError {
-    let timed_out = matches!(
-        error,
-        TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
-    );
+    let timed_out = matches!(error, Deadline(_) | ConnectTimeout(_));
     match timeout_status {
         Some(status) if timed_out => {
             let message = format!(
