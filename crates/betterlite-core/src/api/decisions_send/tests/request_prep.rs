@@ -71,17 +71,12 @@ fn request_prep_logs_the_unsigned_headers_and_body_copy() {
         .insert("X-Custom".to_owned(), "one".to_owned());
     fixture.send(&decisions).expect("the call answers");
     let signed = &fixture.recording.seen_signs()[0];
-    assert!(signed.headers.contains(&(
-        String::from("Content-Type"),
-        String::from("application/json")
-    )));
-    assert!(signed.headers.contains(&(
-        String::from("Authorization"),
-        String::from("Bearer test-key")
-    )));
-    let body: Json =
-        serde_json::from_str(&serde_json::to_string(&decisions.body).expect("the wire serializes"))
-            .expect("the body is JSON");
+    let content = ("Content-Type".to_owned(), "application/json".to_owned());
+    let auth = ("Authorization".to_owned(), "Bearer test-key".to_owned());
+    assert!(signed.headers.contains(&content));
+    assert!(signed.headers.contains(&auth));
+    let wire = serde_json::to_string(&decisions.body).expect("the wire serializes");
+    let body: Json = serde_json::from_str(&wire).expect("the body is JSON");
     let additional = logging
         .lock()
         .unwrap_or_else(PoisonError::into_inner)

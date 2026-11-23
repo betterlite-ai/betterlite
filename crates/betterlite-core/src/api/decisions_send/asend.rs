@@ -15,7 +15,7 @@ use crate::api::vector_store_http_write::service::ClientKind;
 
 impl<Clients: DecisionsAsyncTransport> DecisionsSender<'_, Clients> {
     // adecisions(): signing off the request task only for AWS, then the provider's async client
-    pub(crate) async fn asend_with<T, S>(
+    pub(super) async fn asend_with<T, S>(
         &mut self,
         call: &DecisionsCall<'_>,
         config: &T,

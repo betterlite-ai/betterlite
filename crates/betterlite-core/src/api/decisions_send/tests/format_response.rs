@@ -1,4 +1,6 @@
-use betterlite_models::decisions::{Json, ir, systemone};
+use betterlite_models::decisions::openai::DecisionResponse as OpenAiDecisionResponse;
+use betterlite_models::decisions::{HiddenParams, Json, ir, systemone};
+use betterlite_openai::decisions::call::DecisionsCall;
 use betterlite_openai::decisions::openai::response::ResponseConversionError;
 use rust_decimal::Decimal;
 use serde_json::Number;
@@ -17,6 +19,30 @@ fn answer_count(error: ResponseConversionError) -> (usize, usize) {
             panic!("expected an answer count error, got {other}")
         }
     }
+}
+
+fn openai_output(
+    config: &TestConfig,
+    call: &DecisionsCall<'_>,
+    model: Option<&str>,
+) -> OpenAiDecisionResponse {
+    match format_response(config, call, &ir_response(model)).expect("the response formats") {
+        DecisionsOutput::OpenAi(response) => response,
+        DecisionsOutput::SystemOne(_) => {
+            panic!("an OpenAI request answers with an OpenAI response")
+        }
+    }
+}
+
+fn cost_header(hidden: &HiddenParams) -> Option<f64> {
+    let Some(Json::Object(entries)) = hidden.get("additional_headers") else {
+        panic!("the cost header is set");
+    };
+    assert_eq!(entries.len(), 1);
+    let Some(Json::Number(cost)) = entries.get(RESPONSE_COST_HEADER) else {
+        panic!("the cost header holds a number");
+    };
+    cost.as_f64()
 }
 
 // format_response: the shape follows the request, and the hidden params follow the config's cost
@@ -64,63 +90,27 @@ fn format_response_systemone_rejects_a_different_answer_count() {
 fn format_response_openai_uses_the_requested_model() {
     let fixture = Fixture::new();
     let decisions = openai_call("typesafe", None);
-    let unnamed = format_response(&fixture.config, &decisions, &ir_response(None))
-        .expect("the response formats");
-    let requested = match unnamed {
-        DecisionsOutput::OpenAi(response) => response,
-        DecisionsOutput::SystemOne(_) => {
-            panic!("an OpenAI request answers with an OpenAI response")
-        }
-    };
-    assert_eq!(requested.model, "requested/model");
+    let unnamed = openai_output(&fixture.config, &decisions, None);
+    assert_eq!(unnamed.model, "requested/model");
     assert_eq!(
-        requested.hidden_params.get("model"),
+        unnamed.hidden_params.get("model"),
         Some(&Json::Text(String::from("typesafe/model-1")))
     );
     assert_eq!(
-        requested.hidden_params.get("provider_response_model"),
+        unnamed.hidden_params.get("provider_response_model"),
         Some(&Json::Text(String::from("typesafe/model-1")))
     );
     assert_eq!(
-        requested.hidden_params.get("custom_llm_provider"),
+        unnamed.hidden_params.get("custom_llm_provider"),
         Some(&Json::Text(String::from("typesafe")))
     );
-    assert!(!requested.hidden_params.contains_key("additional_headers"));
-    let named = format_response(
-        &fixture.config,
-        &decisions,
-        &ir_response(Some("provider-model")),
-    )
-    .expect("the response formats");
-    match named {
-        DecisionsOutput::OpenAi(response) => assert_eq!(response.model, "provider-model"),
-        DecisionsOutput::SystemOne(_) => {
-            panic!("an OpenAI request answers with an OpenAI response")
-        }
-    }
+    assert!(!unnamed.hidden_params.contains_key("additional_headers"));
+    let named = openai_output(&fixture.config, &decisions, Some("provider-model"));
+    assert_eq!(named.model, "provider-model");
     let mut config = TestConfig::new(&fixture.recording);
     config.cost = Some(Decimal::new(25, 4));
-    let priced = format_response(&config, &decisions, &ir_response(Some("provider-model")))
-        .expect("the response formats");
-    let response = match priced {
-        DecisionsOutput::OpenAi(response) => response,
-        DecisionsOutput::SystemOne(_) => {
-            panic!("an OpenAI request answers with an OpenAI response")
-        }
-    };
-    let headers = response
-        .hidden_params
-        .get("additional_headers")
-        .expect("the cost header is set");
-    match headers {
-        Json::Object(entries) => match entries.get(RESPONSE_COST_HEADER) {
-            Some(Json::Number(cost)) => assert_eq!(cost.as_f64(), Some(0.002_5_f64)),
-            other => panic!("the cost header holds a number, got {other:?}"),
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            panic!("additional_headers is a map")
-        }
-    }
+    let priced = openai_output(&config, &decisions, Some("provider-model"));
+    assert_eq!(cost_header(&priced.hidden_params), Some(0.002_5_f64));
 }
 
 #[test]
@@ -178,22 +168,7 @@ fn format_response_hidden_params_with_cost() {
             panic!("a SystemOne request answers with a SystemOne response")
         }
     };
-    let headers = response
-        .hidden_params
-        .get("additional_headers")
-        .expect("the cost header is set");
-    match headers {
-        Json::Object(entries) => {
-            assert_eq!(entries.len(), 1);
-            match entries.get(RESPONSE_COST_HEADER) {
-                Some(Json::Number(cost)) => assert_eq!(cost.as_f64(), Some(0.002_5_f64)),
-                other => panic!("the cost header holds a number, got {other:?}"),
-            }
-        }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            panic!("additional_headers is a map")
-        }
-    }
+    assert_eq!(cost_header(&response.hidden_params), Some(0.002_5_f64));
     let serialized = serde_json::to_string(&response).expect("the response serializes");
     assert!(!serialized.contains("additional_headers"));
     assert!(!serialized.contains(RESPONSE_COST_HEADER));
