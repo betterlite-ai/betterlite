@@ -6,6 +6,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::SessionCore;
+use super::logging::logging_state;
 use crate::search_ocr::convert::{CostAnswer, CostCall, OcrCall, SearchCall};
 use crate::search_ocr::error::NativeFailure;
 
@@ -40,9 +41,7 @@ fn cost_charges_each_query_and_keeps_the_sign(
 
 #[test]
 fn logging_state_names_the_search_call_after_its_provider() {
-    let state = session()
-        .logging_state("brave")
-        .expect("the logging state builds");
+    let state = logging_state(&session(), "brave").expect("the logging state builds");
     assert_eq!(state.model, "brave/search");
     assert_eq!(state.call_type, "search");
 }
