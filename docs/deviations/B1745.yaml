@@ -1,6 +1,6 @@
 task: B1745
 deviations:
-  - what: When a table's sixty second deadline fires after its COMMIT was sent, the failure is ambiguous, so the caller drops that table's increments instead of sending them again; a deadline that fires before the commit stays requeue-safe. LiteLLM's interactive transaction timeout is a non-connection error with no SQLSTATE, so it is always requeued.
+  - what: When a table's sixty second deadline fires after its COMMIT was sent, the failure is ambiguous, so the caller drops that table's increments instead of sending them again; a deadline that fires before the commit stays requeue-safe. LiteLLM's interactive transaction timeout is a non-connection error with no SQLSTATE, so it is always requeued. The deadline also covers acquiring the pooled session, which Prisma's transaction timeout starts after.
     why: betterlite's deadline runs on the client, and a commit that was already on the wire may have applied, so replaying it could count the same spend twice. Prisma's query engine rolls the transaction back on its side, which is why the source can treat every timeout as unapplied.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L275-L277
   - what: The user_api_key_cache entries a committed team membership or project table leaves stale are evicted in one delete call per table, in sorted id order; LiteLLM awaits one async_delete_cache per key in the order the increments arrived and stops at the first failure.
