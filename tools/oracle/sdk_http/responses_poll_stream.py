@@ -71,7 +71,7 @@ class ScriptedClock:
         return self.readings[position]
 
 
-# the module the source imports as asyncio: Event for its never-receive, get_event_loop for its clock
+# the module the source imports as asyncio: Event never receives, get_event_loop reads the clock
 class ScriptedAsyncio:
     Event = asyncio.Event
 
