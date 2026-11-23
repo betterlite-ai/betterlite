@@ -2,7 +2,7 @@ id: B4683
 milestone: M9 agents and mcp
 title: OpenAPI MCP schemas and upstream tool execution
 status: todo
-depends_on: [B173, B4667, B4744, B5082]
+depends_on: [B173, B4650, B4744, B5082, B10065]
 file: tasks/B4683-mcp-openapi-tools.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py"

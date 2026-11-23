@@ -1,0 +1,83 @@
+id: B10083
+title: Auth admission ports for managed agents and tenant destinations
+description: >-
+  LiteLLM's auth admission (_authorize_authenticated_request and _seed_request_destinations in
+  user_api_key_auth.py) calls two kinds of higher services in the middle of authentication: the managed agent
+  checks from agent_endpoints/auth/managed_authorization.py, and the OTel tenant destination routing. B855 builds
+  that admission in betterlite-auth and must not depend on the agent or telemetry wiring, so it calls both through
+  ports, and two other tasks implement them: B8544 over B4781's admission functions, and B8870 over B8910's live
+  OTel fan-out. This task builds only the two port traits, so B8870 can start before B855's whole admission stage.
+
+
+  Layout. Module ports in crates/betterlite-auth/src/auth_admission/ports.rs, with its tests in
+  auth_admission/ports/tests.rs. The skeleton declares it with `pub mod ports;` in auth_admission.rs, which stays
+  B855's file. Both traits are object safe and `Send + Sync`, since B855 holds each as an optional
+  `Arc<dyn ...>` and B732's server construction refuses a configured capability whose port is missing.
+
+
+  `ManagedAdmission` stands for the two awaited calls inside the protected block of
+  _authorize_authenticated_request (L3283-L3311). It is an #[async_trait] trait (the crate already depends on
+  async-trait) with `admit(&self, auth: &mut UserAPIKeyAuth) -> Result<(), AdmissionError>`, for
+  admit_managed_actor on a non-null agent_id, and `prepare(&self, auth: &mut UserAPIKeyAuth, target_name: &str,
+  billable: bool) -> Result<(), AdmissionError>`, for prepare_agent_invocation on a resolved invocation target.
+  UserAPIKeyAuth is B2314's type in resolved_key::auth, and both calls take it mutably because B4781's functions
+  write the delegation and billing marks on it. The outcome is B4781's `managed_admission::error::AdmissionError {
+  status, detail }` as it is, so a 403 or 503 and its detail reach B855's exception boundary unchanged; don't add
+  a second error shape. The managed identity store is not an argument: LiteLLM builds it from prisma_client inside
+  the block, and B8544's implementation holds it as an Option decided at server start.
+
+
+  `TenantDestinations` stands for the body of _seed_request_destinations (L3395-L3429): resolve the key's or team's
+  OTLP destinations, keep the ones the published fan-out can deliver, and set them on the request. It is a plain
+  synchronous trait, as LiteLLM's function is, with one method `seed(&self, auth: &UserAPIKeyAuth, headers:
+  &IndexMap<String, String>) -> Result<(), DestinationSeedError>`; headers are the safe request headers, so an
+  x-litellm-disable-callbacks header reaches the implementation. Ok means the request context now holds the
+  deliverable destinations, possibly none. `DestinationSeedError` is the one failure: a thiserror struct whose
+  #[source] is a `Box<dyn std::error::Error + Send + Sync>` and whose Display is exactly that cause's text, because
+  B855 writes it into LiteLLM's debug line "OTel V2: tenant destination resolution failed: %s" and carries on.
+  B8870 wraps its own TenantDestinationError in it.
+
+
+  Tests in auth_admission::ports::tests use fakes held as `Arc<dyn ManagedAdmission>` and `Arc<dyn
+  TenantDestinations>`: an admit and a prepare that change a field of the UserAPIKeyAuth they get, with the change
+  visible to the caller afterwards, and prepare receiving the target name and billable flag it was given; an
+  AdmissionError of 403 and one of 503 with "Managed agent policy requires a database" coming back with status and
+  detail unchanged; a seed that receives the headers it was given; and a DestinationSeedError whose Display equals
+  its cause's text and whose source() returns that cause.
+scope:
+  paths:
+    - crates/betterlite-auth/src/auth_admission/ports.rs
+    - crates/betterlite-auth/src/auth_admission/ports/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3270-L3312
+    why: The managed store, admit_managed_actor and prepare_agent_invocation calls the ManagedAdmission methods stand for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3395-L3429
+    why: _seed_request_destinations, the resolve, filter and set the TenantDestinations seed stands for, and the debug line its failure goes to.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L142-L190
+    why: admit_managed_actor's arguments; prepare_agent_invocation follows at L221.
+dod:
+  - text: ManagedAdmission has async admit and prepare over a mutable UserAPIKeyAuth, usable as Arc<dyn ManagedAdmission>, and returns B4781's AdmissionError with status and detail unchanged.
+    proof: [port-tests]
+  - text: TenantDestinations has a synchronous seed over the auth and the safe headers, usable as Arc<dyn TenantDestinations>, and its DestinationSeedError shows only its cause's text and returns the cause from source().
+    proof: [port-tests]
+checks:
+  optional: []
+  commands:
+    - id: port-tests
+      why: a port is missing, not object safe, loses a mutation of the auth, or changes an error on the way through
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_admission::ports::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The admission order, the managed route 403, the billable rule, the exception boundary, the debug-and-continue around seed and installing both ports in the server state: B855."
+  - "The managed implementation over B4781's admit_managed_actor and prepare_agent_invocation and B4773's store: B8544. The tenant destination implementation over B1109's resolver and B8910's fan-out: B8870."
+  - "managed_agent_route_allowed, managed_inference_request and invocation_target: B4772's pure functions in agent_policy, which B855 calls directly, not through a port."
+pitfalls:
+  - B1109 already has a struct named TenantDestinations in betterlite-core's request_setup_options::destinations (the resolver's result); the port trait here is a different item, and B8870 has to import one of the two under another name.
+  - B855 logs DestinationSeedError's text at debug, so its Display must be the cause alone, and nothing here may format callback_vars or header values into it; they carry tenant exporter credentials.
+  - A port method with a generic parameter or an associated error type stops `dyn` from working, and B855 holds both ports as trait objects.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
