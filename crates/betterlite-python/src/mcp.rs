@@ -14,12 +14,15 @@ mod session;
 mod setup;
 mod transforms;
 
-use self::convert::{ConvertError, NativeMcpErrorPayload};
+use self::convert::NativeMcpErrorPayload;
 use self::native_client::NativeMcpClient;
 use self::native_session::NativeMcpSession;
 use self::transforms::{
     normalize_input_schema, tool_call_to_mcp, tool_to_anthropic, tool_to_openai, tool_to_responses,
 };
+
+// Every native method hands Python the same shape: a future of JSON text, or its mapped exception
+pub(crate) type Answer<'py> = PyResult<Bound<'py, PyAny>>;
 
 // The mcp family: the client, the session handle, the error every failure carries and five pure transforms
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -34,15 +37,15 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-// Every native method hands Python one shape: a future of JSON text, or its mapped exception
-pub(crate) fn awaited<'py, Value>(
-    py: Python<'py>,
-    work: impl Future<Output = Result<Value, NativeMcpErrorPayload>> + Send + 'static,
-) -> PyResult<Bound<'py, PyAny>>
+pub(crate) fn awaited<'py, Value, Work>(py: Python<'py>, work: Work) -> Answer<'py>
 where
     Value: for<'value> IntoPyObject<'value> + Send + 'static,
+    Work: Future<Output = Result<Value, NativeMcpErrorPayload>> + Send + 'static,
 {
-    future_into_py(py, async move { work.await.map_err(PyErr::from) })
+    future_into_py(py, async move {
+        let value = work.await.map_err(PyErr::from)?;
+        Ok(value)
+    })
 }
 
 // litellm's MCP flows catch its own error class, so every failure arrives as this exception carrying JSON text
@@ -54,11 +57,5 @@ impl From<NativeMcpErrorPayload> for PyErr {
             Ok(text) => NativeMcpError::new_err(text),
             Err(_encoding) => PyRuntimeError::new_err(payload.message),
         }
-    }
-}
-
-impl From<ConvertError> for PyErr {
-    fn from(error: ConvertError) -> Self {
-        Self::from(NativeMcpErrorPayload::from(error))
     }
 }

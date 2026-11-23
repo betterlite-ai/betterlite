@@ -47,9 +47,9 @@ fn secret_values(headers: &HeaderMap) -> Vec<String> {
         }
         secrets.push(text.to_owned());
         if let Some((_scheme, credential)) = text.split_once(' ') {
-            let credential = credential.trim();
-            if !credential.is_empty() && credential != text {
-                secrets.push(credential.to_owned());
+            let token = credential.trim();
+            if !token.is_empty() && token != text {
+                secrets.push(token.to_owned());
             }
         }
     }

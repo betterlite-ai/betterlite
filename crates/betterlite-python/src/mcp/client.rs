@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use betterlite_config::tls::TlsPolicy;
@@ -13,7 +13,7 @@ use betterlite_mcp::client::sessions::client::{SessionClient, SessionSettings};
 use betterlite_mcp::client::sessions::error::SessionError;
 use betterlite_mcp::client::sessions::negotiate::{Callbacks, ProtocolVersion};
 use betterlite_mcp::client::sessions::transport::{StdioConfig, TransportType};
-use betterlite_mcp::client::tools::calling::{self, CallToolOptions};
+use betterlite_mcp::client::tools::calling;
 use betterlite_mcp::client::tools::listing;
 use betterlite_mcp::credentials::{
     AuthValue, McpAuthType, McpClient as CredentialClient, hash_discovery_auth,
@@ -23,12 +23,20 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use url::Url;
 
-use super::convert::{self, CallToolWire, GetPromptWire, NativeMcpErrorPayload, session_payload};
+use super::convert::{
+    self, CallToolWire, GetPromptWire, McpErrorKind, NativeMcpErrorPayload, session_payload,
+};
 use super::session::NoProgress;
+
+// The text every client operation answers Python with, or the payload its failure becomes
+pub(crate) type TextResult = Result<String, NativeMcpErrorPayload>;
 
 // A poisoned lock still carries the token and instructions the client last saw, so read it through
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 // One native client owns this state; every Python call builds a fresh session client over it (B4744)
@@ -54,7 +62,9 @@ pub(crate) struct ClientState {
 
 impl ClientState {
     pub(crate) fn session_client(&self) -> SessionClient<SdkRuntime> {
-        self.session_client_with(TaskTracker::new(), CancellationToken::new())
+        let tracker = TaskTracker::new();
+        let cancelled = CancellationToken::new();
+        self.session_client_with(tracker, cancelled)
     }
 
     pub(crate) fn session_client_with(
@@ -104,24 +114,26 @@ impl ClientState {
 
     pub(crate) fn remember_instructions(&self, client: &SessionClient<SdkRuntime>) {
         let mut guard = locked(&self.instructions);
-        *guard = client.last_initialize_instructions.clone();
+        let carried = client.last_initialize_instructions.clone();
+        *guard = carried;
     }
 
     pub(crate) fn set_auth_value(&self, value: AuthValue) {
-        *locked(&self.auth_value) = Some(value);
+        let mut guard = locked(&self.auth_value);
+        let stored = Some(value);
+        *guard = stored;
     }
 
-    pub(crate) fn instructions(&self) -> Option<String> {
-        Option::clone(&locked(&self.instructions))
-    }
-
-    pub(crate) fn discovery_auth_fingerprint(&self) -> Result<String, NativeMcpErrorPayload> {
+    pub(crate) fn discovery_auth_fingerprint(&self) -> TextResult {
         let request = self
             .credential_client()
             .prepare_request_auth()
-            .map_err(|error| NativeMcpErrorPayload::runtime(error.to_string()))?;
-        hash_discovery_auth(&request)
-            .map_err(|error| NativeMcpErrorPayload::runtime(error.to_string()))
+            .map_err(|error| {
+                NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, error.to_string())
+            })?;
+        hash_discovery_auth(&request).map_err(|error| {
+            NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, error.to_string())
+        })
     }
 
     fn resource_settings(&self) -> ResourceSettings {
@@ -134,62 +146,44 @@ impl ClientState {
         &self,
         client: &SessionClient<SdkRuntime>,
         outcome: Result<T, SessionError<SdkError>>,
-    ) -> Result<String, NativeMcpErrorPayload>
+    ) -> TextResult
     where
         T: Serialize,
     {
         self.remember_instructions(client);
         let value = outcome.map_err(|error| session_payload(&error))?;
-        convert::encode(&value).map_err(NativeMcpErrorPayload::from)
+        convert::encode(&value)
     }
 
-    pub(crate) async fn list_tools(
-        &self,
-        raise_on_error: bool,
-    ) -> Result<String, NativeMcpErrorPayload> {
+    pub(crate) async fn list_tools(&self, raise_on_error: bool) -> TextResult {
         let mut client = self.session_client();
         let outcome = listing::list_tools(&mut client, self.listing_timeout, raise_on_error).await;
         self.answer(&client, outcome)
     }
 
-    pub(crate) async fn call_tool(
-        &self,
-        wire: &CallToolWire,
-    ) -> Result<String, NativeMcpErrorPayload> {
+    pub(crate) async fn call_tool(&self, wire: &CallToolWire) -> TextResult {
         let request = convert::call_request(wire);
-        let options = CallToolOptions {
-            raise_on_error: wire.raise_on_error,
-            allow_input_required: wire.allow_input_required,
-        };
+        let options = convert::call_options(wire);
         let mut client = self.session_client();
         let outcome = calling::call_tool(&mut client, &request, None::<&NoProgress>, options).await;
         self.answer(&client, outcome)
     }
 
-    pub(crate) async fn list_prompts(
-        &self,
-        raise_on_error: bool,
-    ) -> Result<String, NativeMcpErrorPayload> {
+    pub(crate) async fn list_prompts(&self, raise_on_error: bool) -> TextResult {
         let settings = self.resource_settings();
         let mut client = self.session_client();
         let outcome = client.list_prompts(&settings, raise_on_error).await;
         self.answer(&client, outcome)
     }
 
-    pub(crate) async fn list_resources(
-        &self,
-        raise_on_error: bool,
-    ) -> Result<String, NativeMcpErrorPayload> {
+    pub(crate) async fn list_resources(&self, raise_on_error: bool) -> TextResult {
         let settings = self.resource_settings();
         let mut client = self.session_client();
         let outcome = client.list_resources(&settings, raise_on_error).await;
         self.answer(&client, outcome)
     }
 
-    pub(crate) async fn list_resource_templates(
-        &self,
-        raise_on_error: bool,
-    ) -> Result<String, NativeMcpErrorPayload> {
+    pub(crate) async fn list_resource_templates(&self, raise_on_error: bool) -> TextResult {
         let settings = self.resource_settings();
         let mut client = self.session_client();
         let outcome = client
@@ -198,20 +192,15 @@ impl ClientState {
         self.answer(&client, outcome)
     }
 
-    pub(crate) async fn get_prompt(
-        &self,
-        wire: GetPromptWire,
-    ) -> Result<String, NativeMcpErrorPayload> {
+    pub(crate) async fn get_prompt(&self, wire: GetPromptWire) -> TextResult {
         let params = convert::prompt_params(wire);
         let mut client = self.session_client();
         let outcome = client.get_prompt(params).await;
         self.answer(&client, outcome)
     }
 
-    pub(crate) async fn read_resource(&self, url: &str) -> Result<String, NativeMcpErrorPayload> {
-        let endpoint = Url::parse(url).map_err(|error| {
-            NativeMcpErrorPayload::value(format!("url is not a valid URL: {error}"))
-        })?;
+    pub(crate) async fn read_resource(&self, url: &str) -> TextResult {
+        let endpoint = Url::parse(url).map_err(NativeMcpErrorPayload::from)?;
         let mut client = self.session_client();
         let outcome = client.read_resource(endpoint).await;
         self.answer(&client, outcome)

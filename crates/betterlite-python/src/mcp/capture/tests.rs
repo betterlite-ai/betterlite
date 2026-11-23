@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use http::HeaderMap;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 

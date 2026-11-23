@@ -5,8 +5,6 @@ use betterlite_mcp::tools::pagination::ToolError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
 
-use super::ConvertError;
-
 // The Python class names LiteLLM's MCP failures carry; B8082 maps them back to its exception classes
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -28,7 +26,7 @@ pub(crate) struct NativeMcpErrorPayload {
 }
 
 impl NativeMcpErrorPayload {
-    fn plain(kind: McpErrorKind, message: String) -> Self {
+    pub(crate) fn plain(kind: McpErrorKind, message: String) -> Self {
         Self {
             kind,
             message,
@@ -37,38 +35,22 @@ impl NativeMcpErrorPayload {
         }
     }
 
-    pub(crate) fn value(message: String) -> Self {
-        Self::plain(McpErrorKind::ValueError, message)
-    }
-
-    pub(crate) fn runtime(message: String) -> Self {
-        Self::plain(McpErrorKind::RuntimeError, message)
-    }
-
-    pub(crate) fn timeout(message: String) -> Self {
-        Self::plain(McpErrorKind::TimeoutError, message)
-    }
-
-    pub(crate) fn cancelled(message: String) -> Self {
-        Self::plain(McpErrorKind::CancelledError, message)
-    }
-
-    fn mcp(code: i32, message: String) -> Self {
+    fn mcp(code: i32, message: &str) -> Self {
         Self {
             kind: McpErrorKind::McpError,
-            message,
+            message: message.to_owned(),
             code: Some(code),
             data: None,
         }
     }
 }
 
-impl From<ConvertError> for NativeMcpErrorPayload {
-    fn from(error: ConvertError) -> Self {
-        match &error {
-            ConvertError::Json { .. } => Self::value(error.to_string()),
-            ConvertError::Encode { .. } => Self::runtime(error.to_string()),
-        }
+impl From<url::ParseError> for NativeMcpErrorPayload {
+    fn from(error: url::ParseError) -> Self {
+        Self::plain(
+            McpErrorKind::ValueError,
+            format!("url is not a valid URL: {error}"),
+        )
     }
 }
 
@@ -76,35 +58,39 @@ impl From<ConvertError> for NativeMcpErrorPayload {
 pub(crate) fn session_payload(error: &SessionError<SdkError>) -> NativeMcpErrorPayload {
     match error {
         SessionError::Protocol(failure) => {
-            NativeMcpErrorPayload::mcp(failure.code, failure.message.clone())
+            NativeMcpErrorPayload::mcp(failure.code, failure.message.as_ref())
         }
         SessionError::ReadTimeout(timeout) => {
-            NativeMcpErrorPayload::timeout(timeout.message.clone())
+            NativeMcpErrorPayload::plain(McpErrorKind::TimeoutError, timeout.message.clone())
         }
         SessionError::Runtime(source) => sdk_payload(source),
         SessionError::Stream(failure) => sdk_payload(failure.source_error()),
         SessionError::Cancelled | SessionError::CleanupTimedOut => {
-            NativeMcpErrorPayload::cancelled(error.to_string())
+            NativeMcpErrorPayload::plain(McpErrorKind::CancelledError, error.to_string())
         }
-        SessionError::CleanupTask(cause) => NativeMcpErrorPayload::runtime(cause.to_string()),
-        SessionError::Configuration(config) => NativeMcpErrorPayload::value(config.to_string()),
+        SessionError::CleanupTask(cause) => {
+            NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, cause.to_string())
+        }
+        SessionError::Configuration(config) => {
+            NativeMcpErrorPayload::plain(McpErrorKind::ValueError, config.to_string())
+        }
     }
 }
 
 pub(crate) fn tool_failure(error: &ToolError<SessionError<SdkError>>) -> NativeMcpErrorPayload {
     match error {
         ToolError::Session(inner) => session_payload(inner),
-        ToolError::Timeout(_) => NativeMcpErrorPayload::timeout(error.to_string()),
+        ToolError::Timeout(_) => {
+            NativeMcpErrorPayload::plain(McpErrorKind::TimeoutError, error.to_string())
+        }
     }
 }
 
 fn sdk_payload(error: &SdkError) -> NativeMcpErrorPayload {
     match error {
         SdkError::Http(http) => http_payload(http),
-        SdkError::JsonRpc(data) => {
-            NativeMcpErrorPayload::mcp(data.code.0, data.message.to_string())
-        }
-        other => NativeMcpErrorPayload::runtime(other.to_string()),
+        SdkError::JsonRpc(data) => NativeMcpErrorPayload::mcp(data.code.0, data.message.as_ref()),
+        other => NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, other.to_string()),
     }
 }
 
@@ -115,9 +101,9 @@ fn http_payload(error: &McpHttpError) -> NativeMcpErrorPayload {
             status_payload(head.status, preview)
         }
         McpHttpError::Timeout(_) | McpHttpError::HeadTimeout(_) | McpHttpError::BodyTimeout(_) => {
-            NativeMcpErrorPayload::timeout(error.to_string())
+            NativeMcpErrorPayload::plain(McpErrorKind::TimeoutError, error.to_string())
         }
-        other => NativeMcpErrorPayload::runtime(other.to_string()),
+        other => NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, other.to_string()),
     }
 }
 
