@@ -4,7 +4,6 @@ use betterlite_context::resource_config_selection::realtime::RealtimeConfigTag;
 use betterlite_core::api::realtime_connect::{
     Branch, ConnectionQuery, RealtimeConnectParams, RealtimeConnection,
 };
-use betterlite_core::api::realtime_contracts::error::HeaderMap;
 use betterlite_models::decisions::Json;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
@@ -17,6 +16,8 @@ pub(crate) fn observation<Config>(
 ) -> Value {
     let RealtimeConnection { args, branch } = connection;
     let (tag, details) = branch_observation(branch, tokens);
+    let header_pairs: Option<Vec<(&String, &Json)>> =
+        args.headers.as_ref().map(|values| values.iter().collect());
     json!({
         "branch": tag,
         "model": args.model,
@@ -26,7 +27,7 @@ pub(crate) fn observation<Config>(
         "query": query_pairs(&args.query_params),
         "metadata": args.litellm_metadata.as_ref().map_or(Json::Null, |metadata| Json::Object(metadata.clone())),
         "principal": args.user_api_key_dict,
-        "headers": header_pairs(args.headers.as_ref()),
+        "headers": header_pairs,
         "details": details,
     })
 }
@@ -91,11 +92,6 @@ fn query_pairs(query: &ConnectionQuery) -> Value {
             .collect(),
     };
     pairs.sort_unstable();
-    json!(pairs)
-}
-
-fn header_pairs(headers: Option<&HeaderMap>) -> Value {
-    let pairs: Option<Vec<(&String, &Json)>> = headers.map(|values| values.iter().collect());
     json!(pairs)
 }
 
