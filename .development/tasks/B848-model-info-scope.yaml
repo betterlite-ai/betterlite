@@ -11,7 +11,7 @@ description: >-
   The other policy populates access annotations. An admin-view caller gets all teams ('*') and all
   non-team deployment ids. Otherwise, a non-null user_id triggers a user-row read and validation;
   absent users get no teams and no direct access, and read/validation failures propagate. User direct
-  grants expand literal names AND access-group members with B847's map and B844's catalog lookup.
+  grants expand literal names AND access-group members with B10047's map and B844's catalog lookup.
   Empty grants or 'all-proxy-models' expand all non-team ids. Named grants can resolve team rows because
   this lookup has no team_id. Preserve duplicate ids and user-grant order. key_models defaults to ();
   an empty/unrestricted key leaves the user grant unchanged, otherwise intersect with its expanded ids.
