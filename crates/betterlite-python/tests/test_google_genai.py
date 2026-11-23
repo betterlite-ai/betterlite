@@ -331,8 +331,7 @@ def test_error_class_and_cause() -> None:
 
 
 def test_client_is_refused() -> None:
-    with GenaiServer() as server:
-        with pytest.raises(UnsupportedCallArgument) as caught:
-            generate_content(**common_call(server.url), client=CLIENT_VALUE)
+    with GenaiServer() as server, pytest.raises(UnsupportedCallArgument) as caught:
+        generate_content(**common_call(server.url), client=CLIENT_VALUE)
     assert caught.value.argument == "client"
     assert not server.calls
