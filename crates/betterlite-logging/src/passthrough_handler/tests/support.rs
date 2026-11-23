@@ -419,20 +419,21 @@ impl PassthroughLoggingProvider for FakeProvider {
         logging_obj: &StreamLoggingObject,
         model: &str,
     ) -> Result<Option<StreamedResponse>, PassthroughHandlerError> {
-        let call_id = logging_obj.read(&mut |state| state.litellm_call_id.clone());
+        let reply = self
+            .stream_replies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or_else(|| Err(PassthroughHandlerError::leaf(ProbeFailed)));
         self.chunk_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(ChunkCall {
                 model: model.to_owned(),
                 chunks: all_chunks.to_vec(),
-                call_id,
+                call_id: logging_obj.read(&mut |state| state.litellm_call_id.clone()),
             });
-        self.stream_replies
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or_else(|| Err(PassthroughHandlerError::leaf(ProbeFailed)))
+        reply
     }
 }
 
