@@ -1,0 +1,49 @@
+kind: helper
+name: nova-filter-allowed-fields
+call:
+  bedrock_nova_chat:
+    function: filter_allowed_fields
+    model: amazon.nova-pro-v1:0
+    messages:
+      - {role: system, content: be brief}
+      - {role: user, content: hi}
+    model_cost:
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: true}
+    optional_params:
+      maxTokens: 64
+      temperature: 0.2
+      topP: 0.9
+      top_k: 5
+      cache_control_injection_points:
+        - {location: system}
+    litellm_params: {}
+calls:
+  - bedrock_nova_chat:
+      function: filter_allowed_fields
+      model: amazon.nova-pro-v1:0
+      messages:
+        - {role: user, content: hi}
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: true}
+      optional_params:
+        maxTokens: 8
+      litellm_params: {}
+  - bedrock_nova_chat:
+      function: filter_allowed_fields
+      model: amazon.nova-pro-v1:0
+      messages:
+        - {role: system, content: be brief}
+        - {role: user, content: hi}
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: true}
+      optional_params:
+        tools:
+          - type: function
+            function:
+              name: lookup
+              description: finds things
+              parameters: {type: object, properties: {}}
+        tool_choice: {tool: {name: lookup}}
+      litellm_params: {}
+env: {}
+compare: {ignore: []}

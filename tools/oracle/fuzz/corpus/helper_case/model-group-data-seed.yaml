@@ -1,0 +1,13 @@
+kind: helper
+name: model-group-data-seed
+call:
+  model_group_data:
+    calls:
+      - function: with_budget
+        info:
+          access_group: group-a
+          model_names: [gpt-4]
+          deployment_count: 1
+        row: null
+env: {}
+compare: {ignore: []}

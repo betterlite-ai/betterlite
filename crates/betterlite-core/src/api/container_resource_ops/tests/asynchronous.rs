@@ -120,8 +120,14 @@ async fn async_prepare_errors_keep_the_decoded_provider() {
         .await
         .expect_err("the lookup answers nothing");
 
-    let ErrorClass::ApiConnection(context) = &failure.class else {
-        panic!("expected a value error, got {:?}", failure.class);
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("expected a bad request, got {:?}", failure.class);
     };
-    assert_eq!(context.provider.as_deref(), Some("azure"));
+    assert_eq!(details.status.0, 400);
+    assert_eq!(
+        details.message,
+        "Container provider config not found for provider: azure"
+    );
+    assert_eq!(details.provider.as_deref(), Some("azure"));
+    assert_eq!(details.model.as_deref(), Some(""));
 }

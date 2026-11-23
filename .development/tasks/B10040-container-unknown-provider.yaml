@@ -1,0 +1,125 @@
+id: B10040
+title: An unknown or unconfigured container provider answers 400, not 500
+description: >-
+  Side finding from B3342's review (https://github.com/betterlite-ai/betterlite/pull/2961): the LiteLLM bug decided
+  "fix it" there, in B10034 for search and in B1037 for an unknown custom_llm_provider is also on main in the five
+  container call modules. A container call whose custom_llm_provider is unknown, or known without a container config,
+  fails with these errors, and each failure() sends them through its ValueError dispatch, so they come out as
+  ErrorClass::ApiConnection with status 500, the way LiteLLM's ValueError goes through exception_type.
+  The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server broke
+  when its own request was wrong.
+
+
+  The errors are ContainerOpError::UnknownProvider and ::ConfigMissing in
+  crates/betterlite-core/src/api/container_create_list/error.rs, ContainerFileOpError::UnknownProvider and
+  ::NoProviderConfig in crates/betterlite-core/src/api/container_file_endpoints/error.rs,
+  ContainerFileListError::ProviderConfigMissing in crates/betterlite-core/src/api/container_file_list/error.rs,
+  ContainerFileUploadError::ProviderConfigMissing in crates/betterlite-core/src/api/container_file_upload/error.rs,
+  and ContainerOpError::UnknownProvider and ::ProviderConfigMissing in
+  crates/betterlite-core/src/api/container_resource_ops/error.rs. Each answers ErrorClass::BadRequest (status 400)
+  with the message it has today, model "" and the caller's provider, built with ResponseDetails::for_provider, the
+  constructor B10039 adds to crates/betterlite-error/src/error/details.rs. Every other arm keeps its class.
+
+
+  The tests that assert ApiConnection for these errors today assert BadRequest, status 400, the unchanged message,
+  model "" and the provider after this task:
+  list_a_known_provider_without_a_container_config_is_missing and list_a_provider_config_the_registry_lacks_is_missing
+  in container_create_list/tests/list.rs, error_after_decoding_uses_the_resolved_provider in
+  container_file_endpoints/tests/error.rs, a_provider_without_a_container_config_is_a_clear_error and
+  a_provider_whose_config_is_missing_is_the_same_error in container_file_list/tests/operation_calls.rs, and
+  provider_an_unknown_name_never_reaches_the_lookup and
+  provider_a_known_provider_without_a_config_reports_the_missing_config in container_resource_ops/tests/provider.rs.
+  Upload has no test for a missing config yet, so add one to container_file_upload/tests/failure_calls.rs.
+
+
+  The deviation rows in docs/deviations/B3366.yaml, B3367.yaml, B3368.yaml, B3369.yaml and B3370.yaml say these
+  errors keep LiteLLM's class. Rewrite each to say they answer 400 where LiteLLM answers 500, why, and keep its link.
+scope:
+  paths:
+  - "crates/betterlite-core/src/api/container_resource_ops/tests/asynchronous.rs"
+  - "crates/betterlite-core/src/api/container_file_upload/tests/upload_calls.rs"
+  - "crates/betterlite-core/src/api/container_file_endpoints/tests/asynchronous.rs"
+  - "crates/betterlite-core/src/api/container_create_list/tests/create.rs"
+  - crates/betterlite-core/src/api/container_create_list/error.rs
+  - crates/betterlite-core/src/api/container_file_endpoints/error.rs
+  - crates/betterlite-core/src/api/container_file_list/error.rs
+  - crates/betterlite-core/src/api/container_file_upload/error.rs
+  - crates/betterlite-core/src/api/container_resource_ops/error.rs
+  - crates/betterlite-core/src/api/container_create_list/tests/list.rs
+  - crates/betterlite-core/src/api/container_file_endpoints/tests/error.rs
+  - crates/betterlite-core/src/api/container_file_endpoints/tests/prepare.rs
+  - crates/betterlite-core/src/api/container_file_list/tests/operation_calls.rs
+  - crates/betterlite-core/src/api/container_file_upload/tests/failure_calls.rs
+  - crates/betterlite-core/src/api/container_resource_ops/tests/provider.rs
+  - docs/deviations/B3366.yaml
+  - docs/deviations/B3367.yaml
+  - docs/deviations/B3368.yaml
+  - docs/deviations/B3369.yaml
+  - docs/deviations/B3370.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L220-L226
+  why: create_container raises a ValueError for a provider with no container config, and exception_type maps it to APIConnectionError (500); the list, upload, retrieve and delete paths do the same.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L94-L99
+  why: The generated container file operations raise the same ValueError.
+dod:
+- text: >-
+    A container create, list, file list, file upload, generated file operation, retrieve or delete call with an unknown
+    provider or a provider without a container config fails with its UnknownProvider or missing config error and
+    ErrorClass::BadRequest, status 400, the unchanged message, model "" and the caller's provider; every other arm
+    keeps its class.
+  proof: [container-tests]
+- text: >-
+    Each of the five failure() functions builds that class with ResponseDetails::for_provider, not its own ErrorContext
+    literal.
+  proof: [one-constructor]
+- text: >-
+    The deviation rows in docs/deviations/B3366.yaml to B3370.yaml record the 400 where LiteLLM answers 500, each with
+    its pinned LiteLLM link.
+  proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: container-tests
+    why: An unknown or unconfigured container provider still answers 500, or another container behavior broke.
+    run: >-
+      grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/container_create_list/tests/list.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/container_file_endpoints/tests/error.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/container_file_list/tests/operation_calls.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/container_file_upload/tests/failure_calls.rs
+      && grep -q -F 'ErrorClass::BadRequest' crates/betterlite-core/src/api/container_resource_ops/tests/provider.rs
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_(create_list|file_endpoints|file_list|file_upload|resource_ops)::/)'
+  - id: one-constructor
+    why: A container failure() still writes its own ErrorContext literal for the provider mistake.
+    run: >-
+      grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/container_create_list/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/container_file_endpoints/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/container_file_list/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/container_file_upload/error.rs
+      && grep -q -F 'ResponseDetails::for_provider(' crates/betterlite-core/src/api/container_resource_ops/error.rs
+  - id: deviation-rows
+    why: A container deviation row still records the 500 as parity, or lost its pinned link.
+    run: >-
+      for f in B3366 B3367 B3368 B3369 B3370; do
+      perl -0ne 'exit !(m{- what:(?:(?!- what:).)*?400(?:(?!- what:).)*?(container config|not a provider)(?:(?!- what:).)*?link:(?:(?!- what:).)*?BerriAI/litellm/blob/d665dc1a}s)' docs/deviations/$f.yaml || exit 1;
+      done
+oracle_cases: []
+deviations:
+- what: >-
+    A container call whose provider is unknown or has no container config answers BadRequestError (400) with model ""
+    and the provider set.
+  why: >-
+    LiteLLM's ValueError goes through exception_type and comes out as an APIConnectionError (500), though the
+    provider name is the caller's input and the call can never succeed.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L220-L226
+out_of_scope:
+- Every other container error keeps its class, including the mock short circuit that runs before the provider lookup.
+- The agents, interactions and other video calls get their own task.
+pitfalls:
+- container_file_endpoints' failure() sends every error through exception(); match UnknownProvider and NoProviderConfig before that call.
+- container_file_upload's ProviderConfigMissing shares the ValueError arm with Mock, Logging and Params; move only ProviderConfigMissing.
+review_level: standard
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0

@@ -1,0 +1,3 @@
+litellm_settings:
+  amazon_nova:
+    max_tokens_extra: 1

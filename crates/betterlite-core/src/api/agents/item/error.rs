@@ -98,12 +98,14 @@ where
             ClientError::FieldType { field, expected } => {
                 field_type_class(field, expected, name, provider)
             }
-            ClientError::Tls(_) | ClientError::Build(_) | ClientError::UnknownProvider { .. } => {
-                dispatch(
-                    &DispatchInput::Raw(Box::new(item_exception(&error, name, provider))),
-                    redactor,
-                )
+            // LiteLLM's agents calls answer a provider they cannot use with a BadRequestError
+            ClientError::UnknownProvider { provider: named } => {
+                bad_request(error.to_string(), named)
             }
+            ClientError::Tls(_) | ClientError::Build(_) => dispatch(
+                &DispatchInput::Raw(Box::new(item_exception(&error, name, provider))),
+                redactor,
+            ),
         },
         AgentItemError::Provider(carried) => dispatch(
             &DispatchInput::Raw(Box::new(RawException {
@@ -141,6 +143,15 @@ where
             redactor,
         )
     })
+}
+
+// LiteLLM's _get_agents_api_config raises BadRequestError(model="", llm_provider=...) for a provider it cannot use
+fn bad_request(message: String, provider: &str) -> ErrorClass {
+    ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
+        message,
+        Some(String::new()),
+        provider,
+    )))
 }
 
 // docs/compatibility.md rejects a value outside the declared type with a 400 naming the field

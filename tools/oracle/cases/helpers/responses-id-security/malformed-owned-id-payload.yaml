@@ -1,0 +1,121 @@
+kind: helper
+name: responses-id-security-malformed-owned-id-payload
+call:
+  responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_qjPNNiRNZ7XIHoIdkvBTfQijD_70z-F_PFlcFWInjI3j6xfUH-SYvxKsVwal8evx1JXP70UcWweAmrh1V9CkRY-qZItLg890UdS34XcLBM9TWxphtawbWWJeCzeOEV3wewSuHD1a6k4=
+calls:
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_iA94LIBTPYM3uLAINtDLeBmofeW8dBiaMqxVXByJpELIOF1Gqn315_Zcq6LyYpXxjVsF7Q3ov6ENtun6hgE8I5WBt5W3NKQfX8bZbXwtcv8et7QdW_FZchs=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_yDDyqGq0GbO845c9OiO2laSj_xnupE9yVylR80IkeetTqWVkscLpkNP-MNwGCb--zVNfGluSNKoh8y0=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: prefix_resp_hJR9XOI2hfLGOLoTOx1lDcXveEXwh-A-W8WMEQto7Q6CZKYeu2YVLjDoN-wPhFygrcC6o_3dJRaqVUv1pi_V3_w7rTsqvGchPs7cbPZFZpPnEX9sjZMk0FqZ39OW_CIaLMtXTx80_hQHUXf0cJeZ4K5srKDrs6A=
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_hJR9XOI2hfLGOLoTOx1lDcXveEXwh-A-W8WMEQto7Q6CZKYeu2YVLjDoN-wPhFygrcC6o_3dJRaqVUv1pi_V3_w7rTsqvGchPs7cbPZFZpPnEX9sjZMk0FqZ39OW_CIaLMtXTx80_hQHUXf0cJeZ4K5srKDrs6A=resp_ignored
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: plain_id
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aget_responses
+    data:
+      response_id: resp_
+- responses_id_security:
+    operation: authorize
+    settings:
+      disable: false
+      allow: false
+      signing_key: test-master
+    principal:
+      user_id: user_a
+      team_id: team_a
+      role: null
+      role_form: value
+    call_type: aresponses
+    data:
+      response_id: resp_qjPNNiRNZ7XIHoIdkvBTfQijD_70z-F_PFlcFWInjI3j6xfUH-SYvxKsVwal8evx1JXP70UcWweAmrh1V9CkRY-qZItLg890UdS34XcLBM9TWxphtawbWWJeCzeOEV3wewSuHD1a6k4=
+env: {}
+compare:
+  ignore:
+  - pointer: /value/call/class
+    why: betterlite reports a typed internal failure where LiteLLM raises IndexError

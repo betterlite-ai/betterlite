@@ -35,6 +35,7 @@ betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../../../../crates/betterlite-provider" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
+betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
 betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
 betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
@@ -52,6 +53,7 @@ rust_decimal.workspace = true
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "indexmap_2", "macros"] }
 thiserror = "2.0.17"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }

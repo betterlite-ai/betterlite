@@ -1,0 +1,25 @@
+kind: helper
+name: shadow-result-aggregation-zero-funnel-full-coverage
+call:
+  b381:
+    group_id: job-5
+    legs:
+      - {id: leg-a, group_id: job-5, target_type: key, target_id: k1, router_name: router-a, direction: forward, judge_model: judge, shadow_percentage: 10.0, max_turns: 10, created_at: "2026-11-17T00:00:00Z", ends_at: "2026-11-24T00:00:00Z", stopped_at: "2026-11-17T06:00:00Z", stopped_by: bob}
+    counts:
+      - {job_id: leg-a, attempt_count: 2, spend: 0.25}
+    totals: {judged_count: 2, error_count: 0, judge_spend: 0.125}
+    errors: []
+    by_tier:
+      - {grp: simple, turn_count: 2, real_wins: 1, shadow_wins: 1, ties: 0, avg_confidence: 0.5, real_spend: 0.125, shadow_spend: 0.125, cache_hit_turns: 0}
+    by_model:
+      - {grp: gpt-5.2, turn_count: 2, real_wins: 1, shadow_wins: 1, ties: 0, avg_confidence: 0.5, real_spend: 0.125, shadow_spend: 0.125, cache_hit_turns: 0}
+    by_leg:
+      - {grp: leg-a, turn_count: 2, real_wins: 1, shadow_wins: 1, ties: 0, avg_confidence: 0.5, real_spend: 0.125, shadow_spend: 0.125, cache_hit_turns: 0}
+    by_router:
+      - {grp: router-a, turn_count: 2, real_wins: 1, shadow_wins: 1, ties: 0, avg_confidence: 0.5, real_spend: 0.125, shadow_spend: 0.125, cache_hit_turns: 0}
+    funnel: {legs_with_rows: 1, not_sampled: 0, unjudgeable: 0, shed: 0, withheld: 0}
+    keys: []
+    teams: []
+    users: []
+env: {}
+compare: {ignore: []}

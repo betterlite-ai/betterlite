@@ -1,0 +1,9 @@
+task: B10038
+deviations:
+  - what: >-
+      A Bedrock Stability edit for a model with no price record returns the decoded image with a zero response-cost
+      header. LiteLLM's get_model_info raises for the unmapped model after the reply is parsed, so the image is lost.
+    why: >-
+      The provider has already returned and billed the image, so failing loses data no working setup can rely on.
+      B1523 fixed the native Stability edit the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L341-L347

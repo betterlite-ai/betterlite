@@ -1,0 +1,18 @@
+kind: helper
+name: b3340-remix-call-type-video-remix
+call:
+  b3340:
+    operation: remix
+    litellm_call_id: call-remix-logging
+    video_id: video_123
+    prompt: keep the logging
+    custom_llm_provider: openai
+    api_base: https://api.openai.com/v1
+    api_key: test-key
+    user: user-1
+    extra_headers:
+      x-extra: caller
+    status: 200
+    body: '{"id": "video_123", "object": "video", "status": "completed", "seconds": "4", "model": "sora-2"}'
+env: {}
+compare: {ignore: []}

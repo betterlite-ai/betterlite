@@ -1,0 +1,12 @@
+kind: helper
+name: b3340-list-mock-response-json-list
+call:
+  b3340:
+    operation: avideo_list
+    litellm_call_id: call-list-mock
+    custom_llm_provider: openai
+    mock_response: '[{"id": "video_mock_1", "object": "video", "status": "completed", "seconds": "2"}, {"id": "video_mock_2", "object": "video", "status": "completed", "seconds": "6"}]'
+    status: 200
+    body: '{}'
+env: {}
+compare: {ignore: []}

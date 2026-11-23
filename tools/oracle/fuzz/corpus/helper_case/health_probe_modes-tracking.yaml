@@ -1,0 +1,12 @@
+kind: helper
+name: health-probe-modes-tracking-seed
+call:
+  b4440:
+    mode: []
+    wildcard: []
+    tracking:
+      - params: {model: gpt-4o}
+    response:
+      - headers: {x-ms-region: westus}
+env: {}
+compare: {ignore: []}
