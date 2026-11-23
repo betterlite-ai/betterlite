@@ -41,8 +41,8 @@ impl Helper for Op {
             Input::Build {
                 itpm,
                 otpm,
-                current_itpm,
-                current_otpm,
+                current_itpm: input_usage,
+                current_otpm: output_usage,
                 now,
             } => {
                 // ast-grep-ignore: no-long-names
@@ -51,8 +51,8 @@ impl Helper for Op {
                         itpm: *itpm,
                         otpm: *otpm,
                     },
-                    *current_itpm,
-                    *current_otpm,
+                    *input_usage,
+                    *output_usage,
                     instant(*now)?,
                 );
                 to_json(headers)

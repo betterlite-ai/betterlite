@@ -15,21 +15,21 @@ pub type RemainingUsage = IndexMap<String, i64>;
 // ast-grep-ignore: no-long-names
 pub fn build_io_token_rate_limit_headers(
     limits: IoLimits,
-    current_itpm: Option<i64>,
-    current_otpm: Option<i64>,
+    input_usage: Option<i64>,
+    output_usage: Option<i64>,
     now: SystemTime,
 ) -> RemainingUsage {
     let reset = i64::try_from(seconds_until_minute_reset(now)).unwrap_or(i64::MAX);
     let mut headers = RemainingUsage::new();
-    for (side, limit, usage) in [
-        ("input", limits.itpm, current_itpm),
-        ("output", limits.otpm, current_otpm),
+    for (side, cap, usage) in [
+        ("input", limits.itpm, input_usage),
+        ("output", limits.otpm, output_usage),
     ] {
-        let Some(limit) = limit else { continue };
-        headers.insert(format!("x-ratelimit-limit-{side}-tokens"), limit);
+        let Some(configured) = cap else { continue };
+        headers.insert(format!("x-ratelimit-limit-{side}-tokens"), configured);
         headers.insert(
             format!("x-ratelimit-remaining-{side}-tokens"),
-            limit.saturating_sub(usage.unwrap_or(0)).max(0),
+            configured.saturating_sub(usage.unwrap_or(0)).max(0),
         );
         headers.insert(format!("x-ratelimit-reset-{side}-tokens"), reset);
     }
