@@ -8,11 +8,12 @@ use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::session::PostgresStore;
+use rstest::rstest;
 
 use super::super::postgres::BudgetTable;
 use super::super::rows::{EndUserRowError, EndUserRowTable};
 use crate::auth_read::table::{
-    AuthReadError, AuthTable as _, Create, FindMany, FindOne, Presence, Update,
+    AuthReadError, AuthTable, Create, FindMany, FindOne, Presence, Update,
 };
 
 fn budget_table() -> BudgetTable {
@@ -23,136 +24,99 @@ fn budget_table() -> BudgetTable {
     }
 }
 
-// the repository fault of a call the lookup never makes, which must be the table's own refusal
-fn repository_fault<T, Failure>(
-    result: Result<T, AuthReadError<Failure>>,
-    why: &str,
-) -> DbError<Failure>
+// the repository fault of a call the lookup must not make, which is the table's own refusal
+fn repository_fault<Row, Failure>(result: Result<Row, AuthReadError<Failure>>) -> DbError<Failure>
 where
-    T: Debug,
+    Row: Debug,
     Failure: Error + 'static,
 {
-    let error = result.expect_err(why);
+    let error = result.expect_err("only the unique row is part of the lookup");
     let AuthReadError::Repository(fault) = error else {
-        panic!("{why}");
+        panic!("the table answered outside its repository");
     };
     fault
 }
 
-async fn budget_table_unread_errors(table: &BudgetTable) -> Vec<DbError<TableError>> {
-    vec![
-        repository_fault(
-            table
-                .find_first(FindOne {
-                    filter: "budget-1".to_owned(),
-                    include: Presence::Omitted,
-                })
-                .await,
-            "find_first is not part of the default-budget lookup",
-        ),
-        repository_fault(
-            table
-                .find_many(FindMany {
-                    filter: Presence::Value("budget-1".to_owned()),
-                    include: Presence::Omitted,
-                    take: Presence::Omitted,
-                })
-                .await,
-            "find_many is not part of the default-budget lookup",
-        ),
-        repository_fault(
-            table
-                .update(Update {
-                    filter: "budget-1".to_owned(),
-                    data: (),
-                })
-                .await,
-            "update is not part of the default-budget lookup",
-        ),
-        repository_fault(
-            table
-                .create(Create {
-                    data: (),
-                    include: Presence::Omitted,
-                })
-                .await,
-            "create is not part of the default-budget lookup",
-        ),
-    ]
+fn unique_request() -> FindOne<String, ()> {
+    FindOne {
+        filter: "row-1".to_owned(),
+        include: Presence::Omitted,
+    }
 }
 
-// the default-budget read and the end-user lookup only ever ask for the unique row
+fn many_request() -> FindMany<String, ()> {
+    FindMany {
+        filter: Presence::Value("row-1".to_owned()),
+        include: Presence::Omitted,
+        take: Presence::Omitted,
+    }
+}
+
+fn update_request() -> Update<String, ()> {
+    Update {
+        filter: "row-1".to_owned(),
+        data: (),
+    }
+}
+
+fn create_request() -> Create<(), ()> {
+    Create {
+        data: (),
+        include: Presence::Omitted,
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Action {
+    FindUnique,
+    FindFirst,
+    FindMany,
+    Update,
+    Create,
+}
+
+async fn fault<T>(table: &T, action: Action) -> DbError<T::Failure>
+where
+    T: AuthTable<Key = String, Filter = String, Include = (), Data = ()>,
+    T::Row: Debug,
+{
+    match action {
+        Action::FindUnique => repository_fault(table.find_unique(unique_request()).await),
+        Action::FindFirst => repository_fault(table.find_first(unique_request()).await),
+        Action::FindMany => repository_fault(table.find_many(many_request()).await),
+        Action::Update => repository_fault(table.update(update_request()).await),
+        Action::Create => repository_fault(table.create(create_request()).await),
+    }
+}
+
+// the default-budget read only ever asks for the unique row
+#[rstest]
+#[case::find_first(Action::FindFirst)]
+#[case::find_many(Action::FindMany)]
+#[case::update(Action::Update)]
+#[case::create(Action::Create)]
 #[tokio::test]
-async fn budget_table_reads_only_the_unique_row() {
-    let table = budget_table();
-    for error in budget_table_unread_errors(&table).await {
-        assert!(matches!(error, DbError::CreateNull));
-    }
+async fn budget_table_reads_only_the_unique_row(#[case] action: Action) {
+    let error = fault(&budget_table(), action).await;
+    assert!(matches!(error, DbError::CreateNull));
 }
 
-async fn end_user_unique_errors(table: &EndUserRowTable) -> Vec<DbError<EndUserRowError>> {
-    vec![
-        repository_fault(
-            table
-                .find_unique(FindOne {
-                    filter: "alice".to_owned(),
-                    include: Presence::Omitted,
-                })
-                .await,
-            "an absent pool cannot answer the row read",
-        ),
-        repository_fault(
-            table
-                .find_first(FindOne {
-                    filter: "alice".to_owned(),
-                    include: Presence::Omitted,
-                })
-                .await,
-            "an absent pool cannot answer the filtered read",
-        ),
-    ]
-}
-
-async fn end_user_unread_errors(table: &EndUserRowTable) -> Vec<DbError<EndUserRowError>> {
-    vec![
-        repository_fault(
-            table
-                .find_many(FindMany {
-                    filter: Presence::Value("alice".to_owned()),
-                    include: Presence::Omitted,
-                    take: Presence::Omitted,
-                })
-                .await,
-            "find_many is not part of the end-user lookup",
-        ),
-        repository_fault(
-            table
-                .update(Update {
-                    filter: "alice".to_owned(),
-                    data: (),
-                })
-                .await,
-            "update is not part of the end-user lookup",
-        ),
-        repository_fault(
-            table
-                .create(Create {
-                    data: (),
-                    include: Presence::Omitted,
-                })
-                .await,
-            "create is not part of the end-user lookup",
-        ),
-    ]
-}
-
+// the end-user lookup's own reads reach the database and fail only because none is connected
+#[rstest]
+#[case::find_unique(Action::FindUnique)]
+#[case::find_first(Action::FindFirst)]
 #[tokio::test]
-async fn end_user_table_reads_only_the_unique_row() {
-    let table = EndUserRowTable { client: None };
-    for error in end_user_unique_errors(&table).await {
-        assert!(matches!(error, DbError::NoDbConnected));
-    }
-    for error in end_user_unread_errors(&table).await {
-        assert!(matches!(error, DbError::CreateNull));
-    }
+async fn end_user_table_reads_only_the_unique_row(#[case] action: Action) {
+    let error = fault(&EndUserRowTable { client: None }, action).await;
+    assert!(matches!(error, DbError::NoDbConnected));
+}
+
+#[rstest]
+#[case::find_many(Action::FindMany)]
+#[case::update(Action::Update)]
+#[case::create(Action::Create)]
+#[tokio::test]
+async fn end_user_table_refuses_the_unread_actions(#[case] action: Action) {
+    let error = fault(&EndUserRowTable { client: None }, action).await;
+    assert!(matches!(error, DbError::CreateNull));
 }
