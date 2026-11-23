@@ -46,7 +46,7 @@ pub fn probe_request(call: &ProbeCall<'_>) -> Result<OutboundRequest, AzureSpeec
         url,
         query: Vec::new(),
         headers: probe_headers(call.api_key)?,
-        body: RequestBody::Json(probe_body(call.model, call.messages)?),
+        body: RequestBody::Json(probe_body(deployment, call.messages)?),
         deadline: probe_timeout(call.timeout)?,
     })
 }
@@ -78,13 +78,14 @@ fn probe_target<'data>(
             gateway.push('/');
         }
         gateway.push_str(call.model.unwrap_or("None"));
+        gateway.push('/');
         return Ok((gateway, None));
     }
     if call.model.is_none() && call.mode != ProbeMode::ImageGeneration {
         return Err(AzureSpeechError::ModelNotSet);
     }
     Ok((
-        format!("{}/openai", api_base.trim_end_matches('/')),
+        format!("{}/openai/", api_base.trim_end_matches('/')),
         call.model,
     ))
 }
