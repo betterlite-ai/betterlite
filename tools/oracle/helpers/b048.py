@@ -50,9 +50,18 @@ class RegistryCall(TypedDict):
 Input: TypeAlias = RequestCall | RegistryCall
 
 
-class TinyfishConfig(Protocol):
+class SearchConfig(Protocol):
     @property
     def validate_environment(self) -> Validate: ...
+
+    @property
+    def ui_friendly_name(self) -> Callable[[], str]: ...
+
+    @property
+    def get_http_method(self) -> Callable[[], str]: ...
+
+    @property
+    def supports_rich_search_input(self) -> Callable[[], bool]: ...
 
     @property
     def get_complete_url(self) -> Url: ...
@@ -64,20 +73,15 @@ class TinyfishConfig(Protocol):
     def transform_search_response(self) -> TransformReply: ...
 
 
-class RegistryConfig(Protocol):
-    @property
-    def get_complete_url(self) -> Url: ...
-
-
 class ErrorRecord(BaseModel):
     status_code: int
     message: str
 
 
-def config() -> TinyfishConfig:
-    found = ProviderConfigManager.get_provider_search_config(SearchProviders("tinyfish"))
+def config(provider: str) -> SearchConfig:
+    found = ProviderConfigManager.get_provider_search_config(SearchProviders(provider))
     if found is None:
-        raise ValueError("no search config is registered for tinyfish")
+        raise ValueError(f"no search config is registered for {provider}")
     return found
 
 
@@ -88,7 +92,7 @@ def environment(values: Headers) -> None:
         os.environ[name] = value
 
 
-def reply_value(search: TinyfishConfig, call: ReplyCall) -> JsonValue:
+def reply_value(search: SearchConfig, call: ReplyCall) -> JsonValue:
     response = httpx.Response(
         call["status"],
         content=call["body"].encode(),
@@ -104,7 +108,7 @@ def reply_value(search: TinyfishConfig, call: ReplyCall) -> JsonValue:
     return JSON.validate_json(parsed.model_dump_json())
 
 
-def request_value(search: TinyfishConfig, call: RequestCall) -> JsonValue:
+def request_value(search: SearchConfig, call: RequestCall) -> JsonValue:
     environment(call["environment"])
     headers = search.validate_environment(dict(call["headers"]), call["api_key"], call["api_base"])
     body = search.transform_search_request(call["query"], dict(call["optional_params"]))
@@ -122,18 +126,14 @@ def request_value(search: TinyfishConfig, call: RequestCall) -> JsonValue:
 
 def registry_value(provider: str) -> JsonValue:
     try:
-        found = ProviderConfigManager.get_provider_search_config(SearchProviders(provider))
+        found = config(provider)
     except ValueError:
         return None
-    if found is None:
-        return None
-    # the base signature carries bare dicts, so the URL hook is read through the typed view
-    config_view: RegistryConfig = found
     view: dict[str, JsonValue] = {
         "display": found.ui_friendly_name(),
         "method": found.get_http_method(),
         "rich": found.supports_rich_search_input(),
-        "endpoint": config_view.get_complete_url(None, dict[str, JsonValue](), None),
+        "endpoint": found.get_complete_url(None, dict[str, JsonValue](), None),
     }
     return JSON.validate_python(view)
 
@@ -144,4 +144,4 @@ def run(input_value: Input) -> JsonValue:
         views: list[JsonValue] = [registry_value(provider) for provider in input_value["providers"]]
         answer: dict[str, JsonValue] = {"providers": views}
         return answer
-    return request_value(config(), input_value)
+    return request_value(config("tinyfish"), input_value)
