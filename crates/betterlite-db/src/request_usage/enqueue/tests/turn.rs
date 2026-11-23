@@ -55,6 +55,16 @@ async fn skips_a_turn_that_names_no_routing_decision() {
 }
 
 #[tokio::test]
+async fn a_routed_request_the_turn_builder_does_not_count_appends_no_turn() {
+    let case = TurnCase::new();
+    let payload = turn_payload(&turn_metadata(None))
+        .replace(r#""status":"success""#, r#""status":"failure""#);
+    case.enqueue(&payload).await;
+    assert!(case.turns().is_empty());
+    assert!(case.baseline_records().is_empty());
+}
+
+#[tokio::test]
 async fn a_request_with_no_router_catalog_enqueues_nothing() {
     let case = TurnCase::new();
     let capture = captured("sk-capture", "sess-1");
