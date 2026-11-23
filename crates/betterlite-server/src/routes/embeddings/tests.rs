@@ -474,12 +474,15 @@ async fn provider_framework_tests_behavior(
 
 #[tokio::test]
 async fn an_unmocked_embedding_goes_through_the_provider_framework() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let source = format!(
+        "model_list:\n  - {{model_name: emb, litellm_params: {{model: azure/embed, api_base: '{base}', api_key: k}}}}\n"
+    );
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
-    .load(
-        "model_list:\n  - {model_name: emb, litellm_params: {model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k}}\n",
-    )
+    .load(&source)
     .expect("config");
     let executor =
         chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
@@ -487,17 +490,18 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
-        .oneshot(request)
-        .await
-        .expect("response");
-    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    let call = embedding_routes(Arc::new(executor), None, None).oneshot(request);
+    let (sent, answered) = tokio::join!(provider(listener), call);
+    let response = answered.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), 4096).await.expect("body");
-    let envelope: ErrorEnvelope = serde_json::from_slice(&body).expect("JSON");
+    let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
+    assert_eq!(reply.model, "embed");
     assert_eq!(
-        envelope.error.message,
-        "betterlite does not serve azure embeddings yet"
+        reply.data.first().expect("embedding").embedding,
+        vec![0.1_f64]
     );
+    assert!(sent.contains(r#""input":"hello""#), "{sent}");
 }
 
 struct CountingVertex {
@@ -564,7 +568,8 @@ async fn a_mocked_vertex_ai_embedding_never_reaches_the_vertex_call() {
 #[tokio::test]
 async fn another_provider_never_reaches_the_vertex_call() {
     let (status, calls) =
-        status_with_vertex("model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k").await;
+        status_with_vertex("model: bedrock/embed, api_base: 'http://127.0.0.1:1', api_key: k")
+            .await;
     assert_eq!(calls, 0);
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 }
