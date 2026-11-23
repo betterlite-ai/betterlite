@@ -78,6 +78,7 @@ fn tokens_request_decode_reads_the_tokens() {
     assert_eq!(request.tokens, [1, 2, 3]);
     let empty: DecodeRequest = read("{}").unwrap();
     assert!(empty.tokens.is_empty());
+    assert!(empty.skip_special_tokens);
     assert_eq!(empty.custom_tokenizer, None);
 }
 

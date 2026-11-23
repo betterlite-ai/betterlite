@@ -21,6 +21,9 @@ deviations:
 - what: "`get_image_dimensions` and `calculate_img_tokens` read a `data:` URL only; an `http://` or `https://` URL raises `NativeTokensError` instead of downloading up to `MAX_IMAGE_URL_DOWNLOAD_SIZE_MB` bytes and falling back to base64 on failure."
   why: The image helpers run in Rust with no outbound request of their own, and the pytest comparisons send base64 data only.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L231-L249
+- what: "`resize_image_high_res` rejects a zero width or height with `NativeTokensError` where LiteLLM raises `ZeroDivisionError` from its aspect-ratio division; both sides fail the call."
+  why: The Rust geometry checks both sides before dividing, and a degenerate dimension is not an image any working setup resizes.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L146-L155
 - what: "Message content that holds an image, audio or file block raises `ValueError` from the counter, and `use_default_image_token_count` and `default_token_count` are accepted and reach no counting rule."
   why: Counting media blocks belongs to B196 and B197; the two arguments change only that path, and every declared input of this task's signature still counts.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L693-L723

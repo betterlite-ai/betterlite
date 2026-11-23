@@ -94,19 +94,13 @@ fn tokens_image_bounds_the_high_detail_cost() {
 #[test]
 fn tokens_image_names_the_header_of_every_supported_format() {
     assert_eq!(
-        image_type(b"\x89PNG\r\n\x1a\n\0\0\0\0\0\0\0\0\0\0".to_vec()),
+        image_type(b"\x89PNG\r\n\x1a\n\0\0\0\0\0\0\0\0\0\0"),
         Some("png")
     );
-    assert_eq!(image_type(b"GIF89a\x28\x00\x1e\x00".to_vec()), Some("gif"));
-    assert_eq!(image_type(b"\xff\xd8\xff\x00\0\0".to_vec()), Some("jpeg"));
-    assert_eq!(
-        image_type(b"\x00\x00\x00\x18ftypheic".to_vec()),
-        Some("heic")
-    );
-    assert_eq!(
-        image_type(b"RIFF\x1e\x00\x00\x00WEBPVP8X".to_vec()),
-        Some("webp")
-    );
-    assert_eq!(image_type(b"not an image".to_vec()), None);
-    assert_eq!(image_type(Vec::new()), None);
+    assert_eq!(image_type(b"GIF89a\x28\x00\x1e\x00"), Some("gif"));
+    assert_eq!(image_type(b"\xff\xd8\xff\x00\0\0"), Some("jpeg"));
+    assert_eq!(image_type(b"\x00\x00\x00\x18ftypheic"), Some("heic"));
+    assert_eq!(image_type(b"RIFF\x1e\x00\x00\x00WEBPVP8X"), Some("webp"));
+    assert_eq!(image_type(b"not an image"), None);
+    assert_eq!(image_type(&[]), None);
 }
