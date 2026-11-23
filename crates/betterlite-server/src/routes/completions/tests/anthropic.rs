@@ -18,6 +18,7 @@ use super::{Answered, answered};
 const MODEL: &str = "claude-3-haiku-20240307";
 const BUFFERED: &str = r#"{"model":"chat-model","prompt":"Once upon a time"}"#;
 const STREAMED: &str = r#"{"model":"chat-model","prompt":"Once upon a time","stream":true}"#;
+const USAGE_STREAMED: &str = r#"{"model":"chat-model","prompt":"Once upon a time","stream":true,"stream_options":{"include_usage":true}}"#;
 const REPLY: &str = r#"{"id":"msg_bridge","type":"message","role":"assistant","model":"claude-3-haiku-20240307","content":[{"type":"text","text":"hello over anthropic"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":2}}"#;
 const CACHED_REPLY: &str = r#"{"id":"msg_cached","type":"message","role":"assistant","model":"claude-3-haiku-20240307","content":[{"type":"text","text":"hello over anthropic"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":4,"output_tokens":2,"cache_creation_input_tokens":8,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":8,"ephemeral_1h_input_tokens":0}}}"#;
 const TOOL_REPLY: &str = r#"{"id":"msg_tool","type":"message","role":"assistant","model":"claude-3-haiku-20240307","content":[{"type":"tool_use","id":"toolu_bridge","name":"lookup","input":{"a":1}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":5,"output_tokens":3}}"#;
@@ -25,6 +26,14 @@ const ERROR: &str =
     r#"{"type":"error","error":{"type":"invalid_request_error","message":"no such model"}}"#;
 const EVENTS: [&str; 6] = [
     r#"{"type":"message_start","message":{"id":"msg_stream","role":"assistant","model":"claude-3-haiku-20240307","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+    r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
+    r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}"#,
+    r#"{"type":"content_block_stop","index":0}"#,
+    r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#,
+    r#"{"type":"message_stop"}"#,
+];
+const CACHED_EVENTS: [&str; 6] = [
+    r#"{"type":"message_start","message":{"id":"msg_stream_usage","role":"assistant","model":"claude-3-haiku-20240307","usage":{"input_tokens":10,"output_tokens":1,"cache_creation_input_tokens":8,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":8,"ephemeral_1h_input_tokens":0}}}}"#,
     r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#,
     r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}"#,
     r#"{"type":"content_block_stop","index":0}"#,
@@ -104,8 +113,8 @@ async fn exchange(request: &str, answer: (u16, &str)) -> Answered {
     answered(state, listener, "/v1/completions", request, answer).await
 }
 
-fn stream_events() -> String {
-    EVENTS.iter().fold(String::new(), |mut body, event| {
+fn stream_events(events: &[&str]) -> String {
+    events.iter().fold(String::new(), |mut body, event| {
         body.push_str("data: ");
         body.push_str(event);
         body.push_str("\n\n");
@@ -168,7 +177,7 @@ fn assert_prompt(sent: &str) {
 }
 
 async fn stream_text() {
-    let events = stream_events();
+    let events = stream_events(&EVENTS);
     let answered = exchange(STREAMED, (200, &events)).await;
     assert_eq!(answered.status, StatusCode::OK);
     assert_eq!(
@@ -190,6 +199,50 @@ async fn stream_text() {
     );
     assert!(
         answered.raw.contains(r#""text":"hello""#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.ends_with("data: [DONE]\n\n"),
+        "{:?}",
+        answered.raw
+    );
+}
+
+// The closing usage frame copies Anthropic's usage as LiteLLM does, cache breakdown included, then data: [DONE]
+async fn usage_stream_text() {
+    let events = stream_events(&CACHED_EVENTS);
+    let answered = exchange(USAGE_STREAMED, (200, &events)).await;
+    assert_eq!(answered.status, StatusCode::OK);
+    assert!(
+        answered.sent.contains(r#""stream":true"#),
+        "{}",
+        answered.sent
+    );
+    assert!(
+        answered.raw.contains(r#""model":"chat-model""#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.contains(r#""text":"hello""#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.contains(r#""prompt_tokens":10"#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.contains(r#""total_tokens":12"#),
+        "{}",
+        answered.raw
+    );
+    assert!(
+        answered.raw.contains(
+            r#""cache_creation_token_details":{"ephemeral_5m_input_tokens":8,"ephemeral_1h_input_tokens":0}"#
+        ),
         "{}",
         answered.raw
     );
@@ -256,6 +309,7 @@ async fn tool_call_text() {
 enum Scenario {
     BufferedText,
     StreamText,
+    UsageStreamText,
     UpstreamError,
     CacheDetailsText,
     ToolCallText,
@@ -267,11 +321,13 @@ enum Scenario {
 #[case::upstream_error(Scenario::UpstreamError)]
 #[case::cache_details_text(Scenario::CacheDetailsText)]
 #[case::tool_call_text(Scenario::ToolCallText)]
+#[case::usage_stream_text(Scenario::UsageStreamText)]
 #[tokio::test]
 async fn anthropic_bridge_cases(#[case] scenario: Scenario) {
     match scenario {
         Scenario::BufferedText => buffered_text().await,
         Scenario::StreamText => stream_text().await,
+        Scenario::UsageStreamText => usage_stream_text().await,
         Scenario::UpstreamError => upstream_error().await,
         Scenario::CacheDetailsText => cache_details_text().await,
         Scenario::ToolCallText => tool_call_text().await,
