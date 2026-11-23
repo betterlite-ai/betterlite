@@ -36,3 +36,5 @@ pub(crate) async fn send(client: Option<A2AClient>, call: Call) -> Result<String
         .map_err(|error| entry_error(error, false))?;
     Ok(response_text(&response)?)
 }
+
+mod tests;

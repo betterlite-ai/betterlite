@@ -93,3 +93,5 @@ impl NativeA2aClient {
         })
     }
 }
+
+mod tests;
