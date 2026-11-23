@@ -216,7 +216,7 @@ out_of_scope:
     Deterministic collision/retry/rollback tests remain with B3160; no helper calls its handlers.
   - >-
     proxy_server.py apart from the workflow include at L19994: B124 and its concrete parts;
-    B8610 owns the application aggregator and shared server state. This task neither registers
+    B10082 owns the application aggregator and B8610 the shared server state. This task neither registers
     a workflow handler again nor takes ownership of another area's route include.
   - >-
     Auth route admission and admin-viewer policy: B742 and B883. The POST /key/update setup

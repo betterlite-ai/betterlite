@@ -33,7 +33,7 @@ description: >-
 
   Database loading, in B8384's crates/betterlite/src/db_object_sync.rs. DbObjectSync gains the same
   Arc<VectorStores>, and sync_non_llm_objects runs two loaders at their LiteLLM positions, after policies and before
-  mcp, each when B8380's should_load_db_object allows its kind. `init_vector_stores(db)` (vector_stores,
+  mcp, each when B10054's should_load_db_object allows its kind. `init_vector_stores(db)` (vector_stores,
   L8872-L8889) reads the stores with B1062's database load over B726's repository; no rows returns and leaves the
   registry as it is, a None registry is created holding the rows, and an existing one gets each store through B1062's
   add, which keeps the first record of an id it already has. `init_vector_store_indexes(db)` (vector_store_indexes,

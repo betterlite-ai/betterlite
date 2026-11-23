@@ -6,10 +6,10 @@ description: >-
   `health_services_routes(state)` for GET /test and /health/services, and B4448 `readiness_routes(state)` for readiness, details,
   backlog, drain, license, OPTIONS, /settings and /active/callbacks. B4447 and B4448 define traits with fakes and leave the real
   implementations to the umbrella. Nothing merges these routers yet. This task joins them in the area app::health, mounted through
-  B8610's aggregator like every other area: crates/betterlite-server/src/app/health.rs holds `mount`, `mount_public` and `start`,
+  B10082's aggregator like every other area: crates/betterlite-server/src/app/health.rs holds `mount`, `mount_public` and `start`,
   and app/health/ holds compose.rs, services.rs, readiness.rs and tests.rs (declared by the skeleton), following the composition style
   of .development/tasks/B8157-self-hosted-dispatch.yaml and .development/tasks/B8399-proxy-logging-wiring.yaml. This task never edits
-  routes.rs, server.rs or app.rs: B8610 calls health::mount, mount_public and start, holds the server's B4448 ShutdownState in
+  routes.rs, server.rs or app.rs: B10082's app.rs calls health::mount, mount_public and start, B8610 holds the server's B4448 ShutdownState in
   ServerState, and moves B003's three health handlers out of routes.rs into the app/health.rs stub, which this task replaces.
 
   compose.rs. `HealthSlot` (crates/betterlite-server/src/state/health.rs and state/health/, a ServerState slot built once with
@@ -146,7 +146,7 @@ out_of_scope:
   - "Route behavior: B4444 (/health/shared-status), B4445 (/health, /health/history, /health/latest), B4446 (/health/test_connection), B4447 (/test, /health/services) and B4448 (readiness, drain, backlog and the rest)."
   - "The health cycle, probe modes and persistence: B4443, B4440 to B4442 and B7640."
   - "The background health loop and its db-save gating (proxy_server.py L4265-L4678): B4444. Starting it at startup when background_health_checks is true is this task (see the description)."
-  - "The lifespan order that calls start_shutdown and wait_for_drain: B8374. The ShutdownState in ServerState, the area aggregator calls and the move of B003's handlers out of routes.rs: B8610."
+  - "The lifespan order that calls start_shutdown and wait_for_drain: B8374. The ShutdownState in ServerState and the move of B003's handlers out of routes.rs: B8610. The area aggregator calls: B10082."
 pitfalls:
   - B8610 moves B003's three health handlers into the app/health.rs stub; replace them there in the same change, or the merged router panics on a duplicate /health/readiness.
   - The auth exemption for /health/liveliness, /health/liveness and /health/readiness lives in auth.rs and must not move into the health router, since the auth layer in auth.rs (B003's middleware) runs before it.

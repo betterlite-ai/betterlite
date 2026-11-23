@@ -2,9 +2,9 @@ id: B1075
 title: Attached-file id, credential and provider resolution
 description: >-
   Build the seven complete helpers at vector_store_files_endpoints/endpoints.py:35-452 in
-  server::api::vector_file_resolution. Expose typed RequestFacts and injected B1020 authorization/credential
+  server::api::vector_file_resolution. Expose typed RequestFacts and injected B1020 authorization/B10060 credential
   lookup, B1016 unified-id parsing, B1019 legacy file routing, B1021 managed-id requirement, B1062 registry,
-  B1061 endpoint permissions, B174 provider enum conversion and B2400 header/query/body accessors. The source helpers do not perform
+  B1061 endpoint permissions, B174 provider enum conversion and B10059 header/query/body accessors. The source helpers do not perform
   provider HTTP; HTTP routes in B1076/B1081 call this layer. Keep every ordering decision below visible in
   native tests; B171 adapters compare pure request/response projections with pre-resolved dependency answers.
   They must not invoke FastAPI routes or load proxy globals. Managed-id validation itself stays B1021.
@@ -112,7 +112,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1062-L1118
 out_of_scope:
 - B1081 owns create/update/delete handlers and B1076 list/retrieve/content in this file; those tasks supply every actual route/auth HTTP case.
-- B2400 owns provider-source accessors; B1020 owns get_credentials_for_model, authorize_model_for_key, prepare_data_with_credentials and handle_model_based_routing.
+- B10059 owns provider-source accessors; B1020 owns authorize_model_for_key and handle_model_based_routing; B10060 owns get_credentials_for_model and prepare_data_with_credentials.
 - B1016/B1019 own id decoding and B1021 owns managed-id validation and its flag, so no second decoder or ownership policy is introduced here.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as vector_file_resolution in the server group. Replace the stub Op in tools/oracle/src/helpers/server/vector_file_resolution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_file_resolution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-public-servers-legacy-adds-public-internet
+call:
+  b10079:
+    function: list
+    config_servers:
+      - {server_id: cfg-listed, name: Listed Config, transport: http}
+      - {server_id: cfg-open, name: Open Config, transport: http}
+      - {server_id: cfg-closed, name: Closed Config, transport: http, available_on_public_internet: false}
+    db_servers:
+      - {server_id: db-open, name: Open Database, transport: http, available_on_public_internet: true}
+    public_mcp_servers: [cfg-listed]
+    public_hub_strict: false
+env: {}
+compare: {ignore: []}
