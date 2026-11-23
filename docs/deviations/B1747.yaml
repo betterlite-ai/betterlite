@@ -1,0 +1,15 @@
+task: B1747
+deviations:
+  - what: A SPEND_LOG_QUEUE_POLL_INTERVAL whose float value is not finite fails configuration loading under the variable's own name, where LiteLLM's float() accepts infinity and the monitor's asyncio.wait_for then never times out.
+    why: No timer can schedule an infinite or NaN interval, so the value is refused once at startup instead of parking the spend log queue monitor forever on its first wait.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1806
+  - what: After a failed budget window commit, betterlite returns the increments one queue entry per increment, where LiteLLM puts the whole aggregated list back as one entry; a queue that had to return more than the flush count drains over more than one tick.
+    why: The window queue's own API enqueues a single transaction at a time, and the queue type belongs to the task that built it, so a batch put is not this task's to add.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1844
+  - what: A shutdown that cancels a daily commit before its statement starts waits for the commit task to see the cancelled phase and hand its remaining rows back, where LiteLLM cancels the task and puts the rows back without waiting for it to unwind; the same rows return and none is counted twice, but the flush ends only after the in-flight statement has rolled back.
+    why: The drained map belongs to the commit task, so aborting it would lose the remaining rows, and a copy taken before the task would put back rows that earlier chunks of the same map already committed. The phase mark stops the task before its next commit and returns exactly the rows still pending.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1718-L1727
+kept_bugs:
+  - what: The shutdown drain's twenty-pass census counts request logs and every derived queue, while the Redis parking that follows takes request log rows only, so derived rows still queued after the last pass are dropped once the loss is logged.
+    why: The drain and its parking are one shutdown behavior, and a working setup's shutdown cannot be split between the two; the drop is reported by the remaining-rows error line rather than silent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7727-L7753
