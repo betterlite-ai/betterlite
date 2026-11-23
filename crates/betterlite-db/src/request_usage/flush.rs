@@ -46,7 +46,7 @@ pub struct RequestUsageQueues<'run> {
 
 // _total_queued_spend_transactions: each queue under its own lock, plus the pending shadow-funnel events.
 #[must_use]
-pub fn total_queued_spend_transactions(queues: &RequestUsageQueues<'_>) -> i64 {
+pub fn queued_spend_transactions(queues: &RequestUsageQueues<'_>) -> i64 {
     let queued = [
         queues.logs.len(),
         queues.tool_usage.len(),
@@ -169,7 +169,7 @@ where
     pub async fn update_spend_logs_job(
         &self,
     ) -> Result<(), SpendLogsJobError<LogWriter::Error, LogClient::Error>> {
-        if total_queued_spend_transactions(&self.queues) == 0 {
+        if queued_spend_transactions(&self.queues) == 0 {
             flush_baseline_accounting(self.accounting, self.queues.baseline, self.notifier).await;
             return Ok(());
         }
@@ -254,21 +254,24 @@ where
 
     // Every model record drains at once, retried only where a replay cannot double count.
     async fn flush_model_usage(&self) {
+        let writer = self.models.writer;
+        let retries = self.models.retries;
         let transactions = self.queues.model_usage.drain(usize::MAX);
-        if let Err(error) = flush_model_usage_transactions(
-            self.models.writer,
+        let outcome = flush_model_usage_transactions(
+            writer,
             &transactions,
-            self.models.retries,
+            retries,
             self.models.jitter,
             self.models.pause,
         )
-        .await
-        {
-            let dropped = transactions.len();
-            tracing::error!(
-                "Spend tracking - model usage flush failed; {dropped} model usage transactions dropped: {error}"
-            );
-        }
+        .await;
+        let Err(error) = outcome else {
+            return;
+        };
+        let dropped = transactions.len();
+        tracing::error!(
+            "Spend tracking - model usage flush failed; {dropped} model usage transactions dropped: {error}"
+        );
     }
 }
 

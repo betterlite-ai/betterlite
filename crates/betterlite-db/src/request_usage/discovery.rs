@@ -82,7 +82,8 @@ async fn discover_tools(
         user_agent,
     };
     enqueue_mcp_tool(queue, kwargs, &fields).await?;
-    enqueue_request_tools(queue, kwargs, &fields).await?;
+    let tools = tool_list(kwargs.tools.as_ref(), "tools")?;
+    enqueue_request_tools(queue, &fields, tools).await?;
     enqueue_passthrough_tools(queue, kwargs, &fields).await?;
     for name in response_names {
         queue
@@ -190,18 +191,17 @@ async fn enqueue_mcp_tool(
         "mcp_tool_call_metadata.mcp_server_name",
     )?
     .unwrap_or(USER_DEFINED);
-    queue
-        .add_update(fields.item(tool_name.to_owned(), origin))
-        .await;
+    let item = fields.item(tool_name.to_owned(), origin);
+    queue.add_update(item).await;
     Ok(())
 }
 
 async fn enqueue_request_tools(
     queue: &ToolDiscoveryQueue,
-    kwargs: &DiscoveryKwargs,
     fields: &DiscoveryFields<'_>,
+    definitions: &[Json],
 ) -> Result<(), DiscoveryError> {
-    for tool_def in tool_list(kwargs.tools.as_ref(), "tools")? {
+    for tool_def in definitions {
         let Some(name) = function_tool_name(tool_def)? else {
             continue;
         };
@@ -228,22 +228,21 @@ fn function_tool_name(tool_def: &Json) -> Result<Option<String>, DiscoveryError>
 }
 
 fn passthrough_body(kwargs: &DiscoveryKwargs) -> Result<Option<&JsonObject>, DiscoveryError> {
-    let Some(passthrough) = kwargs
-        .passthrough_logging_payload
-        .as_ref()
-        .filter(|value| counts_as_present(value))
-    else {
+    let Some(passthrough) = kwargs.passthrough_logging_payload.as_ref() else {
         return Ok(None);
     };
+    if !counts_as_present(passthrough) {
+        return Ok(None);
+    }
     let Json::Object(payload) = passthrough else {
         return Ok(None);
     };
-    let Some(body) = payload
-        .get("request_body")
-        .filter(|value| counts_as_present(value))
-    else {
+    let Some(body) = payload.get("request_body") else {
         return Ok(None);
     };
+    if !counts_as_present(body) {
+        return Ok(None);
+    }
     let Json::Object(body) = body else {
         return Err(DiscoveryError::NotAnObject {
             field: "passthrough_logging_payload.request_body",
@@ -260,10 +259,11 @@ async fn enqueue_passthrough_tools(
     let Some(body) = passthrough_body(kwargs)? else {
         return Ok(());
     };
-    for tool_def in tool_list(
+    let tools = tool_list(
         body.get("tools"),
         "passthrough_logging_payload.request_body.tools",
-    )? {
+    )?;
+    for tool_def in tools {
         let Json::Object(tool) = tool_def else {
             continue;
         };
