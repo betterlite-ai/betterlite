@@ -2,12 +2,11 @@ use super::convert::{EmbeddingArguments, EmbeddingCallWire, EmbeddingSettingsWir
 use super::error::{CallFacts, CallFailure, Raised, operation_failure, raised, resolution_failure};
 use super::request;
 use super::response::{
-    EmbeddingAnswer, HiddenFacts, hidden_params, milliseconds, mock_usage, response_cost,
-    response_data, usage_json,
+    EmbeddingAnswer, HiddenFacts, hidden_params, mock_usage, record_json, response_cost,
 };
 use super::session::{
     DeploymentInputs, EmbeddingSession, additional_headers, deployment, header_map, mock_api_base,
-    plain_text, secret_text, with_headers,
+    secret_text, with_headers,
 };
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
@@ -61,8 +60,14 @@ pub(crate) async fn call(
     let resolved = session
         .resolve(
             &arguments.model,
-            plain_text(arguments.custom_llm_provider.as_deref()).as_deref(),
-            plain_text(arguments.api_base.as_deref()).as_deref(),
+            arguments
+                .custom_llm_provider
+                .as_deref()
+                .filter(|text| !text.is_empty()),
+            arguments
+                .api_base
+                .as_deref()
+                .filter(|text| !text.is_empty()),
             api_key.as_ref(),
             &globals,
         )
@@ -136,7 +141,7 @@ async fn provider_answer(
         .execute(&context.session.client, &prepared, &inputs)
         .await
         .map_err(failed)?;
-    let provider_ms = milliseconds(sent.elapsed());
+    let provider_ms = sent.elapsed().as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
     let response_headers = header_map(upstream.headers());
     let decoded = adapter.decode(&prepared, upstream).map_err(failed)?;
     let OperationResult::Embedding(response) = decoded else {
@@ -155,7 +160,11 @@ fn mock_answer(context: &CallContext<'_>, mock: &Json) -> Result<EmbeddingAnswer
         return Err(raised(Raised::Plain, String::from(MOCK_ERROR), None, None));
     }
     let facts = &context.facts;
-    let response_ms = milliseconds(context.started.elapsed());
+    let response_ms = context
+        .started
+        .elapsed()
+        .as_secs_f64()
+        .mul_add(1000.0_f64, 0.0_f64);
     let api_base = mock_api_base(
         context.arguments,
         context.settings,
@@ -209,7 +218,11 @@ fn real_answer(
     response: EmbeddingResponse,
 ) -> Result<EmbeddingAnswer, CallFailure> {
     let facts = &context.facts;
-    let response_ms = milliseconds(context.started.elapsed());
+    let response_ms = context
+        .started
+        .elapsed()
+        .as_secs_f64()
+        .mul_add(1000.0_f64, 0.0_f64);
     let overhead = provider_ms.mul_add(-1.0_f64, response_ms).max(0.0_f64);
     let cost = response_cost(
         context.arguments,
@@ -226,12 +239,13 @@ fn real_answer(
     };
     let headers = additional_headers(&response_headers);
     let hidden = hidden_params(&hidden_facts, cost, headers, response_ms, Some(overhead));
-    let usage =
-        usage_json(&response.usage).map_err(|error| CallFailure::Invalid(error.to_string()))?;
+    let usage = serde_json::to_string(&response.usage)
+        .and_then(|text| serde_json::from_str::<Json>(&text))
+        .map_err(|error| CallFailure::Invalid(error.to_string()))?;
     Ok(EmbeddingAnswer {
         object: response.object,
         model: response.model,
-        data: response_data(&response.data),
+        data: response.data.iter().map(record_json).collect(),
         usage,
         hidden_params: hidden,
         response_headers,
@@ -242,7 +256,7 @@ fn real_answer(
 fn global_credentials(settings: &EmbeddingSettingsWire) -> GlobalCredentials {
     GlobalCredentials {
         api_key: secret_text(settings.api_key.as_ref()),
-        api_base: plain_text(settings.api_base.as_deref()),
+        api_base: settings.api_base.clone().filter(|text| !text.is_empty()),
         xai_key: None,
         inception_key: None,
         lemonade_key: None,

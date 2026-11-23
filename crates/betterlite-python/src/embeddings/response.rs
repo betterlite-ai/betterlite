@@ -1,16 +1,14 @@
-use super::convert::ConvertError;
 use super::convert::EmbeddingArguments;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::{HiddenParams, Json};
-use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingUsage, EmbeddingVector};
+use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
+use rust_decimal::prelude::ToPrimitive as _;
 use serde::Serialize;
 use serde_json::Number;
 use std::collections::BTreeMap;
-use std::time::Duration;
 // What Python reads back: the fields it builds an EmbeddingResponse from, the hidden params and the timing.
 #[derive(Debug, Serialize)]
 pub(crate) struct EmbeddingAnswer {
@@ -30,13 +28,6 @@ pub(crate) struct HiddenFacts<'facts> {
     pub(crate) litellm_model: &'facts str,
     pub(crate) provider: Option<&'facts str>,
 }
-fn number(value: f64) -> Json {
-    Number::from_f64(value).map_or(Json::Null, Json::Number)
-}
-#[must_use]
-pub(crate) fn milliseconds(elapsed: Duration) -> f64 {
-    elapsed.as_secs_f64().mul_add(1000.0_f64, 0.0_f64)
-}
 #[must_use]
 pub(crate) fn hidden_params(
     facts: &HiddenFacts<'_>,
@@ -46,8 +37,14 @@ pub(crate) fn hidden_params(
     overhead_ms: Option<f64>,
 ) -> HiddenParams {
     let mut hidden = HiddenParams::new();
-    hidden.insert(String::from("_response_ms"), number(response_ms));
-    hidden.insert(String::from("callback_duration_ms"), number(0.0_f64));
+    hidden.insert(
+        String::from("_response_ms"),
+        Number::from_f64(response_ms).map_or(Json::Null, Json::Number),
+    );
+    hidden.insert(
+        String::from("callback_duration_ms"),
+        Number::from_f64(0.0_f64).map_or(Json::Null, Json::Number),
+    );
     hidden.insert(
         String::from("litellm_call_id"),
         Json::Text(facts.call_id.to_owned()),
@@ -67,8 +64,11 @@ pub(crate) fn hidden_params(
         String::from("litellm_model_name"),
         Json::Text(facts.litellm_model.to_owned()),
     );
-    if let Some(overhead) = overhead_ms {
-        hidden.insert(String::from("litellm_overhead_time_ms"), number(overhead));
+    if let Some(overhead) = overhead_ms.and_then(Number::from_f64) {
+        hidden.insert(
+            String::from("litellm_overhead_time_ms"),
+            Json::Number(overhead),
+        );
     }
     if let Some(provider) = facts.provider {
         hidden.insert(
@@ -94,10 +94,13 @@ pub(crate) fn response_cost(
         (Some(input), Some(_output)) => Some(input),
         (Some(_input), None) | (None, Some(_output)) | (None, None) => None,
     };
-    let price = custom
-        .and_then(Decimal::from_f64)
-        .or_else(|| catalog_price(catalog, model, provider));
-    cost_value(price, prompt_tokens)
+    let price = custom.or_else(|| catalog_price(catalog, model, provider));
+    let Some(cost) = price.and_then(|unit| unit.checked_mul(Decimal::from(prompt_tokens))) else {
+        return Json::Null;
+    };
+    cost.to_f64()
+        .and_then(Number::from_f64)
+        .map_or(Json::Null, Json::Number)
 }
 fn catalog_price(catalog: &ModelCatalog, model: &str, provider: &str) -> Option<Decimal> {
     let prefixed = format!("{provider}/{model}");
@@ -106,14 +109,6 @@ fn catalog_price(catalog: &ModelCatalog, model: &str, provider: &str) -> Option<
         .get(model)
         .or_else(|| catalog.entries.get(&prefixed))
         .and_then(|entry| entry.prices.values.input.input_token)
-}
-fn cost_value(price: Option<Decimal>, tokens: u32) -> Json {
-    let Some(cost) = price.and_then(|price| price.checked_mul(Decimal::from(tokens))) else {
-        return Json::Null;
-    };
-    cost.to_f64()
-        .and_then(Number::from_f64)
-        .map_or(Json::Null, Json::Number)
 }
 // mock_embedding's Usage(prompt_tokens=10, completion_tokens=0) keeps total_tokens at its 0 default
 #[must_use]
@@ -133,32 +128,19 @@ pub(crate) fn mock_usage() -> Json {
     );
     Json::Object(usage)
 }
-#[must_use]
-pub(crate) fn response_data(records: &[EmbeddingRecord]) -> Vec<Json> {
-    records.iter().map(record_json).collect()
-}
-fn record_json(record: &EmbeddingRecord) -> Json {
+pub(crate) fn record_json(record: &EmbeddingRecord) -> Json {
     let mut fields = IndexMap::new();
     fields.insert(String::from("object"), Json::Text(record.object.clone()));
     fields.insert(
         String::from("index"),
         Json::Number(Number::from(record.index)),
     );
-    fields.insert(String::from("embedding"), vector_json(&record.embedding));
-    Json::Object(fields)
-}
-fn vector_json(vector: &EmbeddingVector) -> Json {
-    match vector {
+    let vector = match &record.embedding {
         EmbeddingVector::Base64(text) => Json::Text(text.clone()),
         EmbeddingVector::Floats(values) => {
             Json::List(values.iter().cloned().map(Json::Number).collect())
         }
-    }
-}
-pub(crate) fn usage_json(usage: &EmbeddingUsage) -> Result<Json, ConvertError> {
-    let text = serde_json::to_string(usage).map_err(|source| ConvertError::Encode { source })?;
-    serde_json::from_str(&text).map_err(|source| ConvertError::Answer { source })
-}
-pub(crate) fn serialize_answer(answer: &EmbeddingAnswer) -> Result<String, ConvertError> {
-    serde_json::to_string(answer).map_err(|source| ConvertError::Encode { source })
+    };
+    fields.insert(String::from("embedding"), vector);
+    Json::Object(fields)
 }

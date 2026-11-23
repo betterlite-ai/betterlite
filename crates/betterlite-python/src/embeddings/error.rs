@@ -5,7 +5,6 @@ use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::details::{ResponseDetails, TimeoutDetails, TimeoutStatus};
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::resolution::ResolutionError;
 use betterlite_openai::embedding::EmbeddingError;
 use betterlite_provider::operation::OperationError;
@@ -105,7 +104,7 @@ impl From<SessionError> for PyErr {
         let message = error.to_string();
         match error {
             SessionError::Json(ConvertError::Json { .. }) => PyValueError::new_err(message),
-            SessionError::Json(ConvertError::Encode { .. } | ConvertError::Answer { .. })
+            SessionError::Json(ConvertError::Encode { .. })
             | SessionError::Proxy { .. }
             | SessionError::Client { .. }
             | SessionError::Redact { .. } => PyRuntimeError::new_err(message),
@@ -127,19 +126,24 @@ pub(crate) fn operation_failure(
     redactor: &Redactor,
 ) -> CallFailure {
     match error {
-        OperationError::MissingApiKey => {
-            class_failure(raw_error(MISSING_CREDENTIALS, Some(500), facts), redactor)
+        OperationError::MissingApiKey => classified(
+            String::from(MISSING_CREDENTIALS),
+            Some(500_u16),
+            facts,
+            redactor,
+        ),
+        // the provider's own error body, rendered the way the embeddings route renders it
+        OperationError::Provider { response } => {
+            let route = route_error(&EmbeddingError::Provider { response }, redactor);
+            classified(route.message, Some(route.failure.status), facts, redactor)
         }
-        OperationError::Provider { response } => provider_failure(*response, facts, redactor),
         OperationError::Timeout => raised(
             Raised::Timeout,
             String::from(TIMEOUT_ERROR),
             Some(facts.model.to_owned()),
             Some(facts.provider.to_owned()),
         ),
-        OperationError::Http { source } => {
-            class_failure(raw_error(&source.to_string(), None, facts), redactor)
-        }
+        OperationError::Http { source } => classified(source.to_string(), None, facts, redactor),
         kept @ (OperationError::UnavailableAdapter { .. }
         | OperationError::UnsupportedOperation { .. }
         | OperationError::Encode { .. }
@@ -157,45 +161,25 @@ pub(crate) fn operation_failure(
         ),
     }
 }
-// the provider's own error body, rendered the way the embeddings route renders it, then classified
-fn provider_failure(
-    response: UpstreamResponse,
+// exception_type's mapping of a raw provider failure, keyed on its status and its text
+fn classified(
+    error_str: String,
+    status_code: Option<u16>,
     facts: &CallFacts<'_>,
     redactor: &Redactor,
 ) -> CallFailure {
-    let route = route_error(
-        &EmbeddingError::Provider {
-            response: Box::new(response),
-        },
-        redactor,
-    );
-    class_failure(
-        RawException {
-            model: facts.model.to_owned(),
-            custom_llm_provider: facts.provider.to_owned(),
-            error_str: route.message,
-            status_code: Some(route.failure.status),
-            status_code_is_synthesized: false,
-            message: None,
-            body: None,
-            exception_type: String::new(),
-        },
-        redactor,
-    )
-}
-fn raw_error(error_str: &str, status_code: Option<u16>, facts: &CallFacts<'_>) -> RawException {
-    RawException {
+    let raw = RawException {
         model: facts.model.to_owned(),
         custom_llm_provider: facts.provider.to_owned(),
-        error_str: String::from(error_str),
+        error_str,
         status_code,
         status_code_is_synthesized: false,
         message: None,
         body: None,
         exception_type: String::new(),
-    }
-}
-fn class_failure(raw: RawException, redactor: &Redactor) -> CallFailure {
-    let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
-    CallFailure::Class(Box::new(class))
+    };
+    CallFailure::Class(Box::new(dispatch(
+        &DispatchInput::Raw(Box::new(raw)),
+        redactor,
+    )))
 }

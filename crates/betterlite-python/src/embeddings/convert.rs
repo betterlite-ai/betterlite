@@ -3,6 +3,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_sdk::call_wrapper::error::{class_name, class_status};
+use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -31,8 +32,8 @@ pub(crate) struct EmbeddingArguments {
     pub(crate) litellm_call_id: Option<String>,
     pub(crate) headers: Option<Headers>,
     pub(crate) mock_response: Option<Json>,
-    pub(crate) input_cost_per_token: Option<f64>,
-    pub(crate) output_cost_per_token: Option<f64>,
+    pub(crate) input_cost_per_token: Option<Decimal>,
+    pub(crate) output_cost_per_token: Option<Decimal>,
     pub(crate) allowed_openai_params: Option<Vec<String>>,
     pub(crate) additional_drop_params: Option<Vec<String>>,
     pub(crate) drop_params: Option<bool>,
@@ -66,21 +67,6 @@ pub(crate) enum ConvertError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the provider's usage could not be read back as JSON: {source}")]
-    Answer {
-        #[source]
-        source: serde_json::Error,
-    },
-}
-// the one boundary every native method crosses: the text into the shape that method takes
-pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
-where
-    T: Deserialize<'text>,
-{
-    match serde_json::from_str(text) {
-        Ok(value) => Ok(value),
-        Err(source) => Err(ConvertError::Json { source }),
-    }
 }
 // The JSON text NativeEmbeddingError carries: LiteLLM's exception name and the fields its class keeps.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -1,4 +1,4 @@
-use super::convert::{EmbeddingArguments, EmbeddingSettingsWire, SessionWire, parse};
+use super::convert::{ConvertError, EmbeddingArguments, EmbeddingSettingsWire, SessionWire};
 use super::error::{CallFacts, CallFailure, Raised, SessionError, raised};
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
@@ -40,7 +40,8 @@ pub(crate) struct EmbeddingSession {
 }
 impl EmbeddingSession {
     pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
-        let wire: SessionWire = parse(text)?;
+        let wire: SessionWire =
+            serde_json::from_str(text).map_err(|source| ConvertError::Json { source })?;
         let environment = wire.environment.unwrap_or_else(process_environment);
         let client = outbound_client(&environment)?;
         let catalog = BundledCatalog::default().get();
@@ -149,9 +150,12 @@ pub(crate) fn deployment(
         litellm_params: LiteLlmParams {
             ssl_verify: None,
             model: Some(format!("{}/{}", facts.provider, facts.model)),
-            api_base: plain_text(resolved.api_base.as_deref()),
+            api_base: resolved.api_base.clone().filter(|text| !text.is_empty()),
             api_key: resolved.api_key.clone().or(api_key),
-            api_version: plain_text(arguments.api_version.as_deref()),
+            api_version: arguments
+                .api_version
+                .clone()
+                .filter(|text| !text.is_empty()),
             timeout: arguments.timeout,
             stream_timeout: None,
             max_retries: None,
@@ -227,24 +231,17 @@ pub(crate) fn mock_api_base(
     settings: &EmbeddingSettingsWire,
     environment: &BTreeMap<String, String>,
 ) -> String {
-    plain_text(arguments.api_base.as_deref())
-        .or_else(|| plain_text(settings.api_base.as_deref()))
-        .or_else(|| environment_text(environment, "OPENAI_BASE_URL"))
-        .or_else(|| environment_text(environment, "OPENAI_API_BASE"))
+    arguments
+        .api_base
+        .clone()
+        .filter(|text| !text.is_empty())
+        .or_else(|| settings.api_base.clone().filter(|text| !text.is_empty()))
+        .or_else(|| first_text(environment, &["OPENAI_BASE_URL", "OPENAI_API_BASE"]))
         .unwrap_or_else(|| String::from(OPENAI_BASE))
 }
-// LiteLLM's `value or next`: an empty key or base counts as unset
-pub(crate) fn plain_text(value: Option<&str>) -> Option<String> {
-    value.filter(|text| !text.is_empty()).map(str::to_owned)
-}
+// LiteLLM's `value or next`: an empty key counts as unset
 pub(crate) fn secret_text(value: Option<&SecretString>) -> Option<SecretString> {
     value
         .filter(|secret| !secret.expose_secret().is_empty())
-        .cloned()
-}
-fn environment_text(environment: &BTreeMap<String, String>, name: &str) -> Option<String> {
-    environment
-        .get(name)
-        .filter(|value| !value.is_empty())
         .cloned()
 }

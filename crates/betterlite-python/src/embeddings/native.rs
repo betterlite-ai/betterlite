@@ -1,7 +1,7 @@
 use super::call::{Entry, call};
-use super::convert::{EmbeddingCallWire, parse};
-use super::error::{SessionError, call_failure};
-use super::response::serialize_answer;
+use super::convert::{ConvertError, EmbeddingCallWire};
+use super::error::{CallFailure, SessionError, call_failure};
+use super::response::EmbeddingAnswer;
 use super::session::EmbeddingSession;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -28,8 +28,10 @@ impl NativeEmbeddingSession {
         request: &str,
         _blobs: &Bound<'_, PyList>,
     ) -> PyResult<String> {
-        let wire: EmbeddingCallWire = parse(request).map_err(SessionError::from)?;
-        py.detach(|| get_runtime().block_on(answer_text(&self.session, wire, Entry::Sync)))
+        let wire: EmbeddingCallWire = serde_json::from_str(request)
+            .map_err(|source| SessionError::from(ConvertError::Json { source }))?;
+        let outcome = py.detach(|| get_runtime().block_on(call(&self.session, wire, Entry::Sync)));
+        answer_json(outcome)
     }
     // the awaitable embedding: the same call on the asyncio loop's runtime, handed back as a coroutine
     fn aembedding<'py>(
@@ -38,21 +40,19 @@ impl NativeEmbeddingSession {
         request: &str,
         _blobs: &Bound<'_, PyList>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let wire: EmbeddingCallWire = parse(request).map_err(SessionError::from)?;
+        let wire: EmbeddingCallWire = serde_json::from_str(request)
+            .map_err(|source| SessionError::from(ConvertError::Json { source }))?;
         let session = Arc::clone(&self.session);
         future_into_py(py, async move {
-            answer_text(&session, wire, Entry::Async).await
+            answer_json(Box::pin(call(&session, wire, Entry::Async)).await)
         })
     }
 }
 // both entry points answer the same JSON text or raise the same NativeEmbeddingError
-async fn answer_text(
-    session: &EmbeddingSession,
-    wire: EmbeddingCallWire,
-    entry: Entry,
-) -> PyResult<String> {
-    let answer = Box::pin(call(session, wire, entry))
-        .await
-        .map_err(|failure| call_failure(&failure))?;
-    serialize_answer(&answer).map_err(|error| PyErr::from(SessionError::from(error)))
+fn answer_json(outcome: Result<EmbeddingAnswer, CallFailure>) -> PyResult<String> {
+    match outcome {
+        Ok(answer) => serde_json::to_string(&answer)
+            .map_err(|source| PyErr::from(SessionError::from(ConvertError::Encode { source }))),
+        Err(failure) => Err(call_failure(&failure)),
+    }
 }
