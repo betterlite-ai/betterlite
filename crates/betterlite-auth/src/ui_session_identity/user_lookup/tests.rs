@@ -129,7 +129,6 @@ impl UserStore for FakeStore {
 struct FakeCache {
     cached: Mutex<Option<LiteLLMUserTable>>,
     reads: Mutex<Vec<String>>,
-    writes: Mutex<Vec<String>>,
 }
 
 impl FakeCache {
@@ -137,7 +136,6 @@ impl FakeCache {
         Self {
             cached: Mutex::new(None),
             reads: Mutex::new(Vec::new()),
-            writes: Mutex::new(Vec::new()),
         }
     }
 
@@ -148,11 +146,12 @@ impl FakeCache {
             .clone()
     }
 
-    fn writes(&self) -> Vec<String> {
-        self.writes
+    fn cached_teams(&self) -> Option<Vec<String>> {
+        self.cached
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+            .as_ref()
+            .map(|user| user.teams.clone())
     }
 }
 
@@ -172,14 +171,11 @@ impl UserCache for FakeCache {
 
     async fn write(
         &self,
-        key: &str,
-        _user: &LiteLLMUserTable,
+        _key: &str,
+        user: &LiteLLMUserTable,
         _ttl: f64,
     ) -> Result<(), UserCacheError> {
-        self.writes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(key.to_owned());
+        *self.cached.lock().unwrap_or_else(PoisonError::into_inner) = Some(user.clone());
         Ok(())
     }
 
@@ -300,7 +296,10 @@ async fn the_user_row_is_mapped_to_its_teams() {
         teams,
         Some(vec!["team-2".to_owned(), "litellm-dashboard".to_owned()])
     );
-    assert_eq!(case.cache.writes(), vec!["user-1".to_owned()]);
+    assert_eq!(
+        case.cache.cached_teams(),
+        Some(vec!["team-2".to_owned(), "litellm-dashboard".to_owned()])
+    );
     assert!(case.store.other_calls().is_empty());
 }
 
