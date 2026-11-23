@@ -1,0 +1,97 @@
+kind: helper
+name: decode-and-processing-errors
+call:
+  bedrock_invoke_response:
+    reply:
+      - model: amazon.titan-text-express-v1
+        body: not json
+        status: 200
+        headers: [[x-amzn-requestid, req-1]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: ''
+        status: 400
+        headers: [[x-amzn-requestid, req-1]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": []}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: cohere.command-r-v1:0
+        body: '{"generations": [{"text": "x"}]}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-cohere
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: ai21.j2-ultra-v1
+        body: '{"completions": []}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-ai21
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "text"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "abc"], [x-amzn-bedrock-output-token-count, "3"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+env: {}
+compare: {ignore: []}
