@@ -91,6 +91,10 @@ fn request_prep_logs_the_unsigned_headers_and_body_copy() {
     let Some(Json::Object(recorded)) = additional else {
         panic!("pre_call recorded its additional args");
     };
+    assert_eq!(
+        recorded.get("api_base"),
+        Some(&Json::Text(String::from("http://127.0.0.1:9/v1/systemone")))
+    );
     let Some(Json::Object(headers)) = recorded.get("headers") else {
         panic!("pre_call recorded the outbound headers");
     };

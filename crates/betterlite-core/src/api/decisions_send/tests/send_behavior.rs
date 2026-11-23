@@ -5,6 +5,7 @@ use betterlite_http::interactions::base::{MAX_RESPONSE_BYTES, RequestFailure};
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::Json;
 use http::header::{HeaderMap, HeaderValue};
 use secrecy::SecretString;
 use serde_json::Number;
@@ -67,12 +68,18 @@ async fn send_behavior_async_answers_and_selects_the_provider_client() {
 #[test]
 fn send_behavior_sync_selects_the_default_client() {
     let mut fixture = Fixture::new();
-    let decisions = systemone_call("typesafe", None);
+    let mut decisions = systemone_call("typesafe", None);
+    decisions
+        .litellm_params
+        .insert(String::from("ssl_verify"), Json::Bool(false));
     fixture.send(&decisions).expect("the call answers");
     let selections = fixture.clients.selections();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].0, Mode::Sync);
-    assert!(selections[0].1.is_empty());
+    assert!(
+        selections[0].1.is_empty(),
+        "decisions() builds _get_httpx_client() with no litellm_params"
+    );
 }
 
 #[test]

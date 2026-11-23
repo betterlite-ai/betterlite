@@ -64,14 +64,28 @@ fn format_response_systemone_rejects_a_different_answer_count() {
 fn format_response_openai_uses_the_requested_model() {
     let fixture = Fixture::new();
     let decisions = openai_call("typesafe", None);
-    let output =
-        format_response(&fixture.config, &decisions, &ir_response(None)).expect("it formats");
-    match output {
-        DecisionsOutput::OpenAi(response) => assert_eq!(response.model, "requested/model"),
+    let unnamed = format_response(&fixture.config, &decisions, &ir_response(None))
+        .expect("the response formats");
+    let requested = match unnamed {
+        DecisionsOutput::OpenAi(response) => response,
         DecisionsOutput::SystemOne(_) => {
             panic!("an OpenAI request answers with an OpenAI response")
         }
-    }
+    };
+    assert_eq!(requested.model, "requested/model");
+    assert_eq!(
+        requested.hidden_params.get("model"),
+        Some(&Json::Text(String::from("typesafe/model-1")))
+    );
+    assert_eq!(
+        requested.hidden_params.get("provider_response_model"),
+        Some(&Json::Text(String::from("typesafe/model-1")))
+    );
+    assert_eq!(
+        requested.hidden_params.get("custom_llm_provider"),
+        Some(&Json::Text(String::from("typesafe")))
+    );
+    assert!(!requested.hidden_params.contains_key("additional_headers"));
     let named = format_response(
         &fixture.config,
         &decisions,
@@ -82,6 +96,29 @@ fn format_response_openai_uses_the_requested_model() {
         DecisionsOutput::OpenAi(response) => assert_eq!(response.model, "provider-model"),
         DecisionsOutput::SystemOne(_) => {
             panic!("an OpenAI request answers with an OpenAI response")
+        }
+    }
+    let mut config = TestConfig::new(&fixture.recording);
+    config.cost = Some(Decimal::new(25, 4));
+    let priced = format_response(&config, &decisions, &ir_response(Some("provider-model")))
+        .expect("the response formats");
+    let response = match priced {
+        DecisionsOutput::OpenAi(response) => response,
+        DecisionsOutput::SystemOne(_) => {
+            panic!("an OpenAI request answers with an OpenAI response")
+        }
+    };
+    let headers = response
+        .hidden_params
+        .get("additional_headers")
+        .expect("the cost header is set");
+    match headers {
+        Json::Object(entries) => match entries.get(RESPONSE_COST_HEADER) {
+            Some(Json::Number(cost)) => assert_eq!(cost.as_f64(), Some(0.002_5_f64)),
+            other => panic!("the cost header holds a number, got {other:?}"),
+        },
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("additional_headers is a map")
         }
     }
 }

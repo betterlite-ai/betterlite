@@ -1,8 +1,9 @@
-use std::sync::PoisonError;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::decisions::call::DecisionsCall;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
@@ -38,32 +39,30 @@ where
     let url = config.get_complete_url(&call.api_base, &call.model);
     let body = serde_json::to_string(&call.body)
         .map_err(|error| plain(call, env.redactor, Box::new(error)))?;
-    let data: Json =
-        serde_json::from_str(&body).map_err(|error| plain(call, env.redactor, Box::new(error)))?;
-    if call.logging_obj.is_some() {
-        log(call, env, &url, &outbound_headers, &data)?;
-    }
-    Ok(Prepared {
+    let prepared = Prepared {
         url,
         outbound_headers,
         body,
-    })
+    };
+    let data: Json = serde_json::from_str(&prepared.body)
+        .map_err(|error| plain(call, env.redactor, Box::new(error)))?;
+    if let Some(logging) = call.logging_obj {
+        log(call, logging, env, &prepared, &data)?;
+    }
+    Ok(prepared)
 }
 
 // pre_call runs only when a logging object exists, and sees the headers from before sign_request changed them
 fn log(
     call: &DecisionsCall<'_>,
+    logging: &Mutex<LoggingState>,
     env: &PrePostEnv<'_>,
-    url: &str,
-    headers: &Headers,
+    prepared: &Prepared,
     data: &Json,
 ) -> Result<(), DecisionsSendError> {
-    let Some(logging) = call.logging_obj else {
-        return Ok(());
-    };
     let additional_args = AdditionalArgs {
-        api_base: Some(url.to_owned()),
-        headers: Some(fields(headers)),
+        api_base: Some(prepared.url.clone()),
+        headers: Some(fields(&prepared.outbound_headers)),
         complete_input_dict: Some(
             raw_body(data).map_err(|error| plain(call, env.redactor, Box::new(error)))?,
         ),

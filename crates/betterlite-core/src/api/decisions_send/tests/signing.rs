@@ -1,6 +1,8 @@
-use std::thread;
+use betterlite_models::decisions::Json;
+use betterlite_openai::openai_base_config::Headers;
 
 use super::support::*;
+use crate::api::decisions_send::signing::{BlockingSigning, SigningSeam as _};
 
 // signing: content when the config signed a body, JSON when it did not, and the async AWS split
 
@@ -29,40 +31,65 @@ fn signing_sync_signs_inline_even_for_aws() {
     let mut fixture = Fixture::new();
     fixture.config.aws = true;
     let decisions = systemone_call("strands_decider", None);
-    let caller = thread::current().id();
     fixture.send(&decisions).expect("the call answers");
-    assert_eq!(fixture.recording.sign_threads(), vec![caller]);
+    let events = fixture.recording.events.recorded();
+    assert!(events.contains(&String::from("sign")));
+    assert!(!events.contains(&String::from("off-loop")));
 }
 
 #[tokio::test]
 async fn signing_async_signs_inline_without_aws() {
     let mut fixture = Fixture::new();
     let decisions = systemone_call("typesafe", None);
-    let caller = thread::current().id();
     fixture.asend(&decisions).await.expect("the call answers");
-    assert_eq!(fixture.recording.sign_threads(), vec![caller]);
+    let events = fixture.recording.events.recorded();
+    assert!(events.contains(&String::from("sign")));
+    assert!(!events.contains(&String::from("off-loop")));
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn signing_async_signs_off_the_request_task_with_aws() {
     let mut fixture = Fixture::new();
     fixture.config.aws = true;
     let decisions = systemone_call("strands_decider", None);
-    let caller = thread::current().id();
     fixture.asend(&decisions).await.expect("the call answers");
-    let threads = fixture.recording.sign_threads();
-    assert_eq!(threads.len(), 1);
-    assert_ne!(threads[0], caller);
+    let events = fixture.recording.events.recorded();
+    assert!(events.contains(&String::from("off-loop")));
+    assert_eq!(
+        fixture.recording.seen_signs().len(),
+        1,
+        "the config signs once, from the seam's task"
+    );
+}
+
+#[tokio::test]
+async fn signing_blocking_seam_stays_inline_on_a_current_thread_runtime() {
+    let signed = BlockingSigning.sign(true, &|| (Headers::new(), None)).await;
+    assert_eq!(signed, (Headers::new(), None));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn signing_blocking_seam_signs_off_the_task_with_aws() {
+    let sign = || (Headers::new(), Some(b"{\"signed\":true}".to_vec()));
+    let signed = BlockingSigning.sign(true, &sign).await;
+    assert_eq!(
+        signed,
+        (Headers::new(), Some(b"{\"signed\":true}".to_vec()))
+    );
 }
 
 #[test]
 fn signing_context_carries_the_call_inputs() {
     let mut fixture = Fixture::new();
-    let decisions = systemone_call("typesafe", None);
+    let mut decisions = systemone_call("typesafe", None);
+    decisions.litellm_params.insert(
+        String::from("aws_secret_access_key"),
+        Json::Text(String::from("secret")),
+    );
     fixture.send(&decisions).expect("the call answers");
     let signed = &fixture.recording.seen_signs()[0];
     assert_eq!(signed.url, "http://127.0.0.1:9/v1/systemone");
     assert_eq!(signed.api_base, "http://127.0.0.1:9");
     assert_eq!(signed.api_key.as_deref(), Some("test-key"));
-    assert!(signed.params_empty);
+    assert_eq!(signed.params, decisions.litellm_params);
 }

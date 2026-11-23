@@ -2,6 +2,7 @@ use std::error::Error;
 use std::time::Instant;
 
 use betterlite_error::dispatch::{DispatchInput, dispatch};
+use betterlite_http::interactions::base::Params;
 use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -18,6 +19,7 @@ use super::error::{
 };
 use super::format::{DecisionsOutput, format_response};
 use super::request::{self, Prepared};
+use super::signing::BlockingSigning;
 use crate::api::vector_store_http_write::error::status_facts;
 use crate::api::vector_store_http_write::service::ClientKind;
 
@@ -63,7 +65,10 @@ impl<'env, Clients: DecisionsSyncTransport + DecisionsAsyncTransport>
         &mut self,
         call: &DecisionsCall<'_>,
     ) -> Result<DecisionsOutput, DecisionsSendError> {
-        with_config!(call, |config| self.asend_with(call, config.as_ref()).await)
+        with_config!(call, |config| {
+            self.asend_with(call, config.as_ref(), BlockingSigning)
+                .await
+        })
     }
 
     // decisions(): inline signing, the pool's default client, one blocking POST
@@ -81,10 +86,11 @@ impl<'env, Clients: DecisionsSyncTransport + DecisionsAsyncTransport>
             signing_context(call, &prepared),
         );
         let wire = request::wire(call, self.env.redactor, &prepared, signed)?;
+        let params = Params::new();
         let started = Instant::now();
         let reply = self
             .clients
-            .send_sync(wire)
+            .send_sync(&params, wire)
             .map_err(|error| plain(call, self.env.redactor, Box::new(error)))?
             .map_err(|error| {
                 let attempt = Attempt {

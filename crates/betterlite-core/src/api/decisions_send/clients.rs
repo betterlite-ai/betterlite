@@ -24,7 +24,11 @@ pub type Answer = Result<UpstreamResponse, RequestFailure>;
 
 // LiteLLM's HTTPHandler: a blocking POST whose deadline is the one the caller passed, or its client's own
 pub trait DecisionsSyncTransport: Send + Sync {
-    fn send_sync(&mut self, request: DecisionsRequest) -> Result<Answer, ClientError>;
+    fn send_sync(
+        &mut self,
+        params: &Params,
+        request: DecisionsRequest,
+    ) -> Result<Answer, ClientError>;
 }
 
 // LiteLLM's AsyncHTTPHandler: the same POST as a future, from the client get_async_httpx_client built for the provider

@@ -3,10 +3,14 @@ use betterlite_http::interactions::base::{ClientError, Params, RequestFailure};
 
 use super::{Answer, DecisionsRequest, DecisionsSyncTransport, finish_blocking};
 
-// decisions(): _get_httpx_client() with no litellm_params, then one blocking POST
+// decisions(): _get_httpx_client() with the caller's params, then one blocking POST
 impl DecisionsSyncTransport for HttpClients {
-    fn send_sync(&mut self, request: DecisionsRequest) -> Result<Answer, ClientError> {
-        let client = self.sync_client(&Params::new(), None)?;
+    fn send_sync(
+        &mut self,
+        params: &Params,
+        request: DecisionsRequest,
+    ) -> Result<Answer, ClientError> {
+        let client = self.sync_client(params, None)?;
         let mut builder = client.post(request.url).headers(request.headers);
         if let Some(deadline) = request.timeout {
             builder = builder.timeout(deadline);

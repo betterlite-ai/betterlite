@@ -4,5 +4,6 @@ pub mod error;
 pub mod format;
 mod request;
 pub mod send;
+mod signing;
 
 mod tests;

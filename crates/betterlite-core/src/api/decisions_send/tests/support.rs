@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::thread::{self, ThreadId};
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -58,6 +57,7 @@ use super::super::clients::{
 use super::super::error::DecisionsSendError;
 use super::super::format::DecisionsOutput;
 use super::super::send::DecisionsSender;
+use super::super::signing::{SignFuture, SignTask, SigningSeam};
 
 pub(super) const SYSTEMONE_ANSWER: &str = r#"{"model":"model-1","answers":{"first":{"type":"noul","noul":0.9}},"usage":{"input_tokens":3,"output_tokens":5}}"#;
 
@@ -172,7 +172,7 @@ pub(super) struct SignSeen {
     pub(super) url: String,
     pub(super) api_base: String,
     pub(super) api_key: Option<String>,
-    pub(super) params_empty: bool,
+    pub(super) params: Extra,
 }
 
 #[derive(Default)]
@@ -182,7 +182,6 @@ pub(super) struct Recording {
     urls: Mutex<Vec<(String, String)>>,
     signs: Mutex<Vec<SignSeen>>,
     pub(super) errors: Mutex<Vec<(String, u16, Headers)>>,
-    threads: Mutex<Vec<ThreadId>>,
 }
 
 impl Recording {
@@ -209,13 +208,6 @@ impl Recording {
 
     pub(super) fn seen_errors(&self) -> Vec<(String, u16, Headers)> {
         self.errors
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    pub(super) fn sign_threads(&self) -> Vec<ThreadId> {
-        self.threads
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -300,11 +292,6 @@ impl DecisionsProviderConfig for TestConfig {
     ) -> (Headers, Option<Vec<u8>>) {
         self.recording.events.push("sign");
         self.recording
-            .threads
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(thread::current().id());
-        self.recording
             .signs
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -313,7 +300,7 @@ impl DecisionsProviderConfig for TestConfig {
                 url: context.url.to_owned(),
                 api_base: context.api_base.to_owned(),
                 api_key: context.api_key.map(|key| key.expose_secret().to_owned()),
-                params_empty: context.litellm_params.is_empty(),
+                params: context.litellm_params.clone(),
             });
         if let Some(signature) = &self.signature {
             headers.insert("X-Signature".to_owned(), signature.clone());
@@ -529,9 +516,27 @@ impl FakeClients {
 }
 
 impl DecisionsSyncTransport for FakeClients {
-    fn send_sync(&mut self, request: DecisionsRequest) -> Result<Answer, ClientError> {
-        let wire = self.selected(Mode::Sync, &Params::new())?;
+    fn send_sync(
+        &mut self,
+        params: &Params,
+        request: DecisionsRequest,
+    ) -> Result<Answer, ClientError> {
+        let wire = self.selected(Mode::Sync, params)?;
         Ok(wire.record(request))
+    }
+}
+
+// The seam a case injects: it records the off-loop route and signs on the task that called it
+pub(super) struct RecordingSigning {
+    events: Events,
+}
+
+impl SigningSeam for RecordingSigning {
+    fn sign<'seam>(&'seam self, off_loop: bool, sign: SignTask<'seam>) -> SignFuture<'seam> {
+        if off_loop {
+            self.events.push("off-loop");
+        }
+        Box::pin(ready(sign()))
     }
 }
 
@@ -588,8 +593,11 @@ impl Fixture {
         &mut self,
         call: &DecisionsCall<'_>,
     ) -> Result<DecisionsOutput, DecisionsSendError> {
+        let signing = RecordingSigning {
+            events: self.recording.events.clone(),
+        };
         DecisionsSender::new(&mut self.clients, &self.log.env())
-            .asend_with(call, &self.config)
+            .asend_with(call, &self.config, signing)
             .await
     }
 }

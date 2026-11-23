@@ -49,7 +49,7 @@ fn slow_request() -> (Serving, DecisionsRequest) {
 fn timeout_failure() -> RequestFailure {
     let (serving, request) = slow_request();
     let mut clients = real_clients();
-    let failure = DecisionsSyncTransport::send_sync(&mut clients, request)
+    let failure = DecisionsSyncTransport::send_sync(&mut clients, &Params::new(), request)
         .expect("the blocking client builds")
         .expect_err("the deadline ends the send");
     drop(serving.finish());
@@ -69,7 +69,7 @@ fn connection_failure() -> RequestFailure {
         body: Vec::new(),
         timeout: Some(Duration::from_millis(500)),
     };
-    DecisionsSyncTransport::send_sync(&mut clients, request)
+    DecisionsSyncTransport::send_sync(&mut clients, &Params::new(), request)
         .expect("the blocking client builds")
         .expect_err("nothing listens on the closed port")
 }
