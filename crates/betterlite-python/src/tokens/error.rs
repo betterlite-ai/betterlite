@@ -65,22 +65,17 @@ pub(crate) enum TokensError {
 
 impl From<CountError> for TokensError {
     fn from(error: CountError) -> Self {
-        match error {
-            // the counter's own texts differ from LiteLLM's token_counter, which the three below keep
-            CountError::TextAndMessages => Self::TextAndMessages,
-            CountError::MissingInput => Self::MissingInput,
-            CountError::ToolsWithText => Self::ToolsWithText,
-            other @ (CountError::UnsupportedContent { .. }
-            | CountError::ContentField { .. }
-            | CountError::Selection(_)
-            | CountError::Fetch(_)
-            | CountError::Engine(_)
-            | CountError::Tools(_)
-            | CountError::Json { .. }
-            | CountError::Overflow
-            | CountError::Boundary
-            | CountError::LimitsOverflow) => Self::Count(other),
+        // the counter's own texts differ from LiteLLM's token_counter, which the three below keep
+        if matches!(error, CountError::TextAndMessages) {
+            return Self::TextAndMessages;
         }
+        if matches!(error, CountError::MissingInput) {
+            return Self::MissingInput;
+        }
+        if matches!(error, CountError::ToolsWithText) {
+            return Self::ToolsWithText;
+        }
+        Self::Count(error)
     }
 }
 
