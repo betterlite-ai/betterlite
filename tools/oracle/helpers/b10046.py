@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from typing import Final, Literal, TypeAlias, TypedDict
 
+import litellm.utils
 from litellm.router_utils.add_retry_fallback_headers import apply_remaining_usage_headers
 from litellm.router_utils.pre_call_checks import io_token_rate_limit_check
 from pydantic import JsonValue, TypeAdapter
@@ -36,8 +37,8 @@ Input: TypeAlias = BuildCall | ApplyCall
 
 def build_headers(call: BuildCall) -> JsonValue:
     moment = datetime.fromtimestamp(call["now"], tz=UTC)
-    original = io_token_rate_limit_check.get_utc_datetime
-    io_token_rate_limit_check.get_utc_datetime = FixedClock(moment)
+    original = litellm.utils.get_utc_datetime
+    io_token_rate_limit_check.get_utc_datetime = FixedClock(moment)  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L26
     try:
         headers = io_token_rate_limit_check.build_io_token_rate_limit_headers(
             itpm_limit=call["itpm"],
@@ -46,7 +47,7 @@ def build_headers(call: BuildCall) -> JsonValue:
             current_otpm=call["current_otpm"],
         )
     finally:
-        io_token_rate_limit_check.get_utc_datetime = original
+        io_token_rate_limit_check.get_utc_datetime = original  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L26
     return _JSON.validate_python(headers)
 
 
