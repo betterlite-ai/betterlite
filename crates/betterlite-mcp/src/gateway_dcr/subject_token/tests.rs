@@ -38,7 +38,8 @@ async fn exchange_with<Context, Exchanger>(
     context: &Context,
 ) -> Result<SubjectIdentity, SubjectTokenRefusal>
 where
-    Exchanger: ExchangeSubjectToken<Context>,
+    Exchanger: ExchangeSubjectToken<Context> + Sync,
+    Context: Sync,
 {
     exchanger.exchange(subject_token, context).await
 }
