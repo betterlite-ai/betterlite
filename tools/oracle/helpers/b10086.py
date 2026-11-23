@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import Literal, TypeAlias, TypedDict
 
 from litellm.proxy.auth.user_api_key_auth import (
     _get_bearer_token,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L585-L610
@@ -21,7 +21,7 @@ class DevModeCall(TypedDict):
     enable_oauth2_proxy_auth: bool
 
 
-Input = BearerCall | DevModeCall
+Input: TypeAlias = BearerCall | DevModeCall
 
 
 def bearer_answer(value: str) -> JsonValue:
