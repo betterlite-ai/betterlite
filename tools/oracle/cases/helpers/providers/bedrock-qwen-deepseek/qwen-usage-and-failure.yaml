@@ -84,6 +84,44 @@ call:
     - projection: qwen2
       model: qwen.qwen2-72b-instruct
       messages: []
+      body: '{"generation": "x", "usage": {"prompt_tokens": null, "completion_tokens": null, "total_tokens": null}}'
+      response:
+        id: chatcmpl-usage-null-counts
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": "x", "usage": {"prompt_tokens": null, "completion_tokens": 6}}'
+      response:
+        id: chatcmpl-usage-null-mixed
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
       body: '{"generation": "x"}'
       response:
         id: chatcmpl-usage-kept

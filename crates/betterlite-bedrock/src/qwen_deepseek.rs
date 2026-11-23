@@ -99,9 +99,9 @@ fn usage_from(value: &Json) -> Result<Usage, QwenReplyError> {
 
 fn usage_count(value: Option<&Json>, name: &'static str) -> Result<i64, QwenReplyError> {
     match value {
-        None => Ok(0),
+        None | Some(Json::Null) => Ok(0),
         Some(Json::Number(number)) => number.as_i64().ok_or(QwenReplyError::UsageCount { name }),
-        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             Err(QwenReplyError::UsageCount { name })
         }
     }

@@ -89,6 +89,22 @@ fn counts_default_independently() {
                 total_tokens: 0,
             },
         ),
+        (
+            r#"{"generation": "x", "usage": {"prompt_tokens": null, "completion_tokens": null, "total_tokens": null}}"#,
+            Usage {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+            },
+        ),
+        (
+            r#"{"generation": "x", "usage": {"prompt_tokens": null, "completion_tokens": 6}}"#,
+            Usage {
+                prompt_tokens: 0,
+                completion_tokens: 6,
+                total_tokens: 0,
+            },
+        ),
     ] {
         for projection in BOTH {
             let run = qwen(&case, projection, body);
