@@ -1,10 +1,10 @@
 use super::fixtures::{
     Configs, Fixture, NoBridge, NoInterception, Nothing, Outbound, ScriptedResolver,
 };
-use super::{Call, HookCall, HookObservation, Outcome, RunOutcome};
+use super::scripted::{HookScript, ScriptedPort};
+use super::{Call, HookObservation, Outcome, RunOutcome};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::Failure;
-use async_trait::async_trait;
 use betterlite_core::api::response_id_traversal::response_id::transcode;
 use betterlite_core::api::responses_create::bridge::Created;
 use betterlite_core::api::responses_create::call::ResponsesCreateCall;
@@ -16,23 +16,13 @@ use betterlite_core::api::responses_create_call::deps::{
 use betterlite_core::api::responses_create_call::error::AsyncCreateError;
 use betterlite_core::api::responses_create_http::service::{CreateHooks, LogContext};
 use betterlite_core::api::responses_hook_policy::callbacks::CallbackLists;
-use betterlite_core::api::responses_json::{decision_json, json_value};
-use betterlite_core::api::responses_parameters::prompt_merge::ReturnedMessage;
-use betterlite_core::api::responses_provider_selection::ParameterMap;
-use betterlite_core::api::responses_provider_selection::prompting::{
-    CARRY_UNMATCHED_MESSAGE_POINTS, HookRequest, MergeAnswer, MergeRequest, PromptManagerError,
-};
 use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_models::call_helpers::drop_params::drop_params_env_flag;
-use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use secrecy::SecretString;
-use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Mutex, PoisonError};
 
 type CreateDeps<'deps> = ResponsesCreateDeps<'deps, Outbound, Configs, Nothing, Nothing, ()>;
 
@@ -188,21 +178,6 @@ fn created_json(created: Created<()>) -> Result<Json, SdkHttpError> {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HookScript {
-    answer: HookAnswer,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HookAnswer {
-    model: String,
-    messages: Vec<Json>,
-    #[serde(default)]
-    optional_params: Json,
-}
-
 fn hook_script(run: &Json) -> Result<Option<HookScript>, SdkHttpError> {
     let Json::Object(fields) = run else {
         return Ok(None);
@@ -212,125 +187,5 @@ fn hook_script(run: &Json) -> Result<Option<HookScript>, SdkHttpError> {
         Some(hook) => transcode(hook)
             .map(Some)
             .map_err(|error| SdkHttpError::Invalid(error.to_string())),
-    }
-}
-
-// The scripted stand-in for LiteLLMLoggingObj's async prompt hook, counted the way the adapter observes it
-struct ScriptedPort {
-    answer: HookAnswer,
-    checks: AtomicU32,
-    ran: AtomicU32,
-    records: Mutex<Vec<HookCall>>,
-}
-
-impl ScriptedPort {
-    fn new(script: HookScript) -> Self {
-        Self {
-            answer: script.answer,
-            checks: AtomicU32::new(0),
-            ran: AtomicU32::new(0),
-            records: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn observation(&self) -> HookObservation {
-        HookObservation {
-            checks: self.checks.load(Ordering::SeqCst),
-            ran: self.ran.load(Ordering::SeqCst),
-            sync_checks: 0,
-            calls: self
-                .records
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-        }
-    }
-}
-
-#[async_trait]
-impl AsyncPromptPort for ScriptedPort {
-    fn runs_prompt_hooks(&self, request: &HookRequest<'_>) -> bool {
-        let runs = prompt_management_runs(request);
-        self.checks.fetch_add(1, Ordering::SeqCst);
-        if runs {
-            self.ran.fetch_add(1, Ordering::SeqCst);
-        }
-        runs
-    }
-
-    async fn async_get_chat_completion_prompt(
-        &self,
-        request: &MergeRequest<'_>,
-    ) -> Result<MergeAnswer, PromptManagerError> {
-        let record = HookCall {
-            model: request.model.to_owned(),
-            prompt_id: request.prompt_id.map(str::to_owned),
-            prompt_label: request.prompt_label.map(str::to_owned),
-            prompt_version: request.prompt_version.map(decision_json),
-            prompt_variables: request.prompt_variables.map(decision_json),
-            messages: Json::List(
-                request
-                    .messages
-                    .iter()
-                    .map(|message| decision_json(&message.message))
-                    .collect(),
-            ),
-            carry: request
-                .request_kwargs
-                .contains_key(CARRY_UNMATCHED_MESSAGE_POINTS),
-            aresponses: truthy(request.non_default_params.get("aresponses")),
-        };
-        self.records
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(record);
-        let messages = self
-            .answer
-            .messages
-            .iter()
-            .map(|message| ReturnedMessage {
-                source: None,
-                message: json_value(message),
-            })
-            .collect();
-        let optional_params = match &self.answer.optional_params {
-            Json::Null => ParameterMap::new(),
-            value => transcode(value).map_err(|error| PromptManagerError {
-                message: error.to_string(),
-            })?,
-        };
-        Ok(MergeAnswer {
-            model: self.answer.model.clone(),
-            messages,
-            optional_params,
-        })
-    }
-}
-
-// LiteLLM's Logging.should_run_prompt_management_hooks, for the params aresponses passes it
-fn prompt_management_runs(request: &HookRequest<'_>) -> bool {
-    if request
-        .prompt_id
-        .is_some_and(|prompt_id| !prompt_id.is_empty())
-    {
-        return true;
-    }
-    [
-        "cache_control_injection_points",
-        "knowledge_bases",
-        "vector_store_ids",
-    ]
-    .iter()
-    .any(|name| truthy(request.non_default_params.get(*name)))
-}
-
-fn truthy(value: Option<&JsonValue>) -> bool {
-    match value {
-        None | Some(JsonValue::Null) => false,
-        Some(JsonValue::Bool(flag)) => *flag,
-        Some(JsonValue::Number(number)) => number.as_f64().is_some_and(|float| float != 0.0_f64),
-        Some(JsonValue::Text(text)) => !text.is_empty(),
-        Some(JsonValue::Array(items)) => !items.is_empty(),
-        Some(JsonValue::Object(fields)) => !fields.is_empty(),
     }
 }

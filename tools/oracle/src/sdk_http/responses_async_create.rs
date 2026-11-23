@@ -10,6 +10,8 @@ mod config;
 #[path = "responses_async_create/fixtures/support.rs"]
 mod fixtures;
 mod native;
+#[path = "responses_async_create/fixtures/scripted.rs"]
+mod scripted;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
