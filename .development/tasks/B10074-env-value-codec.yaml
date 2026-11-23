@@ -1,0 +1,104 @@
+id: B10074
+title: Environment value codec for stored config maps
+description: >-
+  LiteLLM stores several settings maps with each string value encrypted on its own: environment_variables in the config table, the CyberArk and Vault override rows, the SSO settings and the cache settings. Three ProxyConfig methods in proxy_server.py do the work over B2303's per-value codec: `_encrypt_env_variables` (L7575-L7583), `_decrypt_db_variables` (L7614-L7622) and `_encrypt_env_variables_for_db` (L7624-L7643). This task builds those three once, so B1646's CyberArk persistence, B8382, the config writers and the cache settings routes all call one copy. B8382 keeps `_decrypt_and_set_db_env_variables`, the read path that also exports to the environment and skips the MCP stdio flag.
+
+
+  Layout. Module env_value_codec in betterlite-server: crates/betterlite-server/src/env_value_codec.rs, tests in env_value_codec/tests.rs. The skeleton created the empty file and its `pub mod` line in lib.rs; do not touch lib.rs. The map type is the server's JSON object, `betterlite_openai::openai_base_config::Object` (imported as JsonMap the way cache_settings_update does), because LiteLLM's callers pass dicts parsed from Json columns. Each function takes `cipher: &StoredCipher<N, D>` from betterlite_secrets::secret_codec, generic over its NonceSource and SecretDiagnostics bounds, so betterlite-db's DbCipher and a test cipher both fit. A string value goes to the codec as `StoredValue::Text`; any other value (number, bool, null, list, object) goes as `StoredValue::Other(value)` and comes back untouched, which also records B2303's debug "not a string" diagnostic the way encrypt_value_helper logs it.
+
+
+  The three functions:
+
+  1. `encrypt_env(values: &JsonMap, cipher, new_key: Option<&SecretString>) -> Result<JsonMap, EnvValueCodecError>` seals each value with `StoredCipher::encrypt_value(value, new_key)`. That call already uses new_key only when it is non-empty and falls back to the configured salt key, so do not filter the key again. encrypt_value_helper re-raises a failure on a string (encrypt_decrypt_utils.py L147-L148), so the first string that cannot be sealed ends the call with `EnvValueCodecError::Encrypt { key, source: SecretError }`, which names the map key and never the value.
+
+  2. `decrypt_env(values: &JsonMap, cipher) -> JsonMap` opens each value with `StoredCipher::decrypt_value(value, key, policy)`, the map key as the field name, and the policy `DecryptPolicy { log: FailureLog::Error, value: FailureValue::Original }`. That is decrypt_value_helper's default exception_type "error" with return_original_value=True: a value that does not open stays as stored, and only the debug "unable to decrypt" line is recorded, no error line. The policy never gives None, and every key stays in the map. It reads with the configured key only and cannot fail.
+
+  3. `encrypt_env_for_db(values: &JsonMap, cipher, new_key) -> Result<JsonMap, EnvValueCodecError>` is decrypt_env followed by encrypt_env. The Admin UI reads stored ciphertext back through /get/config/callbacks and posts it again, so the decrypt pass turns it into plaintext first and the write seals it exactly once. A plaintext value does not open and passes the first step unchanged.
+
+
+  The error enum EnvValueCodecError lives in the module's own files, with thiserror text that names the key only.
+
+
+  Three private ports of these loops already sit in betterlite-server, one per cache settings route, and switch to this module in the same change. `encrypt_settings` in crates/betterlite-server/src/cache_settings_update/route/pipeline.rs (B8502) is `_encrypt_env_variables` with no new key (cache_settings_endpoints.py L624), so the route calls `encrypt_env(&settings, &state.cipher, None)` and maps the error into its UpdateError. The per-value `decrypt_value` in crates/betterlite-server/src/cache_settings_read/stored.rs (B4307) is `_decrypt_db_variables` (L384, L616 and L642), so `stored_from_raw` calls decrypt_env on the parsed map. It used `FailureLog::Debug`, while LiteLLM's default error mode is the one decrypt_env uses, so the debug text of an unreadable value changes to the "unable to decrypt" line and the `None => Null` arm goes away. `decrypt_setting` in crates/betterlite-server/src/cache_settings_test/saved.rs (B4308) is the same `_decrypt_db_variables` for the connection test (L536), already with the right policy, so `saved_settings` calls decrypt_env too. Delete the three private functions, the policy constants only they used and the imports left unused; keep every other line of those modules as it is.
+
+
+  Tests in `env_value_codec::tests` build a StoredCipher with a test salt key and a fixed nonce source, for both xsalsa20-poly1305 and aes-256-gcm, plus a SecretDiagnostics that records events. They cover: encrypt_env sealing each string so that it opens to its plaintext under the key used, numbers, bools, null, lists and objects passing through both directions; a non-empty new_key sealing under that key and an empty one falling back to the salt key; encrypt_env with no salt key and no master key failing on a string with the key name in the error text and no value in it, while a map of non-strings still passes; decrypt_env keeping a value sealed under another key, a garbage string and a plaintext as stored, recording only the debug event; encrypt_env_for_db over a mix of plaintext, a legacy sealed value and a v2:gcm: sealed value giving values that each open once to the plaintext; and encrypt_env_for_db turning "*" and "" into sealed empty text while encrypt_env keeps "*" as "*" under the seal.
+
+
+  Helper cases, operation b10074, under tools/oracle/cases/helpers/env-value-codec/. The input is `salt_key` and `master_key` (string or null), `general_settings` with `encryption_algorithm`, and `calls`, a list of `{operation, values, new_key}` where operation is encrypt_env, decrypt_env or encrypt_env_for_db. The output has one entry per call. decrypt_env returns its map. For the two encrypt operations each string value becomes `{opened, v2}`, where opened is the value decrypted once with the key the write used (new_key when non-empty, else the salt or master key) and v2 says whether it starts with "v2:gcm:"; other values come back as they are; a call that fails returns `{failed: true}`. Ciphertext bytes are never compared, so neither side pins a nonce and the Rust adapter keeps OsNonces. The Python adapter sets LITELLM_SALT_KEY, proxy_server.master_key and proxy_server.general_settings, calls the three methods on a ProxyConfig instance and opens results with `_decrypt_with_signing_key`; the Rust adapter calls this module and opens with B2303's `decrypt_if_encrypted_with`.
+scope:
+  paths:
+    - crates/betterlite-server/src/env_value_codec.rs
+    - crates/betterlite-server/src/env_value_codec/**
+    - crates/betterlite-server/src/cache_settings_update/route/pipeline.rs
+    - crates/betterlite-server/src/cache_settings_read/stored.rs
+    - crates/betterlite-server/src/cache_settings_test/saved.rs
+    - tools/oracle/cases/helpers/env-value-codec/**
+    - tools/oracle/helpers/b10074.py
+    - tools/oracle/helpers/b10074/**
+    - tools/oracle/src/helpers/server/b10074.rs
+    - tools/oracle/src/helpers/server/b10074/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7575-L7583
+    why: Owned. _encrypt_env_variables, one encrypt_value_helper call per value with the optional new key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7614-L7643
+    why: Owned. _decrypt_db_variables with return_original_value=True, and _encrypt_env_variables_for_db, which decrypts first so a UI round trip is not sealed twice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L126-L206
+    why: B2303's encrypt_value_helper (non-strings pass, string failures re-raise) and decrypt_value_helper (the error mode with return_original_value).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L229-L250
+    why: decrypt_value returns "" for empty bytes, which is why "*" and "" come out of encrypt_env_for_db as sealed empty text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L612-L642
+    why: The cache settings update decrypts the saved row, encrypts the new settings and decrypts them again with these methods; the read route does the same at L384 and the connection test at L536.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L302-L322
+    why: B1646's caller, _persist_cyberark_config, encrypts the CyberArk map with _encrypt_env_variables.
+dod:
+  - text: encrypt_env seals every string under the non-empty new key or the configured key, passes other values through and stops at the first string it cannot seal with an error that names the key and not the value.
+    proof: [env-codec-tests, oracle, helper-python]
+  - text: decrypt_env opens each string with the configured key and keeps a value that does not open, recording only the debug line.
+    proof: [env-codec-tests, oracle, helper-python]
+  - text: encrypt_env_for_db never seals stored ciphertext a second time, and "*" and "" come out as sealed empty text.
+    proof: [env-codec-tests, oracle, helper-python]
+  - text: The cache settings read, update and connection test routes use decrypt_env and encrypt_env, and their private loops are gone.
+    proof: [cache-settings-tests]
+checks:
+  optional: []
+  commands:
+    - id: env-codec-tests
+      why: An environment map helper is missing, seals a value twice, drops a key or differs from LiteLLM's policy.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^env_value_codec::/)'
+    - id: cache-settings-tests
+      why: A cache settings route still carries its own encrypt or decrypt loop, or broke when it switched to the shared one.
+      run: >-
+        test -z "$(grep -n 'fn encrypt_settings' crates/betterlite-server/src/cache_settings_update/route/pipeline.rs)" &&
+        test -z "$(grep -n 'fn decrypt_value' crates/betterlite-server/src/cache_settings_read/stored.rs)" &&
+        test -z "$(grep -n 'fn decrypt_setting' crates/betterlite-server/src/cache_settings_test/saved.rs)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_read::/) | test(/^cache_settings_update::/) | test(/^cache_settings_test::/)'
+    - id: helper-python
+      why: The b10074 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10074.py tools/oracle/helpers/b10074)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/env-value-codec/encrypt-for-db-idempotent.yaml
+  - tools/oracle/cases/helpers/env-value-codec/star-and-empty-become-empty.yaml
+  - tools/oracle/cases/helpers/env-value-codec/new-key-and-empty-override.yaml
+  - tools/oracle/cases/helpers/env-value-codec/decrypt-keeps-unreadable.yaml
+  - tools/oracle/cases/helpers/env-value-codec/missing-key-fails.yaml
+deviations: []
+out_of_scope:
+  - "_decrypt_and_set_db_env_variables (decrypt_and_export_env) with its MCP stdio flag skip and environment export: B8382."
+  - "encrypt_value_helper, decrypt_value_helper, decrypt_value, the salt key and the algorithm choice: B2303, already built. This task calls StoredCipher and copies none of its rules."
+  - "Every other function in proxy_server.py: B124 and the tasks split from it."
+  - "The callers that are not built yet (B1646's CyberArk persistence, the config writers, the SSO settings route, master key rotation) wire these functions in their own tasks."
+  - "decrypt_row in crates/betterlite-auth/src/sso_resolution.rs skips the structured SSO keys first and sits in a crate below betterlite-server, so it stays as it is."
+pitfalls:
+  - "_decrypt_db_variables runs decrypt_value_helper in its default \"error\" mode with return_original_value=True, so the policy is FailureLog::Error with FailureValue::Original; the KEEP_ORIGINAL constant in cache_settings_read uses FailureLog::Debug and logs different debug text."
+  - "\"*\" and \"\" decode to no bytes, and LiteLLM's decrypt_value returns \"\" for no bytes, so encrypt_env_for_db stores them as sealed empty text while encrypt_env seals them as written."
+  - "encrypt_env_for_db decrypts with the configured key even when new_key is set, so stored ciphertext under the old key opens before it is sealed under the new one."
+  - "The cache settings update tests capture log output through LogSink; read their assertions before the swap, since non-string values now record the debug \"not a string\" line."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

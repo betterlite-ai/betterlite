@@ -19,7 +19,7 @@ description: >-
 
   Calling a tool. OpenApiTool::new(path, method, operation, base_url, headers, server_label, relays_upstream_auth, auth_type, upstream_token_header) keeps the extracted parameter lists, the lowercase method and the static headers. OpenApiTool::call(arguments, context, transport) runs one call and returns Result<OpenApiToolOutput, OpenApiToolError>. LiteLLM passes per-request values through four ContextVars; here OpenApiCallContext carries them explicitly: auth_header (the BYOK Authorization override), extra_headers (caller headers allowed by the server's extra_headers list), resolved_auth_headers (the gateway-resolved upstream credential). No global state.
   Step 1, merge headers (merge_request_headers). Start from extra_headers minus any name that case-insensitively equals a static header name, then add all static headers. If auth_header is set and non-empty, remove every header named authorization (any case) and set "Authorization" to it. Then for each resolved header, remove every header with the same name ignoring case and set it. Precedence from lowest to highest is extra, static, BYOK, resolved.
-  Step 2, when auth_type is set, run betterlite-mcp's validate_static_credential (B4667) on the merged headers with upstream_token_header and the static header names; on an error return OpenApiToolError::Credential before anything is sent.
+  Step 2, when auth_type is set, run B10065's static_credential::validate_static_credential on the merged headers with upstream_token_header and the static header names; on an error return OpenApiToolError::Credential with its CredError before anything is sent.
   Step 3, URL. url = base_url + path. For each path parameter whose argument is present and truthy (not null, "", false, 0, empty list or object), sanitize it and replace "{name}" and then "{{name}}" in the url. Sanitize: str() of the value, replace "\" with "/", reject any "/" with the error text "Path parameter '{name}' must not contain path separators", reject a ".." segment with "Path parameter '{name}' cannot include '.' or '..' segments", then percent-encode everything except letters, digits, "_", ".", "-" and "~" (Python quote with safe=""). A rejected value does not fail the call: return OpenApiToolOutput::Text("Invalid path parameter: " + message). A missing or falsy path argument leaves the placeholder in the url.
   Step 4, query: every query parameter whose argument is truthy is sent under its own name.
   Step 5, body, only when the body list is non-empty: take argument "body"; if it is falsy, try each name in the body list in order and take the first truthy one. A JSON object is the body. A string is parsed as JSON and the parsed value is the body (any JSON type); when parsing fails the body is {"data": the string}. Any other truthy value becomes {"data": value}. A falsy value sends no body.
@@ -63,7 +63,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/exceptions.py#L22-L107
     why: MCPUpstreamAuthError and MCPOpenApiUpstreamError, the two failures a tool call raises.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/adapter.py#L425-L447
-    why: validate_static_credential, called before the request is built.
+    why: B10065's validate_static_credential, called before the request is built.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L359-L380
     why: custom_credential_slot and credential_redirect_hook, the guard that drops a custom credential header on a cross-origin redirect.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L745
@@ -134,7 +134,7 @@ out_of_scope:
   - "Registering tools in the local tool registry, server name prefixes, openapi_tool_name and the manager's header building (strip_auth_scheme, to_basic_credentials): B4680 owns the registry, the rest belongs to the B136 manager parts."
   - "Setting the four per-request values from the MCP request (operations.py and mcp_server_manager.py:6629): B136 manager parts. This task only reads them from OpenApiCallContext."
   - "The preview route in rest_endpoints.py:1625: B4730 calls the functions built here."
-  - "validate_static_credential, CredError and raise_public: B4667. The user URL fetcher: B5082. The pooled client: B173. RedirectGuard: B4744."
+  - "validate_static_credential: B10065. CredError: B4650, on main. raise_public: B4667, which this task never calls. The user URL fetcher: B5082. The pooled client: B173. RedirectGuard: B4744."
   - "MCP result conversion (result_conversion.py, WireCompat): B136 manager parts. This task returns OpenApiToolOutput and the manager part converts it."
 pitfalls:
   - >-

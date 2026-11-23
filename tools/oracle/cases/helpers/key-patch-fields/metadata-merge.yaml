@@ -1,0 +1,22 @@
+kind: helper
+name: key-patch-fields-metadata-merge
+call:
+  key_patch_fields:
+    calls:
+      - function: metadata
+        request: {key: tok, metadata: {team: t1}}
+        existing_metadata: {service_account_id: sa-1, team: t0}
+      - function: metadata
+        request: {key: tok, metadata: {service_account_id: null}}
+        existing_metadata: {service_account_id: sa-1}
+      - function: metadata
+        request: {key_alias: a}
+        existing_metadata: {team: t0, owner: ops}
+      - function: metadata
+        request: {key: tok, key_alias: a, metadata: null}
+        existing_metadata: {team: t0}
+      - function: metadata
+        request: {key: tok, metadata: null, enable_prompt_caching: true}
+        existing_metadata: {}
+env: {}
+compare: {ignore: []}
