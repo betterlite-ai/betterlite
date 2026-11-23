@@ -1,0 +1,12 @@
+kind: helper
+name: io-zero-limit
+call:
+  b10046:
+    function: build
+    itpm: 0
+    otpm: 0
+    current_itpm: 5
+    current_otpm: null
+    now: 60
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,55 @@
+id: B10094
+title: MCP trusted redirect settings
+description: >-
+  LiteLLM's MCP OAuth code reads two environment variables in oauth_utils.py. MCP_TRUSTED_REDIRECT_ORIGINS is the ops allowlist of extra https redirect origins (comma-separated host or host:port entries, a `*.` prefix for subdomains), read by _parse_trusted_redirect_origins. MCP_TRUSTED_NATIVE_REDIRECT_URIS is the list of private-use callback URIs native MCP clients may register, read by _parse_trusted_native_redirect_uris. B4655's redirect policies and B10062's redirect_trust::shape parse the text and take it as an argument, because rules.yaml keeps environment reads in betterlite-config, but no config section reads either variable yet. This task adds that section, so the code that builds the redirect checks has the text to hand them.
+
+
+  Layout. Section mcp_redirect_trust in betterlite-config: crates/betterlite-config/src/sections/mcp_redirect_trust.rs, with its tests in mcp_redirect_trust/tests.rs. The stub file, its `pub mod` line and its entry in the sections! list are on main. It reads no YAML key, so copy the env-only shape of sections/mcp_sso_assertion_cache.rs: the transparent Raw map, and a convert that reads through the EnvironmentLookup it is given. Constants ORIGINS_VARIABLE = "MCP_TRUSTED_REDIRECT_ORIGINS" and NATIVE_VARIABLE = "MCP_TRUSTED_NATIVE_REDIRECT_URIS". Settings { trusted_origins: String, native_redirect_uris: String } derives Debug, Clone, Default, PartialEq and Eq, and reaches other crates as config.sections.mcp_redirect_trust. Each field holds its variable's text exactly as set, and empty text when the variable is unset, the way LiteLLM's os.environ.get(name, "") reads it.
+
+
+  Keep the text raw. No trimming, lowercasing or splitting here: B4655's parse_trusted_redirect_origins and B10062's native_callbacks own that, and betterlite-mcp depends on betterlite-config, so this crate can't call them. This task parses no outside bytes either, since the text passes through untouched, so there is no fuzz target.
+
+
+  Who reads it. B8623 runs the two parsers on these strings once, when it builds McpState's OAuth state, and hands the one RedirectAllowlists to the B7531 and B7532 flows, which call B4655's validate_trusted_redirect_uri directly. B8702 takes the same value for B7971's RedirectTrust port and for the native callback list B4674's register_aggregate_client takes. That is why the section is its own task: B8623 merges before B8702, so a section inside B8702 would arrive after its first caller.
+
+
+  Tests in sections::mcp_redirect_trust::tests load complete YAML through B002's Loader with an injected environment: unset_variables_read_empty (no variable set, and a config file with an unrelated general_settings block), reads_both_variables (each set to text with spaces around commas, mixed letter case, a `*.` entry and a `myapp://host/oauth/*` entry, which come back unchanged) and empty_variables_read_empty (both set to "").
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/mcp_redirect_trust.rs
+    - crates/betterlite-config/src/sections/mcp_redirect_trust/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L38-L55
+    why: The two variable names, what each entry may look like, and the built-in cursor callback B10062 starts from.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L309-L337
+    why: _parse_trusted_redirect_origins reads MCP_TRUSTED_REDIRECT_ORIGINS with an empty default on every call; B4655 builds the parse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L373-L383
+    why: _parse_trusted_native_redirect_uris reads MCP_TRUSTED_NATIVE_REDIRECT_URIS the same way; B10062 builds the parse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8042-L8053
+    why: Environment variables stored in the database are copied into os.environ at runtime, which is how a LiteLLM change reaches the per-call read (see deviations).
+dod:
+  - text: With neither variable set the section gives two empty strings, an empty variable reads as empty, and a set variable comes back as its exact text, spaces, commas and letter case included.
+    proof: [config-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: A variable is not read, is read under the wrong name, or its text is changed on the way in.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_redirect_trust::/)'
+oracle_cases: []
+deviations:
+  - what: Both variables are read when the config loads, and the wiring builds its lists once at startup, so a value that arrives later through environment_variables stored in the database applies after a restart. LiteLLM reads them on every redirect check, so the same change applies at once there.
+    why: rules.yaml keeps environment reads in betterlite-config and forbids reading the environment per request; the allowlists are deployment settings that change with a rollout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L309-L337
+out_of_scope:
+  - "Parsing MCP_TRUSTED_REDIRECT_ORIGINS (_parse_trusted_redirect_origins) and matching entries: B4655. Parsing MCP_TRUSTED_NATIVE_REDIRECT_URIS into the native callback list (_parse_trusted_native_redirect_uris) and the native match: B10062."
+  - "Building the parsed lists and passing them to validate_trusted_redirect_uri and register_aggregate_client: B8623 builds them once for the OAuth flows, and B8702 passes the same value to the browser routes."
+  - "PROXY_BASE_URL, the other setting the trusted-redirect check reads: the proxy_base_url section, on main."
+pitfalls:
+  - "Unset and empty both read as empty text, as LiteLLM's empty default treats them alike; don't make the fields Option."
+  - "The two names are easy to swap, and a test that sets both variables to the same text passes with the constants crossed; give each variable different text."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
