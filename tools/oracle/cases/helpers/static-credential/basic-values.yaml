@@ -1,0 +1,76 @@
+kind: helper
+name: static-credential-basic-values
+call:
+  b10065:
+    auth_type: basic
+    headers: {Authorization: "Basic dXNlcjpwYXNz"}
+    upstream_token_header: null
+    static_header_names: []
+calls:
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "basic dXNlcjpwYXNz"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "BASIC dXNlcjpwYXNz"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "Basic  dXNlcjpwYXNz"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "Basic dXNlcjpwYXN="}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "Basic OnVzZXI6cGFzcw=="}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: dXNlcjpwYXNz}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "Basic dXNlcg=="}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "Basic !!!!"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "Basic dXNlcjpwYXN"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "Basic dXNlcjpwYXNz extra"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: "Basic dXNl cjpwYXNz"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: Basic}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: basic
+      headers: {Authorization: ""}
+      upstream_token_header: null
+      static_header_names: []
+env: {}
+compare: {ignore: []}

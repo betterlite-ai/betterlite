@@ -1,0 +1,96 @@
+kind: helper
+name: static-credential-api-key-authorization-schemes
+call:
+  b10065:
+    auth_type: api_key
+    headers: {Authorization: "Bearer fixture-key"}
+    upstream_token_header: null
+    static_header_names: []
+calls:
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "ApiKey fixture-key"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "token fixture-key"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "Bearer token"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: opaque-key}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "Custom Custom"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "Basic dXNlcjpwYXNz"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "  Bearer fixture-key  "}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: Bearer}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: basic}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: token}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: apikey}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "Bearer Bearer"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "bearer BEARER"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "Token token"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "apikey APIKEY"}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: ""}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: api_key
+      headers: {Authorization: "   "}
+      upstream_token_header: null
+      static_header_names: []
+env: {}
+compare: {ignore: []}

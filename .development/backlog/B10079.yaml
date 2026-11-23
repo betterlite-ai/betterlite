@@ -1,0 +1,14 @@
+id: B10079
+milestone: M9 agents and mcp
+title: Public MCP server selection
+status: done
+depends_on: [B10020, B6590]
+file: tasks/B10079-mcp-public-servers.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B139
+split_from: B4731
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3060

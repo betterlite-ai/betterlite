@@ -1,0 +1,14 @@
+id: B10092
+milestone: M4 keys, spend and management
+title: Invitation link row creation
+status: done
+depends_on: [B700, B4023, B8410]
+file: tasks/B10092-invitation-row-creation.yaml
+covers:
+  - "litellm/proxy/management_helpers/user_invitation.py"
+parent: B056
+split_from: B797
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3051

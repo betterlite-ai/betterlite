@@ -5,7 +5,7 @@ description: >-
   POST /v1/vector_stores and /vector_stores, and POST/GET /v1/indexes. Own the whole handlers and
   reject_caller_embedding_selection_params, build_request_data_from_managed_vector_store and
   _update_request_data_with_litellm_managed_vector_store_registry. B1068 calls the last helper. Use B1100
-  body decoding, B1060 access checks, B1062 registries, B726 index repository, B1131 index records and
+  body decoding, B10014 and B10071 access checks, B1062 registries, B726 index repository, B1131 index records and
   B004 request processing with route_type avector_store_search/avector_store_create, model=null. B003
   authenticates all aliases. Forward injected proxy config/general settings and user_model, user_temperature,
   user_request_timeout, user_max_tokens, user_api_base unchanged to B004; this task adds no settings.
@@ -62,7 +62,7 @@ dod:
     registered_search_overlay loads store vs_a with top-level provider=openai,credential=outer and
     litellm_params={api_key:sk-server,litellm_credential_name:inner}. Its nested credential wins and registry
     values override caller fields after access succeeds. Unknown store leaves request unchanged. A denied
-    store returns B1060's 403 detail envelope before B004. Native helper case with auth=null skips access;
+    store returns B10014's 403 detail envelope before B004. Native helper case with auth=null skips access;
     absent/null litellm_params uses only present top-level provider/credential keys, preserving explicit nulls.
   proof: [route-tests, oracle]
 - text: >-
@@ -113,7 +113,7 @@ deviations:
 out_of_scope:
 - B1068 owns retrieve/list/update/delete in this file; B1064 owns SDK create/search and its provider calls.
 - Enterprise hook invocation and the downstream "LLM Router not initialized. Ensure models are added to proxy." branch cannot run without that hook and are not built.
-- B004 owns processing/error conversion, B1060 detailed access messages and B1062 index DB projection; their APIs are called rather than copied.
+- B004 owns processing/error conversion, B10014 detailed access messages and B1062 index DB projection; their APIs are called rather than copied.
 pitfalls:
 - Four embedding-selection keys are forbidden by presence, even when their values are null.
 - target_model_names is removed before either creation path, so an empty list is not sent upstream.
