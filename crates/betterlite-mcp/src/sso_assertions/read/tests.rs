@@ -318,7 +318,10 @@ async fn fetch_reports_a_row_read_failure_as_an_unavailable_store() {
     let store = store_with(
         Some(memory_rows(MemoryFailures {
             find: Some(0),
-            ..MemoryFailures::default()
+            find_all: None,
+            upsert: None,
+            update: None,
+            id_jag_server_exists: None,
         })),
         empty_cache(),
     );
@@ -339,7 +342,10 @@ async fn fetch_uncached_reports_a_row_read_failure_as_an_unavailable_store() {
     let store = store_with(
         Some(memory_rows(MemoryFailures {
             find: Some(0),
-            ..MemoryFailures::default()
+            find_all: None,
+            upsert: None,
+            update: None,
+            id_jag_server_exists: None,
         })),
         empty_cache(),
     );
@@ -381,7 +387,7 @@ async fn a_row_that_will_not_decrypt_reads_as_absent() {
 }
 
 #[tokio::test]
-async fn an_unparseable_payload_logs_the_warning_and_reads_as_absent() {
+async fn an_unparsable_payload_logs_the_warning_and_reads_as_absent() {
     let rows = memory_rows(MemoryFailures::default());
     seed_row(&rows, "alice", r#"{"refresh_token":"orphan-refresh"}"#);
     let logs = Logs::default();
@@ -472,7 +478,10 @@ async fn no_token_text_reaches_logs_or_debug_output() {
     let failing = store_with(
         Some(memory_rows(MemoryFailures {
             find: Some(0),
-            ..MemoryFailures::default()
+            find_all: None,
+            upsert: None,
+            update: None,
+            id_jag_server_exists: None,
         })),
         empty_cache(),
     );
