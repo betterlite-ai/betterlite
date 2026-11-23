@@ -34,7 +34,7 @@ use super::{AutorouterQueues, TurnEnvironment};
 pub const BASELINE_QUEUE_LIMIT: usize = 10_000;
 
 // CapturedBaselineObservation of autorouter_baseline_cache.py: the routing hook's frozen record, taken here so spend writing never depends on the hook.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CapturedBaselineObservation {
     pub scope: String,
