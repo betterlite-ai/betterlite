@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::future::{Future, ready};
 use std::mem::take;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -11,31 +11,23 @@ use betterlite_azure::image_transport::{ImageClock, ImageReply, ImageRequest, Im
 use betterlite_azure::transcription::call::logging::{
     AzureTranscriptionLogger, AzureTranscriptionPostCall, AzureTranscriptionPreCall,
 };
-use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
-use betterlite_config::sections::azure_url_policy::AzureCredentials;
-use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
 use betterlite_logging::logging_pre_post::error::PrePostError;
-use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_openai::image_generation::logging::{
     ImageGenerationLogger, PostCallRecord, PreCallRecord,
 };
 use betterlite_openai::transcription::transport::TranscriptionTransport;
 use http::header::{HeaderMap, HeaderValue};
 
-use super::AzureMediaRequest;
-use super::call::AzureMediaOperation;
 use super::error::AzureMediaError;
-use super::execute::dispatch;
-use super::runtime::MediaRuntime;
-use crate::operation::{OperationRequest, OperationResult};
+use crate::operation::OperationResult;
 
+pub mod exchange;
 pub mod speech;
 
-use self::speech::{FixtureError, SpeechLogging, speech_logging};
+use self::speech::SpeechLogging;
 
 // one scripted reply per request the transport will receive, in order
 pub struct Reply {
@@ -230,95 +222,4 @@ pub struct Outcome {
     pub fixture: Fixture,
     pub logger: Recorder,
     pub speech: SpeechLogging,
-}
-
-pub async fn exchange(
-    operation: AzureMediaOperation,
-    replies: Vec<Reply>,
-) -> Result<Outcome, FixtureError> {
-    exchange_with_logging(operation, replies, |_logging| {}).await
-}
-
-pub async fn exchange_with_logging<F>(
-    operation: AzureMediaOperation,
-    replies: Vec<Reply>,
-    configure: F,
-) -> Result<Outcome, FixtureError>
-where
-    F: FnOnce(&mut SpeechLogging),
-{
-    exchange_request_with(
-        OperationRequest::AzureMedia(AzureMediaRequest),
-        operation,
-        replies,
-        configure,
-    )
-    .await
-}
-
-pub async fn exchange_request(
-    request: OperationRequest,
-    operation: AzureMediaOperation,
-    replies: Vec<Reply>,
-) -> Result<Outcome, FixtureError> {
-    exchange_request_with(request, operation, replies, |_logging| {}).await
-}
-
-pub async fn exchange_request_with<F>(
-    request: OperationRequest,
-    operation: AzureMediaOperation,
-    replies: Vec<Reply>,
-    configure: F,
-) -> Result<Outcome, FixtureError>
-where
-    F: FnOnce(&mut SpeechLogging),
-{
-    let fixture = Fixture::new(replies);
-    let clock = Clock;
-    let sources = NoSources;
-    let endpoints = EndpointSettings::default();
-    let credentials = AzureCredentials::default();
-    let environment: BTreeMap<String, String> = BTreeMap::new();
-    let mut cache = Cache::default();
-    let mut logger = Recorder::default();
-    let mut speech = speech_logging()?;
-    configure(&mut speech);
-    let result = {
-        let env = PrePostEnv {
-            debug: DebugSettings::default(),
-            globals: GlobalFlags::default(),
-            decision: Decision {
-                content: false,
-                key_info: false,
-            },
-            redactor: &speech.redactor,
-            log: &speech.sink,
-            input_callbacks: &[],
-            sentry: None,
-            logger_fn: None,
-            now: speech.now,
-        };
-        let mut runtime = MediaRuntime {
-            endpoints: &endpoints,
-            credentials: &credentials,
-            environment: &environment,
-            sources: &sources,
-            refresh_enabled: false,
-            polling_timeout: Duration::from_secs(600),
-            constructor: &fixture,
-            clock: &clock,
-            transport: &fixture,
-            cache: &mut cache,
-            logger: &mut logger,
-            speech_state: &mut speech.state,
-            speech_env: &env,
-        };
-        dispatch(request, operation, &mut runtime).await
-    };
-    Ok(Outcome {
-        result,
-        fixture,
-        logger,
-        speech,
-    })
 }
