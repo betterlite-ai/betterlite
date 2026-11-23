@@ -76,6 +76,6 @@ where
     let Some(name) = text.strip_prefix("os.environ/") else {
         return Ok(false);
     };
-    let resolved = resolve_string(text.to_owned(), path, lookup)?;
+    let resolved = resolve_string(text.clone(), path, lookup)?;
     Ok(betterlite_env::flag(name, &resolved)?.unwrap_or(false))
 }
