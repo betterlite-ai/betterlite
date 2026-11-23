@@ -225,10 +225,8 @@ impl CompletionRequest {
     // Every response part that belongs to another family stays empty; only the Replicate stamps cross over.
     #[must_use]
     pub(crate) fn charge(&self) -> ChargeInputs<'_> {
-        let stamps = match self.response.as_ref() {
-            Some(response) => response.stamps(),
-            None => ReplicateStamps::default(),
-        };
+        let response = self.response.as_ref();
+        let stamps = response.map_or_else(ReplicateStamps::default, ResponseWire::stamps);
         ChargeInputs {
             passthrough_image: false,
             total_time: optional(self.total_time),

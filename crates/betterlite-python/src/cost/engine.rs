@@ -13,7 +13,10 @@ use betterlite_core::cost::usage::{
     BillingResponse, BillingUsage, BillingUsageError, ResponseKind, get_usage_object,
 };
 use betterlite_logging::fields::usage::Usage;
+use betterlite_models::cost_usage::transcription::TranscriptionUsage;
 use betterlite_models::decisions::Json;
+use betterlite_models::decisions::openai::DecisionUsage;
+use betterlite_models::decisions::systemone::DecisionsUsage;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_provider::pricing::ProviderPricing;
@@ -22,6 +25,7 @@ use betterlite_provider::pricing::image::ProviderImagePricing;
 use betterlite_tokenizer::count::error::CountError;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use serde::de::DeserializeOwned;
 
 use crate::cost::billing::{CallRequest, CompletionRequest, RerankUnits};
 use crate::cost::breakdown::Capture;
@@ -114,28 +118,22 @@ impl Engine {
         let Some(mapping) = request.usage.as_ref() else {
             return Ok(None);
         };
-        let transcription;
-        let decisions_ir;
-        let decisions_openai;
         let kind = match request.kind {
             Some(found) => found,
             None => ResponseKind::Other,
         };
-        let usage = match kind {
+        match kind {
             ResponseKind::Transcription => {
-                let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
-                transcription = serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
-                BillingUsage::Transcription(&transcription)
+                let typed: TranscriptionUsage = typed_usage(mapping)?;
+                usage_answer(kind, BillingUsage::Transcription(&typed))
             }
             ResponseKind::DecisionsIr => {
-                let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
-                decisions_ir = serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
-                BillingUsage::DecisionsIr(&decisions_ir)
+                let typed: DecisionsUsage = typed_usage(mapping)?;
+                usage_answer(kind, BillingUsage::DecisionsIr(&typed))
             }
             ResponseKind::DecisionsOpenAi => {
-                let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
-                decisions_openai = serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
-                BillingUsage::DecisionsOpenAi(&decisions_openai)
+                let typed: DecisionUsage = typed_usage(mapping)?;
+                usage_answer(kind, BillingUsage::DecisionsOpenAi(&typed))
             }
             ResponseKind::Chat
             | ResponseKind::ChatStream
@@ -146,15 +144,8 @@ impl Engine {
             | ResponseKind::TextCompletion
             | ResponseKind::SendMessage
             | ResponseKind::Responses
-            | ResponseKind::Other => BillingUsage::Mapping(mapping),
-        };
-        get_usage_object(&BillingResponse {
-            kind,
-            usage,
-            service_tier: None,
-            hidden_params: None,
-        })
-        .map_err(EngineError::from)
+            | ResponseKind::Other => usage_answer(kind, BillingUsage::Mapping(mapping)),
+        }
     }
 
     fn calculator<'call>(
@@ -230,6 +221,25 @@ fn usage_from_mapping(
         service_tier: None,
         hidden_params: None,
     })
+}
+
+// A typed usage the kind declares, read from the usage mapping Python dumped.
+fn typed_usage<T>(mapping: &IndexMap<String, Json>) -> Result<T, BillingUsageError>
+where
+    T: DeserializeOwned,
+{
+    let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
+    serde_json::from_str(&text).map_err(BillingUsageError::Json)
+}
+
+fn usage_answer(kind: ResponseKind, usage: BillingUsage<'_>) -> Result<Option<Usage>, EngineError> {
+    get_usage_object(&BillingResponse {
+        kind,
+        usage,
+        service_tier: None,
+        hidden_params: None,
+    })
+    .map_err(EngineError::from)
 }
 
 // LiteLLM counts tokens only when a response has no usage; with no tokenizer, counting fails.

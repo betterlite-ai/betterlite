@@ -33,7 +33,27 @@ fn cost_request_reads_every_named_argument() {
         "prompt_characters": 40,
         "completion_characters": 12,
         "cache_creation_input_tokens": 3,
-        "cache_read_input_tokens": 5,
+        "cache_read_input_tokens": 5
+    }"#;
+    let request: CallRequest = parse(text).expect("the request parses");
+    let input = request.input(None, None);
+    assert_eq!(input.model, Some("gpt-4o"));
+    assert_eq!(input.prompt_tokens, 11);
+    assert_eq!(input.completion_tokens, 7);
+    assert_eq!(input.response_time_ms, Some(dec("250.5")));
+    assert_eq!(input.custom_llm_provider, Some("openai"));
+    assert_eq!(input.region_name, Some("us-east-1"));
+    assert_eq!(input.prompt_characters, Some(40));
+    assert_eq!(input.completion_characters, Some(12));
+    assert_eq!(input.cache_creation_input_tokens, Some(3));
+    assert_eq!(input.cache_read_input_tokens, Some(5));
+    assert_eq!(input.usage, None);
+    assert_eq!(input.rerank_billed_units, None);
+}
+
+#[test]
+fn cost_request_reads_the_custom_rates_and_the_billing_arguments() {
+    let text = r#"{
         "custom_cost_per_token": {
             "input_cost_per_token": 0.1,
             "output_cost_per_token": 0.2,
@@ -50,16 +70,6 @@ fn cost_request_reads_every_named_argument() {
     }"#;
     let request: CallRequest = parse(text).expect("the request parses");
     let input = request.input(None, None);
-    assert_eq!(input.model, Some("gpt-4o"));
-    assert_eq!(input.prompt_tokens, 11);
-    assert_eq!(input.completion_tokens, 7);
-    assert_eq!(input.response_time_ms, Some(dec("250.5")));
-    assert_eq!(input.custom_llm_provider, Some("openai"));
-    assert_eq!(input.region_name, Some("us-east-1"));
-    assert_eq!(input.prompt_characters, Some(40));
-    assert_eq!(input.completion_characters, Some(12));
-    assert_eq!(input.cache_creation_input_tokens, Some(3));
-    assert_eq!(input.cache_read_input_tokens, Some(5));
     let custom = input
         .custom_cost_per_token
         .expect("the custom rates arrive");
@@ -75,8 +85,6 @@ fn cost_request_reads_every_named_argument() {
     assert_eq!(input.data_residency, Some("eu"));
     assert_eq!(input.vertex_location, Some("global"));
     assert_eq!(input.request_model, Some("gpt-4o-mini"));
-    assert_eq!(input.usage, None);
-    assert_eq!(input.rerank_billed_units, None);
 }
 
 #[test]
