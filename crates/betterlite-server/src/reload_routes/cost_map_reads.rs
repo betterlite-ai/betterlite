@@ -41,8 +41,8 @@ pub(super) async fn cost_map_reload_status(
     let snapshot = admin_read_snapshot(&state, caller)?;
     let provenance = &snapshot.provenance;
     let schedule = match state.config.as_deref() {
-        Some(store) => store_call(store.read_schedule(), STATUS_FAILED).await?,
         None => None,
+        Some(store) => store_call(store.read_schedule(), STATUS_FAILED).await?,
     };
     let status = reload_schedule_status(schedule.as_ref());
     Ok(Json(StatusBody {
