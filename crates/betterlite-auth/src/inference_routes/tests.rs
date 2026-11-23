@@ -150,6 +150,8 @@ fn literal_membership(#[case] index: usize, #[case] literal: &str) {
 #[case::claude_code_marketplace_json(6, "/claude-code/marketplace.json")]
 #[case::claude_code_plugins(7, "/claude-code/plugins")]
 #[case::claude_code_plugins_item(8, "/claude-code/plugins/{plugin_name}")]
+#[case::claude_code_plugins_enable(9, "/claude-code/plugins/{plugin_name}/enable")]
+#[case::claude_code_plugins_disable(10, "/claude-code/plugins/{plugin_name}/disable")]
 fn alias_membership(#[case] index: usize, #[case] literal: &str) {
     assert_eq!(ANTHROPIC_ROUTES.get(index), Some(&literal));
 }
@@ -186,7 +188,7 @@ fn group_expansion() {
     .concat();
     let actual = llm_api_routes();
     assert_eq!(OPENAI_ROUTES.len(), 127);
-    assert_eq!(ANTHROPIC_ROUTES.len(), 9);
-    assert_eq!(actual.len(), 251);
+    assert_eq!(ANTHROPIC_ROUTES.len(), 11);
+    assert_eq!(actual.len(), 253);
     assert_eq!(actual, expected);
 }

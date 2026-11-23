@@ -1,9 +1,17 @@
-use crate::state::ServerState;
-use axum::Router;
 use std::sync::Arc;
 
-#[cfg_attr(test, mutants::skip)]
-pub(crate) fn routes(_state: &Arc<ServerState>) -> Router {
-    // the route owner fills this router
-    Router::new()
+use axum::Router;
+use betterlite_core::api::api_boundaries::ApiLimits;
+
+use crate::api::claude_plugin_write::{ClaudePluginWriteState, database_store, mount};
+use crate::mcp::outbound_credentials::SystemWallClock;
+use crate::state::ServerState;
+
+pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
+    let write = ClaudePluginWriteState {
+        store: database_store(state),
+        clock: Arc::new(SystemWallClock),
+        limits: ApiLimits::default(),
+    };
+    mount(write)
 }
