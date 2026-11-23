@@ -441,8 +441,8 @@ async fn store_shared_binding_delegates_enforce_and_the_proof_check() {
         proof: None,
         proofs: Mutex::new(Vec::new()),
     });
-    let shared = SharedBinding(rejecting);
-    assert!(!shared.proof_matches(server.as_ref(), "user", None).await);
+    let refusing = SharedBinding(rejecting);
+    assert!(!refusing.proof_matches(server.as_ref(), "user", None).await);
 }
 
 #[tokio::test]
