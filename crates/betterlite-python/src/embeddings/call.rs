@@ -242,7 +242,7 @@ fn real_answer(
     })
 }
 // main.py reads litellm.api_key and litellm.api_base into every call's globals
-fn global_credentials(settings: &EmbeddingSettingsWire) -> GlobalCredentials {
+pub(crate) fn global_credentials(settings: &EmbeddingSettingsWire) -> GlobalCredentials {
     GlobalCredentials {
         api_key: secret_text(settings.api_key.as_ref()),
         api_base: settings.api_base.clone().filter(|text| !text.is_empty()),

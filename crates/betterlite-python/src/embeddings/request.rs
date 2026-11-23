@@ -139,7 +139,7 @@ fn params_failure(error: &EmbeddingParamsError) -> CallFailure {
     }
 }
 // encoding_format or the one the params carry or LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT, dropping "none"
-fn requested_encoding(
+pub(crate) fn requested_encoding(
     explicit: Option<&str>,
     params: &Params,
     environment: &BTreeMap<String, String>,

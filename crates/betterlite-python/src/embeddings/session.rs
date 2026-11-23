@@ -173,11 +173,7 @@ fn declared(inputs: &DeploymentInputs<'_>) -> ModelDeployment {
                 .api_key
                 .clone()
                 .or_else(|| inputs.api_key.clone()),
-            api_version: inputs
-                .arguments
-                .api_version
-                .clone()
-                .filter(|text| !text.is_empty()),
+            api_version: inputs.arguments.api_version.clone(),
             timeout: inputs.arguments.timeout,
             stream_timeout: None,
             max_retries: None,

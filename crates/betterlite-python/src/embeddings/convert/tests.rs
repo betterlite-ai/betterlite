@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-use super::super::call::{Entry, call};
+use super::super::call::{Entry, call, global_credentials};
 use super::super::error::{CallFacts, CallFailure, Raised, operation_failure, raised};
-use super::super::request::build;
+use super::super::request::{build, requested_encoding};
 use super::super::response::{
     EmbeddingAnswer, HiddenFacts, hidden_params, mock_usage, record_json, response_cost,
 };
@@ -12,12 +12,14 @@ use super::super::session::{
 use super::{
     EmbeddingArguments, EmbeddingCallWire, EmbeddingSettingsWire, NativeEmbeddingErrorPayload,
 };
+use betterlite_context::non_default_params::Params;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::ErrorContext;
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_openai::embedding::{
@@ -422,6 +424,25 @@ fn request_encoding_format_resolves_in_order(
     let request = built(text, SMALL, pairs).unwrap();
     assert_eq!(request.encoding_format, expected);
     assert!(request.passthrough.is_empty());
+}
+#[rstest]
+#[case::mapped_value(None, "base64", &[], Some("base64"))]
+#[case::empty_mapped_value(None, "", &[("LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT", "float")], Some("float"))]
+#[case::argument_beats_the_mapped_value(Some("float"), "base64", &[], Some("float"))]
+#[case::mapped_none(None, "none", &[], None)]
+fn request_the_mapped_encoding_fills_a_missing_argument(
+    #[case] explicit: Option<&str>,
+    #[case] mapped: &str,
+    #[case] pairs: &[(&str, &str)],
+    #[case] expected: Option<&str>,
+) {
+    let mut params = Params::new();
+    params.insert(
+        String::from("encoding_format"),
+        JsonValue::Text(mapped.to_owned()),
+    );
+    let requested = requested_encoding(explicit, &params, &environment(pairs));
+    assert_eq!(requested.as_deref(), expected);
 }
 #[test]
 fn request_an_unknown_encoding_stays_a_body_field() {
@@ -853,6 +874,21 @@ fn request_the_azure_flag_routes_resolution(#[case] text: &str, #[case] provider
         .resolve(&arguments(text), None, &GlobalCredentials::default())
         .unwrap();
     assert_eq!(resolved.provider.slug(), provider);
+}
+#[test]
+fn request_global_credentials_skip_empty_settings() {
+    let empty: EmbeddingSettingsWire = parse(r#"{"api_base": "", "api_key": ""}"#).unwrap();
+    let unset = global_credentials(&empty);
+    assert_eq!(unset.api_base, None);
+    assert!(unset.api_key.is_none());
+    let given: EmbeddingSettingsWire =
+        parse(r#"{"api_base": "http://proxy.test", "api_key": "sk-module"}"#).unwrap();
+    let globals = global_credentials(&given);
+    assert_eq!(globals.api_base.as_deref(), Some("http://proxy.test"));
+    assert_eq!(
+        globals.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-module")
+    );
 }
 #[test]
 fn request_an_empty_api_base_counts_as_unset() {
