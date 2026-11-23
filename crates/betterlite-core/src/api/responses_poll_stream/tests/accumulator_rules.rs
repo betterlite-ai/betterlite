@@ -1,12 +1,11 @@
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support;
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::responses_poll_stream::accumulator::{AccumulatorLimitError, OutputAccumulator};
 use crate::api::responses_poll_stream::clock::PollClock;
-use crate::api::responses_poll_stream::event::{Item, PollEvent, PollEventError};
+use crate::api::responses_poll_stream::event::{PollEvent, PollEventError};
 
 fn event(source: &str) -> PollEvent {
     PollEvent::decode(&support::json(source)).expect("the event decodes")
@@ -46,7 +45,6 @@ const REPLACED_M1: &str =
     r#"{"item":{"content":[],"id":"m1","marker":"replaced"},"type":"response.output_item.done"}"#;
 const PART_A: &str = r#"{"item_id":"m1","part":{"text":"a","type":"output_text"},"type":"response.content_part.added"}"#;
 const PART_B: &str = r#"{"item_id":"m1","part":{"text":"b","type":"output_text"},"type":"response.content_part.added"}"#;
-const PART_EMPTY: &str = r#"{"item_id":"m1","part":{"text":"","type":"output_text"},"type":"response.content_part.added"}"#;
 const PART_DONE_C: &str = r#"{"content_index":1,"item_id":"m1","part":{"text":"c","type":"output_text"},"type":"response.content_part.done"}"#;
 
 pub(super) fn duplicate_ids_keep_insertion_order() {
@@ -474,7 +472,7 @@ fn absent_optional_keys_take_the_source_defaults() {
 }
 
 #[test]
-fn items_stop_at_the_items_bound() {
+fn accumulated_text_entries_stop_at_the_items_bound() {
     let limits = ApiLimits {
         max_json_bytes: 16 * 1024 * 1024,
         max_event_bytes: 1024 * 1024,
@@ -482,36 +480,28 @@ fn items_stop_at_the_items_bound() {
     };
     let clock = support::clock(&[0]);
     let mut accumulator = OutputAccumulator::started(&clock);
-    let first = Item {
-        id: Some(String::from("m1")),
-        value: IndexMap::new(),
-    };
     accumulator
-        .apply(PollEvent::OutputItemAdded(first))
+        .apply(event(ADDED_M1))
         .expect("the item applies");
-    let second = Item {
-        id: Some(String::from("m2")),
-        value: IndexMap::new(),
-    };
+    let id = Some(String::from("m1"));
     accumulator
-        .apply(PollEvent::OutputItemAdded(second))
-        .expect("the item applies");
+        .apply(PollEvent::OutputTextDelta(id.clone(), 0, String::from("x")))
+        .expect("the delta applies");
+    accumulator
+        .apply(PollEvent::OutputTextDelta(id.clone(), 1, String::from("x")))
+        .expect("the delta applies");
     accumulator
         .check_limits(limits)
-        .expect("the item count is at the limit");
-    let over = Item {
-        id: Some(String::from("m3")),
-        value: IndexMap::new(),
-    };
+        .expect("the text entry count is at the limit");
     accumulator
-        .apply(PollEvent::OutputItemAdded(over))
-        .expect("the item applies");
+        .apply(PollEvent::OutputTextDelta(id, 2, String::from("x")))
+        .expect("the delta applies");
     let error = accumulator
         .check_limits(limits)
-        .expect_err("the item past the limit is refused");
+        .expect_err("the entry past the limit is refused");
     let AccumulatorLimitError::Limit(ApiLimitError::TooManyItems { observed, limit }) = error
     else {
-        panic!("the item bound rejects the third item");
+        panic!("the item bound rejects the third text entry");
     };
     assert_eq!((observed, limit), (3_usize, 2_usize));
 }
@@ -523,17 +513,14 @@ fn delta_text_stops_at_the_json_bound() {
     accumulator
         .apply(event(ADDED_M1))
         .expect("the item applies");
-    accumulator
-        .apply(event(PART_EMPTY))
-        .expect("the part applies");
     let id = Some(String::from("m1"));
     accumulator
         .apply(PollEvent::OutputTextDelta(id.clone(), 0, "x".repeat(1024)))
         .expect("the delta applies");
-    let output = forced(&mut accumulator, &clock);
-    let values = Json::List(vec![output, Json::Text(String::from("completed"))]);
-    let bytes = serde_json::to_vec(&values).expect("the measured output encodes");
-    let observed = bytes.len();
+    let text = Json::List(vec![Json::Text("x".repeat(1024))]);
+    let observed = serde_json::to_vec(&text)
+        .expect("the accumulated text encodes")
+        .len();
     let limits = ApiLimits {
         max_json_bytes: observed,
         max_event_bytes: 16 * 1024 * 1024,

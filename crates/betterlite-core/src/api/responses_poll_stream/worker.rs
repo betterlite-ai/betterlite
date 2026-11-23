@@ -4,15 +4,18 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use thiserror::Error;
 
-use crate::api::responses_poll_state::access::PollAccess;
-use crate::api::responses_poll_state::error::PollingError;
-use crate::api::responses_poll_state::record::PollPatch;
-use crate::api::responses_poll_state::store::ResponsePollingStore;
+use crate::api::responses_poll_state::{
+    access::PollAccess,
+    error::PollingError,
+    get_cache_key,
+    record::PollPatch,
+    store::{ResponsePollingStore, StoredPollState, decode_responses_poll_state},
+};
 
 use super::ERROR_CODE;
 use super::ERROR_TYPE;
 use super::ROUTE_TYPE;
-use super::accumulator::{AccumulatorLimitError, OutputAccumulator};
+use super::accumulator::{AccumulatorLimitError, OutputAccumulator, check_value};
 use super::clock::PollClock;
 use super::event::{PollEvent, PollEventError};
 use super::frame::{PollFrame, PollFrameError, decode_poll_stream_frame};
@@ -62,7 +65,19 @@ impl BackgroundStreaming<'_> {
             error
         );
         let message = bounded_text(&self.redactor.redact_internal_details(&error.to_string()));
-        self.write_patch(&failure_patch(&message)).await
+        // the source's failed record: type, message and code, and no param
+        let failure = Json::Object(IndexMap::from([
+            (String::from("type"), Json::Text(String::from(ERROR_TYPE))),
+            (String::from("message"), Json::Text(message)),
+            (String::from("code"), Json::Text(String::from(ERROR_CODE))),
+        ]));
+        let mut fields = IndexMap::with_capacity(2);
+        fields.insert(
+            String::from("status"),
+            Json::Text(String::from(FAILED_STATUS)),
+        );
+        fields.insert(String::from("error"), failure);
+        self.write_patch(&PollPatch(fields)).await
     }
 
     async fn stream(&self) -> Result<(), PollStreamError> {
@@ -145,7 +160,28 @@ impl BackgroundStreaming<'_> {
         Ok(())
     }
 
+    // update_state applies the patch to the stored record, so the bound is measured on that whole record
     async fn write_patch(&self, patch: &PollPatch) -> Result<(), PollStreamError> {
+        let Some(cache) = self.store.cache.as_ref() else {
+            return Ok(());
+        };
+        let cached = cache
+            .read(&get_cache_key(self.polling_id))
+            .await
+            .map_err(PollingError::from)?;
+        let Some(bytes) = cached.filter(|bytes| !bytes.is_empty()) else {
+            return Ok(());
+        };
+        let mut state =
+            decode_responses_poll_state(&bytes, self.store.limits).map_err(PollingError::from)?;
+        match &mut state {
+            StoredPollState::Record(record) => patch.apply(&mut record.response),
+            StoredPollState::Legacy(response) => patch.apply(response),
+        }
+        let encoded = serde_json::to_vec(&state).map_err(AccumulatorLimitError::Encode)?;
+        let record =
+            serde_json::from_slice::<Json>(&encoded).map_err(AccumulatorLimitError::Encode)?;
+        check_value(&record, self.store.limits)?;
         let update = self
             .store
             .update_state(self.polling_id, PollAccess::AuthDisabled, patch)
@@ -158,22 +194,5 @@ impl BackgroundStreaming<'_> {
 fn status_patch(status: &str) -> PollPatch {
     let mut fields = IndexMap::with_capacity(1);
     fields.insert(String::from("status"), Json::Text(status.to_owned()));
-    PollPatch(fields)
-}
-
-// the source's failed record: type, message and code, and no param
-fn failure_patch(message: &str) -> PollPatch {
-    let error = Json::Object(IndexMap::from([
-        (String::from("type"), Json::Text(String::from(ERROR_TYPE))),
-        (String::from("message"), Json::Text(message.to_owned())),
-        (String::from("code"), Json::Text(String::from(ERROR_CODE))),
-    ]));
-    let fields = IndexMap::from([
-        (
-            String::from("status"),
-            Json::Text(String::from(FAILED_STATUS)),
-        ),
-        (String::from("error"), error),
-    ]);
     PollPatch(fields)
 }

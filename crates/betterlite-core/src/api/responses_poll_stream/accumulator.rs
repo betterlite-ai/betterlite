@@ -61,27 +61,11 @@ impl OutputAccumulator {
         Ok(())
     }
 
-    // the store counts every member and element of what it decodes and caps its bytes, so the worker measures the same values
+    // a delta for a content index with no part stays only in the accumulated text, so it is bounded too
     pub fn check_limits(&self, limits: ApiLimits) -> Result<(), AccumulatorLimitError> {
-        let output = Json::List(
-            self.output_items
-                .values()
-                .map(|item| Json::Object(item.clone()))
-                .collect(),
-        );
-        let mut values = vec![output];
-        values.extend(
-            self.final_patch()
-                .0
-                .into_values()
-                .filter(|value| !matches!(value, Json::Null)),
-        );
-        let known_count = values.iter().map(json_children).sum();
-        limits.check(ApiBoundariesInput::Items(ItemsBoundary { known_count }))?;
-        let known_bytes = serde_json::to_vec(&Json::List(values))?.len();
-        limits.check(ApiBoundariesInput::Json(JsonBoundary { known_bytes }))?;
-        limits.check(ApiBoundariesInput::Event(EventBoundary { known_bytes }))?;
-        Ok(())
+        let texts = self.accumulated_text.values();
+        let text = Json::List(texts.map(|text| Json::Text(text.clone())).collect());
+        check_value(&text, limits)
     }
 
     fn store_item(&mut self, item: Item) {
@@ -219,6 +203,16 @@ impl OutputAccumulator {
                 .collect(),
         )
     }
+}
+
+// the store bounds every record it loads by its bytes and by every member and element it holds
+pub(super) fn check_value(value: &Json, limits: ApiLimits) -> Result<(), AccumulatorLimitError> {
+    let known_count = json_children(value);
+    let known_bytes = serde_json::to_vec(value)?.len();
+    limits.check(ApiBoundariesInput::Items(ItemsBoundary { known_count }))?;
+    limits.check(ApiBoundariesInput::Json(JsonBoundary { known_bytes }))?;
+    limits.check(ApiBoundariesInput::Event(EventBoundary { known_bytes }))?;
+    Ok(())
 }
 
 // the store counts one item for every object member and array element it decodes

@@ -2,6 +2,8 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use thiserror::Error;
 
+use self::TerminalKind::{Cancelled, Completed, Failed, Incomplete};
+
 type Fields = IndexMap<String, Json>;
 
 // the ResponsesAPIResponse fields a terminal event copies into the final update
@@ -77,10 +79,11 @@ impl PollEvent {
             return Err(PollEventError::NotObject);
         };
         let name = text_field(fields, "type")?.unwrap_or_default();
-        if let Some(kind) = terminal_kind(&name) {
-            return Ok(Self::Terminal(terminal_of(kind, fields)?));
-        }
         match name.as_str() {
+            "response.completed" => Ok(Self::Terminal(terminal_of(Completed, fields)?)),
+            "response.failed" => Ok(Self::Terminal(terminal_of(Failed, fields)?)),
+            "response.incomplete" => Ok(Self::Terminal(terminal_of(Incomplete, fields)?)),
+            "response.cancelled" => Ok(Self::Terminal(terminal_of(Cancelled, fields)?)),
             "response.output_item.added" => Ok(Self::OutputItemAdded(item_of(fields)?)),
             "response.output_item.done" => Ok(Self::OutputItemDone(item_of(fields)?)),
             "response.content_part.added" => Ok(Self::ContentPartAdded(
@@ -100,16 +103,6 @@ impl PollEvent {
             "response.in_progress" => Ok(Self::InProgress),
             _ => Ok(Self::Unknown),
         }
-    }
-}
-
-fn terminal_kind(name: &str) -> Option<TerminalKind> {
-    match name {
-        "response.completed" => Some(TerminalKind::Completed),
-        "response.failed" => Some(TerminalKind::Failed),
-        "response.incomplete" => Some(TerminalKind::Incomplete),
-        "response.cancelled" => Some(TerminalKind::Cancelled),
-        _ => None,
     }
 }
 
@@ -198,10 +191,13 @@ fn terminal_of(kind: TerminalKind, fields: &Fields) -> Result<Terminal, PollEven
 }
 
 fn terminal_fields(response: &Fields) -> Fields {
-    let mut fields = IndexMap::with_capacity(TERMINAL_FIELDS.split(' ').count());
-    for name in TERMINAL_FIELDS.split(' ') {
-        let value = response.get(name).cloned().unwrap_or(Json::Null);
-        fields.insert(name.to_owned(), value);
-    }
-    fields
+    TERMINAL_FIELDS
+        .split(' ')
+        .map(|name| {
+            (
+                name.to_owned(),
+                response.get(name).cloned().unwrap_or(Json::Null),
+            )
+        })
+        .collect()
 }

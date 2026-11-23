@@ -187,9 +187,16 @@ impl RecordingCache {
         self.written.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn seed(&self, source: &str) {
+    pub(super) fn seed(&self, source: &str) {
         self.entries()
             .insert(get_cache_key(POLLING_ID), source.to_owned());
+    }
+
+    pub(super) fn last_write_bytes(&self) -> Vec<u8> {
+        self.written()
+            .last()
+            .map(|text| text.clone().into_bytes())
+            .expect("the worker wrote the record")
     }
 
     pub(super) fn writes(&self) -> Vec<Json> {
@@ -337,6 +344,10 @@ pub(super) fn request_data() -> IndexMap<String, Json> {
 
 pub(super) fn json(source: &str) -> Json {
     serde_json::from_str(source).expect("the fixture is JSON")
+}
+
+pub(super) fn seeded_response() -> Json {
+    json(SEED)
 }
 
 pub(super) fn frames(events: &[&str]) -> Vec<Vec<u8>> {
