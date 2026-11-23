@@ -5,7 +5,7 @@ use crate::api::responses_poll_state::record::PollPatch;
 
 use super::UPDATE_INTERVAL;
 use super::clock::PollClock;
-use super::event::{PollEvent, PollEventError, TERMINAL_FIELDS, Terminal};
+use super::event::{Item, PollEvent, PollEventError, TERMINAL_FIELDS, Terminal};
 
 #[derive(Debug, Default)]
 pub struct OutputAccumulator {
@@ -34,60 +34,86 @@ impl OutputAccumulator {
     pub fn apply(&mut self, event: PollEvent) -> Result<(), PollEventError> {
         match event {
             PollEvent::OutputItemAdded(item) | PollEvent::OutputItemDone(item) => {
-                if let Some(id) = item.id {
-                    self.output_items.insert(id, item.value);
-                    self.dirty = true;
-                }
+                self.store_item(item);
             }
-            PollEvent::ContentPartAdded(item_id, part) => {
-                if let Some(id) = item_id
-                    && let Some(item) = self.output_items.get_mut(&id)
-                {
-                    let mut parts = match item.get("content") {
-                        Some(Json::List(parts)) => parts.clone(),
-                        Some(_) | None => Vec::new(),
-                    };
-                    parts.push(part);
-                    item.insert(String::from("content"), Json::List(parts));
-                    self.dirty = true;
-                }
-            }
+            PollEvent::ContentPartAdded(item_id, part) => self.add_part(item_id, part),
             PollEvent::ContentPartDone(item_id, part, content_index) => {
-                if let Some(id) = item_id
-                    && let Some(item) = self.output_items.get_mut(&id)
-                {
-                    // the source compares enumerate positions, so a negative index replaces nothing
-                    if let Ok(position) = usize::try_from(content_index)
-                        && let Some(Json::List(parts)) = item.get_mut("content")
-                        && let Some(slot) = parts.get_mut(position)
-                    {
-                        *slot = part;
-                    }
-                    self.dirty = true;
-                }
+                self.end_part(item_id, part, content_index);
             }
             PollEvent::OutputTextDelta(item_id, content_index, delta) => {
-                if let Some(id) = item_id
-                    && let Some(item) = self.output_items.get_mut(&id)
-                {
-                    let accumulated = self
-                        .accumulated_text
-                        .entry((id, content_index))
-                        .or_default();
-                    accumulated.push_str(&delta);
-                    let text = accumulated.clone();
-                    if let Some(Json::List(parts)) = item.get_mut("content")
-                        && let Some(position) = part_index(content_index, parts.len())?
-                        && let Some(Json::Object(part)) = parts.get_mut(position)
-                    {
-                        part.insert(String::from("text"), Json::Text(text));
-                    }
-                    self.dirty = true;
-                }
+                self.add_delta(item_id, content_index, &delta)?;
             }
             PollEvent::Terminal(terminal) => self.apply_terminal(terminal),
             PollEvent::InProgress | PollEvent::Unknown => {}
         }
+        Ok(())
+    }
+
+    fn store_item(&mut self, item: Item) {
+        if let Some(id) = item.id {
+            self.output_items.insert(id, item.value);
+            self.dirty = true;
+        }
+    }
+
+    fn add_part(&mut self, item_id: Option<String>, part: Json) {
+        let Some(id) = item_id else {
+            return;
+        };
+        let Some(item) = self.output_items.get_mut(&id) else {
+            return;
+        };
+        let mut parts = match item.get("content") {
+            Some(Json::List(parts)) => parts.clone(),
+            Some(_) | None => Vec::new(),
+        };
+        parts.push(part);
+        item.insert(String::from("content"), Json::List(parts));
+        self.dirty = true;
+    }
+
+    fn end_part(&mut self, item_id: Option<String>, part: Json, content_index: i64) {
+        let Some(id) = item_id else {
+            return;
+        };
+        let Some(item) = self.output_items.get_mut(&id) else {
+            return;
+        };
+        // the source compares enumerate positions, so a negative index replaces nothing
+        if let Ok(position) = usize::try_from(content_index)
+            && let Some(Json::List(parts)) = item.get_mut("content")
+            && let Some(slot) = parts.get_mut(position)
+        {
+            *slot = part;
+        }
+        self.dirty = true;
+    }
+
+    fn add_delta(
+        &mut self,
+        item_id: Option<String>,
+        content_index: i64,
+        delta: &str,
+    ) -> Result<(), PollEventError> {
+        let Some(id) = item_id else {
+            return Ok(());
+        };
+        let Some(item) = self.output_items.get_mut(&id) else {
+            return Ok(());
+        };
+        let accumulated = self
+            .accumulated_text
+            .entry((id, content_index))
+            .or_default();
+        accumulated.push_str(delta);
+        let text = accumulated.clone();
+        if let Some(Json::List(parts)) = item.get_mut("content")
+            && let Some(position) = part_index(content_index, parts.len())?
+            && let Some(Json::Object(part)) = parts.get_mut(position)
+        {
+            part.insert(String::from("text"), Json::Text(text));
+        }
+        self.dirty = true;
         Ok(())
     }
 
@@ -105,7 +131,8 @@ impl OutputAccumulator {
 
     #[must_use]
     pub fn final_patch(&self) -> PollPatch {
-        let mut fields = IndexMap::with_capacity(TERMINAL_FIELDS.split(' ').count() + 2);
+        let capacity = TERMINAL_FIELDS.split(' ').count().saturating_add(2);
+        let mut fields = IndexMap::with_capacity(capacity);
         let status = Json::Text(self.final_status().to_owned());
         fields.insert(String::from("status"), status);
         let terminal = self.terminal.as_ref();

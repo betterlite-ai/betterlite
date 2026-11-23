@@ -108,6 +108,21 @@ pub(super) async fn unknown_event_flushes() -> (Scenario, Vec<String>) {
     run_chunks(chunks, &[1000, 1000, 1200]).await
 }
 
+pub(super) async fn non_text_status() -> Scenario {
+    let status = r#"{"response":{"status":5},"type":"response.completed"}"#;
+    let (scenario, _warnings) = run_chunks(support::frames(&[status]), &[1000]).await;
+    scenario
+}
+
+#[tokio::test]
+async fn non_text_terminal_status_fails_the_record() {
+    let scenario = non_text_status().await;
+    assert_failed_message(
+        &scenario,
+        "the streaming event field status is not of the declared type",
+    );
+}
+
 pub(super) fn assert_warned(warnings: &[String], needle: &str) {
     assert!(
         warnings.iter().any(|warning| warning.contains(needle)),
