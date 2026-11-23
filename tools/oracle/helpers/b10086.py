@@ -25,7 +25,7 @@ Input: TypeAlias = BearerCall | DevModeCall
 
 
 def bearer_answer(value: str) -> JsonValue:
-    strict: str = _get_bearer_token(value)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L585-L610
+    strict: str = _get_bearer_token(value)
     permissive = _get_bearer_token_or_received_api_key(value)
     return {"strict": strict, "permissive": permissive}
 
