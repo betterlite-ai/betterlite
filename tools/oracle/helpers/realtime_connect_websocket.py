@@ -28,7 +28,7 @@ AWS_FIELDS = (
 )
 TEXT = TypeAdapter(str | None)
 OBJECT = TypeAdapter(dict[str, JsonValue] | None)
-QUERY = TypeAdapter(RealtimeQueryParams)
+QUERY = TypeAdapter(RealtimeQueryParams | None)
 
 
 class Scope(TypedDict):
