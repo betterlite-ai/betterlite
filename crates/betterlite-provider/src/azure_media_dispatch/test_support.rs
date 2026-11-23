@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::future::{Future, ready};
 use std::mem::take;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -11,9 +11,6 @@ use betterlite_azure::image_transport::{ImageClock, ImageReply, ImageRequest, Im
 use betterlite_azure::transcription::call::logging::{
     AzureTranscriptionLogger, AzureTranscriptionPostCall, AzureTranscriptionPreCall,
 };
-use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
-use betterlite_config::sections::azure_url_policy::AzureCredentials;
-use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
@@ -24,12 +21,13 @@ use betterlite_openai::image_generation::logging::{
 use betterlite_openai::transcription::transport::TranscriptionTransport;
 use http::header::{HeaderMap, HeaderValue};
 
-use super::AzureMediaRequest;
-use super::call::AzureMediaOperation;
 use super::error::AzureMediaError;
-use super::execute::dispatch;
-use super::runtime::MediaRuntime;
-use crate::operation::{OperationRequest, OperationResult};
+use crate::operation::OperationResult;
+
+pub mod exchange;
+pub mod speech;
+
+use self::speech::SpeechLogging;
 
 // one scripted reply per request the transport will receive, in order
 pub struct Reply {
@@ -223,49 +221,5 @@ pub struct Outcome {
     pub result: Result<OperationResult, AzureMediaError>,
     pub fixture: Fixture,
     pub logger: Recorder,
-}
-
-pub async fn exchange(operation: AzureMediaOperation, replies: Vec<Reply>) -> Outcome {
-    exchange_request(
-        OperationRequest::AzureMedia(AzureMediaRequest),
-        operation,
-        replies,
-    )
-    .await
-}
-
-pub async fn exchange_request(
-    request: OperationRequest,
-    operation: AzureMediaOperation,
-    replies: Vec<Reply>,
-) -> Outcome {
-    let fixture = Fixture::new(replies);
-    let clock = Clock;
-    let sources = NoSources;
-    let endpoints = EndpointSettings::default();
-    let credentials = AzureCredentials::default();
-    let environment: BTreeMap<String, String> = BTreeMap::new();
-    let mut cache = Cache::default();
-    let mut logger = Recorder::default();
-    let result = {
-        let mut runtime = MediaRuntime {
-            endpoints: &endpoints,
-            credentials: &credentials,
-            environment: &environment,
-            sources: &sources,
-            refresh_enabled: false,
-            polling_timeout: Duration::from_secs(600),
-            constructor: &fixture,
-            clock: &clock,
-            transport: &fixture,
-            cache: &mut cache,
-            logger: &mut logger,
-        };
-        dispatch(request, operation, &mut runtime).await
-    };
-    Outcome {
-        result,
-        fixture,
-        logger,
-    }
+    pub speech: SpeechLogging,
 }

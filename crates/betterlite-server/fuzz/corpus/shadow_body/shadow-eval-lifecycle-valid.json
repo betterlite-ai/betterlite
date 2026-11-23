@@ -1,0 +1,1 @@
+{"api_key_ids":["seed-key"],"team_ids":["seed-team"],"user_ids":["seed-user"],"router_names":["seed-router"],"models":["seed-model"],"shadow_percentage":25.5,"duration_days":14,"max_budget":2.5,"judge_model":"seed-judge"}

@@ -17,8 +17,8 @@ use uuid::Uuid;
 pub enum AzureMediaOperation {
     ImageGeneration(Box<ImageGenerationOperation>),
     ImageEdit(Box<ImageEditOperation>),
-    OpenAiSpeech,
-    NativeSsml,
+    OpenAiSpeech(Box<OpenAiSpeechOperation>),
+    NativeSsml(Box<NativeSsmlOperation>),
     Transcription(Box<TranscriptionOperation>),
     NativeTranscription(Box<NativeTranscriptionOperation>),
 }
@@ -96,4 +96,35 @@ pub struct NativeTranscriptionOperation {
     pub api_base: Option<String>,
     pub environment_base: Option<String>,
     pub timeout: Duration,
+}
+
+// AzureChatCompletion.audio_speech's arguments: the raw call the leaf selects its client for
+pub struct OpenAiSpeechOperation {
+    pub model: String,
+    pub input: String,
+    pub voice: String,
+    pub optional_params: IndexMap<String, Json>,
+    pub aspeech: bool,
+    pub api_key: Option<SecretString>,
+    pub api_base: Option<String>,
+    pub api_version: Option<String>,
+    pub params: LiteLlmParams,
+    pub provider: Option<CallableProvider>,
+    pub supplied: Option<SuppliedClient>,
+    pub session: SessionKind,
+    pub refresh_enabled: bool,
+}
+
+// AzureAVATextToSpeechConfig.dispatch_text_to_speech's arguments: the mapped options, the caller's params and the credential the caller already resolved
+pub struct NativeSsmlOperation {
+    pub model: String,
+    pub input: String,
+    pub voice: Option<Json>,
+    pub optional_params: IndexMap<String, Json>,
+    pub litellm_params: IndexMap<String, Json>,
+    pub api_key: Option<SecretString>,
+    pub api_base: Option<String>,
+    pub timeout: Option<Duration>,
+    pub extra_headers: Option<BTreeMap<String, String>>,
+    pub aspeech: bool,
 }
