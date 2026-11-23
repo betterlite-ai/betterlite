@@ -1,7 +1,10 @@
 use std::convert::Infallible;
+use std::error::Error as _;
 
 use async_trait::async_trait;
 use axum::http::StatusCode;
+use betterlite_db::database_faults::native::native_sqlstate;
+use betterlite_db::postgres_store::diagnostics::DriverError;
 use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
@@ -63,31 +66,15 @@ impl InvitationError {
 
 // LiteLLM answers a failed insert with the database's own text, and the driver holds the server's message
 fn database_text(error: &DbError) -> String {
-    let driver = match error {
-        DbError::Backend { source }
-        | DbError::SqlState { source, .. }
-        | DbError::UniqueViolation { source, .. } => &source.driver,
-        DbError::NoDbConnected
-        | DbError::Pool { .. }
-        | DbError::InvalidRecord { .. }
-        | DbError::CreateNull => return error.to_string(),
+    let Some(diagnostics) = error
+        .source()
+        .and_then(|source| source.downcast_ref::<DriverError>())
+    else {
+        return error.to_string();
     };
-    driver.as_db_error().map_or_else(
-        || driver.to_string(),
-        |database| database.message().to_owned(),
-    )
-}
-
-// LiteLLM reads Prisma's "Foreign key constraint failed on the field" text; the driver reports SQLSTATE 23503 instead
-fn is_foreign_key_violation(error: &DbError) -> bool {
-    match error {
-        DbError::SqlState { code, .. } => code == &SqlState::FOREIGN_KEY_VIOLATION,
-        DbError::NoDbConnected
-        | DbError::Pool { .. }
-        | DbError::Backend { .. }
-        | DbError::InvalidRecord { .. }
-        | DbError::CreateNull
-        | DbError::UniqueViolation { .. } => false,
+    match diagnostics.driver.as_db_error() {
+        Some(database) => database.message().to_owned(),
+        None => error.to_string(),
     }
 }
 
@@ -116,11 +103,14 @@ pub async fn create_invitation_for_user(
         Ok(row) => row,
         Err(source) => {
             let error = backend::<Infallible>(source);
-            return Err(if is_foreign_key_violation(&error) {
-                InvitationError::UserMissing
-            } else {
-                InvitationError::Insert(error)
-            });
+            // LiteLLM reads Prisma's foreign key text; the driver reports SQLSTATE 23503 instead
+            return Err(
+                if native_sqlstate(&error) == Some(SqlState::FOREIGN_KEY_VIOLATION) {
+                    InvitationError::UserMissing
+                } else {
+                    InvitationError::Insert(error)
+                },
+            );
         }
     };
     decode_row(&row).map_err(InvitationError::Insert)
