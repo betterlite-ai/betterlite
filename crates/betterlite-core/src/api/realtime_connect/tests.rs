@@ -661,7 +661,10 @@ async fn assert_vertex_connection(
     else {
         panic!("a vertex_ai model must take the vertex branch");
     };
-    assert_eq!(settings.credential_timeout_seconds, 20.0_f64);
+    assert_eq!(
+        settings.credential_timeout_seconds.to_bits(),
+        20.0_f64.to_bits()
+    );
     assert_eq!(access_token.expose_secret(), "token-a");
     assert_eq!(project, "resolved-project");
     assert_eq!(location.as_deref(), Some("ai-location"));

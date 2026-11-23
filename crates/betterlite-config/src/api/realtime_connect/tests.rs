@@ -9,7 +9,7 @@ use crate::loader::ConfigError;
 
 use super::{
     AZURE_PROTOCOL_VARIABLE, CREDENTIAL_TIMEOUT_VARIABLE, DEFAULT_TIMEOUT_SECONDS,
-    RealtimeConnectionSettings, load_settings,
+    RealtimeConnectionSettings, default_credential_timeout, load_settings,
 };
 
 const DEFAULTS: &str =
@@ -46,7 +46,14 @@ fn loads_realtime_connection_settings() {
     assert_eq!(defaults.vertexai_project, None);
     assert_eq!(defaults.vertexai_location, None);
     assert_eq!(defaults.azure_realtime_protocol, None);
-    assert_eq!(defaults.credential_timeout_seconds, DEFAULT_TIMEOUT_SECONDS);
+    assert_eq!(
+        defaults.credential_timeout_seconds.to_bits(),
+        DEFAULT_TIMEOUT_SECONDS.to_bits()
+    );
+    assert_eq!(
+        default_credential_timeout().to_bits(),
+        DEFAULT_TIMEOUT_SECONDS.to_bits()
+    );
 }
 
 #[test]
@@ -124,7 +131,10 @@ fn assert_configured_environment_values(configured: &RealtimeConnectionSettings)
     assert_eq!(configured.vertexai_project.as_deref(), Some("env-project"));
     assert_eq!(configured.vertexai_location.as_deref(), Some("env-region"));
     assert_eq!(configured.azure_realtime_protocol.as_deref(), Some("GA"));
-    assert_eq!(configured.credential_timeout_seconds, 12.5_f64);
+    assert_eq!(
+        configured.credential_timeout_seconds.to_bits(),
+        12.5_f64.to_bits()
+    );
 }
 
 #[test]
@@ -154,7 +164,10 @@ fn loads_realtime_connection_settings_treats_empty_environment_values_as_unset()
     assert_eq!(empty.vertexai_project, None);
     assert_eq!(empty.vertexai_location, None);
     assert_eq!(empty.azure_realtime_protocol, None);
-    assert_eq!(empty.credential_timeout_seconds, DEFAULT_TIMEOUT_SECONDS);
+    assert_eq!(
+        empty.credential_timeout_seconds.to_bits(),
+        DEFAULT_TIMEOUT_SECONDS.to_bits()
+    );
 }
 
 #[test]
