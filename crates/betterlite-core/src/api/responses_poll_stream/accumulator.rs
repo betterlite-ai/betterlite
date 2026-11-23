@@ -126,7 +126,10 @@ impl OutputAccumulator {
 
     pub fn flush_forced(&mut self, clock: &dyn PollClock) -> Option<Json> {
         let now = clock.now_millis();
-        self.dirty.then(|| self.flushed(now))
+        if self.dirty {
+            return Some(self.flushed(now));
+        }
+        None
     }
 
     #[must_use]

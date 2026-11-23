@@ -70,9 +70,8 @@ impl PollRequestProcessor for ProviderProcessor {
             .processor_failure()?;
         let status = response.response.status().as_u16();
         if !(200..300).contains(&status) {
-            return Err(PollProcessorError {
-                message: format!("the provider answered with status {status}"),
-            });
+            let message = format!("the provider answered with status {status}");
+            return Err(PollProcessorError { message });
         }
         Ok(PollProcessed::Streaming(Box::new(ProviderChunks {
             body: response.body_stream(),
@@ -122,9 +121,8 @@ impl PollChunkSource for ProviderChunks {
                     self.pending.extend(self.parser.finish());
                 }
                 Some(Err(error)) => {
-                    return Err(PollProcessorError {
-                        message: format!("the provider stream failed: {error}"),
-                    });
+                    let message = format!("the provider stream failed: {error}");
+                    return Err(PollProcessorError { message });
                 }
                 Some(Ok(bytes)) => {
                     let payloads = self.parser.push(&bytes).processor_failure()?;
