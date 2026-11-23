@@ -146,11 +146,6 @@ fn metric_sample(
     }
 }
 
-// an observation count, spelled as floatToGoString spells an integer bucket count
-fn count_text(count: u64) -> String {
-    float_to_go_string(Decimal::from(count).to_f64().unwrap_or(f64::NAN))
-}
-
 fn counter_samples(
     description: &CollectorDescription,
     sample: &Sample,
@@ -187,7 +182,7 @@ fn bucket_sample(
         description,
         "_bucket",
         bucket_labels,
-        count_text(count),
+        float_to_go_string(Decimal::from(count).to_f64().unwrap_or(f64::NAN)),
         false,
     )
 }
@@ -208,7 +203,7 @@ fn histogram_samples(
         description,
         "_count",
         labels.clone(),
-        count_text(last_count),
+        float_to_go_string(Decimal::from(last_count).to_f64().unwrap_or(f64::NAN)),
         false,
     ));
     if description
