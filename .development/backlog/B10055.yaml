@@ -1,0 +1,14 @@
+id: B10055
+milestone: M8 platform
+title: Periodic reload state
+status: done
+depends_on: [B194]
+file: tasks/B10055-periodic-reload-state.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B124
+split_from: B8385
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3038

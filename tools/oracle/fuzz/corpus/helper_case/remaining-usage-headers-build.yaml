@@ -1,0 +1,12 @@
+kind: helper
+name: remaining-usage-headers-build
+call:
+  b10046:
+    function: build
+    itpm: 100
+    otpm: null
+    current_itpm: 150
+    current_otpm: null
+    now: 119
+env: {}
+compare: {ignore: []}

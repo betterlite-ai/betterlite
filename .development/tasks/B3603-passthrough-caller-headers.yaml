@@ -6,8 +6,8 @@ description: >-
   Build `get_litellm_virtual_key` to extract and format the API key from request
   headers, prioritizing `x-litellm-api-key` over Authorization. Implement `_normalize_credential_value`
   to strip authentication scheme prefixes (Bearer, Basic, AWS4-HMAC-SHA256) from header values,
-  reusing B756's `_get_bearer_token` helper so header comparison strips exactly the schemes
-  that `user_api_key_auth` accepts. Build JWT validation through `_is_authenticated_caller_jwt`,
+  reusing B10086's `get_bearer_token` (betterlite-auth bearer_credentials) so header comparison strips exactly the schemes
+  that `user_api_key_auth` accepts; None or an empty key both fall back to the original value. Build JWT validation through `_is_authenticated_caller_jwt`,
   comparing unverified claims (excluding B760's internal claims) with stored claims. Build
   `_is_authenticated_caller_secret` to determine if a header value is the master key, the JWT
   that authenticated the request, or the stored API key, with fallback to always-false in no-auth
@@ -248,8 +248,8 @@ out_of_scope:
   The JWTHandler.get_unverified_claims method and LITELLM_INTERNAL_CLAIMS constant
   are owned by B760; this task uses them for JWT validation without implementing them.
 - >-
-  The _get_bearer_token and is_no_auth_dev_mode functions are owned by B756;
-  this task calls them for credential normalization and no-auth mode detection.
+  The _get_bearer_token and is_no_auth_dev_mode functions are owned by B10086 (betterlite-auth
+  bearer_credentials and dev_auth_mode); this task calls them for credential normalization and no-auth mode detection.
 - >-
   The _safe_get_request_headers function is owned by B1100; this task calls it
   to read incoming headers with safe fallback.
