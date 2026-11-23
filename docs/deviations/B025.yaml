@@ -10,4 +10,9 @@ deviations:
     why: >-
       No LiteLLM setup completes such a call, so nothing can depend on the failure; the typed text branch keeps the token as an auth credential and azure_text_dispatch proves the header.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L79-L83"
+  - what: >-
+      A non-streaming Azure chat answered through betterlite's Python SDK path carries the model the caller requested, where litellm.completion on a non-o-series Azure deployment returns the model the upstream response names.
+    why: >-
+      betterlite's adapter has one chat decode shared by the proxy route and the Python SDK path, and the proxy forces the requested model onto every chat reply, which the HTTP oracle case compares; the fixture dispatch keeps reply_provider so the SDK-shaped oracle helper cases still see azure/<model>.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L731-L736"
 kept_bugs: []
