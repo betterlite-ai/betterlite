@@ -1,0 +1,104 @@
+kind: probe
+name: shadow-eval-results-deleted-target-labels
+probes:
+- clock:
+    unix_millis: 1700000000000
+    monotonic_millis: 0
+  samples: []
+  operation:
+    shadow_eval_results:
+      now_millis: 1700000000000
+      jobs:
+      - id: lab-key-live
+        group_id: lab
+        target_type: key
+        target_id: k-live
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: lab-key-gone
+        group_id: lab
+        target_type: key
+        target_id: k-gone
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: lab-team-live
+        group_id: lab
+        target_type: team
+        target_id: t-live
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: lab-team-gone
+        group_id: lab
+        target_type: team
+        target_id: t-gone
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: lab-user-live
+        group_id: lab
+        target_type: user
+        target_id: u-live
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: lab-user-gone
+        group_id: lab
+        target_type: user
+        target_id: u-gone
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      rows:
+        keys:
+        - target_id: k-live
+          target_alias: prod-key
+          key_name: sk-...abcd
+        teams:
+        - target_id: t-live
+          target_alias: Team One
+        users:
+        - target_id: u-live
+          target_alias: user@example.com
+      steps:
+      - list:
+          role: proxy_admin
+          store: true
+          query: ''
+      - detail:
+          role: proxy_admin
+          store: true
+          job_id: lab
+      errors: []
+      by_tier: []
+      by_model: []
+      by_leg: []
+      by_router: []
+compare:
+  ignore: []
