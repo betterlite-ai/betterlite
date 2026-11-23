@@ -1,5 +1,6 @@
 use std::sync::atomic::Ordering;
 
+use super::frame_selection;
 use super::support::{self, Answer, AnswerStep, Scenario};
 
 const ITEM_ADDED: &str =
@@ -30,12 +31,9 @@ pub(super) async fn flushed_stream() -> Scenario {
 #[tokio::test]
 async fn flush_stays_quiet_without_dirty_output() {
     let unknown = r#"{"type":"response.something_else"}"#;
-    let steps: Vec<AnswerStep> = support::frames(&[ITEM_ADDED, unknown])
-        .into_iter()
-        .map(AnswerStep::Chunk)
-        .collect();
-    let mut scenario = support::scenario(&[1000, 1200, 1400], Answer::Streaming(steps));
-    scenario.run().await.expect("the worker completes");
+    let chunks = support::frames(&[ITEM_ADDED, unknown]);
+    let (scenario, _warnings) =
+        frame_selection::run_chunks(chunks, &[1000, 1200, 1400, 1400]).await;
     let writes = scenario.cache.writes();
     assert_eq!(writes.len(), 3);
     assert_eq!(support::text(&writes[0], "status"), "in_progress");
