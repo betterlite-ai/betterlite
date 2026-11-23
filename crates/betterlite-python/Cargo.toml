@@ -49,5 +49,6 @@ workspace = true
 [package.metadata.typos.default.extend-words]
 ACN = "ACN"
 NIN = "NIN"
+acount = "acount"
 initalization = "initalization"
 asend = "asend"

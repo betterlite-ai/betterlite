@@ -1,0 +1,32 @@
+kind: probe
+name: shadow-eval-validation-forward-only-model-scope
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_validation:
+        router:
+          - model_name: judge-model
+            litellm_params: {model: openai/gpt-4o-mini, api_key: sk-test}
+          - model_name: tier-model
+            litellm_params: {model: anthropic/claude-sonnet-5, api_key: sk-test}
+          - model_name: shadow-router
+            litellm_params:
+              model: auto_router/complexity_router
+              complexity_router_default_model: tier-model
+        rows:
+          teams:
+            - team-1
+        steps:
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"models":["tier-model"],"direction":"reverse","baseline_model":"tier-model","shadow_percentage":50}'
+          - parse:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"models":["tier-model"],"shadow_percentage":50}'
+          - validate_start:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"models":["not-a-model"],"judge_model":"judge-model","shadow_percentage":50}'
+          - validate_start:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"models":["tier-model"],"judge_model":"judge-model","shadow_percentage":50}'
+          - validate_start:
+              text: '{"team_ids":["team-1"],"router_names":["shadow-router"],"models":["anthropic/claude-sonnet-5"],"judge_model":"judge-model","shadow_percentage":50}'
+compare:
+  ignore: []

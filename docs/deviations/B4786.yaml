@@ -1,0 +1,53 @@
+task: B4786
+deviations:
+  - what: >-
+      A failure reading the agents table while resolving a kill switch answers 500 with a detail text.
+      LiteLLM's kill switch route has no try/except around _resolve_agent_kill_switch, so the Prisma
+      exception escapes into the proxy's generic Exception handler and the body is an OpenAI-style
+      error object.
+    why: >-
+      The route reports failures through B4781's IdentityAdminError, the shape its sibling agent routes
+      already answer with, and the status stays 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1114-L1116
+  - what: >-
+      make_agent_public and make_agents_public answer updated_by as an empty string for a caller with no
+      user_id. LiteLLM returns user_api_key_dict.user_id there, which can be null, and AgentMakePublicResponse
+      declares updated_by as a str, so FastAPI raises a response validation error after the config was
+      already saved and the memory list already replaced.
+    why: >-
+      A mutation that succeeded but whose response cannot serialize is a bug no working setup relies on;
+      the empty string keeps the declared str type and lets the caller see the change it made.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1324
+  - what: >-
+      An agent found only in the agents table is projected to its agent_id, agent_name and stored
+      kill_switch. LiteLLM converts the whole row with AgentResponse(**agent.model_dump()), which answers
+      500 for a row the model rejects.
+    why: >-
+      These routes read only the id, the name and the kill switch, so the projection cannot fail on the
+      columns they never look at.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1187-L1189
+  - what: >-
+      A 500 raised from a failed config read or save carries the config port's own error text. LiteLLM
+      answers str(e) of the Python exception.
+    why: >-
+      Error text is betterlite's own, the port's typed error rather than Python's; the status and the
+      {"detail": ...} body shape match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1224-L1226
+  - what: >-
+      The public-discovery routes check the caller's role before the config store is touched. LiteLLM
+      loads the config first on the bulk route and after the agent lookup on the single route, so a
+      config read that raises becomes a 500 there and a 403 for a non-admin here.
+    why: >-
+      Config persistence is a port that reads as part of saving, so the role check runs first; a working
+      config store never fails, and no setup observes the order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1282-L1290
+kept_bugs:
+  - what: >-
+      A bulk replacement whose save_config fails leaves litellm.public_agent_groups holding the new list
+      while the config still holds the old one. betterlite copies this because the route replaces memory
+      before it saves the config, the reverse of the single-agent append.
+    why: >-
+      The task requires LiteLLM's memory-then-config order for bulk and its config-then-memory order for
+      the single append, and a retry after the config store recovers observes the replaced list; saving
+      first would change the write order the route promises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1306-L1315

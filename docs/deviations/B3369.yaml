@@ -26,13 +26,15 @@ deviations:
       registry seam is the one B3361 and B3368 already use.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L220-L226
   - what: >-
-      An unknown custom_llm_provider is this module's UnknownProvider error, "<name>" is not a
-      provider betterlite knows, instead of LiteLLM's ValueError("<name> is not a valid
-      LlmProviders"). Both reach B185 with model "" and no status code, so both are the same
-      ApiConnection class; only the message differs.
+      A BadRequest (400) with model "" and the caller's provider answers an unknown custom_llm_provider
+      and a known provider without a container config. LiteLLM's ValueError for an unknown LlmProviders
+      name and for a missing container config goes through exception_type as an APIConnectionError
+      (500).
     why: >-
-      The provider set is betterlite's own ProviderId enum, and its parse failure names the value the
-      caller gave.
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client
+      the server broke when its own request was wrong. Betterlite's ProviderId enum parse names the
+      unknown value, and ContainerOperation::missing sends create to Unsupported and list to
+      ConfigMissing, the two wordings LiteLLM raises at main.py L226 and L444.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L220-L226
   - what: >-
       The timeout is an Option<f64> field: an explicit none or zero takes the request timeout, and a

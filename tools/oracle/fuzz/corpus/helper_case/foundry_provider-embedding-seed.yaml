@@ -1,0 +1,15 @@
+kind: helper
+name: foundry-provider-embedding-seed
+call:
+  foundry_provider:
+    inputs:
+      - op: embedding
+        api_base: https://res.services.ai.azure.com
+        api_key: sk-foundry-fixture
+        globals:
+          api_base: null
+          api_key: null
+          headers: null
+        environment: {}
+env: {}
+compare: {ignore: []}

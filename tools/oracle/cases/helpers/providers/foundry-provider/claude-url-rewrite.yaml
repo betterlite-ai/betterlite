@@ -1,0 +1,22 @@
+{
+  "kind": "helper",
+  "name": "claude-url-rewrite",
+  "call": {
+    "foundry_provider": {
+      "inputs": [
+        {"op": "rewrite", "base": "https://res.services.ai.azure.com"},
+        {"op": "rewrite", "base": "https://res.services.ai.azure.com/"},
+        {"op": "rewrite", "base": "https://res.services.ai.azure.com/anthropic"},
+        {"op": "rewrite", "base": "https://res.services.ai.azure.com/anthropic/"},
+        {"op": "rewrite", "base": "https://res.services.ai.azure.com/anthropic/v1/messages"},
+        {"op": "rewrite", "base": "https://res.services.ai.azure.com/anthropic/v1/messages/"},
+        {"op": "rewrite", "base": "https://res.services.ai.azure.com/anthropic/v1/messages/extra"},
+        {"op": "rewrite", "base": "https://azure.example.com/custom/anthropic/models"},
+        {"op": "rewrite", "base": "https://azure.example.com/anthropic-proxy"},
+        {"op": "rewrite", "base": "https://azure.example.com/v1/messages"}
+      ]
+    }
+  },
+  "env": {"LITELLM_RUST": "false", "LITELLM_LOCAL_MODEL_COST_MAP": "true"},
+  "compare": {"ignore": []}
+}

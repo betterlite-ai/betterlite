@@ -1,0 +1,25 @@
+kind: helper
+name: key-events-audit-api-key-versus-token
+call:
+  key_events:
+    event: rotated
+    data: {key: sk-old-token-value, key_alias: requested-alias}
+    response: {key: sk-new-rotated-value, token_id: "", key_alias: "", spend: 0.5}
+    row: {token: "", key_alias: old-alias, team_id: null}
+    rows: []
+    caller: {user_id: user-a, api_key: sk-caller-api-key, token: sk-caller-token, metadata: {allow_litellm_changed_by_header: true}, team_metadata: null}
+    changed_by: header-user
+    admin_name: proxy-admin
+    audit: true
+    now: "2026-01-02T03:04:05Z"
+    id: "00000000-0000-4000-8000-000000000788"
+    settings: {store_virtual_keys: true, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+    client: true
+    runtime: ready
+    teams: {}
+    secrets: {}
+    failing: []
+    alerting: []
+calls: []
+env: {}
+compare: {ignore: []}

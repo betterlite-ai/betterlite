@@ -112,6 +112,7 @@ description: >-
   provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
+  - "crates/betterlite-provider/src/provider/tests.rs"
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/foundry_dispatch.rs
   - crates/betterlite-provider/src/foundry_dispatch/**

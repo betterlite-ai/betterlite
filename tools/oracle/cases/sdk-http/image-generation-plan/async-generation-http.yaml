@@ -1,0 +1,19 @@
+kind: sdk_http
+name: image-generation-plan-async-generation-http
+env: {}
+call:
+  image_generation_plan:
+    sync_mode: async
+    call:
+      model: openai/dall-e-2
+      prompt: cat
+      api_key: sk-test
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {created: 1, data: [{b64_json: YQ==}]}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

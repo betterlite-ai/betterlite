@@ -1,0 +1,8 @@
+kind: helper
+name: startup-checks-baseline-json-string-row
+call:
+  b8373:
+    operation: baseline_row
+    row: '{"deployment-a": "a1b2c3", "deployment-b": "b2c3d4", "deployment-c": "c3d4e5", "deployment-d": "d4e5f6", "deployment-e": "e5f6a7"}'
+env: {}
+compare: {ignore: []}
