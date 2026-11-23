@@ -28,6 +28,13 @@ def call_lookup(method: NativeCall, request: dict[str, JsonValue]) -> str:
     return answer
 
 
+def _send(
+    method: NativeCall, request: dict[str, JsonValue]
+) -> tuple[str, str, str | None, str | None]:
+    answer = call_lookup(method, request)
+    return RESULT.validate_json(answer)
+
+
 def get_llm_provider(
     model: str | None,
     custom_llm_provider: str | None = None,
@@ -51,8 +58,7 @@ def get_llm_provider(
         "api_base": TEXT.validate_python(api_base),
         "api_key": TEXT.validate_python(api_key),
     }
-    answer = call_lookup(NativeProviders(provider_settings()).get_llm_provider, request)
-    return RESULT.validate_json(answer)
+    return _send(NativeProviders(provider_settings()).get_llm_provider, request)
 
 
 # ast-grep-ignore: no-long-names
@@ -96,11 +102,13 @@ def _get_openai_compatible_provider_info(
     # litellm_params is read only for bedrock_mantle, whose defaults the Rust tables resolve
     if litellm_params is not None:
         LOGGER.debug("litellm_params is not used by the OpenAI-compatible provider lookup")
-    request: dict[str, JsonValue] = {
-        "model": TEXT.validate_python(model),
-        "api_base": TEXT.validate_python(api_base),
-        "api_key": TEXT.validate_python(api_key),
-        "dynamic_api_key": TEXT.validate_python(dynamic_api_key),
-    }
-    answer = call_lookup(NativeProviders(provider_settings()).openai_compatible_info, request)
-    return RESULT.validate_json(answer)
+    fields: list[tuple[str, str | None]] = [
+        ("model", model),
+        ("api_base", api_base),
+        ("api_key", api_key),
+        ("dynamic_api_key", dynamic_api_key),
+    ]
+    request: dict[str, JsonValue] = {}
+    for name, value in fields:
+        request[name] = TEXT.validate_python(value)
+    return _send(NativeProviders(provider_settings()).openai_compatible_info, request)
