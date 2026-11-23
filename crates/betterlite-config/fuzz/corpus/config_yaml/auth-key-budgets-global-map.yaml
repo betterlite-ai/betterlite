@@ -1,0 +1,5 @@
+litellm_settings:
+  default_key_max_budget_alert_emails:
+    "80":
+      - owner@example.com
+    "90": last@example.com
