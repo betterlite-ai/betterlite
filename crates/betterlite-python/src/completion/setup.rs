@@ -1,3 +1,4 @@
+mod tests;
 use super::error::SessionError;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{Config, GeneralSettings, LiteLlmSettings, ProxyTrust};
