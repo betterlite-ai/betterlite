@@ -6,7 +6,6 @@ from typing import Final, Protocol
 
 import pytest
 from pydantic import JsonValue
-from typing_extensions import override
 
 from betterlite._cache_ops import CacheOperations
 from betterlite._cache_ops.types import CacheStore
@@ -123,6 +122,9 @@ LITELLM_EMBEDDING: EmbeddingModule = importlib.import_module("litellm")
 
 
 class RecordingBackend:
+    fail_read = False
+    fail_write = False
+
     def __init__(self) -> None:
         self.values: dict[str, JsonValue] = {}
         self.calls: list[tuple[str, str]] = []
@@ -132,11 +134,15 @@ class RecordingBackend:
         self.disconnected = False
 
     def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue:
+        if self.fail_read:
+            raise RuntimeError(FAILURE_TEXT)
         self.calls.append(("get_cache", key))
         self.arguments.append(dict(kwargs))
         return self.values.get(key)
 
     def set_cache(self, key: str, value: JsonValue, **_kwargs: JsonValue) -> None:
+        if self.fail_write:
+            raise RuntimeError(FAILURE_TEXT)
         self.calls.append(("set_cache", key))
         self.values[key] = value
 
@@ -174,15 +180,11 @@ class RecordingBackend:
 
 
 class FailingBackend(RecordingBackend):
-    @override
-    def set_cache(self, _key: str, _value: JsonValue, **_kwargs: JsonValue) -> None:
-        raise RuntimeError(FAILURE_TEXT)
+    fail_write = True
 
 
 class FailingReadBackend(RecordingBackend):
-    @override
-    def get_cache(self, _key: str, **_kwargs: JsonValue) -> JsonValue:
-        raise RuntimeError(FAILURE_TEXT)
+    fail_read = True
 
 
 class Cache(CacheOperations):
