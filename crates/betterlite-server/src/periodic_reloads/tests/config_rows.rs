@@ -18,6 +18,7 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::reload_schedule::RELOAD_CONFIG_PARAM_NAME;
 use betterlite_db::reload_schedule::evictor::{ConfigParamEvictor, EvictFuture};
 use betterlite_db::reload_schedule::store::ScheduleDeadlines;
+use betterlite_db::table_ops::access::CONFIG_ATTRIBUTE;
 use betterlite_db::table_ops::{
     ConfigParamInvalidator, FailureFuture, FailureSink, InvalidateFuture, TableFailureEvent,
     TableOps, TablePorts, TableSettings,
@@ -94,10 +95,10 @@ impl DatabaseClient for TableClient {
     type Attribute = Pool;
 
     fn attribute(&self, name: &str) -> Result<Option<Attribute<Pool>>, Infallible> {
-        let known = ["litellm_config"];
-        Ok(known
-            .contains(&name)
-            .then(|| Attribute::Model(self.pool.clone())))
+        if name == CONFIG_ATTRIBUTE {
+            return Ok(Some(Attribute::Model(self.pool.clone())));
+        }
+        Ok(None)
     }
 
     fn token_refresh_enabled(&self) -> bool {
