@@ -64,7 +64,10 @@ impl AzureMediaError {
             Self::Transport(error) => error.status_code(),
             Self::Transcription(error) => error.status(),
             Self::Native(error) => error.status(),
-            Self::Speech(error) => error.status(),
+            Self::Speech(error) => {
+                let (_class, status) = error.kind();
+                status
+            }
             Self::EditStatus { status, .. } => Some(*status),
             Self::HeaderName { .. }
             | Self::HeaderValue { .. }

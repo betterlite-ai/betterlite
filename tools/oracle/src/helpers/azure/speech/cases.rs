@@ -169,7 +169,9 @@ fn record_view(record: &HandlerRecord, answer: &Value, error: &Value) -> Value {
 
 fn probe_view(scenario: &ProbeScenario) -> HelperResult {
     if matches!(scenario.outcome, Outcome::InvalidCompletion) {
-        let error = AzureSpeechError::InvalidCompletion;
+        let error = finish_probe(None)
+            .err()
+            .ok_or_else(|| fixture_failure("no reply"))?;
         return Ok(probe_answer(&Value::Null, &Value::Null, Some(&error)));
     }
     let request = match probe_request(&probe_call(scenario)) {
@@ -255,10 +257,10 @@ fn request_body(body: &RequestBody) -> Result<Value, Box<HelperError>> {
 
 // A status failure is compared as the SDK's status code; any other failure as its class and message.
 fn error_view(error: &AzureSpeechError) -> Value {
-    error.status().map_or_else(
-        || json!({"class": error.class(), "message": error.to_string()}),
-        |status| json!({"status": status}),
-    )
+    match error.kind() {
+        (class, None) => json!({"class": class, "message": error.to_string()}),
+        (_class, Some(status)) => json!({"status": status}),
+    }
 }
 
 fn blocking_runtime() -> Result<Runtime, Box<HelperError>> {

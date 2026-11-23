@@ -18,8 +18,6 @@ use super::exchange;
 use super::{first_request, header, outcome_error};
 use crate::openai_media_dispatch::failure;
 
-const SPEECH_REPLY: &[u8] = b"ID3";
-
 // The two speech arms differ only in the operation they build, the credential header and the reply body they read.
 #[derive(Clone, Copy)]
 pub(super) enum Arm {
@@ -69,7 +67,7 @@ impl Arm {
 }
 
 pub(super) async fn run(input: &Input, arm: Arm) -> HelperResult {
-    let outcome = exchange(arm.operation(input), vec![speech_reply()]).await?;
+    let outcome = exchange(arm.operation(input), vec![speech_reply(arm)]).await?;
     let sent = first_request(outcome.fixture.outbound())?;
     let reply = match arm {
         Arm::OpenAi => openai_reply(&outcome.result),
@@ -103,11 +101,15 @@ fn voice_name(input: &Input) -> String {
     }
 }
 
-fn speech_reply() -> Reply {
+fn speech_reply(arm: Arm) -> Reply {
+    let answer: &[u8] = match arm {
+        Arm::OpenAi => b"ID3",
+        Arm::Native => b"AUDIO",
+    };
     Reply {
         status: 200,
         headers: HeaderMap::new(),
-        body: SPEECH_REPLY.to_vec(),
+        body: answer.to_vec(),
     }
 }
 

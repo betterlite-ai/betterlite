@@ -79,20 +79,9 @@ pub enum AzureSpeechError {
 }
 
 impl AzureSpeechError {
+    // the Python exception class each failure arrives as, and the status when the SDK raises one
     #[must_use]
-    pub fn status(&self) -> Option<u16> {
-        let (_class, status) = self.kind();
-        status
-    }
-
-    // the Python exception class each failure arrives as
-    #[must_use]
-    pub fn class(&self) -> &str {
-        let (class, _status) = self.kind();
-        class
-    }
-
-    fn kind(&self) -> (&str, Option<u16>) {
+    pub fn kind(&self) -> (&str, Option<u16>) {
         match self {
             Self::Client(error) => (error.class(), error.status()),
             Self::Status(error) => ("APIStatusError", Some(error.status)),
