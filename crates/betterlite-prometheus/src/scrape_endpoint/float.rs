@@ -12,7 +12,7 @@ pub(super) fn float_to_go_string(value: f64) -> String {
     }
     let repr = python_repr(value);
     match repr.find('.') {
-        Some(dot) if value > 0.0 && dot > 6 => {
+        Some(dot) if value.is_sign_positive() && dot > 6 => {
             let characters: Vec<char> = repr.chars().collect();
             let first = characters.first().copied().unwrap_or_default();
             let integer: String = characters.get(1..dot).unwrap_or_default().iter().collect();

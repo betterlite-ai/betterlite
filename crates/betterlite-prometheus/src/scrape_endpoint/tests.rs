@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::{Body, Bytes};
 use axum::http::{Request, StatusCode, header};
+use axum::response::Response;
+use flate2::read::GzDecoder;
 use futures_util::TryStreamExt as _;
 use futures_util::future::poll_immediate;
 use rust_decimal::Decimal;
@@ -233,6 +235,7 @@ fn text_help_and_label_values_are_escaped() {
 fn text_float_spellings_follow_python_repr_and_go_exponents() {
     assert_eq!(float_to_go_string(1.0), "1.0");
     assert_eq!(float_to_go_string(100.0), "100.0");
+    assert_eq!(float_to_go_string(100000.0), "100000.0");
     assert_eq!(float_to_go_string(0.0001), "0.0001");
     assert_eq!(float_to_go_string(1e-5), "1e-05");
     assert_eq!(float_to_go_string(1234567.0), "1.234567e+06");
@@ -659,7 +662,7 @@ async fn coalesced_stopped_render_fails_every_waiter() {
 
 // app
 
-async fn frames(response: axum::response::Response) -> Vec<Bytes> {
+async fn frames(response: Response) -> Vec<Bytes> {
     let mut stream = response.into_body().into_data_stream();
     let mut frames = Vec::new();
     while let Some(frame) = stream.try_next().await.unwrap() {
@@ -738,7 +741,7 @@ async fn app_gzip_round_trips() {
     for frame in &compressed {
         joined.extend_from_slice(frame);
     }
-    let mut decoder = flate2::read::GzDecoder::new(&joined[..]);
+    let mut decoder = GzDecoder::new(&joined[..]);
     let mut plain_body = Vec::new();
     decoder.read_to_end(&mut plain_body).unwrap();
     let mut expected = Vec::new();
@@ -797,7 +800,10 @@ async fn app_ignores_the_method_and_serves_sub_paths() {
 async fn app_reads_repeated_name_parameters() {
     let metric = gauge("in_flight", "in flight", &["model"]);
     metric.labels(&[("model", "a")]).set(finite(1));
-    let registry = Arc::new(registry_with(metric));
+    let two_metrics = CollectorRegistry::default();
+    two_metrics.register(metric).unwrap();
+    two_metrics.register(gauge("idle", "idle", &[])).unwrap();
+    let registry = Arc::new(two_metrics);
     let response = make_metrics_app(Arc::clone(&registry))
         .oneshot(
             Request::builder()

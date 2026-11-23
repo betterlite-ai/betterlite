@@ -12,6 +12,8 @@ use flate2::write::GzEncoder;
 
 use crate::collector_registry::CollectorRegistry;
 
+use encoding::openmetrics::render_openmetrics;
+
 // RESPONSE_CHUNK_SIZE_BYTES: the largest frame LiteLLM's StreamingResponse sends
 pub const RESPONSE_CHUNK_SIZE_BYTES: usize = 65_536;
 
@@ -87,9 +89,7 @@ fn media_type(part: &str) -> &str {
 pub fn render_scrape(registry: &CollectorRegistry, request: &ScrapeRequest) -> Vec<u8> {
     let rendered = match request.encoder {
         Encoder::Text => encoding::render_text(registry, &request.metric_names),
-        Encoder::OpenMetrics => {
-            encoding::openmetrics::render_openmetrics(registry, &request.metric_names)
-        }
+        Encoder::OpenMetrics => render_openmetrics(registry, &request.metric_names),
     };
     if request.gzipped {
         gzip(&rendered)
