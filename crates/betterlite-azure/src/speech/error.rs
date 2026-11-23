@@ -45,6 +45,10 @@ pub enum AzureSpeechError {
     #[error("Unable to handle auth")]
     UnableToHandleAuth,
     #[error(
+        "Must provide one of the `base_url` or `azure_endpoint` arguments, or the `AZURE_OPENAI_ENDPOINT` environment variable"
+    )]
+    MissingBase,
+    #[error(
         "The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable"
     )]
     MissingKey,
@@ -87,7 +91,7 @@ impl AzureSpeechError {
             Self::Client(error) => (error.class(), error.status()),
             Self::Status(error) => ("APIStatusError", Some(error.status)),
             Self::Handler { class, status, .. } => (class, *status),
-            Self::UnableToHandleAuth => ("ValueError", None),
+            Self::UnableToHandleAuth | Self::MissingBase => ("ValueError", None),
             Self::MissingKey => ("OpenAIError", None),
             Self::DuplicateArgument { .. } => ("TypeError", None),
             Self::ExtraBody { .. } => ("RuntimeError", None),
