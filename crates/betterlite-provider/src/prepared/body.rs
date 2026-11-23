@@ -55,9 +55,7 @@ pub(crate) fn chat_request_fields(
     let messages = requested
         .shift_remove("messages")
         .unwrap_or(JsonValue::Array(Vec::new()));
-    for key in REMOVED_KEYS {
-        requested.shift_remove(key);
-    }
+    requested.retain(|key, _value| !REMOVED_KEYS.contains(&key.as_str()));
     Ok(ChatRequestFields {
         messages,
         params: requested,
@@ -81,31 +79,50 @@ pub(crate) fn chat_fields(
     // _check_valid_arg runs before the body is built, so an unsupported name answers 400 here
     let mapping = listed_parameters(&params, &supported, model, deployment)?;
     let (drop_policy, _call_drop) = parameter_policy(&params, deployment)?;
-    let (known, forwarded): (IndexMap<String, JsonValue>, IndexMap<String, JsonValue>) = params
+    let (known, mut forwarded): (IndexMap<String, JsonValue>, IndexMap<String, JsonValue>) = params
         .into_iter()
         .partition(|(name, _value)| KNOWN_PARAMS.split(' ').any(|known| known == name));
-    let mut optional: IndexMap<String, JsonValue> = IndexMap::new();
-    for (name, value) in known {
-        // the mapping holds exactly the names the supported list or an allowed list kept
-        if mapping.standard.contains_key(&name) {
-            optional.insert(name, value);
-        }
-    }
+    let mut optional: IndexMap<String, JsonValue> = known
+        .into_iter()
+        .filter(|(name, _value)| mapping.standard.contains_key(name))
+        .collect();
     append_stream_options(request, &mut optional);
-    for (name, value) in forwarded {
-        // a provider-specific name the drop list names is not sent either, as LiteLLM's extra_body merge drops it
-        if !mapping.dropped_fields.contains(&name) {
-            optional.insert(name, value);
-        }
-    }
+    let extra = provider_extra_body(&mut forwarded, &mapping, &drop_policy);
+    optional.insert(String::from("extra_body"), JsonValue::Object(extra));
     drop_nested_paths(&mut optional, &drop_policy.additional_drop_params)?;
     let mut body: IndexMap<String, JsonValue> = IndexMap::new();
     body.insert(String::from("model"), JsonValue::Text(model.to_owned()));
     body.insert(String::from("messages"), messages);
     body.extend(optional);
+    // the OpenAI client merges extra_body into the request, so its contents go out at the top level
+    if let Some(JsonValue::Object(extra_fields)) = body.shift_remove("extra_body") {
+        body.extend(extra_fields);
+    }
     Ok(body)
 }
 
+// add_provider_specific_params_to_optional_params: the provider-specific params move under extra_body, filtered by model and the drop names, before the nested delete (utils.py L5065-L5079)
+fn provider_extra_body(
+    forwarded: &mut IndexMap<String, JsonValue>,
+    mapping: &ParameterMapping,
+    policy: &ParameterPolicy,
+) -> IndexMap<String, JsonValue> {
+    let drops = &policy.additional_drop_params;
+    if drops.iter().any(|name| name == "extra_body") {
+        return IndexMap::new();
+    }
+    let mut extra = IndexMap::new();
+    if let Some(JsonValue::Object(base)) = forwarded.shift_remove("extra_body") {
+        extra = base;
+    }
+    for (name, value) in forwarded.drain(..) {
+        if value != JsonValue::Null && !mapping.dropped_fields.contains(&name) {
+            extra.insert(name, value);
+        }
+    }
+    extra.retain(|name, _value| name != "model" && !drops.contains(name));
+    extra
+}
 // get_optional_params at the pin: the request's kwargs and the deployment's policy decide which names the provider gets.
 pub(crate) fn listed_parameters(
     fields: &IndexMap<String, JsonValue>,
