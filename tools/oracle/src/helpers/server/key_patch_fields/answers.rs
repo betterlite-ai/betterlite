@@ -95,7 +95,7 @@ fn answered<T: Serialize>(
         Ok(value) => (serde_json::to_value(value)?, None),
         Err(error) => (Value::Null, Some(error_json(&error))),
     };
-    let subjects = warnings
+    let subjects: Vec<Value> = warnings
         .iter()
         .map(|warning| Value::String((*warning).to_owned()))
         .collect();
