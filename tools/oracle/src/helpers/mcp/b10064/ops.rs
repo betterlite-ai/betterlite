@@ -10,7 +10,9 @@ use betterlite_db::stored_cipher::DbCipher;
 use betterlite_mcp::credential_contracts::byok_cache::SystemClock;
 use betterlite_mcp::sso_assertions::assertion::{SsoIdentityAssertion, decode_payload};
 use betterlite_mcp::sso_assertions::cache::{CacheState, SsoAssertionCache};
-use betterlite_mcp::sso_assertions::read::{AssertionStoreUnavailable, SsoAssertionStore};
+use betterlite_mcp::sso_assertions::read::{
+    AssertionStoreUnavailable, SsoAssertionStore, fetch_uncached,
+};
 use betterlite_mcp::sso_assertions::store::DbSsoAssertionStore;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -111,7 +113,7 @@ async fn run_step(
         }
         Step::FetchUncached { user_id } => Ok(report(
             "fetch_uncached",
-            store.fetch_uncached(user_id).await,
+            fetch_uncached(store, user_id).await,
             store,
             user_id,
         )),
