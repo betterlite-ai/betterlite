@@ -1,3 +1,6 @@
 task: B1209
-deviations: []
+deviations:
+  - what: 'An empty access-group ID list still runs the batch query with an empty array, where LiteLLM returns an empty map before touching the database.'
+    why: 'The early return only spared a query whose result is empty either way, so the branch was folded into the single query path; the mutant that removed it is equivalent and no test can kill it. Every returned value matches LiteLLM.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5448-L5449'
 kept_bugs: []
