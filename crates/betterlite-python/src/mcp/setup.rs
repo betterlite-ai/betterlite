@@ -29,7 +29,7 @@ mod tests;
 pub(crate) fn build(py: Python<'_>, wire: ClientWire) -> PyResult<ClientState> {
     let environment = process_environment();
     let mut resolved = resolve_settings(wire, &environment).map_err(PyErr::from)?;
-    let tls = tls_policy(resolved.ssl_verify.clone(), &environment).map_err(PyErr::from)?;
+    let tls = tls_policy(resolved.ssl_verify.as_ref(), &environment).map_err(PyErr::from)?;
     let proxy = proxy_policy(&environment).map_err(PyErr::from)?;
     let aws = aws_credentials(py, &mut resolved, &proxy, &tls)?;
     let runtime = SdkRuntime::new(
@@ -88,15 +88,15 @@ fn proxy_policy(
 ) -> Result<Arc<ProxyPolicy>, NativeMcpErrorPayload> {
     ProxyPolicy::resolve(&ProxyTrust::default(), environment)
         .map(Arc::new)
-        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Value, error.to_string()))
 }
 // An explicit ssl_verify is what LiteLLM's get_ssl_verify answers, so it outranks SSL_VERIFY here
 fn tls_policy(
-    explicit: Option<VerifySetting>,
+    explicit: Option<&VerifySetting>,
     environment: &BTreeMap<String, String>,
 ) -> Result<TlsPolicy, NativeMcpErrorPayload> {
     let mut config = tls_config();
-    config.litellm_settings.ssl_verify = explicit.clone();
+    config.litellm_settings.ssl_verify = explicit.cloned();
     let resolved_environment = if explicit.is_some() {
         let mut filtered = environment.clone();
         filtered.remove("SSL_VERIFY");
@@ -105,7 +105,7 @@ fn tls_policy(
         environment.clone()
     };
     TlsPolicy::resolve(&config, &resolved_environment, None)
-        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Value, error.to_string()))
 }
 async fn aws_signer(
     settings: McpSigV4Settings,
@@ -113,9 +113,8 @@ async fn aws_signer(
     tls: &TlsPolicy,
     environment: &BTreeMap<String, String>,
 ) -> Result<McpSigV4Auth, NativeMcpErrorPayload> {
-    let client = ProxiedClient::outbound_with_tls(proxy, tls).map_err(|error| {
-        NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string())
-    })?;
+    let client = ProxiedClient::outbound_with_tls(proxy, tls)
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Value, error.to_string()))?;
     let sources = AwsSources {
         environment: environment.clone().into_iter().collect(),
         filesystem: Fs::real(),
@@ -126,7 +125,7 @@ async fn aws_signer(
     };
     McpSigV4Auth::new(settings, sources)
         .await
-        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Value, error.to_string()))
 }
 fn tls_config() -> Config {
     Config {

@@ -23,9 +23,8 @@ pub(crate) fn tool_to_responses(tool: &str) -> PyResult<String> {
 #[pyfunction]
 pub(crate) fn tool_to_anthropic(tool: &str) -> PyResult<String> {
     let parsed: McpTool = convert::parse(tool)?;
-    let converted = mcp_tool_to_anthropic(&parsed).map_err(|error| {
-        NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string())
-    })?;
+    let converted = mcp_tool_to_anthropic(&parsed)
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Value, error.to_string()))?;
     convert::encode(&converted).map_err(PyErr::from)
 }
 // _normalize_mcp_input_schema fills in type and properties; a null schema normalizes like an empty one

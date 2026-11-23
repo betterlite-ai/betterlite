@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::pending;
 use std::time::Duration;
 
 use betterlite_mcp::client::sdk_transport::error::SdkError;
@@ -8,9 +9,10 @@ use betterlite_mcp::client::tools::result::{ToolCallResult, error_text_result};
 use betterlite_mcp::tools::pagination::{LoadedTool, Page, ToolError};
 use betterlite_mcp::tools::schemas::McpTool;
 use betterlite_prompts::arguments::json::Object;
+use tokio::time::timeout;
 
 use super::{closed_payload, finish};
-use crate::mcp::convert::{NativeMcpErrorPayload, session_payload, tool_failure};
+use crate::mcp::convert::{session_payload, tool_failure};
 
 fn failure(code: i32) -> SessionError<SdkError> {
     SessionError::Protocol(McpFailure {
@@ -42,7 +44,7 @@ fn session_page_answer_keeps_the_cursor_name() {
 #[test]
 fn session_page_error_keeps_its_code() {
     let payload = finish::<Page, _>(Err(failure(-32603)), session_payload).unwrap_err();
-    assert_eq!(payload.code, Some(-32603));
+    assert_eq!(payload.code, Some(-32_603_i32));
     assert_eq!(payload.message, "denied");
 }
 
@@ -56,7 +58,7 @@ fn session_call_answer_carries_the_result() {
 fn session_call_error_is_a_payload() {
     let outcome: Result<ToolCallResult, _> = Err(failure(-32000));
     let payload = finish(outcome, session_payload).unwrap_err();
-    assert_eq!(payload.code, Some(-32000));
+    assert_eq!(payload.code, Some(-32_000_i32));
 }
 
 #[test]
@@ -71,14 +73,12 @@ fn session_tools_session_error_is_a_payload() {
     let payload =
         finish::<Vec<LoadedTool>, _>(Err(ToolError::Session(failure(-32602))), tool_failure)
             .unwrap_err();
-    assert_eq!(payload.code, Some(-32602));
+    assert_eq!(payload.code, Some(-32_602_i32));
 }
 
 #[tokio::test]
 async fn session_tools_timeout_is_a_timeout_payload() {
-    let elapsed = tokio::time::timeout(Duration::ZERO, std::future::pending::<()>())
-        .await
-        .unwrap_err();
+    let elapsed = timeout(Duration::ZERO, pending::<()>()).await.unwrap_err();
     let payload =
         finish::<Vec<LoadedTool>, _>(Err(ToolError::Timeout(elapsed)), tool_failure).unwrap_err();
     assert!(payload.message.contains("timed out"));
@@ -94,12 +94,12 @@ fn session_output_answer_carries_the_result() {
 fn session_output_error_is_a_payload() {
     let outcome: Result<ToolCallResult, _> = Err(ToolError::Session(failure(-32001)));
     let payload = finish(outcome, tool_failure).unwrap_err();
-    assert_eq!(payload.code, Some(-32001));
+    assert_eq!(payload.code, Some(-32_001_i32));
 }
 
 #[test]
 fn session_closed_payload_is_a_runtime_error() {
-    let payload: NativeMcpErrorPayload = closed_payload();
+    let payload = closed_payload();
     let text = serde_json::to_string(&payload).unwrap();
     assert!(text.contains("\"type\":\"RuntimeError\""));
     assert!(text.contains("closed"));

@@ -28,7 +28,7 @@ pub(crate) fn call_request(wire: &CallToolWire) -> CallRequest {
         arguments: wire.arguments.clone(),
     }
 }
-pub(crate) fn call_options(wire: &CallToolWire) -> CallToolOptions {
+pub(crate) const fn call_options(wire: &CallToolWire) -> CallToolOptions {
     CallToolOptions {
         raise_on_error: wire.raise_on_error,
         allow_input_required: wire.allow_input_required,
@@ -45,14 +45,14 @@ pub(crate) fn tool_format(name: &str) -> Result<ToolFormat, NativeMcpErrorPayloa
         "mcp" => Ok(ToolFormat::Mcp),
         "openai" => Ok(ToolFormat::Openai),
         other => Err(NativeMcpErrorPayload::plain(
-            McpErrorKind::ValueError,
+            McpErrorKind::Value,
             format!("format must be \"mcp\" or \"openai\", not {other:?}"),
         )),
     }
 }
 pub(crate) fn deadline(seconds: Option<f64>) -> Result<Option<Duration>, NativeMcpErrorPayload> {
-    match seconds {
-        Some(value) => seconds_duration("listing_deadline", value).map(Some),
-        None => Ok(None),
-    }
+    seconds.map_or_else(
+        || Ok(None),
+        |value| seconds_duration("listing_deadline", value).map(Some),
+    )
 }

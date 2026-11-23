@@ -95,7 +95,7 @@ where
 {
     serde_json::from_str(text).map_err(|source| {
         NativeMcpErrorPayload::plain(
-            McpErrorKind::ValueError,
+            McpErrorKind::Value,
             format!("the MCP text is not JSON of the expected shape: {source}"),
         )
     })
@@ -107,7 +107,7 @@ where
     let written = serde_json::to_string(value);
     written.map_err(|source| {
         NativeMcpErrorPayload::plain(
-            McpErrorKind::RuntimeError,
+            McpErrorKind::Runtime,
             format!("the MCP answer could not be written as JSON: {source}"),
         )
     })
@@ -153,15 +153,14 @@ fn client_timeout(
     timeout: Option<f64>,
     environment: &BTreeMap<String, String>,
 ) -> Result<Duration, NativeMcpErrorPayload> {
-    match timeout {
-        Some(seconds) => seconds_duration("timeout", seconds),
-        None => environment_duration(CLIENT_TIMEOUT_VARIABLE, environment, CLIENT_TIMEOUT_SECONDS),
-    }
+    timeout.map_or_else(
+        || environment_duration(CLIENT_TIMEOUT_VARIABLE, environment, CLIENT_TIMEOUT_SECONDS),
+        |seconds| seconds_duration("timeout", seconds),
+    )
 }
 fn protocol_version(requested: String) -> Result<ProtocolVersion, NativeMcpErrorPayload> {
     let version = ProtocolVersion::try_from(requested);
-    version
-        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
+    version.map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Value, error.to_string()))
 }
 fn ssl_setting(verify: SslVerifyWire) -> VerifySetting {
     match verify {
@@ -200,7 +199,7 @@ fn aws_settings(value: Option<&AuthValue>) -> Result<McpSigV4Settings, NativeMcp
         Some(AuthValue::Headers(headers)) => headers,
         Some(AuthValue::Text(_)) => {
             return Err(NativeMcpErrorPayload::plain(
-                McpErrorKind::ValueError,
+                McpErrorKind::Value,
                 "auth_type aws_sigv4 needs auth_value to be a map of AWS settings".to_owned(),
             ));
         }
@@ -238,14 +237,14 @@ fn auth_kind(kind: AuthTypeWire) -> Result<McpAuthType, NativeMcpErrorPayload> {
 }
 fn unsupported_auth(name: &str) -> NativeMcpErrorPayload {
     NativeMcpErrorPayload::plain(
-        McpErrorKind::ValueError,
+        McpErrorKind::Value,
         format!("auth_type {name} is not supported by the native MCP client"),
     )
 }
 fn seconds_duration(field: &str, seconds: f64) -> Result<Duration, NativeMcpErrorPayload> {
     Duration::try_from_secs_f64(seconds).map_err(|error| {
         NativeMcpErrorPayload::plain(
-            McpErrorKind::ValueError,
+            McpErrorKind::Value,
             format!("{field} is not a valid number of seconds: {error}"),
         )
     })
@@ -257,7 +256,7 @@ fn environment_duration(
 ) -> Result<Duration, NativeMcpErrorPayload> {
     let text = environment.get(variable).map_or("", String::as_str);
     let seconds = betterlite_env::number::<f64>(variable, text)
-        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))?
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Value, error.to_string()))?
         .unwrap_or(fallback);
     seconds_duration(variable, seconds)
 }

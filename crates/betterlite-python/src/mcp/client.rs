@@ -132,14 +132,13 @@ impl ClientState {
             .credential_client()
             .prepare_request_auth()
             .map_err(|error| {
-                NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, error.to_string())
+                NativeMcpErrorPayload::plain(McpErrorKind::Runtime, error.to_string())
             })?;
-        hash_discovery_auth(&request).map_err(|error| {
-            NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, error.to_string())
-        })
+        hash_discovery_auth(&request)
+            .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::Runtime, error.to_string()))
     }
 
-    fn resource_settings(&self) -> ResourceSettings {
+    const fn resource_settings(&self) -> ResourceSettings {
         ResourceSettings {
             listing_timeout: self.listing_timeout,
         }

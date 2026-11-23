@@ -2,8 +2,10 @@ use betterlite_mcp::client::http_transport::capture::{
     BodyChunks, CapturedBody, ErrorCapture, Exchange,
 };
 use http::HeaderMap;
+use std::cmp::Reverse;
 use std::future::Future;
 use std::pin::Pin;
+use std::str;
 mod tests;
 pub(crate) const PREVIEW_CHARS: usize = 512;
 const REDACTED: &str = "****";
@@ -47,7 +49,7 @@ fn secret_values(headers: &HeaderMap) -> Vec<String> {
         }
     }
     // longest first, so a token is masked whole before its own prefix gets a chance
-    secrets.sort_by(|left, right| right.len().cmp(&left.len()));
+    secrets.sort_by_key(|secret| Reverse(secret.len()));
     secrets.dedup();
     secrets
 }
@@ -55,7 +57,7 @@ fn preview(body: &[u8], secrets: &[String]) -> String {
     if body.is_empty() {
         return "(empty)".to_owned();
     }
-    let Ok(text) = std::str::from_utf8(body) else {
+    let Ok(text) = str::from_utf8(body) else {
         return "(omitted: body is not UTF-8)".to_owned();
     };
     let mut masked = text.to_owned();
@@ -65,8 +67,9 @@ fn preview(body: &[u8], secrets: &[String]) -> String {
     truncate(&masked)
 }
 fn truncate(text: &str) -> String {
-    match text.char_indices().nth(PREVIEW_CHARS) {
-        Some((cut, _)) => format!("{}...(truncated)", &text[..cut]),
-        None => text.to_owned(),
+    let kept: String = text.chars().take(PREVIEW_CHARS).collect();
+    if kept == text {
+        return kept;
     }
+    format!("{kept}...(truncated)")
 }

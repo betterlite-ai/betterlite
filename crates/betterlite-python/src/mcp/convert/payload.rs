@@ -6,13 +6,17 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
 // The Python class names LiteLLM's MCP failures carry; B8082 maps them back to its exception classes
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "PascalCase")]
 pub(crate) enum McpErrorKind {
-    McpError,
-    TimeoutError,
-    RuntimeError,
-    ValueError,
-    CancelledError,
+    #[serde(rename = "McpError")]
+    Mcp,
+    #[serde(rename = "TimeoutError")]
+    Timeout,
+    #[serde(rename = "RuntimeError")]
+    Runtime,
+    #[serde(rename = "ValueError")]
+    Value,
+    #[serde(rename = "CancelledError")]
+    Cancelled,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub(crate) struct NativeMcpErrorPayload {
@@ -23,7 +27,7 @@ pub(crate) struct NativeMcpErrorPayload {
     pub(crate) data: Option<Json>,
 }
 impl NativeMcpErrorPayload {
-    pub(crate) fn plain(kind: McpErrorKind, message: String) -> Self {
+    pub(crate) const fn plain(kind: McpErrorKind, message: String) -> Self {
         Self {
             kind,
             message,
@@ -34,7 +38,7 @@ impl NativeMcpErrorPayload {
 
     fn mcp(code: i32, message: &str) -> Self {
         Self {
-            kind: McpErrorKind::McpError,
+            kind: McpErrorKind::Mcp,
             message: message.to_owned(),
             code: Some(code),
             data: None,
@@ -44,7 +48,7 @@ impl NativeMcpErrorPayload {
 impl From<url::ParseError> for NativeMcpErrorPayload {
     fn from(error: url::ParseError) -> Self {
         Self::plain(
-            McpErrorKind::ValueError,
+            McpErrorKind::Value,
             format!("url is not a valid URL: {error}"),
         )
     }
@@ -56,18 +60,18 @@ pub(crate) fn session_payload(error: &SessionError<SdkError>) -> NativeMcpErrorP
             NativeMcpErrorPayload::mcp(failure.code, failure.message.as_ref())
         }
         SessionError::ReadTimeout(timeout) => {
-            NativeMcpErrorPayload::plain(McpErrorKind::TimeoutError, timeout.message.clone())
+            NativeMcpErrorPayload::plain(McpErrorKind::Timeout, timeout.message.clone())
         }
         SessionError::Runtime(source) => sdk_payload(source),
         SessionError::Stream(failure) => sdk_payload(failure.source_error()),
         SessionError::Cancelled | SessionError::CleanupTimedOut => {
-            NativeMcpErrorPayload::plain(McpErrorKind::CancelledError, error.to_string())
+            NativeMcpErrorPayload::plain(McpErrorKind::Cancelled, error.to_string())
         }
         SessionError::CleanupTask(cause) => {
-            NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, cause.to_string())
+            NativeMcpErrorPayload::plain(McpErrorKind::Runtime, cause.to_string())
         }
         SessionError::Configuration(config) => {
-            NativeMcpErrorPayload::plain(McpErrorKind::ValueError, config.to_string())
+            NativeMcpErrorPayload::plain(McpErrorKind::Value, config.to_string())
         }
     }
 }
@@ -75,29 +79,34 @@ pub(crate) fn tool_failure(error: &ToolError<SessionError<SdkError>>) -> NativeM
     match error {
         ToolError::Session(inner) => session_payload(inner),
         ToolError::Timeout(_) => {
-            NativeMcpErrorPayload::plain(McpErrorKind::TimeoutError, error.to_string())
+            NativeMcpErrorPayload::plain(McpErrorKind::Timeout, error.to_string())
         }
     }
 }
 fn sdk_payload(error: &SdkError) -> NativeMcpErrorPayload {
-    match error {
-        SdkError::Http(http) => http_payload(http),
-        SdkError::JsonRpc(data) => NativeMcpErrorPayload::mcp(data.code.0, data.message.as_ref()),
-        other => NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, other.to_string()),
+    if let SdkError::Http(http) = error {
+        return http_payload(http);
     }
+    if let SdkError::JsonRpc(data) = error {
+        return NativeMcpErrorPayload::mcp(data.code.0, data.message.as_ref());
+    }
+    NativeMcpErrorPayload::plain(McpErrorKind::Runtime, error.to_string())
 }
 fn http_payload(error: &McpHttpError) -> NativeMcpErrorPayload {
-    let (kind, message) = match error {
-        McpHttpError::Status(head) => {
-            let preview = head.capture.as_ref().map(|record| record.preview.as_str());
-            return status_payload(head.status, preview);
-        }
-        McpHttpError::Timeout(_) | McpHttpError::HeadTimeout(_) | McpHttpError::BodyTimeout(_) => {
-            (McpErrorKind::TimeoutError, error.to_string())
-        }
-        other => (McpErrorKind::RuntimeError, other.to_string()),
+    if let McpHttpError::Status(head) = error {
+        let preview = head.capture.as_ref().map(|record| record.preview.as_str());
+        return status_payload(head.status, preview);
+    }
+    let timed_out = matches!(
+        error,
+        McpHttpError::Timeout(_) | McpHttpError::HeadTimeout(_) | McpHttpError::BodyTimeout(_)
+    );
+    let kind = if timed_out {
+        McpErrorKind::Timeout
+    } else {
+        McpErrorKind::Runtime
     };
-    NativeMcpErrorPayload::plain(kind, message)
+    NativeMcpErrorPayload::plain(kind, error.to_string())
 }
 // The status and the masked body preview are all Python gets about an HTTP failure that carried no JSON-RPC error
 pub(crate) fn status_payload(status: u16, preview: Option<&str>) -> NativeMcpErrorPayload {
@@ -107,7 +116,7 @@ pub(crate) fn status_payload(status: u16, preview: Option<&str>) -> NativeMcpErr
     data.insert("status".to_owned(), number);
     data.insert("body".to_owned(), body);
     NativeMcpErrorPayload {
-        kind: McpErrorKind::RuntimeError,
+        kind: McpErrorKind::Runtime,
         message: format!("the MCP server answered HTTP {status}"),
         code: None,
         data: Some(Json::Object(data)),

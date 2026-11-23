@@ -153,16 +153,15 @@ async fn serve(
     timeouts: Timeouts,
 ) -> Result<(), SessionError<SdkError>> {
     loop {
-        let next = tokio::select! {
-            () = stop.cancelled() => return Ok(()),
-            next = incoming.recv() => next,
+        let Some(next) = stop.run_until_cancelled(incoming.recv()).await else {
+            return Ok(());
         };
         let Some((command, reply)) = next else {
             return Ok(());
         };
-        let answer = tokio::select! {
-            () = stop.cancelled() => return Ok(()),
-            answer = answer_command(session, command, timeouts) => answer,
+        let in_flight = stop.run_until_cancelled(answer_command(session, command, timeouts));
+        let Some(answer) = in_flight.await else {
+            return Ok(());
         };
         let _sent = reply.send(answer);
     }
@@ -205,7 +204,7 @@ async fn answer_command(
 fn startup_payload(outcome: &Result<(), SessionError<SdkError>>) -> NativeMcpErrorPayload {
     match outcome {
         Ok(()) => NativeMcpErrorPayload::plain(
-            McpErrorKind::RuntimeError,
+            McpErrorKind::Runtime,
             "the MCP session ended before it opened".to_owned(),
         ),
         Err(error) => session_payload(error),
@@ -213,7 +212,7 @@ fn startup_payload(outcome: &Result<(), SessionError<SdkError>>) -> NativeMcpErr
 }
 fn closed_payload() -> NativeMcpErrorPayload {
     let message = "the MCP session is closed".to_owned();
-    let kind = McpErrorKind::RuntimeError;
+    let kind = McpErrorKind::Runtime;
     NativeMcpErrorPayload::plain(kind, message)
 }
 pub(crate) fn finish<Value, Failure>(
