@@ -160,6 +160,7 @@ pub(super) fn embedding_dispatch() {
     let credentials = Credentials {
         api_base: Some(String::from(AZURE_BASE)),
         api_version: Some(String::from("2024-10-21")),
+        extra_headers: Some(support::headers(&[("x-embed", "e")])),
         extra_body: Some(support::json(
             r#"{"x-extra":1,"azure_ad_token":"body-token"}"#,
         )),
@@ -186,6 +187,7 @@ fn embedding_request_shape(request: &RecordedRequest) {
         )
     );
     assert_eq!(support::header(request, "api-key"), Some("env-azure-key"));
+    assert_eq!(support::header(request, "x-embed"), Some("e"));
     assert_eq!(
         support::body_text(request, "model"),
         Some("text-embedding-3-small")
