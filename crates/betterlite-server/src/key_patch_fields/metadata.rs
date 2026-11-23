@@ -34,7 +34,10 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    check_logging(values.get("metadata"), context.flags)?;
+    if let Some(JsonData::Object(fields)) = values.get("metadata") {
+        check_key_logging_config(Some(&Payload(fields.clone())), context.flags)
+            .map_err(|error| KeyPatchError::LoggingMetadata(Box::new(error)))?;
+    }
     if !values.contains_key("metadata") {
         values.insert(
             String::from("metadata"),
@@ -54,15 +57,6 @@ where
     };
     values.insert(String::from("metadata"), metadata);
     Ok(())
-}
-
-// raise_on_invalid_key_logging_config: a bad logging config fails before anything merges into it.
-fn check_logging(metadata: Option<&JsonData>, flags: FeatureFlags) -> Result<(), KeyPatchError> {
-    let Some(JsonData::Object(fields)) = metadata else {
-        return Ok(());
-    };
-    check_key_logging_config(Some(&Payload(fields.clone())), flags)
-        .map_err(|error| KeyPatchError::LoggingMetadata(Box::new(error)))
 }
 
 // A stored reserved field is set once: an omitted one is restored, and a changed or cleared one is the 400.

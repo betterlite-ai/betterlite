@@ -38,12 +38,8 @@ pub(crate) const fn string_of(value: &JsonData) -> Option<&str> {
 }
 
 pub(crate) const fn object_of(value: &JsonData) -> Option<&Row> {
-    match value {
-        JsonData::Object(fields) => Some(fields),
-        JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Array(_) => None,
+    if let JsonData::Object(fields) = value {
+        return Some(fields);
     }
+    None
 }
