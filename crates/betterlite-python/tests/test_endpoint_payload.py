@@ -48,6 +48,7 @@ AUTHORIZATION: Final[dict[str, str]] = {"Authorization": f"Bearer {GOOD_KEY}"}
 REFUSED_NAMES: Final[list[str]] = ["client", "shared_session"]
 READ_BYTES: Final = 4
 API_BASE: Final = "https://proxy.test"
+COHERE_KEY: Final = "sk-cohere"
 OTHER_API_BASE: Final = "https://other.test"
 CONNECT_SECONDS: Final = 0.5
 READ_SECONDS: Final = 1.5
@@ -339,6 +340,11 @@ def test_settings_read_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_settings_missing_name() -> None:
     with pytest.raises(AttributeError, match="no_such_setting"):
         read_settings(["api_base", "no_such_setting"])
+
+
+def test_settings_provider_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(betterlite, "cohere_key", COHERE_KEY)
+    assert read_settings(["cohere_key"]) == {"cohere_key": COHERE_KEY}
 
 
 def test_settings_proxy_headers(
