@@ -1,0 +1,6 @@
+task: B751
+deviations:
+  - what: Temporary-budget timestamp text over 1048576 bytes raises a typed auth parse failure (401 auth_error) without echoing the value.
+    why: Bound the actual new timestamp parser; recipient lists are already decoded and receive no fictitious JSON parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3615-L3634
+kept_bugs: []
