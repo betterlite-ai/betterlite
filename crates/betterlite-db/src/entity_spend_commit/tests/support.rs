@@ -49,7 +49,7 @@ pub(crate) fn flush_moment() -> NaiveDateTime {
     flush_moment_tick(0)
 }
 
-// What a clock that reads a millisecond later each time returns on its tick-th read.
+// The flush moment plus tick milliseconds, for a clock that advances a millisecond per read.
 pub(crate) fn flush_moment_tick(tick: u32) -> NaiveDateTime {
     let nanos = 123_000_000_u32.saturating_add(tick.saturating_mul(1_000_000));
     DateTime::<Utc>::from_timestamp(1_767_225_600, nanos)
