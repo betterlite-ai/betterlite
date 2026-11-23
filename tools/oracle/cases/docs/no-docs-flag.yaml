@@ -1,0 +1,16 @@
+name: docs-no-docs-flag
+config: |
+  model_list: []
+env:
+  NO_DOCS: "true"
+request:
+  method: GET
+  path: /
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: []

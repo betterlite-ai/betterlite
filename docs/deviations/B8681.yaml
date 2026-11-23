@@ -1,0 +1,9 @@
+task: B8681
+deviations:
+  - what: The OpenAPI document lists only the eleven LLM API POST routes and the realtime and Responses WebSocket routes, without request body schemas.
+    why: axum has no route introspection and no pydantic models, so the full route list comes from B124's RouteCatalog and the request schemas have no owner yet. LiteLLM documents every registered route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1806-L1821
+  - what: info.version in the document is the betterlite version.
+    why: LiteLLM writes its own package version there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1737
+kept_bugs: []
