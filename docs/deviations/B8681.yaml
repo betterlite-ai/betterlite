@@ -6,4 +6,7 @@ deviations:
   - what: info.version in the document is the betterlite version.
     why: LiteLLM writes its own package version there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1737
+  - what: DOCS_TITLE from the environment (public_discovery.docs_title) sets the Swagger and ReDoc page titles and info.title in the document, with no license.
+    why: LiteLLM reads DOCS_TITLE only when premium_user is true, which needs an enterprise license, and betterlite's public_discovery section reads it in the open-source build; this task passes that title to the pages and the document as its text requires, which supersedes B123's note that the override is not built.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1044
 kept_bugs: []

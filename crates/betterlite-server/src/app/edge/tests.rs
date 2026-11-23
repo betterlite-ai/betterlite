@@ -58,7 +58,7 @@ fn mounted(overrides: &[(&str, &str)], config: &Config) -> Router {
     for (name, value) in overrides {
         variables.push((*name, Some(*value)));
     }
-    temp_env::with_vars(variables.as_slice(), || {
+    temp_env::with_vars(variables, || {
         crate::app::mount_public(Router::new(), &state)
     })
 }
