@@ -6,7 +6,7 @@ use betterlite_core::api::decisions_send::error::DecisionsSendError;
 use betterlite_core::api::decisions_send::format::DecisionsOutput;
 use betterlite_core::api::decisions_send::send::DecisionsSender;
 use betterlite_models::catalog::ModelCatalog;
-use betterlite_models::decisions::{Extra, Json};
+use betterlite_models::decisions::Extra;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
@@ -19,9 +19,10 @@ use betterlite_openai::decisions::call::fields::{
 };
 use betterlite_openai::decisions::call::{DecisionsCall, PrepareCall, prepare_call};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use indexmap::IndexMap;
 use secrecy::SecretString;
 use std::collections::{BTreeMap, BTreeSet};
+use std::panic::resume_unwind;
+use std::thread::scope;
 use std::time::Duration;
 
 // The case's runs in order, each through the wrapper the case asked for
@@ -50,8 +51,8 @@ fn blocked(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<RunOutcome, SdkHttpError> {
-    std::thread::scope(|scope| {
-        let signed = scope.spawn(|| {
+    scope(|threads| {
+        let signed = threads.spawn(|| {
             let mut clients = support::clients(env)?;
             let redactor =
                 Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
@@ -66,7 +67,7 @@ fn blocked(
         });
         match signed.join() {
             Ok(outcome) => outcome.map_err(|error| SdkHttpError::Invalid(error.to_string())),
-            Err(payload) => std::panic::resume_unwind(payload),
+            Err(payload) => resume_unwind(payload),
         }
     })
 }
