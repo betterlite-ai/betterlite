@@ -164,14 +164,18 @@ fn prompt_voice(voice: &SpeechVoice) -> Option<PromptJson> {
 }
 
 fn prompt_json(fields: &Object) -> Option<PromptJson> {
-    let value = serde_json::to_value(fields).ok()?;
-    serde_json::from_value(value).ok()
+    match serde_json::to_value(fields) {
+        Ok(value) => serde_json::from_value(value).ok(),
+        Err(_error) => None,
+    }
 }
 
 // the mapping hands back only strings, so this conversion cannot fail
 fn strings_object(fields: IndexMap<String, String>) -> Object {
-    let value = serde_json::to_value(fields).unwrap_or_default();
-    serde_json::from_value(value).unwrap_or_default()
+    match serde_json::to_value(fields) {
+        Ok(value) => serde_json::from_value(value).unwrap_or_default(),
+        Err(_error) => Object::new(),
+    }
 }
 
 fn text(params: &Object, name: &str) -> Option<String> {
@@ -182,5 +186,8 @@ fn text(params: &Object, name: &str) -> Option<String> {
 }
 
 fn number(params: &Object, name: &str) -> Option<f64> {
-    params.get(name).and_then(|value| value.as_f64())
+    match params.get(name) {
+        Some(value) => value.as_f64(),
+        None => None,
+    }
 }

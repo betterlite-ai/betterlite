@@ -6,17 +6,13 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::files::error::StatusError;
 use betterlite_openai::files::stream::flatten_headers;
 use http::Method;
-use http::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
-use super::client::{
-    ClientFamily, ClientWiring, RequestAuth, SelectedSpeechClient, SpeechConnection, request_auth,
-    select_client, v1_auth,
-};
+use super::client::{ClientWiring, Family, SpeechConnection, request_auth, select_client};
 use super::error::AzureSpeechError;
 use super::logging::{SpeechLogger, SpeechPreCall};
-use super::url::compose_url;
+use super::wire::{binary_headers, compose_url};
 use crate::endpoints::projection::{CallableProvider, LiteLlmParams, SessionKind, SuppliedClient};
 use crate::native_speech::response::HttpxBinaryResponseContent;
 
@@ -24,7 +20,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 const SPEECH_PATH: &str = "audio/speech";
 const RESERVED: [&str; 3] = ["input", "model", "voice"];
 
-// AzureChatCompletion.audio_speech and async_audio_speech take these arguments; only litellm_params reaches the client builder.
+// AzureChatCompletion.audio_speech takes these arguments; only litellm_params reaches the client builder.
 pub struct AudioSpeechCall<'data> {
     pub model: &'data str,
     pub input: &'data str,
@@ -41,14 +37,15 @@ pub struct AudioSpeechCall<'data> {
     pub refresh_enabled: bool,
 }
 
-struct SpeechControls {
+// The keys speech.create takes as SDK options rather than body fields, and the request timeout.
+struct Controls {
     headers: Vec<(String, String)>,
     query: Vec<(String, String)>,
     body: IndexMap<String, Json>,
     timeout: Option<Duration>,
 }
 
-// One binary speech post: pop the call controls, select the SDK client, log the pre-call, then build the wire request
+// One binary speech post: pop the call controls, select the SDK client, log the pre-call, then build the wire request.
 pub fn audio_speech(
     call: &AudioSpeechCall<'_>,
     wiring: &mut ClientWiring<'_, '_>,
@@ -57,7 +54,7 @@ pub fn audio_speech(
     let mut options = call.optional_params.clone();
     options.shift_remove("max_retries");
     let logged = logged_body(call.model, call.voice, &options);
-    let controls = SpeechControls::take(&mut options)?;
+    let controls = Controls::take(&mut options)?;
     let connection = SpeechConnection {
         model: call.model.to_owned(),
         api_key: call.api_key.clone(),
@@ -68,25 +65,22 @@ pub fn audio_speech(
         supplied: call.supplied.clone(),
         session: call.session,
         refresh_enabled: call.refresh_enabled,
+        aspeech: call.aspeech,
     };
-    let selected = select_client(&connection, call.aspeech, wiring)?;
-    logger
-        .pre_call(SpeechPreCall {
-            input: call.input,
-            api_base: &selected.base_url,
-            data: logged,
-        })
-        .map_err(|source| AzureSpeechError::Logging { source })?;
-    let auth = auth_for(&selected, &controls.headers)?;
-    let mut headers = HeaderMap::new();
-    headers.insert(ACCEPT, HeaderValue::from_static("application/octet-stream"));
-    for (name, value) in &controls.headers {
-        headers.insert(header_name(name)?, header_value(name, value)?);
-    }
-    insert_auth(&mut headers, auth.as_ref())?;
+    let selected = select_client(&connection, wiring)?;
+    logger.pre_call(SpeechPreCall {
+        input: call.input,
+        api_base: &selected.base_url,
+        data: logged,
+    })?;
+    let caller_auth = controls.headers.iter().any(|(name, _)| {
+        name.eq_ignore_ascii_case("authorization") || name.eq_ignore_ascii_case("api-key")
+    });
+    let auth = request_auth(&selected, caller_auth)?;
+    let headers = binary_headers(&controls.headers, auth.as_ref())?;
     let (deployment, version) = match selected.family {
-        ClientFamily::Azure => (Some(call.model), selected.api_version.as_deref()),
-        ClientFamily::OpenAiV1 => (None, None),
+        Family::Azure => (Some(call.model), selected.api_version.as_deref()),
+        Family::OpenAiV1 => (None, None),
     };
     let url = compose_url(
         &selected.base_url,
@@ -101,11 +95,11 @@ pub fn audio_speech(
         query: Vec::new(),
         headers,
         body: RequestBody::Json(wire_body(call, options, controls.body)?),
-        deadline: deadline(call, controls.timeout)?,
+        deadline: deadline(&call.params, controls.timeout)?,
     })
 }
 
-// HttpxBinaryResponseContent(response=response.response): a non-2xx reply is the SDK's status error
+// HttpxBinaryResponseContent(response=response.response): a non-2xx reply is the SDK's status error.
 pub fn finish_audio_speech(
     reply: UpstreamResponse,
 ) -> Result<HttpxBinaryResponseContent, AzureSpeechError> {
@@ -121,7 +115,7 @@ pub fn finish_audio_speech(
     })
 }
 
-impl SpeechControls {
+impl Controls {
     fn take(options: &mut IndexMap<String, Json>) -> Result<Self, AzureSpeechError> {
         Ok(Self {
             headers: string_pairs("extra_headers", options.shift_remove("extra_headers"))?,
@@ -131,15 +125,15 @@ impl SpeechControls {
                 Some(Json::Object(fields)) => fields,
                 Some(other) => {
                     return Err(AzureSpeechError::ExtraBody {
-                        given: python_type(&other).to_owned(),
+                        given: json_kind(&other),
                     });
                 }
             },
             timeout: match options.shift_remove("timeout") {
                 None | Some(Json::Null) => None,
-                Some(Json::Number(number)) => {
-                    Some(duration_of(number.as_f64().ok_or_else(timeout_error)?)?)
-                }
+                Some(Json::Number(number)) => Some(seconds_duration(
+                    number.as_f64().ok_or_else(timeout_error)?,
+                )?),
                 Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
                     return Err(timeout_error());
                 }
@@ -148,7 +142,7 @@ impl SpeechControls {
     }
 }
 
-// speech_request_body: model and voice, then every option except the caller headers
+// speech_request_body: model and voice, then every option except the caller headers the SDK takes as kwargs.
 fn logged_body(
     model: &str,
     voice: &str,
@@ -193,14 +187,14 @@ fn string_pairs(
     Ok(pairs)
 }
 
-fn python_type(value: &Json) -> &'static str {
+fn json_kind(value: &Json) -> &'static str {
     match value {
-        Json::Null => "<class 'NoneType'>",
-        Json::Bool(_) => "<class 'bool'>",
-        Json::Number(_) => "<class 'int'>",
-        Json::Text(_) => "<class 'str'>",
-        Json::List(_) => "<class 'list'>",
-        Json::Object(_) => "<class 'dict'>",
+        Json::Null => "null",
+        Json::Bool(_) => "bool",
+        Json::Number(_) => "number",
+        Json::Text(_) => "string",
+        Json::List(_) => "array",
+        Json::Object(_) => "object",
     }
 }
 
@@ -211,92 +205,25 @@ fn timeout_error() -> AzureSpeechError {
     }
 }
 
-fn duration_of(seconds: f64) -> Result<Duration, AzureSpeechError> {
-    Duration::try_from_secs_f64(seconds).map_err(|_invalid| timeout_error())
+fn seconds_duration(seconds: f64) -> Result<Duration, AzureSpeechError> {
+    match Duration::try_from_secs_f64(seconds) {
+        Ok(duration) => Ok(duration),
+        Err(_invalid) => Err(timeout_error()),
+    }
 }
 
 // the method's timeout argument never reaches SDK construction; litellm_params' timeout does
 fn deadline(
-    call: &AudioSpeechCall<'_>,
+    params: &LiteLlmParams,
     request_timeout: Option<Duration>,
 ) -> Result<Duration, AzureSpeechError> {
     if let Some(timeout) = request_timeout {
         return Ok(timeout);
     }
-    call.params.timeout.map_or(Ok(DEFAULT_TIMEOUT), duration_of)
-}
-
-// ad_token first, then the key; a caller header the SDK would keep lets a missing credential through
-fn auth_for(
-    selected: &SelectedSpeechClient<'_>,
-    extra_headers: &[(String, String)],
-) -> Result<Option<RequestAuth>, AzureSpeechError> {
-    match selected.family {
-        ClientFamily::OpenAiV1 => Ok(Some(v1_auth(selected.v1_key.as_ref())?)),
-        ClientFamily::Azure => match request_auth(
-            selected.ad_token.clone(),
-            selected.provider.as_ref(),
-            selected.api_key.clone(),
-        ) {
-            Ok(auth) => Ok(Some(auth)),
-            Err(AzureSpeechError::UnableToHandleAuth) => {
-                if has_auth_header(extra_headers) {
-                    Ok(None)
-                } else {
-                    Err(AzureSpeechError::UnableToHandleAuth)
-                }
-            }
-            Err(error) => Err(error),
-        },
+    match params.timeout {
+        Some(seconds) => seconds_duration(seconds),
+        None => Ok(DEFAULT_TIMEOUT),
     }
-}
-
-fn has_auth_header(headers: &[(String, String)]) -> bool {
-    headers.iter().any(|(name, _)| {
-        name.eq_ignore_ascii_case("authorization") || name.eq_ignore_ascii_case("api-key")
-    })
-}
-
-fn insert_auth(
-    headers: &mut HeaderMap,
-    auth: Option<&RequestAuth>,
-) -> Result<(), AzureSpeechError> {
-    match auth {
-        Some(RequestAuth::ApiKey(key)) => {
-            let name = HeaderName::from_static("api-key");
-            if !headers.contains_key(&name) {
-                headers.insert(name, sensitive_value("api-key", key.expose_secret())?);
-            }
-        }
-        Some(RequestAuth::Bearer(token)) => {
-            if !headers.contains_key(AUTHORIZATION) {
-                let value = format!("Bearer {}", token.expose_secret());
-                headers.insert(AUTHORIZATION, sensitive_value("authorization", &value)?);
-            }
-        }
-        None => {}
-    }
-    Ok(())
-}
-
-fn header_name(name: &str) -> Result<HeaderName, AzureSpeechError> {
-    HeaderName::from_bytes(name.as_bytes()).map_err(|source| AzureSpeechError::HeaderName {
-        name: name.to_owned(),
-        source,
-    })
-}
-
-fn header_value(name: &str, value: &str) -> Result<HeaderValue, AzureSpeechError> {
-    HeaderValue::try_from(value).map_err(|source| AzureSpeechError::HeaderValue {
-        name: name.to_owned(),
-        source,
-    })
-}
-
-fn sensitive_value(name: &str, value: &str) -> Result<HeaderValue, AzureSpeechError> {
-    let mut parsed = header_value(name, value)?;
-    parsed.set_sensitive(true);
-    Ok(parsed)
 }
 
 fn wire_body(
@@ -305,8 +232,8 @@ fn wire_body(
     extra_body: IndexMap<String, Json>,
 ) -> Result<Vec<u8>, AzureSpeechError> {
     let mut body = IndexMap::from([
-        (String::from("input"), Json::Text(call.input.to_owned())),
         (String::from("model"), Json::Text(call.model.to_owned())),
+        (String::from("input"), Json::Text(call.input.to_owned())),
         (String::from("voice"), Json::Text(call.voice.to_owned())),
     ]);
     for (name, value) in options {

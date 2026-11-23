@@ -31,8 +31,11 @@ impl SpeechLogger for PrePostLogger<'_, '_> {
                 model: None,
                 additional_args: AdditionalArgs {
                     api_base: Some(record.api_base.to_owned()),
+                    headers: None,
                     complete_input_dict: Some(RawBody::Object(record.data)),
-                    ..AdditionalArgs::default()
+                    request_str: None,
+                    openai_sdk: None,
+                    passthrough: IndexMap::new(),
                 },
             },
             self.env,

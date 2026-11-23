@@ -5,6 +5,7 @@ use std::time::Duration;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::AzureSpeechError;
 
@@ -14,8 +15,8 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 3] = ["voice", "response_format", "spe
 #[derive(Debug, Default, Clone)]
 pub struct SpeechGlobals {
     pub api_base: Option<String>,
-    pub api_key: Option<String>,
-    pub azure_key: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub azure_key: Option<SecretString>,
 }
 
 pub struct SpeechEnvironment<'data> {
@@ -31,7 +32,7 @@ pub struct DispatchCall<'data> {
     pub optional_params: &'data IndexMap<String, Json>,
     pub litellm_params: IndexMap<String, Json>,
     pub api_base: Option<String>,
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     pub timeout: Option<Duration>,
     pub extra_headers: Option<&'data BTreeMap<String, String>>,
     pub aspeech: bool,
@@ -98,7 +99,7 @@ where
 
 struct Resolved {
     api_base: Option<String>,
-    api_key: Option<String>,
+    api_key: Option<SecretString>,
     voice: Option<String>,
     litellm_params: IndexMap<String, Json>,
 }
@@ -113,7 +114,7 @@ impl Resolved {
             String::from("api_key"),
             api_key
                 .as_ref()
-                .map_or(Json::Null, |key| Json::Text(key.clone())),
+                .map_or(Json::Null, |key| Json::Text(key.expose_secret().to_owned())),
         );
         litellm_params.insert(
             String::from("api_base"),
@@ -138,7 +139,7 @@ impl Resolved {
             litellm_params: &self.litellm_params,
             extra_headers: call.extra_headers,
             timeout: call.timeout,
-            api_key: self.api_key.as_deref(),
+            api_key: self.api_key.as_ref().map(|key| key.expose_secret()),
             api_base: self.api_base.as_deref(),
             provider: "azure",
             is_async: call.aspeech,
@@ -165,37 +166,34 @@ fn resolve_voice(voice: Option<&Json>) -> Result<Option<String>, AzureSpeechErro
     }
 }
 
+// The explicit value comes first, then the call's litellm_params, the module global and AZURE_API_BASE.
 fn resolve_base(call: &DispatchCall<'_>) -> Result<Option<String>, AzureSpeechError> {
-    if let Some(value) = non_empty(call.api_base.as_deref()) {
-        return Ok(Some(value.to_owned()));
+    if let Some(base) = &call.api_base {
+        return Ok(Some(base.clone()));
     }
-    if let Some(value) = params_text(&call.litellm_params, "api_base")? {
-        return Ok(Some(value.to_owned()));
+    if let Some(base) = params_text(&call.litellm_params, "api_base")? {
+        return Ok(Some(base.to_owned()));
     }
-    if let Some(value) = non_empty(call.environment.globals.api_base.as_deref()) {
-        return Ok(Some(value.to_owned()));
+    if let Some(base) = &call.environment.globals.api_base {
+        return Ok(Some(base.clone()));
     }
     Ok(environment_secret(call.environment, "AZURE_API_BASE"))
 }
 
-fn resolve_key(call: &DispatchCall<'_>) -> Result<Option<String>, AzureSpeechError> {
-    if let Some(value) = non_empty(call.api_key.as_deref()) {
-        return Ok(Some(value.to_owned()));
-    }
-    if let Some(value) = params_text(&call.litellm_params, "api_key")? {
-        return Ok(Some(value.to_owned()));
-    }
+// The explicit key, the call's litellm_params, litellm.api_key, litellm.azure_key, then either Azure variable.
+fn resolve_key(call: &DispatchCall<'_>) -> Result<Option<SecretString>, AzureSpeechError> {
     let globals = call.environment.globals;
-    if let Some(value) = non_empty(globals.api_key.as_deref()) {
-        return Ok(Some(value.to_owned()));
-    }
-    if let Some(value) = non_empty(globals.azure_key.as_deref()) {
-        return Ok(Some(value.to_owned()));
-    }
-    if let Some(value) = environment_secret(call.environment, "AZURE_OPENAI_API_KEY") {
-        return Ok(Some(value));
-    }
-    Ok(environment_secret(call.environment, "AZURE_API_KEY"))
+    let from_params = params_text(&call.litellm_params, "api_key")?;
+    Ok(call
+        .api_key
+        .clone()
+        .or_else(|| from_params.map(SecretString::from))
+        .or_else(|| globals.api_key.clone())
+        .or_else(|| globals.azure_key.clone())
+        .or_else(|| {
+            environment_secret(call.environment, "AZURE_OPENAI_API_KEY").map(SecretString::from)
+        })
+        .or_else(|| environment_secret(call.environment, "AZURE_API_KEY").map(SecretString::from)))
 }
 
 fn params_text<'data>(
@@ -204,7 +202,6 @@ fn params_text<'data>(
 ) -> Result<Option<&'data str>, AzureSpeechError> {
     match params.get(name) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) if text.is_empty() => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text)),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(AzureSpeechError::Option {
@@ -213,10 +210,6 @@ fn params_text<'data>(
             })
         }
     }
-}
-
-fn non_empty(value: Option<&str>) -> Option<&str> {
-    value.filter(|text| !text.is_empty())
 }
 
 fn environment_secret(environment: &SpeechEnvironment<'_>, name: &str) -> Option<String> {

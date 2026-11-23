@@ -9,7 +9,7 @@ use http::header::{ACCEPT, HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 
 use super::error::AzureSpeechError;
-use super::url::compose_url;
+use super::wire::compose_url;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 const PROBE_PATH: &str = "chat/completions";
@@ -39,16 +39,14 @@ pub struct ProbeCall<'data> {
 
 // The live rate-limit probe: always a chat completions create, whose only reply fields are the three headers.
 pub fn probe_request(call: &ProbeCall<'_>) -> Result<OutboundRequest, AzureSpeechError> {
-    let base = probe_base(call)?;
-    let url = compose_url(&base, None, PROBE_PATH, call.api_version, &[])?;
-    let headers = probe_headers(call.api_key)?;
-    let body = probe_body(call.model, call.messages)?;
+    let (base, deployment) = probe_target(call)?;
+    let url = compose_url(&base, deployment, PROBE_PATH, call.api_version, &[])?;
     Ok(OutboundRequest {
         method: Method::POST,
         url,
         query: Vec::new(),
-        headers,
-        body: RequestBody::Json(body),
+        headers: probe_headers(call.api_key)?,
+        body: RequestBody::Json(probe_body(call.model, call.messages)?),
         deadline: probe_timeout(call.timeout)?,
     })
 }
@@ -67,23 +65,26 @@ pub fn finish_probe(
     Ok(rate_limit_headers(&reply.headers))
 }
 
-fn probe_base(call: &ProbeCall<'_>) -> Result<String, AzureSpeechError> {
+// The gateway needs the model in the path and model=None in the body; every other base prefixes the deployment.
+fn probe_target(call: &ProbeCall<'_>) -> Result<(String, Option<&str>), AzureSpeechError> {
     let Some(api_base) = call.api_base else {
         return Err(AzureSpeechError::MissingBase);
     };
     if api_base.contains(CLOUDFLARE) {
-        // the gateway needs the model in the path and model=None in the body
         let mut gateway = api_base.to_owned();
         if !gateway.ends_with('/') {
             gateway.push('/');
         }
         gateway.push_str(call.model.unwrap_or("None"));
-        return Ok(gateway);
+        return Ok((gateway, None));
     }
     if call.model.is_none() && call.mode != ProbeMode::ImageGeneration {
         return Err(AzureSpeechError::ModelNotSet);
     }
-    Ok(format!("{}/openai", api_base.trim_end_matches('/')))
+    Ok((
+        format!("{}/openai", api_base.trim_end_matches('/')),
+        call.model,
+    ))
 }
 
 fn probe_headers(api_key: &str) -> Result<HeaderMap, AzureSpeechError> {
