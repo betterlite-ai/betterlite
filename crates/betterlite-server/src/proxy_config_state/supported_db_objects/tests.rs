@@ -73,7 +73,7 @@ fn a_list_entry_that_is_not_a_string_matches_no_kind() {
     let mut store = SettingsStore::from(Section::GeneralSettings);
     store.load_yaml(BTreeMap::from([(
         SUPPORTED_DB_OBJECTS.to_owned(),
-        json!(["models", 5, null, ["mcp"]]),
+        json!(["models", 5_i32, null, ["mcp"]]),
     )]));
     assert!(should_load_db_object(&store, "models"));
     assert!(!should_load_db_object(&store, "mcp"));
@@ -94,9 +94,9 @@ fn kinds_outside_the_enum_match_by_text() {
 
 #[rstest]
 #[case::a_string(json!("models"), "a string")]
-#[case::an_object(json!({"models": true}), "an object")]
+#[case::an_object(object_fixture(), "an object")]
 #[case::a_boolean(json!(true), "a boolean")]
-#[case::a_number(json!(5), "a number")]
+#[case::a_number(json!(5_i32), "a number")]
 fn a_value_that_is_not_a_list_warns_and_loads_every_kind(
     #[case] value: JsonValue,
     #[case] kind: &str,
@@ -117,9 +117,9 @@ fn json_type_names_name_the_json_types() {
     assert_eq!(json_type_name(&json!(null)), "null");
     assert_eq!(json_type_name(&json!(["models"])), "an array");
     assert_eq!(json_type_name(&json!(true)), "a boolean");
-    assert_eq!(json_type_name(&json!(5)), "a number");
+    assert_eq!(json_type_name(&json!(5_i32)), "a number");
     assert_eq!(json_type_name(&json!("mcp")), "a string");
-    assert_eq!(json_type_name(&json!({"models": true})), "an object");
+    assert_eq!(json_type_name(&object_fixture()), "an object");
 }
 
 #[rstest]
@@ -162,6 +162,10 @@ fn a_database_row_value_applies_when_the_config_file_omits_the_key() {
     );
     assert!(should_load_db_object(&store, "models"));
     assert!(!should_load_db_object(&store, "mcp"));
+}
+
+fn object_fixture() -> JsonValue {
+    serde_json::from_str(r#"{"models": true}"#).expect("the object fixture parses")
 }
 
 #[derive(Clone, Default)]
