@@ -5,7 +5,10 @@ from typing import Final, TypedDict
 import websockets.exceptions
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.responses.streaming_iterator import ResponsesWebSocketStreaming
-from litellm.types.responses.streaming_websocket import ResponsesBackendWebSocket, ResponsesClientWebSocket
+from litellm.types.responses.streaming_websocket import (
+    ResponsesBackendWebSocket,
+    ResponsesClientWebSocket,
+)
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -66,14 +69,12 @@ async def run_scenario(scenario: Scenario) -> JsonValue:
     logging_obj = Logging("gpt-4o", None, stream=True, call_type="responses", start_time=STARTED,
                           litellm_call_id="call-1", function_id="fn-1")
     relay = ResponsesWebSocketStreaming(
-        websocket=client,
-        backend_ws=backend,
-        logging_obj=logging_obj,
+        websocket=client, backend_ws=backend, logging_obj=logging_obj,
         request_data=TypeAdapter(dict[str, object]).validate_python(scenario["request_data"]),
         first_message=scenario["first_message"],
     )
     failure_returned = await relay.bidirectional_forward() is not None
-    answer: dict[str, object] = {
+    answer = {
         "sent_to_client": client.sent, "sent_to_backend": backend.sent,
         "messages": relay.messages, "input_messages": relay.input_messages,
         "litellm_metadata": relay.litellm_metadata, "failure_returned": failure_returned,
