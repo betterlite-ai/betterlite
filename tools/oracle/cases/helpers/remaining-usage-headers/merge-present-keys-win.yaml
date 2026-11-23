@@ -1,0 +1,15 @@
+kind: helper
+name: merge-present-keys-win
+call:
+  b10046:
+    function: apply
+    headers:
+      x-ratelimit-limit-input-tokens: 9
+      x-ratelimit-remaining-input-tokens: null
+      x-other: kept
+    remaining:
+      x-ratelimit-limit-input-tokens: 100
+      x-ratelimit-remaining-input-tokens: 42
+      x-ratelimit-reset-input-tokens: 60
+env: {}
+compare: {ignore: []}
