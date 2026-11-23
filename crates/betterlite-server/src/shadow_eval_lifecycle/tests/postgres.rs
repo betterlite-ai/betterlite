@@ -385,7 +385,7 @@ async fn create_legs_keeps_the_router_name_beside_an_empty_router_list() {
     team.models = Vec::new();
     team.created_by = None;
     team.shadow_percentage = 12.5_f64;
-    team.max_turns = 3;
+    team.max_turns = 3_i32;
     team.max_budget = Decimal::new(2, 0);
     let user = leg("leg-c", UserTarget, "u1");
     let store = lifecycle(&pool);
