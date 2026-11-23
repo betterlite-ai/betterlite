@@ -25,11 +25,14 @@ pub(crate) struct Prepared {
 }
 
 // validate_environment, then get_complete_url, then the body copy, then the optional pre_call, in that order
-pub(crate) fn prepare<T: DecisionsProviderConfig>(
+pub(crate) fn prepare<T>(
     config: &T,
     call: &DecisionsCall<'_>,
     env: &PrePostEnv<'_>,
-) -> Result<Prepared, DecisionsSendError> {
+) -> Result<Prepared, DecisionsSendError>
+where
+    T: DecisionsProviderConfig,
+{
     let outbound_headers =
         config.validate_environment(&call.headers, &call.model, call.api_key.as_ref());
     let url = config.get_complete_url(&call.api_base, &call.model);
@@ -74,7 +77,9 @@ fn log(
         additional_args,
     };
     let mut state = logging.lock().unwrap_or_else(PoisonError::into_inner);
-    pre_call(&mut state, &pre, env).map_err(|error| plain(call, env.redactor, Box::new(error)))
+    pre_call(&mut state, &pre, env)
+        .map(drop)
+        .map_err(|error| plain(call, env.redactor, Box::new(error)))
 }
 
 // The POST both handlers send: signed headers, the signed bytes when the config built them, else the JSON copy

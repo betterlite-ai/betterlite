@@ -13,13 +13,16 @@ use super::request;
 use super::send::{DecisionsSender, finish, plain, signing_context};
 use crate::api::vector_store_http_write::service::ClientKind;
 
-impl<'env, Clients: DecisionsAsyncTransport> DecisionsSender<'env, Clients> {
+impl<Clients: DecisionsAsyncTransport> DecisionsSender<'_, Clients> {
     // adecisions(): signing off the request task only for AWS, then the provider's async client
-    pub(crate) async fn asend_with<T: DecisionsProviderConfig + Sync>(
+    pub(crate) async fn asend_with<T>(
         &mut self,
         call: &DecisionsCall<'_>,
         config: &T,
-    ) -> Result<DecisionsOutput, DecisionsSendError> {
+    ) -> Result<DecisionsOutput, DecisionsSendError>
+    where
+        T: DecisionsProviderConfig + Sync,
+    {
         let prepared = request::prepare(config, call, self.env)?;
         let context = signing_context(call, &prepared);
         let signed = if config.signs_with_aws(&call.api_base) {

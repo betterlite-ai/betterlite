@@ -593,11 +593,7 @@ fn pairs(headers: &Headers) -> Vec<(String, String)> {
 }
 
 pub(super) fn answer_names(response: &systemone::DecisionsResponse) -> Vec<String> {
-    response
-        .answers
-        .keys()
-        .map(|name| name.as_ref().clone())
-        .collect()
+    response.answers.keys().cloned().collect()
 }
 
 pub(super) fn systemone_request() -> systemone::DecisionsRequest {

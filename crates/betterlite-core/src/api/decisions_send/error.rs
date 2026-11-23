@@ -149,14 +149,17 @@ pub(crate) fn transform_error(
 }
 
 // A failed send: a deadline is already litellm.Timeout from the client, and every other httpx.HTTPError goes through _handle_error
-pub(crate) fn send_failure<T: DecisionsProviderConfig>(
+pub(crate) fn send_failure<T>(
     config: &T,
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
     error: RequestFailure,
     mode: ClientKind,
     elapsed: Duration,
-) -> DecisionsSendError {
+) -> DecisionsSendError
+where
+    T: DecisionsProviderConfig,
+{
     if let RequestFailure::Transport(source) = &error
         && source.is_timeout()
     {
@@ -166,12 +169,15 @@ pub(crate) fn send_failure<T: DecisionsProviderConfig>(
 }
 
 // _handle_error with a provider config: B2402's conversion picks the status and masked headers, then get_error_class raises the provider's own error
-pub(crate) fn mapped_failure<T: DecisionsProviderConfig>(
+pub(crate) fn mapped_failure<T>(
     config: &T,
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
     facts: &FailureFacts,
-) -> DecisionsSendError {
+) -> DecisionsSendError
+where
+    T: DecisionsProviderConfig,
+{
     let converted = handle_error(facts, None);
     let provider = config.get_error_class(
         &converted.message,
@@ -262,10 +268,8 @@ fn synthesized(call: &DecisionsCall<'_>, error: BaseLlmException) -> DecisionsSe
         body_param: None,
         body_code: None,
     };
-    mapped(
-        ErrorClass::ApiConnection(Box::new(context)),
-        Box::new(error),
-    )
+    let class = ErrorClass::ApiConnection(Box::new(context));
+    mapped(class, Box::new(error))
 }
 
 pub(super) fn mapped(

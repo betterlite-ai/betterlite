@@ -65,11 +65,14 @@ impl<'env, Clients: DecisionsSyncTransport + DecisionsAsyncTransport>
     }
 
     // decisions(): inline signing, the pool's default client, one blocking POST
-    pub(crate) fn send_with<T: DecisionsProviderConfig>(
+    pub(crate) fn send_with<T>(
         &mut self,
         call: &DecisionsCall<'_>,
         config: &T,
-    ) -> Result<DecisionsOutput, DecisionsSendError> {
+    ) -> Result<DecisionsOutput, DecisionsSendError>
+    where
+        T: DecisionsProviderConfig,
+    {
         let prepared = request::prepare(config, call, self.env)?;
         let signed = config.sign_request(
             prepared.outbound_headers.clone(),
@@ -107,12 +110,15 @@ pub(super) fn plain(
 }
 
 // raise_for_status, then transform_decisions_response, then _format_response
-pub(super) fn finish<T: DecisionsProviderConfig>(
+pub(super) fn finish<T>(
     config: &T,
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
     reply: &UpstreamResponse,
-) -> Result<DecisionsOutput, DecisionsSendError> {
+) -> Result<DecisionsOutput, DecisionsSendError>
+where
+    T: DecisionsProviderConfig,
+{
     if reply.status >= 400 {
         return Err(mapped_failure(config, call, redactor, &status_facts(reply)));
     }

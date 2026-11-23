@@ -37,7 +37,10 @@ pub trait DecisionsAsyncTransport: Send + Sync {
 }
 
 // The blocking answer, read up to the shared cap so a provider answer cannot grow without bound
-pub(super) fn finish_blocking<S: Read>(sent: S, status: u16, headers: HeaderMap) -> Answer {
+pub(super) fn finish_blocking<S>(sent: S, status: u16, headers: HeaderMap) -> Answer
+where
+    S: Read,
+{
     let cap = u64::try_from(MAX_RESPONSE_BYTES.saturating_add(1)).unwrap_or(u64::MAX);
     let mut body = Vec::new();
     sent.take(cap)

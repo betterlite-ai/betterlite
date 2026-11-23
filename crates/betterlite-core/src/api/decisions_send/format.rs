@@ -18,11 +18,14 @@ pub enum DecisionsOutput {
 }
 
 // _format_response: convert through the request's shape, then set the hidden params on the result
-pub(crate) fn format_response<T: DecisionsProviderConfig>(
+pub(crate) fn format_response<T>(
     config: &T,
     call: &DecisionsCall<'_>,
     response: &ir::DecisionResponse,
-) -> Result<DecisionsOutput, ResponseConversionError> {
+) -> Result<DecisionsOutput, ResponseConversionError>
+where
+    T: DecisionsProviderConfig,
+{
     let cost = config.provider_reported_cost(response);
     let output = match &call.request {
         RequestFormat::SystemOne(_) => {
