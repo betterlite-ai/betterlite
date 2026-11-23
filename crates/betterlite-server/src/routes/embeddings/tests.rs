@@ -7,6 +7,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_core::dispatch::error::DispatchError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::operation::OperationError;
 use betterlite_provider::transform_retry::TransformRetryError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -114,7 +115,7 @@ async fn embedding_route_rejects_malformed_body(#[case] path: &str) {
         .header("content-type", "application/json")
         .body(Body::from("not-json"))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -214,7 +215,7 @@ async fn mock_calls_behavior_tests_behavior() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"embed","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -256,7 +257,7 @@ async fn a_mock_testing_param_is_rejected_on_embeddings(#[case] mocked: bool) {
             r#"{"model":"embed","input":"hello","mock_timeout":true}"#,
         ))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -282,7 +283,7 @@ async fn a_mock_embedding_answers_with_the_stripped_model() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -307,7 +308,7 @@ async fn a_mock_embedding_answers_with_the_body_model() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"alias","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -368,7 +369,7 @@ async fn an_embedding_answer_echoes_the_callers_call_id(#[case] sent: &str, #[ca
         .header("x-litellm-call-id", sent)
         .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -425,7 +426,8 @@ async fn a_stripped_client_mock_field_never_reaches_the_embedding_provider() {
             r#"{"model":"embed","input":"hello","mock_response":{"choices":[{"logprobs":null}]},"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#,
         ))
         .expect("request");
-    let call = embedding_routes(Arc::new(executor), None, None).oneshot(request);
+    let call =
+        embedding_routes(Arc::new(executor), None, None, &azure_composition()).oneshot(request);
     let (sent, answered) = tokio::join!(provider(listener), call);
     let response = answered.expect("response");
     assert_eq!(response.status(), StatusCode::OK);
@@ -487,7 +489,7 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -536,7 +538,13 @@ async fn status_with_vertex(deployment: &str) -> (StatusCode, usize) {
             .header("content-type", "application/json")
             .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
             .expect("request");
-        let call = embedding_routes(Arc::new(executor), Some(installed), None).oneshot(request);
+        let call = embedding_routes(
+            Arc::new(executor),
+            Some(installed),
+            None,
+            &azure_composition(),
+        )
+        .oneshot(request);
         (call, vertex)
     };
     let response = call.await.expect("response");
@@ -622,6 +630,11 @@ fn litellm_text(model: &str) -> String {
     )
 }
 
+// the composition a server builds at startup; these routes never reach Azure, so it stays empty
+fn azure_composition() -> Arc<Composition> {
+    Arc::new(Composition::default())
+}
+
 fn embedding_executor() -> Arc<ChatExecutor> {
     let source = "model_list:\n  - model_name: embed-model\n    litellm_params: {model: openai/text-embedding-3-small, api_base: 'http://127.0.0.1:9/v1', api_key: oracle-key}\n";
     let config = ConfigLoader {
@@ -643,10 +656,15 @@ async fn ask(
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
         .expect("request");
-    let response = embedding_routes(embedding_executor(), None, read_through)
-        .oneshot(request)
-        .await
-        .expect("response");
+    let response = embedding_routes(
+        embedding_executor(),
+        None,
+        read_through,
+        &azure_composition(),
+    )
+    .oneshot(request)
+    .await
+    .expect("response");
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 1 << 20).await.expect("body");
     (status, serde_json::from_slice(&bytes).expect("error body"))

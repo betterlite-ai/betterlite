@@ -27,6 +27,7 @@ use betterlite_openai::text_completion_execution::{
     CompletionCallAnswer, CompletionExecutor, CompletionSend,
 };
 use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::operation::OperationResult;
 use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::runtime::runtime_counter;
@@ -38,6 +39,7 @@ use crate::routes::completions::streaming::{StreamRoute, StreamUsage, provider_s
 use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
 use crate::server::error::ChatCallsError;
 use crate::state::anthropic_runtime::Slot;
+use crate::state::azure_runtime;
 
 use self::mock::mock_stream;
 use self::relay::{AnthropicAnswer, answered_result, anthropic_answer, relay_bytes};
@@ -47,6 +49,7 @@ pub(crate) struct ChatCalls {
     pub(crate) executor: Arc<ChatExecutor>,
     pub(crate) counter: Arc<Counter>,
     pub(crate) anthropic: Arc<AnthropicRuntime>,
+    pub(crate) azure: Arc<Composition>,
 }
 
 impl ChatCalls {
@@ -54,6 +57,7 @@ impl ChatCalls {
         config: &Config,
         executor: Arc<ChatExecutor>,
         anthropic: &Slot,
+        azure: &azure_runtime::Slot,
     ) -> Result<Self, ChatCallsError> {
         let counter = runtime_counter(
             config,
@@ -64,6 +68,7 @@ impl ChatCalls {
             executor,
             counter: Arc::new(counter),
             anthropic: anthropic.runtime.clone()?,
+            azure: Arc::clone(&azure.composition),
         })
     }
 }
@@ -95,6 +100,7 @@ impl ChatCall for ChatCalls {
             &call.deployment,
             control,
             Some(&self.anthropic),
+            &self.azure,
         )
         .await
         .map_err(chat_failure)?;
@@ -140,6 +146,7 @@ impl ChatCall for ChatCalls {
             StreamRoute {
                 usage: StreamUsage::Chat,
                 anthropic: Some(&self.anthropic),
+                azure: &self.azure,
             },
         )
         .await

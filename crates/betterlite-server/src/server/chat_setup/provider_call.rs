@@ -9,6 +9,7 @@ use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
 use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::operation::{
     ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult,
 };
@@ -36,9 +37,10 @@ pub(crate) async fn answer_chat(
     deployment: &ChatDeployment,
     control: ControlOptions,
     anthropic: Option<&Arc<AnthropicRuntime>>,
+    azure: &Arc<Composition>,
 ) -> Result<(OperationResult, HeaderMap, Duration), CallError<ChatError>> {
     if !chat_mocks_resolve(executor, deployment, request)? {
-        return provider_chat(executor, request, deployment, control, anthropic).await;
+        return provider_chat(executor, request, deployment, control, anthropic, azure).await;
     }
     let outcome = executor.send(deployment, request).await?;
     Ok((
@@ -71,8 +73,9 @@ async fn provider_chat(
     deployment: &ChatDeployment,
     control: ControlOptions,
     anthropic: Option<&Arc<AnthropicRuntime>>,
+    azure: &Arc<Composition>,
 ) -> Result<(OperationResult, HeaderMap, Duration), CallError<ChatError>> {
-    let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
+    let provider = Provider::from_deployment(deployment, azure).map_err(chat_error)?;
     let mut inputs = Deployment::from_chat(deployment);
     inputs.anthropic = anthropic.cloned();
     let operation = OperationRequest::Chat(Box::new(ChatOperation {

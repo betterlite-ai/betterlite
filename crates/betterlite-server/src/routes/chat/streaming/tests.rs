@@ -37,6 +37,7 @@ use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dis
 use crate::routes::completions::streaming::pump::{Pump, next_frame};
 use crate::server::chat_setup::chat_executor;
 use crate::state::anthropic_runtime;
+use crate::state::azure_runtime;
 use crate::state::shared::Shared;
 
 fn config_for(source: &str) -> Config {
@@ -79,7 +80,8 @@ async fn routed_at(
         client: executor.client.clone(),
     };
     let slot = anthropic_runtime::Slot::new(config, &shared);
-    let calls = ChatCalls::new(config, Arc::new(executor), &slot).expect("calls");
+    let azure = azure_runtime::Slot::new(config);
+    let calls = ChatCalls::new(config, Arc::new(executor), &slot, &azure).expect("calls");
     let response = chat_routes_with_call_id(Arc::new(calls), false)
         .expect("router")
         .oneshot(request)

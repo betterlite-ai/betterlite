@@ -21,6 +21,7 @@ use betterlite_openai::chat::client_mock;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_redact::secret::Redactor;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -42,8 +43,9 @@ pub(crate) fn embedding_routes(
     executor: Arc<ChatExecutor>,
     vertex: Option<Arc<dyn EmbeddingCall>>,
     read_through: Option<Arc<dyn ModelReadThrough>>,
+    azure: &Arc<Composition>,
 ) -> Router {
-    let calls = vertex::calls(Arc::clone(&executor), vertex);
+    let calls = vertex::calls(Arc::clone(&executor), vertex, azure);
     let log = Arc::new(TracingCallLog);
     let dispatch = Arc::new(Dispatch::new(
         executor.deployments.clone(),
@@ -74,6 +76,7 @@ struct EmbeddingState {
 // the existing embedding implementation, reached through the dispatch pipeline's port
 struct EmbeddingCalls {
     executor: Arc<ChatExecutor>,
+    azure: Arc<Composition>,
 }
 
 fn embedding_port_failure(error: CallError<EmbeddingError>) -> EmbeddingFailure {
@@ -93,7 +96,7 @@ impl EmbeddingCall for EmbeddingCalls {
         call: EmbeddingCallInput<'_>,
     ) -> Result<EmbeddingResult, EmbeddingFailure> {
         let (response, upstream_headers, upstream_time) =
-            embed(&self.executor, &call.deployment, call.request)
+            embed(&self.executor, &call.deployment, call.request, &self.azure)
                 .await
                 .map_err(embedding_port_failure)?;
         Ok(EmbeddingResult {
@@ -268,6 +271,7 @@ async fn embed(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
     request: &EmbeddingRequest,
+    azure: &Arc<Composition>,
 ) -> Result<(EmbeddingResponse, HeaderMap, Duration), CallError<EmbeddingError>> {
     if embedding_mocks_resolve(executor, deployment, request)? {
         let outcome = embedding::send(executor, deployment, request).await?;
@@ -277,7 +281,7 @@ async fn embed(
             outcome.upstream_time,
         ));
     }
-    provider_embedding(executor, deployment, request).await
+    provider_embedding(executor, deployment, request, azure).await
 }
 
 fn embedding_mocks_resolve(

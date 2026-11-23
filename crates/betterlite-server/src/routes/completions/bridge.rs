@@ -81,7 +81,15 @@ pub(super) async fn chat_bridge(
         return Ok(ChatCallAnswer::Streamed(stream));
     }
     let executor = &calls.state.executor;
-    let answered = answer_chat(executor, &chat, &call.deployment, control, Some(runtime)).await;
+    let answered = answer_chat(
+        executor,
+        &chat,
+        &call.deployment,
+        control,
+        Some(runtime),
+        &calls.state.azure_runtime.composition,
+    )
+    .await;
     let (result, headers, time) = answered.map_err(|error| chat_call_failure(error, calls))?;
     let answer = if let OperationResult::Anthropic(AnthropicResult::Reply(reply)) = result {
         anthropic_converted(reply, headers, time)?
@@ -99,13 +107,16 @@ async fn streamed_answer(
     control: ControlOptions,
     runtime: &Arc<AnthropicRuntime>,
 ) -> Result<TextStreamAnswer, TextCompletionFailure> {
-    let Ok(Provider::Anthropic(_)) = Provider::from_deployment(&call.deployment) else {
+    let Ok(Provider::Anthropic(_)) =
+        Provider::from_deployment(&call.deployment, &calls.state.azure_runtime.composition)
+    else {
         return streaming::streamed(calls, call, chat, control).await;
     };
     let executor = &calls.state.executor;
     let route = StreamRoute {
         usage: StreamUsage::Text,
         anthropic: Some(runtime),
+        azure: &calls.state.azure_runtime.composition,
     };
     let started = Instant::now();
     let answered = provider_stream(executor, &call.deployment, chat, control, route).await;
