@@ -1,0 +1,108 @@
+id: B10047
+title: Model access-group map and cached model group info
+description: >-
+  Three tasks read the router's access-group map or its cached group info and nothing else of B847: B848 expands a user's direct grants through the map, B8351's catalog queries test wildcard access groups and forward the cached group info, and B847's own usage and filter code reads both. This task builds the two Router methods behind them, get_model_access_groups and _cached_get_model_group_info, together with their caches, so B848 and B8351 wait on this small task instead of all of B847.
+
+
+  Layout. Module model_group_lookups in betterlite-router, crates/betterlite-router/src/model_group_lookups.rs, with submodules access_groups, group_info and error that the module file declares, and every test in model_group_lookups/tests.rs. The module file is an empty stub its parent declares. It sits outside B847's model_group_usage on purpose, so the two tasks never share files. The caches fill the two slots that B844's model_catalog_lookup::cache::CatalogCaches already clears: access_groups and model_group_info.
+
+
+  The access-group map. `pub type AccessGroupMap = IndexMap<String, Vec<String>>`. `AccessGroups` owns one B844 `CacheSlot<AccessGroupMap>` and implements B844's `CacheClear` by clearing it, so the router state can point `CatalogCaches::access_groups` at it. `AccessGroups::get_model_access_groups(&self, lookup: &CatalogLookup<'_>, model_name: Option<&str>, model_access_group: Option<&str>, team_id: Option<&str>) -> Result<AccessGroupMap, AccessGroupError>` follows router.py L12120-L12164. Only a call with all three arguments None uses the cache: a filled slot answers at once, an empty map included. Otherwise call B844's `lookup.get_model_list(model_name, team_id)` and walk its rows in order. Skip a row whose model_info is an empty object. Read model_info.access_groups: absent or null gives no groups; a list of strings gives one group per entry. For every entry append the row's model_name to that group's list, once per occurrence and without deduplication; with model_access_group set, only an entry equal to it counts. A no-args call stores the finished map in the slot. Return an owned clone, never a borrow of the slot. A get_model_list failure is AccessGroupError::Lookup and leaves the slot empty. An access_groups value that is not a list, or an entry that is not a string, is AccessGroupError::InvalidAccessGroups naming the row's model_name, as docs/compatibility.md asks for a value outside the declared List[str].
+
+
+  The cached group info. `GroupInfoCache::new(capacity: i64)` wraps an lru::LruCache<String, Option<ModelGroupInfo>>. The capacity is DEFAULT_MAX_LRU_CACHE_SIZE, default 64, which the server reads from config.sections.full_model_metadata.default_max_lru_cache_size (B2225's loader cases prove the key; this task only takes the number). A capacity of 0 or below stores nothing, as functools.lru_cache does with maxsize 0. Add lru to betterlite-router's Cargo.toml at the 0.18.5 the workspace lock already carries for betterlite-models. `GroupInfoCache::cached_get_model_group_info(&self, lookup, sources, model_group, keys)` takes the same arguments as B846's `model_group_info::aggregate::get_model_group_info` and returns its `Result<Option<ModelGroupInfo>, GroupInfoError<R::Error>>`. A hit returns a clone of the stored answer, None included, marks the entry most recent and never calls B846, so `keys` stays untouched. A miss awaits B846's function and stores an Ok answer, None included; an error is returned and not stored. Implement `CacheClear` so `CatalogCaches::model_group_info` points at this cache and B844's Invalidation::ModelMetadata drops every entry, which is how an equal-length price edit stops serving stale info. Hold the lock only around the lookup and the store, never across the await, and keep a generation counter that clear bumps: an answer whose read began before a clear is returned to its caller but not stored.
+
+
+  Wiring the two caches into the server's router state and its CatalogCaches is the router state owner's step, not this task's. B847 calls both methods from get_remaining_model_group_usage and _filter_deployments_by_model_access_groups, B8351 from is_wildcard_access_group and cached_model_group_info, and B848 from the user grant expansion.
+
+
+  Oracle. The b10047 helper calls get_model_access_groups with the case's model_list, model_group_alias and the three arguments. The Python side builds a Router from those rows and calls the public method, as tools/oracle/helpers/model_catalog_lookup.py builds its Router. The Rust side builds the same catalog through the router's public constructors and calls AccessGroups on a fresh cache; the model_catalog_lookup helper's pub(crate) Snapshot in tools/oracle/src/helpers/router/model_catalog_lookup/snapshot.rs already turns rows into a CatalogLookup, so reuse it where its input fits instead of writing a second row builder. Cache effects cannot show in one call and stay in native tests. Add helper_case corpus seeds named model-access-groups-*.
+
+
+  Tests in model_group_lookups/tests.rs, names starting with access_groups_ or group_info_. The access-group tests use a small catalog built through the public constructors of B844 and B368: duplicates per occurrence, the exact group filter, a model name, a team lookup, alias rows before deployment rows, empty model_info and null access_groups skipped, the invalid value error, the cache answering only the no-args call (change the catalog without clearing and the cached map stays, clear and it follows), an empty-string argument skipping the cache, an empty map cached, and a lookup error leaving the slot empty. The group-info tests use counting fakes for B846's DeploymentInfo, like model_group_info's tests: a hit that skips the read, None cached, an error not cached, least-recent eviction at capacity 1, capacity 0 and -1 storing nothing, Invalidation::ModelMetadata clearing it while Invalidation::AccessGroups does not, and a clear during an in-flight read keeping the older answer out.
+scope:
+  paths:
+    - crates/betterlite-router/src/model_group_lookups.rs
+    - crates/betterlite-router/src/model_group_lookups/**
+    - crates/betterlite-router/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/helpers/model-access-groups/**
+    - tools/oracle/fuzz/corpus/helper_case/model-access-groups-*
+    - tools/oracle/helpers/b10047.py
+    - tools/oracle/helpers/b10047/**
+    - tools/oracle/src/helpers/router/b10047.rs
+    - tools/oracle/src/helpers/router/b10047/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12120-L12164
+    why: Owned. get_model_access_groups, its no-args cache, the per-occurrence append and the exact group filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11319-L11326
+    why: Owned. _cached_get_model_group_info, lru_cache over get_model_group_info with DEFAULT_MAX_LRU_CACHE_SIZE entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L493-L493
+    why: DEFAULT_MAX_LRU_CACHE_SIZE, int from the environment with default 64.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14407-L14430
+    why: Call site. _resolve_model_grant_to_deployment_ids reads the no-args map for a user grant, in B848's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4380-L4395
+    why: Call site. A team's model access check reads the map for one model name and team id.
+dod:
+  - text: The map appends each row's model_name once per access_groups entry without deduplication, lists alias rows before deployment rows, and skips empty model_info and absent or null access_groups.
+    proof: [access-groups-tests, oracle, helper-python]
+  - text: model_access_group keeps only the exact group, and model_name and team_id narrow the rows through get_model_list, with wildcard rows named after the request.
+    proof: [access-groups-tests, oracle]
+  - text: Only the all-None call reads and fills the cache, an empty map included, an empty-string argument skips it, a lookup error leaves it empty, and an access_groups value outside List[str] is a typed error naming the row.
+    proof: [access-groups-tests]
+  - text: The group info cache answers a hit without calling B846, stores None but not errors, evicts the least recent entry at capacity, and stores nothing at capacity 0 or below.
+    proof: [group-info-tests]
+  - text: Invalidation::ModelMetadata clears the group info cache and Invalidation::AccessGroups clears the map, each without touching the other, and an answer read before a clear is not stored.
+    proof: [group-info-tests, access-groups-tests]
+  - text: New model-access-groups seeds for b10047 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: access-groups-tests
+      why: The map drops a duplicate, matches a group loosely, caches a filtered call or caches a failure.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^model_group_lookups::tests::access_groups_/)'
+    - id: group-info-tests
+      why: The group info cache calls B846 on a hit, stores an error, ignores its capacity or survives an invalidation.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^model_group_lookups::tests::group_info_/)'
+    - id: helper-python
+      why: The b10047 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10047.py tools/oracle/helpers/b10047)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10047 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model-access-groups-*")" &&
+        grep -lE '^[[:space:]]+b10047:' tools/oracle/fuzz/corpus/helper_case/model-access-groups-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/model-access-groups/every-occurrence.yaml
+  - tools/oracle/cases/helpers/model-access-groups/alias-rows-first.yaml
+  - tools/oracle/cases/helpers/model-access-groups/exact-group.yaml
+  - tools/oracle/cases/helpers/model-access-groups/for-model-name.yaml
+  - tools/oracle/cases/helpers/model-access-groups/team-lookup.yaml
+  - tools/oracle/cases/helpers/model-access-groups/wildcard-request-name.yaml
+deviations: []
+out_of_scope:
+  - "litellm/router.py: Router.get_model_group_usage, Router.get_model_group_io_token_usage, Router.get_remaining_model_group_usage, Router.set_response_headers and Router._filter_deployments_by_model_access_groups: B847, which calls both methods here."
+  - "litellm/router.py: Router.get_model_group_info and its aggregation: B846. Router.get_model_list, Router._invalidate_model_group_info_cache, Router._invalidate_access_groups_cache and CatalogCaches: B844."
+  - "litellm/router.py: Router.cached_model_group_info (L11328-L11329) and Router._is_model_access_group_for_wildcard_route (L12166-L12183): B8351, which calls both methods here."
+  - "litellm/router.py: every other function has the owner B016's inventory and B847's out_of_scope name."
+  - "Loading DEFAULT_MAX_LRU_CACHE_SIZE: B2225's full_model_metadata loader cases. Holding both caches in the server's router state: the router state owner."
+  - "The proxy callers of the map: B848's grant expansion, the auth checks and the model list routes, each in its own task."
+pitfalls:
+  - "LiteLLM tests `_access_groups_cache is not None`, so a cached empty map is a hit; a slot holding Some(empty) must not recompute."
+  - "An empty string is not None: model_name \"\" or team_id \"\" skips the cache and still runs get_model_list."
+  - "A row that lists the same group twice appends its name twice, and two rows with one public name both append it; callers count occurrences, so never dedupe."
+  - "model_access_group compares whole names, so \"beta\" never matches \"beta-2\"."
+  - "functools.lru_cache never stores a raised exception, so a failed B846 read must not leave an entry behind, while a None answer must."
+  - "lru::LruCache needs a NonZeroUsize, so capacity 0 or below means keeping no LruCache at all rather than clamping to 1."
+  - "The B846 read awaits; holding the cache lock across it blocks every other group, and storing its answer after a clear brings back the stale info the clear removed."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

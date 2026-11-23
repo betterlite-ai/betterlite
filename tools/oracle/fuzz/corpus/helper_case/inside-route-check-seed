@@ -1,0 +1,9 @@
+kind: helper
+name: inside-route-check-seed
+call:
+  b10052:
+    rows:
+      - {user_role: internal_user, user_id: user-1, requested_user_id: user-1}
+env: {}
+compare:
+  ignore: []

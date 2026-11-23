@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::includes::ConfigMap;
+use betterlite_config::sections::mcp_env_values::{
+    MCP_STDIO_ENABLED_ENV_VAR, is_mcp_stdio_flag_key,
+};
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::ExposeSecret as _;
@@ -24,8 +27,6 @@ const BLOCKED_ENV_KEYS: [&str; 14] = [
     "NO_PROXY",
     "no_proxy",
 ];
-
-const MCP_STDIO_ENABLED: &str = "LITELLM_ENABLE_MCP_STDIO";
 
 pub fn env_overlay(
     config: &ConfigMap,
@@ -61,9 +62,9 @@ fn overlay_entry(
         tracing::warn!("Skipping blocked environment variable key: {key}");
         return Ok(());
     }
-    if key.to_uppercase() == MCP_STDIO_ENABLED {
+    if is_mcp_stdio_flag_key(key) {
         tracing::warn!(
-            "Ignoring {MCP_STDIO_ENABLED} set in the config file. Set it in the proxy's environment instead"
+            "Ignoring {MCP_STDIO_ENABLED_ENV_VAR} set in the config file. Set it in the proxy's environment instead"
         );
         return Ok(());
     }

@@ -1,0 +1,64 @@
+id: B10066
+title: MCP refresh ownership and binding denial types
+description: >-
+  B4715's OauthBindingPort in betterlite-db (crates/betterlite-db/src/oauth_token_resolution.rs, on main) is generic over three associated types: Server, Ownership and Denied. B4659 will implement the port with the identity binder, and B4660's refresher binds on it with Ownership = RefreshOwnership and Denied = BindingDenied. Both tasks need those two types, but B4660 never calls the binder, so the types live here on their own and B4660 does not wait for B4659's id_token verifier, JWKS cache and proof hashing. This task builds only the types and their small methods; nothing here checks a token.
+
+
+  Layout. Module port_types under B4659's oauth_identity_binding in betterlite-mcp: crates/betterlite-mcp/src/oauth_identity_binding/port_types.rs, with its tests in port_types/tests.rs. The file is an empty stub that oauth_identity_binding.rs already declares with `pub mod port_types;`. Leave oauth_identity_binding.rs as it is: B4659 fills it later and re-exports these names from it. Until then, callers import them from betterlite_mcp::oauth_identity_binding::port_types. secrecy, serde, http and thiserror are already dependencies of the crate.
+
+
+  RefreshOwnership. LiteLLM's RefreshOwnershipProven, RefreshTokenPresented and the RefreshOwnership alias (L74-L83) become one enum with two variants: `Proven`, which means the gateway unwrapped the upstream refresh token from its own sealed envelope, and `Presented(SecretString)`, which carries the refresh token the caller presented. LiteLLM's third case, None, stays outside the enum: a grant with no ownership is `Option<RefreshOwnership>` = None, the way B4715's EnforceRequest already takes `ownership: Option<&O>`. Implement `From<SecretString> for RefreshOwnership`, giving Presented. B4715's port declares `type Ownership: From<SecretString> + Send + Sync`, and its refresh path builds the ownership with `P::Ownership::from(refresh_token.clone())` (crates/betterlite-db/src/oauth_token_resolution/refresh.rs), so without this impl IdentityBinder can't implement the port. Derive Debug and Clone only. SecretString's Debug prints a redaction, so a Debug of Presented never shows the token. Do not derive PartialEq: B4659 compares a presented token with the stored one in constant time, and a derived `==` would invite a plain comparison.
+
+
+  RejectionCode. LiteLLM's _RejectionCode literal (L64) becomes an enum with PrincipalMismatch ("oauth_principal_mismatch") and BindingFailed ("oauth_identity_binding_failed"). `as_str(self) -> &'static str` returns the literal, and Serialize writes the same string.
+
+
+  BindingDenied. In enforce mode LiteLLM raises HTTPException 403 with a five-key detail (L414-L423). Here that is a value: `BindingDenied { code: RejectionCode, description: String, server_id: String }` with pub fields, deriving Debug, Clone, PartialEq and Eq. `status(&self) -> http::StatusCode` is always FORBIDDEN (403). `detail(&self) -> BindingDenialDetail`, where BindingDenialDetail is a Serialize struct with the fields error (the code), error_description, server_id, credential_owner (always "caller") and credential_stored (always false). It serializes to exactly {"error": "<code>", "error_description": "<description>", "server_id": "<server_id>", "credential_owner": "caller", "credential_stored": false}. Use a typed struct, not serde_json::Value: clippy.toml forbids Value outside a passthrough field. B4675 and B4676 answer the token route with this detail, and B4660's refresher reads any denial as "no token", so neither needs more than status and detail.
+
+
+  Tests in oauth_identity_binding::port_types::tests: rejection_code_literals (both as_str values and their Serialize text), denial_status_and_detail (status 403 and serde_json::to_value(denial.detail()) equal to the five-key object for each code, with a server id and a description that contain a quote and a non-ASCII letter), ownership_from_secret (From gives Presented holding the same token, read with expose_secret), ownership_debug_redacts (the Debug text of Presented holding "rt-secret-1" does not contain it) and port_associated_types (a test-only fake that implements B4715's OauthBindingPort with Server = (), Ownership = RefreshOwnership and Denied = BindingDenied, answers BindingDenied for a Presented ownership and Ok(None) for Proven, and is called through EnforceRequest; it fails to compile when the From impl or the Send and Sync bounds are missing).
+scope:
+  paths:
+    - crates/betterlite-mcp/src/oauth_identity_binding/port_types.rs
+    - crates/betterlite-mcp/src/oauth_identity_binding/port_types/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L64
+    why: The two rejection code literals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L74-L83
+    why: RefreshOwnershipProven, RefreshTokenPresented and the RefreshOwnership alias with its None case.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L414-L423
+    why: The 403 HTTPException and its five-key detail that BindingDenied stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/authz_code_refresher.py#L97-L103
+    why: The refresher catches the 403 and reads it as no token, which is why status and detail are all a caller needs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/authz_code_refresher.py#L125-L155
+    why: Both refresher calls pass RefreshTokenPresented with the stored refresh token.
+dod:
+  - text: RejectionCode gives "oauth_principal_mismatch" and "oauth_identity_binding_failed" from as_str and from Serialize.
+    proof: [port-types-tests]
+  - text: BindingDenied answers status 403 and a detail that serializes to exactly the five keys, with credential_owner "caller" and credential_stored false.
+    proof: [port-types-tests]
+  - text: RefreshOwnership converts from a SecretString into Presented with the same token, and its Debug output never shows the token.
+    proof: [port-types-tests]
+  - text: RefreshOwnership and BindingDenied satisfy B4715's OauthBindingPort as Ownership and Denied in a fake port called through EnforceRequest.
+    proof: [port-types-tests]
+checks:
+  optional: []
+  commands:
+    - id: port-types-tests
+      why: A rejection code, the 403 detail, the From impl or the port bounds are missing or wrong.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_identity_binding::port_types::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "enforce_oauth_identity_binding, the private _BindingRejection, VerifiedRefreshToken, BindingValidator, IdentityBinder and its OauthBindingPort impl, the proof, principal, id_token and JWKS code, and the re-exports in oauth_identity_binding.rs: B4659. Its enforce oracle cases compare this detail with LiteLLM through the whole check, since LiteLLM builds the detail only inside enforce_oauth_identity_binding."
+  - "The refresher and the per-user store that bind on the port with these types: B4660. Turning BindingDenied into the token route's HTTP answer: B4675 and B4676."
+  - "OauthBindingPort and EnforceRequest themselves: B4715, on main."
+pitfalls:
+  - "LiteLLM's RefreshOwnership includes None; keep None outside the enum as Option<RefreshOwnership>, since B4715's EnforceRequest already wraps the ownership in an Option."
+  - "credential_stored is the JSON boolean false and credential_owner the string \"caller\" in every denial; a client reads credential_stored to know nothing was saved."
+  - "The 403 comes back for both codes; oauth_principal_mismatch is only the account mismatch, and every other failure, a missing id_token included, is oauth_identity_binding_failed."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

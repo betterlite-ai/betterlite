@@ -65,7 +65,7 @@ description: >-
 
 
   Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B013 (Model cost map, provider capability
-  data and token counting), B171 (Direct helper oracle and URL path encoding), B1020 (File credentials), B1035 (Batch
+  data and token counting), B171 (Direct helper oracle and URL path encoding), B10060 (Deployment credential lookup: get_credentials_for_model and its error kinds), B1035 (Batch
   records), B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution), B1019 (File routing
   ids). These are callable/type/config owners, not provider-family umbrellas; the external
   B500-B859 ids retain ownership on the provider and keys/data branches.
