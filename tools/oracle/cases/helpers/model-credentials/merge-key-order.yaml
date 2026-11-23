@@ -1,0 +1,25 @@
+kind: helper
+name: model-credentials-merge-key-order
+call:
+  b10060:
+    calls:
+      - function: merge
+        data: {api_key: caller, x: 1, custom_llm_provider: azure}
+        credentials: {api_key: server, model: resolved, custom_llm_provider: openai}
+        include_internal_credentials: false
+      - function: merge
+        data: {file_id: old, x: 1}
+        credentials: {api_key: server}
+        include_internal_credentials: false
+      - function: merge
+        data: {file_id: old, x: 1}
+        credentials: {api_key: server}
+        file_id: ""
+        include_internal_credentials: false
+      - function: merge
+        data: {file_id: old, x: 1}
+        credentials: {api_key: server}
+        file_id: new
+        include_internal_credentials: false
+env: {}
+compare: {ignore: []}
