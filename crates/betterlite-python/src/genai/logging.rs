@@ -17,6 +17,7 @@ use chrono::Utc;
 use indexmap::IndexMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+mod tests;
 static NEXT_CALL: AtomicU64 = AtomicU64::new(0);
 // LiteLLM's logging object for the call, with the call type its entry point names
 pub(crate) fn logging_state(

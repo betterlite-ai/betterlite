@@ -44,6 +44,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use std::future::Future;
 use std::future::ready;
 use std::sync::Arc;
+mod tests;
 // The server runs one Vertex workload identity pool source less than the SDK, so that source fails its load here.
 struct UnavailableAws;
 impl AwsCredentialsResolver for UnavailableAws {

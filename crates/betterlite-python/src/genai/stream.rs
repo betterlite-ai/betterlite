@@ -8,6 +8,7 @@ use pyo3::types::PyBytes;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+mod tests;
 // The two iterator classes LiteLLM answers a stream with: the sync entry point's and the async one's.
 pub(crate) enum StreamKind {
     Blocking(GoogleGenAiStream),

@@ -41,6 +41,7 @@ use secrecy::SecretString;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
+mod tests;
 // The marker each entry point carries: litellm.google_genai.main's four functions, and the stream flag each one sets.
 #[derive(Clone, Copy)]
 pub(crate) enum Entry {

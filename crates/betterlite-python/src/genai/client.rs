@@ -9,6 +9,7 @@ use betterlite_http::proxy::pool::PoolError;
 use betterlite_prompts::arguments::json::Json;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+mod tests;
 // The clients one session hands its calls: built from the environment's proxy, and rebuilt only when a deployment turns verification off.
 pub(crate) struct NativeClients {
     environment: BTreeMap<String, String>,

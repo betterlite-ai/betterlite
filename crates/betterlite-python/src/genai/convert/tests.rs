@@ -12,7 +12,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 
 use super::{
-    ConvertError, GenaiCall, NativeErrorPayload, decision_json, encode, parse, reject_files,
+    ConvertError, GenaiCall, NativeErrorPayload, decision_json, decision_object, encode, json_text,
+    parse, reject_files,
 };
 
 fn context(message: &str, model: &str, provider: &str) -> ErrorContext {
@@ -165,6 +166,26 @@ fn request_decision_json_keeps_every_value() {
             ),
         ]))
     );
+}
+
+#[test]
+fn request_decision_object_keeps_every_key() {
+    let object = Object::from([
+        ("a".to_owned(), Json::Null),
+        ("b".to_owned(), Json::Text("x".to_owned())),
+    ]);
+    let converted = decision_object(&object);
+    assert_eq!(converted.len(), 2);
+    assert_eq!(
+        converted.get("b"),
+        Some(&DecisionJson::Text("x".to_owned()))
+    );
+}
+
+#[test]
+fn request_json_text_writes_the_value() {
+    let text = json_text(&Json::List(vec![Json::Bool(true)])).unwrap();
+    assert_eq!(text, "[true]");
 }
 
 #[test]
