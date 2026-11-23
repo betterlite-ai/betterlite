@@ -23,7 +23,9 @@ use tokio_util::task::TaskTracker;
 
 use super::capture::ErrorBodyCapture;
 use super::client::ClientState;
-use super::convert::{ClientWire, NativeMcpErrorPayload, resolve_settings};
+use super::convert::{
+    ClientWire, McpErrorKind, NativeMcpErrorPayload, ResolvedSettings, resolve_settings,
+};
 
 const CREDENTIALS_TIMEOUT_SECONDS: u64 = 60;
 
@@ -34,15 +36,7 @@ pub(crate) fn build(py: Python<'_>, wire: ClientWire) -> PyResult<ClientState> {
     let resolved = resolve_settings(wire, &environment).map_err(PyErr::from)?;
     let tls = tls_policy(resolved.ssl_verify.clone(), &environment).map_err(PyErr::from)?;
     let proxy = proxy_policy(&environment).map_err(PyErr::from)?;
-    let aws = match resolved.aws.clone() {
-        Some(settings) => {
-            let built = py.detach(|| {
-                get_runtime().block_on(aws_signer(settings, &proxy, &tls, &environment))
-            });
-            Some(Arc::new(built.map_err(PyErr::from)?))
-        }
-        None => None,
-    };
+    let aws = aws_credentials(py, &resolved, &proxy, &tls)?;
     let runtime = SdkRuntime::new(
         HttpBase {
             proxy,
@@ -52,7 +46,31 @@ pub(crate) fn build(py: Python<'_>, wire: ClientWire) -> PyResult<ClientState> {
         TaskTracker::new(),
         SDK_SHUTDOWN,
     );
-    Ok(ClientState {
+    Ok(client_state(resolved, tls, aws, runtime))
+}
+
+fn aws_credentials(
+    py: Python<'_>,
+    resolved: &ResolvedSettings,
+    proxy: &Arc<ProxyPolicy>,
+    tls: &TlsPolicy,
+) -> PyResult<Option<Arc<McpSigV4Auth>>> {
+    let Some(settings) = resolved.aws.clone() else {
+        return Ok(None);
+    };
+    let built = py
+        .detach(|| get_runtime().block_on(aws_signer(settings, proxy, tls, &resolved.environment)));
+    let signer = built.map_err(PyErr::from)?;
+    Ok(Some(Arc::new(signer)))
+}
+
+fn client_state(
+    resolved: ResolvedSettings,
+    tls: TlsPolicy,
+    aws: Option<Arc<McpSigV4Auth>>,
+    runtime: SdkRuntime,
+) -> ClientState {
+    ClientState {
         server_url: resolved.server_url,
         transport_type: resolved.transport_type,
         stdio: resolved.stdio,
@@ -70,7 +88,7 @@ pub(crate) fn build(py: Python<'_>, wire: ClientWire) -> PyResult<ClientState> {
         runtime: Arc::new(runtime),
         instructions: Mutex::new(None),
         tracker: TaskTracker::new(),
-    })
+    }
 }
 
 fn proxy_policy(
@@ -78,7 +96,7 @@ fn proxy_policy(
 ) -> Result<Arc<ProxyPolicy>, NativeMcpErrorPayload> {
     ProxyPolicy::resolve(&ProxyTrust::default(), environment)
         .map(Arc::new)
-        .map_err(|error| NativeMcpErrorPayload::value(error.to_string()))
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
 }
 
 // An explicit ssl_verify is what LiteLLM's get_ssl_verify answers, so it outranks SSL_VERIFY here
@@ -96,7 +114,7 @@ fn tls_policy(
         environment.clone()
     };
     TlsPolicy::resolve(&config, &resolved_environment, None)
-        .map_err(|error| NativeMcpErrorPayload::value(error.to_string()))
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
 }
 
 async fn aws_signer(
@@ -105,8 +123,9 @@ async fn aws_signer(
     tls: &TlsPolicy,
     environment: &BTreeMap<String, String>,
 ) -> Result<McpSigV4Auth, NativeMcpErrorPayload> {
-    let client = ProxiedClient::outbound_with_tls(proxy, tls)
-        .map_err(|error| NativeMcpErrorPayload::value(error.to_string()))?;
+    let client = ProxiedClient::outbound_with_tls(proxy, tls).map_err(|error| {
+        NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string())
+    })?;
     let connector = AwsDuplexClient::from_proxied(&client).connector();
     let sources = AwsSources {
         environment: environment.clone().into_iter().collect(),
@@ -118,7 +137,7 @@ async fn aws_signer(
     };
     McpSigV4Auth::new(settings, sources)
         .await
-        .map_err(|error| NativeMcpErrorPayload::value(error.to_string()))
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
 }
 
 fn tls_config() -> Config {

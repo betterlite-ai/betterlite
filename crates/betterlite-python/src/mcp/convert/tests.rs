@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -11,6 +13,7 @@ use betterlite_mcp::credentials::{AuthValue, McpAuthType};
 use betterlite_mcp::tools::pagination::{LoadedTool, Page, ToolError, ToolFormat};
 use betterlite_mcp::tools::schemas::McpTool;
 use betterlite_prompts::arguments::json::{Json, Object};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::payload::{McpErrorKind, NativeMcpErrorPayload, status_payload};
@@ -160,30 +163,28 @@ fn request_negative_timeout_is_a_value_error() {
     assert!(failure.message.contains("timeout"));
 }
 
-#[test]
-fn request_auth_names_match_litellm() {
-    for (name, expected) in [
-        ("none", McpAuthType::None),
-        ("api_key", McpAuthType::ApiKey),
-        ("bearer_token", McpAuthType::BearerToken),
-        ("basic", McpAuthType::Basic),
-        ("authorization", McpAuthType::Authorization),
-        ("oauth2", McpAuthType::Oauth2),
-        ("token", McpAuthType::Token),
-        ("oauth2_token_exchange", McpAuthType::Oauth2TokenExchange),
-    ] {
-        let text = format!(r#"{{"auth_type":"{name}"}}"#);
-        assert_eq!(resolved(&text).auth_type, expected, "{name}");
-    }
+#[rstest]
+#[case::none("none", McpAuthType::None)]
+#[case::api_key("api_key", McpAuthType::ApiKey)]
+#[case::bearer_token("bearer_token", McpAuthType::BearerToken)]
+#[case::basic("basic", McpAuthType::Basic)]
+#[case::authorization("authorization", McpAuthType::Authorization)]
+#[case::oauth2("oauth2", McpAuthType::Oauth2)]
+#[case::token("token", McpAuthType::Token)]
+#[case::token_exchange("oauth2_token_exchange", McpAuthType::Oauth2TokenExchange)]
+fn request_auth_names_match_litellm(#[case] name: &str, #[case] expected: McpAuthType) {
+    let text = format!(r#"{{"auth_type":"{name}"}}"#);
+    assert_eq!(resolved(&text).auth_type, expected, "{name}");
 }
 
-#[test]
-fn request_unsupported_auth_names_are_refused() {
-    for name in ["oauth2_id_jag", "true_passthrough", "oauth_delegate"] {
-        let failure = refused(&format!(r#"{{"auth_type":"{name}"}}"#));
-        assert_eq!(failure.kind, McpErrorKind::ValueError);
-        assert!(failure.message.contains(name), "{name}");
-    }
+#[rstest]
+#[case::id_jag("oauth2_id_jag")]
+#[case::passthrough("true_passthrough")]
+#[case::delegate("oauth_delegate")]
+fn request_unsupported_auth_names_are_refused(#[case] name: &str) {
+    let failure = refused(&format!(r#"{{"auth_type":"{name}"}}"#));
+    assert_eq!(failure.kind, McpErrorKind::ValueError);
+    assert!(failure.message.contains(name), "{name}");
 }
 
 #[test]
@@ -292,16 +293,6 @@ fn request_call_tool_carries_arguments_and_flags() {
 }
 
 #[test]
-fn request_session_call_tool_carries_the_input_flag() {
-    let call: SessionCallWire =
-        parse(r#"{"name":"ask","arguments":{},"allow_input_required":true}"#).unwrap();
-    assert!(call.allow_input_required);
-    let request = session_call_request(&call);
-    assert_eq!(request.name, "ask");
-    assert_eq!(request.arguments, Some(Object::new()));
-}
-
-#[test]
 fn request_get_prompt_carries_named_arguments() {
     let prompt: GetPromptWire = parse(r#"{"name":"greet","arguments":{"who":"world"}}"#).unwrap();
     let params = prompt_params(prompt);
@@ -332,15 +323,9 @@ fn request_listing_deadline_is_null_or_seconds() {
 #[test]
 fn request_malformed_text_is_an_error_not_a_panic() {
     let failure = parse::<ClientWire>("{").unwrap_err();
-    assert_eq!(
-        NativeMcpErrorPayload::from(failure).kind,
-        McpErrorKind::ValueError
-    );
+    assert_eq!(failure.kind, McpErrorKind::ValueError);
     let wrong = parse::<CallToolWire>(r#"{"name":5}"#).unwrap_err();
-    assert_eq!(
-        NativeMcpErrorPayload::from(wrong).kind,
-        McpErrorKind::ValueError
-    );
+    assert_eq!(wrong.kind, McpErrorKind::ValueError);
 }
 
 #[test]
@@ -482,7 +467,7 @@ async fn error_tool_timeout_becomes_a_timeout() {
 
 #[test]
 fn error_payload_shape_names_every_field() {
-    let failure = NativeMcpErrorPayload::runtime("boom".to_owned());
+    let failure = NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, "boom".to_owned());
     let text = serde_json::to_string(&failure).unwrap();
     assert!(text.contains("\"type\":\"RuntimeError\""));
     assert!(text.contains("\"message\":\"boom\""));

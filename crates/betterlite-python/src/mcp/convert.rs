@@ -13,9 +13,9 @@ mod payload;
 mod request;
 mod tests;
 
-pub(crate) use payload::{NativeMcpErrorPayload, session_payload, tool_failure};
+pub(crate) use payload::{McpErrorKind, NativeMcpErrorPayload, session_payload, tool_failure};
 pub(crate) use request::{
-    CallToolWire, GetPromptWire, call_request, deadline, prompt_params, tool_format,
+    CallToolWire, GetPromptWire, call_options, call_request, deadline, prompt_params, tool_format,
 };
 
 // litellm/constants.py reads these at import; an empty variable counts as unset (docs/compatibility.md)
@@ -100,32 +100,29 @@ pub(crate) struct ResolvedSettings {
     pub(crate) aws: Option<McpSigV4Settings>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ConvertError {
-    #[error("the MCP text is not JSON of the expected shape: {source}")]
-    Json {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the MCP answer could not be written as JSON: {source}")]
-    Encode {
-        #[source]
-        source: serde_json::Error,
-    },
-}
-
-pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
+pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, NativeMcpErrorPayload>
 where
     T: Deserialize<'text>,
 {
-    serde_json::from_str(text).map_err(|source| ConvertError::Json { source })
+    serde_json::from_str(text).map_err(|source| {
+        NativeMcpErrorPayload::plain(
+            McpErrorKind::ValueError,
+            format!("the MCP text is not JSON of the expected shape: {source}"),
+        )
+    })
 }
 
-pub(crate) fn encode<T>(value: &T) -> Result<String, ConvertError>
+pub(crate) fn encode<T>(value: &T) -> Result<String, NativeMcpErrorPayload>
 where
     T: Serialize,
 {
-    serde_json::to_string(value).map_err(|source| ConvertError::Encode { source })
+    let written = serde_json::to_string(value);
+    written.map_err(|source| {
+        NativeMcpErrorPayload::plain(
+            McpErrorKind::RuntimeError,
+            format!("the MCP answer could not be written as JSON: {source}"),
+        )
+    })
 }
 
 pub(crate) fn resolve_settings(
@@ -139,11 +136,13 @@ pub(crate) fn resolve_settings(
     } else {
         None
     };
-    let timeout = match wire.timeout {
-        Some(seconds) => seconds_duration("timeout", seconds)?,
-        None => environment_duration(CLIENT_TIMEOUT_VARIABLE, environment, CLIENT_TIMEOUT_SECONDS)?,
-    };
-    let protocol = wire
+    let timeout = client_timeout(wire.timeout, environment)?;
+    let listing_timeout = environment_duration(
+        LISTING_TIMEOUT_VARIABLE,
+        environment,
+        LISTING_TIMEOUT_SECONDS,
+    )?;
+    let requested = wire
         .protocol_version
         .unwrap_or_else(|| AUTO_PROTOCOL_VERSION.to_owned());
     Ok(ResolvedSettings {
@@ -154,30 +153,53 @@ pub(crate) fn resolve_settings(
         auth_header_name: wire.auth_header_name,
         extra_headers: wire.extra_headers.unwrap_or_default(),
         timeout,
-        listing_timeout: environment_duration(
-            LISTING_TIMEOUT_VARIABLE,
-            environment,
-            LISTING_TIMEOUT_SECONDS,
-        )?,
-        stdio: wire.stdio_config.map(|stdio| StdioConfig {
-            command: stdio.command,
-            args: stdio.args,
-            env: stdio.env,
-        }),
+        listing_timeout,
+        stdio: wire.stdio_config.map(stdio_config),
         environment: environment.clone(),
-        npm_cache_dir: environment
-            .get(NPM_CACHE_VARIABLE)
-            .filter(|value| !value.is_empty())
-            .cloned()
-            .unwrap_or_else(|| NPM_CACHE_DIR.to_owned()),
-        ssl_verify: wire.ssl_verify.map(|verify| match verify {
-            SslVerifyWire::Enabled(enabled) => VerifySetting::Bool(enabled),
-            SslVerifyWire::Path(path) => VerifySetting::Path(path),
-        }),
-        protocol_version: ProtocolVersion::try_from(protocol)
-            .map_err(|error| NativeMcpErrorPayload::value(error.to_string()))?,
+        npm_cache_dir: npm_cache_dir(environment),
+        ssl_verify: wire.ssl_verify.map(ssl_setting),
+        protocol_version: protocol_version(requested)?,
         aws,
     })
+}
+
+fn client_timeout(
+    timeout: Option<f64>,
+    environment: &BTreeMap<String, String>,
+) -> Result<Duration, NativeMcpErrorPayload> {
+    match timeout {
+        Some(seconds) => seconds_duration("timeout", seconds),
+        None => environment_duration(CLIENT_TIMEOUT_VARIABLE, environment, CLIENT_TIMEOUT_SECONDS),
+    }
+}
+
+fn protocol_version(requested: String) -> Result<ProtocolVersion, NativeMcpErrorPayload> {
+    let version = ProtocolVersion::try_from(requested);
+    version
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
+}
+
+fn ssl_setting(verify: SslVerifyWire) -> VerifySetting {
+    match verify {
+        SslVerifyWire::Enabled(enabled) => VerifySetting::Bool(enabled),
+        SslVerifyWire::Path(path) => VerifySetting::Path(path),
+    }
+}
+
+fn stdio_config(stdio: StdioWire) -> StdioConfig {
+    StdioConfig {
+        command: stdio.command,
+        args: stdio.args,
+        env: stdio.env,
+    }
+}
+
+fn npm_cache_dir(environment: &BTreeMap<String, String>) -> String {
+    environment
+        .get(NPM_CACHE_VARIABLE)
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .unwrap_or_else(|| NPM_CACHE_DIR.to_owned())
 }
 
 pub(crate) fn auth_value(wire: AuthValueWire) -> AuthValue {
@@ -197,7 +219,8 @@ fn aws_settings(value: Option<&AuthValue>) -> Result<McpSigV4Settings, NativeMcp
     let headers = match value {
         Some(AuthValue::Headers(headers)) => headers,
         Some(AuthValue::Text(_)) => {
-            return Err(NativeMcpErrorPayload::value(
+            return Err(NativeMcpErrorPayload::plain(
+                McpErrorKind::ValueError,
                 "auth_type aws_sigv4 needs auth_value to be a map of AWS settings".to_owned(),
             ));
         }
@@ -236,14 +259,18 @@ fn auth_kind(kind: AuthTypeWire) -> Result<McpAuthType, NativeMcpErrorPayload> {
 }
 
 fn unsupported_auth(name: &str) -> NativeMcpErrorPayload {
-    NativeMcpErrorPayload::value(format!(
-        "auth_type {name} is not supported by the native MCP client"
-    ))
+    NativeMcpErrorPayload::plain(
+        McpErrorKind::ValueError,
+        format!("auth_type {name} is not supported by the native MCP client"),
+    )
 }
 
 fn seconds_duration(field: &str, seconds: f64) -> Result<Duration, NativeMcpErrorPayload> {
     Duration::try_from_secs_f64(seconds).map_err(|error| {
-        NativeMcpErrorPayload::value(format!("{field} is not a valid number of seconds: {error}"))
+        NativeMcpErrorPayload::plain(
+            McpErrorKind::ValueError,
+            format!("{field} is not a valid number of seconds: {error}"),
+        )
     })
 }
 
@@ -254,7 +281,7 @@ fn environment_duration(
 ) -> Result<Duration, NativeMcpErrorPayload> {
     let text = environment.get(variable).map_or("", String::as_str);
     let seconds = betterlite_env::number::<f64>(variable, text)
-        .map_err(|error| NativeMcpErrorPayload::value(error.to_string()))?
+        .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))?
         .unwrap_or(fallback);
     seconds_duration(variable, seconds)
 }

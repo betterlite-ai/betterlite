@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::time::Duration;
 
 use betterlite_mcp::client::sdk_transport::error::SdkError;

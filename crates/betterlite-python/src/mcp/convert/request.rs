@@ -2,12 +2,13 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_core::api::mcp_client_resources::types::GetPromptRequestParams;
+use betterlite_mcp::client::tools::calling::CallToolOptions;
 use betterlite_mcp::tools::pagination::ToolFormat;
 use betterlite_mcp::tools::tool_calls::CallRequest;
 use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 
-use super::{NativeMcpErrorPayload, seconds_duration};
+use super::{McpErrorKind, NativeMcpErrorPayload, seconds_duration};
 
 // The request texts each native method takes, with LiteLLM's argument names (client.py#L873-L958)
 #[derive(Debug, Default, Deserialize)]
@@ -33,6 +34,13 @@ pub(crate) fn call_request(wire: &CallToolWire) -> CallRequest {
     }
 }
 
+pub(crate) fn call_options(wire: &CallToolWire) -> CallToolOptions {
+    CallToolOptions {
+        raise_on_error: wire.raise_on_error,
+        allow_input_required: wire.allow_input_required,
+    }
+}
+
 pub(crate) fn prompt_params(wire: GetPromptWire) -> GetPromptRequestParams {
     GetPromptRequestParams {
         name: wire.name,
@@ -44,9 +52,10 @@ pub(crate) fn tool_format(name: &str) -> Result<ToolFormat, NativeMcpErrorPayloa
     match name {
         "mcp" => Ok(ToolFormat::Mcp),
         "openai" => Ok(ToolFormat::Openai),
-        other => Err(NativeMcpErrorPayload::value(format!(
-            "format must be \"mcp\" or \"openai\", not {other:?}"
-        ))),
+        other => Err(NativeMcpErrorPayload::plain(
+            McpErrorKind::ValueError,
+            format!("format must be \"mcp\" or \"openai\", not {other:?}"),
+        )),
     }
 }
 
