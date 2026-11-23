@@ -6,7 +6,7 @@ from betterlite._completion.errors import raise_native_error
 from betterlite._native import NativeGenaiError, NativeGenaiStream
 
 
-# LiteLLM's two streaming iterators as one class: the sync call iterates it, the async call awaits its chunks, and a chunk is raw bytes
+# LiteLLM's two streaming iterators as one class: sync iterates it, async awaits chunks
 class GenaiStream(Iterator[bytes]):
     def __init__(self, native: NativeGenaiStream) -> None:
         self._native = native

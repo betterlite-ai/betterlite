@@ -12,8 +12,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 
 use super::{
-    ConvertError, GenaiCall, NativeErrorPayload, decision_json, decision_object, encode, json_text,
-    parse, reject_files,
+    ConvertError, GenaiCall, NativeErrorPayload, decision_json, decision_object, parse,
+    reject_files,
 };
 
 fn context(message: &str, model: &str, provider: &str) -> ErrorContext {
@@ -183,12 +183,6 @@ fn request_decision_object_keeps_every_key() {
 }
 
 #[test]
-fn request_json_text_writes_the_value() {
-    let text = json_text(&Json::List(vec![Json::Bool(true)])).unwrap();
-    assert_eq!(text, "[true]");
-}
-
-#[test]
 fn error_payload_names_the_litellm_class() {
     let class = ErrorClass::BadRequest(Box::new(ResponseDetails::<400>::from(context(
         "API key not valid",
@@ -235,7 +229,7 @@ fn error_payload_encodes_as_json() {
     let class = ErrorClass::BadRequest(Box::new(ResponseDetails::<400>::from(context(
         "bad", "gemini/g", "gemini",
     ))));
-    let text = encode(&NativeErrorPayload::from_class(&class)).unwrap();
+    let text = serde_json::to_string(&NativeErrorPayload::from_class(&class)).unwrap();
     assert!(text.contains(r#""type":"BadRequestError""#));
     assert!(text.contains(r#""status_code":400"#));
 }

@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::time::{Duration, TryFromFloatSecsError};
 mod tests;
 // The session text: absent means the process environment, the snapshot LiteLLM reads its globals from at import.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct SessionWire {
     pub(crate) environment: Option<BTreeMap<String, String>>,
@@ -48,11 +48,6 @@ impl GenaiCall {
 pub(crate) enum ConvertError {
     #[error("the native request text is not JSON of the expected shape: {source}")]
     Json {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the answer could not be written as JSON: {source}")]
-    Encode {
         #[source]
         source: serde_json::Error,
     },
@@ -153,10 +148,4 @@ impl NativeErrorPayload {
             max_retries: None,
         }
     }
-}
-pub(crate) fn encode(payload: &NativeErrorPayload) -> Result<String, ConvertError> {
-    serde_json::to_string(payload).map_err(|source| ConvertError::Encode { source })
-}
-pub(crate) fn json_text(value: &Json) -> Result<String, ConvertError> {
-    serde_json::to_string(value).map_err(|source| ConvertError::Encode { source })
 }

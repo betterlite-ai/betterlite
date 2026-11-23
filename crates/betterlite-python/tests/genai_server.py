@@ -51,7 +51,7 @@ RESPONSE: Final[dict[str, JsonValue]] = {
     "modelVersion": MODEL,
 }
 EVENTS: Final[list[dict[str, JsonValue]]] = [
-    {"candidates": [{"content": {"parts": [{"text": "Hel"}], "role": "model"}, "index": 0}]},
+    {"candidates": [{"content": {"parts": [{"text": "Hi"}], "role": "model"}, "index": 0}]},
     {
         "candidates": [
             {
@@ -216,22 +216,6 @@ async def reference_stream_async(result: Awaitable[Answer]) -> AsyncByteStream:
             return stream
         case Dumpable() | ByteStream() | None:
             raise AssertionError("the reference call answered no async iterator")
-
-
-def collect_bytes(stream: ByteStream) -> list[bytes]:
-    return list(stream)
-
-
-async def collect_bytes_async(stream: AsyncByteStream) -> list[bytes]:
-    return [chunk async for chunk in stream]
-
-
-def recorded_bodies(server: GenaiServer) -> list[Request]:
-    return [call["body"] for call in server.calls]
-
-
-def recorded_paths(server: GenaiServer) -> list[str]:
-    return [call["path"] for call in server.calls]
 
 
 def recorded_header(server: GenaiServer, index: int, name: str) -> str | None:

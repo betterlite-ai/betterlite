@@ -21,16 +21,17 @@ class SessionSettings(TypedDict):
 SESSION: Final[TypeAdapter[SessionSettings]] = TypeAdapter(SessionSettings)
 
 
-# litellm.api_key is the studio key LiteLLM reads after GOOGLE_API_KEY and GEMINI_API_KEY, so it travels in the session, not in the request
+# litellm.api_key is the studio key LiteLLM reads after GOOGLE_API_KEY and GEMINI_API_KEY
 def session_settings() -> str:
     settings = SESSION.validate_python(read_settings(SESSION_SETTINGS))
     api_key = settings["api_key"]
     if api_key is None:
         return "{}"
-    return json.dumps({"api_key": api_key})
+    payload: dict[str, str] = {"api_key": api_key}
+    return json.dumps(payload)
 
 
-# LiteLLM's module settings fill a name the call left absent; an explicit value, an empty string included, stays as given
+# module settings fill a name the call left absent; an explicit value, an empty one included
 def fill_settings(forwarded: dict[str, CallValue]) -> None:
     settings = read_settings(FALLBACK_SETTINGS)
     for name in FALLBACK_SETTINGS:
@@ -38,25 +39,25 @@ def fill_settings(forwarded: dict[str, CallValue]) -> None:
             forwarded[name] = settings[name]
 
 
-# the call's own kwargs minus LiteLLM's async markers and its logging object, which the Rust call cannot take
+# the call's own kwargs minus LiteLLM's async markers and its logging object
 def forwarded_kwargs(kwargs: Mapping[str, CallValue]) -> dict[str, CallValue]:
-    forwarded: dict[str, CallValue] = {
-        name: value
-        for name, value in kwargs.items()
-        if name not in ASYNC_FLAGS and name != LOGGING_OBJECT
-    }
+    forwarded: dict[str, CallValue] = {}
+    for name, value in kwargs.items():
+        if name in ASYNC_FLAGS or name == LOGGING_OBJECT:
+            continue
+        forwarded[name] = value
     fill_settings(forwarded)
     return forwarded
 
 
-# proxy auth headers ride every family's request; the caller's own headers go on first, as LiteLLM's completion path orders them
-def merged_headers(extra_headers: Mapping[str, str] | None) -> dict[str, str] | None:
+# proxy auth headers ride every family's request, after the caller's own headers
+def merged_headers(extra_headers: Mapping[str, str] | None) -> dict[str, str]:
     headers: dict[str, str] = {} if extra_headers is None else dict(extra_headers)
     headers.update(proxy_headers())
-    return headers or None
+    return headers
 
 
-# the payload GenaiCall reads: LiteLLM's named arguments on the call, everything else in kwargs for the Rust setup
+# the payload GenaiCall reads: LiteLLM's named arguments, everything else in kwargs
 def call_values(
     model: str, contents: CallValue, config: CallValue, tools: CallValue,
     extra_headers: Mapping[str, str] | None, extra_query: CallValue,

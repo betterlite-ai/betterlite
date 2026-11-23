@@ -14,7 +14,7 @@ from betterlite._native import NativeGenaiError, NativeGenaiSession
 JSON_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 
-# a non-stream answer is the response body, which LiteLLM hands back as a provider object with the same model_dump
+# a non-stream answer is the response body LiteLLM hands back as a provider object's model_dump
 def content_result(values: Mapping[str, CallValue]) -> dict[str, JsonValue]:
     session = NativeGenaiSession(session_settings())
     answer = call_native(session.generate_content, to_call_payload(values), NativeGenaiError)
@@ -29,17 +29,7 @@ async def content_result_async(values: Mapping[str, CallValue]) -> dict[str, Jso
     return JSON_OBJECT.validate_python(answer)
 
 
-# the stream objects are not JSON, so their errors are mapped here instead of by the runner's call_native
-def stream_result(values: Mapping[str, CallValue]) -> GenaiStream:
-    session = NativeGenaiSession(session_settings())
-    payload = to_call_payload(values)
-    try:
-        native = session.generate_content_stream(payload.text, payload.blobs)
-    except NativeGenaiError as failure:
-        raise_native_error(failure)
-    return GenaiStream(native)
-
-
+# a stream's chunks are not JSON, so its native errors are mapped here instead of by the runner
 async def stream_result_async(values: Mapping[str, CallValue]) -> GenaiStream:
     session = NativeGenaiSession(session_settings())
     payload = to_call_payload(values)
@@ -56,7 +46,7 @@ def generate_content(
     extra_body: CallValue = None, timeout: TimeoutValues | float | str | None = None,
     custom_llm_provider: str | None = None, **kwargs: CallValue,
 ) -> dict[str, JsonValue] | Awaitable[dict[str, JsonValue]]:
-    asynchronous = kwargs.pop(ASYNC_FLAGS[0], False)
+    asynchronous = kwargs.pop(ASYNC_FLAGS[0], False) is True
     values = call_values(
         model, contents, config, tools, extra_headers, extra_query, extra_body, timeout,
         custom_llm_provider, kwargs,
@@ -72,14 +62,20 @@ def generate_content_stream(
     extra_body: CallValue = None, timeout: TimeoutValues | float | str | None = None,
     custom_llm_provider: str | None = None, **kwargs: CallValue,
 ) -> GenaiStream | Awaitable[GenaiStream]:
-    asynchronous = kwargs.pop(ASYNC_FLAGS[1], False)
+    asynchronous = kwargs.pop(ASYNC_FLAGS[1], False) is True
     values = call_values(
         model, contents, config, tools, extra_headers, extra_query, extra_body, timeout,
         custom_llm_provider, kwargs,
     )
     if asynchronous:
         return stream_result_async(values)
-    return stream_result(values)
+    session = NativeGenaiSession(session_settings())
+    payload = to_call_payload(values)
+    try:
+        native = session.generate_content_stream(payload.text, payload.blobs)
+    except NativeGenaiError as failure:
+        raise_native_error(failure)
+    return GenaiStream(native)
 
 
 async def agenerate_content(
@@ -88,13 +84,15 @@ async def agenerate_content(
     extra_body: CallValue = None, timeout: TimeoutValues | float | str | None = None,
     custom_llm_provider: str | None = None, **kwargs: CallValue,
 ) -> dict[str, JsonValue]:
-    # LiteLLM's async entry marks kwargs with its flag; the payload builder drops both flags, so it never reaches the request
-    kwargs[ASYNC_FLAGS[0]] = True
     values = call_values(
         model, contents, config, tools, extra_headers, extra_query, extra_body, timeout,
         custom_llm_provider, kwargs,
     )
-    return await content_result_async(values)
+    session = NativeGenaiSession(session_settings())
+    answer = await acall_native(
+        session.agenerate_content, to_call_payload(values), NativeGenaiError
+    )
+    return JSON_OBJECT.validate_python(answer)
 
 
 async def agenerate_content_stream(
@@ -103,7 +101,6 @@ async def agenerate_content_stream(
     extra_body: CallValue = None, timeout: TimeoutValues | float | str | None = None,
     custom_llm_provider: str | None = None, **kwargs: CallValue,
 ) -> GenaiStream:
-    kwargs[ASYNC_FLAGS[1]] = True
     values = call_values(
         model, contents, config, tools, extra_headers, extra_query, extra_body, timeout,
         custom_llm_provider, kwargs,

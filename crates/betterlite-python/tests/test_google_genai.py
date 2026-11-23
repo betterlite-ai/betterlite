@@ -1,7 +1,7 @@
 import asyncio
 import inspect
 from collections.abc import Awaitable, Mapping
-from typing import Final, Protocol, TypedDict
+from typing import Final, Protocol, TypeAlias, TypedDict
 
 import pytest
 from genai_server import (
@@ -24,11 +24,7 @@ from genai_server import (
     SYSTEM_INSTRUCTION,
     TOOLS,
     GenaiServer,
-    collect_bytes,
-    collect_bytes_async,
-    recorded_bodies,
     recorded_header,
-    recorded_paths,
     reference_dict,
     reference_stream,
     reference_stream_async,
@@ -53,6 +49,9 @@ PROXY_VALUE: Final = "yes"
 CLIENT_VALUE: Final = "driver"
 FIRST: Final = 0
 SECOND: Final = 1
+
+ContentAnswer: TypeAlias = dict[str, JsonValue] | Awaitable[dict[str, JsonValue]]
+StreamAnswer: TypeAlias = GenaiStream | Awaitable[GenaiStream]
 
 
 class CommonCall(TypedDict):
@@ -98,40 +97,34 @@ def signature_rows(signature: inspect.Signature) -> list[str]:
     return rows
 
 
-def content_dict(
-    result: dict[str, JsonValue] | Awaitable[dict[str, JsonValue]],
-) -> dict[str, JsonValue]:
+def content_dict(result: ContentAnswer) -> dict[str, JsonValue]:
     match result:
-        case dict():
-            return result
+        case dict() as answer:
+            return answer
         case object():
             raise AssertionError("the plain call answered an awaitable")
 
 
-async def content_dict_async(
-    result: dict[str, JsonValue] | Awaitable[dict[str, JsonValue]],
-) -> dict[str, JsonValue]:
+async def awaited_dict(result: ContentAnswer) -> dict[str, JsonValue]:
     match result:
         case dict():
-            return result
+            raise AssertionError("the flagged call answered a dict")
         case object() as awaitable:
             return await awaitable
 
 
-def own_stream(result: GenaiStream | Awaitable[GenaiStream]) -> GenaiStream:
+def own_stream(result: StreamAnswer) -> GenaiStream:
     match result:
-        case GenaiStream():
-            return result
+        case GenaiStream() as stream:
+            return stream
         case object():
-            raise AssertionError("the streaming call answered an awaitable")
+            raise AssertionError("the plain stream call answered an awaitable")
 
 
-async def stream_awaitable(
-    result: GenaiStream | Awaitable[GenaiStream],
-) -> GenaiStream:
+async def awaited_stream(result: StreamAnswer) -> GenaiStream:
     match result:
         case GenaiStream():
-            return result
+            raise AssertionError("the flagged stream call answered a stream")
         case object() as awaitable:
             return await awaitable
 
@@ -144,19 +137,20 @@ async def async_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str
 
 async def flagged_content(server_url: str) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
     ours = generate_content(**common_call(server_url), agenerate_content=True)
-    reference = LITELLM_ASYNC.generate_content(**common_call(server_url), agenerate_content=True)
-    assert asyncio.iscoroutine(ours)
-    assert asyncio.iscoroutine(reference)
-    return await content_dict_async(ours), reference_dict(await reference)
+    reference = LITELLM_ASYNC.generate_content(
+        **common_call(server_url), agenerate_content=True
+    )
+    return await awaited_dict(ours), reference_dict(await reference)
 
 
 async def async_streams(server_url: str) -> tuple[list[bytes], list[bytes]]:
-    ours = await collect_bytes_async(await agenerate_content_stream(**common_call(server_url)))
-    reference = await collect_bytes_async(
-        await reference_stream_async(
+    ours = [chunk async for chunk in await agenerate_content_stream(**common_call(server_url))]
+    reference = [
+        chunk
+        async for chunk in await reference_stream_async(
             LITELLM_ASYNC.agenerate_content_stream(**common_call(server_url))
         )
-    )
+    ]
     return ours, reference
 
 
@@ -165,17 +159,15 @@ async def flagged_stream(server_url: str) -> tuple[list[bytes], list[bytes]]:
     reference = LITELLM_ASYNC.generate_content_stream(
         **common_call(server_url), agenerate_content_stream=True
     )
-    assert asyncio.iscoroutine(ours)
-    assert asyncio.iscoroutine(reference)
     return (
-        await collect_bytes_async(await stream_awaitable(ours)),
-        await collect_bytes_async(await reference_stream_async(reference)),
+        [chunk async for chunk in await awaited_stream(ours)],
+        [chunk async for chunk in await reference_stream_async(reference)],
     )
 
 
 async def close_async_stream(server_url: str) -> None:
     stream = await agenerate_content_stream(**common_call(server_url))
-    assert len(await collect_bytes_async(stream)) == len(EVENTS)
+    assert len([chunk async for chunk in stream]) == len(EVENTS)
     await stream.aclose()
     await stream.aclose()
     with pytest.raises(StopAsyncIteration):
@@ -201,8 +193,8 @@ def test_plain_matches_litellm() -> None:
     with GenaiServer() as server:
         ours = content_dict(generate_content(**common_call(server.url)))
         reference = reference_dict(LITELLM.generate_content(**common_call(server.url)))
-        paths = recorded_paths(server)
-        bodies = recorded_bodies(server)
+        paths = [call["path"] for call in server.calls]
+        bodies = [call["body"] for call in server.calls]
         key = recorded_header(server, FIRST, API_KEY_HEADER)
         reference_key = recorded_header(server, SECOND, API_KEY_HEADER)
     assert ours == reference
@@ -236,7 +228,7 @@ def test_optional_matches_litellm() -> None:
                 safetySettings=SAFETY_SETTINGS,
             )
         )
-        bodies = recorded_bodies(server)
+        bodies = [call["body"] for call in server.calls]
     assert ours == reference
     assert bodies[FIRST] == bodies[SECOND]
     assert bodies[FIRST]["generationConfig"] == CONFIG
@@ -261,8 +253,8 @@ def test_optional_proxy_headers() -> None:
 def test_async_matches_litellm() -> None:
     with GenaiServer() as server:
         ours, reference = asyncio.run(async_content(server.url))
-        paths = recorded_paths(server)
-        bodies = recorded_bodies(server)
+        paths = [call["path"] for call in server.calls]
+        bodies = [call["body"] for call in server.calls]
     assert ours == reference
     assert paths == [GENERATE_PATH, GENERATE_PATH]
     assert bodies[FIRST] == bodies[SECOND]
@@ -271,18 +263,18 @@ def test_async_matches_litellm() -> None:
 def test_coroutine_flag_matches() -> None:
     with GenaiServer() as server:
         ours, reference = asyncio.run(flagged_content(server.url))
-        paths = recorded_paths(server)
+        paths = [call["path"] for call in server.calls]
     assert ours == reference
     assert paths == [GENERATE_PATH, GENERATE_PATH]
 
 
 def test_stream_matches_litellm() -> None:
     with GenaiServer() as server:
-        ours = collect_bytes(own_stream(generate_content_stream(**common_call(server.url))))
-        reference = collect_bytes(
+        ours = list(own_stream(generate_content_stream(**common_call(server.url))))
+        reference = list(
             reference_stream(LITELLM.generate_content_stream(**common_call(server.url)))
         )
-        paths = recorded_paths(server)
+        paths = [call["path"] for call in server.calls]
     assert ours == reference
     assert len(ours) == len(EVENTS)
     assert paths == [STREAM_PATH, STREAM_PATH]
@@ -293,7 +285,7 @@ def test_stream_matches_litellm() -> None:
 def test_stream_close_after_end() -> None:
     with GenaiServer() as server:
         stream = own_stream(generate_content_stream(**common_call(server.url)))
-        assert len(collect_bytes(stream)) == len(EVENTS)
+        assert len(list(stream)) == len(EVENTS)
         with pytest.raises(StopIteration):
             next(stream)
         stream.close()
@@ -305,7 +297,7 @@ def test_stream_close_after_end() -> None:
 def test_async_stream_matches() -> None:
     with GenaiServer() as server:
         ours, reference = asyncio.run(async_streams(server.url))
-        bodies = recorded_bodies(server)
+        bodies = [call["body"] for call in server.calls]
     assert ours == reference
     assert len(ours) == len(EVENTS)
     assert bodies[FIRST]["contents"] == CONTENTS
@@ -314,7 +306,7 @@ def test_async_stream_matches() -> None:
 def test_coroutine_stream_flags() -> None:
     with GenaiServer() as server:
         ours, reference = asyncio.run(flagged_stream(server.url))
-        paths = recorded_paths(server)
+        paths = [call["path"] for call in server.calls]
     assert ours == reference
     assert paths == [STREAM_PATH, STREAM_PATH]
 
@@ -342,6 +334,5 @@ def test_client_is_refused() -> None:
     with GenaiServer() as server:
         with pytest.raises(UnsupportedCallArgument) as caught:
             generate_content(**common_call(server.url), client=CLIENT_VALUE)
-        paths = recorded_paths(server)
     assert caught.value.argument == "client"
-    assert not paths
+    assert not server.calls

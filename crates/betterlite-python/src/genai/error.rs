@@ -1,4 +1,4 @@
-use super::convert::{ConvertError, NativeErrorPayload, encode};
+use super::convert::{ConvertError, NativeErrorPayload};
 use betterlite_config::env_integer::timeout::TimeoutError as RequestTimeoutError;
 use betterlite_config::loader::ConfigError;
 use betterlite_config::sections::vertex_credential_sources::credential_source::CredentialDecodeError;
@@ -74,13 +74,7 @@ pub(crate) enum SessionError {
 }
 impl From<ConvertError> for PyErr {
     fn from(error: ConvertError) -> Self {
-        match &error {
-            ConvertError::Encode { .. } => PyRuntimeError::new_err(error.to_string()),
-            ConvertError::Json { .. }
-            | ConvertError::Timeout { .. }
-            | ConvertError::Files
-            | ConvertError::CallFiles(_) => PyValueError::new_err(error.to_string()),
-        }
+        PyValueError::new_err(error.to_string())
     }
 }
 impl From<SessionError> for PyErr {
@@ -98,7 +92,7 @@ impl From<SessionError> for PyErr {
 }
 // LiteLLM's exception_type names the class, and Python raises the matching type from the payload text.
 pub(crate) fn payload_error(payload: &NativeErrorPayload) -> PyErr {
-    match encode(payload) {
+    match serde_json::to_string(payload) {
         Ok(text) => NativeGenaiError::new_err(text),
         Err(error) => PyRuntimeError::new_err(error.to_string()),
     }
