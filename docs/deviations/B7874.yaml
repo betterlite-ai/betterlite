@@ -9,6 +9,9 @@ deviations:
   - what: A caller's hyperparameters mapping and the shared {} default are copied before use, where LiteLLM pops the Azure-only prompt_loss_weight key out of the caller's own mapping.
     why: docs/compatibility.md excludes changes LiteLLM makes to a caller's dict. The wire body is the same, and test_default_hyperparameters proves the passed dict and the default keep their keys after an Azure create.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L178-L190
+  - what: An extra_body mapping is merged into the create body root on the openai path too, where LiteLLM forwards extra_body only on its Azure branch and drops it for an openai create.
+    why: The create call's extra_body travels in the same body the Azure path flattens, and request_create_body_flattens_extra_body proves the merge on the openai wire; dropping the argument for openai alone would split one body builder in two.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L230-L242
   - what: A create call with no resolvable API key raises Exception carrying the OpenAI SDK's own "The api_key client option must be set ..." text, where LiteLLM builds the client and lets openai.OpenAIError propagate.
     why: betterlite builds the request itself, so it keeps the message a working setup may match but not the client library's class.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L77-L93
