@@ -145,20 +145,16 @@ fn answer_once(listener: &TcpListener, status: &str, body: &str) -> String {
     String::from_utf8(received).unwrap()
 }
 fn served_in(
+    listener: &TcpListener,
     embedding_session: &EmbeddingSession,
     status: &str,
     body: &str,
-    api_key: Option<&str>,
+    arguments_json: &str,
 ) -> (String, Result<EmbeddingAnswer, CallFailure>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address: SocketAddr = listener.local_addr().unwrap();
-    let key = api_key.map_or_else(String::new, |value| format!(", \"api_key\": \"{value}\""));
-    let wire: EmbeddingCallWire = parse(&format!(
-        r#"{{"arguments": {{"model": "text-embedding-3-small", "input": "hi", "api_base": "http://{address}/v1", "timeout": 5, "headers": {{"x-custom": "one"}}{key}}}}"#
-    ))
-    .unwrap();
+    let wire: EmbeddingCallWire = parse(&format!(r#"{{"arguments": {arguments_json}}}"#)).unwrap();
     thread::scope(|scope| {
-        let server = scope.spawn(|| answer_once(&listener, status, body));
+        let server = scope.spawn(|| answer_once(listener, status, body));
         let outcome = get_runtime().block_on(call(embedding_session, wire, Entry::Sync));
         // a call that failed before it connected would leave the server waiting in accept
         let _unblock = TcpStream::connect(address);
@@ -170,7 +166,12 @@ fn served_call(
     body: &str,
     api_key: &str,
 ) -> (String, Result<EmbeddingAnswer, CallFailure>) {
-    served_in(&session(), status, body, Some(api_key))
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address: SocketAddr = listener.local_addr().unwrap();
+    let arguments_json = format!(
+        r#"{{"model": "text-embedding-3-small", "input": "hi", "api_key": "{api_key}", "api_base": "http://{address}/v1", "timeout": 5, "headers": {{"x-custom": "one"}}}}"#
+    );
+    served_in(&listener, &session(), status, body, &arguments_json)
 }
 fn arguments(text: &str) -> EmbeddingArguments {
     parse(text).unwrap()
@@ -880,13 +881,35 @@ fn request_a_provider_answer_carries_headers_and_hidden_params() {
 }
 #[test]
 fn request_the_environment_key_authorizes_the_call() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address: SocketAddr = listener.local_addr().unwrap();
+    let arguments_json = format!(
+        r#"{{"model": "text-embedding-3-small", "input": "hi", "api_base": "http://{address}/v1", "timeout": 5}}"#
+    );
     let keyed = session_from(r#"{"environment": {"OPENAI_API_KEY": "sk-env"}}"#);
-    let (sent, outcome) = served_in(&keyed, "200 OK", EMBEDDING_BODY, None);
+    let (sent, outcome) = served_in(&listener, &keyed, "200 OK", EMBEDDING_BODY, &arguments_json);
     outcome.unwrap();
     assert!(
         sent.to_lowercase().contains("authorization: bearer sk-env"),
         "{sent}"
     );
+}
+#[test]
+fn request_the_environment_base_reaches_the_provider() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address: SocketAddr = listener.local_addr().unwrap();
+    let keyed = session_from(&format!(
+        r#"{{"environment": {{"OPENAI_BASE_URL": "http://{address}/v1", "OPENAI_API_KEY": "sk-env"}}}}"#
+    ));
+    let (sent, outcome) = served_in(
+        &listener,
+        &keyed,
+        "200 OK",
+        EMBEDDING_BODY,
+        r#"{"model": "text-embedding-3-small", "input": "hi", "timeout": 5}"#,
+    );
+    outcome.unwrap();
+    assert!(sent.starts_with("POST /v1/embeddings "), "{sent}");
 }
 #[test]
 fn error_a_served_401_raises_the_authentication_class() {
