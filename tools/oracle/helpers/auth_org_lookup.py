@@ -1,9 +1,10 @@
 import asyncio
 import logging
 import sys
+import time
+from functools import partial
 from types import ModuleType
 from typing import Final, Literal, NotRequired, TypedDict
-from unittest.mock import patch
 
 import httpx
 from litellm.caching.in_memory_cache import InMemoryCache
@@ -30,17 +31,11 @@ MANAGEMENT_TTL_SECONDS: Final = 60.0
 OUTAGE: Final = "outage"
 FAULT: Final = "fault"
 LOGGING_FUNCTIONS: Final = frozenset(("get_org_object_by_alias", "get_org_object_for_request"))
-FLOAT: Final[TypeAdapter[float]] = TypeAdapter(float)
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 Function = Literal["org_object", "org_alias", "org_for_request", "project_object"]
-Detail = Literal["object", "text"]
 Row = dict[str, JsonValue]
-
-
-class Step(TypedDict):
-    now: NotRequired[float]
-    fail: NotRequired[list[str]]
-    allow: NotRequired[bool | str | None]
+Step = TypedDict("Step", {"now": float, "fail": list[str], "allow": NotRequired[bool | str | None]})
 
 
 class Call(TypedDict):
@@ -58,163 +53,99 @@ class Call(TypedDict):
     steps: list[Step]
 
 
-class BudgetView(TypedDict):
-    max_budget: float | None
-    allowed_models: list[str] | None
-
-
-class OrgView(TypedDict):
-    organization_id: str | None
-    organization_alias: str | None
-    models: list[str]
-    budget: BudgetView | None
-
-
-class ProjectView(TypedDict):
-    project_id: str
-    project_alias: str | None
-    budget: BudgetView | None
-    refreshed_at: float | None
-
-
-class Failure(TypedDict):
-    kind: Literal["org_not_found", "http", "exception"]
-    status: int | None
-    detail: Detail | None
-
-
-class StepAnswer(TypedDict):
-    value: OrgView | ProjectView | None
-    error: Failure | None
-    events: list[str]
-    logs: list[str]
-
-
-class Answer(TypedDict):
-    steps: list[StepAnswer]
-
-
-Result = OrgView | ProjectView | None
-
-
-def org_key(org_id: str, include_budget: bool) -> str:
-    if include_budget:
-        return f"org_id:{org_id}:with_budget"
-    return f"org_id:{org_id}"
-
-
-def last_known_key(org_id: str) -> str:
-    return f"org_id:{org_id}:with_budget:last_known"
-
-
-def project_key(project_id: str) -> str:
-    return f"project_id:{project_id}"
-
-
-def budget_view(budget: LiteLLM_BudgetTable | None) -> BudgetView | None:
+def budget_view(budget: LiteLLM_BudgetTable | None) -> JsonValue:
     if budget is None:
         return None
-    return BudgetView(max_budget=budget.max_budget, allowed_models=budget.allowed_models)
+    return JSON.validate_python({"max_budget": budget.max_budget, "allowed_models": budget.allowed_models})
 
 
-def org_view(org: LiteLLM_OrganizationTable | None) -> OrgView | None:
-    if org is None:
-        return None
-    return OrgView(
-        organization_id=org.organization_id,
-        organization_alias=org.organization_alias,
-        models=org.models,
-        budget=budget_view(org.litellm_budget_table),
-    )
+def org_view(org: LiteLLM_OrganizationTable) -> JsonValue:
+    return {
+        "organization_id": org.organization_id,
+        "organization_alias": org.organization_alias,
+        "models": JSON.validate_python(org.models),
+        "budget": budget_view(org.litellm_budget_table),
+    }
 
 
-def project_view(project: LiteLLM_ProjectTableCachedObj | None) -> ProjectView | None:
-    if project is None:
-        return None
-    return ProjectView(
-        project_id=project.project_id,
-        project_alias=project.project_alias,
-        budget=budget_view(project.litellm_budget_table),
-        refreshed_at=project.last_refreshed_at,
-    )
-
-
-def seeds(call: Call) -> dict[str, JsonValue]:
-    values: dict[str, JsonValue] = {}
-    target = call["target"]
-    match call["function"]:
-        case "org_object":
-            org = call.get("cached_org")
-            if org is not None:
-                values[org_key(target, call.get("include_budget", False))] = org
-        case "org_alias":
-            org = call.get("cached_org")
-            if org is not None:
-                values[f"org_alias:{target}"] = org
-        case "org_for_request":
-            org = call.get("cached_org")
-            if org is not None:
-                values[org_key(target, True)] = org
-            stale = call.get("cached_last_known")
-            if stale is not None:
-                values[last_known_key(target)] = stale
-        case "project_object":
-            project = call.get("cached_project")
-            if project is not None:
-                values[project_key(target)] = project
-    return values
-
-
-def settings(allow: bool | str | None) -> dict[str, object]:
-    values: dict[str, object] = {}
-    values["allow_requests_on_db_unavailable"] = allow
-    return values
+def project_view(project: LiteLLM_ProjectTableCachedObj) -> JsonValue:
+    budget = budget_view(project.litellm_budget_table)
+    return {
+        "project_id": project.project_id,
+        "project_alias": project.project_alias,
+        "budget": budget,
+        "refreshed_at": project.last_refreshed_at,
+    }
 
 
 class Fixture(InMemoryCache):
     def __init__(self, call: Call) -> None:
         super().__init__()
-        self.events: list[str] = []
-        self.logs: list[str] = []
+        self.events: list[JsonValue] = []
+        self.logs: list[JsonValue] = []
         self.fail: list[str] = []
-        self.values: dict[str, JsonValue] = seeds(call)
+        self.values: dict[str, JsonValue] = {}
+        target = call["target"]
+        cached_org = call.get("cached_org")
+        match call["function"]:
+            case "org_object":
+                if cached_org is not None:
+                    suffix = ":with_budget" if call.get("include_budget") else ""
+                    self.values[f"org_id:{target}{suffix}"] = cached_org
+            case "org_alias":
+                if cached_org is not None:
+                    self.values[f"org_alias:{target}"] = cached_org
+            case "org_for_request":
+                if cached_org is not None:
+                    self.values[f"org_id:{target}:with_budget"] = cached_org
+                stale = call.get("cached_last_known")
+                if stale is not None:
+                    self.values[f"org_id:{target}:with_budget:last_known"] = stale
+            case "project_object":
+                project = call.get("cached_project")
+                if project is not None:
+                    self.values[f"project_id:{target}"] = project
 
     def begin(self, step: Step) -> None:
         self.events = []
         self.logs = []
-        self.fail = list(step.get("fail", []))
+        self.fail = list(step["fail"])
+        time.time = partial(float, step["now"])
 
     @override
     def get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:
         self.events.append(f"read {key}")
         return self.values.get(key)
 
-    @override
-    def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
-        ttl = kwargs.get("ttl")
-        if ttl is None:
-            raise ValueError("a management object write carries a ttl")
-        seconds = FLOAT.validate_python(ttl)
-        self.events.append(f"write {key} ttl={seconds:g}")
-        self.values[key] = value
 
-
+# DualCache swallows a failing in-memory write, so a scripted write failure is raised above it
 class KeyCache(UserApiKeyCache):
     def __init__(self, fixture: Fixture) -> None:
         super().__init__(in_memory_cache=fixture, default_in_memory_ttl=MANAGEMENT_TTL_SECONDS)
         self.fixture = fixture
 
     @override
-    async def async_set_cache(
-        self, key: str | None, value: object, local_only: bool = False, **kwargs: object
+    async def async_set_cache(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L215-L233
+        self, key: str, value: BaseModel, *, model_type: type[BaseModel], ttl: float
     ) -> None:
-        if key is not None and f"write {key}" in self.fixture.fail:
+        del model_type
+        if f"write {key}" in self.fixture.fail:
             raise RuntimeError(key)
-        await super().async_set_cache(key, value, local_only=local_only, **kwargs)
+        self.fixture.events.append(f"write {key} ttl={ttl:g}")
+        self.fixture.values[key] = JSON.validate_json(value.model_dump_json())
 
 
 class StoredRow(BaseModel):
     model_config = ConfigDict(extra="allow")
+
+
+# the route exception's typed fields, since HTTPException.detail carries Any
+class Rejection(BaseModel):
+    status_code: int
+    detail: str | dict[str, str]
+
+
+REJECTION: Final[TypeAdapter[Rejection]] = TypeAdapter(Rejection)
 
 
 class Table:
@@ -223,29 +154,19 @@ class Table:
         self.name = name
         self.rows = rows
 
-    async def find_unique(
-        self, *, where: dict[str, str], include: dict[str, bool] | None = None
-    ) -> StoredRow | None:
-        field, value = next(iter(where.items()))
-        found = "true" if include else "false"
-        self.fixture.events.append(f"find_unique {self.name} {value} include={found}")
+    async def find_unique(self, where: dict[str, str], include: dict[str, bool] | None = None) -> StoredRow | None:
         self.refuse()
-        for row in self.rows:
-            if row.get(field) == value:
-                return StoredRow.model_validate(self.visible(row, include))
-        return None
+        field, value = next(iter(where.items()))
+        flag = "true" if include else "false"
+        self.fixture.events.append(f"find_unique {self.name} {value} include={flag}")
+        found = [row for row in self.rows if row.get(field) == value]
+        return StoredRow.model_validate(self.visible(found[0], include)) if found else None
 
-    async def find_many(
-        self, *, where: dict[str, str], include: dict[str, bool] | None = None
-    ) -> list[StoredRow]:
+    async def find_many(self, where: dict[str, str], include: dict[str, bool] | None = None) -> list[StoredRow]:
+        self.refuse()
         field, value = next(iter(where.items()))
         self.fixture.events.append(f"find_many {self.name} {value}")
-        self.refuse()
-        return [
-            StoredRow.model_validate(self.visible(row, include))
-            for row in self.rows
-            if row.get(field) == value
-        ]
+        return [StoredRow.model_validate(self.visible(row, include)) for row in self.rows if row.get(field) == value]
 
     def refuse(self) -> None:
         if OUTAGE in self.fixture.fail:
@@ -273,137 +194,107 @@ class FakeDb(PrismaWrapper):
 
 
 class FakePrismaClient(PrismaClient):
-    def __init__(self, tables: dict[str, Table]) -> None:
-        self.db = FakeDb(tables)
-
-
-class ServiceLogger:
-    async def async_service_success_hook(self, **_kwargs: object) -> None:
-        return None
-
-    async def async_service_failure_hook(self, **_kwargs: object) -> None:
-        return None
-
-
-class Logging:
-    def __init__(self) -> None:
-        self.service_logging_obj = ServiceLogger()
-
-
-class ProxyServer(ModuleType):
-    general_settings: dict[str, object]
-    proxy_logging_obj: Logging
+    def __init__(self, fixture: Fixture, call: Call) -> None:
+        org_row = call.get("org_row")
+        rows: list[Row] = [] if org_row is None else [org_row]
+        alias_rows = call.get("alias_rows")
+        if alias_rows is not None:
+            rows.extend(alias_rows)
+        project_row = call.get("project_row")
+        projects: list[Row] = [] if project_row is None else [project_row]
+        self.db = FakeDb(
+            {
+                "litellm_organizationtable": Table(fixture, "organization", rows),
+                "litellm_projecttable": Table(fixture, "project", projects),
+            }
+        )
 
 
 class Board(logging.Handler):
     def __init__(self, fixture: Fixture) -> None:
         super().__init__(logging.DEBUG)
-        self.fixture = fixture
+        self.fixture: Final = fixture
+        self.service_logging_obj: Final = self
 
     @override
     def emit(self, record: logging.LogRecord) -> None:
         if record.funcName in LOGGING_FUNCTIONS:
             self.fixture.logs.append(record.levelname)
 
+    async def async_service_success_hook(self, **_kwargs: JsonValue) -> None: ...
 
-def client_for(call: Call, fixture: Fixture) -> FakePrismaClient:
-    org_rows: list[Row] = []
-    org_row = call.get("org_row")
-    if org_row is not None:
-        org_rows.append(org_row)
-    org_rows.extend(call.get("alias_rows", []))
-    project_rows: list[Row] = []
-    project_row = call.get("project_row")
-    if project_row is not None:
-        project_rows.append(project_row)
-    tables = {
-        "litellm_organizationtable": Table(fixture, "organization", org_rows),
-        "litellm_projecttable": Table(fixture, "project", project_rows),
-    }
-    return FakePrismaClient(tables)
+    async def async_service_failure_hook(self, **_kwargs: JsonValue) -> None: ...
 
 
-def database(call: Call, client: FakePrismaClient) -> FakePrismaClient | None:
-    return client if call["database"] else None
+class ProxyServer(ModuleType):
+    general_settings: dict[str, JsonValue]
+    proxy_logging_obj: Board
 
 
-async def looked_up(call: Call, client: FakePrismaClient, cache: KeyCache) -> Result:
+async def looked_up(call: Call, client: FakePrismaClient | None, cache: UserApiKeyCache) -> JsonValue:
     target = call["target"]
     match call["function"]:
         case "org_object":
-            org = await get_org_object(
+            budget = call.get("include_budget")
+            org: LiteLLM_OrganizationTable | None = await get_org_object(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4107-L4176
                 org_id=target,
-                prisma_client=database(call, client),
+                prisma_client=client,
                 user_api_key_cache=cache,
-                include_budget_table=call.get("include_budget", False),
+                include_budget_table=False if budget is None else budget,
             )
-            return org_view(org)
+            return None if org is None else org_view(org)
         case "org_alias":
-            return org_view(await get_org_object_by_alias(target, database(call, client), cache))
+            alias: LiteLLM_OrganizationTable | None = await get_org_object_by_alias(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3530-L3614
+                target, client, cache
+            )
+            return None if alias is None else org_view(alias)
         case "org_for_request":
-            if not call["database"]:
+            if client is None:
                 raise ValueError("the request lookup runs only with a database")
-            return org_view(await get_org_object_for_request(target, client, cache, None, None))
+            requested = await get_org_object_for_request(target, client, cache, None, None)
+            return None if requested is None else org_view(requested)
         case "project_object":
-            project = await get_project_object(target, database(call, client), cache)
-            return project_view(project)
+            project = await get_project_object(target, client, cache)
+            return None if project is None else project_view(project)
 
 
-async def performed(
-    call: Call, client: FakePrismaClient, cache: KeyCache
-) -> tuple[Result, Failure | None]:
+async def performed(call: Call, client: FakePrismaClient | None, cache: UserApiKeyCache) -> tuple[JsonValue, JsonValue]:
     try:
         return await looked_up(call, client, cache), None
     except OrganizationNotFoundError:
-        return None, Failure(kind="org_not_found", status=None, detail=None)
+        return None, {"kind": "org_not_found", "status": None, "detail": None}
     except HTTPException as raised:
-        detail: Detail = "object" if isinstance(raised.detail, dict) else "text"
-        return None, Failure(kind="http", status=raised.status_code, detail=detail)
+        rejected = REJECTION.validate_python(raised, from_attributes=True)
+        match rejected.detail:
+            case str():
+                return None, {"kind": "http", "status": rejected.status_code, "detail": "text"}
+            case dict():
+                return None, {"kind": "http", "status": rejected.status_code, "detail": "object"}
     except (httpx.ConnectError, RuntimeError):
-        return None, Failure(kind="exception", status=None, detail=None)
+        return None, {"kind": "exception", "status": None, "detail": None}
 
 
-async def answer(call: Call, fixture: Fixture) -> Answer:
+async def answer(call: Call, fixture: Fixture) -> JsonValue:
+    logger = logging.getLogger("LiteLLM Proxy")
+    board = Board(fixture)
+    logger.setLevel(logging.DEBUG)
+    logger.handlers = [board]
     cache = KeyCache(fixture)
-    client = client_for(call, fixture)
+    client = FakePrismaClient(fixture, call)
     proxy_server = ProxyServer(PROXY_MODULE)
-    proxy_server.proxy_logging_obj = Logging()
-    previous = sys.modules.get(PROXY_MODULE)
+    proxy_server.proxy_logging_obj = board
     sys.modules[PROXY_MODULE] = proxy_server
-    steps: list[StepAnswer] = []
-    try:
-        for step in call["steps"]:
-            fixture.begin(step)
-            proxy_server.general_settings = settings(step.get("allow"))
-            with patch("time.time", return_value=step.get("now", 0.0)):
-                value, error = await performed(call, client, cache)
-            steps.append(
-                StepAnswer(
-                    value=value,
-                    error=error,
-                    events=list(fixture.events),
-                    logs=list(fixture.logs),
-                )
-            )
-    finally:
-        if previous is None:
-            sys.modules.pop(PROXY_MODULE, None)
-        else:
-            sys.modules[PROXY_MODULE] = previous
-    return Answer(steps=steps)
+    steps: list[JsonValue] = []
+    for step in call["steps"]:
+        fixture.begin(step)
+        allow = step.get("allow")
+        proxy_server.general_settings = {"allow_requests_on_db_unavailable": False if allow is None else allow}
+        value, error = await performed(call, client if call["database"] else None, cache)
+        steps.append({"value": value, "error": error, "events": list(fixture.events), "logs": list(fixture.logs)})
+    return {"steps": steps}
 
 
-def run(input_value: Call) -> Answer:
+def run(input_value: Call) -> JsonValue:
     if input_value["in_memory_ttl"] != DEFAULT_IN_MEMORY_TTL:
         raise ValueError("in_memory_ttl must equal the DEFAULT_IN_MEMORY_TTL the case env sets")
-    fixture = Fixture(input_value)
-    logger = logging.getLogger("LiteLLM Proxy")
-    level = logger.level
-    handlers = list(logger.handlers)
-    logger.setLevel(logging.DEBUG)
-    logger.handlers = [Board(fixture)]
-    try:
-        return asyncio.run(answer(input_value, fixture))
-    finally:
-        logger.handlers = handlers
-        logger.setLevel(level)
+    return asyncio.run(answer(input_value, Fixture(input_value)))
