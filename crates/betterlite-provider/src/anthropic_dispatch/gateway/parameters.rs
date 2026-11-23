@@ -15,23 +15,20 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
-use betterlite_models::params::classification::RESERVED_PARAMETER_NAMES;
-use betterlite_models::params::{
-    CallType, ChatParameters, ParameterError, ParameterMapping, ParameterPolicy,
-    map_listed_parameters,
-};
+use betterlite_models::params::{ParameterMapping, ParameterPolicy};
 use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 
 use crate::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use crate::operation::{AnthropicCallError, OperationError};
+use crate::prepared::body::{convert, drop_nested_paths, listed_parameters, parameter_policy};
+use crate::prepared::deployment::Deployment;
 
 // The runtime values every parameter step reads, borrowed once so each step takes one argument.
 pub(crate) struct Sources<'context, 'catalog> {
     pub(crate) runtime: &'context AnthropicRuntime,
+    pub(crate) deployment: &'context Deployment,
     pub(crate) environment:
         &'context mut CapabilityEnvironment<'catalog, NoDynamicMetadata, NoHfConfig>,
     pub(crate) catalogs: &'context CatalogSources<'catalog>,
@@ -53,16 +50,19 @@ pub(crate) async fn map(
     let mut fields = params;
     let headers = take_headers(&mut fields)?;
     let extra_body = fields.shift_remove("extra_body");
-    let (policy, call_drop) = take_policy(&mut fields, sources.runtime.global_drop_params)?;
-    for reserved in RESERVED_PARAMETER_NAMES {
-        fields.shift_remove(*reserved);
-    }
+    let (policy, call_drop) = parameter_policy(&fields, sources.deployment)?;
     if stream {
         fields.insert(String::from("stream"), JsonValue::Bool(true));
     }
-    let parameters: ChatParameters = convert(JsonValue::Object(fields))?;
-    let optional =
-        optional_parameters(sources, &parameters, &policy, call_drop, extra_body).await?;
+    let supported = get_supported_openai_params(
+        sources.model,
+        Some("anthropic"),
+        &mut *sources.environment,
+        sources.catalogs,
+    )
+    .await;
+    let mapping = listed_parameters(&fields, &supported, sources.model, sources.deployment)?;
+    let optional = optional_parameters(sources, mapping, &policy, call_drop, extra_body).await?;
     let effort_used = effort(&optional, sources).await;
     Ok(MappedParameters {
         optional,
@@ -73,19 +73,18 @@ pub(crate) async fn map(
 
 async fn optional_parameters(
     sources: &mut Sources<'_, '_>,
-    parameters: &ChatParameters,
+    mapping: ParameterMapping,
     policy: &ParameterPolicy,
     call_drop: bool,
     extra_body: Option<JsonValue>,
 ) -> Result<IndexMap<String, Json>, OperationError> {
-    let mapping = mapping(sources, parameters, policy).await?;
     let standard: IndexMap<String, Json> = convert(mapping.standard)?;
     let provider: IndexMap<String, Json> = convert(mapping.provider_fields)?;
     let request = ParamsRequest {
         model: sources.model,
         provider: "anthropic",
         drop: DropParams {
-            global: sources.runtime.global_drop_params,
+            global: sources.deployment.global_drop_params,
             call: call_drop,
         },
         budgets: &sources.runtime.budgets,
@@ -104,6 +103,7 @@ async fn optional_parameters(
     copy_provider_fields(provider, &mut optional);
     optional = openai_overrides(optional, standard, policy)?;
     copy_extra_body(extra_body, policy, &mut optional)?;
+    drop_nested_paths(&mut optional, &policy.additional_drop_params)?;
     Ok(optional)
 }
 
@@ -118,29 +118,6 @@ fn openai_overrides(
     let merged =
         apply_openai_param_overrides(mapped, &mut non_default, &policy.allowed_openai_params);
     convert(merged)
-}
-
-// _check_valid_arg: a name outside the supported list is UnsupportedParamsError unless drop_params takes it out.
-async fn mapping(
-    sources: &mut Sources<'_, '_>,
-    parameters: &ChatParameters,
-    policy: &ParameterPolicy,
-) -> Result<ParameterMapping, OperationError> {
-    let supported = get_supported_openai_params(
-        sources.model,
-        Some("anthropic"),
-        &mut *sources.environment,
-        sources.catalogs,
-    )
-    .await;
-    map_listed_parameters(
-        &supported,
-        sources.model,
-        CallType::ChatCompletion,
-        parameters,
-        policy,
-    )
-    .map_err(|source| OperationError::Parameters { source })
 }
 
 async fn effort(optional: &IndexMap<String, Json>, sources: &mut Sources<'_, '_>) -> bool {
@@ -165,29 +142,6 @@ fn take_headers(
     match fields.shift_remove("extra_headers") {
         None | Some(JsonValue::Null) => Ok(BTreeMap::new()),
         Some(value) => convert(value),
-    }
-}
-
-fn take_policy(
-    fields: &mut IndexMap<String, JsonValue>,
-    global: bool,
-) -> Result<(ParameterPolicy, bool), OperationError> {
-    let call_drop = match fields.shift_remove("drop_params") {
-        None | Some(JsonValue::Null) => false,
-        Some(value) => convert(value)?,
-    };
-    let policy = ParameterPolicy {
-        drop_params: call_drop || global,
-        additional_drop_params: names(fields.shift_remove("additional_drop_params"))?,
-        allowed_openai_params: names(fields.shift_remove("allowed_openai_params"))?,
-    };
-    Ok((policy, call_drop))
-}
-
-fn names(value: Option<JsonValue>) -> Result<Vec<String>, OperationError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(Vec::new()),
-        Some(listed) => convert(listed),
     }
 }
 
@@ -218,17 +172,6 @@ fn copy_extra_body(
     }
     optional.insert(String::from("extra_body"), convert(value)?);
     Ok(())
-}
-
-fn convert<T, U>(value: T) -> Result<U, OperationError>
-where
-    T: Serialize,
-    U: DeserializeOwned,
-{
-    let wire = serde_json::to_value(value).map_err(|source| OperationError::Encode { source })?;
-    serde_json::from_value(wire).map_err(|source| OperationError::Parameters {
-        source: ParameterError::Encode { source },
-    })
 }
 
 // A mapped parameter that LiteLLM rejects keeps the status it raised, so the caller reads it as the provider's own error.

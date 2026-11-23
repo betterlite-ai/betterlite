@@ -505,6 +505,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "log_metadata"
+path = "fuzz_targets/log_metadata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "shadow_body"
 path = "fuzz_targets/shadow_body.rs"
 test = false

@@ -234,6 +234,7 @@ fn deployment(base: &str, global_drop_params: bool) -> Deployment {
         timeout: Duration::from_secs(5),
         max_retries: None,
         drop_params: None,
+        additional_drop_params: Vec::new(),
         global_drop_params,
         provider_affinity_header: None,
         anthropic: None,

@@ -1,0 +1,51 @@
+kind: helper
+name: auth-end-users-fetch-failure-boundaries
+call:
+  auth_end_users:
+    function: default_budget
+    database: false
+    validate_in_db: false
+    budget_id: b1
+calls:
+  - auth_end_users:
+      function: default_budget
+      database: true
+      validate_in_db: false
+      budget_id: b1
+  - auth_end_users:
+      function: default_budget
+      database: true
+      validate_in_db: false
+      budget_id: b1
+      fail: query
+  - auth_end_users:
+      function: default_budget
+      database: true
+      validate_in_db: false
+      budget_id: b1
+      fail: decode
+  - auth_end_users:
+      function: team_member_budget
+      database: true
+      validate_in_db: false
+      budget_id: b-team
+      fail: query
+  - auth_end_users:
+      function: team_member_budget
+      database: true
+      validate_in_db: false
+      budget_id: b-team
+      fail: decode
+  - auth_end_users:
+      function: end_user_object
+      database: false
+      validate_in_db: false
+      end_user_id: u1
+  - auth_end_users:
+      function: end_user_object
+      database: true
+      validate_in_db: true
+      end_user_id: u1
+      fail: end_user_query
+env: {}
+compare: {ignore: []}
