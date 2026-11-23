@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
@@ -17,7 +17,12 @@ impl<S: Subscriber> Layer<S> for Levels {
             .target()
             .starts_with("betterlite_auth::auth_org_lookup")
         {
-            self.script.record_log(metadata.level().to_string());
+            self.script
+                .board
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .logs
+                .push(metadata.level().to_string());
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::io::Error as IoError;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCacheError;
@@ -35,7 +35,7 @@ pub(crate) struct Board {
 
 // the org cache, the project cache and the two tables, recording every read and write in order
 pub(crate) struct Script {
-    board: Mutex<Board>,
+    pub(crate) board: Mutex<Board>,
     values: Mutex<BTreeMap<String, OrganizationTable>>,
     projects: Mutex<BTreeMap<String, CachedProject>>,
     org_rows: Vec<OrganizationTable>,
@@ -59,46 +59,18 @@ impl Script {
     }
 
     pub(crate) fn begin(&self, step: &Step) {
-        let mut board = self.board();
+        let mut board = self.board.lock().unwrap_or_else(PoisonError::into_inner);
         board.events.clear();
         board.logs.clear();
         board.fail.clone_from(&step.fail);
     }
 
-    pub(crate) fn snapshot(&self) -> (Vec<String>, Vec<String>) {
-        let board = self.board();
-        (board.events.clone(), board.logs.clone())
-    }
-
-    pub(crate) fn record_log(&self, level: String) {
-        self.board().logs.push(level);
-    }
-
-    fn board(&self) -> MutexGuard<'_, Board> {
-        self.board.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn values(&self) -> MutexGuard<'_, BTreeMap<String, OrganizationTable>> {
-        self.values.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn projects(&self) -> MutexGuard<'_, BTreeMap<String, CachedProject>> {
-        self.projects.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn record(&self, event: String) {
-        self.board().events.push(event);
-    }
-
-    fn fails(&self, name: &str) -> bool {
-        self.board().fail.iter().any(|script| script == name)
-    }
-
     fn store_failure(&self) -> Option<StoreFailure> {
-        if self.fails("outage") {
+        let board = self.board.lock().unwrap_or_else(PoisonError::into_inner);
+        if board.fail.iter().any(|script| script == "outage") {
             return Some(Box::new(AuthReadError::Repository(DbError::NoDbConnected)));
         }
-        if self.fails("fault") {
+        if board.fail.iter().any(|script| script == "fault") {
             return Some(Box::new(AuthReadError::Repository(DbError::CreateNull)));
         }
         None
@@ -108,23 +80,48 @@ impl Script {
         match self.store_failure() {
             Some(fault) => Err(fault),
             None => {
-                self.record(event);
+                self.board
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .events
+                    .push(event);
                 Ok(())
             }
         }
     }
 
+    // both cache reads record the key on the board and then clone the stored object
+    fn read_map<V: Clone>(&self, map: &Mutex<BTreeMap<String, V>>, key: &str) -> Option<V> {
+        self.board
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .events
+            .push(format!("read {key}"));
+        let stored = map.lock().unwrap_or_else(PoisonError::into_inner);
+        let found = stored.get(key);
+        found.cloned()
+    }
+
     fn accept_write(&self, key: &str, entry: Entry<'_>, ttl: f64) -> CacheWrite {
-        if self.fails(&format!("write {key}")) {
-            return Err(cache_failure());
+        {
+            let mut board = self.board.lock().unwrap_or_else(PoisonError::into_inner);
+            if board
+                .fail
+                .iter()
+                .any(|script| script == &format!("write {key}"))
+            {
+                return Err(cache_failure());
+            }
+            board.events.push(format!("write {key} ttl={ttl}"));
         }
-        self.record(format!("write {key} ttl={ttl}"));
         match entry {
             Entry::Org(org) => {
-                self.values().insert(key.to_owned(), org.clone());
+                let values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
+                let _previous = values.insert(key.to_owned(), org.clone());
             }
             Entry::Project(project) => {
-                self.projects().insert(key.to_owned(), project.clone());
+                let projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
+                let _previous = projects.insert(key.to_owned(), project.clone());
             }
         }
         Ok(())
@@ -152,7 +149,10 @@ fn seeded_orgs(input: &Input) -> BTreeMap<String, OrganizationTable> {
                 let _previous = values.insert(org_key(target, true), org.clone());
             }
             if let Some(stale) = cached_last_known {
-                let _previous = values.insert(last_known_key(target), stale.clone());
+                let _previous = values.insert(
+                    format!("org_id:{target}:with_budget:last_known"),
+                    stale.clone(),
+                );
             }
         }
         Function::ProjectObject => {}
@@ -162,10 +162,11 @@ fn seeded_orgs(input: &Input) -> BTreeMap<String, OrganizationTable> {
 
 fn seeded_projects(input: &Input) -> BTreeMap<String, CachedProject> {
     let mut projects = BTreeMap::new();
+    let target = &input.target;
     match input.function {
         Function::ProjectObject => {
             if let Some(project) = &input.cached_project {
-                let _previous = projects.insert(project_key(&input.target), project.clone());
+                let _previous = projects.insert(format!("project_id:{target}"), project.clone());
             }
         }
         Function::OrgObject | Function::OrgAlias | Function::OrgForRequest => {}
@@ -178,14 +179,6 @@ pub(crate) fn org_key(org_id: &str, include_budget: bool) -> String {
         return format!("org_id:{org_id}:with_budget");
     }
     format!("org_id:{org_id}")
-}
-
-pub(crate) fn last_known_key(org_id: &str) -> String {
-    format!("org_id:{org_id}:with_budget:last_known")
-}
-
-pub(crate) fn project_key(project_id: &str) -> String {
-    format!("project_id:{project_id}")
 }
 
 fn cache_failure() -> AuthCacheError {
@@ -218,9 +211,7 @@ impl OrgCache for Script {
         key: &str,
         _local_only: bool,
     ) -> Result<Option<OrganizationTable>, AuthCacheError> {
-        self.record(format!("read {key}"));
-        let cached = self.values().get(key).cloned();
-        Ok(cached)
+        Ok(self.read_map(&self.values, key))
     }
 
     async fn write_org(&self, key: &str, org: &OrganizationTable, ttl: f64) -> CacheWrite {
@@ -228,9 +219,7 @@ impl OrgCache for Script {
     }
 
     async fn read_project(&self, key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
-        self.record(format!("read {key}"));
-        let cached = self.projects().get(key).cloned();
-        Ok(cached)
+        Ok(self.read_map(&self.projects, key))
     }
 
     async fn write_project(&self, key: &str, project: &CachedProject, ttl: f64) -> CacheWrite {

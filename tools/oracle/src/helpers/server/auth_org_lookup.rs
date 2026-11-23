@@ -1,6 +1,6 @@
 mod fixtures;
 
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_auth::auth_org_lookup::alias::get_org_object_by_alias;
 use betterlite_auth::auth_org_lookup::error::OrgLookupError;
@@ -50,12 +50,12 @@ impl Helper for Op {
         for step in &input.steps {
             script.begin(step);
             let (value, error) = runtime.block_on(outcome(input, &lookup, step));
-            let (events, logs) = script.snapshot();
+            let board = script.board.lock().unwrap_or_else(PoisonError::into_inner);
             steps.push(json!({
                 "value": value,
                 "error": error,
-                "events": events,
-                "logs": logs,
+                "events": board.events.clone(),
+                "logs": board.logs.clone(),
             }));
         }
         Ok(json!({"steps": steps}))
