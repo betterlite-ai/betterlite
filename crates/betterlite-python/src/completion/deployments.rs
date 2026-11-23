@@ -69,7 +69,8 @@ fn deployment_of(
             ssl_verify: None,
             model: Some(litellm_model),
             api_base: resolved.api_base.clone(),
-            api_key: resolved.api_key.clone(),
+            // the call's own api_key is what LiteLLM uses when resolution sets no dynamic key
+            api_key: resolved.api_key.clone().or(api_key),
             api_version: None,
             timeout: None,
             stream_timeout: None,
