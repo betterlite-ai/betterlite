@@ -251,7 +251,7 @@ pub(super) fn connection_args(
     let query_params = match forwarding {
         Forwarding::Provider => ConnectionQuery::Transport(prepared.query_params.clone()),
         Forwarding::Connector => {
-            ConnectionQuery::Connector(connector_query(prepared.query_params.as_ref()))
+            ConnectionQuery::Connector(prepared.query_params.as_ref().map(connector_query))
         }
         Forwarding::Bedrock => ConnectionQuery::Omitted,
     };
@@ -279,11 +279,9 @@ pub(super) fn connection_args(
     }
 }
 
-pub(super) fn connector_query(query: Option<&IndexMap<String, String>>) -> Option<QueryParams> {
-    query.map(|pairs| {
-        pairs
-            .iter()
-            .map(|(name, value)| (name.clone(), Some(value.clone())))
-            .collect()
-    })
+pub(super) fn connector_query(query: &IndexMap<String, String>) -> QueryParams {
+    query
+        .iter()
+        .map(|(name, value)| (name.clone(), Some(value.clone())))
+        .collect()
 }

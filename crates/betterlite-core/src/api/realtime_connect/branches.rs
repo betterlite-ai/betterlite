@@ -46,7 +46,7 @@ where
 {
     let (api_base, api_key) = azure_base_and_key(settings, call, prepared);
     let api_version = azure_api_version(call);
-    let query = connector_query(prepared.query_params.as_ref());
+    let query = prepared.query_params.as_ref().map(connector_query);
     let protocol = azure_protocol(settings, call, query.as_ref());
     // a truthy key suppresses the Azure AD lookup entirely
     let azure_ad_token = if api_key.is_none() {

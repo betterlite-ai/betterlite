@@ -307,9 +307,10 @@ async fn azure_client_protocol(
     let dispatch = Recorder::with_ad_token(Some(secret("resolved-ad")));
     let mut settings = settings();
     settings.azure_api_base = Some(String::from("https://azure.example"));
+    let connect = params();
     let call = call(
         "azure/my-deployment",
-        &params(),
+        &connect,
         None,
         litellm_params,
         client_sent_beta,
@@ -379,7 +380,7 @@ fn assert_azure_global_arguments(connection: &RealtimeConnection<TestConfig>) {
         Some(&Some(String::from("transcription")))
     );
     // a transcription-only query stays model-free
-    assert!(query.get("model").is_none());
+    assert!(!query.contains_key("model"));
 }
 
 async fn azure_ad_token_fallback(litellm_params: &IndexMap<String, Json>) {
@@ -741,9 +742,10 @@ async fn vertex_placement_for(
         String::from("resolved-project"),
     ))]);
     let dispatch = Recorder::with_tokens(Arc::clone(&tokens));
+    let connect = params();
     let call = call(
         "vertex_ai/gemini-live",
-        &params(),
+        &connect,
         None,
         litellm_params,
         false,
@@ -828,7 +830,7 @@ fn vertex_setup() -> (
     let mut connect = params();
     connect.vertex_credentials = Some(named_credentials.clone());
     connect.vertex_project = Some(String::from("named-project"));
-    connect.vertex_location = Some(String::from(""));
+    connect.vertex_location = Some(String::new());
     connect.vertex_ai_location = Some(String::from("ai-location"));
     connect.timeout = Some(4.0_f64);
     let query = IndexMap::from([(String::from("model"), String::from("gemini-live"))]);
