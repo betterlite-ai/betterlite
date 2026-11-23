@@ -142,7 +142,7 @@ fn closing_usage(raw: &str) -> StreamedUsage {
         .filter_map(|line| line.strip_prefix("data: "))
         .filter_map(|frame| serde_json::from_str::<UsageFrame>(frame).ok())
         .filter_map(|frame| frame.usage)
-        .last()
+        .next_back()
         .expect("the closing usage frame")
 }
 
