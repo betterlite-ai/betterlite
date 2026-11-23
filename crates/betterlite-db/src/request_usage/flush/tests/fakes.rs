@@ -301,11 +301,17 @@ impl ToolSpendFailure for ToolFailure {
     }
 }
 
+// What the tool spend writer was handed: one count of index rows and the daily rollups.
+#[derive(Default)]
+struct ToolWrites {
+    index_rows: usize,
+    rollups: Vec<ToolDayRollup>,
+}
+
 // The tool writer counts index rows and keeps the rollups it was handed.
 pub(super) struct FakeToolWriter {
     pub(super) trace: Trace,
-    index_rows: AtomicUsize,
-    rollups: Mutex<Vec<ToolDayRollup>>,
+    writes: Mutex<ToolWrites>,
     fail: AtomicBool,
 }
 
@@ -313,8 +319,7 @@ impl FakeToolWriter {
     pub(super) fn new(trace: Trace) -> Self {
         Self {
             trace,
-            index_rows: AtomicUsize::new(0),
-            rollups: Mutex::new(Vec::new()),
+            writes: Mutex::new(ToolWrites::default()),
             fail: AtomicBool::new(false),
         }
     }
@@ -324,13 +329,17 @@ impl FakeToolWriter {
     }
 
     pub(super) fn index_rows(&self) -> usize {
-        self.index_rows.load(Ordering::SeqCst)
+        self.writes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .index_rows
     }
 
     pub(super) fn rollups(&self) -> Vec<ToolDayRollup> {
-        self.rollups
+        self.writes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .rollups
             .clone()
     }
 
@@ -348,13 +357,15 @@ impl FakeToolWriter {
 
     fn count_rows(&self, rows: &[ToolIndexRow]) -> Result<(), ToolFailure> {
         self.check()?;
-        self.index_rows.fetch_add(rows.len(), Ordering::SeqCst);
+        let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
+        writes.index_rows = writes.index_rows.saturating_add(rows.len());
         Ok(())
     }
 
     fn store_rollups(&self, rollups: &[ToolDayRollup]) -> Result<(), ToolFailure> {
         self.check()?;
-        append(&self.rollups, rollups);
+        let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
+        writes.rollups.extend_from_slice(rollups);
         Ok(())
     }
 }
