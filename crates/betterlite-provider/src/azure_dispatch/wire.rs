@@ -23,16 +23,6 @@ pub(crate) struct Wire {
     pub(crate) body: Object,
     pub(crate) json_mode: bool,
 }
-impl Wire {
-    const fn new(url: String, headers: BTreeMap<String, String>, body: Object, json: bool) -> Self {
-        Self {
-            url,
-            headers,
-            body,
-            json_mode: json,
-        }
-    }
-}
 // the auth header: the SDK's Azure client prefers its token, while the v1 OpenAI client prefers its key
 fn auth_headers(resolved: &Resolved, version: Option<&str>) -> BTreeMap<String, String> {
     let mut headers = BTreeMap::new();
@@ -52,12 +42,19 @@ fn auth_headers(resolved: &Resolved, version: Option<&str>) -> BTreeMap<String, 
     headers
 }
 // main.py merges kwargs.headers with kwargs.extra_headers, extra_headers winning, and sends the map only when non-empty
-fn merged_headers(resolved: &Resolved) -> Option<BTreeMap<String, String>> {
+fn chat_extra(
+    resolved: &Resolved,
+    optional: &mut Object,
+) -> Result<BTreeMap<String, String>, AzureProviderError> {
     let mut merged = resolved.headers.clone().unwrap_or_default();
-    if let Some(extra) = &resolved.extra_headers {
-        merged.extend(extra.clone());
+    merged.extend(resolved.extra_headers.clone().unwrap_or_default());
+    let sent = (!merged.is_empty())
+        .then_some(merged)
+        .or_else(|| resolved.globals_headers.clone());
+    if let Some(headers) = &sent {
+        request::inject_headers(optional, &SecretHeaders(headers.clone()));
     }
-    (!merged.is_empty()).then_some(merged)
+    take_extra(optional)
 }
 fn url_for(
     api_base: Option<&str>,
@@ -97,16 +94,6 @@ fn take_extra(optional: &mut Object) -> Result<BTreeMap<String, String>, AzurePr
             }
         })
         .collect()
-}
-fn chat_extra(
-    resolved: &Resolved,
-    optional: &mut Object,
-) -> Result<BTreeMap<String, String>, AzureProviderError> {
-    let sent = merged_headers(resolved).or_else(|| resolved.globals_headers.clone());
-    if let Some(headers) = &sent {
-        request::inject_headers(optional, &SecretHeaders(headers.clone()));
-    }
-    take_extra(optional)
 }
 fn retries(optional: &mut Object, max_retries: Option<&Json>) -> Result<(), AzureProviderError> {
     if let Some(value) = max_retries.filter(|value| **value != Json::Null) {
@@ -150,7 +137,12 @@ pub(crate) fn chat(
     )?;
     let mut headers = auth_headers(resolved, api_version);
     headers.extend(extra);
-    Ok(Wire::new(url, headers, body, json_mode))
+    Ok(Wire {
+        url,
+        headers,
+        body,
+        json_mode,
+    })
 }
 // Text never folds kwargs.headers: only kwargs.extra_headers reach the request.
 pub(crate) fn text(
@@ -201,7 +193,12 @@ fn text_wire(
     let url = url_for(Some(api_base), api_version, model, "/completions")?;
     let mut headers = auth_headers(resolved, api_version);
     headers.extend(extra);
-    Ok(Wire::new(url, headers, body, false))
+    Ok(Wire {
+        url,
+        headers,
+        body,
+        json_mode: false,
+    })
 }
 pub(crate) fn embedding(
     resolved: &Resolved,
@@ -216,8 +213,10 @@ pub(crate) fn embedding(
     // the SDK's own client default, applied before LiteLLM ever sees the request
     body.entry(String::from("encoding_format"))
         .or_insert_with(|| Json::Text(String::from("base64")));
-    if let Some(headers) = merged_headers(resolved) {
-        request::inject_headers(&mut body, &SecretHeaders(headers));
+    let mut merged = resolved.headers.clone().unwrap_or_default();
+    merged.extend(resolved.extra_headers.clone().unwrap_or_default());
+    if !merged.is_empty() {
+        request::inject_headers(&mut body, &SecretHeaders(merged));
     }
     let extra = take_extra(&mut body)?;
     for (name, value) in &resolved.extra_body {
@@ -231,5 +230,10 @@ pub(crate) fn embedding(
     let url = url_for(Some(api_base), api_version, model, "/embeddings")?;
     let mut headers = auth_headers(resolved, api_version);
     headers.extend(extra);
-    Ok(Wire::new(url, headers, body, false))
+    Ok(Wire {
+        url,
+        headers,
+        body,
+        json_mode: false,
+    })
 }

@@ -22,19 +22,6 @@ fn filled_secret(secret: Option<&SecretString>) -> Option<SecretString> {
         .filter(|text| !text.expose_secret().is_empty())
         .cloned()
 }
-fn api_type(composition: &Composition) -> String {
-    let configured = composition.environment.lookup("AZURE_API_TYPE");
-    configured
-        .filter(|kind| !kind.is_empty())
-        .unwrap_or_else(|| DEFAULT_API_TYPE.to_owned())
-}
-fn default_version(composition: &Composition) -> String {
-    composition
-        .globals
-        .azure_default_api_version
-        .clone()
-        .unwrap_or_else(|| AZURE_DEFAULT_API_VERSION.to_owned())
-}
 fn take_extra_body(
     credentials: &mut Credentials,
 ) -> Result<(Object, Option<String>), AzureProviderError> {
@@ -62,11 +49,6 @@ fn embedding_extra_body(credentials: &mut Credentials) -> Result<Object, AzurePr
             Err(AzureProviderError::ExtraBodyNotAnObject)
         }
     }
-}
-fn ad_token(composition: &Composition, from_body: Option<String>) -> Option<SecretString> {
-    from_body
-        .map(SecretString::from)
-        .or_else(|| composition.secret("AZURE_AD_TOKEN"))
 }
 struct Ranks<'composition, 'credentials> {
     composition: &'composition Composition,
@@ -139,7 +121,11 @@ pub(crate) fn resolve(
     operation: Operation,
     detection_model: Option<&str>,
 ) -> Result<Resolved, AzureProviderError> {
-    let default_api_version = default_version(composition);
+    let default_api_version = composition
+        .globals
+        .azure_default_api_version
+        .clone()
+        .unwrap_or_else(|| AZURE_DEFAULT_API_VERSION.to_owned());
     let (extra_body, from_body) = match operation {
         Operation::Embedding => (embedding_extra_body(&mut credentials)?, None),
         Operation::Chat | Operation::Text => take_extra_body(&mut credentials)?,
@@ -157,9 +143,15 @@ pub(crate) fn resolve(
         api_base,
         api_version,
         api_key: ranks.api_key(),
-        api_type: api_type(composition),
+        api_type: composition
+            .environment
+            .lookup("AZURE_API_TYPE")
+            .filter(|kind| !kind.is_empty())
+            .unwrap_or_else(|| DEFAULT_API_TYPE.to_owned()),
         auth_token: filled_secret(credentials.azure_ad_token.as_ref()),
-        azure_ad_token: ad_token(composition, from_body),
+        azure_ad_token: from_body
+            .map(SecretString::from)
+            .or_else(|| composition.secret("AZURE_AD_TOKEN")),
         headers: credentials.headers.clone(),
         extra_headers: credentials.extra_headers.clone(),
         globals_headers: composition

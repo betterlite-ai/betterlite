@@ -12,10 +12,6 @@ use std::io::Error as IoError;
 use std::time::TryFromFloatSecsError;
 use thiserror::Error;
 use url::ParseError as UrlParseError;
-pub const MISSING_TEXT_BASE: &str = "api_base is required for Azure OpenAI LLM provider. Either set it dynamically or set the AZURE_API_BASE environment variable.";
-pub const MISSING_EMBEDDING_BASE: &str =
-    "No API Base provided for Azure OpenAI LLM provider. Set 'AZURE_API_BASE' in .env";
-pub const MAX_RETRIES_TYPE: &str = "max retries must be an int";
 #[derive(Debug, Error)]
 pub enum AzureProviderError {
     #[error(
@@ -132,8 +128,8 @@ impl From<AzureProviderError> for OperationError {
             | AzureProviderError::InvalidUrl(_)) => {
                 provider_error(400, "AzureOpenAIError", failure.to_string())
             }
-            AzureProviderError::MaxRetriesType => {
-                provider_error(422, "AzureOpenAIError", String::from(MAX_RETRIES_TYPE))
+            failure @ AzureProviderError::MaxRetriesType => {
+                provider_error(422, "AzureOpenAIError", failure.to_string())
             }
             AzureProviderError::Rejected { status, message } => {
                 provider_error(status, "AzureOpenAIError", message)

@@ -3,7 +3,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_dispatch::call::{Composition, Credentials, Globals, Operation, Request};
 use crate::azure_dispatch::compose::prepare;
-use crate::azure_dispatch::error::{AzureProviderError, MISSING_EMBEDDING_BASE, MISSING_TEXT_BASE};
+use crate::azure_dispatch::error::AzureProviderError;
 use crate::azure_dispatch::fixtures::execution::dispatch;
 use crate::azure_dispatch::resolve::{DEFAULT_API_TYPE, merge_defaults, resolve};
 
@@ -65,14 +65,17 @@ fn missing_base_case(composition: &Composition, kind: MissingBase) -> AzureProvi
 
 fn text_missing_base(composition: &Composition) {
     let error = missing_base_case(composition, MissingBase::Text);
-    assert_eq!(error.to_string(), MISSING_TEXT_BASE);
+    assert_eq!(
+        error.to_string(),
+        "api_base is required for Azure OpenAI LLM provider. Either set it dynamically or set the AZURE_API_BASE environment variable."
+    );
     assert!(matches!(error, AzureProviderError::MissingTextApiBase));
 }
 
 fn embedding_message() {
     assert_eq!(
         AzureProviderError::MissingEmbeddingApiBase.to_string(),
-        MISSING_EMBEDDING_BASE
+        "No API Base provided for Azure OpenAI LLM provider. Set 'AZURE_API_BASE' in .env"
     );
 }
 
@@ -94,7 +97,10 @@ fn chat_missing_base(composition: &Composition) {
 
 fn embedding_missing_base(composition: &Composition) {
     let error = missing_base_case(composition, MissingBase::Embedding);
-    assert_eq!(error.to_string(), MISSING_EMBEDDING_BASE);
+    assert_eq!(
+        error.to_string(),
+        "No API Base provided for Azure OpenAI LLM provider. Set 'AZURE_API_BASE' in .env"
+    );
 }
 
 fn ranks_composition() -> Composition {
