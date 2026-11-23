@@ -56,7 +56,7 @@ async fn run_with_limits(events: &[&str], limits: ApiLimits) -> Scenario {
 }
 
 // the store writes the owner envelope once B080 lands, so a seeded cache here holds one too
-fn with_envelope(mut scenario: Scenario) -> Scenario {
+fn with_envelope(scenario: Scenario) -> Scenario {
     scenario.cache.seed(ENVELOPE_SEED);
     scenario
 }

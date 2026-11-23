@@ -45,6 +45,7 @@ const REPLACED_M1: &str =
     r#"{"item":{"content":[],"id":"m1","marker":"replaced"},"type":"response.output_item.done"}"#;
 const PART_A: &str = r#"{"item_id":"m1","part":{"text":"a","type":"output_text"},"type":"response.content_part.added"}"#;
 const PART_B: &str = r#"{"item_id":"m1","part":{"text":"b","type":"output_text"},"type":"response.content_part.added"}"#;
+const PART_EMPTY: &str = r#"{"item_id":"m1","part":{"text":"","type":"output_text"},"type":"response.content_part.added"}"#;
 const PART_DONE_C: &str = r#"{"content_index":1,"item_id":"m1","part":{"text":"c","type":"output_text"},"type":"response.content_part.done"}"#;
 
 pub(super) fn duplicate_ids_keep_insertion_order() {

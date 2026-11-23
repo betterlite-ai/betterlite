@@ -172,7 +172,7 @@ fn terminal_of(kind: TerminalKind, fields: &Fields) -> Result<Terminal, PollEven
         Some(_) => return Err(PollEventError::Field("response.output")),
     };
     // a failed or incomplete event rewrites the error, so an absent one clears an earlier failure
-    let error = if matches!(kind, TerminalKind::Failed | TerminalKind::Incomplete) {
+    let error = if matches!(kind, Failed | Incomplete) {
         let error = response.get("error").cloned().unwrap_or(Json::Null);
         if !matches!(error, Json::Null | Json::Object(_)) {
             return Err(PollEventError::Field("response.error"));
