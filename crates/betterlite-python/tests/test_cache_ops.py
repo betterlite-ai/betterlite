@@ -339,7 +339,7 @@ def test_cache_ops_lookup_dynamic() -> None:
     assert ours_async.arguments == reference_async.arguments
 
 
-def test_cache_ops_lookup_similarity() -> None:
+def test_cache_ops_lookup_sim() -> None:
     ours = Cache(SimilarityBackend())
     ours_kwargs: dict[str, JsonValue] = {**CHAT, "metadata": {}}
     assert ours.get_cache(None, **ours_kwargs) is None
