@@ -780,6 +780,29 @@ fn an_unsupported_provider_is_a_named_bad_request() {
     assert_eq!(harness.state.call_type, "get_agent");
 }
 
+#[tokio::test]
+async fn an_unknown_provider_is_a_bad_request() {
+    let config = fixture();
+    let mut harness = Harness::new();
+    let call = Call::new("agent-1")
+        .provider("gemini")
+        .kwarg("custom_llm_provider", text("nope"));
+    let error = aget(&config, harness.deps(), &call.request())
+        .await
+        .expect_err("the async client cannot resolve nope");
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("nope"));
+    assert_eq!(
+        details.message,
+        "\"nope\" is not a provider betterlite knows"
+    );
+    assert_eq!(harness.state.call_type, "get_agent");
+}
+
 #[test]
 fn a_missing_agent_is_a_not_found_error_with_the_agent_name() {
     let serving = serve(

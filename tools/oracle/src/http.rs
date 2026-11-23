@@ -16,6 +16,7 @@ pub mod browser_flow;
 #[path = "http/native_feature_eligibility/native_feature_eligibility.rs"]
 pub mod native_feature_eligibility;
 pub mod postgres;
+pub mod saml_idp;
 
 // Steps reuse this as the deadline for a whole transcript, not only a single request.
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);

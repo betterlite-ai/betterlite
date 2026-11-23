@@ -1,0 +1,19 @@
+kind: helper
+name: file-batch-rewrite-worst-problem-priority
+call:
+  file_batch_rewrite:
+    scenarios:
+      - problems:
+          - {"line_number": 1, "kind": "unparseable", "custom_id": null, "url": null, "guardrail_name": null, "status": 0}
+          - {"line_number": 5, "kind": "raised", "custom_id": null, "url": null, "guardrail_name": "g", "status": 500}
+          - {"line_number": 3, "kind": "raised", "custom_id": "c", "url": null, "guardrail_name": "g", "status": 429}
+      - problems:
+          - {"line_number": 5, "kind": "unscannable", "custom_id": "e", "url": "/v1/audio/transcriptions", "guardrail_name": null, "status": 0}
+          - {"line_number": 2, "kind": "unparseable", "custom_id": null, "url": null, "guardrail_name": null, "status": 0}
+      - problems:
+          - {"line_number": 2, "kind": "unroutable", "custom_id": "r", "url": null, "guardrail_name": "pii-route", "status": 0}
+          - {"line_number": 1, "kind": "raised", "custom_id": null, "url": null, "guardrail_name": null, "status": 400}
+      - problems:
+          - {"line_number": 7, "kind": "unscannable", "custom_id": null, "url": null, "guardrail_name": null, "status": 0}
+env: {}
+compare: {ignore: []}

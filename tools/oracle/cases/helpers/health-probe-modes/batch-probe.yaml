@@ -1,0 +1,42 @@
+kind: helper
+name: batch_probe
+call:
+  b4440:
+    mode:
+      - mode: batch
+        model: gpt-4o
+        custom_llm_provider: openai
+        params: {model: gpt-4o, api_base: https://api.openai.com}
+        prompt: null
+        inputs: null
+        logging: true
+        failure: null
+      - mode: batch
+        model: hosted-model
+        custom_llm_provider: hosted_vllm
+        params: {model: hosted-model, api_base: ""}
+        prompt: null
+        inputs: null
+        logging: true
+        failure: null
+      - mode: batch
+        model: claude-3
+        custom_llm_provider: anthropic
+        params: {model: claude-3, messages: [{role: user, content: hi}]}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: batch
+        model: gpt-4o
+        custom_llm_provider: litellm_proxy
+        params: {model: gpt-4o, litellm_metadata: {team: t1}}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+    wildcard: []
+    tracking: []
+    response: []
+env: {}
+compare: {ignore: []}

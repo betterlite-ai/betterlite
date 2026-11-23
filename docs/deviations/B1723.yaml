@@ -1,0 +1,49 @@
+task: B1723
+deviations:
+  - what: >-
+      The daily tag totals add exact decimals and round the exact sum to four
+      places. LiteLLM adds the Python floats its database driver returns and
+      rounds the float sum.
+    why: >-
+      Money is a Decimal in betterlite. A sum of 0.1 and 0.2 answers 0.3 here and
+      0.30000000000000004 in LiteLLM, and a value at a four-place tie can round to
+      a different last digit because the float carries a binary approximation of
+      it. Rank order follows the same sums, so two close tags can swap places.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4478-L4493
+  - what: >-
+      A daily tag amount that Postgres returns as NaN or Infinity, or as a value
+      Decimal cannot represent, answers the 500 proxy error body on
+      /global/spend/tags. LiteLLM writes such a number into the JSON body as a
+      bare NaN or Infinity literal.
+    why: >-
+      json.dumps writes those numbers as bare NaN or Infinity, which no strict
+      JSON parser accepts, so that LiteLLM response is already broken for a
+      client. betterlite treats an amount it cannot represent as unreadable spend
+      data and keeps the typed parse cause in the message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4490-L4493
+kept_bugs:
+  - what: >-
+      /spend/tags accepts start_date and end_date and ignores both values.
+    why: >-
+      get_spend_by_tags never reads them, so a setup that filters the legacy tag
+      endpoint by date gets every spend log in the table. The task text asks for
+      the dates to stay unused.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4397-L4410
+  - what: >-
+      /global/spend/tags rejects only a missing date, so start_date=&end_date=
+      reaches the database, fails its date cast and answers the 500 wrapper.
+    why: >-
+      The route checks `is None`, so an empty string counts as present.
+      betterlite keeps the empty string and the database error behind the same
+      wrapper.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2173-L2180
+  - what: >-
+      /global/spend/all_tag_names answers a bare [] when the driver reports no
+      result at all, instead of the {"tag_names": []} shape of every other
+      answer.
+    why: >-
+      _query_raw_or_none returns None and the route returns an empty list rather
+      than an empty tag_names object, so a client that reads tag_names has to
+      handle the bare list. A Postgres pool always returns rows, empty or not, so
+      the branch only shows up for a driver that reports no result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2098-L2100

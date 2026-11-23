@@ -1,0 +1,26 @@
+kind: helper
+name: direct-nova-defaults
+call:
+  bedrock_nova_chat:
+    function: defaults
+    arguments:
+      max_completion_tokens: 16
+      max_tokens: 32
+      temperature: 1
+      top_p: 1
+      tools:
+        - type: function
+          function:
+            name: lookup
+            description: finds things
+            parameters: {type: object, properties: {}}
+      reasoning_effort: [low]
+calls:
+  - bedrock_nova_chat:
+      function: defaults
+      arguments: {}
+  - bedrock_nova_chat:
+      function: defaults
+      arguments: {temperature: 0, top_p: 0}
+env: {}
+compare: {ignore: []}

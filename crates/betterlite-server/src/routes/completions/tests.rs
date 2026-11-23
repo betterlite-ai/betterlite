@@ -761,6 +761,7 @@ fn state_with_read_through(read_through: Option<Arc<dyn ModelReadThrough>>) -> A
         chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
     let shared = Arc::new(Shared {
         bundled_catalog: Arc::clone(&executor.bundled_catalog),
+        client: executor.client.clone(),
     });
     let mut state = ServerState::new(&config, Arc::new(executor), shared);
     state.model_read_through.read_through = read_through;

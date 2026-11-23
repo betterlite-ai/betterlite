@@ -1,0 +1,6 @@
+litellm_settings:
+  amazon_nova_api_key: global-key
+  amazon_nova:
+    reasoning_effort:
+      - low
+      - high

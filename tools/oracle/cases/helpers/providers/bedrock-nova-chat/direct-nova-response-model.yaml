@@ -1,0 +1,14 @@
+kind: helper
+name: direct-nova-response-model
+call:
+  bedrock_nova_chat:
+    function: response_model
+    model: amazon.nova-pro-v1:0
+    body: '{"id":"chatcmpl-supplied","object":"chat.completion","created":1700000000,"model":"previous-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'
+calls:
+  - bedrock_nova_chat:
+      function: response_model
+      model: amazon-nova/already-prefixed
+      body: '{"id":"chatcmpl-supplied","object":"chat.completion","created":1700000000,"model":"previous-model","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}'
+env: {}
+compare: {ignore: []}

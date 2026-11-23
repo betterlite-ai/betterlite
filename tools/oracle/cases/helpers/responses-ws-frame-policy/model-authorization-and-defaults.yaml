@@ -1,0 +1,114 @@
+kind: helper
+name: model-authorization-and-defaults
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: create
+      message: '{"type": "response.create", "model": "client"}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "response": {"model": "client"}}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "client", "response": {"model": "client"}}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "client", "response": {"model": "gpt-4o"}}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create"}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "response": {}}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "response": "x"}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "gpt-4o"}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "gpt-4o", "response": {"model": "gpt-4o"}}'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "client"}'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "model": "client"}'
+      authorized_model: ''
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "temperature": 0.5}'
+      authorized_model: null
+      defaults:
+        fill_missing: {temperature: 0.2, top_p: 1}
+        overrides: {temperature: 0.9, type: x}
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "response": {"temperature": 0.5}}'
+      authorized_model: null
+      defaults:
+        fill_missing: {top_p: 1}
+        overrides: {temperature: 0.9}
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "response": {}}'
+      authorized_model: gpt-4o
+      defaults:
+        fill_missing: {}
+        overrides: {model: override}
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create", "temperature": 0.2}'
+      authorized_model: null
+      defaults:
+        fill_missing: {temperature: 0.7}
+        overrides: {}
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '{"type": "response.create"}'
+      authorized_model: null
+      defaults:
+        fill_missing: {}
+        overrides: {}
+      guardrails: []
+      request_data: {}
+env: {}
+compare:
+  ignore: []

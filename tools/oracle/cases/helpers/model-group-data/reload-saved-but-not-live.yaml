@@ -1,0 +1,42 @@
+kind: helper
+name: model-group-data-reload-saved-but-not-live
+call:
+  model_group_data:
+    calls:
+      - function: raise_http_if_reload_degraded_serving
+        before: [d1]
+        written:
+          - id: d1
+            model_info: {}
+        access_group: group-a
+        still_desired: null
+        live_after: []
+calls:
+  - model_group_data:
+      calls:
+        - function: raise_http_if_reload_degraded_serving
+          before: [d1, d2]
+          written:
+            - id: d1
+              model_info: {}
+          access_group: group-a
+          still_desired: [d1, d2]
+          live_after: [d2]
+        - function: raise_http_if_reload_degraded_serving
+          before: [d1, d2]
+          written:
+            - id: d1
+              model_info: {}
+          access_group: group-a
+          still_desired: [d2]
+          live_after: [d2]
+        - function: raise_http_if_reload_degraded_serving
+          before: [d1]
+          written:
+            - id: d1
+              model_info: {}
+          access_group: group-a
+          still_desired: [d1]
+          live_after: [d1]
+env: {}
+compare: {ignore: []}

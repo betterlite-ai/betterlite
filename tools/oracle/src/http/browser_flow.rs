@@ -9,11 +9,14 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use url::Url;
 
+use super::saml_idp::SamlIdpError;
+use super::saml_idp::driver::SamlSigner;
 use super::{REQUEST_TIMEOUT, Response, send_with_raw_headers};
 use crate::OracleError;
 use crate::case::Request;
 use crate::case::browser_flow::form::{FormCaptureError, parse_form_projection};
 use crate::case::browser_flow::{PlaceholderError, Step};
+use betterlite_oracle_runner::case::RequestBody;
 use betterlite_oracle_runner::multipart_oracle::error::MultipartError;
 
 mod capture;
@@ -56,6 +59,12 @@ pub enum BrowserFlowError {
     },
     #[error("step {index}: unterminated capture placeholder")]
     Interpolate { index: usize },
+    #[error("step {index} saml assertion: {source}")]
+    Saml {
+        index: usize,
+        #[source]
+        source: SamlIdpError,
+    },
     #[error("step {index} body: {source}")]
     Multipart {
         index: usize,
@@ -157,6 +166,7 @@ struct StepState<'state> {
     base_url: &'state Url,
     jar: &'state mut CookieJar,
     captures: &'state mut BTreeMap<String, CapturedValue>,
+    signer: &'state mut SamlSigner,
 }
 
 // The jar and capture map are local to this call, so the two proxies never share either.
@@ -171,6 +181,7 @@ pub(crate) fn run_case_steps(
         .ok_or(BrowserFlowError::DeadlineExceeded { index: 0 })?;
     let mut jar = CookieJar::default();
     let mut captures = BTreeMap::new();
+    let mut signer = SamlSigner::new();
     let mut responses = Vec::with_capacity(steps.len());
     for (index, step) in steps.iter().enumerate() {
         if Instant::now() >= deadline {
@@ -182,6 +193,7 @@ pub(crate) fn run_case_steps(
             base_url: &base_url,
             jar: &mut jar,
             captures: &mut captures,
+            signer: &mut signer,
         };
         responses.push(run_step(client, base, index, step, &mut state)?);
     }
@@ -218,7 +230,7 @@ fn run_step(
         }
         headers.insert("cookie".to_owned(), cookie_header);
     }
-    let body = interpolate::resolve_body(index, step, state.captures)?;
+    let body = step_body(index, step, state)?;
     let request = Request {
         method: step.request.method.clone(),
         path,
@@ -232,6 +244,27 @@ fn run_step(
         .update_from_response(index, state.base_url, &raw_headers)?;
     apply_captures(index, step, &response, &raw_headers, state)?;
     Ok(response)
+}
+
+fn step_body(
+    index: usize,
+    step: &Step,
+    state: &mut StepState<'_>,
+) -> Result<RequestBody, BrowserFlowError> {
+    let Some(assertion) = &step.saml_assertion else {
+        return interpolate::resolve_body(index, step, state.captures);
+    };
+    let captured = state
+        .captures
+        .get(&assertion.request_id_capture)
+        .ok_or_else(|| BrowserFlowError::MissingCapture {
+            index,
+            name: assertion.request_id_capture.clone(),
+        })?;
+    state
+        .signer
+        .form_body(assertion, captured.text.expose_secret())
+        .map_err(|source| BrowserFlowError::Saml { index, source })
 }
 
 fn apply_captures(
