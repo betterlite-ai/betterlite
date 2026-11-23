@@ -322,6 +322,26 @@ async fn request_input_cost_is_capped_at_the_reserved_cost() {
 }
 
 #[tokio::test]
+async fn request_resized_admission_cost_is_the_record_cost() {
+    let mut world = World::new();
+    world.admission.plan = AdmissionPlan::Applied {
+        entries: vec![(KEY.to_owned(), amount("7"))],
+        reserved_cost: amount("7"),
+    };
+    world.costs.input_cost = Some(amount("9"));
+    let body = support::body();
+    let request = RequestFixture::new(&body, ROUTE, &world).build();
+    let handle = reserve_budget_for_request(&request, &world.services(None))
+        .await
+        .expect("the reservation finishes")
+        .expect("a reservation");
+    let state = lock(&handle.0);
+    assert_eq!(state.reserved_cost, amount("7"));
+    assert_eq!(state.entries, vec![reservation_entry(KEY, amount("7"))]);
+    assert_eq!(state.input_cost, amount("7"));
+}
+
+#[tokio::test]
 async fn request_missing_input_cost_is_zero() {
     let mut world = World::new();
     world.costs.input_cost = None;
@@ -549,6 +569,23 @@ async fn lease_stops_at_the_request_timeout() {
     advance(INTERVAL).await;
     yield_now().await;
     assert_eq!(harness.refreshed().len(), 3);
+}
+
+#[tokio::test(start_paused = true)]
+async fn lease_timeout_too_large_does_not_renew() {
+    let harness = LeaseHarness::new();
+    let handle = reservation_handle(&[KEY]);
+    let renewal = harness.renewal(TTL, Duration::MAX);
+    lease::start(
+        &renewal,
+        Arc::downgrade(&handle.0),
+        get_reserved_counter_keys(&handle),
+    );
+    yield_now().await;
+    assert!(harness.tracker.is_empty());
+    advance(INTERVAL).await;
+    yield_now().await;
+    assert!(harness.refreshed().is_empty());
 }
 
 #[tokio::test]
