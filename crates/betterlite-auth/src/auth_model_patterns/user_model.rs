@@ -22,10 +22,10 @@ pub fn can_user_call_model(
     key_model_aliases: &BTreeMap<String, String>,
     context: &ModelAccessContext<'_>,
 ) -> ModelAccessDecision {
-    let Some(user) = user else {
+    let Some(row) = user else {
         return ModelAccessDecision::Allowed;
     };
-    let models = user_models(user);
+    let models = user_models(row);
     // LiteLLM raises the key type here on purpose, even though the object is a user
     if models.iter().any(|name| name.as_str() == NO_DEFAULT_MODELS) {
         let requested = requested_text(model);

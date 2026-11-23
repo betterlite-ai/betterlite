@@ -2,7 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
+use betterlite_db::user_repository::projection::user_record_to_model;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 use rstest::rstest;
@@ -15,8 +17,23 @@ use crate::auth_request_models::RequestedModels;
 
 const RECURSE_DEPTH: i64 = 100;
 
+fn user_with_models(models: JsonData) -> LiteLLMUserTable {
+    let record = JsonData::Object(BTreeMap::from([
+        ("user_id".to_owned(), JsonData::String("user-1".to_owned())),
+        ("models".to_owned(), models),
+    ]));
+    user_record_to_model(Some(&record))
+        .unwrap()
+        .expect("the fixture user row is present")
+}
+
 fn user(models: &[&str]) -> LiteLLMUserTable {
-    serde_json::from_value(serde_json::json!({ "user_id": "user-1", "models": models })).unwrap()
+    user_with_models(JsonData::Array(
+        models
+            .iter()
+            .map(|name| JsonData::String((*name).to_owned()))
+            .collect(),
+    ))
 }
 
 fn one(model: &str) -> RequestedModels {
@@ -204,12 +221,13 @@ fn sentinel_message_joins_list_models() {
 // docs/deviations/B10051.yaml: B871's projection empties the column on one non-string item, even around the sentinel
 #[test]
 fn invalid_model_column_treated_as_empty() {
-    let numeric =
-        serde_json::from_value(serde_json::json!({ "user_id": "user-1", "models": [7] })).unwrap();
-    let sentinel_and_number = serde_json::from_value(
-        serde_json::json!({ "user_id": "user-2", "models": ["no-default-models", 7] }),
-    )
-    .unwrap();
+    let numeric = user_with_models(JsonData::Array(vec![JsonData::Number(
+        serde_json::Number::from(7_i32),
+    )]));
+    let sentinel_and_number = user_with_models(JsonData::Array(vec![
+        JsonData::String("no-default-models".to_owned()),
+        JsonData::Number(serde_json::Number::from(7_i32)),
+    ]));
     let aliases = empty_aliases();
     let provider = UnresolvedProviderInference;
     let ctx = context(&aliases, &provider);
