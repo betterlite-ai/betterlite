@@ -254,6 +254,39 @@ async fn empty_membership_skips_query() {
 }
 
 #[tokio::test]
+async fn user_membership_in_filter() {
+    let seed = [
+        organization_insert("org-1"),
+        team_insert("t1", "one", Some("org-1"), &[], &[]),
+        team_insert("t2", "two", Some("org-1"), &[], &[]),
+        team_insert("t3", "three", Some("org-1"), &[], &[]),
+        user_insert("u1", &["t1", "t3"]),
+    ]
+    .concat();
+    let fixture = database(&seed).await;
+    let cache = Arc::new(RecordingCache::default());
+    let store = user_store(&fixture.store, &fixture.store);
+    let users = lookup(&cache, Some(store));
+    let filters = team_filters(None, None, None, Some("u1"));
+    let clause = build_where_conditions(&users, &filters, TeamListScope::default())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        clause,
+        vec![TeamListWhere::In(
+            TeamListColumn::TeamId,
+            vec!["t1".to_owned(), "t3".to_owned()]
+        )]
+    );
+    assert_eq!(
+        fixture.matching_team_ids(&clause, false).await,
+        vec!["t1".to_owned(), "t3".to_owned()]
+    );
+    fixture.close().await;
+}
+
+#[tokio::test]
 async fn empty_string_filters_are_unset() {
     let cache = Arc::new(RecordingCache::default());
     let no_database = lookup(&cache, None);
