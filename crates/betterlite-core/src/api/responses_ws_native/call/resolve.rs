@@ -24,12 +24,12 @@ pub(super) struct ResolvedCall {
     pub(super) provider_config: Option<ResponsesApiConfig>,
 }
 
-pub(super) fn resolve_call<Client, Handler>(
+pub(super) fn resolve_call<Client, Handler, HandlerError>(
     deps: &NativeWsDeps<'_, Handler>,
     call: &NativeWsCall<'_, Client>,
-) -> Result<ResolvedCall, NativeWsCallError<Handler>>
+) -> Result<ResolvedCall, NativeWsCallError<HandlerError>>
 where
-    Handler: Error + 'static,
+    HandlerError: Error + 'static,
 {
     let resolved = deps
         .resolution
@@ -58,8 +58,8 @@ where
     Ok(ResolvedCall {
         model,
         provider: resolved.provider,
-        api_base,
-        api_key,
+        api_base: api_base.map(str::to_owned),
+        api_key: api_key.cloned(),
         provider_config,
     })
 }
