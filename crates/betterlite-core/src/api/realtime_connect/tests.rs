@@ -15,8 +15,8 @@ use crate::api::vertex_chirp::target::AccessTokenResolver;
 
 use super::token::{VertexTokenError, resolve_vertex_token};
 use super::{
-    AzureAdTokenRequest, Branch, ConnectionQuery, RealtimeConnectDispatch, RealtimeConnectError,
-    RealtimeConnectParams, RealtimeConnection,
+    AzureAdTokenRequest, Branch, ConnectionQuery, RealtimeConnectDispatch as _,
+    RealtimeConnectError, RealtimeConnectParams, RealtimeConnection,
 };
 use support::{
     BareDispatch, Recorder, ScriptedTokens, TestConfig, call, params, run, secret, settings, text,

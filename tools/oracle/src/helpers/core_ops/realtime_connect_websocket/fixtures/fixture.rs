@@ -123,7 +123,7 @@ impl VertexAccessTokenSource for ScriptedTokens {
 }
 
 pub(crate) struct Fixture {
-    pub(crate) tokens: Arc<ScriptedTokens>,
+    pub(crate) tokens: VertexToken,
 }
 
 impl RealtimeConnectDispatch for Fixture {

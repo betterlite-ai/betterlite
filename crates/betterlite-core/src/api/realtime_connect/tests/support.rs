@@ -141,11 +141,18 @@ impl VertexAccessTokenSource for ScriptedTokens {
     }
 }
 
+#[derive(Clone, Default)]
+enum AdReply {
+    #[default]
+    Unset,
+    Answer(Option<SecretString>),
+}
+
 #[derive(Default)]
 pub(super) struct Recorder {
     tags: Mutex<Vec<RealtimeConfigTag>>,
     pub(super) ad_requests: Mutex<Vec<(Option<String>, Option<String>)>>,
-    ad_reply: Mutex<Option<Option<SecretString>>>,
+    ad_reply: Mutex<AdReply>,
     tokens: Mutex<Option<Arc<dyn VertexAccessTokenSource<Error = TestError>>>>,
 }
 
@@ -164,7 +171,7 @@ impl Recorder {
         *recorder
             .ad_reply
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(reply);
+            .unwrap_or_else(PoisonError::into_inner) = AdReply::Answer(reply);
         recorder
     }
 
@@ -219,13 +226,17 @@ impl RealtimeConnectDispatch for Recorder {
                     .map(|token| token.expose_secret().to_owned()),
                 request.params.tenant_id.clone(),
             ));
-        self.ad_reply
+        let reply = self
+            .ad_reply
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-            .ok_or(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
+            .clone();
+        match reply {
+            AdReply::Unset => Err(RealtimeConnectError::NotBuilt(DispatchError::NotBuilt {
                 entry: "azure_ad_token_credentials",
-            }))
+            })),
+            AdReply::Answer(answer) => Ok(answer),
+        }
     }
 }
 
