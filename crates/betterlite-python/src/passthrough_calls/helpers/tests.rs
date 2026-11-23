@@ -28,9 +28,15 @@ fn merge_query_parameters_reads_a_repeated_url_parameter_as_a_list() {
 }
 
 #[test]
+fn merge_query_parameters_reads_the_query_of_a_scheme_less_url() {
+    let merged = merge_query_parameters("/v1/chat?from_url=url&shared=url", "{}", None).unwrap();
+    assert_eq!(merged, r#"{"from_url":"url","shared":"url"}"#);
+}
+
+#[test]
 fn merge_query_parameters_refuses_a_url_that_is_not_one() {
     Python::initialize();
-    let error = merge_query_parameters("not a url", "{}", None).unwrap_err();
+    let error = merge_query_parameters("http://", "{}", None).unwrap_err();
     assert!(error.to_string().contains("not a URL"), "{error}");
 }
 

@@ -4,10 +4,11 @@ use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::openai_base_config::Object;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
+use std::collections::BTreeMap;
 
 use super::{
     API_ERROR, BAD_REQUEST, BAD_REQUEST_STATUS, ConvertError, ErrorPayload, SYNTHESIZED_STATUS,
-    call_args,
+    call_args, serialize,
 };
 
 const FULL_REQUEST: &str = r#"{
@@ -31,6 +32,13 @@ const FULL_REQUEST: &str = r#"{
 
 fn full_blobs() -> Vec<Vec<u8>> {
     vec![b"pong".to_vec(), b"png-bytes".to_vec()]
+}
+
+#[test]
+fn an_answer_that_cannot_be_written_as_json_is_an_encode_error() {
+    let value = BTreeMap::from([(vec![1_u8], "value")]);
+    let error = serialize(&value).unwrap_err();
+    assert!(matches!(error, ConvertError::Encode { .. }));
 }
 
 #[test]

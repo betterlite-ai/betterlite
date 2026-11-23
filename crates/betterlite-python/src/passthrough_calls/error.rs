@@ -3,6 +3,7 @@ use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 
 use super::convert::{ConvertError, ErrorPayload};
+use super::helpers::HelperError;
 use super::session::SessionError;
 
 create_exception!(betterlite_native, NativePassthroughError, PyException);
@@ -15,9 +16,29 @@ pub(crate) fn native_error(payload: ErrorPayload) -> PyErr {
     }
 }
 
+fn convert_error(error: &ConvertError) -> PyErr {
+    match error {
+        ConvertError::Encode { .. } => PyRuntimeError::new_err(error.to_string()),
+        ConvertError::Json { .. } | ConvertError::File { .. } | ConvertError::Content => {
+            PyValueError::new_err(error.to_string())
+        }
+    }
+}
+
 impl From<ConvertError> for PyErr {
     fn from(error: ConvertError) -> Self {
-        PyValueError::new_err(error.to_string())
+        convert_error(&error)
+    }
+}
+
+impl From<HelperError> for PyErr {
+    fn from(error: HelperError) -> Self {
+        match &error {
+            HelperError::Url(_) | HelperError::Timeout(_) => {
+                PyValueError::new_err(error.to_string())
+            }
+            HelperError::Wire(wire) => convert_error(wire),
+        }
     }
 }
 

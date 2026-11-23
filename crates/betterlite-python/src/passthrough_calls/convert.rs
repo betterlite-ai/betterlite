@@ -57,6 +57,11 @@ pub(crate) enum ConvertError {
     },
     #[error("the content argument is not a file marker")]
     Content,
+    #[error("the answer could not be written as JSON: {source}")]
+    Encode {
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
@@ -67,6 +72,14 @@ where
         Ok(value) => Ok(value),
         Err(source) => Err(ConvertError::Json { source }),
     }
+}
+
+// the other direction of the same boundary: the helper's answer back to the Python caller as JSON text
+pub(crate) fn serialize<T>(value: &T) -> Result<String, ConvertError>
+where
+    T: Serialize,
+{
+    serde_json::to_string(value).map_err(|source| ConvertError::Encode { source })
 }
 
 // The wire's file markers become the call's content and multipart uploads, each blob moved out once.

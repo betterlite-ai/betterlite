@@ -1,3 +1,4 @@
+use super::convert::{ConvertError, parse, serialize};
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_context::bedrock_model::runtime_arn::encode_runtime_modelid_arn as runtime_arn;
 use betterlite_models::passthrough_policies::generic_timeout::{
@@ -8,17 +9,30 @@ use betterlite_models::passthrough_policies::query_merge::{
     QueryParameters, merge_query_parameters as merge_query,
 };
 use betterlite_models::passthrough_policies::sdk_timeout::{
-    DeploymentTimeouts, RequestTimeouts, RouterTimeouts, TimeoutValue,
-    resolve_sdk_timeout as resolve_sdk,
+    DeploymentTimeouts, RequestTimeouts, RouterTimeouts, TimeoutError,
+    resolve_sdk_timeout as resolve_sdk, timeout_value,
 };
 use betterlite_openai::openai_base_config::Object;
 use indexmap::IndexMap;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use serde::{Deserialize, Serialize};
-use url::Url;
+use serde::Deserialize;
+use thiserror::Error;
+use url::{ParseError, Url};
 
 mod tests;
+
+// the base a scheme-less existing_url resolves against; only the query is read
+const BASE_URL: &str = "http://localhost/";
+
+#[derive(Debug, Error)]
+pub(crate) enum HelperError {
+    #[error("existing_url is not a URL: {0}")]
+    Url(#[from] ParseError),
+    #[error(transparent)]
+    Wire(#[from] ConvertError),
+    #[error(transparent)]
+    Timeout(#[from] TimeoutError),
+}
 
 // BasePassthroughUtils.get_merged_query_parameters: the URL's own query, then the caller's, over the defaults.
 #[pyfunction]
@@ -26,15 +40,18 @@ pub(crate) fn merge_query_parameters(
     existing_url: &str,
     request_query_params: &str,
     default_query_params: Option<&str>,
-) -> PyResult<String> {
-    let url = Url::parse(existing_url)
-        .map_err(|error| PyValueError::new_err(format!("existing_url is not a URL: {error}")))?;
-    let request: QueryParameters = read(request_query_params)?;
+) -> Result<String, HelperError> {
+    // LiteLLM reads only the query, so a scheme-less reference merges like an absolute URL
+    let url = match Url::parse(existing_url) {
+        Ok(url) => url,
+        Err(_unparsed) => Url::parse(BASE_URL)?.join(existing_url)?,
+    };
+    let request: QueryParameters = parse(request_query_params)?;
     let defaults: Option<QueryParameters> = match default_query_params {
-        Some(text) => Some(read(text)?),
+        Some(text) => Some(parse(text)?),
         None => None,
     };
-    encode(&merge_query(&url, &request, defaults.as_ref()))
+    serialize(&merge_query(&url, &request, defaults.as_ref())).map_err(HelperError::from)
 }
 
 // BasePassthroughUtils.forward_headers_from_request, with B3571's protected header list.
@@ -43,10 +60,10 @@ pub(crate) fn forward_headers_from_request(
     request_headers: &str,
     headers: &str,
     forward_headers: bool,
-) -> PyResult<String> {
-    let request: IndexMap<String, String> = read(request_headers)?;
-    let provided: IndexMap<String, String> = read(headers)?;
-    encode(&forward_from(&request, provided, forward_headers))
+) -> Result<String, HelperError> {
+    let request: IndexMap<String, String> = parse(request_headers)?;
+    let provided: IndexMap<String, String> = parse(headers)?;
+    serialize(&forward_from(&request, provided, forward_headers)).map_err(HelperError::from)
 }
 
 // CommonUtils.encode_bedrock_runtime_modelid_arn, which encodes the resource separator in a model ARN.
@@ -75,8 +92,8 @@ struct SdkTimeoutRequest {
 
 // resolve_llm_passthrough_timeout: the stream levels first, then the generic chain, then 600 seconds.
 #[pyfunction]
-pub(crate) fn resolve_sdk_timeout(request: &str) -> PyResult<f64> {
-    let wire: SdkTimeoutRequest = read(request)?;
+pub(crate) fn resolve_sdk_timeout(request: &str) -> Result<f64, HelperError> {
+    let wire: SdkTimeoutRequest = parse(request)?;
     let request_timeouts = RequestTimeouts {
         stream: matches!(wire.kwargs.get("stream"), Some(JsonValue::Bool(true))),
         stream_timeout: timeout_value(wire.kwargs.get("stream_timeout")),
@@ -99,40 +116,5 @@ pub(crate) fn resolve_sdk_timeout(request: &str) -> PyResult<f64> {
         None,
         DEFAULT_TIMEOUT_SECONDS,
     )
-    .map_err(|error| PyValueError::new_err(error.to_string()))
-}
-
-// only the winning value is validated, so a list or object in a lower field never fails the call
-fn timeout_value(value: Option<&JsonValue>) -> Option<TimeoutValue> {
-    match value {
-        None | Some(JsonValue::Null) => None,
-        Some(JsonValue::Number(number)) => number.as_f64().map(TimeoutValue::Number),
-        Some(JsonValue::Bool(flag)) => {
-            Some(TimeoutValue::Number(if *flag { 1.0_f64 } else { 0.0_f64 }))
-        }
-        Some(JsonValue::String(text)) => Some(TimeoutValue::Text(text.clone())),
-        Some(other @ (JsonValue::Array(_) | JsonValue::Object(_))) => {
-            Some(TimeoutValue::Text(other.to_string()))
-        }
-    }
-}
-
-fn read<T>(text: &str) -> PyResult<T>
-where
-    T: for<'text> Deserialize<'text>,
-{
-    match serde_json::from_str(text) {
-        Ok(value) => Ok(value),
-        Err(error) => Err(PyValueError::new_err(error.to_string())),
-    }
-}
-
-fn encode<T>(value: &T) -> PyResult<String>
-where
-    T: Serialize,
-{
-    match serde_json::to_string(value) {
-        Ok(text) => Ok(text),
-        Err(error) => Err(PyRuntimeError::new_err(error.to_string())),
-    }
+    .map_err(HelperError::from)
 }
