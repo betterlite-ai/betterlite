@@ -294,7 +294,7 @@ def test_send_message_direct_sets_the_agent_headers() -> None:
     assert len(posts) == SINGLE
     assert header_of(posts[0], TRACE_HEADER) == AGENT_TRACE
     assert header_of(posts[0], AGENT_HEADER) == AGENT_ID
-    assert call_of(posts[0])["method"] == SEND_METHOD
+    assert call_of(posts[0]).get("method") == SEND_METHOD
 
 
 def test_send_message_streaming_gives_the_events_in_order() -> None:
@@ -315,7 +315,7 @@ def test_send_message_streaming_gives_the_events_in_order() -> None:
     assert message["result"]["kind"] == MESSAGE_LABEL
     assert message["result"]["parts"][0]["text"] == REPLY_TEXT
     posts = recorded(recorder, "POST")
-    assert call_of(posts[0])["method"] == STREAM_METHOD
+    assert call_of(posts[0]).get("method") == STREAM_METHOD
     assert header_of(posts[0], ACCEPT_HEADER) == EVENT_STREAM
 
 
@@ -478,4 +478,4 @@ def test_errors_recover_from_a_localhost_card() -> None:
     assert payload["result"]["parts"][0]["text"] == REPLY_TEXT
     assert len(recorded(recorder, "GET")) == SINGLE
     assert len(posts) == SINGLE
-    assert call_of(posts[0])["method"] == SEND_METHOD
+    assert call_of(posts[0]).get("method") == SEND_METHOD

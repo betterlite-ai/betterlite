@@ -186,9 +186,10 @@ class _Handler(BaseHTTPRequestHandler):
             }
         )
         card = owner.card()
-        if self.path == CARD_PATH and not owner.recorder.legacy_card:
-            self.reply(OK, card)
-        elif self.path == LEGACY_CARD_PATH and owner.recorder.legacy_card:
+        serves = (self.path == CARD_PATH and not owner.recorder.legacy_card) or (
+            self.path == LEGACY_CARD_PATH and owner.recorder.legacy_card
+        )
+        if serves:
             self.reply(OK, card)
         else:
             self.reply(NOT_FOUND, {})
