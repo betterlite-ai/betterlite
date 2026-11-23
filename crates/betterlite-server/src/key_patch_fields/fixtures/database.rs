@@ -79,6 +79,14 @@ struct Environment {
     url: Option<String>,
 }
 
+pub(crate) struct SeedKey<'a> {
+    pub(crate) token: &'a str,
+    pub(crate) key_alias: Option<&'a str>,
+    pub(crate) metadata: &'a str,
+    pub(crate) budget_id: Option<&'a str>,
+    pub(crate) team_id: Option<&'a str>,
+}
+
 pub(crate) struct TestDatabase {
     fixture: PostgresFixture,
     pool: Pool,
@@ -126,17 +134,16 @@ impl TestDatabase {
             .await;
     }
 
-    pub(crate) async fn seed_key(
-        &self,
-        token: &str,
-        key_alias: Option<&str>,
-        metadata: &str,
-        budget_id: Option<&str>,
-        team_id: Option<&str>,
-    ) {
+    pub(crate) async fn seed_key(&self, key: SeedKey<'_>) {
         self.execute(
             SEED_KEY_SQL,
-            &[&token, &key_alias, &metadata, &budget_id, &team_id],
+            &[
+                &key.token,
+                &key.key_alias,
+                &key.metadata,
+                &key.budget_id,
+                &key.team_id,
+            ],
         )
         .await;
     }

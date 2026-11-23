@@ -79,10 +79,10 @@ pub fn metadata_fields(request: &UpdateKeyRequest, supplied: Row) -> Row {
         .into_iter()
         .filter(|(_, value)| !matches!(value, JsonData::Null))
         .collect();
-    if let Some(expiry) = expiry {
+    if let Some(timestamp) = expiry {
         fields.insert(
             String::from("temp_budget_expiry"),
-            JsonData::String(isoformat_timestamp(expiry)),
+            JsonData::String(isoformat_timestamp(timestamp)),
         );
     }
     fields
@@ -130,7 +130,8 @@ async fn validate_router_settings(
     let explicit = matches!(router_settings, Some(value) if !matches!(value, JsonData::Null));
     let team_changed = supplied.contains_key("team_id")
         && supplied.get("team_id").and_then(string_of) != context.existing.team_id.as_deref();
-    if !explicit && !(router_settings.is_none() && team_changed) {
+    let needs_validation = explicit || (router_settings.is_none() && team_changed);
+    if !needs_validation {
         return Ok(());
     }
     let effective = match router_settings {

@@ -31,7 +31,7 @@ use self::support::{
     number_f64, object, prepare_error, prepared, prepared_row, run_metadata, string_field,
     update_request,
 };
-use crate::key_patch_fields::fixtures::database::TestDatabase;
+use crate::key_patch_fields::fixtures::database::{SeedKey, TestDatabase};
 
 #[tokio::test]
 async fn metadata_omitted_copies_explicit_null_retained() {
@@ -589,7 +589,13 @@ fn statement_column_guard() {
 async fn soft_transaction_budget_then_key() {
     let database = TestDatabase::start().await;
     database
-        .seed_key("token-2", Some("alias"), "{}", None, None)
+        .seed_key(SeedKey {
+            token: "token-2",
+            key_alias: Some("alias"),
+            metadata: "{}",
+            budget_id: None,
+            team_id: None,
+        })
         .await;
     let write = KeyPatchWrite {
         key: "token-2",
@@ -644,16 +650,16 @@ async fn object_permission_absent_or_updated() {
 #[tokio::test]
 async fn postgres_pinned_rows() {
     let database = TestDatabase::start().await;
-    database.seed_budget("budget-1", Some(1.0)).await;
+    database.seed_budget("budget-1", Some(1.0_f64)).await;
     database.seed_permission("perm-1").await;
     database
-        .seed_key(
-            "token-1",
-            Some("alias"),
-            r#"{"team": "t1"}"#,
-            Some("budget-1"),
-            Some("t1"),
-        )
+        .seed_key(SeedKey {
+            token: "token-1",
+            key_alias: Some("alias"),
+            metadata: r#"{"team": "t1"}"#,
+            budget_id: Some("budget-1"),
+            team_id: Some("t1"),
+        })
         .await;
     let write = KeyPatchWrite {
         key: "token-1",
@@ -676,9 +682,15 @@ async fn postgres_pinned_rows() {
 #[tokio::test]
 async fn postgres_failure_effects() {
     let database = TestDatabase::start().await;
-    database.seed_budget("budget-1", Some(1.0)).await;
+    database.seed_budget("budget-1", Some(1.0_f64)).await;
     database
-        .seed_key("token-3", Some("kept"), "{}", Some("budget-1"), None)
+        .seed_key(SeedKey {
+            token: "token-3",
+            key_alias: Some("kept"),
+            metadata: "{}",
+            budget_id: Some("budget-1"),
+            team_id: None,
+        })
         .await;
     let write = KeyPatchWrite {
         key: "token-3",

@@ -17,12 +17,12 @@ pub fn validate_budget(field: &'static str, amount: Option<Amount>) -> Result<()
         Some(Amount::Finite(decimal)) if decimal.is_sign_negative() && !decimal.is_zero() => amount,
         Some(Amount::Finite(_)) | None => None,
     };
-    let Some(rejected) = rejected else {
+    let Some(rejected_amount) = rejected else {
         return Ok(());
     };
     Err(KeyPatchError::NonFiniteBudget {
         field,
-        received: describe_amount(Some(rejected)),
+        received: describe_amount(Some(rejected_amount)),
     })
 }
 

@@ -46,7 +46,7 @@ fn apply_duration(values: &mut Row, clock: KeyClock<'_>) -> Result<(), KeyPatchE
     let Some(specified) = values.remove("duration") else {
         return Ok(());
     };
-    if let JsonData::Null = specified {
+    if specified == JsonData::Null {
         values.insert(String::from("expires"), JsonData::Null);
         return Ok(());
     }

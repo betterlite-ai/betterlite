@@ -126,10 +126,10 @@ async fn write_key_row(
         .query_opt(statement.as_str(), &[&json, &hashed])
         .await
         .map_err(database_failure)?;
-    let Some(stored) = stored else {
+    let Some(row) = stored else {
         return Ok(Row::new());
     };
-    let JsonData::Object(mut fields) = row_json(&stored)? else {
+    let JsonData::Object(mut fields) = row_json(&row)? else {
         return Err(KeyPatchError::StoredRowShape);
     };
     attach_object_permission(transaction, &mut fields).await?;

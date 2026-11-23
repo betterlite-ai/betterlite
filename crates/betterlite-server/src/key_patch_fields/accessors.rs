@@ -77,8 +77,8 @@ pub fn requested_end_user_budget_id(request: &KeyRequestBase) -> Option<String> 
 
 // _general_settings: the loaded globals must be a JSON object; the loader itself belongs to the config crate.
 pub fn general_settings(value: &JsonData) -> Result<Row, KeyPatchError> {
-    match object_of(value) {
-        Some(settings) => Ok(settings.clone()),
-        None => Err(KeyPatchError::GeneralSettings),
-    }
+    object_of(value).map_or_else(
+        || Err(KeyPatchError::GeneralSettings),
+        |settings| Ok(settings.clone()),
+    )
 }
