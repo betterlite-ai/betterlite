@@ -15,7 +15,7 @@ use pyo3_async_runtimes::tokio::get_runtime;
 use rust_decimal::Decimal;
 use serde_json::value::RawValue;
 
-use super::{reload_async_with, reload_blocking_with};
+use super::{reload_async, reload_async_with, reload_blocking, reload_blocking_with};
 use crate::model_info::convert::ReloadQuery;
 use crate::model_info::fetch::FetchError;
 use crate::model_info::state::Runtime;
@@ -417,6 +417,40 @@ fn model_info_reload_async_rejects_an_integrity_failure() {
         )))
     );
     assert_eq!(runtime.source_json().unwrap(), before);
+}
+
+#[test]
+fn model_info_reload_blocking_answers_through_the_process_environment() {
+    let runtime = runtime();
+    let mut broken = query();
+    broken.url = "not a url".to_owned();
+    let answer = get_runtime()
+        .block_on(reload_blocking(&runtime, &broken))
+        .unwrap();
+    let parsed = envelope(&answer);
+    assert_eq!(
+        parsed.get("status"),
+        Some(&Json::Text("reloaded".to_owned()))
+    );
+    let info = source(&runtime);
+    assert_eq!(info.get("source"), Some(&Json::Text("local".to_owned())));
+}
+
+#[test]
+fn model_info_reload_async_answers_through_the_process_environment() {
+    let runtime = runtime();
+    let mut broken = query();
+    broken.url = "not a url".to_owned();
+    let answer = get_runtime()
+        .block_on(reload_async(&runtime, &broken))
+        .unwrap();
+    let parsed = envelope(&answer);
+    assert_eq!(
+        parsed.get("status"),
+        Some(&Json::Text("reloaded".to_owned()))
+    );
+    let info = source(&runtime);
+    assert_eq!(info.get("source"), Some(&Json::Text("local".to_owned())));
 }
 
 #[test]
