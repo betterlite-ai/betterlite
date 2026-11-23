@@ -3,7 +3,7 @@ import importlib
 import inspect
 import json
 import threading
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Coroutine
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
 from typing import ClassVar, Final, Protocol, Self, TypedDict
@@ -113,7 +113,7 @@ class AsyncSkillCall(Protocol):
     def __call__(self, skill_id: str, extra_headers: dict[str, str] | None = None,
                  extra_query: dict[str, JsonValue] | None = None, timeout: float | None = None,
                  custom_llm_provider: str | None = None,
-                 **kwargs: CallValue) -> Coroutine[None, None, BaseModel]: ...
+                 **kwargs: CallValue) -> Awaitable[BaseModel]: ...
 
 
 class SkillsReferenceError(Exception):
@@ -352,12 +352,14 @@ def test_signature_get_and_delete() -> None:
                 api_key=GOOD_KEY,
             )
             awaited_answer = asyncio.run(
-                awaited(
-                    SKILL_ID,
-                    timeout=TIMEOUT,
-                    custom_llm_provider=ANTHROPIC,
-                    api_base=server.url,
-                    api_key=GOOD_KEY,
+                asyncio.wait_for(
+                    awaited(
+                        SKILL_ID,
+                        timeout=TIMEOUT,
+                        custom_llm_provider=ANTHROPIC,
+                        api_base=server.url,
+                        api_key=GOOD_KEY,
+                    )
                 )
             )
             our_call = server.calls[-3]
