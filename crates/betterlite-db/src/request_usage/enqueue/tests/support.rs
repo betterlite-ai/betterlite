@@ -63,7 +63,9 @@ impl CasePrices {
         let record = self.prices.get(key)?.clone();
         Some(PricedModel {
             record,
-            ..PricedModel::default()
+            tiered_pricing: Vec::new(),
+            off_peak_pricing: None,
+            off_peak_cache_read_present: false,
         })
     }
 }
