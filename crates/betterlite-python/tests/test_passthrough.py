@@ -1,9 +1,10 @@
 import asyncio
 import importlib
-import inspect
 import re
+import subprocess
+import sys
 import threading
-from collections.abc import AsyncIterator, Callable, Generator, Iterator, Mapping
+from collections.abc import AsyncIterator, Generator, Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
 from typing import ClassVar, Final, Protocol, Self, TypeAlias, runtime_checkable
@@ -69,6 +70,7 @@ ARN_MODEL: Final = "arn:aws:bedrock:us-east-1:123456789012:application-inference
 ARN_ENDPOINT: Final = f"/model/{ARN_MODEL}/invoke"
 ARN_ENCODED: Final = f"/model/{ARN_MODEL.replace('/', '%2F', 1)}/invoke"
 REFERENCE_ERROR_TEXT: Final = "Invalid API key"
+PROVIDER_ERROR_TEXT: Final = "Provider openai not found"
 FORWARD_REQUEST: Final[dict[str, str]] = {
     "host": "upstream.test",
     "content-length": "5",
@@ -91,6 +93,63 @@ MERGE_DEFAULTS: Final[dict[str, str | list[str]]] = {
     "from_default": "default",
     "from_url": "default",
 }
+# the signature comparison runs in its own interpreter, so no untyped parameter value reaches mypy
+PROBE: Final = """
+import importlib
+import inspect
+import json
+
+
+def rows(function):
+    return [
+        [
+            parameter.name,
+            parameter.kind.name,
+            "" if parameter.default is inspect.Parameter.empty else repr(parameter.default),
+        ]
+        for parameter in inspect.signature(function).parameters.values()
+    ]
+
+
+ours = importlib.import_module("betterlite.passthrough.main")
+theirs = importlib.import_module("litellm.passthrough.main")
+ours_utils = importlib.import_module("betterlite.passthrough.utils")
+theirs_utils = importlib.import_module("litellm.passthrough.utils")
+ours_timeouts = importlib.import_module("betterlite.passthrough.timeout_utils")
+theirs_timeouts = importlib.import_module("litellm.passthrough.timeout_utils")
+pairs = {
+    "llm_passthrough_route": (ours.llm_passthrough_route, theirs.llm_passthrough_route),
+    "allm_passthrough_route": (ours.allm_passthrough_route, theirs.allm_passthrough_route),
+    "get_merged_query_parameters": (
+        ours_utils.BasePassthroughUtils.get_merged_query_parameters,
+        theirs_utils.BasePassthroughUtils.get_merged_query_parameters,
+    ),
+    "forward_headers_from_request": (
+        ours_utils.BasePassthroughUtils.forward_headers_from_request,
+        theirs_utils.BasePassthroughUtils.forward_headers_from_request,
+    ),
+    "encode_bedrock_runtime_modelid_arn": (
+        ours_utils.CommonUtils.encode_bedrock_runtime_modelid_arn,
+        theirs_utils.CommonUtils.encode_bedrock_runtime_modelid_arn,
+    ),
+    "resolve_pass_through_request_timeout": (
+        ours_timeouts.resolve_pass_through_request_timeout,
+        theirs_timeouts.resolve_pass_through_request_timeout,
+    ),
+    "resolve_llm_passthrough_timeout": (
+        ours_timeouts.resolve_llm_passthrough_timeout,
+        theirs_timeouts.resolve_llm_passthrough_timeout,
+    ),
+}
+print(
+    json.dumps(
+        {
+            "ours": {name: rows(ours_rows) for name, (ours_rows, _) in pairs.items()},
+            "reference": {name: rows(theirs_rows) for name, (_, theirs_rows) in pairs.items()},
+        }
+    )
+)
+"""
 
 BODY_VIEW: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 QUERY_VIEW: Final[TypeAdapter[dict[str, str | list[str]]]] = TypeAdapter(
@@ -104,6 +163,14 @@ class RecordedCall(TypedDict):
     body: bytes
 
 
+class SignatureView(TypedDict):
+    ours: dict[str, list[tuple[str, str, str]]]
+    reference: dict[str, list[tuple[str, str, str]]]
+
+
+SIGNATURE_VIEW: Final[TypeAdapter[SignatureView]] = TypeAdapter(SignatureView)
+
+
 # LiteLLM's own objects come back through this empty protocol, which every type satisfies
 class CallResult(Protocol):
     ...
@@ -111,8 +178,6 @@ class CallResult(Protocol):
 
 Answer: TypeAlias = tuple[int, dict[str, str], bytes]
 CallArgument: TypeAlias = JsonValue | SessionLike
-SignatureRow: TypeAlias = tuple[str, str, str]
-RouteCall: TypeAlias = Callable[..., CallResult]
 
 
 @runtime_checkable
@@ -162,38 +227,6 @@ OUR_MAIN: ReferenceModule = importlib.import_module("betterlite.passthrough.main
 REFERENCES: ReferenceModule = importlib.import_module("litellm.passthrough.main")
 REFERENCE_UTILS: ReferenceModule = importlib.import_module("litellm.passthrough.utils")
 REFERENCE_TIMEOUTS: ReferenceModule = importlib.import_module("litellm.passthrough.timeout_utils")
-
-SIGNATURES: Final[list[tuple[str, RouteCall, RouteCall]]] = [
-    ("llm_passthrough_route", llm_passthrough_route, REFERENCES.llm_passthrough_route),
-    ("allm_passthrough_route", allm_passthrough_route, REFERENCES.allm_passthrough_route),
-    (
-        "get_merged_query_parameters",
-        BasePassthroughUtils.get_merged_query_parameters,
-        REFERENCE_UTILS.BasePassthroughUtils.get_merged_query_parameters,
-    ),
-    (
-        "forward_headers_from_request",
-        BasePassthroughUtils.forward_headers_from_request,
-        REFERENCE_UTILS.BasePassthroughUtils.forward_headers_from_request,
-    ),
-    (
-        "encode_bedrock_runtime_modelid_arn",
-        CommonUtils.encode_bedrock_runtime_modelid_arn,
-        REFERENCE_UTILS.CommonUtils.encode_bedrock_runtime_modelid_arn,
-    ),
-    (
-        "resolve_pass_through_request_timeout",
-        # ast-grep-ignore: no-long-names - LiteLLM's own name is this long
-        resolve_pass_through_request_timeout,
-        REFERENCE_TIMEOUTS.resolve_pass_through_request_timeout,
-    ),
-    (
-        "resolve_llm_passthrough_timeout",
-        # ast-grep-ignore: no-long-names - LiteLLM's own name is this long
-        resolve_llm_passthrough_timeout,
-        REFERENCE_TIMEOUTS.resolve_llm_passthrough_timeout,
-    ),
-]
 
 
 class PassthroughServer(ThreadingHTTPServer):
@@ -294,18 +327,15 @@ def recorded_body(record: RecordedCall) -> dict[str, JsonValue]:
     return BODY_VIEW.validate_json(text)
 
 
-def default_text(value: CallResult) -> str:
-    if value is inspect.Parameter.empty:
-        return ""
-    return repr(value)
+def signature_view() -> SignatureView:
+    done = subprocess.run(
+        [sys.executable, "-c", PROBE], capture_output=True, text=True, check=False
+    )
+    assert done.returncode == 0, done.stderr
+    return SIGNATURE_VIEW.validate_json(done.stdout)
 
 
-def signature_of(function: RouteCall) -> list[SignatureRow]:
-    parameters = inspect.signature(function).parameters.values()
-    return [(item.name, item.kind.name, default_text(item.default)) for item in parameters]
-
-
-def answer_parts(answer: StreamReply) -> Answer:
+def answer_parts(answer: StreamReply | AnswerView) -> Answer:
     match answer:
         case AnswerView():
             return answer.status_code, compared_headers(answer.headers), answer.content
@@ -313,7 +343,7 @@ def answer_parts(answer: StreamReply) -> Answer:
             raise AssertionError("the call answered with a stream")
 
 
-def stream_parts(answer: StreamReply) -> Answer:
+def stream_parts(answer: StreamReply | StreamView) -> Answer:
     match answer:
         case StreamView():
             return answer.status_code, compared_headers(answer.headers), b"".join(answer)
@@ -335,6 +365,14 @@ def reference_stream_parts(answer: CallResult) -> Answer:
             return answer.status_code, compared_headers(answer.headers), b"".join(answer)
         case object():
             raise AssertionError("the reference call answered with no stream")
+
+
+def status_of(error: Exception | ErrorView) -> int:
+    match error:
+        case ErrorView():
+            return error.status_code
+        case object():
+            raise AssertionError("the reference error carries no status")
 
 
 def float_of(value: CallResult) -> float:
@@ -361,7 +399,7 @@ async def awaited(answer: CallResult) -> CallResult:
             raise AssertionError("the reference call answered with no awaitable")
 
 
-async def async_answer(answer: AsyncStreamReply) -> Answer:
+async def async_answer(answer: AsyncStreamReply | AnswerView) -> Answer:
     match answer:
         case AnswerView():
             return answer.status_code, compared_headers(answer.headers), answer.content
@@ -369,7 +407,7 @@ async def async_answer(answer: AsyncStreamReply) -> Answer:
             raise AssertionError("the async call answered with a stream")
 
 
-async def async_stream(answer: AsyncStreamReply) -> Answer:
+async def async_stream(answer: AsyncStreamReply | AsyncStreamView) -> Answer:
     match answer:
         case AsyncStreamView():
             chunks = [chunk async for chunk in answer]
@@ -436,10 +474,10 @@ async def reference_positional() -> None:
         await awaited(REFERENCES.allm_passthrough_route(POSITIONAL))
 
 
-@pytest.mark.parametrize(("name", "ours", "reference"), SIGNATURES)
-def test_signature_matches(name: str, ours: RouteCall, reference: RouteCall) -> None:
-    rows = signature_of(reference)
-    assert signature_of(ours) == rows, name
+def test_signature_matches() -> None:
+    view = signature_view()
+    for name, rows in view["reference"].items():
+        assert view["ours"][name] == rows, name
 
 
 def test_signature_refusal() -> None:
@@ -624,15 +662,11 @@ def test_error_upstream() -> None:
             raise AssertionError("the raised error carries no native cause")
     reference = reference_error.value
     assert ERROR_TEXT in str(reference)
-    match reference:
-        case ErrorView():
-            assert reference.status_code == UNAUTHORIZED
-        case object():
-            raise AssertionError("the reference error carries no status")
+    assert status_of(reference) == UNAUTHORIZED
 
 
 def test_error_provider_missing() -> None:
-    with pytest.raises(Exception, match="Provider openai not found") as ours_error:
+    with pytest.raises(Exception, match=PROVIDER_ERROR_TEXT) as ours_error:
         llm_passthrough_route(
             method="POST",
             endpoint=CHAT_ENDPOINT,
@@ -641,7 +675,7 @@ def test_error_provider_missing() -> None:
             api_base=DEAD_BASE,
             json=dict(INPUT_BODY),
         )
-    with pytest.raises(Exception, match="Provider openai not found") as reference_error:
+    with pytest.raises(Exception, match=PROVIDER_ERROR_TEXT) as reference_error:
         REFERENCES.llm_passthrough_route(
             method="POST",
             endpoint=CHAT_ENDPOINT,
@@ -652,7 +686,7 @@ def test_error_provider_missing() -> None:
         )
     ours = ours_error.value
     assert type(ours).__name__ == "Exception"
-    assert str(ours) == "Provider openai not found"
+    assert str(ours) == PROVIDER_ERROR_TEXT
     assert type(reference_error.value).__name__ == "Exception"
     match ours.__cause__:
         case NativeError():
