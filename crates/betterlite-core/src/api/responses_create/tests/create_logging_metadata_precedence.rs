@@ -155,7 +155,10 @@ pub(crate) async fn residency_and_client() {
         Some(&Json::Null)
     );
     assert_eq!(rig.source.created().len(), 2);
+    async_session_residency(&rig, &seams).await;
+}
 
+async fn async_session_residency(rig: &Rig, seams: &Seams<'_>) {
     rig.wire.queue(200, OK_RESPONSE);
     let mut asynchronous = call("openai/gpt-4o");
     asynchronous.kwargs = kwargs(r#"{"aresponses":true}"#);

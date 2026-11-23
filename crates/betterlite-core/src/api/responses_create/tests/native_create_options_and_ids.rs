@@ -18,9 +18,6 @@ use crate::api::response_id_codecs::response::build_response_id;
 use crate::api::responses_compact_http::service::{ClientKind, SuppliedClient};
 use crate::api::responses_create::bridge::Created;
 use crate::api::responses_create::call::input_value;
-use crate::api::responses_create::deps::ResponsesCreateDeps;
-use crate::api::responses_create_http::service::CreateHooks;
-use crate::api::responses_hook_policy::callbacks::CallbackLists;
 
 pub(crate) async fn options_and_ids() {
     let rig = Rig::new();
@@ -261,36 +258,16 @@ pub(crate) async fn supplied_client_transport() {
     let rig = Rig::new();
     let supplied = Wire::new(&rig.events);
     supplied.queue(200, OK_RESPONSE);
+    let client = SuppliedClient {
+        kind: ClientKind::Sync,
+        transport: &supplied,
+    };
     let gateway = NoInterception;
     let bridge = RecordingBridge::new(&rig.events);
     let nothing = Nothing;
-    let deps = ResponsesCreateDeps {
-        resolver: &rig.resolver,
-        lookup: &rig.lookup,
-        configs: &rig.configs,
-        source: &rig.source,
-        supplied: Some(SuppliedClient {
-            kind: ClientKind::Sync,
-            transport: &supplied,
-        }),
-        environment: &rig.variables,
-        prompts: None,
-        file_mapping: None,
-        hooks: CreateHooks {
-            callbacks: CallbackLists {
-                global: &[],
-                dynamic: &[],
-            },
-            resolver: &nothing,
-            dispatcher: &nothing,
-            executor: &nothing,
-            logging: None,
-        },
-        interception: &gateway,
-        bridge: &bridge,
-        drop_params: false,
-        reasoning_auto_summary: false,
-    };
+    let seams = Seams::new(&rig, &nothing, &gateway, &bridge);
+    let mut deps = seams.deps();
+    deps.supplied = Some(client);
     let mut harness = Harness::new();
     run_create(&deps, &call("openai/gpt-4o"), &mut harness)
         .await
