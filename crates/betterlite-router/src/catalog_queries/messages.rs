@@ -29,7 +29,7 @@ pub struct RouterFallbacks<'router> {
 }
 
 // The order test: a level above the attempt's own target can still take the stream over.
-pub(crate) fn a_higher_order_level_remains(
+pub(super) fn a_higher_order_level_remains(
     queries: &CatalogQueries<'_>,
     model_group: &str,
     request: &MessagesRequest<'_>,
@@ -46,7 +46,7 @@ pub(crate) fn a_higher_order_level_remains(
 }
 
 // _has_content_policy_fallback: the request list wins; an unset one leaves the router's list.
-pub(crate) fn content_policy_available(
+pub(super) fn content_policy_available(
     model_group: &str,
     request: &MessagesRequest<'_>,
     router: &RouterFallbacks<'_>,
