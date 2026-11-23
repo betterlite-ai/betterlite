@@ -114,19 +114,21 @@ async fn settle_daily_commit<Writer>(
 where
     Writer: DailyChunkWriter,
 {
-    match settled {
-        Ok((_remaining, Ok(()))) => Ok(()),
-        Ok((remaining, Err(error))) => {
-            requeue_daily_rows(queue, entity, remaining, &error).await;
-            Ok(())
-        }
+    let joined = match settled {
+        Ok(joined) => joined,
         Err(join_error) => {
             tracing::error!(
                 "Spend tracking - the daily {entity:?} spend commit task ended abnormally: {join_error}"
             );
-            Ok(())
+            return Ok(());
         }
-    }
+    };
+    let (remaining, outcome) = joined;
+    let Err(error) = outcome else {
+        return Ok(());
+    };
+    requeue_daily_rows(queue, entity, remaining, &error).await;
+    Ok(())
 }
 
 // The shutdown arrived mid-flush. Before the phase commits, nothing reached the database and the whole remaining map goes back; once it is committing, the queue owns a continuation instead.
@@ -166,22 +168,26 @@ async fn requeue_interrupted_daily<Writer>(
 ) where
     Writer: DailyChunkWriter,
 {
-    match settled {
-        Ok((_remaining, Ok(()))) => {}
-        Ok((remaining, Err(error))) => {
-            if remaining.is_empty() {
-                return;
-            }
-            let rows = remaining.len();
+    let (remaining, outcome) = match settled {
+        Ok(joined) => joined,
+        Err(join_error) => {
             tracing::error!(
-                "Spend tracking - daily {entity:?} spend commit interrupted by shutdown failed. Re-queued {rows} rows for the shutdown flush. Error: {error}"
+                "Spend tracking - the interrupted daily {entity:?} spend commit task ended abnormally: {join_error}"
             );
-            restore_rows(queue, entity, remaining).await;
+            return;
         }
-        Err(join_error) => tracing::error!(
-            "Spend tracking - the interrupted daily {entity:?} spend commit task ended abnormally: {join_error}"
-        ),
+    };
+    let Err(error) = outcome else {
+        return;
+    };
+    if remaining.is_empty() {
+        return;
     }
+    let rows = remaining.len();
+    tracing::error!(
+        "Spend tracking - daily {entity:?} spend commit interrupted by shutdown failed. Re-queued {rows} rows for the shutdown flush. Error: {error}"
+    );
+    restore_rows(queue, entity, remaining).await;
 }
 
 async fn requeue_daily_rows<Failure>(

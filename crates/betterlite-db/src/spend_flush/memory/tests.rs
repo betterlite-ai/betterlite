@@ -147,7 +147,12 @@ fn user_increment() -> SpendUpdateQueueItem {
 fn discovered_tool() -> ToolDiscoveryItem {
     ToolDiscoveryItem {
         tool_name: Some("search".to_owned()),
-        ..ToolDiscoveryItem::default()
+        origin: None,
+        created_by: None,
+        key_hash: None,
+        team_id: None,
+        key_alias: None,
+        user_agent: None,
     }
 }
 

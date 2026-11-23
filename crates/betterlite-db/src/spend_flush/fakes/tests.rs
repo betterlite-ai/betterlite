@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+// The doubles every lifecycle test shares: one ordered event log and a fake for each port the flush drives.
 use std::collections::{BTreeMap, VecDeque};
 use std::future::{Future, ready};
 use std::pin::Pin;
@@ -53,6 +54,28 @@ impl Events {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+}
+
+// The two signals a fake that stands still needs: the test wakes on entered and lets the fake go on with release.
+#[derive(Default)]
+pub(crate) struct ReleaseGate {
+    entered: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+impl ReleaseGate {
+    fn entered(&self) -> Arc<Notify> {
+        Arc::clone(&self.entered)
+    }
+
+    fn release(&self) -> Arc<Notify> {
+        Arc::clone(&self.release)
+    }
+
+    async fn stand_still(&self) {
+        self.entered.notify_one();
+        self.release.notified().await;
     }
 }
 
@@ -218,8 +241,7 @@ pub(crate) enum ChunkStep {
 pub(crate) struct FakeDailyWriter {
     events: Arc<Events>,
     script: Mutex<VecDeque<ChunkStep>>,
-    entered: Arc<Notify>,
-    release: Arc<Notify>,
+    gate: ReleaseGate,
 }
 
 impl FakeDailyWriter {
@@ -227,18 +249,17 @@ impl FakeDailyWriter {
         Self {
             events,
             script: Mutex::new(VecDeque::from(steps)),
-            entered: Arc::new(Notify::new()),
-            release: Arc::new(Notify::new()),
+            gate: ReleaseGate::default(),
         }
     }
 
     // Wake the test once this chunk is standing still, and let it go on the test's signal.
     pub(crate) fn entered(&self) -> Arc<Notify> {
-        Arc::clone(&self.entered)
+        self.gate.entered()
     }
 
     pub(crate) fn release(&self) -> Arc<Notify> {
-        Arc::clone(&self.release)
+        self.gate.release()
     }
 
     fn next_step(&self) -> ChunkStep {
@@ -247,11 +268,6 @@ impl FakeDailyWriter {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or(ChunkStep::Commit)
-    }
-
-    async fn await_release(&self) {
-        self.entered.notify_one();
-        self.release.notified().await;
     }
 
     // A phase that refuses the transition has already been cancelled by the shutdown, which is how the real statement ends.
@@ -264,7 +280,7 @@ impl FakeDailyWriter {
             }
             ChunkStep::Fail(failure) => Err(FakeDailyError::Failed { failure }),
             ChunkStep::WaitThenCommit => {
-                self.await_release().await;
+                self.gate.stand_still().await;
                 if phase.state() == CommitPhaseState::Cancelled {
                     return Err(FakeDailyError::Cancelled);
                 }
@@ -274,13 +290,13 @@ impl FakeDailyWriter {
             }
             ChunkStep::BeginThenWaitThenCommit => {
                 phase.apply(CommitTransition::Begin)?;
-                self.await_release().await;
+                self.gate.stand_still().await;
                 phase.apply(CommitTransition::Finish)?;
                 Ok(())
             }
             ChunkStep::BeginThenWaitThenFail(failure) => {
                 phase.apply(CommitTransition::Begin)?;
-                self.await_release().await;
+                self.gate.stand_still().await;
                 Err(FakeDailyError::Failed { failure })
             }
         }
@@ -421,8 +437,7 @@ pub(crate) struct FakeService {
     times: Mutex<Vec<TokioInstant>>,
     update: Mutex<UpdateBehavior>,
     drain_fails: AtomicBool,
-    entered: Arc<Notify>,
-    release: Arc<Notify>,
+    gate: ReleaseGate,
 }
 
 struct CensusPlan {
@@ -441,8 +456,7 @@ impl FakeService {
             times: Mutex::new(Vec::new()),
             update: Mutex::new(UpdateBehavior::Succeed),
             drain_fails: AtomicBool::new(false),
-            entered: Arc::new(Notify::new()),
-            release: Arc::new(Notify::new()),
+            gate: ReleaseGate::default(),
         }
     }
 
@@ -460,11 +474,11 @@ impl FakeService {
 
     // Wake the test once an update pass stands still, and let it go on the test's signal.
     pub(crate) fn entered(&self) -> Arc<Notify> {
-        Arc::clone(&self.entered)
+        self.gate.entered()
     }
 
     pub(crate) fn release(&self) -> Arc<Notify> {
-        Arc::clone(&self.release)
+        self.gate.release()
     }
 
     // The paused clock reads, so a test compares the gaps between passes.
@@ -483,9 +497,15 @@ impl FakeService {
     }
 
     async fn block_until_released(&self) -> Result<(), FakeServiceError> {
-        self.entered.notify_one();
-        self.release.notified().await;
+        self.gate.stand_still().await;
         self.events.push("update finished".to_owned());
+        Ok(())
+    }
+
+    fn drain_outcome(&self) -> Result<(), FakeServiceError> {
+        if self.drain_fails.load(Ordering::SeqCst) {
+            return Err(FakeServiceError);
+        }
         Ok(())
     }
 }
@@ -519,13 +539,8 @@ impl SpendLogsService for FakeService {
     }
 
     fn run_spend_logs(&self) -> ServiceFuture<'_, Result<(), FakeServiceError>> {
-        let failing = self.drain_fails.load(Ordering::SeqCst);
         self.events.push("drain".to_owned());
-        Box::pin(ready(if failing {
-            Err(FakeServiceError)
-        } else {
-            Ok(())
-        }))
+        Box::pin(ready(self.drain_outcome()))
     }
 }
 

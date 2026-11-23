@@ -49,20 +49,25 @@ struct DailyCase {
     shutdown: CancellationToken,
 }
 
+// The commit ports one case needs: the fake writer, a fixed clock and jitter, and a retry pause that records nothing.
+fn commit_parts(writer: &Arc<FakeDailyWriter>) -> Arc<DailyCommitParts<FakeDailyWriter>> {
+    Arc::new(DailyCommitParts {
+        writer: Arc::clone(writer),
+        retries: 0,
+        clock: Arc::new(FixedClock {
+            instant: Instant::now(),
+        }),
+        jitter: Arc::new(FixedJitter),
+        pause: Arc::new(PauseLog::default()),
+        failures: Arc::new(NoSpendLogFailureSink),
+    })
+}
+
 impl DailyCase {
     fn new(steps: Vec<ChunkStep>) -> Self {
         let events = Arc::new(Events::default());
         let writer = Arc::new(FakeDailyWriter::new(Arc::clone(&events), steps));
-        let parts = Arc::new(DailyCommitParts {
-            writer: Arc::clone(&writer),
-            retries: 0,
-            clock: Arc::new(FixedClock {
-                instant: Instant::now(),
-            }),
-            jitter: Arc::new(FixedJitter),
-            pause: Arc::new(PauseLog::default()),
-            failures: Arc::new(NoSpendLogFailureSink),
-        });
+        let parts = commit_parts(&writer);
         Self {
             events,
             writer,
@@ -201,11 +206,14 @@ struct DrainCase {
 impl DrainCase {
     fn new(census: Vec<i64>) -> Self {
         let events = Arc::new(Events::default());
+        let service = Arc::new(FakeService::new(Arc::clone(&events), census));
+        let queue = Arc::new(SpendLogQueue::new(usize::MAX));
+        let lists = Arc::new(RecordingLists::default());
         Self {
-            service: Arc::new(FakeService::new(Arc::clone(&events), census)),
             events,
-            queue: Arc::new(SpendLogQueue::new(usize::MAX)),
-            lists: Arc::new(RecordingLists::default()),
+            service,
+            queue,
+            lists,
             lock: WriteLock::new(()),
             slot: SpendLogsMonitorSlot::new(),
         }

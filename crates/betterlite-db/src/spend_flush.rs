@@ -7,5 +7,4 @@ pub mod service;
 pub mod shutdown;
 pub mod window;
 
-#[cfg(test)]
 pub(crate) mod fakes;

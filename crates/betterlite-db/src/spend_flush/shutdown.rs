@@ -28,19 +28,6 @@ struct MonitorHandle {
     task: JoinHandle<()>,
 }
 
-impl MonitorHandle {
-    // The monitor's own task ends here, and the wait it was parked on is dropped with it; the flush signal stays bound as the source's event does.
-    async fn stop(self) {
-        self.shutdown.cancel();
-        match self.task.await {
-            Ok(()) => {}
-            Err(error) => tracing::warn!(
-                "Spend tracking - the spend logs queue monitor ended abnormally: {error}"
-            ),
-        }
-    }
-}
-
 // spend_logs_queue_monitor_task and spend_log_flush_requested: one monitor per client, started once and cleared by the shutdown drain.
 pub struct SpendLogsMonitorSlot {
     tasks: TaskTracker,
@@ -89,15 +76,21 @@ impl SpendLogsMonitorSlot {
             .is_some()
     }
 
-    // The cancellation and the join happen before the write lock is taken, so no monitor pass can wake up inside the drain.
+    // The monitor's task and the wait it was parked on end before the write lock is taken, so no pass can wake up inside the drain; the flush signal stays bound as the source's event does.
     async fn stop(&self) {
         let taken = self
             .handle
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        if let Some(monitor) = taken {
-            monitor.stop().await;
+        let Some(monitor) = taken else {
+            return;
+        };
+        monitor.shutdown.cancel();
+        if let Err(error) = monitor.task.await {
+            tracing::warn!(
+                "Spend tracking - the spend logs queue monitor ended abnormally: {error}"
+            );
         }
     }
 }
