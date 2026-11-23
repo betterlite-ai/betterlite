@@ -1,4 +1,6 @@
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
+
+use betterlite_models::decisions::Json;
 
 use super::support::*;
 use crate::api::decisions_send::format::DecisionsOutput;
@@ -63,7 +65,10 @@ fn request_prep_logs_the_unsigned_headers_and_body_copy() {
     let mut fixture = Fixture::new();
     fixture.config.signature = Some(String::from("sig"));
     let logging = Mutex::new(logging_state());
-    let decisions = systemone_call("typesafe", Some(&logging));
+    let mut decisions = systemone_call("typesafe", Some(&logging));
+    decisions
+        .headers
+        .insert("X-Custom".to_owned(), "one".to_owned());
     fixture.send(&decisions).expect("the call answers");
     let signed = &fixture.recording.seen_signs()[0];
     assert!(signed.headers.contains(&(
@@ -74,14 +79,19 @@ fn request_prep_logs_the_unsigned_headers_and_body_copy() {
         String::from("Authorization"),
         String::from("Bearer test-key")
     )));
-    let seen = fixture
-        .recording
-        .seen_validations()
-        .first()
-        .cloned()
-        .expect("the environment was validated");
-    assert!(
-        seen.headers.is_empty(),
-        "pre_call must see the call's own headers, not the signed ones"
+    let body: Json =
+        serde_json::from_str(&serde_json::to_string(&decisions.body).expect("the wire serializes"))
+            .expect("the body is JSON");
+    let state = logging.lock().unwrap_or_else(PoisonError::into_inner);
+    let Some(Json::Object(recorded)) = state.model_call_details.get("additional_args") else {
+        panic!("pre_call recorded its additional args");
+    };
+    let Some(Json::Object(headers)) = recorded.get("headers") else {
+        panic!("pre_call recorded the outbound headers");
+    };
+    assert_eq!(
+        headers.get("X-Custom"),
+        Some(&Json::Text(String::from("one")))
     );
+    assert_eq!(recorded.get("complete_input_dict"), Some(&body));
 }

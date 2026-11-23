@@ -327,7 +327,7 @@ impl DecisionsProviderConfig for TestConfig {
         {
             Transform::Answer(response) => Ok(response.clone()),
             Transform::Invalid(message) => Err(ParseResponseError::Invalid(Box::new(
-                provider_error_of(message),
+                provider_error_of(message, &Headers::new()),
             ))),
             Transform::Malformed => {
                 let error =
@@ -352,19 +352,23 @@ impl DecisionsProviderConfig for TestConfig {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((error_message.to_owned(), status_code, headers.clone()));
-        provider_error_of_with_status(error_message, status_code)
+        provider_error_of_with_status(error_message, status_code, headers)
     }
 }
 
-fn provider_error_of(message: &str) -> ProviderError {
-    provider_error_of_with_status(message, 500)
+fn provider_error_of(message: &str, headers: &Headers) -> ProviderError {
+    provider_error_of_with_status(message, 500, headers)
 }
 
-fn provider_error_of_with_status(message: &str, status_code: u16) -> ProviderError {
+fn provider_error_of_with_status(
+    message: &str,
+    status_code: u16,
+    headers: &Headers,
+) -> ProviderError {
     ProviderError::from(ProviderErrorParts {
         status_code,
         message: message.to_owned(),
-        headers: None,
+        headers: Some(headers.clone().into_iter().collect()),
         request: None,
         response: None,
         body: None,

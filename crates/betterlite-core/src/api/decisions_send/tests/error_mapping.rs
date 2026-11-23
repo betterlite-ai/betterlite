@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error as _;
 use std::net::TcpListener;
 use std::sync::PoisonError;
 use std::time::Duration;
@@ -8,6 +9,7 @@ use betterlite_error::error::ErrorClass;
 use betterlite_http::interactions::base::{ClientError, Params, RequestFailure};
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
+use betterlite_models::decisions::Json;
 use http::header::HeaderMap;
 use url::Url;
 
@@ -109,6 +111,14 @@ fn error_mapping_rate_limit_keeps_the_status_and_provider_message() {
     assert_eq!(seen[0].1, 429);
     assert_eq!(seen[0].2.get("retry-after"), Some(&String::from("2")));
     assert_eq!(fixture.wire.requests().len(), 1);
+    let source = error.source().expect("the mapped error keeps its source");
+    let base = source
+        .downcast_ref::<BaseLlmException>()
+        .expect("the source is the provider's exception");
+    assert_eq!(
+        base.headers.get("retry-after"),
+        Some(&Json::Text(String::from("2")))
+    );
 }
 
 #[test]
@@ -146,6 +156,10 @@ fn error_mapping_synthesized_connection_failure_is_an_api_connection_error() {
     );
     assert_eq!(class_of(&error).metadata().status_code, 500);
     assert_eq!(fixture.recording.seen_errors()[0].1, 500);
+    let ErrorClass::ApiConnection(context) = class_of(&error) else {
+        panic!("a connection failure is an APIConnectionError");
+    };
+    assert_eq!(context.model.as_deref(), Some("typesafe/model-1"));
 }
 
 #[test]

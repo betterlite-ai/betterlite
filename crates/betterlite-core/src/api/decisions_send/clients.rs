@@ -135,7 +135,7 @@ fn async_sender(clients: &mut HttpClients, params: &Params) -> Result<AsyncSende
 }
 
 // The blocking answer, read up to the shared cap so a provider answer cannot grow without bound
-fn finish_blocking<S>(sent: S, status: u16, headers: HeaderMap) -> Answer
+pub(crate) fn finish_blocking<S>(sent: S, status: u16, headers: HeaderMap) -> Answer
 where
     S: Read,
 {
