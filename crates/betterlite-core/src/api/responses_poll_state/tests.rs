@@ -1,10 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
-use std::path::PathBuf;
 use std::sync::Arc;
-
-use rstest::rstest;
 
 use crate::api::api_boundaries::ApiLimits;
 
@@ -82,13 +79,25 @@ async fn polling_owner_retention() {
     owners::record_shape_denials(&cache, &store).await;
 }
 
-#[rstest]
-fn replays_corpus(#[files("fuzz/corpus/responses_poll_state/*")] path: PathBuf) {
-    let bytes = fs::read(&path).expect("the seed reads");
-    let decoded = decode_responses_poll_state(&bytes, ApiLimits::default());
-    let rejected = matches!(
-        path.file_name().and_then(|name| name.to_str()),
-        Some("malformed.json" | "array.json" | "scalar.json" | "empty.bin")
-    );
-    assert_eq!(decoded.is_err(), rejected, "{}", path.display());
+const CORPUS: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/fuzz/corpus/responses_poll_state"
+);
+
+#[test]
+fn replays_corpus() {
+    let mut seeds = Vec::new();
+    for entry in fs::read_dir(CORPUS).expect("the corpus directory exists") {
+        seeds.push(entry.expect("the corpus entry lists").path());
+    }
+    assert!(!seeds.is_empty(), "the corpus has seeds");
+    for path in seeds {
+        let bytes = fs::read(&path).expect("the seed reads");
+        let decoded = decode_responses_poll_state(&bytes, ApiLimits::default());
+        let rejected = matches!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some("malformed.json" | "array.json" | "scalar.json" | "empty.bin")
+        );
+        assert_eq!(decoded.is_err(), rejected, "{}", path.display());
+    }
 }
