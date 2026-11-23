@@ -101,7 +101,7 @@ pub(super) async fn require_present(
 }
 
 // register, update and the lifecycle routes each wrap a table failure with their own prefix
-pub(super) fn table_failure(
+pub(super) const fn table_failure(
     prefix: Option<&'static str>,
     source: TableError,
 ) -> ClaudePluginWriteError {
