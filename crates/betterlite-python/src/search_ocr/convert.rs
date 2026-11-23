@@ -169,8 +169,9 @@ pub(crate) fn resolve_document(
     file_document(fields, blobs)
 }
 
-fn file_document(fields: &OcrObject, blobs: &[Vec<u8>]) -> Result<OcrDocumentInput, OcrError> {
-    let mime_type = match fields.get("mime_type") {
+// A document field counts only when the caller sent a string; every other shape leaves it unset.
+fn optional_text(fields: &OcrObject, key: &str) -> Option<String> {
+    match fields.get(key) {
         Some(OcrJson::Text(text)) => Some(text.clone()),
         Some(
             OcrJson::Null
@@ -180,7 +181,11 @@ fn file_document(fields: &OcrObject, blobs: &[Vec<u8>]) -> Result<OcrDocumentInp
             | OcrJson::Object(_),
         )
         | None => None,
-    };
+    }
+}
+
+fn file_document(fields: &OcrObject, blobs: &[Vec<u8>]) -> Result<OcrDocumentInput, OcrError> {
+    let mime_type = optional_text(fields, "mime_type");
     let file = match fields.get("file") {
         Some(OcrJson::Null) | None => {
             return Err(OcrError::InvalidRequest(MISSING_FILE.to_owned()));
@@ -215,17 +220,7 @@ fn marker_document(
     let Some(bytes) = blobs.get(index) else {
         return Err(OcrError::InvalidRequest(UNSUPPORTED_FILE.to_owned()));
     };
-    let content_type = match marker.get("content_type") {
-        Some(OcrJson::Text(text)) => Some(text.clone()),
-        Some(
-            OcrJson::Null
-            | OcrJson::Bool(_)
-            | OcrJson::Number(_)
-            | OcrJson::List(_)
-            | OcrJson::Object(_),
-        )
-        | None => None,
-    };
+    let content_type = optional_text(marker, "content_type");
     Ok(OcrDocumentInput::Bytes {
         bytes: bytes.clone(),
         file_name: Some(name.clone()).filter(|name| name != "file"),

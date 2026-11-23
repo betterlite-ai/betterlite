@@ -12,12 +12,12 @@ from betterlite.ocr.dispatch import (
 
 __all__ = [
     "LiteLLMOcrRequest",
-    "OcrContext",
     "OCRPage",
     "OCRPageDimensions",
     "OCRPageImage",
     "OCRResponse",
     "OCRUsageInfo",
+    "OcrContext",
     "aocr",
     "ocr",
 ]

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::{
     ConvertError, CostAnswer, CostCall, OcrCall, SearchCall, SessionWire, resolve_document,
 };

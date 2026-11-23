@@ -107,35 +107,39 @@ impl SessionCore {
         let pricing = CatalogPricing {
             catalog: Arc::clone(&self.catalog),
         };
-        let negative = call.number_of_queries < 0;
-        let queries = call.number_of_queries.unsigned_abs();
-        let outcome = search_provider_cost_per_query(
-            &pricing,
-            &call.model,
-            call.custom_llm_provider.as_deref(),
-            queries,
-            &call.optional_params,
-        )
-        .await;
-        let (input_cost, output_cost) = match outcome {
-            Ok((input, output)) if negative => (-input, -output),
-            Ok((input, output)) => (input, output),
-            Err(SearchCostError::ModelInfo { source, .. }) => {
-                return encode(&CostAnswer::Unmapped {
-                    message: source.to_string(),
-                });
-            }
-            Err(SearchCostError::Overflow) => {
-                return Err(class_failure(
-                    plain_error("the search cost arithmetic overflowed a decimal"),
-                    Vec::new(),
-                ));
-            }
-        };
-        encode(&CostAnswer::Cost {
-            input_cost,
-            output_cost,
-        })
+        encode(&cost_answer(&pricing, call).await?)
+    }
+}
+
+// the tiers charge per query, and a negative count keeps Python's sign on the pair
+async fn cost_answer(
+    pricing: &CatalogPricing,
+    call: CostCall,
+) -> Result<CostAnswer, NativeFailure> {
+    let outcome = search_provider_cost_per_query(
+        pricing,
+        &call.model,
+        call.custom_llm_provider.as_deref(),
+        call.number_of_queries.unsigned_abs(),
+        &call.optional_params,
+    )
+    .await;
+    match outcome {
+        Ok((input, output)) if call.number_of_queries < 0 => Ok(CostAnswer::Cost {
+            input_cost: -input,
+            output_cost: -output,
+        }),
+        Ok((input, output)) => Ok(CostAnswer::Cost {
+            input_cost: input,
+            output_cost: output,
+        }),
+        Err(SearchCostError::ModelInfo { source, .. }) => Ok(CostAnswer::Unmapped {
+            message: source.to_string(),
+        }),
+        Err(SearchCostError::Overflow) => Err(class_failure(
+            plain_error("the search cost arithmetic overflowed a decimal"),
+            Vec::new(),
+        )),
     }
 }
 

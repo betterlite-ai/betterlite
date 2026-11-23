@@ -48,25 +48,13 @@ def _build_search_optional_params(
     max_tokens_per_page: int | None = None,
     country: str | None = None,
 ) -> dict[str, JsonValue]:
-    optional_params: dict[str, JsonValue] = {}
-    if max_results is not None:
-        optional_params["max_results"] = max_results
-    if search_domain_filter is not None:
-        optional_params["search_domain_filter"] = JSON.validate_python(search_domain_filter)
-    if max_tokens_per_page is not None:
-        optional_params["max_tokens_per_page"] = max_tokens_per_page
-    if country is not None:
-        optional_params["country"] = country
-    return optional_params
-
-
-# filter_out_litellm_params starts with the names the payload drops; the rest is the native filter's
-def _optional_kwargs(kwargs: Mapping[str, CallValue]) -> dict[str, CallValue]:
-    kept: dict[str, CallValue] = {}
-    for name, value in kwargs.items():
-        if not is_dropped(name, value):
-            kept[name] = value
-    return kept
+    options: dict[str, JsonValue] = {
+        "max_results": max_results,
+        "search_domain_filter": JSON.validate_python(search_domain_filter),
+        "max_tokens_per_page": max_tokens_per_page,
+        "country": country,
+    }
+    return {name: option for name, option in options.items() if option is not None}
 
 
 def _search_values(
@@ -82,24 +70,42 @@ def _search_values(
     extra_headers: dict[str, str] | None,
     kwargs: Mapping[str, CallValue],
 ) -> dict[str, CallValue]:
+    options = _build_search_optional_params(
+        max_results, search_domain_filter, max_tokens_per_page, country
+    )
     values: dict[str, CallValue] = {
+        **options,
         "query": JSON.validate_python(query),
         "search_provider": search_provider,
         "timeout_seconds": timeout,
-        "kwargs": _optional_kwargs(kwargs),
+        # filter_out_litellm_params: the payload drops its own names, the native side takes the rest
+        "kwargs": {
+            name: value
+            for name, value in kwargs.items()
+            if not is_dropped(name, value)
+        },
+        "api_key": api_key,
+        "api_base": api_base,
+        "extra_headers": extra_headers,
     }
-    optional_params = _build_search_optional_params(
-        max_results, search_domain_filter, max_tokens_per_page, country
-    )
-    for name, option in optional_params.items():
-        values[name] = option
-    if api_key is not None:
-        values["api_key"] = api_key
-    if api_base is not None:
-        values["api_base"] = api_base
-    if extra_headers is not None:
-        values["extra_headers"] = extra_headers
     return values
+
+
+# The native call and its exception family: the two twins differ only in the wait.
+def _search_blocking(payload: CallPayload) -> str:
+    session = NativeSearchSession("{}")
+    try:
+        return session.search(payload.text, payload.blobs)
+    except NativeError as error:
+        raise_native_error(error)
+
+
+async def _search_awaiting(payload: CallPayload) -> str:
+    session = NativeSearchSession("{}")
+    try:
+        return await session.asearch(payload.text, payload.blobs)
+    except NativeError as error:
+        raise_native_error(error)
 
 
 def _search_answer(text: str) -> SearchResponse:
@@ -122,27 +128,11 @@ def search(
     extra_headers: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> SearchResponse:
-    payload: CallPayload = to_call_payload(
-        _search_values(
-            query,
-            search_provider,
-            max_results,
-            search_domain_filter,
-            max_tokens_per_page,
-            country,
-            api_key,
-            api_base,
-            timeout,
-            extra_headers,
-            kwargs,
-        )
-    )
-    session = NativeSearchSession("{}")
-    try:
-        answer = session.search(payload.text, payload.blobs)
-    except NativeError as error:
-        raise_native_error(error)
-    return _search_answer(answer)
+    payload = to_call_payload(_search_values(
+        query, search_provider, max_results, search_domain_filter,
+        max_tokens_per_page, country, api_key, api_base, timeout, extra_headers, kwargs,
+    ))
+    return _search_answer(_search_blocking(payload))
 
 
 async def asearch(
@@ -158,24 +148,7 @@ async def asearch(
     extra_headers: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> SearchResponse:
-    payload: CallPayload = to_call_payload(
-        _search_values(
-            query,
-            search_provider,
-            max_results,
-            search_domain_filter,
-            max_tokens_per_page,
-            country,
-            api_key,
-            api_base,
-            timeout,
-            extra_headers,
-            kwargs,
-        )
-    )
-    session = NativeSearchSession("{}")
-    try:
-        answer = await session.asearch(payload.text, payload.blobs)
-    except NativeError as error:
-        raise_native_error(error)
-    return _search_answer(answer)
+    return _search_answer(await _search_awaiting(to_call_payload(_search_values(
+        query, search_provider, max_results, search_domain_filter,
+        max_tokens_per_page, country, api_key, api_base, timeout, extra_headers, kwargs,
+    ))))

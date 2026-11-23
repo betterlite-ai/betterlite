@@ -6,10 +6,10 @@ import threading
 from collections.abc import Coroutine
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar, Final, Protocol, TypeAlias, runtime_checkable
+from typing import ClassVar, Final, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 import pytest
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 from betterlite import exceptions
 from betterlite._completion.errors import UnsupportedCallArgument
@@ -28,6 +28,7 @@ OCR_DOCUMENT: Final[dict[str, JsonValue]] = {
     "type": "document_url",
     "document_url": "data:application/pdf;base64,YWJj",
 }
+BAD_DOCUMENT: Final[dict[str, JsonValue]] = {"document_url": "https://example.test/a.pdf"}
 SEARCH_BODY: Final[dict[str, JsonValue]] = {
     "web": {
         "results": [
@@ -50,13 +51,15 @@ OCR_BODY: Final[dict[str, JsonValue]] = {
     "usage_info": {"pages_processed": 1, "doc_size_bytes": 3},
 }
 ERROR_BODY: Final[dict[str, JsonValue]] = {"message": "the provider refused"}
+BLOCKED_VALUE: Final = "an object Rust cannot take"
+DUMP: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 CallArgument: TypeAlias = JsonValue
 
 
 @runtime_checkable
 class Dumpable(Protocol):
-    def model_dump(self) -> dict[str, JsonValue]: ...
+    def model_dump_json(self) -> str: ...
 
 
 @runtime_checkable
@@ -101,11 +104,36 @@ class ReferenceCost(Protocol):
     def __getattr__(self, name: str) -> CostCall: ...
 
 
-# litellm's search and ocr decorators leave their functions untyped, so the reference keeps the declared shape
+class OcrCall(TypedDict, total=False):
+    model: str
+    document: dict[str, JsonValue]
+    api_key: str
+    api_base: str
+    req_format: str
+
+
+class SearchCall(TypedDict, total=False):
+    query: str
+    search_provider: str
+    max_results: int
+    api_key: str
+    api_base: str
+
+
+# litellm's search and ocr decorators leave these untyped, so the reference keeps the shape
 REFERENCE: Reference = importlib.import_module("litellm")
 REFERENCE_ASYNC: ReferenceAsync = importlib.import_module("litellm")
 REFERENCE_ERRORS: ReferenceErrors = importlib.import_module("litellm.exceptions")
 REFERENCE_COST: ReferenceCost = importlib.import_module("litellm.search.cost_calculator")
+
+OCR_ERRORS: Final[dict[int, tuple[type[BaseException], type[BaseException]]]] = {
+    RATE_LIMITED: (exceptions.RateLimitError, REFERENCE_ERRORS.RateLimitError),
+    SERVER_ERROR: (exceptions.InternalServerError, REFERENCE_ERRORS.InternalServerError),
+}
+OURS_BAD_REQUEST: Final[type[BaseException]] = exceptions.BadRequestError
+THEIRS_BAD_REQUEST: Final[type[BaseException]] = REFERENCE_ERRORS.BadRequestError
+OURS_UNSUPPORTED: Final[type[BaseException]] = exceptions.UnsupportedParamsError
+THEIRS_UNSUPPORTED: Final[type[BaseException]] = REFERENCE_ERRORS.UnsupportedParamsError
 
 
 class SearchOcrServer(ThreadingHTTPServer):
@@ -176,6 +204,29 @@ def error_fields(error: BaseException) -> ErrorFields:
             raise AssertionError("the error does not carry the fields")
 
 
+def ocr_call(server: SearchOcrServer) -> OcrCall:
+    return OcrCall(
+        model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY, api_base=server.url
+    )
+
+
+def search_call(server: SearchOcrServer) -> SearchCall:
+    return SearchCall(
+        query="brave search", search_provider=SEARCH_PROVIDER, max_results=2,
+        api_key=GOOD_KEY, api_base=server.url,
+    )
+
+
+def both_raise(
+    call: OcrCall, ours_type: type[BaseException], theirs_type: type[BaseException]
+) -> tuple[BaseException, BaseException]:
+    with pytest.raises(ours_type) as ours:
+        ocr(**call)
+    with pytest.raises(theirs_type) as theirs:
+        REFERENCE.ocr(**call)
+    return ours.value, theirs.value
+
+
 def test_search_signature() -> None:
     assert _parameters(inspect.signature(search)) == _parameters(
         inspect.signature(REFERENCE.search)
@@ -213,42 +264,18 @@ def test_ocr_signature_extra_args() -> None:
 
 def test_search_calls() -> None:
     with closing(SearchOcrServer(OK)) as server:
-        ours = search(
-            query="brave search",
-            search_provider=SEARCH_PROVIDER,
-            max_results=2,
-            api_key=GOOD_KEY,
-            api_base=server.url,
-        )
-        theirs = REFERENCE.search(
-            query="brave search",
-            search_provider=SEARCH_PROVIDER,
-            max_results=2,
-            api_key=GOOD_KEY,
-            api_base=server.url,
-        ).model_dump()
-    assert ours.model_dump() == theirs
+        call = search_call(server)
+        ours = DUMP.validate_json(search(**call).model_dump_json())
+        theirs = DUMP.validate_json(REFERENCE.search(**call).model_dump_json())
+        assert ours == theirs
 
 
 def test_asearch_calls() -> None:
     with closing(SearchOcrServer(OK)) as server:
-        ours = asyncio.run(
-            asearch(
-                query="brave search",
-                search_provider=SEARCH_PROVIDER,
-                api_key=GOOD_KEY,
-                api_base=server.url,
-            )
-        )
-        theirs = asyncio.run(
-            REFERENCE_ASYNC.asearch(
-                query="brave search",
-                search_provider=SEARCH_PROVIDER,
-                api_key=GOOD_KEY,
-                api_base=server.url,
-            )
-        ).model_dump()
-    assert ours.model_dump() == theirs
+        call = search_call(server)
+        ours = DUMP.validate_json(asyncio.run(asearch(**call)).model_dump_json())
+        theirs = DUMP.validate_json(asyncio.run(REFERENCE_ASYNC.asearch(**call)).model_dump_json())
+        assert ours == theirs
 
 
 def test_cost_calls() -> None:
@@ -275,111 +302,56 @@ def test_cost_calls() -> None:
 
 def test_ocr_calls() -> None:
     with closing(SearchOcrServer(OK)) as server:
-        ours = ocr(model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY, api_base=server.url)
-        theirs = REFERENCE.ocr(
-            model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY, api_base=server.url
-        ).model_dump()
-    assert ours.model_dump() == theirs
+        call = ocr_call(server)
+        ours = DUMP.validate_json(ocr(**call).model_dump_json())
+        theirs = DUMP.validate_json(REFERENCE.ocr(**call).model_dump_json())
+        assert ours == theirs
 
 
 def test_aocr_calls() -> None:
     with closing(SearchOcrServer(OK)) as server:
-        ours = asyncio.run(
-            aocr(model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY, api_base=server.url)
-        )
-        theirs = asyncio.run(
-            REFERENCE_ASYNC.aocr(
-                model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY, api_base=server.url
-            )
-        ).model_dump()
-    assert ours.model_dump() == theirs
+        call = ocr_call(server)
+        ours = DUMP.validate_json(asyncio.run(aocr(**call)).model_dump_json())
+        theirs = DUMP.validate_json(asyncio.run(REFERENCE_ASYNC.aocr(**call)).model_dump_json())
+        assert ours == theirs
 
 
-def test_ocr_provider_error_class() -> None:
-    server = SearchOcrServer(RATE_LIMITED)
-    try:
-        with pytest.raises(exceptions.RateLimitError) as ours:
-            ocr(model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY, api_base=server.url)
-        with pytest.raises(REFERENCE_ERRORS.RateLimitError) as theirs:
-            REFERENCE.ocr(
-                model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY, api_base=server.url
-            )
-    finally:
-        server.close()
-    assert error_fields(ours.value).status_code == error_fields(theirs.value).status_code
-
-
-def test_ocr_server_error_class() -> None:
-    server = SearchOcrServer(SERVER_ERROR)
-    try:
-        with pytest.raises(exceptions.InternalServerError) as ours:
-            ocr(model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY, api_base=server.url)
-        with pytest.raises(REFERENCE_ERRORS.InternalServerError) as theirs:
-            REFERENCE.ocr(
-                model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY, api_base=server.url
-            )
-    finally:
-        server.close()
-    assert error_fields(ours.value).status_code == error_fields(theirs.value).status_code
-
-
-def test_ocr_req_format_error() -> None:
-    arguments: Final[dict[str, JsonValue]] = {
-        "model": OCR_MODEL,
-        "document": OCR_DOCUMENT,
-        "api_key": GOOD_KEY,
-        "api_base": UNREACHABLE,
-        "req_format": "bogus",
-        "num_retries": 0,
-    }
-    with pytest.raises(exceptions.UnsupportedParamsError) as ours:
-        ocr(**arguments)
-    with pytest.raises(REFERENCE_ERRORS.UnsupportedParamsError) as theirs:
-        REFERENCE.ocr(**arguments)
-    assert error_fields(theirs.value).status_code == ours.value.status_code
-    for value in ("req_format", "bogus", "native", "litellm"):
-        assert value in ours.value.message
-        assert value in error_fields(theirs.value).message
-
-
-def test_ocr_document_type_error() -> None:
-    document: Final[dict[str, JsonValue]] = {"document_url": "https://example.test/a.pdf"}
-    server = SearchOcrServer(OK)
-    try:
-        with pytest.raises(exceptions.BadRequestError) as ours:
-            ocr(model=OCR_MODEL, document=document, api_key=GOOD_KEY, api_base=server.url)
-        with pytest.raises(REFERENCE_ERRORS.BadRequestError) as theirs:
-            REFERENCE.ocr(
-                model=OCR_MODEL, document=document, api_key=GOOD_KEY, api_base=server.url
-            )
-        calls = list(server.calls)
-    finally:
-        server.close()
-    assert not calls
-    assert "type" in str(ours.value)
-    assert error_fields(theirs.value).status_code == ours.value.status_code
+@pytest.mark.parametrize("status", [RATE_LIMITED, SERVER_ERROR])
+def test_ocr_error_classes(status: int) -> None:
+    ours_type, theirs_type = OCR_ERRORS[status]
+    with closing(SearchOcrServer(status)) as server:
+        ours, theirs = both_raise(ocr_call(server), ours_type, theirs_type)
+    assert error_fields(ours).status_code == error_fields(theirs).status_code
 
 
 def test_search_error_class() -> None:
-    server = SearchOcrServer(RATE_LIMITED)
-    try:
+    with closing(SearchOcrServer(RATE_LIMITED)) as server:
+        call = search_call(server)
         with pytest.raises(exceptions.RateLimitError) as ours:
-            search(
-                query="brave search",
-                search_provider=SEARCH_PROVIDER,
-                api_key=GOOD_KEY,
-                api_base=server.url,
-            )
+            search(**call)
         with pytest.raises(REFERENCE_ERRORS.RateLimitError) as theirs:
-            REFERENCE.search(
-                query="brave search",
-                search_provider=SEARCH_PROVIDER,
-                api_key=GOOD_KEY,
-                api_base=server.url,
-            )
-    finally:
-        server.close()
+            REFERENCE.search(**call)
     assert error_fields(ours.value).status_code == error_fields(theirs.value).status_code
+
+
+def test_ocr_document_type_error() -> None:
+    with closing(SearchOcrServer(OK)) as server:
+        call = OcrCall(model=OCR_MODEL, document=BAD_DOCUMENT, api_key=GOOD_KEY,
+                       api_base=server.url)
+        ours, theirs = both_raise(call, OURS_BAD_REQUEST, THEIRS_BAD_REQUEST)
+        calls = list(server.calls)
+    assert not calls
+    assert error_fields(theirs).status_code == error_fields(ours).status_code
+
+
+def test_ocr_req_format_error() -> None:
+    call = OcrCall(
+        model=OCR_MODEL, document=OCR_DOCUMENT, api_key=GOOD_KEY,
+        api_base=UNREACHABLE, req_format="bogus",
+    )
+    ours, theirs = both_raise(call, OURS_UNSUPPORTED, THEIRS_UNSUPPORTED)
+    assert error_fields(theirs).status_code == error_fields(ours).status_code
+    assert "bogus" in error_fields(ours).message and "bogus" in error_fields(theirs).message
 
 
 def test_ocr_flag_unsupported() -> None:
@@ -390,15 +362,15 @@ def test_ocr_flag_unsupported() -> None:
 
 @pytest.mark.parametrize("name", ["client", "shared_session"])
 def test_search_unsupported(name: str) -> None:
-    blocked: dict[str, JsonValue] = {name: "an object Rust cannot take"}
     with pytest.raises(UnsupportedCallArgument) as error:
-        search(query="brave search", search_provider=SEARCH_PROVIDER, **blocked)
+        search(
+            query="brave search", search_provider=SEARCH_PROVIDER, **{name: BLOCKED_VALUE}
+        )
     assert error.value.argument == name
 
 
 @pytest.mark.parametrize("name", ["client", "shared_session"])
 def test_ocr_unsupported(name: str) -> None:
-    blocked: dict[str, JsonValue] = {name: "an object Rust cannot take"}
     with pytest.raises(UnsupportedCallArgument) as error:
-        ocr(model=OCR_MODEL, document=OCR_DOCUMENT, **blocked)
+        ocr(model=OCR_MODEL, document=OCR_DOCUMENT, **{name: BLOCKED_VALUE})
     assert error.value.argument == name

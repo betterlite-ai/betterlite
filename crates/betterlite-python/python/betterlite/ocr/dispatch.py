@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, PrivateAttr, TypeAdapter,
 from betterlite import exceptions
 from betterlite._completion.arguments import TimeoutValues
 from betterlite._completion.errors import UnsupportedCallArgument, raise_native_error
-from betterlite._endpoints.payload import CallValue, is_dropped, to_call_payload
+from betterlite._endpoints.payload import CallPayload, CallValue, is_dropped, to_call_payload
 from betterlite._native import NativeError, NativeSearchSession
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -205,31 +205,22 @@ def _check_async_flag(request: LiteLLMOcrRequest) -> None:
         raise UnsupportedCallArgument(ASYNC_FLAG)
 
 
-# project_optional_fields starts with filter_out_litellm_params; the native call keeps what it consumes
-def _optional_params(kwargs: Mapping[str, CallValue]) -> dict[str, CallValue]:
-    kept: dict[str, CallValue] = {}
-    for name, value in kwargs.items():
-        if not is_dropped(name, value):
-            kept[name] = value
-    return kept
-
-
+# project_optional_fields: only the names the native call consumes travel to the provider
 def _values(request: LiteLLMOcrRequest) -> dict[str, CallValue]:
-    values: dict[str, CallValue] = {
+    return {
         "model": request.model,
         "document": request.document,
-        "optional_params": _optional_params(request.kwargs),
+        "optional_params": {
+            name: value
+            for name, value in request.kwargs.items()
+            if not is_dropped(name, value)
+        },
         "timeout_seconds": request.timeout,
+        "api_key": request.api_key,
+        "api_base": request.api_base,
+        "custom_llm_provider": request.custom_llm_provider,
+        "extra_headers": request.extra_headers,
     }
-    if request.api_key is not None:
-        values["api_key"] = request.api_key
-    if request.api_base is not None:
-        values["api_base"] = request.api_base
-    if request.custom_llm_provider is not None:
-        values["custom_llm_provider"] = request.custom_llm_provider
-    if request.extra_headers is not None:
-        values["extra_headers"] = request.extra_headers
-    return values
 
 
 def _ocr_answer(text: str) -> OCRResponse:
@@ -241,26 +232,37 @@ def _ocr_answer(text: str) -> OCRResponse:
     return response
 
 
-def ocr(*args: CallValue, **kwargs: CallValue) -> OCRResponse:
-    request = _public_request("ocr", args, kwargs)
+# The binding of both public entry points; the req_format check runs before either native call.
+def _prepared(
+    name: str, args: tuple[CallValue, ...], kwargs: Mapping[str, CallValue]
+) -> LiteLLMOcrRequest:
+    request = _public_request(name, args, kwargs)
     _check_req_format(request)
-    _check_async_flag(request)
-    payload = to_call_payload(_values(request))
+    return request
+
+
+def _ocr_blocking(payload: CallPayload) -> str:
     session = NativeSearchSession("{}")
     try:
-        answer = session.ocr(payload.text, payload.blobs)
+        return session.ocr(payload.text, payload.blobs)
     except NativeError as error:
         raise_native_error(error)
-    return _ocr_answer(answer)
+
+
+async def _ocr_awaiting(payload: CallPayload) -> str:
+    session = NativeSearchSession("{}")
+    try:
+        return await session.aocr(payload.text, payload.blobs)
+    except NativeError as error:
+        raise_native_error(error)
+
+
+def ocr(*args: CallValue, **kwargs: CallValue) -> OCRResponse:
+    request = _prepared("ocr", args, kwargs)
+    _check_async_flag(request)
+    return _ocr_answer(_ocr_blocking(to_call_payload(_values(request))))
 
 
 async def aocr(*args: CallValue, **kwargs: CallValue) -> OCRResponse:
-    request = _public_request("aocr", args, kwargs)
-    _check_req_format(request)
-    payload = to_call_payload(_values(request))
-    session = NativeSearchSession("{}")
-    try:
-        answer = await session.aocr(payload.text, payload.blobs)
-    except NativeError as error:
-        raise_native_error(error)
-    return _ocr_answer(answer)
+    request = _prepared("aocr", args, kwargs)
+    return _ocr_answer(await _ocr_awaiting(to_call_payload(_values(request))))

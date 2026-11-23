@@ -137,24 +137,20 @@ pub(crate) fn native_error(
 
 impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
-        match &error {
-            SessionError::Json(_) => PyValueError::new_err(error.to_string()),
-            SessionError::Proxy { .. }
-            | SessionError::Client { .. }
-            | SessionError::Tls { .. }
-            | SessionError::Settings { .. }
-            | SessionError::Redactor { .. } => PyRuntimeError::new_err(error.to_string()),
+        if !matches!(&error, SessionError::Json(_)) {
+            return PyRuntimeError::new_err(error.to_string());
         }
+        PyValueError::new_err(error.to_string())
     }
 }
 
 impl From<ConvertError> for PyErr {
     fn from(error: ConvertError) -> Self {
         match &error {
+            ConvertError::Encode { .. } => PyRuntimeError::new_err(error.to_string()),
             ConvertError::Json { .. } | ConvertError::Timeout { .. } => {
                 PyValueError::new_err(error.to_string())
             }
-            ConvertError::Encode { .. } => PyRuntimeError::new_err(error.to_string()),
         }
     }
 }
