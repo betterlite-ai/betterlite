@@ -48,9 +48,7 @@ impl Monitor {
         while self.tasks.join_next().await.is_some() {}
     }
 
-    // The monitor reads its census on the poll after the one that ends its wait, so the
-    // test yields until that poll lands. Yields leave the paused clock alone, so the
-    // census keeps the instant its wait ended on.
+    // Yields, never advances, until the census appears: the monitor reads it on the poll after its wait ends.
     async fn reach(&self, censuses: usize) {
         for _ in 0..64_usize {
             if self.service.census_times().len() >= censuses {
