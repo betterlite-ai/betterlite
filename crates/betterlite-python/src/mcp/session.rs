@@ -1,8 +1,5 @@
-use std::convert::Infallible;
-use std::future::{Future, ready};
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
-
+use super::client::ClientState;
+use super::convert::{self, McpErrorKind, NativeMcpErrorPayload, session_payload, tool_failure};
 use betterlite_mcp::client::sdk_runtime::session::SdkSession;
 use betterlite_mcp::client::sdk_transport::error::SdkError;
 use betterlite_mcp::client::sessions::error::SessionError;
@@ -12,24 +9,20 @@ use betterlite_mcp::client::tools::session::ToolCallSession;
 use betterlite_mcp::tools::pagination::{self, McpSession, Timeouts, ToolFormat};
 use betterlite_mcp::tools::tool_calls::{self, CallRequest, OpenAiToolCall};
 use serde::Serialize;
+use std::convert::Infallible;
+use std::future::{Future, ready};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
-
-use super::client::ClientState;
-use super::convert::{self, McpErrorKind, NativeMcpErrorPayload, session_payload, tool_failure};
-
 mod tests;
-
 pub(crate) type Reply = oneshot::Sender<Result<String, NativeMcpErrorPayload>>;
-
 // The one thing open() waits on: the session started, or the payload that stopped it
 type Startup = Result<(), NativeMcpErrorPayload>;
-
 // LiteLLM's call_tool takes no progress callback, so every notification the server sends is dropped
 pub(crate) struct NoProgress;
-
 impl ProgressHost for NoProgress {
     type Error = Infallible;
 
@@ -41,14 +34,12 @@ impl ProgressHost for NoProgress {
         ready(Ok(()))
     }
 }
-
 pub(crate) enum Command {
     ListPage(Option<String>),
     CallTool(CallRequest, bool),
     LoadTools(ToolFormat, Option<Duration>),
     CallOpenAiTool(OpenAiToolCall),
 }
-
 // One open MCP session, served by a single task that owns the transport until close or drop
 pub(crate) struct OpenSession {
     commands: mpsc::Sender<(Command, Reply)>,
@@ -56,7 +47,6 @@ pub(crate) struct OpenSession {
     closed: Mutex<bool>,
     join: Mutex<Option<JoinHandle<()>>>,
 }
-
 impl OpenSession {
     pub(crate) async fn open(
         state: &Arc<ClientState>,
@@ -115,13 +105,11 @@ impl OpenSession {
         Ok(())
     }
 }
-
 impl Drop for OpenSession {
     fn drop(&mut self) {
         self.stop.cancel();
     }
 }
-
 // The session task: B4744 opens and closes the session, and every command is answered on its own oneshot
 async fn drive(
     state: Arc<ClientState>,
@@ -152,14 +140,12 @@ async fn drive(
         let _answer = sender.send(Err(payload));
     }
 }
-
 // open_session answers as soon as initialize and the handshake are through, not after the first command
 fn announce(ready: &mut Option<oneshot::Sender<Startup>>) {
     if let Some(sender) = ready.take() {
         let _answer = sender.send(Ok(()));
     }
 }
-
 async fn serve(
     session: &mut SdkSession,
     incoming: &mut mpsc::Receiver<(Command, Reply)>,
@@ -181,7 +167,6 @@ async fn serve(
         let _sent = reply.send(answer);
     }
 }
-
 async fn answer_command(
     session: &mut SdkSession,
     command: Command,
@@ -189,17 +174,17 @@ async fn answer_command(
 ) -> Result<String, NativeMcpErrorPayload> {
     match command {
         Command::ListPage(cursor) => {
-            let work = McpSession::list_tools(session, cursor.as_deref());
-            finish(work.await, session_payload)
+            let page = McpSession::list_tools(session, cursor.as_deref());
+            finish(page.await, session_payload)
         }
         Command::CallTool(request, allow_input_required) => {
             let forwarder = ProgressForwarder::<NoProgress> {
                 tool: request.name.as_str(),
                 host: None,
             };
-            let work =
+            let called =
                 ToolCallSession::call_tool(session, &request, &forwarder, allow_input_required);
-            finish(work.await, session_payload)
+            finish(called.await, session_payload)
         }
         Command::LoadTools(tool_format, listing_deadline) => {
             let settings = Timeouts {
@@ -207,17 +192,16 @@ async fn answer_command(
                 listing: timeouts.listing,
                 listing_deadline,
             };
-            let work = pagination::load_mcp_tools(session, tool_format, settings);
-            finish(work.await, tool_failure)
+            let loaded = pagination::load_mcp_tools(session, tool_format, settings);
+            finish(loaded.await, tool_failure)
         }
         Command::CallOpenAiTool(call) => {
             let request = tool_calls::openai_tool_call_to_mcp(&call);
-            let work = tool_calls::call_mcp_tool(session, request, timeouts);
-            finish(work.await, tool_failure)
+            let converted = tool_calls::call_mcp_tool(session, request, timeouts);
+            finish(converted.await, tool_failure)
         }
     }
 }
-
 fn startup_payload(outcome: &Result<(), SessionError<SdkError>>) -> NativeMcpErrorPayload {
     match outcome {
         Ok(()) => NativeMcpErrorPayload::plain(
@@ -227,13 +211,11 @@ fn startup_payload(outcome: &Result<(), SessionError<SdkError>>) -> NativeMcpErr
         Err(error) => session_payload(error),
     }
 }
-
 fn closed_payload() -> NativeMcpErrorPayload {
     let message = "the MCP session is closed".to_owned();
     let kind = McpErrorKind::RuntimeError;
     NativeMcpErrorPayload::plain(kind, message)
 }
-
 fn finish<Value, Failure>(
     outcome: Result<Value, Failure>,
     to_payload: fn(&Failure) -> NativeMcpErrorPayload,

@@ -1,21 +1,17 @@
-use std::future::ready;
-use std::sync::{Arc, PoisonError};
-
-use pyo3::prelude::*;
-use pyo3_async_runtimes::tokio::future_into_py;
-
 use super::client::ClientState;
 use super::convert::{self, AuthValueWire, CallToolWire, ClientWire, GetPromptWire};
 use super::native_session::NativeMcpSession;
 use super::session::OpenSession;
 use super::{Answer, awaited, setup};
-
+use pyo3::prelude::*;
+use pyo3_async_runtimes::tokio::future_into_py;
+use std::future::ready;
+use std::sync::{Arc, PoisonError};
 // One native client per Python MCPClient: the settings text decides everything a session needs
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeMcpClient {
     state: Arc<ClientState>,
 }
-
 #[pymethods]
 impl NativeMcpClient {
     #[new]

@@ -1,17 +1,13 @@
-use std::sync::Arc;
-
-use betterlite_mcp::tools::tool_calls::OpenAiToolCall;
-use pyo3::prelude::*;
-
 use super::convert::{self, CallToolWire, call_request};
 use super::session::{Command, OpenSession};
 use super::{Answer, awaited};
-
+use betterlite_mcp::tools::tool_calls::OpenAiToolCall;
+use pyo3::prelude::*;
+use std::sync::Arc;
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeMcpSession {
     pub(crate) open: Arc<OpenSession>,
 }
-
 #[pymethods]
 impl NativeMcpSession {
     #[pyo3(signature = (cursor = None))]

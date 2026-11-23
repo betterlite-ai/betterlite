@@ -4,7 +4,6 @@ use betterlite_mcp::client::sessions::error::SessionError;
 use betterlite_mcp::tools::pagination::ToolError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
-
 // The Python class names LiteLLM's MCP failures carry; B8082 maps them back to its exception classes
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -15,7 +14,6 @@ pub(crate) enum McpErrorKind {
     ValueError,
     CancelledError,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub(crate) struct NativeMcpErrorPayload {
     #[serde(rename = "type")]
@@ -24,7 +22,6 @@ pub(crate) struct NativeMcpErrorPayload {
     pub(crate) code: Option<i32>,
     pub(crate) data: Option<Json>,
 }
-
 impl NativeMcpErrorPayload {
     pub(crate) fn plain(kind: McpErrorKind, message: String) -> Self {
         Self {
@@ -44,7 +41,6 @@ impl NativeMcpErrorPayload {
         }
     }
 }
-
 impl From<url::ParseError> for NativeMcpErrorPayload {
     fn from(error: url::ParseError) -> Self {
         Self::plain(
@@ -53,7 +49,6 @@ impl From<url::ParseError> for NativeMcpErrorPayload {
         )
     }
 }
-
 // The JSON-RPC code stays as the server sent it, including -32022 for a rejected protocol version
 pub(crate) fn session_payload(error: &SessionError<SdkError>) -> NativeMcpErrorPayload {
     match error {
@@ -76,7 +71,6 @@ pub(crate) fn session_payload(error: &SessionError<SdkError>) -> NativeMcpErrorP
         }
     }
 }
-
 pub(crate) fn tool_failure(error: &ToolError<SessionError<SdkError>>) -> NativeMcpErrorPayload {
     match error {
         ToolError::Session(inner) => session_payload(inner),
@@ -85,7 +79,6 @@ pub(crate) fn tool_failure(error: &ToolError<SessionError<SdkError>>) -> NativeM
         }
     }
 }
-
 fn sdk_payload(error: &SdkError) -> NativeMcpErrorPayload {
     match error {
         SdkError::Http(http) => http_payload(http),
@@ -93,7 +86,6 @@ fn sdk_payload(error: &SdkError) -> NativeMcpErrorPayload {
         other => NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, other.to_string()),
     }
 }
-
 fn http_payload(error: &McpHttpError) -> NativeMcpErrorPayload {
     match error {
         McpHttpError::Status(head) => {
@@ -106,7 +98,6 @@ fn http_payload(error: &McpHttpError) -> NativeMcpErrorPayload {
         other => NativeMcpErrorPayload::plain(McpErrorKind::RuntimeError, other.to_string()),
     }
 }
-
 // The status and the masked body preview are all Python gets about an HTTP failure that carried no JSON-RPC error
 pub(crate) fn status_payload(status: u16, preview: Option<&str>) -> NativeMcpErrorPayload {
     let number = Json::Number(serde_json::Number::from(status));

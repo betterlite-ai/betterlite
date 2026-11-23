@@ -1,21 +1,16 @@
-use std::future::Future;
-use std::pin::Pin;
-
 use betterlite_mcp::client::http_transport::capture::{
     BodyChunks, CapturedBody, ErrorCapture, Exchange,
 };
 use http::HeaderMap;
-
+use std::future::Future;
+use std::pin::Pin;
 mod tests;
-
 pub(crate) const PREVIEW_CHARS: usize = 512;
 const REDACTED: &str = "****";
 // httpx's own headers carry nothing secret, and masking them would hide what the server was told
 const PUBLIC_HEADERS: &str =
     "content-type content-length accept host user-agent accept-encoding connection";
-
 pub(crate) struct ErrorBodyCapture;
-
 impl ErrorCapture for ErrorBodyCapture {
     // The full body has to survive: a non-2xx answer may hold the JSON-RPC error the client relays
     fn capture<'body>(
@@ -34,7 +29,6 @@ impl ErrorCapture for ErrorBodyCapture {
         })
     }
 }
-
 fn secret_values(headers: &HeaderMap) -> Vec<String> {
     let mut secrets = Vec::new();
     for (name, value) in headers {
@@ -58,7 +52,6 @@ fn secret_values(headers: &HeaderMap) -> Vec<String> {
     secrets.dedup();
     secrets
 }
-
 fn preview(body: &[u8], secrets: &[String]) -> String {
     if body.is_empty() {
         return "(empty)".to_owned();
@@ -72,7 +65,6 @@ fn preview(body: &[u8], secrets: &[String]) -> String {
     }
     truncate(&masked)
 }
-
 fn truncate(text: &str) -> String {
     match text.char_indices().nth(PREVIEW_CHARS) {
         Some((cut, _)) => format!("{}...(truncated)", &text[..cut]),

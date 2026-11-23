@@ -1,6 +1,3 @@
-use std::collections::BTreeMap;
-use std::time::Duration;
-
 use betterlite_config::tls::VerifySetting;
 use betterlite_http::mcp_sigv4::McpSigV4Settings;
 use betterlite_mcp::client::sessions::negotiate::ProtocolVersion;
@@ -8,16 +5,15 @@ use betterlite_mcp::client::sessions::transport::{StdioConfig, TransportType};
 use betterlite_mcp::credentials::{AuthValue, McpAuthType};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
-
+use std::collections::BTreeMap;
+use std::time::Duration;
 mod payload;
 mod request;
 mod tests;
-
 pub(crate) use payload::{McpErrorKind, NativeMcpErrorPayload, session_payload, tool_failure};
 pub(crate) use request::{
     CallToolWire, GetPromptWire, call_options, call_request, deadline, prompt_params, tool_format,
 };
-
 // litellm/constants.py reads these at import; an empty variable counts as unset (docs/compatibility.md)
 const CLIENT_TIMEOUT_VARIABLE: &str = "LITELLM_MCP_CLIENT_TIMEOUT";
 const CLIENT_TIMEOUT_SECONDS: f64 = 60.0;
@@ -26,7 +22,6 @@ const LISTING_TIMEOUT_SECONDS: f64 = 30.0;
 const NPM_CACHE_VARIABLE: &str = "MCP_NPM_CACHE_DIR";
 const NPM_CACHE_DIR: &str = "/tmp/.npm_mcp_cache";
 const AUTO_PROTOCOL_VERSION: &str = "auto";
-
 // The settings text B8082 builds from LiteLLM's MCPClient constructor arguments (client.py#L376-L430)
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -42,7 +37,6 @@ pub(crate) struct ClientWire {
     pub(crate) ssl_verify: Option<SslVerifyWire>,
     pub(crate) protocol_version: Option<String>,
 }
-
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum AuthTypeWire {
@@ -59,21 +53,18 @@ pub(crate) enum AuthTypeWire {
     TruePassthrough,
     OauthDelegate,
 }
-
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum AuthValueWire {
     Text(String),
     Headers(BTreeMap<String, String>),
 }
-
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum SslVerifyWire {
     Enabled(bool),
     Path(String),
 }
-
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct StdioWire {
@@ -81,7 +72,6 @@ pub(crate) struct StdioWire {
     pub(crate) args: Vec<String>,
     pub(crate) env: Option<BTreeMap<String, String>>,
 }
-
 // Everything the settings text decides, with the process environment and every default already applied
 pub(crate) struct ResolvedSettings {
     pub(crate) server_url: String,
@@ -99,7 +89,6 @@ pub(crate) struct ResolvedSettings {
     pub(crate) protocol_version: ProtocolVersion,
     pub(crate) aws: Option<McpSigV4Settings>,
 }
-
 pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, NativeMcpErrorPayload>
 where
     T: Deserialize<'text>,
@@ -111,7 +100,6 @@ where
         )
     })
 }
-
 pub(crate) fn encode<T>(value: &T) -> Result<String, NativeMcpErrorPayload>
 where
     T: Serialize,
@@ -124,7 +112,6 @@ where
         )
     })
 }
-
 pub(crate) fn resolve_settings(
     wire: ClientWire,
     environment: &BTreeMap<String, String>,
@@ -162,7 +149,6 @@ pub(crate) fn resolve_settings(
         aws,
     })
 }
-
 fn client_timeout(
     timeout: Option<f64>,
     environment: &BTreeMap<String, String>,
@@ -172,20 +158,17 @@ fn client_timeout(
         None => environment_duration(CLIENT_TIMEOUT_VARIABLE, environment, CLIENT_TIMEOUT_SECONDS),
     }
 }
-
 fn protocol_version(requested: String) -> Result<ProtocolVersion, NativeMcpErrorPayload> {
     let version = ProtocolVersion::try_from(requested);
     version
         .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
 }
-
 fn ssl_setting(verify: SslVerifyWire) -> VerifySetting {
     match verify {
         SslVerifyWire::Enabled(enabled) => VerifySetting::Bool(enabled),
         SslVerifyWire::Path(path) => VerifySetting::Path(path),
     }
 }
-
 fn stdio_config(stdio: StdioWire) -> StdioConfig {
     StdioConfig {
         command: stdio.command,
@@ -193,7 +176,6 @@ fn stdio_config(stdio: StdioWire) -> StdioConfig {
         env: stdio.env,
     }
 }
-
 fn npm_cache_dir(environment: &BTreeMap<String, String>) -> String {
     environment
         .get(NPM_CACHE_VARIABLE)
@@ -201,7 +183,6 @@ fn npm_cache_dir(environment: &BTreeMap<String, String>) -> String {
         .cloned()
         .unwrap_or_else(|| NPM_CACHE_DIR.to_owned())
 }
-
 pub(crate) fn auth_value(wire: AuthValueWire) -> AuthValue {
     match wire {
         AuthValueWire::Text(text) => AuthValue::Text(SecretString::from(text)),
@@ -213,7 +194,6 @@ pub(crate) fn auth_value(wire: AuthValueWire) -> AuthValue {
         }
     }
 }
-
 // LiteLLM picks aws_sigv4 signing by auth_type and reads its keys from the auth_value map (B4742)
 fn aws_settings(value: Option<&AuthValue>) -> Result<McpSigV4Settings, NativeMcpErrorPayload> {
     let headers = match value {
@@ -241,7 +221,6 @@ fn aws_settings(value: Option<&AuthValue>) -> Result<McpSigV4Settings, NativeMcp
         aws_session_name: text("aws_session_name"),
     })
 }
-
 fn auth_kind(kind: AuthTypeWire) -> Result<McpAuthType, NativeMcpErrorPayload> {
     match kind {
         AuthTypeWire::None | AuthTypeWire::AwsSigv4 => Ok(McpAuthType::None),
@@ -257,14 +236,12 @@ fn auth_kind(kind: AuthTypeWire) -> Result<McpAuthType, NativeMcpErrorPayload> {
         AuthTypeWire::OauthDelegate => Err(unsupported_auth("oauth_delegate")),
     }
 }
-
 fn unsupported_auth(name: &str) -> NativeMcpErrorPayload {
     NativeMcpErrorPayload::plain(
         McpErrorKind::ValueError,
         format!("auth_type {name} is not supported by the native MCP client"),
     )
 }
-
 fn seconds_duration(field: &str, seconds: f64) -> Result<Duration, NativeMcpErrorPayload> {
     Duration::try_from_secs_f64(seconds).map_err(|error| {
         NativeMcpErrorPayload::plain(
@@ -273,7 +250,6 @@ fn seconds_duration(field: &str, seconds: f64) -> Result<Duration, NativeMcpErro
         )
     })
 }
-
 fn environment_duration(
     variable: &str,
     environment: &BTreeMap<String, String>,

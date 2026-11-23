@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
-
+use super::convert::{
+    self, CallToolWire, GetPromptWire, McpErrorKind, NativeMcpErrorPayload, session_payload,
+};
+use super::session::NoProgress;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_core::api::mcp_client_resources::operations::McpResourceOperations as _;
 use betterlite_core::api::mcp_client_resources::settings::ResourceSettings;
@@ -19,18 +19,14 @@ use betterlite_mcp::credentials::{
     AuthValue, McpAuthType, McpClient as CredentialClient, hash_discovery_auth,
 };
 use serde::Serialize;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use url::Url;
-
-use super::convert::{
-    self, CallToolWire, GetPromptWire, McpErrorKind, NativeMcpErrorPayload, session_payload,
-};
-use super::session::NoProgress;
-
 // The text every client operation answers Python with, or the payload its failure becomes
 pub(crate) type TextResult = Result<String, NativeMcpErrorPayload>;
-
 // A poisoned lock still carries the token and instructions the client last saw, so read it through
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     match mutex.lock() {
@@ -38,7 +34,6 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         Err(poisoned) => poisoned.into_inner(),
     }
 }
-
 // One native client owns this state; every Python call builds a fresh session client over it (B4744)
 pub(crate) struct ClientState {
     pub(crate) server_url: String,
@@ -59,7 +54,6 @@ pub(crate) struct ClientState {
     pub(crate) instructions: Mutex<Option<String>>,
     pub(crate) tracker: TaskTracker,
 }
-
 impl ClientState {
     pub(crate) fn session_client(&self) -> SessionClient<SdkRuntime> {
         let tracker = TaskTracker::new();

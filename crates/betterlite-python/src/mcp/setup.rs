@@ -1,7 +1,8 @@
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
+use super::capture::ErrorBodyCapture;
+use super::client::ClientState;
+use super::convert::{
+    ClientWire, McpErrorKind, NativeMcpErrorPayload, ResolvedSettings, resolve_settings,
+};
 use aws_smithy_async::rt::sleep::{SharedAsyncSleep, TokioSleep};
 use aws_smithy_async::time::SharedTimeSource;
 use aws_smithy_runtime_api::client::http::SharedHttpClient;
@@ -19,18 +20,12 @@ use betterlite_mcp::client::sessions::stdio::SDK_SHUTDOWN;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings};
 use pyo3::{PyErr, PyResult, Python};
 use pyo3_async_runtimes::tokio::get_runtime;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio_util::task::TaskTracker;
-
-use super::capture::ErrorBodyCapture;
-use super::client::ClientState;
-use super::convert::{
-    ClientWire, McpErrorKind, NativeMcpErrorPayload, ResolvedSettings, resolve_settings,
-};
-
 const CREDENTIALS_TIMEOUT_SECONDS: u64 = 60;
-
 mod tests;
-
 pub(crate) fn build(py: Python<'_>, wire: ClientWire) -> PyResult<ClientState> {
     let environment = process_environment();
     let resolved = resolve_settings(wire, &environment).map_err(PyErr::from)?;
@@ -48,7 +43,6 @@ pub(crate) fn build(py: Python<'_>, wire: ClientWire) -> PyResult<ClientState> {
     );
     Ok(client_state(resolved, tls, aws, runtime))
 }
-
 fn aws_credentials(
     py: Python<'_>,
     resolved: &ResolvedSettings,
@@ -63,7 +57,6 @@ fn aws_credentials(
     let signer = built.map_err(PyErr::from)?;
     Ok(Some(Arc::new(signer)))
 }
-
 fn client_state(
     resolved: ResolvedSettings,
     tls: TlsPolicy,
@@ -90,7 +83,6 @@ fn client_state(
         tracker: TaskTracker::new(),
     }
 }
-
 fn proxy_policy(
     environment: &BTreeMap<String, String>,
 ) -> Result<Arc<ProxyPolicy>, NativeMcpErrorPayload> {
@@ -98,7 +90,6 @@ fn proxy_policy(
         .map(Arc::new)
         .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
 }
-
 // An explicit ssl_verify is what LiteLLM's get_ssl_verify answers, so it outranks SSL_VERIFY here
 fn tls_policy(
     explicit: Option<VerifySetting>,
@@ -116,7 +107,6 @@ fn tls_policy(
     TlsPolicy::resolve(&config, &resolved_environment, None)
         .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
 }
-
 async fn aws_signer(
     settings: McpSigV4Settings,
     proxy: &Arc<ProxyPolicy>,
@@ -139,7 +129,6 @@ async fn aws_signer(
         .await
         .map_err(|error| NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string()))
 }
-
 fn tls_config() -> Config {
     Config {
         model_list: Vec::new(),
