@@ -17,7 +17,9 @@ use betterlite_foundry::chat::sources::NoSources;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
 use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_openai::image_generation::logging::{
     ImageGenerationLogger, PostCallRecord, PreCallRecord,
 };
@@ -30,6 +32,10 @@ use super::error::AzureMediaError;
 use super::execute::dispatch;
 use super::runtime::MediaRuntime;
 use crate::operation::{OperationRequest, OperationResult};
+
+pub mod speech;
+
+use self::speech::{FixtureError, SpeechLogging, speech_logging};
 
 // one scripted reply per request the transport will receive, in order
 pub struct Reply {
@@ -223,9 +229,13 @@ pub struct Outcome {
     pub result: Result<OperationResult, AzureMediaError>,
     pub fixture: Fixture,
     pub logger: Recorder,
+    pub speech: SpeechLogging,
 }
 
-pub async fn exchange(operation: AzureMediaOperation, replies: Vec<Reply>) -> Outcome {
+pub async fn exchange(
+    operation: AzureMediaOperation,
+    replies: Vec<Reply>,
+) -> Result<Outcome, FixtureError> {
     exchange_request(
         OperationRequest::AzureMedia(AzureMediaRequest),
         operation,
@@ -238,7 +248,7 @@ pub async fn exchange_request(
     request: OperationRequest,
     operation: AzureMediaOperation,
     replies: Vec<Reply>,
-) -> Outcome {
+) -> Result<Outcome, FixtureError> {
     let fixture = Fixture::new(replies);
     let clock = Clock;
     let sources = NoSources;
@@ -247,7 +257,22 @@ pub async fn exchange_request(
     let environment: BTreeMap<String, String> = BTreeMap::new();
     let mut cache = Cache::default();
     let mut logger = Recorder::default();
+    let mut speech = speech_logging()?;
     let result = {
+        let env = PrePostEnv {
+            debug: DebugSettings::default(),
+            globals: GlobalFlags::default(),
+            decision: Decision {
+                content: false,
+                key_info: false,
+            },
+            redactor: &speech.redactor,
+            log: &speech.sink,
+            input_callbacks: &[],
+            sentry: None,
+            logger_fn: None,
+            now: speech.now,
+        };
         let mut runtime = MediaRuntime {
             endpoints: &endpoints,
             credentials: &credentials,
@@ -260,12 +285,15 @@ pub async fn exchange_request(
             transport: &fixture,
             cache: &mut cache,
             logger: &mut logger,
+            speech_state: &mut speech.state,
+            speech_env: &env,
         };
         dispatch(request, operation, &mut runtime).await
     };
-    Outcome {
+    Ok(Outcome {
         result,
         fixture,
         logger,
-    }
+        speech,
+    })
 }

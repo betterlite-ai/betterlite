@@ -8,6 +8,7 @@ use secrecy::SecretString;
 
 use super::case::Input;
 use super::{NOW, generation_result, json_reply};
+use crate::openai_media_dispatch::failure;
 
 pub(super) async fn image_generation(input: &Input) -> HelperResult {
     let reply = json_reply(input)?;
@@ -31,6 +32,7 @@ pub(super) async fn image_generation(input: &Input) -> HelperResult {
         AzureMediaOperation::ImageGeneration(Box::new(call)),
         vec![reply],
     )
-    .await;
+    .await
+    .map_err(|error| failure("RuntimeError", error))?;
     generation_result(&outcome)
 }

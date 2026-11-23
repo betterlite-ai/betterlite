@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::case::Input;
 use super::{EDIT_REPLY, IMAGE, NOW, edit_view, outcome_error};
+use crate::openai_media_dispatch::failure;
 
 pub(super) async fn image_edit(input: &Input) -> HelperResult {
     let call = ImageEditOperation {
@@ -38,7 +39,8 @@ pub(super) async fn image_edit(input: &Input) -> HelperResult {
         AzureMediaOperation::ImageEdit(Box::new(call)),
         vec![Reply::json(200, EDIT_REPLY)],
     )
-    .await;
+    .await
+    .map_err(|error| failure("RuntimeError", error))?;
     let Ok(OperationResult::AzureMedia(AzureMediaResult::ImageEdit(edited))) = &outcome.result
     else {
         return outcome_error(&outcome.result);

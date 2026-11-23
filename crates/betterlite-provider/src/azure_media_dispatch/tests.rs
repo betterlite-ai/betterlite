@@ -11,6 +11,8 @@ use betterlite_azure::endpoints::projection::{
 use betterlite_azure::image_transport::ImageClock as _;
 use betterlite_azure::image_transport::request::TimeoutPhases;
 use betterlite_azure::images::generation::GeneratedImage;
+use betterlite_azure::native_speech::response::HttpxBinaryResponseContent;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::image_edits::file::ImageEditFile;
@@ -22,13 +24,14 @@ use serde_json::Number;
 use uuid::Uuid;
 
 use super::call::{
-    AzureMediaOperation, ImageEditOperation, ImageGenerationOperation,
-    NativeTranscriptionOperation, TranscriptionOperation,
+    AzureMediaOperation, ImageEditOperation, ImageGenerationOperation, NativeSsmlOperation,
+    NativeTranscriptionOperation, OpenAiSpeechOperation, TranscriptionOperation,
 };
 use super::error::AzureMediaError;
 use super::parts::{form_parts, header_map};
-use super::test_support::{Cache, Clock, Outcome, Reply, exchange, exchange_request};
+use super::test_support::{Cache, Clock, Outcome, Reply};
 use super::{AzureMediaResult, ImageEditOutcome};
+use crate::api::speech_http::SpeechBinaryResponse;
 use crate::openai_media_dispatch::OpenAiMediaRequest;
 use crate::operation::{OperationRequest, OperationResult};
 
@@ -38,6 +41,23 @@ const AZURE: &str = "https://example.openai.azure.com";
 const API_KEY: &str = "sk-azure-fixture";
 const DALL_E_BODY: &str =
     r#"{"created":1700000000,"data":[{"b64_json":"aW1hZ2U=","revised_prompt":"a cat"}]}"#;
+
+// every exchange builds the logging fixture; one that fails to build fails the test, not the arm under it
+async fn exchange(operation: AzureMediaOperation, replies: Vec<Reply>) -> Outcome {
+    super::test_support::exchange(operation, replies)
+        .await
+        .expect("the logging fixture builds")
+}
+
+async fn exchange_request(
+    request: OperationRequest,
+    operation: AzureMediaOperation,
+    replies: Vec<Reply>,
+) -> Outcome {
+    super::test_support::exchange_request(request, operation, replies)
+        .await
+        .expect("the logging fixture builds")
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Family {
@@ -69,7 +89,7 @@ async fn azure_media_dispatch_cases(#[case] family: Family) {
 async fn azure_media_dispatch_unsupported_operation() {
     let outcome = exchange_request(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
-        AzureMediaOperation::OpenAiSpeech,
+        AzureMediaOperation::OpenAiSpeech(Box::new(speech_operation())),
         Vec::new(),
     )
     .await;
@@ -470,32 +490,158 @@ async fn edit_bad_headers() {
     }
 }
 
+fn speech_operation() -> OpenAiSpeechOperation {
+    OpenAiSpeechOperation {
+        model: String::from("tts"),
+        input: String::from("hello"),
+        voice: String::from("alloy"),
+        optional_params: IndexMap::new(),
+        aspeech: false,
+        api_key: Some(key()),
+        api_base: Some(AZURE.to_owned()),
+        api_version: Some(String::from("2024-06-01")),
+        params: LiteLlmParams::default(),
+        provider: None,
+        supplied: None,
+        session: SessionKind::Dedicated,
+        refresh_enabled: false,
+    }
+}
+
+fn ssml_operation() -> NativeSsmlOperation {
+    NativeSsmlOperation {
+        model: String::from("tts-model"),
+        input: String::from("hello"),
+        voice: Some(Json::Text(String::from("alloy"))),
+        optional_params: IndexMap::new(),
+        litellm_params: IndexMap::new(),
+        api_key: Some(key()),
+        api_base: Some(String::from("https://westus.api.cognitive.microsoft.com")),
+        timeout: None,
+        extra_headers: None,
+        aspeech: false,
+    }
+}
+
+fn speech_result(outcome: &Outcome) -> &HttpxBinaryResponseContent {
+    let Ok(OperationResult::AzureMedia(AzureMediaResult::OpenAiSpeech(content))) = &outcome.result
+    else {
+        panic!("the openai speech arm returns its binary response");
+    };
+    content
+}
+
+fn ssml_result(outcome: &Outcome) -> &SpeechBinaryResponse {
+    let Ok(OperationResult::AzureMedia(AzureMediaResult::NativeSsml(content))) = &outcome.result
+    else {
+        panic!("the native ssml arm returns its binary response");
+    };
+    content
+}
+
+fn sent_json_body(sent: &OutboundRequest) -> Json {
+    let RequestBody::Json(bytes) = &sent.body else {
+        panic!("the speech request body is JSON");
+    };
+    serde_json::from_slice(bytes).expect("the speech body parses")
+}
+
 async fn openai_speech() {
-    let outcome = exchange(AzureMediaOperation::OpenAiSpeech, Vec::new()).await;
+    speech_request().await;
+    speech_failure().await;
+}
+
+// the binary leaf posts the deployment-scoped speech body with the SDK's auth and accept headers
+async fn speech_request() {
+    let outcome = exchange(
+        AzureMediaOperation::OpenAiSpeech(Box::new(speech_operation())),
+        vec![Reply::json(200, "ID3")],
+    )
+    .await;
+    let content = speech_result(&outcome);
+    assert_eq!(content.status, 200);
+    assert_eq!(content.body, b"ID3".to_vec());
+    let outbound = outcome.fixture.outbound();
+    let sent = &outbound[0];
+    assert_eq!(sent.method, Method::POST);
+    assert_eq!(
+        sent.url.as_str(),
+        format!("{AZURE}/openai/deployments/tts/audio/speech?api-version=2024-06-01")
+    );
+    assert_eq!(header(&sent.headers, "api-key"), Some(API_KEY));
+    assert_eq!(
+        header(&sent.headers, "accept"),
+        Some("application/octet-stream")
+    );
+    let expected: Json = serde_json::from_str(r#"{"model":"tts","input":"hello","voice":"alloy"}"#)
+        .expect("the expected body parses");
+    assert_eq!(sent_json_body(sent), expected);
+}
+
+async fn speech_failure() {
+    let outcome = exchange(
+        AzureMediaOperation::OpenAiSpeech(Box::new(speech_operation())),
+        vec![Reply::json(500, "boom")],
+    )
+    .await;
     let error = error_of(&outcome);
-    assert!(matches!(
-        error,
-        AzureMediaError::Unavailable {
-            operation: "openai_speech"
-        }
-    ));
-    assert!(error.to_string().contains("openai_speech"));
-    assert_eq!(error.status(), None);
-    assert!(outcome.fixture.images().is_empty());
-    assert!(outcome.fixture.outbound().is_empty());
+    assert_eq!(error.status(), Some(500));
+    assert!(matches!(error, AzureMediaError::Speech(_)));
+    assert!(error.to_string().contains("boom"));
 }
 
 async fn native_ssml() {
-    let outcome = exchange(AzureMediaOperation::NativeSsml, Vec::new()).await;
+    ssml_request().await;
+    ssml_failure().await;
+}
+
+// the native leaf sends the SSML body to the TTS endpoint with the cognitive-services headers
+async fn ssml_request() {
+    let outcome = exchange(
+        AzureMediaOperation::NativeSsml(Box::new(ssml_operation())),
+        vec![Reply::json(200, "AUDIO")],
+    )
+    .await;
+    let content = ssml_result(&outcome);
+    assert_eq!(content.content.status, 200);
+    assert_eq!(content.content.body, b"AUDIO".to_vec());
+    let outbound = outcome.fixture.outbound();
+    let sent = &outbound[0];
+    assert_eq!(sent.method, Method::POST);
+    assert_eq!(
+        sent.url.as_str(),
+        "https://westus.tts.speech.microsoft.com/cognitiveservices/v1"
+    );
+    assert_eq!(
+        header(&sent.headers, "ocp-apim-subscription-key"),
+        Some(API_KEY)
+    );
+    assert_eq!(
+        header(&sent.headers, "x-microsoft-outputformat"),
+        Some("audio-24khz-48kbitrate-mono-mp3")
+    );
+    assert_eq!(
+        header(&sent.headers, "content-type"),
+        Some("application/ssml+xml")
+    );
+    let RequestBody::Bytes { data, .. } = &sent.body else {
+        panic!("the ssml request body is bytes");
+    };
+    let ssml = from_utf8(data).expect("the ssml body is UTF-8");
+    assert!(ssml.contains("en-US-JennyNeural"));
+    assert!(ssml.contains("hello"));
+}
+
+async fn ssml_failure() {
+    let outcome = exchange(
+        AzureMediaOperation::NativeSsml(Box::new(ssml_operation())),
+        vec![Reply::json(400, "bad ssml")],
+    )
+    .await;
     let error = error_of(&outcome);
-    assert!(matches!(
-        error,
-        AzureMediaError::Unavailable {
-            operation: "native_ssml"
-        }
-    ));
-    assert!(outcome.fixture.images().is_empty());
-    assert!(outcome.fixture.outbound().is_empty());
+    assert_eq!(error.status(), Some(400));
+    assert!(matches!(error, AzureMediaError::Speech(_)));
+    assert!(error.to_string().contains("bad ssml"));
 }
 
 #[test]

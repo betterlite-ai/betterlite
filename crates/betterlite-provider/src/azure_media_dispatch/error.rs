@@ -2,6 +2,7 @@ use betterlite_azure::azure_urls::AzureUrlError;
 use betterlite_azure::credentials::selection::AzureTokenError;
 use betterlite_azure::image_transport::error::ImageTransportError;
 use betterlite_azure::images::error::ImageError;
+use betterlite_azure::speech::error::AzureSpeechError;
 use betterlite_azure::transcription::call::AzureTranscriptionError;
 use betterlite_azure::transcription::native::NativeError;
 use betterlite_openai::image_edits::error::ImageEditError;
@@ -24,6 +25,8 @@ pub enum AzureMediaError {
     Transcription(#[from] AzureTranscriptionError),
     #[error(transparent)]
     Native(#[from] NativeError),
+    #[error(transparent)]
+    Speech(#[from] AzureSpeechError),
     // BaseLLMException: the handler raises the upstream status with the reply text before any transform reads the body
     #[error("{message}")]
     EditStatus { status: u16, message: String },
@@ -61,6 +64,7 @@ impl AzureMediaError {
             Self::Transport(error) => error.status_code(),
             Self::Transcription(error) => error.status(),
             Self::Native(error) => error.status(),
+            Self::Speech(error) => error.status(),
             Self::EditStatus { status, .. } => Some(*status),
             Self::HeaderName { .. }
             | Self::HeaderValue { .. }

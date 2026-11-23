@@ -17,6 +17,7 @@ use super::case::Input;
 use super::{
     AUDIO, AUDIO_FILE, AUDIO_TYPE, first_request, json_reply, outcome_error, transcription_view,
 };
+use crate::openai_media_dispatch::failure;
 
 pub(super) async fn transcription(input: &Input) -> HelperResult {
     let call = TranscriptionOperation {
@@ -43,7 +44,8 @@ pub(super) async fn transcription(input: &Input) -> HelperResult {
         AzureMediaOperation::Transcription(Box::new(call)),
         vec![reply],
     )
-    .await;
+    .await
+    .map_err(|error| failure("RuntimeError", error))?;
     let Ok(OperationResult::AzureMedia(AzureMediaResult::Transcription(transcribed))) =
         &outcome.result
     else {
