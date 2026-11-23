@@ -46,7 +46,7 @@ pub trait EndUserCache: RegistryCache {
         Row: Serialize + Sync;
 }
 
-fn options(ttl: f64) -> WriteOptions {
+pub(super) fn options(ttl: f64) -> WriteOptions {
     WriteOptions {
         ttl: Some(WriteTtl { seconds: ttl }),
         local_only: false,

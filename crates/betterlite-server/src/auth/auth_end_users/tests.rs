@@ -34,6 +34,7 @@ enum Answer {
     Resolved,
     Missing,
     Budget,
+    BudgetDefault,
     Failure,
 }
 
@@ -104,7 +105,7 @@ impl EndUserLookup for ScriptedLookup {
             .expect("the lookup calls")
             .push(end_user_id.to_owned());
         match self.answer {
-            Answer::Resolved | Answer::Budget => Ok(Some(row())),
+            Answer::Resolved | Answer::Budget | Answer::BudgetDefault => Ok(Some(row())),
             Answer::Missing => Ok(None),
             Answer::Failure => Err(EndUserFailure::Failure(
                 "the end-user lookup failed".to_owned(),
@@ -123,6 +124,12 @@ impl EndUserLookup for ScriptedLookup {
             .push(format!("{} {route}", end_user.user_id));
         if self.answer == Answer::Budget {
             return Err(EndUserFailure::Budget(budget_details()));
+        }
+        if self.answer == Answer::BudgetDefault {
+            return Err(EndUserFailure::Budget(BudgetExceededDetails {
+                message: None,
+                ..budget_details()
+            }));
         }
         Ok(())
     }
@@ -337,6 +344,22 @@ async fn failure_stops_downstream() {
     );
     assert!(!failure_reached);
     assert!(failing.checks().is_empty());
+}
+
+#[tokio::test]
+async fn absent_message_uses_the_default_text() {
+    let lookup = ScriptedLookup::new(Answer::BudgetDefault);
+    let (status, body, reached) = run_request(
+        &config_with_database(),
+        rule(Arc::clone(&lookup), Some("alice")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body.contains("Budget has been exceeded! Current cost: 150, Max budget: 100"),
+        "{body}"
+    );
+    assert!(!reached);
 }
 
 #[tokio::test]
