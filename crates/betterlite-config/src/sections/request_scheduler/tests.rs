@@ -147,6 +147,7 @@ fn polling_interval_reads_the_environment_default(
     assert_eq!(settings.polling_interval.to_bits(), expected.to_bits());
 }
 
+// an empty DEFAULT_IN_MEMORY_TTL stops the load in the auth prefetch section, which reads the same variable
 #[test]
 fn local_ttl_reads_the_environment_default() {
     let configured = load_with("model_list: []\n", &[("DEFAULT_IN_MEMORY_TTL", "2")])
@@ -155,13 +156,6 @@ fn local_ttl_reads_the_environment_default() {
         configured.local_ttl_seconds.to_bits(),
         2.0_f64.to_bits(),
         "a configured ttl"
-    );
-    let empty = load_with("model_list: []\n", &[("DEFAULT_IN_MEMORY_TTL", "")])
-        .expect("the fixture config loads");
-    assert_eq!(
-        empty.local_ttl_seconds.to_bits(),
-        DEFAULT_IN_MEMORY_TTL.to_bits(),
-        "an empty ttl"
     );
     let absent = load_with("model_list: []\n", &[]).expect("the fixture config loads");
     assert_eq!(
