@@ -9,7 +9,7 @@ from typing_extensions import TypeIs, override
 from betterlite import _native
 from betterlite._completion.arguments import SessionLike
 from betterlite._completion.errors import UnsupportedCallArgument
-from betterlite._endpoints.payload import CallValue, Readable, to_call_payload
+from betterlite._endpoints.payload import CallValue, Readable
 from betterlite.types.llms.openai.core.aliases import FileTypes
 
 QUERY: Final[TypeAdapter[dict[str, str | list[str]]]] = TypeAdapter(dict[str, str | list[str]])
@@ -145,14 +145,14 @@ def cookie_pairs(cookies: Cookies) -> list[CallValue]:
 
 
 def file_fields(files: Files) -> dict[str, CallValue]:
-    entries: Iterable[tuple[str, FileTypes]]
+    pairs: list[tuple[str, FileTypes]] = []
     match files:
         case Mapping() as mapping:
-            entries = mapping.items()
+            pairs.extend(mapping.items())
         case Sequence() as sequence:
-            entries = sequence
+            pairs.extend(sequence)
     grouped: dict[str, list[CallValue]] = {}
-    for field, content in entries:
+    for field, content in pairs:
         grouped.setdefault(field, []).append(content)
     return {field: items[0] if len(items) == 1 else items for field, items in grouped.items()}
 
