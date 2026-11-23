@@ -45,6 +45,7 @@ scope:
   - crates/betterlite-python/python/betterlite/_embeddings/**
   - crates/betterlite-python/python/betterlite/main.py
   - crates/betterlite-python/tests/test_embeddings.py
+  - crates/betterlite-python/ruff.toml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6196-L6247
