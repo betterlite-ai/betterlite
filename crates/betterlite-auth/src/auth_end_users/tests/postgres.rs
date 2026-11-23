@@ -137,10 +137,7 @@ async fn resolved(
 }
 
 fn relation_budget_id(end_user: &LiteLLMEndUserTable) -> Option<&str> {
-    end_user
-        .litellm_budget_table
-        .as_ref()
-        .and_then(|budget| budget.budget_id.as_deref())
+    end_user.litellm_budget_table.as_ref()?.budget_id.as_deref()
 }
 
 // the budget decision over a live database spend, with an optional conflicting cached counter

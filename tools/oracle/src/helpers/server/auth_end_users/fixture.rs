@@ -19,7 +19,7 @@ use betterlite_db::postgres_store::errors::DbError;
 use betterlite_models::decisions::Json;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::{Failure, Input};
 
@@ -83,11 +83,11 @@ impl Fixture {
             return Ok(Value::Null);
         };
         let key = CacheKey::EndUserId(id).render();
-        let stored = match self.values.lock() {
+        let cached = match self.values.lock() {
             Ok(values) => values.get(&key).cloned(),
             Err(poisoned) => poisoned.into_inner().get(&key).cloned(),
         };
-        let Some(stored) = stored else {
+        let Some(stored) = cached else {
             return Ok(Value::Null);
         };
         let row: LiteLLMEndUserTable = serde_json::from_value(stored)?;
@@ -170,6 +170,7 @@ impl EndUserCache for Fixture {
             Err(poisoned) => poisoned.into_inner(),
         };
         let _previous = values.insert(cache_key.to_owned(), encoded);
+        drop(values);
         Ok(())
     }
 }
@@ -207,12 +208,12 @@ struct EndUserView<'view> {
 }
 
 pub(super) fn budget_view(budget: Option<&LiteLLMBudgetTable>) -> Result<Value, serde_json::Error> {
-    let Some(budget) = budget else {
+    let Some(row) = budget else {
         return Ok(Value::Null);
     };
     serde_json::to_value(BudgetView {
-        budget_id: budget.budget_id.as_deref(),
-        max_budget: serde_json::to_value(budget)?.get("max_budget").cloned(),
+        budget_id: row.budget_id.as_deref(),
+        max_budget: serde_json::to_value(row)?.get("max_budget").cloned(),
     })
 }
 
@@ -223,8 +224,6 @@ pub(super) fn end_user_view(row: &LiteLLMEndUserTable) -> Result<Value, serde_js
         user_id: row.user_id.as_str(),
         budget_id: row.budget_id.as_deref(),
         spend: encoded.get("spend").cloned(),
-        max_budget: relation
-            .and_then(|relation| relation.get("max_budget"))
-            .cloned(),
+        max_budget: relation.and_then(|table| table.get("max_budget")).cloned(),
     })
 }
