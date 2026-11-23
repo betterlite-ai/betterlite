@@ -1,0 +1,39 @@
+task: B10090
+deviations:
+  - what: >-
+      A restricted scrape writes its participating families in registration order.
+    why: >-
+      prometheus_client's RestrictedRegistry.collect gathers the matching collectors into a Python set, so their
+      order is arbitrary; registration order is deterministic, and every helper case restricts to at most one
+      family, where no order can show.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/registry.py#L150-L164
+  - what: >-
+      A gzipped scrape's compressed bytes differ from LiteLLM's gzip.compress output: flate2 compresses at level 6
+      with no header timestamp, Python at level 9 with the current time. The gunzipped body is byte-identical.
+    why: >-
+      The timestamp and the level are encoder settings the declared bytes do not expose, and the helper cases
+      compare the gunzipped lines and the gzipped flag, as the task instructs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L54
+  - what: >-
+      A scrape whose render task stops answers 500 with an empty body and no content type.
+    why: >-
+      LiteLLM never catches a render failure, so the app it is mounted in renders its own 500 response, whose body
+      depends on the host. The task makes the failure a 500, and render_scrape itself cannot fail except when its
+      task is aborted.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L92
+kept_bugs:
+  - what: >-
+      q-values are ignored: an Accept part of application/openmetrics-text;q=0 still picks OpenMetrics, and
+      gzip;q=0 still turns gzip on.
+    why: >-
+      prometheus_client 0.20.0's choose_encoder and gzip_accepted compare only the text before the semicolon, and
+      LiteLLM calls them, so a setup sending q=0 gets what LiteLLM gives it; the task and its accept-negotiation
+      case require this spelling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L40-L47
+  - what: >-
+      The OpenMetrics media type is compared case-sensitively, so Application/OpenMetrics-Text renders the text
+      format even though HTTP media types are case-insensitive.
+    why: >-
+      prometheus_client's choose_encoder uses an exact string comparison, the task's first pitfall requires it, and
+      the accept-negotiation case pins it; a scrape server sending the canonical lowercase spelling is unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L40-L47
