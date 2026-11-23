@@ -96,6 +96,10 @@ fn catalog_is_parsed_once_and_shared() {
     r#"{"version":"v","models":[],"harnesses":[{"id":"h","label":"H","text":"t","sources":["s"],"extra":true}]}"#,
     "unknown field"
 )]
+#[case::empty_preset_text(
+    r#"{"version":"v","models":[{"id":"a","label":"A","text":"   ","sources":["s"],"model":"m"}],"harnesses":[]}"#,
+    "a fuse profile text is empty once its surrounding whitespace is stripped"
+)]
 #[case::empty_model_sources(
     r#"{"version":"v","models":[{"id":"a","label":"A","text":"t","sources":[],"model":"m"}],"harnesses":[]}"#,
     "a fuse preset needs at least one source"
@@ -107,6 +111,17 @@ fn catalog_is_parsed_once_and_shared() {
 fn catalog_rejects_unknown_fields_and_empty_sources(#[case] raw: &str, #[case] reason: &str) {
     let error = serde_json::from_str::<FusePresetCatalog>(raw).unwrap_err();
     assert!(error.to_string().contains(reason));
+}
+
+#[test]
+fn catalog_parse_error_converts_to_the_typed_catalog_error() {
+    let error =
+        serde_json::from_str::<FusePresetCatalog>(r#"{"models":[],"harnesses":[]}"#).unwrap_err();
+    let converted = FusePresetsError::from(error);
+    assert_eq!(
+        converted.to_string(),
+        "the bundled fuse preset catalog is not valid"
+    );
 }
 
 #[test]
