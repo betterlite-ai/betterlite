@@ -171,13 +171,14 @@ pub fn ws_request_defaults(
 }
 
 fn extra_body_overrides(value: Option<&Json>) -> Result<BTreeMap<String, Json>, WsNativeError> {
-    match value {
-        None | Some(Json::Null) => Ok(BTreeMap::new()),
-        Some(Json::Object(fields)) => Ok(fields.clone().into_iter().collect()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(WsNativeError::Validation {
-                message: String::from("extra_body must be a JSON object"),
-            })
-        }
-    }
+    let filtered = value.filter(|candidate| !matches!(**candidate, Json::Null));
+    let Some(present) = filtered else {
+        return Ok(BTreeMap::new());
+    };
+    let Json::Object(fields) = present else {
+        return Err(WsNativeError::Validation {
+            message: String::from("extra_body must be a JSON object"),
+        });
+    };
+    Ok(fields.clone().into_iter().collect())
 }

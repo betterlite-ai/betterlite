@@ -391,7 +391,8 @@ impl FakeResolution {
         Self {
             model: String::from("gpt-4o"),
             provider: Some(String::from("openai")),
-            ..Self::default()
+            api_base: None,
+            api_key: None,
         }
     }
 }
@@ -558,8 +559,15 @@ impl Entry {
     pub(super) fn new() -> Self {
         Self {
             model: String::from("gpt-4o"),
+            api_base: None,
+            api_key: None,
+            timeout: None,
+            kwargs: Event::new(),
             resolution: FakeResolution::openai(),
-            ..Self::default()
+            globals: LiteLlmGlobals::default(),
+            openai_api_key: None,
+            configs: FakeConfigs::default(),
+            logging: Arc::new(RecordingLogging::default()),
         }
     }
 

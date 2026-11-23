@@ -65,6 +65,8 @@ pub(super) trait ForwardSteps {
 
     async fn forward_client_frames(&self) -> Result<(), ClientRelayError>;
 
+    async fn accept_and_relay(&self, message: &str) -> Result<(), ClientRelayError>;
+
     async fn relay_client_frame(&self, message: &str) -> Result<(), ClientRelayError>;
 }
 
@@ -176,14 +178,19 @@ where
         }
     }
 
-    async fn forward_client_frames(&self) -> Result<(), ClientRelayError> {
-        let policy = self.policy();
-        if let Some(first) = self.setup.first_message.as_deref()
-            && enforce_or_reject_frame(&policy, self.setup.websocket, first)
-                .await
-                .map_err(|error| ClientRelayError::Frame(class_message(&error)))?
+    async fn accept_and_relay(&self, message: &str) -> Result<(), ClientRelayError> {
+        if enforce_or_reject_frame(&self.policy(), self.setup.websocket, message)
+            .await
+            .map_err(|error| ClientRelayError::Frame(class_message(&error)))?
         {
-            self.relay_client_frame(first).await?;
+            self.relay_client_frame(message).await?;
+        }
+        Ok(())
+    }
+
+    async fn forward_client_frames(&self) -> Result<(), ClientRelayError> {
+        if let Some(first) = self.setup.first_message.as_deref() {
+            self.accept_and_relay(first).await?;
         }
         loop {
             let message = self
@@ -192,12 +199,7 @@ where
                 .receive_text()
                 .await
                 .map_err(|error| ClientRelayError::Frame(error.to_string()))?;
-            let accepted = enforce_or_reject_frame(&policy, self.setup.websocket, &message)
-                .await
-                .map_err(|error| ClientRelayError::Frame(class_message(&error)))?;
-            if accepted {
-                self.relay_client_frame(&message).await?;
-            }
+            self.accept_and_relay(&message).await?;
         }
     }
 
