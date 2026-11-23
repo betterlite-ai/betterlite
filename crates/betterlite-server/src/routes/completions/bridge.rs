@@ -7,7 +7,6 @@ use betterlite_core::operation::text_completion::{
     TextCompletionResult,
 };
 use betterlite_core::operation::text_stream::TextStreamAnswer;
-use betterlite_http::error::HttpError;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::{ChatRequest, execution::ChatError};
@@ -23,10 +22,11 @@ use betterlite_provider::anthropic_dispatch::gateway::reply::AnthropicReply;
 use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
 use betterlite_provider::operation::{ChatCompletion, OperationResult};
 use betterlite_provider::provider::Provider;
-use futures_util::stream::{BoxStream, StreamExt as _};
+use futures_util::stream::StreamExt as _;
 
 use super::CompletionCalls;
 use super::streaming::chunks::frames_answer;
+pub(super) use super::streaming::chunks::{ChatChunks, ChunkUsage};
 use super::streaming::{self, StreamRoute, StreamUsage, provider_stream};
 use crate::server::chat_setup::provider_call::{CallError, Runtimes, answer_chat};
 
@@ -55,21 +55,6 @@ pub(super) fn converted(
         upstream_headers,
         upstream_time,
     })
-}
-
-// which reader each upstream frame set goes through: the shared chat chunk reader, or the Anthropic adapter's own chunks
-#[derive(Clone, Copy)]
-pub(super) enum ChunkUsage {
-    Chat(bool),
-    Anthropic,
-}
-
-// streaming::chunks holds the frame source; the two names stay here because the completion tests build the reader from bridge
-pub(super) struct ChatChunks {
-    pub(super) bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
-    pub(super) parser: SseParser,
-    pub(super) model: String,
-    pub(super) usage: ChunkUsage,
 }
 
 // the chat endpoint reached for a chat-catalog deployment, with the one Anthropic runtime the application built
@@ -131,9 +116,13 @@ async fn streamed_answer(
     let OperationResult::Anthropic(AnthropicResult::Stream(frames)) = result else {
         return Err(TextCompletionFailure::internal(MISMATCHED));
     };
-    let model = call.request.model.as_deref();
-    let usage = ChunkUsage::Anthropic;
-    let answer = frames_answer(frames, headers, model, usage, started.elapsed());
+    let chunks = ChatChunks {
+        bytes: frames,
+        parser: SseParser::default(),
+        model: call.request.model.as_deref().unwrap_or_default().to_owned(),
+        usage: ChunkUsage::Anthropic,
+    };
+    let answer = frames_answer(chunks, headers, started.elapsed());
     Ok(answer)
 }
 

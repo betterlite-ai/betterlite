@@ -12,23 +12,27 @@ use betterlite_openai::stream::SseParser;
 use betterlite_openai::text_completion_stream::decode_chat_events;
 use futures_util::stream::{self, BoxStream, StreamExt as _};
 
-use crate::routes::completions::bridge::{ChatChunks, ChunkUsage};
-
 use super::pump::{FrameSource, Pump, next_frame};
 
-pub(in crate::routes::completions) fn frames_answer(
-    bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
+// which reader each upstream frame set goes through: the shared chat chunk reader, or the Anthropic adapter's own chunks
+#[derive(Clone, Copy)]
+pub(crate) enum ChunkUsage {
+    Chat(bool),
+    Anthropic,
+}
+
+pub(crate) struct ChatChunks {
+    pub(crate) bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
+    pub(crate) parser: SseParser,
+    pub(crate) model: String,
+    pub(crate) usage: ChunkUsage,
+}
+
+pub(crate) fn frames_answer(
+    chunks: ChatChunks,
     headers: HeaderMap,
-    model: Option<&str>,
-    usage: ChunkUsage,
     upstream_time: Duration,
 ) -> TextStreamAnswer {
-    let chunks = ChatChunks {
-        bytes,
-        parser: SseParser::default(),
-        model: model.unwrap_or_default().to_owned(),
-        usage,
-    };
     let pump: Pump<ChatChunks, Json> = Pump::new(chunks);
     TextStreamAnswer {
         body: stream::unfold(pump, next_frame::<ChatChunks, TextCompletionFailure>).boxed(),
@@ -44,9 +48,13 @@ pub(crate) fn chat_stream_answer(
     time: Duration,
 ) -> TextStreamAnswer {
     let headers = upstream.response.headers().clone();
-    let body = upstream.body_stream();
-    let usage = ChunkUsage::Chat(include_usage);
-    frames_answer(body, headers, model, usage, time)
+    let chunks = ChatChunks {
+        bytes: upstream.body_stream(),
+        parser: SseParser::default(),
+        model: model.unwrap_or_default().to_owned(),
+        usage: ChunkUsage::Chat(include_usage),
+    };
+    frames_answer(chunks, headers, time)
 }
 
 #[async_trait]
