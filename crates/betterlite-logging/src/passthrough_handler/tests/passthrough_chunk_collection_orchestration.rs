@@ -22,7 +22,7 @@ fn builds_the_payload_for_the_rebuilt_response() {
     let chunks = vec!["one".to_owned(), "two".to_owned()];
     let outcome = harness
         .handler
-        .handle_collected_chunks(CollectedChunksInput {
+        .handle_collected_chunks(&CollectedChunksInput {
             logging_obj: &harness.logging,
             request_body: &request,
             all_chunks: &chunks,
@@ -69,7 +69,7 @@ fn returns_no_result_when_the_rebuild_yields_nothing() {
     let request = json_object(r#"{"model": "claude-3"}"#);
     let outcome = harness
         .handler
-        .handle_collected_chunks(CollectedChunksInput {
+        .handle_collected_chunks(&CollectedChunksInput {
             logging_obj: &harness.logging,
             request_body: &request,
             all_chunks: &["one".to_owned()],
@@ -97,7 +97,7 @@ fn uses_an_empty_model_when_the_body_has_none(#[case] body: &str) {
     let request = json_object(body);
     let outcome = harness
         .handler
-        .handle_collected_chunks(CollectedChunksInput {
+        .handle_collected_chunks(&CollectedChunksInput {
             logging_obj: &harness.logging,
             request_body: &request,
             all_chunks: &["one".to_owned()],
@@ -116,7 +116,7 @@ fn propagates_a_rebuild_error() {
     let request = json_object(r#"{"model": "claude-3"}"#);
     let error = harness
         .handler
-        .handle_collected_chunks(CollectedChunksInput {
+        .handle_collected_chunks(&CollectedChunksInput {
             logging_obj: &harness.logging,
             request_body: &request,
             all_chunks: &[],
@@ -134,7 +134,7 @@ fn refuses_a_non_text_model_before_the_rebuild() {
     let request = json_object(r#"{"model": ["claude-3"]}"#);
     let error = harness
         .handler
-        .handle_collected_chunks(CollectedChunksInput {
+        .handle_collected_chunks(&CollectedChunksInput {
             logging_obj: &harness.logging,
             request_body: &request,
             all_chunks: &[],
@@ -161,7 +161,7 @@ fn rebuilds_a_text_completion() {
     let request = json_object(r#"{"model": "claude-3"}"#);
     let outcome = harness
         .handler
-        .handle_collected_chunks(CollectedChunksInput {
+        .handle_collected_chunks(&CollectedChunksInput {
             logging_obj: &harness.logging,
             request_body: &request,
             all_chunks: &[],
@@ -189,7 +189,7 @@ fn a_payload_failure_keeps_the_rebuilt_response() {
     let request = json_object(r#"{"model": "claude-3"}"#);
     let outcome = harness
         .handler
-        .handle_collected_chunks(CollectedChunksInput {
+        .handle_collected_chunks(&CollectedChunksInput {
             logging_obj: &harness.logging,
             request_body: &request,
             all_chunks: &[],

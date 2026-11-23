@@ -4,12 +4,18 @@ use betterlite_config::sections::request_headers::Settings;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
+use super::payload::{
+    cost_number, passthrough_payload, stamp_response_identity, standard_logging_object_json,
+    write_end_user,
+};
 use super::ports::{PassthroughLoggingProvider, ResponseCost};
 use super::types::{
-    CollectedChunksInput, MODEL, NO_COMPLETE_RESPONSE, PassthroughChatInput,
-    PassthroughHandlerError, PassthroughLoggingPayload, ResponsePayloadInput, StreamedResponse,
+    CollectedChunksInput, MODEL, NO_COMPLETE_RESPONSE, PASSTHROUGH_LOGGING_PAYLOAD, PAYLOAD_ERROR,
+    PassthroughChatInput, PassthroughHandlerError, PassthroughLoggingPayload, RESPONSE_COST,
+    ResponsePayloadInput, StreamedResponse,
 };
 use crate::end_user::extraction::{IdSettings, request_end_user_id};
+use crate::logging_success::payload_state::STANDARD_LOGGING_OBJECT;
 use crate::logging_success::ports::StandardPayloadBuilder;
 use crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use crate::passthrough_logging_state::response::PassThroughResponse;
@@ -25,7 +31,6 @@ pub struct BasePassthroughLoggingHandler {
 }
 
 impl BasePassthroughLoggingHandler {
-    #[must_use]
     pub fn passthrough_chat_handler(
         &self,
         input: PassthroughChatInput<'_>,
@@ -42,7 +47,7 @@ impl BasePassthroughLoggingHandler {
         let model = request_model(request_body, Some(response_body))?;
         let config = self.provider.get_provider_config(&model);
         let mut response = config.transform_response(upstream, &model, logging_obj)?;
-        let kwargs = self.build_response_logging_payload(ResponsePayloadInput {
+        let logged_kwargs = self.build_response_logging_payload(ResponsePayloadInput {
             response: &mut response,
             model: &model,
             kwargs,
@@ -52,7 +57,7 @@ impl BasePassthroughLoggingHandler {
         });
         Ok(HandlerOutcome {
             result: Some(PassThroughResponse::ModelResponse(response)),
-            kwargs,
+            kwargs: logged_kwargs,
         })
     }
 
@@ -69,22 +74,14 @@ impl BasePassthroughLoggingHandler {
         )
     }
 
-    #[must_use]
     pub fn handle_collected_chunks(
         &self,
-        input: CollectedChunksInput<'_>,
+        input: &CollectedChunksInput<'_>,
     ) -> Result<HandlerOutcome, PassthroughHandlerError> {
-        let CollectedChunksInput {
-            logging_obj,
-            request_body,
-            all_chunks,
-            start_time,
-            end_time,
-        } = input;
-        let model = request_model(request_body, None)?;
-        let built = self
-            .provider
-            .build_streaming_response(all_chunks, logging_obj, &model)?;
+        let model = request_model(input.request_body, None)?;
+        let built =
+            self.provider
+                .build_streaming_response(input.all_chunks, input.logging_obj, &model)?;
         let Some(mut complete) = built else {
             tracing::error!("{NO_COMPLETE_RESPONSE}");
             return Ok(HandlerOutcome {
@@ -98,9 +95,9 @@ impl BasePassthroughLoggingHandler {
                     response: json,
                     model: &model,
                     kwargs: PassThroughLoggingKwargs::default(),
-                    start_time,
-                    end_time,
-                    logging_obj,
+                    start_time: input.start_time,
+                    end_time: input.end_time,
+                    logging_obj: input.logging_obj,
                 }),
         };
         let result = match complete {
@@ -111,6 +108,98 @@ impl BasePassthroughLoggingHandler {
             result: Some(result),
             kwargs,
         })
+    }
+
+    #[must_use]
+    pub fn build_response_logging_payload(
+        &self,
+        mut input: ResponsePayloadInput<'_>,
+    ) -> PassThroughLoggingKwargs {
+        if let Err(error) = self.fill_response_logging_payload(&mut input) {
+            tracing::error!("{PAYLOAD_ERROR}: {error}");
+        }
+        input.kwargs
+    }
+
+    fn fill_response_logging_payload(
+        &self,
+        input: &mut ResponsePayloadInput<'_>,
+    ) -> Result<(), PassthroughHandlerError> {
+        self.record_cost(input)?;
+        self.record_end_user(input)?;
+        self.record_standard_logging_object(input)?;
+        stamp_response_identity(input)
+    }
+
+    fn record_cost(
+        &self,
+        input: &mut ResponsePayloadInput<'_>,
+    ) -> Result<(), PassthroughHandlerError> {
+        let cost = self.cost.completion_cost(input.response, input.model)?;
+        let number = cost_number(cost)?;
+        input
+            .kwargs
+            .entries
+            .insert(RESPONSE_COST.to_owned(), number.clone());
+        input
+            .kwargs
+            .entries
+            .insert(MODEL.to_owned(), Json::Text(input.model.to_owned()));
+        let model = input.model;
+        let logging_obj = input.logging_obj;
+        logging_obj.edit(&mut |state| {
+            state
+                .model_call_details
+                .insert(RESPONSE_COST.to_owned(), number.clone());
+            model.clone_into(&mut state.model);
+        });
+        Ok(())
+    }
+
+    fn record_end_user(
+        &self,
+        input: &mut ResponsePayloadInput<'_>,
+    ) -> Result<(), PassthroughHandlerError> {
+        let Some(value) = input.kwargs.entries.get(PASSTHROUGH_LOGGING_PAYLOAD) else {
+            return Ok(());
+        };
+        if matches!(value, Json::Null) {
+            return Ok(());
+        }
+        let payload = passthrough_payload(value)?;
+        let Some(user) = self
+            .get_user_from_metadata(&payload)
+            .filter(|user| !user.is_empty())
+        else {
+            return Ok(());
+        };
+        write_end_user(&mut input.kwargs, input.logging_obj, &user)
+    }
+
+    fn record_standard_logging_object(
+        &self,
+        input: &mut ResponsePayloadInput<'_>,
+    ) -> Result<(), PassthroughHandlerError> {
+        let logging_obj = input.logging_obj;
+        let response: &Json = input.response;
+        let start_time = input.start_time;
+        let end_time = input.end_time;
+        let builder = self.payload_builder.as_ref();
+        let built = logging_obj
+            .read(&mut |state| builder.build(state, response, start_time, end_time))
+            .ok_or(PassthroughHandlerError::StateUnavailable)?;
+        let object = match built {
+            Some(payload) => standard_logging_object_json(&payload)?,
+            None => Json::Null,
+        };
+        let text = serde_json::to_string_pretty(&object)
+            .map_err(|source| PassthroughHandlerError::StandardLoggingJson { source })?;
+        tracing::debug!("standard_logging_object= {text}");
+        input
+            .kwargs
+            .entries
+            .insert(STANDARD_LOGGING_OBJECT.to_owned(), object);
+        Ok(())
     }
 }
 

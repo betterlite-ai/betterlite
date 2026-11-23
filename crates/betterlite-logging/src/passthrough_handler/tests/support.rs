@@ -563,10 +563,10 @@ pub(super) fn harness_returning(payload: StandardLoggingPayload) -> Harness {
     build(ProviderId::Anthropic, RecordingBuilder::returning(payload))
 }
 
-fn build(name: ProviderId, builder: RecordingBuilder) -> Harness {
+fn build(name: ProviderId, payload_builder: RecordingBuilder) -> Harness {
     let provider = Arc::new(FakeProvider::new(name));
     let cost = Arc::new(FakeCost::default());
-    let builder = Arc::new(builder);
+    let builder = Arc::new(payload_builder);
     let handler = BasePassthroughLoggingHandler {
         provider: Arc::clone(&provider),
         cost: Arc::clone(&cost),

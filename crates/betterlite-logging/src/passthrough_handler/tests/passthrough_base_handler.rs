@@ -160,7 +160,7 @@ fn the_chunk_path_returns_the_same_kwargs() {
     let request = json_object(r#"{"model": "claude-3"}"#);
     let outcome = harness
         .handler
-        .handle_collected_chunks(CollectedChunksInput {
+        .handle_collected_chunks(&CollectedChunksInput {
             logging_obj: &harness.logging,
             request_body: &request,
             all_chunks: &[],

@@ -173,7 +173,7 @@ fn a_non_object_request_body_names_the_field() {
     harness.cost.costs(cost("0.25"));
     let (captured, _guard) = capture_logs(Level::ERROR);
     let mut response = json(r#"{"id": "chatcmpl-9"}"#);
-    harness
+    let _written = harness
         .handler
         .build_response_logging_payload(payload_input(
             &harness.logging,

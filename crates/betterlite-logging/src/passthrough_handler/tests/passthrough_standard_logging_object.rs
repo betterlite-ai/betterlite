@@ -52,7 +52,7 @@ fn the_builder_sees_the_cost_the_user_and_the_model() {
     harness.cost.costs(cost("0.5"));
     let mut response = json(r#"{"id": "upstream-9"}"#);
     let payload_value = json(r#"{"request_body": {"user": "alice"}}"#);
-    harness
+    let _written = harness
         .handler
         .build_response_logging_payload(payload_input(
             &harness.logging,
@@ -85,7 +85,7 @@ fn logs_the_object_at_debug_level() {
     harness.cost.costs(cost("0.5"));
     let (captured, _guard) = capture_logs(Level::DEBUG);
     let mut response = json(r#"{"id": "chatcmpl-9"}"#);
-    harness
+    let _written = harness
         .handler
         .build_response_logging_payload(payload_input(
             &harness.logging,
@@ -104,7 +104,7 @@ fn keeps_the_debug_line_off_at_info_level() {
     harness.cost.costs(cost("0.5"));
     let (captured, _guard) = capture_logs(Level::INFO);
     let mut response = json(r#"{"id": "chatcmpl-9"}"#);
-    harness
+    let _written = harness
         .handler
         .build_response_logging_payload(payload_input(
             &harness.logging,
