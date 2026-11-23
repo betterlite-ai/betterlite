@@ -6,7 +6,7 @@ deviations:
       is possible; the tests allow a relative difference of 1e-12 and the cached, cache-creation,
       tiered and per-second cases are the ones where LiteLLM's own sums carry a rounding tail.
     why: B068 computes with exact money types, so the value crosses into Python once, as a float.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L401
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1291
   - what: >-
       When a response carries no usage and no custom token counts, LiteLLM tokenizes the prompt,
       messages and completion to price the call. betterlite's Python cost helpers have no
@@ -14,7 +14,7 @@ deviations:
       response needs usage or explicit token counts, instead of counting.
     why: Token counting belongs to the completion family, and this package's cost path prices a
       response's usage only.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1740
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1557-L1560
   - what: >-
       `completion_cost` passes the `total_time` argument through and does not read
       `completion_response._response_ms` or `litellm_logging_obj.get_response_ms()`, so a
@@ -22,7 +22,7 @@ deviations:
       `total_time` (0.0 by default).
     why: LiteLLM's `_response_time_ms_for_cost` sits in L1059-L1331, which the task marks private
       to the Rust calculator, and the native request carries no field for it.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1316
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1317-L1329
   - what: >-
       `get_replicate_completion_pricing` reads `created` and `ended` from the response's dumped
       mapping. An `ended` attribute that the response class keeps out of `model_dump()` is not
