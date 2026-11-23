@@ -3,8 +3,7 @@ import atexit
 import os
 import sys
 from collections.abc import Coroutine
-from types import TracebackType
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, Unpack, cast, runtime_checkable
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast, runtime_checkable
 
 import httpx
 import litellm
@@ -60,38 +59,10 @@ class FileReadApi(Protocol):
 API: FileReadApi = litellm
 
 
-STDOUT: Final[int] = 1
-
-
-# the harness reads the exit status, so the result is written and the process ends
+# LiteLLM decides the exit status itself, so a finished case flushes and ends the process
 def end_after_output() -> None:
     sys.stdout.flush()
     os._exit(0)
-
-
-# an uncaught error becomes the case's result, where the failing pointer shows its text
-def diagnose(
-    kind: type[BaseException], error: BaseException, trace: TracebackType | None, /
-) -> None:
-    last = trace
-    while last is not None and last.tb_next is not None:
-        last = last.tb_next
-    where = ""
-    if last is not None:
-        source = last.tb_frame.f_code.co_filename.rsplit("/", maxsplit=1)[-1]
-        where = f" at {source}:{last.tb_lineno}"
-    label = " ".join(f"!{kind.__name__}: {error}{where}".split())
-    start = label.find("file_provider_read.steps")
-    if start > 0:
-        label = label[start:]
-    label = label[:300]
-    result = Result(file_provider_read={"value": {"steps": [StepOutcome(file={label: True})]}})
-    os.write(STDOUT, result.model_dump_json(by_alias=True, exclude_unset=True).encode())
-    os._exit(0)
-
-
-atexit.register(end_after_output)
-sys.excepthook = diagnose
 
 
 # BadRequestError leaves model and llm_provider unannotated; both are the text LiteLLM passes
@@ -160,8 +131,8 @@ class FileProviderReadRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         steps = [run_step(step, api_base) for step in self.file_provider_read.steps]
-        steps.append(StepOutcome(file={"!no-step-raised": True}))
         result = Result(file_provider_read={"value": {"steps": steps}})
+        atexit.register(end_after_output)
         return result.model_dump_json(by_alias=True, exclude_unset=True)
 
 
