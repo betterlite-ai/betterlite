@@ -61,7 +61,9 @@ HOOKS = ("pre_call", "post_call", "during_call", "logging_only")
 def mismatch(label, left, right):
     print("MISMATCH " + label, file=sys.stderr)
     print("litellm: " + json.dumps(left, indent=2, default=str, sort_keys=True), file=sys.stderr)
-    print("betterlite: " + json.dumps(right, indent=2, default=str, sort_keys=True), file=sys.stderr)
+    print(
+        "betterlite: " + json.dumps(right, indent=2, default=str, sort_keys=True), file=sys.stderr
+    )
     raise SystemExit(1)
 
 
@@ -131,7 +133,9 @@ def group_surface():
         our_params = {item["name"]: item["default"] for item in ours[name]["params"]}
         for parameter in row["params"]:
             if parameter["name"] not in our_params:
-                mismatch("param " + name + "." + parameter["name"], sorted(our_params), row["params"])
+                mismatch(
+                    "param " + name + "." + parameter["name"], sorted(our_params), row["params"]
+                )
             equal(
                 "param default " + name + "." + parameter["name"],
                 parameter["default"],
@@ -139,7 +143,11 @@ def group_surface():
             )
     for name in class_attributes(LiteGuardrail):
         if not hasattr(BetterGuardrail, name):
-            mismatch("missing attribute " + name, sorted(class_attributes(BetterGuardrail)), sorted(class_attributes(LiteGuardrail)))
+            mismatch(
+                "missing attribute " + name,
+                sorted(class_attributes(BetterGuardrail)),
+                sorted(class_attributes(LiteGuardrail)),
+            )
     equal("advisory constant", LITE_ADVISORY, BETTER_ADVISORY)
     for label in ("session", "intervention", "logguard"):
         equal(label + " async", False, inspect.iscoroutinefunction(SIDES["betterlite"][label]))
@@ -168,7 +176,9 @@ def group_surface():
         body["replaced"] = stored is not base.apply_guardrail
         body["wrapper_async"] = inspect.iscoroutinefunction(ProbeGuardrail.apply_guardrail)
         body["hook_runs"] = asyncio.run(
-            ProbeGuardrail().apply_guardrail({"texts": ["hi"]}, {}, "request")
+            ProbeGuardrail().apply_guardrail(
+                inputs={"texts": ["hi"]}, request_data={}, input_type="request"
+            )
         )
         bodies[side] = body
     equal("subclass body", bodies["litellm"], bodies["betterlite"])
@@ -195,7 +205,9 @@ def group_selection():
             "multi": base(guardrail_name="probe", event_hook=[hooks.pre_call, hooks.post_call]),
             "tagged": base(
                 guardrail_name="probe",
-                event_hook=mode(tags={"team": [hooks.pre_call, hooks.post_call]}, default=hooks.post_call),
+                event_hook=mode(
+                    tags={"team": [hooks.pre_call, hooks.post_call]}, default=hooks.post_call
+                ),
             ),
             "on": base(guardrail_name="probe", default_on=True),
             "off": base(guardrail_name="probe", default_on=False),
@@ -214,7 +226,8 @@ def group_selection():
                     key = "|".join((instance_name, data_name, event))
                     report[key] = answer(instance, data, hooks, event)
         for event in HOOKS:
-            report["event|plain|" + event] = instances["plain"]._event_hook_is_event_type(hooks[event])
+            plain_hook = instances["plain"]
+            report["event|plain|" + event] = plain_hook._event_hook_is_event_type(hooks[event])
             report["event|pre|" + event] = instances["pre"]._event_hook_is_event_type(hooks[event])
         if side == "betterlite":
             suppressed = instances["pre"].should_run_guardrail(
@@ -266,9 +279,9 @@ def group_errors():
                 )
             ),
             "non_list": capture(
-                lambda: base(guardrail_name="probe", event_hook=hooks.pre_call).should_run_guardrail(
-                    {"guardrails": 5}, hooks.pre_call
-                )
+                lambda: base(
+                    guardrail_name="probe", event_hook=hooks.pre_call
+                ).should_run_guardrail({"guardrails": 5}, hooks.pre_call)
             ),
         }
         reports[side] = report
@@ -374,7 +387,11 @@ def group_records():
         hooks = types["hooks"]
         base = types["base"]
         guardrail = base(guardrail_name="probe", event_hook=hooks.pre_call)
-        data = {"guardrails": ["probe"], "metadata": {"user": "u"}, "litellm_logging_obj": FakeLogging()}
+        data = {
+            "guardrails": ["probe"],
+            "metadata": {"user": "u"},
+            "litellm_logging_obj": FakeLogging(),
+        }
         guardrail.add_standard_logging_guardrail_information_to_request_data(
             {"action": "allow"},
             data,
@@ -403,12 +420,18 @@ def group_records():
         probe = ProbeGuardrail()
         success_logging = FakeLogging()
         result = await probe.apply_guardrail(
-            {"texts": ["hi"]}, {"guardrails": ["probe"]}, "request", logging_obj=success_logging
+            inputs={"texts": ["hi"]},
+            request_data={"guardrails": ["probe"]},
+            input_type="request",
+            logging_obj=success_logging,
         )
         failure_logging = FakeLogging()
         try:
             await probe.apply_guardrail(
-                {"texts": ["boom"]}, {"guardrails": ["probe"]}, "request", logging_obj=failure_logging
+                inputs={"texts": ["boom"]},
+                request_data={"guardrails": ["probe"]},
+                input_type="request",
+                logging_obj=failure_logging,
             )
             raised = "none"
         except Exception as error:
@@ -448,20 +471,25 @@ def run_probe(group: str) -> str:
 
 
 def test_guardrail_surface() -> None:
-    assert run_probe("surface") == "OK"
+    output = run_probe("surface")
+    assert output == "OK"
 
 
 def test_guardrail_selection() -> None:
-    assert run_probe("selection") == "OK"
+    output = run_probe("selection")
+    assert output == "OK"
 
 
 def test_guardrail_errors() -> None:
-    assert run_probe("errors") == "OK"
+    output = run_probe("errors")
+    assert output == "OK"
 
 
 def test_guardrail_messages() -> None:
-    assert run_probe("messages") == "OK"
+    output = run_probe("messages")
+    assert output == "OK"
 
 
 def test_guardrail_records() -> None:
-    assert run_probe("records") == "OK"
+    output = run_probe("records")
+    assert output == "OK"

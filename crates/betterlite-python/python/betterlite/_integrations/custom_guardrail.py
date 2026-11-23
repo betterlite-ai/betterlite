@@ -1,20 +1,26 @@
-from pydantic import JsonValue
+from typing import Final
 
-from betterlite._integrations.custom_guardrail_hook_logging import (
-    is_guarded_hook,
-    log_guardrail_information,
+from pydantic import JsonValue
+from typing_extensions import override
+
+from betterlite._integrations.custom_guardrail_constants import (
+    LOGS_GUARDRAIL_INFORMATION_MARKER as MARKER,
 )
+from betterlite._integrations.custom_guardrail_hook_logging import log_guardrail_information
+from betterlite._integrations.custom_guardrail_hooks import GuardrailHooks
 from betterlite._integrations.custom_guardrail_params import GuardrailParams
-from betterlite._integrations.guardrail_types import HookCallable
+
+APPLY_GUARDRAIL_HOOK: Final = "apply_guardrail"
 
 
 class CustomGuardrail(GuardrailParams):
+    @override
     def __init_subclass__(cls, **kwargs: JsonValue) -> None:
         _ = kwargs
+        own = cls.apply_guardrail
         # ast-grep-ignore: no-reflection
-        own: HookCallable | None = cls.__dict__.get("apply_guardrail")
-        if own is None or is_guarded_hook(own):
+        marked: JsonValue = getattr(own, MARKER, False)
+        if own is GuardrailHooks.apply_guardrail or marked is True:
             return
-        hooked = log_guardrail_information(own)
         # ast-grep-ignore: no-reflection
-        setattr(cls, "apply_guardrail", hooked)
+        setattr(cls, APPLY_GUARDRAIL_HOOK, log_guardrail_information(own))

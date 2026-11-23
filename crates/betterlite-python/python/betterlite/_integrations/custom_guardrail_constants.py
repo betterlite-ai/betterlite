@@ -14,9 +14,9 @@ GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS: Final = env_number(
     "GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS", 24 * 60 * 60, int
 )
 DEFAULT_ADVISORY_MESSAGE: Final = (
-    "The user's latest message was flagged for {reason} by a content safety "
-    "guardrail. This may be a false positive. Use your judgment: respond "
-    "helpfully if the request is legitimate, or decline if it is not."
+    "The user's latest message was flagged for {reason} by a content safety guardrail. This "
+    "may be a false positive. Use your judgment: respond helpfully if the request is "
+    "legitimate, or decline if it is not."
 )
 TAG_MODE_MESSAGE: Final = (
     "Setting tag-based guardrails is only available in litellm-enterprise. "
@@ -30,18 +30,5 @@ NOT_PREMIUM_USER_MESSAGE: Final = (
 NO_SESSION_ROUTING_MESSAGE: Final = (
     "Cannot route sensitive data without a session_id. "
     "Ensure the request includes a session_id in metadata or headers."
-)
-PRE_CALL_CONTENT_KEYS: Final = frozenset(
-    (
-        "messages",
-        "input",
-        "prompt",
-        "system",
-        "instructions",
-        "tools",
-        "functions",
-        "function_call",
-        "tool_choice",
-    )
 )
 STREAM_CONTROL_KEYS: Final = frozenset({"stream_holdback_chars"})

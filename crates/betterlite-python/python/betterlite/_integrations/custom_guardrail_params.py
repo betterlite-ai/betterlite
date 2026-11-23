@@ -12,6 +12,7 @@ from betterlite.types.utils.base import InitValue
 
 
 class GuardrailParams(GuardrailHooks):
+    # ast-grep-ignore: no-long-names
     def update_in_memory_litellm_params(self, litellm_params: LitellmParams) -> None:
         payload: dict[str, JsonValue] = litellm_params.model_dump(mode="json", exclude_none=True)
         update_native_params(self._native, payload)

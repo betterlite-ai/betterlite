@@ -1,5 +1,4 @@
-from collections.abc import Awaitable, Callable
-from typing import Final, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import Final, Literal, NoReturn, Protocol, TypeAlias, runtime_checkable
 
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
@@ -14,17 +13,6 @@ GuardrailStatus: TypeAlias = Literal[
     "guardrail_failed_to_respond",
     "not_run",
 ]
-# a guardrail receives and returns JSON, a LiteLLM object or the exception it caught
-GuardrailValue: TypeAlias = (
-    JsonValue
-    | Dumpable
-    | Exception
-    | list["GuardrailValue"]
-    | dict[str, "GuardrailValue"]
-)
-HookCallable: TypeAlias = Callable[..., GuardrailValue | Awaitable[GuardrailValue]]
-AsyncHookCallable: TypeAlias = Callable[..., Awaitable[GuardrailValue]]
-SyncHookCallable: TypeAlias = Callable[..., GuardrailValue]
 
 
 class GenericGuardrailAPIInputs(TypedDict, total=False):
@@ -35,6 +23,13 @@ class GenericGuardrailAPIInputs(TypedDict, total=False):
     structured_messages: list[dict[str, JsonValue]]
     model: str | None
     stream_holdback_chars: list[int]
+
+
+# a guardrail receives and returns JSON, a LiteLLM object or the exception it caught
+GuardrailValue: TypeAlias = (
+    JsonValue | Dumpable | Exception | GenericGuardrailAPIInputs
+    | list["GuardrailValue"] | dict[str, "GuardrailValue"]
+)
 
 
 class GuardrailTracingDetail(TypedDict, total=False):
@@ -106,13 +101,26 @@ class RecordContext(TypedDict):
     log_target: LogTarget | None
 
 
-class ErrorPayload(TypedDict):
-    kind: str
-    message: str
-    guardrail_name: str | None
-
-
 class GuardrailConfigModel(Protocol): ...
+
+
+class GuardrailRecorder(Protocol):
+    # ast-grep-ignore: no-long-names
+    def add_standard_logging_guardrail_information_to_request_data(
+        self, guardrail_json_response: GuardrailValue, request_data: dict[str, JsonValue],
+        guardrail_status: GuardrailStatus, start_time: float | None = None,
+        end_time: float | None = None,
+    ) -> None: ...
+
+    def _process_response(
+        self, response: GuardrailValue, request_data: dict[str, JsonValue],
+        start_time: float | None = None, end_time: float | None = None,
+    ) -> GuardrailValue: ...
+
+    def _process_error(
+        self, e: Exception, request_data: dict[str, JsonValue],
+        start_time: float | None = None, end_time: float | None = None,
+    ) -> NoReturn: ...
 
 
 @runtime_checkable
@@ -142,6 +150,7 @@ class GuardrailSettingsOwner(Protocol):
     timeout: float | None
     use_native_during_call_hook: bool
     use_native_lifecycle_hooks: bool
+    # ast-grep-ignore: no-long-names
     records_own_guardrail_information: bool
 
     def uses_apply_guardrail_interface(self) -> bool: ...
@@ -151,4 +160,3 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 SETTINGS: Final[TypeAdapter[SettingsJson]] = TypeAdapter(SettingsJson)
 LOG_TARGET: Final[TypeAdapter[LogTarget | None]] = TypeAdapter(LogTarget | None)
-ERROR_PAYLOAD: Final[TypeAdapter[ErrorPayload]] = TypeAdapter(ErrorPayload)

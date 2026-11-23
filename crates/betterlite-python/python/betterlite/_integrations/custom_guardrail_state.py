@@ -16,6 +16,7 @@ from betterlite._integrations.custom_guardrail_support import (
     native_handle,
     render_message,
     strict_guardrail_modes,
+    text_value,
 )
 from betterlite._integrations.custom_logger import LOGGER, CustomLogger
 from betterlite._integrations.guardrail_types import (
@@ -35,6 +36,7 @@ class GuardrailState(CustomLogger):
     timeout: float | None = None
     use_native_during_call_hook: bool = False
     use_native_lifecycle_hooks: bool = False
+    # ast-grep-ignore: no-long-names
     records_own_guardrail_information: bool = False
     _guardrail_self_recorded: bool = False
 
@@ -126,11 +128,7 @@ class GuardrailState(CustomLogger):
         detection_info: dict[str, JsonValue] | None = None,
         original_response: GuardrailValue = None,
     ) -> NoReturn:
-        match request_data.get("model"):
-            case str() as model_name:
-                model = model_name
-            case bool() | int() | float() | list() | dict() | None:
-                model = "unknown"
+        model = text_value(request_data.get("model"), "unknown")
         raise ModifyResponseException(
             message=violation_message,
             model=model,
@@ -147,6 +145,7 @@ class GuardrailState(CustomLogger):
                 data[key] = updated[key]
         return written
 
+    # ast-grep-ignore: no-long-names
     def raise_sensitive_data_route_exception(
         self,
         route_to_model: str,
@@ -164,6 +163,7 @@ class GuardrailState(CustomLogger):
             sticky_session_routing=self.sticky_session_routing,
         )
 
+    # ast-grep-ignore: no-long-names
     def _get_session_id_from_request_data(self, request_data: dict[str, JsonValue]) -> str | None:
         return session_id_from_request_data(request_data)
 
@@ -181,100 +181,92 @@ class GuardrailState(CustomLogger):
             case str() | bool() | int() | float() | dict() | None:
                 return set()
 
-    async def _cached_text_hashes(self, cache: GuardrailCache, session_id: str) -> set[str]:
+    async def _cached_hashes(self, cache: GuardrailCache, session_id: str) -> set[str] | None:
         key = self._scanned_texts_cache_key(session_id)
         try:
             cached = await cache.async_get_cache(key=key)
-        except Exception:
-            LOGGER.warning(
-                "Guardrail %s: could not read the scanned-texts cache", self.guardrail_name,
-                exc_info=True,
-            )
-            return set()
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as error:
+            LOGGER.warning("Guardrail %s: read cache failed: %s", self.guardrail_name, error)
+            return None
         return self._hash_set(cached)
 
-    async def filter_new_texts_for_session(
+    async def _scan_baseline(
         self,
         texts: list[str] | None,
         request_data: dict[str, JsonValue],
         cache: GuardrailCache,
-    ) -> list[str] | None:
+        *,
+        warn_masking: bool,
+    ) -> tuple[list[str], str, set[str]] | None:
         if not self.only_scan_new_messages or not texts:
-            return texts
+            return None
         if self.mask_request_content or self.mask_response_content:
-            LOGGER.warning(
-                "Guardrail %s: only_scan_new_messages cannot be combined with "
-                "mask_request_content or mask_response_content",
-                self.guardrail_name,
-            )
+            if warn_masking:
+                LOGGER.warning(
+                    "Guardrail %s: only_scan_new_messages is ignored while masking is on",
+                    self.guardrail_name,
+                )
             return None
         session_id = self._get_session_id_from_request_data(request_data)
         if not session_id:
-            return texts
-        seen = await self._cached_text_hashes(cache, session_id)
+            return None
+        seen = await self._cached_hashes(cache, session_id)
+        if seen is None:
+            return None
+        return texts, session_id, seen
+
+    async def filter_new_texts_for_session(
+        self, texts: list[str] | None, request_data: dict[str, JsonValue], cache: GuardrailCache,
+    ) -> list[str] | None:
+        baseline = await self._scan_baseline(texts, request_data, cache, warn_masking=True)
+        if baseline is None:
+            return None
+        texts, _, seen = baseline
         return [text for text in texts if self._scanned_text_hash(text) not in seen]
 
     async def mark_texts_scanned(
-        self,
-        texts: list[str],
-        request_data: dict[str, JsonValue],
-        cache: GuardrailCache,
+        self, texts: list[str] | None, request_data: dict[str, JsonValue], cache: GuardrailCache,
     ) -> None:
-        if not self.only_scan_new_messages or not texts:
+        baseline = await self._scan_baseline(texts, request_data, cache, warn_masking=False)
+        if baseline is None:
             return
-        if self.mask_request_content or self.mask_response_content:
-            LOGGER.warning(
-                "Guardrail %s: only_scan_new_messages cannot be combined with "
-                "mask_request_content or mask_response_content",
-                self.guardrail_name,
-            )
-            return
-        session_id = self._get_session_id_from_request_data(request_data)
-        if not session_id:
-            return
-        seen = await self._cached_text_hashes(cache, session_id)
-        hashes = [self._scanned_text_hash(text) for text in texts]
-        merged = list(dict.fromkeys([*sorted(seen), *hashes]))
+        texts, session_id, seen = baseline
+        merged: list[str] = sorted(seen | {self._scanned_text_hash(text) for text in texts})
         key = self._scanned_texts_cache_key(session_id)
         try:
             await cache.async_set_cache(
+                # ast-grep-ignore: no-long-names
                 key=key, value=merged, ttl=GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS
             )
-        except Exception:
-            LOGGER.warning(
-                "Guardrail %s: could not write the scanned-texts cache", self.guardrail_name,
-                exc_info=True,
-            )
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as error:
+            LOGGER.warning("Guardrail %s: write cache failed: %s", self.guardrail_name, error)
 
     def should_route_on_sensitive_data(self) -> bool:
         return self.on_sensitive_data == "route" and self.sensitive_data_route_to_model is not None
 
+    # ast-grep-ignore: no-long-names
     def handle_sensitive_data_detection(
         self,
         request_data: dict[str, JsonValue],
         detection_info: dict[str, JsonValue] | None = None,
     ) -> NoReturn:
-        if self.should_route_on_sensitive_data():
-            route = self.sensitive_data_route_to_model
-            match route:
-                case str():
-                    try:
-                        self.raise_sensitive_data_route_exception(
-                            route_to_model=route,
-                            request_data=request_data,
-                            detection_info=detection_info,
-                        )
-                    except ValueError as error:
-                        raise GuardrailRaisedException(
-                            message=(
-                                f"Sensitive data detected by {self.guardrail_name} "
-                                "(routing skipped: request has no session_id)"
-                            ),
-                            guardrail_name=self.guardrail_name,
-                            blocked_content=True,
-                        ) from error
-                case None:
-                    pass
+        route = self.sensitive_data_route_to_model
+        if self.should_route_on_sensitive_data() and route is not None:
+            try:
+                self.raise_sensitive_data_route_exception(
+                    route_to_model=route,
+                    request_data=request_data,
+                    detection_info=detection_info,
+                )
+            except ValueError as error:
+                raise GuardrailRaisedException(
+                    message=(
+                        f"Sensitive data detected by {self.guardrail_name} "
+                        "(routing skipped: request has no session_id)"
+                    ),
+                    guardrail_name=self.guardrail_name,
+                    blocked_content=True,
+                ) from error
         raise GuardrailRaisedException(
             message=f"Sensitive data detected by {self.guardrail_name}",
             guardrail_name=self.guardrail_name,
@@ -286,8 +278,7 @@ class GuardrailState(CustomLogger):
     ) -> str:
         if not (0 <= start_index < end_index <= len(content_string)):
             return content_string
-        masked = content_string[:start_index] + mask_string + content_string[end_index:]
-        return masked
+        return content_string[:start_index] + mask_string + content_string[end_index:]
 
     @staticmethod
     def get_config_model() -> type[GuardrailConfigModel] | None:

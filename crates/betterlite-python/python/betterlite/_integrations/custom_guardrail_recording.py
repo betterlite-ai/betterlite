@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from typing import NoReturn
 
 from pydantic import JsonValue
+from typing_extensions import override
 
 from betterlite._integrations.custom_guardrail_constants import STREAM_CONTROL_KEYS
 from betterlite._integrations.custom_guardrail_request import (
@@ -21,6 +22,7 @@ from betterlite._integrations.custom_guardrail_support import (
 from betterlite._integrations.custom_logger import LOGGER
 from betterlite._integrations.guardrail_types import (
     JSON,
+    GuardrailRecorder,
     GuardrailStatus,
     GuardrailTracingDetail,
     GuardrailValue,
@@ -30,32 +32,21 @@ from betterlite._integrations.guardrail_types import (
 from betterlite.types.guardrails.params import GuardrailEventHooks
 
 
-def hook_logging_obj(
-    kwargs: Mapping[str, JsonValue], request_data: Mapping[str, JsonValue]
-) -> JsonValue:
-    value = kwargs.get("logging_obj")
-    match value:
-        case None:
-            nested = request_data.get("litellm_logging_obj")
-            return nested
-        case str() | bool() | int() | float() | list() | dict():
-            return value
-
-
-class GuardrailRecording(GuardrailSelection):
+class GuardrailRecording(GuardrailSelection, GuardrailRecorder):
     @staticmethod
     def _is_guardrail_intervention(e: Exception) -> bool:
         return is_guardrail_intervention(e)
 
+    @override
     # ast-grep-ignore: no-long-names
     def add_standard_logging_guardrail_information_to_request_data(
         self,
         guardrail_json_response: GuardrailValue,
         request_data: dict[str, JsonValue],
         guardrail_status: GuardrailStatus,
-        *,
         start_time: float | None = None,
         end_time: float | None = None,
+        *,
         duration: float | None = None,
         masked_entity_count: dict[str, int] | None = None,
         guardrail_provider: str | None = None,
@@ -75,38 +66,26 @@ class GuardrailRecording(GuardrailSelection):
             tracing_detail=detail,
         )
         logging_obj = request_data.get("litellm_logging_obj")
-        context = RecordContext(
-            settings=settings_of(self),
-            log_target=log_target_json(logging_obj),
-        )
+        context = RecordContext(settings=settings_of(self), log_target=log_target_json(logging_obj))
         updated, target = record_add(request_data, record, context)
         apply_records(request_data, updated)
         apply_log_target(logging_obj, target)
         self._guardrail_self_recorded = True
 
+    @override
     def _process_response(
-        self,
-        response: GuardrailValue,
-        request_data: dict[str, JsonValue],
-        *,
-        start_time: float | None = None,
-        end_time: float | None = None,
-        duration: float | None = None,
-        event_type: GuardrailEventHooks | None = None,
+        self, response: GuardrailValue, request_data: dict[str, JsonValue],
+        start_time: float | None = None, end_time: float | None = None,
+        *, duration: float | None = None, event_type: GuardrailEventHooks | None = None,
         original_inputs: dict[str, JsonValue] | None = None,
     ) -> GuardrailValue:
         guardrail_response = self._summarize_guardrail_response(
             response, original_inputs, event_type
         )
-        LOGGER.debug("Guardrail response: %s", guardrail_response)
+        LOGGER.debug("Guardrail response: %s", response)
         self.add_standard_logging_guardrail_information_to_request_data(
-            guardrail_response,
-            request_data,
-            "success",
-            duration=duration,
-            start_time=start_time,
-            end_time=end_time,
-            event_type=event_type,
+            guardrail_response, request_data, "success", start_time, end_time,
+            duration=duration, event_type=event_type,
         )
         return response
 
@@ -115,33 +94,24 @@ class GuardrailRecording(GuardrailSelection):
         response: GuardrailValue,
         original_inputs: Mapping[str, JsonValue] | None,
         event_type: GuardrailEventHooks | None,
-    ) -> JsonValue:
+    ) -> GuardrailValue:
         return guardrail_summary(response, original_inputs, event_type)
 
+    @override
     def _process_error(
-        self,
-        e: Exception,
-        request_data: dict[str, JsonValue],
-        *,
-        start_time: float | None = None,
-        end_time: float | None = None,
-        duration: float | None = None,
-        event_type: GuardrailEventHooks | None = None,
+        self, e: Exception, request_data: dict[str, JsonValue],
+        start_time: float | None = None, end_time: float | None = None,
+        *, duration: float | None = None, event_type: GuardrailEventHooks | None = None,
     ) -> NoReturn:
         status: GuardrailStatus = (
-            "guardrail_intervened"
-            if self._is_guardrail_intervention(e)
+            "guardrail_intervened" if self._is_guardrail_intervention(e)
             else "guardrail_failed_to_respond"
         )
-        response = "deny" if "CustomCodeGuardrail" in e.__class__.__name__ else str(e)
+        class_name = self.__class__.__name__
+        response: GuardrailValue = "deny" if "CustomCodeGuardrail" in class_name else e
         self.add_standard_logging_guardrail_information_to_request_data(
-            response,
-            request_data,
-            status,
-            duration=duration,
-            start_time=start_time,
-            end_time=end_time,
-            event_type=event_type,
+            response, request_data, status, start_time, end_time,
+            duration=duration, event_type=event_type,
         )
         raise e
 
