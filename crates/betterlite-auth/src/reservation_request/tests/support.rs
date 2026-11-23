@@ -502,8 +502,10 @@ impl LeaseHarness {
         redis_default_ttl: i64,
         request_timeout: Duration,
     ) -> LeaseRenewal<'_> {
+        let recorder = Arc::clone(&self.recorder);
+        let leases: Arc<dyn ReservationLeases> = recorder;
         LeaseRenewal {
-            leases: Arc::clone(&self.recorder),
+            leases,
             redis_default_ttl,
             request_timeout,
             tasks: &self.tracker,

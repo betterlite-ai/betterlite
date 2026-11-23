@@ -36,7 +36,7 @@ const REQUEST_BODY: &str = r#"{"model":"gpt-4o"}"#;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Input {
+pub(crate) struct Input {
     routes: Vec<String>,
 }
 
