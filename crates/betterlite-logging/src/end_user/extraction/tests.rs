@@ -294,15 +294,18 @@ fn malformed_json_text_kept(#[case] id: &str) {
 #[test]
 fn oversized_or_deep_json_text_stays_an_id() {
     let oversized = format!("{{\"a\": \"{}\"}}", "x".repeat(1_100_000));
-    let value = Json::Text(oversized.clone());
+    let oversized_value = Json::Text(oversized.clone());
     assert_eq!(
-        coerce_user_id(&value, true).as_deref(),
+        coerce_user_id(&oversized_value, true).as_deref(),
         Some(oversized.as_str())
     );
     let mut deep = "[".repeat(70);
     deep.push_str(&"]".repeat(70));
-    let value = Json::Text(deep.clone());
-    assert_eq!(coerce_user_id(&value, true).as_deref(), Some(deep.as_str()));
+    let deep_value = Json::Text(deep.clone());
+    assert_eq!(
+        coerce_user_id(&deep_value, true).as_deref(),
+        Some(deep.as_str())
+    );
 }
 
 #[test]
