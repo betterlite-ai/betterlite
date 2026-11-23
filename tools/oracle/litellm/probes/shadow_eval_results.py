@@ -267,11 +267,7 @@ class FakeStore:
 
     def count_rows(self, args: Sequence[object]) -> Sequence[Mapping[str, object]]:
         wanted = _IDS.validate_python(args[0])
-        return [
-            row
-            for row in self.counts
-            if _TEXT.validate_python(row["job_id"]) in wanted
-        ]
+        return [row for row in self.counts if _TEXT.validate_python(row["job_id"]) in wanted]
 
 
 class FakeDb:
