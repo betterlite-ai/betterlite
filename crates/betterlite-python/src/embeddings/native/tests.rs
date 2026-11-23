@@ -5,10 +5,12 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use std::ffi::CStr;
 
+use super::super::error::NativeEmbeddingError;
 use super::super::register;
 use super::NativeEmbeddingSession;
 
 const SESSION: &str = r#"{"environment": {}}"#;
+const MOCK_ERROR: &str = r#"{"arguments": {"model": "text-embedding-3-small", "input": "hi", "mock_response": "error"}}"#;
 const MOCK: &str =
     r#"{"arguments": {"model": "text-embedding-3-small", "input": "hi", "mock_response": [0.5]}}"#;
 const AWAIT_MOCK: &CStr = c"import asyncio
@@ -69,5 +71,20 @@ fn a_malformed_request_text_is_a_value_error_on_both_entries() {
             .aembedding(py, "not json", &PyList::empty(py))
             .unwrap_err();
         assert!(awaited.is_instance_of::<PyValueError>(py));
+    });
+}
+
+#[test]
+fn a_mock_error_raises_the_native_embedding_error_with_its_payload() {
+    Python::initialize();
+    Python::attach(|py| {
+        let session = NativeEmbeddingSession::new(SESSION).unwrap();
+        let failure = session
+            .embedding(py, MOCK_ERROR, &PyList::empty(py))
+            .unwrap_err();
+        assert!(failure.is_instance_of::<NativeEmbeddingError>(py));
+        let text = failure.value(py).to_string();
+        assert!(text.contains(r#""type":"Exception""#), "{text}");
+        assert!(text.contains(r#""message":"Mock error""#), "{text}");
     });
 }
