@@ -1,3 +1,4 @@
+use super::convert::{ConvertError, NativeErrorPayload, encode};
 use betterlite_config::env_integer::timeout::TimeoutError as RequestTimeoutError;
 use betterlite_config::loader::ConfigError;
 use betterlite_config::sections::vertex_credential_sources::credential_source::CredentialDecodeError;
@@ -9,12 +10,8 @@ use betterlite_vertex::google_native_content::error::NativeContentError;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
-
-use super::convert::{ConvertError, NativeErrorPayload, encode};
-
 // Every failure a generate content call raises comes back as this class, carrying the LiteLLM error payload as its text.
 create_exception!(betterlite_native, NativeGenaiError, PyException);
-
 // What the provider config reports while B3489 builds the body, the URL and the auth headers.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum GenaiConfigError {
@@ -34,13 +31,11 @@ pub(crate) enum GenaiConfigError {
         source: CredentialDecodeError,
     },
 }
-
 impl From<NativeContentError> for GenaiConfigError {
     fn from(source: NativeContentError) -> Self {
         Self::Native { source }
     }
 }
-
 // What a session needs from the process before it can take a call.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SessionError {
@@ -77,7 +72,6 @@ pub(crate) enum SessionError {
         source: LoggingStateError,
     },
 }
-
 impl From<ConvertError> for PyErr {
     fn from(error: ConvertError) -> Self {
         match &error {
@@ -89,7 +83,6 @@ impl From<ConvertError> for PyErr {
         }
     }
 }
-
 impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
         match error {
@@ -103,7 +96,6 @@ impl From<SessionError> for PyErr {
         }
     }
 }
-
 // LiteLLM's exception_type names the class, and Python raises the matching type from the payload text.
 pub(crate) fn payload_error(payload: &NativeErrorPayload) -> PyErr {
     match encode(payload) {

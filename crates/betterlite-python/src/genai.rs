@@ -7,13 +7,10 @@ mod native;
 mod provider;
 mod session;
 mod stream;
-
-use pyo3::prelude::*;
-
 use self::error::NativeGenaiError;
 use self::native::NativeGenaiSession;
 use self::stream::NativeGenaiStream;
-
+use pyo3::prelude::*;
 // The classes betterlite.google_genai reaches for: one session, its streams and the exception every failure carries.
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<NativeGenaiSession>()?;

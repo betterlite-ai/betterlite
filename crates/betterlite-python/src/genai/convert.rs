@@ -1,6 +1,3 @@
-use std::collections::BTreeMap;
-use std::time::{Duration, TryFromFloatSecsError};
-
 use betterlite_core::google_genai::streaming::GenAiStreamError;
 use betterlite_error::error::{ErrorClass, class_message};
 use betterlite_models::decisions::Json as DecisionJson;
@@ -10,9 +7,9 @@ use betterlite_sdk::call_setup::RequestMap;
 use betterlite_sdk::call_wrapper::error::{class_name, class_status};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-
+use std::collections::BTreeMap;
+use std::time::{Duration, TryFromFloatSecsError};
 mod tests;
-
 // The session text: absent means the process environment, the snapshot LiteLLM reads its globals from at import.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -20,7 +17,6 @@ pub(crate) struct SessionWire {
     pub(crate) environment: Option<BTreeMap<String, String>>,
     pub(crate) api_key: Option<String>,
 }
-
 // One generate content call, field for field with litellm/google_genai/main.py's arguments and its **kwargs.
 #[derive(Debug, Deserialize)]
 pub(crate) struct GenaiCall {
@@ -37,7 +33,6 @@ pub(crate) struct GenaiCall {
     #[serde(default)]
     pub(crate) kwargs: Object,
 }
-
 impl GenaiCall {
     // timeout or request_timeout hands the handler seconds; a zero is no timeout, and B3489 resolves it then
     pub(crate) fn timeout(&self) -> Result<Option<Duration>, ConvertError> {
@@ -49,7 +44,6 @@ impl GenaiCall {
         }
     }
 }
-
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConvertError {
     #[error("the native request text is not JSON of the expected shape: {source}")]
@@ -72,7 +66,6 @@ pub(crate) enum ConvertError {
     #[error(transparent)]
     CallFiles(#[from] CallFilesError),
 }
-
 // the one boundary every native method crosses: the text into the shape that method takes
 pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
 where
@@ -83,7 +76,6 @@ where
         Err(source) => Err(ConvertError::Json { source }),
     }
 }
-
 // B6040 encodes a file as a $file marker with its bytes beside the text, and a generate content body has no part for one
 pub(crate) fn reject_files(text: &str, blobs: &mut [Vec<u8>]) -> Result<(), ConvertError> {
     let payload: RequestMap = parse(text)?;
@@ -92,7 +84,6 @@ pub(crate) fn reject_files(text: &str, blobs: &mut [Vec<u8>]) -> Result<(), Conv
     }
     Err(ConvertError::Files)
 }
-
 // LiteLLM's logging state carries the models crate's Json, which keeps key order the way the prompts one does
 #[must_use]
 pub(crate) fn decision_json(value: &Json) -> DecisionJson {
@@ -105,7 +96,6 @@ pub(crate) fn decision_json(value: &Json) -> DecisionJson {
         Json::Object(fields) => DecisionJson::Object(decision_object(fields)),
     }
 }
-
 #[must_use]
 pub(crate) fn decision_object(object: &Object) -> IndexMap<String, DecisionJson> {
     object
@@ -113,7 +103,6 @@ pub(crate) fn decision_object(object: &Object) -> IndexMap<String, DecisionJson>
         .map(|(name, value)| (name.clone(), decision_json(value)))
         .collect()
 }
-
 // the JSON text a NativeGenaiError carries: LiteLLM's exception name and the fields its class keeps
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct NativeErrorPayload {
@@ -128,7 +117,6 @@ pub(crate) struct NativeErrorPayload {
     pub(crate) num_retries: Option<i64>,
     pub(crate) max_retries: Option<i64>,
 }
-
 impl NativeErrorPayload {
     #[must_use]
     pub(crate) fn from_class(class: &ErrorClass) -> Self {
@@ -150,7 +138,6 @@ impl NativeErrorPayload {
             max_retries: metadata.retry.max_retries.map(i64::from),
         }
     }
-
     // a stream that fails mid-iteration raises the provider's own exception in LiteLLM, and no class of the table fits
     #[must_use]
     pub(crate) fn from_stream(error: &GenAiStreamError) -> Self {
@@ -167,11 +154,9 @@ impl NativeErrorPayload {
         }
     }
 }
-
 pub(crate) fn encode(payload: &NativeErrorPayload) -> Result<String, ConvertError> {
     serde_json::to_string(payload).map_err(|source| ConvertError::Encode { source })
 }
-
 pub(crate) fn json_text(value: &Json) -> Result<String, ConvertError> {
     serde_json::to_string(value).map_err(|source| ConvertError::Encode { source })
 }

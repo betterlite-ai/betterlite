@@ -1,7 +1,4 @@
-use std::future::Future;
-use std::future::ready;
-use std::sync::Arc;
-
+use super::error::GenaiConfigError;
 use betterlite_bedrock::aws_settings::sources::{Credentials, SourceError};
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -44,12 +41,11 @@ use betterlite_vertex::token_cache::error::CredentialCacheError;
 use betterlite_vertex::token_cache::probe::AccessToken;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-
-use super::error::GenaiConfigError;
-
+use std::future::Future;
+use std::future::ready;
+use std::sync::Arc;
 // The server runs one Vertex workload identity pool source less than the SDK, so that source fails its load here.
 struct UnavailableAws;
-
 impl AwsCredentialsResolver for UnavailableAws {
     fn credentials(
         &self,
@@ -58,7 +54,6 @@ impl AwsCredentialsResolver for UnavailableAws {
         ready(Err(CredentialError::Source(SourceError::MissingProvider)))
     }
 }
-
 // LiteLLM's GoogleGenAIConfig and VertexAIGoogleGenAIConfig differ in four methods of one class, so one config serves both slots.
 pub(crate) struct NativeContentConfig {
     pub(crate) provider: NativeProvider,
@@ -69,10 +64,8 @@ pub(crate) struct NativeContentConfig {
     pub(crate) google: GoogleAuth,
     pub(crate) clock: Arc<dyn CredentialClock>,
 }
-
 impl GenerateContentProviderConfig for NativeContentConfig {
     type Error = GenaiConfigError;
-
     // map_generate_content_optional_params: Studio drops what it cannot send and answers camelCase, Vertex keeps every key in snake_case
     fn map_optional_params(&self, config: &Object, _model: &str) -> Object {
         match self.provider {
@@ -80,7 +73,6 @@ impl GenerateContentProviderConfig for NativeContentConfig {
             NativeProvider::Vertex => vertex_optional_params(config),
         }
     }
-
     fn transform_request(&self, request: &SetupRequest<'_>) -> Result<Json, GenaiConfigError> {
         let native = native_request(request);
         let body = vertex_transform(self.provider, &native, &self.schema)?;
@@ -88,15 +80,12 @@ impl GenerateContentProviderConfig for NativeContentConfig {
             serde_json::to_value(body).map_err(|source| GenaiConfigError::Body { source })?;
         serde_json::from_value::<Json>(encoded).map_err(|source| GenaiConfigError::Body { source })
     }
-
     fn request_top_level_fields(&self) -> &'static [&'static str] {
         &TOP_LEVEL_FIELDS
     }
 }
-
 impl GenerateContentHttpConfig for NativeContentConfig {
     type Response = GenerateContentResponse;
-
     fn auth_token_and_url(
         &self,
         call: &AuthCall<'_>,
@@ -112,7 +101,6 @@ impl GenerateContentHttpConfig for NativeContentConfig {
             self.target(call, configured.as_ref()).await
         }
     }
-
     // transform_generate_content_response: a reply it cannot read becomes the provider's own error class
     fn decode_response(
         &self,
@@ -126,7 +114,6 @@ impl GenerateContentHttpConfig for NativeContentConfig {
             )
         })
     }
-
     // BaseGoogleGenAIGenerateContentConfig.get_error_class keeps the provider's status, message and headers
     fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
         BaseLlmException {
@@ -137,7 +124,6 @@ impl GenerateContentHttpConfig for NativeContentConfig {
         }
     }
 }
-
 impl NativeContentConfig {
     // get_auth_token_and_url: the credentials, the project and the location, then the URL and the headers they select
     async fn target(
@@ -155,7 +141,6 @@ impl NativeContentConfig {
             headers: exposed_headers(target),
         })
     }
-
     // LiteLLM's _get_common_auth_components with the per-deployment params it hands the Vertex getters
     fn native_auth<'auth>(
         &'auth self,
@@ -183,7 +168,6 @@ impl NativeContentConfig {
             },
         }
     }
-
     // VertexBase.load_auth: the fresh handle, then the token and the project it resolved
     fn lookup(
         &self,
@@ -216,7 +200,6 @@ impl NativeContentConfig {
         }
     }
 }
-
 fn native_request(request: &SetupRequest<'_>) -> VertexRequest {
     VertexRequest {
         model: request.model.to_owned(),
@@ -226,7 +209,6 @@ fn native_request(request: &SetupRequest<'_>) -> VertexRequest {
         system_instruction: request.system_instruction.cloned().unwrap_or(Json::Null),
     }
 }
-
 // _get_google_ai_studio_api_key reads gemini_api_key after api_key and before the environment, so it cannot be a params field
 fn gemini_key(extra: &Object) -> Option<AuthValue> {
     match extra.get("gemini_api_key") {
@@ -239,7 +221,6 @@ fn gemini_key(extra: &Object) -> Option<AuthValue> {
         | None => None,
     }
 }
-
 // LiteLLM's credentials value is a service-account document, a filename or JSON text, and from_text reads all three
 fn configured_credentials(
     credentials: &VertexCredentials,
@@ -253,7 +234,6 @@ fn configured_credentials(
     ConfiguredCredentials::from_text(text)
         .map_err(|source| GenaiConfigError::Credentials { source })
 }
-
 // the provider answers secrets; the wire takes text
 fn exposed_headers(target: VertexTarget) -> IndexMap<String, String> {
     target

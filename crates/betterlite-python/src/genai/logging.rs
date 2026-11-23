@@ -1,6 +1,6 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
-
+use super::convert::{GenaiCall, decision_object};
+use super::error::SessionError;
+use super::session::Entry;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -15,13 +15,9 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_redact::secret::Redactor;
 use chrono::Utc;
 use indexmap::IndexMap;
-
-use super::convert::{GenaiCall, decision_object};
-use super::error::SessionError;
-use super::session::Entry;
-
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 static NEXT_CALL: AtomicU64 = AtomicU64::new(0);
-
 // LiteLLM's logging object for the call, with the call type its entry point names
 pub(crate) fn logging_state(
     call: &GenaiCall,
@@ -55,7 +51,6 @@ pub(crate) fn logging_state(
     LoggingState::new(init, setup, redactor, next_call_id, || Duration::ZERO)
         .map_err(|source| SessionError::Logging { source })
 }
-
 // the pre/post env the handler logs through; a Python session has no callbacks, sentry or logger function
 pub(crate) fn logging_env<'env>(
     redactor: &'env Redactor,
@@ -76,16 +71,13 @@ pub(crate) fn logging_env<'env>(
         now: Utc::now().fixed_offset(),
     }
 }
-
 // LiteLLM mints a fresh call id per request, and nothing in the Python path reads it back
 fn next_call_id() -> String {
     let sequence = NEXT_CALL.fetch_add(1, Ordering::Relaxed);
     format!("betterlite-genai-{sequence}")
 }
-
 // A Python session has no log sink of its own, so the pre-call records it would write are dropped.
 pub(crate) struct SilentSink;
-
 impl LogSink for SilentSink {
     fn emit(&self, _record: LogRecord) {}
 }

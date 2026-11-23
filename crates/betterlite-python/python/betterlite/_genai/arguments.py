@@ -58,15 +58,9 @@ def merged_headers(extra_headers: Mapping[str, str] | None) -> dict[str, str] | 
 
 # the payload GenaiCall reads: LiteLLM's named arguments on the call, everything else in kwargs for the Rust setup
 def call_values(
-    model: str,
-    contents: CallValue,
-    config: CallValue,
-    tools: CallValue,
-    extra_headers: Mapping[str, str] | None,
-    extra_query: CallValue,
-    extra_body: CallValue,
-    timeout: CallValue,
-    custom_llm_provider: str | None,
+    model: str, contents: CallValue, config: CallValue, tools: CallValue,
+    extra_headers: Mapping[str, str] | None, extra_query: CallValue,
+    extra_body: CallValue, timeout: CallValue, custom_llm_provider: str | None,
     kwargs: Mapping[str, CallValue],
 ) -> dict[str, CallValue]:
     forwarded = forwarded_kwargs(kwargs)

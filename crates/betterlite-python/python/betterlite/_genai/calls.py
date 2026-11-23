@@ -51,29 +51,15 @@ async def stream_result_async(values: Mapping[str, CallValue]) -> GenaiStream:
 
 
 def generate_content(
-    model: str,
-    contents: CallValue,
-    config: CallValue = None,
-    tools: CallValue = None,
-    extra_headers: Mapping[str, str] | None = None,
-    extra_query: CallValue = None,
-    extra_body: CallValue = None,
-    timeout: TimeoutValues | float | str | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
+    model: str, contents: CallValue, config: CallValue = None, tools: CallValue = None,
+    extra_headers: Mapping[str, str] | None = None, extra_query: CallValue = None,
+    extra_body: CallValue = None, timeout: TimeoutValues | float | str | None = None,
+    custom_llm_provider: str | None = None, **kwargs: CallValue,
 ) -> dict[str, JsonValue] | Awaitable[dict[str, JsonValue]]:
     asynchronous = kwargs.pop(ASYNC_FLAGS[0], False)
     values = call_values(
-        model,
-        contents,
-        config,
-        tools,
-        extra_headers,
-        extra_query,
-        extra_body,
-        timeout,
-        custom_llm_provider,
-        kwargs,
+        model, contents, config, tools, extra_headers, extra_query, extra_body, timeout,
+        custom_llm_provider, kwargs,
     )
     if asynchronous:
         return content_result_async(values)
@@ -81,29 +67,15 @@ def generate_content(
 
 
 def generate_content_stream(
-    model: str,
-    contents: CallValue,
-    config: CallValue = None,
-    tools: CallValue = None,
-    extra_headers: Mapping[str, str] | None = None,
-    extra_query: CallValue = None,
-    extra_body: CallValue = None,
-    timeout: TimeoutValues | float | str | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
+    model: str, contents: CallValue, config: CallValue = None, tools: CallValue = None,
+    extra_headers: Mapping[str, str] | None = None, extra_query: CallValue = None,
+    extra_body: CallValue = None, timeout: TimeoutValues | float | str | None = None,
+    custom_llm_provider: str | None = None, **kwargs: CallValue,
 ) -> GenaiStream | Awaitable[GenaiStream]:
     asynchronous = kwargs.pop(ASYNC_FLAGS[1], False)
     values = call_values(
-        model,
-        contents,
-        config,
-        tools,
-        extra_headers,
-        extra_query,
-        extra_body,
-        timeout,
-        custom_llm_provider,
-        kwargs,
+        model, contents, config, tools, extra_headers, extra_query, extra_body, timeout,
+        custom_llm_provider, kwargs,
     )
     if asynchronous:
         return stream_result_async(values)
@@ -111,57 +83,29 @@ def generate_content_stream(
 
 
 async def agenerate_content(
-    model: str,
-    contents: CallValue,
-    config: CallValue = None,
-    tools: CallValue = None,
-    extra_headers: Mapping[str, str] | None = None,
-    extra_query: CallValue = None,
-    extra_body: CallValue = None,
-    timeout: TimeoutValues | float | str | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
+    model: str, contents: CallValue, config: CallValue = None, tools: CallValue = None,
+    extra_headers: Mapping[str, str] | None = None, extra_query: CallValue = None,
+    extra_body: CallValue = None, timeout: TimeoutValues | float | str | None = None,
+    custom_llm_provider: str | None = None, **kwargs: CallValue,
 ) -> dict[str, JsonValue]:
     # LiteLLM's async entry marks kwargs with its flag; the payload builder drops both flags, so it never reaches the request
     kwargs[ASYNC_FLAGS[0]] = True
     values = call_values(
-        model,
-        contents,
-        config,
-        tools,
-        extra_headers,
-        extra_query,
-        extra_body,
-        timeout,
-        custom_llm_provider,
-        kwargs,
+        model, contents, config, tools, extra_headers, extra_query, extra_body, timeout,
+        custom_llm_provider, kwargs,
     )
     return await content_result_async(values)
 
 
 async def agenerate_content_stream(
-    model: str,
-    contents: CallValue,
-    config: CallValue = None,
-    tools: CallValue = None,
-    extra_headers: Mapping[str, str] | None = None,
-    extra_query: CallValue = None,
-    extra_body: CallValue = None,
-    timeout: TimeoutValues | float | str | None = None,
-    custom_llm_provider: str | None = None,
-    **kwargs: CallValue,
+    model: str, contents: CallValue, config: CallValue = None, tools: CallValue = None,
+    extra_headers: Mapping[str, str] | None = None, extra_query: CallValue = None,
+    extra_body: CallValue = None, timeout: TimeoutValues | float | str | None = None,
+    custom_llm_provider: str | None = None, **kwargs: CallValue,
 ) -> GenaiStream:
     kwargs[ASYNC_FLAGS[1]] = True
     values = call_values(
-        model,
-        contents,
-        config,
-        tools,
-        extra_headers,
-        extra_query,
-        extra_body,
-        timeout,
-        custom_llm_provider,
-        kwargs,
+        model, contents, config, tools, extra_headers, extra_query, extra_body, timeout,
+        custom_llm_provider, kwargs,
     )
     return await stream_result_async(values)

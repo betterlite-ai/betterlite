@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
+use super::error::SessionError;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
@@ -9,16 +7,14 @@ use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::pool::PoolError;
 use betterlite_prompts::arguments::json::Json;
-
-use super::error::SessionError;
-
+use std::collections::BTreeMap;
+use std::sync::Arc;
 // The clients one session hands its calls: built from the environment's proxy, and rebuilt only when a deployment turns verification off.
 pub(crate) struct NativeClients {
     environment: BTreeMap<String, String>,
     policy: Arc<ProxyPolicy>,
     pub(crate) default: ProxiedClient,
 }
-
 impl NativeClients {
     pub(crate) fn build(environment: &BTreeMap<String, String>) -> Result<Self, SessionError> {
         let trust = ProxyTrust::default();
@@ -33,7 +29,6 @@ impl NativeClients {
             default,
         })
     }
-
     // httpx's verify=False and verify="<path>" build a client of their own; every other value keeps the session's
     fn verified_with(&self, verification: Verification) -> Result<ProxiedClient, ClientError> {
         let ca_file = match &verification {
@@ -52,10 +47,8 @@ impl NativeClients {
             .map_err(|source| ClientError::Pool(PoolError::Client(source)))
     }
 }
-
 impl ClientSource for NativeClients {
     type Client = ProxiedClient;
-
     fn client(&self, ssl_verify: Option<&Json>) -> Result<ProxiedClient, ClientError> {
         match ssl_verify {
             Some(Json::Bool(false)) => self.verified_with(Verification::Disabled),
@@ -67,7 +60,6 @@ impl ClientSource for NativeClients {
         }
     }
 }
-
 // TlsPolicy::resolve reads LITELLM_USER_AGENT and falls back to the crate's own name
 fn user_agent(environment: &BTreeMap<String, String>) -> String {
     environment

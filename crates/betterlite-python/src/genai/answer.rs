@@ -1,5 +1,6 @@
-use std::future::{Future, ready};
-
+use super::convert::json_text;
+use super::session::Outcome;
+use super::stream::StreamKind;
 use betterlite_core::api::genai::chat_call::{
     CompletionCall, CompletionExecutor, CompletionOutput, GenerateContentOutcome as AdapterOutcome,
 };
@@ -11,28 +12,19 @@ use betterlite_prompts::arguments::json::Json;
 use betterlite_vertex::google_native_content::response::GenerateContentResponse;
 use pyo3::PyErr;
 use pyo3::exceptions::PyRuntimeError;
-
-use super::convert::json_text;
-use super::session::Outcome;
-use super::stream::StreamKind;
-
+use std::future::{Future, ready};
 const ADAPTER_UNAVAILABLE: &str =
     "litellm.<operation>: the chat completion adapter is not part of betterlite's Python package";
-
 // The chat adapter every non-Gemini, non-Vertex model would run through; the Python package ships no executor for it.
 pub(crate) struct AdapterUnavailable;
-
 #[derive(Debug, thiserror::Error)]
 #[error("the chat completion adapter is not part of betterlite's Python package")]
 pub(crate) struct AdapterError;
-
 impl CompletionExecutor for AdapterUnavailable {
     type Error = AdapterError;
-
     fn completion(&self, _call: CompletionCall) -> Result<CompletionOutput, AdapterError> {
         Err(AdapterError)
     }
-
     fn acompletion(
         &self,
         _call: CompletionCall,
@@ -40,7 +32,6 @@ impl CompletionExecutor for AdapterUnavailable {
         ready(Err(AdapterError))
     }
 }
-
 // the answer in the shape Python reads: JSON text, or bytes it iterates
 pub(crate) fn answered(
     answer: GenerateContentAnswer<GenerateContentResponse>,
@@ -52,7 +43,6 @@ pub(crate) fn answered(
         GenerateContentAnswer::AsyncNative(outcome) => async_answer(outcome),
     }
 }
-
 fn adapter_answer(answer: AdapterOutcome) -> Result<Outcome, PyErr> {
     match answer {
         AdapterOutcome::Response(response) => {
@@ -66,7 +56,6 @@ fn adapter_answer(answer: AdapterOutcome) -> Result<Outcome, PyErr> {
         AdapterOutcome::Stream(_stream) => Err(PyRuntimeError::new_err(ADAPTER_UNAVAILABLE)),
     }
 }
-
 fn native_answer(answer: NativeOutcome<GenerateContentResponse>) -> Result<Outcome, PyErr> {
     match answer {
         NativeOutcome::Response(response) => {
@@ -75,7 +64,6 @@ fn native_answer(answer: NativeOutcome<GenerateContentResponse>) -> Result<Outco
         NativeOutcome::Stream(stream) => Ok(Outcome::Stream(StreamKind::Blocking(stream.iterator))),
     }
 }
-
 fn async_answer(
     answer: AsyncGenerateContentOutcome<GenerateContentResponse>,
 ) -> Result<Outcome, PyErr> {

@@ -1,7 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
-use std::time::Duration;
-
+use super::answer::{AdapterError, AdapterUnavailable, answered};
+use super::client::NativeClients;
+use super::convert::{GenaiCall, NativeErrorPayload, SessionWire, parse};
+use super::error::{GenaiConfigError, SessionError, payload_error};
+use super::logging::{SilentSink, logging_env, logging_state};
+use super::provider::NativeContentConfig;
+use super::stream::StreamKind;
 use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::sections::Section as _;
@@ -35,15 +38,9 @@ use betterlite_vertex::google_native_content::response::GenerateContentResponse;
 use betterlite_vertex::model_policy::partners::is_vertex_partner_model;
 use pyo3::PyErr;
 use secrecy::SecretString;
-
-use super::answer::{AdapterError, AdapterUnavailable, answered};
-use super::client::NativeClients;
-use super::convert::{GenaiCall, NativeErrorPayload, SessionWire, parse};
-use super::error::{GenaiConfigError, SessionError, payload_error};
-use super::logging::{SilentSink, logging_env, logging_state};
-use super::provider::NativeContentConfig;
-use super::stream::StreamKind;
-
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use std::time::Duration;
 // The marker each entry point carries: litellm.google_genai.main's four functions, and the stream flag each one sets.
 #[derive(Clone, Copy)]
 pub(crate) enum Entry {
@@ -52,7 +49,6 @@ pub(crate) enum Entry {
     BlockingStream,
     AwaitStream,
 }
-
 impl Entry {
     pub(crate) const fn call_type(self) -> &'static str {
         match self {
@@ -63,13 +59,11 @@ impl Entry {
         }
     }
 }
-
 // What a finished call hands back: the response text Python loads, or the stream it iterates.
 pub(crate) enum Outcome {
     Text(String),
     Stream(StreamKind),
 }
-
 // Everything one Python session owns: the environment snapshot, the settings read from it and the clients every call goes through.
 pub(crate) struct GenaiCore {
     environment: BTreeMap<String, String>,
@@ -86,7 +80,6 @@ pub(crate) struct GenaiCore {
     clock: Arc<dyn CredentialClock>,
     redactor: Redactor,
 }
-
 impl GenaiCore {
     pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
         let wire: SessionWire = parse(text)?;
@@ -129,7 +122,6 @@ impl GenaiCore {
             redactor,
         })
     }
-
     // one call: the request B3489 reads, the provider slots it dispatches between, and the logging state it records into
     pub(crate) async fn call(&self, call: GenaiCall, entry: Entry) -> Result<Outcome, PyErr> {
         let timeout = call.timeout()?;
@@ -167,7 +159,6 @@ impl GenaiCore {
             .map_err(|failure| payload_error(&NativeErrorPayload::from_class(&failure.class)))?;
         answered(answer)
     }
-
     // the collaborating provider config one resolved provider runs against
     fn config(&self, provider: NativeProvider) -> NativeContentConfig {
         NativeContentConfig {
@@ -183,7 +174,6 @@ impl GenaiCore {
             clock: Arc::clone(&self.clock),
         }
     }
-
     // the context get_llm_provider reads: this session's catalog and environment, and no global credentials of its own
     fn resolution(&self) -> ResolutionContext<'_> {
         ResolutionContext {
@@ -197,7 +187,6 @@ impl GenaiCore {
         }
     }
 }
-
 // the request the four entry points read, field for field
 fn request_of(call: &GenaiCall, timeout: Option<Duration>) -> GenerateContentRequest<'_> {
     GenerateContentRequest {
@@ -213,7 +202,6 @@ fn request_of(call: &GenaiCall, timeout: Option<Duration>) -> GenerateContentReq
         kwargs: &call.kwargs,
     }
 }
-
 // one of the four entry points, all of which are async and end with the same setup and dispatch
 async fn dispatch(
     deps: &GenerateContentDeps<'_, NativeContentConfig, NativeClients, AdapterUnavailable>,
