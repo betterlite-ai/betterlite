@@ -20,7 +20,6 @@ from typing_extensions import runtime_checkable
 
 import betterlite.exceptions as errors
 from betterlite._completion.errors import UnsupportedCallArgumentError
-from betterlite._endpoints.payload import CallValue
 from betterlite.assistants import _records
 from betterlite.types.utils import Message
 
@@ -29,7 +28,7 @@ UNAUTHORIZED_STATUS: Final = 401
 BAD_REQUEST_STATUS: Final = 400
 FAKE_CLIENT: Final = "openai.OpenAI"
 COMPARED_HEADERS: Final[tuple[str, ...]] = ("authorization", "openai-beta")
-CREATE: Final[dict[str, CallValue]] = {
+CREATE: Final[dict[str, JsonValue]] = {
     "model": "gpt-4o-mini",
     "name": "helper",
     "description": "a helper",
@@ -41,7 +40,7 @@ CREATE: Final[dict[str, CallValue]] = {
     "top_p": 0.0,
     "response_format": "auto",
 }
-THREAD: Final[dict[str, CallValue]] = {
+THREAD: Final[dict[str, JsonValue]] = {
     "messages": [{"role": "user", "content": "hi"}],
     "metadata": {"team": "a"},
     "tool_resources": {"code_interpreter": {"file_ids": ["file_1"]}},
@@ -80,12 +79,17 @@ LITELLM: LiteLLMReference = importlib.import_module("litellm")
 THEIR_ERRORS: LiteLLMErrors = importlib.import_module("litellm.exceptions")
 
 
+class DefaultView(Protocol):
+    @property
+    def default(self) -> JsonValue: ...
+
+
 def shape(signature: inspect.Signature) -> list[tuple[str, str, bool]]:
-    parameters = signature.parameters
-    return [
-        (name, parameter.kind.name, parameter.default is None)
-        for name, parameter in parameters.items()
-    ]
+    rows: list[tuple[str, str, bool]] = []
+    for name, parameter in signature.parameters.items():
+        default: DefaultView = parameter
+        rows.append((name, parameter.kind.name, default.default is None))
+    return rows
 
 
 def dump_pair(ours: Dumpable, reference: Dumpable) -> None:
