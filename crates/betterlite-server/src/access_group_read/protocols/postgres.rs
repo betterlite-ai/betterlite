@@ -8,6 +8,7 @@ use deadpool_postgres::GenericClient;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 
+use self::memberships::Membership;
 use super::error::AccessGroupStoreError;
 use super::records::AccessGroupRecord;
 use super::tables::{AccessGroupTable, AccessGroupTx, AgentTable, KeyTable, TeamTable};
@@ -68,10 +69,11 @@ impl<C: GenericClient + Sync> PgAccessGroupTables<'_, C> {
 
     async fn write_list(
         &self,
-        statement: &str,
+        table: Membership,
         key: &str,
         ids: &[String],
     ) -> Result<(), AccessGroupStoreError> {
+        let statement = table.statement();
         let parameters: [&(dyn ToSql + Sync); 2] = [&key, &ids];
         self.execute_changing_one(statement, &parameters).await
     }

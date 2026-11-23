@@ -21,6 +21,23 @@ const SET_KEY_GROUPS_SQL: &str = r#"UPDATE "LiteLLM_VerificationToken" SET "acce
 const FIND_AGENTS_CARRYING_SQL: &str = r#"SELECT "agent_id", "access_group_ids" FROM "LiteLLM_AgentsTable" WHERE "access_group_ids" && $1::text[]"#;
 const SET_AGENT_GROUPS_SQL: &str = r#"UPDATE "LiteLLM_AgentsTable" SET "access_group_ids" = $2, "updated_at" = (NOW() AT TIME ZONE 'UTC') WHERE "agent_id" = $1"#;
 
+#[derive(Clone, Copy)]
+pub(super) enum Membership {
+    Team,
+    Key,
+    Agent,
+}
+
+impl Membership {
+    pub(super) const fn statement(self) -> &'static str {
+        match self {
+            Self::Team => SET_TEAM_GROUPS_SQL,
+            Self::Key => SET_KEY_GROUPS_SQL,
+            Self::Agent => SET_AGENT_GROUPS_SQL,
+        }
+    }
+}
+
 impl<C: GenericClient + Sync> TeamTable for PgAccessGroupTables<'_, C> {
     async fn find(&self, team_id: &str) -> Result<Option<TeamRecord>, AccessGroupStoreError> {
         let parameters: [&(dyn ToSql + Sync); 1] = [&team_id];
@@ -55,7 +72,7 @@ impl<C: GenericClient + Sync> TeamTable for PgAccessGroupTables<'_, C> {
         team_id: &str,
         ids: &[String],
     ) -> Result<(), AccessGroupStoreError> {
-        self.write_list(SET_TEAM_GROUPS_SQL, team_id, ids).await
+        self.write_list(Membership::Team, team_id, ids).await
     }
 }
 
@@ -79,7 +96,7 @@ impl<C: GenericClient + Sync> KeyTable for PgAccessGroupTables<'_, C> {
         token: &str,
         ids: &[String],
     ) -> Result<(), AccessGroupStoreError> {
-        self.write_list(SET_KEY_GROUPS_SQL, token, ids).await
+        self.write_list(Membership::Key, token, ids).await
     }
 }
 
@@ -101,7 +118,7 @@ impl<C: GenericClient + Sync> AgentTable for PgAccessGroupTables<'_, C> {
         agent_id: &str,
         ids: &[String],
     ) -> Result<(), AccessGroupStoreError> {
-        self.write_list(SET_AGENT_GROUPS_SQL, agent_id, ids).await
+        self.write_list(Membership::Agent, agent_id, ids).await
     }
 }
 
