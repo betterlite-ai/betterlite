@@ -85,23 +85,25 @@ pub fn visible_message(class: &ErrorClass) -> String {
     }
 }
 
-pub(crate) fn plain(
+// Every entry into exception_type names the model, the provider and the error the same way
+pub(super) fn raw_exception(
     call: &DecisionsCall<'_>,
-    redactor: &Redactor,
-    error: Box<dyn Error + Send + Sync>,
-) -> DecisionsSendError {
-    let raw = RawException {
+    error_str: String,
+    status_code: Option<u16>,
+    synthesized: bool,
+    message: Option<String>,
+    exception_type: &str,
+) -> RawException {
+    RawException {
         model: qualified_model(call),
         custom_llm_provider: call.custom_llm_provider.clone(),
-        error_str: error.to_string(),
-        status_code: None,
-        status_code_is_synthesized: false,
-        message: None,
+        error_str,
+        status_code,
+        status_code_is_synthesized: synthesized,
+        message,
         body: None,
-        exception_type: String::new(),
-    };
-    let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
-    mapped(class, error)
+        exception_type: exception_type.to_owned(),
+    }
 }
 
 // A synthesized status takes _map_upstream_exception's direct APIConnectionError, anything else exception_type's mapping
@@ -113,16 +115,15 @@ pub(crate) fn provider_error(
     if error.status_code_is_synthesized {
         return synthesized(call, error);
     }
-    let raw = RawException {
-        model: qualified_model(call),
-        custom_llm_provider: call.custom_llm_provider.clone(),
-        error_str: error.message.clone(),
-        status_code: Some(error.status_code),
-        status_code_is_synthesized: false,
-        message: Some(error.message.clone()),
-        body: None,
-        exception_type: String::from("BaseLLMException"),
-    };
+    let message = error.message.clone();
+    let raw = raw_exception(
+        call,
+        message.clone(),
+        Some(error.status_code),
+        false,
+        Some(message),
+        "BaseLLMException",
+    );
     let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
     mapped(class, Box::new(error))
 }
@@ -133,30 +134,15 @@ pub(crate) fn transform_error(
     redactor: &Redactor,
     error: ParseResponseError,
 ) -> DecisionsSendError {
-    let raw = match &error {
-        ParseResponseError::Invalid(provider) => RawException {
-            model: qualified_model(call),
-            custom_llm_provider: call.custom_llm_provider.clone(),
-            error_str: provider.message.clone(),
-            status_code: Some(provider.status_code),
-            status_code_is_synthesized: provider.status_code_is_synthesized,
-            message: Some(provider.message.clone()),
-            body: None,
-            exception_type: String::from("BaseLLMException"),
-        },
-        ParseResponseError::Malformed(source) => RawException {
-            model: qualified_model(call),
-            custom_llm_provider: call.custom_llm_provider.clone(),
-            error_str: source.to_string(),
-            status_code: None,
-            status_code_is_synthesized: false,
-            message: None,
-            body: None,
-            exception_type: String::from("ValidationError"),
-        },
-    };
-    let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
-    mapped(class, Box::new(error))
+    match error {
+        ParseResponseError::Invalid(provider) => provider_error(call, redactor, *provider),
+        ParseResponseError::Malformed(source) => {
+            let text = source.to_string();
+            let raw = raw_exception(call, text, None, false, None, "ValidationError");
+            let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
+            mapped(class, Box::new(ParseResponseError::Malformed(source)))
+        }
+    }
 }
 
 // A failed send: a deadline is already litellm.Timeout from the client, and every other httpx.HTTPError goes through _handle_error
@@ -275,7 +261,10 @@ fn synthesized(call: &DecisionsCall<'_>, error: BaseLlmException) -> DecisionsSe
     )
 }
 
-fn mapped(class: ErrorClass, source: Box<dyn Error + Send + Sync>) -> DecisionsSendError {
+pub(super) fn mapped(
+    class: ErrorClass,
+    source: Box<dyn Error + Send + Sync>,
+) -> DecisionsSendError {
     let message = visible_message(&class);
     DecisionsSendError::Mapped {
         class,

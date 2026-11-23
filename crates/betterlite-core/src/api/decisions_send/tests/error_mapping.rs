@@ -8,9 +8,10 @@ use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_http::interactions::base::{ClientError, Params, RequestFailure};
 use betterlite_http_fixture::reply::reply;
-use betterlite_http_fixture::server::serve;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_models::decisions::Json;
 use http::header::HeaderMap;
+use rstest::rstest;
 use url::Url;
 
 use super::support::*;
@@ -28,43 +29,28 @@ fn class_of(error: &DecisionsSendError) -> &ErrorClass {
     }
 }
 
-// The failure a blocking send raises when its deadline passes, taken from a real client
-fn timeout_failure() -> RequestFailure {
+// A server that answers well after the deadline, and the request that names that deadline
+fn slow_request() -> (Serving, DecisionsRequest) {
     let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(300))
         .expect("the slow server starts");
+    let request = DecisionsRequest {
+        url: Url::parse(&format!("http://{}/slow", serving.address))
+            .expect("the fixture url parses"),
+        headers: HeaderMap::new(),
+        body: Vec::new(),
+        timeout: Some(Duration::from_millis(20)),
+    };
+    (serving, request)
+}
+
+// The failure a blocking send raises when its deadline passes, taken from a real client
+fn timeout_failure() -> RequestFailure {
+    let (serving, request) = slow_request();
     let mut clients = real_clients();
     let client = DecisionsClients::select_sync(&mut clients, &Params::new())
         .expect("the blocking client builds");
-    let request = DecisionsRequest {
-        url: Url::parse(&format!("http://{}/slow", serving.address))
-            .expect("the fixture url parses"),
-        headers: HeaderMap::new(),
-        body: Vec::new(),
-        timeout: Some(Duration::from_millis(20)),
-    };
     let failure = client
         .send_blocking(request)
-        .expect_err("the deadline ends the send");
-    drop(serving.finish());
-    failure
-}
-
-async fn async_timeout_failure() -> RequestFailure {
-    let serving = serve(reply("200 OK", &[], "{}"), Duration::from_millis(300))
-        .expect("the slow server starts");
-    let mut clients = real_clients();
-    let client = DecisionsClients::select_async(&mut clients, &Params::new())
-        .expect("the async client builds");
-    let request = DecisionsRequest {
-        url: Url::parse(&format!("http://{}/slow", serving.address))
-            .expect("the fixture url parses"),
-        headers: HeaderMap::new(),
-        body: Vec::new(),
-        timeout: Some(Duration::from_millis(20)),
-    };
-    let failure = client
-        .send(request)
-        .await
         .expect_err("the deadline ends the send");
     drop(serving.finish());
     failure
@@ -162,32 +148,31 @@ fn error_mapping_synthesized_connection_failure_is_an_api_connection_error() {
     assert_eq!(context.model.as_deref(), Some("typesafe/model-1"));
 }
 
-#[test]
-fn error_mapping_synthesized_labels_upper_case_only_the_first_character() {
+#[rstest]
+#[case::typesafe("typesafe", "TypesafeException")]
+#[case::hosted_vllm("hosted_vllm", "Hosted_vllmException")]
+#[case::strands_decider("strands_decider", "Strands_deciderException")]
+fn error_mapping_synthesized_labels_upper_case_only_the_first_character(
+    #[case] provider: &str,
+    #[case] label: &str,
+) {
     let fixture = Fixture::new();
-    let cases = [
-        ("typesafe", "TypesafeException"),
-        ("hosted_vllm", "Hosted_vllmException"),
-        ("strands_decider", "Strands_deciderException"),
-    ];
-    for (provider, label) in cases {
-        let call = systemone_call(provider, None);
-        let error = provider_error(
-            &call,
-            &fixture.log.redactor,
-            BaseLlmException {
-                status_code: 500,
-                message: String::from("boom"),
-                headers: BTreeMap::new(),
-                status_code_is_synthesized: true,
-            },
-        );
-        assert_eq!(
-            error.message(),
-            format!("litellm.APIConnectionError: {label} - boom")
-        );
-        assert_eq!(class_of(&error).metadata().status_code, 500);
-    }
+    let call = systemone_call(provider, None);
+    let error = provider_error(
+        &call,
+        &fixture.log.redactor,
+        BaseLlmException {
+            status_code: 500,
+            message: String::from("boom"),
+            headers: BTreeMap::new(),
+            status_code_is_synthesized: true,
+        },
+    );
+    assert_eq!(
+        error.message(),
+        format!("litellm.APIConnectionError: {label} - boom")
+    );
+    assert_eq!(class_of(&error).metadata().status_code, 500);
 }
 
 #[test]
@@ -209,7 +194,15 @@ fn error_mapping_sync_timeout_keeps_the_handler_message() {
 
 #[tokio::test]
 async fn error_mapping_async_timeout_keeps_the_handler_message() {
-    let failure = async_timeout_failure().await;
+    let (serving, request) = slow_request();
+    let mut clients = real_clients();
+    let client = DecisionsClients::select_async(&mut clients, &Params::new())
+        .expect("the async client builds");
+    let failure = client
+        .send(request)
+        .await
+        .expect_err("the deadline ends the send");
+    drop(serving.finish());
     let mut fixture = Fixture::failing(failure);
     let mut decisions = systemone_call("typesafe", None);
     decisions.timeout = Some(Duration::from_millis(20));

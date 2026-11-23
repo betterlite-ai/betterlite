@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod error_mapping;
 mod format_response;
 mod request_prep;

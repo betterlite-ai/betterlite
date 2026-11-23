@@ -1,7 +1,5 @@
 use std::future::Future;
 use std::io::Read;
-use std::pin::Pin;
-use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_http::interactions::base::clients::{HttpClients, async_client};
@@ -11,6 +9,8 @@ use betterlite_http::interactions::base::{
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::limits::read_bounded;
 use http::header::HeaderMap;
+use reqwest::Client;
+use reqwest::blocking::Client as BlockingClient;
 use url::Url;
 
 #[derive(Debug)]
@@ -43,27 +43,52 @@ pub trait DecisionsClients: Send + Sync {
     fn select_async(&mut self, params: &Params) -> Result<Self::AsyncClient, ClientError>;
 }
 
-// The blocking client B173's factory built for this call, held as the send itself
+// The blocking client B173's factory built for this call
 #[derive(Clone)]
-pub struct SyncSender(Arc<BlockingSend>);
-
-type BlockingSend = dyn Fn(DecisionsRequest) -> Answer + Send + Sync;
+pub struct SyncSender(BlockingClient);
 
 impl DecisionsSyncClient for SyncSender {
     fn send_blocking(&self, request: DecisionsRequest) -> Answer {
-        (self.0)(request)
+        let mut builder = self.0.post(request.url).headers(request.headers);
+        if let Some(deadline) = request.timeout {
+            builder = builder.timeout(deadline);
+        }
+        let sent = builder
+            .body(request.body)
+            .send()
+            .map_err(RequestFailure::Transport)?;
+        let status = sent.status().as_u16();
+        let headers = sent.headers().clone();
+        finish_blocking(sent, status, headers)
     }
 }
 
 #[derive(Clone)]
-pub struct AsyncSender(Arc<AsyncSend>);
-
-type AsyncAnswer = Pin<Box<dyn Future<Output = Answer> + Send>>;
-type AsyncSend = dyn Fn(DecisionsRequest) -> AsyncAnswer + Send + Sync;
+pub struct AsyncSender(Client);
 
 impl DecisionsAsyncClient for AsyncSender {
     fn send(&self, request: DecisionsRequest) -> impl Future<Output = Answer> + Send {
-        (self.0)(request)
+        let client = self.0.clone();
+        async move {
+            let mut builder = client
+                .post(request.url)
+                .headers(request.headers)
+                .body(request.body);
+            if let Some(timeout) = request.timeout {
+                builder = builder.timeout(timeout);
+            }
+            let mut sent = builder.send().await.map_err(RequestFailure::Transport)?;
+            let status = sent.status().as_u16();
+            let headers = sent.headers().clone();
+            let body = read_bounded(&mut sent, MAX_RESPONSE_BYTES)
+                .await
+                .map_err(RequestFailure::from)?;
+            Ok(UpstreamResponse {
+                status,
+                headers,
+                body,
+            })
+        }
     }
 }
 
@@ -72,66 +97,14 @@ impl DecisionsClients for HttpClients {
     type SyncClient = SyncSender;
 
     fn select_sync(&mut self, params: &Params) -> Result<SyncSender, ClientError> {
-        sync_sender(self, params)
+        let client = self.sync_client(params, None)?;
+        Ok(SyncSender(client))
     }
 
     fn select_async(&mut self, params: &Params) -> Result<AsyncSender, ClientError> {
-        async_sender(self, params)
+        let client = async_client(self, params, None)?;
+        Ok(AsyncSender(client))
     }
-}
-
-fn sync_sender(clients: &mut HttpClients, params: &Params) -> Result<SyncSender, ClientError> {
-    let client = clients.sync_client(params, None)?;
-    Ok(SyncSender(Arc::new(
-        move |request: DecisionsRequest| -> Answer {
-            let DecisionsRequest {
-                url,
-                headers,
-                body,
-                timeout,
-            } = request;
-            let mut builder = client.post(url).headers(headers);
-            if let Some(deadline) = timeout {
-                builder = builder.timeout(deadline);
-            }
-            let sent = builder
-                .body(body)
-                .send()
-                .map_err(RequestFailure::Transport)?;
-            let status = sent.status().as_u16();
-            let reply_headers = sent.headers().clone();
-            finish_blocking(sent, status, reply_headers)
-        },
-    )))
-}
-
-fn async_sender(clients: &mut HttpClients, params: &Params) -> Result<AsyncSender, ClientError> {
-    let client = async_client(clients, params, None)?;
-    Ok(AsyncSender(Arc::new(
-        move |request: DecisionsRequest| -> AsyncAnswer {
-            let cloned = client.clone();
-            Box::pin(async move {
-                let mut builder = cloned
-                    .post(request.url)
-                    .headers(request.headers)
-                    .body(request.body);
-                if let Some(timeout) = request.timeout {
-                    builder = builder.timeout(timeout);
-                }
-                let mut sent = builder.send().await.map_err(RequestFailure::Transport)?;
-                let status = sent.status().as_u16();
-                let headers = sent.headers().clone();
-                let body = read_bounded(&mut sent, MAX_RESPONSE_BYTES)
-                    .await
-                    .map_err(RequestFailure::from)?;
-                Ok(UpstreamResponse {
-                    status,
-                    headers,
-                    body,
-                })
-            })
-        },
-    )))
 }
 
 // The blocking answer, read up to the shared cap so a provider answer cannot grow without bound

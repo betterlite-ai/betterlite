@@ -1,0 +1,64 @@
+use std::time::Instant;
+
+use betterlite_http::interactions::base::Params;
+use betterlite_models::controls::json_value::JsonValue;
+use betterlite_openai::decisions::call::DecisionsCall;
+use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
+use betterlite_openai::openai_base_config::Headers;
+
+use super::clients::{DecisionsAsyncClient, DecisionsClients};
+use super::error::{DecisionsSendError, send_failure};
+use super::format::DecisionsOutput;
+use super::request;
+use super::send::{DecisionsSender, finish, plain, signing_context};
+use crate::api::vector_store_http_write::service::ClientKind;
+
+impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
+    // adecisions(): signing off the request task only for AWS, then the provider's async client
+    pub(crate) async fn asend_with<T: DecisionsProviderConfig + Sync>(
+        &mut self,
+        call: &DecisionsCall<'_>,
+        config: &T,
+    ) -> Result<DecisionsOutput, DecisionsSendError> {
+        let prepared = request::prepare(config, call, self.env)?;
+        let context = signing_context(call, &prepared);
+        let signed = if config.signs_with_aws(&call.api_base) {
+            signed_off_task(|| config.sign_request(prepared.outbound_headers.clone(), context))
+        } else {
+            config.sign_request(prepared.outbound_headers.clone(), context)
+        };
+        let params: Params = std::iter::once((
+            String::from("custom_llm_provider"),
+            JsonValue::Text(call.custom_llm_provider.clone()),
+        ))
+        .collect();
+        let client = self
+            .clients
+            .select_async(&params)
+            .map_err(|error| plain(call, self.env.redactor, error))?;
+        let wire = request::wire(call, self.env.redactor, &prepared, signed)?;
+        let started = Instant::now();
+        let reply = client.send(wire).await.map_err(|error| {
+            send_failure(
+                config,
+                call,
+                self.env.redactor,
+                error,
+                ClientKind::Asynchronous,
+                started.elapsed(),
+            )
+        })?;
+        finish(config, call, self.env.redactor, &reply)
+    }
+}
+
+// run_aws_signing: the signing call runs on the executor's thread, not the request task
+fn signed_off_task<F>(sign: F) -> (Headers, Option<Vec<u8>>)
+where
+    F: FnOnce() -> (Headers, Option<Vec<u8>>) + Send,
+{
+    std::thread::scope(|scope| match scope.spawn(sign).join() {
+        Ok(signed) => signed,
+        Err(payload) => std::panic::resume_unwind(payload),
+    })
+}

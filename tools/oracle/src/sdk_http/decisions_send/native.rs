@@ -50,29 +50,25 @@ fn blocked(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<RunOutcome, SdkHttpError> {
-    std::thread::scope(
-        |scope| match scope.spawn(|| sent(run, api_base, env)).join() {
+    std::thread::scope(|scope| {
+        let signed = scope.spawn(|| {
+            let mut clients = support::clients(env)?;
+            let redactor =
+                Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
+            let log = support::Sink;
+            let log_env = support::prepost_env(&redactor, &log);
+            let mut sender = DecisionsSender::new(&mut clients, &log_env);
+            let decisions = match prepared_call(run, api_base, env) {
+                Ok(decisions) => decisions,
+                Err(error) => return report::prepared(&error),
+            };
+            finished(sender.send(&decisions))
+        });
+        match signed.join() {
             Ok(outcome) => outcome.map_err(|error| SdkHttpError::Invalid(error.to_string())),
             Err(payload) => std::panic::resume_unwind(payload),
-        },
-    )
-}
-
-fn sent(
-    run: &Run,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<RunOutcome, SdkHttpError> {
-    let mut clients = support::clients(env)?;
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
-    let log = support::Sink;
-    let log_env = support::prepost_env(&redactor, &log);
-    let mut sender = DecisionsSender::new(&mut clients, &log_env);
-    let decisions = match prepared_call(run, api_base, env) {
-        Ok(decisions) => decisions,
-        Err(error) => return report::prepared(&error),
-    };
-    finished(sender.send(&decisions))
+        }
+    })
 }
 
 async fn answered(

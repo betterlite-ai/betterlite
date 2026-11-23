@@ -94,10 +94,6 @@ def failure_of(error: APIError, status: int | None) -> Failure:
     )
 
 
-def dumped(answer: Answer) -> JsonValue:
-    return JSON.validate_json(answer.model_dump_json())
-
-
 async def answered(run: Run, kwargs: dict[str, JsonValue], api_base: str | None) -> JsonValue:
     if run.asynchronous:
         answer: Answer = await litellm.adecisions(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L75-L100
@@ -112,8 +108,8 @@ async def answered(run: Run, kwargs: dict[str, JsonValue], api_base: str | None)
             extra_headers=run.extra_headers,
             **kwargs,
         )
-        return dumped(answer)
-    blocking: Answer = litellm.decisions(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L103-L128
+        return JSON.validate_json(answer.model_dump_json())
+    blocking: Answer = litellm.decisions(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L103-L128
         model=run.model,
         input=run.input,
         questions=run.questions,
@@ -125,7 +121,7 @@ async def answered(run: Run, kwargs: dict[str, JsonValue], api_base: str | None)
         extra_headers=run.extra_headers,
         **kwargs,
     )
-    return dumped(blocking)
+    return JSON.validate_json(blocking.model_dump_json())
 
 
 async def run_outcome(run: Run, api_base: str) -> RunOutcome:

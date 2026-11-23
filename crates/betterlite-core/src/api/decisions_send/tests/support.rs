@@ -22,7 +22,7 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::systemone;
 use betterlite_models::decisions::{DecisionsJson, Extra, Json, TokenCount, ir, openai};
 use betterlite_openai::decisions::call::DecisionsCall;
-use betterlite_openai::decisions::call::fields::{RequestFormat, SystemOneRequestFields};
+use betterlite_openai::decisions::call::fields::RequestFormat;
 use betterlite_openai::decisions::call::provider::ProviderConfig;
 use betterlite_openai::decisions::openai::request::wire::{
     InputWire, QuestionWire, RequestWire as OpenAiRequestWire,
@@ -382,6 +382,16 @@ struct FakeAnswer {
     body: Vec<u8>,
 }
 
+impl FakeAnswer {
+    fn new(status: u16, body: &str) -> Self {
+        Self {
+            status,
+            headers: HeaderMap::new(),
+            body: body.as_bytes().to_vec(),
+        }
+    }
+}
+
 // The wire a decisions call sends through: it records the request and answers or fails with the fixture's choice
 #[derive(Clone)]
 pub(super) struct FakeWire {
@@ -392,21 +402,18 @@ pub(super) struct FakeWire {
 }
 
 impl FakeWire {
-    fn new(recording: &Arc<Recording>, status: u16, body: &str) -> Self {
+    fn new(recording: &Arc<Recording>, answer: FakeAnswer) -> Self {
+        let shared = Arc::clone(recording);
         Self {
-            recording: recording.clone(),
-            answer: Arc::new(Mutex::new(FakeAnswer {
-                status,
-                headers: HeaderMap::new(),
-                body: body.as_bytes().to_vec(),
-            })),
+            recording: shared,
+            answer: Arc::new(Mutex::new(answer)),
             failure: Arc::default(),
             requests: Arc::default(),
         }
     }
 
     fn failing(recording: &Arc<Recording>, failure: RequestFailure) -> Self {
-        let wire = Self::new(recording, 200, "{}");
+        let wire = Self::new(recording, FakeAnswer::new(200, "{}"));
         *wire.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(failure);
         wire
     }
@@ -552,7 +559,7 @@ pub(super) struct Fixture {
 impl Fixture {
     pub(super) fn new() -> Self {
         let recording = Arc::new(Recording::default());
-        let wire = FakeWire::new(&recording, 200, SYSTEMONE_ANSWER);
+        let wire = FakeWire::new(&recording, FakeAnswer::new(200, SYSTEMONE_ANSWER));
         let clients = FakeClients::from_wire(&recording, wire.clone());
         Self {
             config: TestConfig::new(&recording),
@@ -575,18 +582,16 @@ impl Fixture {
         &mut self,
         call: &DecisionsCall<'_>,
     ) -> Result<DecisionsOutput, DecisionsSendError> {
-        let env = self.log.env();
-        let mut sender = DecisionsSender::new(&mut self.clients, &env);
-        sender.send_with(call, &self.config)
+        DecisionsSender::new(&mut self.clients, &self.log.env()).send_with(call, &self.config)
     }
 
     pub(super) async fn asend(
         &mut self,
         call: &DecisionsCall<'_>,
     ) -> Result<DecisionsOutput, DecisionsSendError> {
-        let env = self.log.env();
-        let mut sender = DecisionsSender::new(&mut self.clients, &env);
-        sender.asend_with(call, &self.config).await
+        DecisionsSender::new(&mut self.clients, &self.log.env())
+            .asend_with(call, &self.config)
+            .await
     }
 }
 
@@ -619,15 +624,37 @@ pub(super) fn openai_request() -> openai::DecisionRequest {
     .expect("the request fixture parses")
 }
 
+fn predicate_question() -> ir::DecisionQuestion {
+    ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
+        name: Some(String::from("first")),
+        instructions: Some(DecisionsJson::Text(String::from("Is it true?"))),
+        criteria: None,
+        extra: Extra::new(),
+    })
+}
+
+fn predicate_answer() -> ir::DecisionAnswer {
+    ir::DecisionAnswer::Predicate {
+        probability: Number::from_f64(0.9).expect("a finite probability"),
+        extra: Extra::new(),
+    }
+}
+
+fn ir_usage() -> ir::DecisionUsage {
+    ir::DecisionUsage {
+        input_tokens: TokenCount(Number::from(3_u8)),
+        output_tokens: TokenCount(Number::from(5_u8)),
+        cached_tokens: TokenCount::default(),
+        cache_write_tokens: TokenCount::default(),
+        reasoning_tokens: TokenCount::default(),
+        extra: Extra::new(),
+    }
+}
+
 pub(super) fn ir_request() -> ir::DecisionRequest {
     ir::DecisionRequest {
         input: ir::DecisionInput::State(DecisionsJson::Text(String::from("state"))),
-        questions: vec![ir::DecisionQuestion::Predicate(ir::PredicateQuestion {
-            name: Some(String::from("first")),
-            instructions: Some(DecisionsJson::Text(String::from("Is it true?"))),
-            criteria: None,
-            extra: Extra::new(),
-        })],
+        questions: vec![predicate_question()],
         safety_identifier: None,
     }
 }
@@ -635,15 +662,8 @@ pub(super) fn ir_request() -> ir::DecisionRequest {
 pub(super) fn ir_response(model: Option<&str>) -> ir::DecisionResponse {
     ir::DecisionResponse {
         model: model.map(str::to_owned),
-        answers: vec![ir::DecisionAnswer::Predicate {
-            probability: Number::from_f64(0.9).expect("a finite probability"),
-            extra: Extra::new(),
-        }],
-        usage: ir::DecisionUsage {
-            input_tokens: TokenCount(Number::from(3_u8)),
-            output_tokens: TokenCount(Number::from(5_u8)),
-            ..ir::DecisionUsage::default()
-        },
+        answers: vec![predicate_answer()],
+        usage: ir_usage(),
         extra: Extra::new(),
     }
 }
@@ -664,12 +684,27 @@ fn openai_body() -> ProviderRequestWire {
     })
 }
 
-fn call<'logging>(
+// The two envelopes a Decisions call can carry, each with the provider wire its request serializes to
+enum Shape {
+    SystemOne,
+    OpenAi,
+}
+
+fn shaped_call<'logging>(
     provider: &str,
-    request: RequestFormat,
-    body: ProviderRequestWire,
+    shape: Shape,
     logging: Option<&'logging Mutex<LoggingState>>,
 ) -> DecisionsCall<'logging> {
+    let (request, body) = match shape {
+        Shape::SystemOne => {
+            let request = systemone_request();
+            (RequestFormat::SystemOne(request.body), systemone_body())
+        }
+        Shape::OpenAi => {
+            let request = openai_request();
+            (RequestFormat::OpenAi(request.body), openai_body())
+        }
+    };
     DecisionsCall {
         model: String::from("model-1"),
         requested_model: String::from("requested/model"),
@@ -691,26 +726,14 @@ pub(super) fn systemone_call<'logging>(
     provider: &str,
     logging: Option<&'logging Mutex<LoggingState>>,
 ) -> DecisionsCall<'logging> {
-    let request = systemone_request();
-    call(
-        provider,
-        RequestFormat::SystemOne(request.body.clone()),
-        systemone_body(),
-        logging,
-    )
+    shaped_call(provider, Shape::SystemOne, logging)
 }
 
 pub(super) fn openai_call<'logging>(
     provider: &str,
     logging: Option<&'logging Mutex<LoggingState>>,
 ) -> DecisionsCall<'logging> {
-    let request = openai_request();
-    call(
-        provider,
-        RequestFormat::OpenAi(request.body.clone()),
-        openai_body(),
-        logging,
-    )
+    shaped_call(provider, Shape::OpenAi, logging)
 }
 
 pub(super) fn real_clients() -> HttpClients {

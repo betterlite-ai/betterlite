@@ -5,12 +5,10 @@ use betterlite_openai::decisions::call::DecisionsCall;
 use betterlite_openai::decisions::call::fields::RequestFormat;
 use betterlite_openai::decisions::openai::response::ResponseConversionError;
 use betterlite_openai::decisions::openai::response::to_openai::ir_to_openai_response;
-use betterlite_openai::decisions::transformation::responses::to_systemone::ir_to_systemone_response;
-use rust_decimal::Decimal;
-
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
-
-use crate::helpers::set_response_cost_in_hidden_params;
+use betterlite_openai::decisions::transformation::responses::to_systemone::ir_to_systemone_response;
+use betterlite_openai::edenai_common::set_response_cost;
+use rust_decimal::Decimal;
 
 // DecisionsResponse | OpenAIDecisionResponse, chosen by the request format rather than the provider
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,5 +68,5 @@ fn hidden_params(hidden: &mut HiddenParams, call: &DecisionsCall<'_>, cost: Opti
         String::from("provider_response_model"),
         Json::Text(qualified),
     );
-    set_response_cost_in_hidden_params(hidden, cost);
+    set_response_cost(hidden, cost);
 }
