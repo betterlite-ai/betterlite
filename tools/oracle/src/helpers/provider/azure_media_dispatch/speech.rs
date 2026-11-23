@@ -20,68 +20,88 @@ use crate::openai_media_dispatch::failure;
 const SPEECH_REPLY: &[u8] = b"ID3";
 
 pub(super) async fn openai_speech(input: &Input) -> HelperResult {
-    let call = OpenAiSpeechOperation {
-        model: input.model.clone(),
-        input: input.input.clone(),
-        voice: voice_name(input),
-        optional_params: input.options.clone(),
-        aspeech: false,
-        api_key: Some(SecretString::from(input.api_key.clone())),
-        api_base: Some(input.api_base.clone()),
-        api_version: Some(input.api_version.clone()),
-        params: LiteLlmParams::default(),
-        provider: None,
-        supplied: None,
-        session: SessionKind::Dedicated,
-        refresh_enabled: false,
-    };
-    let outcome = exchange(
-        AzureMediaOperation::OpenAiSpeech(Box::new(call)),
-        vec![speech_reply()],
-    )
-    .await
-    .map_err(|error| failure("RuntimeError", error))?;
-    let Ok(OperationResult::AzureMedia(AzureMediaResult::OpenAiSpeech(content))) = &outcome.result
-    else {
-        return outcome_error(&outcome.result);
-    };
-    speech_view(
-        &first_request(outcome.fixture.outbound())?,
-        content.status,
-        &content.body,
-        "api-key",
-    )
+    speech(input, Arm::OpenAi).await
 }
 
 pub(super) async fn native_ssml(input: &Input) -> HelperResult {
-    let call = NativeSsmlOperation {
-        model: input.model.clone(),
-        input: input.input.clone(),
-        voice: input.voice.clone(),
-        optional_params: input.options.clone(),
-        litellm_params: IndexMap::new(),
-        api_key: Some(SecretString::from(input.api_key.clone())),
-        api_base: Some(input.api_base.clone()),
-        timeout: None,
-        extra_headers: None,
-        aspeech: false,
+    speech(input, Arm::Native).await
+}
+
+// The two speech arms differ only in the operation they build, the credential header and the reply body they read.
+#[derive(Clone, Copy)]
+enum Arm {
+    OpenAi,
+    Native,
+}
+
+impl Arm {
+    fn operation(self, input: &Input) -> AzureMediaOperation {
+        match self {
+            Self::OpenAi => AzureMediaOperation::OpenAiSpeech(Box::new(OpenAiSpeechOperation {
+                model: input.model.clone(),
+                input: input.input.clone(),
+                voice: voice_name(input),
+                optional_params: input.options.clone(),
+                aspeech: false,
+                api_key: Some(SecretString::from(input.api_key.clone())),
+                api_base: Some(input.api_base.clone()),
+                api_version: Some(input.api_version.clone()),
+                params: LiteLlmParams::default(),
+                provider: None,
+                supplied: None,
+                session: SessionKind::Dedicated,
+                refresh_enabled: false,
+            })),
+            Self::Native => AzureMediaOperation::NativeSsml(Box::new(NativeSsmlOperation {
+                model: input.model.clone(),
+                input: input.input.clone(),
+                voice: input.voice.clone(),
+                optional_params: input.options.clone(),
+                litellm_params: IndexMap::new(),
+                api_key: Some(SecretString::from(input.api_key.clone())),
+                api_base: Some(input.api_base.clone()),
+                timeout: None,
+                extra_headers: None,
+                aspeech: false,
+            })),
+        }
+    }
+
+    const fn key_header(self) -> &'static str {
+        match self {
+            Self::OpenAi => "api-key",
+            Self::Native => "ocp-apim-subscription-key",
+        }
+    }
+}
+
+async fn speech(input: &Input, arm: Arm) -> HelperResult {
+    let outcome = exchange(arm.operation(input), vec![speech_reply()])
+        .await
+        .map_err(|error| failure("RuntimeError", error))?;
+    let sent = first_request(outcome.fixture.outbound())?;
+    let reply = match arm {
+        Arm::OpenAi => openai_reply(&outcome.result),
+        Arm::Native => native_reply(&outcome.result),
     };
-    let outcome = exchange(
-        AzureMediaOperation::NativeSsml(Box::new(call)),
-        vec![speech_reply()],
-    )
-    .await
-    .map_err(|error| failure("RuntimeError", error))?;
-    let Ok(OperationResult::AzureMedia(AzureMediaResult::NativeSsml(response))) = &outcome.result
-    else {
+    let Some((status, body)) = reply else {
         return outcome_error(&outcome.result);
     };
-    speech_view(
-        &first_request(outcome.fixture.outbound())?,
-        response.content.status,
-        &response.content.body,
-        "ocp-apim-subscription-key",
-    )
+    speech_view(&sent, status, body, arm.key_header())
+}
+
+fn openai_reply(result: &OperationResult) -> Option<(u16, &[u8])> {
+    let OperationResult::AzureMedia(AzureMediaResult::OpenAiSpeech(content)) = result else {
+        return None;
+    };
+    Some((content.status, &content.body))
+}
+
+fn native_reply(result: &OperationResult) -> Option<(u16, &[u8])> {
+    let OperationResult::AzureMedia(AzureMediaResult::NativeSsml(response)) = result else {
+        return None;
+    };
+    Some((response.content.status, &response.content.body))
 }
 
 fn voice_name(input: &Input) -> String {
