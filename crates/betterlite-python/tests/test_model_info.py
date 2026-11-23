@@ -141,6 +141,20 @@ def test_lookup_provider_info() -> None:
     assert litellm_get_provider_info("gpt-4", "openai") is None
 
 
+def test_lookup_cache_attributes() -> None:
+    get_model_info.cache_clear()
+    get_model_info("gpt-4")
+    info = get_model_info.cache_info()
+    assert info.hits == 0
+    assert info.misses == 1
+
+
+def test_lookup_api_key_matches() -> None:
+    theirs = _MODEL_INFO.validate_python(litellm.get_model_info("gpt-4", api_key="sk-test"))
+    ours = get_model_info("gpt-4", api_key="sk-test")
+    assert ours == theirs
+
+
 def test_sync_model_cost_change() -> None:
     entry: dict[str, JsonValue] = {"litellm_provider": "openai", "max_tokens": PROBE_MAX_TOKENS}
     betterlite.model_cost["sync-probe-model"] = entry
