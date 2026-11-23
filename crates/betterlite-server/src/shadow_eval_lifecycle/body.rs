@@ -4,7 +4,7 @@ use crate::shadow_eval_validation::error::ShadowEvalRequestError;
 use crate::shadow_eval_validation::request::{StartShadowEvalRequest, parse_shadow_eval_request};
 
 // the shadow_body outside-bytes bound: one mebibyte, checked before any decode
-pub const SHADOW_BODY_MAX_BYTES: usize = 1_048_576;
+pub const SHADOW_BODY_MAX_BYTES: usize = 0x0010_0000;
 
 #[derive(Debug, Error)]
 pub enum ShadowBodyError {

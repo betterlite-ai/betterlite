@@ -26,12 +26,12 @@ pub(super) fn leg_parameters<'legs>(
     for ((((leg, kind), heading), created_at), ends_at) in rows {
         parameters.push(&leg.id);
         parameters.push(&leg.group_id);
-        parameters.push(*kind);
+        parameters.push(kind);
         parameters.push(&leg.target_id);
         parameters.push(&leg.router_name);
         parameters.push(&leg.router_names);
         parameters.push(&leg.models);
-        parameters.push(*heading);
+        parameters.push(heading);
         parameters.push(&leg.baseline_model);
         parameters.push(&leg.judge_model);
         parameters.push(&leg.shadow_percentage);
@@ -100,7 +100,7 @@ pub(super) fn leg_row(row: &Row) -> Result<LegRow, PostgresLifecycleError> {
         max_budget: row.try_get("max_budget").map_err(backend)?,
         created_at: created_at.and_utc(),
         ends_at: ends_at.and_utc(),
-        stopped_at: stopped_at.map(NaiveDateTime::and_utc),
+        stopped_at: stopped_at.map(|stamp| stamp.and_utc()),
         stopped_by: row.try_get("stopped_by").map_err(backend)?,
     })
 }

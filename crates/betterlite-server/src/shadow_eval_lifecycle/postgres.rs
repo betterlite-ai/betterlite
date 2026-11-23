@@ -225,9 +225,10 @@ impl ShadowLifecycleStore for PostgresShadowLifecycleStore {
     ) -> Result<u64, Self::Error> {
         let client = self.store.session().await?;
         let naive = stamp.naive_utc();
-        client
+        let claimed = client
             .execute(STOP_JOB_SQL, &[&job_id, &operator, &naive])
             .await
-            .map_err(backend)
+            .map_err(backend)?;
+        Ok(claimed)
     }
 }
