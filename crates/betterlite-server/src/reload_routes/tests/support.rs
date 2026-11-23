@@ -236,7 +236,7 @@ impl FakeStore {
 
     fn record<Value, Change>(&self, change: Change) -> StoreFuture<'_, Value>
     where
-        Value: Send,
+        Value: Send + 'static,
         Change: FnOnce(&mut StoreState) -> Value,
     {
         let answer = {

@@ -32,7 +32,7 @@ async fn oneshot_rejects_an_anonymous_caller() {
     let (status, text) = send(&harness, None, Method::POST, COST_MAP_RELOAD).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(parsed(&text)["error"]["code"], "401");
-    let (beta_code, _text) = send(&harness, None, Method::GET, BETA_STATUS).await;
+    let (beta_code, _) = send(&harness, None, Method::GET, BETA_STATUS).await;
     assert_eq!(beta_code, StatusCode::UNAUTHORIZED);
 }
 
@@ -129,7 +129,7 @@ async fn oneshot_rejects_a_non_admin_before_the_hours_check(
 async fn oneshot_rejects_a_non_admin_before_the_database_check() {
     let mut harness = Harness::new();
     harness.store = None;
-    let (status, _text) = send(
+    let (status, _) = send(
         &harness,
         Some(key_with("internal_user")),
         Method::POST,
@@ -177,7 +177,7 @@ async fn oneshot_answers_422_when_hours_is_not_an_integer(#[case] value: &str) {
 #[tokio::test]
 async fn oneshot_answers_422_before_the_role_check(#[case] uri: &str) {
     let caller = key_with("internal_user");
-    let (status, _text) = send(&Harness::new(), Some(caller), Method::POST, uri).await;
+    let (status, _) = send(&Harness::new(), Some(caller), Method::POST, uri).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}");
 }
 
@@ -379,7 +379,7 @@ async fn oneshot_keeps_the_map_when_the_reload_is_unavailable() {
 async fn oneshot_keeps_a_failed_recorded_revision_from_being_applied() {
     let mut harness = Harness::new();
     harness.store = Some(FakeStore::failing());
-    let (status, _text) = send(&harness, Some(master()), Method::POST, COST_MAP_RELOAD).await;
+    let (status, _) = send(&harness, Some(master()), Method::POST, COST_MAP_RELOAD).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(harness.reloads.cost_map_loaded_at(), moment());
     assert_eq!(harness.reloads.cost_map_applied_revision(), 0);
@@ -535,7 +535,7 @@ async fn oneshot_reloads_the_beta_headers_and_preserves_the_interval() {
 async fn oneshot_reloads_the_beta_headers_without_a_stored_interval(#[case] store: FakeStore) {
     let mut harness = Harness::new();
     harness.store = Some(store);
-    let (status, _text) = send(&harness, Some(master()), Method::POST, BETA_RELOAD).await;
+    let (status, _) = send(&harness, Some(master()), Method::POST, BETA_RELOAD).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         harness.store().snapshot().beta_writes,
@@ -748,9 +748,8 @@ async fn oneshot_answers_a_beta_status_whose_next_run_is_datetime_max() {
 #[tokio::test]
 async fn oneshot_answers_405_when_a_route_takes_another_method() {
     let harness = Harness::new();
-    let (status, _text) = send(&harness, Some(master()), Method::GET, COST_MAP_RELOAD).await;
+    let (status, _) = send(&harness, Some(master()), Method::GET, COST_MAP_RELOAD).await;
     assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED);
-    let (source_status, _text) =
-        send(&harness, Some(master()), Method::POST, COST_MAP_SOURCE).await;
+    let (source_status, _) = send(&harness, Some(master()), Method::POST, COST_MAP_SOURCE).await;
     assert_eq!(source_status, StatusCode::METHOD_NOT_ALLOWED);
 }

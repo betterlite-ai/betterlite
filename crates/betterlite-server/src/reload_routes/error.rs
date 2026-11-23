@@ -48,14 +48,14 @@ pub(super) enum WrappedCause {
 
 impl ReloadError {
     // the 500 a handler's catch block wraps a missing database in, "500: Database connection not available"
-    pub(super) fn missing_database(prefix: &'static str) -> Self {
+    pub(super) const fn missing_database(prefix: &'static str) -> Self {
         Self::Wrapped {
             prefix,
             cause: WrappedCause::MissingDatabase,
         }
     }
 
-    pub(super) fn wrapped(prefix: &'static str, source: ReloadStoreError) -> Self {
+    pub(super) const fn wrapped(prefix: &'static str, source: ReloadStoreError) -> Self {
         Self::Wrapped {
             prefix,
             cause: WrappedCause::Store(source),
