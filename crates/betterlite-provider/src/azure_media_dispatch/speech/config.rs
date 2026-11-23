@@ -11,7 +11,6 @@ use betterlite_azure::native_speech::mapping::{
 use betterlite_azure::native_speech::request::{SpeechTransform, transform_request};
 use betterlite_azure::speech::dispatch::supported_openai_params;
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_models::decisions::Json;
 use betterlite_openai::api::speech_provider_contract::{SpeechVoice, TextToSpeechRequestData};
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_openai::openai_base_config::Object;
@@ -149,8 +148,8 @@ fn mapped_fields(mapped: &MappedParams) -> IndexMap<String, String> {
         ("role", &mapped.role),
         ("lang", &mapped.lang),
     ] {
-        if let Some(value) = value {
-            fields.insert(name.to_owned(), value.clone());
+        if let Some(field) = value {
+            fields.insert(name.to_owned(), field.clone());
         }
     }
     fields

@@ -10,7 +10,6 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
-use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::transcription::transport::TranscriptionTransport;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -89,12 +88,14 @@ where
         request: HandlerRequest<'_>,
     ) -> impl Future<Output = Result<Self::Output, HandlerFailure>> + Send {
         async move {
-            let optional_json =
-                serde_json::to_value(request.optional_params).map_err(encode_failure)?;
-            let optional_params = serde_json::from_value(optional_json).map_err(encode_failure)?;
-            let litellm_json =
-                serde_json::to_value(request.litellm_params).map_err(encode_failure)?;
-            let litellm_params = serde_json::from_value(litellm_json).map_err(encode_failure)?;
+            let optional_json = serde_json::to_value(request.optional_params)
+                .map_err(|error| encode_failure(error.to_string()))?;
+            let optional_params = serde_json::from_value(optional_json)
+                .map_err(|error| encode_failure(error.to_string()))?;
+            let litellm_json = serde_json::to_value(request.litellm_params)
+                .map_err(|error| encode_failure(error.to_string()))?;
+            let litellm_params = serde_json::from_value(litellm_json)
+                .map_err(|error| encode_failure(error.to_string()))?;
             let params = SpeechParams {
                 api_key: request.api_key.map(SecretString::from),
                 api_base: request.api_base.map(str::to_owned),
@@ -127,11 +128,11 @@ where
     }
 }
 
-fn encode_failure(source: serde_json::Error) -> HandlerFailure {
+fn encode_failure(message: String) -> HandlerFailure {
     HandlerFailure {
         class: String::from("Exception"),
         status: None,
-        message: source.to_string(),
+        message,
     }
 }
 
@@ -154,23 +155,23 @@ fn ssl_verify(params: &IndexMap<String, Json>) -> Option<bool> {
 }
 
 fn speech_failure(error: SpeechError) -> HandlerFailure {
-    match &error {
-        SpeechError::Provider(provider) => HandlerFailure {
-            class: String::from("APIStatusError"),
-            status: Some(provider.status_code),
-            message: error.to_string(),
-        },
+    let message = error.to_string();
+    let (class, status) = match error {
+        SpeechError::Provider(provider) => {
+            (String::from("APIStatusError"), Some(provider.status_code))
+        }
         SpeechError::Client(_)
         | SpeechError::Logging(_)
         | SpeechError::CompleteUrl(_)
         | SpeechError::RequestUrl { .. }
         | SpeechError::HeaderName { .. }
         | SpeechError::HeaderValue { .. }
-        | SpeechError::Encode(_) => HandlerFailure {
-            class: String::from("Exception"),
-            status: None,
-            message: error.to_string(),
-        },
+        | SpeechError::Encode(_) => (String::from("Exception"), None),
+    };
+    HandlerFailure {
+        class,
+        status,
+        message,
     }
 }
 
