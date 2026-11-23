@@ -1,0 +1,49 @@
+kind: helper
+name: bearer-credentials-no-auth-dev-mode
+call:
+  b10086:
+    operation: dev_mode
+    master_key: null
+    enable_jwt_auth: false
+    enable_oauth2_auth: false
+    enable_oauth2_proxy_auth: false
+calls:
+  - b10086:
+      operation: dev_mode
+      master_key: null
+      enable_jwt_auth: true
+      enable_oauth2_auth: false
+      enable_oauth2_proxy_auth: false
+  - b10086:
+      operation: dev_mode
+      master_key: null
+      enable_jwt_auth: false
+      enable_oauth2_auth: true
+      enable_oauth2_proxy_auth: false
+  - b10086:
+      operation: dev_mode
+      master_key: null
+      enable_jwt_auth: false
+      enable_oauth2_auth: false
+      enable_oauth2_proxy_auth: true
+  - b10086:
+      operation: dev_mode
+      master_key: ""
+      enable_jwt_auth: false
+      enable_oauth2_auth: false
+      enable_oauth2_proxy_auth: false
+  - b10086:
+      operation: dev_mode
+      master_key: "sk-123"
+      enable_jwt_auth: false
+      enable_oauth2_auth: false
+      enable_oauth2_proxy_auth: false
+  - b10086:
+      operation: dev_mode
+      master_key: null
+      enable_jwt_auth: true
+      enable_oauth2_auth: true
+      enable_oauth2_proxy_auth: true
+env: {}
+compare:
+  ignore: []
