@@ -1,6 +1,7 @@
 import json
 from collections.abc import Coroutine, Mapping
-from typing import Final, Literal
+from functools import partial
+from typing import Final, Literal, TypeAlias, TypeVar
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -18,11 +19,9 @@ from betterlite.types.llms.openai.core.threads import Thread
 from betterlite.types.utils.base import Dumpable, ResponseObject
 
 SETTINGS: Final = ("api_key", "api_base", "api_version", "organization", "openai_key", "azure_key")
-PARAMS: Final = (
-    "api_key", "api_base", "api_version", "organization", "max_retries", "timeout",
-    "request_timeout", "azure_ad_token", "tenant_id", "client_id", "client_secret",
-    "azure_username", "azure_password", "azure_scope",
-)
+PARAMS: Final = ("api_key", "api_base", "api_version", "organization", "max_retries", "timeout",
+                 "request_timeout", "azure_ad_token", "tenant_id", "client_id", "client_secret",
+                 "azure_username", "azure_password", "azure_scope")
 DROPPED: Final = ("client", "shared_session", "logger_fn")
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
@@ -52,6 +51,15 @@ class AssistantDeleted(ResponseObject):
 class AssistantPage(ResponseObject):
     data: list[Assistant]
     has_more: bool
+
+
+PageAnswer: TypeAlias = AssistantPage | Coroutine[None, None, AssistantPage]
+DeletedAnswer: TypeAlias = AssistantDeleted | Coroutine[None, None, AssistantDeleted]
+RecordT = TypeVar("RecordT", bound=ResponseObject)
+READ_METHODS: Final = {
+    "list": NativeAssistantSession.get_assistants,
+    "delete": NativeAssistantSession.delete_assistant,
+}
 
 
 def session() -> NativeAssistantSession:
@@ -91,8 +99,7 @@ def params_of(arguments: Mapping[str, CallValue]) -> dict[str, JsonValue]:
 
 
 def named_arguments(
-    arguments: Mapping[str, CallValue], named: Mapping[str, CallValue],
-) -> dict[str, CallValue]:
+    arguments: Mapping[str, CallValue], named: Mapping[str, CallValue]) -> dict[str, CallValue]:
     given = {name: value for name, value in named.items() if value is not None}
     return {**arguments, **given}
 
@@ -106,21 +113,23 @@ def thread_message(value: CallValue | Dumpable) -> JsonValue:
 
 
 def read_delete_payload(
-    operation: str, provider: str, entry: str, arguments: Mapping[str, CallValue],
-) -> CallPayload:
-    values: dict[str, CallValue] = {
-        "operation": operation, "provider": provider, "entry": entry,
-        "assistant_id": arguments.get("assistant_id"),
-        "aget_assistants": arguments.get("aget_assistants"),
-        "async_delete_assistants": arguments.get("async_delete_assistants"),
-        "after": arguments.get("after"), "before": arguments.get("before"),
-        "limit": arguments.get("limit"), "order": arguments.get("order"),
-        "params": params_of(arguments),
-    }
+    operation: str, provider: str, entry: str, arguments: Mapping[str, CallValue]) -> CallPayload:
+    names = ("assistant_id", "aget_assistants", "async_delete_assistants", "after", "before",
+             "limit", "order")
+    values: dict[str, CallValue] = {"operation": operation, "provider": provider, "entry": entry}
+    values.update({name: arguments.get(name) for name in names})
+    values["params"] = params_of(arguments)
     values.update({name: arguments.get(name) for name in DROPPED})
     if "extra_body" in arguments:
         values["extra_body"] = arguments["extra_body"]
     return to_call_payload(values)
+
+
+def read_delete_answer(record: type[RecordT], operation: Literal["list", "delete"],
+                       provider: str, arguments: Mapping[str, CallValue]) -> RecordT:
+    method = READ_METHODS[operation]
+    payload = read_delete_payload(operation, provider, "sync", arguments)
+    return record.model_validate(assistant_answer(partial(method, session()), payload))
 
 
 def create_payload(provider: str, arguments: Mapping[str, CallValue]) -> CallPayload:
@@ -132,8 +141,7 @@ def create_payload(provider: str, arguments: Mapping[str, CallValue]) -> CallPay
 
 
 def thread_payload(
-    provider: str, thread_id: str | None, arguments: Mapping[str, CallValue],
-) -> CallPayload:
+    provider: str, thread_id: str | None, arguments: Mapping[str, CallValue]) -> CallPayload:
     values: dict[str, CallValue] = {"custom_llm_provider": provider, "thread_id": thread_id}
     messages = arguments.get("messages")
     if messages is not None:
@@ -180,15 +188,12 @@ def thread_of(value: JsonValue) -> Thread | None:
 
 def get_assistants(
     custom_llm_provider: str, client: CallValue = None, api_key: CallValue = None,
-    api_base: CallValue = None, api_version: CallValue = None, **kwargs: CallValue,
-) -> AssistantPage | Coroutine[None, None, AssistantPage]:
-    flag = flag_argument("aget_assistants", kwargs, Exception)
-    named = {"client": client, "api_key": api_key, "api_base": api_base, "api_version": api_version}
-    arguments = named_arguments(kwargs, named)
-    if flag:
+    api_base: CallValue = None, api_version: CallValue = None, **kwargs: CallValue) -> PageAnswer:
+    args = {"client": client, "api_key": api_key, "api_base": api_base, "api_version": api_version}
+    arguments = named_arguments(kwargs, args)
+    if flag_argument("aget_assistants", kwargs, Exception):
         return aget_assistants(custom_llm_provider, **arguments)
-    payload = read_delete_payload("list", custom_llm_provider, "sync", arguments)
-    return AssistantPage.model_validate(assistant_answer(session().get_assistants, payload))
+    return read_delete_answer(AssistantPage, "list", custom_llm_provider, arguments)
 
 
 async def aget_assistants(
@@ -235,18 +240,15 @@ async def acreate_assistants(
 def delete_assistant(
     custom_llm_provider: str, assistant_id: str, client: CallValue = None,
     api_key: CallValue = None, api_base: CallValue = None, api_version: CallValue = None,
-    **kwargs: CallValue,
-) -> AssistantDeleted | Coroutine[None, None, AssistantDeleted]:
-    flag = flag_argument("async_delete_assistants", kwargs, ValueError)
-    named: dict[str, CallValue] = {
-        "assistant_id": assistant_id, "client": client, "api_key": api_key,
-        "api_base": api_base, "api_version": api_version,
-    }
+    **kwargs: CallValue) -> DeletedAnswer:
+    named = {"assistant_id": assistant_id, "client": client, "api_key": api_key,
+             "api_base": api_base, "api_version": api_version}
     arguments = named_arguments(kwargs, named)
-    if flag:
-        return adelete_assistant(custom_llm_provider, **arguments)
-    payload = read_delete_payload("delete", custom_llm_provider, "sync", arguments)
-    return AssistantDeleted.model_validate(assistant_answer(session().delete_assistant, payload))
+    match flag_argument("async_delete_assistants", kwargs, ValueError):
+        case True:
+            return adelete_assistant(custom_llm_provider, **arguments)
+        case False:
+            return read_delete_answer(AssistantDeleted, "delete", custom_llm_provider, arguments)
 
 
 async def adelete_assistant(
