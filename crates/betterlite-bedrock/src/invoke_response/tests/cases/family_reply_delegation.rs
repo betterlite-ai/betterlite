@@ -154,7 +154,7 @@ fn json_mode_replies_read_the_tool_arguments() {
 
     let mut nova = fixture();
     nova.model = NOVA_MODEL.to_owned();
-    nova.optional.json_mode = Some(true);
+    nova.json_mode = Some(true);
     let nova_run = decode(&nova, NOVA_JSON_REPLY);
     let reply = nova_run.nova();
     assert!(reply.choices[0].message.tool_calls.is_none());
@@ -164,6 +164,18 @@ fn json_mode_replies_read_the_tool_arguments() {
     );
     assert_eq!(reply.choices[0].finish_reason.as_str(), "stop");
     assert_eq!(reply.model, NOVA_MODEL);
+
+    let mut overridden = fixture();
+    overridden.model = NOVA_MODEL.to_owned();
+    overridden.json_mode = Some(false);
+    overridden.optional.json_mode = Some(true);
+    let overridden_run = decode(&overridden, NOVA_JSON_REPLY);
+    assert!(
+        overridden_run.nova().choices[0]
+            .message
+            .tool_calls
+            .is_some()
+    );
 }
 
 // httpx keeps a repeated response header as two values, and the Anthropic header reader joins them
