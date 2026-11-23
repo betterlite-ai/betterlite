@@ -1,4 +1,4 @@
-from datetime import timezone
+from datetime import UTC
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.proxy._experimental.mcp_server.outbound_credentials.sso_assertion_store import (
@@ -80,7 +80,7 @@ def render_assertion(assertion: SSOIdentityAssertion) -> JsonValue:
     expires_at = assertion.expires_at
     rendered_expires_at: str | None = None
     if expires_at is not None and expires_at.tzinfo is None:
-        rendered_expires_at = expires_at.replace(tzinfo=timezone.utc).isoformat()
+        rendered_expires_at = expires_at.replace(tzinfo=UTC).isoformat()
     elif expires_at is not None:
         rendered_expires_at = expires_at.isoformat()
     return {
