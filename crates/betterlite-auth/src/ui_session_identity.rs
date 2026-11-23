@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 
+use crate::auth_model_lists::lists::dedup_first;
 use crate::auth_user_lookup::error::UserLookupError;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
@@ -51,7 +52,12 @@ where
         .user_teams(user_id, auth.extra.requires_fresh_policy)
         .await
     {
-        Ok(Some(rows)) => unique_team_ids(rows),
+        // LiteLLM appends each nonempty team once, in the order the user row lists it
+        Ok(Some(rows)) => dedup_first(
+            rows.into_iter()
+                .filter(|team_id| !team_id.is_empty())
+                .collect(),
+        ),
         Ok(None) => Vec::new(),
         Err(error) => {
             tracing::warn!(
@@ -61,15 +67,4 @@ where
             Vec::new()
         }
     }
-}
-
-// LiteLLM appends each nonempty team once, in the order the user row lists it
-fn unique_team_ids(team_ids: Vec<String>) -> Vec<String> {
-    let mut resolved: Vec<String> = Vec::with_capacity(team_ids.len());
-    for team_id in team_ids {
-        if !team_id.is_empty() && !resolved.contains(&team_id) {
-            resolved.push(team_id);
-        }
-    }
-    resolved
 }
