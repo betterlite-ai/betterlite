@@ -131,10 +131,12 @@ def test_create_matches_litellm() -> None:
 def test_retrieve_matches_litellm() -> None:
     with BatchServer() as server:
         reference = LITELLM.retrieve_batch(
-            batch_id=BATCH_ID, api_base=server.url, api_key=GOOD_KEY,
+            batch_id=BATCH_ID, metadata=METADATA, api_base=server.url, api_key=GOOD_KEY,
         )
         found = made_batch(
-            retrieve_batch(batch_id=BATCH_ID, api_base=server.url, api_key=GOOD_KEY)
+            retrieve_batch(
+                batch_id=BATCH_ID, metadata=METADATA, api_base=server.url, api_key=GOOD_KEY
+            )
         )
         assert len(server.calls) == 2
         reference_call, ours_call = server.calls
