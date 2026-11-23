@@ -1,0 +1,9 @@
+task: B1741
+deviations:
+  - what: A cancelled run leaves the spend_log_cleanup lease to its Redis TTL instead of releasing it.
+    why: LiteLLM awaits release_lock in its finally block, which asyncio still runs while the task is being cancelled; in betterlite cancellation is the run future being dropped, a Drop guard cannot await, so the lease is left to expire rather than holding a second connection open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L815-L820
+  - what: A use_spend_logs_partitioning value that is not a boolean fails config loading instead of being read by Python truthiness.
+    why: LiteLLM reads general_settings.get("use_spend_logs_partitioning", False) and lets any truthy value such as 1 or "yes" start partition maintenance; betterlite names the field and refuses to load, as docs/compatibility.md says for a value of the wrong type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L589-L591
+kept_bugs: []

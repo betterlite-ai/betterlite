@@ -1,0 +1,121 @@
+kind: sdk_http
+name: file-provider-read-read-deadline-and-mode
+env:
+  OPENAI_API_KEY: sk-env
+  ANTHROPIC_API_KEY: sk-ant-env
+call:
+  file_provider_read:
+    steps:
+      - function: file_retrieve
+        file_id: file-a
+        timeout: 2
+        request_timeout: 3
+      - function: file_retrieve
+        file_id: file-a
+        timeout: "2.5"
+      - function: file_retrieve
+        file_id: file-a
+        timeout: 0
+        request_timeout: 0
+      - function: file_retrieve
+        file_id: file-a
+        timeout: {connect: 1, read: 2, write: 3, pool: 4}
+      - function: file_retrieve
+        file_id: file_ant
+        custom_llm_provider: anthropic
+        timeout: {connect: 1, read: 2}
+      - function: file_retrieve
+        file_id: file-a
+        timeout: soon
+      - function: file_retrieve
+        file_id: file-a
+        custom_llm_provider: cohere
+        timeout: soon
+      - function: file_list
+        timeout: soon
+      - function: file_retrieve
+        file_id: file_ant
+        custom_llm_provider: anthropic
+        client: http_handler
+      - function: file_retrieve
+        file_id: file_ant
+        custom_llm_provider: anthropic
+        client: http_handler
+        is_async: true
+      - function: afile_retrieve
+        file_id: file_ant
+        custom_llm_provider: anthropic
+        client: http_handler
+      - function: file_list
+        custom_llm_provider: anthropic
+        client: http_handler
+      - function: afile_list
+        custom_llm_provider: anthropic
+        client: http_handler
+      - function: file_list
+        is_async: true
+      - function: afile_list
+        is_async: false
+      - function: file_retrieve
+        file_id: file_az
+        custom_llm_provider: azure
+        api_key: az-key
+        api_version: "2024-10-21"
+        timeout: 2
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-a, object: file, bytes: 1, created_at: 1700000001, filename: a.jsonl, purpose: batch, status: processed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-a, object: file, bytes: 2, created_at: 1700000002, filename: a.jsonl, purpose: batch, status: processed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-a, object: file, bytes: 3, created_at: 1700000003, filename: a.jsonl, purpose: batch, status: processed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file-a, object: file, bytes: 4, created_at: 1700000004, filename: a.jsonl, purpose: batch, status: processed}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_ant, type: file, filename: t.pdf, mime_type: application/pdf, size_bytes: 5, created_at: "2025-04-01T00:00:05Z", downloadable: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_ant, type: file, filename: h.pdf, mime_type: application/pdf, size_bytes: 6, created_at: "2025-04-01T00:00:06Z", downloadable: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_ant, type: file, filename: h.pdf, mime_type: application/pdf, size_bytes: 7, created_at: "2025-04-01T00:00:07Z", downloadable: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_ant, type: file, filename: h.pdf, mime_type: application/pdf, size_bytes: 8, created_at: "2025-04-01T00:00:08Z", downloadable: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - {id: file_ant, type: file, filename: h.pdf, mime_type: application/pdf, size_bytes: 9, created_at: "2025-04-01T00:00:09Z", downloadable: false}
+      has_more: false
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      data:
+        - {id: file_ant, type: file, filename: h.pdf, mime_type: application/pdf, size_bytes: 10, created_at: "2025-04-01T00:00:10Z", downloadable: false}
+      has_more: false
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_az, object: file, bytes: 5, created_at: 1700000005, filename: az.jsonl, purpose: batch, status: processed}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, api-key, x-api-key, x-supplied-client]
+  ignore:
+    - pointer: /file_provider_read/value/steps/5/failure/message
+      why: Python's float() text and betterlite's field-naming text differ
+    - pointer: /file_provider_read/value/steps/6/failure/message
+      why: Python's float() text and betterlite's field-naming text differ
+    - pointer: /file_provider_read/value/steps/7/failure/message
+      why: Python's float() text and betterlite's field-naming text differ

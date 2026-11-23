@@ -1,0 +1,93 @@
+kind: helper
+name: quota-estimation-shapes
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd", "instructions": "efgh", "max_output_tokens": 7}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "response": {"input": "abcd", "instructions": "efgh", "max_output_tokens": 7}}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcde"}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abc"}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "", "instructions": "", "max_output_tokens": null}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": [{"content": "ab"}, {"text": "cd"}]}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": ["ab", ["cdefgh"], 5, null, {"content": [{"text": "wxyz"}, {"content": {"text": "deep"}}]}], "instructions": {"text": "ignored"}}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd", "max_output_tokens": "7"}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd", "max_output_tokens": 7.5}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd", "max_output_tokens": 0}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd", "max_output_tokens": -5}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd", "max_output_tokens": true}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "response": {}, "input": [{"content": "abcd"}], "max_output_tokens": 7}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "response": "abcdefgh", "input": "ab"}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "response": {"input": "abcdefgh"}, "input": "ab", "max_output_tokens": 7}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "éééééééé"}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "😀😀😀😀"}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+env: {}
+compare:
+  ignore: []

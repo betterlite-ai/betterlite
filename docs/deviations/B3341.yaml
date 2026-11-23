@@ -15,6 +15,22 @@ deviations:
   - what: A handler failure with no provider status (a client, logging, multipart or request fault) maps through exception_type's ValueError path to the provider family's generic API error with a synthesized 500; LiteLLM's _handle_error turns those caught exceptions into the provider's own class first.
     why: B3335's transport reports those faults with their typed reason and no status, and a status-less failure mapped as a provider 500 would invent a status the provider never sent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6085
+  - what: >-
+      A video_create_character call whose provider is unknown or has no video config answers a BadRequestError
+      (400) with model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes
+      out as an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1174-L1178
+  - what: >-
+      A video_get_character call whose provider is unknown or has no video config answers a BadRequestError (400)
+      with model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes out as
+      an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1299-L1303
 kept_bugs:
   - what: A call with no litellm_call_id logs litellm_call_id null in the logged litellm_params rather than a generated identifier or no key.
     why: LiteLLM's update_environment_variables receives kwargs.get("litellm_call_id") and writes it as given, so a deployment inspecting that field sees a null for a call made outside the client decorator.
