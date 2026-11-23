@@ -189,8 +189,8 @@ def reply_result(invoke: InvokeApi, call: ReplyCall) -> JsonValue:
         outcome = {"ok": reply_view(invoke, call)}
     except BedrockError as error:  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L295-L302
         outcome = {"error": {"class": type(error).__name__, "status": error.status_code}}
-    except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L281-L419
-        outcome = {"error": {"class": type(error).__name__, "status": None}}
+    except Exception as failure:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L281-L419
+        outcome = {"error": {"class": type(failure).__name__, "status": None}}
     return outcome
 
 
