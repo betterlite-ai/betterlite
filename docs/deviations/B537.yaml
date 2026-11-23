@@ -1,0 +1,12 @@
+task: B537
+deviations:
+  - what: An azure_ad_token_provider reply the client cannot use (an empty string, or a value that is not a string) fails with ValueError "Expected `azure_ad_token_provider` argument to return a string but it returned <type>", naming the reply's type where the pinned openai SDK interpolates the reply value itself, and printing nothing after "returned" for an empty text reply.
+    why: A text reply is the bearer credential, so interpolating it puts a credential into an error message and into every log that records the failure; the class and the message prefix stay the SDK's, and a non-string reply is named by its type, which the credentials layer already carries instead of the value.
+    link: https://github.com/openai/openai-python/blob/v2.26.0/src/openai/lib/azure.py#L306-L317
+kept_bugs:
+  - what: audio_speech takes timeout, organization, azure_ad_token, azure_ad_token_provider and max_retries as its own arguments, but builds the client from litellm_params alone: none of them reach client construction, and speech.create receives only the remaining optional params, so the max_retries pop only keeps that key out of the kwargs.
+    why: Setups that need a wire timeout, an organization or AD credentials configure them through litellm_params, which the client builder does read; a caller passing them as call arguments has always had them ignored in LiteLLM, and betterlite copies that so both send the same client settings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1381-L1409
+  - what: The Cloudflare AI gateway probe with no model appends the literal text None to the base URL and then sends "model": null in the chat body, instead of leaving the model out of both.
+    why: get_headers formats the missing model into the path before it clears the variable for the body; a setup shares its gateway base and passes the model, as real calls do, so only a model-less gateway probe sees this, and copying it keeps the probe's traffic identical to LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1486-L1508
