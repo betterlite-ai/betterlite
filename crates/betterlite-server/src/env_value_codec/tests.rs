@@ -135,9 +135,7 @@ fn a_string_without_a_configured_key_fails_naming_the_key_only() {
     let cipher = test_cipher(None, LEGACY);
     let values = object(&[("api_key", json!("sk-live-secret"))]);
     let error = encrypt_env(&values, &cipher, None).unwrap_err();
-    let EnvValueCodecError::Encrypt { key, source } = &error else {
-        panic!("a string with no key is refused");
-    };
+    let EnvValueCodecError::Encrypt { key, source } = &error;
     assert_eq!(key, "api_key");
     assert!(matches!(source, SecretError::MissingKey));
     let text = error.to_string();
