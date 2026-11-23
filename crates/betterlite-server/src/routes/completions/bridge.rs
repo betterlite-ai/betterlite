@@ -76,7 +76,7 @@ pub(super) async fn chat_bridge(
     let runtime = calls.anthropic()?;
     let chat = chat_request(call.request).map_err(bridge_failure)?;
     let control = ControlOptions::default();
-    if let ChatCallMode::Streamed = mode {
+    if matches!(mode, ChatCallMode::Streamed) {
         let stream = streamed_answer(calls, call, &chat, control, runtime).await?;
         return Ok(ChatCallAnswer::Streamed(stream));
     }

@@ -28,7 +28,7 @@ use tower::ServiceExt as _;
 use super::bridge::{ChatChunks, ChunkUsage};
 use super::routes;
 use crate::route_read_through::ModelReadThrough;
-use crate::routes::completions::streaming::pump::FrameSource;
+use crate::routes::completions::streaming::pump::FrameSource as _;
 use crate::routes::router;
 use crate::routes::tests::state_for;
 use crate::server::chat_setup::chat_executor;
