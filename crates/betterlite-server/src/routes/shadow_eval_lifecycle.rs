@@ -12,6 +12,7 @@ use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_config::loader::startup::process_environment;
+use betterlite_config::types::Config;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json as JsonValue;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -43,11 +44,12 @@ use crate::shadow_eval_validation::router_view::AnthropicCredentials;
 use crate::state::ServerState;
 use crate::tracing_routes::router::unauthenticated;
 
-// the two globals start-time model resolution reads, resolved once when the router is built
+// what start-time model resolution and validation read, resolved once when the router is built
 struct LifecycleState {
     store: Option<Arc<PostgresShadowLifecycleStore>>,
     api_key: Option<SecretString>,
     api_base: Option<String>,
+    anthropic: AnthropicSettings,
 }
 
 #[derive(Serialize)]
@@ -67,13 +69,30 @@ impl JudgeSdk for UnbuiltJudgeSdk {
     }
 }
 
-#[cfg_attr(test, mutants::skip)]
-pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
-    let lifecycle = Arc::new(LifecycleState {
+fn lifecycle_state(state: &Arc<ServerState>) -> LifecycleState {
+    LifecycleState {
         store: store_from_state(state).map(Arc::new),
         api_key: state.config.sections.resource_sdk_settings.api_key.clone(),
         api_base: state.config.sections.resource_sdk_settings.api_base.clone(),
-    });
+        anthropic: anthropic_settings(&state.config),
+    }
+}
+
+// the config loader resolves ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN and the base url into its section
+fn anthropic_settings(config: &Config) -> AnthropicSettings {
+    let credentials = &config.sections.anthropic_credentials;
+    AnthropicSettings {
+        api_key: credentials.api_key.clone(),
+        auth_token: credentials.auth_token.clone(),
+        api_base: credentials.api_base.clone(),
+        use_bearer_for_custom_base: credentials.use_bearer_for_custom_base,
+        anthropic_version: AnthropicSettings::default().anthropic_version,
+    }
+}
+
+#[cfg_attr(test, mutants::skip)]
+pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
+    let lifecycle = Arc::new(lifecycle_state(state));
     Router::new()
         .route("/auto_router/shadow_eval/start", post(start_route))
         .route("/auto_router/shadow_eval/{job_id}/stop", post(stop_route))
@@ -202,9 +221,8 @@ async fn start_job(
         },
     };
     let cache = ProviderCache::default();
-    let settings = AnthropicSettings::default();
     let sdk = UnbuiltJudgeSdk;
-    let deps = start_deps(state, &sdk, &resolution, &cache, &settings);
+    let deps = start_deps(state, &sdk, &resolution, &cache);
     let mut ids = repeat_with(Uuid::new_v4);
     let mut call = StartCall {
         caller,
@@ -220,7 +238,6 @@ const fn start_deps<'deps>(
     sdk: &'deps dyn JudgeSdk,
     resolution: &'deps ResolutionContext<'deps>,
     cache: &'deps ProviderCache,
-    settings: &'deps AnthropicSettings,
 ) -> StartDeps<'deps> {
     StartDeps {
         router: None,
@@ -230,7 +247,7 @@ const fn start_deps<'deps>(
         credentials: AnthropicCredentials {
             anthropic_key: None,
             api_key: state.api_key.as_ref(),
-            settings,
+            settings: &state.anthropic,
             secret_state: SecretManagerReadState {
                 client_exists: false,
                 settings_exist: false,

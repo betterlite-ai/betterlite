@@ -1,24 +1,32 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
+use betterlite_anthropic::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey, UserIdentity,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::judge_primitives::provider_qualified::ProviderCache;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolutionContext;
 use chrono::{Duration, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use secrecy::ExposeSecret;
 
 use super::{
-    LifecycleState, UnbuiltJudgeSdk, identity_of_caller, lifecycle_response, start_route,
-    stop_route, store_from_state,
+    LifecycleState, UnbuiltJudgeSdk, identity_of_caller, lifecycle_response, lifecycle_state,
+    start_deps, start_route, stop_route, store_from_state,
 };
 use crate::auth::auth_identity::AuthContext;
 use crate::judge_targets::call::JudgeCall;
@@ -69,6 +77,7 @@ fn state() -> Arc<LifecycleState> {
         store: None,
         api_key: None,
         api_base: None,
+        anthropic: AnthropicSettings::default(),
     })
 }
 
@@ -83,13 +92,9 @@ fn judge_call() -> JudgeCall {
     }
 }
 
-fn configured_config() -> Config {
+fn configured_config(lookup: BTreeMap<String, String>) -> Config {
     let yaml = "general_settings:\n  database_url: postgresql://betterlite:betterlite@localhost:5432/betterlite\n";
-    ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load(yaml)
-    .unwrap()
+    ConfigLoader { lookup }.load(yaml).unwrap()
 }
 
 #[tokio::test]
@@ -178,8 +183,37 @@ async fn the_unbuilt_judge_sdk_refuses_a_call() {
 
 #[tokio::test]
 async fn store_from_state_builds_a_store_from_the_configured_url() {
-    let state = state_for(&configured_config());
+    let state = state_for(&configured_config(BTreeMap::new()));
     assert!(store_from_state(&state).is_some());
+}
+
+#[test]
+fn the_route_hands_the_configured_anthropic_key_to_start_validation() {
+    let lookup = BTreeMap::from([("ANTHROPIC_API_KEY".to_owned(), "sk-ant-env-key".to_owned())]);
+    let config = configured_config(lookup);
+    let state = lifecycle_state(&state_for(&config));
+    let mut bundled = BundledCatalog::default();
+    let catalog = bundled.get();
+    let no_names = BTreeSet::new();
+    let environment = BTreeMap::new();
+    let resolution = ResolutionContext {
+        catalog: catalog.as_ref(),
+        known_model_names: &no_names,
+        custom_providers: &no_names,
+        environment: &environment,
+        registry: JSONProviderRegistry::load(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    let cache = ProviderCache::default();
+    let sdk = UnbuiltJudgeSdk;
+    let deps = start_deps(&state, &sdk, &resolution, &cache);
+    let settings = deps.credentials.settings;
+    assert_eq!(
+        settings.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-ant-env-key")
+    );
+    assert_eq!(settings.anthropic_version, ANTHROPIC_VERSION);
 }
 
 #[test]
