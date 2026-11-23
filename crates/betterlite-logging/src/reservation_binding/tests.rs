@@ -93,19 +93,19 @@ fn lookup_nothing_recorded_is_absent() {
 #[rstest]
 #[case::both_buckets(
     r#"{"metadata": {"user_api_key_budget_reservation": {"id": "res-1"}}, "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res-2"}}, "model": "gpt-4"}"#,
-    r#"{"metadata": {"user_api_key_budget_reservation": {"id": "res-1", "callback_bound": true}}, "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res-2", "callback_bound": true}}, "model": "gpt-4"}"#
+    r#"{"metadata":{"user_api_key_budget_reservation":{"id":"res-1","callback_bound":true}},"litellm_metadata":{"user_api_key_budget_reservation":{"id":"res-2","callback_bound":true}},"model":"gpt-4"}"#
 )]
 #[case::only_litellm_metadata(
     r#"{"metadata": {"team": "t1"}, "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res-2"}}}"#,
-    r#"{"metadata": {"team": "t1"}, "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res-2", "callback_bound": true}}}"#
+    r#"{"metadata":{"team":"t1"},"litellm_metadata":{"user_api_key_budget_reservation":{"id":"res-2","callback_bound":true}}}"#
 )]
 #[case::reservation_on_the_auth_record(
     r#"{"metadata": {"user_api_key_auth": {"budget_reservation": {"id": "res-3"}}}}"#,
-    r#"{"metadata": {"user_api_key_auth": {"budget_reservation": {"id": "res-3", "callback_bound": true}}}}"#
+    r#"{"metadata":{"user_api_key_auth":{"budget_reservation":{"id":"res-3","callback_bound":true}}}}"#
 )]
 #[case::empty_reservation_is_stamped(
     r#"{"litellm_metadata": {"user_api_key_budget_reservation": {}}}"#,
-    r#"{"litellm_metadata": {"user_api_key_budget_reservation": {"callback_bound": true}}}"#
+    r#"{"litellm_metadata":{"user_api_key_budget_reservation":{"callback_bound":true}}}"#
 )]
 fn stamp_sets_callback_bound_on_each_bucket(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(encoded(&stamped(input, true)), expected);
@@ -114,24 +114,24 @@ fn stamp_sets_callback_bound_on_each_bucket(#[case] input: &str, #[case] expecte
 #[rstest]
 #[case::list_bucket(
     r#"{"metadata": [1], "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res"}}}"#,
-    r#"{"metadata": [1], "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res", "callback_bound": true}}}"#
+    r#"{"metadata":[1],"litellm_metadata":{"user_api_key_budget_reservation":{"id":"res","callback_bound":true}}}"#
 )]
 #[case::text_bucket(
     r#"{"metadata": "stamped", "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res"}}}"#,
-    r#"{"metadata": "stamped", "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res", "callback_bound": true}}}"#
+    r#"{"metadata":"stamped","litellm_metadata":{"user_api_key_budget_reservation":{"id":"res","callback_bound":true}}}"#
 )]
 #[case::null_bucket(
     r#"{"metadata": null, "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res"}}}"#,
-    r#"{"metadata": null, "litellm_metadata": {"user_api_key_budget_reservation": {"id": "res", "callback_bound": true}}}"#
+    r#"{"metadata":null,"litellm_metadata":{"user_api_key_budget_reservation":{"id":"res","callback_bound":true}}}"#
 )]
 #[case::no_bucket_is_created("{}", "{}")]
 #[case::bucket_without_a_reservation_stays(
-    r#"{"metadata": {"team": "t1"}, "litellm_metadata": {"user_api_key_auth": {"team": "t2"}}}"#,
-    r#"{"metadata": {"team": "t1"}, "litellm_metadata": {"user_api_key_auth": {"team": "t2"}}}"#
+    r#"{"metadata":{"team":"t1"},"litellm_metadata":{"user_api_key_auth":{"team":"t2"}}}"#,
+    r#"{"metadata":{"team":"t1"},"litellm_metadata":{"user_api_key_auth":{"team":"t2"}}}"#
 )]
 #[case::non_object_reservation_stays(
-    r#"{"metadata": {"user_api_key_budget_reservation": "res"}, "litellm_metadata": {"user_api_key_auth": null}}"#,
-    r#"{"metadata": {"user_api_key_budget_reservation": "res"}, "litellm_metadata": {"user_api_key_auth": null}}"#
+    r#"{"metadata":{"user_api_key_budget_reservation":"res"},"litellm_metadata":{"user_api_key_auth":null}}"#,
+    r#"{"metadata":{"user_api_key_budget_reservation":"res"},"litellm_metadata":{"user_api_key_auth":null}}"#
 )]
 fn stamp_skips_a_bucket_it_cannot_stamp(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(encoded(&stamped(input, true)), expected);
@@ -140,11 +140,11 @@ fn stamp_skips_a_bucket_it_cannot_stamp(#[case] input: &str, #[case] expected: &
 #[rstest]
 #[case::existing_member_stays_in_place(
     r#"{"metadata": {"user_api_key_budget_reservation": {"callback_bound": false, "id": "res", "cost": 1}, "team": "t1"}}"#,
-    r#"{"metadata": {"user_api_key_budget_reservation": {"callback_bound": true, "id": "res", "cost": 1}, "team": "t1"}}"#
+    r#"{"metadata":{"user_api_key_budget_reservation":{"callback_bound":true,"id":"res","cost":1},"team":"t1"}}"#
 )]
 #[case::missing_member_is_appended(
     r#"{"metadata": {"user_api_key_budget_reservation": {"id": "res"}}}"#,
-    r#"{"metadata": {"user_api_key_budget_reservation": {"id": "res", "callback_bound": true}}}"#
+    r#"{"metadata":{"user_api_key_budget_reservation":{"id":"res","callback_bound":true}}}"#
 )]
 fn stamp_keeps_the_callback_bound_member_in_place(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(encoded(&stamped(input, true)), expected);
@@ -157,6 +157,6 @@ fn stamp_unbind_after_bind_leaves_false() {
     stamp_callback_bound(&mut params, false);
     assert_eq!(
         encoded(&params),
-        r#"{"metadata": {"user_api_key_budget_reservation": {"id": "res", "callback_bound": false}}, "litellm_metadata": {"user_api_key_auth": {"budget_reservation": {"id": "res", "callback_bound": false}}}}"#
+        r#"{"metadata":{"user_api_key_budget_reservation":{"id":"res","callback_bound":false}},"litellm_metadata":{"user_api_key_auth":{"budget_reservation":{"id":"res","callback_bound":false}}}}"#
     );
 }
