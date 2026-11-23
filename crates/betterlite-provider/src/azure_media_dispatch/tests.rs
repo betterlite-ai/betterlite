@@ -34,7 +34,7 @@ use super::error::AzureMediaError;
 use super::parts::{form_parts, header_map};
 use super::speech::config::AvaSpeechConfig;
 use super::test_support::{Cache, Clock, Outcome, Reply};
-use super::{AzureMediaResult, ImageEditOutcome};
+use super::{AzureMediaRequest, AzureMediaResult, ImageEditOutcome};
 use crate::api::speech_http::SpeechBinaryResponse;
 use crate::api::speech_provider_contract::{SpeechMappingOptions, TextToSpeechConfig};
 use crate::openai_media_dispatch::OpenAiMediaRequest;
@@ -49,9 +49,14 @@ const DALL_E_BODY: &str =
 
 // every exchange builds the logging fixture; one that fails to build fails the test, not the arm under it
 async fn exchange(operation: AzureMediaOperation, replies: Vec<Reply>) -> Outcome {
-    super::test_support::exchange::exchange(operation, replies)
-        .await
-        .expect("the logging fixture builds")
+    super::test_support::exchange::exchange_request_with(
+        OperationRequest::AzureMedia(AzureMediaRequest),
+        operation,
+        replies,
+        |_logging| {},
+    )
+    .await
+    .expect("the logging fixture builds")
 }
 
 async fn exchange_request(
@@ -606,12 +611,14 @@ fn speech_error(outcome: &Outcome, status: u16, text: &str) {
 // a pre-call the logging hooks refuse stops the arm before any request leaves
 async fn logging_failure() {
     let operation = AzureMediaOperation::OpenAiSpeech(Box::new(speech_operation()));
-    let outcome =
-        super::test_support::exchange::exchange_with_logging(operation, Vec::new(), |logging| {
-            logging.state.request_logging.raw_request_only = true
-        })
-        .await
-        .expect("the logging fixture builds");
+    let outcome = super::test_support::exchange::exchange_request_with(
+        OperationRequest::AzureMedia(AzureMediaRequest),
+        operation,
+        Vec::new(),
+        |logging| logging.state.request_logging.raw_request_only = true,
+    )
+    .await
+    .expect("the logging fixture builds");
     let error = error_of(&outcome);
     assert!(matches!(
         error,

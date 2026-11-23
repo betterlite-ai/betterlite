@@ -7,43 +7,12 @@ use betterlite_foundry::chat::sources::NoSources;
 use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
 use betterlite_logging::logging_privacy::request::Decision;
 
-use super::super::AzureMediaRequest;
 use super::super::call::AzureMediaOperation;
 use super::super::execute::dispatch;
 use super::super::runtime::MediaRuntime;
 use super::speech::{FixtureError, SpeechLogging, speech_logging};
 use super::{Cache, Clock, Fixture, Outcome, Recorder, Reply};
 use crate::operation::OperationRequest;
-
-pub async fn exchange(
-    operation: AzureMediaOperation,
-    replies: Vec<Reply>,
-) -> Result<Outcome, FixtureError> {
-    exchange_request_with(
-        OperationRequest::AzureMedia(AzureMediaRequest),
-        operation,
-        replies,
-        |_logging| {},
-    )
-    .await
-}
-
-pub async fn exchange_with_logging<F>(
-    operation: AzureMediaOperation,
-    replies: Vec<Reply>,
-    configure: F,
-) -> Result<Outcome, FixtureError>
-where
-    F: FnOnce(&mut SpeechLogging),
-{
-    exchange_request_with(
-        OperationRequest::AzureMedia(AzureMediaRequest),
-        operation,
-        replies,
-        configure,
-    )
-    .await
-}
 
 pub async fn exchange_request_with<F>(
     request: OperationRequest,
