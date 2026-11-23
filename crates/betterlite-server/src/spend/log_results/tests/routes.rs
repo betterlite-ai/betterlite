@@ -188,6 +188,23 @@ async fn no_database_answers_the_exact_error() {
     assert_eq!(reply.json(), json(NO_DATABASE_BODY));
 }
 
+// the leniency chrono adds over strptime, listed in docs/deviations/B1730.yaml
+#[tokio::test]
+async fn a_signed_year_is_forwarded_instead_of_refused() {
+    let fake = Fake::default();
+    let events = fake.events.clone();
+    let reply = call(
+        state(Some(fake)),
+        "/spend/logs?start_date=-100-01-01&end_date=2024-01-01&summarize=false",
+        Some(&admin()),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let recorded = seen(&events);
+    assert_eq!(recorded.len(), 1);
+    assert!(recorded[0].starts_with("rows -0100-01-01T00:00:00+00:00|2024-01-01T00:00:00+00:00 "));
+}
+
 #[tokio::test]
 async fn no_database_wins_over_a_bad_date() {
     let reply = call(

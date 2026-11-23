@@ -139,4 +139,8 @@ fn accepts_unpadded_and_signed_years_that_python_refuses() {
         parse_legacy_date("+2024-01-02").unwrap(),
         NaiveDate::from_ymd_opt(2024, 1, 2).unwrap()
     );
+    assert_eq!(
+        parse_legacy_date(" 2024-01-02").unwrap(),
+        NaiveDate::from_ymd_opt(2024, 1, 2).unwrap()
+    );
 }
