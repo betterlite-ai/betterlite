@@ -48,11 +48,24 @@ pub(crate) fn outbound_client(
         .map_err(|source| SessionError::Proxy { source })?;
     ProxiedClient::outbound(&Arc::new(policy)).map_err(|source| SessionError::Client { source })
 }
+// the module-level credentials a session's settings carry, read the way main.py reads them
+pub(crate) trait ModuleCredentials {
+    fn api_key(&self) -> Option<SecretString>;
+    fn api_base(&self) -> Option<String>;
+}
+impl ModuleCredentials for CompletionSettings {
+    fn api_key(&self) -> Option<SecretString> {
+        self.api_key.clone()
+    }
+    fn api_base(&self) -> Option<String> {
+        self.api_base.clone()
+    }
+}
 // litellm.api_key and litellm.api_base reach resolution as the module-level credentials
-pub(crate) fn global_credentials(settings: &CompletionSettings) -> GlobalCredentials {
+pub(crate) fn global_credentials<S: ModuleCredentials>(settings: &S) -> GlobalCredentials {
     GlobalCredentials {
-        api_key: settings.api_key.clone(),
-        api_base: settings.api_base.clone(),
+        api_key: settings.api_key(),
+        api_base: settings.api_base(),
         xai_key: None,
         inception_key: None,
         lemonade_key: None,

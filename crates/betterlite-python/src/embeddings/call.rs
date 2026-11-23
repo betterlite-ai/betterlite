@@ -7,6 +7,7 @@ use super::response::{
 use super::session::{
     DeploymentInputs, EmbeddingSession, deployment, header_map, secret_text, with_headers,
 };
+use crate::completion::setup::global_credentials;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
@@ -271,14 +272,4 @@ fn model_info_id(arguments: &EmbeddingArguments) -> Option<&Json> {
         return None;
     };
     info.get("id")
-}
-// main.py reads litellm.api_key and litellm.api_base into every call's globals
-pub(crate) fn global_credentials(settings: &EmbeddingSettingsWire) -> GlobalCredentials {
-    GlobalCredentials {
-        api_key: secret_text(settings.api_key.as_ref()),
-        api_base: settings.api_base.clone().filter(|text| !text.is_empty()),
-        xai_key: None,
-        inception_key: None,
-        lemonade_key: None,
-    }
 }

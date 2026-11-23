@@ -303,7 +303,7 @@ def test_call_hidden_params() -> None:
     assert FLOAT.validate_python(hidden["response_cost"]) > 0.0
 
 
-def test_call_hidden_params_name_the_caller_model() -> None:
+def test_call_hidden_model_names() -> None:
     with closing(EndpointServer()) as server:
         base = server.url + API_BASE_PATH
         prefixed = response_of(
@@ -443,14 +443,14 @@ def test_error_mock_text() -> None:
     assert str(caught.value) == MOCK_ERROR_TEXT
 
 
-def test_async_mock_text_is_the_connection_class() -> None:
+def test_async_mock_error_class() -> None:
     with pytest.raises(APIConnectionError) as caught:
         asyncio.run(aembedding(model=GOOD_MODEL, input="hi", mock_response="error"))
     assert caught.value.status_code == SERVER_ERROR_STATUS
     assert MOCK_ERROR_TEXT in caught.value.message
 
 
-def test_error_azure_ad_token_provider_refused() -> None:
+def test_error_token_refused() -> None:
     with pytest.raises(UnsupportedCallArgument) as caught:
         embedding(model=GOOD_MODEL, input="hi", azure_ad_token_provider=object())
     assert caught.value.argument == "azure_ad_token_provider"
@@ -474,7 +474,7 @@ def test_async_aembedding() -> None:
     assert records_of(response)[0]["embedding"] == FIXTURE_VECTOR
 
 
-def test_async_hidden_params_hold_only_the_provider() -> None:
+def test_async_hidden_one_key() -> None:
     with closing(EndpointServer()) as server:
         response = asyncio.run(
             aembedding(

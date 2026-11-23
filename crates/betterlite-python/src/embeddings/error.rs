@@ -1,10 +1,9 @@
 use super::convert::{ConvertError, NativeEmbeddingErrorPayload};
+use crate::completion::error::SessionError as CompletionSessionError;
 use betterlite_core::operation::embedding::route_error;
-use betterlite_env::EnvError;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::details::{ResponseDetails, TimeoutDetails, TimeoutStatus};
 use betterlite_error::error::{ErrorClass, ErrorContext};
-use betterlite_http::error::HttpError;
 use betterlite_models::resolution::ResolutionError;
 use betterlite_openai::embedding::EmbeddingError;
 use betterlite_provider::operation::OperationError;
@@ -33,16 +32,8 @@ pub(crate) enum CallFailure {
 pub(crate) enum SessionError {
     #[error(transparent)]
     Json(#[from] ConvertError),
-    #[error("the proxy environment could not be read: {source}")]
-    Proxy {
-        #[source]
-        source: EnvError,
-    },
-    #[error("the outbound http client could not be built: {source}")]
-    Client {
-        #[source]
-        source: HttpError,
-    },
+    #[error(transparent)]
+    Completion(#[from] CompletionSessionError),
     #[error("the redactor could not be built: {source}")]
     Redact {
         #[from]
@@ -109,8 +100,7 @@ impl From<SessionError> for PyErr {
         match error {
             SessionError::Json(ConvertError::Json { .. }) => PyValueError::new_err(message),
             SessionError::Json(ConvertError::Encode { .. })
-            | SessionError::Proxy { .. }
-            | SessionError::Client { .. }
+            | SessionError::Completion(_)
             | SessionError::Redact { .. } => PyRuntimeError::new_err(message),
         }
     }

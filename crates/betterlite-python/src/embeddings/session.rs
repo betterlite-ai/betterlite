@@ -1,8 +1,8 @@
-use super::convert::{ConvertError, EmbeddingArguments, SessionWire};
+use super::convert::{ConvertError, EmbeddingArguments, EmbeddingSettingsWire, SessionWire};
 use super::error::{CallFacts, CallFailure, Raised, SessionError, raised, resolution_failure};
+use crate::completion::setup::{ModuleCredentials, openai_defaults, outbound_client};
 use betterlite_config::loader::startup::process_environment;
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
+use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -90,34 +90,13 @@ impl EmbeddingSession {
         }
     }
 }
-fn first_text(environment: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
-    names.iter().find_map(|name| {
-        environment
-            .get(*name)
-            .filter(|value| !value.is_empty())
-            .cloned()
-    })
-}
-// the environment values main.py's OpenAI branch falls back to, in its order
-pub(crate) fn openai_defaults(environment: &BTreeMap<String, String>) -> OpenAiDefaults {
-    OpenAiDefaults {
-        request_timeout: None,
-        api_bases: first_text(environment, &["OPENAI_BASE_URL", "OPENAI_API_BASE"])
-            .into_iter()
-            .collect(),
-        api_keys: first_text(environment, &["OPENAI_API_KEY"])
-            .map(SecretString::from)
-            .into_iter()
-            .collect(),
-        organization: first_text(environment, &["OPENAI_ORGANIZATION"]),
-        global_drop_params: false,
+impl ModuleCredentials for EmbeddingSettingsWire {
+    fn api_key(&self) -> Option<SecretString> {
+        secret_text(self.api_key.as_ref())
     }
-}
-// the outbound client honours the proxy variables of the environment the session was built from
-fn outbound_client(environment: &BTreeMap<String, String>) -> Result<ProxiedClient, SessionError> {
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), environment)
-        .map_err(|source| SessionError::Proxy { source })?;
-    ProxiedClient::outbound(&Arc::new(policy)).map_err(|source| SessionError::Client { source })
+    fn api_base(&self) -> Option<String> {
+        self.api_base.clone().filter(|text| !text.is_empty())
+    }
 }
 // get_llm_provider's answer next to the call's own key and arguments
 pub(crate) struct DeploymentInputs<'call> {
