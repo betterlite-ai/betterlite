@@ -36,6 +36,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 
+use super::builders::env_vars;
 use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_agentic_execution::executor::{
     AnthropicContinuation, ContinuationExecutor, ResponsesContinuation,
