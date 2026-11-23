@@ -36,22 +36,30 @@ class MemberView(TypedDict):
     role: str
 
 
-class ItemView(TypedDict):
+# LiteLLM dumps only the keys each response model declares, so the views differ
+class ItemBase(TypedDict):
     team_id: str
     team_alias: str | None
     members_with_roles: list[MemberView]
-    members_count: NotRequired[int]
-    keys_count: NotRequired[int]
-    access_group_models: NotRequired[list[str] | None]
-    access_group_mcp_server_ids: NotRequired[list[str] | None]
-    access_group_agent_ids: NotRequired[list[str] | None]
-    id: NotRequired[str | None]
-    deleted_by: NotRequired[str | None]
-    deleted_by_api_key: NotRequired[str | None]
-    litellm_changed_by: NotRequired[str | None]
 
 
-ITEM: Final = TypeAdapter(ItemView)
+class LiveItemView(ItemBase):
+    members_count: int
+    keys_count: int
+    access_group_models: list[str] | None
+    access_group_mcp_server_ids: list[str] | None
+    access_group_agent_ids: list[str] | None
+
+
+class DeletedItemView(ItemBase):
+    id: str | None
+    deleted_by: str | None
+    deleted_by_api_key: str | None
+    litellm_changed_by: str | None
+
+
+LIVE_ITEM: Final = TypeAdapter(LiveItemView)
+DELETED_ITEM: Final = TypeAdapter(DeletedItemView)
 
 
 def optional_views(values: list[str] | None) -> list[JsonValue] | None:
@@ -60,33 +68,39 @@ def optional_views(values: list[str] | None) -> list[JsonValue] | None:
     return [*values]
 
 
-def item_view(view: ItemView, *, use_deleted_table: bool) -> JsonValue:
-    members: list[JsonValue] = [
+def members_json(view: ItemBase) -> list[JsonValue]:
+    return [
         {"user_id": member["user_id"], "role": member["role"]}
         for member in view["members_with_roles"]
     ]
-    if use_deleted_table:
-        return {
-            "kind": "deleted",
-            "team_id": view["team_id"],
-            "team_alias": view["team_alias"],
-            "members_with_roles": members,
-            "id": view["id"],
-            "deleted_by": view["deleted_by"],
-            "deleted_by_api_key": view["deleted_by_api_key"],
-            "litellm_changed_by": view["litellm_changed_by"],
-        }
+
+
+def base_item(view: ItemBase, kind: str) -> dict[str, JsonValue]:
     return {
-        "kind": "enriched",
+        "kind": kind,
         "team_id": view["team_id"],
         "team_alias": view["team_alias"],
-        "members_with_roles": members,
-        "members_count": view["members_count"],
-        "keys_count": view["keys_count"],
-        "access_group_models": optional_views(view["access_group_models"]),
-        "access_group_mcp_server_ids": optional_views(view["access_group_mcp_server_ids"]),
-        "access_group_agent_ids": optional_views(view["access_group_agent_ids"]),
+        "members_with_roles": members_json(view),
     }
+
+
+def live_item_view(view: LiveItemView) -> JsonValue:
+    item = base_item(view, "enriched")
+    item["members_count"] = view["members_count"]
+    item["keys_count"] = view["keys_count"]
+    item["access_group_models"] = optional_views(view["access_group_models"])
+    item["access_group_mcp_server_ids"] = optional_views(view["access_group_mcp_server_ids"])
+    item["access_group_agent_ids"] = optional_views(view["access_group_agent_ids"])
+    return item
+
+
+def deleted_item_view(view: DeletedItemView) -> JsonValue:
+    item = base_item(view, "deleted")
+    item["id"] = view["id"]
+    item["deleted_by"] = view["deleted_by"]
+    item["deleted_by_api_key"] = view["deleted_by_api_key"]
+    item["litellm_changed_by"] = view["litellm_changed_by"]
+    return item
 
 
 def run(input_value: Input) -> JsonValue:
@@ -97,8 +111,8 @@ def run(input_value: Input) -> JsonValue:
         use_deleted_table=use_deleted_table,
         keys_count_by_team=input_value.get("keys_count_by_team"),
     )
-    views = [
-        item_view(ITEM.validate_json(item.model_dump_json()), use_deleted_table=use_deleted_table)
-        for item in converted
-    ]
-    return {"teams": views}
+    if use_deleted_table:
+        deleted = [deleted_item_view(DELETED_ITEM.validate_json(item.model_dump_json())) for item in converted]
+        return {"teams": deleted}
+    live = [live_item_view(LIVE_ITEM.validate_json(item.model_dump_json())) for item in converted]
+    return {"teams": live}
