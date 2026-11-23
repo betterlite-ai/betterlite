@@ -52,6 +52,7 @@ pub mod fallback_observations;
 pub mod fallback_plans;
 pub mod feedback_math;
 pub mod feedback_signals;
+pub mod fuse_presets;
 pub mod generalization_integration;
 pub mod io_token_limits;
 pub mod io_token_reservations;

@@ -1,0 +1,99 @@
+id: B10087
+title: Fuse profile preset catalog
+description: >-
+  B3192's public GET /public/complexity_router/fuse_presets returns LiteLLM's bundled Fuse preset catalog, and B353's llm_v2 config resolves its model and harness profiles from the same catalog. Neither uses anything else of the other. This task builds LiteLLM's fuse_presets.py and its bundled fuse_presets.json: the catalog types, the bounded profile text, the catalog load and the preset lookup. B3192 then waits on this small task instead of all of B353, and B353 calls it.
+
+
+  Layout. Module fuse_presets in betterlite-router, crates/betterlite-router/src/fuse_presets.rs, with its tests in fuse_presets/tests.rs. Copy fuse_presets.json byte for byte from the pinned commit to crates/betterlite-router/src/fuse_presets/fuse_presets.json and read it with include_str!. The module file is an empty stub lib.rs already declares. It sits outside B353's two_solver_classifier on purpose, so the two tasks never share files. The module's error enum lives in its own files.
+
+
+  Types. `ProfileText` is a string newtype: strip leading and trailing whitespace, then require 1 to 4000 characters, counted as characters and not bytes, as pydantic counts a str. It deserializes through that check (serde try_from) and keeps the stripped value. Too short and too long are two variants of the module's error. B353 uses this type for llm_v2_config's efficient_profile, capable_profile and harness. `FuseModelPreset { id, label, text: ProfileText, sources: Vec<String>, model }`, `FuseHarnessPreset { id, label, text: ProfileText, sources: Vec<String> }` and `FusePresetCatalog { version, models: Vec<FuseModelPreset>, harnesses: Vec<FuseHarnessPreset> }` are public, deserialize with deny_unknown_fields (LiteLLM's extra="forbid"), reject an empty sources list, and implement Serialize. Declare the fields in exactly that order: pydantic serializes in declaration order, so a model preset goes out as id, label, text, sources, model although the JSON file lists model before text, and B3192's route returns this serialization.
+
+
+  The catalog. `get_fuse_presets()` parses the bundled JSON once per process (std::sync::LazyLock or OnceLock; LiteLLM uses lru_cache(maxsize=1)) and returns a shared reference to the catalog. A parse failure is the module's typed error, never a panic (rules.yaml no-panics). The bundled file holds version "2026-09-22-v1", twelve models and five harnesses; keep them in file order.
+
+
+  The lookup. `PresetKind { Model, Harness }` and `resolve_fuse_profile(text: Option<&ProfileText>, preset_id: Option<&str>, kind: PresetKind)`, returning the catalog error or an optional profile text (borrow or clone as the lifetimes allow). Without a preset id it returns text, None included. With one it searches only the requested kind's list for an exact id. An unknown id gives None even when text is given; a known id gives text when text is given, and the preset's text otherwise. B353 turns None into its own "requires text or a known ..._preset" errors.
+
+
+  Oracle. Helper cases on the b10087 operation with three variants. catalog takes no input and answers the catalog as JSON. resolve takes text, preset_id and kind and answers the profile text or null. profile_text takes a raw string and answers the stripped value or the failure kind, too short or too long. The Python adapter calls the pinned get_fuse_presets().model_dump(mode="json") and resolve_fuse_profile, and validates ProfileText through a pydantic TypeAdapter, mapping its string_too_short and string_too_long error types to the two kinds; it never compares pydantic's message text. The Rust side calls the production functions. Add helper_case corpus seeds named fuse-presets-*. There is no fuzz target: the bundled file is trusted data compiled into the binary, and profile texts from a config file reach ProfileText through B002's config decoder, whose seeds B353 adds.
+
+
+  Tests in fuse_presets/tests.rs, names starting with catalog_, resolve_ or profile_text_. Catalog tests: the bundled file parses with its version and every id in order, a catalog with an unknown field or an empty sources list fails, and a serialized model preset lists its keys as id, label, text, sources, model. Resolve tests: an rstest table over no preset with and without text, a known model preset with and without text, a known harness preset, an unknown id with text, and a model id asked for as a harness. ProfileText tests: surrounding spaces, tabs and newlines stripped, whitespace alone too short, exactly 4000 characters after stripping accepted, 4001 rejected, and a multibyte text counted by characters.
+scope:
+  paths:
+    - crates/betterlite-router/src/fuse_presets.rs
+    - crates/betterlite-router/src/fuse_presets/**
+    - tools/oracle/cases/helpers/fuse-presets/**
+    - tools/oracle/fuzz/corpus/helper_case/fuse-presets-*
+    - tools/oracle/helpers/b10087.py
+    - tools/oracle/helpers/b10087/**
+    - tools/oracle/src/helpers/router/b10087.rs
+    - tools/oracle/src/helpers/router/b10087/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.py#L1-L52
+    why: Owned. ProfileText, the three preset models, get_fuse_presets and resolve_fuse_profile.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/fuse_presets.json#L1-L121
+    why: Owned. The bundled catalog, copied unchanged.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L137-L169
+    why: Call site. LLMV2Config's profile fields and _profile_texts, in B353's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L444-L449
+    why: Call site. The public fuse_presets route, in B3192's code.
+dod:
+  - text: The bundled catalog parses once into the typed catalog with its version, twelve models and five harnesses in file order; an unknown field or an empty sources list fails; a model preset serializes its keys as id, label, text, sources, model.
+    proof: [catalog-tests, oracle, helper-python]
+  - text: resolve_fuse_profile returns text when no preset id is given, None for an unknown id even with text, text over the preset when both are given and the preset's text otherwise, searching only the requested kind's list.
+    proof: [resolve-tests, oracle]
+  - text: ProfileText strips surrounding whitespace before it checks 1 to 4000 characters, so whitespace alone is too short and a 4000-character text with spaces around it passes.
+    proof: [profile-text-tests, oracle]
+  - text: New fuse-presets seeds for b10087 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: catalog-tests
+      why: The bundled catalog is missing, reordered, accepts an unknown field or serializes keys in file order.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^fuse_presets::tests::catalog_/)'
+    - id: resolve-tests
+      why: Text rescues an unknown preset id, a preset overrides given text, or a lookup crosses kinds.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^fuse_presets::tests::resolve_/)'
+    - id: profile-text-tests
+      why: ProfileText counts before stripping, counts bytes or accepts an empty text.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^fuse_presets::tests::profile_text_/)'
+    - id: helper-python
+      why: The b10087 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10087.py tools/oracle/helpers/b10087)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10087 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/fuse-presets-*")" &&
+        grep -lE '^[[:space:]]+b10087:' tools/oracle/fuzz/corpus/helper_case/fuse-presets-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/fuse-presets/bundled-catalog.yaml
+  - tools/oracle/cases/helpers/fuse-presets/no-preset-keeps-text.yaml
+  - tools/oracle/cases/helpers/fuse-presets/text-beats-preset.yaml
+  - tools/oracle/cases/helpers/fuse-presets/preset-text-fallback.yaml
+  - tools/oracle/cases/helpers/fuse-presets/unknown-preset-with-text.yaml
+  - tools/oracle/cases/helpers/fuse-presets/kind-selects-list.yaml
+  - tools/oracle/cases/helpers/fuse-presets/profile-text-bounds.yaml
+deviations: []
+out_of_scope:
+  - "litellm/router_strategy/complexity_router/llm_v2.py: LLMV2Config, its _profile_texts errors and the two-solver classifier: B353, which calls resolve_fuse_profile and uses ProfileText."
+  - "GET /public/complexity_router/fuse_presets: B3192, which returns get_fuse_presets' catalog."
+  - "Fetching newer presets or editing the bundled ones: not built; LiteLLM ships the file inside its package."
+pitfalls:
+  - "An unknown preset id gives None even when text is given, so text never rescues a mistyped efficient_profile_preset."
+  - "\"claude-code-v1\" asked for as kind model is unknown: each kind searches only its own list."
+  - "pydantic serializes FuseModelPreset as id, label, text, sources, model while fuse_presets.json lists model before text, so a struct declared in file order changes the route body."
+  - "ProfileText strips before it counts, so \"  x  \" is stored as \"x\" and a text of only spaces fails as too short."
+  - "lru_cache never caches a raised error, but the bundled bytes never change, so a once-per-process cell holding the parse result answers the same."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
