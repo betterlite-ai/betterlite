@@ -1,0 +1,17 @@
+kind: helper
+name: bearer-credentials-unrecognized-values
+call:
+  b10086:
+    operation: bearer
+    value: "BEARER sk-123"
+calls:
+  - b10086: {operation: bearer, value: "Bearer\tsk-123"}
+  - b10086: {operation: bearer, value: "Bearer"}
+  - b10086: {operation: bearer, value: "sk-123"}
+  - b10086: {operation: bearer, value: ""}
+  - b10086: {operation: bearer, value: "AWS4-HMAC-SHA256 SignedHeaders=host, Signature=abc"}
+  - b10086: {operation: bearer, value: "Signature=abc Credential=Bearer sk-1/x"}
+  - b10086: {operation: bearer, value: "AWS4-HMAC-SHA256 Credential=/20250101"}
+env: {}
+compare:
+  ignore: []
