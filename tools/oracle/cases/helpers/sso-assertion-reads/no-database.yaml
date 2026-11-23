@@ -1,0 +1,20 @@
+kind: helper
+name: no-database
+call:
+  b10064:
+    database: false
+    rows: []
+    failure: null
+    steps:
+      - {step: fetch, user_id: alice}
+      - {step: fetch_uncached, user_id: alice}
+      - {step: persist, user_id: alice, assertion: {id_token: never-stored-token}}
+env: {}
+compare: {ignore: []}
+calls:
+  - b10064:
+      database: false
+      rows: []
+      failure: null
+      steps:
+        - {step: fetch, user_id: bravo, invalidate_during_read: true}
