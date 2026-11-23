@@ -337,7 +337,7 @@ def test_client_is_refused() -> None:
     assert not server.calls
 
 
-def test_unserved_model_error_names_the_adapter() -> None:
+def test_adapter_model_error() -> None:
     values = common_call("http://127.0.0.1:9")
     values["model"] = "openai/gpt-4o"
     with pytest.raises(Exception, match="chat completion adapter"):
