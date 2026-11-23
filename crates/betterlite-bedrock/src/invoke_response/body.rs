@@ -58,21 +58,15 @@ pub(super) fn family_output(
     match family {
         Family::Cohere => cohere(fields, choices),
         Family::Ai21 => ai21(fields),
-        Family::Generation => Ok(field(fields, "generation", "generation")?.clone()),
+        Family::Generation => Ok(fields
+            .get("generation")
+            .ok_or(FamilyError::Malformed {
+                field: "generation",
+            })?
+            .clone()),
         Family::Mistral => mistral(fields, choices),
         Family::Titan => titan(fields),
     }
-}
-
-fn field<'value>(
-    fields: &'value Object,
-    key: &str,
-    name: &'static str,
-) -> Result<&'value Json, FamilyError> {
-    let Some(value) = fields.get(key) else {
-        return Err(FamilyError::Malformed { field: name });
-    };
-    Ok(value)
 }
 
 fn cohere(fields: &Object, choices: &mut [ChatChoice]) -> Result<Json, FamilyError> {
@@ -83,8 +77,15 @@ fn cohere(fields: &Object, choices: &mut [ChatChoice]) -> Result<Json, FamilyErr
         return Ok(Json::Null);
     };
     let first = first_record(generations, "generations")?;
-    let text = field(first, "text", "generations.text")?.clone();
-    let finish = field(first, "finish_reason", "generations.finish_reason")?;
+    let text = first
+        .get("text")
+        .ok_or(FamilyError::Malformed {
+            field: "generations.text",
+        })?
+        .clone();
+    let finish = first.get("finish_reason").ok_or(FamilyError::Malformed {
+        field: "generations.finish_reason",
+    })?;
     let mapped = mapped_finish_reason(finish)?;
     let choice = choices.first_mut().ok_or(FamilyError::MissingChoice)?;
     choice.finish_reason = Some(mapped);
@@ -104,7 +105,9 @@ fn mapped_finish_reason(value: &Json) -> Result<String, FamilyError> {
 }
 
 fn ai21(fields: &Object) -> Result<Json, FamilyError> {
-    let completions = field(fields, "completions", "completions")?;
+    let completions = fields.get("completions").ok_or(FamilyError::Malformed {
+        field: "completions",
+    })?;
     let first = first_record(completions, "completions")?;
     let data = first
         .get("data")
@@ -131,7 +134,9 @@ fn mistral(fields: &Object, choices: &mut [ChatChoice]) -> Result<Json, FamilyEr
 }
 
 fn titan(fields: &Object) -> Result<Json, FamilyError> {
-    let results = field(fields, "results", "results")?;
+    let results = fields
+        .get("results")
+        .ok_or(FamilyError::Malformed { field: "results" })?;
     let first = first_record(results, "results")?;
     Ok(first.get("outputText").cloned().unwrap_or(Json::Null))
 }
