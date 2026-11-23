@@ -32,6 +32,7 @@ pub struct PollRequest {
 }
 
 // background_streaming.py's detach_request_from_client: the scope stays, the hangup never arrives
+#[derive(Debug)]
 pub struct DetachedRequest<'request> {
     pub scope: &'request PollScope,
 }

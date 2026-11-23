@@ -141,5 +141,5 @@ pub(super) fn assert_redacted(message: &str) {
 }
 
 pub(super) fn assert_bounded(message: &str) {
-    assert_eq!(message.len(), 16_384);
+    assert_eq!(message.len(), 0x4000);
 }

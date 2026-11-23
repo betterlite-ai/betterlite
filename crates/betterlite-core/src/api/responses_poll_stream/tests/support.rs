@@ -290,9 +290,9 @@ pub(super) fn clock(readings: &[u64]) -> ScriptedClock {
 }
 
 pub(super) fn store_for(cache: &Arc<RecordingCache>) -> ResponsePollingStore {
-    let handle: Arc<dyn PollingCache> = Arc::clone(cache);
+    let handle: Option<Arc<dyn PollingCache>> = Some(Arc::<RecordingCache>::clone(cache));
     ResponsePollingStore {
-        cache: Some(handle),
+        cache: handle,
         ttl: 3600,
         limits: ApiLimits::default(),
     }

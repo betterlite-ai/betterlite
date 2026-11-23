@@ -110,17 +110,24 @@ impl BackgroundStreaming<'_> {
                 PollFrame::Malformed => {
                     tracing::warn!("Failed to parse streaming chunk: the payload is not JSON");
                 }
-                PollFrame::Event(value) => {
-                    let event = PollEvent::decode(&value)?;
-                    if matches!(&event, PollEvent::InProgress) {
-                        self.write_patch(&status_patch(STATUS_IN_PROGRESS)).await?;
-                    }
-                    state.apply(event)?;
-                    if let Some(output) = state.flush_if_due(self.clock) {
-                        self.write_patch(&output_patch(output)).await?;
-                    }
-                }
+                PollFrame::Event(value) => self.apply_event(&value, state).await?,
             }
+        }
+        Ok(())
+    }
+
+    async fn apply_event(
+        &self,
+        value: &Json,
+        state: &mut OutputAccumulator,
+    ) -> Result<(), PollStreamError> {
+        let event = PollEvent::decode(value)?;
+        if matches!(&event, PollEvent::InProgress) {
+            self.write_patch(&status_patch(STATUS_IN_PROGRESS)).await?;
+        }
+        state.apply(event)?;
+        if let Some(output) = state.flush_if_due(self.clock) {
+            self.write_patch(&output_patch(output)).await?;
         }
         Ok(())
     }

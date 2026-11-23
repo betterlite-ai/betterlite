@@ -168,14 +168,19 @@ impl OutputAccumulator {
             self.error = Some(error.clone());
         }
         if let Some(items) = &terminal.output {
-            for item in items {
-                if let Some(id) = &item.id {
-                    self.output_items.insert(id.clone(), item.value.clone());
-                }
-            }
+            self.merge_items(items);
             self.dirty = true;
         }
         self.terminal = Some(terminal);
+    }
+
+    fn merge_items(&mut self, items: &[Item]) {
+        for item in items {
+            let Some(id) = &item.id else {
+                continue;
+            };
+            self.output_items.insert(id.clone(), item.value.clone());
+        }
     }
 
     fn flushed(&mut self, now: u64) -> Json {
