@@ -1,12 +1,11 @@
 use super::convert::{EmbeddingArguments, EmbeddingCallWire, EmbeddingSettingsWire};
-use super::error::{CallFacts, CallFailure, Raised, operation_failure, raised};
+use super::error::{CallFacts, CallFailure, Raised, classified, operation_failure, raised};
 use super::request;
 use super::response::{
     EmbeddingAnswer, HiddenFacts, hidden_params, mock_usage, record_json, response_cost,
 };
 use super::session::{
-    DeploymentInputs, EmbeddingSession, additional_headers, deployment, header_map, mock_api_base,
-    secret_text, with_headers,
+    DeploymentInputs, EmbeddingSession, deployment, header_map, secret_text, with_headers,
 };
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::{HiddenParams, Json};
@@ -26,6 +25,8 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 const MOCK_ERROR: &str = "Mock error";
 const MOCK_PROMPT_TOKENS: u32 = 10;
+// get_api_base's default for the openai provider, which the wrapper reports for a call that named none
+const OPENAI_DEFAULT_BASE: &str = "https://api.openai.com";
 // aembedding stamps the provider on every answer it awaits, a mock answer included
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Entry {
@@ -138,12 +139,18 @@ async fn provider_answer(
             Some(facts.provider.to_owned()),
         ));
     };
-    real_answer(context, resolved, provider_ms, response_headers, *response)
+    real_answer(context, provider_ms, response_headers, *response)
 }
 // mock_embedding answers before the provider runs, with none of a real answer's headers or overhead
 fn mock_answer(context: &CallContext<'_>, mock: &Json) -> Result<EmbeddingAnswer, CallFailure> {
     if matches!(mock, Json::Text(text) if text == "error") {
-        return Err(raised(Raised::Plain, String::from(MOCK_ERROR), None, None));
+        // aembedding's except maps the caught Exception again; a sync mock keeps main.py's bare Exception
+        let facts = &context.facts;
+        let redactor = &context.session.redactor;
+        return match context.entry {
+            Entry::Sync => Err(raised(Raised::Plain, String::from(MOCK_ERROR), None, None)),
+            Entry::Async => Err(classified(String::from(MOCK_ERROR), None, facts, redactor)),
+        };
     }
     let response_ms = context
         .started
@@ -160,14 +167,10 @@ fn mock_answer(context: &CallContext<'_>, mock: &Json) -> Result<EmbeddingAnswer
         response_ms,
     })
 }
-// the logging object's values for a mock answer: the configured base, the mock's ten prompt tokens priced
+// the logging object's values for a mock answer: the call's own base, the mock's ten prompt tokens priced
 fn mock_hidden(context: &CallContext<'_>, response_ms: f64) -> HiddenParams {
     let facts = &context.facts;
-    let api_base = mock_api_base(
-        context.arguments,
-        context.settings,
-        &context.session.environment,
-    );
+    let api_base = hidden_api_base(context);
     let cost = response_cost(
         context.arguments,
         &context.session.catalog,
@@ -177,9 +180,11 @@ fn mock_hidden(context: &CallContext<'_>, response_ms: f64) -> HiddenParams {
     );
     let hidden_facts = HiddenFacts {
         call_id: facts.call_id,
-        api_base: &api_base,
-        litellm_model: facts.model,
+        api_base: api_base.as_deref(),
+        litellm_model: &context.arguments.model,
+        model_id: model_info_id(context.arguments),
         provider: (context.entry == Entry::Async).then_some(facts.provider),
+        wrapped: context.entry == Entry::Sync,
     };
     hidden_params(
         &hidden_facts,
@@ -201,7 +206,6 @@ fn mock_record(mock: &Json) -> Json {
 }
 fn real_answer(
     context: &CallContext<'_>,
-    deployment: &ChatDeployment,
     provider_ms: f64,
     response_headers: BTreeMap<String, String>,
     response: EmbeddingResponse,
@@ -220,14 +224,22 @@ fn real_answer(
         facts.provider,
         response.usage.prompt_tokens,
     );
+    let api_base = hidden_api_base(context);
     let hidden_facts = HiddenFacts {
         call_id: facts.call_id,
-        api_base: &deployment.api_base,
-        litellm_model: facts.model,
+        api_base: api_base.as_deref(),
+        litellm_model: &context.arguments.model,
+        model_id: model_info_id(context.arguments),
         provider: Some(facts.provider),
+        wrapped: context.entry == Entry::Sync,
     };
-    let headers = additional_headers(&response_headers);
-    let hidden = hidden_params(&hidden_facts, cost, headers, response_ms, Some(overhead));
+    let hidden = hidden_params(
+        &hidden_facts,
+        cost,
+        AdditionalHeaders::new(),
+        response_ms,
+        Some(overhead),
+    );
     let usage = serde_json::to_string(&response.usage)
         .and_then(|text| serde_json::from_str::<Json>(&text))
         .map_err(|error| CallFailure::Invalid(error.to_string()))?;
@@ -240,6 +252,25 @@ fn real_answer(
         response_headers,
         response_ms,
     })
+}
+// set_hidden_params reports get_api_base over the call's own kwargs, never the resolved deployment
+fn hidden_api_base(context: &CallContext<'_>) -> Option<String> {
+    if let Some(api_base) = &context.arguments.api_base {
+        return Some(api_base.clone());
+    }
+    if let Some(Json::Text(alias)) = context.arguments.extra.get("base_url")
+        && !alias.is_empty()
+    {
+        return Some(alias.clone());
+    }
+    (context.facts.provider == "openai").then(|| String::from(OPENAI_DEFAULT_BASE))
+}
+// set_hidden_params reads kwargs["model_info"]["id"] into the answer's model_id
+fn model_info_id(arguments: &EmbeddingArguments) -> Option<&Json> {
+    let Json::Object(info) = arguments.extra.get("model_info")? else {
+        return None;
+    };
+    info.get("id")
 }
 // main.py reads litellm.api_key and litellm.api_base into every call's globals
 pub(crate) fn global_credentials(settings: &EmbeddingSettingsWire) -> GlobalCredentials {

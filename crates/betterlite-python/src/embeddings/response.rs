@@ -21,12 +21,15 @@ pub(crate) struct EmbeddingAnswer {
     pub(crate) response_headers: BTreeMap<String, String>,
     pub(crate) response_ms: f64,
 }
-// The values the logging object keeps beside a response; a mock answer carries neither provider nor overhead.
+// The values the logging object keeps beside a response.
 pub(crate) struct HiddenFacts<'facts> {
     pub(crate) call_id: &'facts str,
-    pub(crate) api_base: &'facts str,
+    pub(crate) api_base: Option<&'facts str>,
     pub(crate) litellm_model: &'facts str,
+    pub(crate) model_id: Option<&'facts Json>,
     pub(crate) provider: Option<&'facts str>,
+    // set_hidden_params runs inside LiteLLM's @client wrapper, which an awaited answer never reaches
+    pub(crate) wrapped: bool,
 }
 #[must_use]
 pub(crate) fn hidden_params(
@@ -46,9 +49,13 @@ pub(crate) fn hidden_params(
             Number::from_f64(0.0_f64).map_or(Json::Null, Json::Number),
         ),
         ("litellm_call_id", Json::Text(facts.call_id.to_owned())),
-        ("api_base", Json::Text(facts.api_base.to_owned())),
-        // the OpenAI handler's deployment carries no model_info, so LiteLLM logs a null model id
-        ("model_id", Json::Null),
+        (
+            "api_base",
+            facts
+                .api_base
+                .map_or(Json::Null, |base| Json::Text(base.to_owned())),
+        ),
+        ("model_id", facts.model_id.map_or(Json::Null, Clone::clone)),
         ("response_cost", cost),
         ("additional_headers", Json::Object(additional_headers)),
         (
@@ -70,6 +77,10 @@ pub(crate) fn hidden_params(
             String::from("custom_llm_provider"),
             Json::Text(provider.to_owned()),
         );
+    }
+    // an awaited answer never runs the wrapper's set_hidden_params, so only the provider stamp survives
+    if !facts.wrapped {
+        hidden.retain(|name, _| name.as_str() == "custom_llm_provider");
     }
     hidden
 }

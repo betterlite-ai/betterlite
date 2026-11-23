@@ -12,24 +12,12 @@ use betterlite_openai::embedding::{EmbeddingInput, EmbeddingRequest, EncodingFor
 use serde_json::Number;
 use std::collections::BTreeMap;
 // main.py's default_params: never a provider argument, so a kwarg of this name stays out of the body
-const EXCLUDED: [&str; 15] = [
-    "user",
-    "dimensions",
-    "request_timeout",
-    "api_base",
-    "api_version",
-    "api_key",
-    "deployment_id",
-    "organization",
-    "base_url",
-    "default_headers",
-    "timeout",
-    "max_retries",
-    "encoding_format",
-    "aembedding",
-    "extra_headers",
-];
+const EXCLUDED: &str = "user dimensions request_timeout api_base api_version api_key deployment_id \
+    organization base_url default_headers timeout max_retries encoding_format aembedding \
+    extra_headers";
 const ENCODING_ENV: &str = "LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT";
+// main.py reads that variable in its openai, together_ai, nvidia_nim and litellm_proxy branch only
+const ENCODING_ENV_PROVIDERS: [&str; 4] = ["openai", "together_ai", "nvidia_nim", "litellm_proxy"];
 // get_optional_params_embeddings raises this text, and main.py's exception_type keeps it verbatim
 const DIMENSIONS_MESSAGE: &str = "Setting dimensions is not supported for OpenAI `text-embedding-3` and later models. To drop it from the call, set `litellm.drop_params = True`.";
 // The request LiteLLM's OpenAI embedding handler builds: typed fields plus every other body field.
@@ -41,7 +29,12 @@ pub(crate) fn build(
     environment: &BTreeMap<String, String>,
 ) -> Result<EmbeddingRequest, CallFailure> {
     let mut params = optional_params(arguments, model, provider, litellm_drop_params)?;
-    let requested = requested_encoding(arguments.encoding_format.as_deref(), &params, environment);
+    let requested = requested_encoding(
+        arguments.encoding_format.as_deref(),
+        &params,
+        provider,
+        environment,
+    );
     params.remove("encoding_format");
     // the mapping keeps or drops the caller's own value, so its presence decides and the typed argument fills it
     let dimensions = params.remove("dimensions").and(arguments.dimensions);
@@ -75,7 +68,8 @@ fn optional_params(
     for (name, value) in &arguments.extra {
         kwargs.insert(name.clone(), json_value(value)?);
     }
-    let filtered = filter_out_litellm_params(&kwargs, &EXCLUDED);
+    let excluded: Vec<&str> = EXCLUDED.split_whitespace().collect();
+    let filtered = filter_out_litellm_params(&kwargs, &excluded);
     let passed = passed_params(arguments, model, &filtered);
     let allowed = arguments.allowed_openai_params.clone().unwrap_or_default();
     let additional_drop = arguments.additional_drop_params.clone().unwrap_or_default();
@@ -142,6 +136,7 @@ fn params_failure(error: &EmbeddingParamsError) -> CallFailure {
 pub(crate) fn requested_encoding(
     explicit: Option<&str>,
     params: &Params,
+    provider: &str,
     environment: &BTreeMap<String, String>,
 ) -> Option<String> {
     let from_params = match params.get("encoding_format") {
@@ -156,16 +151,19 @@ pub(crate) fn requested_encoding(
         )
         | None => None,
     };
+    let from_environment = if ENCODING_ENV_PROVIDERS.contains(&provider) {
+        environment
+            .get(ENCODING_ENV)
+            .filter(|value| !value.is_empty())
+            .cloned()
+    } else {
+        None
+    };
     let requested = explicit
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .or(from_params)
-        .or_else(|| {
-            environment
-                .get(ENCODING_ENV)
-                .filter(|value| !value.is_empty())
-                .cloned()
-        })?;
+        .or(from_environment)?;
     if requested.trim().to_lowercase() == "none" {
         return None;
     }

@@ -6,9 +6,7 @@ use super::super::request::{build, requested_encoding};
 use super::super::response::{
     EmbeddingAnswer, HiddenFacts, hidden_params, mock_usage, record_json, response_cost,
 };
-use super::super::session::{
-    EmbeddingSession, additional_headers, header_map, mock_api_base, openai_defaults, secret_text,
-};
+use super::super::session::{EmbeddingSession, header_map, openai_defaults, secret_text};
 use super::{
     EmbeddingArguments, EmbeddingCallWire, EmbeddingSettingsWire, NativeEmbeddingErrorPayload,
 };
@@ -46,6 +44,13 @@ const SMALL: &str = "text-embedding-3-small";
 const ADA: &str = "text-embedding-ada-002";
 const EMBEDDING_BODY: &str = r#"{"object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [0.1, 0.2]}], "model": "text-embedding-3-small", "usage": {"prompt_tokens": 2, "total_tokens": 2}}"#;
 const UNAUTHORIZED_BODY: &str = r#"{"error": {"message": "Invalid API key provided: bad-key", "type": "invalid_request_error", "param": null, "code": "invalid_api_key"}}"#;
+// every named argument EmbeddingArguments reads, plus the price and switch keys
+const NAMED_ARGUMENTS_TEXT: &str = r#"{"model": "m", "input": "hi", "dimensions": 3,
+    "encoding_format": "base64", "timeout": 12.5, "user": "alice", "api_base": "http://base",
+    "api_key": "sk-key", "custom_llm_provider": "openai", "litellm_call_id": "call-1",
+    "headers": {"x-base": "1"}, "mock_response": 0, "input_cost_per_token": 0.1,
+    "output_cost_per_token": 0.2, "allowed_openai_params": ["dimensions"],
+    "additional_drop_params": ["user"], "drop_params": true}"#;
 fn parse<T>(text: &str) -> Result<T, serde_json::Error>
 where
     T: DeserializeOwned,
@@ -110,6 +115,12 @@ fn mock_call(entry: Entry) -> EmbeddingAnswer {
     .unwrap();
     get_runtime()
         .block_on(call(&session(), wire, entry))
+        .unwrap()
+}
+fn mock_answer_of(arguments_json: &str) -> EmbeddingAnswer {
+    let wire: EmbeddingCallWire = parse(&format!(r#"{{"arguments": {arguments_json}}}"#)).unwrap();
+    get_runtime()
+        .block_on(call(&session(), wire, Entry::Sync))
         .unwrap()
 }
 // a request is complete once its headers ended and the content-length bytes after them arrived
@@ -249,55 +260,42 @@ fn request_unknown_kwargs_keep_the_shape_they_arrived_in() {
     );
 }
 #[test]
-fn request_named_arguments_are_read_off_the_text() {
-    let call = arguments(
-        r#"{"model": "m", "input": "hi", "dimensions": 3, "encoding_format": "base64",
-            "timeout": 12.5, "user": "alice", "api_base": "http://base", "api_key": "sk-key",
-            "custom_llm_provider": "openai", "litellm_call_id": "call-1",
-            "headers": {"x-base": "1"}, "mock_response": [0.5]}"#,
-    );
-    assert_eq!(call.dimensions, Some(3));
-    assert_eq!(call.encoding_format.as_deref(), Some("base64"));
-    assert_eq!(call.timeout, Some(12.5_f64));
-    assert_eq!(call.user.as_deref(), Some("alice"));
-    assert_eq!(call.api_base.as_deref(), Some("http://base"));
+fn request_named_arguments_prices_and_switches_are_read_off_the_text() {
+    let call = arguments(NAMED_ARGUMENTS_TEXT);
     assert_eq!(
         call.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-key")
     );
-    assert_eq!(call.custom_llm_provider.as_deref(), Some("openai"));
-    assert_eq!(call.litellm_call_id.as_deref(), Some("call-1"));
     assert_eq!(
         call.headers
             .as_ref()
             .and_then(|headers| headers.get("x-base")),
         Some(&String::from("1"))
     );
-    assert_eq!(
-        call.mock_response,
-        Some(Json::List(vec![Json::Number(
-            Number::from_f64(0.5_f64).unwrap()
-        )]))
-    );
-}
-#[test]
-fn request_prices_and_switches_are_read_off_the_text() {
-    let call = arguments(
-        r#"{"model": "m", "input": "hi", "input_cost_per_token": 0.1,
-            "output_cost_per_token": 0.2, "allowed_openai_params": ["dimensions"],
-            "additional_drop_params": ["user"], "drop_params": true}"#,
-    );
-    assert_eq!(call.input_cost_per_token, Some(Decimal::new(1_i64, 1_u32)));
-    assert_eq!(call.output_cost_per_token, Some(Decimal::new(2_i64, 1_u32)));
-    assert_eq!(
-        call.allowed_openai_params,
-        Some(vec![String::from("dimensions")])
-    );
-    assert_eq!(
-        call.additional_drop_params,
-        Some(vec![String::from("user")])
-    );
-    assert_eq!(call.drop_params, Some(true));
+    let parsed = EmbeddingArguments {
+        api_key: None,
+        headers: None,
+        ..call
+    };
+    let expected = EmbeddingArguments {
+        model: String::from("m"),
+        input: Some(EmbeddingInput::Text(String::from("hi"))),
+        dimensions: Some(3),
+        encoding_format: Some(String::from("base64")),
+        timeout: Some(12.5_f64),
+        user: Some(String::from("alice")),
+        api_base: Some(String::from("http://base")),
+        custom_llm_provider: Some(String::from("openai")),
+        litellm_call_id: Some(String::from("call-1")),
+        mock_response: Some(Json::Number(Number::from(0_u32))),
+        input_cost_per_token: Some(Decimal::new(1_i64, 1_u32)),
+        output_cost_per_token: Some(Decimal::new(2_i64, 1_u32)),
+        allowed_openai_params: Some(vec![String::from("dimensions")]),
+        additional_drop_params: Some(vec![String::from("user")]),
+        drop_params: Some(true),
+        ..EmbeddingArguments::default()
+    };
+    assert_eq!(format!("{parsed:?}"), format!("{expected:?}"));
 }
 #[test]
 fn request_settings_are_read_off_the_text() {
@@ -446,13 +444,21 @@ fn request_encoding_format_resolves_in_order(
     assert!(request.passthrough.is_empty());
 }
 #[rstest]
-#[case::mapped_value(None, "base64", &[], Some("base64"))]
-#[case::empty_mapped_value(None, "", &[("LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT", "float")], Some("float"))]
-#[case::argument_beats_the_mapped_value(Some("float"), "base64", &[], Some("float"))]
-#[case::mapped_none(None, "none", &[], None)]
+#[case::mapped_value(None, "base64", "openai", &[], Some("base64"))]
+#[case::empty_mapped_value(None, "", "openai", &[("LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT", "float")], Some("float"))]
+#[case::argument_beats_the_mapped_value(Some("float"), "base64", "openai", &[], Some("float"))]
+#[case::mapped_none(None, "none", "openai", &[], None)]
+#[case::non_openai_ignores_the_environment(
+    None,
+    "",
+    "azure",
+    &[("LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT", "base64")],
+    None
+)]
 fn request_the_mapped_encoding_fills_a_missing_argument(
     #[case] explicit: Option<&str>,
     #[case] mapped: &str,
+    #[case] provider: &str,
     #[case] pairs: &[(&str, &str)],
     #[case] expected: Option<&str>,
 ) {
@@ -461,7 +467,7 @@ fn request_the_mapped_encoding_fills_a_missing_argument(
         String::from("encoding_format"),
         JsonValue::Text(mapped.to_owned()),
     );
-    let requested = requested_encoding(explicit, &params, &environment(pairs));
+    let requested = requested_encoding(explicit, &params, provider, &environment(pairs));
     assert_eq!(requested.as_deref(), expected);
 }
 #[test]
@@ -564,9 +570,11 @@ fn request_an_unpriced_model_costs_null() {
 fn request_hidden_params_skip_provider_and_overhead_when_absent() {
     let facts = HiddenFacts {
         call_id: "call-1",
-        api_base: "http://base",
+        api_base: Some("http://base"),
         litellm_model: SMALL,
+        model_id: None,
         provider: None,
+        wrapped: true,
     };
     let hidden = hidden_params(&facts, Json::Null, AdditionalHeaders::new(), 12.5_f64, None);
     assert!(!hidden.contains_key("custom_llm_provider"));
@@ -597,9 +605,11 @@ fn request_hidden_params_skip_provider_and_overhead_when_absent() {
 fn request_hidden_params_carry_provider_and_overhead_when_given() {
     let facts = HiddenFacts {
         call_id: "call-1",
-        api_base: "http://base",
+        api_base: Some("http://base"),
         litellm_model: SMALL,
+        model_id: None,
         provider: Some("openai"),
+        wrapped: true,
     };
     let cost = Json::Number(Number::from(1_u32));
     let hidden = hidden_params(
@@ -623,6 +633,51 @@ fn request_hidden_params_carry_provider_and_overhead_when_given() {
     assert_eq!(
         hidden.get("response_cost").map(text_of).as_deref(),
         Some("1")
+    );
+}
+#[test]
+fn request_hidden_params_without_the_wrapper_keep_only_the_provider() {
+    let facts = HiddenFacts {
+        call_id: "call-1",
+        api_base: Some("http://base"),
+        litellm_model: SMALL,
+        model_id: None,
+        provider: Some("openai"),
+        wrapped: false,
+    };
+    let hidden = hidden_params(
+        &facts,
+        Json::Null,
+        AdditionalHeaders::new(),
+        12.5_f64,
+        Some(2.5_f64),
+    );
+    assert_eq!(hidden.len(), 1_usize);
+    assert_eq!(
+        hidden.get("custom_llm_provider"),
+        Some(&Json::Text(String::from("openai")))
+    );
+}
+#[test]
+fn request_hidden_params_carry_the_model_info_id_and_the_caller_model() {
+    let model_id = Json::Text(String::from("deployment-1"));
+    let facts = HiddenFacts {
+        call_id: "call-1",
+        api_base: None,
+        litellm_model: "openai/text-embedding-3-small",
+        model_id: Some(&model_id),
+        provider: None,
+        wrapped: true,
+    };
+    let hidden = hidden_params(&facts, Json::Null, AdditionalHeaders::new(), 1.0_f64, None);
+    assert_eq!(
+        hidden.get("model_id"),
+        Some(&Json::Text(String::from("deployment-1")))
+    );
+    assert_eq!(hidden.get("api_base"), Some(&Json::Null));
+    assert_eq!(
+        hidden.get("litellm_model_name"),
+        Some(&Json::Text(String::from("openai/text-embedding-3-small")))
     );
 }
 #[test]
@@ -659,20 +714,45 @@ fn request_secret_text_treats_empty_as_unset(
     assert_eq!(kept.as_ref().map(ExposeSecret::expose_secret), expected);
 }
 #[rstest]
-#[case::argument(r#"{"api_base": "http://argument"}"#, r#"{"api_base": "http://module"}"#, &[("OPENAI_BASE_URL", "http://url")], "http://argument")]
-#[case::module(r#"{"api_base": ""}"#, r#"{"api_base": "http://module"}"#, &[("OPENAI_BASE_URL", "http://url")], "http://module")]
-#[case::base_url("{}", r#"{"api_base": ""}"#, &[("OPENAI_BASE_URL", "http://url"), ("OPENAI_API_BASE", "http://api")], "http://url")]
-#[case::api_base_env("{}", "{}", &[("OPENAI_BASE_URL", ""), ("OPENAI_API_BASE", "http://api")], "http://api")]
-#[case::default("{}", "{}", &[], "https://api.openai.com")]
-fn request_mock_api_base_follows_main_py(
-    #[case] given: &str,
-    #[case] module: &str,
-    #[case] pairs: &[(&str, &str)],
+#[case::argument(r#"{"model": "text-embedding-3-small", "input": "hi", "mock_response": [0.5], "api_base": "http://argument"}"#, "http://argument")]
+#[case::empty_argument(
+    r#"{"model": "text-embedding-3-small", "input": "hi", "mock_response": [0.5], "api_base": ""}"#,
+    ""
+)]
+#[case::base_url(r#"{"model": "text-embedding-3-small", "input": "hi", "mock_response": [0.5], "base_url": "http://alias"}"#, "http://alias")]
+#[case::empty_base_url(
+    r#"{"model": "text-embedding-3-small", "input": "hi", "mock_response": [0.5], "base_url": ""}"#,
+    "https://api.openai.com"
+)]
+#[case::default(
+    r#"{"model": "text-embedding-3-small", "input": "hi", "mock_response": [0.5]}"#,
+    "https://api.openai.com"
+)]
+fn request_a_mock_hidden_api_base_comes_from_the_call(
+    #[case] arguments_json: &str,
     #[case] expected: &str,
 ) {
-    let settings: EmbeddingSettingsWire = parse(module).unwrap();
-    let base = mock_api_base(&arguments(given), &settings, &environment(pairs));
-    assert_eq!(base, expected);
+    let answer = mock_answer_of(arguments_json);
+    assert_eq!(
+        answer.hidden_params.get("api_base"),
+        Some(&Json::Text(String::from(expected)))
+    );
+}
+#[test]
+fn request_a_mock_hidden_api_base_ignores_the_settings_and_environment() {
+    let wire: EmbeddingCallWire = parse(
+        r#"{"arguments": {"model": "text-embedding-3-small", "input": "hi", "mock_response": [0.5]},
+            "settings": {"api_base": "http://module"}}"#,
+    )
+    .unwrap();
+    let keyed = session_from(r#"{"environment": {"OPENAI_BASE_URL": "http://url"}}"#);
+    let answer = get_runtime()
+        .block_on(call(&keyed, wire, Entry::Sync))
+        .unwrap();
+    assert_eq!(
+        answer.hidden_params.get("api_base"),
+        Some(&Json::Text(String::from("https://api.openai.com")))
+    );
 }
 #[test]
 fn request_openai_defaults_skip_empty_environment_values() {
@@ -695,7 +775,7 @@ fn request_openai_defaults_skip_empty_environment_values() {
     assert!(empty.api_bases.is_empty());
 }
 #[test]
-fn request_response_headers_keep_text_values_and_project_rate_limits() {
+fn request_response_headers_keep_text_values() {
     let mut headers = HeaderMap::new();
     headers.insert(
         "x-ratelimit-remaining-requests",
@@ -709,10 +789,12 @@ fn request_response_headers_keep_text_values_and_project_rate_limits() {
         collected.get("x-request-id").map(String::as_str),
         Some("req-1")
     );
-    let projected = additional_headers(&collected);
-    assert!(projected.contains_key("x-ratelimit-remaining-requests"));
-    assert!(projected.contains_key("llm_provider-x-ratelimit-remaining-requests"));
-    assert!(projected.contains_key("llm_provider-x-request-id"));
+    assert_eq!(
+        collected
+            .get("x-ratelimit-remaining-requests")
+            .map(String::as_str),
+        Some("9")
+    );
 }
 #[test]
 fn request_a_session_needs_its_settings_text() {
@@ -743,7 +825,7 @@ fn error_raised_classes_keep_their_status(
     assert_eq!(payload.model.as_deref(), Some(SMALL));
 }
 #[rstest]
-#[case::missing_key(OperationError::MissingApiKey, "InternalServerError", Some(500_u16))]
+#[case::missing_key(OperationError::MissingApiKey, "APIConnectionError", Some(500_u16))]
 #[case::timeout(OperationError::Timeout, "Timeout", Some(408_u16))]
 #[case::no_adapter(OperationError::UnavailableAdapter { provider: String::from("openai") }, "InternalServerError", Some(500_u16))]
 fn error_operation_failures_map_to_litellm_classes(
@@ -803,6 +885,25 @@ fn error_a_mock_error_text_is_a_plain_exception() {
     assert_eq!(payload.message, "Mock error");
 }
 #[test]
+fn error_an_awaited_mock_error_is_the_connection_class() {
+    let wire: EmbeddingCallWire = parse(
+        r#"{"arguments": {"model": "text-embedding-3-small", "input": "hi", "mock_response": "error"}}"#,
+    )
+    .unwrap();
+    let failure = get_runtime()
+        .block_on(call(&session(), wire, Entry::Async))
+        .unwrap_err();
+    let payload = payload_of(failure);
+    assert_eq!(payload.kind, "APIConnectionError");
+    assert_eq!(payload.status_code, Some(500_u16));
+    assert_eq!(
+        payload.message,
+        "APIConnectionError: OpenAIException - Mock error"
+    );
+    assert_eq!(payload.model.as_deref(), Some(SMALL));
+    assert_eq!(payload.llm_provider.as_deref(), Some("openai"));
+}
+#[test]
 fn request_a_mock_answer_skips_the_provider() {
     let answer = mock_call(Entry::Sync);
     assert_eq!(answer.object, "list");
@@ -831,9 +932,26 @@ fn request_a_mock_answer_skips_the_provider() {
 #[test]
 fn request_an_awaited_mock_answer_names_the_provider() {
     let answer = mock_call(Entry::Async);
+    assert_eq!(answer.hidden_params.len(), 1_usize);
     assert_eq!(
         answer.hidden_params.get("custom_llm_provider"),
         Some(&Json::Text(String::from("openai")))
+    );
+}
+#[test]
+fn request_the_caller_model_and_model_info_reach_a_mock_answer() {
+    let answer = mock_answer_of(
+        r#"{"model": "openai/text-embedding-3-small", "input": "hi", "mock_response": [0.5],
+            "model_info": {"id": "deployment-1"}}"#,
+    );
+    assert_eq!(answer.model, SMALL);
+    assert_eq!(
+        answer.hidden_params.get("litellm_model_name"),
+        Some(&Json::Text(String::from("openai/text-embedding-3-small")))
+    );
+    assert_eq!(
+        answer.hidden_params.get("model_id"),
+        Some(&Json::Text(String::from("deployment-1")))
     );
 }
 #[test]
@@ -865,10 +983,15 @@ fn request_a_provider_answer_carries_headers_and_hidden_params() {
         hidden.get("custom_llm_provider"),
         Some(&Json::Text(String::from("openai")))
     );
-    let Some(Json::Object(projected)) = hidden.get("additional_headers") else {
-        panic!("the hidden params carry no additional headers");
+    assert_eq!(
+        hidden.get("additional_headers").map(text_of).as_deref(),
+        Some("{}")
+    );
+    let Some(Json::Text(api_base)) = hidden.get("api_base") else {
+        panic!("the hidden params carry no api base");
     };
-    assert!(projected.contains_key("llm_provider-x-ratelimit-remaining-requests"));
+    assert!(api_base.starts_with("http://127.0.0.1:"), "{api_base}");
+    assert!(api_base.ends_with("/v1"), "{api_base}");
     let Some(Json::Number(overhead)) = hidden.get("litellm_overhead_time_ms") else {
         panic!("a provider answer carries its overhead");
     };

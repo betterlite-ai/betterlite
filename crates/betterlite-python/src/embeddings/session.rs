@@ -1,12 +1,9 @@
-use super::convert::{ConvertError, EmbeddingArguments, EmbeddingSettingsWire, SessionWire};
+use super::convert::{ConvertError, EmbeddingArguments, SessionWire};
 use super::error::{CallFacts, CallFailure, Raised, SessionError, raised, resolution_failure};
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_models::call_helpers::headers::{
-    AdditionalHeaders, HeaderSource, process_response_headers,
-};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
@@ -18,12 +15,9 @@ use betterlite_openai::text_completion_execution::catalog::CompletionCatalog;
 use betterlite_provider::prepared::PreparedRequest;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::{HeaderMap, HeaderName, HeaderValue};
-use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-// get_litellm_params' default before main.py's OpenAI branch replaces it with the /v1 base
-const OPENAI_BASE: &str = "https://api.openai.com";
 // Everything one Python session owns: the environment snapshot, the HTTP client and the catalog it resolves against.
 pub(crate) struct EmbeddingSession {
     pub(crate) environment: BTreeMap<String, String>,
@@ -44,10 +38,7 @@ impl EmbeddingSession {
         let client = outbound_client(&environment)?;
         let catalog = BundledCatalog::default().get();
         let completion = CompletionCatalog::new(&catalog);
-        let redactor =
-            Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| SessionError::Redact {
-                message: error.to_string(),
-            })?;
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
         Ok(Self {
             defaults: openai_defaults(&environment),
             environment,
@@ -192,12 +183,9 @@ pub(crate) fn with_headers(
     prepared: PreparedRequest,
     headers: Option<&Headers>,
 ) -> Result<PreparedRequest, CallFailure> {
-    let Some(caller_headers) = headers else {
+    let Some(caller_headers) = headers.filter(|given| !given.is_empty()) else {
         return Ok(prepared);
     };
-    if caller_headers.is_empty() {
-        return Ok(prepared);
-    }
     let PreparedRequest::Embedding(mut chat) = prepared else {
         return Err(CallFailure::Invalid(String::from(
             "the resolved provider's request cannot carry the caller's headers yet",
@@ -220,28 +208,6 @@ pub(crate) fn header_map(headers: &HeaderMap) -> BTreeMap<String, String> {
         }
     }
     collected
-}
-// a_litellm_logging's additional_headers: the six rate-limit names bare, every other name prefixed
-pub(crate) fn additional_headers(headers: &BTreeMap<String, String>) -> AdditionalHeaders {
-    let mut source = IndexMap::new();
-    for (name, value) in headers {
-        source.insert(name.clone(), value.clone());
-    }
-    process_response_headers(HeaderSource::Upstream(&source))
-}
-// the base main.py's OpenAI branch falls back to before the handler defaults to https://api.openai.com/v1
-pub(crate) fn mock_api_base(
-    arguments: &EmbeddingArguments,
-    settings: &EmbeddingSettingsWire,
-    environment: &BTreeMap<String, String>,
-) -> String {
-    arguments
-        .api_base
-        .clone()
-        .filter(|text| !text.is_empty())
-        .or_else(|| settings.api_base.clone().filter(|text| !text.is_empty()))
-        .or_else(|| first_text(environment, &["OPENAI_BASE_URL", "OPENAI_API_BASE"]))
-        .unwrap_or_else(|| String::from(OPENAI_BASE))
 }
 // LiteLLM's `value or next`: an empty key counts as unset
 pub(crate) fn secret_text(value: Option<&SecretString>) -> Option<SecretString> {

@@ -18,10 +18,16 @@ deviations:
   - what: "`litellm_logging_obj.post_call` and `update_environment_variables` have no Python logging object to update."
     why: The logging object belongs to the `@client` wrapper, which an embedding call does not run yet (see the CallWrapper entry above).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6437
-  - what: "`azure_ad_token_provider` is left out of the call payload, so an azure embedding call never asks it for a token."
-    why: A Python callable cannot cross into Rust; an azure call still authenticates with `api_key` or the azure environment values.
+  - what: "`azure_ad_token_provider` raises UnsupportedCallArgument instead of being called for a token."
+    why: A Python callable cannot cross into Rust; refusing it is honest, since dropping it silently would send an azure call under a different identity than the caller configured.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6360
   - what: "`cost_per_second`, `input_cost_per_second` and `output_cost_per_second` stay out of the body but do not price the answer; `response_cost` uses only the per-token pair and the catalog."
     why: Per-second pricing is registered through the `@client` wrapper's cost tracking, which an embedding call does not run yet (see the CallWrapper entry above).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6421-L6432
+  - what: "The bridge maps betterlite-provider's OperationError to LiteLLM's embedding exceptions in error.rs instead of reusing the server embeddings route's embedding_error and provider_embedding."
+    why: embedding_error and provider_embedding are private to crates/betterlite-server/src/server/chat_setup/provider_call/embedding.rs and answer in the server's own CallError<EmbeddingError>, so betterlite-python can neither import them nor name their type; a dependency from betterlite-python on betterlite-server would also invert the tree's layering.
+    link: https://github.com/betterlite-ai/betterlite/blob/main/crates/betterlite-server/src/server/chat_setup/provider_call/embedding.rs
+  - what: "A hidden api_base is null when the call gave no api_base and no base_url alias and the provider is not openai, where LiteLLM's get_api_base can return the provider's environment default through get_llm_provider."
+    why: The hidden api_base follows the call's own inputs; an openai call without a base reports https://api.openai.com, and no other provider's default chain is resolved for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_api_base.py#L72-L113
 kept_bugs: []

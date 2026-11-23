@@ -8,12 +8,13 @@ use betterlite_http::error::HttpError;
 use betterlite_models::resolution::ResolutionError;
 use betterlite_openai::embedding::EmbeddingError;
 use betterlite_provider::operation::OperationError;
+use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 create_exception!(betterlite_native, NativeEmbeddingError, PyException);
-// openai.OpenAI's own message when every key source is empty; LiteLLM's wrapper re-raises it as a 500
+// openai.OpenAI's own message when every key source is empty; with no status it maps to APIConnectionError
 const MISSING_CREDENTIALS: &str = "Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.";
 const TIMEOUT_ERROR: &str = "APITimeoutError - Request timed out. Error_str: Request timed out.";
 // the identity every answer and every error carries back to Python
@@ -42,8 +43,11 @@ pub(crate) enum SessionError {
         #[source]
         source: HttpError,
     },
-    #[error("the redactor could not be built: {message}")]
-    Redact { message: String },
+    #[error("the redactor could not be built: {source}")]
+    Redact {
+        #[from]
+        source: RedactionError,
+    },
 }
 // The LiteLLM exception classes main.py raises itself, around the provider's own errors.
 #[derive(Debug, Clone, Copy)]
@@ -126,12 +130,9 @@ pub(crate) fn operation_failure(
     redactor: &Redactor,
 ) -> CallFailure {
     match error {
-        OperationError::MissingApiKey => classified(
-            String::from(MISSING_CREDENTIALS),
-            Some(500_u16),
-            facts,
-            redactor,
-        ),
+        OperationError::MissingApiKey => {
+            classified(String::from(MISSING_CREDENTIALS), None, facts, redactor)
+        }
         // the provider's own error body, rendered the way the embeddings route renders it
         OperationError::Provider { response } => {
             let route = route_error(&EmbeddingError::Provider { response }, redactor);
@@ -162,7 +163,7 @@ pub(crate) fn operation_failure(
     }
 }
 // exception_type's mapping of a raw provider failure, keyed on its status and its text
-fn classified(
+pub(crate) fn classified(
     error_str: String,
     status_code: Option<u16>,
     facts: &CallFacts<'_>,
