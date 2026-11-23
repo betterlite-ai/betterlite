@@ -47,6 +47,7 @@ async fn polling_terminal_merge() {
     terminal_merge::assert_only_m1(&terminal_merge::empty_terminal_output().await);
     terminal_merge::assert_failure_captured(&terminal_merge::failure_terminal().await);
     terminal_merge::assert_terminal_fields(&terminal_merge::terminal_fields().await);
+    terminal_merge::assert_incomplete_details(&terminal_merge::incomplete_details().await);
     terminal_merge::assert_defaults_completed(&terminal_merge::absent_optional_keys().await);
     let (scenario, warnings) = terminal_merge::non_streaming().await;
     terminal_merge::assert_completed_without_iterating(&scenario, &warnings);

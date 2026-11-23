@@ -13,8 +13,9 @@ const COMPLETED_WITH_M2: &str = r#"{"response":{"output":[{"content":[],"id":"m2
 const COMPLETED_EMPTY: &str =
     r#"{"response":{"output":[],"status":"completed"},"type":"response.completed"}"#;
 const COMPLETED_WITH_FIELDS: &str = r#"{"response":{"incomplete_details":{},"instructions":"","max_output_tokens":0,"model":"b936-model","parallel_tool_calls":false,"previous_response_id":"resp_prev","reasoning":{},"status":"completed","store":false,"temperature":0,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_p":0.5,"truncation":"disabled","usage":{"input_tokens":7,"output_tokens":0,"total_tokens":7},"user":""},"type":"response.completed"}"#;
+const COMPLETED_WITH_INCOMPLETE: &str = r#"{"response":{"incomplete_details":{"reason":"max_output_tokens"},"status":"completed"},"type":"response.completed"}"#;
 // every ResponsesAPIResponse field background_streaming.py copies into the terminal update
-const TERMINAL_NAMES: [&str; 16] = [
+const TERMINAL_NAMES: [&str; 15] = [
     "usage",
     "reasoning",
     "tool_choice",
@@ -30,7 +31,6 @@ const TERMINAL_NAMES: [&str; 16] = [
     "parallel_tool_calls",
     "user",
     "store",
-    "incomplete_details",
 ];
 
 pub(super) async fn with_events(events: &[&str]) -> Scenario {
@@ -62,6 +62,10 @@ pub(super) async fn failure_terminal() -> Scenario {
 
 pub(super) async fn terminal_fields() -> Scenario {
     with_events(&[ITEM_ADDED, COMPLETED_WITH_FIELDS]).await
+}
+
+pub(super) async fn incomplete_details() -> Scenario {
+    with_events(&[ITEM_ADDED, COMPLETED_WITH_INCOMPLETE]).await
 }
 
 pub(super) async fn absent_optional_keys() -> Scenario {
@@ -129,7 +133,17 @@ pub(super) fn assert_terminal_fields(scenario: &Scenario) {
             "terminal field {name}"
         );
     }
+    // B935 applies incomplete_details only when it has content, so this empty object is dropped
+    assert_eq!(support::field(&record, "incomplete_details"), Json::Null);
     assert_eq!(support::field(&record, "error"), Json::Null);
+}
+
+pub(super) fn assert_incomplete_details(scenario: &Scenario) {
+    let record = support::last_write(&scenario.cache);
+    assert_eq!(
+        support::field(&record, "incomplete_details"),
+        support::json(r#"{"reason":"max_output_tokens"}"#)
+    );
 }
 
 pub(super) fn assert_defaults_completed(scenario: &Scenario) {
