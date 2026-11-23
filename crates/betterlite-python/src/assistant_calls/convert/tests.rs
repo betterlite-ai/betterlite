@@ -7,7 +7,6 @@ use betterlite_core::api::assistant_read_delete::request::{
 use betterlite_core::api::assistant_read_delete::sdk_dispatch::AssistantSdkError;
 use betterlite_core::api::assistant_records::AssistantCreateInput;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use secrecy::ExposeSecret as _;
 
 use super::{ModuleSettings, ThreadRequest, read};
 use crate::assistant_calls::error::{family, payload};
@@ -42,7 +41,11 @@ fn request_read_delete_keeps_the_flag_params_and_pagination() {
     assert_eq!(input.limit, Some(20));
     assert_eq!(input.order.as_deref(), Some("desc"));
     assert_eq!(
-        input.params.api_key.as_ref().map(|key| key.expose_secret()),
+        input
+            .params
+            .api_key
+            .as_ref()
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("sk-param")
     );
 }

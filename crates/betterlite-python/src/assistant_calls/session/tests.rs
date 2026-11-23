@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use betterlite_config::sections::resource_sdk_settings::Settings;
-use secrecy::ExposeSecret as _;
 
 use super::{ModuleSettings, apply_module_settings};
 
@@ -20,15 +19,15 @@ fn module_settings_apply_every_global() {
     let key = settings
         .api_key
         .as_ref()
-        .map(|secret| secret.expose_secret());
+        .map(secrecy::ExposeSecret::expose_secret);
     let openai = settings
         .openai_key
         .as_ref()
-        .map(|secret| secret.expose_secret());
+        .map(secrecy::ExposeSecret::expose_secret);
     let azure = settings
         .azure_key
         .as_ref()
-        .map(|secret| secret.expose_secret());
+        .map(secrecy::ExposeSecret::expose_secret);
     assert_eq!(key, Some("sk-a"));
     assert_eq!(settings.api_base.as_deref(), Some("http://base"));
     assert_eq!(settings.api_version.as_deref(), Some("v1"));

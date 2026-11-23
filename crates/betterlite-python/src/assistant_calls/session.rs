@@ -177,7 +177,7 @@ impl Session {
     ) -> Result<Option<ThreadRecord>, ThreadOutcome> {
         let facade = self.thread_facade();
         let mut kwargs = request.kwargs.clone();
-        let outcome = match kind {
+        match kind {
             ThreadKind::Create => {
                 let call = CreateThreadCall {
                     custom_llm_provider: request.custom_llm_provider.clone(),
@@ -188,15 +188,11 @@ impl Session {
                     kwargs: &mut kwargs,
                 };
                 if asynchronous {
-                    facade
-                        .acreate_thread(call)
-                        .await
-                        .map_err(ThreadOutcome::Async)?
+                    let answer = facade.acreate_thread(call).await;
+                    answer.map_err(ThreadOutcome::Async)
                 } else {
-                    facade
-                        .create_thread(call)
-                        .await
-                        .map_err(ThreadOutcome::Sync)?
+                    let answer = facade.create_thread(call).await;
+                    answer.map_err(ThreadOutcome::Sync)
                 }
             }
             ThreadKind::Get => {
@@ -207,16 +203,14 @@ impl Session {
                     kwargs: &mut kwargs,
                 };
                 if asynchronous {
-                    facade
-                        .aget_thread(call)
-                        .await
-                        .map_err(ThreadOutcome::Async)?
+                    let answer = facade.aget_thread(call).await;
+                    answer.map_err(ThreadOutcome::Async)
                 } else {
-                    facade.get_thread(call).await.map_err(ThreadOutcome::Sync)?
+                    let answer = facade.get_thread(call).await;
+                    answer.map_err(ThreadOutcome::Sync)
                 }
             }
-        };
-        Ok(outcome)
+        }
     }
 
     fn thread_facade(&self) -> AssistantThreads<'_, ProxiedClient> {
@@ -248,9 +242,9 @@ impl Session {
 // litellm.api_key and the other module globals win over the environment, and an unset one leaves it in place.
 fn apply_module_settings(settings: &mut resource_sdk_settings::Settings, module: &ModuleSettings) {
     settings.api_key = module.api_key.clone().map(SecretString::from);
-    settings.api_base = module.api_base.clone();
-    settings.api_version = module.api_version.clone();
-    settings.organization = module.organization.clone();
+    settings.api_base.clone_from(&module.api_base);
+    settings.api_version.clone_from(&module.api_version);
+    settings.organization.clone_from(&module.organization);
     settings.openai_key = module.openai_key.clone().map(SecretString::from);
     settings.azure_key = module.azure_key.clone().map(SecretString::from);
 }

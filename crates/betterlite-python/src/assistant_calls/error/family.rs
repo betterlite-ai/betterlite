@@ -41,10 +41,10 @@ fn wire_body(fields: &[(&str, &WireField)]) -> Option<Json> {
 }
 
 fn text_field(value: Option<String>) -> WireField {
-    match value {
-        Some(text) => WireField::Text(text),
-        None => WireField::MISSING,
-    }
+    let Some(text) = value else {
+        return WireField::MISSING;
+    };
+    WireField::Text(text)
 }
 
 // The create façades hand over the class and status, and their own failures name the model instead of n/a.
@@ -103,8 +103,8 @@ pub(crate) fn read_delete(
         },
         AssistantReadDeleteError::Dispatch(source) => {
             let origin = match source {
-                AssistantSdkError::Assistants(error) => Raised::Assistants(error),
-                AssistantSdkError::Definitions(error) => Raised::from(error),
+                AssistantSdkError::Assistants(assistants) => Raised::Assistants(assistants),
+                AssistantSdkError::Definitions(definitions) => Raised::from(definitions),
             };
             // the async twin maps a provider failure with model="", and betterlite has one path for both
             let failure = raised(&origin, "", provider, Entry::Sync, redactor);
