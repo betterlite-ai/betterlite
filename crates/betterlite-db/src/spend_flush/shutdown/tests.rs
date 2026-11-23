@@ -49,10 +49,10 @@ struct DailyCase {
     shutdown: CancellationToken,
 }
 
-// The commit ports one case needs: the fake writer, a fixed clock and jitter, and a retry pause that records nothing.
-fn commit_parts(writer: &Arc<FakeDailyWriter>) -> Arc<DailyCommitParts<FakeDailyWriter>> {
+// The commit ports one case needs: the writer under test, a fixed clock and jitter, no retries and a retry pause that records nothing.
+fn commit_parts<Writer>(writer: Arc<Writer>) -> Arc<DailyCommitParts<Writer>> {
     Arc::new(DailyCommitParts {
-        writer: Arc::clone(writer),
+        writer,
         retries: 0,
         clock: Arc::new(FixedClock {
             instant: Instant::now(),
@@ -67,7 +67,7 @@ impl DailyCase {
     fn new(steps: Vec<ChunkStep>) -> Self {
         let events = Arc::new(Events::default());
         let writer = Arc::new(FakeDailyWriter::new(Arc::clone(&events), steps));
-        let parts = commit_parts(&writer);
+        let parts = commit_parts(Arc::clone(&writer));
         Self {
             events,
             writer,
@@ -544,18 +544,9 @@ async fn a_cancelled_flush_keeps_a_blocked_daily_statement_off_the_database() {
         )]))
         .await
         .unwrap();
-    let parts = Arc::new(DailyCommitParts {
-        writer: Arc::new(PostgresDailyChunks {
-            store: store.clone(),
-        }),
-        retries: 0,
-        clock: Arc::new(FixedClock {
-            instant: Instant::now(),
-        }),
-        jitter: Arc::new(FixedJitter),
-        pause: Arc::new(PauseLog::default()),
-        failures: Arc::new(NoSpendLogFailureSink),
-    });
+    let parts = commit_parts(Arc::new(PostgresDailyChunks {
+        store: store.clone(),
+    }));
     let commits = TaskTracker::new();
     let shutdown = CancellationToken::new();
     let blocker = store.session().await.unwrap();
