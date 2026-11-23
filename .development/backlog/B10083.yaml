@@ -1,13 +1,13 @@
 id: B10083
 milestone: M4 keys, spend and management
 title: Auth admission ports for managed agents and tenant destinations
-status: todo
+status: done
 depends_on: [B2314, B4781]
 file: tasks/B10083-auth-admission-ports.yaml
 covers: []
 parent: B052
 split_from: B855
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3059
