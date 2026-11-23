@@ -1,0 +1,10 @@
+kind: helper
+name: vector-index-admin-lifecycle-document-paths
+call:
+  b10071: {function: lifecycle, method: "POST", path: "/azure_ai/indexes/my-index/docs/search", index_name: "my-index"}
+calls:
+  - b10071: {function: lifecycle, method: "POST", path: "/azure_ai/indexes/my-index/docsanything", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "DELETE", path: "/azure_ai/indexes/my-index/docs", index_name: "my-index"}
+  - b10071: {function: lifecycle, method: "PATCH", path: "/azure_ai/indexes/my-index/docs/1", index_name: "my-index"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,67 @@
+id: B10097
+title: Admission and in-flight Prometheus metrics
+description: >-
+  B022 (done) covers litellm/proxy/middleware/admission_control_middleware.py and in_flight_requests_middleware.py and ported the admission semaphore, the queue, the 503 answer and the in-flight count (crates/betterlite-server/src/admission_control.rs and admission_control/in_flight.rs). It left out the Prometheus metrics those two files create: nothing in crates/ makes litellm_in_flight_requests, litellm_admission_admitted_requests, litellm_admission_queued_requests or litellm_admission_rejected_requests_total. LiteLLM's /metrics shows them, betterlite's will not once B8680 mounts it, and under PROMETHEUS_MULTIPROC_DIR the dedicated listener never sees the per-worker sums. This task adds the four metrics to B022's two layers.
+
+
+  LiteLLM. InFlightRequestsMiddleware builds its gauge on the first HTTP request (a websocket scope skips the middleware) into prometheus_client's default registry: litellm_in_flight_requests, help "Number of HTTP requests currently in-flight on this uvicorn worker", no labels, multiprocess_mode livesum when PROMETHEUS_MULTIPROC_DIR is in the environment. Every HTTP request incs it on arrival and decs it in the finally after the app returns, the scrape of /metrics included, so a scrape reads at least 1.0. A failure to build it leaves the middleware counting without a gauge and is never retried. AdmissionControlState calls create_prometheus_admission_metrics on its first record call, that is the first admission, queue entry or rejection; an exempt path or disabled admission records nothing, so none of the three exist until then. It makes litellm_admission_admitted_requests ("Number of requests admitted by this worker") and litellm_admission_queued_requests ("Number of requests queued by this worker"), both gauges in livesum under the variable, and the counter litellm_admission_rejected_requests_total ("Number of requests rejected by this worker") with the label reason. record_admission and record_release inc and dec the admitted gauge, record_queue and record_dequeue the queued gauge, and record_rejection incs the counter child for queue_full or queue_timeout. A ValueError from the registry leaves the process without the three, never retried.
+
+
+  Wiring. The registry comes in through the constructors: `InFlightRequests::new(registry: Arc<CollectorRegistry>)` replaces the derived Default, and `AdmissionControl::from_settings(settings: &Settings, registry: Arc<CollectorRegistry>)` takes it beside the settings. Each layer keeps a `OnceLock` of its metrics and fills it on its first event, as LiteLLM's init flag does: build each metric with B3875's PrometheusMetric::new, the gauges with B10096's `with_multiprocess_mode(GaugeMode::LiveSum)`, and register it. The mode is LiveSum always: only B10096's writer reads it, and that writer exists exactly when PROMETHEUS_MULTIPROC_DIR is set (B8613), so this gives both of LiteLLM's branches without a check. A registration the registry refuses logs at warn with the error and leaves that layer without metrics for the process. Update the metrics where B022's layers already move their atomics: the in-flight gauge by +1 next to `current.fetch_add` in track_in_flight and by -1 in InFlightGuard's drop; the admitted gauge next to `admitted.fetch_add` in admit_request and in AdmissionSlot's drop; the queued gauge when reserve_queue_slot succeeds and in QueueSlot's drop; and the counter child "queue_full" or "queue_timeout" next to each rejected_total increment. A gauge moves through MetricUpdate::Inc with 1 or -1. In the queue_full path the rejection is the first event, so it builds the metrics. Websocket upgrades and exempt paths keep skipping both layers, so they touch no metric.
+
+
+  server.rs. application() builds one `Arc<CollectorRegistry>` and passes clones to AdmissionControl::from_settings and InFlightRequests::new. Nothing renders it until B8610 hands both layers shared.prometheus_registry and B8613 builds InFlightRequests over its step 13 registry; B8680 then mounts /metrics over that one.
+
+
+  Tests in admission_control/tests/gauges.rs, declared in tests.rs, with B022's harness. Before any request the registry has none of the four names. While a request is in flight litellm_in_flight_requests is 1, and it is 0 once the response body is finished or dropped; a websocket upgrade leaves it absent. With admission disabled, or a request to an exempt path, the three admission metrics stay absent. With max_in_flight_requests 1 and one request held: admitted is 1; a second request waits and queued is 1 until it times out, then the counter's queue_timeout child is 1 and queued is 0; with max_queued_requests 0 a second request makes the queue_full child 1 without touching queued. After every request finishes, admitted and queued are 0. The three gauges carry GaugeMode::LiveSum. A second InFlightRequests on the same registry logs the refused registration and still counts requests. With a CollectorRegistry::multiprocess over a temporary folder and pid 4242, one finished request leaves gauge_livesum_4242.db holding the litellm_in_flight_requests key at 0.0 (read it with B10095's decode_db_file).
+
+
+  Oracle. Only a scrape shows these metrics, and /metrics is mounted by B8680, so B8680 writes the two booted cases that compare them with LiteLLM (prometheus-scrape/in-flight-gauge and prometheus-scrape/admission-gauges) and depends on this task. No helper case here: LiteLLM keeps the gauges in class and module state of prometheus_client's one default registry, so a helper process could build them only once.
+scope:
+  paths:
+    - crates/betterlite-server/src/admission_control.rs
+    - crates/betterlite-server/src/admission_control/**
+    - crates/betterlite-server/src/server.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/in_flight_requests_middleware.py#L36-L79
+    why: The in-flight gauge, built on the first HTTP request, livesum under PROMETHEUS_MULTIPROC_DIR, inc and dec around every request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L66-L131
+    why: AdmissionControlState, which builds the metrics on its first record call and moves them on admission, release, queue, dequeue and rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L144-L185
+    why: Where the middleware records each event, and which paths and settings record nothing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L201-L234
+    why: _create_gauge and create_prometheus_admission_metrics, with the names, help texts, the livesum branch and the reason label.
+dod:
+  - text: litellm_in_flight_requests exists from the first HTTP request on, reads the number of requests in flight, ignores websocket upgrades, and carries GaugeMode::LiveSum.
+    proof: [gauge-tests]
+  - text: The admitted and queued gauges and the rejected counter exist from the first admission event on, follow admission, release, queue entry, dequeue and both rejection reasons, and stay absent while admission is off or only exempt paths are called.
+    proof: [gauge-tests]
+  - text: Both layers take the registry through their constructors, a refused registration is logged and leaves the layer counting, and a multiprocess registry writes the in-flight gauge into the livesum file.
+    proof: [gauge-tests]
+  - text: Every earlier admission control test still passes with the new constructors.
+    proof: [admission-regression]
+checks:
+  optional: [mutants]
+  commands:
+    - id: gauge-tests
+      why: A metric is missing, built at the wrong moment, moved at the wrong point, or not livesum.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admission_control::tests::gauges::/)'
+    - id: admission-regression
+      why: The constructor change broke B022's admission or in-flight behavior.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admission_control::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Mounting /metrics and the two booted cases that scrape these metrics: B8680."
+  - "Handing the layers the registry /metrics renders: B8610 for AdmissionControl, B8613 for InFlightRequests."
+  - "The multiprocess file writer and GaugeMode: B10096. GET /health/backlog, which reads the same counts: B4448."
+pitfalls:
+  - "Build the metrics on the first event, not in the constructor: LiteLLM's scrape has no admission metrics until a non-exempt request arrives, and B10096 would write zero entries for the unlabelled gauges at registration."
+  - "The /metrics scrape is itself an in-flight request, so the in-flight gauge reads 1 during it; the admission layer exempts /metrics, so a scrape never builds the admission metrics."
+  - "The queue_full rejection never enters the queue, so it must not move the queued gauge; queue_timeout does enter it and leaves it through QueueSlot's drop."
+  - "The in-flight decrement belongs in InFlightGuard's drop, which runs when a streamed body ends or the client goes away, not when the handler returns."
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

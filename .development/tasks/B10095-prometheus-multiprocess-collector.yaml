@@ -1,0 +1,149 @@
+id: B10095
+title: Prometheus multiprocess collector
+description: >-
+  When PROMETHEUS_MULTIPROC_DIR is set, LiteLLM's /metrics does not render its in-process registry. _mount_metrics_endpoint builds a fresh prometheus_client CollectorRegistry, registers a MultiProcessCollector in it and renders that, and the dedicated metrics listener's build_metrics_app does the same over its --multiproc_dir. At every scrape the collector reads the `*.db` files the worker processes wrote into the folder and merges them. B3886's metrics_router and B3887's listener both assume this collector, and no task builds it. prometheus_client 0.20.0 is the spec, since LiteLLM leans on it and no crates.io crate reads its file format. This task ports the read side (the file format, the merge, the collector and mark_process_dead) and lets B10090's scrape app render it.
+
+
+  Layout. Module multiprocess in betterlite-prometheus: crates/betterlite-prometheus/src/multiprocess.rs is a stub that lib.rs declares; its one line, `pub mod writer;`, declares B10096's empty writer module, so keep it. Put the code in multiprocess/files.rs, multiprocess/merge.rs and multiprocess/collector.rs, each with a tests.rs in its own folder, and one thiserror enum MultiprocessError in the module. betterlite-prometheus depends on no betterlite crate and must stay that way.
+
+
+  The file format is prometheus_client's MmapedDict, little-endian (struct's native order on x86_64 and aarch64). Bytes 0 to 4 hold `used` as an i32 and bytes 4 to 8 are zero. Entries start at offset 8 and run while the offset is below used: an i32 key length n, the n UTF-8 bytes of the key, spaces up to the next multiple of 8 counted from the length field (8 - (n + 4) % 8 of them, so a full 8 when 4 + n is already aligned), then the value and the timestamp as two f64. `DbEntry { key: String, value: f64, timestamp: f64 }`. `decode_db_file(bytes: &[u8]) -> Result<Vec<DbEntry>, MultiprocessError>` is read_all_values_from_file with _read_all_values: an entry whose key would end past used fails with "Read beyond file size detected, file is corrupted.", and bytes that stop before used or a key that is not UTF-8 fail too. `encode_db_file(entries: &[DbEntry]) -> Vec<u8>` writes the bytes MmapedDict's _init_value and write_value leave: the file starts at 65536 zero bytes and doubles while the entries don't fit. Tests, the fuzz seeds and the oracle adapter use it, and B10096's writer will share its entry encoding.
+
+
+  The merge is MultiProcessCollector.merge(files, accumulate=True), that is _read_metrics then _accumulate_metrics. Files are read in the order given. A file's type is its name up to the first "_"; a gauge file is gauge_<mode>_<pid>.db, so its mode is the second part and its pid the third minus ".db". A file that is gone by the time it is read is skipped when it is a gauge whose mode starts with "live" (mark_process_dead may remove it between the listing and the read), and an error otherwise. Each key is the JSON array [metric name, sample name, labels object, help]. The first time a metric name is seen it becomes a family with that help and the file's type; a type outside counter, gauge, summary and histogram, or a metric name that does not match `^[a-zA-Z_:][a-zA-Z0-9_:]*$`, is an error naming it. A gauge sample gets a pid label from its file name, and the file's mode becomes the family's mode, the last file read winning. Then each family is accumulated, keyed by sample name and labels in the order keys are first seen. A gauge in min or livemin keeps the smallest value per series without its pid label, max or livemax the largest, sum or livesum the total, and mostrecent or livemostrecent the value whose timestamp is strictly greater than every earlier one, starting from 0. Every other mode (all, liveall) keeps each pid's sample with its pid label. A histogram sample with an le label goes into buckets keyed by its other labels and the le value read as a float, summed across files, and its _sum is summed like any other sample. After all other samples, each label set in first-seen order gets its buckets in ascending order as cumulative `<name>_bucket` samples with le written by B10090's floatToGoString port, then `<name>_count` with the last cumulative value. Counter and summary samples are summed. Families come out in the order their metric name was first seen.
+
+
+  The collector. `MultiProcessCollector::new(path: &Path) -> Result<Self, MultiprocessError>` refuses an empty path or one that is not a directory with "env PROMETHEUS_MULTIPROC_DIR is not set or not a directory", as LiteLLM's mount does at startup. `collect(&self) -> Result<Vec<MetricFamily>, MultiprocessError>` lists the folder the way glob's `*.db` does (std::fs::read_dir order, names ending in ".db", none starting with "."), with no sorting, and merges. `mark_process_dead(pid: u32, path: &Path) -> Result<(), MultiprocessError>` removes gauge_<mode>_<pid>.db for each of liveall, livemin, livemax, livesum and livemostrecent when it exists, and fails when a removal fails. B3887's worker cleanup calls it.
+
+
+  The scrape seam. B10090's render_scrape, CoalescedScrapeRenderer and make_metrics_app take one Arc<CollectorRegistry> and walk its PrometheusMetric values, which cannot hold what the files give: no `_created`, a pid label, f64 values. Split B10090's encoders at prometheus_client's own seam instead of writing a second encoder. `MetricFamily { name, help, kind, samples }` with kind Counter, Gauge, Summary or Histogram and each sample a full sample name, label pairs and an f64 value is what the encoders write. The registry turns its metrics into families exactly as B10090 renders them now (`x_total` and `x_created` samples, cumulative buckets), and the collector returns families. A summary is written like generate_latest writes one: `# TYPE x summary` with its `x_count` and `x_sum` samples. `pub enum ScrapeSource { Registry(Arc<CollectorRegistry>), Multiprocess(MultiProcessCollector) }` replaces the registry argument of CoalescedScrapeRenderer::new and make_metrics_app, and the multiprocess arm collects inside each render on the blocking pool. A collect error is a ScrapeRenderError, so the scrape answers 500. render_scrape keeps its `(registry: &CollectorRegistry, request: &ScrapeRequest)` signature, so B10090's tests and its oracle adapter (tools/oracle/src/helpers/prometheus/b10090.rs, outside this scope) call it unchanged; put the family-level render beside it, and let both ScrapeSource arms reach that one. Every scrape_endpoint test B10090 wrote keeps passing.
+
+
+  Restriction. LiteLLM's multiprocess registry is CollectorRegistry() without auto_describe, and MultiProcessCollector has no describe, so the registry maps no sample names to it and restricted_registry finds nothing: under PROMETHEUS_MULTIPROC_DIR any non-empty name[] list renders an empty text body, or `# EOF` alone for OpenMetrics. betterlite filters the multiprocess families the way B10090 filters the registry (keep the samples whose full name is listed, drop a family left with none); see deviations, and write that row into docs/deviations/B10095.yaml.
+
+
+  Fuzz. The .db files come from other processes, so add a cargo-fuzz crate crates/betterlite-prometheus/fuzz (the root workspace already takes crates/*/fuzz; copy the shape of crates/betterlite-mcp/fuzz/Cargo.toml) with the target db_file_decode, which passes the bytes to decode_db_file. multiprocess::files::tests::replays_the_db_file_decode_corpus replays crates/betterlite-prometheus/fuzz/corpus/db_file_decode through the same function. Seeds: an empty file, a 64 KiB file with two entries, a key length that runs past used, a used past the end of the bytes and a key that is not UTF-8.
+
+
+  Tests. multiprocess::files::tests: encode and decode round trips, the padding for key lengths around the 8-byte boundary and every decode error. multiprocess::merge::tests: counters summed across two pids, each gauge mode, mostrecent dropping a series whose timestamps are all 0, histogram buckets accumulated with their count and sum, a missing live gauge file skipped and a missing counter file failing, an unknown type and a bad metric name failing, and family and sample order. multiprocess::collector::tests: new refusing an empty path and a file, collect skipping dot files and files that don't end in .db, and mark_process_dead removing only the five live files of that pid. scrape_endpoint tests whose names start with multiprocess_: a scrape of a folder renders a counter without `_created`, a gauge with its pid label and a histogram, in both formats, a name[] scrape is filtered, and a broken file answers 500.
+
+
+  Oracle. Helper cases on the b10095 operation; no route reaches this code yet. A case lists files in order, each a name such as counter_1001.db or gauge_livesum_1002.db with its entries (metric name, sample name, labels, help, value, timestamp), and a call: merge, or scrape with an accept header. The Python side writes each file into a fresh temporary folder with prometheus_client.mmap_dict.MmapedDict and mmap_key, then answers merge with MultiProcessCollector.merge over the files' paths, and scrape with LiteLLM's render_scrape over a CollectorRegistry() holding a MultiProcessCollector and parse_scrape_request(accept, "", []). The Rust side writes the same files with encode_db_file into its own folder and runs this task's code. Both answer the used part of each file as hex. Directory order differs between two folders, so both sort the families by name and the samples inside each family by name and labels, and a scrape answer is split into family blocks at each `# HELP` line, sorted by name, with the sample lines of each block sorted. Add tempfile to tools/oracle/src/helpers/prometheus/Cargo.toml and helper_case corpus seeds named prometheus-multiprocess-*.
+scope:
+  paths:
+    - crates/betterlite-prometheus/src/multiprocess.rs
+    - crates/betterlite-prometheus/src/multiprocess/**
+    - crates/betterlite-prometheus/src/scrape_endpoint.rs
+    - crates/betterlite-prometheus/src/scrape_endpoint/**
+    - crates/betterlite-prometheus/Cargo.toml
+    - crates/betterlite-prometheus/fuzz/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/prometheus-multiprocess/**
+    - tools/oracle/fuzz/corpus/helper_case/prometheus-multiprocess-*
+    - tools/oracle/helpers/b10095.py
+    - tools/oracle/helpers/b10095/**
+    - tools/oracle/src/helpers/prometheus/b10095.rs
+    - tools/oracle/src/helpers/prometheus/b10095/**
+    - tools/oracle/src/helpers/prometheus/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4565-L4592
+    why: Call site. _mount_metrics_endpoint renders a fresh registry with MultiProcessCollector when PROMETHEUS_MULTIPROC_DIR is in the environment (B3886).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L75-L85
+    why: Call site. build_metrics_app does the same over its multiproc_dir (B3887).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_cleanup.py#L33-L75
+    why: Call site. mark_worker_exit and mark_dead_workers call mark_process_dead (B3887).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_metrics_endpoint.py#L25-L100
+    why: render_scrape and make_metrics_asgi_app, which B10090 ported and this task extends with the multiprocess source.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/multiprocess.py
+    why: The spec. MultiProcessCollector, merge, _read_metrics, _accumulate_metrics and mark_process_dead.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/mmap_dict.py
+    why: The spec for the file layout, _read_all_values, read_all_values_from_file, _init_value and mmap_key.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L39-L125
+    why: MultiProcessValue, which names the files counter_<pid>.db, histogram_<pid>.db and gauge_<mode>_<pid>.db.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/registry.py#L57-L84
+    why: _get_names returns nothing for a collector without describe when auto_describe is off (see deviations).
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/registry.py#L145-L165
+    why: RestrictedRegistry, which therefore finds no collector in LiteLLM's multiprocess registry.
+  - url: https://prometheus.github.io/client_python/multiprocess/
+    why: prometheus_client's multiprocess guide, including the gauge modes.
+dod:
+  - text: decode_db_file reads every entry prometheus_client's MmapedDict writes, encode_db_file writes the same bytes, and a corrupted, truncated or non-UTF-8 file is an error, never a panic.
+    proof: [files-tests, db-file-corpus, oracle, helper-python]
+  - text: The merge sums counters and summaries across pids, applies each gauge mode with the pid label only for all and liveall, accumulates histogram buckets with their count, and keeps prometheus_client's family and sample order.
+    proof: [merge-tests, oracle, helper-python]
+  - text: A vanished live gauge file is skipped, any other vanished file, an unknown type or a bad metric name is an error naming it.
+    proof: [merge-tests]
+  - text: MultiProcessCollector::new refuses an empty path or a non-directory with LiteLLM's text, collect reads only the `*.db` files glob would find, and mark_process_dead removes only the five live gauge files of that pid.
+    proof: [collector-tests]
+  - text: make_metrics_app over ScrapeSource::Multiprocess renders the merged families with B10090's encoders in both formats, filters name[] scrapes, answers 500 for a broken file, and every B10090 scrape test still passes over ScrapeSource::Registry.
+    proof: [scrape-source-tests, oracle, helper-python]
+  - text: The b10095 adapters pass the strict Python checks and a new prometheus-multiprocess seed replays through the shared helper case parser.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: files-tests
+      why: The file layout, its padding or a decode error differs from MmapedDict.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^multiprocess::files::tests::/) - test(replays_the_db_file_decode_corpus)'
+    - id: merge-tests
+      why: A gauge mode, the histogram accumulation, the error cases or the order differ from MultiProcessCollector.merge.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^multiprocess::merge::tests::/)'
+    - id: collector-tests
+      why: The path check, the file listing or mark_process_dead differ from prometheus_client.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^multiprocess::collector::tests::/)'
+    - id: scrape-source-tests
+      why: The multiprocess source does not render through B10090's encoders, or the seam broke a registry scrape.
+      run: >-
+        cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::tests::(.*::)?multiprocess_/)' &&
+        cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_endpoint::/)'
+    - id: db-file-corpus
+      why: The db_file_decode fuzz target, its added corpus or its replay test is missing or fails.
+      run: >-
+        test -f crates/betterlite-prometheus/fuzz/fuzz_targets/db_file_decode.rs &&
+        grep -q db_file_decode crates/betterlite-prometheus/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prometheus/fuzz/corpus/db_file_decode)" &&
+        cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(replays_the_db_file_decode_corpus)'
+    - id: helper-python
+      why: The b10095 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10095.py tools/oracle/helpers/b10095)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10095 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/prometheus-multiprocess-*")" &&
+        grep -lE 'b10095"?:' tools/oracle/fuzz/corpus/helper_case/prometheus-multiprocess-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-prometheus --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/prometheus-multiprocess/counter-sum-across-pids.yaml
+  - tools/oracle/cases/helpers/prometheus-multiprocess/gauge-modes.yaml
+  - tools/oracle/cases/helpers/prometheus-multiprocess/gauge-mostrecent.yaml
+  - tools/oracle/cases/helpers/prometheus-multiprocess/histogram-accumulate.yaml
+  - tools/oracle/cases/helpers/prometheus-multiprocess/scrape-text.yaml
+  - tools/oracle/cases/helpers/prometheus-multiprocess/scrape-openmetrics.yaml
+deviations:
+  - what: Under PROMETHEUS_MULTIPROC_DIR a scrape with name[] parameters keeps the listed samples and drops families left with none, as it does without the variable. LiteLLM renders nothing for any non-empty name[] list there, an empty text body or `# EOF` alone for OpenMetrics.
+    why: The empty body comes from prometheus_client's registry finding no names for a collector without describe, not from a choice LiteLLM made, and no working setup relies on a filter that drops every metric.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4581-L4586
+  - what: A .db file whose type part is gaugehistogram, info, stateset or unknown fails the scrape with 500. prometheus_client's Metric accepts those types and LiteLLM renders them.
+    why: prometheus_client's writers only create counter, gauge, histogram and summary files, so such a file comes from something else in the folder, and the four extra encodings would only serve that.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics_core.py#L6-L9
+out_of_scope:
+  - "Writing samples into the folder, prometheus_client's MultiProcessValue: B10096."
+  - "metrics_router and the folder it is given: B3886. The dedicated listener, wipe_directory, mark_worker_exit and mark_dead_workers: B3887. Creating the folder at launch: B4177's prometheus_directory, on main."
+  - "The text and OpenMetrics encoders, the name[] parsing, coalescing and chunking: B10090; this task only feeds them families."
+pitfalls:
+  - "glob's `*` skips names that start with a dot, so `.counter_1.db` is not read; std::fs::read_dir lists it."
+  - "The key padding is 8 - (n + 4) % 8 spaces, which is 8 and not 0 when 4 + n is already a multiple of 8; an encoder that pads to zero shifts every later entry."
+  - "A gauge's pid label comes from the file name, not the key, and min, max, sum and mostrecent drop it before they combine; only all and liveall keep it."
+  - "mostrecent replaces a value only when the timestamp is strictly greater than the best so far, which starts at 0, so a series whose timestamps are all 0 disappears from the scrape."
+  - "Histogram files hold per-bucket counts, not cumulative ones, and no _count; the merge builds both, and _count is the running total after the last bucket."
+  - "A counter family is named without `_total` in the key's first element while its samples are `x_total`, so the text encoder's `x_total` HELP and TYPE lines come from the family name plus the suffix, as for the registry."
+  - "Bucket le text goes through float and back (floatToGoString), so a file's le \"1\" comes out as \"1.0\" and \"+Inf\" stays \"+Inf\"."
+  - "Collect inside the render on the blocking pool, never when the app is built: LiteLLM reads the folder again at every scrape."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
