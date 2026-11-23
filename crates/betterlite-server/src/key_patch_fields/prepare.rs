@@ -1,3 +1,5 @@
+mod timing;
+
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_db::resource_repository::model::ModelRepository;
@@ -12,6 +14,7 @@ use crate::key_policy_fields::KeyClock;
 use crate::key_policy_fields::model_budget::validate_model_max_budget;
 use crate::router_weight_references::settings::validate_settings_weights;
 
+use self::timing::{apply_budget_windows, apply_request_times};
 use super::Row;
 use super::drop_request_only_fields;
 use super::error::KeyPatchError;
@@ -20,7 +23,6 @@ use super::metadata::{
 };
 use super::object_of;
 use super::string_of;
-use super::timing::{apply_budget_windows, apply_request_times};
 
 pub struct PrepareContext<'existing> {
     pub existing: &'existing LiteLLMVerificationToken,
