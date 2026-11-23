@@ -120,5 +120,7 @@ pub mod team_budget_admission;
 pub mod tiering;
 pub mod toolset_scope;
 pub mod trusted_network;
+pub mod ui_session_identity;
 pub mod user_roles;
+pub mod vector_index_admin;
 pub mod virtual_key_routes;

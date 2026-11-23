@@ -1,0 +1,115 @@
+id: B10070
+title: UI session credential and its team ids
+description: >-
+  A dashboard session token is a key whose team_id is "litellm-dashboard" and that carries the signed-in user's id. Three callers ask whether a request carries one: the MCP client allowlist in server.py lets it through (B8724), the vector store access checks widen it to the user's real teams (B1060), and the MCP dashboard contexts build on it (B4672). This task builds the two functions they share from ui_session_utils.py, is_ui_session_credential and resolve_ui_session_team_ids, and nothing else from that file. B4672 builds the rest of ui_session_utils.py and calls these two.
+
+
+  Layout. Module ui_session_identity in betterlite-auth: crates/betterlite-auth/src/ui_session_identity.rs with its tests in ui_session_identity/tests.rs, and the UserLookup implementation of the port in ui_session_identity/user_lookup.rs with its tests in ui_session_identity/user_lookup/tests.rs. The module file is an empty stub that lib.rs declares. The code lives in betterlite-auth because UserAPIKeyAuth keeps team_id, user_id and requires_fresh_policy pub(crate) there, so the functions read those fields directly and no public reader is added. It sits outside B4672's session_auth module on purpose, so the two tasks never share files. betterlite-mcp (B4672), betterlite-core (B1060) and betterlite-server (B8724) already depend on betterlite-auth; no Cargo.toml changes.
+
+
+  1. UI_SESSION_TOKEN_TEAM_ID is the pub constant "litellm-dashboard" (LiteLLM's constant of that name; no env var, no config key). is_ui_session_credential(auth: &UserAPIKeyAuth) -> bool is true when team_id equals that constant and user_id is set and not empty.
+
+
+  2. UiSessionTeams is the port for the one read the resolver makes, an async_trait with Send + Sync like UserCache in auth_user_lookup. has_database(&self) -> bool is sync and answers LiteLLM's `prisma_client is None` question. user_teams(&self, user_id: &str, fresh: bool) -> Result<Option<Vec<String>>, UserLookupError> returns the user's teams list, or None when there is no user. The production implementation is for B736's UserLookup: has_database is whether its store is set, and user_teams calls get_user_object with a UserLookupRequest whose user_id is the given id, sso_user_id and user_email are None, user_id_upsert is false and check_db_only is Some(fresh), then maps the user to its teams. A lookup error comes back unchanged.
+
+
+  3. resolve_ui_session_team_ids<T>(auth: &UserAPIKeyAuth, teams: &T) -> Vec<String> where T: UiSessionTeams + ?Sized, async. A credential that is not a session credential gives an empty list before any port call. has_database false logs at debug "Cannot resolve UI session team ids without DB access" and gives an empty list without calling user_teams. Otherwise it calls user_teams with the auth's user_id and its requires_fresh_policy as fresh. An Err logs the warning "Failed to load teams for UI session token user." with the error as a field and gives an empty list; Ok(None) and an empty teams list give an empty list. Otherwise the result is the teams in first-seen order, each once, with empty strings dropped. The dashboard team id stays in the result when the user's row lists it.
+
+
+  B1060 and B4672 take the port as a generic parameter and script it in their tests; route wiring passes the UserLookup.
+
+
+  Oracle. No route reaches this code yet, so the helper operation b10070 compares both functions with LiteLLM. Its input names the function and gives the auth's team_id, user_id and requires_fresh_policy; for the resolver it also scripts whether a database exists and what the user lookup answers (a teams list, no user, or a failure). The Rust side builds the auth with UserAPIKeyAuth::construct from a dict and runs a scripted UiSessionTeams that records whether user_teams ran and with which fresh flag. The Python adapter builds LiteLLM's UserAPIKeyAuth and, for the resolver, patches litellm.proxy.proxy_server.prisma_client (None, or a stand-in object) and litellm.proxy.auth.auth_checks.get_user_object (the function imports both at call time, so the module attributes are what it reads) with a stand-in that returns a LiteLLM_UserTable carrying the scripted teams, returns None or raises, and records its check_db_only. The answer is the boolean or the list, plus whether the lookup ran and its fresh flag.
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/ui_session_identity.rs
+    - crates/betterlite-auth/src/ui_session_identity/**
+    - tools/oracle/cases/helpers/ui-session-identity/**
+    - "tools/oracle/fuzz/corpus/helper_case/ui-session-identity-*"
+    - tools/oracle/helpers/b10070.py
+    - tools/oracle/helpers/b10070/**
+    - tools/oracle/src/helpers/auth/b10070.rs
+    - tools/oracle/src/helpers/auth/b10070/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L38-L88
+    why: Owned. is_ui_session_credential and resolve_ui_session_team_ids, with the session check before the database check and the de-duplicating loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1725
+    why: UI_SESSION_TOKEN_TEAM_ID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2616-L2760
+    why: get_user_object, the read B736 ported; check_db_only skips the cache and a missing user raises UserNotFoundError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1125-L1128
+    why: Caller. reject_disallowed_mcp_client lets a session credential through (B8724).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L225-L235
+    why: Caller. _vector_store_auth_contexts turns a session credential into one context per resolved team (B1060).
+
+dod:
+  - text: >-
+      is_ui_session_credential is true only for team_id "litellm-dashboard" with a non-empty user_id,
+      and false for an empty or missing user_id, another team id or no team id.
+    proof: [identity-tests, helper-case-corpus, helper-python, helper-tests, oracle]
+  - text: >-
+      resolve_ui_session_team_ids returns an empty list for a non-session credential without calling the port, for no database without calling user_teams,
+      and for a lookup error, no user or no teams; otherwise it returns the teams once each in first-seen order without empty strings, keeps "litellm-dashboard",
+      and reads with the auth's requires_fresh_policy as fresh.
+    proof: [identity-tests, helper-case-corpus, helper-python, helper-tests, oracle]
+  - text: >-
+      The UserLookup implementation reports has_database from its store, asks get_user_object with user_id_upsert false and check_db_only set to fresh,
+      maps the user to its teams and passes a lookup error through.
+    proof: [lookup-teams-tests]
+  - text: New helper cases cover both functions, parse through the shared helper case parser and give LiteLLM's answers.
+    proof: [helper-case-corpus, helper-python, helper-tests, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: identity-tests
+      why: the session predicate or the team id resolution is missing or differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^ui_session_identity::tests::/)'
+    - id: lookup-teams-tests
+      why: the production port does not read the user through B736's lookup with the right flags
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^ui_session_identity::user_lookup::tests::/)'
+    - id: helper-tests
+      why: the b10070 adapter does not call the production predicate and resolver
+      run: cargo nextest run --locked -p betterlite-oracle-auth --no-tests=fail -E 'test(/^b10070::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: tools/oracle/helpers/b10070.py is missing or fails ruff or basedpyright
+      run: test -f tools/oracle/helpers/b10070.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no newly added ui-session-identity helper case reaches the shared parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/ui-session-identity-*')" && grep -qE '^[[:space:]]+b10070:' tools/oracle/fuzz/corpus/helper_case/ui-session-identity-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/ui-session-identity/session-credential-dashboard-team.yaml
+  - tools/oracle/cases/helpers/ui-session-identity/session-credential-empty-user.yaml
+  - tools/oracle/cases/helpers/ui-session-identity/session-credential-other-team.yaml
+  - tools/oracle/cases/helpers/ui-session-identity/team-ids-dedupe-keeps-dashboard.yaml
+  - tools/oracle/cases/helpers/ui-session-identity/team-ids-plain-key-skips-lookup.yaml
+  - tools/oracle/cases/helpers/ui-session-identity/team-ids-no-database.yaml
+  - tools/oracle/cases/helpers/ui-session-identity/team-ids-lookup-failure.yaml
+  - tools/oracle/cases/helpers/ui-session-identity/team-ids-fresh-policy.yaml
+
+deviations:
+  - what: The resolver reads the user through the UiSessionTeams port instead of importing proxy_server's prisma_client and user_api_key_cache.
+    why: betterlite has no module-level state; the port's UserLookup implementation runs the same get_user_object read, so the returned list is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L53-L73
+
+out_of_scope:
+  - "clone_user_api_key_auth_with_team, admitted_user_context, acting_user_auth, build_effective_auth_contexts, can_access_mcp_server, _restricts_mcp, is_keyless_mcp_subject, toolset_grant_contexts, _own_toolset_ids, _inherited_toolset_ids, _context_toolset_ids and granted_toolset_ids: B4672, which calls the two functions here."
+  - "get_user_object: B736. This task calls it through the UserLookup implementation and does not copy its cache or database rules."
+  - "Callers: reject_disallowed_mcp_client (B8724), _vector_store_auth_contexts (B1060), the connected_app_view flag in mcp_management_endpoints.py (B4720) and the MCP dashboard contexts (B4672)."
+
+pitfalls:
+  - The session check runs before the database check, so a plain virtual key never reaches has_database or user_teams and never logs the debug line.
+  - user_id "" is not a session credential even with the dashboard team id, since LiteLLM tests bool(user_id).
+  - resolve_ui_session_team_ids keeps "litellm-dashboard" when the user's row lists it, while B4669's user_team_ids drops it; do not reuse that read here.
+  - A missing user is an error from get_user_object (LiteLLM raises UserNotFoundError, B736 returns UserLookupError), so it takes the warning branch; the None branch only covers a lookup without a user_id.
+  - check_db_only follows the auth's requires_fresh_policy, so a fresh-policy session skips the user cache; a hard-coded false would serve a cached team list after a membership change.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
