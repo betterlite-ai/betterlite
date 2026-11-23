@@ -323,6 +323,7 @@ pub(super) fn internal(user_id: &str) -> Principal {
 }
 
 // which list the fixture's fake joins: the callbacks the route searches, or the cold reader it selects
+#[derive(Clone, Copy)]
 pub(super) enum FakeKind {
     Payload,
     Cold,

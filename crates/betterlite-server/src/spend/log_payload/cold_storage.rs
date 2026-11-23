@@ -19,22 +19,19 @@ impl ColdStorageHandler {
         &self,
         object_key: &str,
     ) -> Result<Option<Fields>, LoggerError> {
-        let logger = match &self.injected {
-            Some(injected) => Arc::clone(injected),
-            None => {
-                let Some(name) = self.selected.as_deref() else {
-                    return Ok(None);
-                };
-                let Some(active) = self.loggers.cold_storage_logger(name) else {
-                    tracing::warn!(
-                        callback = name,
-                        "No active custom logger found for the cold storage callback"
-                    );
-                    return Ok(None);
-                };
-                active
-            }
+        if let Some(injected) = &self.injected {
+            return injected.proxy_server_request(object_key).await;
+        }
+        let Some(name) = self.selected.as_deref() else {
+            return Ok(None);
         };
-        logger.proxy_server_request(object_key).await
+        let Some(active) = self.loggers.cold_storage_logger(name) else {
+            tracing::warn!(
+                callback = name,
+                "No active custom logger found for the cold storage callback"
+            );
+            return Ok(None);
+        };
+        active.proxy_server_request(object_key).await
     }
 }
