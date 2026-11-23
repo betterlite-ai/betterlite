@@ -1,1 +1,67 @@
-crate::sections::stub_section!();
+mod tests;
+
+use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::{resolve_secret, resolve_string};
+use crate::sections::Section;
+use secrecy::SecretString;
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct Raw {
+    #[serde(default)]
+    #[serde(rename = "litellm_settings")]
+    settings: RawSettings,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+struct RawSettings {
+    api_base: Option<String>,
+    api_key: Option<SecretString>,
+    openai_key: Option<SecretString>,
+}
+
+// The three litellm globals the native WebSocket call falls back to, plus the environment key behind them.
+#[derive(Debug, Clone, Default)]
+pub struct Settings {
+    pub api_base: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub openai_key: Option<SecretString>,
+    pub openai_api_key: Option<SecretString>,
+}
+
+impl Section for Raw {
+    type Settings = Settings;
+
+    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        Ok(Settings {
+            api_base: optional_string(self.settings.api_base, "litellm_settings.api_base", lookup)?,
+            api_key: resolve_secret(self.settings.api_key, "litellm_settings.api_key", lookup)?,
+            openai_key: resolve_secret(
+                self.settings.openai_key,
+                "litellm_settings.openai_key",
+                lookup,
+            )?,
+            // an empty environment value names no key, so the credential chain treats it as unset
+            openai_api_key: lookup
+                .lookup("OPENAI_API_KEY")
+                .filter(|value| !value.is_empty())
+                .map(SecretString::from),
+        })
+    }
+}
+
+fn optional_string<L>(
+    value: Option<String>,
+    path: &str,
+    lookup: &L,
+) -> Result<Option<String>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    match value {
+        Some(text) => Ok(Some(resolve_string(text, path, lookup)?)),
+        None => Ok(None),
+    }
+}

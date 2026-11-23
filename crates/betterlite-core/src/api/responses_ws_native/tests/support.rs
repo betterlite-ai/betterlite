@@ -1,0 +1,719 @@
+use std::collections::{BTreeMap, VecDeque};
+use std::future::{Future, pending, ready};
+use std::io;
+use std::slice::from_ref;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+use async_trait::async_trait;
+use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+use betterlite_error::error::details::RateLimitDetails;
+use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_error::rate_limit::RateLimitCategory;
+use betterlite_logging::logging_state::LoggingStateError;
+use betterlite_models::decisions::Json;
+use betterlite_models::resolution::ResolutionError;
+use betterlite_models::usage_sum::Usage;
+use betterlite_openai::api::responses_shapes::websocket::{
+    PresidioGuardrailCallback, ResponsesClientWebSocket, ResponsesWebSocketMessage,
+    WsRequestDefaults,
+};
+use betterlite_openai::credentials::LiteLlmGlobals;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::value::RawValue;
+use thiserror::Error;
+use tokio::task::yield_now;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
+
+use crate::api::responses_provider_selection::provider_config::{
+    ConfigLookup, NativeConfig, ResponsesApiConfig,
+};
+use crate::api::responses_stream_events::ProjectQuotaCallback;
+use crate::api::responses_ws_native::call::{
+    NativeWsCall, NativeWsDeps, NativeWsProviderHandler, NativeWsResolution, ProviderWsRequest,
+    WsResolved, responses_websocket,
+};
+use crate::api::responses_ws_native::logging::{WsCallUpdate, WsNativeLogging};
+use crate::api::responses_ws_native::relay::RelaySetup;
+use crate::api::responses_ws_native::relay::ResponsesWsRelay;
+use crate::api::responses_ws_native::relay::backend::{BackendError, NativeWsBackend};
+use crate::cost::realtime::RealtimeBilling;
+
+pub(super) type Event = IndexMap<String, Json>;
+pub(super) type Received = Result<ResponsesWebSocketMessage, BackendError<TestError>>;
+pub(super) type ReceiveScript = Mutex<VecDeque<Received>>;
+
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub(super) struct TestError(pub(super) String);
+
+pub(super) fn lock<Value>(shared: &Mutex<Value>) -> MutexGuard<'_, Value> {
+    shared.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+pub(super) fn object(text: &str) -> Event {
+    serde_json::from_str(text).unwrap()
+}
+
+pub(super) fn json(text: &str) -> Json {
+    serde_json::from_str(text).unwrap()
+}
+
+pub(super) fn redactor() -> Redactor {
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()
+}
+
+pub(super) fn rate_limited(message: &str) -> ErrorClass {
+    ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context: ErrorContext {
+            message: message.to_owned(),
+            model: None,
+            provider: None,
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        },
+        category: RateLimitCategory::LitellmRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    }))
+}
+
+pub(super) struct TestClient {
+    pub(super) sent: Mutex<Vec<String>>,
+    pub(super) incoming: Mutex<VecDeque<Result<String, TestError>>>,
+    pub(super) fail_sends: bool,
+    pub(super) yield_first: bool,
+}
+
+impl TestClient {
+    pub(super) fn new(frames: Vec<&str>) -> Self {
+        Self::with_results(
+            frames
+                .into_iter()
+                .map(|frame| Ok(frame.to_owned()))
+                .collect(),
+        )
+    }
+
+    pub(super) fn with_results(results: VecDeque<Result<String, TestError>>) -> Self {
+        Self {
+            sent: Mutex::new(Vec::new()),
+            incoming: Mutex::new(results),
+            fail_sends: false,
+            yield_first: false,
+        }
+    }
+
+    pub(super) fn sent(&self) -> Vec<String> {
+        lock(&self.sent).clone()
+    }
+}
+
+impl ResponsesClientWebSocket for TestClient {
+    type Error = TestError;
+
+    fn send_text<'call>(
+        &'call self,
+        data: &'call str,
+    ) -> impl Future<Output = Result<(), TestError>> + Send + 'call {
+        lock(&self.sent).push(data.to_owned());
+        ready(if self.fail_sends {
+            Err(TestError(String::from("the client socket is closed")))
+        } else {
+            Ok(())
+        })
+    }
+
+    fn receive_text(&self) -> impl Future<Output = Result<String, TestError>> + Send + '_ {
+        let next = lock(&self.incoming)
+            .pop_front()
+            .unwrap_or_else(|| Err(TestError(String::from("the client socket is closed"))));
+        async move {
+            if self.yield_first {
+                yield_now().await;
+            }
+            next
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReceiveMode {
+    Scripted,
+    UnsupportedDecode,
+    Blocked,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CloseMode {
+    Graceful,
+    Fails,
+}
+
+pub(super) struct ScriptedBackend {
+    pub(super) sent: Mutex<Vec<String>>,
+    pub(super) recv_raw_script: ReceiveScript,
+    pub(super) recv_script: ReceiveScript,
+    pub(super) receive: ReceiveMode,
+    pub(super) close: CloseMode,
+}
+
+impl ScriptedBackend {
+    pub(super) fn new() -> Self {
+        Self {
+            sent: Mutex::new(Vec::new()),
+            recv_raw_script: Mutex::new(VecDeque::new()),
+            recv_script: Mutex::new(VecDeque::new()),
+            receive: ReceiveMode::Scripted,
+            close: CloseMode::Graceful,
+        }
+    }
+
+    pub(super) fn text(&self, frame: &str) -> &Self {
+        lock(&self.recv_raw_script)
+            .push_back(Ok(ResponsesWebSocketMessage::Text(frame.to_owned())));
+        self
+    }
+
+    pub(super) fn bytes(&self, frame: &[u8]) -> &Self {
+        lock(&self.recv_raw_script).push_back(Ok(ResponsesWebSocketMessage::Bytes(frame.to_vec())));
+        self
+    }
+
+    pub(super) fn closing(&self) -> &Self {
+        lock(&self.recv_raw_script).push_back(Err(BackendError::Closed {
+            source: TestError(String::from("the backend connection closed")),
+        }));
+        self
+    }
+
+    pub(super) fn failing(&self, message: &str) -> &Self {
+        lock(&self.recv_raw_script).push_back(Err(BackendError::Failed {
+            source: TestError(message.to_owned()),
+        }));
+        self
+    }
+
+    pub(super) fn sent(&self) -> Vec<String> {
+        lock(&self.sent).clone()
+    }
+}
+
+const CLOSED: &str = "the backend connection closed";
+
+fn next_message(script: &ReceiveScript) -> Received {
+    lock(script).pop_front().unwrap_or_else(|| {
+        Err(BackendError::Closed {
+            source: TestError(String::from(CLOSED)),
+        })
+    })
+}
+
+impl NativeWsBackend for ScriptedBackend {
+    type Error = TestError;
+
+    fn recv_raw(
+        &self,
+    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<TestError>>> + Send + '_
+    {
+        async move {
+            match self.receive {
+                ReceiveMode::Blocked => pending().await,
+                ReceiveMode::UnsupportedDecode => Err(BackendError::UnsupportedDecode),
+                ReceiveMode::Scripted => next_message(&self.recv_raw_script),
+            }
+        }
+    }
+
+    fn recv(
+        &self,
+    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<TestError>>> + Send + '_
+    {
+        async move {
+            match self.receive {
+                ReceiveMode::Blocked => pending().await,
+                ReceiveMode::UnsupportedDecode | ReceiveMode::Scripted => {
+                    next_message(&self.recv_script)
+                }
+            }
+        }
+    }
+
+    fn send<'call>(
+        &'call self,
+        message: &'call str,
+    ) -> impl Future<Output = Result<(), TestError>> + Send + 'call {
+        lock(&self.sent).push(message.to_owned());
+        ready(Ok(()))
+    }
+
+    fn close(&self) -> impl Future<Output = Result<(), TestError>> + Send + '_ {
+        ready(match self.close {
+            CloseMode::Graceful => Ok(()),
+            CloseMode::Fails => Err(TestError(String::from("the backend close failed"))),
+        })
+    }
+}
+
+pub(super) struct EchoGuard;
+
+impl PresidioGuardrailCallback for EchoGuard {
+    type Error = TestError;
+    type Settings = ();
+
+    fn presidio_settings(&self, _data: &BTreeMap<String, Box<RawValue>>) -> Option<()> {
+        Some(())
+    }
+
+    fn check_pii<'call>(
+        &'call self,
+        text: &'call str,
+        _output_parse_pii: bool,
+        _presidio_config: Option<&'call ()>,
+        _request_data: &'call BTreeMap<String, Box<RawValue>>,
+    ) -> impl Future<Output = Result<String, TestError>> + Send + 'call {
+        ready(Ok(text.to_owned()))
+    }
+}
+
+pub(super) struct RejectFirstQuota {
+    pub(super) calls: Mutex<usize>,
+    pub(super) message: String,
+}
+
+impl RejectFirstQuota {
+    pub(super) fn new(message: &str) -> Self {
+        Self {
+            calls: Mutex::new(0),
+            message: message.to_owned(),
+        }
+    }
+}
+
+#[async_trait]
+impl ProjectQuotaCallback for RejectFirstQuota {
+    async fn enforce_frame_quota(
+        &self,
+        _user_api_key_dict: Option<&UserAPIKeyAuth>,
+        _requested_model: Option<&str>,
+        _estimated_input_tokens: i64,
+        _estimated_output_tokens: i64,
+    ) -> Result<(), ErrorClass> {
+        let mut calls = lock(&self.calls);
+        *calls += 1;
+        if *calls == 1 {
+            Err(rate_limited(&self.message))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct RecordedUpdate {
+    pub(super) model: String,
+    pub(super) user: Option<String>,
+    pub(super) provider: Option<String>,
+    pub(super) litellm_params: Event,
+    pub(super) kwargs: Event,
+}
+
+#[derive(Default)]
+pub(super) struct RecordingLogging {
+    pub(super) effects: Mutex<Vec<String>>,
+    pub(super) updates: Mutex<Vec<RecordedUpdate>>,
+    pub(super) pre_calls: Mutex<Vec<(String, String)>>,
+    pub(super) inputs: Mutex<Vec<Vec<Event>>>,
+    pub(super) success: Mutex<Vec<Vec<Event>>>,
+    pub(super) partial: Mutex<Vec<(Usage, f64)>>,
+    pub(super) costs: Mutex<Vec<(Option<String>, Option<f64>)>>,
+    pub(super) failures: Mutex<Vec<ErrorClass>>,
+    pub(super) tracebacks: Mutex<Vec<String>>,
+    pub(super) price: Option<f64>,
+}
+
+impl RecordingLogging {
+    pub(super) fn priced(price: f64) -> Self {
+        Self {
+            price: Some(price),
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn effects(&self) -> Vec<String> {
+        lock(&self.effects).clone()
+    }
+}
+
+impl WsNativeLogging for RecordingLogging {
+    fn update_from_kwargs(&self, update: WsCallUpdate<'_>) -> Result<(), LoggingStateError> {
+        lock(&self.effects).push(String::from("update"));
+        lock(&self.updates).push(RecordedUpdate {
+            model: update.model.to_owned(),
+            user: update.user.map(str::to_owned),
+            provider: update.custom_llm_provider.map(str::to_owned),
+            litellm_params: update.litellm_params.clone(),
+            kwargs: update.kwargs.clone(),
+        });
+        Ok(())
+    }
+
+    fn pre_call(&self, input: &str, api_key: &str) {
+        lock(&self.effects).push(String::from("pre_call"));
+        lock(&self.pre_calls).push((input.to_owned(), api_key.to_owned()));
+    }
+
+    fn record_input_messages(&self, messages: &[Event]) {
+        lock(&self.effects).push(String::from("input_messages"));
+        lock(&self.inputs).push(messages.to_vec());
+    }
+
+    fn dispatch_success(&self, messages: Vec<Event>) {
+        lock(&self.effects).push(String::from("success"));
+        lock(&self.success).push(messages);
+    }
+
+    fn response_cost(&self, billing: &RealtimeBilling) -> Option<f64> {
+        lock(&self.effects).push(String::from("cost"));
+        lock(&self.costs).push((billing.service_tier.clone(), self.price));
+        self.price
+    }
+
+    fn record_partial_usage(&self, usage: &Usage, response_cost: f64) {
+        lock(&self.effects).push(String::from("partial_usage"));
+        lock(&self.partial).push((usage.clone(), response_cost));
+    }
+
+    fn dispatch_failure(&self, exception: ErrorClass, traceback: String) {
+        lock(&self.effects).push(String::from("failure"));
+        lock(&self.failures).push(exception);
+        lock(&self.tracebacks).push(traceback);
+    }
+}
+
+pub(super) struct FakeResolution {
+    pub(super) model: String,
+    pub(super) provider: Option<String>,
+    pub(super) api_base: Option<String>,
+    pub(super) api_key: Option<String>,
+}
+
+impl FakeResolution {
+    pub(super) fn openai() -> Self {
+        Self {
+            model: String::from("gpt-4o"),
+            provider: Some(String::from("openai")),
+            api_base: None,
+            api_key: None,
+        }
+    }
+}
+
+impl NativeWsResolution for FakeResolution {
+    fn resolve(
+        &self,
+        _model: &str,
+        _api_base: Option<&str>,
+        _api_key: Option<&SecretString>,
+    ) -> Result<WsResolved, ResolutionError> {
+        Ok(WsResolved {
+            model: self.model.clone(),
+            provider: self.provider.clone(),
+            api_base: self.api_base.clone(),
+            api_key: self.api_key.clone().map(SecretString::from),
+        })
+    }
+}
+
+pub(super) struct FakeConfigs {
+    pub(super) native: bool,
+}
+
+impl Default for FakeConfigs {
+    fn default() -> Self {
+        Self { native: false }
+    }
+}
+
+impl ConfigLookup for FakeConfigs {
+    fn responses_api_config(
+        &self,
+        _model: &str,
+        _provider: &str,
+        _api_base: Option<&str>,
+    ) -> Option<NativeConfig> {
+        self.native.then_some(NativeConfig {
+            encrypted_agent_messages: true,
+        })
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct RecordedRequest {
+    pub(super) model: String,
+    pub(super) api_base: Option<String>,
+    pub(super) api_key: Option<String>,
+    pub(super) timeout: Option<f64>,
+    pub(super) first_message: Option<String>,
+    pub(super) litellm_metadata: Event,
+    pub(super) custom_llm_provider: Option<String>,
+    pub(super) provider_config: Option<ResponsesApiConfig>,
+    pub(super) remaining_kwargs: Event,
+    pub(super) fill_missing: BTreeMap<String, Json>,
+    pub(super) overrides: BTreeMap<String, Json>,
+}
+
+pub(super) struct RecordingHandler {
+    pub(super) requests: Mutex<Vec<RecordedRequest>>,
+    pub(super) forward: bool,
+    pub(super) backend: Arc<ScriptedBackend>,
+    pub(super) logging: Arc<RecordingLogging>,
+    pub(super) outputs: Vec<EchoGuard>,
+    pub(super) quota: Option<Arc<dyn ProjectQuotaCallback>>,
+    pub(super) authorized_model: Option<String>,
+    pub(super) request_data: Option<Event>,
+    pub(super) redactor: Redactor,
+}
+
+impl RecordingHandler {
+    pub(super) fn recording_only() -> Self {
+        Self {
+            requests: Mutex::new(Vec::new()),
+            forward: false,
+            backend: Arc::new(ScriptedBackend::new()),
+            logging: Arc::new(RecordingLogging::default()),
+            outputs: Vec::new(),
+            quota: None,
+            authorized_model: None,
+            request_data: None,
+            redactor: redactor(),
+        }
+    }
+
+    pub(super) fn forwarding(
+        backend: Arc<ScriptedBackend>,
+        logging: Arc<RecordingLogging>,
+    ) -> Self {
+        Self {
+            forward: true,
+            backend,
+            logging,
+            ..Self::recording_only()
+        }
+    }
+
+    pub(super) fn request(&self, index: usize) -> RecordedRequest {
+        lock(&self.requests)[index].clone()
+    }
+}
+
+fn record_request(request: &ProviderWsRequest<'_, TestClient>) -> RecordedRequest {
+    RecordedRequest {
+        model: request.model.to_owned(),
+        api_base: request.api_base.map(str::to_owned),
+        api_key: request.api_key.map(|key| key.expose_secret().to_owned()),
+        timeout: request.timeout,
+        first_message: request.first_message.clone(),
+        litellm_metadata: request.litellm_metadata.clone(),
+        custom_llm_provider: request.custom_llm_provider.map(str::to_owned),
+        provider_config: request.provider_config,
+        remaining_kwargs: request.remaining_kwargs.clone(),
+        fill_missing: request.request_defaults.fill_missing.clone(),
+        overrides: request.request_defaults.overrides.clone(),
+    }
+}
+
+impl NativeWsProviderHandler<TestClient> for RecordingHandler {
+    type Error = TestError;
+
+    fn responses_websocket(
+        &self,
+        request: ProviderWsRequest<'_, TestClient>,
+    ) -> impl Future<Output = Result<Option<ErrorClass>, TestError>> + Send + '_ {
+        async move {
+            lock(&self.requests).push(record_request(&request));
+            if !self.forward {
+                return Ok(None);
+            }
+            let logging: &dyn WsNativeLogging = &*self.logging;
+            let relay = ResponsesWsRelay::new(RelaySetup {
+                websocket: request.websocket,
+                backend: self.backend.as_ref(),
+                logging: Some(logging),
+                user_api_key_dict: request.user_api_key_dict,
+                request_data: self.request_data.clone(),
+                first_message: request.first_message.clone(),
+                guardrail_callbacks: None,
+                output_guardrail_callbacks: if self.outputs.is_empty() {
+                    None
+                } else {
+                    Some(self.outputs.as_slice())
+                },
+                quota_callbacks: self.quota.as_ref().map(from_ref),
+                authorized_model: self.authorized_model.as_deref(),
+                custom_llm_provider: request.custom_llm_provider,
+                request_defaults: Some(&request.request_defaults),
+                redactor: &self.redactor,
+            });
+            Ok(relay.bidirectional_forward().await)
+        }
+    }
+}
+
+pub(super) struct Entry {
+    pub(super) model: String,
+    pub(super) api_base: Option<String>,
+    pub(super) api_key: Option<String>,
+    pub(super) timeout: Option<f64>,
+    pub(super) kwargs: Event,
+    pub(super) resolution: FakeResolution,
+    pub(super) globals: LiteLlmGlobals,
+    pub(super) openai_api_key: Option<String>,
+    pub(super) configs: FakeConfigs,
+}
+
+impl Entry {
+    pub(super) fn new() -> Self {
+        Self {
+            model: String::from("gpt-4o"),
+            api_base: None,
+            api_key: None,
+            timeout: None,
+            kwargs: Event::new(),
+            resolution: FakeResolution::openai(),
+            globals: LiteLlmGlobals::default(),
+            openai_api_key: None,
+            configs: FakeConfigs::default(),
+        }
+    }
+
+    pub(super) async fn request(&self) -> RecordedRequest {
+        let handler = RecordingHandler::recording_only();
+        let client = TestClient::new(Vec::new());
+        let logging = RecordingLogging::default();
+        let openai = self.openai_api_key.as_deref().map(SecretString::from);
+        let caller_key = self.api_key.as_deref().map(SecretString::from);
+        let deps = NativeWsDeps {
+            resolution: &self.resolution,
+            configs: &self.configs,
+            logging: &logging,
+            globals: &self.globals,
+            openai_api_key: openai.as_ref(),
+            auto_summary: false,
+            handler: &handler,
+        };
+        let call = NativeWsCall {
+            model: &self.model,
+            websocket: &client,
+            api_base: self.api_base.as_deref(),
+            api_key: caller_key.as_ref(),
+            timeout: self.timeout,
+            user_api_key_dict: None,
+            kwargs: &self.kwargs,
+        };
+        responses_websocket(&deps, call).await.unwrap();
+        handler.request(0)
+    }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    pub(super) fn text(&self) -> String {
+        String::from_utf8(lock(&self.0).clone()).unwrap()
+    }
+}
+
+impl io::Write for Captured {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        lock(&self.0).extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for Captured {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+pub(super) struct RelayParts<'relay> {
+    pub(super) websocket: &'relay TestClient,
+    pub(super) backend: &'relay ScriptedBackend,
+    pub(super) logging: &'relay RecordingLogging,
+    pub(super) redactor: &'relay Redactor,
+    pub(super) first_message: Option<String>,
+    pub(super) request_data: Option<Event>,
+    pub(super) outputs: Option<&'relay [EchoGuard]>,
+    pub(super) quota: Option<&'relay [Arc<dyn ProjectQuotaCallback>]>,
+    pub(super) authorized_model: Option<&'relay str>,
+    pub(super) provider: Option<&'relay str>,
+    pub(super) defaults: Option<&'relay WsRequestDefaults<Json>>,
+}
+
+impl<'relay> RelayParts<'relay> {
+    pub(super) fn standard(
+        websocket: &'relay TestClient,
+        backend: &'relay ScriptedBackend,
+        logging: &'relay RecordingLogging,
+        redactor: &'relay Redactor,
+    ) -> Self {
+        Self {
+            websocket,
+            backend,
+            logging,
+            redactor,
+            first_message: None,
+            request_data: None,
+            outputs: None,
+            quota: None,
+            authorized_model: None,
+            provider: None,
+            defaults: None,
+        }
+    }
+
+    pub(super) fn relay(self) -> ResponsesWsRelay<'relay, EchoGuard, TestClient, ScriptedBackend> {
+        let logging: &dyn WsNativeLogging = self.logging;
+        ResponsesWsRelay::new(RelaySetup {
+            websocket: self.websocket,
+            backend: self.backend,
+            logging: Some(logging),
+            user_api_key_dict: None,
+            request_data: self.request_data,
+            first_message: self.first_message,
+            guardrail_callbacks: None,
+            output_guardrail_callbacks: self.outputs,
+            quota_callbacks: self.quota,
+            authorized_model: self.authorized_model,
+            custom_llm_provider: self.provider,
+            request_defaults: self.defaults,
+            redactor: self.redactor,
+        })
+    }
+}
+
+pub(super) fn capture_traces() -> (Captured, DefaultGuard) {
+    let captured = Captured::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(captured.clone())
+        .finish();
+    let guard = set_default(subscriber);
+    (captured, guard)
+}

@@ -1,0 +1,774 @@
+#![cfg(test)]
+
+mod support;
+
+use std::sync::Arc;
+
+use betterlite_error::envelope::WireField;
+use betterlite_error::error::ErrorClass;
+use betterlite_models::decisions::Json;
+use betterlite_openai::api::responses_shapes::websocket::ResponsesWebSocketMessage;
+use betterlite_openai::credentials::LiteLlmGlobals;
+use secrecy::SecretString;
+
+use crate::api::decisions_send::error::visible_message;
+use crate::api::responses_provider_selection::provider_config::{NativeConfig, ResponsesApiConfig};
+use crate::api::responses_stream_events::ProjectQuotaCallback;
+use crate::api::responses_ws_frame_policy::{DELTA_EVENT_TYPES, OUTPUT_DONE_EVENT_TYPES};
+use crate::api::responses_ws_native::call::{NativeWsCall, NativeWsDeps, responses_websocket};
+use crate::api::responses_ws_native::error::WsNativeError;
+use crate::api::responses_ws_native::logging::traceback_text;
+use crate::api::responses_ws_native::relay::ResponsesWsRelay;
+use crate::api::responses_ws_native::relay::backend::BackendError;
+use crate::api::responses_ws_native::request::{
+    build_litellm_metadata_for_ws, build_responses_websocket_request_defaults,
+    deployment_reasoning_default, first_ws_frame_with_routed_input,
+};
+use support::{
+    CloseMode, EchoGuard, Entry, Event, FakeConfigs, FakeResolution, ReceiveMode, RecordingHandler,
+    RecordingLogging, RejectFirstQuota, RelayParts, ScriptedBackend, TestClient, TestError,
+    capture_traces, json, lock, object, redactor,
+};
+
+const FIRST_FRAME: &str = r#"{"type":"response.create","input":"hello"}"#;
+
+fn texts(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_owned()).collect()
+}
+
+struct ForwardingFixture {
+    backend: Arc<ScriptedBackend>,
+    client: TestClient,
+    logging: Arc<RecordingLogging>,
+    handler: RecordingHandler,
+    kwargs: Event,
+}
+
+fn forwarding_fixture() -> ForwardingFixture {
+    let backend = Arc::new(ScriptedBackend::new());
+    backend
+        .text(r#"{"type":"response.created"}"#)
+        .text(r#"{"type":"response.completed"}"#)
+        .closing();
+    let mut client = TestClient::new(Vec::new());
+    client.yield_first = true;
+    let logging = Arc::new(RecordingLogging::default());
+    let handler = RecordingHandler::forwarding(Arc::clone(&backend), Arc::clone(&logging));
+    let mut kwargs = Event::new();
+    kwargs.insert(
+        String::from("first_message"),
+        Json::Text(FIRST_FRAME.to_owned()),
+    );
+    ForwardingFixture {
+        backend,
+        client,
+        logging,
+        handler,
+        kwargs,
+    }
+}
+
+async fn run_entry(fixture: &ForwardingFixture) -> Option<ErrorClass> {
+    let resolution = FakeResolution::openai();
+    let configs = FakeConfigs::default();
+    let globals = LiteLlmGlobals::default();
+    let openai = SecretString::from("sk-env");
+    let deps = NativeWsDeps {
+        resolution: &resolution,
+        configs: &configs,
+        logging: &*fixture.logging,
+        globals: &globals,
+        openai_api_key: Some(&openai),
+        auto_summary: false,
+        handler: &fixture.handler,
+    };
+    let call = NativeWsCall {
+        model: "gpt-4o",
+        websocket: &fixture.client,
+        api_base: None,
+        api_key: None,
+        timeout: Some(7.0),
+        user_api_key_dict: None,
+        kwargs: &fixture.kwargs,
+    };
+    responses_websocket(&deps, call).await.unwrap()
+}
+
+fn assert_forwarded_call(fixture: &ForwardingFixture) {
+    let request = fixture.handler.request(0);
+    assert_eq!(request.model, "gpt-4o");
+    assert_eq!(request.api_key.as_deref(), Some("sk-env"));
+    assert_eq!(request.api_base, None);
+    assert_eq!(request.timeout, Some(7.0));
+    assert_eq!(request.first_message.as_deref(), Some(FIRST_FRAME));
+    assert_eq!(request.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(fixture.backend.sent(), texts(&[FIRST_FRAME]));
+    assert_eq!(
+        fixture.client.sent(),
+        texts(&[
+            r#"{"type":"response.created"}"#,
+            r#"{"type":"response.completed"}"#
+        ])
+    );
+    assert_eq!(
+        fixture.logging.effects(),
+        texts(&["update", "pre_call", "success"])
+    );
+    let updates = lock(&fixture.logging.updates).clone();
+    assert_eq!(updates[0].model, "gpt-4o");
+    assert_eq!(updates[0].provider.as_deref(), Some("openai"));
+    assert_eq!(updates[0].user, None);
+    assert_eq!(
+        updates[0].litellm_params.get("data_residency"),
+        Some(&Json::Null)
+    );
+    assert!(updates[0].kwargs.contains_key("first_message"));
+}
+
+#[tokio::test]
+async fn native_ws_response_create() {
+    let fixture = forwarding_fixture();
+    let outcome = run_entry(&fixture).await;
+    assert!(outcome.is_none());
+    assert_forwarded_call(&fixture);
+}
+
+fn assert_frame_routing() {
+    let routed = Json::Text(String::from("routed"));
+    assert_eq!(
+        first_ws_frame_with_routed_input("not-json", Some(&routed)),
+        "not-json"
+    );
+    assert_eq!(
+        first_ws_frame_with_routed_input("null", Some(&routed)),
+        "null"
+    );
+    assert_eq!(
+        first_ws_frame_with_routed_input(
+            r#"{"type":"response.create","input":"old","other":1}"#,
+            Some(&routed)
+        ),
+        r#"{"type":"response.create","input":"routed","other":1}"#
+    );
+    assert_eq!(
+        first_ws_frame_with_routed_input(
+            r#"{"type":"response.create","response":{"input":"old"},"other":1}"#,
+            Some(&routed)
+        ),
+        r#"{"type":"response.create","response":{"input":"routed"},"other":1}"#
+    );
+    let matching = r#"{"type":"response.create","input":"routed"}"#;
+    assert_eq!(
+        first_ws_frame_with_routed_input(matching, Some(&routed)),
+        matching
+    );
+    let nested_matching = r#"{"type":"response.create","response":{"input":"routed"}}"#;
+    assert_eq!(
+        first_ws_frame_with_routed_input(nested_matching, Some(&routed)),
+        nested_matching
+    );
+}
+
+fn assert_reasoning_defaults() {
+    let scalar = object(r#"{"reasoning_effort":"high"}"#);
+    assert_eq!(
+        deployment_reasoning_default(&scalar, false),
+        Some(json(r#"{"effort":"high"}"#))
+    );
+    assert_eq!(
+        deployment_reasoning_default(&scalar, true),
+        Some(json(r#"{"effort":"high","summary":"detailed"}"#))
+    );
+    let mapping = object(r#"{"reasoning_effort":{"effort":"high"}}"#);
+    assert_eq!(
+        deployment_reasoning_default(&mapping, false),
+        Some(json(r#"{"effort":"high"}"#))
+    );
+    let suppressed = object(r#"{"reasoning":{"effort":"none"},"reasoning_effort":"high"}"#);
+    assert_eq!(deployment_reasoning_default(&suppressed, false), None);
+    assert_eq!(deployment_reasoning_default(&object("{}"), false), None);
+}
+
+fn assert_deployment_defaults() {
+    let deployment = object(
+        r#"{"temperature":0.5,"reasoning_effort":"high","extra_body":{"reasoning":{"effort":"low"},"service_tier":"flex"}}"#,
+    );
+    let defaults = build_responses_websocket_request_defaults(&deployment, false).unwrap();
+    assert_eq!(defaults.fill_missing.get("temperature"), Some(&json("0.5")));
+    assert_eq!(
+        defaults.fill_missing.get("reasoning"),
+        Some(&json(r#"{"effort":"high"}"#))
+    );
+    assert!(!defaults.fill_missing.contains_key("extra_body"));
+    assert_eq!(
+        defaults.overrides.get("reasoning"),
+        Some(&json(r#"{"effort":"low"}"#))
+    );
+    assert_eq!(
+        defaults.overrides.get("service_tier"),
+        Some(&json(r#""flex""#))
+    );
+}
+
+fn assert_malformed_inputs() {
+    assert!(matches!(
+        build_litellm_metadata_for_ws(&object(r#"{"litellm_metadata":[1]}"#)),
+        Err(WsNativeError::TypeError { kind: "list" })
+    ));
+    assert!(matches!(
+        build_litellm_metadata_for_ws(&object(r#"{"metadata":["x"]}"#)),
+        Err(WsNativeError::AttributeError { kind: "list" })
+    ));
+    assert!(matches!(
+        build_responses_websocket_request_defaults(&object(r#"{"extra_body":[1]}"#), false),
+        Err(WsNativeError::Validation { .. })
+    ));
+}
+
+async fn entry_routing_request() -> support::RecordedRequest {
+    let mut entry = Entry::new();
+    entry.kwargs = object(
+        r#"{"input":"routed","previous_response_id":"resp_prev","temperature":0.5,"first_message":{"type":"response.create","input":"old","other":1},"other":1}"#,
+    );
+    entry.request().await
+}
+
+#[tokio::test]
+async fn request_defaults_and_routing() {
+    assert_frame_routing();
+    assert_reasoning_defaults();
+    assert_deployment_defaults();
+    assert_malformed_inputs();
+    let request = entry_routing_request().await;
+    assert_eq!(
+        request.first_message.as_deref(),
+        Some(r#"{"type":"response.create","input":"routed","other":1}"#)
+    );
+    assert_eq!(
+        request.remaining_kwargs,
+        object(r#"{"temperature":0.5,"other":1}"#)
+    );
+    assert_eq!(request.fill_missing.get("temperature"), Some(&json("0.5")));
+    assert!(!request.fill_missing.contains_key("previous_response_id"));
+    assert!(request.overrides.is_empty());
+}
+
+async fn merged_metadata_request() -> support::RecordedRequest {
+    let mut entry = Entry::new();
+    entry.api_base = Some(String::from("https://caller.test"));
+    entry.api_key = Some(String::from("sk-call"));
+    entry.resolution.api_base = Some(String::from("wss://dynamic.test"));
+    entry.resolution.api_key = Some(String::from("sk-dynamic"));
+    entry.kwargs = object(
+        r#"{"litellm_metadata":{"trace":"t1"},"metadata":{"guardrails":["pii"]},"guardrails":["fallback"]}"#,
+    );
+    entry.request().await
+}
+
+async fn guardrail_precedence() -> (Event, Event) {
+    let mut entry = Entry::new();
+    entry.kwargs = object(r#"{"metadata":{"guardrails":[]},"guardrails":["fallback"]}"#);
+    let fallback = entry.request().await;
+    entry.kwargs = object(r#"{"metadata":{},"guardrails":[]}"#);
+    let neither = entry.request().await;
+    (fallback.litellm_metadata, neither.litellm_metadata)
+}
+
+async fn credential_fallbacks() -> Vec<Option<String>> {
+    let mut entry = Entry::new();
+    entry.globals.api_base = Some(String::from("https://global.test"));
+    entry.globals.api_key = Some(SecretString::from("sk-global"));
+    entry.globals.openai_key = Some(SecretString::from("sk-openai"));
+    entry.openai_api_key = Some(String::from("sk-env"));
+    let global = entry.request().await;
+    entry.globals.api_key = Some(SecretString::from(""));
+    let openai_key = entry.request().await;
+    entry.globals.openai_key = None;
+    let env = entry.request().await;
+    entry.openai_api_key = None;
+    let none = entry.request().await;
+    vec![
+        global.api_base,
+        global.api_key,
+        openai_key.api_key,
+        env.api_key,
+        none.api_key,
+    ]
+}
+
+async fn provider_configs() -> (Option<ResponsesApiConfig>, Option<ResponsesApiConfig>) {
+    let mut entry = Entry::new();
+    entry.configs.native = true;
+    let native = entry.request().await;
+    let mut missing = Entry::new();
+    missing.resolution.provider = None;
+    let absent = missing.request().await;
+    (native.provider_config, absent.provider_config)
+}
+
+#[tokio::test]
+async fn metadata_and_credentials() {
+    let merged = merged_metadata_request().await;
+    assert_eq!(
+        merged.litellm_metadata,
+        object(r#"{"trace":"t1","guardrails":["pii"]}"#)
+    );
+    assert_eq!(merged.api_base.as_deref(), Some("wss://dynamic.test"));
+    assert_eq!(merged.api_key.as_deref(), Some("sk-dynamic"));
+    assert_eq!(merged.custom_llm_provider.as_deref(), Some("openai"));
+    let (fallback, neither) = guardrail_precedence().await;
+    assert_eq!(fallback, object(r#"{"guardrails":["fallback"]}"#));
+    assert!(neither.is_empty());
+    let credentials = credential_fallbacks().await;
+    assert_eq!(
+        credentials,
+        vec![
+            Some(String::from("https://global.test")),
+            Some(String::from("sk-global")),
+            Some(String::from("sk-openai")),
+            Some(String::from("sk-env")),
+            None,
+        ]
+    );
+    let (native, absent) = provider_configs().await;
+    assert_eq!(
+        native,
+        Some(ResponsesApiConfig::Native(NativeConfig {
+            encrypted_agent_messages: true,
+        }))
+    );
+    assert_eq!(absent, None);
+}
+
+fn constructor_defaults(relay: &ResponsesWsRelay<'_, EchoGuard, TestClient, ScriptedBackend>) {
+    assert!(relay.litellm_metadata.is_empty());
+    assert!(relay.setup.guardrail_callbacks.is_none());
+    assert!(relay.setup.output_guardrail_callbacks.is_none());
+    assert!(relay.setup.quota_callbacks.is_none());
+    assert!(relay.setup.authorized_model.is_none());
+    assert!(relay.setup.request_defaults.is_none());
+}
+
+async fn stored_events(relay: &ResponsesWsRelay<'_, EchoGuard, TestClient, ScriptedBackend>) {
+    relay
+        .store_event(r#"{"type":"response.created"}"#)
+        .await
+        .unwrap();
+    relay
+        .store_event(r#"{"type":"response.completed"}"#)
+        .await
+        .unwrap();
+    let dropped = [
+        r#"{"type":"response.output_text.delta"}"#,
+        r#"{"type":"unknown"}"#,
+        "not-json",
+    ];
+    for frame in dropped {
+        relay.store_event(frame).await.unwrap();
+    }
+    assert_eq!(relay.messages.lock().await.len(), 2);
+}
+
+async fn collected_input(
+    relay: &ResponsesWsRelay<'_, EchoGuard, TestClient, ScriptedBackend>,
+    logging: &RecordingLogging,
+) {
+    let hello = r#"{"type":"response.create","input":"hello"}"#;
+    let world = r#"{"type":"response.create","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"world"}]}]}"#;
+    relay.store_input(hello).await;
+    relay.store_input(world).await;
+    let dropped = [
+        "not-json",
+        r#"{"type":"response.create","input":[{"type":"message","role":"assistant","content":[{"type":"input_text","text":"no"}]}]}"#,
+        r#"{"type":"response.create","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":""}]}]}"#,
+        r#"{"type":"response.create","input":[1,"text",null]}"#,
+        r#"{"type":"other","input":"ignored"}"#,
+    ];
+    for frame in dropped {
+        relay.store_input(frame).await;
+    }
+    let expected = vec![
+        object(r#"{"role":"user","content":"hello"}"#),
+        object(r#"{"role":"user","content":"world"}"#),
+    ];
+    assert_eq!(relay.input_messages.lock().await.clone(), expected);
+    assert_eq!(lock(&logging.pre_calls).len(), 7);
+    assert!(
+        lock(&logging.pre_calls)
+            .iter()
+            .all(|(_, key)| key.is_empty())
+    );
+}
+
+fn wrapped_item(frame: &str, relay_metadata: Event) -> String {
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let mut request_data = Event::new();
+    request_data.insert(String::from("litellm_metadata"), relay_metadata);
+    let mut parts = RelayParts::standard(&client, &backend, &logging, &redactor);
+    parts.request_data = Some(request_data);
+    let relay = parts.relay();
+    relay.wrap_response_event(frame).unwrap()
+}
+
+fn encrypted_metadata() -> Event {
+    object(r#"{"encrypted_content_affinity_enabled":true,"model_info":{"id":"dep-1"}}"#)
+}
+
+fn assert_encrypted_wrapping() {
+    let frame = r#"{"type":"response.output_item.added","item":{"encrypted_content":"cipher"}}"#;
+    let wrapped = wrapped_item(frame, encrypted_metadata());
+    let parsed: Event = serde_json::from_str(&wrapped).unwrap();
+    let Json::Object(item) = parsed.get("item").unwrap().clone() else {
+        panic!("the item stays an object");
+    };
+    let Some(Json::Text(content)) = item.get("encrypted_content") else {
+        panic!("the encrypted content stays text");
+    };
+    assert_ne!(content, "cipher");
+    assert!(content.ends_with(";cipher"));
+    let disabled = object(r#"{"encrypted_content_affinity_enabled":false}"#);
+    assert_eq!(wrapped_item(frame, disabled), frame);
+    let missing = object(r#"{"encrypted_content_affinity_enabled":true}"#);
+    assert_eq!(wrapped_item(frame, missing), frame);
+    let not_item = r#"{"type":"response.output_item.added","item":"cipher"}"#;
+    assert_eq!(wrapped_item(not_item, encrypted_metadata()), not_item);
+    let empty = r#"{"type":"response.output_item.added","item":{"encrypted_content":""}}"#;
+    assert_eq!(wrapped_item(empty, encrypted_metadata()), empty);
+}
+
+#[tokio::test]
+async fn event_capture_and_input_log() {
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let mut request_data = Event::new();
+    request_data.insert(String::from("litellm_metadata"), json("[1]"));
+    let mut parts = RelayParts::standard(&client, &backend, &logging, &redactor);
+    parts.request_data = Some(request_data);
+    let relay = parts.relay();
+    constructor_defaults(&relay);
+    stored_events(&relay).await;
+    collected_input(&relay, &logging).await;
+    assert_encrypted_wrapping();
+}
+
+async fn recv_fallback_and_connection_closed() {
+    let (captured, _guard) = capture_traces();
+    let client = TestClient::new(Vec::new());
+    let mut backend = ScriptedBackend::new();
+    backend.receive = ReceiveMode::UnsupportedDecode;
+    {
+        let mut script = lock(&backend.recv_script);
+        script.push_back(Ok(ResponsesWebSocketMessage::Text(String::from(
+            r#"{"type":"response.created"}"#,
+        ))));
+        script.push_back(Ok(ResponsesWebSocketMessage::Bytes(
+            br#"{"type":"response.completed"}"#.to_vec(),
+        )));
+        script.push_back(Err(BackendError::Closed {
+            source: TestError(String::from("the backend connection closed")),
+        }));
+    }
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();
+    relay.backend_to_client().await.unwrap();
+    assert_eq!(
+        client.sent(),
+        texts(&[
+            r#"{"type":"response.created"}"#,
+            r#"{"type":"response.completed"}"#
+        ])
+    );
+    assert_eq!(lock(&logging.success).len(), 1);
+    assert!(
+        captured
+            .text()
+            .contains("Responses WS backend connection closed: the backend connection closed")
+    );
+}
+
+async fn failed_backend_frame_is_logged() {
+    let (captured, _guard) = capture_traces();
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    backend.failing("boom");
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();
+    relay.backend_to_client().await.unwrap();
+    assert!(client.sent().is_empty());
+    assert!(
+        captured
+            .text()
+            .contains("Error in responses WS backend_to_client: boom")
+    );
+    assert!(lock(&logging.success).is_empty());
+}
+
+async fn output_events_are_dropped() {
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    for kind in DELTA_EVENT_TYPES
+        .iter()
+        .chain(OUTPUT_DONE_EVENT_TYPES.iter())
+    {
+        backend.text(&format!(r#"{{"type":"{kind}"}}"#));
+    }
+    backend.text("not-json").closing();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let outputs = [EchoGuard];
+    let mut parts = RelayParts::standard(&client, &backend, &logging, &redactor);
+    parts.outputs = Some(outputs.as_slice());
+    let relay = parts.relay();
+    relay.backend_to_client().await.unwrap();
+    assert_eq!(client.sent(), texts(&["not-json"]));
+}
+
+async fn array_frame_fails_wrapping() {
+    let (captured, _guard) = capture_traces();
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    backend.text("[1,2,3]").closing();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();
+    relay.backend_to_client().await.unwrap();
+    assert!(client.sent().is_empty());
+    assert!(
+        captured.text().contains(
+            "Error in responses WS backend_to_client: 'list' object has no attribute 'get'"
+        )
+    );
+}
+
+async fn invalid_utf8_sends_nothing() {
+    let (captured, _guard) = capture_traces();
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    backend.bytes(&[0xff, 0xfe]).closing();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();
+    relay.backend_to_client().await.unwrap();
+    assert!(client.sent().is_empty());
+    assert!(
+        captured
+            .text()
+            .contains("Error in responses WS backend_to_client: invalid utf-8")
+    );
+}
+
+async fn client_termination_closes_backend() {
+    let mut client = TestClient::new(Vec::new());
+    client.yield_first = true;
+    let mut backend = ScriptedBackend::new();
+    backend.receive = ReceiveMode::Blocked;
+    backend.close = CloseMode::Fails;
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let mut parts = RelayParts::standard(&client, &backend, &logging, &redactor);
+    parts.authorized_model = Some("gpt-4o");
+    parts.provider = Some("openai");
+    let relay = parts.relay();
+    relay.messages.lock().await.push(object(
+        r#"{"type":"response.failed","response":{"error":{"type":"server_error","message":"upstream broke","code":"E_UP"}}}"#,
+    ));
+    let failure = relay.bidirectional_forward().await;
+    let failure = failure.expect("the stored failure comes back");
+    assert_eq!(failure.metadata().status_code, 500);
+    assert!(logging.effects().contains(&String::from("failure")));
+}
+
+#[tokio::test]
+async fn backend_close_and_disconnect() {
+    recv_fallback_and_connection_closed().await;
+    failed_backend_frame_is_logged().await;
+    output_events_are_dropped().await;
+    array_frame_fails_wrapping().await;
+    invalid_utf8_sends_nothing().await;
+    client_termination_closes_backend().await;
+}
+
+async fn rejected_frame_effects() {
+    let client = TestClient::new(vec![
+        r#"{"type":"response.create","input":"first"}"#,
+        r#"{"type":"response.create","input":"second"}"#,
+    ]);
+    let backend = ScriptedBackend::new();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let quota: Arc<dyn ProjectQuotaCallback> = Arc::new(RejectFirstQuota::new("quota full"));
+    let quotas = [quota];
+    let mut parts = RelayParts::standard(&client, &backend, &logging, &redactor);
+    parts.quota = Some(quotas.as_slice());
+    let relay = parts.relay();
+    relay.client_to_backend().await;
+    assert_eq!(
+        client.sent(),
+        texts(&[
+            r#"{"type":"error","error":{"type":"rate_limit_exceeded","message":"quota full"}}"#
+        ])
+    );
+    assert_eq!(
+        backend.sent(),
+        texts(&[r#"{"type":"response.create","input":"second"}"#])
+    );
+    let pre_calls = lock(&logging.pre_calls).clone();
+    assert_eq!(
+        pre_calls,
+        vec![(
+            String::from(r#"{"type":"response.create","input":"second"}"#),
+            String::new(),
+        )]
+    );
+    assert!(relay.messages.lock().await.is_empty());
+}
+
+async fn rejected_send_failure_is_swallowed() {
+    let mut client = TestClient::new(vec![r#"{"type":"response.create","input":"first"}"#]);
+    client.fail_sends = true;
+    let backend = ScriptedBackend::new();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let quota: Arc<dyn ProjectQuotaCallback> = Arc::new(RejectFirstQuota::new("quota full"));
+    let quotas = [quota];
+    let mut parts = RelayParts::standard(&client, &backend, &logging, &redactor);
+    parts.quota = Some(quotas.as_slice());
+    let relay = parts.relay();
+    relay.client_to_backend().await;
+    assert_eq!(client.sent().len(), 1);
+    assert!(backend.sent().is_empty());
+    assert!(relay.messages.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn rate_limit_drop() {
+    rejected_frame_effects().await;
+    rejected_send_failure_is_swallowed().await;
+}
+
+async fn failure_is_mapped_and_billed() {
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let mut parts = RelayParts::standard(&client, &backend, &logging, &redactor);
+    parts.authorized_model = Some("gpt-4o");
+    parts.provider = Some("openai");
+    let relay = parts.relay();
+    relay
+        .store_input(r#"{"type":"response.create","input":"hello"}"#)
+        .await;
+    relay
+        .store_event(
+            r#"{"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7},"service_tier":"flex"}}"#,
+        )
+        .await
+        .unwrap();
+    relay
+        .store_event(
+            r#"{"type":"response.failed","response":{"error":{"type":"server_error","message":"upstream broke","code":"E_UP"},"service_tier":"flex"}}"#,
+        )
+        .await
+        .unwrap();
+    relay.log_messages().await.unwrap();
+    assert_eq!(
+        logging.effects(),
+        texts(&[
+            "pre_call",
+            "input_messages",
+            "cost",
+            "partial_usage",
+            "failure"
+        ])
+    );
+    assert_eq!(lock(&logging.inputs).len(), 1);
+    let partial = lock(&logging.partial).clone();
+    assert_eq!(partial.len(), 1);
+    assert_eq!(partial[0].0.prompt_tokens, 3);
+    assert_eq!(partial[0].0.completion_tokens, 4);
+    assert_eq!(partial[0].0.total_tokens, 7);
+    assert_eq!(partial[0].1, 0.0);
+    assert_eq!(
+        lock(&logging.costs).clone(),
+        vec![(Some(String::from("flex")), None)]
+    );
+    let failures = lock(&logging.failures).clone();
+    let metadata = failures[0].metadata();
+    assert_eq!(metadata.status_code, 500);
+    assert_eq!(
+        metadata.error_type,
+        WireField::Text(String::from("internal_server_error"))
+    );
+    assert_eq!(metadata.param, WireField::Null);
+    let visible = visible_message(&failures[0]);
+    assert_eq!(
+        visible,
+        "litellm.InternalServerError: InternalServerError: OpenAIException - upstream broke"
+    );
+    assert_eq!(
+        lock(&logging.tracebacks)[0],
+        format!("Traceback (most recent call last):\n{visible}")
+    );
+    assert_eq!(lock(&logging.tracebacks)[0], traceback_text(&failures[0]));
+}
+
+async fn success_dispatches_only() {
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();
+    relay
+        .store_event(r#"{"type":"response.created"}"#)
+        .await
+        .unwrap();
+    relay
+        .store_event(r#"{"type":"response.completed"}"#)
+        .await
+        .unwrap();
+    relay.log_messages().await.unwrap();
+    assert_eq!(logging.effects(), texts(&["success"]));
+    assert!(lock(&logging.partial).is_empty());
+}
+
+async fn incomplete_and_unknown() {
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();
+    relay
+        .store_event(r#"{"type":"response.incomplete"}"#)
+        .await
+        .unwrap();
+    relay.store_event(r#"{"type":"unknown"}"#).await.unwrap();
+    relay.log_messages().await.unwrap();
+    assert_eq!(logging.effects(), texts(&["success"]));
+    assert_eq!(lock(&logging.success)[0].len(), 1);
+    assert!(lock(&logging.partial).is_empty());
+}
+
+async fn empty_messages() {
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let relay = RelayParts::standard(&client, &backend, &logging, &redactor).relay();
+    relay.log_messages().await.unwrap();
+    assert!(logging.effects().is_empty());
+}
+
+#[tokio::test]
+async fn failure_usage_logging() {
+    failure_is_mapped_and_billed().await;
+    success_dispatches_only().await;
+    incomplete_and_unknown().await;
+    empty_messages().await;
+}
