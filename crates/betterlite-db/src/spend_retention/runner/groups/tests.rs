@@ -17,11 +17,12 @@ use crate::spend_retention::batches::table::CleanupTable;
 use crate::spend_retention::batches::{SpendLogCleanup, StopReason};
 use crate::spend_retention::runner::progress::RunProgress;
 use crate::spend_retention::runner::support::{
-    FakeLock, FakePartitions, FixedCleanupClock, HEALTH_IDS, PARTITION_NAMES, SESSION_IDS,
-    SPEND_IDS, StepCleanupClock, TAG_IDS, TOOL_IDS, TestDurations, USER_SESSION_IDS, group_run,
-    install_logs, moment, naive, provision, retention_settings, seed_daily_tag, seed_health_check,
-    seed_session, seed_sessions, seed_spend_logs, seed_tool_index, seed_tool_indexes,
-    seed_user_session, seed_user_sessions, text_join,
+    BASELINE_REQUESTS, BASELINE_ROWS, BASELINE_STATE, FakeLock, FakePartitions, FixedCleanupClock,
+    HEALTH_IDS, PARTITION_NAMES, SESSION_IDS, SPEND_IDS, StepCleanupClock, TAG_IDS, TOOL_IDS,
+    TestDurations, USER_SESSION_IDS, group_run, install_logs, moment, naive, provision,
+    retention_settings, seed_daily_tag, seed_health_check, seed_session, seed_sessions,
+    seed_spend_logs, seed_tool_index, seed_tool_indexes, seed_user_session, seed_user_sessions,
+    text_join,
 };
 
 use super::{GroupPlan, GroupWindow};
@@ -422,4 +423,68 @@ async fn the_session_rollups_split_their_group_time() {
     assert_eq!(results[1].rows_deleted, 6);
     assert_eq!(results[1].stop_reason, StopReason::BudgetExhausted);
     case.close().await;
+}
+
+// the session group of a 30-day horizon on 2025-02-01, whose deadline is the given number of seconds away
+async fn baseline_session_run(seconds: u64, setup: &str) -> (String, String, String, String) {
+    let mut case = provision().await;
+    case.client
+        .batch_execute(BASELINE_ROWS)
+        .await
+        .expect("the baseline rows");
+    if !setup.is_empty() {
+        case.client.batch_execute(setup).await.expect("the setup");
+    }
+    seed_session(&case, "old-session", moment(2024, 12, 1)).await;
+    let settings = retention_settings(r#"{"maximum_autorouter_session_retention_period": "30d"}"#);
+    let cleanup = group_cleanup(settings, FakePartitions::default());
+    let registry = CollectorRegistry::default();
+    let metrics = CleanupMetrics::new(&registry);
+    let progress = RunProgress::default();
+    let mono = cleanup.clock.mono;
+    let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, mono);
+    let window = GroupWindow {
+        retention_seconds: 2_592_000,
+        deadline: deadline_after(mono, seconds),
+    };
+    let (logs, _subscriber) = install_logs();
+    run.clean_group(GroupPlan::Sessions, window)
+        .await
+        .expect("the session group");
+    let state = if setup.is_empty() {
+        text_join(&case.client, BASELINE_STATE).await
+    } else {
+        String::new()
+    };
+    let requests = text_join(&case.client, BASELINE_REQUESTS).await;
+    let sessions = text_join(&case.client, SESSION_IDS).await;
+    let contents = logs.contents();
+    case.close().await;
+    (state, requests, sessions, contents)
+}
+
+#[tokio::test]
+async fn the_session_group_retires_old_baselines_before_pruning_its_rollups() {
+    let (state, requests, sessions, logs) = baseline_session_run(300, "").await;
+    assert_eq!(state, "fresh-scope:false:false,old-scope:true:true");
+    assert_eq!(requests, "fresh-request");
+    assert_eq!(sessions, "");
+    assert!(!logs.contains("Auto-router baseline retention remains pending"));
+}
+
+#[tokio::test]
+async fn a_failed_baseline_retirement_warns_and_the_rollups_are_still_pruned() {
+    let setup = r#"ALTER TABLE "LiteLLM_AutoRouterBaselineComparison" RENAME TO "Unavailable""#;
+    let (_, requests, sessions, logs) = baseline_session_run(300, setup).await;
+    assert_eq!(requests, "fresh-request,old-request");
+    assert_eq!(sessions, "");
+    assert!(logs.contains("Auto-router baseline retention remains pending"));
+}
+
+#[tokio::test]
+async fn a_spent_session_budget_skips_baseline_retirement() {
+    let (state, requests, _, logs) = baseline_session_run(0, "").await;
+    assert_eq!(state, "fresh-scope:false:false,old-scope:false:false");
+    assert_eq!(requests, "fresh-request,old-request");
+    assert!(!logs.contains("Auto-router baseline retention remains pending"));
 }

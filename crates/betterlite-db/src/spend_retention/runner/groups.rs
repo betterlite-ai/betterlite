@@ -2,6 +2,7 @@ use chrono::{DateTime, TimeDelta, Utc};
 use tokio::time::Instant;
 use tokio_postgres::Client;
 
+use crate::baseline::store::retire::retire_before;
 use crate::cleanup_metrics::CleanupMetrics;
 use crate::spend_retention::batches::TableCleanupResult;
 use crate::spend_retention::batches::cutoff::Cutoff;
@@ -111,6 +112,9 @@ where
             tracing::info!("Removing logs older than {}", cutoff.text());
             self.maintain_partitions(moment, window.deadline).await?;
         }
+        if matches!(plan, GroupPlan::Sessions) {
+            self.retire_baselines(moment, window.deadline).await;
+        }
         let mut pending = u32::try_from(steps.len()).unwrap_or(1);
         let mut results = Vec::new();
         for step in steps {
@@ -124,6 +128,18 @@ where
             pending = pending.saturating_sub(1);
         }
         Ok(results)
+    }
+
+    // comparisons retire before their session rows go, and a failed retirement waits for the next run
+    async fn retire_baselines(&mut self, moment: DateTime<Utc>, deadline: Instant) {
+        let Some(timeout_ms) = remaining_budget(self.clock, deadline, self.bounds.batch_timeout)()
+        else {
+            return;
+        };
+        let retired = retire_before(self.client, moment, self.bounds.batch_size, timeout_ms).await;
+        if let Err(error) = retired {
+            tracing::warn!(%error, "Auto-router baseline retention remains pending");
+        }
     }
 
     // partition DDL is started only with budget left, only behind the switch, and only on a partitioned table
