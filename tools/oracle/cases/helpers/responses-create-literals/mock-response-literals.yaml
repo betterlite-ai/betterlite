@@ -1,0 +1,21 @@
+kind: helper
+name: responses-create-literals-mock-response
+call:
+  responses_create_literals:
+    steps:
+      - text: hi
+        tools:
+          - null
+          - []
+          - [{type: file_search}]
+          - [{type: web_search}]
+          - [{type: file_search}, {type: web_search}]
+          - [{type: file_search, extra: kept}]
+          - [7, "file_search"]
+          - [{type: file_search}, 7]
+      - text: null
+        tools: []
+      - text: ""
+        tools: [null]
+env: {}
+compare: {ignore: []}

@@ -138,6 +138,8 @@ pub static ANTHROPIC_ROUTES: &[&str] = &[
     "/claude-code/marketplace.json",
     "/claude-code/plugins",
     "/claude-code/plugins/{plugin_name}",
+    "/claude-code/plugins/{plugin_name}/enable",
+    "/claude-code/plugins/{plugin_name}/disable",
 ];
 
 #[must_use]

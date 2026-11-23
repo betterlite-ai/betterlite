@@ -1,0 +1,15 @@
+kind: helper
+name: azure_speech-supported_params-seed
+call:
+  azure_speech:
+    supported_params:
+      model: tts
+      input: hello
+      voice: alloy
+      api_base: https://example.openai.azure.com
+      api_version: v1
+      api_key: sk-azure-fixture
+      aspeech: true
+      reply: {status: 400, body: bad input}
+env: {}
+compare: {ignore: []}

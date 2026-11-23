@@ -1,0 +1,12 @@
+task: B1744
+deviations:
+  - what: Tool, model and turn queues wait for bounded capacity instead of growing without a limit; captured baseline JSON over 64 MiB is rejected and actual-turn accounting continues.
+    why: Owned memory limits prevent a stalled database from exhausting the gateway while retaining the existing baseline fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L702-L846
+  - what: Captured baseline JSON past the spend buffer's 64 MiB budget fails before it is parsed, so the enqueue warns and keeps the actual turn where LiteLLM's model_validate_json parses any size it is handed.
+    why: The spend buffer owns one fixed byte budget for every record it holds, and a captured observation beyond it would grow the queue past that bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L817
+  - what: A spend log batch whose write future is dropped before it settles goes back to the in-memory queue head, while LiteLLM returns a dequeued batch only from its CancelledError handler.
+    why: A drop cannot wait for Redis, so the memory head keeps the rows reachable when a task is aborted at an await rather than cancelled through the handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7607-L7623
+kept_bugs: []

@@ -1,0 +1,47 @@
+name: claude-plugin-write-create
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+database:
+  seed:
+    dashboard: {logs: []}
+    users: [{user_id: alice}]
+    keys: [{token: sk-alice-token, user_id: alice}]
+    teams: [{team_id: team-red}]
+steps:
+  - request:
+      method: POST
+      path: /claude-code/plugins
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        name: create-plugin
+        source: {source: github, repo: org/create-plugin}
+        version: "2.1.0"
+        description: A plugin
+        author: {name: Ada}
+        homepage: https://example.com/plugin
+        keywords: [one, two]
+        category: dev
+        domain: Productivity
+        namespace: workflows
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugin/id, why: each peer generates its own plugin id}
+  - request:
+      method: POST
+      path: /claude-code/plugins
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        name: minimal-plugin
+        source: {source: git-subdir, url: https://github.com/org/repo.git, path: plugins/minimal}
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugin/id, why: each peer generates its own plugin id}

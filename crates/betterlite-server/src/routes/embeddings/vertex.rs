@@ -6,6 +6,7 @@ use betterlite_core::operation::embedding::{
 };
 use betterlite_openai::chat::deployment::Provider as DeploymentProvider;
 use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_provider::azure_dispatch::call::Composition;
 
 use super::{EmbeddingCalls, embedding_mocks_resolve};
 
@@ -18,8 +19,12 @@ struct VertexFirst {
 pub(super) fn calls(
     executor: Arc<ChatExecutor>,
     vertex: Option<Arc<dyn EmbeddingCall>>,
+    azure: &Arc<Composition>,
 ) -> Arc<dyn EmbeddingCall> {
-    let plain = EmbeddingCalls { executor };
+    let plain = EmbeddingCalls {
+        executor,
+        azure: Arc::clone(azure),
+    };
     match vertex {
         Some(installed) => Arc::new(VertexFirst { installed, plain }),
         None => Arc::new(plain),

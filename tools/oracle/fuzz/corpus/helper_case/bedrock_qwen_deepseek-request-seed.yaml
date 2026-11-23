@@ -1,0 +1,42 @@
+kind: helper
+name: bedrock-qwen-deepseek-request-seed
+call:
+  bedrock_qwen_deepseek:
+    qwen_reply: []
+    qwen_request:
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: system
+        content: seed system
+      - role: user
+        content:
+        - type: text
+          text: seed text
+        - type: image_url
+          image_url:
+            url: https://example.invalid/seed.png
+      non_default_params:
+        max_tokens: 16
+        temperature: 0.25
+        top_p: 0.75
+        top_k: 10
+        stop:
+        - STOP
+        stream: false
+        unsupported_seed: dropped
+      optional_params:
+        seed: 3
+    - model: qwen.qwen3-32b-v1:0
+      messages:
+      - role: assistant
+        content: ignored
+        tool_calls:
+        - function:
+            name: seed_tool
+            arguments: '{"seed": "arg"}'
+      non_default_params: {}
+      optional_params: {}
+    deepseek_reply: []
+env: {}
+compare:
+  ignore: []
