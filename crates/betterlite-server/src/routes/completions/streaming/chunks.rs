@@ -3,12 +3,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use axum::http::HeaderMap;
+use betterlite_core::operation::text_completion::TextCompletionFailure;
 use betterlite_core::operation::text_stream::TextStreamAnswer;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::StreamResponse;
 use betterlite_models::decisions::Json;
 use betterlite_openai::stream::SseParser;
-use betterlite_openai::text_completion_execution::TextCompletionFailure;
 use betterlite_openai::text_completion_stream::decode_chat_events;
 use futures_util::stream::{self, BoxStream, StreamExt as _};
 
