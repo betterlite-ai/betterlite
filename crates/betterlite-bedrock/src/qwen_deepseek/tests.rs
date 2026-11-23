@@ -1,4 +1,11 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::too_many_lines,
+        reason = "each helper states one LiteLLM behavior as a single scenario"
+    )
+)]
 
 mod cases;
 mod corpus;

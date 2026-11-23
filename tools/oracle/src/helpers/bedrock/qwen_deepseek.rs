@@ -45,7 +45,7 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct QwenReplyCall {
-    projection: Projection,
+    projection: QwenProjection,
     model: String,
     messages: Json,
     body: String,
@@ -70,13 +70,6 @@ struct DeepseekReplyCall {
     request_data: IndexMap<String, Json>,
     body: String,
     response: Reply,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Projection {
-    Qwen2,
-    Qwen3,
 }
 
 // Which Bedrock reply transform a wire feeds, and the input values the two reply kinds differ in.
@@ -104,7 +97,7 @@ impl Helper for Op {
         let mut answers = Vec::new();
         for call in &input.qwen_reply {
             answers.push(reply_case(ReplyWire {
-                kind: ReplyKind::Qwen(projection(call.projection)),
+                kind: ReplyKind::Qwen(call.projection),
                 model: &call.model,
                 messages: &call.messages,
                 request_data: &IndexMap::new(),
@@ -171,20 +164,27 @@ fn reply_case(wire: ReplyWire<'_>) -> Result<Value, Box<HelperError>> {
             let logged = state.model_call_details.contains_key("log_event_type");
             Ok(qwen_answer(outcome, logged))
         }
-        ReplyKind::Deepseek => {
-            let runtime = Builder::new_current_thread().build().or_value_error()?;
-            let outcome = runtime.block_on(decode_deepseek_reply(
-                invoke,
-                &raw,
-                build_reply(wire.response),
-                &ZeroCounter,
-                &NoReasoning,
-            ));
-            match outcome {
-                Ok(reply) => Ok(json!({ "ok": reply_view(&reply) })),
-                Err(error) => Ok(json!({ "error": deepseek_error(&error) })),
-            }
-        }
+        ReplyKind::Deepseek => deepseek_case(invoke, &raw, wire.response),
+    }
+}
+
+// The DeepSeek wire runs the base conversion on a current-thread runtime and answers in its own shape.
+fn deepseek_case(
+    invoke: InvokeReplyCall<'_, '_, '_>,
+    raw: &RawInvokeReply<'_>,
+    response: &Reply,
+) -> Result<Value, Box<HelperError>> {
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
+    let outcome = runtime.block_on(decode_deepseek_reply(
+        invoke,
+        raw,
+        build_reply(response),
+        &ZeroCounter,
+        &NoReasoning,
+    ));
+    match outcome {
+        Ok(reply) => Ok(json!({ "ok": reply_view(&reply) })),
+        Err(error) => Ok(json!({ "error": deepseek_error(&error) })),
     }
 }
 
@@ -239,13 +239,6 @@ fn deepseek_error(error: &DeepseekReplyError) -> Value {
         DeepseekReplyError::PromptNotText => ("AttributeError", None),
     };
     json!({ "class": class, "status": status })
-}
-
-fn projection(value: Projection) -> QwenProjection {
-    match value {
-        Projection::Qwen2 => QwenProjection::Qwen2,
-        Projection::Qwen3 => QwenProjection::Qwen3,
-    }
 }
 
 fn params_json(source: &Params) -> Result<Value, Box<HelperError>> {

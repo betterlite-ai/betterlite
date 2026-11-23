@@ -13,6 +13,7 @@ use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
 use betterlite_prompts::reasoning_fields::content_split::parse_content_for_reasoning;
 use indexmap::IndexMap;
+use serde::Deserialize;
 
 use crate::converse_usage::transform::ReasoningTokenCounter as ConverseReasoningCounter;
 use crate::invoke_response::{InvokeReply, InvokeReplyCall, RawInvokeReply, decode_invoke_reply};
@@ -27,7 +28,8 @@ use reply::{Reply, Usage};
 type Fields = IndexMap<String, Json>;
 
 // AmazonQwen2Config only changes the reply projection; its request and option code is Qwen3's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum QwenProjection {
     Qwen2,
     Qwen3,
