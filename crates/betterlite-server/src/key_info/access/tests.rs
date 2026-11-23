@@ -73,14 +73,17 @@ fn team_lookup(world: &Arc<World>) -> TeamLookup {
 
 fn caller(role: Option<UserRole>, api_key: Option<&str>, user_id: Option<&str>) -> UserAPIKeyAuth {
     let mut fields: BTreeMap<String, JsonData> = BTreeMap::new();
-    if let Some(role) = role {
-        fields.insert("user_role".to_owned(), JsonData::String(role.to_string()));
+    if let Some(granted_role) = role {
+        fields.insert(
+            "user_role".to_owned(),
+            JsonData::String(granted_role.to_string()),
+        );
     }
-    if let Some(api_key) = api_key {
-        fields.insert("api_key".to_owned(), JsonData::String(api_key.to_owned()));
+    if let Some(plain_key) = api_key {
+        fields.insert("api_key".to_owned(), JsonData::String(plain_key.to_owned()));
     }
-    if let Some(user_id) = user_id {
-        fields.insert("user_id".to_owned(), JsonData::String(user_id.to_owned()));
+    if let Some(caller_id) = user_id {
+        fields.insert("user_id".to_owned(), JsonData::String(caller_id.to_owned()));
     }
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap()
 }
