@@ -324,6 +324,14 @@ def test_cost_calls() -> None:
         assert ours == pytest.approx(theirs)
 
 
+def test_cost_unmapped_model() -> None:
+    with pytest.raises(exceptions.ModelNotMappedError) as ours:
+        search_provider_cost_per_query("nonesuch/search")
+    with pytest.raises(REFERENCE_ERRORS.ModelNotMappedError) as theirs:
+        REFERENCE_COST.search_provider_cost_per_query("nonesuch/search")
+    assert str(ours.value) == str(theirs.value)
+
+
 def test_ocr_calls() -> None:
     with closing(SearchOcrServer(OK)) as server:
         call = ocr_call(server)
