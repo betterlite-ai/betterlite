@@ -16,7 +16,7 @@ use crate::routes::completions::bridge::{ChatChunks, ChunkUsage};
 
 use super::pump::{FrameSource, Pump, next_frame};
 
-pub(crate) fn frames_answer(
+pub(in crate::routes::completions) fn frames_answer(
     bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     headers: HeaderMap,
     model: Option<&str>,
