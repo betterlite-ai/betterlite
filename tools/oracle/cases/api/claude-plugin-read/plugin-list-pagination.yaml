@@ -1,7 +1,7 @@
 name: claude-plugin-read-list-pagination
 config: |
   general_settings:
-    master_key: oracle-master
+    master_key: oracle-master-read-pagination
 env: {}
 upstream: []
 database:
@@ -11,7 +11,7 @@ steps:
   - request:
       method: POST
       path: /claude-code/plugins
-      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      headers: {content-type: application/json, authorization: Bearer oracle-master-read-pagination}
       body:
         name: read-alpha
         source: {source: github, repo: org/read-alpha}
@@ -32,7 +32,7 @@ steps:
   - request:
       method: POST
       path: /claude-code/plugins
-      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      headers: {content-type: application/json, authorization: Bearer oracle-master-read-pagination}
       body:
         name: read-beta
         source: {source: url, url: "https://github.com/org/read-beta.git"}
@@ -45,7 +45,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-pagination}
       body: null
     compare:
       headers: []
@@ -61,7 +61,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins?enabled_only=true
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-pagination}
       body: null
     compare:
       headers: []
@@ -77,7 +77,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins?enabled_only=1
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-pagination}
       body: null
     compare:
       headers: []
@@ -93,7 +93,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins?enabled_only=false
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-pagination}
       body: null
     compare:
       headers: []

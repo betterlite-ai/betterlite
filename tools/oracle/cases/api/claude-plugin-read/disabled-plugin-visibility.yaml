@@ -1,7 +1,7 @@
 name: claude-plugin-read-disabled-visibility
 config: |
   general_settings:
-    master_key: oracle-master
+    master_key: oracle-master-read-visibility
 env: {}
 upstream: []
 database:
@@ -11,7 +11,7 @@ steps:
   - request:
       method: POST
       path: /claude-code/plugins
-      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      headers: {content-type: application/json, authorization: Bearer oracle-master-read-visibility}
       body:
         name: read-public
         source: {source: github, repo: org/read-public}
@@ -24,7 +24,7 @@ steps:
   - request:
       method: POST
       path: /claude-code/plugins
-      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      headers: {content-type: application/json, authorization: Bearer oracle-master-read-visibility}
       body:
         name: read-private
         source: {source: github, repo: org/read-private}
@@ -37,7 +37,7 @@ steps:
   - request:
       method: POST
       path: /claude-code/plugins/read-private/disable
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-visibility}
       body: null
     compare:
       headers: []
@@ -47,7 +47,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-visibility}
       body: null
     compare:
       headers: []
@@ -63,7 +63,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins/read-private
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-visibility}
       body: null
     compare:
       headers: []
@@ -76,7 +76,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins?enabled_only=true
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-visibility}
       body: null
     compare:
       headers: []

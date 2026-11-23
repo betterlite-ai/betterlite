@@ -1,7 +1,7 @@
 name: claude-plugin-read-get
 config: |
   general_settings:
-    master_key: oracle-master
+    master_key: oracle-master-read-get
 env: {}
 upstream: []
 database:
@@ -11,7 +11,7 @@ steps:
   - request:
       method: POST
       path: /claude-code/plugins
-      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      headers: {content-type: application/json, authorization: Bearer oracle-master-read-get}
       body:
         name: read-detail
         source: {source: github, repo: org/read-detail}
@@ -32,7 +32,7 @@ steps:
   - request:
       method: POST
       path: /claude-code/plugins
-      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      headers: {content-type: application/json, authorization: Bearer oracle-master-read-get}
       body:
         name: read-minimal
         source: {source: git-subdir, url: "https://github.com/org/repo.git", path: plugins/minimal}
@@ -45,7 +45,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins/read-detail
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-get}
       body: null
     compare:
       headers: []
@@ -58,7 +58,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins/read-minimal
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-get}
       body: null
     compare:
       headers: []

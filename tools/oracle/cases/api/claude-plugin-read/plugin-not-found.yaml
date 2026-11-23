@@ -1,7 +1,7 @@
 name: claude-plugin-read-not-found
 config: |
   general_settings:
-    master_key: oracle-master
+    master_key: oracle-master-read-not-found
 env: {}
 upstream: []
 database:
@@ -11,7 +11,7 @@ steps:
   - request:
       method: GET
       path: /claude-code/plugins/absent-plugin
-      headers: {authorization: Bearer oracle-master}
+      headers: {authorization: Bearer oracle-master-read-not-found}
       body: null
     compare:
       headers: []
