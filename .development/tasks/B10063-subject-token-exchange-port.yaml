@@ -1,0 +1,59 @@
+id: B10063
+title: MCP subject token exchange port
+description: >-
+  RFC 8693 token exchange at the gateway's POST /token has two sides. B4663 proves a native client's IdP token and names the user it stands for; B4674's gateway flow and B4676's exchange grant take that answer and mint a proxy credential. The values passing between them are three names in LiteLLM's gateway_dcr_flow.py: SubjectIdentity, SubjectTokenRefusal and the ExchangeSubjectToken protocol. They carry no logic and need no other task, so they are built here first and B4663 no longer waits for the rest of the gateway flow.
+
+
+  Layout. Module gateway_dcr::subject_token in betterlite-mcp: crates/betterlite-mcp/src/gateway_dcr/subject_token.rs, with its tests in gateway_dcr/subject_token/tests.rs. The file is an empty stub that gateway_dcr.rs declares; gateway_dcr.rs and its other submodules are B4674's. Callers import from gateway_dcr::subject_token, with no re-export elsewhere.
+
+
+  SubjectIdentity { user_id: String, team_id: Option<String> } is the user a proven token stands for; team_id None means the token names no team. RefusalCode is the enum UnsupportedGrantType, InvalidRequest and TemporarilyUnavailable, and its text through as_str and Display is unsupported_grant_type, invalid_request and temporarily_unavailable. It is a closed set of its own rather than B4674's wider OauthErrorCode, because a refusal can carry only these three. SubjectTokenRefusal { error: RefusalCode, description: String } says why the gateway won't take the token. All three derive Debug, Clone, PartialEq and Eq.
+
+
+  LiteLLM's two models are frozen pydantic models with Field(min_length=1) on user_id and on description, so building one with empty text raises a validation error there. Here they are plain structs with pub fields that callers build as literals, so the rule rests with the code that builds them. Every description B4663 and B4674 write is fixed, non-empty text; B4663 builds SubjectIdentity from JWT auth's answer and owns what an empty user_id gets.
+
+
+  ExchangeSubjectToken<Context> is the port: fn exchange(&self, subject_token: &str, context: &Context) -> impl Future<Output = Result<SubjectIdentity, SubjectTokenRefusal>> + Send, the same shape as AssertionRows in betterlite-db. LiteLLM's second argument is the FastAPI Request; a type parameter takes its place, so B4663's IdpTokenExchange implements the trait for its authorizer's context and B4674's RefuseSubjectToken for every context. LiteLLM returns the union SubjectIdentity | SubjectTokenRefusal and the grant tests it with isinstance; Result gives B4676 the same two arms to match.
+
+
+  This task parses no outside bytes; the subject token is only passed through to the implementation.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/gateway_dcr/subject_token.rs
+    - crates/betterlite-mcp/src/gateway_dcr/subject_token/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L216-L233
+    why: Owned. SubjectIdentity, SubjectTokenRefusal with its three codes, and the ExchangeSubjectToken protocol.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L262-L265
+    why: The refusing default B4674 builds on this trait.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L145-L181
+    why: Producer. identity_from_subject_token builds every refusal and the identity, in B4663's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1139-L1146
+    why: Consumer. The grant answers temporarily_unavailable with 503 and the other two codes with 400, in B4676's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1316-L1336
+    why: Consumer. The exchange tail calls the port with the request and builds the session principal from the identity, in B4676's code.
+dod:
+  - text: RefusalCode gives unsupported_grant_type, invalid_request and temporarily_unavailable through as_str and Display.
+    proof: [subject-token-tests]
+  - text: A function generic over ExchangeSubjectToken<C> runs a fake exchanger with its own context type and gets an identity with a team, one without, and a refusal, and the returned future can be spawned on a tokio runtime.
+    proof: [subject-token-tests]
+checks:
+  optional: []
+  commands:
+    - id: subject-token-tests
+      why: The code text tests or the generic port tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_dcr::subject_token::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "_refuse_subject_token (RefuseSubjectToken, the default that answers unsupported_grant_type), supported_grant_types, the constants, the models, the other port types, sealing, registration and the single-use guard in gateway_dcr_flow.py: B4674. Authorize and the connect flow: B4675. The token grants, _subject_token_refusal_response, revocation and introspection: B4676."
+  - "IdpTokenExchange, the production implementation of this port: B4663."
+pitfalls:
+  - "Write the trait method as fn exchange(...) -> impl Future<Output = ...> + Send, not async fn: a public trait with async fn gives callers no Send bound, and the grant runs inside an axum handler."
+  - "B4676 matches RefusalCode to pick 503 or 400, so the enum has exactly the three variants and no catch-all; a fourth code would have no status there."
+  - "team_id None and team_id Some(\"\") are different values to B4676, which copies team_id into the minted credential's principal; keep the Option and never fill it with empty text."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

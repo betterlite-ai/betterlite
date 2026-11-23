@@ -1,0 +1,75 @@
+id: B10092
+title: Invitation link row creation
+description: >-
+  LiteLLM creates an invitation link row in one helper, create_invitation_for_user in litellm/proxy/management_helpers/user_invitation.py, and two places call it: POST /invitation/new (B8599) and the invitation email's link builder, which B4023 reaches through its `InvitationCreator` port. B797 owned the helper next to /user/delete, so B8599 waited on all of user deletion and its seventeen other dependencies for these 36 lines. This task builds the helper and the port's implementation on their own.
+
+
+  Layout. Module user_invitation in betterlite-server, crates/betterlite-server/src/user_invitation.rs, an empty stub the crate's lib.rs already declares. Add submodules under user_invitation/ as you need, with the tests in user_invitation/tests.rs (or files under user_invitation/tests/). SQL is plain tokio-postgres through B700's PostgresStore with `$n` parameters only, the way crates/betterlite-logging/src/key_invitation_email/link.rs reads the same table.
+
+
+  The row. `InvitationRecord` is LiteLLM's InvitationModel (_types.py L3955): id, user_id, is_accepted, accepted_at (optional), expires_at, created_at, created_by, updated_at and updated_by, with the datetimes as chrono `DateTime<Utc>`. It derives Serialize and Deserialize with those field names, so B8599's invitation routes read and answer this one type. The table's timestamp columns are `TIMESTAMP(3)` without a zone: bind and read them as NaiveDateTime and take them as UTC.
+
+
+  The helper. `create_invitation_for_user(store: Option<&PostgresStore>, user_id: &str, actor_user_id: Option<&str>, proxy_admin_name: &str) -> Result<InvitationRecord, InvitationError>`. user_id is InvitationNew.user_id, actor_user_id is the caller's UserAPIKeyAuth.user_id, and proxy_admin_name is LiteLLM's litellm_proxy_admin_name, the constant "default_user_id", passed in by the caller. Steps in LiteLLM's order: no store is InvitationError::NoDatabase. Take now once in UTC; expires_at is now plus seven days. The actor is actor_user_id when it is Some and not empty, otherwise proxy_admin_name, matching Python's `or`. Insert one row into "LiteLLM_InvitationLink" with id a new uuid v4 text (Prisma's `@default(uuid())` is made by the client; the column has no default), user_id, created_at = updated_at = now, expires_at, created_by = updated_by = the actor, and is_accepted and accepted_at left to their column defaults (false and NULL). Return the inserted row from `RETURNING`, so the record shows the stored millisecond values. Do not look the user up first.
+
+
+  Errors. `InvitationError` (thiserror) with NoDatabase, UserMissing and Insert(DbError), each with `status()` and `message()`, the text LiteLLM puts in its `{"error": ...}` detail. NoDatabase is 400 with B8410's CommonProxyErrors::DbNotConnectedError text. A foreign key violation (DbError::SqlState with SqlState::FOREIGN_KEY_VIOLATION, on any of the three constraints) is UserMissing, 400 with "User id does not exist in 'LiteLLM_UserTable'. Fix this by creating user via `/user/new`." Every other insert failure is Insert, 500 with the database error's own text. B8599 decides how a route turns these into its answer through handle_exception_on_proxy; this module does not.
+
+
+  The port. `InvitationLinks { store: PostgresStore, proxy_admin_name: String }` implements B4023's `betterlite_logging::key_invitation_email::link::InvitationCreator` with `type Error = InvitationError`. `create_for_user(user_id)` calls create_invitation_for_user with that user as both the invitee and the actor, since LiteLLM's Slack link builder passes `UserAPIKeyAuth(user_id=recipient_user_id)`, and returns `InvitationId(record.id)`. Binding it into B4023 at startup is B8891's step.
+
+
+  Tests on real Postgres through betterlite-postgres-fixture's PostgresFixture with the baseline catalogs applied, as crates/betterlite-server/src/agent_rows/tests/support.rs does; insert the LiteLLM_UserTable rows each case needs. Names start with invitation_: the seven-day expiry and equal created_at and updated_at, the stored defaults (is_accepted false, accepted_at None, a parseable uuid id), the actor choice for Some(id), Some("") and None, no store, an unknown invitee, an unknown actor (the created_by constraint gives the same 400), another insert failure (a database without the table) as 500, and the port writing a row whose created_by and updated_by are the recipient and returning its id.
+scope:
+  paths:
+    - crates/betterlite-server/src/user_invitation.rs
+    - crates/betterlite-server/src/user_invitation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/user_invitation.py#L11-L49
+    why: Owned. create_invitation_for_user, the 400 without a database, the seven-day expiry, the actor fallback and the foreign key 400.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3942-L3964
+    why: InvitationNew and InvitationModel, the input and the row this task returns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L816-L832
+    why: The table, the client-made uuid id, the is_accepted default and the three user foreign keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17705-L17775
+    why: Call site. POST /invitation/new checks access and then calls the helper with the caller's key (B8599).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1236-L1272
+    why: Call site. The invitation link builder creates a row with the recipient as the actor when none exists (B4023's port).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1738-L1738
+    why: LITELLM_PROXY_ADMIN_NAME, "default_user_id".
+dod:
+  - text: A created row expires seven days after its created_at, has created_at equal to updated_at, a uuid id, is_accepted false and no accepted_at, and the record returned is the stored row.
+    proof: [invitation-tests]
+  - text: created_by and updated_by are the caller's user id, or the proxy admin name when it is None or empty.
+    proof: [invitation-tests]
+  - text: No store is 400 with the DB not connected text, any foreign key violation is 400 with the /user/new text, and another insert failure is 500 with the database error text.
+    proof: [invitation-tests]
+  - text: InvitationLinks implements B4023's InvitationCreator, writing a row with the recipient as the actor and returning its id.
+    proof: [invitation-tests]
+checks:
+  optional: []
+  commands:
+    - id: invitation-tests
+      why: The invitation row, its actor, its errors or the InvitationCreator implementation differ from LiteLLM's helper.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_invitation::tests::(.*::)?invitation_/)'
+oracle_cases: []
+deviations:
+  - what: A 500 from a failed insert carries the Postgres driver's error text, not Prisma's.
+    why: betterlite talks to Postgres without Prisma, so Prisma's message does not exist. Status and the error key stay as LiteLLM has them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/user_invitation.py#L41-L49
+out_of_scope:
+  - "POST /invitation/new, /invitation/info, /invitation/update and /invitation/delete, their access checks and handle_exception_on_proxy: B8599, which calls this helper and answers InvitationRecord."
+  - "Mounting the invitation routes and their HTTP oracle cases: B8670. The helper writes the database and reads proxy_server globals, so it has no helper case."
+  - "construct_user_invitation_link and the invitation email: B4023. Binding InvitationLinks into B4023 at startup: B8891."
+  - "Deleting a user's invitation rows during /user/delete: B797."
+pitfalls:
+  - "All three of user_id, created_by and updated_by reference LiteLLM_UserTable, so an actor with no user row, the proxy admin name included, fails with the same /user/new 400 as an unknown invitee."
+  - "Python's `user_id or litellm_proxy_admin_name` treats an empty string like None; Some(\"\") must fall back to \"default_user_id\"."
+  - "Prisma made the id on the client; the column is TEXT NOT NULL without a default, so an insert that leaves id out fails with a not-null violation."
+  - "Take now once: created_at, updated_at and the expiry all come from the same instant, and TIMESTAMP(3) keeps milliseconds, so compare the returned row, not the local value, in tests."
+  - "LiteLLM matches the Prisma text \"Foreign key constraint failed on the field\"; the driver reports SQLSTATE 23503 instead, so match the code, not a message."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

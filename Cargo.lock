@@ -4232,6 +4232,7 @@ dependencies = [
  "betterlite-tokenizer",
  "chrono",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "mime_guess",
  "pyo3",
  "pyo3-async-runtimes",

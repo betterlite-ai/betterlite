@@ -1,0 +1,9 @@
+task: B10063
+deviations:
+  - what: SubjectIdentity and SubjectTokenRefusal are plain structs with public fields, so neither rejects an empty user_id or description when it is built.
+    why: LiteLLM's frozen pydantic models raise a validation error on Field(min_length=1); the task leaves that rule with the code that builds the values, and every description B4663 and B4674 write is fixed, non-empty text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L216-L225
+  - what: ExchangeSubjectToken is a Rust trait whose exchange method takes the caller's own context type and answers Result<SubjectIdentity, SubjectTokenRefusal>, where LiteLLM's protocol is a callable taking the FastAPI Request and returning the SubjectIdentity | SubjectTokenRefusal union.
+    why: There is no FastAPI Request at this layer, so a type parameter carries the request the implementation needs, and Result gives the consumer the same two arms to match that isinstance gives LiteLLM's grant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L228-L233
+kept_bugs: []
