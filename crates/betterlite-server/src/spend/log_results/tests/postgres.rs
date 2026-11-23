@@ -186,6 +186,8 @@ INSERT INTO "LiteLLM_SpendLogs"
 ('s1a', 'acompletion', 'k1', 0.5, 30, 10, 20, '2024-02-01 00:00:00', '2024-02-01 00:00:02.500', 'gpt-4o', 'alice', 's1', 'True', NULL),
 ('s1b', 'call_mcp_tool', 'k1', 0.25, 0, 0, 0, '2024-02-01 00:01:00', '2024-02-01 00:01:01', 'gpt-4o', 'alice', 's1', '', NULL),
 ('s1c', 'asend_message', 'k1', 0.25, 5, 1, 2, '2024-02-01 00:02:00', '2024-02-01 00:02:03', 'gpt-4o', 'alice', 's1', 'false', 700),
+-- a batch call is neither MCP nor agent, so it counts as an LLM call
+('s1e', 'batch', 'k1', 0, 0, 0, 0, '2024-02-01 00:04:00', '2024-02-01 00:04:01', 'gpt-4o', 'alice', 's1', '', NULL),
 ('s1d', 'acompletion', 'k2', 9, 0, 0, 0, '2024-02-01 00:03:00', '2024-02-01 00:03:01', 'gpt-4o', 'bob', 's1', 'False', 0);
 
 INSERT INTO "LiteLLM_SpendLogs"
@@ -239,13 +241,13 @@ async fn session_aggregates_group_by_session_and_key() {
     let aggregates = store.session_aggregates(&lookup).await.unwrap();
     assert_eq!(aggregates.len(), 5);
     let s1k1 = find(&aggregates, "s1", "k1");
-    assert_eq!(s1k1.session_total_count, 3);
+    assert_eq!(s1k1.session_total_count, 4);
     assert_eq!(s1k1.session_total_spend, decimal("1"));
-    assert_eq!(s1k1.session_total_duration_ms, 4_200);
+    assert_eq!(s1k1.session_total_duration_ms, 5_200);
     assert_eq!(s1k1.mcp_tool_call_count, 1);
     assert_eq!(s1k1.mcp_tool_call_spend, decimal("0.25"));
     assert_eq!(s1k1.session_cache_hit_count, 1);
-    assert_eq!(s1k1.session_llm_count, 1);
+    assert_eq!(s1k1.session_llm_count, 2);
     assert_eq!(s1k1.session_agent_count, 1);
     assert_eq!(s1k1.session_total_prompt_tokens, 11);
     assert_eq!(s1k1.session_total_completion_tokens, 22);

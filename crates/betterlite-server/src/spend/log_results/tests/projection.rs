@@ -240,6 +240,7 @@ async fn public_v2_skips_the_query_and_keeps_the_envelope() {
     let row_fields = object(&as_json(&built.data[0]));
     assert_eq!(row_fields.get("session_total_count"), None);
     let fields = object(&as_json(&built));
+    assert!(fields.contains_key("data"));
     assert_eq!(fields.get("total"), Some(&json("2")));
     assert_eq!(fields.get("page"), Some(&json("1")));
     assert_eq!(fields.get("page_size"), Some(&json("50")));

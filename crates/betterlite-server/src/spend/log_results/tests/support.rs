@@ -295,3 +295,7 @@ pub(super) fn viewer() -> Principal {
 pub(super) fn internal(user_id: &str) -> Principal {
     principal(Vec::new(), Some(user_id))
 }
+
+pub(super) fn internal_without_user() -> Principal {
+    principal(Vec::new(), None)
+}

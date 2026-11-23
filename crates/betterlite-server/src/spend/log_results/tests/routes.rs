@@ -8,7 +8,8 @@ use betterlite_models::key_digest::hashing::hash_token;
 use rstest::rstest;
 
 use super::support::{
-    Failure, Fake, Reply, admin, call, internal, json, row, seen, state, summary_row, viewer,
+    Failure, Fake, Reply, admin, call, internal, internal_without_user, json, row, seen, state,
+    summary_row, viewer,
 };
 use crate::spend::log_results::capped::TRUNCATION_HEADER;
 
@@ -61,6 +62,25 @@ async fn an_internal_user_reads_only_their_own_rows() {
         fields.get("startTime"),
         Some(&json("\"2024-01-02T00:00:00Z\""))
     );
+}
+
+// LiteLLM assigns user_id = user_api_key_dict.user_id even when it is None, clearing a filter
+#[tokio::test]
+async fn an_internal_user_without_a_user_id_reads_every_user() {
+    let fake = Fake::default();
+    let events = fake.events.clone();
+    let reply = call(
+        state(Some(Arc::new(fake))),
+        "/spend/logs?user_id=root&summarize=false",
+        Some(&internal_without_user()),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let recorded = seen(&events);
+    assert_eq!(recorded.len(), 1);
+    let event = &recorded[0];
+    assert!(event.starts_with("rows  "));
+    assert!(!event.contains("\"user\""));
 }
 
 #[tokio::test]
