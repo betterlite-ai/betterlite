@@ -78,70 +78,57 @@ fn flags_default_off(#[case] source: &str) {
 #[rstest]
 #[case::env_login_true(
     "general_settings:\n  disable_env_credential_login: true\n",
-    true,
-    false
+    (true, false)
 )]
 #[case::env_login_false(
     "general_settings:\n  disable_env_credential_login: false\n",
-    false,
-    false
+    (false, false)
 )]
 #[case::env_login_null(
     "general_settings:\n  disable_env_credential_login: null\n",
-    false,
-    false
+    (false, false)
 )]
 #[case::env_login_quoted_true(
     "general_settings:\n  disable_env_credential_login: \"true\"\n",
-    false,
-    false
+    (false, false)
 )]
 #[case::env_login_capital_true(
     "general_settings:\n  disable_env_credential_login: \"True\"\n",
-    false,
-    false
+    (false, false)
 )]
-#[case::env_login_number("general_settings:\n  disable_env_credential_login: 1\n", false, false)]
+#[case::env_login_number("general_settings:\n  disable_env_credential_login: 1\n", (false, false))]
 #[case::sso_blocks_true(
     "general_settings:\n  disable_password_login_when_sso_enabled: true\n",
-    false,
-    true
+    (false, true)
 )]
 #[case::sso_blocks_false(
     "general_settings:\n  disable_password_login_when_sso_enabled: false\n",
-    false,
-    false
+    (false, false)
 )]
 #[case::sso_blocks_null(
     "general_settings:\n  disable_password_login_when_sso_enabled: null\n",
-    false,
-    false
+    (false, false)
 )]
 #[case::sso_blocks_quoted_true(
     "general_settings:\n  disable_password_login_when_sso_enabled: \"true\"\n",
-    false,
-    false
+    (false, false)
 )]
 #[case::sso_blocks_capital_true(
     "general_settings:\n  disable_password_login_when_sso_enabled: \"True\"\n",
-    false,
-    false
+    (false, false)
 )]
 #[case::sso_blocks_number(
     "general_settings:\n  disable_password_login_when_sso_enabled: 1\n",
-    false,
-    false
+    (false, false)
 )]
-fn only_literal_true(
-    #[case] source: &str,
-    #[case] env_login_disabled: bool,
-    #[case] sso_blocks_password_login: bool,
-) {
+fn only_literal_true(#[case] source: &str, #[case] expected: (bool, bool)) {
     let settings = loaded(source);
-    assert_eq!(settings.env_login_disabled, env_login_disabled);
     assert_eq!(
-        settings.sso_blocks_password_login,
-        sso_blocks_password_login
+        (
+            settings.env_login_disabled,
+            settings.sso_blocks_password_login
+        ),
+        expected
     );
 }
 
