@@ -1,5 +1,6 @@
 use rust_decimal::Decimal;
 
+use crate::baseline::records::{BaselineEntity, DailyBaselineTarget};
 use crate::daily_records::projection::DailyPayload;
 use crate::redis_spend::codec::MAX_SPEND_BUFFER_BYTES;
 use crate::request_usage::baseline_capture::{
@@ -224,6 +225,43 @@ async fn a_capture_prices_the_routing_decisions_classifier_cost() {
     let records = case.baseline_records();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].pricing.classifier_cost, Decimal::new(25, 2));
+}
+
+#[tokio::test]
+async fn a_published_capture_carries_the_logs_daily_attribution() {
+    let case = TurnCase::new();
+    let capture = captured("sk-capture", "sess-1");
+    let metadata = empty_metadata();
+    let daily = daily_payload(
+        r#"{"team_id":"t1","startTime":"2025-01-02T03:04:05Z","api_key":"sk-capture","model":"anthropic/claude-opus-5","custom_llm_provider":"anthropic","model_group":"anthropic/claude-opus-5","spend":0.25}"#,
+    );
+    let input = BaselineCaptureInput {
+        serialized: Some(&capture),
+        api_key: Some("sk-capture"),
+        session_id: Some("sess-1"),
+        request_id: Some("req-log"),
+        spend: Some(Decimal::ONE),
+        turn: None,
+        metadata: &metadata,
+    };
+    let outcome = case.enqueue_baseline(&daily, &input).await.unwrap();
+    assert_eq!(outcome, CaptureOutcome::Captured);
+    let records = case.baseline_records();
+    assert_eq!(records.len(), 1);
+    let attributed = records[0]
+        .daily
+        .as_ref()
+        .expect("the daily base names the row");
+    assert_eq!(attributed.date, "2025-01-02");
+    assert_eq!(attributed.api_key, "sk-capture");
+    assert_eq!(attributed.model.as_deref(), Some("anthropic/claude-opus-5"));
+    assert_eq!(
+        attributed.targets,
+        vec![DailyBaselineTarget {
+            entity: BaselineEntity::Team,
+            entity_id: Some("t1".to_owned()),
+        }]
+    );
 }
 
 #[tokio::test]
