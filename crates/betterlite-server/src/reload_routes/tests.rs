@@ -172,6 +172,16 @@ async fn oneshot_answers_422_when_hours_is_not_an_integer(#[case] value: &str) {
 }
 
 #[rstest]
+#[case::cost_map(COST_MAP_SCHEDULE)]
+#[case::beta(BETA_SCHEDULE)]
+#[tokio::test]
+async fn oneshot_answers_422_before_the_role_check(#[case] uri: &str) {
+    let caller = key_with("internal_user");
+    let (status, _text) = send(&Harness::new(), Some(caller), Method::POST, uri).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}");
+}
+
+#[rstest]
 #[case::cost_map_zero(COST_MAP_SCHEDULE, "0")]
 #[case::cost_map_minus_one(COST_MAP_SCHEDULE, "-1")]
 #[case::cost_map_minimum(COST_MAP_SCHEDULE, "-9223372036854775808")]
