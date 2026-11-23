@@ -1,0 +1,27 @@
+task: B7884
+deviations:
+  - what: The three proxy-side helpers at the top of litellm/skills/main.py are not exposed.
+    why: They read proxy request state the Python package has no access to; the native session reads the request metadata and runs the hosted handler itself (B3391 to B3393).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L38-L71
+  - what: create_skill and list_skills name the first five of LiteLLM's parameters and take timeout and custom_llm_provider through **kwargs; aget_skill and adelete_skill take timeout and custom_llm_provider the same way.
+    why: ruff's PLR0913 and PLR0917 cap a function at five named parameters and a noqa costs this task's zero expect budget; every keyword LiteLLM takes is still accepted, only a positional call past the named prefix differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L135-L145
+  - what: An error response to get_skill or list_skills is classified from its status, so a 404 raises NotFoundError carrying the body's message.
+    why: LiteLLM validates the error body as Skill or ListSkillsResponse and raises APIConnectionError at status 500, a bug no working setup can rely on; delete already maps its status and create maps it through _handle_error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12349-L12361
+  - what: A hosted (litellm_proxy) skills call raises APIConnectionError with "Prisma client is not initialized..." without opening a database.
+    why: The Python package never initializes Prisma, so LiteLLM's hosted handler cannot run; the message is LiteLLM's own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L62
+  - what: A raw bytes file in create_skill is sent as a multipart part named "file", where httpx names it "upload".
+    why: The shared Python payload layer names every raw file value "file" and a tuple's own name is kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12070-L12078
+  - what: A dict value in extra_body is sent as JSON text in the multipart create body.
+    why: LiteLLM hands it to httpx, which raises TypeError and LiteLLM reports InternalServerError, a 500 where the caller's body is at fault; docs/compatibility.md says output is standard JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12131
+  - what: A files entry given as a path is read into bytes before the call.
+    why: LiteLLM passes the object to httpx, which does not accept a path and reports InternalServerError; the task requires paths to work.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12072-L12073
+  - what: litellm_logging_obj is dropped from the payload and no Python logging object sees the call.
+    why: It is LiteLLM's own runtime state and cannot cross into the Rust session, which writes the call's log itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/skills/main.py#L163
+kept_bugs: []
