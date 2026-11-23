@@ -56,15 +56,15 @@ CREATE TABLE "LiteLLM_HealthCheckTable" ("health_check_id" TEXT NOT NULL, "check
 CREATE TABLE "LiteLLM_DailyTagSpend" ("id" TEXT NOT NULL, "date" TEXT NOT NULL);"#;
 
 const MANY_SPEND_LOGS: &str = r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, "startTime", "endTime")
-SELECT 'row-' || g, 'completion', 'sk-fixture', $1, $1 FROM generate_series(1, $2) AS g"#;
+SELECT 'row-' || g, 'completion', 'sk-fixture', $1, $1 FROM generate_series(1, $2::bigint) AS g"#;
 
 const TOOL_INDEX_ROW: &str = r#"INSERT INTO "LiteLLM_SpendLogToolIndex" (request_id, "tool_name", "start_time") VALUES ($1, 'tool', $2)"#;
 const MANY_TOOL_INDEX_ROWS: &str = r#"INSERT INTO "LiteLLM_SpendLogToolIndex" (request_id, "tool_name", "start_time")
-SELECT 'tool-' || g, 'tool', $1::timestamptz FROM generate_series(1, $2) AS g"#;
+SELECT 'tool-' || g, 'tool', $1::timestamptz FROM generate_series(1, $2::bigint) AS g"#;
 const MANY_SESSION_ROWS: &str = r#"INSERT INTO "LiteLLM_AutoRouterSession" (api_key, session_id, router_name, last_turn_at)
-SELECT 'sk-key', 'session-' || g, 'router', $1::timestamptz FROM generate_series(1, $2) AS g"#;
+SELECT 'sk-key', 'session-' || g, 'router', $1::timestamptz FROM generate_series(1, $2::bigint) AS g"#;
 const MANY_USER_SESSION_ROWS: &str = r#"INSERT INTO "LiteLLM_AutoRouterUserSession" (user_id, api_key, session_id, router_name, last_turn_at)
-SELECT 'user', 'sk-key', 'user-session-' || g, 'router', $1::timestamptz FROM generate_series(1, $2) AS g"#;
+SELECT 'user', 'sk-key', 'user-session-' || g, 'router', $1::timestamptz FROM generate_series(1, $2::bigint) AS g"#;
 const SESSION_ROW: &str =
     r#"INSERT INTO "LiteLLM_AutoRouterSession" VALUES ($1, $2, 'router', $3)"#;
 const USER_SESSION_ROW: &str =
