@@ -1,0 +1,15 @@
+task: B1730
+deviations:
+  - what: start_date and end_date are read with chrono's %Y-%m-%d, so a year shorter than four digits, a signed year and whitespace before a number are accepted where LiteLLM's strptime answers its 500, and a calendar-invalid day answers the one format message instead of Python's range message. Non-ASCII digits are refused by both.
+    why: chrono is the parser the workspace already uses for this format. The dates only narrow which spend rows an already authorized caller may read, and LiteLLM's own UI sends plain YYYY-MM-DD text, so no working setup depends on those edge forms.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3577-L3578
+  - what: An out-of-range start or end year that chrono still parses (a signed year below 1) reaches PostgreSQL as a bound and fails there, so the answer is a 500 naming the database error rather than strptime's message.
+    why: Betterlite builds the ISO text without chrono's rfc3339 formatter, which panics on years outside 0..=9999, and lets the driver refuse the value instead. The status and code match LiteLLM's and messages are betterlite's words.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3577-L3578
+kept_bugs:
+  - what: An internal-user key whose authenticated user_id is None clears the requested user_id and reads every user's rows.
+    why: view_spend_logs assigns user_id from user_api_key_dict without checking for None, and the task keeps the scope rule exactly; the route gate still decides which roles reach the handler at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3558-L3562
+  - what: A summarize=true request with both dates appends one zero item per day from the last observed day through end_date with no cap, so a far-future end_date builds millions of items.
+    why: The task fixes exactly that padding rule, and LiteLLM builds the same tuple; only an authorized caller's own request pays the cost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3631-L3642
