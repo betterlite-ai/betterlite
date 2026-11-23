@@ -31,17 +31,6 @@ fn writes_only_the_litellm_kwargs() {
         kwargs(&[(PASSTHROUGH_LOGGING_PAYLOAD, passthrough)]),
     );
     let outcome = harness.handler.passthrough_chat_handler(input).unwrap();
-    let keys: Vec<&str> = outcome.kwargs.entries.keys().map(String::as_str).collect();
-    assert_eq!(
-        keys,
-        vec![
-            PASSTHROUGH_LOGGING_PAYLOAD,
-            RESPONSE_COST,
-            MODEL,
-            LITELLM_PARAMS,
-            STANDARD_LOGGING_OBJECT
-        ]
-    );
     assert_eq!(
         outcome.kwargs.entries[RESPONSE_COST],
         cost_json(cost("0.5"))
@@ -54,6 +43,54 @@ fn writes_only_the_litellm_kwargs() {
         outcome.kwargs.entries[STANDARD_LOGGING_OBJECT],
         payload_json()
     );
+}
+
+#[test]
+fn writes_the_kwargs_in_litellm_order() {
+    let harness = harness_returning(payload());
+    harness
+        .provider
+        .transform_ok(json(r#"{"id": "chatcmpl-9"}"#));
+    harness.cost.costs(cost("0.5"));
+    let headers = headers();
+    let request = json_object(r#"{"model": "claude-3"}"#);
+    let response = json_object(r#"{"type": "message"}"#);
+    let passthrough = json(
+        r#"{"url": "https://upstream.example/v1/messages", "request_body": {"user": "alice"}}"#,
+    );
+    let input = chat_input(
+        &harness.logging,
+        &headers,
+        &request,
+        &response,
+        kwargs(&[(PASSTHROUGH_LOGGING_PAYLOAD, passthrough)]),
+    );
+    let outcome = harness.handler.passthrough_chat_handler(input).unwrap();
+    let keys: Vec<&str> = outcome.kwargs.entries.keys().map(String::as_str).collect();
+    assert_eq!(
+        keys,
+        vec![
+            PASSTHROUGH_LOGGING_PAYLOAD,
+            RESPONSE_COST,
+            MODEL,
+            LITELLM_PARAMS,
+            STANDARD_LOGGING_OBJECT
+        ]
+    );
+}
+
+#[test]
+fn returns_the_transformed_response() {
+    let harness = harness_returning(payload());
+    harness
+        .provider
+        .transform_ok(json(r#"{"id": "chatcmpl-9"}"#));
+    harness.cost.costs(cost("0.5"));
+    let headers = headers();
+    let request = json_object(r#"{"model": "claude-3"}"#);
+    let response = json_object(r#"{"type": "message"}"#);
+    let input = chat_input(&harness.logging, &headers, &request, &response, kwargs(&[]));
+    let outcome = harness.handler.passthrough_chat_handler(input).unwrap();
     assert_eq!(
         outcome.result,
         Some(PassThroughResponse::ModelResponse(json(
@@ -142,9 +179,9 @@ fn reads_absent_and_null_fields_as_none() {
 #[test]
 fn a_non_object_request_body_names_the_field() {
     let mut decoder = serde_json::Deserializer::from_str(r#"{"request_body": "nope"}"#);
-    let decoded: Result<PassthroughLoggingPayload, _> =
+    let parsed: Result<PassthroughLoggingPayload, _> =
         serde_path_to_error::deserialize(&mut decoder);
-    let error = decoded.expect_err("request_body must be an object");
+    let error = parsed.expect_err("request_body must be an object");
     assert!(error.to_string().contains("request_body"));
 }
 

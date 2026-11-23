@@ -3,8 +3,10 @@ use rstest::rstest;
 use tracing::Level;
 
 use super::support::{capture_logs, cost, cost_json, end, harness, json, json_object, start};
+use crate::logging_success::payload_state::STANDARD_LOGGING_OBJECT;
 use crate::passthrough_handler::types::{
-    CollectedChunksInput, NO_COMPLETE_RESPONSE, PAYLOAD_ERROR, StreamedResponse,
+    CollectedChunksInput, MODEL, NO_COMPLETE_RESPONSE, PAYLOAD_ERROR, RESPONSE_COST,
+    StreamedResponse,
 };
 use crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use crate::passthrough_logging_state::response::PassThroughResponse;
@@ -19,22 +21,16 @@ fn builds_the_payload_for_the_rebuilt_response() {
         )))));
     harness.cost.costs(cost("0.5"));
     let request = json_object(r#"{"model": "claude-3"}"#);
-    let chunks = vec!["one".to_owned(), "two".to_owned()];
     let outcome = harness
         .handler
         .handle_collected_chunks(&CollectedChunksInput {
             logging_obj: &harness.logging,
             request_body: &request,
-            all_chunks: &chunks,
+            all_chunks: &["one".to_owned(), "two".to_owned()],
             start_time: start(),
             end_time: end(),
         })
         .unwrap();
-    let calls = harness.provider.chunks();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].model, "claude-3");
-    assert_eq!(calls[0].chunks, chunks);
-    assert_eq!(calls[0].call_id.as_deref(), Some("call-1"));
     assert_eq!(
         outcome.result,
         Some(PassThroughResponse::ModelResponse(json(
@@ -49,12 +45,36 @@ fn builds_the_payload_for_the_rebuilt_response() {
         outcome.kwargs.entries["model"],
         Json::Text("claude-3".to_owned())
     );
-    assert!(
-        !outcome
-            .kwargs
-            .entries
-            .contains_key("passthrough_logging_payload")
-    );
+    let keys: Vec<&str> = outcome.kwargs.entries.keys().map(String::as_str).collect();
+    assert_eq!(keys, vec![RESPONSE_COST, MODEL, STANDARD_LOGGING_OBJECT]);
+}
+
+#[test]
+fn records_the_rebuild_inputs() {
+    let harness = harness();
+    harness
+        .provider
+        .stream(Ok(Some(StreamedResponse::Model(json(
+            r#"{"id": "rebuilt-9"}"#,
+        )))));
+    harness.cost.costs(cost("0.5"));
+    let request = json_object(r#"{"model": "claude-3"}"#);
+    let chunks = vec!["one".to_owned(), "two".to_owned()];
+    harness
+        .handler
+        .handle_collected_chunks(&CollectedChunksInput {
+            logging_obj: &harness.logging,
+            request_body: &request,
+            all_chunks: &chunks,
+            start_time: start(),
+            end_time: end(),
+        })
+        .unwrap();
+    let calls = harness.provider.chunks();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].model, "claude-3");
+    assert_eq!(calls[0].chunks, chunks);
+    assert_eq!(calls[0].call_id.as_deref(), Some("call-1"));
     assert_eq!(
         harness.cost.calls()[0].response,
         json(r#"{"id": "rebuilt-9"}"#)

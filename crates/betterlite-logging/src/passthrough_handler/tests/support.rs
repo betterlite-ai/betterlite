@@ -91,10 +91,10 @@ pub(super) fn json(text: &str) -> Json {
 }
 
 pub(super) fn json_object(text: &str) -> JsonObject {
-    match json(text) {
-        Json::Object(fields) => fields,
-        other => panic!("the fixture must be a JSON object, got {other:?}"),
-    }
+    let Json::Object(fields) = json(text) else {
+        panic!("the fixture must be a JSON object: {text}");
+    };
+    fields
 }
 
 pub(super) fn cost(text: &str) -> Decimal {
@@ -111,7 +111,7 @@ pub(super) fn headers() -> HeaderMap {
     headers
 }
 
-pub(super) fn upstream(headers: &HeaderMap) -> UpstreamChatResponse<'_> {
+pub(super) const fn upstream(headers: &HeaderMap) -> UpstreamChatResponse<'_> {
     UpstreamChatResponse {
         status_code: 200,
         headers,
@@ -567,10 +567,13 @@ fn build(name: ProviderId, payload_builder: RecordingBuilder) -> Harness {
     let provider = Arc::new(FakeProvider::new(name));
     let cost = Arc::new(FakeCost::default());
     let builder = Arc::new(payload_builder);
+    let provider_port: Arc<dyn PassthroughLoggingProvider> = Arc::clone(&provider);
+    let cost_port: Arc<dyn ResponseCost> = Arc::clone(&cost);
+    let builder_port: Arc<dyn StandardPayloadBuilder> = Arc::clone(&builder);
     let handler = BasePassthroughLoggingHandler {
-        provider: Arc::clone(&provider),
-        cost: Arc::clone(&cost),
-        payload_builder: Arc::clone(&builder),
+        provider: provider_port,
+        cost: cost_port,
+        payload_builder: builder_port,
         request_headers: Settings::default(),
         validate_end_user_id_in_db: false,
     };
