@@ -93,10 +93,16 @@ pub struct MemberSpendRow<'key> {
     pub cost: Decimal,
 }
 
+// The rows one team membership transaction writes, sorted, and the teams they lock before the upsert.
+pub struct TeamMemberWrite<'key> {
+    pub rows: Vec<MemberSpendRow<'key>>,
+    pub teams: Vec<&'key str>,
+}
+
 // The source sorts (team_id, user_id, cost) tuples, which is not the raw key order once an id holds a byte below ':'.
 pub fn team_member_rows(
     increments: &BTreeMap<String, Decimal>,
-) -> Result<Vec<MemberSpendRow<'_>>, MemberKeyError> {
+) -> Result<TeamMemberWrite<'_>, MemberKeyError> {
     let mut rows = Vec::with_capacity(increments.len());
     for (key, cost) in increments {
         let member = team_member_key(key)?;
@@ -109,7 +115,8 @@ pub fn team_member_rows(
     rows.sort_by(|left, right| {
         (left.team_id, left.user_id, left.cost).cmp(&(right.team_id, right.user_id, right.cost))
     });
-    Ok(rows)
+    let teams = team_lock_order(&rows);
+    Ok(TeamMemberWrite { rows, teams })
 }
 
 // Locks are taken once per team in sorted team order, like the team endpoints take them.
@@ -120,32 +127,36 @@ pub fn team_lock_order<'key>(rows: &[MemberSpendRow<'key>]) -> Vec<&'key str> {
     team_ids
 }
 
-// _write_team_member_spend: the sorted per-team advisory locks, then one roster-checked upsert for every member.
-pub(super) async fn write_team_member_spend(
-    transaction: &DbSession<'_>,
-    rows: &[MemberSpendRow<'_>],
-) -> Result<(), tokio_postgres::Error> {
-    for team_id in team_lock_order(rows) {
-        transaction
-            .execute(TEAM_ADVISORY_LOCK_SQL, &[&team_id])
-            .await?;
-    }
-    transaction
-        .execute(TEAM_MEMBER_SPEND_SQL, &[&Json(rows)])
-        .await?;
-    Ok(())
+// What one membership table's transaction writes.
+pub enum MemberSpendWrite<'rows> {
+    Organization(Vec<OrgMemberSpend>),
+    Team(TeamMemberWrite<'rows>),
 }
 
-// Organization memberships are only incremented: a missing membership stays missing.
-pub(super) async fn write_org_member_spend(
+// _write_team_member_spend and the org member updates: the roster-checked upsert behind the sorted per-team advisory locks, and one increment per existing organization membership.
+pub(super) async fn write_member_spend(
     transaction: &DbSession<'_>,
-    rows: &[OrgMemberSpend],
+    write: MemberSpendWrite<'_>,
 ) -> Result<(), tokio_postgres::Error> {
-    let statement = transaction.prepare(ORG_MEMBER_SPEND_SQL).await?;
-    for row in rows {
-        transaction
-            .execute(&statement, &[&row.organization_id, &row.user_id, &row.cost])
-            .await?;
+    match write {
+        MemberSpendWrite::Team(members) => {
+            for team_id in members.teams {
+                transaction
+                    .execute(TEAM_ADVISORY_LOCK_SQL, &[&team_id])
+                    .await?;
+            }
+            transaction
+                .execute(TEAM_MEMBER_SPEND_SQL, &[&Json(members.rows.as_slice())])
+                .await?;
+        }
+        MemberSpendWrite::Organization(rows) => {
+            let statement = transaction.prepare(ORG_MEMBER_SPEND_SQL).await?;
+            for row in rows {
+                transaction
+                    .execute(&statement, &[&row.organization_id, &row.user_id, &row.cost])
+                    .await?;
+            }
+        }
     }
     Ok(())
 }

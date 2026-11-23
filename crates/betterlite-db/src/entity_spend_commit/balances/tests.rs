@@ -5,6 +5,7 @@ use std::time::Duration;
 use chrono::NaiveDateTime;
 use rstest::rstest;
 
+use crate::entity_spend_commit::balances::PostgresEntityTables;
 use crate::entity_spend_commit::progress::EntityCommitError;
 use crate::entity_spend_commit::tests::support::{
     Database, MEMBER_SPEND, MEMBER_TOTAL_SPEND, Ports, SEED_SQL, amount, commit_through,
@@ -150,18 +151,8 @@ async fn zero_then_fractional_costs_share_one_connection() {
     database.seed(SEED_SQL).await;
     let ports = Ports::new();
     let writer = ports.tables(database.store.clone());
-    for cost in ["0", "0.5"] {
-        let members = increments(&[("team_id::t1::user_id::u1", cost)]);
-        writer
-            .write_table(SpendTable::TeamMemberList, &members)
-            .await
-            .unwrap();
-        let users = increments(&[("u1", cost)]);
-        writer
-            .write_table(SpendTable::UserList, &users)
-            .await
-            .unwrap();
-    }
+    write_member_and_user(&writer, "0").await;
+    write_member_and_user(&writer, "0.5").await;
     assert_eq!(database.spend(MEMBER_SPEND, "t1/u1").await, amount("1.5"));
     assert_eq!(
         database.spend(MEMBER_TOTAL_SPEND, "t1/u1").await,
@@ -169,6 +160,20 @@ async fn zero_then_fractional_costs_share_one_connection() {
     );
     assert_eq!(database.spend(USER_SPEND, "u1").await, amount("1.5"));
     database.close().await;
+}
+
+// The same cost through a team membership and a user row, over the writer's one pooled connection.
+async fn write_member_and_user(writer: &PostgresEntityTables<'_>, cost: &str) {
+    let members = increments(&[("team_id::t1::user_id::u1", cost)]);
+    writer
+        .write_table(SpendTable::TeamMemberList, &members)
+        .await
+        .unwrap();
+    let users = increments(&[("u1", cost)]);
+    writer
+        .write_table(SpendTable::UserList, &users)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

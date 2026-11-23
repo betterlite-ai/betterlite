@@ -94,10 +94,15 @@ fn member_rows_sort_by_team_then_user_and_lock_each_team_once() {
         ("team_id::a::user_id::u2", "2"),
         ("team_id::a::user_id::u1", "3"),
     ]);
-    let rows = team_member_rows(&input).unwrap();
-    let order: Vec<(&str, &str)> = rows.iter().map(|row| (row.team_id, row.user_id)).collect();
+    let write = team_member_rows(&input).unwrap();
+    let order: Vec<(&str, &str)> = write
+        .rows
+        .iter()
+        .map(|row| (row.team_id, row.user_id))
+        .collect();
     assert_eq!(order, [("a", "u1"), ("a", "u2"), ("a-x", "u1")]);
-    assert_eq!(team_lock_order(&rows), ["a", "a-x"]);
+    assert_eq!(write.teams, ["a", "a-x"]);
+    assert_eq!(team_lock_order(&write.rows), ["a", "a-x"]);
 }
 
 #[test]

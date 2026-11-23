@@ -5,11 +5,11 @@ use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 
 use super::membership::{
-    org_member_rows, team_member_rows, write_org_member_spend, write_team_member_spend,
+    MemberSpendWrite, org_member_rows, team_member_rows, write_member_spend,
 };
 use super::{EntityTableError, EntityTableWriter, TableFuture};
 use crate::key_user_writes::retry::WriteClock;
-use crate::postgres_store::errors::backend;
+use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::{DbSession, PostgresStore};
 use crate::spend_commit::tables::SpendTable;
 use crate::spend_commit::transaction::{SpendDeadline, SpendTransactionError};
@@ -34,104 +34,120 @@ pub struct PostgresEntityTables<'clock> {
     pub deadline: SpendDeadline,
 }
 
-impl PostgresEntityTables<'_> {
-    async fn commit_table(
-        &self,
-        table: SpendTable,
-        increments: &BTreeMap<String, Decimal>,
-        committing: &AtomicBool,
-    ) -> Result<(), EntityTableError> {
-        let mut client = self
-            .store
-            .session()
-            .await
-            .map_err(|source| EntityTableError::Statement { table, source })?;
-        let transaction =
-            client
-                .transaction()
-                .await
-                .map_err(|source| EntityTableError::Statement {
-                    table,
-                    source: backend(source),
-                })?;
-        self.write_statements(&transaction, table, increments)
-            .await?;
-        committing.store(true, Ordering::SeqCst);
-        transaction
-            .commit()
-            .await
-            .map_err(|source| EntityTableError::Statement {
-                table,
-                source: backend(source),
-            })
-    }
+// The closed entity-table mapping: what one table's transaction writes.
+enum TableWrite<'rows> {
+    // the statement an increment-only table issues and the rows it binds
+    Rows(&'static str, &'rows BTreeMap<String, Decimal>),
+    // the key table alone advances last_active, so its rows are bound with the flush moment
+    Keys(&'rows BTreeMap<String, Decimal>),
+    Members(MemberSpendWrite<'rows>),
+}
 
-    // The closed entity-table mapping: each table's statements in sorted id order, so every pod locks rows alike.
-    async fn write_statements(
+impl PostgresEntityTables<'_> {
+    // One table's transaction: its rows decoded, its statements and its COMMIT under the source's one deadline.
+    async fn commit_rows(
         &self,
-        transaction: &DbSession<'_>,
         table: SpendTable,
         increments: &BTreeMap<String, Decimal>,
     ) -> Result<(), EntityTableError> {
-        let written = match table {
+        let write = match table {
+            SpendTable::UserList => TableWrite::Rows(USER_SPEND_SQL, increments),
+            SpendTable::EndUserList => TableWrite::Rows(END_USER_SPEND_SQL, increments),
+            SpendTable::KeyList => TableWrite::Keys(increments),
+            SpendTable::TeamList => TableWrite::Rows(TEAM_SPEND_SQL, increments),
             SpendTable::TeamMemberList => {
                 let rows = team_member_rows(increments)
                     .map_err(|source| EntityTableError::Key { table, source })?;
-                write_team_member_spend(transaction, &rows).await
+                TableWrite::Members(MemberSpendWrite::Team(rows))
             }
+            SpendTable::OrgList => TableWrite::Rows(ORG_SPEND_SQL, increments),
             SpendTable::OrgMemberList => {
                 let rows = org_member_rows(increments)
                     .map_err(|source| EntityTableError::Key { table, source })?;
-                write_org_member_spend(transaction, &rows).await
+                TableWrite::Members(MemberSpendWrite::Organization(rows))
             }
-            SpendTable::KeyList => {
-                increment_keys(transaction, increments, self.clock.now().naive_utc()).await
-            }
-            SpendTable::UserList => increment_rows(transaction, USER_SPEND_SQL, increments).await,
-            SpendTable::EndUserList => {
-                increment_rows(transaction, END_USER_SPEND_SQL, increments).await
-            }
-            SpendTable::TeamList => increment_rows(transaction, TEAM_SPEND_SQL, increments).await,
-            SpendTable::OrgList => increment_rows(transaction, ORG_SPEND_SQL, increments).await,
-            SpendTable::ProjectList => {
-                increment_rows(transaction, PROJECT_SPEND_SQL, increments).await
-            }
-            SpendTable::TagList => increment_rows(transaction, TAG_SPEND_SQL, increments).await,
-            SpendTable::ModelAccessGroupList => {
-                increment_rows(transaction, ACCESS_GROUP_SPEND_SQL, increments).await
-            }
-            SpendTable::AgentList => increment_rows(transaction, AGENT_SPEND_SQL, increments).await,
+            SpendTable::ProjectList => TableWrite::Rows(PROJECT_SPEND_SQL, increments),
+            SpendTable::TagList => TableWrite::Rows(TAG_SPEND_SQL, increments),
+            SpendTable::ModelAccessGroupList => TableWrite::Rows(ACCESS_GROUP_SPEND_SQL, increments),
+            SpendTable::AgentList => TableWrite::Rows(AGENT_SPEND_SQL, increments),
         };
-        written.map_err(|source| EntityTableError::Statement {
-            table,
-            source: backend(source),
-        })
+        let committing = AtomicBool::new(false);
+        let outcome = self
+            .deadline
+            .run(self.commit_table(write, &committing))
+            .await;
+        match outcome {
+            Ok(()) => Ok(()),
+            Err(SpendTransactionError::Work(source)) => {
+                Err(EntityTableError::Statement { table, source })
+            }
+            // a deadline that fires after COMMIT was sent may have applied, so that table is not requeue-safe
+            Err(SpendTransactionError::Timeout { seconds }) => {
+                if committing.load(Ordering::SeqCst) {
+                    Err(EntityTableError::CommitTimeout { table, seconds })
+                } else {
+                    Err(EntityTableError::Timeout { table, seconds })
+                }
+            }
+        }
+    }
+
+    // The session, the table's statements, the mark and the COMMIT itself.
+    async fn commit_table(
+        &self,
+        write: TableWrite<'_>,
+        committing: &AtomicBool,
+    ) -> Result<(), DbError> {
+        let mut client = self.store.session().await?;
+        let transaction = client.transaction().await.map_err(backend)?;
+        execute_table(&transaction, self.clock, write)
+            .await
+            .map_err(backend)?;
+        committing.store(true, Ordering::SeqCst);
+        transaction.commit().await.map_err(backend)
     }
 }
 
+// One table's statements inside its transaction, each issued in sorted id order so every pod locks rows alike.
+async fn execute_table(
+    transaction: &DbSession<'_>,
+    clock: &dyn WriteClock,
+    write: TableWrite<'_>,
+) -> Result<(), tokio_postgres::Error> {
+    match write {
+        TableWrite::Rows(sql, rows) => increment_rows(transaction, sql, rows, None).await,
+        TableWrite::Keys(rows) => {
+            increment_rows(
+                transaction,
+                KEY_SPEND_SQL,
+                rows,
+                Some(clock.now().naive_utc()),
+            )
+            .await
+        }
+        TableWrite::Members(members) => write_member_spend(transaction, members).await,
+    }
+}
+
+// One prepared statement per sorted id; the key table also stamps its own last_active on each row.
 async fn increment_rows(
     transaction: &DbSession<'_>,
     sql: &str,
     increments: &BTreeMap<String, Decimal>,
+    last_active: Option<NaiveDateTime>,
 ) -> Result<(), tokio_postgres::Error> {
     let statement = transaction.prepare(sql).await?;
     for (entity_id, cost) in increments {
-        transaction.execute(&statement, &[entity_id, cost]).await?;
-    }
-    Ok(())
-}
-
-// Keys advance spend and total_spend together and record the flush time as last_active.
-async fn increment_keys(
-    transaction: &DbSession<'_>,
-    increments: &BTreeMap<String, Decimal>,
-    last_active: NaiveDateTime,
-) -> Result<(), tokio_postgres::Error> {
-    let statement = transaction.prepare(KEY_SPEND_SQL).await?;
-    for (token, cost) in increments {
-        transaction
-            .execute(&statement, &[token, cost, &last_active])
-            .await?;
+        match last_active {
+            Some(at) => {
+                transaction
+                    .execute(&statement, &[entity_id, cost, &at])
+                    .await?;
+            }
+            None => {
+                transaction.execute(&statement, &[entity_id, cost]).await?;
+            }
+        }
     }
     Ok(())
 }
@@ -144,24 +160,7 @@ impl EntityTableWriter for PostgresEntityTables<'_> {
         table: SpendTable,
         increments: &'writer BTreeMap<String, Decimal>,
     ) -> TableFuture<'writer, EntityTableError> {
-        Box::pin(async move {
-            let committing = AtomicBool::new(false);
-            let outcome = self
-                .deadline
-                .run(self.commit_table(table, increments, &committing))
-                .await;
-            match outcome {
-                Ok(()) => Ok(()),
-                Err(SpendTransactionError::Work(error)) => Err(error),
-                Err(SpendTransactionError::Timeout { seconds }) => {
-                    if committing.load(Ordering::SeqCst) {
-                        Err(EntityTableError::CommitTimeout { table, seconds })
-                    } else {
-                        Err(EntityTableError::Timeout { table, seconds })
-                    }
-                }
-            }
-        })
+        Box::pin(self.commit_rows(table, increments))
     }
 }
 
