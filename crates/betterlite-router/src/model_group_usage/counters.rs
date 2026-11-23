@@ -13,11 +13,15 @@ pub trait UsageCounterCache: Send + Sync {
     async fn batch_get(&self, keys: &[String]) -> Result<Option<Vec<Option<Json>>>, Self::Error>;
 }
 
-// B2226/B360's ordered batch read, with the keyword defaults both Router calls pass: no local_only, Redis throttled.
+// A router cache behind the counter seam, read with the keyword defaults both Router calls pass: no local_only, Redis throttled.
+pub struct BatchCounters<'cache, C> {
+    pub cache: &'cache C,
+}
+
 #[async_trait]
-impl<T> UsageCounterCache for T
+impl<C> UsageCounterCache for BatchCounters<'_, C>
 where
-    T: BatchReads + Send + Sync,
+    C: BatchReads + Send + Sync,
 {
     type Error = Infallible;
 
@@ -26,6 +30,6 @@ where
             local_only: false,
             throttle_redis: true,
         };
-        Ok(BatchReads::async_batch_get_cache(self, keys, options).await)
+        Ok(BatchReads::async_batch_get_cache(self.cache, keys, options).await)
     }
 }

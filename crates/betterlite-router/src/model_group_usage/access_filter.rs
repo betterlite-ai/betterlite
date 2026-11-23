@@ -36,29 +36,10 @@ pub fn filter_deployments_by_model_access_groups(
         litellm_metadata,
         team_id,
     } = request;
-    if deployments.is_empty() {
-        return Ok(Vec::new());
-    }
-    let Some(principal) = metadata.or(litellm_metadata) else {
+    let Some(allowed) = constrained_grants(model, deployments, metadata, litellm_metadata) else {
         return Ok(deployments.to_vec());
     };
-    let allowed: BTreeSet<&str> = principal
-        .models
-        .iter()
-        .chain(&principal.team_models)
-        .map(String::as_str)
-        .collect();
-    if allowed.is_empty()
-        || allowed.contains(model)
-        || allowed.contains("*")
-        || allowed.contains("all-proxy-models")
-    {
-        return Ok(deployments.to_vec());
-    }
     let groups = access_groups.get_model_access_groups(lookup, Some(model), None, team_id)?;
-    if groups.is_empty() {
-        return Ok(deployments.to_vec());
-    }
     let allowed_groups: BTreeSet<&str> = groups
         .keys()
         .map(String::as_str)
@@ -74,6 +55,33 @@ pub fn filter_deployments_by_model_access_groups(
         }
     }
     Ok(filtered)
+}
+
+// The grants that restrict candidates, or none when the model, wildcard or all-proxy grant, or an empty set, bypasses the filter.
+fn constrained_grants<'request>(
+    model: &str,
+    deployments: &[DeploymentSpec],
+    metadata: Option<&'request KeyGrants>,
+    litellm_metadata: Option<&'request KeyGrants>,
+) -> Option<BTreeSet<&'request str>> {
+    if deployments.is_empty() {
+        return None;
+    }
+    let principal = metadata.or(litellm_metadata)?;
+    let allowed: BTreeSet<&str> = principal
+        .models
+        .iter()
+        .chain(&principal.team_models)
+        .map(String::as_str)
+        .collect();
+    if allowed.is_empty()
+        || allowed.contains(model)
+        || allowed.contains("*")
+        || allowed.contains("all-proxy-models")
+    {
+        return None;
+    }
+    Some(allowed)
 }
 
 // The candidate's model_info.access_groups intersection, with a value the declared List[str] cannot hold rejected.

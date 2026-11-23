@@ -2,6 +2,7 @@ use std::time::SystemTime;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::io_token_reservations::limits::IoLimits;
+use crate::model_group_info::group::ModelGroupInfo;
 use crate::remaining_usage_headers::{RemainingUsage, build_io_token_rate_limit_headers};
 
 use super::counters::UsageCounterCache;
@@ -38,14 +39,29 @@ where
             io_limits, usage.itpm, usage.otpm, now,
         ));
     }
-    let tpm_limit = info.as_ref().and_then(|info| info.tpm);
-    let rpm_limit = info.as_ref().and_then(|info| info.rpm);
-    if tpm_limit.is_none() && rpm_limit.is_none() {
-        return Ok(headers);
-    }
-    let usage = get_model_group_usage(model_list, cache, now)
+    add_standard_headers(&mut headers, info.as_ref(), model_list, cache, now)
         .await
         .map_err(GroupUsageError::Counter)?;
+    Ok(headers)
+}
+
+// The tpm/rpm pair: no counter read at all when neither limit is set, and a missing counter counts as no usage.
+async fn add_standard_headers<C>(
+    headers: &mut RemainingUsage,
+    info: Option<&ModelGroupInfo>,
+    model_list: Option<&[DeploymentSpec]>,
+    cache: &C,
+    now: SystemTime,
+) -> Result<(), C::Error>
+where
+    C: UsageCounterCache,
+{
+    let tpm_limit = info.and_then(|info| info.tpm);
+    let rpm_limit = info.and_then(|info| info.rpm);
+    if tpm_limit.is_none() && rpm_limit.is_none() {
+        return Ok(());
+    }
+    let usage = get_model_group_usage(model_list, cache, now).await?;
     if let Some(limit) = tpm_limit {
         headers.insert(
             "x-ratelimit-remaining-tokens".to_owned(),
@@ -60,5 +76,5 @@ where
         );
         headers.insert("x-ratelimit-limit-requests".to_owned(), limit);
     }
-    Ok(headers)
+    Ok(())
 }

@@ -5,9 +5,9 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::remaining_usage_headers::apply_remaining_usage_headers;
+use crate::remaining_usage_headers::{RemainingUsage, apply_remaining_usage_headers};
 use crate::router_core::headers::{
-    Response, apply_response_model_id, ensure_additional_headers, prepare_response,
+    Prepared, Response, apply_response_model_id, ensure_additional_headers, prepare_response,
     write_hidden_params,
 };
 use crate::routing_decision_headers::{RoutingValue, apply_quality_headers, complexity_headers};
@@ -56,8 +56,24 @@ where
         }
         None => None,
     };
-    apply_response_model_id(&mut prepared, find_deployment_metadata(request_kwargs));
-    let headers = ensure_additional_headers(&mut prepared);
+    stamp_headers(
+        &mut prepared,
+        model_group,
+        request_kwargs,
+        remaining.as_ref(),
+    );
+    Ok(write_hidden_params(prepared))
+}
+
+// The model id, the group header, the decision headers, then the remaining usage, in the order the source writes them.
+fn stamp_headers(
+    prepared: &mut Prepared,
+    model_group: Option<&str>,
+    request_kwargs: Option<&JsonObject>,
+    remaining: Option<&RemainingUsage>,
+) {
+    apply_response_model_id(prepared, find_deployment_metadata(request_kwargs));
+    let headers = ensure_additional_headers(prepared);
     headers.insert(
         "x-litellm-model-group".to_owned(),
         model_group.map_or(Json::Null, |group| Json::Text(group.to_owned())),
@@ -71,10 +87,9 @@ where
         );
         apply_decision_headers(headers, &routing);
     }
-    if let Some(remaining) = &remaining {
+    if let Some(remaining) = remaining {
         apply_remaining_usage_headers(headers, remaining);
     }
-    Ok(write_hidden_params(prepared))
 }
 
 // apply_quality_router_decision_headers, then the dict.update of complexity_router_decision_headers.
