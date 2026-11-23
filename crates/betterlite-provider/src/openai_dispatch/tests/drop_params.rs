@@ -224,6 +224,30 @@ async fn nested_path_dropped() {
         served.get("metadata").is_none(),
         "a nested path under metadata still serves the call"
     );
+    // LiteLLM moves a provider-specific param under extra_body before the delete, so a bare name finds nothing
+    let forwarded = format!(
+        r#"{{"model":"{MODEL}","messages":{MESSAGES},"x_custom":{{"keep":1,"drop":2}},"additional_drop_params":["x_custom.drop"]}}"#
+    );
+    let untouched = sent_body(DeploymentDropPolicy::default(), &forwarded).await;
+    let both = IndexMap::from([
+        (String::from("keep"), support::number_value(1)),
+        (String::from("drop"), support::number_value(2)),
+    ]);
+    assert_eq!(
+        support::field(&untouched, "x_custom"),
+        &JsonValue::Object(both),
+        "a provider-specific param sits under extra_body, so the bare name deletes nothing"
+    );
+    let under_extra_body = format!(
+        r#"{{"model":"{MODEL}","messages":{MESSAGES},"x_custom":{{"keep":1,"drop":2}},"additional_drop_params":["extra_body.x_custom.drop"]}}"#
+    );
+    let reduced = sent_body(DeploymentDropPolicy::default(), &under_extra_body).await;
+    let kept = IndexMap::from([(String::from("keep"), support::number_value(1))]);
+    assert_eq!(
+        support::field(&reduced, "x_custom"),
+        &JsonValue::Object(kept),
+        "the extra_body path reaches the provider-specific param"
+    );
 }
 
 pub(super) async fn openai_unsupported_param() {
