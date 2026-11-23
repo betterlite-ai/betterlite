@@ -39,7 +39,7 @@ impl NativeMcpClient {
     #[pyo3(signature = (raise_on_error = false))]
     fn list_prompts<'py>(&self, py: Python<'py>, raise_on_error: bool) -> Answer<'py> {
         let state = Arc::clone(&self.state);
-        let work = async move { state.list_prompts(raise_on_error).await };
+        let work = async move { state.list_prompts(raise_on_error) };
         awaited(py, work)
     }
 
@@ -53,14 +53,14 @@ impl NativeMcpClient {
     #[pyo3(signature = (raise_on_error = false))]
     fn list_resources<'py>(&self, py: Python<'py>, raise_on_error: bool) -> Answer<'py> {
         let state = Arc::clone(&self.state);
-        let work = async move { state.list_resources(raise_on_error).await };
+        let work = async move { state.list_resources(raise_on_error) };
         awaited(py, work)
     }
 
     #[pyo3(signature = (raise_on_error = false))]
     fn list_resource_templates<'py>(&self, py: Python<'py>, raise_on_error: bool) -> Answer<'py> {
         let state = Arc::clone(&self.state);
-        let work = async move { state.list_resource_templates(raise_on_error).await };
+        let work = async move { state.list_resource_templates(raise_on_error) };
         awaited(py, work)
     }
 

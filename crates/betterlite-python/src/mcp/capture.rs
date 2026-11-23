@@ -20,8 +20,7 @@ impl ErrorCapture for ErrorBodyCapture {
     ) -> Pin<Box<dyn Future<Output = CapturedBody> + Send + 'body>> {
         Box::pin(async move {
             let mut retained = Vec::new();
-            while let Some(chunk) = body.next_chunk().await {
-                let Ok(bytes) = chunk else { break };
+            while let Some(Ok(bytes)) = body.next_chunk().await {
                 retained.extend(bytes);
             }
             let preview = preview(&retained, &secret_values(&exchange.request_headers));

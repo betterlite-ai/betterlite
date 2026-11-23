@@ -4,8 +4,7 @@ use std::time::Duration;
 
 use betterlite_mcp::client::sdk_transport::error::SdkError;
 use betterlite_mcp::client::sessions::error::{McpFailure, SessionError};
-use betterlite_mcp::client::tools::calling::error_tool_result;
-use betterlite_mcp::client::tools::result::ToolCallResult;
+use betterlite_mcp::client::tools::result::{ToolCallResult, error_text_result};
 use betterlite_mcp::tools::pagination::{LoadedTool, Page, ToolError};
 use betterlite_mcp::tools::schemas::McpTool;
 use betterlite_prompts::arguments::json::Object;
@@ -49,7 +48,7 @@ fn session_page_error_keeps_its_code() {
 
 #[test]
 fn session_call_answer_carries_the_result() {
-    let text = finish(Ok(error_tool_result("McpError", "boom")), session_payload).unwrap();
+    let text = finish(Ok(error_text_result("McpError", "boom")), session_payload).unwrap();
     assert!(text.contains("\"isError\":true"));
 }
 
@@ -87,7 +86,7 @@ async fn session_tools_timeout_is_a_timeout_payload() {
 
 #[test]
 fn session_output_answer_carries_the_result() {
-    let text = finish(Ok(error_tool_result("McpError", "boom")), tool_failure).unwrap();
+    let text = finish(Ok(error_text_result("McpError", "boom")), tool_failure).unwrap();
     assert!(text.contains("boom"));
 }
 

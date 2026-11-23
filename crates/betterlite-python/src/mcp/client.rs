@@ -22,6 +22,8 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
+use tokio::runtime::Handle;
+use tokio::task::block_in_place;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use url::Url;
@@ -163,26 +165,31 @@ impl ClientState {
         self.answer(&client, outcome)
     }
 
-    pub(crate) async fn list_prompts(&self, raise_on_error: bool) -> TextResult {
+    // rustc can't prove these list futures Send, so block_in_place runs each on this runtime
+    pub(crate) fn list_prompts(&self, raise_on_error: bool) -> TextResult {
         let settings = self.resource_settings();
         let mut client = self.session_client();
-        let outcome = client.list_prompts(&settings, raise_on_error).await;
+        let outcome = block_in_place(|| {
+            Handle::current().block_on(client.list_prompts(&settings, raise_on_error))
+        });
         self.answer(&client, outcome)
     }
 
-    pub(crate) async fn list_resources(&self, raise_on_error: bool) -> TextResult {
+    pub(crate) fn list_resources(&self, raise_on_error: bool) -> TextResult {
         let settings = self.resource_settings();
         let mut client = self.session_client();
-        let outcome = client.list_resources(&settings, raise_on_error).await;
+        let outcome = block_in_place(|| {
+            Handle::current().block_on(client.list_resources(&settings, raise_on_error))
+        });
         self.answer(&client, outcome)
     }
 
-    pub(crate) async fn list_resource_templates(&self, raise_on_error: bool) -> TextResult {
+    pub(crate) fn list_resource_templates(&self, raise_on_error: bool) -> TextResult {
         let settings = self.resource_settings();
         let mut client = self.session_client();
-        let outcome = client
-            .list_resource_templates(&settings, raise_on_error)
-            .await;
+        let outcome = block_in_place(|| {
+            Handle::current().block_on(client.list_resource_templates(&settings, raise_on_error))
+        });
         self.answer(&client, outcome)
     }
 

@@ -28,10 +28,10 @@ const CREDENTIALS_TIMEOUT_SECONDS: u64 = 60;
 mod tests;
 pub(crate) fn build(py: Python<'_>, wire: ClientWire) -> PyResult<ClientState> {
     let environment = process_environment();
-    let resolved = resolve_settings(wire, &environment).map_err(PyErr::from)?;
+    let mut resolved = resolve_settings(wire, &environment).map_err(PyErr::from)?;
     let tls = tls_policy(resolved.ssl_verify.clone(), &environment).map_err(PyErr::from)?;
     let proxy = proxy_policy(&environment).map_err(PyErr::from)?;
-    let aws = aws_credentials(py, &resolved, &proxy, &tls)?;
+    let aws = aws_credentials(py, &mut resolved, &proxy, &tls)?;
     let runtime = SdkRuntime::new(
         HttpBase {
             proxy,
@@ -45,11 +45,11 @@ pub(crate) fn build(py: Python<'_>, wire: ClientWire) -> PyResult<ClientState> {
 }
 fn aws_credentials(
     py: Python<'_>,
-    resolved: &ResolvedSettings,
+    resolved: &mut ResolvedSettings,
     proxy: &Arc<ProxyPolicy>,
     tls: &TlsPolicy,
 ) -> PyResult<Option<Arc<McpSigV4Auth>>> {
-    let Some(settings) = resolved.aws.clone() else {
+    let Some(settings) = resolved.aws.take() else {
         return Ok(None);
     };
     let built = py
@@ -116,11 +116,10 @@ async fn aws_signer(
     let client = ProxiedClient::outbound_with_tls(proxy, tls).map_err(|error| {
         NativeMcpErrorPayload::plain(McpErrorKind::ValueError, error.to_string())
     })?;
-    let connector = AwsDuplexClient::from_proxied(&client).connector();
     let sources = AwsSources {
         environment: environment.clone().into_iter().collect(),
         filesystem: Fs::real(),
-        client: SharedHttpClient::new(connector),
+        client: SharedHttpClient::new(AwsDuplexClient::from_proxied(&client)),
         clock: SharedTimeSource::default(),
         sleep: SharedAsyncSleep::new(TokioSleep::new()),
         timeout: Duration::from_secs(CREDENTIALS_TIMEOUT_SECONDS),

@@ -7,14 +7,13 @@ use betterlite_mcp::client::sdk_transport::error::SdkError;
 use betterlite_mcp::client::sessions::error::{McpFailure, SessionConfigError, SessionError};
 use betterlite_mcp::client::sessions::negotiate::ProtocolVersion;
 use betterlite_mcp::client::sessions::transport::TransportType;
-use betterlite_mcp::client::tools::calling::error_tool_result;
-use betterlite_mcp::client::tools::result::ToolCallResult;
+use betterlite_mcp::client::tools::result::error_text_result;
 use betterlite_mcp::credentials::{AuthValue, McpAuthType};
 use betterlite_mcp::tools::pagination::{LoadedTool, Page, ToolError, ToolFormat};
 use betterlite_mcp::tools::schemas::McpTool;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use super::payload::{McpErrorKind, NativeMcpErrorPayload, status_payload};
 use super::*;
@@ -247,13 +246,11 @@ fn request_protocol_versions_match_litellm() {
 fn request_ssl_verify_accepts_a_bool_or_a_path() {
     assert_eq!(
         resolved(r#"{"ssl_verify":false}"#).ssl_verify,
-        Some(betterlite_config::tls::VerifySetting::Bool(false))
+        Some(VerifySetting::Bool(false))
     );
     assert_eq!(
         resolved(r#"{"ssl_verify":"/etc/ca.pem"}"#).ssl_verify,
-        Some(betterlite_config::tls::VerifySetting::Path(
-            "/etc/ca.pem".to_owned()
-        ))
+        Some(VerifySetting::Path("/etc/ca.pem".to_owned()))
     );
 }
 
@@ -359,7 +356,7 @@ fn result_tool_keeps_the_wire_schema_name() {
 
 #[test]
 fn result_error_text_keeps_the_flag_and_text() {
-    let result = error_tool_result("McpError", "boom");
+    let result = error_text_result("McpError", "boom");
     let text = encode(&result).unwrap();
     assert!(text.contains("\"isError\":true"));
     assert!(text.contains("McpError: boom"));
