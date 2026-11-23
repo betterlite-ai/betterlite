@@ -104,13 +104,15 @@ pub(super) struct TestClient {
 impl TestClient {
     pub(super) fn new(frames: Vec<&str>) -> Self {
         Self {
+            sent: Mutex::new(Vec::new()),
             incoming: Mutex::new(
                 frames
                     .into_iter()
                     .map(|frame| Ok(frame.to_owned()))
                     .collect(),
             ),
-            ..Self::default()
+            fail_sends: false,
+            yield_first: false,
         }
     }
 
