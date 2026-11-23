@@ -105,7 +105,7 @@ async fn run_once(
             result: Some(created_json(created)?),
             failure: None,
         }),
-        Err(error) => failure_outcome(&error, &request, &fixture.redactor),
+        Err(error) => Ok(failure_outcome(&error, &request, &fixture.redactor)),
     }
 }
 fn env_flags(env: &BTreeMap<String, String>) -> (bool, bool) {
@@ -119,10 +119,10 @@ fn failure_outcome(
     error: &CreateError,
     request: &ResponsesCreateCall,
     redactor: &Redactor,
-) -> Result<RunOutcome, SdkHttpError> {
+) -> RunOutcome {
     let (provider, model) = scripted(&request.model, request.custom_llm_provider.as_deref());
     let failure = error.sdk_failure(&provider, &model, redactor);
-    Ok(RunOutcome {
+    RunOutcome {
         result: None,
         failure: Some(Failure {
             class: failure.class.to_owned(),
@@ -132,7 +132,7 @@ fn failure_outcome(
             code: Some(failure.code),
             message: failure.message,
         }),
-    })
+    }
 }
 fn create_call(run: &Json, api_base: &str) -> Result<ResponsesCreateCall, SdkHttpError> {
     let mut call: ResponsesCreateCall =
