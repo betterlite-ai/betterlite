@@ -21,7 +21,6 @@ use betterlite_logging::otel::content_projections::StreamOutputAssembler;
 use betterlite_logging::otel::fan_out::attach::attach_tenant_fan_out;
 use betterlite_logging::otel::fan_out::overridden::OverriddenBackendFilter;
 use betterlite_logging::otel::fan_out::processor::TenantFanOutSpanProcessor;
-use betterlite_logging::otel::fan_out::scope::RequestScopeSource as _;
 use betterlite_logging::otel::legacy_metrics::filter::CallbackSettingsView;
 use betterlite_logging::otel::logger_runtime::LoggerRuntime;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;

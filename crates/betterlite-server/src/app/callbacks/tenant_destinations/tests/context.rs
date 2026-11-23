@@ -1,6 +1,7 @@
 use betterlite_auth::auth_admission::ports::TenantDestinations as _;
 use betterlite_logging::otel::proxy_runtime::slot::{request_slot_scope, set_destinations};
 use opentelemetry_sdk::trace::InMemorySpanExporter;
+use tokio::task::yield_now;
 
 use super::support::{
     NEWRELIC_US_ENDPOINT, OPERATOR_ENDPOINT, RecordingSinks, TENANT_A, allowed_hosts, attach,
@@ -110,14 +111,14 @@ async fn concurrent_tenants_are_isolated() {
     let key_b = build_key(&logging(&newrelic_entry("nr-b")));
     let request_a = request_slot_scope(async {
         adapter.seed(&key_a, &no_headers()).expect("tenant a seeds");
-        tokio::task::yield_now().await;
+        yield_now().await;
         end_span(&provider, "llm-a");
         let destinations = slot(&runtime);
         (endpoints(&destinations), authorization_pair(&destinations))
     });
     let request_b = request_slot_scope(async {
         adapter.seed(&key_b, &no_headers()).expect("tenant b seeds");
-        tokio::task::yield_now().await;
+        yield_now().await;
         end_span(&provider, "llm-b");
         endpoints(&slot(&runtime))
     });
@@ -125,18 +126,18 @@ async fn concurrent_tenants_are_isolated() {
     flush(&fan_out);
     let (_, (ends_a, auth_a)) = result_a;
     let (_, ends_b) = result_b;
-    assert_tenant_isolation(&sinks, &operator, ends_a, ends_b, &auth_a);
+    assert_tenant_isolation(&sinks, &operator, &ends_a, &ends_b, &auth_a);
 }
 
 fn assert_tenant_isolation(
     sinks: &RecordingSinks,
     operator: &InMemorySpanExporter,
-    ends_a: Vec<String>,
-    ends_b: Vec<String>,
+    ends_a: &[String],
+    ends_b: &[String],
     auth_a: &str,
 ) {
-    assert_eq!(ends_a, vec![langfuse_endpoint(TENANT_A)]);
-    assert_eq!(ends_b, vec![NEWRELIC_US_ENDPOINT.to_owned()]);
+    assert_eq!(ends_a, &[langfuse_endpoint(TENANT_A)][..]);
+    assert_eq!(ends_b, &[NEWRELIC_US_ENDPOINT.to_owned()][..]);
     assert_eq!(sinks.spans(&langfuse_endpoint(TENANT_A)).len(), 1);
     assert_eq!(sinks.spans(NEWRELIC_US_ENDPOINT).len(), 1);
     let gathered = operator
