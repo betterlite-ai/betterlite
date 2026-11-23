@@ -2,12 +2,13 @@
 
 use std::sync::Arc;
 
+use axum::body::to_bytes;
 use axum::extract::{Path, RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse as _;
 use rstest::rstest;
 
-use super::{ResultsState, failure, shadow_eval_read};
+use super::{ResultsState, answered, failure, shadow_eval_read};
 use crate::shadow_eval_results::error::ShadowResultsRouteError;
 use crate::shadow_eval_results::query::ShadowQueryError;
 use crate::shadow_eval_validation::error::AccessError;
@@ -36,6 +37,17 @@ async fn an_unauthenticated_detail_answers_401() {
     .await
     .unwrap_err();
     assert_eq!(error.into_response().status(), StatusCode::UNAUTHORIZED);
+}
+
+// the read's success path reaches the caller as its JSON body, not as the empty 200 a default response carries
+#[tokio::test]
+async fn answered_serializes_the_read_into_the_json_body() {
+    let response = answered(Ok(vec!["job-1".to_owned()]))
+        .unwrap()
+        .into_response();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(String::from_utf8(body.to_vec()).unwrap(), "[\"job-1\"]");
 }
 
 // LiteLLM answers each management failure with its own status, and the body names the reason
