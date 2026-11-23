@@ -79,7 +79,8 @@ impl Database {
     }
 
     pub(crate) async fn insert_users(&self, users: &[&str]) {
-        let client = self.pool.get().await.expect("a fixture connection");
+        let store = self.store();
+        let client = store.session().await.expect("a fixture session");
         for user in users {
             let parameters: [&(dyn ToSql + Sync); 1] = [user];
             client
