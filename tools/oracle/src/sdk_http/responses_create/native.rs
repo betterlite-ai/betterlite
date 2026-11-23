@@ -105,7 +105,7 @@ async fn run_once(
             result: Some(created_json(created)?),
             failure: None,
         }),
-        Err(error) => failure_outcome(error, &request, &fixture.redactor),
+        Err(error) => failure_outcome(&error, &request, &fixture.redactor),
     }
 }
 fn env_flags(env: &BTreeMap<String, String>) -> (bool, bool) {
@@ -116,7 +116,7 @@ fn env_flags(env: &BTreeMap<String, String>) -> (bool, bool) {
     (drop_params.enabled, auto_summary)
 }
 fn failure_outcome(
-    error: CreateError,
+    error: &CreateError,
     request: &ResponsesCreateCall,
     redactor: &Redactor,
 ) -> Result<RunOutcome, SdkHttpError> {
