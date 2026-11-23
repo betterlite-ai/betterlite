@@ -1,5 +1,11 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use async_trait::async_trait;
+use betterlite_cache::backend::{CacheBackend, CacheResult};
+use betterlite_cache::configuration::cache::Backend;
 use betterlite_cache::types::embedding::CachedEmbedding;
 use pyo3::Python;
 use pyo3_async_runtimes::tokio::get_runtime;
@@ -62,6 +68,24 @@ fn open(settings: &str) -> CacheCore {
 
 fn call(text: &str) -> CacheCall {
     convert::parse_call(text).unwrap()
+}
+
+// An injected backend whose disconnect leaves a mark, so close has something to show.
+#[derive(Default)]
+struct ClosingBackend {
+    closed: Arc<AtomicBool>,
+}
+
+#[async_trait]
+impl CacheBackend for ClosingBackend {
+    fn default_ttl(&self) -> i64 {
+        60_i64
+    }
+
+    async fn disconnect(&self) -> CacheResult<()> {
+        self.closed.store(true, Ordering::SeqCst);
+        Ok(())
+    }
 }
 
 #[test]
@@ -216,4 +240,26 @@ fn cache_core_closes_the_backend() {
     let core = open("{}");
     core.write(&call(WRITE)).unwrap();
     get_runtime().block_on(core.close()).unwrap();
+}
+
+#[test]
+fn cache_core_close_disconnects_the_injected_backend() {
+    let mut core = open("{}");
+    let backend = Arc::new(ClosingBackend::default());
+    let closed = Arc::clone(&backend.closed);
+    core.cache.backend = Backend::Injected(backend);
+    get_runtime().block_on(core.close()).unwrap();
+    assert!(closed.load(Ordering::SeqCst));
+}
+
+#[test]
+fn cache_core_async_semantic_lookup_reads_the_same_entry() {
+    let core = open("{}");
+    core.write(&call(WRITE)).unwrap();
+    assert_eq!(
+        get_runtime()
+            .block_on(core.async_lookup_semantic(&call(LOOKUP)))
+            .unwrap(),
+        r#"[{"content":"hello"},null]"#
+    );
 }
