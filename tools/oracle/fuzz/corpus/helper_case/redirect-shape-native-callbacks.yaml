@@ -1,0 +1,12 @@
+kind: helper
+name: redirect-shape-native-callbacks
+call:
+  b10062:
+    native_redirect_uris: ' MyApp://Host/CB*, Cursor://Anysphere.Cursor-MCP/OAuth/Callback '
+    uris:
+      - 'myapp://host/cb/x'
+      - 'myapp://host/cb-2'
+      - 'CURSOR://AnySphere.Cursor-MCP/OAuth/Callback'
+      - 'cursor://anysphere.cursor-mcp/oauth/callback?x=1'
+env: {}
+compare: {ignore: []}

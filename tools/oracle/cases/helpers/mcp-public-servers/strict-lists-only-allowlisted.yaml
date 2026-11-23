@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-public-servers-strict-lists-only-allowlisted
+call:
+  b10079:
+    function: list
+    config_servers:
+      - {server_id: cfg-listed, name: Listed Config, transport: http}
+      - {server_id: cfg-open, name: Open Config, transport: http}
+    db_servers:
+      - {server_id: db-listed, name: Listed Database, transport: http}
+      - {server_id: db-open, name: Open Database, transport: http, available_on_public_internet: false}
+    public_mcp_servers: [cfg-listed, db-listed]
+    public_hub_strict: true
+env: {}
+compare: {ignore: []}

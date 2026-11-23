@@ -1,0 +1,22 @@
+kind: helper
+name: read-litellm-ciphertext
+call:
+  b10064:
+    database: true
+    rows:
+      - {user_id: alice, assertion_b64: '2dh80cBkdHDkovybj_OND81M0C-mbkbor1qIucTPKyjogVXhEpGo5QJQageNSTVt_UEA6qfm8LTw4kaeqK_6IZPpsDtPpqOXH40rPOPxvijhxNGlheBqJVueJE8Tk0Lf8xiUoUqspQqzTeRvzVh755-TtoGuJ_uo4Ij33czhdcayo7OgMTG_t90unCZC39qNFgSPOUIKA7vnXsc1UitU4u1Xg1_rORC7w2tmOByr9_nq_tjEEsus'}
+    failure: null
+    steps:
+      - {step: fetch_uncached, user_id: alice}
+      - {step: fetch, user_id: alice}
+env: {}
+compare: {ignore: []}
+calls:
+  - b10064:
+      database: true
+      rows:
+        - {user_id: bravo, assertion_b64: 'v2:gcm:OASaFQgYtr_lekzXx3se4K2PQZgE6tnTGbywqyub1pcNlOJe-r-QSs3mpl_eJGVr19dsWa4Lka6Y_ld9GAQO8ViM4iNgurhq8zYF-hFcIGEtvK82U1OZyoFg-gCU7fDHyH4KcCrhIc9HOj3kdTq7HzhzVQAU0nOT4sGaGzTJQXOvxzogXq9jjjk1pto5XdaH2o8KzI_tRrT2wuBMF8D0PN3jMx8U94I6zmrk'}
+      failure: null
+      steps:
+        - {step: fetch, user_id: bravo}
+        - {step: fetch_uncached, user_id: bravo}

@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-public-servers-list-seed
+call:
+  b10079:
+    function: list
+    config_servers:
+      - {server_id: seed-config, name: Seed Config, transport: http}
+    db_servers:
+      - {server_id: seed-db, name: Seed Database, transport: http}
+    public_mcp_servers: [seed-db]
+    public_hub_strict: true
+env: {}
+compare: {ignore: []}
