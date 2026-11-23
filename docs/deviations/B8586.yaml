@@ -15,8 +15,8 @@ deviations:
   - what: Cancelling the beta headers reload answers the success body when no config row exists.
     why: LiteLLM's Prisma delete raises for a missing row and the handler's catch turns it into a 500, so a second cancel fails; betterlite's delete is idempotent, and a cancel must not depend on a row still being there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19747-L19749
-  - what: Cost map timestamps and the source route's loaded_at trim trailing zeros in the fractional seconds; Python's isoformat prints six digits whenever the microsecond is not zero.
-    why: chrono's RFC 3339 formatter prints the shortest exact fraction, so a time whose microseconds end in zeros prints fewer digits than LiteLLM; the instant is the same and the task keeps clock values out of the oracle comparison.
+  - what: Cost map timestamps and the source route's loaded_at go through chrono's RFC 3339 formatter, which prints three fractional digits when the time lands on a whole millisecond and nine when it carries nanoseconds past the microsecond; Python's isoformat prints six digits whenever the microsecond is not zero and none when it is.
+    why: a clock whose microsecond part is a whole number of milliseconds, or whose nanos are sub-microsecond, prints a different number of digits than LiteLLM; the instant is the same and the task keeps clock values out of the oracle comparison.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19389-L19394
 kept_bugs:
   - what: A cost map reload whose revision record fails answers 500 after the reloaded map is already adopted in this pod.
