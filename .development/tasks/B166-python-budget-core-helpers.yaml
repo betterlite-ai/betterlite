@@ -95,11 +95,13 @@ out_of_scope:
 - "`budget_reservation_from_metadata`, `bind_budget_reservation_to_callbacks`, `unbind_budget_reservation_from_callbacks` (B1719), `redact_nested_match_and_regex_keys` (B3688) and `_get_parent_otel_span_from_kwargs` (B3847) are not exposed here."
 - "Proxy budget limits, `litellm.budget_manager` wiring in the proxy and the rest of utils.py belong to their own entries."
 pitfalls:
+- "A test that compares a private LiteLLM field, such as _hidden_params, carries a noqa for SLF001 with the pinned LiteLLM link on the same line, as crates/betterlite-python/tests/test_chat_response_objects.py does; four of the expects are for those lines."
 - "`user_dict` is saved by a background thread, so tests must join it before reading the file."
 - "`created_at=time.time()` as a default is fixed at import time in LiteLLM, and copying that is intended."
 - "`safe_deep_copy` has a depth limit and handles exceptions and `datetime`; read L514-L563 before writing it."
 - "`filter_exceptions_from_params` stops at `max_depth=20` and must not loop on a cycle."
+- "Ruff flags LiteLLM's own signatures here (FBT001, FBT002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 5
 review_level: standard

@@ -1,0 +1,17 @@
+kind: helper
+name: model-access-groups-alias-filter
+call:
+  b10047:
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          access_groups: [beta, alpha]
+    model_group_alias:
+      sonnet: gpt-4o
+    arguments:
+      model_access_group: beta
+env: {}
+compare: {ignore: []}

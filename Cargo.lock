@@ -4473,6 +4473,7 @@ dependencies = [
  "hex",
  "indexmap 2.14.2",
  "jiff",
+ "lru",
  "prometheus-client",
  "rand 0.10.3",
  "rand_distr",
