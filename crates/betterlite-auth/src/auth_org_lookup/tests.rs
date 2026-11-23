@@ -385,6 +385,16 @@ async fn outage_stale_before_policy() {
     assert_eq!(org.organization_id.as_deref(), Some("o1"));
 }
 
+// the 503 a denied outage carries: no HTTPException, the retry wording and the no_db_connection type
+fn assert_denied_outage(error: &OrgLookupError) {
+    assert!(is_outage(error));
+    assert_eq!(error.http(), None);
+    let exception = proxy_exception(error);
+    assert_eq!(exception.message, TRANSIENT_MESSAGE);
+    assert_eq!(exception.error_type, "no_db_connection");
+    assert_eq!(exception.code, "503");
+}
+
 #[tokio::test]
 async fn outage_no_stale_policy_matrix() {
     let world = world();
@@ -399,12 +409,7 @@ async fn outage_no_stale_policy_matrix() {
     let denied = get_org_object_for_request(&lookup, "o1", &AllowRequestsOnOutage::Boolean(false))
         .await
         .unwrap_err();
-    assert!(is_outage(&denied));
-    assert_eq!(denied.http(), None);
-    let exception = proxy_exception(&denied);
-    assert_eq!(exception.message, TRANSIENT_MESSAGE);
-    assert_eq!(exception.error_type, "no_db_connection");
-    assert_eq!(exception.code, "503");
+    assert_denied_outage(&denied);
 
     let text_deny = AllowRequestsOnOutage::Text("false".to_owned());
     let refused = get_org_object_for_request(&lookup, "o1", &text_deny)
@@ -579,14 +584,16 @@ async fn project_failure_propagates() {
 async fn no_negative_cache() {
     let world = world();
     let lookup = support::lookup(&world);
-    assert!(get_org_object(&lookup, org_id("o1"), true).await.is_err());
+    let _missing = get_org_object(&lookup, org_id("o1"), true)
+        .await
+        .unwrap_err();
     assert!(
         get_project_object(&lookup, "p1", 1.0_f64)
             .await
             .unwrap()
             .is_none()
     );
-    assert!(get_org_object_by_alias(&lookup, "gone").await.is_err());
+    let _missing_alias = get_org_object_by_alias(&lookup, "gone").await.unwrap_err();
     assert!(
         !world
             .events()

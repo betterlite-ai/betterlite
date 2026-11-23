@@ -121,26 +121,26 @@ impl World {
     }
 
     fn begin_read(&self, name: &str, event: String) -> Result<(), StoreFailure> {
-        match self.store_fault(name) {
-            Some(fault) => Err(fault),
-            None => {
-                self.record(event);
-                Ok(())
-            }
+        if let Some(fault) = self.store_fault(name) {
+            return Err(fault);
         }
+        self.record(event);
+        Ok(())
     }
 
-    fn accept_write(&self, key: &str, entry: Entry<'_>, ttl: f64) -> CacheWrite {
+    fn accept_write(&self, key: &str, entry: &Entry<'_>, ttl: f64) -> CacheWrite {
         if self.fails(&format!("write {key}")) {
             return Err(cache_failure());
         }
         self.record(format!("write {key} ttl={ttl}"));
         match entry {
             Entry::Org(org) => {
-                self.lock().orgs.insert(key.to_owned(), org.clone());
+                self.lock().orgs.insert(key.to_owned(), (**org).clone());
             }
             Entry::Project(project) => {
-                self.lock().projects.insert(key.to_owned(), project.clone());
+                self.lock()
+                    .projects
+                    .insert(key.to_owned(), (**project).clone());
             }
         }
         Ok(())
@@ -213,9 +213,9 @@ where
 }
 
 pub(crate) fn org_row(org_id: &str, alias: Option<&str>, budget_id: &str) -> OrganizationTable {
-    let alias = alias.map_or_else(|| "null".to_owned(), |value| format!("\"{value}\""));
+    let alias_text = alias.map_or_else(|| "null".to_owned(), |value| format!("\"{value}\""));
     decode(&format!(
-        r#"{{"organization_id": "{org_id}", "organization_alias": {alias}, "budget_id": "{budget_id}", "created_by": "admin", "updated_by": "admin", "models": ["gpt-4o"]}}"#
+        r#"{{"organization_id": "{org_id}", "organization_alias": {alias_text}, "budget_id": "{budget_id}", "created_by": "admin", "updated_by": "admin", "models": ["gpt-4o"]}}"#
     ))
 }
 
@@ -265,7 +265,7 @@ impl OrgCache for World {
     }
 
     async fn write_org(&self, key: &str, org: &OrganizationTable, ttl: f64) -> CacheWrite {
-        self.accept_write(key, Entry::Org(org), ttl)
+        self.accept_write(key, &Entry::Org(org), ttl)
     }
 
     async fn read_project(&self, key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
@@ -277,7 +277,7 @@ impl OrgCache for World {
     }
 
     async fn write_project(&self, key: &str, project: &CachedProject, ttl: f64) -> CacheWrite {
-        self.accept_write(key, Entry::Project(project), ttl)
+        self.accept_write(key, &Entry::Project(project), ttl)
     }
 
     fn management_ttl(&self) -> f64 {

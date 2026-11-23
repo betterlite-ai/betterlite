@@ -28,14 +28,12 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let script = Arc::new(Script::new(input));
-        let store: Option<Arc<dyn OrgStore>> = if input.database {
-            Some(Arc::clone(&script) as Arc<dyn OrgStore>)
-        } else {
-            None
-        };
+        let wired: Arc<dyn OrgStore> = Arc::clone(&script);
+        let store = input.database.then_some(wired);
+        let cache: Arc<dyn OrgCache> = Arc::clone(&script);
         let lookup = OrgLookup {
             store,
-            cache: Arc::clone(&script) as Arc<dyn OrgCache>,
+            cache,
             in_memory_ttl: input.in_memory_ttl,
         };
         let levels = Levels {
@@ -96,37 +94,34 @@ fn policy(step: &Step) -> AllowRequestsOnOutage {
 }
 
 fn org_view(org: Option<&OrganizationTable>) -> Value {
-    match org {
-        None => Value::Null,
-        Some(row) => json!({
+    org.map_or(Value::Null, |row| {
+        json!({
             "organization_id": row.organization_id,
             "organization_alias": row.organization_alias,
             "models": row.models,
             "budget": budget_view(row.litellm_budget_table.as_ref()),
-        }),
-    }
+        })
+    })
 }
 
 fn budget_view(budget: Option<&LiteLLMBudgetTable>) -> Value {
-    match budget {
-        None => Value::Null,
-        Some(row) => json!({
+    budget.map_or(Value::Null, |row| {
+        json!({
             "max_budget": row.max_budget,
             "allowed_models": row.allowed_models,
-        }),
-    }
+        })
+    })
 }
 
 fn project_view(project: Option<&CachedProject>) -> Value {
-    match project {
-        None => Value::Null,
-        Some(row) => json!({
+    project.map_or(Value::Null, |row| {
+        json!({
             "project_id": row.project.project_id,
             "project_alias": row.project.project_alias,
             "budget": budget_view(row.project.litellm_budget_table.as_ref()),
             "refreshed_at": row.last_refreshed_at,
-        }),
-    }
+        })
+    })
 }
 
 // the exception class, status and detail shape; the message text is not compared
@@ -140,8 +135,8 @@ fn failure(error: &OrgLookupError) -> Value {
             "exception"
         }
     };
-    match error.http() {
-        Some(status) => json!({"kind": kind, "status": status, "detail": "object"}),
-        None => json!({"kind": kind, "status": null, "detail": null}),
-    }
+    error.http().map_or(
+        json!({"kind": kind, "status": null, "detail": null}),
+        |status| json!({"kind": kind, "status": status, "detail": "object"}),
+    )
 }

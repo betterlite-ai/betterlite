@@ -26,9 +26,8 @@ pub struct OrgRule {
 
 // the collaborator stays out of the line, since it carries the cache and the database handles
 impl fmt::Debug for OrgRule {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("OrgRule")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OrgRule")
             .field("org_id", &self.org_id)
             .finish_non_exhaustive()
     }

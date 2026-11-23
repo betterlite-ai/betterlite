@@ -77,17 +77,15 @@ impl Script {
     }
 
     fn begin_read(&self, event: String) -> Result<(), StoreFailure> {
-        match self.store_failure() {
-            Some(fault) => Err(fault),
-            None => {
-                self.board
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .events
-                    .push(event);
-                Ok(())
-            }
+        if let Some(fault) = self.store_failure() {
+            return Err(fault);
         }
+        self.board
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .events
+            .push(event);
+        Ok(())
     }
 
     // both cache reads record the key on the board and then clone the stored object
@@ -105,7 +103,7 @@ impl Script {
         found.cloned()
     }
 
-    fn accept_write(&self, key: &str, entry: Entry<'_>, ttl: f64) -> CacheWrite {
+    fn accept_write(&self, key: &str, entry: &Entry<'_>, ttl: f64) -> CacheWrite {
         {
             let mut board = self.board.lock().unwrap_or_else(PoisonError::into_inner);
             if board
@@ -120,11 +118,11 @@ impl Script {
         match entry {
             Entry::Org(org) => {
                 let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
-                let _previous = values.insert(key.to_owned(), org.clone());
+                let _previous = values.insert(key.to_owned(), (**org).clone());
             }
             Entry::Project(project) => {
                 let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
-                let _previous = projects.insert(key.to_owned(), project.clone());
+                let _previous = projects.insert(key.to_owned(), (**project).clone());
             }
         }
         Ok(())
@@ -218,7 +216,7 @@ impl OrgCache for Script {
     }
 
     async fn write_org(&self, key: &str, org: &OrganizationTable, ttl: f64) -> CacheWrite {
-        self.accept_write(key, Entry::Org(org), ttl)
+        self.accept_write(key, &Entry::Org(org), ttl)
     }
 
     async fn read_project(&self, key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
@@ -226,7 +224,7 @@ impl OrgCache for Script {
     }
 
     async fn write_project(&self, key: &str, project: &CachedProject, ttl: f64) -> CacheWrite {
-        self.accept_write(key, Entry::Project(project), ttl)
+        self.accept_write(key, &Entry::Project(project), ttl)
     }
 
     fn management_ttl(&self) -> f64 {

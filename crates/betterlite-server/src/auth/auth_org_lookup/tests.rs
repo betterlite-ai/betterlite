@@ -170,10 +170,8 @@ async fn run_request(config: &Config, rule: Arc<OrgRule>) -> (StatusCode, String
     (status, text, reached.load(Ordering::Acquire))
 }
 
-#[tokio::test]
-async fn stage_is_registered() {
-    assert!(INSTALLED_STAGES.contains(&AuthBackend::AuthOrgLookup));
-    // the slot carries DEFAULT_IN_MEMORY_TTL and the outage setting the stage reads
+// the slot carries DEFAULT_IN_MEMORY_TTL and the outage setting the stage reads
+fn assert_slot_settings() {
     let without = state_for(&config_with_master_key());
     assert!(!without.auth_org_lookup.database);
     assert_eq!(
@@ -201,7 +199,9 @@ async fn stage_is_registered() {
         with.auth_org_lookup.allow_requests_on_outage,
         AllowRequestsOnOutage::Text("true".to_owned())
     );
+}
 
+fn assert_dispatch_reaches_the_stage() {
     let master_key = SecretString::from("secret-master-key".to_owned());
     let stage = OrgStageInput {
         context: master_context(&master_key),
@@ -220,8 +220,10 @@ async fn stage_is_registered() {
         dispatch(AuthBackend::AuthOrgLookup, &wrong_stage, &master_key),
         Err(StageFailure::Authentication(_))
     ));
+}
 
-    // the registered stage runs the lookup on a request with a database and reaches the handler
+// the registered stage runs the lookup on a request with a database and reaches the handler
+async fn assert_request_runs_the_lookup() {
     let lookup = ScriptedLookup::new(Answer::Found);
     let (status, _body, reached) = run_request(
         &config_with_database(),
@@ -242,6 +244,14 @@ async fn stage_is_registered() {
     assert_eq!(skip_status, StatusCode::OK);
     assert!(skip_reached);
     assert!(skipped.calls().is_empty());
+}
+
+#[tokio::test]
+async fn stage_is_registered() {
+    assert!(INSTALLED_STAGES.contains(&AuthBackend::AuthOrgLookup));
+    assert_slot_settings();
+    assert_dispatch_reaches_the_stage();
+    assert_request_runs_the_lookup().await;
 }
 
 #[tokio::test]

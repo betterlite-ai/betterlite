@@ -68,6 +68,11 @@ fn org_store(reader: PostgresStore, writer: PostgresStore) -> DatabaseOrgStore {
 }
 
 async fn assert_orgs(database: &DatabaseOrgStore) {
+    assert_budget_projection(database).await;
+    assert_alias_projection(database).await;
+}
+
+async fn assert_budget_projection(database: &DatabaseOrgStore) {
     let with_budget: OrganizationTable =
         serde_json::from_str(&database.find_org("o1", true).await.unwrap().unwrap()).unwrap();
     assert_eq!(with_budget.organization_id.as_deref(), Some("o1"));
@@ -79,6 +84,9 @@ async fn assert_orgs(database: &DatabaseOrgStore) {
         serde_json::from_str(&database.find_org("o1", false).await.unwrap().unwrap()).unwrap();
     assert!(plain.litellm_budget_table.is_none());
     assert_eq!(database.find_org("absent", true).await.unwrap(), None);
+}
+
+async fn assert_alias_projection(database: &DatabaseOrgStore) {
     let shared = database.find_by_alias("shared").await.unwrap();
     assert_eq!(shared.len(), 2);
     for row in &shared {
@@ -97,6 +105,21 @@ async fn assert_projects(database: &DatabaseOrgStore) {
     assert!(project.project.litellm_budget_table.is_some());
     assert_eq!(project.last_refreshed_at, None);
     assert_eq!(database.find_project("absent").await.unwrap(), None);
+}
+
+async fn assert_stale_plan_is_outage(store: &PostgresStore, database: &DatabaseOrgStore) {
+    store
+        .session()
+        .await
+        .unwrap()
+        .batch_execute(STALE_PLAN_SETUP)
+        .await
+        .unwrap();
+    let stale = database.find_org("o1", false).await.unwrap_err();
+    assert!(
+        is_outage(&OrgLookupError::Failure(OrgFailure::Store(stale))),
+        "a stale plan on the replica is an outage, not a missing row"
+    );
 }
 
 #[tokio::test]
@@ -127,18 +150,7 @@ async fn relation_projection() {
         .store(true, Ordering::SeqCst);
     assert!(writer_only.find_org("o1", false).await.unwrap().is_some());
 
-    store
-        .session()
-        .await
-        .unwrap()
-        .batch_execute(STALE_PLAN_SETUP)
-        .await
-        .unwrap();
-    let stale = database.find_org("o1", false).await.unwrap_err();
-    assert!(
-        is_outage(&OrgLookupError::Failure(OrgFailure::Store(stale))),
-        "a stale plan on the replica is an outage, not a missing row"
-    );
+    assert_stale_plan_is_outage(&store, &database).await;
 
     database.tasks.close();
     database.tasks.wait().await;
