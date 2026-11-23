@@ -192,10 +192,10 @@ pub(crate) fn with_headers(
     prepared: PreparedRequest,
     headers: Option<&Headers>,
 ) -> Result<PreparedRequest, CallFailure> {
-    let Some(headers) = headers else {
+    let Some(caller_headers) = headers else {
         return Ok(prepared);
     };
-    if headers.is_empty() {
+    if caller_headers.is_empty() {
         return Ok(prepared);
     }
     let PreparedRequest::Embedding(mut chat) = prepared else {
@@ -203,7 +203,7 @@ pub(crate) fn with_headers(
             "the resolved provider's request cannot carry the caller's headers yet",
         )));
     };
-    for (name, value) in headers {
+    for (name, value) in caller_headers {
         let header = HeaderName::try_from(name.as_str())
             .map_err(|error| CallFailure::Invalid(format!("{name}: {error}")))?;
         let text = HeaderValue::try_from(value.as_str())

@@ -38,13 +38,17 @@ use serde_json::Number;
 use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::str;
 use std::sync::Arc;
 use std::thread;
 const SMALL: &str = "text-embedding-3-small";
 const ADA: &str = "text-embedding-ada-002";
 const EMBEDDING_BODY: &str = r#"{"object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [0.1, 0.2]}], "model": "text-embedding-3-small", "usage": {"prompt_tokens": 2, "total_tokens": 2}}"#;
 const UNAUTHORIZED_BODY: &str = r#"{"error": {"message": "Invalid API key provided: bad-key", "type": "invalid_request_error", "param": null, "code": "invalid_api_key"}}"#;
-fn parse<T: DeserializeOwned>(text: &str) -> Result<T, serde_json::Error> {
+fn parse<T>(text: &str) -> Result<T, serde_json::Error>
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(text)
 }
 fn session() -> EmbeddingSession {
@@ -106,7 +110,7 @@ fn mock_call(entry: Entry) -> EmbeddingAnswer {
 }
 // a request is complete once its headers ended and the content-length bytes after them arrived
 fn complete(received: &[u8]) -> bool {
-    let text = std::str::from_utf8(received).unwrap();
+    let text = str::from_utf8(received).unwrap();
     let Some((head, body)) = text.split_once("\r\n\r\n") else {
         return false;
     };

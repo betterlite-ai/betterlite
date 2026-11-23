@@ -82,13 +82,10 @@ pub(crate) fn response_cost(
     provider: &str,
     prompt_tokens: u32,
 ) -> Json {
-    let custom = match (
-        arguments.input_cost_per_token,
-        arguments.output_cost_per_token,
-    ) {
-        (Some(input), Some(_output)) => Some(input),
-        (Some(_input), None) | (None, Some(_output)) | (None, None) => None,
-    };
+    let custom = arguments
+        .input_cost_per_token
+        .zip(arguments.output_cost_per_token)
+        .map(|(input, _output)| input);
     let price = custom.or_else(|| catalog_price(catalog, model, provider));
     let Some(cost) = price.and_then(|unit| unit.checked_mul(Decimal::from(prompt_tokens))) else {
         return Json::Null;
