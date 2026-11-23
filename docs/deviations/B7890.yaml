@@ -3,6 +3,12 @@ deviations:
   - what: The routes return a betterlite PassthroughResponse with status_code, headers, content, text, json() and raise_for_status() instead of an httpx.Response, and reading .request raises RuntimeError because no httpx.Request is built.
     why: The wheel does not depend on httpx, so the response is the same object the rest of the wheel raises and reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L592-L595
+  - what: PassthroughResponse.raise_for_status raises betterlite's APIError with the response text and status where an httpx.Response raises httpx.HTTPStatusError.
+    why: The raised class is the one every other error in the wheel uses, and the status and body text are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L592-L595
+  - what: get_merged_query_parameters takes any object whose str() is the URL text, where LiteLLM's parameter is annotated httpx.URL.
+    why: The wheel does not depend on httpx; an httpx.URL reads the same through str().
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L32-L39
   - what: This task has no helper oracle cases.
     why: The functions call a native session, so pytest compares both packages against one local server.
     link: ""
