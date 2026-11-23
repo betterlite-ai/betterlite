@@ -58,27 +58,24 @@ struct CasePrices {
 }
 
 impl CasePrices {
-    // The priced form of one resolved record, with no tiered or off-peak tables behind it.
-    fn priced(record: PriceRecord) -> PricedModel {
-        PricedModel {
+    // The priced form of one stored record, with no tiered or off-peak tables behind it.
+    fn priced(&self, key: &str) -> Option<PricedModel> {
+        let record = self.prices.get(key)?.clone();
+        Some(PricedModel {
             record,
-            tiered_pricing: Vec::new(),
-            off_peak_pricing: None,
-            off_peak_cache_read_present: false,
-        }
+            ..PricedModel::default()
+        })
     }
 }
 
+// A rate key is the provider/model spelling, with an empty provider when the caller names none.
 impl PriceLookup for CasePrices {
     fn effective_model_info(
         &self,
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        let Some(provider) = custom_llm_provider else {
-            return self.raw_cost_map_entry(&format!("/{model}"));
-        };
-        self.raw_cost_map_entry(&format!("{provider}/{model}"))
+        self.raw_cost_map_entry(&format!("{}/{model}", custom_llm_provider.unwrap_or("")))
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
@@ -90,8 +87,7 @@ impl PriceLookup for CasePrices {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
-            .map(Self::priced)
+        self.priced(&format!("{}/{model}", custom_llm_provider.unwrap_or("")))
     }
 }
 

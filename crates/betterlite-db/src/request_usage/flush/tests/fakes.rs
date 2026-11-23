@@ -31,6 +31,14 @@ use crate::tool_spend::{FlushFuture, RetryPause, ToolSpendFailure, ToolSpendWrit
 
 use super::support::Trace;
 
+// Every fake keeps what it was handed behind one lock, so a poisoned lock still yields its rows.
+fn append<T: Clone>(store: &Mutex<Vec<T>>, items: &[T]) {
+    store
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .extend_from_slice(items);
+}
+
 // A scripted spend log write failure, each flag set the way a native error would report itself.
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 #[error("the scripted spend log insert failed")]
@@ -138,10 +146,7 @@ impl SpendLogsWriter for FakeLogWriter {
             if let Some(scripted) = failure {
                 return Err(scripted);
             }
-            self.rows
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .extend_from_slice(rows);
+            append(&self.rows, rows);
             Ok(rows.len())
         })
     }
@@ -261,10 +266,7 @@ impl GuardrailRollupSink for FakeGuardrailSink {
     ) -> RollupFuture<'rows, RollupFailure> {
         Box::pin(async move {
             self.check()?;
-            self.rows
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .extend_from_slice(rows);
+            append(&self.rows, rows);
             Ok(())
         })
     }
@@ -346,10 +348,7 @@ impl FakeToolWriter {
 
     fn store_rollups(&self, rollups: &[ToolDayRollup]) -> Result<(), ToolFailure> {
         self.check()?;
-        self.rollups
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(rollups);
+        append(&self.rollups, rollups);
         Ok(())
     }
 }
@@ -423,10 +422,7 @@ impl FakeModelWriter {
 
     fn store_rollups(&self, rollups: &[ModelUsageRollup]) -> Result<(), ModelFailure> {
         self.check()?;
-        self.rollups
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(rollups);
+        append(&self.rollups, rollups);
         Ok(())
     }
 }
