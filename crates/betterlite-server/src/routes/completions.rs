@@ -7,6 +7,8 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, State};
 use axum::http::HeaderMap;
+use axum::http::HeaderValue;
+use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use betterlite_context::call_context::{CallContext as DispatchContext, CallInputs};
@@ -19,25 +21,22 @@ use betterlite_core::operation::text_completion::{
 };
 use betterlite_core::operation::text_stream::TextStreamAnswer;
 use betterlite_core::operation::{CallResult, Operation};
-use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_openai::chat::deployment::ChatDeployment;
+use betterlite_openai::completion_chat_bridge::CompletionEndpoint;
 use betterlite_openai::completion_chat_bridge::answer::text_answer_body;
-use betterlite_openai::completion_chat_bridge::{CompletionEndpoint, chat_request};
 use betterlite_openai::text_completion_execution::CompletionExecutor;
 use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRequestError};
+use betterlite_provider::anthropic_dispatch::gateway::runtime::{AnthropicRuntime, RuntimeError};
 use betterlite_tokenizer::count::Counter;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
 use crate::pre_call::rewrites::resolve_call_id;
-use crate::server::chat_setup::provider_call::answer_chat;
 use crate::state::ServerState;
 
 use super::chat::headers::success_headers;
 
-use self::bridge::{
-    bridge_failure, chat_call_failure, json_response, text_answer, text_result, text_stream,
-};
+use self::bridge::{chat_bridge, text_answer, text_stream};
 use self::error::{FailureAnswer, failure_answer, render};
 
 mod bridge;
@@ -71,6 +70,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
             .error_body_call_id
             .include_call_id_in_error_body,
         counter: None,
+        anthropic: state.anthropic_runtime.runtime.clone(),
     })
 }
 
@@ -82,6 +82,8 @@ struct CompletionState {
     include_call_id: bool,
     // the token counter the application shares with the chat route, so an output-limit reply counts as it does
     counter: Option<Arc<Counter>>,
+    // the one runtime the application built; a configuration it cannot load fails at startup, so the route builds none
+    anthropic: Result<Arc<AnthropicRuntime>, Arc<RuntimeError>>,
 }
 
 impl CompletionState {
@@ -91,6 +93,7 @@ impl CompletionState {
             state: Arc::clone(&self.state),
             execution: Arc::clone(&self.execution),
             counter: self.counter.clone(),
+            anthropic: self.anthropic.clone(),
         })
     }
 }
@@ -100,6 +103,16 @@ struct CompletionCalls {
     state: Arc<ServerState>,
     execution: Arc<CompletionExecutor>,
     counter: Option<Arc<Counter>>,
+    anthropic: Result<Arc<AnthropicRuntime>, Arc<RuntimeError>>,
+}
+
+impl CompletionCalls {
+    // the runtime the application built; startup already refused a configuration whose runtime could not load
+    fn anthropic(&self) -> Result<&Arc<AnthropicRuntime>, TextCompletionFailure> {
+        self.anthropic
+            .as_ref()
+            .map_err(|error| TextCompletionFailure::internal(&error.as_ref().to_string()))
+    }
 }
 
 #[async_trait]
@@ -127,23 +140,7 @@ impl TextCompletionCall for CompletionCalls {
         call: TextCompletionCallInput<'_>,
         mode: ChatCallMode,
     ) -> Result<ChatCallAnswer, TextCompletionFailure> {
-        let chat = chat_request(call.request).map_err(bridge_failure)?;
-        let control = ControlOptions::default();
-        match mode {
-            ChatCallMode::Buffered => {
-                let (result, headers, time) =
-                    answer_chat(&self.state.executor, &chat, &call.deployment, control, None)
-                        .await
-                        .map_err(|error| chat_call_failure(error, self))?;
-                let answer =
-                    streaming::buffered(self, call.request, (result, headers, time)).await?;
-                Ok(ChatCallAnswer::Buffered(text_result(answer)))
-            }
-            ChatCallMode::Streamed => {
-                let answer = streaming::streamed(self, &call, &chat, control).await?;
-                Ok(ChatCallAnswer::Streamed(answer))
-            }
-        }
+        chat_bridge(self, &call, mode).await
     }
 }
 
@@ -289,4 +286,10 @@ fn chat_response(
             render(&answer, call_id, state.include_call_id)
         }
     }
+}
+
+// the chat endpoint's text answer is written by the bridge, so the route adds its own content type
+fn json_response(mut headers: HeaderMap, body: Vec<u8>) -> Response {
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    (headers, body).into_response()
 }
