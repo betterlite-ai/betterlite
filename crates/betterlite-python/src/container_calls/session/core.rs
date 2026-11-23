@@ -155,9 +155,10 @@ impl SessionCore {
         let (configs, logging, handler) =
             self.operation_stack(wire, &request, resource_call_type(delete))?;
         let operations = self.operations(&handler, &configs, &logging);
-        match delete {
-            true => encode(&operations.delete_container(&request)?),
-            false => encode(&operations.retrieve_container(&request)?),
+        if delete {
+            encode(&operations.delete_container(&request)?)
+        } else {
+            encode(&operations.retrieve_container(&request)?)
         }
     }
 
