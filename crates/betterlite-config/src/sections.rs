@@ -58,6 +58,7 @@ pub mod azure_endpoints;
 pub mod azure_image_transport;
 pub mod azure_managed_identity;
 pub mod azure_oidc_exchange;
+pub mod azure_provider_globals;
 pub mod azure_responses;
 pub mod azure_search;
 pub mod azure_transcription;
@@ -569,7 +570,8 @@ sections! {
     auth_prefetch, auth_pricing, auth_reconnect, auth_request_policy, auth_route_patterns,
     auth_route_policy, auth_user_lookup, available_models, azure_arc_identity, azure_blob_cache,
     azure_client_secret, azure_content_safety, azure_credentials, azure_default_chain, azure_endpoints,
-    azure_image_transport, azure_managed_identity, azure_oidc_exchange, azure_responses,
+    azure_image_transport, azure_managed_identity, azure_oidc_exchange, azure_provider_globals,
+    azure_responses,
     azure_search, azure_transcription, azure_url_policy, batch_cost_finalize, batch_create_route,
     batch_limit_descriptors, batch_managed_records, batch_provider_cancel, batch_provider_create,
     batch_provider_list, batch_provider_read, batch_read_routes, batch_route_support,

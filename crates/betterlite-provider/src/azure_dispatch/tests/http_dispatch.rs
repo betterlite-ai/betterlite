@@ -113,7 +113,9 @@ async fn exchange(
     let deployment = deployment(&api_base);
     let request = prepared_request(composed);
     let client = client();
-    let adapter = Azure { composition };
+    let adapter = Azure {
+        composition: Arc::new(composition),
+    };
     let executed = async {
         let upstream = adapter
             .execute(&client, &request, &deployment)
@@ -197,7 +199,7 @@ fn adapter_request() -> OperationRequest {
 fn check_adapter_prepare() {
     let target = deployment("https://deployment.test");
     let adapter = Azure {
-        composition: support::composition(&[]),
+        composition: Arc::new(support::composition(&[])),
     };
     let prepared = adapter
         .prepare(&adapter_request(), &target, &catalog())

@@ -21,6 +21,7 @@ use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
 use crate::state::anthropic_runtime;
+use crate::state::azure_runtime;
 use crate::state::shared::Shared;
 
 use super::{Exchange, header};
@@ -85,7 +86,8 @@ pub(super) fn calls(config: &Config, executor: ChatExecutor) -> ChatCalls {
         client: executor.client.clone(),
     };
     let slot = anthropic_runtime::Slot::new(config, &shared);
-    ChatCalls::new(config, Arc::new(executor), &slot).expect("calls")
+    let azure = azure_runtime::Slot::new(config);
+    ChatCalls::new(config, Arc::new(executor), &slot, &azure).expect("calls")
 }
 
 fn booted(config: &Config, environment: &BTreeMap<String, String>) -> Router {

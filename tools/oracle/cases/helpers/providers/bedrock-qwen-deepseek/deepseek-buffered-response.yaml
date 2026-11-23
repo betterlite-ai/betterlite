@@ -1,0 +1,342 @@
+kind: helper
+name: deepseek-buffered-response
+call:
+  bedrock_qwen_deepseek:
+    qwen_reply: []
+    qwen_request: []
+    deepseek_reply:
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '7'
+      - - x-amzn-bedrock-output-token-count
+        - '3'
+      request_data:
+        prompt: hello<think>
+      body: '{"generation": "reasoning text</think>final answer"}'
+      response:
+        id: chatcmpl-deepseek
+        choices:
+        - index: 0
+          finish_reason: stop
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 99
+          completion_tokens: 99
+          total_tokens: 198
+        created: 0
+        model: ''
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: hello
+      body: '{"generation": "answer"}'
+      response:
+        id: chatcmpl-no-trigger
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: 'hello<think> '
+      body: '{"generation": "thought</think>"}'
+      response:
+        id: chatcmpl-empty-content
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: hello<think>
+      body: '{"generation": "plain answer"}'
+      response:
+        id: chatcmpl-no-closing
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: hello<think>
+      body: '{"generation": "plain answer"}'
+      response:
+        id: chatcmpl-kept-fields
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields:
+              existing: kept
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: hello<think>
+      body: '{"generation": "reason</think>done"}'
+      response:
+        id: chatcmpl-merge
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields:
+              existing: kept
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '4'
+      - - x-amzn-bedrock-output-token-count
+        - '2'
+      request_data:
+        prompt: hello<think>
+      body: '{"generation": "r</think>c"}'
+      response:
+        id: chatcmpl-two-choices
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        - index: 1
+          finish_reason: length
+          message:
+            role: assistant
+            content: second
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: null
+      body: '{"generation": "answer"}'
+      response:
+        id: chatcmpl-null-prompt
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: '   '
+      body: '{"generation": "answer"}'
+      response:
+        id: chatcmpl-blank-prompt
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: 0
+      body: '{"generation": "answer"}'
+      response:
+        id: chatcmpl-zero-prompt
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data: {}
+      body: '{"generation": "answer"}'
+      response:
+        id: chatcmpl-missing-prompt
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: 5
+      body: '{"generation": "r</think>c"}'
+      response:
+        id: chatcmpl-number-prompt
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - model: deepseek_r1.deepseek-r1-v1:0
+      status: 200
+      headers:
+      - - x-amzn-bedrock-input-token-count
+        - '2'
+      - - x-amzn-bedrock-output-token-count
+        - '1'
+      request_data:
+        prompt: true
+      body: '{"generation": "answer"}'
+      response:
+        id: chatcmpl-bool-prompt
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+env: {}
+compare:
+  ignore: []

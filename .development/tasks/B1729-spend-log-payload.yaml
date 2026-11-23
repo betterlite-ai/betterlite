@@ -42,6 +42,9 @@ description: >-
   receives 800 changed lines for security tests, configuration and tagged parser corpora.
 scope:
   paths:
+    - "crates/betterlite-server/src/tests.rs"
+    - "crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs"
+    - "crates/betterlite-server/src/routes/embeddings/tests.rs"
     - crates/betterlite-server/src/spend/log_payload.rs
     - crates/betterlite-server/src/spend/log_payload/**
     - crates/betterlite-config/src/spend_storage.rs

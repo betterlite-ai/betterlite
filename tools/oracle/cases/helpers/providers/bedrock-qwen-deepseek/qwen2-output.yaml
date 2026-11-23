@@ -1,0 +1,259 @@
+kind: helper
+name: qwen2-output
+call:
+  bedrock_qwen_deepseek:
+    qwen_reply:
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages:
+      - role: user
+        content: hi
+      body: '{"generation": "answer", "text": "ignored"}'
+      response:
+        id: chatcmpl-qwen2
+        created: 1700000000
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: length
+          message:
+            role: assistant
+            content: seed content
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"text": "fallback"}'
+      response:
+        id: chatcmpl-text
+        created: 5
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": "", "text": "fallback"}'
+      response:
+        id: chatcmpl-empty-generation
+        created: 5
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": null, "text": "fallback"}'
+      response:
+        id: chatcmpl-null-generation
+        created: 5
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": 0, "text": "fallback"}'
+      response:
+        id: chatcmpl-zero-generation
+        created: 5
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": "<|im_start|>assistant\ntwice<|im_end|><|im_end|>"}'
+      response:
+        id: chatcmpl-wrappers
+        created: 5
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": " padded "}'
+      response:
+        id: chatcmpl-spacing
+        created: 5
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": "unused"}'
+      response:
+        id: chatcmpl-no-choices
+        created: 5
+        model: previous-model
+        choices: []
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": "answer", "text": "ignored"}'
+      response:
+        id: chatcmpl-qwen3
+        created: 6
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"text": "only"}'
+      response:
+        id: chatcmpl-qwen3-text
+        created: 6
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": "<|im_start|>assistant\nwrapped<|im_end|>"}'
+      response:
+        id: chatcmpl-qwen3-wrappers
+        created: 6
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{}'
+      response:
+        id: chatcmpl-qwen3-empty
+        created: 6
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": "first"}'
+      response:
+        id: chatcmpl-two-choices
+        created: 7
+        model: previous-model
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        - index: 1
+          finish_reason: length
+          message:
+            role: assistant
+            content: second
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    qwen_request: []
+    deepseek_reply: []
+env: {}
+compare:
+  ignore: []

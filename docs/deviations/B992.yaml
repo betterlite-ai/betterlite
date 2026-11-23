@@ -1,0 +1,33 @@
+task: B992
+deviations:
+  - what: >-
+      A create request whose name is not kebab-case answers 400 {"detail": {"error": "Plugin name must be kebab-case (lowercase letters, numbers, hyphens)"}}, where LiteLLM's pydantic RegisterPluginRequest pattern rejects the same body with FastAPI's 422 validation envelope before the handler runs.
+    why: >-
+      The pinned handler still carries its own kebab regex guard, and the task pins that 400 detail as the contract; betterlite decodes name as a string so the guard is reachable, and ClaudePluginWriteInput::validate raises the same 400 detail. plugin_create's invalid_name case proves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L332-L337
+  - what: >-
+      A request with no credentials on these routes answers 401 {"error": {"message": "the API key is not valid", "type": "auth_error", "param": "None", "code": "401"}}, where LiteLLM answers the same envelope with the message "Authentication Error, No api key passed in.".
+    why: >-
+      Status 401, type auth_error, param "None" and code "401" match; the message comes from betterlite's shared unauth envelope (B003), which every dependency 401 uses, so this slice does not reword it for these routes. claude-plugin-write-auth-missing.yaml ignores /error/message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L75-L80
+  - what: >-
+      betterlite's anthropic route table carries the plugin enable and disable templates, which LiteLLM's LiteLLMRoutes.anthropic_routes leaves out; the table feeds both key route permissions and betterlite's shared route-match gate, and an unrecognized path answers 404 there before routing, so those two paths must appear in the table to reach the handlers mounted for them.
+    why: >-
+      LiteLLM relies on FastAPI routing to serve /claude-code/plugins/{plugin_name}/enable and /disable, and its permission table never needed them. The ordered-table helper case under tools/oracle/cases/helpers/inference-routes now sees the two extra entries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L551-L561
+  - what: >-
+      An invalid virtual key with no database answers 400 with betterlite's own message "the API key is not valid", where LiteLLM reports the ProxyException message "No connected db.".
+    why: >-
+      Status, type no_db_connection, null param and code "400" match LiteLLM; the authentication stage (B003) owns the wording, and auth_invalid.yaml ignores /error/message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2125-L2133
+kept_bugs:
+  - what: >-
+      The name-conflict answer says "A skill named '<name>' already exists. Update the existing skill instead of adding it again." for a plugin, and betterlite keeps that wording.
+    why: >-
+      A marketplace entry is a skill in LiteLLM's catalogue model and a client may match the message, so the 409 copies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L259-L262
+  - what: >-
+      An absent database answers 500 rather than 503 and names DATABASE_URL in the detail; betterlite keeps the status and the detail text.
+    why: >-
+      The marketplace handlers ask for the Prisma client with a plain HTTPException, and a setup that watches for that 500 relies on the classification.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L88-L97

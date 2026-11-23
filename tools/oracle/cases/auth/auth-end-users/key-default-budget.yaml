@@ -1,0 +1,38 @@
+kind: helper
+name: auth-end-users-metadata-id-shapes
+call:
+  auth_end_users:
+    function: key_budget_id
+    database: true
+    validate_in_db: false
+    key_metadata:
+      end_user_budget_id: ""
+calls:
+  - auth_end_users:
+      function: key_budget_id
+      database: true
+      validate_in_db: false
+      key_metadata:
+        end_user_budget_id: " b-key "
+  - auth_end_users:
+      function: key_budget_id
+      database: true
+      validate_in_db: false
+      key_metadata:
+        end_user_budget_id: 5
+  - auth_end_users:
+      function: resolve_default
+      database: true
+      validate_in_db: false
+      key_budget_id: b-key
+      proxy_default: b-proxy
+      cached_budget: {budget_id: b-key, max_budget: 100.0}
+  - auth_end_users:
+      function: resolve_default
+      database: true
+      validate_in_db: false
+      key_budget_id: b-dangling
+      proxy_default: b-proxy
+      cached_budget: {budget_id: b-proxy, max_budget: 20.0}
+env: {}
+compare: {ignore: []}

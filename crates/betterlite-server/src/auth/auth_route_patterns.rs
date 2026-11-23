@@ -11,6 +11,7 @@ use secrecy::SecretString;
 use super::auth_identity::StageFailure;
 use super::failures::stage_failure_response;
 use super::route_match::{RouteMatchError, decoded_route_path};
+use crate::api::claude_plugin_write::PLUGINS_PATH;
 use crate::cache_activity_routes::CACHE_ACTIVITY_PATH;
 use crate::error_body::AuthenticationFailure;
 use crate::tracing_routes::router::unauthenticated;
@@ -43,11 +44,16 @@ pub(crate) async fn stage(
     if check_configured_public_routes(&route, Ok(&settings.routes.public_routes)) {
         next.run(request).await
     } else {
-        let failure_response: fn(&StageFailure) -> Response = if path == CACHE_ACTIVITY_PATH {
-            dependency_failure_response
-        } else {
-            stage_failure_response
-        };
+        let plugin_route = path == PLUGINS_PATH
+            || path
+                .strip_prefix(PLUGINS_PATH)
+                .is_some_and(|rest| rest.starts_with('/'));
+        let failure_response: fn(&StageFailure) -> Response =
+            if path == CACHE_ACTIVITY_PATH || plugin_route {
+                dependency_failure_response
+            } else {
+                stage_failure_response
+            };
         Box::pin(super::authenticate(
             State(settings.master_key),
             request,

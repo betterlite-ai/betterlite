@@ -1,0 +1,14 @@
+kind: helper
+name: azure_speech-audio_speech-seed
+call:
+  azure_speech:
+    audio_speech:
+      model: tts
+      input: hello
+      voice: alloy
+      api_base: https://example.openai.azure.com
+      api_version: "2024-06-01"
+      api_key: sk-azure-fixture
+      reply: {status: 200, headers: {content-type: audio/mpeg}, body: ID3}
+env: {}
+compare: {ignore: []}

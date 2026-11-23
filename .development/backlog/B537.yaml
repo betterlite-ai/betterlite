@@ -1,7 +1,7 @@
 id: B537
 milestone: M3 providers
 title: Azure OpenAI speech transport
-status: todo
+status: done
 depends_on: [B531, B173, B171, B190, B8500, B2200, B249, B695, B538]
 file: tasks/B537-azure-speech.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/azure/text_to_speech/transformation.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3019

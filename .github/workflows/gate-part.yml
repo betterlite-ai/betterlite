@@ -261,6 +261,8 @@ jobs:
       # lint and task split every check between them, so a check added to checks.yaml runs in task
       - name: Run the gate's ${{ matrix.part }} checks on the merged result
         if: github.event_name != 'pull_request' || inputs.task != ''
+        # the cache build took 22 to 33 minutes before its heavy builds took turns, which adds about 30%; out of memory, it once hung until the runner was lost at 61 minutes (run 45129968169)
+        timeout-minutes: ${{ matrix.part == 'cache' && 50 || 350 }}
         env:
           EVENT: ${{ github.event_name }}
           GATE_BASE: ${{ inputs.base }}
@@ -300,15 +302,15 @@ jobs:
               fi
               if [[ -z $affected ]]; then echo "no package the change touches falls in this part"; exit 0; fi
               read -r -a packages <<< "$affected"
-              # the oracle library and its unit-test build need about 8 GB each, so they take turns on a 16 GB runner
-              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
+              # the builds that need over 4 GB take turns: two at once ran the 16 GB runner out of memory in the tests parts (#1542) and in the cache part (runs 45129968169, 45144639135)
+              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/rustc-turns.sh"
               # the tests use LiteLLM but not its dev tools, about 330 MB
               # a shard that stops at its first failure hides the rest: on 11-13 shard 3 ran 30 of 22702 tests in run 43451345497
               UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --max-fail 20 "${packages[@]}" ;;
             cache)
               # every other part builds the gate first, and without its dependencies in this cache each job spent about 110 s on them (run 43847942706)
               cargo build --locked --quiet --manifest-path .development/gate/Cargo.toml || exit 1
-              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
+              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/rustc-turns.sh"
               exec cargo test --locked --no-run --workspace ;;
             task)
               export NEXTEST_PROFILE=task

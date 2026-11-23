@@ -7,6 +7,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
@@ -24,6 +25,7 @@ pub enum AuthBackend {
     AuthModelPatterns,
     AuthResourceGrants,
     AuthTagBudgets,
+    AuthEndUsers,
 }
 
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
@@ -35,6 +37,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthModelPatterns,
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
+    AuthBackend::AuthEndUsers,
 ];
 
 #[derive(Clone, Debug)]
@@ -46,6 +49,7 @@ pub enum StageInput {
     AuthModelPatterns(Box<ModelPatternStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
+    AuthEndUsers(Box<EndUserStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +80,7 @@ pub(crate) enum StageFailure {
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
+    EndUsers(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {
@@ -103,6 +108,13 @@ pub(crate) fn dispatch(
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
             };
             // the batch reads ran while this stage's input was assembled, so only the identity is left
+            Ok(stage.context.clone())
+        }
+        AuthBackend::AuthEndUsers => {
+            let StageInput::AuthEndUsers(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the lookup and the budget check ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
     }

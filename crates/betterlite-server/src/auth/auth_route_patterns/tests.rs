@@ -78,6 +78,25 @@ async fn failure_stops_downstream() {
 }
 
 #[rstest]
+#[case::plugins("/claude-code/plugins")]
+#[case::plugins_subpath("/claude-code/plugins/demo/enable")]
+#[tokio::test]
+async fn plugin_routes_answer_a_missing_key_with_the_dependency_401(#[case] path: &str) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let response = configured_router(Arc::clone(&calls), "['/v1/chat/completions']")
+        .oneshot(Request::post(path).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let bytes = to_bytes(response.into_body(), 8192).await.unwrap();
+    let body: ErrorResponse = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body.error.error_type, "auth_error");
+    assert_eq!(body.error.param.as_deref(), Some("None"));
+    assert_eq!(body.error.code, "401");
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
 #[case::native_public_routes_without_license("/v1/chat/completions", "['/v1/chat/*']", 200)]
 #[case::metrics_templates_not_auth_aliases(
     "/v1/threads/thread_123",
