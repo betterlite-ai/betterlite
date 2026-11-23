@@ -1,0 +1,65 @@
+id: B10045
+title: The session rollup group test deletes the same rows on every run
+description: >-
+  Fix a flaky test on main. The gate run https://github.com/betterlite-ai/betterlite/actions/runs/45145640686
+  (head 51ef480b9b5) went red on one test in betterlite-db,
+  spend_retention::runner::groups::tests::the_session_rollups_split_their_group_time. It panicked at
+  crates/betterlite-db/src/spend_retention/runner/groups/tests.rs:423 after 0.716 s with
+  "assertion `left == right` failed, left: 4, right: 6": the first session table deleted 4 rows, not 6. The scheduled
+  run https://github.com/betterlite-ai/betterlite/actions/runs/45144639135 on the same commit passed it, so the count
+  changes from run to run.
+
+
+  The test seeds 20 old rows in each session table, runs clean_group for GroupPlan::Sessions under a
+  StepCleanupClock that moves 5 seconds on every reading, with a deadline 100 seconds after start, and expects 6 rows
+  deleted from each table, both stopped by BudgetExhausted. The clock itself is deterministic: it counts readings in an
+  AtomicU32 (crates/betterlite-db/src/spend_retention/runner/tests/support.rs:261-290), and clean_group runs the tables
+  one after the other with no concurrency. The statement timeout each batch sets is
+  min(batch_timeout, remaining fake time) from statement_timeout_ms in
+  crates/betterlite-db/src/spend_retention/batches/deadline.rs:24, which stays at several seconds here, so a real
+  statement timeout inside a 0.7 s test is unlikely. Something else changes either the number of clock readings a table
+  takes or the rows one batch deletes. Find it first: run the test under stress until it fails, and read what differs
+  (the clock readings per batch, the rows per batch, an error or retry path that reads the clock again).
+
+
+  Then make the test deterministic while keeping what it checks: each table's share of the group deadline gives the
+  same deleted count and BudgetExhausted every run. If the cause is in the production code (a batch that sometimes
+  deletes fewer rows, or a path that reads the clock a varying number of times), that is a product bug: fix it there and
+  say so in the report.
+scope:
+  paths:
+  - crates/betterlite-db/src/spend_retention/runner/groups/tests.rs
+  - crates/betterlite-db/src/spend_retention/runner/tests/support.rs
+  - crates/betterlite-db/src/spend_retention/runner/groups.rs
+  - crates/betterlite-db/src/spend_retention/batches/deleter.rs
+  - crates/betterlite-db/src/spend_retention/batches/deadline.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    the_session_rollups_split_their_group_time passes 50 runs in a row under nextest's stress mode, and its assertions
+    stay as strict as now: an exact deleted count for each session table and BudgetExhausted for both. The report names
+    the cause with the file and line, and says whether it was in the test or in the production code.
+  proof: [retention-groups, session-rollup-stress]
+checks:
+  optional: []
+  commands:
+  - id: retention-groups
+    why: A retention group test broke.
+    run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_retention::runner::groups::/)'
+  - id: session-rollup-stress
+    why: The session rollup group test still deletes a different count now and then.
+    run: cargo nextest run --locked -p betterlite-db --no-tests=fail --stress-count 50 -E 'test(=spend_retention::runner::groups::tests::the_session_rollups_split_their_group_time)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Loosening the assertions, for example to a range of deleted rows or to at least 4. The test checks that the group deadline is split evenly, and a range would hide an uneven split.
+- Raising the deadline or the clock step to make the failure rarer without knowing the cause.
+- The other retention tests, unless the same cause makes them flaky too; then fix them in this task and name them in the report.
+pitfalls:
+- The test passes almost every time on a quiet machine. Run the stress check with the machine busy too (for example next to a cargo build), since CI fails it on a loaded runner.
+- StepCleanupClock is shared by tests in other modules through tests/support.rs, so a change to it must keep those tests' readings the same.
+review_level: standard
+budget:
+  max_changed_lines: 150
+  max_new_expects: 0
