@@ -188,8 +188,7 @@ where
     Ok(reply)
 }
 
-// Only a prompt that trims to a trailing <think>, and a first content, reach the reasoning split;
-// the rebuilt message always carries a fields map, empty when no reasoning was parsed.
+// Only a trailing-<think> prompt with a first content reaches the split, which always rebuilds a fields map.
 fn apply_reasoning(
     request_data: &IndexMap<String, Json>,
     reply: &mut Reply,
