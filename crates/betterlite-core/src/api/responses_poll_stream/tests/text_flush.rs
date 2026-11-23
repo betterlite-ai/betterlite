@@ -27,6 +27,21 @@ pub(super) async fn flushed_stream() -> Scenario {
     scenario
 }
 
+#[tokio::test]
+async fn flush_stays_quiet_without_dirty_output() {
+    let unknown = r#"{"type":"response.something_else"}"#;
+    let steps: Vec<AnswerStep> = support::frames(&[ITEM_ADDED, unknown])
+        .into_iter()
+        .map(AnswerStep::Chunk)
+        .collect();
+    let mut scenario = support::scenario(&[1000, 1200, 1400], Answer::Streaming(steps));
+    scenario.run().await.expect("the worker completes");
+    let writes = scenario.cache.writes();
+    assert_eq!(writes.len(), 3);
+    assert_eq!(support::text(&writes[0], "status"), "in_progress");
+    assert_eq!(support::text(&writes[2], "status"), "completed");
+}
+
 pub(super) fn assert_batches(scenario: &Scenario) {
     let writes = scenario.cache.writes();
     assert_eq!(writes.len(), 4);

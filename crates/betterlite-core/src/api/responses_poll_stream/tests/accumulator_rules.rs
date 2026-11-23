@@ -372,6 +372,12 @@ fn terminal_fields_reach_patch() {
     );
 }
 
+#[test]
+fn in_progress_decodes_to_the_in_progress_event() {
+    let source = r#"{"response":{"status":"in_progress"},"type":"response.in_progress"}"#;
+    assert_eq!(event(source), PollEvent::InProgress);
+}
+
 #[rstest]
 #[case::in_progress(r#"{"response":{"status":"in_progress"},"type":"response.in_progress"}"#)]
 #[case::unknown(r#"{"type":"response.something_else"}"#)]
