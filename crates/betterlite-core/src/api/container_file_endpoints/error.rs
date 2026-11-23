@@ -2,6 +2,7 @@ use std::time::TryFromFloatSecsError;
 
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::ErrorClass;
+use betterlite_error::error::details::ResponseDetails;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_openai::api::container_contracts::error::{BaseLlmException, ContainerError};
@@ -11,6 +12,9 @@ use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
 use crate::containers::container_request_parameters::ContainerFieldTypeError;
+
+// exception_type() maps every file-endpoint failure with model "" and the provider resolved so far
+const MODEL: &str = "";
 
 #[derive(Debug, Error)]
 pub enum ContainerFileOpError {
@@ -61,10 +65,23 @@ pub fn failure(
     redactor: &Redactor,
     route: Option<CallRoute<'_>>,
 ) -> ContainerFileFailureError {
-    let class = dispatch(
-        &DispatchInput::Raw(Box::new(exception(&error, provider, route))),
-        redactor,
-    );
+    let class = match &error {
+        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+        ContainerFileOpError::UnknownProvider { .. }
+        | ContainerFileOpError::NoProviderConfig { .. } => ErrorClass::BadRequest(Box::new(
+            ResponseDetails::for_provider(error.to_string(), Some(MODEL.to_owned()), provider),
+        )),
+        ContainerFileOpError::UnknownEndpoint { .. }
+        | ContainerFileOpError::MockJson { .. }
+        | ContainerFileOpError::MockModel { .. }
+        | ContainerFileOpError::Decode(_)
+        | ContainerFileOpError::Timeout { .. }
+        | ContainerFileOpError::Logging(_)
+        | ContainerFileOpError::Handler(_) => dispatch(
+            &DispatchInput::Raw(Box::new(exception(&error, provider, route))),
+            redactor,
+        ),
+    };
     ContainerFileFailureError { error, class }
 }
 
@@ -124,7 +141,7 @@ const fn upstream(error: &ContainerFileOpError) -> Option<&BaseLlmException> {
 
 fn provider_status(upstream: &BaseLlmException, provider: &str) -> RawException {
     RawException {
-        model: String::new(),
+        model: MODEL.to_owned(),
         custom_llm_provider: provider.to_owned(),
         error_str: upstream.message.clone(),
         status_code: Some(upstream.status_code),
@@ -143,7 +160,7 @@ fn call_error(
 ) -> RawException {
     let message = error.to_string();
     RawException {
-        model: String::new(),
+        model: MODEL.to_owned(),
         custom_llm_provider: provider.to_owned(),
         error_str: message.clone(),
         status_code,

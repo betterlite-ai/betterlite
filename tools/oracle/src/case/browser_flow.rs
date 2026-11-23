@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 
+use super::saml_assertion::SamlAssertion;
 use super::{Compare, Request, validate_contracts};
 use crate::OracleError;
 use betterlite_oracle_runner::case::{BodyKind, RequestBody, validate_ignores};
@@ -26,6 +27,8 @@ pub(crate) struct Step {
     pub(crate) captures: Vec<Capture>,
     #[serde(default)]
     pub(crate) form: bool,
+    #[serde(default)]
+    pub(crate) saml_assertion: Option<SamlAssertion>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -149,6 +152,37 @@ fn validate_step(
             )));
         }
     }
+    if let Some(assertion) = &step.saml_assertion {
+        validate_saml_assertion(path, index, step, assertion, known_names)?;
+    }
+    Ok(())
+}
+
+fn validate_saml_assertion(
+    path: &Path,
+    index: usize,
+    step: &Step,
+    assertion: &SamlAssertion,
+    known_names: &BTreeSet<String>,
+) -> Result<(), OracleError> {
+    let invalid = |message: String| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message,
+    };
+    if !step.request.body.is_null() || step.request.body_kind != BodyKind::Json {
+        return Err(invalid(format!(
+            "step {index} saml_assertion cannot be combined with a request body"
+        )));
+    }
+    assertion
+        .validate()
+        .map_err(|message| invalid(format!("step {index} saml_assertion: {message}")))?;
+    if !known_names.contains(&assertion.request_id_capture) {
+        return Err(invalid(format!(
+            "step {index} saml_assertion references undeclared capture \"{}\"",
+            assertion.request_id_capture
+        )));
+    }
     Ok(())
 }
 
@@ -205,6 +239,11 @@ fn collect_value_placeholders(
 pub(crate) const PLACEHOLDER_PREFIX: &str = "{{capture:";
 pub(crate) const PLACEHOLDER_SUFFIX: &str = "}}";
 
+pub(crate) fn supported_capture_name(name: &str) -> bool {
+    name.chars()
+        .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
+}
+
 pub(crate) fn find_placeholders(text: &str) -> Result<Vec<PlaceholderRef>, PlaceholderError> {
     let mut found = Vec::new();
     let mut remaining = text;
@@ -225,10 +264,7 @@ fn parse_placeholder_body(body: &str) -> Result<PlaceholderRef, PlaceholderError
     if parts.next().is_some() || name.is_empty() || encoding.is_empty() {
         return Err(PlaceholderError::Malformed(body.to_owned()));
     }
-    if !name
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
-    {
+    if !supported_capture_name(name) {
         return Err(PlaceholderError::UnsupportedName(name.to_owned()));
     }
     let parsed = match encoding {

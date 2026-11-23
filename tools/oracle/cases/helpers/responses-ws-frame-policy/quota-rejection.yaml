@@ -1,0 +1,38 @@
+kind: helper
+name: quota-rejection
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd"}'
+      authorized_model: gpt-4o
+      verdicts: [rate_limit]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd"}'
+      authorized_model: gpt-4o
+      verdicts: [rate_limit]
+      refuse_send: true
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd"}'
+      authorized_model: gpt-4o
+      verdicts: [accept, rate_limit, accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd"}'
+      authorized_model: gpt-4o
+      verdicts: [fail, accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.create", "input": "abcd"}'
+      authorized_model: gpt-4o
+      verdicts: [accept]
+      refuse_send: false
+    - kind: quota
+      message: '{"type": "response.cancel"}'
+      authorized_model: gpt-4o
+      verdicts: [rate_limit]
+      refuse_send: false
+env: {}
+compare:
+  ignore: []

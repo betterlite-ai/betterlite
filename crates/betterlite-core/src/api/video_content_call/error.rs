@@ -10,6 +10,9 @@ use crate::api::video_selection::error::VideoSelectionError;
 use crate::api::videos_http_transport::error::VideoTransportError;
 use crate::api::videos_http_transport::video_config::VideoHttpConfig;
 
+// exception_type() maps every video content failure with model ""
+const MODEL: &str = "";
+
 #[derive(Debug, Error)]
 pub enum VideoContentCallError {
     // LiteLLM's ValueError, which exception_type turns into an APIConnectionError
@@ -58,17 +61,26 @@ pub fn failure(
             class: field_class(field, expected, provider),
             message,
         },
+        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
         VideoContentCallError::Unsupported { .. }
         | VideoContentCallError::Selection(_)
-        | VideoContentCallError::UnknownProvider { .. }
-        | VideoContentCallError::Logging(_)
-        | VideoContentCallError::Suspended => VideoContentCallError::Mapped {
-            class: dispatch(
-                &DispatchInput::Raw(Box::new(rejected_exception(&message, provider))),
-                redactor,
-            ),
+        | VideoContentCallError::UnknownProvider { .. } => VideoContentCallError::Mapped {
+            class: ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
+                message.clone(),
+                Some(MODEL.to_owned()),
+                provider,
+            ))),
             message,
         },
+        VideoContentCallError::Logging(_) | VideoContentCallError::Suspended => {
+            VideoContentCallError::Mapped {
+                class: dispatch(
+                    &DispatchInput::Raw(Box::new(rejected_exception(&message, provider))),
+                    redactor,
+                ),
+                message,
+            }
+        }
     }
 }
 

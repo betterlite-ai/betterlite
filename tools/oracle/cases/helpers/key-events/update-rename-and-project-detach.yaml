@@ -1,0 +1,26 @@
+kind: helper
+name: key-events-update-rename-and-project-detach
+call:
+  key_events:
+    event: updated
+    data: {key: sk-old-key-value-1234, key_alias: new-alias, project_id: null, spend: 0.5}
+    response: {unused: true}
+    row: {token: null, key_alias: old-alias, team_id: team-a}
+    rows: []
+    caller: {user_id: user-a, api_key: sk-caller-api-key, token: null, metadata: {}, team_metadata: null}
+    changed_by: null
+    admin_name: proxy-admin
+    audit: true
+    now: "2026-01-02T03:04:05Z"
+    id: "00000000-0000-4000-8000-000000000785"
+    settings: {store_virtual_keys: true, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+    client: true
+    runtime: ready
+    teams:
+      team-a: {secret_manager_settings: {region: eu-west-1}}
+    secrets: {litellm/old-alias: sk-stored-value}
+    failing: []
+    alerting: []
+calls: []
+env: {}
+compare: {ignore: []}
