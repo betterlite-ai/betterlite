@@ -4024,7 +4024,7 @@ dependencies = [
  "axum",
  "flate2",
  "futures-util",
- "indexmap",
+ "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
  "thiserror",
