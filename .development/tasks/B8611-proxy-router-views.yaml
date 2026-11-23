@@ -3,7 +3,7 @@ title: Proxy router from config.yaml and the shared router views
 description: >-
   LiteLLM's proxy keeps one module global, llm_router, that load_config builds from config.yaml at startup (proxy_server.py
   L6890-L7007) and every route, hook and logger reads. betterlite has the router pieces (B368's catalog updates, B367's
-  pattern catalog, B302's aliases, B323's routing groups, B844's lookup indexes, B847's group info, B016's pipeline and
+  pattern catalog, B302's aliases, B323's routing groups, B844's lookup indexes, B10047's group info, B016's pipeline and
   B8351's CatalogQueries) but nothing builds them into one value from the config, and tasks in crates that may not
   depend on betterlite-router declared ports for the same few catalog reads. This task builds that value and one adapter
   for five of those ports. Both live in betterlite-server, because deny.toml lets only betterlite-server, betterlite-oracle and
@@ -24,7 +24,7 @@ description: >-
   Result<ProxyRouter, ProxyRouterError>` does what Router.__init__ does with these values in the proxy: it seeds B368's
   DeploymentCatalog through its set_model_list port with ignore_invalid_deployments true (an invalid deployment is logged
   and skipped, as LiteLLM passes ignore_invalid_deployments=True), lets B367's PatternCatalog index the wildcard entries,
-  builds B844's lookup indexes and B847's cached group info, and builds B016's RouteContext with the routing strategy and
+  builds B844's lookup indexes and B10047's cached group info, and builds B016's RouteContext with the routing strategy and
   the router settings. Read each module's merged constructor and call it; copy no algorithm. ProxyRouter keeps the catalog
   behind one std::sync::RwLock so B8381's database sync can upsert and delete while readers hold a snapshot, keeps
   `cache_responses` in an AtomicBool with `cache_responses()` and `enable_cache_responses()` (switch_on_llm_response_caching

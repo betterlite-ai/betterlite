@@ -1,0 +1,108 @@
+id: B10054
+title: Supported DB object gate
+description: >-
+  An operator can keep some object kinds out of the database with general_settings.supported_db_objects, for example
+  `supported_db_objects: [models, mcp]` loads models and MCP servers from the database and everything else only from
+  the config file. Every database loader asks LiteLLM's should_load_db_object (proxy_server.py L5183-L5205) first:
+  B8385's periodic cost map check asks for model_cost_map, B8384's object loaders for guardrails, policies, mcp, agents
+  and the rest, B8379 and B8381 for models, and the registry read-through for its kind. This task builds only that gate,
+  so B8385 no longer waits for B8380's config saves.
+
+
+  Layout. Build crates/betterlite-server/src/proxy_config_state/supported_db_objects.rs, with a tests.rs beside it in
+  proxy_config_state/supported_db_objects/. The skeleton creates the file and declares `pub mod supported_db_objects;`
+  in proxy_config_state.rs, B8380's module; leave that parent file as it is. Callers reach the gate as
+  betterlite_server::proxy_config_state::supported_db_objects::should_load_db_object.
+
+
+  The gate. `pub fn should_load_db_object(general_settings: &SettingsStore, object_type: &str) -> bool`, over B4140's
+  SettingsStore (betterlite_config::sections::settings::settings_store) holding the general_settings section; the
+  caller hands in the store it already owns, so the gate holds no state and reads no global. Read the
+  supported_db_objects key with `SettingsStore::get`, so a value from the config file, the database row or a runtime
+  write is seen the same way LiteLLM's general_settings dict sees it. No value, or a JSON null, loads every kind and logs
+  nothing. A value that is not an array logs the warning "supported_db_objects is not a list, got {type}. Loading all
+  objects." and loads every kind; name the JSON type in betterlite's own words, since Python's class repr is not ported
+  (docs/compatibility.md). An array loads the kind only when one of its string entries equals object_type exactly; an
+  empty array loads nothing.
+
+
+  Why the kind is text. LiteLLM types the argument `str | SupportedDBObjectType`, and its callers pass kinds that B8410's
+  SupportedDbObjectType (betterlite_error::proxy_enums::supported_db_object_type) does not have: agents,
+  vector_store_indexes, search_tools, anthropic_beta_headers, sso_settings, cache_settings and semantic_filter_settings
+  (proxy_server.py L8249-L8297). So the gate takes the kind's text and compares entries by text, as LiteLLM's
+  `str(obj) == str(object_type)` does; a caller holding an enum value passes its Display text, and strum writes
+  that in snake_case ("model_cost_map"). Do not add these kinds to the enum here.
+
+
+  Tests. supported_db_objects::tests builds a SettingsStore from Section::GeneralSettings and loads YAML values into it:
+  the key absent, set to null, set to a string, set to an object, set to an empty array, and set to [models, mcp] asked
+  for models, mcp, model_cost_map and agents; a kind outside the enum listed ([agents, search_tools]); every
+  SupportedDbObjectType value matched through its Display text; and a database row value seen when the config file does
+  not set the key. Capture tracing output with tracing_subscriber the way media_relay_logging's test support does, and
+  assert the warning for the non-array values and its absence for null.
+
+
+  Oracle cases. Helper operation b10054 takes a general_settings mapping and an object_type string and answers the
+  boolean. The Python side assigns proxy_server.general_settings and calls proxy_server.should_load_db_object; the Rust
+  side loads the same mapping into a general_settings SettingsStore. Write the cases under
+  tools/oracle/cases/helpers/supported-db-objects/: unset, null, a string value, an empty list, a list asked for a listed
+  and an unlisted kind, and a list holding kinds outside the enum.
+scope:
+  paths:
+    - crates/betterlite-server/src/proxy_config_state/supported_db_objects.rs
+    - crates/betterlite-server/src/proxy_config_state/supported_db_objects/**
+    - tools/oracle/cases/helpers/supported-db-objects/**
+    - tools/oracle/helpers/b10054.py
+    - tools/oracle/helpers/b10054/**
+    - tools/oracle/src/helpers/server/b10054.rs
+    - tools/oracle/src/helpers/server/b10054/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5183-L5205
+    why: Owned. should_load_db_object, the null and non-list branches and the text comparison.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8249-L8297
+    why: The kinds the object loaders pass, seven of them missing from SupportedDBObjectType.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L124-L143
+    why: SupportedDBObjectType, whose __str__ returns the value the gate compares.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L99-L104
+    why: Call site in the registry read-through, gated on the same function.
+dod:
+  - text: should_load_db_object loads every kind when supported_db_objects is absent or null, warns and loads every kind when it is not an array, and otherwise loads only kinds an entry names, so an empty array loads nothing.
+    proof: [db-object-gate-tests, oracle, helper-python]
+  - text: Kinds outside SupportedDbObjectType match by text like the enum's own, and every enum value matches through its Display text.
+    proof: [db-object-gate-tests, oracle, helper-python]
+  - text: The gate reads the key through SettingsStore::get, so a database row value counts when the config file does not set it.
+    proof: [db-object-gate-tests]
+checks:
+  optional: []
+  commands:
+    - id: db-object-gate-tests
+      why: The supported_db_objects gate is missing, loads the wrong kinds or warns on the wrong values
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_config_state::supported_db_objects::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the gate cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10054)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b10054 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b10054/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/supported-db-objects/unset.yaml
+  - tools/oracle/cases/helpers/supported-db-objects/null.yaml
+  - tools/oracle/cases/helpers/supported-db-objects/not-a-list.yaml
+  - tools/oracle/cases/helpers/supported-db-objects/empty-list.yaml
+  - tools/oracle/cases/helpers/supported-db-objects/listed-and-unlisted.yaml
+  - tools/oracle/cases/helpers/supported-db-objects/kinds-outside-enum.yaml
+deviations: []
+out_of_scope:
+  - "ProxyConfig._should_load_db_object (L8064-L8065), the method wrapper the loaders call, the rest of ProxyConfigState, config saves and the config-owned guards: B8380."
+  - "Deciding when each loader runs: B8385 for model_cost_map, B8384 for the non-LLM objects, B8379 and B8381 for models. The registry read-through's database switch: B8231."
+  - "The rest of proxy_server.py: the other parts of B124, listed by area in B124's out_of_scope."
+pitfalls:
+  - "SettingsStore::get returns Some(Value::Null) for `supported_db_objects: null` in the config file, and LiteLLM's `.get(..., None) is None` treats that as unset: it loads everything without the warning."
+  - "LiteLLM's object loaders pass \"agents\", \"search_tools\" and five more kinds the enum lacks; a signature over SupportedDbObjectType alone would leave B8384 with no way to ask for them."
+  - "proxy_server.general_settings is a module global in the Python adapter; assign it for every call and restore it afterwards, or the next case reads the previous list."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

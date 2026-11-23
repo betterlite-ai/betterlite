@@ -115,6 +115,7 @@ pub mod prometheus_services;
 pub mod prometheus_usage;
 pub mod python_json;
 pub mod registry;
+pub mod reservation_binding;
 pub mod rubrik;
 pub mod rubrik_delivery;
 pub mod rubrik_event_logging;

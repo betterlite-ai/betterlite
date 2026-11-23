@@ -6,7 +6,7 @@ description: >-
   The result is a boolean policy decision, not an HTTP exception. B2432 turns denial into a visible skipped
   compaction. Summary requests do not reenter normal authentication, so check every applicable parent scope
   in source order and stop at the first denial. Reuse B732 principals, B747 model matching, B736 user/member
-  lookup, B879 project lookup and B886 user/project grants. Inject repository availability and policy failures;
+  lookup, B879 project lookup and B10051 user and B886 project grants. Inject repository availability and policy failures;
   importing proxy globals is represented by an explicit absent-proxy context.
 
   general_settings.context_management_summary_model defaults to null; only a nonempty string is retained,
@@ -110,7 +110,7 @@ out_of_scope:
 - B970 declares the five rate-limit interfaces at compact.py L128-L167 (`_CreateRateLimitDescriptors`, `_AddModelRateLimitDescriptor`, `_CreateOrgRateLimitDescriptors`, `_GetProxyHook`, `_ShouldRateLimit`).
 - B970 owns budget and rate-limit helpers at compact.py L395-L627; B971 owns history/prompt/token helpers at L630-L1016 and L1114-L1157.
 - B2432 owns summary calls and apply_compact_20260112 at L1019-L1111 and L1160-L1380; B972 owns the dispatcher.
-- B736/B879 own object retrieval and B747/B886 own the underlying grant policy; this task only sequences those calls for a summary.
+- B736/B879 own object retrieval and B747/B886/B10051 own the underlying grant policy; this task only sequences those calls for a summary.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as summary_model_access in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/summary_model_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/summary_model_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A failed user or project read skips that scope, but a failed team membership read denies the summary.

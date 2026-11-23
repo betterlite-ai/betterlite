@@ -105,3 +105,22 @@ fn the_three_variables_do_not_depend_on_the_yaml() {
     assert!(rules.stdio.enabled);
     assert_eq!(rules.stdio.allowed_commands, defaults());
 }
+
+#[rstest]
+#[case::constant("LITELLM_ENABLE_MCP_STDIO")]
+#[case::lowercase("litellm_enable_mcp_stdio")]
+#[case::mixed_case("Litellm_Enable_Mcp_Stdio")]
+#[case::dotless_i("l\u{131}tellm_enable_mcp_std\u{131}o")]
+#[case::long_s("LITELLM_ENABLE_MCP_\u{17f}TDIO")]
+fn stdio_flag_key_matches_the_flag_name_in_any_case(#[case] name: &str) {
+    assert!(super::is_mcp_stdio_flag_key(name), "{name:?}");
+}
+
+#[rstest]
+#[case::suffixed("LITELLM_ENABLE_MCP_STDIO_X")]
+#[case::leading_space(" LITELLM_ENABLE_MCP_STDIO")]
+#[case::prefix_only("MCP_STDIO")]
+#[case::empty("")]
+fn stdio_flag_key_rejects_every_other_name(#[case] name: &str) {
+    assert!(!super::is_mcp_stdio_flag_key(name), "{name:?}");
+}
