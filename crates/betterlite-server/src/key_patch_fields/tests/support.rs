@@ -274,8 +274,9 @@ pub(super) async fn assert_router_unavailable(
 }
 
 pub(super) fn assert_close(actual: f64, expected: f64) {
+    use std::ops::Sub as _;
     assert!(
-        (actual - expected).abs() < 1e-9_f64,
+        actual.sub(expected).abs() < 1e-9_f64,
         "{actual} != {expected}"
     );
 }

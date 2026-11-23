@@ -144,6 +144,16 @@ fn native_metadata_projection_without_license() {
     assert!(warnings.is_empty());
 }
 
+// prepare_key_update_data folds a nonnull premium field into the key's metadata and keeps a null one out
+#[tokio::test]
+async fn premium_fields_move_into_metadata() {
+    let fixture = fixture();
+    let stored = existing(r#"{"token": "tok", "metadata": {"team": "t1"}}"#);
+    let request = update_request(r#"{"key": "tok", "tags": ["a"], "guardrails": null}"#);
+    let values = prepared_row(&fixture, &stored, &request).await;
+    assert_metadata(&values, r#"{"team": "t1", "tags": ["a"]}"#);
+}
+
 #[test]
 fn callbacks_encrypted_before_return() {
     let request = r#"{"logging": [{"callback_name": "langfuse",
@@ -525,10 +535,10 @@ fn requested_end_user_budget_clear_and_precedence(
 
 #[rstest]
 #[case::tree(r#"{"store_model_in_db": true}"#, true)]
-#[case::null(r#"null"#, false)]
-#[case::array(r#"[]"#, false)]
+#[case::null("null", false)]
+#[case::array("[]", false)]
 #[case::text(r#""text""#, false)]
-#[case::number(r#"7"#, false)]
+#[case::number("7", false)]
 fn general_settings_mapping_validation(#[case] document: &str, #[case] mapping: bool) {
     let outcome = general_settings(&json(document));
     if mapping {
