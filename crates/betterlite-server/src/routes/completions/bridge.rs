@@ -227,11 +227,11 @@ pub(super) fn chat_stream_answer(
     frames_answer(body, headers, model, usage, time)
 }
 
-struct ChatChunks {
-    bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
-    parser: SseParser,
-    model: String,
-    usage: ChunkUsage,
+pub(super) struct ChatChunks {
+    pub(super) bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
+    pub(super) parser: SseParser,
+    pub(super) model: String,
+    pub(super) usage: ChunkUsage,
 }
 
 #[async_trait]
