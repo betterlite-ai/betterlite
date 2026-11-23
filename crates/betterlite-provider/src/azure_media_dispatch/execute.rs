@@ -10,7 +10,7 @@ use crate::operation::{OperationRequest, OperationResult};
 use super::call::AzureMediaOperation;
 use super::error::AzureMediaError;
 use super::runtime::MediaRuntime;
-use super::{AzureMediaRequest, AzureMediaResult, edit, image, transcription};
+use super::{AzureMediaRequest, AzureMediaResult, edit, image, speech, transcription};
 
 // The closed provider enum is the only entry: the typed call names the Azure leaf, and the resolved runtime carries its leaves.
 pub async fn dispatch<C, K, T, L>(
@@ -34,16 +34,12 @@ where
         AzureMediaOperation::ImageEdit(call) => {
             AzureMediaResult::ImageEdit(Box::new(edit::image_edit(*call, runtime).await?))
         }
-        // B537 replaces both arms with the speech leaves; until then the composition fails instead of sending anything
-        AzureMediaOperation::OpenAiSpeech => {
-            return Err(AzureMediaError::Unavailable {
-                operation: "openai_speech",
-            });
+        // B537's two speech leaves: the binary Azure OpenAI client and the native AVA dispatch through B2452
+        AzureMediaOperation::OpenAiSpeech(call) => {
+            AzureMediaResult::OpenAiSpeech(Box::new(speech::openai::openai(*call, runtime).await?))
         }
-        AzureMediaOperation::NativeSsml => {
-            return Err(AzureMediaError::Unavailable {
-                operation: "native_ssml",
-            });
+        AzureMediaOperation::NativeSsml(call) => {
+            AzureMediaResult::NativeSsml(Box::new(speech::native::native(*call, runtime).await?))
         }
         AzureMediaOperation::Transcription(call) => {
             AzureMediaResult::Transcription(Box::new(transcription::openai(*call, runtime).await?))
