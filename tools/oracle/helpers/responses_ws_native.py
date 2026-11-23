@@ -23,12 +23,6 @@ class Scenario(TypedDict):
     request_data: dict[str, JsonValue]
 
 
-async def idle() -> None:
-    done: asyncio.Future[None] = asyncio.Future[None]()
-    done.set_result(None)
-    await done
-
-
 class Socket(ResponsesClientWebSocket, ResponsesBackendWebSocket):
     def __init__(self, frames: list[str]) -> None:
         self.sent: list[str] = []
@@ -36,7 +30,7 @@ class Socket(ResponsesClientWebSocket, ResponsesBackendWebSocket):
 
     @override
     async def send_text(self, data: str) -> None:
-        await idle()
+        await asyncio.sleep(0)
         self.sent.append(data)
 
     @override
@@ -46,7 +40,7 @@ class Socket(ResponsesClientWebSocket, ResponsesBackendWebSocket):
 
     @override
     async def recv(self, decode: bool = True) -> str:
-        await idle()
+        await asyncio.sleep(0)
         return self.pop()
 
     @override
@@ -55,7 +49,7 @@ class Socket(ResponsesClientWebSocket, ResponsesBackendWebSocket):
 
     @override
     async def close(self) -> None:
-        await idle()
+        await asyncio.sleep(0)
 
     def pop(self) -> str:
         if not self.frames:

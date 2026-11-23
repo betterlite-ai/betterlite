@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
-use std::future::{Future, ready};
 use std::io::{Error as IoError, ErrorKind};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_core::api::responses_ws_frame_policy::RequestData;
 use betterlite_core::api::responses_ws_native::relay::backend::{BackendError, NativeWsBackend};
+use betterlite_core::api::responses_ws_native::relay::forward::ForwardRelay as _;
 use betterlite_core::api::responses_ws_native::relay::{RelaySetup, ResponsesWsRelay};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_shapes::websocket::{
@@ -72,49 +72,35 @@ impl FakeSocket {
 impl ResponsesClientWebSocket for FakeSocket {
     type Error = BackendError<IoError>;
 
-    fn send_text<'call>(
-        &'call self,
-        data: &'call str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'call {
+    async fn send_text(&self, data: &str) -> Result<(), Self::Error> {
         self.record(data);
-        ready(Ok(()))
+        Ok(())
     }
 
-    fn receive_text(&self) -> impl Future<Output = Result<String, Self::Error>> + Send + '_ {
-        async move {
-            yield_now().await;
-            self.pop_frame()
-        }
+    async fn receive_text(&self) -> Result<String, Self::Error> {
+        yield_now().await;
+        self.pop_frame()
     }
 }
 
 impl NativeWsBackend for FakeSocket {
     type Error = IoError;
 
-    fn recv_raw(
-        &self,
-    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<Self::Error>>> + Send + '_
-    {
-        ready(self.pop_frame().map(ResponsesWebSocketMessage::Text))
+    async fn recv_raw(&self) -> Result<ResponsesWebSocketMessage, BackendError<Self::Error>> {
+        self.pop_frame().map(ResponsesWebSocketMessage::Text)
     }
 
-    fn recv(
-        &self,
-    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<Self::Error>>> + Send + '_
-    {
-        self.recv_raw()
+    async fn recv(&self) -> Result<ResponsesWebSocketMessage, BackendError<Self::Error>> {
+        self.recv_raw().await
     }
 
-    fn send<'call>(
-        &'call self,
-        message: &'call str,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'call {
+    async fn send(&self, message: &str) -> Result<(), Self::Error> {
         self.record(message);
-        ready(Ok(()))
+        Ok(())
     }
 
-    fn close(&self) -> impl Future<Output = Result<(), Self::Error>> + Send + '_ {
-        ready(Ok(()))
+    async fn close(&self) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
@@ -126,14 +112,14 @@ impl PresidioGuardrailCallback for FakeSocket {
         None
     }
 
-    fn check_pii<'call>(
-        &'call self,
-        text: &'call str,
+    async fn check_pii(
+        &self,
+        text: &str,
         _output_parse_pii: bool,
-        _presidio_config: Option<&'call ()>,
-        _request_data: &'call RequestData,
-    ) -> impl Future<Output = Result<String, IoError>> + Send + 'call {
-        ready(Ok(text.to_owned()))
+        _presidio_config: Option<&()>,
+        _request_data: &RequestData,
+    ) -> Result<String, IoError> {
+        Ok(text.to_owned())
     }
 }
 
