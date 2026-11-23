@@ -4232,6 +4232,7 @@ dependencies = [
  "chrono",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "mutants",
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",
