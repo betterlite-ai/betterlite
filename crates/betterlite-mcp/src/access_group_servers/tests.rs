@@ -2,7 +2,7 @@
 
 use std::error::Error as StdError;
 use std::fmt::Debug;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::RwLock;
@@ -72,16 +72,14 @@ impl AccessGroupServerRows for FakeRows {
         access_groups: &[String],
         use_writer: bool,
     ) -> impl Future<Output = Result<Vec<String>, Self::Error>> + Send {
-        async move {
-            self.calls.lock().unwrap().push(PortCall {
-                access_groups: access_groups.to_vec(),
-                use_writer,
-            });
-            if self.failing {
-                return Err(PortFailure);
-            }
-            Ok(self.server_ids.clone())
+        self.calls.lock().unwrap().push(PortCall {
+            access_groups: access_groups.to_vec(),
+            use_writer,
+        });
+        if self.failing {
+            return ready(Err(PortFailure));
         }
+        ready(Ok(self.server_ids.clone()))
     }
 }
 

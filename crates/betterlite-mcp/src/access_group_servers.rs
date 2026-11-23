@@ -28,11 +28,8 @@ impl AccessGroupServerRows for McpTableStore<'_> {
         access_groups: &[String],
         use_writer: bool,
     ) -> impl Future<Output = Result<Vec<String>, Self::Error>> + Send {
-        async move {
-            // ast-grep-ignore: no-long-names
-            <McpTableStore<'_>>::server_ids_with_any_access_group(self, access_groups, use_writer)
-                .await
-        }
+        // ast-grep-ignore: no-long-names
+        <McpTableStore<'_>>::server_ids_with_any_access_group(self, access_groups, use_writer)
     }
 }
 
@@ -68,18 +65,21 @@ pub fn config_server_ids_for_access_groups(
 }
 
 // ast-grep-ignore: no-long-names - LiteLLM's _get_db_server_ids_for_access_groups swallows a fault at debug unless the caller needs the writer
-pub async fn db_server_ids_for_access_groups<R: AccessGroupServerRows>(
+pub async fn db_server_ids_for_access_groups<R>(
     rows: Option<&R>,
     access_groups: &[String],
     use_writer: bool,
-) -> Result<Vec<String>, AccessGroupServersError<R::Error>> {
-    let Some(rows) = rows else {
+) -> Result<Vec<String>, AccessGroupServersError<R::Error>>
+where
+    R: AccessGroupServerRows,
+{
+    let Some(server_rows) = rows else {
         return Ok(Vec::new());
     };
     if access_groups.is_empty() {
         return Ok(Vec::new());
     }
-    match rows
+    match server_rows
         .server_ids_with_any_access_group(access_groups, use_writer)
         .await
     {
@@ -96,12 +96,15 @@ pub async fn db_server_ids_for_access_groups<R: AccessGroupServerRows>(
 }
 
 // LiteLLM's _get_mcp_servers_from_access_groups: the config ids first, then the database ids not already listed
-pub async fn servers_from_access_groups<R: AccessGroupServerRows>(
+pub async fn servers_from_access_groups<R>(
     registry: &SharedRegistry,
     rows: Option<&R>,
     access_groups: &[String],
     requires_fresh_policy: bool,
-) -> Result<Vec<String>, AccessGroupServersError<R::Error>> {
+) -> Result<Vec<String>, AccessGroupServersError<R::Error>>
+where
+    R: AccessGroupServerRows,
+{
     let config_ids = {
         let guard = registry.read().await;
         // ast-grep-ignore: no-long-names
