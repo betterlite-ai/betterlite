@@ -228,11 +228,11 @@ async fn alias_read_failure_propagates() {
 #[tokio::test]
 async fn id_nonstring_after_db_guard() {
     let world = world();
-    let lookup = support::without_database(&world);
-    let guarded = get_org_object(&lookup, OrgId::NotString, false).await;
+    let unwired = support::without_database(&world);
+    let guarded = get_org_object(&unwired, OrgId::NotString, false).await;
     assert!(matches!(guarded, Err(OrgLookupError::NoDatabase)));
-    let lookup = support::lookup(&world);
-    let absent = get_org_object(&lookup, OrgId::NotString, false)
+    let wired = support::lookup(&world);
+    let absent = get_org_object(&wired, OrgId::NotString, false)
         .await
         .unwrap();
     assert!(absent.is_none());
@@ -595,4 +595,46 @@ async fn no_negative_cache() {
     );
     assert!(world.lock().orgs.is_empty());
     assert!(world.lock().projects.is_empty());
+}
+
+#[tokio::test]
+async fn outage_message_reads_chain() {
+    let policy = AllowRequestsOnOutage::Boolean(false);
+    let permanent_world = world();
+    permanent_world.script("permanent org");
+    let permanent_lookup = support::lookup(&permanent_world);
+    let permanent = get_org_object_for_request(&permanent_lookup, "o1", &policy)
+        .await
+        .unwrap_err();
+    let AuthFailure::Proxy {
+        exception: permanent_exception,
+        ..
+    } = as_auth_failure(&permanent)
+    else {
+        panic!("a permanent fault answers the 503 envelope");
+    };
+    assert_eq!(permanent_exception.code, "503");
+    assert_eq!(permanent_exception.error_type, "no_db_connection");
+    assert_eq!(permanent_exception.param.as_deref(), Some("None"));
+    assert!(
+        permanent_exception
+            .message
+            .contains("not a transient outage"),
+        "a permanent fault names the engine fault: {}",
+        permanent_exception.message
+    );
+    let transient_world = world();
+    transient_world.script("outage org");
+    let transient_lookup = support::lookup(&transient_world);
+    let transient = get_org_object_for_request(&transient_lookup, "o1", &policy)
+        .await
+        .unwrap_err();
+    let AuthFailure::Proxy {
+        exception: transient_exception,
+        ..
+    } = as_auth_failure(&transient)
+    else {
+        panic!("a transport outage answers the 503 envelope");
+    };
+    assert_eq!(transient_exception.message, TRANSIENT_MESSAGE);
 }

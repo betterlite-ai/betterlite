@@ -5,6 +5,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use async_trait::async_trait;
 use betterlite_cache::backend::BackendError;
 use betterlite_cache::dual_cache::DualCacheError;
+use betterlite_db::database_failures::deadline::DbLookupError;
+use betterlite_db::database_faults::DbError as PrismaFault;
+use betterlite_db::database_faults::ErrorType;
 use betterlite_db::postgres_store::diagnostics::PoolFailure;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::resource_rows::organization::OrganizationTable;
@@ -97,6 +100,11 @@ impl World {
         if self.fails(&format!("outage {name}")) {
             return Some(Box::new(AuthReadError::Repository(outage_fault())));
         }
+        if self.fails(&format!("permanent {name}")) {
+            return Some(Box::new(AuthReadError::Lookup(DbLookupError::Database(
+                permanent_fault(),
+            ))));
+        }
         if self.fails(&format!("fault {name}")) {
             return Some(Box::new(AuthReadError::Repository(DbError::CreateNull)));
         }
@@ -109,6 +117,18 @@ fn outage_fault() -> DbError<Infallible> {
         source: PoolFailure {
             driver: PoolError::Closed,
         },
+    }
+}
+
+// a prisma-shaped engine fault that retrying cannot clear, so the 503 words it as permanent
+fn permanent_fault() -> PrismaFault {
+    PrismaFault {
+        error_type: ErrorType::Prisma,
+        message: "the query engine reported a protocol violation".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
     }
 }
 

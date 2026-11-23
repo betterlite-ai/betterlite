@@ -4,7 +4,9 @@ use std::convert::Infallible;
 use betterlite_db::database_availability::chain::{Chain, has_outage_in_chain};
 use betterlite_db::database_availability::message::TRANSIENT_MESSAGE;
 use betterlite_db::database_availability::policy::PolicyError;
-use betterlite_db::database_availability::projection::SERVICE_UNAVAILABLE_STATUS;
+use betterlite_db::database_availability::projection::{
+    SERVICE_UNAVAILABLE_STATUS, service_unavailable_error,
+};
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_faults::native::is_native_transport_error;
 use betterlite_db::postgres_store::errors::DbError as NativeDbError;
@@ -93,7 +95,7 @@ pub fn as_auth_failure(error: &OrgLookupError) -> AuthFailure {
     }
     if is_outage(error) {
         return AuthFailure::Proxy {
-            exception: outage_exception(),
+            exception: outage_exception(outage_message(error)),
             invalid_virtual_key: false,
         };
     }
@@ -176,11 +178,22 @@ fn driver_database_error(fault: &NativeDbError<Infallible>) -> Option<&DriverDbE
     }
 }
 
+// database_unavailable_message: the retry wording for a transient outage, the deployment wording
+// for a permanent engine fault. Only a prisma-shaped failure carries a chain; the rest are native
+fn outage_message(error: &OrgLookupError) -> String {
+    if let OrgLookupError::Failure(OrgFailure::Store(read)) = error
+        && let AuthReadError::Lookup(DbLookupError::Database(fault)) = read.as_ref()
+    {
+        return service_unavailable_error(&Chain::from_error(fault)).message;
+    }
+    TRANSIENT_MESSAGE.to_owned()
+}
+
 // B1217's 503 envelope; service_unavailable_error needs a chain of prisma faults, which a native
 // pool or driver fault is not, so the projection's constants are used directly
-fn outage_exception() -> ProxyException {
+fn outage_exception(message: String) -> ProxyException {
     ProxyException::new(ProxyExceptionInit {
-        message: TRANSIENT_MESSAGE.to_owned(),
+        message,
         error_type: ProxyErrorTypes::NoDbConnection.to_string(),
         param: Some("None".to_owned()),
         code: ExceptionCode::Status(i64::from(SERVICE_UNAVAILABLE_STATUS)),
