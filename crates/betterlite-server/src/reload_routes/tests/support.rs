@@ -242,10 +242,10 @@ impl FakeStore {
             .clone()
     }
 
-    fn record<Value>(
-        &self,
-        change: impl FnOnce(&mut StoreState) -> Value,
-    ) -> StoreFuture<'_, Value> {
+    fn record<Value, Change>(&self, change: Change) -> StoreFuture<'_, Value>
+    where
+        Change: FnOnce(&mut StoreState) -> Value,
+    {
         let answer = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             if state.fail {
