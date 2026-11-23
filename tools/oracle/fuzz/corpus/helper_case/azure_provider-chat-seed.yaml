@@ -1,0 +1,45 @@
+kind: helper
+name: azure-provider-chat-seed
+call:
+  azure_provider:
+    case: chat
+    model: gpt-4o
+    api_base: https://fixture.test
+    api_version: "2024-10-21"
+    api_key: sk-seed
+    azure_ad_token: null
+    headers: null
+    extra_headers: null
+    extra_body: null
+    max_retries: null
+    messages:
+      - role: user
+        content: hi
+    optional_params: {}
+    embedding: null
+    acompletion: false
+    environment: {}
+    globals:
+      api_base: null
+      api_version: null
+      api_key: null
+      azure_key: null
+      headers: null
+      azure_default_api_version: null
+    chat_defaults: null
+    o_series_defaults: null
+    status: 200
+    reply:
+      id: chatcmpl-seed
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o
+      choices:
+        - index: 0
+          message: {role: assistant, content: hi}
+          logprobs: null
+          finish_reason: stop
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    second: null
+env: {}
+compare: {ignore: []}
