@@ -237,8 +237,15 @@ fn assert_malformed_inputs() {
 async fn entry_routing_request() -> support::RecordedRequest {
     let mut entry = Entry::new();
     entry.kwargs = object(
-        r#"{"input":"routed","previous_response_id":"resp_prev","temperature":0.5,"first_message":{"type":"response.create","input":"old","other":1},"other":1}"#,
+        r#"{"input":"routed","previous_response_id":"resp_prev","temperature":0.5,"first_message":"{\"type\":\"response.create\",\"response\":{\"input\":\"old\"},\"other\":1}","other":1}"#,
     );
+    entry.request().await
+}
+
+async fn non_string_first_message_request() -> support::RecordedRequest {
+    let mut entry = Entry::new();
+    entry.kwargs =
+        object(r#"{"input":"routed","first_message":{"type":"response.create","input":"old"}}"#);
     entry.request().await
 }
 
@@ -251,7 +258,7 @@ async fn request_defaults_and_routing() {
     let request = entry_routing_request().await;
     assert_eq!(
         request.first_message.as_deref(),
-        Some(r#"{"type":"response.create","input":"routed","other":1}"#)
+        Some(r#"{"type":"response.create","response":{"input":"routed"},"other":1}"#)
     );
     assert_eq!(
         request.remaining_kwargs,
@@ -260,6 +267,8 @@ async fn request_defaults_and_routing() {
     assert_eq!(request.fill_missing.get("temperature"), Some(&json("0.5")));
     assert!(!request.fill_missing.contains_key("previous_response_id"));
     assert!(request.overrides.is_empty());
+    let non_string = non_string_first_message_request().await;
+    assert_eq!(non_string.first_message, None);
 }
 
 async fn merged_metadata_request() -> support::RecordedRequest {
