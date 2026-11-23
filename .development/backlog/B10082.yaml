@@ -1,13 +1,13 @@
 id: B10082
 milestone: M8 platform
 title: Area mount aggregator
-status: todo
+status: done
 depends_on: [B1100, B3099]
 file: tasks/B10082-area-mount-aggregator.yaml
 covers: []
 parent: B8610
 split_from: B8610
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3062
