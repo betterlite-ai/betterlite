@@ -78,9 +78,7 @@ def substituted_kwargs(kwargs: dict[str, JsonValue], api_base: str) -> dict[str,
 
 
 def substituted_api_base(api_base: str | None, mock: str) -> str | None:
-    if api_base is None:
-        return None
-    return api_base.replace(MOCK, mock)
+    return None if api_base is None else api_base.replace(MOCK, mock)
 
 
 def failure_of(error: APIError, status: int | None) -> Failure:

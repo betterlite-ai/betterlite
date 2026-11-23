@@ -1,7 +1,5 @@
-use super::super::error::SdkHttpError;
-use super::super::result::kinds::SdkResult;
-use super::{Call, MOCK, Outcome, Run, RunOutcome};
-use super::{report, support};
+use super::super::{error::SdkHttpError, result::kinds::SdkResult};
+use super::{Call, MOCK, Outcome, Run, RunOutcome, report, support};
 use betterlite_core::api::decisions_send::error::DecisionsSendError;
 use betterlite_core::api::decisions_send::format::DecisionsOutput;
 use betterlite_core::api::decisions_send::send::DecisionsSender;
@@ -108,12 +106,10 @@ fn prepared_call(
 ) -> Result<DecisionsCall<'static>, PrepareError> {
     let arguments = arguments_of(run, mock_base)?;
     let catalog = ModelCatalog::default();
-    let known_model_names = BTreeSet::new();
-    let custom_providers = BTreeSet::new();
     let resolution = ResolutionContext {
         catalog: &catalog,
-        known_model_names: &known_model_names,
-        custom_providers: &custom_providers,
+        known_model_names: &BTreeSet::new(),
+        custom_providers: &BTreeSet::new(),
         environment,
         registry: JSONProviderRegistry::default(),
         policies: ProviderPolicies::default(),
@@ -138,14 +134,13 @@ fn prepared_call(
 }
 
 fn arguments_of(run: &Run, mock_base: &str) -> Result<Arguments, PrepareError> {
-    let (globals, azure_ai) = base_config();
-    let kwargs = substituted_kwargs(run, mock_base)?;
+    let mut kwargs = substituted_kwargs(run, mock_base)?;
+    let fields = fields_of(run, &kwargs)?;
+    // _prepare_decisions_call forwards every kwarg except state, which only picked the request format
+    kwargs.shift_remove("state");
     Ok(Arguments {
-        fields: fields_of(run, &kwargs)?,
-        api_key: run
-            .api_key
-            .as_ref()
-            .map(|key| SecretString::from(key.clone())),
+        fields,
+        api_key: run.api_key.clone().map(SecretString::from),
         api_base: run
             .api_base
             .as_ref()
@@ -154,9 +149,11 @@ fn arguments_of(run: &Run, mock_base: &str) -> Result<Arguments, PrepareError> {
             .timeout
             .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok()),
         extra_headers: run.extra_headers.clone(),
-        kwargs: litellm_params(kwargs),
-        globals,
-        azure_ai,
+        kwargs,
+        globals: LiteLlmGlobals::default(),
+        azure_ai: AzureAiConfig {
+            complete_url: Box::new(|base: &str, _model: &str| base.to_owned()),
+        },
     })
 }
 
@@ -166,14 +163,6 @@ fn substituted_kwargs(run: &Run, mock_base: &str) -> Result<Extra, PrepareError>
         .map_err(|source| invalid_request(run, source))?
         .replace(MOCK, mock_base);
     serde_json::from_str(&text).map_err(|source| invalid_request(run, source))
-}
-
-// No global credentials are set, and Azure's URL hook only returns the base it was given
-fn base_config() -> (LiteLlmGlobals, AzureAiConfig) {
-    let azure_ai = AzureAiConfig {
-        complete_url: Box::new(|base: &str, _model: &str| base.to_owned()),
-    };
-    (LiteLlmGlobals::default(), azure_ai)
 }
 
 // _request_fields: a state key selects the SystemOne envelope, and is filtered out of the kwargs after
@@ -207,12 +196,6 @@ fn invalid_request(run: &Run, source: serde_json::Error) -> PrepareError {
         provider: run.custom_llm_provider.clone().unwrap_or_default(),
         source,
     }
-}
-
-// _prepare_decisions_call forwards every kwarg except state, which only picked the request format
-fn litellm_params(mut kwargs: Extra) -> Extra {
-    kwargs.shift_remove("state");
-    kwargs
 }
 
 fn finished(

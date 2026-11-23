@@ -27,21 +27,13 @@ pub struct Call {
 #[serde(deny_unknown_fields)]
 pub struct Run {
     pub model: String,
-    #[serde(default)]
     pub input: Option<Json>,
-    #[serde(default)]
     pub questions: Option<Json>,
-    #[serde(default)]
     pub safety_identifier: Option<String>,
-    #[serde(default)]
     pub custom_llm_provider: Option<String>,
-    #[serde(default)]
     pub api_key: Option<String>,
-    #[serde(default)]
     pub api_base: Option<String>,
-    #[serde(default)]
     pub timeout: Option<f64>,
-    #[serde(default)]
     pub extra_headers: Option<BTreeMap<String, String>>,
     // adecisions awaits, decisions blocks; the case picks which wrapper it calls
     #[serde(default)]
@@ -54,13 +46,10 @@ pub struct Run {
 #[serde(deny_unknown_fields)]
 pub struct Failure {
     pub class: String,
-    #[serde(default)]
     pub status: Option<u16>,
-    #[serde(default, rename = "type")]
+    #[serde(rename = "type")]
     pub kind: Option<String>,
-    #[serde(default)]
     pub param: Option<String>,
-    #[serde(default)]
     pub code: Option<String>,
     pub message: String,
 }
