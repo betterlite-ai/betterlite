@@ -2,6 +2,7 @@
 
 use std::str::FromStr as _;
 
+use betterlite_core::cost::completion::usage::pricing::pricing_usage;
 use betterlite_core::cost::usage::{BillingUsage, ResponseKind};
 use betterlite_core::routes::CallType;
 use betterlite_logging::fields::usage::Usage;
@@ -88,7 +89,7 @@ fn cost_request_defaults_the_call_type_and_the_empty_counts() {
     assert_eq!(input.response_time_ms, None);
     assert_eq!(input.call_type, CallType::Completion);
     assert_eq!(input.audio_seconds, Decimal::ZERO);
-    assert_eq!(input.custom_cost_per_token, None);
+    assert!(input.custom_cost_per_token.is_none());
 }
 
 #[test]
@@ -134,11 +135,12 @@ fn cost_request_carries_the_usage_mapping_and_the_billed_units() {
         .billed();
     assert_eq!(units.search_units, Some(Some(2)));
     assert_eq!(units.total_tokens, None);
-    let input = request.input(Some(&usage), Some(&units));
+    let pricing = pricing_usage(&usage).expect("the usage prices");
+    let input = request.input(Some(&pricing), Some(&units));
     assert_eq!(input.usage.map(|found| found.prompt_tokens), Some(3));
     assert_eq!(
         input.rerank_billed_units.map(|found| found.search_units),
-        Some(Some(2))
+        Some(Some(Some(2)))
     );
 }
 
@@ -206,7 +208,7 @@ fn cost_result_reads_every_completion_argument() {
     assert_eq!(request.prompt, "hello");
     assert_eq!(request.messages.len(), 1);
     assert_eq!(request.completion, "world");
-    assert_eq!(request.total_time, Some(dec("1200.0")));
+    assert_eq!(request.total_time, Some(Amount(dec("1200.0"))));
     assert_eq!(request.custom_pricing, Some(true));
     assert_eq!(request.base_model.as_deref(), Some("gpt-4o-2024"));
     assert_eq!(request.vertex_location.as_deref(), Some("global"));

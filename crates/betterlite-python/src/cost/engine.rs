@@ -5,26 +5,20 @@ use betterlite_core::cost::call_price::{CallPriceEnv, call_price};
 use betterlite_core::cost::completion::args::{
     CompletionArgs, CostCalculator, SpecialBorrows, SyncImage, ToolBorrows,
 };
-use betterlite_core::cost::completion::error::CompletionCostError;
 use betterlite_core::cost::completion::lookup::CatalogLookup;
+use betterlite_core::cost::completion::usage::pricing::pricing_usage;
 use betterlite_core::cost::completion::{completion_cost, reading};
 use betterlite_core::cost::prepare::{BillingTokenCounter, ResponseView, TypedResponse};
 use betterlite_core::cost::usage::{
     BillingResponse, BillingUsage, BillingUsageError, ResponseKind, get_usage_object,
 };
 use betterlite_logging::fields::usage::Usage;
-use betterlite_models::cost_usage::transcription::TranscriptionUsage;
 use betterlite_models::decisions::Json;
-use betterlite_models::decisions::openai::DecisionUsage;
-use betterlite_models::decisions::systemone::DecisionsUsage;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_provider::pricing::ProviderPricing;
-use betterlite_provider::pricing::grounding::{
-    GroundingFormulas, GroundingPricing, ProviderFormulas,
-};
+use betterlite_provider::pricing::grounding::{GroundingPricing, ProviderFormulas};
 use betterlite_provider::pricing::image::ProviderImagePricing;
-use betterlite_provider::pricing::image::error::ImagePolicyError;
 use betterlite_tokenizer::count::error::CountError;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -64,11 +58,12 @@ impl Engine {
             Some(mapping) => usage_from_mapping(mapping)?,
             None => None,
         };
+        let pricing = usage.as_ref().map(pricing_usage).transpose()?;
         let rerank = request
             .rerank_billed_units
             .as_ref()
             .map(RerankUnits::billed);
-        let input = request.input(usage.as_ref(), rerank.as_ref());
+        let input = request.input(pricing.as_ref(), rerank.as_ref());
         let mut clock = SystemTime::now;
         let moment = reading(&mut clock)?;
         let resolution = self.settings.lookup.resolution();

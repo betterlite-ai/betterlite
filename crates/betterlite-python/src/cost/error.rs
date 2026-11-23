@@ -1,5 +1,6 @@
 use betterlite_core::cost::call_price::error::CallPriceError;
 use betterlite_core::cost::completion::error::{ChargeInputError, CompletionCostError};
+use betterlite_core::cost::completion::usage::UsageConversionError;
 use betterlite_core::cost::prepare::error::PrepareError;
 use betterlite_core::cost::usage::BillingUsageError;
 use betterlite_models::duration_cost::error::DurationCostError;
@@ -23,6 +24,8 @@ mod tests;
 pub(crate) enum EngineError {
     #[error(transparent)]
     Usage(#[from] BillingUsageError),
+    #[error(transparent)]
+    Conversion(#[from] UsageConversionError),
     #[error(transparent)]
     Input(#[from] ChargeInputError),
     #[error(transparent)]
@@ -147,7 +150,10 @@ fn price_failure(error: &EngineError) -> Option<&CallPriceError> {
     match error {
         EngineError::Price(found) => Some(found),
         EngineError::Completion(CompletionCostError::Price(found)) => Some(found),
-        EngineError::Completion(_) | EngineError::Usage(_) | EngineError::Input(_) => None,
+        EngineError::Completion(_)
+        | EngineError::Usage(_)
+        | EngineError::Input(_)
+        | EngineError::Conversion(_) => None,
     }
 }
 
