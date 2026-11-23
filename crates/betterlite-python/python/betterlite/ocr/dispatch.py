@@ -110,28 +110,24 @@ def _text(name: str, value: CallValue) -> str:
 
 
 def _optional_text(name: str, value: CallValue) -> str | None:
-    match value:
-        case None:
-            return None
-        case object():
-            return _text(name, value)
+    if value is None:
+        return None
+    return _text(name, value)
 
 
 def _optional_object(name: str, value: CallValue) -> dict[str, JsonValue] | None:
-    match value:
-        case None:
-            return None
-        case object():
-            try:
-                return OBJECT.validate_python(JSON.validate_python(value))
-            except ValidationError as error:
-                raise TypeError(f"{name} must be a mapping") from error
+    if value is None:
+        return None
+    try:
+        return OBJECT.validate_python(JSON.validate_python(value))
+    except ValidationError as error:
+        raise TypeError(f"{name} must be a mapping") from error
 
 
 def _optional_timeout(value: CallValue) -> float | TimeoutValues | None:
+    if value is None:
+        return None
     match value:
-        case None:
-            return None
         case int() as seconds:
             return float(seconds)
         case float() as seconds:
