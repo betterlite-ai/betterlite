@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -253,6 +253,12 @@ struct FakeRowsState {
     evictions: AtomicUsize,
 }
 
+impl FakeRowsState {
+    fn evict(&mut self) {
+        self.evictions.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct FakeRows {
     state: Arc<Mutex<FakeRowsState>>,
@@ -299,6 +305,18 @@ impl FakeRows {
         }
         Ok(state)
     }
+
+    fn answer<Output, Transform>(
+        &self,
+        operation: &'static str,
+        transform: Transform,
+    ) -> Ready<Result<Output, FakeRowsError>>
+    where
+        Transform: FnOnce(&mut FakeRowsState) -> Output,
+    {
+        let decided = self.decide(operation);
+        ready(decided.map(|mut state| transform(&mut state)))
+    }
 }
 
 impl ReloadConfigRows for FakeRows {
@@ -307,46 +325,31 @@ impl ReloadConfigRows for FakeRows {
     fn read_schedule(
         &self,
     ) -> impl Future<Output = Result<Option<ReloadSchedule>, FakeRowsError>> + Send {
-        let schedule = self
-            .decide("read_schedule")
-            .map(|state| state.schedule.clone());
-        ready(schedule)
+        self.answer("read_schedule", |state| state.schedule.clone())
     }
 
     fn record_run(
         &self,
         ran_at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), FakeRowsError>> + Send {
-        let recorded = self
-            .decide("record_run")
-            .map(|mut state| state.recorded.push(ran_at));
-        ready(recorded)
+        self.answer("record_run", |state| state.recorded.push(ran_at))
     }
 
     fn read_beta_headers(
         &self,
     ) -> impl Future<Output = Result<Option<ConfigParamRow>, FakeRowsError>> + Send {
-        let row = self
-            .decide("read_beta_headers")
-            .map(|state| state.beta_row.clone());
-        ready(row)
+        self.answer("read_beta_headers", |state| state.beta_row.clone())
     }
 
     fn write_beta_headers(
         &self,
         value: JsonData,
     ) -> impl Future<Output = Result<(), FakeRowsError>> + Send {
-        let written = self
-            .decide("write_beta_headers")
-            .map(|mut state| state.writes.push(value));
-        ready(written)
+        self.answer("write_beta_headers", |state| state.writes.push(value))
     }
 
     fn evict_beta_headers(&self) -> impl Future<Output = Result<(), FakeRowsError>> + Send {
-        let evicted = self.decide("evict_beta_headers").map(|state| {
-            state.evictions.fetch_add(1, Ordering::SeqCst);
-        });
-        ready(evicted)
+        self.answer("evict_beta_headers", FakeRowsState::evict)
     }
 }
 
