@@ -132,9 +132,10 @@ fn refuses_text_that_is_not_a_date(#[case] text: &str) {
 // the leniency chrono adds over strptime, listed in docs/deviations/B1730.yaml
 #[test]
 fn accepts_unpadded_and_signed_years_that_python_refuses() {
+    // strptime's %Y needs exactly four digits
     assert_eq!(
-        parse_legacy_date("2024-1-2").unwrap(),
-        NaiveDate::from_ymd_opt(2024, 1, 2).unwrap()
+        parse_legacy_date("24-01-02").unwrap(),
+        NaiveDate::from_ymd_opt(24, 1, 2).unwrap()
     );
     assert_eq!(
         parse_legacy_date("+2024-01-02").unwrap(),
