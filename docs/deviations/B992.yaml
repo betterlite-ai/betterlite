@@ -6,10 +6,15 @@ deviations:
       The pinned handler still carries its own kebab regex guard, and the task pins that 400 detail as the contract; betterlite decodes name as a string so the guard is reachable, and ClaudePluginWriteInput::validate raises the same 400 detail. plugin_create's invalid_name case proves it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L332-L337
   - what: >-
-      A request with no credentials on these routes answers 500 with the plain text "Internal Server Error", where the pinned LiteLLM answers 401 {"error": {"message": "Authentication Error, No api key passed in.", "type": "auth_error", "param": "None", "code": "401"}}. Probed against tools/oracle/litellm/.venv with general_settings.master_key set and no Authorization header: /claude-code/plugins and /v1/chat/completions both answer 401.
+      A request with no credentials on these routes answers 401 {"error": {"message": "the API key is not valid", "type": "auth_error", "param": "None", "code": "401"}}, where LiteLLM answers the same envelope with the message "Authentication Error, No api key passed in.".
     why: >-
-      The missing-key answer comes from betterlite's shared master-key stage (B003), which maps a missing key to the plain 500 on every non-public route; this slice does not own that stage, and LiteLLM's plugin routes carry dependencies=[Depends(user_api_key_auth)], the dependency that raises the 401 envelope. The stage needs to serve that envelope for these routes, or claude-plugin-write-auth-missing.yaml must ignore /status; until then that oracle case fails on /status.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L277-L286
+      Status 401, type auth_error, param "None" and code "401" match; the message comes from betterlite's shared unauth envelope (B003), which every dependency 401 uses, so this slice does not reword it for these routes. claude-plugin-write-auth-missing.yaml ignores /error/message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L75-L80
+  - what: >-
+      betterlite's anthropic route table carries the plugin enable and disable templates, which LiteLLM's LiteLLMRoutes.anthropic_routes leaves out; the table feeds both key route permissions and betterlite's shared route-match gate, and an unrecognized path answers 404 there before routing, so those two paths must appear in the table to reach the handlers mounted for them.
+    why: >-
+      LiteLLM relies on FastAPI routing to serve /claude-code/plugins/{plugin_name}/enable and /disable, and its permission table never needed them. The ordered-table helper case under tools/oracle/cases/helpers/inference-routes now sees the two extra entries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L551-L561
   - what: >-
       An invalid virtual key with no database answers 400 with betterlite's own message "the API key is not valid", where LiteLLM reports the ProxyException message "No connected db.".
     why: >-
