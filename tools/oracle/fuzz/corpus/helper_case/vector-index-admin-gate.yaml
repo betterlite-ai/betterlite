@@ -1,0 +1,14 @@
+kind: helper
+name: vector-index-admin-gate-seed
+call:
+  b10071:
+    function: gate
+    user_role: proxy_admin_viewer
+    operation: create
+calls:
+  - b10071:
+      function: gate
+      user_role: proxy_admin
+      operation: delete
+env: {}
+compare: {ignore: []}
