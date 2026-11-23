@@ -57,15 +57,15 @@ fn malformed_family_payloads_are_processing_errors() {
             r#"{"results": []}"#,
             "the results field is missing or malformed",
         ),
-        (MODEL, r#"[1, 2]"#, "the response body is not a JSON object"),
+        (MODEL, "[1, 2]", "the response body is not a JSON object"),
         (
             "ai21.j2-mid-v1",
-            r#"{}"#,
+            "{}",
             "the completions field is missing or malformed",
         ),
         (
             "meta.llama3-70b-instruct-v1:0",
-            r#"{}"#,
+            "{}",
             "the generation field is missing or malformed",
         ),
         (

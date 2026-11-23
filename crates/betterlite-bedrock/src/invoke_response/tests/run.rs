@@ -64,10 +64,9 @@ impl Run {
     }
 
     pub(super) fn response_headers(&self) -> &[(String, String)] {
-        self.failure()
-            .bedrock()
-            .map_or(&[] as &[(String, String)], |error| {
-                error.response_headers.as_slice()
-            })
+        match self.failure().bedrock() {
+            Some(error) => error.response_headers.as_slice(),
+            None => &[],
+        }
     }
 }

@@ -160,9 +160,8 @@ pub(super) fn assign_content(
 ) -> Result<(), ContentReason> {
     let text = match output {
         Json::Text(text) => text.as_str(),
-        Json::Null => "",
+        Json::Null | Json::List(_) | Json::Object(_) => "",
         Json::Bool(_) | Json::Number(_) => return Err(ContentReason::NotText),
-        Json::List(_) | Json::Object(_) => "",
     };
     let Some(choice) = choices.first_mut() else {
         return Err(ContentReason::NoChoice);

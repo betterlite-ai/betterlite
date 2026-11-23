@@ -62,7 +62,8 @@ pub async fn decode_invoke_reply<ChatCounter, Reasoning>(
 ) -> Result<InvokeReply, error::InvokeReplyError>
 where
     ChatCounter: TokenCounter + Sync,
-    Reasoning: AnthropicReasoningCounter<Failure = Infallible>
+    Reasoning: Sync
+        + AnthropicReasoningCounter<Failure = Infallible>
         + ConverseReasoningCounter<Failure = Infallible>,
 {
     let record = serde_json::from_slice(raw.body).map_err(|_source| error::decode_error(raw))?;
@@ -100,7 +101,7 @@ where
     let output = body::family_output(&record, family, &mut response.choices)
         .map_err(|source| error::processing_error(raw, &source))?;
     body::assign_content(&mut response.choices, &output)
-        .map_err(|reason| error::content_error(raw, &body::output_text(&output), reason))?;
+        .map_err(|reason| error::content_error(raw, &body::output_text(&output), &reason))?;
     usage::assign(&call, raw, &mut response, counter).await?;
     Ok(InvokeReply::Chat(response))
 }

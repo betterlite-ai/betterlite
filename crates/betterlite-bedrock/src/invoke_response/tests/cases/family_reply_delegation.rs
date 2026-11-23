@@ -93,7 +93,7 @@ fn delegated_errors_become_processing_errors() {
     for (model, body) in [
         (CLAUDE_MODEL, r#"{"id": "msg_1", "type": "message"}"#),
         (NOVA_MODEL, r#"{"output": {}}"#),
-        (PEGASUS_MODEL, r#"{}"#),
+        (PEGASUS_MODEL, "{}"),
     ] {
         let mut case = fixture();
         case.model = model.to_owned();

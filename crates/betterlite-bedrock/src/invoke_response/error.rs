@@ -86,14 +86,14 @@ pub(super) fn processing_error(
 pub(super) fn content_error(
     raw: &RawInvokeReply<'_>,
     output: &str,
-    reason: ContentReason,
+    reason: &ContentReason,
 ) -> InvokeReplyError {
-    let reason = match reason {
+    let detail = match reason {
         ContentReason::Empty => "",
         ContentReason::NoChoice => "list index out of range",
         ContentReason::NotText => "the response text is not a string",
     };
-    let message = format!("Error parsing received text={output}.\nError-{reason}");
+    let message = format!("Error parsing received text={output}.\nError-{detail}");
     match bedrock_error(raw.status, message, raw.headers) {
         Ok(error) => InvokeReplyError::Content(Box::new(error)),
         Err(error) => error,
