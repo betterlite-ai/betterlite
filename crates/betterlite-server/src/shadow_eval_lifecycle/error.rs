@@ -38,6 +38,8 @@ pub enum LifecycleError {
     JobNotFound { job_id: String },
     #[error("Job {job_id} is already {status}")]
     NotStoppable { job_id: String, status: String },
+    #[error("the shadow eval window does not fit the clock")]
+    WindowOverflow,
     #[error("the shadow eval job id source is exhausted")]
     IdsExhausted,
 }
@@ -56,6 +58,7 @@ impl LifecycleError {
             | Self::Caller(_)
             | Self::DatabaseUnavailable
             | Self::Database(_)
+            | Self::WindowOverflow
             | Self::IdsExhausted => 500,
         }
     }

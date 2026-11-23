@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::iter::repeat_with;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -34,7 +35,7 @@ use crate::shadow_eval_lifecycle::access::require_writer;
 use crate::shadow_eval_lifecycle::body::decode_shadow_body;
 use crate::shadow_eval_lifecycle::error::LifecycleError;
 use crate::shadow_eval_lifecycle::postgres::{PostgresShadowLifecycleStore, store_from_state};
-use crate::shadow_eval_lifecycle::start::{StartDeps, start_shadow_eval};
+use crate::shadow_eval_lifecycle::start::{StartCall, StartDeps, start_shadow_eval};
 use crate::shadow_eval_lifecycle::stop::stop_shadow_eval_job;
 use crate::shadow_eval_models::job::ShadowJobResponse;
 use crate::shadow_eval_validation::request::StartShadowEvalRequest;
@@ -91,7 +92,7 @@ async fn start_route(
         StatusCode::CREATED,
     ) {
         Ok(gated) => gated,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let request = match decode_shadow_body(&body) {
         Ok(request) => request,
@@ -119,7 +120,7 @@ async fn stop_route(
             let result = stop_shadow_eval_job(store, &job_id, operator, Utc::now()).await;
             lifecycle_response(result, StatusCode::OK)
         }
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
@@ -128,24 +129,26 @@ fn gate<'state>(
     caller: Option<&Extension<AuthContext>>,
     action: &str,
     success: StatusCode,
-) -> Result<(&'state PostgresShadowLifecycleStore, Identity), Response> {
+) -> Result<(&'state PostgresShadowLifecycleStore, Identity), Box<Response>> {
     let identity = identity_of_caller(caller)?;
     let store = require_writer(&identity, action, state.store.as_deref())
-        .map_err(|error| lifecycle_response(Err(error), success))?;
+        .map_err(|error| Box::new(lifecycle_response(Err(error), success)))?;
     Ok((store, identity))
 }
 
-fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, Response> {
-    let Some(caller) = caller else {
-        return Err(unauthenticated());
+fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, Box<Response>> {
+    let Some(extension) = caller else {
+        return Err(Box::new(unauthenticated()));
     };
-    caller_identity(&caller.principal).map_err(|error| {
+    caller_identity(&extension.principal).map_err(|error| {
         let detail = LifecycleError::Caller(error).to_string();
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(DetailBody { detail }),
+        Box::new(
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(DetailBody { detail }),
+            )
+                .into_response(),
         )
-            .into_response()
     })
 }
 
@@ -200,16 +203,34 @@ async fn start_job(
     };
     let cache = ProviderCache::default();
     let settings = AnthropicSettings::default();
-    let deps = StartDeps {
-        // this server installs no live DeploymentCatalog yet, so a start answers the no-router 400 until it does
+    let sdk = UnbuiltJudgeSdk;
+    let deps = start_deps(state, &sdk, &resolution, &cache, &settings);
+    let mut ids = repeat_with(Uuid::new_v4);
+    let mut call = StartCall {
+        caller,
+        now: Utc::now(),
+        ids: &mut ids,
+    };
+    start_shadow_eval(store, deps, request, &mut call).await
+}
+
+// this server installs no live DeploymentCatalog yet, so a start answers the no-router 400 until one is installed
+fn start_deps<'deps>(
+    state: &'deps LifecycleState,
+    sdk: &'deps dyn JudgeSdk,
+    resolution: &'deps ResolutionContext<'deps>,
+    cache: &'deps ProviderCache,
+    settings: &'deps AnthropicSettings,
+) -> StartDeps<'deps> {
+    StartDeps {
         router: None,
-        sdk: &UnbuiltJudgeSdk,
-        cache: &cache,
-        resolution: &resolution,
+        sdk,
+        cache,
+        resolution,
         credentials: AnthropicCredentials {
             anthropic_key: None,
             api_key: state.api_key.as_ref(),
-            settings: &settings,
+            settings,
             secret_state: SecretManagerReadState {
                 client_exists: false,
                 settings_exist: false,
@@ -217,9 +238,7 @@ async fn start_job(
                 hosted_keys: None,
             },
         },
-    };
-    let mut ids = std::iter::repeat_with(Uuid::new_v4);
-    start_shadow_eval(store, deps, request, caller, Utc::now(), &mut ids).await
+    }
 }
 
 mod tests;

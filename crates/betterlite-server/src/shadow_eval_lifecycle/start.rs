@@ -30,6 +30,13 @@ pub struct StartDeps<'deps> {
     pub credentials: AnthropicCredentials<'deps>,
 }
 
+// the caller, clock and id source one start request runs with
+pub struct StartCall<'call, Ids> {
+    pub caller: Option<&'call str>,
+    pub now: DateTime<Utc>,
+    pub ids: &'call mut Ids,
+}
+
 const fn job_direction(direction: RequestDirection) -> JobDirection {
     match direction {
         RequestDirection::Forward => JobDirection::Forward,
@@ -42,9 +49,7 @@ pub async fn start_shadow_eval<Store, Ids>(
     store: &Store,
     deps: StartDeps<'_>,
     request: &StartShadowEvalRequest,
-    caller: Option<&str>,
-    now: DateTime<Utc>,
-    ids: &mut Ids,
+    call: &mut StartCall<'_, Ids>,
 ) -> Result<ShadowJobResponse, LifecycleError>
 where
     Store: ShadowLifecycleStore + ?Sized,
@@ -59,7 +64,7 @@ where
     let requested = requested_by_type(request);
     sweep_requested(store, &requested).await?;
     reject_claimed(store, &requested, direction).await?;
-    let (group_id, legs) = mint_legs(ids, request, direction, caller, now, &requested)?;
+    let (group_id, legs) = mint_legs(call, request, direction, &requested)?;
     if let Err(rejection) = store.create_legs(&legs).await {
         return Err(match rejection {
             InsertRejection::UniqueViolation => LifecycleError::ConcurrentClaim {
@@ -75,7 +80,7 @@ where
     let rows: Vec<_> = legs.iter().map(NewLeg::row).collect();
     let mut job = job_from_legs(&group_id, &rows, None)?;
     apply_target_labels(&mut job, &target_rows);
-    Ok(job.response(now)?)
+    Ok(job.response(call.now)?)
 }
 
 fn validate_against(
@@ -180,11 +185,9 @@ fn requested_by_type(request: &StartShadowEvalRequest) -> Vec<(ShadowEvalTargetT
 
 // a job's id is minted once, with its leg ids, before the single insert; an ambiguous write is never retried
 fn mint_legs<Ids>(
-    ids: &mut Ids,
+    call: &mut StartCall<'_, Ids>,
     request: &StartShadowEvalRequest,
     direction: JobDirection,
-    caller: Option<&str>,
-    now: DateTime<Utc>,
     requested: &[(ShadowEvalTargetType, Vec<String>)],
 ) -> Result<(String, Vec<NewLeg>), LifecycleError>
 where
@@ -195,8 +198,14 @@ where
         .first()
         .cloned()
         .ok_or(LifecycleError::Model(ShadowEvalModelError::NoRouterArms))?;
+    let ids = &mut *call.ids;
     let group_id = ids.next().ok_or(LifecycleError::IdsExhausted)?.to_string();
-    let ends_at = now + Duration::days(i64::from(request.duration_days));
+    let window = Duration::try_days(i64::from(request.duration_days))
+        .ok_or(LifecycleError::WindowOverflow)?;
+    let ends_at = call
+        .now
+        .checked_add_signed(window)
+        .ok_or(LifecycleError::WindowOverflow)?;
     let mut legs = Vec::new();
     for (target_type, target_ids) in requested {
         for target_id in target_ids {
@@ -215,8 +224,8 @@ where
                 shadow_percentage: request.shadow_percentage,
                 max_turns: i64::from(SHADOW_EVAL_TURN_VALVE),
                 max_budget: request.max_budget,
-                created_by: caller.map(str::to_owned),
-                created_at: now,
+                created_by: call.caller.map(str::to_owned),
+                created_at: call.now,
                 ends_at,
             });
         }
