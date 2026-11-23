@@ -1,0 +1,7 @@
+litellm_settings:
+  api_base: https://global.example/v1
+  api_key: sk-global-realtime
+  openai_key: sk-openai-global
+  xai_key: sk-xai-global
+  vertex_project: global-vertex-project
+  vertex_location: global-vertex-region

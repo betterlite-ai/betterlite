@@ -1,0 +1,9 @@
+kind: helper
+name: startup-checks-buffer-true-no-redis
+call:
+  b8373:
+    operation: transaction_buffer
+    use_redis_transaction_buffer: true
+    redis_configured: false
+env: {}
+compare: {ignore: []}

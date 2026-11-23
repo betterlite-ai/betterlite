@@ -1,5 +1,6 @@
 use std::future::{Future, ready};
 use std::pin::Pin;
+use std::sync::Arc;
 
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::{ChatDeployment, Provider as DeploymentProvider};
@@ -9,6 +10,7 @@ use crate::aiohttp_openai_dispatch::AiohttpOpenAi;
 use crate::anthropic_dispatch::Anthropic;
 use crate::anthropic_dispatch::base::Surface;
 use crate::azure_dispatch::Azure;
+use crate::azure_dispatch::call::Composition;
 use crate::bedrock_dispatch_contract::Bedrock;
 use crate::compatible_providers::Compatible;
 use crate::embedding_rerank_providers::EmbeddingRerank;
@@ -32,11 +34,12 @@ use self::media_providers::MediaProviders;
 use self::speech_providers::SpeechProviders;
 use self::subscription::Subscription;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(align(8))] // the Box is the enum's only pointer; 8-byte variant layouts satisfy variant_size_differences without boxing the one-byte adapters
 pub enum Provider {
     OpenAi(OpenAi),
     AiohttpOpenAi(AiohttpOpenAi),
-    Azure(Azure),
+    Azure(Box<Azure>),
     AzureAi(AzureAi),
     Anthropic(Anthropic),
     Bedrock(Bedrock),
@@ -139,22 +142,32 @@ macro_rules! dispatch_to_adapters {
 
 impl Provider {
     // The model the resolver keeps carries the slug that picks aiohttp or a stub; OpenAI is named by the resolver itself
-    pub fn from_deployment(deployment: &ChatDeployment) -> Result<Self, OperationError> {
+    pub fn from_deployment(
+        deployment: &ChatDeployment,
+        composition: &Arc<Composition>,
+    ) -> Result<Self, OperationError> {
         match &deployment.provider {
             DeploymentProvider::OpenAi { .. } => Ok(Self::OpenAi(OpenAi)),
             DeploymentProvider::Unsupported { model } => Self::from_slug(
                 model
                     .split_once('/')
                     .map_or(model.as_str(), |(slug, _model)| slug),
+                composition,
             ),
         }
     }
 
-    pub(crate) fn from_slug(slug: &str) -> Result<Self, OperationError> {
+    // the caller owns the one Azure composition, so the adapter reads no environment of its own
+    pub(crate) fn from_slug(
+        slug: &str,
+        composition: &Arc<Composition>,
+    ) -> Result<Self, OperationError> {
         match slug {
             "openai" => Ok(Self::OpenAi(OpenAi)),
             "aiohttp_openai" => Ok(Self::AiohttpOpenAi(AiohttpOpenAi)),
-            "azure" | "azure_text" => Ok(Self::Azure(Azure)),
+            "azure" | "azure_text" => Ok(Self::Azure(Box::new(Azure {
+                composition: Arc::clone(composition),
+            }))),
             "azure_ai" => Ok(Self::AzureAi(AzureAi)),
             "anthropic" => Ok(Self::Anthropic(Anthropic {
                 surface: Surface::Messages,

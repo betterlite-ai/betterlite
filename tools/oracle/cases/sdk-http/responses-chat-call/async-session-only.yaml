@@ -1,0 +1,37 @@
+kind: sdk_http
+name: sdk-http-responses-chat-call-async-session-only
+env: {}
+call:
+  responses_chat_call:
+    mode: async
+    model: gpt-4o-mini
+    request: {model: gpt-4o-mini, input: hello, previous_response_id: resp_a}
+    api_key: sk-test
+    timeout_seconds: 10
+    history:
+      - request_id: resp_a
+        session_id: sess_a
+        proxy_server_request:
+          messages:
+            - {role: user, content: old}
+        response: '{}'
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chat_a
+      created: 0
+      object: chat.completion
+      model: gpt-4o-mini
+      choices:
+        - index: 0
+          message: {role: assistant, content: hi}
+          finish_reason: stop
+      usage: {prompt_tokens: 2, completion_tokens: 1, total_tokens: 3}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /responses_chat_call/value/response/output/0/id
+      why: LiteLLM stamps the message item with a fresh uuid4 while betterlite feeds the pinned id source

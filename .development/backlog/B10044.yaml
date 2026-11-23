@@ -1,0 +1,13 @@
+id: B10044
+milestone: R2 bug fixes
+title: The server builds the Azure composition once at startup from config, and the provider crate never reads the process environment
+status: done
+depends_on: [B025]
+file: tasks/B10044-azure-startup-composition.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3023

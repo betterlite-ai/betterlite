@@ -1,0 +1,77 @@
+kind: sdk_http
+name: responses-create-affinity-and-interception-order
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_create:
+    runs:
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+        kwargs:
+          provider_affinity_header: X-Session
+          session_id: s
+          litellm_metadata:
+            model_info: {id: deployment_a}
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+        kwargs:
+          provider_affinity_header: X-Session
+          session_id: "bad\nvalue"
+          litellm_metadata:
+            model_info: {id: deployment_a}
+      - mode: sync
+        model: openai/gpt-4o
+        input: hello
+        kwargs:
+          use_chat_completions_api: true
+          _require_encrypted_task_support: true
+          litellm_metadata:
+            model_info: {id: deployment_a}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: resp_a
+      object: response
+      created_at: 1741476542
+      status: completed
+      error: null
+      incomplete_details: null
+      instructions: null
+      max_output_tokens: null
+      model: gpt-4o-2024-08-06
+      output:
+        - type: message
+          id: msg_a
+          status: completed
+          role: assistant
+          content:
+            - type: output_text
+              text: hello
+              annotations: []
+      parallel_tool_calls: true
+      previous_response_id: null
+      reasoning: {effort: null, summary: null}
+      store: true
+      temperature: 1.0
+      text: {format: {type: text}}
+      tool_choice: auto
+      tools: []
+      top_p: 1.0
+      truncation: disabled
+      usage:
+        input_tokens: 5
+        input_tokens_details: {cached_tokens: 0}
+        output_tokens: 2
+        output_tokens_details: {}
+        total_tokens: 7
+      user: null
+      metadata: {}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x-session]
+  ignore:
+    - pointer: /responses_create/value/runs/2/failure/message
+      why: 'LiteLLM''s APIConnectionError constructor prefixes the message with "litellm.APIConnectionError: " and betterlite carries the mapper''s text'

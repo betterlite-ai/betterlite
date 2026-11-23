@@ -1,0 +1,56 @@
+name: claude-plugin-write-delete-missing
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+database:
+  seed:
+    dashboard: {logs: []}
+    users: [{user_id: alice}]
+    keys: [{token: sk-alice-token, user_id: alice}]
+    teams: [{team_id: team-red}]
+steps:
+  - request:
+      method: DELETE
+      path: /claude-code/plugins/absent-plugin
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: POST
+      path: /claude-code/plugins
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        name: delete-plugin
+        source: {source: url, url: "https://github.com/org/delete-plugin.git"}
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugin/id, why: each peer generates its own plugin id}
+  - request:
+      method: DELETE
+      path: /claude-code/plugins/delete-plugin
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []
+  - request:
+      method: DELETE
+      path: /claude-code/plugins/delete-plugin
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore: []

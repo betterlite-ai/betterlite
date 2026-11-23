@@ -45,7 +45,12 @@ pub(crate) async fn run_stages(
             &resolver,
             body.as_ref(),
         );
-        match async { dispatch(*backend, &prefetch_stage(staged?).await?, master_key) }.await {
+        match async {
+            let prefetched = prefetch_stage(staged?).await?;
+            dispatch(*backend, &prefetched, master_key)
+        }
+        .await
+        {
             Ok(context) => authenticated = Some(context),
             Err(failure) => {
                 let context = FailureContext::of(&request, body.as_ref());

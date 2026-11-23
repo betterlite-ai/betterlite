@@ -1,0 +1,28 @@
+kind: helper
+name: shadow-result-aggregation-missing-funnel-null-coverage
+call:
+  b381:
+    group_id: job-4
+    legs:
+      - {id: leg-a, group_id: job-4, target_type: key, target_id: k1, router_name: router-a, direction: forward, judge_model: judge, shadow_percentage: 50.0, max_turns: 10, created_at: "2026-11-18T00:00:00Z", ends_at: "2026-11-25T00:00:00Z", stopped_at: null, stopped_by: null}
+      - {id: leg-b, group_id: job-4, target_type: user, target_id: u1, router_name: router-b, direction: forward, judge_model: judge, shadow_percentage: 50.0, max_turns: 10, created_at: "2026-11-18T00:00:00Z", ends_at: "2026-11-25T00:00:00Z", stopped_at: null, stopped_by: null}
+    counts:
+      - {job_id: leg-a, attempt_count: 3, spend: 0.75}
+    totals: {judged_count: 3, error_count: 0, judge_spend: 0.25}
+    errors: []
+    by_tier:
+      - {grp: complex, turn_count: 3, real_wins: 1, shadow_wins: 1, ties: 1, avg_confidence: 0.75, real_spend: 0.25, shadow_spend: 0.5, cache_hit_turns: 0}
+    by_model:
+      - {grp: gpt-5.2, turn_count: 3, real_wins: 1, shadow_wins: 1, ties: 1, avg_confidence: 0.75, real_spend: 0.25, shadow_spend: 0.5, cache_hit_turns: 0}
+    by_leg:
+      - {grp: leg-a, turn_count: 3, real_wins: 1, shadow_wins: 1, ties: 1, avg_confidence: 0.75, real_spend: 0.25, shadow_spend: 0.5, cache_hit_turns: 0}
+    by_router:
+      - {grp: router-a, turn_count: 3, real_wins: 1, shadow_wins: 1, ties: 1, avg_confidence: 0.75, real_spend: 0.25, shadow_spend: 0.5, cache_hit_turns: 0}
+    funnel: {legs_with_rows: 1, not_sampled: 3, unjudgeable: 1, shed: 1, withheld: 1}
+    keys:
+      - {token: k1, key_alias: partial key, key_name: "sk-...prt1"}
+    teams: []
+    users:
+      - {user_id: u1, user_email: user@example.com}
+env: {}
+compare: {ignore: []}

@@ -22,6 +22,7 @@ use betterlite_openai::text_completion_execution::CompletionAnswer;
 use betterlite_openai::text_completion_request::CompletionRequest;
 use betterlite_openai::text_completion_stream::{DONE_FRAME, decode_chat_events, without_nulls};
 use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::operation::{
     ChatCompletion, ChatOperation, OperationError, OperationRequest, OperationResult,
 };
@@ -35,10 +36,11 @@ use crate::routes::chat::headers::success_headers;
 use crate::routes::chat::streaming::recovery;
 use crate::server::chat_setup::provider_call::{CallError, chat_error};
 
+use self::chunks::chat_stream_answer;
 use self::pump::{FrameSource, Pump, next_frame};
 
 use super::CompletionCalls;
-use super::bridge::{chat_call_failure, chat_stream_answer, converted};
+use super::bridge::{chat_call_failure, converted};
 
 // The route whose upstream rules a chat stream follows: only the chat route's provider adds stream usage
 #[derive(Clone, Copy)]
@@ -47,11 +49,12 @@ pub(crate) enum StreamUsage {
     Text,
 }
 
-// what the stream's route adds to the provider call: its usage rules and the Anthropic runtime it reaches
+// what the stream's route adds to the provider call: its usage rules and the runtimes it reaches
 #[derive(Clone, Copy)]
 pub(crate) struct StreamRoute<'runtime> {
     pub(crate) usage: StreamUsage,
     pub(crate) anthropic: Option<&'runtime Arc<AnthropicRuntime>>,
+    pub(crate) azure: &'runtime Arc<Composition>,
 }
 
 // The chat endpoint reached for a chat-catalog deployment; routes/chat.rs keeps its streaming module private
@@ -62,7 +65,7 @@ pub(crate) async fn provider_stream(
     control: ControlOptions,
     route: StreamRoute<'_>,
 ) -> Result<(OperationResult, HeaderMap), CallError<ChatError>> {
-    let provider = Provider::from_deployment(deployment).map_err(chat_error)?;
+    let provider = Provider::from_deployment(deployment, route.azure).map_err(chat_error)?;
     let mut inputs = Deployment::from_chat(deployment);
     inputs.anthropic = route.anthropic.cloned();
     let operation = OperationRequest::Stream(Box::new(ChatOperation {
@@ -206,6 +209,7 @@ pub(super) async fn streamed(
         StreamRoute {
             usage: StreamUsage::Text,
             anthropic: None,
+            azure: &calls.state.azure_runtime.composition,
         },
     )
     .await
@@ -265,5 +269,6 @@ fn include_usage(request: &CompletionRequest) -> bool {
         .is_some_and(|chosen| chosen.include_usage)
 }
 
+pub(crate) mod chunks;
 pub(crate) mod pump;
 mod tests;

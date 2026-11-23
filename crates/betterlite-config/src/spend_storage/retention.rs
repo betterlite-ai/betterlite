@@ -1,8 +1,11 @@
 use std::time::Duration;
 
-use betterlite_db::spend_retention::batches::settings::CleanupBounds;
+use betterlite_db::spend_retention::batches::settings::{
+    CleanupBounds, CleanupGeneralSettings, CleanupSettings,
+};
 use betterlite_env::EnvError;
 
+use super::partition_switch::load_switch;
 use crate::loader::{ConfigError, EnvironmentLookup};
 
 pub const ENV_BATCH_SIZE: &str = "SPEND_LOG_CLEANUP_BATCH_SIZE";
@@ -12,6 +15,20 @@ pub const ENV_BATCH_TIMEOUT: &str = "SPEND_LOG_CLEANUP_BATCH_TIMEOUT_SECONDS";
 pub const ENV_MAX_FAILURES: &str = "SPEND_LOG_CLEANUP_MAX_CONSECUTIVE_BATCH_FAILURES";
 pub const ENV_FAILURE_BACKOFF: &str = "SPEND_LOG_CLEANUP_BATCH_FAILURE_BACKOFF_SECONDS";
 pub const ENV_COUNT_CAP: &str = "SPEND_LOG_CLEANUP_REMAINING_COUNT_CAP";
+
+pub fn cleanup_settings<Lookup>(
+    mut general: CleanupGeneralSettings,
+    lookup: &Lookup,
+) -> Result<CleanupSettings, ConfigError>
+where
+    Lookup: EnvironmentLookup,
+{
+    general.use_spend_logs_partitioning = load_switch(general.use_spend_logs_partitioning.take())?;
+    Ok(CleanupSettings {
+        general,
+        defaults: cleanup_defaults(lookup)?,
+    })
+}
 
 // litellm/constants.py reads these once at import, so a malformed number stops the proxy from starting
 pub fn cleanup_defaults<Lookup>(lookup: &Lookup) -> Result<CleanupBounds, ConfigError>

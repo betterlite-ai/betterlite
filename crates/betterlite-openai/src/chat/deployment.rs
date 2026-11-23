@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, TryFromFloatSecsError};
 
+use betterlite_config::sections::drop_params::DeploymentDropPolicy;
 use betterlite_config::types::ModelDeployment;
 use betterlite_http::url_policy::base::ConfiguredBase;
 use betterlite_http::url_policy::error::UrlPolicyError;
@@ -86,6 +87,8 @@ pub struct ChatDeployment {
     pub rpm: u32,
     pub tpm: u32,
     pub global_drop_params: bool,
+    // the model_list entry's litellm_params.drop_params and additional_drop_params
+    pub drop_policy: DeploymentDropPolicy,
 }
 
 impl ChatDeployment {
@@ -146,6 +149,7 @@ impl ChatDeployment {
             rpm: params.rpm.unwrap_or_default(),
             tpm: params.tpm.unwrap_or_default(),
             global_drop_params: defaults.global_drop_params,
+            drop_policy: DeploymentDropPolicy::default(),
             litellm_model,
             provider,
         })

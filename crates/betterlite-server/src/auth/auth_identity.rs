@@ -7,6 +7,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
@@ -26,6 +27,7 @@ pub enum AuthBackend {
     AuthResourceGrants,
     AuthTagBudgets,
     AuthKeyBudgets,
+    AuthEndUsers,
 }
 
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
@@ -38,6 +40,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
+    AuthBackend::AuthEndUsers,
 ];
 
 #[derive(Clone, Debug)]
@@ -50,6 +53,7 @@ pub enum StageInput {
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
+    AuthEndUsers(Box<EndUserStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -81,6 +85,7 @@ pub(crate) enum StageFailure {
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
+    EndUsers(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {
@@ -115,6 +120,13 @@ pub(crate) fn dispatch(
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
             };
             // the reads ran while the stage input was assembled, so the budget failures already surfaced there
+            Ok(stage.context.clone())
+        }
+        AuthBackend::AuthEndUsers => {
+            let StageInput::AuthEndUsers(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the lookup and the budget check ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
     }

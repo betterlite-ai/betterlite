@@ -1,34 +1,34 @@
-use std::collections::VecDeque;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use axum::http::HeaderMap;
-use axum::http::HeaderValue;
-use axum::http::header::CONTENT_TYPE;
-use axum::response::{IntoResponse as _, Response};
 use betterlite_core::operation::text_completion::{
-    TextCompletionCallInput, TextCompletionFailure, TextCompletionResult,
+    ChatCallAnswer, ChatCallMode, TextCompletionCallInput, TextCompletionFailure,
+    TextCompletionResult,
 };
 use betterlite_core::operation::text_stream::TextStreamAnswer;
-use betterlite_http::error::HttpError;
-use betterlite_http::proxy::StreamResponse;
+use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::execution::ChatError;
-use betterlite_openai::completion_chat_bridge::answer::text_completion_response;
+use betterlite_openai::chat::{ChatRequest, execution::ChatError};
+use betterlite_openai::completion_chat_bridge::{answer::text_completion_response, chat_request};
 use betterlite_openai::stream::SseParser;
-use betterlite_openai::text_completion_execution::failure::CompletionFailure;
-use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_execution::{
-    CompletionAnswer, CompletionCallAnswer, CompletionSend, CompletionStreamAnswer,
+    CompletionAnswer, CompletionCallAnswer, CompletionSend, failure::CompletionFailure,
+    log::TracingCompletionLog,
 };
-use betterlite_openai::text_completion_stream::{decode_chat_events, shaped_chunk};
-use betterlite_provider::operation::ChatCompletion;
-use futures_util::StreamExt as _;
-use futures_util::stream::{self, BoxStream};
+use betterlite_openai::text_completion_stream::shaped_chunk;
+use betterlite_provider::anthropic_dispatch::AnthropicResult;
+use betterlite_provider::anthropic_dispatch::gateway::reply::AnthropicReply;
+use betterlite_provider::anthropic_dispatch::gateway::runtime::AnthropicRuntime;
+use betterlite_provider::operation::{ChatCompletion, OperationResult};
+use betterlite_provider::provider::Provider;
+use futures_util::stream::StreamExt as _;
 
 use super::CompletionCalls;
-use crate::routes::completions::streaming::pump::{FrameSource, Pump, next_frame};
-use crate::server::chat_setup::provider_call::CallError;
+use super::streaming::chunks::frames_answer;
+pub(super) use super::streaming::chunks::{ChatChunks, ChunkUsage};
+use super::streaming::{self, StreamRoute, StreamUsage, provider_stream};
+use crate::server::chat_setup::provider_call::{CallError, Runtimes, answer_chat};
 
 const MISMATCHED: &str = "the provider answered a different operation";
 
@@ -36,10 +36,10 @@ pub(super) async fn text_answer(
     calls: &CompletionCalls,
     call: &TextCompletionCallInput<'_>,
 ) -> Result<TextCompletionResult, TextCompletionFailure> {
-    match text_send(calls, call, false).await? {
-        CompletionCallAnswer::Buffered(answer) => Ok(text_result(answer)),
-        CompletionCallAnswer::Streamed(_) => Err(TextCompletionFailure::internal(MISMATCHED)),
-    }
+    let CompletionCallAnswer::Buffered(answer) = text_send(calls, call, false).await? else {
+        return Err(TextCompletionFailure::internal(MISMATCHED));
+    };
+    Ok(text_result(answer))
 }
 
 pub(super) fn converted(
@@ -57,6 +57,97 @@ pub(super) fn converted(
     })
 }
 
+// the chat endpoint reached for a chat-catalog deployment, with the one Anthropic runtime the application built
+pub(super) async fn chat_bridge(
+    calls: &CompletionCalls,
+    call: &TextCompletionCallInput<'_>,
+    mode: ChatCallMode,
+) -> Result<ChatCallAnswer, TextCompletionFailure> {
+    let runtime = calls.anthropic()?;
+    let chat = chat_request(call.request).map_err(bridge_failure)?;
+    let control = ControlOptions::default();
+    if matches!(mode, ChatCallMode::Streamed) {
+        let stream = streamed_answer(calls, call, &chat, control, runtime).await?;
+        return Ok(ChatCallAnswer::Streamed(stream));
+    }
+    let executor = &calls.state.executor;
+    let answered = answer_chat(
+        executor,
+        &chat,
+        &call.deployment,
+        control,
+        Runtimes {
+            anthropic: Some(runtime),
+            azure: &calls.state.azure_runtime.composition,
+        },
+    )
+    .await;
+    let (result, headers, time) = answered.map_err(|error| chat_call_failure(error, calls))?;
+    let answer = if let OperationResult::Anthropic(AnthropicResult::Reply(reply)) = result {
+        anthropic_converted(reply, headers, time)?
+    } else {
+        streaming::buffered(calls, call.request, (result, headers, time)).await?
+    };
+    Ok(ChatCallAnswer::Buffered(text_result(answer)))
+}
+
+// Only the Anthropic adapter reads the runtime, so every other deployment keeps the route's stream, recovery included.
+async fn streamed_answer(
+    calls: &CompletionCalls,
+    call: &TextCompletionCallInput<'_>,
+    chat: &ChatRequest,
+    control: ControlOptions,
+    runtime: &Arc<AnthropicRuntime>,
+) -> Result<TextStreamAnswer, TextCompletionFailure> {
+    let Ok(Provider::Anthropic(_)) =
+        Provider::from_deployment(&call.deployment, &calls.state.azure_runtime.composition)
+    else {
+        return streaming::streamed(calls, call, chat, control).await;
+    };
+    let executor = &calls.state.executor;
+    let route = StreamRoute {
+        usage: StreamUsage::Text,
+        anthropic: Some(runtime),
+        azure: &calls.state.azure_runtime.composition,
+    };
+    let started = Instant::now();
+    let answered = provider_stream(executor, &call.deployment, chat, control, route).await;
+    let (result, headers) = answered.map_err(|error| chat_call_failure(error, calls))?;
+    let OperationResult::Anthropic(AnthropicResult::Stream(frames)) = result else {
+        return Err(TextCompletionFailure::internal(MISMATCHED));
+    };
+    let chunks = ChatChunks {
+        bytes: frames,
+        parser: SseParser::default(),
+        model: call.request.model.as_deref().unwrap_or_default().to_owned(),
+        usage: ChunkUsage::Anthropic,
+    };
+    let answer = frames_answer(chunks, headers, started.elapsed());
+    Ok(answer)
+}
+
+// The Messages reply read back as the chat response LiteLLM's text conversion takes; its tool calls and thinking drop out.
+pub(super) fn anthropic_converted(
+    reply: Box<AnthropicReply>,
+    upstream_headers: HeaderMap,
+    upstream_time: Duration,
+) -> Result<CompletionAnswer, TextCompletionFailure> {
+    let mut dump = serde_json::to_value(reply)
+        .map_err(|source| TextCompletionFailure::internal(&source.to_string()))?;
+    // the chat response cannot read Anthropic's usage details and would drop its extras, so the reply's own dump is restored
+    let usage = dump.as_object_mut().and_then(|map| map.remove("usage"));
+    let chat = serde_json::from_value(dump)
+        .map_err(|source| TextCompletionFailure::internal(&source.to_string()))?;
+    let mut response = text_completion_response(chat);
+    response.usage = serde_json::from_value(usage.unwrap_or_default())
+        .map_err(|source| TextCompletionFailure::internal(&source.to_string()))?;
+    Ok(CompletionAnswer {
+        response: Box::new(response),
+        upstream_headers,
+        upstream_time,
+    })
+}
+
 pub(super) async fn text_stream(
     calls: &CompletionCalls,
     call: &TextCompletionCallInput<'_>,
@@ -64,8 +155,23 @@ pub(super) async fn text_stream(
     let CompletionCallAnswer::Streamed(answer) = text_send(calls, call, true).await? else {
         return Err(TextCompletionFailure::internal(MISMATCHED));
     };
-    let model = call.request.model.as_deref();
-    Ok(stream_answer(answer, model))
+    let named = call.request.model.as_deref().unwrap_or_default().to_owned();
+    let body = answer
+        .stream
+        .map(move |item| {
+            let chunk =
+                item.map_err(|error| TextCompletionFailure::new(500, None, error.to_string()))?;
+            let value = shaped_chunk(chunk, &named)
+                .map_err(|source| TextCompletionFailure::new(500, None, source.to_string()))?;
+            serde_json::from_value::<Json>(value)
+                .map_err(|source| TextCompletionFailure::new(500, None, source.to_string()))
+        })
+        .boxed();
+    Ok(TextStreamAnswer {
+        body,
+        upstream_headers: answer.upstream_headers,
+        upstream_time: answer.upstream_time,
+    })
 }
 
 async fn text_send(
@@ -73,23 +179,18 @@ async fn text_send(
     call: &TextCompletionCallInput<'_>,
     streamed: bool,
 ) -> Result<CompletionCallAnswer, TextCompletionFailure> {
+    let execution = &calls.execution;
+    let transport = execution.text_transport(&call.deployment, call.request, streamed);
+    let built = transport.await.map_err(bridge_failure)?;
     let mut logger = TracingCompletionLog;
-    let built = calls
-        .execution
-        .text_transport(&call.deployment, call.request, streamed)
-        .await
-        .map_err(bridge_failure)?;
-    calls
-        .execution
-        .send(CompletionSend {
-            deployment: &call.deployment,
-            request: built,
-            streamed,
-            redactor: &calls.state.executor.redactor,
-            logger: &mut logger,
-        })
-        .await
-        .map_err(bridge_failure)
+    let sent = execution.send(CompletionSend {
+        deployment: &call.deployment,
+        request: built,
+        streamed,
+        redactor: &calls.state.executor.redactor,
+        logger: &mut logger,
+    });
+    sent.await.map_err(bridge_failure)
 }
 
 pub(super) fn text_result(answer: CompletionAnswer) -> TextCompletionResult {
@@ -98,80 +199,6 @@ pub(super) fn text_result(answer: CompletionAnswer) -> TextCompletionResult {
         upstream_headers: answer.upstream_headers,
         upstream_time: answer.upstream_time,
     }
-}
-
-fn stream_answer(answer: CompletionStreamAnswer, model: Option<&str>) -> TextStreamAnswer {
-    let named = model.unwrap_or_default().to_owned();
-    let body = answer
-        .stream
-        .map(move |item| match item {
-            Ok(chunk) => {
-                let value = shaped_chunk(chunk, &named)
-                    .map_err(|source| TextCompletionFailure::new(500, None, source.to_string()))?;
-                serde_json::from_value::<Json>(value)
-                    .map_err(|source| TextCompletionFailure::new(500, None, source.to_string()))
-            }
-            Err(error) => Err(TextCompletionFailure::new(500, None, error.to_string())),
-        })
-        .boxed();
-    TextStreamAnswer {
-        body,
-        upstream_headers: answer.upstream_headers,
-        upstream_time: answer.upstream_time,
-    }
-}
-
-pub(super) fn chat_stream_answer(
-    upstream: StreamResponse,
-    model: Option<&str>,
-    include_usage: bool,
-    upstream_time: Duration,
-) -> TextStreamAnswer {
-    let upstream_headers = upstream.response.headers().clone();
-    let chunks = ChatChunks {
-        bytes: upstream.body_stream(),
-        parser: SseParser::default(),
-        model: model.unwrap_or_default().to_owned(),
-        include_usage,
-    };
-    let pump: Pump<ChatChunks, Json> = Pump::new(chunks);
-    TextStreamAnswer {
-        body: stream::unfold(pump, next_frame::<ChatChunks, TextCompletionFailure>).boxed(),
-        upstream_headers,
-        upstream_time,
-    }
-}
-
-struct ChatChunks {
-    bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>,
-    parser: SseParser,
-    model: String,
-    include_usage: bool,
-}
-
-#[async_trait]
-impl FrameSource<TextCompletionFailure> for ChatChunks {
-    type Item = Json;
-
-    async fn fill(&mut self, pending: &mut VecDeque<Json>) -> Result<bool, TextCompletionFailure> {
-        let (events, ended) = match self.bytes.next().await {
-            Some(Ok(bytes)) => (self.parser.push(&bytes), false),
-            Some(Err(error)) => return Err(TextCompletionFailure::internal(&error.to_string())),
-            None => (Ok(self.parser.finish()), true),
-        };
-        let parsed =
-            events.map_err(|source| TextCompletionFailure::internal(&source.to_string()))?;
-        let chunks = decode_chat_events(&parsed, &self.model, self.include_usage)
-            .map_err(|error| TextCompletionFailure::internal(&error.to_string()))?;
-        pending.extend(chunks);
-        Ok(ended)
-    }
-}
-
-// the chat endpoint's text answer is written by the bridge, so the route adds its own content type
-pub(super) fn json_response(mut headers: HeaderMap, body: Vec<u8>) -> Response {
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    (headers, body).into_response()
 }
 
 pub(super) fn bridge_failure(failure: CompletionFailure) -> TextCompletionFailure {

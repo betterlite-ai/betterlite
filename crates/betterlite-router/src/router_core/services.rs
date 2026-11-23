@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use crate::cooldown_state::filter::HealthInputs;
+use crate::deployment_affinity::DeploymentAffinity;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::generalization_integration::model_generalizations::ModelGeneralizations;
 use crate::least_busy::LeastBusy;
 use crate::model_rate_limits::service::ModelRateLimits;
 use crate::prompt_affinity::service::PromptAffinity;
+use crate::request_scheduler::service::RequestScheduler;
 use crate::routing_groups::group::RoutingGroup;
 
 // The one failure a route service reports: the caller cancelled while the deployments were filtered.
@@ -44,6 +46,12 @@ pub trait RouteServices: Send + Sync {
         Ok(deployments)
     }
 
+    // Router.add_optional_pre_call_checks and _ensure_deployment_affinity_callback leave the affinity check out unless the config turns it on
+    #[must_use]
+    fn deployment_affinity(&self) -> Option<&DeploymentAffinity> {
+        None
+    }
+
     // Router.add_optional_pre_call_checks leaves PromptCachingDeploymentCheck out unless the config names it
     #[must_use]
     fn prompt_affinity(&self) -> Option<&PromptAffinity> {
@@ -71,6 +79,12 @@ pub trait RouteServices: Send + Sync {
     // Router.cache's in-flight counters, which the least-busy strategy reads and every attempt updates
     #[must_use]
     fn least_busy(&self) -> Option<Arc<LeastBusy>> {
+        None
+    }
+
+    // Router.scheduler, absent on a router that never queues a priority request
+    #[must_use]
+    fn request_scheduler(&self) -> Option<&RequestScheduler> {
         None
     }
 }

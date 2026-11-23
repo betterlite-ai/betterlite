@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -25,6 +26,7 @@ use secrecy::SecretString;
 use url::Url;
 
 use crate::aiohttp_openai_dispatch::{AiohttpOpenAiPrepared, AiohttpOpenAiRequest};
+use crate::azure_dispatch::call::Composition;
 use crate::hosted_platform_dispatch::call::{EmbeddingCall, ResourceCall};
 use crate::hosted_platform_dispatch::context::DispatchSettings;
 use crate::hosted_platform_dispatch::embedding::dispatch;
@@ -90,6 +92,7 @@ fn perplexity_deployment(api_key: Option<&str>) -> Deployment {
         timeout: Duration::from_secs(3),
         max_retries: None,
         drop_params: None,
+        additional_drop_params: Vec::new(),
         global_drop_params: false,
         provider_affinity_header: None,
         anthropic: None,
@@ -152,7 +155,7 @@ fn reaches_config_embedding_through_the_perplexity_arm() {
 
 #[test]
 fn reaches_config_embedding_through_the_perplexity_adapter() {
-    let provider = Provider::from_slug("perplexity").unwrap();
+    let provider = Provider::from_slug("perplexity", &Arc::new(Composition::default())).unwrap();
     assert_eq!(provider, Provider::Perplexity(Perplexity));
     assert_eq!(provider.name(), "perplexity");
     let operation = embedding_operation(

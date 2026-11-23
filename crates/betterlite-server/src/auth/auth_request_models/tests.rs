@@ -125,6 +125,9 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::KeyBudgets(_)) => {
             panic!("the master key stage runs no key budget check")
         }
+        Err(StageFailure::EndUsers(_)) => {
+            panic!("the master key stage runs no end-user check")
+        }
     }
 }
 

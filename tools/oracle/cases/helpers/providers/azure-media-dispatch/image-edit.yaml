@@ -1,0 +1,14 @@
+kind: helper
+name: azure-image-edit
+call:
+  azure_media_dispatch:
+    case: image_edit
+    api_base: https://example.openai.azure.com
+    api_version: 2025-04-01-preview
+    model: gpt-image-1
+    prompt: make it blue
+    api_key: sk-azure-fixture
+    options:
+      size: 1024x1024
+env: {}
+compare: {ignore: []}

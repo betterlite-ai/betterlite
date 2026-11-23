@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::drop_params::DeploymentDropPolicy;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::{DeploymentError, Provider};
 use rand::SeedableRng as _;
@@ -277,4 +278,24 @@ async fn a_mocked_network_answers_without_opening_a_connection() {
     assert!(answered.response.id.starts_with("chatcmpl-mock-"));
     let connected = timeout(Duration::from_millis(200), listener.accept()).await;
     connected.unwrap_err();
+}
+
+#[test]
+fn a_deployment_drop_policy_reaches_its_chat_deployment() {
+    let yaml = "model_list:\n  - model_name: first\n    litellm_params:\n      model: openai/gpt-4o\n      api_key: k\n  - model_name: second\n    litellm_params:\n      model: openai/gpt-4o\n      api_key: k\n      drop_params: true\n      additional_drop_params:\n        - temperature\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    let [first, second] = chat.deployments.as_slice() else {
+        panic!("both deployments start");
+    };
+    assert_eq!(first.drop_policy, DeploymentDropPolicy::default());
+    assert_eq!(second.drop_policy.drop_params, Some(true));
+    assert_eq!(
+        second.drop_policy.additional_drop_params,
+        vec![String::from("temperature")]
+    );
 }

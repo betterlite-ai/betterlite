@@ -1,0 +1,26 @@
+kind: helper
+name: auth-end-users-lookup-cache-effects
+call:
+  auth_end_users:
+    function: end_user_object
+    database: true
+    validate_in_db: true
+    end_user_id: u1
+    proxy_default: b-proxy
+    end_user_row: {user_id: u1, blocked: false}
+    budget_row: {budget_id: b-proxy, max_budget: 10.0}
+calls:
+  - auth_end_users:
+      function: end_user_object
+      database: true
+      validate_in_db: true
+      end_user_id: u1
+      key_budget_id: b-key
+      cached_budget: {budget_id: b-key, max_budget: 4.0}
+      cached_end_user: {user_id: u1, blocked: false}
+  - auth_end_users:
+      function: end_user_object
+      database: false
+      validate_in_db: false
+env: {}
+compare: {ignore: []}

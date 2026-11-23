@@ -1,0 +1,99 @@
+id: B10044
+title: The server builds the Azure composition once at startup from config, and the provider crate never reads the process environment
+description: >-
+  Follow-up to B025's review (inject-dependencies), moved here by the architect so B025 could finish. B025's
+  Provider::from_slug in crates/betterlite-provider/src/provider.rs builds the Azure adapter's Composition with
+  Composition::from_environment(process_environment()) on every request. So the provider crate reads the process
+  environment itself, copies it per call, and the Composition's Globals (LiteLLM's litellm.api_base, api_version,
+  api_key, azure_key, headers and AZURE_DEFAULT_API_VERSION) stay empty in production, though the proxy sets them from
+  litellm_settings.
+
+
+  Build the Azure composition once at startup from config alone. A new config section,
+  crates/betterlite-config/src/sections/azure_provider_globals.rs (registered in sections.rs), resolves at config
+  load, through the loader's lookup like bedrock_services_search.rs does: the litellm_settings globals api_base,
+  api_version, api_key, azure_key and headers, and the variables the Azure adapter reads (AZURE_API_BASE,
+  AZURE_API_VERSION, AZURE_API_KEY, AZURE_OPENAI_API_KEY, AZURE_AD_TOKEN, AZURE_API_TYPE). A Slot in a new
+  crates/betterlite-server/src/state/azure_runtime.rs builds the Composition from that section, and state.rs
+  registers it beside anthropic_runtime. Provider::from_deployment and from_slug take the composition from their
+  caller, and the server passes it in the five places that call them today: server/chat_setup.rs,
+  server/chat_setup/provider_call.rs, server/chat_setup/provider_call/embedding.rs, routes/completions/streaming.rs
+  and routes/chat/streaming.rs where it hands provider_call its runtimes. The Python binding
+  (crates/betterlite-python/src/completion/calls.rs) builds the composition at the call from process_environment(),
+  since an SDK user can set os.environ after import and LiteLLM reads it at call time; its SDK module globals stay
+  with B157-B166. AzureOpenAIConfig and AzureOpenAIO1Config defaults keep their LiteLLM defaults here, since only
+  SDK code sets them.
+
+
+  After this task no file under crates/betterlite-provider/src calls process_environment, and the tests that build a
+  Provider for azure or azure_text pass an injected composition.
+scope:
+  paths:
+  - "crates/betterlite-server/src/routes/embeddings/vertex.rs"
+  - "crates/betterlite-server/src/server.rs"
+  - "crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs"
+  - "crates/betterlite-server/src/server/chat_setup/provider_call/tests/defaults.rs"
+  - "crates/betterlite-server/src/routes/embeddings/tests.rs"
+  - "crates/betterlite-server/src/routes/embeddings.rs"
+  - "crates/betterlite-server/src/routes/completions/bridge.rs"
+  - "crates/betterlite-server/src/routes/chat/tests/unknown_model_cases.rs"
+  - "crates/betterlite-server/src/routes/chat/tests/stream/tests.rs"
+  - "crates/betterlite-server/src/routes/chat/tests/anthropic.rs"
+  - "crates/betterlite-server/src/routes/chat/streaming/recovery/tests.rs"
+  - "crates/betterlite-provider/src/prepared/deployment.rs"
+  - "crates/betterlite-provider/src/hosted_platform_dispatch/perplexity/tests.rs"
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/**
+  - crates/betterlite-provider/src/azure_dispatch.rs
+  - crates/betterlite-provider/src/azure_dispatch/**
+  - crates/betterlite-config/src/sections.rs
+  - crates/betterlite-config/src/sections/azure_provider_globals.rs
+  - crates/betterlite-config/src/sections/azure_provider_globals/**
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/state/azure_runtime.rs
+  - crates/betterlite-server/src/state/azure_runtime/**
+  - crates/betterlite-server/src/server/chat_setup.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call/embedding.rs
+  - crates/betterlite-server/src/server/chat_setup/tests/**
+  - crates/betterlite-server/src/routes/completions/streaming.rs
+  - crates/betterlite-server/src/routes/completions/streaming/**
+  - crates/betterlite-server/src/routes/chat/streaming.rs
+  - crates/betterlite-server/src/routes/chat/streaming/tests.rs
+  - crates/betterlite-python/src/completion/calls.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1367-L1388
+  why: Azure chat takes api_base, api_version, the key and headers from the call, then litellm's globals, then the environment.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6594
+  why: The proxy sets each litellm_settings key as a litellm global.
+dod:
+- text: >-
+    A server whose config sets litellm_settings.api_base and api_version, with no AZURE_API_BASE in its environment,
+    sends an Azure chat to that base and version; an AZURE_API_KEY in the startup environment still reaches the call.
+  proof: [azure-tests]
+- text: >-
+    No file under crates/betterlite-provider/src calls process_environment, and the server builds the Azure
+    composition once at startup.
+  proof: [no-env-read, azure-tests]
+checks:
+  optional: []
+  commands:
+  - id: azure-tests
+    why: The Azure composition does not reach the provider from startup, or another Azure behavior broke.
+    run: cargo nextest run --locked -p betterlite-provider -p betterlite-config -p betterlite-server --no-tests=fail -E 'test(/azure/)'
+  - id: no-env-read
+    why: The provider crate still reads the process environment itself.
+    run: >-
+      ! git grep -n -F 'process_environment(' -- crates/betterlite-provider/src
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Python SDK module globals (litellm.api_base set from Python), which B157-B166 own.
+- Setting AzureOpenAIConfig or AzureOpenAIO1Config defaults from config; LiteLLM's proxy has no key for them.
+pitfalls:
+- The server never calls process_environment() for Azure. The section resolves every Azure variable at config load, and no request reads the environment.
+review_level: security
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0

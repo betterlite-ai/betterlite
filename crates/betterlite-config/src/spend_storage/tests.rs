@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_db::spend_partitions::calendar::PartitionInterval;
-use betterlite_db::spend_retention::batches::settings::{CleanupBounds, DurationParser, Retention};
+use betterlite_db::spend_retention::batches::settings::{
+    CleanupBounds, DurationParser, Retention, SettingValue,
+};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use tracing::Subscriber;
@@ -646,6 +648,53 @@ fn loads_spend_retention_settings_live_after_a_reset() {
     );
 }
 
+#[test]
+fn loads_retention_partition_switch() {
+    let defaults = load("general_settings: {}\n", &[]);
+    assert_eq!(defaults.retention.general.use_spend_logs_partitioning, None);
+    let enabled = load(
+        "general_settings:\n  use_spend_logs_partitioning: true\n  maximum_spend_logs_retention_period: 7d\n",
+        &[],
+    );
+    assert_eq!(
+        enabled.retention.general.use_spend_logs_partitioning,
+        Some(SettingValue::Flag(true))
+    );
+    assert_eq!(
+        enabled
+            .retention
+            .retention_seconds(Retention::SpendLogs, &Durations),
+        Some(604_800)
+    );
+    let disabled = load(
+        "general_settings:\n  use_spend_logs_partitioning: false\n",
+        &[],
+    );
+    assert_eq!(
+        disabled.retention.general.use_spend_logs_partitioning,
+        Some(SettingValue::Flag(false))
+    );
+    let cleared = load(
+        "general_settings:\n  use_spend_logs_partitioning: null\n",
+        &[],
+    );
+    assert_eq!(cleared.retention.general.use_spend_logs_partitioning, None);
+}
+
+#[test]
+fn a_non_boolean_partition_switch_fails_loading() {
+    let error = load_spend_storage_policy(
+        "general_settings:\n  use_spend_logs_partitioning: always\n",
+        &environment(&[]),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("general_settings.use_spend_logs_partitioning")
+    );
+}
+
 #[rstest]
 #[case::fraction(ENV_BATCH_SIZE, "1.5")]
 #[case::digit_group(ENV_RUN_LOOPS, "1_0")]
@@ -725,4 +774,44 @@ fn a_malformed_spend_log_queue_byte_budget_fails_loading(#[case] value: &str) {
 fn treats_an_empty_spend_logs_url_as_unset() {
     let settings = load("general_settings: {}\n", &[(ENV_SPEND_LOGS_URL, "")]);
     assert_eq!(settings.spend_logs_url, None);
+}
+
+#[rstest]
+#[case::absent("litellm_settings: {}\n", None)]
+#[case::null("litellm_settings:\n  cold_storage_custom_logger: null\n", None)]
+#[case::named(
+    "litellm_settings:\n  cold_storage_custom_logger: s3_v2\n",
+    Some("s3_v2")
+)]
+#[case::empty("litellm_settings:\n  cold_storage_custom_logger: \"\"\n", Some(""))]
+fn loads_spend_cold_storage_logger(#[case] source: &str, #[case] expected: Option<&str>) {
+    let settings = load(source, &[]);
+    assert_eq!(settings.cold_storage_custom_logger.as_deref(), expected);
+}
+
+#[rstest]
+#[case::boolean("true")]
+#[case::number("3")]
+#[case::list("[s3_v2]")]
+#[case::map("{name: s3_v2}")]
+fn loads_spend_cold_storage_only_from_a_name(#[case] value: &str) {
+    let source = format!("litellm_settings:\n  cold_storage_custom_logger: {value}\n");
+    let error = load_spend_storage_policy(&source, &environment(&[])).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("litellm_settings.cold_storage_custom_logger")
+    );
+}
+
+#[test]
+fn loads_spend_cold_storage_from_a_stored_policy_row() {
+    let decoded = decode_spend_storage_policy(
+        br#"{"litellm_settings":{"cold_storage_custom_logger":"gcs_bucket"}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        decoded.cold_storage_custom_logger.as_deref(),
+        Some("gcs_bucket")
+    );
 }

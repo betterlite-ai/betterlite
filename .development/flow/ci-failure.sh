@@ -18,8 +18,12 @@ lines=$(grep -m 60 -E "^FAIL |^     |^    thread '" <<< "${failed_log}")
 missed=$(find "${logs}" -path '*/mutants.out/missed.txt' -exec cat {} + 2> /dev/null)
 missed=$(sort -u <<< "${missed}")
 missed=$(head -n 40 <<< "${missed}")
+# nextest sometimes never exits after building a mutant, and the build timeout lists that mutant in timeout.txt too (B359, 11-23)
+stuck=$(find "${logs}" -path '*/mutants.out/outcomes.json' -exec jq -r '.outcomes[] | select(.summary == "Timeout" and .phase_results[-1].phase == "Build") | .scenario.Mutant.name' {} + 2> /dev/null)
+stuck=$(sort -u <<< "${stuck}")
 timed_out=$(find "${logs}" -path '*/mutants.out/timeout.txt' -exec cat {} + 2> /dev/null)
 timed_out=$(sort -u <<< "${timed_out}")
+timed_out=$(comm -23 - <(printf '%s\n' "${stuck}") <<< "${timed_out}")
 timed_out=$(head -n 20 <<< "${timed_out}")
 # a failed unmutated baseline prints only its last line in the job log, and its failing test and panic sit in mutants.log (B203 spent two rounds blind on 11-17)
 baseline=$(grep -r -l --include=mutants.log 'cargo test failed in an unmutated tree' "${logs}" 2> /dev/null)
@@ -35,5 +39,7 @@ ${baseline}}${missed:+
 Mutants CI missed:
 ${missed}}${timed_out:+
 Mutants that timed out in CI (the gate counts a timeout as a failure, so a test must fail on the mutant instead of hanging):
-${timed_out}}
+${timed_out}}${stuck:+
+Mutant builds that never finished in CI (nextest did not exit after building them; this is not your code, so change nothing for them, and the run after your next push builds them again):
+${stuck}}
 The gate logs of that run are in target/ci-logs/${run_id}/ in your worktree."

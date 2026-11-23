@@ -196,7 +196,8 @@ fn text_field<'fields>(fields: &'fields JsonObject, name: &str) -> Option<&'fiel
     }
 }
 
-fn routing_groups(
+// the routing group index Router._init_routing_groups builds, shared with the deployment affinity check
+pub(crate) fn routing_groups(
     config: &Config,
     names: &BTreeSet<String>,
 ) -> Result<RoutingGroupIndex, DeploymentSetError> {

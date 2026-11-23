@@ -116,6 +116,7 @@ async fn run(
     let matrix = runtime.beta.matrix().await;
     let mut native = Handler::from(Deps {
         runtime,
+        deployment,
         client,
         matrix: &matrix,
         capabilities,
@@ -154,6 +155,7 @@ async fn mapped_request<'call>(
     let parameters = {
         let mut sources = Sources {
             runtime,
+            deployment,
             environment: &mut capabilities,
             catalogs: &catalogs,
             model: &deployment.model,
@@ -171,6 +173,7 @@ async fn mapped_request<'call>(
 
 struct Deps<'call> {
     runtime: &'call AnthropicRuntime,
+    deployment: &'call Deployment,
     client: &'call ProxiedClient,
     matrix: &'call BetaMatrix,
     capabilities: CapabilityEnvironment<'call, NoDynamicMetadata, NoHfConfig>,
@@ -212,7 +215,7 @@ impl<'call> From<Deps<'call>> for Handler<'call> {
                 max_tokens: deps.runtime.max_tokens,
                 billing: BillingHeader::Keep,
                 modify_params: deps.runtime.request_flags.modify_params,
-                drop_params: deps.runtime.global_drop_params,
+                drop_params: deps.deployment.global_drop_params,
             },
             legacy: Legacy {
                 prompts: &deps.runtime.prompt_factory,

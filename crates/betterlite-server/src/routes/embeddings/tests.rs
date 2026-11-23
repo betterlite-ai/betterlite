@@ -7,6 +7,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_core::dispatch::error::DispatchError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::operation::OperationError;
 use betterlite_provider::transform_retry::TransformRetryError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -25,6 +26,7 @@ use super::{EmbeddingError, dispatch_failure, embedding_port_failure, embedding_
 use crate::route_read_through::ModelReadThrough;
 use crate::server::chat_setup::chat_executor;
 use crate::server::chat_setup::provider_call::CallError;
+use crate::state::azure_runtime;
 use async_trait::async_trait;
 use betterlite_core::operation::embedding::{
     EmbeddingCall, EmbeddingCallInput, EmbeddingFailure, EmbeddingResult, route_error,
@@ -114,7 +116,7 @@ async fn embedding_route_rejects_malformed_body(#[case] path: &str) {
         .header("content-type", "application/json")
         .body(Body::from("not-json"))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -214,7 +216,7 @@ async fn mock_calls_behavior_tests_behavior() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"embed","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -256,7 +258,7 @@ async fn a_mock_testing_param_is_rejected_on_embeddings(#[case] mocked: bool) {
             r#"{"model":"embed","input":"hello","mock_timeout":true}"#,
         ))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -282,7 +284,7 @@ async fn a_mock_embedding_answers_with_the_stripped_model() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -307,7 +309,7 @@ async fn a_mock_embedding_answers_with_the_body_model() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"alias","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -368,7 +370,7 @@ async fn an_embedding_answer_echoes_the_callers_call_id(#[case] sent: &str, #[ca
         .header("x-litellm-call-id", sent)
         .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -425,7 +427,8 @@ async fn a_stripped_client_mock_field_never_reaches_the_embedding_provider() {
             r#"{"model":"embed","input":"hello","mock_response":{"choices":[{"logprobs":null}]},"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#,
         ))
         .expect("request");
-    let call = embedding_routes(Arc::new(executor), None, None).oneshot(request);
+    let call =
+        embedding_routes(Arc::new(executor), None, None, &azure_composition()).oneshot(request);
     let (sent, answered) = tokio::join!(provider(listener), call);
     let response = answered.expect("response");
     assert_eq!(response.status(), StatusCode::OK);
@@ -478,7 +481,7 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
         lookup: BTreeMap::new(),
     }
     .load(
-        "model_list:\n  - {model_name: emb, litellm_params: {model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k}}\n",
+        "model_list:\n  - {model_name: emb, litellm_params: {model: deepseek/embed, api_base: 'http://127.0.0.1:1', api_key: k}}\n",
     )
     .expect("config");
     let executor =
@@ -487,7 +490,7 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
         .expect("request");
-    let response = embedding_routes(Arc::new(executor), None, None)
+    let response = embedding_routes(Arc::new(executor), None, None, &azure_composition())
         .oneshot(request)
         .await
         .expect("response");
@@ -496,8 +499,41 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
     let envelope: ErrorEnvelope = serde_json::from_slice(&body).expect("JSON");
     assert_eq!(
         envelope.error.message,
-        "betterlite does not serve azure embeddings yet"
+        "betterlite does not serve deepseek embeddings yet"
     );
+}
+
+// the embeddings route hands the startup composition to the adapter, so the configured version and the startup key reach Azure
+#[tokio::test]
+async fn azure_embedding_uses_the_startup_composition() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let source = format!(
+        "litellm_settings:\n  api_base: '{base}'\n  api_version: '2024-06-01'\nmodel_list:\n  - {{model_name: emb, litellm_params: {{model: azure/embed-up}}, model_info: {{id: dep-1}}}}\n"
+    );
+    let environment = BTreeMap::from([("AZURE_API_KEY".to_owned(), "startup-key".to_owned())]);
+    let config = ConfigLoader {
+        lookup: environment.clone(),
+    }
+    .load(&source)
+    .expect("config");
+    let executor =
+        chat_executor(&config, &environment, StdRng::seed_from_u64(1)).expect("executor");
+    let azure = azure_runtime::Slot::new(&config);
+    let request = Request::post("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
+        .expect("request");
+    let call =
+        embedding_routes(Arc::new(executor), None, None, &azure.composition).oneshot(request);
+    let (sent, answered) = tokio::join!(provider(listener), call);
+    assert_eq!(answered.expect("response").status(), StatusCode::OK);
+    let lowered = sent.to_lowercase();
+    assert!(
+        lowered.starts_with("post /openai/deployments/embed-up/embeddings?api-version=2024-06-01 "),
+        "{sent}"
+    );
+    assert!(lowered.contains("api-key: startup-key"), "{sent}");
 }
 
 struct CountingVertex {
@@ -536,7 +572,13 @@ async fn status_with_vertex(deployment: &str) -> (StatusCode, usize) {
             .header("content-type", "application/json")
             .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
             .expect("request");
-        let call = embedding_routes(Arc::new(executor), Some(installed), None).oneshot(request);
+        let call = embedding_routes(
+            Arc::new(executor),
+            Some(installed),
+            None,
+            &azure_composition(),
+        )
+        .oneshot(request);
         (call, vertex)
     };
     let response = call.await.expect("response");
@@ -564,7 +606,8 @@ async fn a_mocked_vertex_ai_embedding_never_reaches_the_vertex_call() {
 #[tokio::test]
 async fn another_provider_never_reaches_the_vertex_call() {
     let (status, calls) =
-        status_with_vertex("model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k").await;
+        status_with_vertex("model: deepseek/embed, api_base: 'http://127.0.0.1:1', api_key: k")
+            .await;
     assert_eq!(calls, 0);
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 }
@@ -621,6 +664,11 @@ fn litellm_text(model: &str) -> String {
     )
 }
 
+// the composition a server builds at startup; these routes never reach Azure, so it stays empty
+fn azure_composition() -> Arc<Composition> {
+    Arc::new(Composition::default())
+}
+
 fn embedding_executor() -> Arc<ChatExecutor> {
     let source = "model_list:\n  - model_name: embed-model\n    litellm_params: {model: openai/text-embedding-3-small, api_base: 'http://127.0.0.1:9/v1', api_key: oracle-key}\n";
     let config = ConfigLoader {
@@ -642,10 +690,15 @@ async fn ask(
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
         .expect("request");
-    let response = embedding_routes(embedding_executor(), None, read_through)
-        .oneshot(request)
-        .await
-        .expect("response");
+    let response = embedding_routes(
+        embedding_executor(),
+        None,
+        read_through,
+        &azure_composition(),
+    )
+    .oneshot(request)
+    .await
+    .expect("response");
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 1 << 20).await.expect("body");
     (status, serde_json::from_slice(&bytes).expect("error body"))

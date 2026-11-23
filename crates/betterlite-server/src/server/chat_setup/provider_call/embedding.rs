@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::http::HeaderMap;
@@ -5,6 +6,7 @@ use betterlite_http::error::HttpError;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::{EmbeddingError, EmbeddingRequest, EmbeddingResponse};
+use betterlite_provider::azure_dispatch::call::Composition;
 use betterlite_provider::operation::{
     EmbeddingOperation, OperationError, OperationRequest, OperationResult,
 };
@@ -45,8 +47,9 @@ pub(crate) async fn provider_embedding(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
     request: &EmbeddingRequest,
+    azure: &Arc<Composition>,
 ) -> Result<(EmbeddingResponse, HeaderMap, Duration), CallError<EmbeddingError>> {
-    let provider = Provider::from_deployment(deployment).map_err(embedding_error)?;
+    let provider = Provider::from_deployment(deployment, azure).map_err(embedding_error)?;
     let inputs = Deployment::from_chat(deployment);
     let operation = OperationRequest::Embedding(Box::new(EmbeddingOperation {
         model: inputs.model.clone(),

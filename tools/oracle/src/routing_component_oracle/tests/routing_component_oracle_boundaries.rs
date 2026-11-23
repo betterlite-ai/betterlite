@@ -273,7 +273,7 @@ async fn a_stub_answers_not_built_on_both_sides() {
             monotonic_millis: 42_000,
         },
         samples: Vec::new(),
-        operation: ProbeOperation::ComplexityTurnOverrides(UnbuiltInput::default()),
+        operation: ProbeOperation::AdaptiveFeedback(UnbuiltInput::default()),
     };
     let bytes = serde_json::to_vec(&request).unwrap();
     let command = python_command(&root);
@@ -288,7 +288,7 @@ async fn a_stub_answers_not_built_on_both_sides() {
     let python: Reply = parse_message(&output.stdout.bytes).unwrap();
     let expected = Reply::Error {
         kind: ProbeFailure::UnknownOperation,
-        message: "complexity_turn_overrides is not built".to_owned(),
+        message: "adaptive_feedback is not built".to_owned(),
     };
     assert_eq!(python, expected);
     assert_eq!(execute(&request), expected);
