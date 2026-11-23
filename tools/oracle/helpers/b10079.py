@@ -34,6 +34,7 @@ def servers_by_id(records: list[dict[str, JsonValue]]) -> dict[str, MCPServer]:
     return servers
 
 
+# MCPServerManager.__init__ builds token stores and discovery caches the public methods never read
 def build_manager(call: RegistryCall) -> MCPServerManager:
     manager = MCPServerManager.__new__(MCPServerManager)
     manager.config_mcp_servers = servers_by_id(call["config_servers"])
