@@ -90,7 +90,10 @@ mod public_endpoints {
             let (status, text) =
                 body_text(resource_hubs_routes(state()), "/public/skill_hub").await;
             assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-            assert_eq!(text, format!(r#"{{"error":"{DB_NOT_CONNECTED}"}}"#));
+            assert_eq!(
+                text,
+                format!(r#"{{"detail":{{"error":"{DB_NOT_CONNECTED}"}}}}"#)
+            );
         }
     }
 }

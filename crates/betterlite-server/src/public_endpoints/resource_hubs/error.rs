@@ -32,14 +32,22 @@ struct DetailBody {
     detail: String,
 }
 
+// FastAPI renders HTTPException(detail={...}) as {"detail": {...}}, the body LiteLLM's _get_prisma_client produces.
+#[derive(Serialize)]
+struct PolicyBody {
+    detail: ErrorDetail,
+}
+
 impl IntoResponse for ResourceHubsError {
     fn into_response(self) -> Response {
         if let Self::PluginPolicy(policy) = &self {
             let fields = policy.fields();
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorDetail {
-                    error: fields.detail.error,
+                Json(PolicyBody {
+                    detail: ErrorDetail {
+                        error: fields.detail.error,
+                    },
                 }),
             )
                 .into_response();
