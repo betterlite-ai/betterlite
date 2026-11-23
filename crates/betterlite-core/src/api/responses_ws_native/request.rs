@@ -8,7 +8,6 @@ use indexmap::IndexMap;
 use super::error::WsNativeError;
 use crate::api::responses_parameters::requested::requested_optional_params;
 
-// Python truthiness over JSON: null, false, zero, "" and empty containers are false
 #[must_use]
 pub fn is_supplied(value: &Json) -> bool {
     match value {
@@ -39,7 +38,6 @@ pub(super) fn json_type_name(value: &Json) -> &'static str {
     }
 }
 
-// JSON that isn't an object fails the way Python's .get does; malformed JSON is simply not read
 pub(super) fn json_object(message: &str) -> Result<Option<IndexMap<String, Json>>, WsNativeError> {
     match serde_json::from_str::<Json>(message) {
         Ok(Json::Object(fields)) => Ok(Some(fields)),
@@ -55,7 +53,6 @@ enum SlotError {
     AttributeError,
 }
 
-// kwargs.get(name) or {}: a falsey value is an empty mapping, a truthy non-mapping raises
 fn mapping_slot<'value>(
     value: Option<&'value Json>,
     error: SlotError,
@@ -74,7 +71,6 @@ fn mapping_slot<'value>(
     }
 }
 
-// {**litellm_metadata}: a truthy non-mapping raises, and the guardrails prefer the caller's metadata
 pub fn build_litellm_metadata_for_ws(
     kwargs: &IndexMap<String, Json>,
 ) -> Result<IndexMap<String, Json>, WsNativeError> {
@@ -92,7 +88,6 @@ pub fn build_litellm_metadata_for_ws(
     Ok(metadata)
 }
 
-// a mapping effort is validated and kept, a scalar one is wrapped, and a present reasoning suppresses both
 #[must_use]
 pub fn deployment_reasoning_default(
     kwargs: &IndexMap<String, Json>,
@@ -126,7 +121,6 @@ fn reasoning_effort_object(effort: &Json, auto_summary: bool) -> Json {
     Json::Object(fields)
 }
 
-// the routed input replaces a nested response input when one exists, otherwise the flat input
 #[must_use]
 pub fn routed_first_frame(first_message: &str, routed_input: Option<&Json>) -> String {
     let Ok(Json::Object(frame)) = serde_json::from_str::<Json>(first_message) else {

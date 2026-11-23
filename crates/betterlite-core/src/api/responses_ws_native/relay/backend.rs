@@ -9,7 +9,6 @@ pub enum BackendError<Source>
 where
     Source: Error + 'static,
 {
-    // the peer exposes only recv(), so the first call's TypeError asks the relay for the no-argument form
     #[error("the backend does not accept the decode argument")]
     UnsupportedDecode,
     #[error("the backend connection closed: {source}")]
@@ -24,7 +23,6 @@ where
     },
 }
 
-// The relay asks for recv(decode=False) first and falls back to recv() only on UnsupportedDecode.
 pub trait NativeWsBackend: Send + Sync {
     type Error: Error + Send + Sync + 'static;
 

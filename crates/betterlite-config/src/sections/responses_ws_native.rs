@@ -19,7 +19,6 @@ struct RawSettings {
     openai_key: Option<SecretString>,
 }
 
-// The three litellm globals the native WebSocket call falls back to, plus the environment key behind them.
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub api_base: Option<String>,
@@ -43,7 +42,6 @@ impl Section for Raw {
                 "litellm_settings.openai_key",
                 lookup,
             )?,
-            // an empty environment value names no key, so the credential chain treats it as unset
             openai_api_key: lookup
                 .lookup("OPENAI_API_KEY")
                 .filter(|value| !value.is_empty())

@@ -21,7 +21,6 @@ use crate::api::responses_ws_native::error::WsNativeError;
 use crate::api::responses_ws_native::request::json_object;
 use crate::cost::realtime::error::RealtimeCostError;
 
-// a failure that ends the backend forward loop; the connection closes either way
 struct BackendEnd {
     error: String,
 }
@@ -37,7 +36,6 @@ impl BackendEnd {
     }
 }
 
-// the client path's failures are logged and swallowed, so they stay matchable instead of turning into text
 #[derive(Debug, Error)]
 enum ClientRelayError {
     #[error("{0}")]
@@ -56,7 +54,6 @@ where
     Client: ResponsesClientWebSocket + Sync,
     Backend: NativeWsBackend,
 {
-    // the connection ends after final logging, whatever stopped the backend forward loop
     pub async fn backend_to_client(&self) -> Result<(), RealtimeCostError> {
         if let Err(end) = self.forward_backend_events().await {
             tracing::error!("Error in responses WS backend_to_client: {}", end.error);
@@ -64,14 +61,12 @@ where
         self.log_messages().await
     }
 
-    // the client loop swallows every failure after the debug line, keeping the relay alive until it ends
     pub async fn client_to_backend(&self) {
         if let Err(error) = self.forward_client_frames().await {
             tracing::debug!("Responses WS client_to_backend ended: {error}");
         }
     }
 
-    // whichever direction ends first decides the close path; the returned failure is the stored one
     pub async fn bidirectional_forward(&self) -> Option<ErrorClass> {
         let mut backend_forward = Box::pin(self.backend_to_client());
         let mut client_forward = Box::pin(self.client_to_backend());
@@ -104,7 +99,6 @@ where
         Ok(())
     }
 
-    // recv(decode=False) first; only a peer without that argument falls back to recv()
     async fn receive_message(
         &self,
     ) -> Result<ResponsesWebSocketMessage, BackendError<Backend::Error>> {
@@ -115,7 +109,6 @@ where
         outcome
     }
 
-    // one forwarded backend frame: bytes decode, guardrail drops run first, and a clean close ends the loop
     async fn next_backend_text(&self) -> Result<Option<String>, BackendEnd> {
         loop {
             let message = match self.receive_message().await {
@@ -144,7 +137,6 @@ where
         }
     }
 
-    // unmask, output-mask, then wrap: the stored and sent forms are the transformed ones
     async fn transform_backend_frame(&self, message: &str) -> Result<String, BackendEnd> {
         let policy = self.policy();
         let request_data = self.request_data.lock().await;
@@ -182,7 +174,6 @@ where
         }
     }
 
-    // masking runs before storage, so every stored and logged client frame is the masked one
     async fn relay_client_frame(&self, message: &str) -> Result<(), ClientRelayError> {
         let masked = self.masked_client_frame(message).await?;
         self.store_input(&masked).await;
@@ -218,7 +209,6 @@ where
     }
 }
 
-// a falsey drop list still reads the event type first, so a non-object frame fails like LiteLLM's .get
 fn output_dropped(message: &str) -> Result<bool, WsNativeError> {
     let Some(fields) = json_object(message)? else {
         return Ok(false);

@@ -90,7 +90,6 @@ where
     }
 }
 
-// request_data stays one JSON value per key, so the policy's RawValue slots keep their declared form
 fn raw_request_data(fields: &IndexMap<String, Json>) -> RequestData {
     let mut data = RequestData::new();
     for (name, value) in fields {

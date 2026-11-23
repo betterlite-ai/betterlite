@@ -31,7 +31,6 @@ where
     Client: ResponsesClientWebSocket + Sync,
     Backend: NativeWsBackend,
 {
-    // the allowlisted event is kept in its transformed form; malformed JSON is dropped, other JSON fails
     pub async fn store_event(&self, message: &str) -> Result<(), WsNativeError> {
         let Some(parsed) = json_object(message)? else {
             return Ok(());
@@ -46,7 +45,6 @@ where
         Ok(())
     }
 
-    // input extraction ignores its own failures, and every frame still reaches pre_call with the empty key
     pub async fn store_input(&self, message: &str) {
         let collected = collect_input(message);
         if !collected.is_empty() {
@@ -57,7 +55,6 @@ where
         }
     }
 
-    // the first stored error or response.failed decides the exception the connection returns
     pub async fn failure_exception(&self) -> Option<ErrorClass> {
         let messages = self.messages.lock().await;
         let failed = messages.iter().find(|event| {
@@ -79,7 +76,6 @@ where
         ))
     }
 
-    // a response object takes the managed-id rewrite; only the two item events take encrypted wrapping
     pub fn wrap_response_event(&self, response_str: &str) -> Result<String, WsNativeError> {
         let Some(mut event) = json_object(response_str)? else {
             return Ok(response_str.to_owned());
@@ -105,7 +101,6 @@ where
         }
     }
 
-    // the stored messages reach success or failure dispatch once, after the connection ends
     pub async fn log_messages(&self) -> Result<(), RealtimeCostError> {
         let Some(logging) = self.setup.logging else {
             return Ok(());
@@ -129,7 +124,6 @@ where
     }
 }
 
-// the logging object prices the whole session, and a falsey price, including None, is recorded as zero
 fn record_usage_for_failure(
     messages: &[IndexMap<String, Json>],
     logging: &dyn WsNativeLogging,
@@ -151,7 +145,6 @@ fn record_usage_for_failure(
     Ok(())
 }
 
-// Ports _collect_input_from_client_event: only response.create frames, and only the user's text, are kept
 fn collect_input(message: &str) -> Vec<IndexMap<String, Json>> {
     let Ok(Some(frame)) = json_object(message) else {
         return Vec::new();

@@ -37,7 +37,6 @@ const EXPLICIT_KEYS: [&str; 12] = [
     "previous_response_id",
 ];
 
-// The resolver's provider call: a provider model, the provider it resolved, and any dynamic credentials.
 pub struct WsResolved {
     pub model: String,
     pub provider: Option<String>,
@@ -54,7 +53,6 @@ pub trait NativeWsResolution: Send + Sync {
     ) -> Result<WsResolved, ResolutionError>;
 }
 
-// get_llm_provider without a declared provider: the resolver names the provider, and the routing prefix is B931's
 impl<T> NativeWsResolution for T
 where
     T: ModelResolver + Send + Sync,
@@ -100,7 +98,6 @@ pub struct NativeWsCall<'call, Client> {
     pub kwargs: &'call IndexMap<String, Json>,
 }
 
-// async_responses_websocket's arguments, after this task has resolved every argument it owns
 pub struct ProviderWsRequest<'request, Client> {
     pub model: &'request str,
     pub websocket: &'request Client,
@@ -140,7 +137,6 @@ where
     Handler(#[from] HandlerError),
 }
 
-// Ports _aresponses_websocket: resolve, log the resolver values, then hand the typed provider call over
 pub async fn responses_websocket<Client, Handler>(
     deps: &NativeWsDeps<'_, Handler>,
     call: NativeWsCall<'_, Client>,

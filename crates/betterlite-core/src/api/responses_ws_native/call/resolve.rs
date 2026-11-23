@@ -16,7 +16,6 @@ use crate::api::responses_stream_events::JsonShape;
 use crate::api::responses_ws_native::logging::WsCallUpdate;
 use crate::api::responses_ws_native::request::is_supplied;
 
-// the resolver, then the base/key chains, the logging update and the provider config, all before the handler
 pub(super) struct ResolvedCall {
     pub(super) model: String,
     pub(super) provider: Option<String>,
@@ -65,7 +64,6 @@ where
     })
 }
 
-// update_from_kwargs receives the resolver's model, the user and provider, and the projected params
 fn record_update<Client, Handler>(
     deps: &NativeWsDeps<'_, Handler>,
     call: &NativeWsCall<'_, Client>,
@@ -90,7 +88,6 @@ fn first_present<'value>(values: &[Option<&'value str>]) -> Option<&'value str> 
         .find(|text| !text.is_empty())
 }
 
-// an empty key is falsey in Python's `or` chain, so it counts as unset here too
 fn first_secret<'secret>(
     values: &[Option<&'secret SecretString>],
 ) -> Option<&'secret SecretString> {
@@ -101,7 +98,6 @@ fn first_secret<'secret>(
         .find(|secret| !secret.expose_secret().is_empty())
 }
 
-// GenericLiteLLMParams(**kwargs).api_key: the explicit parameter never reaches this slot
 fn kwarg_secret(kwargs: &IndexMap<String, Json>) -> Option<SecretString> {
     match kwargs.get("api_key") {
         Some(Json::Text(text)) => Some(SecretString::from(text.clone())),
@@ -122,7 +118,6 @@ fn resolve_config(
         .and_then(|name| resolve_provider_config(configs, model, name, &JsonValue::Null, api_base))
 }
 
-// get_litellm_params carries metadata, litellm_metadata and data_residency; the logging state owns the rest
 fn litellm_params_for_ws(
     kwargs: &IndexMap<String, Json>,
     residency: Option<DataResidency>,
@@ -140,7 +135,6 @@ fn litellm_params_for_ws(
     params
 }
 
-// not metadata and a truthy litellm_metadata copies it; otherwise the caller's metadata is kept as given
 fn resolved_metadata(kwargs: &IndexMap<String, Json>) -> Json {
     if let Some(value) = kwargs.get("metadata").filter(|value| is_supplied(value)) {
         return value.clone();
