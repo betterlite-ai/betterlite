@@ -307,6 +307,8 @@ def test_cost_calls() -> None:
         ("exa_ai/search", None, 1, None),
         ("exa_ai/search", "exa_ai", 3, {"max_results": 30}),
         ("exa_ai/search", "exa_ai", 1, {"max_results": 1000}),
+        ("dataforseo/search", "dataforseo", 2, None),
+        ("parallel_ai/search", "parallel_ai", 1, None),
     ]
     for model, provider, queries, optional_params in cases:
         ours = search_provider_cost_per_query(

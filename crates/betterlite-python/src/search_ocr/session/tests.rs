@@ -39,6 +39,15 @@ fn cost_charges_each_query_and_keeps_the_sign(
 }
 
 #[test]
+fn logging_state_names_the_search_call_after_its_provider() {
+    let state = session()
+        .logging_state("brave")
+        .expect("the logging state builds");
+    assert_eq!(state.model, "brave/search");
+    assert_eq!(state.call_type, "search");
+}
+
+#[test]
 fn cost_reports_a_model_the_catalog_lacks() {
     let answer = cost(r#"{"model": "nonesuch/search", "number_of_queries": 1}"#);
     assert_eq!(
