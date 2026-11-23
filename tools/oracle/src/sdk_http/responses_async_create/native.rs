@@ -105,20 +105,10 @@ async fn run_once(
         state: &mut fixture.state,
         env: &environment,
     };
-    let execution = CreateExecution { deps };
-    let prompts = port
+    let answer = wrapped(deps, &request, port.as_ref(), &mut log).await;
+    let hooks = port
         .as_ref()
-        .map(|scripted| scripted as &dyn AsyncPromptPort);
-    let create = AsyncCreateDeps {
-        resolver: deps.resolver,
-        lookup: deps.lookup,
-        prompts,
-    };
-    let answer = aresponses(&create, &execution, &request, (), &mut log).await;
-    let hooks = match &port {
-        Some(scripted) => scripted.observation(),
-        None => HookObservation::default(),
-    };
+        .map_or_else(HookObservation::default, ScriptedPort::observation);
     match answer {
         Ok(created) => Ok(RunOutcome {
             result: Some(created_json(created)?),
@@ -131,6 +121,26 @@ async fn run_once(
             hooks,
         }),
     }
+}
+
+// The wrapper aresponses runs: its own provider detection, its optional async prompt port and the sync execution behind it
+async fn wrapped(
+    deps: &CreateDeps<'_>,
+    request: &ResponsesCreateCall,
+    port: Option<&ScriptedPort>,
+    log: &mut LogContext<'_, '_>,
+) -> Result<Created<()>, AsyncCreateError> {
+    let execution = CreateExecution { deps };
+    let prompts: Option<&dyn AsyncPromptPort> = match port {
+        Some(scripted) => Some(scripted),
+        None => None,
+    };
+    let create = AsyncCreateDeps {
+        resolver: deps.resolver,
+        lookup: deps.lookup,
+        prompts,
+    };
+    aresponses(&create, &execution, request, (), log).await
 }
 
 fn failure_outcome(error: &AsyncCreateError, redactor: &Redactor) -> Failure {

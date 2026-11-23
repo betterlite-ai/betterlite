@@ -26,7 +26,6 @@ pub(super) struct HookScript {
 struct HookAnswer {
     model: String,
     messages: Vec<Json>,
-    #[serde(default)]
     optional_params: Json,
 }
 
@@ -77,28 +76,11 @@ impl AsyncPromptPort for ScriptedPort {
         &self,
         request: &MergeRequest<'_>,
     ) -> Result<MergeAnswer, PromptManagerError> {
-        let record = HookCall {
-            model: request.model.to_owned(),
-            prompt_id: request.prompt_id.map(str::to_owned),
-            prompt_label: request.prompt_label.map(str::to_owned),
-            prompt_version: request.prompt_version.map(decision_json),
-            prompt_variables: request.prompt_variables.map(decision_json),
-            messages: Json::List(
-                request
-                    .messages
-                    .iter()
-                    .map(|message| decision_json(&message.message))
-                    .collect(),
-            ),
-            carry: request
-                .request_kwargs
-                .contains_key(CARRY_UNMATCHED_MESSAGE_POINTS),
-            aresponses: truthy(request.non_default_params.get("aresponses")),
-        };
+        let call = observed(request);
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(record);
+            .push(call);
         let messages = self
             .answer
             .messages
@@ -119,6 +101,28 @@ impl AsyncPromptPort for ScriptedPort {
             messages,
             optional_params,
         })
+    }
+}
+
+// The hook call as the case observes it: what aresponses passed and what the port answered under
+fn observed(request: &MergeRequest<'_>) -> HookCall {
+    HookCall {
+        model: request.model.to_owned(),
+        prompt_id: request.prompt_id.map(str::to_owned),
+        prompt_label: request.prompt_label.map(str::to_owned),
+        prompt_version: request.prompt_version.map(decision_json),
+        prompt_variables: request.prompt_variables.map(decision_json),
+        messages: Json::List(
+            request
+                .messages
+                .iter()
+                .map(|message| decision_json(&message.message))
+                .collect(),
+        ),
+        carry: request
+            .request_kwargs
+            .contains_key(CARRY_UNMATCHED_MESSAGE_POINTS),
+        aresponses: truthy(request.non_default_params.get("aresponses")),
     }
 }
 

@@ -186,7 +186,7 @@ impl ModelResolver for ScriptedResolver {
         requests.push(seen);
         drop(requests);
         let (provider, model) = match request.custom_llm_provider {
-            Some(given) => (given.to_owned(), strip(given, request.model)),
+            Some(given) => (given.to_owned(), strip(given, request.model).to_owned()),
             None => {
                 let Some((prefix, rest)) = request.model.split_once('/') else {
                     return Err(ResolutionError::MissingProvider {
@@ -433,7 +433,7 @@ impl SyncHandoff<Token> for ScriptedHandoff {
 
 pub(super) async fn drive(
     resolver: &ScriptedResolver,
-    port: Option<&ScriptedPort>,
+    port: Option<&dyn AsyncPromptPort>,
     handoff: &ScriptedHandoff,
     call: &ResponsesCreateCall,
 ) -> Result<Created<Token>, AsyncCreateError> {
@@ -450,7 +450,7 @@ pub(super) async fn drive(
     let deps = AsyncCreateDeps {
         resolver,
         lookup: &lookup,
-        prompts: port.map(|port| port as &dyn AsyncPromptPort),
+        prompts: port,
     };
     let mut log = LogContext {
         state: &mut harness.state,

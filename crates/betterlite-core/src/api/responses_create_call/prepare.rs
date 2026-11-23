@@ -53,7 +53,7 @@ fn convert(call: &ResponsesCreateCall) -> Result<ResponsesCreateCall, AsyncCreat
     let mut converted = call.clone();
     let text =
         response_text(call).map_err(|error| AsyncCreateError::create(error, "", &call.model))?;
-    converted.text = text.map(decision_json);
+    converted.text = text;
     converted.text_format = None;
     converted
         .kwargs

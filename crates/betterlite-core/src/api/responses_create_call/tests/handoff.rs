@@ -69,7 +69,7 @@ fn omitted(call: &ResponsesCreateCall) {
     assert_eq!(call.extra_body, None);
     assert_eq!(call.timeout, None);
     assert_eq!(call.allowed_openai_params, None);
-    assert_eq!(call.api_key, None);
+    assert!(call.api_key.is_none());
     assert_eq!(call.api_base, None);
     assert_eq!(call.ssl_verify, None);
 }
