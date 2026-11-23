@@ -147,6 +147,30 @@ pub(super) fn delta_out_of_range_marks_dirty() {
 }
 
 #[test]
+fn empty_ids_are_used_as_given() {
+    let clock = support::clock(&[0]);
+    let mut accumulator = OutputAccumulator::started(&clock);
+    let added =
+        r#"{"item":{"content":[],"id":"","type":"message"},"type":"response.output_item.added"}"#;
+    accumulator.apply(event(added)).expect("the item applies");
+    assert_eq!(
+        output_ids(&forced(&mut accumulator, &clock)),
+        vec![String::new()]
+    );
+}
+
+#[test]
+fn empty_terminal_status_is_used_as_given() {
+    let clock = support::clock(&[0]);
+    let mut accumulator = OutputAccumulator::started(&clock);
+    let terminal = r#"{"response":{"status":""},"type":"response.completed"}"#;
+    accumulator
+        .apply(event(terminal))
+        .expect("the terminal applies");
+    assert_eq!(accumulator.final_status(), "");
+}
+
+#[test]
 fn delta_beyond_the_first_part_errors() {
     let clock = support::clock(&[0]);
     let mut accumulator = OutputAccumulator::started(&clock);

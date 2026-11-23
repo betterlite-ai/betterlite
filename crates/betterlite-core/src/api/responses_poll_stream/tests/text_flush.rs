@@ -10,7 +10,7 @@ const HE: &str =
 const LLO: &str =
     r#"{"content_index":0,"delta":"llo","item_id":"m","type":"response.output_text.delta"}"#;
 
-pub(super) const CLOCK: [u64; 6] = [1000, 1149, 1150, 1200, 1250, 1300];
+pub(super) const CLOCK: [u64; 6] = [1000, 1149, 1150, 1300, 1350, 1400];
 
 pub(super) async fn flushed_stream() -> Scenario {
     let mut steps: Vec<AnswerStep> = support::frames(&[ITEM_ADDED, PART_ADDED, HE, LLO])

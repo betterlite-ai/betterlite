@@ -48,37 +48,36 @@ const LINE_BREAKS: [char; 10] = [
 
 fn select_frame_data(frame: &str) -> PollFrame {
     let mut remainder = frame;
-    while let Some((line, rest)) = next_line(remainder) {
+    // every line takes at least one byte, so this bound only stops a broken splitter
+    for _ in 0..=frame.len() {
+        let (line, rest) = next_line(remainder);
         if let Some(payload) = line
             .strip_prefix("data: ")
             .map(|payload| payload.trim_matches(|character| PYTHON_WHITESPACE.contains(&character)))
         {
             return classify_payload(payload);
         }
+        if rest.is_empty() {
+            return PollFrame::NoData;
+        }
         remainder = rest;
     }
     PollFrame::NoData
 }
 
-// python's str.splitlines: a break ends a line, "\r\n" counts once, and a trailing break adds no line
-fn next_line(text: &str) -> Option<(&str, &str)> {
-    if text.is_empty() {
-        return None;
-    }
+// python's str.splitlines reads a break as the end of a line; a "\r\n" pair leaves one empty line
+// more, and an empty line never selects a payload either way
+fn next_line(text: &str) -> (&str, &str) {
     let Some((offset, character)) = text
         .char_indices()
         .find(|(_, character)| LINE_BREAKS.contains(character))
     else {
-        return Some((text, ""));
+        return (text, "");
     };
-    let (line, rest) = text.split_at_checked(offset)?;
-    let rest = rest.get(character.len_utf8()..)?;
-    let rest = if character == '\r' {
-        rest.strip_prefix('\n').unwrap_or(rest)
-    } else {
-        rest
+    let Some((line, rest)) = text.split_at_checked(offset) else {
+        return (text, "");
     };
-    Some((line, rest))
+    (line, rest.get(character.len_utf8()..).unwrap_or(rest))
 }
 
 fn classify_payload(payload: &str) -> PollFrame {

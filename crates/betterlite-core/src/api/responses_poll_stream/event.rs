@@ -167,14 +167,13 @@ fn item_value(value: &Json, field: &'static str) -> Result<Item, PollEventError>
     })
 }
 
-// python skips an empty id exactly like an absent one
+// an absent or null id leaves no id; a given id is used as it is, empty or not
 fn id_of(
     item: &IndexMap<String, Json>,
     field: &'static str,
 ) -> Result<Option<String>, PollEventError> {
     match item.get("id") {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) if text.is_empty() => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(_) => Err(PollEventError::Field { field }),
     }
@@ -223,11 +222,6 @@ fn terminal_of(
     };
     let status = match response.get("status") {
         None | Some(Json::Null) => None,
-        Some(Json::Text(text)) if text.is_empty() => {
-            return Err(PollEventError::Field {
-                field: "response.status",
-            });
-        }
         Some(Json::Text(text)) => Some(text.clone()),
         Some(_) => {
             return Err(PollEventError::Field {

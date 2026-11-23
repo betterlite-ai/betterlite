@@ -8,6 +8,7 @@ use crate::api::responses_poll_stream::frame::{PollFrame, decode_poll_stream_fra
 
 mod accumulator_rules;
 mod cancel_failure;
+mod clock;
 mod frame_selection;
 mod provider_call;
 mod support;

@@ -213,7 +213,6 @@ fn part_index(index: i64, len: usize) -> Result<Option<usize>, PollEventError> {
         };
         return Ok(Some(position));
     }
-    Ok(usize::try_from(index)
-        .ok()
-        .filter(|position| *position < len))
+    // a positive index past the last part selects nothing, exactly like python's failed bounds check
+    Ok(usize::try_from(index).ok())
 }
