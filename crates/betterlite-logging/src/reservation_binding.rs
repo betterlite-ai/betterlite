@@ -46,9 +46,12 @@ fn object_at<'map>(
     Some(found)
 }
 
-// The shared lookup borrows the bucket, so the stamp resolves the same two slots again mutably
+// The shared probe ends before the mutable lookup starts, so the slot the lookup picks can be fetched mutably
 fn reservation_mut(metadata: &mut IndexMap<String, Json>) -> Option<&mut IndexMap<String, Json>> {
-    if let Some(Json::Object(stamped)) = metadata.get_mut(RESERVATION_KEY) {
+    if object_at(metadata, RESERVATION_KEY).is_some() {
+        let Some(Json::Object(stamped)) = metadata.get_mut(RESERVATION_KEY) else {
+            return None;
+        };
         return Some(stamped);
     }
     let Some(Json::Object(auth)) = metadata.get_mut(AUTH_KEY) else {
