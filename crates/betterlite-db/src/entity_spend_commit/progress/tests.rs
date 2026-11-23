@@ -103,13 +103,21 @@ async fn empty_categories_still_mark_all_eleven_tables(#[case] input: SpendTable
 async fn every_table_commits_once_in_the_source_order() {
     let ports = Ports::new();
     let writer = ScriptedWriter::new(&ports.events, &[]);
-    let input = every_table(&[("b", "1"), ("a", "2")]);
+    let input = every_table(&[
+        ("team_id::b::user_id::b", "1"),
+        ("team_id::a::user_id::a", "2"),
+    ]);
     let (committed, outcome) = commit_through(&ports, &writer, &ports.cache(), &input).await;
     outcome.unwrap();
     assert_eq!(committed, SpendTable::COMMIT_ORDER);
     let expected: Vec<String> = SpendTable::COMMIT_ORDER
         .iter()
-        .map(|table| format!("write {} a,b", table.name()))
+        .map(|table| {
+            format!(
+                "write {} team_id::a::user_id::a,team_id::b::user_id::b",
+                table.name()
+            )
+        })
         .collect();
     assert_eq!(writes(&ports.events), expected);
 }
