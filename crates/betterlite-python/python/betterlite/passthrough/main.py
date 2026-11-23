@@ -1,9 +1,7 @@
 from collections.abc import AsyncIterator, Generator, Iterator, Mapping
-from contextlib import contextmanager
 from typing import Final, TypeAlias, TypeVar
 
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import Unpack
 
 from betterlite._completion.arguments import SessionLike
 from betterlite._completion.errors import raise_native_error
@@ -71,7 +69,12 @@ class PassthroughStreamingResponse:
         return self
 
     def __next__(self) -> bytes:
-        chunk = self._stream.next_chunk()
+        chunk: bytes | None = None
+        try:
+            chunk = self._stream.next_chunk()
+        except NativePassthroughError as failure:
+            self.close()
+            raise_native_error(NativeError(str(failure)))
         if chunk is None:
             raise StopIteration
         return chunk
@@ -104,8 +107,17 @@ class AsyncPassthroughStreamingResponse:
     def __aiter__(self) -> AsyncIterator[bytes]:
         return self
 
+    # ast-grep-ignore: no-one-line-functions
+    def aiter_bytes(self) -> "AsyncPassthroughStreamingResponse":
+        return self
+
     async def __anext__(self) -> bytes:
-        chunk = await self._stream.anext_chunk()
+        chunk: bytes | None = None
+        try:
+            chunk = await self._stream.anext_chunk()
+        except NativePassthroughError as failure:
+            await self.aclose()
+            raise_native_error(NativeError(str(failure)))
         if chunk is None:
             raise StopAsyncIteration
         return chunk
@@ -135,31 +147,26 @@ def reply_response(
             return PassthroughResponse(status_code, dict(headers), content)
 
 
-@contextmanager
-def native_call() -> Iterator[None]:
-    try:
-        yield
-    except NativePassthroughError as failure:
-        raise_native_error(NativeError(str(failure)))
-
-
 def call_route(route: RouteValues) -> ResponseParts:
     payload = to_call_payload(request_values(route))
     session = NativePassthroughSession("{}")
-    with native_call():
-        return session.call(payload.text, payload.blobs)
+    parts: ResponseParts
+    try:
+        parts = session.call(payload.text, payload.blobs)
+    except NativePassthroughError as failure:
+        raise_native_error(NativeError(str(failure)))
+    return parts
 
 
 async def acall_route(route: RouteValues) -> ResponseParts:
     payload = to_call_payload(request_values(route))
     session = NativePassthroughSession("{}")
-    with native_call():
-        return await session.acall(payload.text, payload.blobs)
-
-
-def route_values(**values: Unpack[RouteValues]) -> RouteValues:
-    route: RouteValues = values
-    return route
+    parts: ResponseParts
+    try:
+        parts = await session.acall(payload.text, payload.blobs)
+    except NativePassthroughError as failure:
+        raise_native_error(NativeError(str(failure)))
+    return parts
 
 
 def llm_passthrough_route(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L393
@@ -181,7 +188,7 @@ def llm_passthrough_route(  # noqa: PLR0913  # https://github.com/BerriAI/litell
     client: SessionLike | None = None,
     **kwargs: CallValue,
 ) -> StreamReply:
-    route = route_values(
+    route = RouteValues(
         method=method,
         endpoint=endpoint,
         model=model,
@@ -222,7 +229,7 @@ async def allm_passthrough_route(  # noqa: PLR0913  # https://github.com/BerriAI
     **kwargs: CallValue,
 ) -> AsyncStreamReply:
     body = None if content is None else await acontent_bytes(content)
-    route = route_values(
+    route = RouteValues(
         method=method,
         endpoint=endpoint,
         model=model,
