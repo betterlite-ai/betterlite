@@ -38,6 +38,7 @@ scope:
   - crates/betterlite-router/src/context/request_scheduler/**
   - crates/betterlite-server/src/routing/request_scheduler.rs
   - crates/betterlite-server/src/routing/request_scheduler/**
+  - crates/betterlite-server/src/routing/deployment_affinity.rs
   - tools/oracle/src/router_probes/request_scheduler.rs
   - tools/oracle/src/router_probes/request_scheduler/**
   - tools/oracle/litellm/probes/request_scheduler.py
