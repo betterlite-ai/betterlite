@@ -1,12 +1,12 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Final, TypeAlias
 
 import litellm
 import openai
 import pytest
 from litellm.litellm_core_utils import get_llm_provider_logic
+from litellm.llms.custom_llm import CustomLLM
 from litellm.types.router import GenericLiteLLMParams as TheirParams
-from pydantic import JsonValue
 
 import betterlite
 from betterlite._provider import _get_openai_compatible_provider_info as our_compatible_info
@@ -154,7 +154,7 @@ def test_endpoint_lookup(api_base: str) -> None:
     assert ours[3] == api_base
 
 
-def test_endpoint_reads_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lookup_endpoint_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GROQ_API_KEY", "sk-test-groq")
     ours = betterlite.get_llm_provider(model="gpt-4", api_base=GROQ_BASE)
     theirs = get_llm_provider_logic.get_llm_provider(model="gpt-4", api_base=GROQ_BASE)
@@ -162,7 +162,7 @@ def test_endpoint_reads_key(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ours[2] == "sk-test-groq"
 
 
-def test_params_fill_all_none() -> None:
+def test_lookup_params_fill() -> None:
     ours = betterlite.get_llm_provider(
         model="llama3-8b-8192",
         litellm_params=GenericLiteLLMParams(
@@ -178,27 +178,37 @@ def test_params_fill_all_none() -> None:
     assert ours == theirs
 
 
-def test_later_provider_map() -> None:
-    entries: list[JsonValue] = [{"provider": "myprovider"}]
-    betterlite.custom_provider_map = entries
-    try:
-        ours = betterlite.get_llm_provider(model="myprovider/model-x")
-        assert ours == ("model-x", "myprovider", None, None)
-    finally:
-        betterlite.custom_provider_map = []
+@pytest.fixture()
+def custom_maps() -> Iterator[list[str]]:
+    betterlite.custom_provider_map = [{"provider": "myprovider"}]
+    litellm.custom_provider_map = [{"provider": "myprovider", "custom_handler": CustomLLM()}]
+    yield ["myprovider"]
+    betterlite.custom_provider_map = []
+    litellm.custom_provider_map = []
+
+
+def test_lookup_later_provider_map(custom_maps: list[str]) -> None:
+    provider = custom_maps[0]
+    ours = betterlite.get_llm_provider(model=f"{provider}/model-x")
+    theirs = get_llm_provider_logic.get_llm_provider(model=f"{provider}/model-x")
+    assert ours == theirs
+
+
+def test_inferred_custom_map(custom_maps: list[str]) -> None:
+    provider = custom_maps[0]
+    theirs = get_llm_provider_logic.inferred_provider(f"{provider}/model-x")
+    assert betterlite.inferred_provider(f"{provider}/model-x") == theirs
 
 
 @pytest.mark.parametrize("name", [None, "myprovider", "other"])
-def test_registered_later_map(name: str | None) -> None:
-    betterlite.custom_provider_map = [{"provider": "myprovider"}]
-    try:
-        assert betterlite.is_registered_custom_provider(name) is (name == "myprovider")
-    finally:
-        betterlite.custom_provider_map = []
+def test_lookup_registered_map(custom_maps: list[str], name: str | None) -> None:
+    theirs = get_llm_provider_logic.is_registered_custom_provider(name)
+    assert betterlite.is_registered_custom_provider(name) == theirs
+    assert betterlite.is_registered_custom_provider(name) is (name in custom_maps)
 
 
 @pytest.mark.parametrize(("model", "provider"), DECLARED_PAIRS)
-def test_declared_auth(model: str | None, provider: str | None) -> None:
+def test_lookup_declared_auth(model: str | None, provider: str | None) -> None:
     theirs = get_llm_provider_logic.declared_authenticating_provider(model, provider)
     assert betterlite.declared_authenticating_provider(model, provider) == theirs
 
@@ -217,7 +227,7 @@ def test_inferred_declared_first() -> None:
 
 
 @pytest.mark.parametrize("case", COMPATIBLE)
-def test_compatible_matches(monkeypatch: pytest.MonkeyPatch, case: CompatibleCase) -> None:
+def test_openai_compatible_info(monkeypatch: pytest.MonkeyPatch, case: CompatibleCase) -> None:
     model, api_base, api_key, dynamic_api_key, expected = case
     for name in ENV_KEYS:
         monkeypatch.delenv(name, raising=False)
@@ -231,7 +241,7 @@ def test_compatible_matches(monkeypatch: pytest.MonkeyPatch, case: CompatibleCas
 
 @pytest.mark.parametrize(("theirs", "ours"), HANDLERS)
 @pytest.mark.parametrize(("model", "provider"), HANDLER_INPUTS)
-def test_handlers_match_litellm(
+def test_openai_compatible_helpers(
     theirs: PairHandler, ours: PairHandler, model: str, provider: str | None
 ) -> None:
     expected = theirs(model, provider)
@@ -239,7 +249,7 @@ def test_handlers_match_litellm(
 
 
 @pytest.mark.parametrize("model", UNLISTED)
-def test_unlisted_models_error(model: str) -> None:
+def test_errors_unlisted_models(model: str) -> None:
     caught: list[str] = []
     try:
         get_llm_provider_logic.get_llm_provider(model=model)
@@ -250,7 +260,7 @@ def test_unlisted_models_error(model: str) -> None:
     assert caught == [str(actual.value)]
 
 
-def test_none_model_error() -> None:
+def test_errors_none_model() -> None:
     expected = (
         "litellm.BadRequestError: GetLLMProvider Exception - model parameter is required but "
         "was None. Please provide a valid model name.\n\noriginal model: None"
@@ -260,7 +270,7 @@ def test_none_model_error() -> None:
     assert str(actual.value) == expected
 
 
-def test_params_ignored_if_set() -> None:
+def test_errors_params_ignored() -> None:
     theirs_params = TheirParams(
         custom_llm_provider="groq", api_base="https://example/v1", api_key="sk-params"
     )
