@@ -9,7 +9,7 @@ deviations:
   - what: Proxy auth headers from litellm.proxy_auth are added to every generate-content request's headers, where LiteLLM's generate-content path merges only the caller's extra_headers.
     why: B6040's proxy_headers rides every family's request so a proxy that authenticates its upstreams keeps working for this call too.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11641-L11642
-  - what: A model that is neither Gemini nor Vertex answers a RuntimeError naming the chat completion adapter, where LiteLLM converts the call to a chat completion and runs it.
+  - what: A model that is neither Gemini nor Vertex fails with the native error naming the chat completion adapter, where LiteLLM converts the call to a chat completion and runs it.
     why: The adapter is B3489's Rust path and its executor is not part of the Python package, so a Python session has nothing to run it through.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L348-L360
   - what: Every call builds a fresh native session, reading the process environment and building the HTTP client pool again, where LiteLLM reuses its cached httpx clients.
