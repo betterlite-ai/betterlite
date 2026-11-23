@@ -46,7 +46,8 @@ impl NativeProviders {
             .map_err(|error| error.into_pyerr(py))
     }
 
-    fn declared_authenticating(&self, py: Python<'_>, request: &str) -> PyResult<String> {
+    #[staticmethod]
+    fn declared_authenticating(py: Python<'_>, request: &str) -> PyResult<String> {
         let call: HandlerRequest = parse(request).map_err(|error| error.into_pyerr(py))?;
         let declared = declared_provider(&call);
         serde_json::to_string(&declared.as_deref())
@@ -60,7 +61,8 @@ impl NativeProviders {
             .map_err(|source| ProviderError::Encode { source }.into_pyerr(py))
     }
 
-    fn handle_anthropic(&self, py: Python<'_>, request: &str) -> PyResult<String> {
+    #[staticmethod]
+    fn handle_anthropic(py: Python<'_>, request: &str) -> PyResult<String> {
         let call: HandlerRequest = parse(request).map_err(|error| error.into_pyerr(py))?;
         let pair = anthropic_handler(&call);
         serde_json::to_string(&pair)

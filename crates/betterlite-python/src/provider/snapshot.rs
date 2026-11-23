@@ -12,6 +12,7 @@ use crate::provider::error::ProviderError;
 use crate::provider::settings::ProviderSettings;
 
 // Every outside value a lookup reads, taken once when Python builds the native object.
+#[derive(Debug)]
 pub(crate) struct ProviderSnapshot {
     pub(crate) catalog: Arc<ModelCatalog>,
     pub(crate) known_model_names: BTreeSet<String>,

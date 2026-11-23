@@ -29,5 +29,5 @@ def handle_cohere_chat_model_custom_llm_provider(
 def handle_anthropic_text_model_custom_llm_provider(
     model: str, custom_llm_provider: str | None = None
 ) -> tuple[str, str | None]:
-    method = NativeProviders(provider_settings()).handle_anthropic
+    method = NativeProviders.handle_anthropic
     return _pair(method, model, custom_llm_provider)

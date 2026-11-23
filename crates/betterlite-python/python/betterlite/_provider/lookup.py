@@ -69,7 +69,7 @@ def declared_authenticating_provider(
         "model": TEXT.validate_python(model),
         "custom_llm_provider": TEXT.validate_python(custom_llm_provider),
     }
-    answer = call_lookup(NativeProviders(provider_settings()).declared_authenticating, request)
+    answer = call_lookup(NativeProviders.declared_authenticating, request)
     return TEXT.validate_json(answer)
 
 
