@@ -59,8 +59,8 @@ impl ClaudePluginReadState {
 
 pub(crate) fn mount(state: ClaudePluginReadState) -> Router {
     Router::new()
-        .route(PLUGINS_PATH, get(flow::read_list))
-        .route(PLUGIN_PATH, get(flow::read_plugin))
+        .route(PLUGINS_PATH, get(flow::read))
+        .route(PLUGIN_PATH, get(flow::read))
         .with_state(Arc::new(state))
 }
 
