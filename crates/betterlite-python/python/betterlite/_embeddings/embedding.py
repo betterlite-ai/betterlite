@@ -32,7 +32,8 @@ NAMED_ARGUMENTS: Final[tuple[str, ...]] = (
 )
 # the arguments main.py hands to get_optional_params_embeddings as its own parameters
 OPTIONAL_ARGUMENTS: Final[tuple[str, ...]] = (
-    "dimensions", "encoding_format", "user", "api_base", "api_key", "custom_llm_provider",
+    "dimensions", "encoding_format", "user", "api_base", "api_version", "api_key",
+    "custom_llm_provider",
 )
 # LiteLLM's own bookkeeping and the clients Rust cannot use; the payload drops or refuses them
 SKIPPED_KWARGS: Final[tuple[str, ...]] = (

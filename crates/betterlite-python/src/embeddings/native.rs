@@ -1,4 +1,4 @@
-use super::call;
+use super::call::{Entry, call};
 use super::convert::{EmbeddingCallWire, parse};
 use super::error::{SessionError, call_failure};
 use super::response::serialize_answer;
@@ -29,7 +29,7 @@ impl NativeEmbeddingSession {
         _blobs: &Bound<'_, PyList>,
     ) -> PyResult<String> {
         let wire: EmbeddingCallWire = parse(request).map_err(SessionError::from)?;
-        py.detach(|| get_runtime().block_on(answer_text(&self.session, wire)))
+        py.detach(|| get_runtime().block_on(answer_text(&self.session, wire, Entry::Sync)))
     }
     // the awaitable embedding: the same call on the asyncio loop's runtime, handed back as a coroutine
     fn aembedding<'py>(
@@ -40,12 +40,18 @@ impl NativeEmbeddingSession {
     ) -> PyResult<Bound<'py, PyAny>> {
         let wire: EmbeddingCallWire = parse(request).map_err(SessionError::from)?;
         let session = Arc::clone(&self.session);
-        future_into_py(py, async move { answer_text(&session, wire).await })
+        future_into_py(py, async move {
+            answer_text(&session, wire, Entry::Async).await
+        })
     }
 }
 // both entry points answer the same JSON text or raise the same NativeEmbeddingError
-async fn answer_text(session: &EmbeddingSession, wire: EmbeddingCallWire) -> PyResult<String> {
-    let answer = Box::pin(call::call(session, wire))
+async fn answer_text(
+    session: &EmbeddingSession,
+    wire: EmbeddingCallWire,
+    entry: Entry,
+) -> PyResult<String> {
+    let answer = Box::pin(call(session, wire, entry))
         .await
         .map_err(|failure| call_failure(&failure))?;
     serialize_answer(&answer).map_err(|error| PyErr::from(SessionError::from(error)))

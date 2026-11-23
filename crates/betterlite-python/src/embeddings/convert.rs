@@ -25,6 +25,7 @@ pub(crate) struct EmbeddingArguments {
     pub(crate) timeout: Option<f64>,
     pub(crate) user: Option<String>,
     pub(crate) api_base: Option<String>,
+    pub(crate) api_version: Option<String>,
     pub(crate) api_key: Option<SecretString>,
     pub(crate) custom_llm_provider: Option<String>,
     pub(crate) litellm_call_id: Option<String>,

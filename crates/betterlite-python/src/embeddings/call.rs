@@ -6,31 +6,48 @@ use super::response::{
     response_data, usage_json,
 };
 use super::session::{
-    EmbeddingSession, additional_headers, deployment, header_map, mock_api_base, plain_text,
-    secret_text, with_headers,
+    DeploymentInputs, EmbeddingSession, additional_headers, deployment, header_map, mock_api_base,
+    plain_text, secret_text, with_headers,
 };
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolvedModel;
 use betterlite_openai::chat::deployment::ChatDeployment;
-use betterlite_openai::embedding::EmbeddingResponse;
-use betterlite_provider::operation::{EmbeddingOperation, OperationRequest, OperationResult};
+use betterlite_openai::embedding::{EmbeddingRequest, EmbeddingResponse};
+use betterlite_provider::operation::{
+    EmbeddingOperation, OperationError, OperationRequest, OperationResult,
+};
 use betterlite_provider::prepared::deployment::Deployment;
 use betterlite_provider::provider::Provider;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde_json::Number;
 use std::collections::BTreeMap;
 use std::time::Instant;
 const MOCK_ERROR: &str = "Mock error";
 const MOCK_PROMPT_TOKENS: u32 = 10;
-struct Timing {
+// aembedding stamps the provider on every answer it awaits, a mock answer included
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Entry {
+    Sync,
+    Async,
+}
+// One call's borrowed inputs, so each step takes the call instead of its parts.
+struct CallContext<'call> {
+    session: &'call EmbeddingSession,
+    facts: CallFacts<'call>,
+    arguments: &'call EmbeddingArguments,
+    settings: &'call EmbeddingSettingsWire,
+    globals: &'call GlobalCredentials,
     started: Instant,
-    provider_ms: f64,
+    entry: Entry,
 }
 // main.py's embedding call, from the resolved deployment to the answer Python turns into an EmbeddingResponse.
 pub(crate) async fn call(
     session: &EmbeddingSession,
     wire: EmbeddingCallWire,
+    entry: Entry,
 ) -> Result<EmbeddingAnswer, CallFailure> {
     let started = Instant::now();
     let EmbeddingCallWire {
@@ -51,53 +68,77 @@ pub(crate) async fn call(
         )
         .map_err(|error| resolution_failure(&error, &arguments.model))?;
     let provider = resolved.provider.slug().to_owned();
-    let prefix = format!("{provider}/");
     let model = resolved
         .model
-        .strip_prefix(&prefix)
+        .strip_prefix(&format!("{provider}/"))
         .map_or_else(|| resolved.model.clone(), str::to_owned);
-    let facts = CallFacts {
-        call_id: arguments.litellm_call_id.as_deref().unwrap_or_default(),
-        model: &model,
-        provider: &provider,
+    let context = CallContext {
+        session,
+        facts: CallFacts {
+            call_id: arguments.litellm_call_id.as_deref().unwrap_or_default(),
+            model: &model,
+            provider: &provider,
+        },
+        arguments: &arguments,
+        settings: &settings,
+        globals: &globals,
+        started,
+        entry,
     };
+    answer(&context, &resolved, api_key).await
+}
+// main.py builds the optional params before mock_response short-circuits, so a refused param fails a mock call too
+async fn answer(
+    context: &CallContext<'_>,
+    resolved: &ResolvedModel,
+    api_key: Option<SecretString>,
+) -> Result<EmbeddingAnswer, CallFailure> {
     let request = request::build(
-        &arguments,
-        &model,
-        &provider,
-        settings.drop_params.unwrap_or(false),
-        &session.environment,
+        context.arguments,
+        context.facts.model,
+        context.facts.provider,
+        context.settings.drop_params.unwrap_or(false),
+        &context.session.environment,
     )?;
-    if let Some(mock) = &arguments.mock_response {
-        return mock_answer(session, &facts, &arguments, mock, &settings, started);
+    if let Some(mock) = &context.arguments.mock_response {
+        return mock_answer(context, mock);
     }
-    let resolved_deployment = deployment(
-        session, &resolved, &facts, &prefix, api_key, &arguments, &globals,
-    )?;
-    let inputs = Deployment::from_chat(&resolved_deployment);
-    let adapter = Provider::from_deployment(&resolved_deployment)
-        .map_err(|error| operation_failure(error, &facts, &session.redactor))?;
+    let inputs = DeploymentInputs {
+        resolved,
+        facts: &context.facts,
+        api_key,
+        arguments: context.arguments,
+        globals: context.globals,
+    };
+    let resolved_deployment = deployment(context.session, inputs)?;
+    provider_answer(context, &resolved_deployment, request).await
+}
+// prepare, send and decode through the adapter the resolved deployment names
+async fn provider_answer(
+    context: &CallContext<'_>,
+    resolved: &ChatDeployment,
+    request: EmbeddingRequest,
+) -> Result<EmbeddingAnswer, CallFailure> {
+    let facts = &context.facts;
+    let failed = |error: OperationError| operation_failure(error, facts, &context.session.redactor);
+    let inputs = Deployment::from_chat(resolved);
+    let adapter = Provider::from_deployment(resolved).map_err(failed)?;
     let operation = OperationRequest::Embedding(Box::new(EmbeddingOperation {
         model: inputs.model.clone(),
         request,
     }));
-    let prepared = adapter
-        .prepare(&operation, &inputs, &session.capabilities)
-        .map_err(|error| operation_failure(error, &facts, &session.redactor))?;
-    let prepared = with_headers(prepared, arguments.headers.as_ref())?;
+    let unsent = adapter
+        .prepare(&operation, &inputs, &context.session.capabilities)
+        .map_err(failed)?;
+    let prepared = with_headers(unsent, context.arguments.headers.as_ref())?;
     let sent = Instant::now();
     let upstream = adapter
-        .execute(&session.client, &prepared, &inputs)
+        .execute(&context.session.client, &prepared, &inputs)
         .await
-        .map_err(|error| operation_failure(error, &facts, &session.redactor))?;
-    let timing = Timing {
-        started,
-        provider_ms: milliseconds(sent.elapsed()),
-    };
+        .map_err(failed)?;
+    let provider_ms = milliseconds(sent.elapsed());
     let response_headers = header_map(upstream.headers());
-    let decoded = adapter
-        .decode(&prepared, upstream)
-        .map_err(|error| operation_failure(error, &facts, &session.redactor))?;
+    let decoded = adapter.decode(&prepared, upstream).map_err(failed)?;
     let OperationResult::Embedding(response) = decoded else {
         return Err(raised(
             Raised::InternalServer,
@@ -106,33 +147,23 @@ pub(crate) async fn call(
             Some(facts.provider.to_owned()),
         ));
     };
-    real_answer(
-        session,
-        &facts,
-        &arguments,
-        &resolved_deployment,
-        &timing,
-        response_headers,
-        *response,
-    )
+    real_answer(context, resolved, provider_ms, response_headers, *response)
 }
 // mock_embedding answers before the provider runs, with none of a real answer's headers or overhead
-fn mock_answer(
-    session: &EmbeddingSession,
-    facts: &CallFacts<'_>,
-    arguments: &EmbeddingArguments,
-    mock: &Json,
-    settings: &EmbeddingSettingsWire,
-    started: Instant,
-) -> Result<EmbeddingAnswer, CallFailure> {
+fn mock_answer(context: &CallContext<'_>, mock: &Json) -> Result<EmbeddingAnswer, CallFailure> {
     if matches!(mock, Json::Text(text) if text == "error") {
         return Err(raised(Raised::Plain, String::from(MOCK_ERROR), None, None));
     }
-    let response_ms = milliseconds(started.elapsed());
-    let api_base = mock_api_base(arguments, settings, &session.environment);
+    let facts = &context.facts;
+    let response_ms = milliseconds(context.started.elapsed());
+    let api_base = mock_api_base(
+        context.arguments,
+        context.settings,
+        &context.session.environment,
+    );
     let cost = response_cost(
-        arguments,
-        &session.catalog,
+        context.arguments,
+        &context.session.catalog,
         facts.model,
         facts.provider,
         MOCK_PROMPT_TOKENS,
@@ -141,7 +172,7 @@ fn mock_answer(
         call_id: facts.call_id,
         api_base: &api_base,
         litellm_model: facts.model,
-        provider: None,
+        provider: (context.entry == Entry::Async).then_some(facts.provider),
     };
     let hidden = hidden_params(
         &hidden_facts,
@@ -171,22 +202,18 @@ fn mock_record(mock: &Json) -> Json {
     Json::Object(record)
 }
 fn real_answer(
-    session: &EmbeddingSession,
-    facts: &CallFacts<'_>,
-    arguments: &EmbeddingArguments,
+    context: &CallContext<'_>,
     deployment: &ChatDeployment,
-    timing: &Timing,
+    provider_ms: f64,
     response_headers: BTreeMap<String, String>,
     response: EmbeddingResponse,
 ) -> Result<EmbeddingAnswer, CallFailure> {
-    let response_ms = milliseconds(timing.started.elapsed());
-    let overhead = timing
-        .provider_ms
-        .mul_add(-1.0_f64, response_ms)
-        .max(0.0_f64);
+    let facts = &context.facts;
+    let response_ms = milliseconds(context.started.elapsed());
+    let overhead = provider_ms.mul_add(-1.0_f64, response_ms).max(0.0_f64);
     let cost = response_cost(
-        arguments,
-        &session.catalog,
+        context.arguments,
+        &context.session.catalog,
         facts.model,
         facts.provider,
         response.usage.prompt_tokens,
@@ -197,20 +224,14 @@ fn real_answer(
         litellm_model: facts.model,
         provider: Some(facts.provider),
     };
-    let hidden = hidden_params(
-        &hidden_facts,
-        cost,
-        additional_headers(&response_headers),
-        response_ms,
-        Some(overhead),
-    );
+    let headers = additional_headers(&response_headers);
+    let hidden = hidden_params(&hidden_facts, cost, headers, response_ms, Some(overhead));
     let usage =
         usage_json(&response.usage).map_err(|error| CallFailure::Invalid(error.to_string()))?;
-    let data = response_data(&response.data);
     Ok(EmbeddingAnswer {
         object: response.object,
         model: response.model,
-        data,
+        data: response_data(&response.data),
         usage,
         hidden_params: hidden,
         response_headers,

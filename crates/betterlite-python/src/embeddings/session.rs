@@ -124,24 +124,34 @@ fn outbound_client(environment: &BTreeMap<String, String>) -> Result<ProxiedClie
         .map_err(|source| SessionError::Proxy { source })?;
     ProxiedClient::outbound(&Arc::new(policy)).map_err(|source| SessionError::Client { source })
 }
+// get_llm_provider's answer next to the call's own key and arguments
+pub(crate) struct DeploymentInputs<'call> {
+    pub(crate) resolved: &'call ResolvedModel,
+    pub(crate) facts: &'call CallFacts<'call>,
+    pub(crate) api_key: Option<SecretString>,
+    pub(crate) arguments: &'call EmbeddingArguments,
+    pub(crate) globals: &'call GlobalCredentials,
+}
 // get_llm_provider's inputs, turned into the deployment the shared provider pipeline prepares
 pub(crate) fn deployment(
     session: &EmbeddingSession,
-    resolved: &ResolvedModel,
-    facts: &CallFacts<'_>,
-    prefix: &str,
-    api_key: Option<SecretString>,
-    arguments: &EmbeddingArguments,
-    globals: &GlobalCredentials,
+    inputs: DeploymentInputs<'_>,
 ) -> Result<ChatDeployment, CallFailure> {
+    let DeploymentInputs {
+        resolved,
+        facts,
+        api_key,
+        arguments,
+        globals,
+    } = inputs;
     let declared = ModelDeployment {
         model_name: resolved.model.clone(),
         litellm_params: LiteLlmParams {
             ssl_verify: None,
-            model: Some(format!("{prefix}{}", facts.model)),
+            model: Some(format!("{}/{}", facts.provider, facts.model)),
             api_base: plain_text(resolved.api_base.as_deref()),
             api_key: resolved.api_key.clone().or(api_key),
-            api_version: None,
+            api_version: plain_text(arguments.api_version.as_deref()),
             timeout: arguments.timeout,
             stream_timeout: None,
             max_retries: None,

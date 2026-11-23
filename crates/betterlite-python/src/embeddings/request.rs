@@ -40,30 +40,7 @@ pub(crate) fn build(
     litellm_drop_params: bool,
     environment: &BTreeMap<String, String>,
 ) -> Result<EmbeddingRequest, CallFailure> {
-    let mut kwargs: Params = Params::new();
-    for (name, value) in &arguments.extra {
-        kwargs.insert(name.clone(), json_value(value)?);
-    }
-    let filtered = filter_out_litellm_params(&kwargs, &EXCLUDED);
-    let passed = passed_params(arguments, model, &filtered);
-    let allowed = arguments.allowed_openai_params.clone().unwrap_or_default();
-    let additional_drop = arguments.additional_drop_params.clone().unwrap_or_default();
-    let mut params = embedding_optional_params(&ParamsRequest {
-        model,
-        custom_llm_provider: provider,
-        passed_params: &passed,
-        special_params: &filtered,
-        additional_drop_params: &additional_drop,
-        allowed_openai_params: &allowed,
-        drop_policy: DropPolicy {
-            drop_params: arguments.drop_params,
-            litellm_drop_params,
-        },
-        provider_config: None,
-        mapper: None,
-        supported: None,
-    })
-    .map_err(|error| params_failure(&error))?;
+    let mut params = optional_params(arguments, model, provider, litellm_drop_params)?;
     let requested = requested_encoding(arguments.encoding_format.as_deref(), &params, environment);
     params.remove("encoding_format");
     // the mapping keeps or drops the caller's own value, so its presence decides and the typed argument fills it
@@ -86,6 +63,38 @@ pub(crate) fn build(
         user,
         passthrough,
     })
+}
+// main.py's non_default_params run through get_optional_params_embeddings for the resolved provider
+fn optional_params(
+    arguments: &EmbeddingArguments,
+    model: &str,
+    provider: &str,
+    litellm_drop_params: bool,
+) -> Result<Params, CallFailure> {
+    let mut kwargs = Params::new();
+    for (name, value) in &arguments.extra {
+        kwargs.insert(name.clone(), json_value(value)?);
+    }
+    let filtered = filter_out_litellm_params(&kwargs, &EXCLUDED);
+    let passed = passed_params(arguments, model, &filtered);
+    let allowed = arguments.allowed_openai_params.clone().unwrap_or_default();
+    let additional_drop = arguments.additional_drop_params.clone().unwrap_or_default();
+    embedding_optional_params(&ParamsRequest {
+        model,
+        custom_llm_provider: provider,
+        passed_params: &passed,
+        special_params: &filtered,
+        additional_drop_params: &additional_drop,
+        allowed_openai_params: &allowed,
+        drop_policy: DropPolicy {
+            drop_params: arguments.drop_params,
+            litellm_drop_params,
+        },
+        provider_config: None,
+        mapper: None,
+        supported: None,
+    })
+    .map_err(|error| params_failure(&error))
 }
 // get_optional_params_embeddings' locals(): the named arguments plus the kwargs it was handed
 fn passed_params(arguments: &EmbeddingArguments, model: &str, filtered: &Params) -> Params {
