@@ -112,5 +112,5 @@ fn basic_carries_credentials(value: &str) -> bool {
     let Ok(decoded) = BASE64.decode(encoded.trim()) else {
         return false;
     };
-    decoded.contains(&b':')
+    decoded.trim_ascii().contains(&b':')
 }
