@@ -230,6 +230,7 @@ impl CatalogSleeper for TokioSleep {
 }
 struct NoJitter;
 impl JitterSource for NoJitter {
+    #[cfg_attr(test, mutants::skip)]
     fn unit_interval(&mut self) -> Decimal {
         Decimal::ZERO
     }

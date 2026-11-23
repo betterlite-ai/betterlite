@@ -11,7 +11,7 @@ pub(crate) struct NativeCatalog {
 #[pymethods]
 impl NativeCatalog {
     #[new]
-    fn new(text: &str) -> PyResult<Self> {
+    pub(crate) fn new(text: &str) -> PyResult<Self> {
         let runtime = Runtime::new(text)?;
         Ok(Self {
             runtime: Arc::new(runtime),

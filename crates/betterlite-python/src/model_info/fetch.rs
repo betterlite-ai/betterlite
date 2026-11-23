@@ -56,7 +56,7 @@ impl HttpFetch {
         ))
     }
 }
-fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
+pub(crate) fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
     headers
         .iter()
         .filter_map(|(name, value)| {

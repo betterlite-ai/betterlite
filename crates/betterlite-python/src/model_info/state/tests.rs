@@ -5,12 +5,16 @@ use betterlite_models::decisions::Json;
 use betterlite_models::fetch_policy::revision::git_blob_id;
 use betterlite_models::source::{CatalogProvenance, SourceKind};
 use chrono::Utc;
+use http::{HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use serde_json::value::RawValue;
 
 use super::{Runtime, catalog_settings};
 use crate::model_info::convert::{self, RuntimeEntries};
+use crate::model_info::fetch::header_pairs;
+use crate::model_info::git_blob_id as native_git_blob_id;
 use crate::model_info::map::finalize;
+use crate::model_info::native::NativeCatalog;
 use crate::native_api::bundled_model_cost_json;
 
 fn runtime() -> Runtime {
@@ -165,4 +169,51 @@ fn model_info_state_finalize_installs_rules_and_expands_aliases() {
         finalized.entries.keys().last().map(String::as_str),
         Some("d")
     );
+}
+
+#[test]
+fn model_info_git_blob_id_hashes_the_git_object_header() {
+    assert_eq!(
+        native_git_blob_id(b""),
+        "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    );
+    assert_eq!(
+        native_git_blob_id(b"betterlite"),
+        "fa2a1e3b4141ddece01ca48ab95cab199ac377c9"
+    );
+}
+
+#[test]
+fn model_info_fetch_header_pairs_keeps_the_text_headers() {
+    let mut headers = HeaderMap::new();
+    headers.insert("etag", HeaderValue::from_static("abc"));
+    headers.insert("location", HeaderValue::from_static("elsewhere"));
+    let mut pairs = header_pairs(&headers);
+    pairs.sort();
+    assert_eq!(
+        pairs,
+        vec![
+            ("etag".to_owned(), "abc".to_owned()),
+            ("location".to_owned(), "elsewhere".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn model_info_native_generation_moves_with_each_adopt() {
+    let text = bundled_model_cost_json().unwrap();
+    let catalog = NativeCatalog::new(&text).unwrap();
+    assert_eq!(catalog.generation(), 0);
+    catalog.adopt("{}").unwrap();
+    catalog.adopt("{}").unwrap();
+    assert_eq!(catalog.generation(), 2);
+}
+
+#[test]
+fn model_info_state_adopt_rebuilds_the_catalog() {
+    let runtime = runtime();
+    runtime
+        .adopt(r#"{"catalog-probe":{"litellm_provider":"openai","max_tokens":42}}"#)
+        .unwrap();
+    assert!(runtime.state().catalog.metadata("catalog-probe").is_some());
 }
