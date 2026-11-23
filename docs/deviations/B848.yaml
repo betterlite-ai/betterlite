@@ -1,0 +1,12 @@
+task: B848
+deviations:
+  - what: A team or access group row whose stored list column is NULL reads as an empty list.
+    why: LiteLLM's pydantic models declare these columns as lists, so a NULL row fails validation there; betterlite's migrations allow NULL and its SQL normalizes it, because no working setup can rely on a validation crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L70-L95
+  - what: get_all_team_models returns each model's team ids in the order they were collected.
+    why: LiteLLM builds a set and converts it with list(), so its order is arbitrary; betterlite keeps insertion order, which is a stable refinement of the same mapping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14399-L14403
+kept_bugs:
+  - what: An unrestricted team reaches a team deployment when its team_id is a substring of the team's id, not only on equality.
+    why: LiteLLM uses Python's in operator on the strings, and production teams rely on ids that embed their team id, so the substring gate is copied on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14279
