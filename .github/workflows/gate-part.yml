@@ -261,6 +261,8 @@ jobs:
       # lint and task split every check between them, so a check added to checks.yaml runs in task
       - name: Run the gate's ${{ matrix.part }} checks on the merged result
         if: github.event_name != 'pull_request' || inputs.task != ''
+        # the cache build takes 22 to 33 minutes, and twice on 11-23 it stalled until the runner was lost at 61 minutes with no log (runs 45129968169, 45144639135)
+        timeout-minutes: ${{ matrix.part == 'cache' && 50 || 350 }}
         env:
           EVENT: ${{ github.event_name }}
           GATE_BASE: ${{ inputs.base }}
