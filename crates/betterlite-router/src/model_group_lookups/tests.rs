@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use std::future::Future;
+use std::future::{Future, poll_fn};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::task::{Context, Poll, Waker};
@@ -19,7 +19,7 @@ use tokio::runtime::Builder;
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget};
-use crate::model_catalog_lookup::cache::{CacheClear, CacheSlot, CatalogCaches, Invalidation};
+use crate::model_catalog_lookup::cache::{CacheClear as _, CacheSlot, CatalogCaches, Invalidation};
 use crate::model_catalog_lookup::lookup::CatalogLookup;
 use crate::model_group_info::error::GroupInfoError;
 use crate::model_group_info::group::ModelGroupInfo;
@@ -269,7 +269,7 @@ fn access_groups_rejects_a_value_outside_the_list(#[case] info: &str) {
     let error =
         all_groups(&world, &cache).expect_err("the access_groups value is not a list of strings");
     assert!(
-        matches!(error, AccessGroupError::InvalidAccessGroups { ref model_name } if model_name == "bad-row")
+        matches!(error, AccessGroupError::InvalidAccessGroups { model_name } if model_name == "bad-row")
     );
 }
 
@@ -316,12 +316,10 @@ fn access_groups_empty_string_argument_skips_the_cache(
 ) {
     let mut world = World::new(&[group_row("gpt-4o", "a", &["beta"])]);
     let cache = AccessGroups::default();
-    {
-        let lookup = world.lookup();
-        let _ignored = cache
-            .get_model_access_groups(&lookup, model_name, model_access_group, team_id)
-            .expect("the empty-string map");
-    }
+    let lookup = world.lookup();
+    let _ignored = cache
+        .get_model_access_groups(&lookup, model_name, model_access_group, team_id)
+        .expect("the empty-string map");
     world.push(group_row("claude", "b", &["beta"]));
     let map = all_groups(&world, &cache).expect("the map");
     assert_eq!(map, expected(&[("beta", &["gpt-4o", "claude"])]));
@@ -338,13 +336,11 @@ fn access_groups_lookup_error_leaves_the_cache_empty() {
         },
     );
     let cache = AccessGroups::default();
-    {
-        let lookup = world.lookup();
-        let error = cache
-            .get_model_access_groups(&lookup, None, None, None)
-            .expect_err("the alias has no hidden field");
-        assert!(matches!(error, AccessGroupError::Lookup(_)));
-    }
+    let lookup = world.lookup();
+    let error = cache
+        .get_model_access_groups(&lookup, None, None, None)
+        .expect_err("the alias has no hidden field");
+    assert!(matches!(error, AccessGroupError::Lookup(_)));
     world
         .aliases
         .insert("broken".to_owned(), AliasTarget::Name("gpt-4o".to_owned()));
@@ -398,16 +394,11 @@ impl DeploymentInfo for FakeInfo {
         let answer = self.answer.clone();
         let gate = self.gate.clone();
         async move {
-            if let Some(gate) = gate {
-                std::future::poll_fn(move |_context| {
-                    if gate.load(Ordering::SeqCst) {
-                        Poll::Ready(())
-                    } else {
-                        Poll::Pending
-                    }
-                })
-                .await;
-            }
+            poll_fn(move |_context| match &gate {
+                Some(open) if !open.load(Ordering::SeqCst) => Poll::Pending,
+                Some(_) | None => Poll::Ready(()),
+            })
+            .await;
             Ok(answer)
         }
     }
@@ -670,7 +661,7 @@ async fn group_info_a_clear_during_a_read_keeps_the_older_answer_out() {
     let lookup = scenario.world.lookup();
     let sources = scenario.sources();
     let cache = &scenario.cache;
-    {
+    let older = {
         let mut keys = ModelCostKeys::default();
         let mut read =
             std::pin::pin!(cache.cached_get_model_group_info(&lookup, &sources, "g", &mut keys));
@@ -678,9 +669,9 @@ async fn group_info_a_clear_during_a_read_keeps_the_older_answer_out() {
         assert!(matches!(read.as_mut().poll(&mut context), Poll::Pending));
         cache.clear();
         scenario.release();
-        let older = read.await.expect("the read").expect("group");
-        assert_eq!(older.model_group, "g");
-    }
+        read.await.expect("the read").expect("group")
+    };
+    assert_eq!(older.model_group, "g");
     assert_eq!(scenario.calls(), 1);
     let mut keys = ModelCostKeys::default();
     let newer = cache

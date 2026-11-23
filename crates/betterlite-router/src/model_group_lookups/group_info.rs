@@ -56,11 +56,11 @@ impl GroupInfoCache {
             .is_none()
             .then(|| get_model_group_info(lookup, sources, model_group, keys));
         async move {
-            let Some(pending) = pending else {
+            let Some(started) = pending else {
                 // Only a hit leaves pending empty, so the cached answer is there to return.
                 return Ok(cached.flatten());
             };
-            let answer = pending.await?;
+            let answer = started.await?;
             let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
             // A clear that landed during the read keeps that older answer out of the lru.
             if self.generation.load(Ordering::SeqCst) == generation
@@ -68,6 +68,7 @@ impl GroupInfoCache {
             {
                 drop(cache.put(model_group.to_owned(), answer.clone()));
             }
+            drop(entries);
             Ok(answer)
         }
     }
