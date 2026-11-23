@@ -6,7 +6,6 @@ import litellm
 import pytest
 from litellm.litellm_core_utils.token_counter import (
     calculate_img_tokens,
-    calculate_tiles_needed,
     get_image_dimensions,
     get_image_type,
     high_detail_image_token_upper_bound,
@@ -120,13 +119,9 @@ def test_counter_message_roles(message: dict[str, JsonValue]) -> None:
 
 
 def test_counter_message_objects() -> None:
-    ours = betterlite.token_counter(
-        model="gpt-4o",
-        messages=[Message(role="user", content=TEXT)],
-    )
-    theirs: int = litellm.token_counter(
-        model="gpt-4o",
-        messages=[LiteLLMMessage(role="user", content=TEXT)],
+    ours = betterlite.token_counter(model="gpt-4o", messages=[Message(role="user", content=TEXT)])
+    theirs = litellm.token_counter(
+        model="gpt-4o", messages=[LiteLLMMessage(role="user", content=TEXT)]
     )
     assert ours == theirs
 
@@ -137,19 +132,11 @@ def test_counter_tool_list() -> None:
     assert ours == theirs
 
 
-def test_counter_tool_choice() -> None:
-    for choice in TOOL_CHOICES:
-        ours = betterlite.token_counter(
-            model="gpt-4o",
-            messages=PLAIN_MESSAGES,
-            tool_choice=choice,
-        )
-        theirs: int = litellm.token_counter(
-            model="gpt-4o",
-            messages=PLAIN_MESSAGES,
-            tool_choice=choice,
-        )
-        assert ours == theirs, choice
+@pytest.mark.parametrize("choice", TOOL_CHOICES)
+def test_counter_tool_choice(choice: dict[str, JsonValue] | str) -> None:
+    ours = betterlite.token_counter(model="gpt-4o", messages=PLAIN_MESSAGES, tool_choice=choice)
+    theirs = litellm.token_counter(model="gpt-4o", messages=PLAIN_MESSAGES, tool_choice=choice)
+    assert ours == theirs, choice
 
 
 def test_counter_response_tokens() -> None:
@@ -203,7 +190,7 @@ def test_counter_unknown_type() -> None:
         )
 
 
-def test_counter_image_block_raises() -> None:
+def test_counter_refuses_image() -> None:
     with pytest.raises(ValueError, match="not counted"):
         betterlite.token_counter(
             model="gpt-4o",
@@ -217,10 +204,7 @@ def test_counter_disabled() -> None:
     betterlite.disable_token_counter = True
     litellm.disable_token_counter = True
     try:
-        ours = betterlite.token_counter(text=TEXT)
-        theirs: int = litellm.token_counter(text=TEXT)
-        assert ours == theirs
-        assert ours == 0
+        assert betterlite.token_counter(text=TEXT) == litellm.token_counter(text=TEXT) == 0
     finally:
         betterlite.disable_token_counter = False
         litellm.disable_token_counter = False
@@ -335,10 +319,9 @@ def test_image_resize() -> None:
 
 
 def test_image_tiles() -> None:
-    theirs: int = calculate_tiles_needed(800, 600)
-    assert betterlite.calculate_tiles_needed(800, 600) == theirs == DEFAULT_TILES
-    custom: int = calculate_tiles_needed(800, 600, 100, 50)
-    assert betterlite.calculate_tiles_needed(800, 600, 100, 50) == custom == CUSTOM_TILES
+    assert betterlite.calculate_tiles_needed(800, 600) == DEFAULT_TILES
+    custom = betterlite.calculate_tiles_needed(800, 600, 100, 50)
+    assert custom == CUSTOM_TILES
 
 
 def test_image_bound() -> None:

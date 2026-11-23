@@ -1,12 +1,11 @@
 import contextlib
-import json
 from collections.abc import Sequence
+from json import dumps
 from typing import Final, TypedDict
 
 from pydantic import JsonValue
 
 from betterlite import _native
-from betterlite._tokens.wire import JSON
 
 HUGGING_FACE: Final = "huggingface_tokenizer"
 
@@ -36,15 +35,24 @@ def tokenizer_handle(custom_tokenizer: CustomTokenizer) -> int:
     return custom_tokenizer["tokenizer"].tokenizer_id
 
 
+def request_with_tokenizer(
+    model: str,
+    custom_tokenizer: CustomTokenizer | None,
+) -> dict[str, JsonValue]:
+    request: dict[str, JsonValue] = {"model": model}
+    if custom_tokenizer is not None:
+        request["custom_tokenizer"] = tokenizer_handle(custom_tokenizer)
+    return request
+
+
 def encode(
     model: str = "",
     text: str = "",
     custom_tokenizer: CustomTokenizer | None = None,
 ) -> list[int]:
-    request: dict[str, JsonValue] = {"model": model, "text": text}
-    if custom_tokenizer is not None:
-        request["custom_tokenizer"] = tokenizer_handle(custom_tokenizer)
-    return _native.encode_text(json.dumps(request))
+    request: dict[str, JsonValue] = request_with_tokenizer(model, custom_tokenizer)
+    request["text"] = text
+    return _native.encode_text(dumps(request))
 
 
 def decode(
@@ -53,14 +61,11 @@ def decode(
     custom_tokenizer: CustomTokenizer | None = None,
     skip_special_tokens: bool = True,
 ) -> str:
-    request: dict[str, JsonValue] = {
-        "model": model,
-        "tokens": JSON.validate_python(list(tokens)),
-        "skip_special_tokens": skip_special_tokens,
-    }
-    if custom_tokenizer is not None:
-        request["custom_tokenizer"] = tokenizer_handle(custom_tokenizer)
-    return _native.decode_tokens(json.dumps(request))
+    request: dict[str, JsonValue] = request_with_tokenizer(model, custom_tokenizer)
+    tokens_json: list[JsonValue] = [token for token in tokens]
+    request["tokens"] = tokens_json
+    request["skip_special_tokens"] = skip_special_tokens
+    return _native.decode_tokens(dumps(request))
 
 
 def create_pretrained_tokenizer(
@@ -75,11 +80,11 @@ def create_pretrained_tokenizer(
     }
     if auth_token is not None:
         request["auth_token"] = auth_token
-    handle = _native.load_tokenizer(json.dumps(request))
+    handle = _native.load_tokenizer(dumps(request))
     return {"type": HUGGING_FACE, "tokenizer": NativeTokenizer(handle)}
 
 
 def create_tokenizer(json: str) -> CustomTokenizer:
     request: dict[str, JsonValue] = {"kind": "json", "json": json}
-    handle = _native.load_tokenizer(json.dumps(request))
+    handle = _native.load_tokenizer(dumps(request))
     return {"type": HUGGING_FACE, "tokenizer": NativeTokenizer(handle)}

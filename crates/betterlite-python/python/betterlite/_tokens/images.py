@@ -24,9 +24,10 @@ def calculate_tiles_needed(
     request: dict[str, JsonValue] = {
         "resized_width": resized_width,
         "resized_height": resized_height,
-        "tile_width": tile_width,
-        "tile_height": tile_height,
     }
+    if tile_width != DEFAULT_TILE_WIDTH or tile_height != DEFAULT_TILE_HEIGHT:
+        request["tile_width"] = tile_width
+        request["tile_height"] = tile_height
     return _native.image_tile_count(json.dumps(request))
 
 
@@ -41,9 +42,9 @@ def get_image_type(image_data: bytes) -> str | None:
     return _native.image_type(image_data)
 
 
-# ast-grep-ignore: no-one-line-functions
 def get_image_dimensions(data: str) -> tuple[int, int]:
-    return _native.image_dimensions(json.dumps({"data": data}))
+    request: dict[str, JsonValue] = {"data": data}
+    return _native.image_dimensions(json.dumps(request))
 
 
 def calculate_img_tokens(
