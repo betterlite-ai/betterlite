@@ -1,0 +1,10 @@
+kind: helper
+name: vector-index-admin-lifecycle-overlapping-occurrence
+call:
+  b10071: {function: lifecycle, method: "DELETE", path: "/indexes/indexes/index", index_name: "index"}
+calls:
+  - b10071: {function: lifecycle, method: "DELETE", path: "/indexes/indexes/index2", index_name: "index"}
+  - b10071: {function: lifecycle, method: "DELETE", path: "/indexes/indexes/indexes/index", index_name: "index"}
+  - b10071: {function: lifecycle, method: "DELETE", path: "/indexes/indexes/index?x=1", index_name: "index"}
+env: {}
+compare: {ignore: []}
