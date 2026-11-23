@@ -48,7 +48,9 @@ pub(crate) fn image_type(data: &[u8]) -> Option<&'static str> {
 #[pyfunction]
 pub(crate) fn image_dimensions(request: &str) -> PyResult<(u32, u32)> {
     let wire: DimensionsRequest = read(request)?;
-    let bytes = decode_data_url(&wire.data, MAX_MEDIA_BYTES).map_err(ImageError::from)?;
+    let bytes = decode_data_url(&wire.data, MAX_MEDIA_BYTES)
+        .map_err(ImageError::from)
+        .map_err(TokensError::from)?;
     let (width, height) = dimensions_of(&bytes, &Settings::default()).map_err(TokensError::from)?;
     Ok((width, height))
 }

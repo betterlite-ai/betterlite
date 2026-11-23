@@ -80,10 +80,9 @@ impl From<TokensError> for PyErr {
             | TokensError::MissingInput
             | TokensError::ToolsWithText
             | TokensError::UnknownTokenizer { .. }
-            | TokensError::Count(CountError::UnsupportedContent { .. })
-            | TokensError::Count(CountError::ContentField { .. }) => {
-                PyValueError::new_err(error.to_string())
-            }
+            | TokensError::Count(
+                CountError::UnsupportedContent { .. } | CountError::ContentField { .. },
+            ) => PyValueError::new_err(error.to_string()),
             TokensError::Count(_)
             | TokensError::SkipSpecialTokens
             | TokensError::Selection(_)

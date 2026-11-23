@@ -127,7 +127,10 @@ fn tokens_request_load_reads_a_serialized_tokenizer() {
 
 #[test]
 fn tokens_request_load_refuses_another_kind() {
-    let error = read::<LoadRequest>(r#"{"kind":"downloaded"}"#).unwrap_err();
+    let result = read::<LoadRequest>(r#"{"kind":"downloaded"}"#);
+    let Err(error) = result else {
+        panic!("an unknown kind must not parse");
+    };
     assert!(error.to_string().starts_with("the load tokenizer request"));
 }
 

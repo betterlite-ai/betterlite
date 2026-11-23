@@ -16,7 +16,10 @@ pub(crate) trait Wire: DeserializeOwned {
     const FIELD: &'static str;
 }
 
-pub(crate) fn read<T: Wire>(text: &str) -> Result<T, TokensError> {
+pub(crate) fn read<T>(text: &str) -> Result<T, TokensError>
+where
+    T: Wire,
+{
     serde_json::from_str(text).map_err(|source| TokensError::Json {
         field: T::FIELD,
         source,
