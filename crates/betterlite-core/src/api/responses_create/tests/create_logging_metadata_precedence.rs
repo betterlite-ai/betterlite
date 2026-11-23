@@ -50,7 +50,7 @@ fn assert_logged(harness: &Harness) {
     );
     assert!(
         params.get("metadata").is_none(),
-        "a null metadata is dropped from the logged params"
+        "a null metadata is dropped"
     );
     assert_eq!(
         params.get("provider_affinity_header"),
