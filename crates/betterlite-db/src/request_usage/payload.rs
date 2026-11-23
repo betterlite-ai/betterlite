@@ -6,7 +6,7 @@ use crate::autorouter_facts::turn::TurnPayload;
 use crate::daily_records::projection::DailyPayload;
 
 // SpendLogsPayload as _enqueue_tool_usage_transaction reads it; a field the source indexes stays optional so its absence fails where the source raises.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct ToolUsagePayload {
     pub request_id: Option<String>,
@@ -35,7 +35,7 @@ pub struct AutorouterPayload {
     pub metadata: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(default)]
 struct PayloadEnvelope {
     metadata: Option<String>,

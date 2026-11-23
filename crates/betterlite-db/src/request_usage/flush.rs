@@ -47,7 +47,7 @@ pub struct RequestUsageQueues<'run> {
 // _total_queued_spend_transactions: each queue under its own lock, plus the pending shadow-funnel events.
 #[must_use]
 pub fn queued_spend_transactions(queues: &RequestUsageQueues<'_>) -> i64 {
-    let queued = [
+    let sizes = [
         queues.logs.len(),
         queues.tool_usage.len(),
         queues.model_usage.len(),
@@ -55,8 +55,8 @@ pub fn queued_spend_transactions(queues: &RequestUsageQueues<'_>) -> i64 {
         baseline_pending(queues.baseline),
     ];
     let mut total = queues.funnel.pending_events();
-    for size in queued {
-        total = total.saturating_add(i64::try_from(size).unwrap_or(i64::MAX));
+    for count in sizes {
+        total = total.saturating_add(i64::try_from(count).unwrap_or(i64::MAX));
     }
     total
 }
