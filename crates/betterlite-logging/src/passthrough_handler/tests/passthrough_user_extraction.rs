@@ -157,7 +157,7 @@ fn a_malformed_payload_aborts_the_standard_object() {
             "claude-3",
             kwargs(&[(PASSTHROUGH_LOGGING_PAYLOAD, Json::Text("nope".to_owned()))]),
         ));
-    assert_eq!(written.entries["response_cost"], json(r#"0.25"#));
+    assert_eq!(written.entries["response_cost"], json("0.25"));
     assert!(!written.entries.contains_key("litellm_params"));
     assert!(!written.entries.contains_key(STANDARD_LOGGING_OBJECT));
     assert!(

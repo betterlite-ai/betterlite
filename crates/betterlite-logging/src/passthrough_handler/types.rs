@@ -24,14 +24,14 @@ pub(super) const USER: &str = "user";
 
 // httpx.Response, which LiteLLM's transform_response reads
 #[derive(Clone, Copy, Debug)]
-pub struct UpstreamChatResponse<'a> {
+pub struct UpstreamChatResponse<'upstream> {
     pub status_code: u16,
-    pub headers: &'a HeaderMap,
-    pub body: &'a [u8],
+    pub headers: &'upstream HeaderMap,
+    pub body: &'upstream [u8],
 }
 
 // LiteLLM's total=False PassthroughStandardLoggingPayload; only request_body is read here
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PassthroughLoggingPayload {
     pub url: Option<String>,
@@ -50,31 +50,31 @@ pub enum StreamedResponse {
 }
 
 // the fields passthrough_chat_handler reads from its arguments
-pub struct PassthroughChatInput<'a> {
-    pub upstream: UpstreamChatResponse<'a>,
-    pub response_body: &'a JsonObject,
-    pub logging_obj: &'a StreamLoggingObject,
-    pub request_body: &'a JsonObject,
+pub struct PassthroughChatInput<'call> {
+    pub upstream: UpstreamChatResponse<'call>,
+    pub response_body: &'call JsonObject,
+    pub logging_obj: &'call StreamLoggingObject,
+    pub request_body: &'call JsonObject,
     pub start_time: DateTime<FixedOffset>,
     pub end_time: DateTime<FixedOffset>,
     pub kwargs: PassThroughLoggingKwargs,
 }
 
 // what build_response_logging_payload writes: the response, the kwargs and the write destinations
-pub struct ResponsePayloadInput<'a> {
-    pub response: &'a mut Json,
-    pub model: &'a str,
+pub struct ResponsePayloadInput<'call> {
+    pub response: &'call mut Json,
+    pub model: &'call str,
     pub kwargs: PassThroughLoggingKwargs,
     pub start_time: DateTime<FixedOffset>,
     pub end_time: DateTime<FixedOffset>,
-    pub logging_obj: &'a StreamLoggingObject,
+    pub logging_obj: &'call StreamLoggingObject,
 }
 
 // the fields handle_collected_chunks reads from its arguments
-pub struct CollectedChunksInput<'a> {
-    pub logging_obj: &'a StreamLoggingObject,
-    pub request_body: &'a JsonObject,
-    pub all_chunks: &'a [String],
+pub struct CollectedChunksInput<'call> {
+    pub logging_obj: &'call StreamLoggingObject,
+    pub request_body: &'call JsonObject,
+    pub all_chunks: &'call [String],
     pub start_time: DateTime<FixedOffset>,
     pub end_time: DateTime<FixedOffset>,
 }

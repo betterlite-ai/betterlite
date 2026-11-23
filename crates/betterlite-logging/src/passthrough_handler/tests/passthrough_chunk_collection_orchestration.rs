@@ -84,7 +84,7 @@ fn returns_no_result_when_the_rebuild_yields_nothing() {
 }
 
 #[rstest]
-#[case::absent(r#"{}"#)]
+#[case::absent("{}")]
 #[case::null(r#"{"model": null}"#)]
 fn uses_an_empty_model_when_the_body_has_none(#[case] body: &str) {
     let harness = harness();

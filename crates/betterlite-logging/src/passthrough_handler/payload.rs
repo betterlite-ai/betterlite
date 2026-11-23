@@ -150,7 +150,7 @@ fn write_end_user(
     logging_obj.edit(&mut |state| {
         state
             .litellm_params
-            .insert(PROXY_SERVER_REQUEST.to_owned(), request);
+            .insert(PROXY_SERVER_REQUEST.to_owned(), request.clone());
     });
     Ok(())
 }
