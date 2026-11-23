@@ -125,14 +125,15 @@ async fn drive(
     };
     let mut client = state.session_client_with(TaskTracker::new(), stop.clone());
     let mut ready = Some(ready_tx);
-    let outcome = run_with_session(
+    // run_with_session's future carries the session and every command future, past clippy's 16384-byte large_futures limit
+    let outcome = Box::pin(run_with_session(
         &mut client,
         async |session| {
             announce(&mut ready);
             serve(session, &mut incoming, &stop, timeouts).await
         },
         quiet_on_error,
-    )
+    ))
     .await;
     state.remember_instructions(&client);
     let payload = startup_payload(&outcome);
