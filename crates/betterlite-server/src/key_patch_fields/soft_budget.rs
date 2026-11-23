@@ -96,11 +96,8 @@ where
     remaining.remove(SOFT_BUDGET);
     let updated =
         update_key_soft_budget(store, existing_budget_id, soft_budget, changed_by).await?;
-    match (updated, existing_budget_id) {
-        (Some(budget_id), None) => {
-            remaining.insert(String::from("budget_id"), JsonData::String(budget_id));
-        }
-        (Some(_), Some(_)) | (None, _) => {}
+    if let (Some(budget_id), None) = (updated, existing_budget_id) {
+        remaining.insert(String::from("budget_id"), JsonData::String(budget_id));
     }
     Ok(remaining)
 }
