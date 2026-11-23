@@ -195,18 +195,17 @@ where
             rows: self.queues.logs.dequeue(MAX_LOGS_PER_INTERVAL),
             settled: false,
         };
-        let outcome = tokio::select! {
-            biased;
-            () = self.shutdown.cancelled() => {
+        let write = self.logs.run(Some(batch.rows.as_slice()));
+        let written = self.shutdown.run_until_cancelled(write).await;
+        let outcome = match written {
+            Some(result) => result.map_err(SpendLogsJobError::Logs),
+            None => {
                 requeue_spend_logs(self.queues.logs, self.logs.redis, batch.rows.as_slice()).await;
                 let requeued = batch.rows.len();
                 tracing::warn!(
                     "Spend tracking - spend log write cancelled, requeued {requeued} rows for the next flush"
                 );
                 Err(SpendLogsJobError::Cancelled)
-            }
-            written = self.logs.run(Some(batch.rows.as_slice())) => {
-                written.map_err(SpendLogsJobError::Logs)
             }
         };
         batch.settled = true;

@@ -44,18 +44,18 @@ fn tool_usage_transaction(
     response_names: &[String],
     realtime_names: &[String],
 ) -> Result<Option<ToolUsageTransaction>, ToolUsageError> {
-    let payload: ToolUsagePayload =
+    let usage: ToolUsagePayload =
         serde_json::from_slice(payload).map_err(ToolUsageError::Payload)?;
-    let request_id = payload.request_id.as_deref().ok_or(ToolUsageError::Field {
+    let request_id = usage.request_id.as_deref().ok_or(ToolUsageError::Field {
         field: "request_id",
     })?;
-    let spend = payload
+    let spend = usage
         .spend
         .ok_or(ToolUsageError::Field { field: "spend" })?;
-    let total_tokens = payload.total_tokens.ok_or(ToolUsageError::Field {
+    let total_tokens = usage.total_tokens.ok_or(ToolUsageError::Field {
         field: "total_tokens",
     })?;
-    let start_time = payload
+    let start_time = usage
         .start_time
         .as_deref()
         .ok_or(ToolUsageError::Field { field: "startTime" })?;
@@ -63,7 +63,7 @@ fn tool_usage_transaction(
         &ToolUsageRequest {
             request_id,
             start_time_iso: start_time,
-            mcp_namespaced_tool_name: payload.mcp_namespaced_tool_name.as_deref(),
+            mcp_namespaced_tool_name: usage.mcp_namespaced_tool_name.as_deref(),
             spend,
             total_tokens,
         },
@@ -74,14 +74,14 @@ fn tool_usage_transaction(
 
 // _enqueue_model_usage_transaction: the daily model usage rollup row; a build or enqueue failure is debug-only.
 pub async fn enqueue_model_usage(queue: &UsageQueue<ModelUsageTransaction>, payload: &[u8]) {
-    let payload: ModelUsagePayload = match serde_json::from_slice(payload) {
-        Ok(payload) => payload,
+    let usage: ModelUsagePayload = match serde_json::from_slice(payload) {
+        Ok(usage) => usage,
         Err(error) => {
             tracing::debug!("_enqueue_model_usage_transaction error (non-blocking): {error}");
             return;
         }
     };
-    let Some(transaction) = build_model_usage_transaction(&payload) else {
+    let Some(transaction) = build_model_usage_transaction(&usage) else {
         return;
     };
     if let Err(error) = queue.push(transaction).await {

@@ -19,24 +19,24 @@ pub(super) fn mcp_call_metadata(
             });
         }
     };
-    let Some(metadata) = sl_object
+    let Some(metadata_value) = sl_object
         .get("metadata")
         .filter(|value| counts_as_present(value))
     else {
         return Ok(None);
     };
-    let Json::Object(metadata) = metadata else {
+    let Json::Object(metadata) = metadata_value else {
         return Err(DiscoveryError::NotAnObject {
             field: "standard_logging_object.metadata",
         });
     };
-    let Some(mcp) = metadata
+    let Some(mcp_value) = metadata
         .get("mcp_tool_call_metadata")
         .filter(|value| counts_as_present(value))
     else {
         return Ok(None);
     };
-    let Json::Object(mcp) = mcp else {
+    let Json::Object(mcp) = mcp_value else {
         return Ok(None);
     };
     Ok(Some(mcp))

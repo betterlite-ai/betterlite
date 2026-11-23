@@ -47,10 +47,10 @@ pub async fn enqueue_autorouter_turn<C>(
 ) where
     C: SavingsPricingContext,
 {
-    let Some(queues) = queues else {
+    let Some(wired) = queues else {
         return;
     };
-    if let Err(error) = turn_enqueue(queues, environment, payload).await {
+    if let Err(error) = turn_enqueue(wired, environment, payload).await {
         tracing::debug!("_enqueue_autorouter_turn_transaction error (non-blocking): {error}");
     }
 }
@@ -63,22 +63,22 @@ pub(crate) async fn turn_enqueue<C>(
 where
     C: SavingsPricingContext,
 {
-    let payload = decode_autorouter_payload(payload).map_err(TurnEnqueueError::Payload)?;
-    let Some(metadata_text) = payload.metadata.as_deref().filter(|text| !text.is_empty()) else {
+    let decoded = decode_autorouter_payload(payload).map_err(TurnEnqueueError::Payload)?;
+    let Some(metadata_text) = decoded.metadata.as_deref().filter(|text| !text.is_empty()) else {
         return Ok(());
     };
     let metadata = turn_metadata(metadata_text)?;
     if !routes_turn(&metadata.object) {
         return Ok(());
     }
-    let saved_spend = savings_spend(&payload.daily, &metadata, environment.pricing).await?;
-    let transaction = turn_transaction(&payload.turn, &metadata.object, saved_spend)
+    let saved_spend = savings_spend(&decoded.daily, &metadata, environment.pricing).await?;
+    let built = turn_transaction(&decoded.turn, &metadata.object, saved_spend)
         .map_err(TurnEnqueueError::Turn)?;
     let captured = enqueue_baseline_accounting(
         queues,
         environment,
-        &payload.daily,
-        &capture_input(&payload, &metadata, transaction.as_ref()),
+        &decoded.daily,
+        &capture_input(&decoded, &metadata, built.as_ref()),
     )
     .await;
     match captured {
@@ -90,7 +90,7 @@ where
             );
         }
     }
-    let Some(transaction) = transaction else {
+    let Some(transaction) = built else {
         return Ok(());
     };
     queues

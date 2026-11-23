@@ -75,6 +75,7 @@ impl<T> UsageQueue<T> {
             state.pending.push_back(item);
             return Admission::Queued;
         }
+        drop(state);
         Admission::Full(item)
     }
 

@@ -30,17 +30,17 @@ pub async fn enqueue_tool_registry_upsert(
     team_id: Option<&str>,
     response_names: &[String],
 ) {
-    let Some(kwargs) = kwargs else {
+    let Some(serialized) = kwargs else {
         return;
     };
-    let kwargs: DiscoveryKwargs = match serde_json::from_slice(kwargs) {
-        Ok(kwargs) => kwargs,
+    let decoded: DiscoveryKwargs = match serde_json::from_slice(serialized) {
+        Ok(decoded) => decoded,
         Err(error) => {
             tracing::debug!("_enqueue_tool_registry_upsert error (non-blocking): {error}");
             return;
         }
     };
-    if let Err(error) = discover_tools(queue, &kwargs, hashed_token, team_id, response_names).await
+    if let Err(error) = discover_tools(queue, &decoded, hashed_token, team_id, response_names).await
     {
         tracing::debug!("_enqueue_tool_registry_upsert error (non-blocking): {error}");
     }
@@ -95,25 +95,25 @@ async fn discover_tools(
 
 // _litellm_params.get("metadata") or {}: an absent or falsey pair reads as no metadata, and a truthy non-mapping fails the read.
 fn litellm_metadata(kwargs: &DiscoveryKwargs) -> Result<Option<&JsonObject>, DiscoveryError> {
-    let Some(params) = kwargs
+    let Some(params_value) = kwargs
         .litellm_params
         .as_ref()
         .filter(|value| counts_as_present(value))
     else {
         return Ok(None);
     };
-    let Json::Object(params) = params else {
+    let Json::Object(params) = params_value else {
         return Err(DiscoveryError::NotAnObject {
             field: "litellm_params",
         });
     };
-    let Some(metadata) = params
+    let Some(metadata_value) = params
         .get("metadata")
         .filter(|value| counts_as_present(value))
     else {
         return Ok(None);
     };
-    let Json::Object(metadata) = metadata else {
+    let Json::Object(metadata) = metadata_value else {
         return Err(DiscoveryError::NotAnObject {
             field: "litellm_params.metadata",
         });
@@ -183,7 +183,7 @@ async fn enqueue_mcp_tool(
         Some(name) => Some(name),
         None => present_text(mcp.get("name"), "mcp_tool_call_metadata.name")?,
     };
-    let Some(tool_name) = tool_name else {
+    let Some(name) = tool_name else {
         return Ok(());
     };
     let origin = present_text(
@@ -191,7 +191,7 @@ async fn enqueue_mcp_tool(
         "mcp_tool_call_metadata.mcp_server_name",
     )?
     .unwrap_or(USER_DEFINED);
-    let item = fields.item(tool_name.to_owned(), origin);
+    let item = fields.item(name.to_owned(), origin);
     queue.add_update(item).await;
     Ok(())
 }
@@ -215,13 +215,13 @@ fn function_tool_name(tool_def: &Json) -> Result<Option<String>, DiscoveryError>
     let Json::Object(tool) = tool_def else {
         return Ok(None);
     };
-    let Some(function) = tool
+    let Some(function_value) = tool
         .get("function")
         .filter(|value| counts_as_present(value))
     else {
         return Ok(None);
     };
-    let Json::Object(function) = function else {
+    let Json::Object(function) = function_value else {
         return Ok(None);
     };
     Ok(present_text(function.get("name"), "tools.function.name")?.map(ToOwned::to_owned))
@@ -237,13 +237,13 @@ fn passthrough_body(kwargs: &DiscoveryKwargs) -> Result<Option<&JsonObject>, Dis
     let Json::Object(payload) = passthrough else {
         return Ok(None);
     };
-    let Some(body) = payload.get("request_body") else {
+    let Some(body_value) = payload.get("request_body") else {
         return Ok(None);
     };
-    if !counts_as_present(body) {
+    if !counts_as_present(body_value) {
         return Ok(None);
     }
-    let Json::Object(body) = body else {
+    let Json::Object(body) = body_value else {
         return Err(DiscoveryError::NotAnObject {
             field: "passthrough_logging_payload.request_body",
         });

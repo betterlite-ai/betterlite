@@ -143,7 +143,7 @@ where
     let breakdown: Option<CostBreakdown> =
         typed_mapping(capture_mapping(input.metadata, "cost_breakdown")?);
     let routing_decision = RoutingDecision {
-        classifier_cost: decision.and_then(|decision| decision.classifier_cost),
+        classifier_cost: decision.and_then(|recorded| recorded.classifier_cost),
     };
     let pricing = baseline_cost_snapshot(&SnapshotInput {
         model: &captured.model,
@@ -193,8 +193,8 @@ fn typed_mapping<T>(mapping: Option<&JsonObject>) -> Option<T>
 where
     T: DeserializeOwned,
 {
-    let mapping = mapping?;
-    let text = serde_json::to_string(mapping).ok()?;
+    let present = mapping?;
+    let text = serde_json::to_string(present).ok()?;
     serde_json::from_str(&text).ok()
 }
 
@@ -204,14 +204,14 @@ async fn publish(
 ) -> Result<CaptureOutcome, BaselineCaptureError> {
     // The record is a strict model: its own canonical decoder is the validator the queue will apply.
     let bytes = serialize_record(&record).into_bytes();
-    let record = decode_baseline_record(&bytes).map_err(BaselineCaptureError::Record)?;
+    let decoded = decode_baseline_record(&bytes).map_err(BaselineCaptureError::Record)?;
     if baseline_pending(queues.baseline) >= BASELINE_QUEUE_LIMIT {
         tracing::warn!("Auto-router baseline observation queue is full");
         return Ok(CaptureOutcome::Retained);
     }
     queues
         .baseline
-        .push(record)
+        .push(decoded)
         .await
         .map_err(BaselineCaptureError::Queue)?;
     queues.logs.request_flush();
