@@ -7,6 +7,8 @@ import inspect
 import json
 import sys
 
+import betterlite.exceptions
+import litellm.exceptions
 from betterlite.integrations.custom_guardrail import (
     DEFAULT_ADVISORY_MESSAGE as BETTER_ADVISORY,
     CustomGuardrail as BetterGuardrail,
@@ -42,6 +44,7 @@ SIDES = {
         "session": lite_session_id,
         "intervention": lite_intervention,
         "logguard": lite_logguard,
+        "exceptions": litellm.exceptions,
     },
     "betterlite": {
         "base": BetterGuardrail,
@@ -52,6 +55,7 @@ SIDES = {
         "session": better_session_id,
         "intervention": better_intervention,
         "logguard": better_logguard,
+        "exceptions": betterlite.exceptions,
     },
 }
 
@@ -284,6 +288,20 @@ def group_errors():
                 ).should_run_guardrail({"guardrails": 5}, hooks.pre_call)
             ),
         }
+        guardrail = base(guardrail_name="probe", event_hook=hooks.pre_call)
+        raised = types["exceptions"].GuardrailRaisedException(message="blocked")
+        denied = types["exceptions"].BlockedPiiEntityError("EMAIL")
+        report["intervention"] = [
+            types["intervention"](raised),
+            types["intervention"](denied),
+            types["intervention"](ValueError("plain")),
+        ]
+        data = {"guardrails": ["probe"]}
+        try:
+            guardrail._process_error(raised, data, 1.0, 2.0)
+        except Exception:
+            pass
+        report["status"] = normalize(data["metadata"])
         reports[side] = report
     equal("errors", reports["litellm"], reports["betterlite"])
     print("OK")
