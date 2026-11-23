@@ -7,8 +7,14 @@ from litellm.router_strategy.complexity_router.fuse_presets import (
 )
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+
+class FailureDetail(TypedDict):
+    type: str
+
+
 CATALOG: Final = TypeAdapter(dict[str, JsonValue])
 PROFILE_TEXT: Final = TypeAdapter(ProfileText)
+FAILURES: Final = TypeAdapter(list[FailureDetail])
 
 
 class CatalogCall(TypedDict):
@@ -39,7 +45,7 @@ Answer: TypeAlias = TextAnswer | dict[str, JsonValue] | str | None
 
 
 def rejected(error: ValidationError) -> TextAnswer:
-    failure = error.errors()[0]["type"]
+    failure = FAILURES.validate_json(error.json(include_input=False))[0]["type"]
     if failure == "string_too_short":
         return {"kind": "too_short", "text": None}
     if failure == "string_too_long":
