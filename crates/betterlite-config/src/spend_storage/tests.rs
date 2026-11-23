@@ -775,3 +775,43 @@ fn treats_an_empty_spend_logs_url_as_unset() {
     let settings = load("general_settings: {}\n", &[(ENV_SPEND_LOGS_URL, "")]);
     assert_eq!(settings.spend_logs_url, None);
 }
+
+#[rstest]
+#[case::absent("litellm_settings: {}\n", None)]
+#[case::null("litellm_settings:\n  cold_storage_custom_logger: null\n", None)]
+#[case::named(
+    "litellm_settings:\n  cold_storage_custom_logger: s3_v2\n",
+    Some("s3_v2")
+)]
+#[case::empty("litellm_settings:\n  cold_storage_custom_logger: \"\"\n", Some(""))]
+fn loads_spend_cold_storage_logger(#[case] source: &str, #[case] expected: Option<&str>) {
+    let settings = load(source, &[]);
+    assert_eq!(settings.cold_storage_custom_logger.as_deref(), expected);
+}
+
+#[rstest]
+#[case::boolean("true")]
+#[case::number("3")]
+#[case::list("[s3_v2]")]
+#[case::map("{name: s3_v2}")]
+fn loads_spend_cold_storage_only_from_a_name(#[case] value: &str) {
+    let source = format!("litellm_settings:\n  cold_storage_custom_logger: {value}\n");
+    let error = load_spend_storage_policy(&source, &environment(&[])).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("litellm_settings.cold_storage_custom_logger")
+    );
+}
+
+#[test]
+fn loads_spend_cold_storage_from_a_stored_policy_row() {
+    let decoded = decode_spend_storage_policy(
+        br#"{"litellm_settings":{"cold_storage_custom_logger":"gcs_bucket"}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        decoded.cold_storage_custom_logger.as_deref(),
+        Some("gcs_bucket")
+    );
+}
