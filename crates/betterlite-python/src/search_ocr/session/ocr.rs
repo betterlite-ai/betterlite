@@ -102,7 +102,8 @@ impl SessionCore {
         {
             raw.message = Some(body.clone());
             headers.clone_from(response_headers);
-        } else if let OcrError::Transport(OcrTransportError::Http { body, .. }) = error {
+        }
+        if let OcrError::Transport(OcrTransportError::Http { body, .. }) = error {
             raw.message = Some(body.clone());
         }
         let class = dispatch(&DispatchInput::Raw(Box::new(raw)), &self.redactor);

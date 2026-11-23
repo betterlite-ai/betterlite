@@ -225,7 +225,7 @@ fn marker_document(
     let content_type = optional_text(marker, "content_type");
     Ok(OcrDocumentInput::Bytes {
         bytes: bytes.clone(),
-        file_name: Some(name.clone()).filter(|name| name != "file"),
+        file_name: Some(name.clone()).filter(|candidate| candidate != "file"),
         mime_type: mime_type.or(content_type),
     })
 }
