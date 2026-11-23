@@ -1,0 +1,24 @@
+kind: helper
+name: reservation-binding-unbind-without-creating
+call:
+  b10088:
+    function: stamp
+    litellm_params:
+      metadata:
+        user_api_key_budget_reservation: {id: res-1, callback_bound: true}
+      litellm_metadata:
+        user_api_key_budget_reservation: {id: res-1, callback_bound: true}
+    callback_bound: false
+calls:
+  - b10088:
+      function: stamp
+      litellm_params: {}
+      callback_bound: false
+  - b10088:
+      function: stamp
+      litellm_params:
+        metadata: {team: t1}
+        litellm_metadata: null
+      callback_bound: false
+env: {}
+compare: {ignore: []}
