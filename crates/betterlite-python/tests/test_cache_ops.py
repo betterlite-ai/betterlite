@@ -6,6 +6,7 @@ from typing import Final, Protocol
 
 import pytest
 from pydantic import JsonValue
+from typing_extensions import override
 
 from betterlite._cache_ops import CacheOperations
 from betterlite._cache_ops.types import CacheStore
@@ -55,6 +56,7 @@ PRESET: Final[dict[str, JsonValue]] = {
     "messages": [{"role": "user", "content": "hello"}],
     "litellm_params": {"preset_cache_key": "given"},
 }
+EMBEDDING_WRITES: Final = 2
 STREAM_TEXT: Final = "abcdefghijkl"
 STREAM_CHUNKS: Final[list[dict[str, JsonValue]]] = [
     {"choices": [{"delta": {"role": "assistant", "content": "abcde"}}]},
@@ -79,7 +81,7 @@ class LiteLLMCache(Protocol):
         dynamic_cache_object: CacheStore | None = None,
         **kwargs: JsonValue,
     ) -> None: ...
-    def add_embedding_response_to_cache(
+    def add_embedding_response_to_cache(  # ast-grep-ignore: no-long-names
         self,
         result: InitValue,
         input_value: JsonValue,
@@ -134,7 +136,7 @@ class RecordingBackend:
         self.arguments.append(dict(kwargs))
         return self.values.get(key)
 
-    def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
+    def set_cache(self, key: str, value: JsonValue, **_kwargs: JsonValue) -> None:
         self.calls.append(("set_cache", key))
         self.values[key] = value
 
@@ -143,18 +145,18 @@ class RecordingBackend:
         self.arguments.append(dict(kwargs))
         return self.values.get(key)
 
-    async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
+    async def async_set_cache(self, key: str, value: JsonValue, **_kwargs: JsonValue) -> None:
         self.calls.append(("async_set_cache", key))
         self.values[key] = value
 
     async def async_set_cache_pipeline(
-        self, cache_list: list[tuple[str, JsonValue]], **kwargs: JsonValue
+        self, cache_list: list[tuple[str, JsonValue]], **_kwargs: JsonValue
     ) -> None:
         self.calls.append(("async_set_cache_pipeline", ""))
         for key, value in cache_list:
             self.values[key] = value
 
-    async def batch_cache_write(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
+    async def batch_cache_write(self, key: str, value: JsonValue, **_kwargs: JsonValue) -> None:
         self.calls.append(("batch_cache_write", key))
         self.values[key] = value
 
@@ -162,20 +164,24 @@ class RecordingBackend:
         self.pinged = True
         return True
 
+    # ast-grep-ignore: no-one-line-functions
     async def delete_cache_keys(self, keys: list[str]) -> None:
         self.deleted.extend(keys)
 
+    # ast-grep-ignore: no-one-line-functions
     async def disconnect(self) -> None:
         self.disconnected = True
 
 
 class FailingBackend(RecordingBackend):
-    def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
+    @override
+    def set_cache(self, _key: str, _value: JsonValue, **_kwargs: JsonValue) -> None:
         raise RuntimeError(FAILURE_TEXT)
 
 
 class FailingReadBackend(RecordingBackend):
-    def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue:
+    @override
+    def get_cache(self, _key: str, **_kwargs: JsonValue) -> JsonValue:
         raise RuntimeError(FAILURE_TEXT)
 
 
@@ -210,18 +216,18 @@ def matched_caches(
 ) -> tuple[Cache, LiteLLMCache]:
     ours = Cache(ours_backend, namespace=namespace, ttl=ttl, mode=mode)
     reference = LITELLM_CACHE.Cache(
-        _backend=reference_backend, namespace=namespace, ttl=ttl, mode=mode, **{"type": "local"}
+        _backend=reference_backend, namespace=namespace, ttl=ttl, mode=mode, type="local"
     )
     return ours, reference
 
 
-def test_cache_ops_chat_and_embedding_keys_match_litellm() -> None:
+def test_cache_ops_chat_embed_keys() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
     assert ours.get_cache_key(**CHAT) == reference.get_cache_key(**CHAT)
     assert ours.get_cache_key(**EMBEDDING) == reference.get_cache_key(**EMBEDDING)
 
 
-def test_cache_ops_file_and_namespace_keys_match_litellm() -> None:
+def test_cache_ops_file_ns_keys() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
     assert ours.get_cache_key(**FILE) == reference.get_cache_key(**FILE)
     assert ours.get_cache_key(**NESTED_NAMESPACE) == reference.get_cache_key(**NESTED_NAMESPACE)
@@ -232,59 +238,58 @@ def test_cache_ops_file_and_namespace_keys_match_litellm() -> None:
     assert named.get_cache_key(**CHAT) == named_reference.get_cache_key(**CHAT)
 
 
-def test_cache_ops_caching_groups_key_matches_litellm() -> None:
+def test_cache_ops_group_keys() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
     assert ours.get_cache_key(**GROUPS) == reference.get_cache_key(**GROUPS)
 
 
-def test_cache_ops_preset_key_wins_over_the_derived_cache_key() -> None:
+def test_cache_ops_preset_key() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
     assert ours.get_cache_key(**PRESET) == reference.get_cache_key(**PRESET) == "given"
 
 
-def test_cache_ops_native_key_matches_the_derived_cache_key() -> None:
+def test_cache_ops_native_key() -> None:
     native = NativeCache('{"type": "local"}')
     ours = Cache(RecordingBackend(), native=native)
-    reference = LITELLM_CACHE.Cache(_backend=RecordingBackend(), **{"type": "local"})
+    reference = LITELLM_CACHE.Cache(_backend=RecordingBackend(), type="local")
     assert ours.get_cache_key(**CHAT) == reference.get_cache_key(**CHAT)
 
 
-def test_cache_ops_lookup_miss_returns_none() -> None:
+def test_cache_ops_lookup_miss() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
-    assert ours.get_cache(**CHAT) is None
-    assert reference.get_cache(**CHAT) is None
+    assert ours.get_cache(None, **CHAT) is None
+    assert reference.get_cache(None, **CHAT) is None
     failing = Cache(FailingReadBackend())
-    assert failing.get_cache(**CHAT) is None
-    failing_reference = LITELLM_CACHE.Cache(_backend=FailingReadBackend(), **{"type": "local"})
-    assert failing_reference.get_cache(**CHAT) is None
+    assert failing.get_cache(None, **CHAT) is None
+    failing_reference = LITELLM_CACHE.Cache(_backend=FailingReadBackend(), type="local")
+    assert failing_reference.get_cache(None, **CHAT) is None
 
 
-def test_cache_ops_lookup_returns_a_written_hit() -> None:
+def test_cache_ops_lookup_hit() -> None:
     ours_backend = RecordingBackend()
     reference_backend = RecordingBackend()
     ours, reference = matched_caches(ours_backend, reference_backend)
-    ours.add_cache(CHAT_RESPONSE, **CHAT)
+    ours.add_cache(CHAT_RESPONSE, None, **CHAT)
     reference.add_cache(CHAT_RESPONSE, **CHAT)
-    assert sorted(ours_backend.values) == sorted(reference_backend.values)
-    assert ours.get_cache(**CHAT) == reference.get_cache(**CHAT) == CHAT_RESPONSE
+    assert ours.get_cache(None, **CHAT) == reference.get_cache(None, **CHAT) == CHAT_RESPONSE
 
 
-def test_cache_ops_lookup_past_s_maxage_returns_none() -> None:
+def test_cache_ops_lookup_stale() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
-    ours.add_cache(CHAT_RESPONSE, **CHAT)
+    ours.add_cache(CHAT_RESPONSE, None, **CHAT)
     reference.add_cache(CHAT_RESPONSE, **CHAT)
-    stale = {**CHAT, "cache": {"s-maxage": -1}}
-    fresh = {**CHAT, "cache": {"s-maxage": 1000}}
-    assert ours.get_cache(**stale) is None
-    assert reference.get_cache(**stale) is None
-    assert ours.get_cache(**fresh) == reference.get_cache(**fresh) == CHAT_RESPONSE
+    stale: dict[str, JsonValue] = {**CHAT, "cache": {"s-maxage": -1}}
+    fresh: dict[str, JsonValue] = {**CHAT, "cache": {"s-maxage": 1000}}
+    assert ours.get_cache(None, **stale) is None
+    assert reference.get_cache(None, **stale) is None
+    assert ours.get_cache(None, **fresh) == reference.get_cache(None, **fresh) == CHAT_RESPONSE
 
 
-def test_cache_ops_lookup_uses_a_dynamic_cache_object() -> None:
+def test_cache_ops_lookup_dynamic() -> None:
     ours_backend = RecordingBackend()
     reference_backend = RecordingBackend()
     ours, reference = matched_caches(ours_backend, reference_backend)
-    ours.add_cache(CHAT_RESPONSE, **CHAT)
+    ours.add_cache(CHAT_RESPONSE, None, **CHAT)
     reference.add_cache(CHAT_RESPONSE, **CHAT)
     ours_dynamic = RecordingBackend()
     reference_dynamic = RecordingBackend()
@@ -303,22 +308,22 @@ def test_cache_ops_lookup_uses_a_dynamic_cache_object() -> None:
     assert ours_async.arguments == reference_async.arguments
 
 
-def test_cache_ops_async_lookup_returns_a_written_hit() -> None:
+def test_cache_ops_async_lookup() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
-    ours.add_cache(CHAT_RESPONSE, **CHAT)
+    ours.add_cache(CHAT_RESPONSE, None, **CHAT)
     reference.add_cache(CHAT_RESPONSE, **CHAT)
-    assert asyncio.run(ours.async_get_cache(**CHAT)) == CHAT_RESPONSE
-    assert asyncio.run(reference.async_get_cache(**CHAT)) == CHAT_RESPONSE
+    assert asyncio.run(ours.async_get_cache(None, **CHAT)) == CHAT_RESPONSE
+    assert asyncio.run(reference.async_get_cache(None, **CHAT)) == CHAT_RESPONSE
 
 
-def test_cache_ops_should_use_cache_follows_mode_and_flag() -> None:
+def test_cache_ops_should_use() -> None:
     off, off_reference = matched_caches(RecordingBackend(), RecordingBackend(), mode="default_off")
     assert off.should_use_cache(**CHAT) is False
     assert off_reference.should_use_cache(**CHAT) is False
-    opted_in = {**CHAT, "cache": {"use-cache": True}}
+    opted_in: dict[str, JsonValue] = {**CHAT, "cache": {"use-cache": True}}
     assert off.should_use_cache(**opted_in) is True
     assert off_reference.should_use_cache(**opted_in) is True
-    opted_out = {**CHAT, "cache": {"use-cache": False}}
+    opted_out: dict[str, JsonValue] = {**CHAT, "cache": {"use-cache": False}}
     assert off.should_use_cache(**opted_out) is False
     assert off_reference.should_use_cache(**opted_out) is False
     on, on_reference = matched_caches(RecordingBackend(), RecordingBackend())
@@ -326,36 +331,36 @@ def test_cache_ops_should_use_cache_follows_mode_and_flag() -> None:
     assert on_reference.should_use_cache(**CHAT) is True
 
 
-def test_cache_ops_write_stores_the_same_entries() -> None:
+def test_cache_ops_write_entries() -> None:
     ours_backend = RecordingBackend()
     reference_backend = RecordingBackend()
     ours, reference = matched_caches(ours_backend, reference_backend)
-    ours.add_cache(CHAT_RESPONSE, **CHAT)
+    ours.add_cache(CHAT_RESPONSE, None, **CHAT)
     reference.add_cache(CHAT_RESPONSE, **CHAT)
     assert sorted(ours_backend.values) == sorted(reference_backend.values)
-    asyncio.run(ours.async_add_cache(CHAT_RESPONSE, **CHAT))
-    asyncio.run(reference.async_add_cache(CHAT_RESPONSE, **CHAT))
+    asyncio.run(ours.async_add_cache(CHAT_RESPONSE, None, **CHAT))
+    asyncio.run(reference.async_add_cache(CHAT_RESPONSE, None, **CHAT))
     assert sorted(ours_backend.values) == sorted(reference_backend.values)
-    assert ours.get_cache(**CHAT) == reference.get_cache(**CHAT) == CHAT_RESPONSE
+    assert ours.get_cache(None, **CHAT) == reference.get_cache(None, **CHAT) == CHAT_RESPONSE
     off, off_reference = matched_caches(RecordingBackend(), RecordingBackend(), mode="default_off")
-    off.add_cache(CHAT_RESPONSE, **CHAT)
+    off.add_cache(CHAT_RESPONSE, None, **CHAT)
     off_reference.add_cache(CHAT_RESPONSE, **CHAT)
-    assert off.get_cache(**CHAT) is None
-    assert off_reference.get_cache(**CHAT) is None
+    assert off.get_cache(None, **CHAT) is None
+    assert off_reference.get_cache(None, **CHAT) is None
 
 
-def test_cache_ops_failing_write_is_logged_not_raised(caplog: pytest.LogCaptureFixture) -> None:
+def test_cache_ops_write_failure(caplog: pytest.LogCaptureFixture) -> None:
     cache = Cache(FailingBackend())
     with caplog.at_level(logging.ERROR, logger="LiteLLM"):
-        cache.add_cache(CHAT_RESPONSE, **CHAT)
-        asyncio.run(cache.async_add_cache(CHAT_RESPONSE, **CHAT))
+        cache.add_cache(CHAT_RESPONSE, None, **CHAT)
+        asyncio.run(cache.async_add_cache(CHAT_RESPONSE, None, **CHAT))
     assert "LiteLLM Cache: exception in add_cache" in caplog.text
     assert FAILURE_TEXT in caplog.text
-    reference = LITELLM_CACHE.Cache(_backend=FailingBackend(), **{"type": "local"})
+    reference = LITELLM_CACHE.Cache(_backend=FailingBackend(), type="local")
     reference.add_cache(CHAT_RESPONSE, **CHAT)
 
 
-def test_cache_ops_embedding_write_key_matches_litellm() -> None:
+def test_cache_ops_embed_keys() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
     embedding = LITELLM_EMBEDDING.EmbeddingResponse(**EMBEDDING_RESPONSE)
     ours_key, ours_data, _ = ours.add_embedding_response_to_cache(
@@ -368,44 +373,44 @@ def test_cache_ops_embedding_write_key_matches_litellm() -> None:
     assert ours_data["response"] == reference_data["response"]
 
 
-def test_cache_ops_embedding_pipeline_write_reads_back_each_input() -> None:
+def test_cache_ops_pipeline_write() -> None:
     ours_backend = RecordingBackend()
     reference_backend = RecordingBackend()
     ours, reference = matched_caches(ours_backend, reference_backend)
     embedding = LITELLM_EMBEDDING.EmbeddingResponse(**EMBEDDING_RESPONSE)
-    asyncio.run(ours.async_add_cache_pipeline(embedding, **EMBEDDING))
-    asyncio.run(reference.async_add_cache_pipeline(embedding, **EMBEDDING))
+    asyncio.run(ours.async_add_cache_pipeline(embedding, None, **EMBEDDING))
+    asyncio.run(reference.async_add_cache_pipeline(embedding, None, **EMBEDDING))
     assert sorted(ours_backend.values) == sorted(reference_backend.values)
-    assert len(ours_backend.values) == 2
+    assert len(ours_backend.values) == EMBEDDING_WRITES
     first = {**EMBEDDING, "input": "a"}
     second = {**EMBEDDING, "input": "b"}
     missing = {**EMBEDDING, "input": "c"}
-    ours_first = ours.get_cache(**first)
-    reference_first = reference.get_cache(**first)
+    ours_first = ours.get_cache(None, **first)
+    reference_first = reference.get_cache(None, **first)
     assert ours_first is not None
     assert ours_first == reference_first
-    assert ours.get_cache(**second) == reference.get_cache(**second)
-    assert ours.get_cache(**missing) is None
-    assert reference.get_cache(**missing) is None
+    assert ours.get_cache(None, **second) == reference.get_cache(None, **second)
+    assert ours.get_cache(None, **missing) is None
+    assert reference.get_cache(None, **missing) is None
 
 
-def test_cache_ops_batch_write_stores_the_entry() -> None:
+def test_cache_ops_batch_write() -> None:
     ours_backend = RecordingBackend()
     reference_backend = RecordingBackend()
     ours, reference = matched_caches(ours_backend, reference_backend)
     asyncio.run(ours.batch_cache_write(CHAT_RESPONSE, **CHAT))
     asyncio.run(reference.batch_cache_write(CHAT_RESPONSE, **CHAT))
     assert sorted(ours_backend.values) == sorted(reference_backend.values)
-    assert ours.get_cache(**CHAT) == reference.get_cache(**CHAT) == CHAT_RESPONSE
+    assert ours.get_cache(None, **CHAT) == reference.get_cache(None, **CHAT) == CHAT_RESPONSE
 
 
-def test_cache_ops_streaming_content_chunks_of_five() -> None:
+def test_cache_ops_streaming() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
     assert list(ours.generate_streaming_content(STREAM_TEXT)) == STREAM_CHUNKS
     assert list(reference.generate_streaming_content(STREAM_TEXT)) == STREAM_CHUNKS
 
 
-def test_cache_ops_backend_calls_reach_ping_delete_and_disconnect() -> None:
+def test_cache_ops_backend_calls() -> None:
     backend = RecordingBackend()
     cache = Cache(backend)
     assert asyncio.run(cache.ping()) is True
@@ -415,7 +420,7 @@ def test_cache_ops_backend_calls_reach_ping_delete_and_disconnect() -> None:
     assert backend.deleted == ["a", "b"]
     assert backend.disconnected is True
     reference_backend = RecordingBackend()
-    reference = LITELLM_CACHE.Cache(_backend=reference_backend, **{"type": "local"})
+    reference = LITELLM_CACHE.Cache(_backend=reference_backend, type="local")
     assert asyncio.run(reference.ping()) is True
     asyncio.run(reference.delete_cache_keys(["a", "b"]))
     asyncio.run(reference.disconnect())
@@ -424,11 +429,11 @@ def test_cache_ops_backend_calls_reach_ping_delete_and_disconnect() -> None:
     assert reference_backend.disconnected is True
 
 
-def test_cache_ops_native_write_and_read_match_a_python_backend() -> None:
+def test_cache_ops_native_write() -> None:
     ours = Cache(RecordingBackend(), native=NativeCache('{"type": "local"}'))
-    reference = LITELLM_CACHE.Cache(_backend=RecordingBackend(), **{"type": "local"})
-    assert ours.get_cache(**CHAT) is None
-    assert reference.get_cache(**CHAT) is None
-    ours.add_cache(CHAT_RESPONSE, **CHAT)
+    reference = LITELLM_CACHE.Cache(_backend=RecordingBackend(), type="local")
+    assert ours.get_cache(None, **CHAT) is None
+    assert reference.get_cache(None, **CHAT) is None
+    ours.add_cache(CHAT_RESPONSE, None, **CHAT)
     reference.add_cache(CHAT_RESPONSE, **CHAT)
-    assert ours.get_cache(**CHAT) == reference.get_cache(**CHAT) == CHAT_RESPONSE
+    assert ours.get_cache(None, **CHAT) == reference.get_cache(None, **CHAT) == CHAT_RESPONSE
