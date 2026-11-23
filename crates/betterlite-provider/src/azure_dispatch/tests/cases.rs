@@ -402,7 +402,7 @@ pub(super) fn o_series_dispatch() {
     o_series_model_base(&composition);
     azure_defaults_branch(&composition);
     model_selects_branch(&composition);
-    decode_stamps_provider(&composition);
+    decode_stamps_client_model(&composition);
 }
 
 fn o_series_model_base(composition: &Composition) {
@@ -448,14 +448,15 @@ fn model_selects_branch(composition: &Composition) {
     assert_eq!(support::number_at(&body, "max_tokens"), Some(32));
 }
 
-// the production decode stamps the reply of an o-series call with the provider name
-fn decode_stamps_provider(composition: &Composition) {
+// the production decode puts the client's own model back, as the proxy does for every provider
+fn decode_stamps_client_model(composition: &Composition) {
     let credentials = Credentials {
         api_base: Some(String::from(AZURE_BASE)),
         base_model: Some(String::from("o1-preview")),
         ..support::credentials()
     };
-    let call = support::chat("deployment-1", Object::new(), credentials);
+    let mut call = support::chat("deployment-1", Object::new(), credentials);
+    call.client_model = Some(String::from("o1-group"));
     let composed = prepare(composition, Request::Chat(Box::new(call))).expect("the o-series call");
     let request = prepared_request(composed);
     let response = UpstreamResponse {
@@ -468,5 +469,5 @@ fn decode_stamps_provider(composition: &Composition) {
     else {
         panic!("a chat completion");
     };
-    assert_eq!(completion.model, "azure/o1-preview-2024-12-17");
+    assert_eq!(completion.model, "o1-group");
 }

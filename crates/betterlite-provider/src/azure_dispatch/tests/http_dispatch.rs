@@ -82,11 +82,13 @@ fn chat(api_base: String) -> ChatCall {
         api_key: Some(support::key("http-key")),
         ..support::credentials()
     };
-    support::chat(
+    let mut call = support::chat(
         "gpt-http-upstream",
         support::object(r#"{"temperature":1}"#),
         credentials,
-    )
+    );
+    call.client_model = Some(String::from("http-group"));
+    call
 }
 
 // One composed chat request against a loopback server: the adapter executes it and decodes the answer.
@@ -139,7 +141,7 @@ pub(super) async fn check_round_trip() {
         panic!("a chat completion");
     };
     assert_eq!(completion.id, "chatcmpl-http");
-    assert_eq!(completion.model, "gpt-http-upstream-2024");
+    assert_eq!(completion.model, "http-group");
     assert_eq!(
         completion.choices[0].message.content.as_deref(),
         Some("hello over http")

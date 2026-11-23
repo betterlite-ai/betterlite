@@ -126,6 +126,7 @@ fn chat_call(
     let credentials = credentials(&mut optional, deployment)?;
     Ok(call::ChatCall {
         model: chat.model.clone(),
+        client_model: chat.request.model.clone(),
         messages,
         optional,
         credentials,

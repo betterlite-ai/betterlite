@@ -22,6 +22,7 @@ pub struct Prepared {
     pub mode: ReplyMode,
     // the model LiteLLM detects branches with: base_model or model, on the chat path only
     pub detection: Option<String>,
+    pub client_model: Option<String>,
     pub stream: bool,
 }
 fn prepared_http(wire: Wire, timeout: Option<f64>) -> Result<PreparedHttp, AzureProviderError> {
@@ -103,6 +104,7 @@ fn chat_part(composition: &Composition, call: &ChatCall) -> Result<Prepared, Azu
         http,
         mode: ReplyMode::Chat { json_mode },
         detection: Some(detection),
+        client_model: call.client_model.clone(),
         stream: call.stream,
     })
 }
@@ -117,6 +119,7 @@ fn text_part(composition: &Composition, call: &TextCall) -> Result<Prepared, Azu
         http,
         mode: ReplyMode::Text { post_call },
         detection: None,
+        client_model: None,
         stream: false,
     })
 }
@@ -136,6 +139,7 @@ fn embedding_part(
         http,
         mode: ReplyMode::Embedding,
         detection: None,
+        client_model: None,
         stream: false,
     })
 }
@@ -155,7 +159,7 @@ pub fn prepared_request(prepared: Prepared) -> PreparedRequest {
     let chat = PreparedChat {
         http: prepared.http,
         retry: TransformRetry::DISABLED,
-        client_model: prepared.detection,
+        client_model: prepared.client_model,
     };
     if matches!(prepared.mode, ReplyMode::Embedding) {
         return PreparedRequest::Embedding(Box::new(chat));

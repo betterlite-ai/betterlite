@@ -40,15 +40,19 @@ pub(crate) fn decode(
     upstream: Upstream,
 ) -> Result<OperationResult, OperationError> {
     match (prepared.kind(), upstream) {
-        (PreparedKind::Chat(chat), Upstream::Buffered(response)) => Ok(OperationResult::Chat(
-            ChatCompletion::OpenAi(Box::new(project(
+        (PreparedKind::Chat(chat), Upstream::Buffered(response)) => {
+            let completion = project(
                 response,
                 &Projection::Chat {
                     json_mode: false,
-                    provider: reply_provider(chat.client_model.as_deref()),
+                    provider: None,
                 },
-            )?)),
-        )),
+            )?;
+            let stamped = completion.for_client(chat.client_model.as_deref());
+            Ok(OperationResult::Chat(ChatCompletion::OpenAi(Box::new(
+                stamped,
+            ))))
+        }
         (PreparedKind::Stream(_), Upstream::Streaming(response)) => {
             Ok(OperationResult::Stream(Box::new(response)))
         }
@@ -130,7 +134,10 @@ fn text_reply(response: &UpstreamResponse) -> Result<ChatResponse, OperationErro
         })?;
     convert(&projected).map_err(OperationError::from)
 }
-fn raw_embedding(response: UpstreamResponse) -> RawEmbedding {
+pub(crate) fn embedding_response(
+    response: UpstreamResponse,
+) -> Result<EmbeddingResponse, OperationError> {
+    let response = success(response)?;
     let headers: BTreeMap<String, String> = response
         .headers
         .iter()
@@ -141,16 +148,11 @@ fn raw_embedding(response: UpstreamResponse) -> RawEmbedding {
             )
         })
         .collect();
-    RawEmbedding {
+    let raw = RawEmbedding {
         status: response.status,
         headers,
         body: response.body,
-    }
-}
-pub(crate) fn embedding_response(
-    response: UpstreamResponse,
-) -> Result<EmbeddingResponse, OperationError> {
-    let raw = raw_embedding(success(response)?);
+    };
     let parsed = raw.parse().map_err(|error| OperationError::Decode {
         operation: "embedding",
         source: JsonError::io(IoError::other(error.to_string())),

@@ -111,6 +111,7 @@ pub(crate) fn text_call(optional: Object, credentials: Credentials, acompletion:
 pub(crate) fn chat(model: &str, optional: Object, credentials: Credentials) -> ChatCall {
     ChatCall {
         model: model.to_owned(),
+        client_model: None,
         messages: messages(),
         optional,
         credentials,

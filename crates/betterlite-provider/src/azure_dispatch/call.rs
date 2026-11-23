@@ -89,6 +89,7 @@ pub struct SuppliedClient {
 #[derive(Clone)]
 pub struct ChatCall {
     pub model: String,
+    pub client_model: Option<String>,
     pub messages: Vec<Message>,
     pub optional: Object,
     pub credentials: Credentials,
