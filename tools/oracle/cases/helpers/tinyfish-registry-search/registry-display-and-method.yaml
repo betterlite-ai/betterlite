@@ -1,0 +1,29 @@
+kind: helper
+name: registry-display-and-method
+call:
+  b048:
+    op: registry
+    providers:
+      - perplexity
+      - tavily
+      - parallel_ai
+      - exa_ai
+      - brave
+      - google_pse
+      - dataforseo
+      - firecrawl
+      - fastcrw
+      - searxng
+      - linkup
+      - duckduckgo
+      - searchapi
+      - serper
+      - you_com
+      - apiserpent
+      - tinyfish
+      - nimble
+    environment:
+      LINKUP_API_KEY: linkup-key
+      SEARXNG_API_BASE: https://searx.test
+env: {}
+compare: {ignore: []}
