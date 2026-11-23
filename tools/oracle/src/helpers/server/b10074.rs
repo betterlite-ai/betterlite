@@ -80,7 +80,10 @@ fn answer(cipher: &Cipher, call: &Call) -> Value {
         Operation::DecryptEnv => return Value::Object(decrypt_env(&call.values, cipher)),
     };
     match sealed {
-        Ok(values) => sealed_view(&values, write_key(cipher, new_key.as_ref())),
+        Ok(values) => {
+            let key = write_key(cipher, new_key.as_ref());
+            sealed_view(&values, key.as_ref())
+        }
         Err(_) => json!({"failed": true}),
     }
 }

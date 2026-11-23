@@ -4,8 +4,8 @@ use std::sync::Mutex;
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Value, json};
 
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent};
@@ -57,11 +57,15 @@ fn test_cipher(key: Option<&str>, algorithm: Algorithm) -> Cipher {
     }
 }
 
-fn object(entries: &[(&str, Value)]) -> JsonMap {
+fn object(entries: &[(&str, JsonValue)]) -> JsonMap {
     entries
         .iter()
         .map(|(key, value)| ((*key).to_owned(), value.clone()))
         .collect()
+}
+
+fn nested(entries: &[(&str, JsonValue)]) -> JsonValue {
+    JsonValue::Object(object(entries))
 }
 
 fn opened(value: &str, key: &str) -> Option<String> {
@@ -79,13 +83,16 @@ fn messages(cipher: &Cipher) -> Vec<(Level, String)> {
 fn encrypt_env_seals_every_string_and_passes_other_values(#[case] algorithm: Algorithm) {
     let cipher = test_cipher(Some(SALT_KEY), algorithm);
     let values = object(&[
-        ("api_key", json!("sk-secret")),
-        ("model", json!("gpt-4o")),
-        ("count", json!(3)),
-        ("enabled", json!(true)),
-        ("nothing", Value::Null),
-        ("names", json!(["a", "b"])),
-        ("nested", json!({"port": 6379})),
+        ("api_key", JsonValue::from("sk-secret")),
+        ("model", JsonValue::from("gpt-4o")),
+        ("count", JsonValue::from(3_u32)),
+        ("enabled", JsonValue::Bool(true)),
+        ("nothing", JsonValue::Null),
+        (
+            "names",
+            JsonValue::Array(vec![JsonValue::from("a"), JsonValue::from("b")]),
+        ),
+        ("nested", nested(&[("port", JsonValue::from(6379_u32))])),
     ]);
     let encrypted = encrypt_env(&values, &cipher, None).unwrap();
     assert_eq!(encrypted.len(), values.len());
@@ -113,7 +120,7 @@ fn encrypt_env_uses_a_non_empty_new_key_and_falls_back_from_an_empty_one(
     #[case] algorithm: Algorithm,
 ) {
     let cipher = test_cipher(Some(SALT_KEY), algorithm);
-    let values = object(&[("api_key", json!("sk-secret"))]);
+    let values = object(&[("api_key", JsonValue::from("sk-secret"))]);
     let override_key = SecretString::from(OVERRIDE_KEY);
     let sealed = encrypt_env(&values, &cipher, Some(&override_key)).unwrap();
     let under_override = sealed["api_key"].as_str().unwrap();
@@ -133,7 +140,7 @@ fn encrypt_env_uses_a_non_empty_new_key_and_falls_back_from_an_empty_one(
 #[test]
 fn a_string_without_a_configured_key_fails_naming_the_key_only() {
     let cipher = test_cipher(None, LEGACY);
-    let values = object(&[("api_key", json!("sk-live-secret"))]);
+    let values = object(&[("api_key", JsonValue::from("sk-live-secret"))]);
     let error = encrypt_env(&values, &cipher, None).unwrap_err();
     let EnvValueCodecError::Encrypt { key, source } = &error;
     assert_eq!(key, "api_key");
@@ -148,11 +155,17 @@ fn a_string_without_a_configured_key_fails_naming_the_key_only() {
 fn a_map_of_non_strings_needs_no_configured_key() {
     let cipher = test_cipher(None, LEGACY);
     let values = object(&[
-        ("port", json!(6379)),
-        ("ssl", json!(true)),
-        ("nothing", Value::Null),
-        ("nodes", json!([["127.0.0.1", 7000]])),
-        ("nested", json!({"password": "plain"})),
+        ("port", JsonValue::from(6379_u32)),
+        ("ssl", JsonValue::Bool(true)),
+        ("nothing", JsonValue::Null),
+        (
+            "nodes",
+            JsonValue::Array(vec![JsonValue::Array(vec![
+                JsonValue::from("127.0.0.1"),
+                JsonValue::from(7000_u32),
+            ])]),
+        ),
+        ("nested", nested(&[("password", JsonValue::from("plain"))])),
     ]);
     assert_eq!(encrypt_env(&values, &cipher, None).unwrap(), values);
     assert_eq!(decrypt_env(&values, &cipher), values);
@@ -169,8 +182,8 @@ fn a_map_of_non_strings_needs_no_configured_key() {
 fn decrypt_env_opens_what_it_can(#[case] algorithm: Algorithm) {
     let cipher = test_cipher(Some(SALT_KEY), algorithm);
     let readable = object(&[
-        ("legacy", json!(LEGACY_HELLO)),
-        ("sealed", json!(AES_HELLO)),
+        ("legacy", JsonValue::from(LEGACY_HELLO)),
+        ("sealed", JsonValue::from(AES_HELLO)),
     ]);
     let decrypted = decrypt_env(&readable, &cipher);
     assert_eq!(decrypted["legacy"], "hello");
@@ -184,13 +197,17 @@ fn decrypt_env_opens_what_it_can(#[case] algorithm: Algorithm) {
 fn decrypt_env_keeps_the_rest_as_stored(#[case] algorithm: Algorithm) {
     let cipher = test_cipher(Some(SALT_KEY), algorithm);
     let foreign = test_cipher(Some("salt-other"), algorithm);
-    let foreign_sealed =
-        encrypt_env(&object(&[("host", json!("foreign-host"))]), &foreign, None).unwrap();
+    let foreign_sealed = encrypt_env(
+        &object(&[("host", JsonValue::from("foreign-host"))]),
+        &foreign,
+        None,
+    )
+    .unwrap();
     let values = object(&[
         ("host", foreign_sealed["host"].clone()),
-        ("garbage", json!("not*base64*text")),
-        ("plain", json!("plaintext")),
-        ("port", json!(6379)),
+        ("garbage", JsonValue::from("not*base64*text")),
+        ("plain", JsonValue::from("plaintext")),
+        ("port", JsonValue::from(6379_u32)),
     ]);
     let kept = decrypt_env(&values, &cipher);
     assert_eq!(kept, values);
@@ -222,10 +239,10 @@ fn decrypt_env_keeps_the_rest_as_stored(#[case] algorithm: Algorithm) {
 fn encrypt_env_for_db_opens_plaintext_and_stored_ciphertext_once(#[case] algorithm: Algorithm) {
     let cipher = test_cipher(Some(SALT_KEY), algorithm);
     let values = object(&[
-        ("plain", json!("hello")),
-        ("legacy", json!(LEGACY_HELLO)),
-        ("sealed", json!(AES_HELLO)),
-        ("port", json!(6379)),
+        ("plain", JsonValue::from("hello")),
+        ("legacy", JsonValue::from(LEGACY_HELLO)),
+        ("sealed", JsonValue::from(AES_HELLO)),
+        ("port", JsonValue::from(6379_u32)),
     ]);
     let stored = encrypt_env_for_db(&values, &cipher, None).unwrap();
     assert_eq!(stored.len(), values.len());
@@ -247,9 +264,9 @@ fn encrypt_env_for_db_decrypts_with_the_configured_key_before_an_override_write(
 ) {
     let cipher = test_cipher(Some(SALT_KEY), algorithm);
     let values = object(&[
-        ("legacy", json!(LEGACY_HELLO)),
-        ("sealed", json!(AES_HELLO)),
-        ("plain", json!("hello")),
+        ("legacy", JsonValue::from(LEGACY_HELLO)),
+        ("sealed", JsonValue::from(AES_HELLO)),
+        ("plain", JsonValue::from("hello")),
     ]);
     let override_key = SecretString::from(OVERRIDE_KEY);
     let stored = encrypt_env_for_db(&values, &cipher, Some(&override_key)).unwrap();
@@ -267,7 +284,10 @@ fn encrypt_env_for_db_decrypts_with_the_configured_key_before_an_override_write(
 #[case::aes(AES)]
 fn encrypt_env_for_db_turns_star_and_empty_into_sealed_empty_text(#[case] algorithm: Algorithm) {
     let cipher = test_cipher(Some(SALT_KEY), algorithm);
-    let values = object(&[("star", json!("*")), ("empty", json!(""))]);
+    let values = object(&[
+        ("star", JsonValue::from("*")),
+        ("empty", JsonValue::from("")),
+    ]);
     let encrypted = encrypt_env(&values, &cipher, None).unwrap();
     assert_eq!(
         opened(encrypted["star"].as_str().unwrap(), SALT_KEY).as_deref(),

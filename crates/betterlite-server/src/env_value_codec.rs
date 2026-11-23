@@ -98,9 +98,10 @@ fn decrypt_entry<N, D>(key: &str, value: JsonValue, cipher: &StoredCipher<N, D>)
 where
     D: SecretDiagnostics,
 {
-    cipher
-        .decrypt_value(stored_value(value.clone()), key, KEEP_ORIGINAL)
-        .map_or_else(|| value, plain_value)
+    match cipher.decrypt_value(stored_value(value.clone()), key, KEEP_ORIGINAL) {
+        Some(opened) => plain_value(opened),
+        None => value,
+    }
 }
 
 fn stored_value(value: JsonValue) -> StoredValue<JsonValue> {
