@@ -38,12 +38,16 @@ fn record_bytes(output: Json) -> usize {
     encoded_len(&response_record("in_progress", output))
 }
 
-async fn run_with_limits(events: &[&str], limits: ApiLimits) -> Scenario {
+fn scenario_for(events: &[&str], limits: ApiLimits) -> Scenario {
     let steps: Vec<AnswerStep> = support::frames(events)
         .into_iter()
         .map(AnswerStep::Chunk)
         .collect();
-    let mut scenario = support::scenario(&[1000], Answer::Streaming(steps)).with_limits(limits);
+    support::scenario(&[1000], Answer::Streaming(steps)).with_limits(limits)
+}
+
+async fn run_with_limits(events: &[&str], limits: ApiLimits) -> Scenario {
+    let mut scenario = scenario_for(events, limits);
     scenario
         .run()
         .await
@@ -51,12 +55,8 @@ async fn run_with_limits(events: &[&str], limits: ApiLimits) -> Scenario {
     scenario
 }
 
-fn envelope_scenario(events: &[&str], limits: ApiLimits) -> Scenario {
-    let steps: Vec<AnswerStep> = support::frames(events)
-        .into_iter()
-        .map(AnswerStep::Chunk)
-        .collect();
-    let scenario = support::scenario(&[1000], Answer::Streaming(steps)).with_limits(limits);
+// the store writes the owner envelope once B080 lands, so a seeded cache here holds one too
+fn with_envelope(mut scenario: Scenario) -> Scenario {
     scenario.cache.seed(ENVELOPE_SEED);
     scenario
 }
@@ -237,7 +237,7 @@ async fn a_limit_between_the_values_and_the_record_keeps_the_cache_decodable() {
     let output = support::json(&format!(
         r#"[{{"content":[],"id":"m1","payload":"{payload}"}}]"#
     ));
-    let mut sized = envelope_scenario(&[added.as_str()], ApiLimits::default());
+    let mut sized = with_envelope(scenario_for(&[added.as_str()], ApiLimits::default()));
     sized.run().await.expect("the worker records its outcome");
     let flush = sized.cache.writes().into_iter().nth(1);
     let observed = encoded_len(&flush.expect("the flush record is written"));
@@ -248,7 +248,7 @@ async fn a_limit_between_the_values_and_the_record_keeps_the_cache_decodable() {
         max_event_bytes: 16 * 1024 * 1024,
         max_items: 64 * 1024,
     };
-    let mut scenario = envelope_scenario(&[added.as_str()], limits);
+    let mut scenario = with_envelope(scenario_for(&[added.as_str()], limits));
     scenario
         .run()
         .await
