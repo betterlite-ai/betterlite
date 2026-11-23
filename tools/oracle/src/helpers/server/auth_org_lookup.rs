@@ -28,9 +28,9 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let script = Arc::new(Script::new(input));
-        let wired: Arc<dyn OrgStore> = Arc::clone(&script);
+        let wired: Arc<dyn OrgStore> = Arc::<Script>::clone(&script);
         let store = input.database.then_some(wired);
-        let cache: Arc<dyn OrgCache> = Arc::clone(&script);
+        let cache: Arc<dyn OrgCache> = Arc::<Script>::clone(&script);
         let lookup = OrgLookup {
             store,
             cache,
@@ -135,8 +135,8 @@ fn failure(error: &OrgLookupError) -> Value {
             "exception"
         }
     };
-    error.http().map_or(
-        json!({"kind": kind, "status": null, "detail": null}),
+    error.http().map_or_else(
+        || json!({"kind": kind, "status": null, "detail": null}),
         |status| json!({"kind": kind, "status": status, "detail": "object"}),
     )
 }
