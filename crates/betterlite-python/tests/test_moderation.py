@@ -196,8 +196,7 @@ def header_of(call: RecordedCall, name: str) -> str | None:
 
 
 def view_of(response: OpenAIModerationResponse) -> ModerationView:
-    dumped = response.model_dump()
-    return VIEW.validate_python(dumped)
+    return VIEW.validate_json(response.model_dump_json())
 
 
 def first_result(view: ModerationView) -> ResultView:

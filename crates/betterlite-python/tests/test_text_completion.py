@@ -11,11 +11,12 @@ import pytest
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
+from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._text import TextCompletionStreamWrapper
 from betterlite.exceptions import (
     AuthenticationError,
     BadRequestError,
-    UnsupportedCallArgument,
+    Timeout,
     UnsupportedParamsError,
 )
 from betterlite.main import atext_completion, text_completion
@@ -42,11 +43,22 @@ FINISH_REASON: Final = "stop"
 STREAM_PARTS: Final = ("a", "b", "c")
 TOKENS_TEXT: Final = "tokens"
 MOCK_TEXT: Final = "mocked"
+MOCK_DEFAULT: Final = "This is a mock request"
+MOCK_TOOL_CALLS: Final[list[dict[str, JsonValue]]] = [
+    {"id": "call_1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}},
+]
 UNKNOWN_PATH: Final = "the server received a path no test expects"
 AUTH_TEXT: Final = "Incorrect API key provided: bad-key"
 PROMPT_TOKENS: Final = 2
 COMPLETION_TOKENS: Final = 1
 TOTAL_TOKENS: Final = 3
+BEST_OF: Final = 2
+MAX_TOKENS: Final = 5
+TEMPERATURE: Final = 0.2
+TOP_P: Final = 0.9
+CHAT_TEMPERATURE: Final = 0.1
+BAD_REQUEST: Final = 400
+TIMEOUT_STATUS: Final = 408
 USAGE: Final[dict[str, JsonValue]] = {
     "prompt_tokens": PROMPT_TOKENS,
     "completion_tokens": COMPLETION_TOKENS,
@@ -470,16 +482,16 @@ def test_prompts_parameters_reach() -> None:
             api_key=GOOD_KEY,
         )
         body = server.calls[-1]["body"]
-    assert body["best_of"] == 2
+    assert body["best_of"] == BEST_OF
     assert body["echo"] is True
     assert body["logit_bias"] == {"50256": -100}
     assert body["logprobs"] == 1
-    assert body["max_tokens"] == 5
+    assert body["max_tokens"] == MAX_TOKENS
     assert body["n"] == 1
     assert body["stop"] == ["\n"]
     assert body["suffix"] == "end"
-    assert body["temperature"] == 0.2
-    assert body["top_p"] == 0.9
+    assert body["temperature"] == TEMPERATURE
+    assert body["top_p"] == TOP_P
     assert body["user"] == "reader"
     assert answer_of(outcome).model_dump()["object"] == "text_completion"
 
@@ -523,14 +535,14 @@ def test_prompts_auth_error() -> None:
 def test_prompts_unknown_param() -> None:
     with pytest.raises(UnsupportedParamsError) as caught:
         text_completion(model=TEXT_MODEL, prompt="hi", api_type="openai")
-    assert caught.value.status_code == 400
+    assert caught.value.status_code == BAD_REQUEST
     assert "api_type" in caught.value.message
 
 
 def test_prompts_async_model_none() -> None:
     with pytest.raises(BadRequestError) as caught:
         asyncio.run(atext_completion(model=None, prompt="hi"))
-    assert caught.value.status_code == 400
+    assert caught.value.status_code == BAD_REQUEST
     assert "LLM Provider NOT provided" in caught.value.message
 
 
@@ -543,6 +555,28 @@ def test_prompts_mock_answer() -> None:
         )
         assert server.calls == []
     assert first_choice(view_of(answer_of(outcome)))["text"] == MOCK_TEXT
+
+
+def test_prompts_mock_timeout() -> None:
+    with pytest.raises(Timeout) as caught:
+        text_completion(model=TEXT_MODEL, prompt="hi", mock_timeout=True, timeout=0)
+    assert caught.value.status_code == TIMEOUT_STATUS
+
+
+def test_prompts_mock_timeout_without_a_timeout() -> None:
+    with pytest.raises(BadRequestError) as caught:
+        text_completion(model=TEXT_MODEL, prompt="hi", mock_timeout=True)
+    assert caught.value.status_code == BAD_REQUEST
+
+
+def test_prompts_mock_tool_calls() -> None:
+    with closing(TextServer()) as server:
+        outcome = text_completion(
+            model=TEXT_MODEL, prompt="hi", mock_tool_calls=MOCK_TOOL_CALLS,
+            api_base=server.url, api_key=GOOD_KEY,
+        )
+        assert server.calls == []
+    assert first_choice(view_of(answer_of(outcome)))["text"] == MOCK_DEFAULT
 
 
 def test_chat_one_user_message() -> None:
@@ -578,9 +612,9 @@ def test_chat_parameters_sent() -> None:
             api_key=GOOD_KEY,
         )
         body = server.calls[-1]["body"]
-    assert body["max_tokens"] == 5
+    assert body["max_tokens"] == MAX_TOKENS
     assert body["stop"] == ["x"]
-    assert body["temperature"] == 0.1
+    assert body["temperature"] == CHAT_TEMPERATURE
     assert body["user"] == "reader"
 
 
