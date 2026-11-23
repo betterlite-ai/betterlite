@@ -17,7 +17,7 @@ use secrecy::SecretString;
 
 use crate::speech::binary::{AudioSpeechCall, finish_audio_speech};
 use crate::speech::dispatch::SpeechGlobals;
-use crate::speech::logging::{PrePostLogger, SpeechLogger, SpeechPreCall};
+use crate::speech::logging::{PrePostLogger, SpeechLogger as _, SpeechPreCall};
 
 use super::support::{self, API_BASE, Inputs, Recorder, SECRET, json};
 
@@ -113,50 +113,55 @@ impl LogSink for Sink {
     }
 }
 
-// PrePostLogger hands the speech pre-call to B249's pre_call, which fills the call details from it
-#[test]
-fn speech_pre_post_logger_records_the_pre_call() {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-    let init: LoggingInit = serde_json::from_str(
+fn logging_init() -> LoggingInit {
+    serde_json::from_str(
         r#"{"model":"tts-1","call_type":"speech","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
     )
-    .expect("the logging fixture is valid");
-    let mut state = LoggingState::new(
-        init,
+    .expect("the logging fixture is valid")
+}
+
+fn logging_state(redactor: &Redactor) -> LoggingState {
+    LoggingState::new(
+        logging_init(),
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
             settings: CorrelationSettings::default(),
         },
-        &redactor,
+        redactor,
         || String::from("generated"),
         Duration::default,
     )
-    .expect("the logging state builds");
-    let sink = Sink::default();
-    let env = PrePostEnv {
+    .expect("the logging state builds")
+}
+
+fn logging_env<'env>(redactor: &'env Redactor, sink: &'env Sink) -> PrePostEnv<'env> {
+    PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
         decision: Decision {
             content: false,
             key_info: false,
         },
-        redactor: &redactor,
-        log: &sink,
+        redactor,
+        log: sink,
         input_callbacks: &[],
         sentry: None,
         logger_fn: None,
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses"),
-    };
-    PrePostLogger {
-        state: &mut state,
-        env: &env,
     }
-    .pre_call(SpeechPreCall {
-        input: "hello",
-        api_base: API_BASE,
-        data: IndexMap::from([(String::from("voice"), json(r#""alloy""#))]),
-    })
-    .expect("pre_call records");
+}
+
+fn record_speech_pre_call(state: &mut LoggingState, env: &PrePostEnv<'_>) {
+    PrePostLogger { state, env }
+        .pre_call(SpeechPreCall {
+            input: "hello",
+            api_base: API_BASE,
+            data: IndexMap::from([(String::from("voice"), json(r#""alloy""#))]),
+        })
+        .expect("pre_call records");
+}
+
+fn assert_pre_call_details(state: &LoggingState) {
     let details = &state.model_call_details;
     assert_eq!(
         details.get("log_event_type"),
@@ -178,4 +183,15 @@ fn speech_pre_post_logger_records_the_pre_call() {
         state.litellm_params.get("api_base"),
         Some(&json(r#""https://example.openai.azure.com""#))
     );
+}
+
+// PrePostLogger hands the speech pre-call to B249's pre_call, which fills the call details from it
+#[test]
+fn speech_pre_post_logger_records_the_pre_call() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+    let mut state = logging_state(&redactor);
+    let sink = Sink::default();
+    let env = logging_env(&redactor, &sink);
+    record_speech_pre_call(&mut state, &env);
+    assert_pre_call_details(&state);
 }
