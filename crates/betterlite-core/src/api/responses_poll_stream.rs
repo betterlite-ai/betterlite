@@ -7,7 +7,6 @@ pub mod worker;
 
 mod tests;
 
-// the route the detached provider call runs as
 pub const ROUTE_TYPE: &str = "aresponses";
 // background_streaming.py's UPDATE_INTERVAL, in the milliseconds the clock reports
 pub const UPDATE_INTERVAL: u64 = 150;

@@ -4,7 +4,6 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use thiserror::Error;
 
-use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::responses_poll_state::access::PollAccess;
 use crate::api::responses_poll_state::error::PollingError;
 use crate::api::responses_poll_state::record::PollPatch;
@@ -13,7 +12,7 @@ use crate::api::responses_poll_state::store::ResponsePollingStore;
 use super::ERROR_CODE;
 use super::ERROR_TYPE;
 use super::ROUTE_TYPE;
-use super::accumulator::OutputAccumulator;
+use super::accumulator::{AccumulatorLimitError, OutputAccumulator};
 use super::clock::PollClock;
 use super::event::{PollEvent, PollEventError};
 use super::frame::{PollFrame, PollFrameError, decode_poll_stream_frame};
@@ -34,7 +33,6 @@ pub struct BackgroundStreaming<'context> {
     pub processor: &'context dyn PollRequestProcessor,
     pub clock: &'context dyn PollClock,
     pub redactor: &'context Redactor,
-    pub limits: ApiLimits,
 }
 
 // the source stores str(e), so every variant's text is the message the record carries
@@ -47,7 +45,7 @@ pub enum PollStreamError {
     #[error(transparent)]
     Event(#[from] PollEventError),
     #[error(transparent)]
-    Limit(#[from] ApiLimitError),
+    Accumulated(#[from] AccumulatorLimitError),
     #[error(transparent)]
     Polling(#[from] PollingError),
 }
@@ -93,6 +91,7 @@ impl BackgroundStreaming<'_> {
         };
         self.consume(chunks.as_mut(), &mut state).await?;
         if let Some(output) = state.flush_forced(self.clock) {
+            state.check_limits(self.store.limits)?;
             let patch = PollPatch(IndexMap::from([(String::from("output"), output)]));
             self.write_patch(&patch).await?;
         }
@@ -105,7 +104,7 @@ impl BackgroundStreaming<'_> {
         state: &mut OutputAccumulator,
     ) -> Result<(), PollStreamError> {
         while let Some(bytes) = chunks.next_chunk().await? {
-            match decode_poll_stream_frame(&bytes, self.limits)? {
+            match decode_poll_stream_frame(&bytes, self.store.limits)? {
                 PollFrame::NoData => {}
                 PollFrame::Done => break,
                 PollFrame::Malformed => {
@@ -127,8 +126,8 @@ impl BackgroundStreaming<'_> {
             self.write_patch(&status_patch(STATUS_IN_PROGRESS)).await?;
         }
         state.apply(event)?;
-        state.check_limits(self.limits)?;
         if let Some(output) = state.flush_if_due(self.clock) {
+            state.check_limits(self.store.limits)?;
             let patch = PollPatch(IndexMap::from([(String::from("output"), output)]));
             self.write_patch(&patch).await?;
         }
@@ -136,6 +135,7 @@ impl BackgroundStreaming<'_> {
     }
 
     async fn finish(&self, state: &OutputAccumulator) -> Result<(), PollStreamError> {
+        state.check_limits(self.store.limits)?;
         self.write_patch(&state.final_patch()).await?;
         tracing::info!(
             "Finished background streaming for {}, status={}",

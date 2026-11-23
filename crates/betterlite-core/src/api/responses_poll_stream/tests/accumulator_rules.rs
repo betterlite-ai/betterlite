@@ -4,7 +4,7 @@ use rstest::rstest;
 
 use super::support;
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
-use crate::api::responses_poll_stream::accumulator::OutputAccumulator;
+use crate::api::responses_poll_stream::accumulator::{AccumulatorLimitError, OutputAccumulator};
 use crate::api::responses_poll_stream::clock::PollClock;
 use crate::api::responses_poll_stream::event::{Item, PollEvent, PollEventError};
 
@@ -509,7 +509,8 @@ fn items_stop_at_the_items_bound() {
     let error = accumulator
         .check_limits(limits)
         .expect_err("the item past the limit is refused");
-    let ApiLimitError::TooManyItems { observed, limit } = error else {
+    let AccumulatorLimitError::Limit(ApiLimitError::TooManyItems { observed, limit }) = error
+    else {
         panic!("the item bound rejects the third item");
     };
     assert_eq!((observed, limit), (3_usize, 2_usize));
@@ -517,13 +518,15 @@ fn items_stop_at_the_items_bound() {
 
 #[test]
 fn delta_text_stops_at_the_json_bound() {
-    let limits = ApiLimits::default();
     let clock = support::clock(&[0]);
     let mut accumulator = OutputAccumulator::started(&clock);
     accumulator
         .apply(event(ADDED_M1))
         .expect("the item applies");
-    let text = "x".repeat(limits.max_json_bytes);
+    accumulator
+        .apply(event(PART_EMPTY))
+        .expect("the part applies");
+    let text = "x".repeat(1024);
     accumulator
         .apply(PollEvent::OutputTextDelta(
             Some(String::from("m1")),
@@ -531,6 +534,16 @@ fn delta_text_stops_at_the_json_bound() {
             text,
         ))
         .expect("the delta applies");
+    let output = forced(&mut accumulator, &clock);
+    let values = Json::List(vec![output, Json::Text(String::from("completed"))]);
+    let observed = serde_json::to_vec(&values)
+        .expect("the measured output encodes")
+        .len();
+    let limits = ApiLimits {
+        max_json_bytes: observed,
+        max_event_bytes: 16 * 1024 * 1024,
+        max_items: 64 * 1024,
+    };
     accumulator
         .check_limits(limits)
         .expect("the text is exactly at the limit");
@@ -544,13 +557,14 @@ fn delta_text_stops_at_the_json_bound() {
     let error = accumulator
         .check_limits(limits)
         .expect_err("the byte past the limit is refused");
-    assert_eq!(
-        error,
-        ApiLimitError::JsonTooLarge {
-            observed: limits.max_json_bytes.saturating_add(1),
-            limit: limits.max_json_bytes,
-        }
-    );
+    let AccumulatorLimitError::Limit(ApiLimitError::JsonTooLarge {
+        observed: rejected,
+        limit,
+    }) = error
+    else {
+        panic!("the JSON bound rejects the extra byte");
+    };
+    assert_eq!((rejected, limit), (observed.saturating_add(1), observed));
 }
 
 #[test]

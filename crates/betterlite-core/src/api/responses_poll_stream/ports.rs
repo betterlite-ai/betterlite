@@ -5,16 +5,10 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use thiserror::Error;
 
-// what a client link can report; the worker holds one but never reads it
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ClientMessage {
-    Body(Vec<u8>),
-    Disconnect,
-}
-
+// the client link the admitted request carried; the worker holds one but never reads it
 #[async_trait]
 pub trait ClientInbound: Send + Sync {
-    async fn receive(&mut self) -> ClientMessage;
+    async fn receive(&mut self);
 }
 
 // the preprocessed scope and body B080 copies when it admits the polling request
@@ -39,9 +33,8 @@ pub struct DetachedRequest<'request> {
 
 impl DetachedRequest<'_> {
     // background_streaming.py's _never_receive: waiting forever, so a closed client cancels nothing
-    pub async fn receive(&self) -> ClientMessage {
+    pub async fn receive(&self) {
         pending::<()>().await;
-        ClientMessage::Disconnect
     }
 }
 

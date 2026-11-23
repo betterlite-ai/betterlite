@@ -72,8 +72,5 @@ fn classify_payload(payload: &str) -> PollFrame {
     if payload == "[DONE]" {
         return PollFrame::Done;
     }
-    match serde_json::from_str::<Json>(payload) {
-        Ok(event) => PollFrame::Event(event),
-        Err(_error) => PollFrame::Malformed,
-    }
+    serde_json::from_str(payload).map_or(PollFrame::Malformed, PollFrame::Event)
 }

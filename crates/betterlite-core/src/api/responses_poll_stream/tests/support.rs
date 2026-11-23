@@ -23,8 +23,8 @@ use crate::api::responses_poll_state::get_cache_key;
 use crate::api::responses_poll_state::store::ResponsePollingStore;
 use crate::api::responses_poll_stream::clock::PollClock;
 use crate::api::responses_poll_stream::ports::{
-    ClientInbound, ClientMessage, PollChunkSource, PollProcessCall, PollProcessed,
-    PollProcessorError, PollRequest, PollRequestProcessor, PollScope,
+    ClientInbound, PollChunkSource, PollProcessCall, PollProcessed, PollProcessorError,
+    PollRequest, PollRequestProcessor, PollScope,
 };
 use crate::api::responses_poll_stream::worker::{BackgroundStreaming, PollStreamError};
 
@@ -234,9 +234,8 @@ struct SharedInbound(Arc<RecordingInbound>);
 
 #[async_trait]
 impl ClientInbound for SharedInbound {
-    async fn receive(&mut self) -> ClientMessage {
+    async fn receive(&mut self) {
         self.0.received.fetch_add(1, Ordering::SeqCst);
-        ClientMessage::Disconnect
     }
 }
 
@@ -246,7 +245,6 @@ pub(super) struct Scenario {
     pub(super) processor: Arc<ScriptedProcessor>,
     pub(super) inbound: Arc<RecordingInbound>,
     pub(super) store: ResponsePollingStore,
-    limits: ApiLimits,
     request: Option<PollRequest>,
 }
 
@@ -282,7 +280,6 @@ pub(super) fn scenario(readings: &[u64], answer: Answer) -> Scenario {
         }),
         inbound,
         store,
-        limits: ApiLimits::default(),
         request: Some(request),
     }
 }
@@ -318,16 +315,14 @@ impl Scenario {
             processor: self.processor.as_ref(),
             clock: self.clock.as_ref(),
             redactor: &redactor,
-            limits: self.limits,
         }
         .run()
         .await
     }
 
-    // B1087 resolves one ApiLimits for both the store and the worker, so a scenario scripts both
+    // B1087 resolves one ApiLimits for the store's reads and the worker's writes, so a scenario scripts that copy
     pub(super) fn with_limits(mut self, limits: ApiLimits) -> Self {
         self.store.limits = limits;
-        self.limits = limits;
         self
     }
 }

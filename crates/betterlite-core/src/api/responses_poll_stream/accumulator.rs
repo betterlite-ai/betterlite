@@ -1,24 +1,32 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use thiserror::Error;
 
 use crate::api::api_boundaries::{
-    ApiBoundariesInput, ApiLimitError, ApiLimits, ItemsBoundary, JsonBoundary,
+    ApiBoundariesInput, ApiLimitError, ApiLimits, EventBoundary, ItemsBoundary, JsonBoundary,
 };
 use crate::api::responses_poll_state::record::PollPatch;
 
 use super::UPDATE_INTERVAL;
 use super::clock::PollClock;
-use super::event::{Item, PollEvent, PollEventError, TERMINAL_FIELDS, Terminal};
+use super::event::{Item, PollEvent, PollEventError, Terminal};
 
 #[derive(Debug, Default)]
 pub struct OutputAccumulator {
     output_items: IndexMap<String, IndexMap<String, Json>>,
     accumulated_text: IndexMap<(String, i64), String>,
-    text_bytes: usize,
     terminal: Option<Terminal>,
     error: Option<Json>,
     dirty: bool,
     last_update_millis: u64,
+}
+
+#[derive(Debug, Error)]
+pub enum AccumulatorLimitError {
+    #[error(transparent)]
+    Limit(#[from] ApiLimitError),
+    #[error("the accumulated polling record could not be encoded: {0}")]
+    Encode(#[from] serde_json::Error),
 }
 
 impl OutputAccumulator {
@@ -28,7 +36,6 @@ impl OutputAccumulator {
         Self {
             output_items: IndexMap::new(),
             accumulated_text: IndexMap::new(),
-            text_bytes: 0,
             terminal: None,
             error: None,
             dirty: false,
@@ -54,13 +61,20 @@ impl OutputAccumulator {
         Ok(())
     }
 
-    // the polling store refuses a record over these bounds on every later read, so the worker stops first
-    pub fn check_limits(&self, limits: ApiLimits) -> Result<(), ApiLimitError> {
-        let known_count = self.output_items.len();
+    // the store counts every member and element of what it decodes and caps its bytes, so the worker measures the same values
+    pub fn check_limits(&self, limits: ApiLimits) -> Result<(), AccumulatorLimitError> {
+        let mut values = vec![self.output_value()];
+        values.extend(
+            self.final_patch()
+                .0
+                .into_values()
+                .filter(|value| !matches!(value, Json::Null)),
+        );
+        let known_count = values.iter().map(json_children).sum();
         limits.check(ApiBoundariesInput::Items(ItemsBoundary { known_count }))?;
-        limits.check(ApiBoundariesInput::Json(JsonBoundary {
-            known_bytes: self.text_bytes,
-        }))?;
+        let known_bytes = serde_json::to_vec(&Json::List(values))?.len();
+        limits.check(ApiBoundariesInput::Json(JsonBoundary { known_bytes }))?;
+        limits.check(ApiBoundariesInput::Event(EventBoundary { known_bytes }))?;
         Ok(())
     }
 
@@ -119,7 +133,6 @@ impl OutputAccumulator {
         let key = (id, content_index);
         let accumulated = self.accumulated_text.entry(key).or_default();
         accumulated.push_str(delta);
-        self.text_bytes = self.text_bytes.saturating_add(delta.len());
         let text = accumulated.clone();
         if let Some(Json::List(parts)) = item.get_mut("content")
             && let Some(position) = part_index(content_index, parts.len())?
@@ -148,17 +161,12 @@ impl OutputAccumulator {
 
     #[must_use]
     pub fn final_patch(&self) -> PollPatch {
-        let mut fields = IndexMap::new();
-        let status = Json::Text(self.final_status().to_owned());
-        fields.insert(String::from("status"), status);
+        // the last terminal event already holds every name in TERMINAL_FIELDS, null where the event omitted it
         let terminal = self.terminal.as_ref();
-        for name in TERMINAL_FIELDS.split(' ') {
-            let value = terminal
-                .and_then(|record| record.fields.get(name))
-                .map_or(Json::Null, Json::clone);
-            fields.insert(name.to_owned(), value);
-        }
+        let mut fields = terminal.map_or_else(IndexMap::new, |record| record.fields.clone());
+        let status = Json::Text(self.final_status().to_owned());
         let error = self.error.clone().unwrap_or(Json::Null);
+        fields.insert(String::from("status"), status);
         fields.insert(String::from("error"), error);
         PollPatch(fields)
     }
@@ -198,12 +206,21 @@ impl OutputAccumulator {
     fn flushed(&mut self, now: u64) -> Json {
         self.dirty = false;
         self.last_update_millis = now;
-        Json::List(
-            self.output_items
-                .values()
-                .map(|item| Json::Object(item.clone()))
-                .collect(),
-        )
+        self.output_value()
+    }
+
+    fn output_value(&self) -> Json {
+        let items = self.output_items.values();
+        Json::List(items.map(|item| Json::Object(item.clone())).collect())
+    }
+}
+
+// the store counts one item for every object member and array element it decodes
+fn json_children(value: &Json) -> usize {
+    match value {
+        Json::List(items) => items.len() + items.iter().map(json_children).sum::<usize>(),
+        Json::Object(fields) => fields.len() + fields.values().map(json_children).sum::<usize>(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => 0,
     }
 }
 
