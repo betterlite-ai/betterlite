@@ -1,0 +1,26 @@
+kind: helper
+name: static-credential-non-static-modes
+call:
+  b10065:
+    auth_type: none
+    headers: {}
+    upstream_token_header: null
+    static_header_names: []
+calls:
+  - b10065:
+      auth_type: oauth2
+      headers: {Authorization: Bearer}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: oauth2_token_exchange
+      headers: {X-API-Key: ""}
+      upstream_token_header: null
+      static_header_names: []
+  - b10065:
+      auth_type: oauth2
+      headers: {Authorization: Bearer, X-API-Key: ""}
+      upstream_token_header: X-Custom
+      static_header_names: [apikey]
+env: {}
+compare: {ignore: []}
