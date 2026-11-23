@@ -9,3 +9,11 @@ deviations:
   - what: The provider comes from the argument or kwargs.custom_llm_provider, and every failure carries that resolved name.
     why: LiteLLM's kwargs can never hold custom_llm_provider, since the parameter is named and Python binds it before **kwargs, while aget's exception handler re-reads only its own argument; betterlite's kwargs map can carry the key, the agents item call resolves it the same way, and the resolved name is what selected the provider config and the client.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L407-L412
+  - what: >-
+      An interactions get or aget call whose provider is unknown or has no interactions config answers a
+      BadRequestError (400) with model "" and the provider set.
+    why: >-
+      LiteLLM's ValueError goes through exception_type and comes out as an APIConnectionError (500), though
+      the provider name is the caller's input and the call can never succeed.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L425-L426

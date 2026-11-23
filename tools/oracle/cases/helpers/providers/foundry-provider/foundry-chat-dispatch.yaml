@@ -1,0 +1,55 @@
+{
+  "kind": "helper",
+  "name": "foundry-chat-dispatch",
+  "call": {
+    "foundry_provider": {
+      "inputs": [
+        {
+          "op": "dispatch",
+          "model": "gpt-4o",
+          "messages": [{"role": "user", "content": "hi"}],
+          "api_base": "https://res.services.ai.azure.com/models",
+          "api_key": "sk-foundry-fixture",
+          "headers": null,
+          "optionals": {},
+          "globals": {"api_base": null, "api_key": null, "headers": null},
+          "environment": {},
+          "stream": false,
+          "status": null
+        },
+        {
+          "op": "dispatch",
+          "model": "gpt-4o",
+          "messages": [{"role": "user", "content": "hi"}],
+          "api_base": "https://res.services.ai.azure.com/models",
+          "api_key": null,
+          "headers": null,
+          "optionals": {},
+          "globals": {"api_base": null, "api_key": "sk-global-fixture", "headers": null},
+          "environment": {},
+          "stream": false,
+          "status": null
+        },
+        {
+          "op": "dispatch",
+          "model": "gpt-4o",
+          "messages": [{"role": "user", "content": "hi"}],
+          "api_base": null,
+          "api_key": null,
+          "headers": null,
+          "optionals": {},
+          "globals": {
+            "api_base": "https://global.services.ai.azure.com",
+            "api_key": "sk-global-fixture",
+            "headers": {"x-global": "g"}
+          },
+          "environment": {},
+          "stream": false,
+          "status": null
+        }
+      ]
+    }
+  },
+  "env": {"LITELLM_RUST": "false", "LITELLM_LOCAL_MODEL_COST_MAP": "true"},
+  "compare": {"ignore": []}
+}

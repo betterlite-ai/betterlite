@@ -1,0 +1,25 @@
+kind: helper
+name: prometheus-deployment-fallback-events
+call:
+  b3881:
+    function: fallback_success
+    kwargs:
+      model: fallback-1
+      tags: [tag-a]
+      metadata:
+        user_api_key_hash: hash-1
+    original_model_group: group-a
+    exception:
+      status_code: "400"
+calls:
+  - b3881:
+      function: fallback_failure
+      kwargs:
+        model: fallback-2
+        litellm_metadata:
+          user_api_key_alias: litellm-alias
+        metadata:
+          user_api_key_alias: meta-alias
+      original_model_group: unknown-group
+env: {}
+compare: {ignore: []}

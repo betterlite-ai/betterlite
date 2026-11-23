@@ -1,0 +1,49 @@
+kind: helper
+name: file-batch-guardrails-batch-route-selection
+call:
+  file_batch_guardrails:
+    calls:
+      - {"function": "call_type", "url": "/chat/completions", "body": {}}
+      - {"function": "call_type", "url": "/v1/chat/completions", "body": {}}
+      - {"function": "call_type", "url": "/engines/gpt-4o/chat/completions", "body": {}}
+      - {"function": "call_type", "url": "/openai/deployments/gpt-4o/chat/completions", "body": {}}
+      - {"function": "call_type", "url": "/completions", "body": {}}
+      - {"function": "call_type", "url": "/v1/completions", "body": {}}
+      - {"function": "call_type", "url": "/engines/gpt-4o/completions", "body": {}}
+      - {"function": "call_type", "url": "/openai/deployments/gpt-4o/completions", "body": {}}
+      - {"function": "call_type", "url": "/embeddings", "body": {}}
+      - {"function": "call_type", "url": "/v1/embeddings", "body": {}}
+      - {"function": "call_type", "url": "/engines/text-embedding-3-small/embeddings", "body": {}}
+      - {"function": "call_type", "url": "/openai/deployments/text-embedding-3-small/embeddings", "body": {}}
+      - {"function": "call_type", "url": "/responses", "body": {}}
+      - {"function": "call_type", "url": "/v1/responses", "body": {}}
+      - {"function": "call_type", "url": "/openai/v1/responses", "body": {}}
+      - {"function": "call_type", "url": "/responses/r_1", "body": {}}
+      - {"function": "call_type", "url": "/v1/responses/r_1", "body": {}}
+      - {"function": "call_type", "url": "/openai/v1/responses/r_1", "body": {}}
+      - {"function": "call_type", "url": "/anthropic/v1/messages", "body": {}}
+      - {"function": "call_type", "url": "/v1/messages", "body": {}}
+      - {"function": "call_type", "url": "https://example.invalid/v1/responses/?x=1", "body": {}}
+      - {"function": "call_type", "url": "/v1/embeddings//", "body": {}}
+      - {"function": "call_type", "url": "/v1/completions#part", "body": {}}
+      - {"function": "call_type", "url": "http://[::1]:4000/v1/embeddings", "body": {}}
+      - {"function": "call_type", "url": "http://user@[::1]/v1/embeddings", "body": {}}
+      - {"function": "call_type", "url": "/responses/r_1/input_items", "body": {}}
+      - {"function": "call_type", "url": "/v1/images/generations", "body": {}}
+      - {"function": "call_type", "url": null, "body": {"messages": null, "prompt": null, "input": null}}
+      - {"function": "call_type", "url": null, "body": {"prompt": null, "input": null}}
+      - {"function": "call_type", "url": null, "body": {"input": null}}
+      - {"function": "call_type", "url": null, "body": {}}
+      - {"function": "call_type", "url": "/v1/unknown", "body": {"prompt": "x"}}
+      - {"function": "call_type", "url": "", "body": {"input": "x"}}
+      - {"function": "call_type", "url": 7, "body": {"input": "x"}}
+      - {"function": "call_type", "url": ["/v1/embeddings"], "body": {"messages": []}}
+      - {"function": "call_type", "url": "https://[::1/v1/responses", "body": {"input": "x"}}
+      - {"function": "call_type", "url": "https://[host]/v1/responses", "body": {"input": "x"}}
+      - {"function": "call_type", "url": "localhost:4000/v1/chat/completions", "body": {"prompt": "x"}}
+      - {"function": "call_type", "url": "/v1/images/generations", "body": {"messages": []}}
+      - {"function": "call_type", "url": "/responses/r_1/input_items", "body": {"input": "x"}}
+      - {"function": "call_type", "url": "/v1/embeddings", "body": {"messages": []}}
+      - {"function": "call_type", "url": "/v1/responses", "body": {"input": "x"}}
+env: {}
+compare: {ignore: []}

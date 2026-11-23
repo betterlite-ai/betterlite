@@ -1,0 +1,40 @@
+task: B3341
+deviations:
+  - what: The async entry calls the sync entry in the same task and awaits the handler's pending answer; LiteLLM runs the sync function in loop.run_in_executor through a copied contextvars context, then awaits the coroutine it returns.
+    why: A Rust future carries the call's context by construction, and B3335's blocking character send is already a Send future the async handler drives, so a second executor hop adds a thread without adding isolation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1120-L1127
+  - what: A caller's client keyword is not forwarded to the character handler; the transport's clients come from CharacterTransport::supplying instead. LiteLLM passes client=kwargs.get("client") to the handler and uses it when its class matches the call.
+    why: A supplied client is a Rust type parameter of the transport (B3335), not a value the call layer can hand through a keyword map, so the same choice is made where the transport is built.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1203
+  - what: Provider edenai fails with the selector's typed unavailable error until B5838 installs its video config; LiteLLM returns an EdenAIVideoConfig for it.
+    why: B3332's selector owns the provider tags and edenai's config belongs to B5838, and this call layer never decodes a character provider itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9727-L9728
+  - what: A timeout that is not a usable duration (negative, not finite, or too large for Duration) fails as a ValueError-class error after the logging update and before the handler runs; LiteLLM passes the value on and only the HTTP client rejects it.
+    why: The resolved timeout becomes a Duration here, and refusing an unusable deadline before the provider call keeps the call from starting a request it cannot bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1201
+  - what: A handler failure with no provider status (a client, logging, multipart or request fault) maps through exception_type's ValueError path to the provider family's generic API error with a synthesized 500; LiteLLM's _handle_error turns those caught exceptions into the provider's own class first.
+    why: B3335's transport reports those faults with their typed reason and no status, and a status-less failure mapped as a provider 500 would invent a status the provider never sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6077-L6085
+  - what: >-
+      A video_create_character call whose provider is unknown or has no video config answers a BadRequestError
+      (400) with model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes
+      out as an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1174-L1178
+  - what: >-
+      A video_get_character call whose provider is unknown or has no video config answers a BadRequestError (400)
+      with model "" and the provider set, where LiteLLM's ValueError goes through exception_type and comes out as
+      an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the
+      server broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1299-L1303
+kept_bugs:
+  - what: A call with no litellm_call_id logs litellm_call_id null in the logged litellm_params rather than a generated identifier or no key.
+    why: LiteLLM's update_environment_variables receives kwargs.get("litellm_call_id") and writes it as given, so a deployment inspecting that field sees a null for a call made outside the client decorator.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1183-L1189
+  - what: Both character calls accept extra_query and extra_body and never forward either to the handler.
+    why: The create signature carries both keywords (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1147-L1148) and the get one does too (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1272-L1273), while the handler calls take neither (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1193-L1204 for create, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1318-L1328 for get); a working setup has always had both ignored on a character call, and forwarding them would change the request such a setup sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1193-L1204

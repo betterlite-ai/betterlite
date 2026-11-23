@@ -10,6 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use betterlite_config::cost_adjustments::{AdjustmentEntry, Settings as AdjustmentSettings};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_core::cost::completion::args::{
     ChargeInputs, CompletionArgs, ResponseParts, ToolInputs,
 };
@@ -22,6 +24,7 @@ use betterlite_core::cost::special::replicate::ReplicateStamps;
 use betterlite_core::cost::special::request::{ImageParts, LoggingView, TranscriptionDuration};
 use betterlite_core::cost::usage::{BillingUsage, ResponseKind};
 use betterlite_core::routes::CallType;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_logging::fields::usage::Usage;
 use betterlite_models::catalog::BundledCatalog;
@@ -334,9 +337,15 @@ fn the_slot_builds_the_shared_service_from_the_bundled_catalog() {
         &config,
         &Shared {
             bundled_catalog: BundledCatalog::default().get(),
+            client: transport(),
         },
     );
     let _service = slot
         .service
         .expect("the bundled catalog builds the service");
+}
+
+fn transport() -> ProxiedClient {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    ProxiedClient::outbound(&Arc::new(policy)).unwrap()
 }

@@ -1,0 +1,61 @@
+kind: helper
+name: non-object-masking-frames
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: create
+      message: '[1, 2, 3]'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: '"response.create"'
+      authorized_model: gpt-4o
+      defaults: null
+      guardrails:
+      - {}
+      request_data: {}
+    - kind: create
+      message: '5'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: create
+      message: 'null'
+      authorized_model: null
+      defaults: null
+      guardrails: []
+      request_data: {}
+    - kind: unmask
+      message: '[1, 2, 3]'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '"response.completed"'
+      guardrails: 1
+      request_data:
+        metadata: {pii_tokens: {<EMAIL_ADDRESS_1>: a@example.com}}
+    - kind: unmask
+      message: '[1, 2, 3]'
+      guardrails: 1
+      request_data: {}
+    - kind: completed
+      message: '[1, 2, 3]'
+      guardrails:
+      - {}
+      request_data: {}
+    - kind: completed
+      message: 'null'
+      guardrails:
+      - {}
+      request_data: {}
+    - kind: completed
+      message: '[1, 2, 3]'
+      guardrails: []
+      request_data: {}
+env: {}
+compare:
+  ignore: []

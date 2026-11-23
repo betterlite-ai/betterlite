@@ -88,11 +88,17 @@ async fn async_prepare_error_uses_the_resolved_provider() {
         )
         .await
         .expect_err("the decoded provider is unknown");
-    let ErrorClass::ApiConnection(context) = &failure.class else {
-        panic!("a ValueError maps to a connection error");
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad provider name maps to a bad request");
     };
-    assert_eq!(context.provider.as_deref(), Some("bogus"));
-    assert_eq!(context.model.as_deref(), Some(""));
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.provider.as_deref(), Some("bogus"));
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert!(
+        details
+            .message
+            .contains("is not a provider betterlite knows")
+    );
 }
 
 #[tokio::test]

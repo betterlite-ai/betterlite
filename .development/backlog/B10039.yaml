@@ -1,0 +1,13 @@
+id: B10039
+milestone: R2 bug fixes
+title: An unknown or unconfigured video edit or extension provider answers 400, not 500
+status: done
+depends_on: [B3342, B10034]
+file: tasks/B10039-video-unknown-provider.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 2982

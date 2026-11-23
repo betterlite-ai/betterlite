@@ -5,6 +5,7 @@ mod support;
 use std::time::Duration;
 
 use betterlite_error::error::ErrorClass;
+use betterlite_http::interactions::base::ClientError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
@@ -15,7 +16,7 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::call::prepare;
-use super::error::InteractionGetError;
+use super::error::{InteractionGetError, failure};
 use super::{aget, get};
 use support::{
     Call, FixtureError, GET_BODY, Harness, base, environment_headers, environment_params, fixture,
@@ -125,7 +126,7 @@ fn a_null_kwargs_provider_keeps_the_null_in_the_parameters() {
 }
 
 #[test]
-fn get_reports_an_unsupported_provider_as_a_value_error() {
+fn get_reports_an_unsupported_provider_as_a_bad_request() {
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").provider("openai");
@@ -138,15 +139,15 @@ fn get_reports_an_unsupported_provider_as_a_value_error() {
         &error.error,
         InteractionGetError::Unsupported { provider } if provider.as_str() == "openai"
     ));
-    let ErrorClass::ApiConnection(context) = &error.class else {
-        panic!("expected an api connection error, got {:?}", error.class);
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
     };
-    assert_eq!(context.model.as_deref(), Some(""));
-    assert_eq!(context.provider.as_deref(), Some("openai"));
-    assert!(
-        context
-            .message
-            .contains("Interactions API not supported for: openai")
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(
+        details.message,
+        "Interactions API not supported for: openai"
     );
 }
 
@@ -441,7 +442,7 @@ async fn aget_records_the_caller_metadata_on_the_logging_state() {
 }
 
 #[tokio::test]
-async fn aget_reports_an_unsupported_provider_as_a_value_error() {
+async fn aget_reports_an_unsupported_provider_as_a_bad_request() {
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").provider("openai");
@@ -452,7 +453,46 @@ async fn aget_reports_an_unsupported_provider_as_a_value_error() {
         error.error.to_string(),
         "Interactions API not supported for: openai"
     );
-    assert!(matches!(&error.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("openai"));
+}
+
+#[test]
+fn get_reports_an_unknown_provider_as_a_bad_request() {
+    let config = fixture();
+    let mut harness = Harness::new();
+    let call = Call::new("int_1").provider("nope");
+    let error = get(&config, harness.deps(), &call.request()).expect_err("nope is no provider");
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("nope"));
+    assert_eq!(details.message, "Interactions API not supported for: nope");
+}
+
+#[test]
+fn get_maps_a_client_unknown_provider_to_a_bad_request() {
+    let harness = Harness::new();
+    let fault = InteractionGetError::Client(Box::new(ClientError::UnknownProvider {
+        provider: "nope".to_owned(),
+    }));
+    let failed = failure::<FixtureError>(fault, Some("nope"), &harness.redactor);
+    let ErrorClass::BadRequest(details) = &failed.class else {
+        panic!("expected a bad request, got {:?}", failed.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("nope"));
+    assert_eq!(
+        details.message,
+        "\"nope\" is not a provider betterlite knows"
+    );
 }
 
 #[tokio::test]

@@ -13,6 +13,7 @@ use crate::bedrock_dispatch_contract::Bedrock;
 use crate::compatible_providers::Compatible;
 use crate::embedding_rerank_providers::EmbeddingRerank;
 use crate::foundry_dispatch::AzureAi;
+use crate::hosted_platform_dispatch::perplexity::adapter::Perplexity;
 use crate::legacy_dispatch::Legacy;
 use crate::openai_dispatch::OpenAi;
 use crate::operation::{OperationError, OperationRequest, OperationResult};
@@ -49,6 +50,7 @@ pub enum Provider {
     Subscription(Subscription),
     MediaProviders(MediaProviders),
     SpeechProviders(SpeechProviders),
+    Perplexity(Perplexity),
 }
 
 // The three stages every provider answers; a stub keeps these defaults until its owner overrides them in its own module
@@ -164,6 +166,7 @@ impl Provider {
             "vertex_ai" | "vertex_ai_beta" => Ok(Self::VertexAi(VertexAi)),
             "gemini" => Ok(Self::Gemini(Gemini)),
             "xai" | "mistral" | "codestral" => Ok(Self::XaiMistral(XaiMistral)),
+            "perplexity" => Ok(Self::Perplexity(Perplexity)),
             "litellm_proxy" => Ok(Self::Legacy(Legacy::LitellmProxy)),
             "aleph_alpha" => Ok(Self::Legacy(Legacy::AlephAlpha)),
             "custom" => Ok(Self::Legacy(Legacy::Custom)),
@@ -191,6 +194,7 @@ dispatch_to_adapters!(
     Subscription,
     MediaProviders,
     SpeechProviders,
+    Perplexity,
 );
 
 mod tests;

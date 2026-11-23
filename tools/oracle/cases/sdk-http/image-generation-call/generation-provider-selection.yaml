@@ -1,0 +1,21 @@
+kind: sdk_http
+name: image-generation-call-generation-provider-selection
+env: {}
+call:
+  image_generation_call:
+    prompt: cat
+    model: recraft/recraft-v3
+    api_key: recraft-key
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {created: 3, data: [{url: "https://example.test/r.png"}]}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /image_generation_call/value/result/created
+      why: >-
+        the Recraft transform starts the response object from its own clock and
+        never reads created from the provider body

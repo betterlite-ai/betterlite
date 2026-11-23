@@ -1,11 +1,17 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+mod input;
+mod logs;
+mod ops;
+mod signing;
+mod tests;
+
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("bedrock_nova_chat")
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run(input)
     }
 }

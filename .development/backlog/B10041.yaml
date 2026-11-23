@@ -1,0 +1,13 @@
+id: B10041
+milestone: R2 bug fixes
+title: An unknown or unsupported interactions or agents provider answers 400, not 500
+status: done
+depends_on: [B10039, B3495, B3500, B3505]
+file: tasks/B10041-interactions-unknown-provider.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 2989

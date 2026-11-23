@@ -1,0 +1,55 @@
+kind: helper
+name: bedrock-other-stability-native-edit-options
+call:
+  bedrock_other_stability_edits:
+    calls:
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        options:
+          n: 2
+          response_format: b64_json
+          quality: high
+          user: u
+        drop_params: true
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        options:
+          left: 3.9
+          right: '12'
+          up: true
+          down: false
+          seed: 5
+          strength: '0.5'
+          creativity: 2
+          control_strength: abc
+          grow_mask: 3.7
+          fidelity: 0.25
+          composition_fidelity: null
+          style_strength: x
+          change_strength: 1
+        drop_params: true
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        options:
+          negative_prompt: blur
+          aspect_ratio: 16:9
+          output_format: jpeg
+          model: alt
+          mode: search
+          style_preset: preset
+          select_prompt: sel
+          search_prompt: find
+        drop_params: true
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        options:
+          fidelity: [1, 2]
+        drop_params: true
+      - function: request
+        model: stability.stable-image-inpaint-v1:0
+        options:
+          output_format: null
+          mask: ''
+        drop_params: true
+env: {}
+compare: {ignore: []}

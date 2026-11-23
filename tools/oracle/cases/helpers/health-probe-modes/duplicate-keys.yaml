@@ -1,0 +1,42 @@
+kind: helper
+name: duplicate_keys
+call:
+  b4440:
+    mode:
+      - mode: completion
+        model: gpt-4o
+        custom_llm_provider: openai
+        params: {model: gpt-4o, prompt: already here}
+        prompt: new
+        inputs: null
+        logging: false
+        failure: null
+      - mode: image_edit
+        model: gpt-image-1
+        custom_llm_provider: openai
+        params: {model: gpt-image-1, image: data}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: rerank
+        model: rerank-v3
+        custom_llm_provider: cohere
+        params: {model: rerank-v3, documents: [x]}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+      - mode: embedding
+        model: e
+        custom_llm_provider: openai
+        params: {model: e, input: [x]}
+        prompt: null
+        inputs: null
+        logging: false
+        failure: null
+    wildcard: []
+    tracking: []
+    response: []
+env: {}
+compare: {ignore: []}

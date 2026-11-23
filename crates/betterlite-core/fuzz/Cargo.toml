@@ -17,10 +17,12 @@ betterlite-core = { path = ".." }
 betterlite-http = { path = "../../betterlite-http" }
 betterlite-models = { path = "../../betterlite-models" }
 betterlite-openai = { path = "../../betterlite-openai" }
+betterlite-secrets = { path = "../../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false }
 http = "1.5.0"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
+secrecy = { workspace = true }
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 uuid.workspace = true
 
@@ -209,6 +211,13 @@ bench = false
 [[bin]]
 name = "response_id_codecs"
 path = "fuzz_targets/response_id_codecs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "file_batch_guardrails"
+path = "fuzz_targets/file_batch_guardrails.rs"
 test = false
 doc = false
 bench = false
@@ -510,6 +519,27 @@ bench = false
 [[bin]]
 name = "create_timeout_text"
 path = "fuzz_targets/create_timeout_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_log_json"
+path = "fuzz_targets/session_log_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses_file_search_loop"
+path = "fuzz_targets/responses_file_search_loop.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "owned_response_id"
+path = "fuzz_targets/owned_response_id.rs"
 test = false
 doc = false
 bench = false

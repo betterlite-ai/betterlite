@@ -1,0 +1,19 @@
+kind: helper
+name: auth-errors-route-invalid-key-401
+call:
+  auth_errors:
+    rows:
+      # a malformed key on the responses route: quiet warning, normalized route on the identity, 401 envelope
+      - step: handle
+        failure: {kind: proxy, message: "Authentication Error, LiteLLM Virtual Key expected. Received=bad-key, expected to start with 'sk-'.", type: auth_error, param: None, status_code: 401, marked: true, internal_message: ""}
+        reply: original
+        replacement: null
+        switches: []
+        identity: null
+        request_data: {model: gpt-4o, input: hello}
+        route: /v1/responses/resp_abc
+        user_agent: openai-python/1.60.0
+        client_host: 192.0.2.10
+env: {}
+compare:
+  ignore: []

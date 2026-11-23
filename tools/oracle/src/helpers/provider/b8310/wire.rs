@@ -55,7 +55,10 @@ pub(super) fn error_or_null<T>(outcome: &Result<T, DispatchError>) -> Value {
         Ok(_) => Value::Null,
         Err(DispatchError::Handler(handler)) => json!({"status": handler.status_code()}),
         Err(
-            DispatchError::NotBuilt { .. }
+            DispatchError::PerplexityEmbedding(_)
+            | DispatchError::PerplexityResponses(_)
+            | DispatchError::PerplexitySearch(_)
+            | DispatchError::Decisions(_)
             | DispatchError::Cloudflare(_)
             | DispatchError::Encode { .. },
         ) => json!({"status": null}),

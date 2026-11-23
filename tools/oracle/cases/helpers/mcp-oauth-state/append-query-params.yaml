@@ -1,0 +1,86 @@
+kind: helper
+name: mcp-oauth-state-append-query-params
+call:
+  b7530:
+    function: append_query_params
+    url: "https://gateway.example/mcp/callback"
+    params: {code: abc, state: xyz}
+calls:
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb?next=%2Fhome&blank=&flag"
+      params: {code: a b}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb?x=1"
+      params: {v: "~*"}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb"
+      params: {v: "a + b"}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb"
+      params: {k: "a&b=c"}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb#frag"
+      params: {k: v}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb?a=1&&b=2"
+      params: {}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb"
+      params: {}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb?"
+      params: {}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb?q=a+b"
+      params: {}
+  - b7530:
+      function: append_query_params
+      url: "cb?x=1"
+      params: {k: v}
+  - b7530:
+      function: append_query_params
+      url: "https://gw:bad/cb"
+      params: {k: v}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb?a=1;b=2"
+      params: {}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb?x=%zz"
+      params: {}
+  - b7530:
+      function: append_query_params
+      url: "HTTPS://GW.example/Cb?x=1"
+      params: {}
+  - b7530:
+      function: append_query_params
+      url: "https://[::1]:8443/cb?x=1"
+      params: {k: v}
+  - b7530:
+      function: append_query_params
+      url: "custom://gw/cb"
+      params: {k: v}
+  - b7530:
+      function: append_query_params
+      url: "https://gw"
+      params: {k: v}
+  - b7530:
+      function: append_query_params
+      url: "https://gw?x=1"
+      params: {k: v}
+  - b7530:
+      function: append_query_params
+      url: "https://gw/cb?=v"
+      params: {}
+env: {}
+compare: {ignore: []}
