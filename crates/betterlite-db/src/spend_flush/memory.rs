@@ -52,7 +52,9 @@ pub struct DailySpendQueues<'run> {
 
 impl<'run> DailySpendQueues<'run> {
     #[must_use]
-    pub fn in_flush_order(&self) -> [(DailySpendEntity, &'run Arc<DailySpendUpdateQueue>); 5] {
+    pub const fn in_flush_order(
+        &self,
+    ) -> [(DailySpendEntity, &'run Arc<DailySpendUpdateQueue>); 5] {
         [
             (DailySpendEntity::User, self.user),
             (DailySpendEntity::Team, self.team),
@@ -133,50 +135,37 @@ where
 #[must_use]
 pub fn spend_table_transactions(transactions: &SpendUpdateTransactions) -> SpendTableTransactions {
     let mut tables = SpendTableTransactions::new();
-    tables.insert(
-        SpendTable::UserList,
-        Some(amounts(&transactions.user_list_transactions)),
-    );
-    tables.insert(
-        SpendTable::EndUserList,
-        Some(amounts(&transactions.end_user_list_transactions)),
-    );
-    tables.insert(
-        SpendTable::KeyList,
-        Some(amounts(&transactions.key_list_transactions)),
-    );
-    tables.insert(
-        SpendTable::TeamList,
-        Some(amounts(&transactions.team_list_transactions)),
-    );
-    tables.insert(
-        SpendTable::TeamMemberList,
-        Some(amounts(&transactions.team_member_list_transactions)),
-    );
-    tables.insert(
-        SpendTable::OrgList,
-        Some(amounts(&transactions.org_list_transactions)),
-    );
-    tables.insert(
-        SpendTable::OrgMemberList,
-        Some(amounts(&transactions.org_member_list_transactions)),
-    );
-    tables.insert(
-        SpendTable::ProjectList,
-        Some(amounts(&transactions.project_list_transactions)),
-    );
-    tables.insert(
-        SpendTable::TagList,
-        Some(amounts(&transactions.tag_list_transactions)),
-    );
-    tables.insert(
-        SpendTable::ModelAccessGroupList,
-        Some(amounts(&transactions.model_access_group_spend)),
-    );
-    tables.insert(
-        SpendTable::AgentList,
-        Some(amounts(&transactions.agent_list_transactions)),
-    );
+    let buckets = [
+        (SpendTable::UserList, &transactions.user_list_transactions),
+        (
+            SpendTable::EndUserList,
+            &transactions.end_user_list_transactions,
+        ),
+        (SpendTable::KeyList, &transactions.key_list_transactions),
+        (SpendTable::TeamList, &transactions.team_list_transactions),
+        (
+            SpendTable::TeamMemberList,
+            &transactions.team_member_list_transactions,
+        ),
+        (SpendTable::OrgList, &transactions.org_list_transactions),
+        (
+            SpendTable::OrgMemberList,
+            &transactions.org_member_list_transactions,
+        ),
+        (
+            SpendTable::ProjectList,
+            &transactions.project_list_transactions,
+        ),
+        (SpendTable::TagList, &transactions.tag_list_transactions),
+        (
+            SpendTable::ModelAccessGroupList,
+            &transactions.model_access_group_spend,
+        ),
+        (SpendTable::AgentList, &transactions.agent_list_transactions),
+    ];
+    for (table, bucket) in buckets {
+        tables.insert(table, Some(amounts(bucket)));
+    }
     tables
 }
 

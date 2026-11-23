@@ -4,6 +4,7 @@ mod partition_switch;
 mod queue;
 pub mod retention;
 mod tests;
+use self::cold_storage::custom_logger;
 use self::queue::{logs_url, max_bytes};
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::raw::RawNumber;
@@ -132,9 +133,7 @@ impl Section for Raw {
             spend_logs_url: logs_url(lookup),
             spend_log_monitor: monitor::monitor_settings(lookup)?,
             retention: retention::cleanup_settings(general.retention, lookup)?,
-            cold_storage_custom_logger: cold_storage::custom_logger(
-                &litellm.cold_storage_custom_logger,
-            )?,
+            cold_storage_custom_logger: custom_logger(&litellm.cold_storage_custom_logger)?,
         })
     }
 }
