@@ -8,7 +8,7 @@ from typing import Final, Protocol, TypeAlias, runtime_checkable
 
 from pydantic import JsonValue, TypeAdapter
 
-from betterlite._completion.arguments import SessionLike
+from betterlite._completion.arguments import SessionLike, TimeoutValues
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite.types.llms.openai.core.aliases import FileTypes
 
@@ -18,6 +18,7 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 FILE_KEY: Final = "$file"
 DEFAULT_NAME: Final = "file"
 MIN_TUPLE_ITEMS: Final = 2
+MAX_TUPLE_ITEMS: Final = 3
 REFUSED: Final[tuple[str, ...]] = ("client", "shared_session")
 LOGGER_FN: Final = "logger_fn"
 LOGGER_FN_DROPPED: Final = "logger_fn is not called: the endpoint call runs in Rust"
@@ -44,14 +45,6 @@ class PathValue(Protocol):
     def __fspath__(self) -> str | bytes: ...
 
 
-@runtime_checkable
-class TimeoutValue(Protocol):
-    connect: float | None
-    read: float | None
-    write: float | None
-    pool: float | None
-
-
 # everything a family passes in: JSON, a file, a timeout, or an object LiteLLM's own call would take
 CallValue: TypeAlias = (
     JsonValue
@@ -59,7 +52,7 @@ CallValue: TypeAlias = (
     | bytearray
     | Mapping[str, str]
     | Readable
-    | TimeoutValue
+    | TimeoutValues
     | SessionLike
     | list["CallValue"]
     | dict[str, "CallValue"]
@@ -100,7 +93,7 @@ def plain_value(key: str, value: CallValue, blobs: list[bytes]) -> JsonValue:
             return {name: plain_value(name, item, blobs) for name, item in value.items()}
         case list():
             return [plain_value(key, item, blobs) for item in value]
-        case TimeoutValue():
+        case TimeoutValues():
             return JSON.validate_python(timeout_seconds(value))
         case object():
             return file_value(key, value, blobs)
@@ -126,6 +119,8 @@ def file_value(key: str, value: CallValue, blobs: list[bytes]) -> JsonValue:
 def tuple_file(key: str, items: tuple[CallValue, ...], blobs: list[bytes]) -> JsonValue:
     if len(items) < MIN_TUPLE_ITEMS:
         raise TypeError(f"{key} is not a file: a tuple needs a name and its content")
+    if len(items) > MAX_TUPLE_ITEMS:
+        raise TypeError(f"{key} is not a file: a tuple takes at most three items")
     name = tuple_name(key, items[0])
     content_type = tuple_content_type(key, items[2:3])
     data = content_bytes(key, items[1])
@@ -201,7 +196,7 @@ def read_stream(stream: Readable) -> bytes:
             return stream.read()
 
 
-def timeout_seconds(timeout: TimeoutValue) -> float | None:
+def timeout_seconds(timeout: TimeoutValues) -> float | None:
     phases = [
         phase
         for phase in (timeout.connect, timeout.read, timeout.write, timeout.pool)

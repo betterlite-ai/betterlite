@@ -3,6 +3,9 @@ deviations:
   - what: Files cross to Rust as raw blobs next to the JSON text and not as base64 inside it.
     why: Audio and image files can be many megabytes, and base64 would copy them twice.
     link: ""
+  - what: A file tuple with more than three items is refused with a TypeError naming the key, where LiteLLM passes the fourth item's headers mapping through to the OpenAI SDK, which sends it on the multipart part.
+    why: The task's file forms stop at (name, content, content_type), and the $file marker carries no per-part headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L190
   - what: A timeout object with connect, read, write and pool phases becomes the largest of the four before it reaches Rust, where LiteLLM hands the object to its HTTP client and each phase keeps its own limit.
     why: The Rust transport enforces one deadline per call, as B5659's deviations record, and the task text asks for the largest phase.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L814-L827

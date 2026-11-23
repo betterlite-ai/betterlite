@@ -275,6 +275,12 @@ def test_refuse_unknown_object_key() -> None:
         to_call_payload({"mystery": object()})
 
 
+def test_refuse_four_item_tuple() -> None:
+    taken = ("take.wav", b"take-bytes", "audio/wav", {"X-Part-Name": "one"})
+    with pytest.raises(TypeError, match="image is not a file"):
+        to_call_payload({"image": taken})
+
+
 def test_runner_returns_json() -> None:
     answer = call_native(ANSWERING, to_call_payload({"model": EMBEDDING_MODEL}))
     assert answer == LIST_ANSWER
