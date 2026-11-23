@@ -2,6 +2,7 @@ mod convert;
 mod error;
 mod native;
 mod session;
+mod tests;
 
 use error::NativeAssistantError;
 use native::NativeAssistantSession;
