@@ -28,7 +28,7 @@ pub(super) async fn read(
     plugin_name: Option<Path<String>>,
     RawQuery(raw_query): RawQuery,
 ) -> Response {
-    let Some(Path(plugin_name)) = plugin_name else {
+    let Some(Path(name)) = plugin_name else {
         let (_, [enabled_only]) = match read_query(raw_query.as_deref(), ["enabled_only"]) {
             Ok(flags) => flags,
             Err(error) => return error.into_response(),
@@ -39,7 +39,7 @@ pub(super) async fn read(
             Err(error) => error.into_response(),
         };
     };
-    match get_plugin(state.as_ref(), caller, &plugin_name).await {
+    match get_plugin(state.as_ref(), caller, &name).await {
         Ok(result) => Json(result).into_response(),
         Err(error) => error.into_response(),
     }
