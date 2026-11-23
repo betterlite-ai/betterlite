@@ -344,6 +344,7 @@ async fn guardrail_precedence() -> (Event, Event) {
 
 async fn credential_fallbacks() -> Vec<Option<String>> {
     let mut entry = Entry::new();
+    entry.resolution.api_base = Some(String::new());
     entry.globals.api_base = Some(String::from("https://global.test"));
     entry.globals.api_key = Some(SecretString::from("sk-global"));
     entry.globals.openai_key = Some(SecretString::from("sk-openai"));
