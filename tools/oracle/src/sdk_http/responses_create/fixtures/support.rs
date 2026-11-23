@@ -1,8 +1,19 @@
 use super::super::error::SdkHttpError;
 use super::config::OpenAiCreateConfig;
+use async_trait::async_trait;
+use betterlite_core::api::responses_agentic_execution::executor::{
+    AnthropicContinuation, ContinuationExecutor, ResponsesContinuation,
+};
 use betterlite_core::api::responses_compact_http::service::SharedSession;
 use betterlite_core::api::responses_create::deps::{ConfigRequest, CreateConfigFactory};
+use betterlite_core::api::responses_create::interception::{
+    CreateInterception, DispatchArgs, FileSearchArgs, Interception, InterceptionResult,
+};
+use betterlite_core::api::responses_create_http::config::Params;
 use betterlite_core::api::responses_create_http::service::ClientSource;
+use betterlite_core::api::responses_hook_policy::callbacks::{
+    DeploymentHookDispatcher, NamedCallbackResolver, PolicyCallback,
+};
 use betterlite_core::api::responses_provider_selection::provider_config::{
     ConfigLookup, NativeConfig,
 };
@@ -14,19 +25,20 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::resolution::{
     ProviderIdentity, ResolutionError, ResolutionRequest, ResolvedModel,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use secrecy::SecretString;
+use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 use std::time::Duration;
 pub(super) struct Sink;
 impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
-// The pre-call state one create request logs through, with nothing attached
 pub(super) struct Fixture {
     pub(super) redactor: Redactor,
     pub(super) sink: Sink,
@@ -62,7 +74,6 @@ impl Fixture {
         })
     }
 }
-// The pooled client the deployment would get; the case env only carries the key and the proxy settings
 pub(super) struct Outbound {
     client: ProxiedClient,
 }
@@ -103,7 +114,6 @@ impl ModelResolver for ScriptedResolver {
         })
     }
 }
-// get_llm_provider reads a prefix, even one the caller named; B931 strips responses/ later
 pub(super) fn scripted(model: &str, custom_llm_provider: Option<&str>) -> (String, String) {
     if let Some(given) = custom_llm_provider {
         let resolved = match model.split_once('/') {
@@ -138,5 +148,57 @@ impl CreateConfigFactory for Configs {
         (request.provider == "openai").then(|| OpenAiCreateConfig {
             api_key: self.api_key.clone(),
         })
+    }
+}
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub(super) struct HookFailure {
+    pub(super) message: String,
+}
+pub(super) struct Nothing;
+#[async_trait]
+impl DeploymentHookDispatcher for Nothing {
+    type Error = HookFailure;
+    async fn pre_call_deployment_hook(
+        &self,
+        _request: Params,
+        _call_type: &str,
+    ) -> Result<Option<Params>, Self::Error> {
+        Ok(None)
+    }
+}
+impl NamedCallbackResolver for Nothing {
+    fn resolve(&self, _name: &str) -> Option<PolicyCallback> {
+        None
+    }
+}
+#[async_trait]
+impl ContinuationExecutor for Nothing {
+    type Error = HookFailure;
+    async fn responses(&self, _call: &ResponsesContinuation) -> Result<Box<RawValue>, Self::Error> {
+        Err(HookFailure {
+            message: String::from("a continuation is not expected"),
+        })
+    }
+    async fn anthropic_messages(
+        &self,
+        _call: &AnthropicContinuation,
+    ) -> Result<Box<RawValue>, Self::Error> {
+        Err(HookFailure {
+            message: String::from("a continuation is not expected"),
+        })
+    }
+}
+pub(super) struct NoInterception;
+#[async_trait]
+impl CreateInterception<()> for NoInterception {
+    fn mcp_requested(&self, _tools: Option<&[JsonValue]>) -> bool {
+        false
+    }
+    async fn mcp(&self, _args: &DispatchArgs<'_>, context: ()) -> InterceptionResult<()> {
+        Ok(Interception::Continue(context))
+    }
+    async fn file_search(&self, _args: &FileSearchArgs<'_>, context: ()) -> InterceptionResult<()> {
+        Ok(Interception::Continue(context))
     }
 }

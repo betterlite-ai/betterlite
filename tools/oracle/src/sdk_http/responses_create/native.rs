@@ -1,13 +1,15 @@
-use super::ports::{Bridge, NoInterception, Nothing};
-use super::support::{Configs, Fixture, Outbound, ScriptedResolver, scripted};
+use super::fixtures::{
+    Configs, Fixture, NoInterception, Nothing, Outbound, ScriptedResolver, scripted,
+};
+use super::ports::Bridge;
 use super::{Call, Outcome, RunOutcome};
 use crate::sdk_http::error::SdkHttpError;
 use crate::sdk_http::result::Failure;
-use betterlite_core::api::responses_chat_call::records::CallOutcome;
 use betterlite_core::api::responses_create::bridge::Created;
 use betterlite_core::api::responses_create::call::ResponsesCreateCall;
 use betterlite_core::api::responses_create::convert::reencode;
 use betterlite_core::api::responses_create::deps::ResponsesCreateDeps;
+use betterlite_core::api::responses_create::error::CreateError;
 use betterlite_core::api::responses_create::execute::create;
 use betterlite_core::api::responses_create_http::service::{CreateHooks, LogContext};
 use betterlite_core::api::responses_hook_policy::callbacks::CallbackLists;
@@ -15,10 +17,9 @@ use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PreP
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_models::call_helpers::drop_params::drop_params_env_flag;
 use betterlite_models::decisions::Json;
+use betterlite_redact::secret::Redactor;
 use secrecy::SecretString;
-use serde::Serialize;
 use std::collections::BTreeMap;
-// Every run of the case against the same mock, resolver and provider config the SDK would use
 pub(super) async fn execute(
     call: &Call,
     api_base: &str,
@@ -35,11 +36,7 @@ pub(super) async fn execute(
         env: env.clone(),
     };
     let nothing = Nothing;
-    let drop_params =
-        drop_params_env_flag(env.get("LITELLM_DROP_PARAMS").map(String::as_str)).enabled;
-    let auto_summary = env
-        .get("LITELLM_REASONING_AUTO_SUMMARY")
-        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+    let (drop_params, auto_summary) = env_flags(env);
     let deps = ResponsesCreateDeps {
         resolver: &resolver,
         lookup: &configs,
@@ -64,9 +61,16 @@ pub(super) async fn execute(
         drop_params,
         reasoning_auto_summary: auto_summary,
     };
+    run_all(call, api_base, &deps).await
+}
+async fn run_all(
+    call: &Call,
+    api_base: &str,
+    deps: &ResponsesCreateDeps<'_, Outbound, Configs, Nothing, Nothing, ()>,
+) -> Result<Outcome, SdkHttpError> {
     let mut runs = Vec::with_capacity(call.runs.len());
     for run in &call.runs {
-        runs.push(run_once(run, api_base, &deps).await?);
+        runs.push(run_once(run, api_base, deps).await?);
     }
     Ok(Outcome { runs })
 }
@@ -91,37 +95,45 @@ async fn run_once(
         logger_fn: None,
         now: fixture.now,
     };
-    let answer = {
-        let mut log = LogContext {
-            state: &mut fixture.state,
-            env: &env,
-        };
-        create(deps, &request, (), &mut log).await
+    let mut log = LogContext {
+        state: &mut fixture.state,
+        env: &env,
     };
+    let answer = create(deps, &request, (), &mut log).await;
     match answer {
         Ok(created) => Ok(RunOutcome {
             result: Some(created_json(created)?),
             failure: None,
         }),
-        Err(error) => {
-            let (provider, model) =
-                scripted(&request.model, request.custom_llm_provider.as_deref());
-            let failure = error.sdk_failure(&provider, &model, &fixture.redactor);
-            Ok(RunOutcome {
-                result: None,
-                failure: Some(Failure {
-                    class: failure.class.to_owned(),
-                    status: failure.status,
-                    kind: Some(failure.kind),
-                    param: Some(failure.param),
-                    code: Some(failure.code),
-                    message: failure.message,
-                }),
-            })
-        }
+        Err(error) => failure_outcome(error, &request, &fixture.redactor),
     }
 }
-// The case's run object as the call responses() receives, with the mock's base and the case's timeout
+fn env_flags(env: &BTreeMap<String, String>) -> (bool, bool) {
+    let drop_params = drop_params_env_flag(env.get("LITELLM_DROP_PARAMS").map(String::as_str));
+    let auto_summary = env
+        .get("LITELLM_REASONING_AUTO_SUMMARY")
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+    (drop_params.enabled, auto_summary)
+}
+fn failure_outcome(
+    error: CreateError,
+    request: &ResponsesCreateCall,
+    redactor: &Redactor,
+) -> Result<RunOutcome, SdkHttpError> {
+    let (provider, model) = scripted(&request.model, request.custom_llm_provider.as_deref());
+    let failure = error.sdk_failure(&provider, &model, redactor);
+    Ok(RunOutcome {
+        result: None,
+        failure: Some(Failure {
+            class: failure.class.to_owned(),
+            status: failure.status,
+            kind: Some(failure.kind),
+            param: Some(failure.param),
+            code: Some(failure.code),
+            message: failure.message,
+        }),
+    })
+}
 fn create_call(run: &Json, api_base: &str) -> Result<ResponsesCreateCall, SdkHttpError> {
     let mut call: ResponsesCreateCall =
         reencode(run).map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
@@ -139,15 +151,14 @@ fn create_call(run: &Json, api_base: &str) -> Result<ResponsesCreateCall, SdkHtt
 }
 fn created_json(created: Created<()>) -> Result<Json, SdkHttpError> {
     match created {
-        Created::Responses(stamped) => json_of(&stamped.response),
+        Created::Responses(stamped) => {
+            reencode(&stamped.response).map_err(|error| SdkHttpError::Invalid(error.to_string()))
+        }
         Created::Raw(raw) => serde_json::from_str(raw.get())
             .map_err(|error| SdkHttpError::Invalid(error.to_string())),
-        Created::Chat(outcome) => match *outcome {
-            CallOutcome::Response(assembled) => json_of(&assembled.response),
-            CallOutcome::Stream(_) => Err(SdkHttpError::Invalid(String::from(
-                "a chat stream is not a create answer",
-            ))),
-        },
+        Created::Chat(_) => Err(SdkHttpError::Invalid(String::from(
+            "a chat outcome is not handled here",
+        ))),
         Created::Live(_) => Err(SdkHttpError::Invalid(String::from(
             "a live stream is not a create answer",
         ))),
@@ -155,10 +166,4 @@ fn created_json(created: Created<()>) -> Result<Json, SdkHttpError> {
             "a synthetic stream is not a create answer",
         ))),
     }
-}
-fn json_of<T>(value: &T) -> Result<Json, SdkHttpError>
-where
-    T: Serialize,
-{
-    reencode(value).map_err(|error| SdkHttpError::Invalid(error.to_string()))
 }

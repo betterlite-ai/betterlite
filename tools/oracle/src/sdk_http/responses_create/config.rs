@@ -1,18 +1,20 @@
 use betterlite_context::non_default_params::Params as OptionalParams;
 use betterlite_core::api::responses_compact_http::error::ConfigFailure;
+use betterlite_core::api::responses_create::convert::reencode;
 use betterlite_core::api::responses_create::deps::CreateCapabilities;
-use betterlite_core::api::responses_create::error::CreateParamError;
 use betterlite_core::api::responses_create_http::config::{
     CreateConfig, CreateParams, CreateSignRequest, CreateTransformRequest, Headers, Signed,
 };
+use betterlite_core::api::responses_parameters::error::ResponsesParametersError;
 use betterlite_core::api::responses_parameters::provider::ResponsesParamProvider;
+use betterlite_core::api::responses_read_http::config::NoWorkloadIdentity;
 use betterlite_core::api::vector_store_http_write::error::{BaseLlmException, HeaderMap};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::response_events::{
-    ApiKeySources, RawResponse, ResponsesProvider, ResponsesReply, WorkloadIdentity,
-    get_complete_url, transform_response, validate_environment,
+    ApiKeySources, RawResponse, ResponsesProvider, ResponsesReply, get_complete_url,
+    transform_response, validate_environment,
 };
 use betterlite_openai::response_input::transform_responses_request;
 use betterlite_prompts::arguments::json::Object;
@@ -20,20 +22,8 @@ use betterlite_provider::api::responses_provider_contract::records::{
     Params as ContractParams, normalize_responses_request,
 };
 use secrecy::SecretString;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 pub(super) struct OpenAiCreateConfig {
     pub(super) api_key: Option<SecretString>,
-}
-struct NoIdentity;
-impl WorkloadIdentity for NoIdentity {
-    fn bearer_token(
-        &mut self,
-        _api_key: Option<&SecretString>,
-        _api_base: Option<&str>,
-    ) -> Option<SecretString> {
-        None
-    }
 }
 impl CreateConfig for OpenAiCreateConfig {
     fn validate_environment(
@@ -42,7 +32,7 @@ impl CreateConfig for OpenAiCreateConfig {
         _model: &str,
         params: &CreateParams,
     ) -> Result<Headers, ConfigFailure> {
-        let mut identity = NoIdentity;
+        let mut identity = NoWorkloadIdentity;
         Ok(validate_environment(
             headers,
             ApiKeySources {
@@ -78,8 +68,8 @@ impl CreateConfig for OpenAiCreateConfig {
         .map_err(ConfigFailure::new)
     }
     fn normalize_request(&self, data: Object) -> Result<Object, ConfigFailure> {
-        let params: ContractParams = round_trip(&data)?;
-        round_trip(&normalize_responses_request(&params))
+        let params: ContractParams = reencode(&data).map_err(ConfigFailure::new)?;
+        reencode(&normalize_responses_request(&params)).map_err(ConfigFailure::new)
     }
     fn sign_request(&self, request: &CreateSignRequest<'_>) -> Result<Signed, ConfigFailure> {
         Ok(Signed {
@@ -105,7 +95,7 @@ impl CreateConfig for OpenAiCreateConfig {
     }
 }
 impl ResponsesParamProvider for OpenAiCreateConfig {
-    type Error = CreateParamError;
+    type Error = ResponsesParametersError;
     fn name(&self) -> &'static str {
         "openai"
     }
@@ -128,14 +118,4 @@ impl CreateCapabilities for OpenAiCreateConfig {
     fn should_fake_stream(&self, _model: &str, _stream: Option<bool>, _provider: &str) -> bool {
         false
     }
-}
-// The two response shapes are separate Json types, so the normalization sees the provider contract's one
-fn round_trip<Wire, Body>(data: &Body) -> Result<Wire, ConfigFailure>
-where
-    Wire: DeserializeOwned,
-    Body: Serialize + ?Sized,
-{
-    serde_json::to_value(data)
-        .and_then(serde_json::from_value::<Wire>)
-        .map_err(ConfigFailure::new)
 }

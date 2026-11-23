@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::future::Future;
 mod config;
+#[path = "responses_create/fixtures/support.rs"]
+mod fixtures;
 mod native;
 mod ports;
-mod support;
-// One decorated responses() call: each run is the named arguments and kwargs the case wrote
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Call {
@@ -33,15 +33,10 @@ impl CallKind for Call {
         api_base: &str,
         env: &BTreeMap<String, String>,
     ) -> impl Future<Output = Result<SdkResult, SdkHttpError>> {
-        send(self, api_base, env)
+        async move {
+            Ok(SdkResult::ResponsesCreate {
+                value: Box::new(native::execute(self, api_base, env).await?),
+            })
+        }
     }
-}
-async fn send(
-    call: &Call,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<SdkResult, SdkHttpError> {
-    Ok(SdkResult::ResponsesCreate {
-        value: Box::new(native::execute(call, api_base, env).await?),
-    })
 }
