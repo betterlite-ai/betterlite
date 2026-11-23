@@ -5,7 +5,7 @@ use betterlite_openai::response_input::ResponsesInput;
 
 use super::support::{
     Gateway, Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams, body_json,
-    call, field, json, kwargs, number_is, object, run_create, text, value_number, values,
+    call, field, json, kwargs, number_is, object, run_create, text, tools, value_number, values,
 };
 
 pub(crate) async fn bridge_selection() {
@@ -55,6 +55,7 @@ pub(crate) async fn bridge_selection() {
     flagged_bridges(&nothing, &gateway, &mut harness).await;
     absent_config_bridges(&nothing, &gateway, &mut harness).await;
     passing_without_tools(&nothing, &mut harness).await;
+    passing_with_tools(&nothing, &mut harness).await;
 }
 
 async fn passing_without_tools(nothing: &Nothing, harness: &mut Harness) {
@@ -68,6 +69,24 @@ async fn passing_without_tools(nothing: &Nothing, harness: &mut Harness) {
         .await
         .expect("a bridged call without tools passes the file search by");
     assert!(gateway.file_search_record().is_none());
+    assert_eq!(bridge.calls().len(), 1);
+    assert!(rig.wire.requests().is_empty());
+}
+
+async fn passing_with_tools(nothing: &Nothing, harness: &mut Harness) {
+    let rig = Rig::new();
+    let gateway = Gateway::passing(&rig.events);
+    let bridge = RecordingBridge::new(&rig.events);
+    let seams = Seams::new(&rig, nothing, &gateway, &bridge);
+    let mut search = call("openai/gpt-4o");
+    search.kwargs = kwargs(r#"{"use_chat_completions_api":true}"#);
+    search.tools = Some(tools(
+        r#"[{"type":"file_search","file_search":{"vector_store_ids":["vs"]}}]"#,
+    ));
+    run_create(&seams.deps(), &search, harness)
+        .await
+        .expect("the bridged file search dispatches the emulation first");
+    assert!(gateway.file_search_record().is_some());
     assert_eq!(bridge.calls().len(), 1);
     assert!(rig.wire.requests().is_empty());
 }
