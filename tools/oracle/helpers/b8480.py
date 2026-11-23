@@ -92,9 +92,9 @@ async def counted_route(
 
 
 async def execute(input_value: Input) -> dict[str, JsonValue]:
-    engine: ReservationApi = TypeAdapter(ReservationApi, config=ARBITRARY).validate_python(
-        budget_reservation
-    )
+    engine: ReservationApi = TypeAdapter[ReservationApi](
+        ReservationApi, config=ARBITRARY
+    ).validate_python(budget_reservation)
     budget_reservation.count_request_input_tokens = CountingTokens()
     token = UserAPIKeyAuth(token=KEY, max_budget=MAX_BUDGET, spend=0.0)
     counted: list[JsonValue] = [
