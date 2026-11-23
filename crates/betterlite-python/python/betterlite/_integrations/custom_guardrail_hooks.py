@@ -16,7 +16,6 @@ from betterlite._integrations.custom_logger_types import (
 from betterlite._integrations.guardrail_types import OBJECT, GenericGuardrailAPIInputs
 from betterlite.types.litellm_params_state import JsonMap
 
-
 ApplyGuardrailHook: TypeAlias = Callable[
     [
         "GuardrailHooks", GenericGuardrailAPIInputs, dict[str, JsonValue],

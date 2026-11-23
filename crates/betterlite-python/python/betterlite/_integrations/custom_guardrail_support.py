@@ -103,21 +103,18 @@ def json_projection(value: GuardrailValue) -> JsonValue:
             return JSON.validate_python(value)
 
 
-def hook_json(
-    value: GuardrailEventHooks | list[GuardrailEventHooks] | Mode | None,
-) -> JsonValue:
-    match value:
-        case Mode():
-            return JSON.validate_python(value.model_dump(mode="json"))
-        case list():
-            return JSON.validate_json(json.dumps(value))
-        case GuardrailEventHooks() | None:
-            return None if value is None else str(value)
-
-
 def settings_of(owner: GuardrailSettingsOwner) -> SettingsJson:
     supported = owner.supported_event_hooks
     hooks: list[str] | None = None if supported is None else [str(hook) for hook in supported]
+    requested = owner.event_hook
+    event_hook: JsonValue = None
+    match requested:
+        case Mode():
+            event_hook = JSON.validate_python(requested.model_dump(mode="json"))
+        case list():
+            event_hook = JSON.validate_json(json.dumps(requested))
+        case GuardrailEventHooks() | None:
+            event_hook = None if requested is None else str(requested)
     switches = SwitchesJson(
         use_native_during_call_hook=owner.use_native_during_call_hook,
         use_native_lifecycle_hooks=owner.use_native_lifecycle_hooks,
@@ -127,7 +124,7 @@ def settings_of(owner: GuardrailSettingsOwner) -> SettingsJson:
     )
     return SettingsJson(
         guardrail_name=owner.guardrail_name, supported_event_hooks=hooks,
-        event_hook=hook_json(owner.event_hook), default_on=owner.default_on,
+        event_hook=event_hook, default_on=owner.default_on,
         mask_request_content=owner.mask_request_content,
         mask_response_content=owner.mask_response_content,
         violation_message_template=owner.violation_message_template,
