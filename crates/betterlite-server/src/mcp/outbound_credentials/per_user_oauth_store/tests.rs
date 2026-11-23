@@ -16,6 +16,7 @@ use betterlite_http::proxy::outbound::RequestBody;
 use chrono::TimeDelta;
 use http::Method;
 use http::header::ACCEPT;
+use rstest::rstest;
 use secrecy::SecretString;
 use tokio::task::JoinSet;
 
@@ -24,9 +25,9 @@ use crate::mcp::outbound_credentials::v2_store::{CredentialPayload, CredentialVa
 use crate::mcp::outbound_credentials::{PER_USER_TOKEN_KEY_PREFIX, iso_to_epoch};
 use support::{
     DEADLINE, FakeRows, FixedWallClock, answer_with_array, answer_with_object,
-    answer_with_server_error, base_time, chain_fixture, expired_credential, exposed,
-    grant_with_expiry, grant_without_expiry, lazy_fixture, lazy_token, oauth_server, pooled_client,
-    reader_fixture, sealed_byok, serving_token_endpoint, test_cipher,
+    answer_with_server_error, base_time, chain_fixture, expired_credential, exposed, grant,
+    lazy_fixture, lazy_token, oauth_server, pooled_client, reader_fixture, sealed_byok,
+    serving_token_endpoint, test_cipher,
 };
 
 mod support;
@@ -315,18 +316,18 @@ async fn store_bound_read_returns_a_matching_credential_for_an_enforce_server() 
     assert_eq!(fixture.binding.checks.load(Ordering::Relaxed), 1);
 }
 
+#[rstest]
+#[case::audit(Some(oauth_server(Some("audit"))))]
+#[case::unbound(Some(oauth_server(None)))]
+#[case::unknown(None)]
 #[tokio::test]
-async fn store_bound_read_passes_audit_unbound_and_unknown_servers_unchecked() {
-    for server in [
-        Some(oauth_server(Some("audit"))),
-        Some(oauth_server(None)),
-        None,
-    ] {
-        let fixture = reader_fixture(server, Some("other-user"), false);
-        let credential = fixture.reader.read_credential("user", "srv").await.unwrap();
-        assert!(credential.is_some());
-        assert_eq!(fixture.binding.checks.load(Ordering::Relaxed), 0);
-    }
+async fn store_bound_read_passes_audit_unbound_and_unknown_servers_unchecked(
+    #[case] server: Option<Arc<MCPServer>>,
+) {
+    let fixture = reader_fixture(server, Some("other-user"), false);
+    let credential = fixture.reader.read_credential("user", "srv").await.unwrap();
+    assert!(credential.is_some());
+    assert_eq!(fixture.binding.checks.load(Ordering::Relaxed), 0);
 }
 
 #[tokio::test]
@@ -335,7 +336,7 @@ async fn store_chain_without_redis_refreshes_and_caches_in_process() {
         Some(oauth_server(None)),
         Some(expired_credential()),
         false,
-        Some(grant_with_expiry()),
+        Some(grant(Some(3600))),
     );
     let built = fixture.builder.build();
     assert!(!built.uses_redis);
@@ -360,7 +361,7 @@ async fn store_chain_with_redis_uses_the_runtime_coordinator_and_default_ttl() {
         Some(oauth_server(None)),
         Some(expired_credential()),
         true,
-        Some(grant_without_expiry()),
+        Some(grant(None)),
     );
     let built = fixture.builder.build();
     assert!(built.uses_redis);
@@ -491,21 +492,21 @@ async fn store_lazy_fetch_returns_the_token_when_the_proof_matches() {
     assert!(fixture.chain.invalidations.lock().unwrap().is_empty());
 }
 
+#[rstest]
+#[case::unknown(None)]
+#[case::unbound(Some(oauth_server(None)))]
+#[case::audit(Some(oauth_server(Some("audit"))))]
 #[tokio::test]
-async fn store_lazy_fetch_returns_the_token_for_unknown_unbound_and_audit_servers() {
-    for server in [
-        None,
-        Some(oauth_server(None)),
-        Some(oauth_server(Some("audit"))),
-    ] {
-        let fixture = lazy_fixture(
-            server,
-            Some(lazy_token("fresh", Some("other-user"))),
-            false,
-            false,
-        );
-        let fetched = fixture.store.fetch("user", "srv").await.unwrap().unwrap();
-        assert_eq!(fetched.access_token, "fresh");
-        assert!(fixture.chain.invalidations.lock().unwrap().is_empty());
-    }
+async fn store_lazy_fetch_returns_the_token_for_unknown_unbound_and_audit_servers(
+    #[case] server: Option<Arc<MCPServer>>,
+) {
+    let fixture = lazy_fixture(
+        server,
+        Some(lazy_token("fresh", Some("other-user"))),
+        false,
+        false,
+    );
+    let fetched = fixture.store.fetch("user", "srv").await.unwrap().unwrap();
+    assert_eq!(fetched.access_token, "fresh");
+    assert!(fixture.chain.invalidations.lock().unwrap().is_empty());
 }

@@ -12,6 +12,7 @@ use betterlite_mcp::oauth_identity_binding::port_types::{
 };
 use betterlite_mcp::server_record::MCPServer;
 use chrono::DateTime;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 
@@ -315,18 +316,19 @@ async fn an_unknown_server_returns_none() {
     assert_eq!(harness.post.calls().len(), 0);
 }
 
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
 #[tokio::test]
-async fn a_server_without_a_token_url_returns_none() {
-    for token_url in [None, Some("")] {
-        let harness = fixture(
-            Some(oauth_server(token_url, None)),
-            Some(grant_answer()),
-            Vec::new(),
-        );
-        let outcome = refresh(&harness, &stored_token(Some("stored"), &[])).await;
-        assert_eq!(outcome.unwrap(), None);
-        assert_eq!(harness.post.calls().len(), 0);
-    }
+async fn a_server_without_a_token_url_returns_none(#[case] token_url: Option<&str>) {
+    let harness = fixture(
+        Some(oauth_server(token_url, None)),
+        Some(grant_answer()),
+        Vec::new(),
+    );
+    let outcome = refresh(&harness, &stored_token(Some("stored"), &[])).await;
+    assert_eq!(outcome.unwrap(), None);
+    assert_eq!(harness.post.calls().len(), 0);
 }
 
 #[tokio::test]
@@ -425,23 +427,22 @@ async fn a_missing_answer_returns_none_and_persists_nothing() {
     assert_eq!(harness.persist.calls().len(), 0);
 }
 
+#[rstest]
+#[case::missing(answer(&[("refresh_token", text("rotated"))]))]
+#[case::empty(answer(&[("access_token", text(""))]))]
+#[case::not_text(answer(&[("access_token", integer(7))]))]
 #[tokio::test]
-async fn a_missing_or_empty_access_token_returns_none_and_persists_nothing() {
-    let bodies = [
-        answer(&[("refresh_token", text("rotated"))]),
-        answer(&[("access_token", text(""))]),
-        answer(&[("access_token", integer(7))]),
-    ];
-    for body in bodies {
-        let harness = fixture(
-            Some(oauth_server(Some("https://idp.test/token"), None)),
-            Some(body),
-            vec![Ok(None)],
-        );
-        let outcome = refresh(&harness, &stored_token(Some("stored"), &[])).await;
-        assert_eq!(outcome.unwrap(), None);
-        assert_eq!(harness.persist.calls().len(), 0);
-    }
+async fn a_missing_or_empty_access_token_returns_none_and_persists_nothing(
+    #[case] body: TokenResponse,
+) {
+    let harness = fixture(
+        Some(oauth_server(Some("https://idp.test/token"), None)),
+        Some(body),
+        vec![Ok(None)],
+    );
+    let outcome = refresh(&harness, &stored_token(Some("stored"), &[])).await;
+    assert_eq!(outcome.unwrap(), None);
+    assert_eq!(harness.persist.calls().len(), 0);
 }
 
 #[tokio::test]
@@ -592,24 +593,28 @@ async fn expires_at_is_the_clock_plus_expires_in() {
     assert_eq!(harness.persist.calls()[0].expires_in, Some(3_600));
 }
 
+#[rstest]
+#[case::zero(0_i64, 1_000_i64)]
+#[case::negative(-120, 880)]
 #[tokio::test]
-async fn a_zero_or_negative_expires_in_is_used_as_is() {
-    for (expires_in, expected) in [(0_i64, 1_000_i64), (-120, 880)] {
-        let harness = fixture(
-            Some(oauth_server(Some("https://idp.test/token"), None)),
-            Some(answer(&[
-                ("access_token", text("fresh")),
-                ("expires_in", integer(expires_in)),
-            ])),
-            vec![Ok(None)],
-        );
-        let outcome = refresh(&harness, &stored_token(Some("stored"), &[]))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(outcome.expires_at, DateTime::from_timestamp(expected, 0));
-        assert_eq!(harness.persist.calls()[0].expires_in, Some(expires_in));
-    }
+async fn a_zero_or_negative_expires_in_is_used_as_is(
+    #[case] expires_in: i64,
+    #[case] expected: i64,
+) {
+    let harness = fixture(
+        Some(oauth_server(Some("https://idp.test/token"), None)),
+        Some(answer(&[
+            ("access_token", text("fresh")),
+            ("expires_in", integer(expires_in)),
+        ])),
+        vec![Ok(None)],
+    );
+    let outcome = refresh(&harness, &stored_token(Some("stored"), &[]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(outcome.expires_at, DateTime::from_timestamp(expected, 0));
+    assert_eq!(harness.persist.calls()[0].expires_in, Some(expires_in));
 }
 
 #[tokio::test]
@@ -717,10 +722,19 @@ fn read_grant_body_reads_the_grant_fields() {
 #[test]
 fn replays_the_refresh_grant_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/refresh_grant_body");
-    for entry in std::fs::read_dir(corpus).unwrap() {
-        let bytes = std::fs::read(entry.unwrap().path()).unwrap();
-        if let Ok(JsonValue::Object(body)) = serde_json::from_slice::<JsonValue>(&bytes) {
-            drop(read_grant_body(&body));
-        }
-    }
+    std::fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| std::fs::read(entry.unwrap().path()).unwrap())
+        .filter_map(|bytes| match serde_json::from_slice::<JsonValue>(&bytes) {
+            Ok(JsonValue::Object(body)) => Some(body),
+            Ok(
+                JsonValue::Null
+                | JsonValue::Bool(_)
+                | JsonValue::Number(_)
+                | JsonValue::String(_)
+                | JsonValue::Array(_),
+            ) => None,
+            Err(_error) => None,
+        })
+        .for_each(|body| drop(read_grant_body(&body)));
 }

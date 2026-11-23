@@ -154,8 +154,7 @@ where
         }
     }
 
-    // An in-process chain is replaced once Redis answers, but only after the fetches already inside it finish,
-    // so a rotating refresh token is never redeemed by two coordinators.
+    // An in-process chain is replaced after its in-flight fetches finish, so one refresh token is redeemed once.
     async fn store_for_fetch(&self) -> (Arc<dyn InvalidatableOAuthTokenStore>, bool) {
         let mut state = self.state.lock().await;
         loop {

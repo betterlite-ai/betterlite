@@ -52,14 +52,14 @@ impl TokenEndpointPost for PooledTokenPost {
         let request = match refresh_request(url, form, headers, self.deadline) {
             Ok(request) => request,
             Err(error) => {
-                warn_failed(&error.to_string());
+                tracing::warn!("MCP OAuth refresh request failed: {error}");
                 return None;
             }
         };
         let sent = match self.client.send(request).await {
             Ok(sent) => sent,
             Err(error) => {
-                warn_failed(&error.to_string());
+                tracing::warn!("MCP OAuth refresh request failed: {error}");
                 return None;
             }
         };
@@ -67,7 +67,7 @@ impl TokenEndpointPost for PooledTokenPost {
         let buffered = match sent.buffered(self.client.limits.body_bytes).await {
             Ok(response) => response,
             Err(error) => {
-                warn_failed(&error.to_string());
+                tracing::warn!("MCP OAuth refresh request failed: {error}");
                 return None;
             }
         };
@@ -125,13 +125,11 @@ pub(super) fn refresh_request(
 fn answer(status: StatusCode, body: &[u8]) -> Option<TokenResponse> {
     if !status.is_success() {
         let status_code = status.as_u16();
-        warn_failed(&format!("the token endpoint answered HTTP {status_code}"));
+        tracing::warn!(
+            "MCP OAuth refresh request failed: the token endpoint answered HTTP {status_code}"
+        );
         return None;
     }
-    object_body(body)
-}
-
-fn object_body(body: &[u8]) -> Option<TokenResponse> {
     match serde_json::from_slice::<JsonValue>(body) {
         Ok(JsonValue::Object(object)) => Some(object),
         Ok(
@@ -141,18 +139,16 @@ fn object_body(body: &[u8]) -> Option<TokenResponse> {
             | JsonValue::String(_)
             | JsonValue::Array(_),
         ) => {
-            warn_failed("the token endpoint body is not a JSON object");
+            tracing::warn!(
+                "MCP OAuth refresh request failed: the token endpoint body is not a JSON object"
+            );
             None
         }
         Err(error) => {
-            warn_failed(&error.to_string());
+            tracing::warn!("MCP OAuth refresh request failed: {error}");
             None
         }
     }
-}
-
-fn warn_failed(detail: &str) {
-    tracing::warn!("MCP OAuth refresh request failed: {detail}");
 }
 
 pub struct DbCredentialReader<Table> {
@@ -167,15 +163,15 @@ impl<Table: CredentialRows> CredentialReader for DbCredentialReader<Table> {
         user_id: &str,
         server_id: &str,
     ) -> Result<Option<CredentialPayload>, TokenStoreUnavailable> {
-        let Some(table) = &self.database else {
-            return Err(TokenStoreUnavailable {
+        match &self.database {
+            None => Err(TokenStoreUnavailable {
                 detail: DATABASE_NOT_CONNECTED.to_owned(),
-            });
-        };
-        let payload = get_user_oauth_credential(table, &self.cipher, user_id, server_id)
-            .await
-            .map_err(unavailable)?;
-        Ok(payload.map(credential_payload))
+            }),
+            Some(table) => get_user_oauth_credential(table, &self.cipher, user_id, server_id)
+                .await
+                .map_err(unavailable)
+                .map(|payload| payload.map(credential_payload)),
+        }
     }
 }
 
