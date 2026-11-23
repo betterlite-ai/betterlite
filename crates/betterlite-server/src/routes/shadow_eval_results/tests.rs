@@ -42,9 +42,9 @@ async fn an_unauthenticated_detail_answers_401() {
 // the read's success path reaches the caller as its JSON body, not as the empty 200 a default response carries
 #[tokio::test]
 async fn answered_serializes_the_read_into_the_json_body() {
-    let response = answered(Ok(vec!["job-1".to_owned()]))
-        .unwrap()
-        .into_response();
+    let Ok(response) = answered(Ok(vec!["job-1".to_owned()])) else {
+        panic!("the read's success path answered with an error");
+    };
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     assert_eq!(String::from_utf8(body.to_vec()).unwrap(), "[\"job-1\"]");
