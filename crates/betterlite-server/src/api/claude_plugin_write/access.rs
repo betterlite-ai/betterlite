@@ -9,7 +9,7 @@ use betterlite_core::api::claude_plugin_write::ClaudePluginWriteInput;
 use betterlite_db::auxiliary_repository::repository::TableError;
 
 use super::ClaudePluginWriteState;
-use super::error::ClaudePluginWriteError;
+use super::error::{BackendSource, ClaudePluginWriteError};
 use super::store::ClaudePluginStore;
 use crate::auth::auth_identity::AuthContext;
 
@@ -86,12 +86,12 @@ pub(super) const fn check_body(
 pub(super) async fn require_present(
     store: &dyn ClaudePluginStore,
     plugin_name: &str,
-    prefix: Option<&str>,
+    prefix: Option<&'static str>,
 ) -> Result<(), ClaudePluginWriteError> {
     let existing = store
         .find_by_name(plugin_name)
         .await
-        .map_err(|source| table_failure(prefix, &source))?;
+        .map_err(|source| table_failure(prefix, source))?;
     if existing.is_none() {
         return Err(ClaudePluginWriteError::from(plugin_not_found_error(
             plugin_name,
@@ -101,8 +101,12 @@ pub(super) async fn require_present(
 }
 
 // register, update and the lifecycle routes each wrap a table failure with their own prefix
-pub(super) fn table_failure(prefix: Option<&str>, source: &TableError) -> ClaudePluginWriteError {
+pub(super) fn table_failure(
+    prefix: Option<&'static str>,
+    source: TableError,
+) -> ClaudePluginWriteError {
     ClaudePluginWriteError::Backend {
-        message: prefix.map_or_else(|| source.to_string(), |label| format!("{label}: {source}")),
+        prefix,
+        source: BackendSource::Table(source),
     }
 }

@@ -3,12 +3,22 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use betterlite_core::api::claude_plugin_policy::{ClaudePluginPolicyError, PluginErrorDetail};
 use betterlite_core::api::claude_plugin_write::ClaudePluginWriteFailure;
+use betterlite_db::auxiliary_repository::repository::TableError;
 use serde::Serialize;
 use thiserror::Error;
 
 use crate::auth::failures::body_too_large_response;
 use crate::error_body::{AuthenticationFailure, authentication_error};
 use crate::search_tool_routes::body::BodyError;
+
+// the causes a write can hit after the request passes validation; the source stays in the type
+#[derive(Debug, Error)]
+pub(crate) enum BackendSource {
+    #[error(transparent)]
+    Table(TableError),
+    #[error(transparent)]
+    Manifest(serde_json::Error),
+}
 
 // LiteLLM raises HTTPException for every handler failure, so FastAPI renders the detail object
 #[derive(Debug, Error)]
@@ -23,8 +33,12 @@ pub(crate) enum ClaudePluginWriteError {
     Body(#[from] BodyError),
     #[error("the request body is too large")]
     TooLarge { observed: usize, limit: usize },
-    #[error("{message}")]
-    Backend { message: String },
+    #[error("the write failed after the request was accepted")]
+    Backend {
+        prefix: Option<&'static str>,
+        #[source]
+        source: BackendSource,
+    },
 }
 
 impl From<ClaudePluginWriteFailure> for ClaudePluginWriteError {
@@ -46,9 +60,10 @@ impl IntoResponse for ClaudePluginWriteError {
             }
             Self::Body(error) => error.into_response(),
             Self::TooLarge { observed, limit } => body_too_large_response(observed, limit),
-            Self::Backend { message } => {
-                detail_response(StatusCode::INTERNAL_SERVER_ERROR, message)
-            }
+            Self::Backend { prefix, source } => detail_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                prefix.map_or_else(|| source.to_string(), |label| format!("{label}: {source}")),
+            ),
         }
     }
 }

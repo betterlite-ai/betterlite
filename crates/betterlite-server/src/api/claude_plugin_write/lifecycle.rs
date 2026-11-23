@@ -44,7 +44,7 @@ pub(super) async fn toggle(
     gate.store
         .set_enabled(&input.plugin_name, enabled, updated_at)
         .await
-        .map_err(|source| table_failure(None, &source))?;
+        .map_err(|source| table_failure(None, source))?;
     let state_word = if enabled { "enabled" } else { "disabled" };
     Ok(Json(ClaudePluginWriteResult::Message(PluginMessage {
         status: SUCCESS,
@@ -68,7 +68,7 @@ pub(super) async fn remove(
     gate.store
         .delete(&input.plugin_name)
         .await
-        .map_err(|source| table_failure(None, &source))?;
+        .map_err(|source| table_failure(None, source))?;
     Ok(Json(ClaudePluginWriteResult::Message(PluginMessage {
         status: SUCCESS,
         message: format!("Plugin '{}' deleted", input.plugin_name),

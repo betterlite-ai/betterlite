@@ -16,13 +16,13 @@ use serde::de::DeserializeOwned;
 
 use super::ClaudePluginWriteState;
 use super::access::{Gate, check_body, creator_id, prepare, require_present, table_failure};
-use super::error::ClaudePluginWriteError;
+use super::error::{BackendSource, ClaudePluginWriteError};
 use super::store::{ClaudePluginStore, NewPlugin, PluginChanges, PluginCreateError};
 use super::wire::{CreatePluginBody, PluginPath};
 use crate::auth::auth_identity::AuthContext;
 use crate::search_tool_routes::body::decode_body;
 
-fn create_failure(error: &PluginCreateError, plugin_name: &str) -> ClaudePluginWriteError {
+fn create_failure(error: PluginCreateError, plugin_name: &str) -> ClaudePluginWriteError {
     match error {
         PluginCreateError::NameTaken => {
             ClaudePluginWriteError::from(name_conflict_error(plugin_name))
@@ -51,14 +51,6 @@ fn create_input(
     })
 }
 
-const fn update_write(plugin_name: String, spec: PluginSpec) -> ClaudePluginWriteInput {
-    ClaudePluginWriteInput {
-        action: ClaudePluginWriteAction::Update,
-        plugin_name,
-        spec: Some(spec),
-    }
-}
-
 async fn ensure_absent(
     store: &dyn ClaudePluginStore,
     plugin_name: &str,
@@ -66,7 +58,7 @@ async fn ensure_absent(
     let existing = store
         .find_by_name(plugin_name)
         .await
-        .map_err(|source| table_failure(Some(REGISTRATION_FAILED), &source))?;
+        .map_err(|source| table_failure(Some(REGISTRATION_FAILED), source))?;
     if existing.is_none() {
         return Ok(());
     }
@@ -86,7 +78,7 @@ async fn register_plugin(
         .store
         .create(write)
         .await
-        .map_err(|error| create_failure(&error, &input.plugin_name))?;
+        .map_err(|error| create_failure(error, &input.plugin_name))?;
     Ok((created, source))
 }
 
@@ -98,7 +90,7 @@ async fn require_updated(
     let found = store
         .update(changes)
         .await
-        .map_err(|source| table_failure(Some(UPDATE_FAILED), &source))?;
+        .map_err(|source| table_failure(Some(UPDATE_FAILED), source))?;
     found.ok_or_else(|| ClaudePluginWriteError::from(plugin_not_found_error(plugin_name)))
 }
 
@@ -164,7 +156,11 @@ pub(super) async fn update(
     body: Bytes,
 ) -> Result<Json<ClaudePluginWriteResult>, ClaudePluginWriteError> {
     let request: UpdatePluginSpec = decode_write(state.as_ref(), &body)?;
-    let input = update_write(path.plugin_name, PluginSpec::from(request));
+    let input = ClaudePluginWriteInput {
+        action: ClaudePluginWriteAction::Update,
+        plugin_name: path.plugin_name,
+        spec: Some(PluginSpec::from(request)),
+    };
     let gate = prepare(state.as_ref(), caller, &input)?;
     require_present(gate.store.as_ref(), &input.plugin_name, Some(UPDATE_FAILED)).await?;
     let (changes, source) = plugin_changes(state.as_ref(), &input)?;
@@ -194,7 +190,7 @@ fn plugin_changes(
 
 fn manifest_json(
     input: &ClaudePluginWriteInput,
-    prefix: &str,
+    prefix: &'static str,
 ) -> Result<String, ClaudePluginWriteError> {
     let spec = input
         .spec
@@ -202,6 +198,7 @@ fn manifest_json(
         .ok_or(ClaudePluginWriteFailure::MissingSpec)?;
     let manifest = build_plugin_manifest(&input.plugin_name, spec);
     serde_json::to_string(&manifest).map_err(|source| ClaudePluginWriteError::Backend {
-        message: format!("{prefix}: {source}"),
+        prefix: Some(prefix),
+        source: BackendSource::Manifest(source),
     })
 }
