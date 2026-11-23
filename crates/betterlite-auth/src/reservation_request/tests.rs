@@ -430,6 +430,7 @@ fn lease_renewal_interval_halves_the_redis_ttl() {
     assert_eq!(renewal_interval(1), Some(Duration::from_millis(500)));
     assert_eq!(renewal_interval(0), None);
     assert_eq!(renewal_interval(-60), None);
+    assert_eq!(renewal_interval(i64::MAX), None);
 }
 
 #[tokio::test(start_paused = true)]
