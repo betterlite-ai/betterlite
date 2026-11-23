@@ -591,6 +591,16 @@ fn group_info_does_not_store_an_error() {
 }
 
 #[test]
+fn group_info_evicts_at_capacity_one() {
+    let scenario = Scenario::new(1, &[plain_row("a", "a"), plain_row("b", "b")]);
+    assert!(scenario.read("a").expect("a").is_some());
+    assert!(scenario.read("b").expect("b").is_some());
+    assert_eq!(scenario.calls(), 2);
+    assert!(scenario.read("a").expect("a again").is_some());
+    assert_eq!(scenario.calls(), 3);
+}
+
+#[test]
 fn group_info_evicts_the_least_recent() {
     let scenario = Scenario::new(
         2,
