@@ -180,7 +180,7 @@ fn request_the_caller_model_and_model_info_reach_a_mock_answer() {
     );
 }
 #[test]
-fn request_a_provider_answer_carries_headers_and_hidden_params() {
+fn request_a_provider_answer_sends_the_call_and_keeps_the_headers() {
     let (sent, outcome) = served_call("200 OK", EMBEDDING_BODY, "sk-test");
     let answer = outcome.unwrap();
     assert!(sent.starts_with("POST /v1/embeddings "), "{sent}");
@@ -203,6 +203,11 @@ fn request_a_provider_answer_carries_headers_and_hidden_params() {
             .map(String::as_str),
         Some("9")
     );
+}
+#[test]
+fn request_a_provider_answer_carries_the_hidden_params() {
+    let (_sent, outcome) = served_call("200 OK", EMBEDDING_BODY, "sk-test");
+    let answer = outcome.unwrap();
     let hidden = &answer.hidden_params;
     assert_eq!(
         hidden.get("custom_llm_provider"),
