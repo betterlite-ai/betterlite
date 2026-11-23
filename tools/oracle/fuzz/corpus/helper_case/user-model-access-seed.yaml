@@ -1,0 +1,13 @@
+kind: helper
+name: user-model-access-seed
+call:
+  b10051:
+    checks:
+      - {model: gpt-4o, user: {user_id: seed-listed, models: [gpt-4o]}, key_aliases: {}}
+      - {model: [gpt-4o, o3], user: {user_id: seed-list, models: [gpt-4o, o3]}, key_aliases: {fast: gpt-4o}}
+      - {model: fast, user: {user_id: seed-alias, models: [gpt-4o]}, key_aliases: {fast: gpt-4o}}
+      - {model: gpt-4o, user: null, key_aliases: {}}
+      - {model: gpt-4o, user: {user_id: seed-sentinel, models: [no-default-models]}, key_aliases: {}}
+      - {model: gpt-4o, user: {user_id: seed-null-column, models: null}, key_aliases: {}}
+env: {}
+compare: {ignore: []}
