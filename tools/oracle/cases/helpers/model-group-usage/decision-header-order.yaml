@@ -1,0 +1,53 @@
+kind: helper
+name: decision-header-order
+call:
+  model_group_usage:
+    {
+      "function": "response",
+      "model_list": [
+        {
+          "model_name": "g",
+          "litellm_params": {
+            "model": "openai/gpt-4o"
+          },
+          "model_info": {
+            "id": "a"
+          }
+        }
+      ],
+      "model_group": null,
+      "now": 3660,
+      "group_info": null,
+      "cache": {
+        "mode": "missing",
+        "values": []
+      },
+      "response": {
+        "id": "r"
+      },
+      "request_kwargs": {
+        "metadata": {
+          "quality_router_decision": {
+            "routed_model": "openai/gpt-4o",
+            "quality_tier": 2
+          }
+        },
+        "litellm_metadata": {
+          "routing_decision": {
+            "router_type": "complexity",
+            "tier": "fast",
+            "cause": "low",
+            "score": 0.5,
+            "tier_litellm_params": {
+              "reasoning_effort": "low"
+            }
+          }
+        }
+      },
+      "metadata": null,
+      "litellm_metadata": null,
+      "team_id": null,
+      "candidates": null
+    }
+env: {}
+compare: {ignore: []}
