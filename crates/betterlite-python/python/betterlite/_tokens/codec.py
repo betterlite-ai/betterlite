@@ -62,7 +62,8 @@ def decode(
     skip_special_tokens: bool = True,
 ) -> str:
     request: dict[str, JsonValue] = request_with_tokenizer(model, custom_tokenizer)
-    tokens_json: list[JsonValue] = [token for token in tokens]
+    tokens_json: list[JsonValue] = []
+    tokens_json.extend(tokens)
     request["tokens"] = tokens_json
     request["skip_special_tokens"] = skip_special_tokens
     return _native.decode_tokens(dumps(request))
