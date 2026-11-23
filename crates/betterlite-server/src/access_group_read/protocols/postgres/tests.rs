@@ -94,9 +94,10 @@ async fn updated_at(
     row.get(0)
 }
 
-async fn create_group<C: GenericClient + Sync>(
-    tables: &PgAccessGroupTables<'_, C>,
-) -> AccessGroupRecord {
+async fn create_group<C>(tables: &PgAccessGroupTables<'_, C>) -> AccessGroupRecord
+where
+    C: GenericClient + Sync,
+{
     tables
         .create(&new_group("math", Some("Math tools"), &["t1"]))
         .await
@@ -117,9 +118,10 @@ fn assert_created_group(created: &AccessGroupRecord) {
     assert_eq!(parsed.get_version_num(), 4_usize);
 }
 
-async fn assert_absent_groups_read_none<C: GenericClient + Sync>(
-    tables: &PgAccessGroupTables<'_, C>,
-) {
+async fn assert_absent_groups_read_none<C>(tables: &PgAccessGroupTables<'_, C>)
+where
+    C: GenericClient + Sync,
+{
     assert_eq!(
         tables
             .find_by_name("absent")
@@ -156,11 +158,13 @@ fn assert_lists_unchanged(updated: &AccessGroupRecord) {
     assert_eq!(updated.assigned_key_ids, Some(groups(&["token-a"])));
 }
 
-async fn restore_description<C: GenericClient + Sync>(
+async fn restore_description<C>(
     tables: &PgAccessGroupTables<'_, C>,
     access_group_id: &str,
     changes: &AccessGroupChanges,
-) {
+) where
+    C: GenericClient + Sync,
+{
     let restored = AccessGroupChanges {
         description: FieldWrite::Set("Math tools".to_owned()),
         ..changes.clone()
@@ -182,10 +186,10 @@ fn assert_renamed_only(updated: &AccessGroupRecord) {
     assert_eq!(updated.updated_by, None);
 }
 
-async fn assert_renamed_row<C: GenericClient + Sync>(
-    tables: &PgAccessGroupTables<'_, C>,
-    access_group_id: &str,
-) {
+async fn assert_renamed_row<C>(tables: &PgAccessGroupTables<'_, C>, access_group_id: &str)
+where
+    C: GenericClient + Sync,
+{
     let renamed = tables
         .find_by_name("renamed")
         .await
@@ -237,9 +241,10 @@ async fn insert_null_rows(database: &Database) {
         .await;
 }
 
-async fn assert_null_group_reads_none<C: GenericClient + Sync>(
-    tables: &PgAccessGroupTables<'_, C>,
-) {
+async fn assert_null_group_reads_none<C>(tables: &PgAccessGroupTables<'_, C>)
+where
+    C: GenericClient + Sync,
+{
     let group = tables
         .find_by_id("g-null")
         .await
@@ -253,9 +258,10 @@ async fn assert_null_group_reads_none<C: GenericClient + Sync>(
     assert_eq!(group.assigned_key_ids, None);
 }
 
-async fn assert_null_team_and_key_read_none<C: GenericClient + Sync>(
-    tables: &PgAccessGroupTables<'_, C>,
-) {
+async fn assert_null_team_and_key_read_none<C>(tables: &PgAccessGroupTables<'_, C>)
+where
+    C: GenericClient + Sync,
+{
     let team = tables
         .litellm_teamtable()
         .find("t-null")
@@ -280,10 +286,10 @@ async fn assert_null_team_and_key_read_none<C: GenericClient + Sync>(
     assert_eq!(key.access_group_ids, None);
 }
 
-async fn write_membership_lists<C: GenericClient + Sync>(
-    tables: &PgAccessGroupTables<'_, C>,
-    replacement: &[String],
-) {
+async fn write_membership_lists<C>(tables: &PgAccessGroupTables<'_, C>, replacement: &[String])
+where
+    C: GenericClient + Sync,
+{
     tables
         .litellm_teamtable()
         .set_access_group_ids("t1", replacement)
@@ -301,10 +307,10 @@ async fn write_membership_lists<C: GenericClient + Sync>(
         .expect("the agent write runs");
 }
 
-async fn assert_memberships_stored<C: GenericClient + Sync>(
-    tables: &PgAccessGroupTables<'_, C>,
-    replacement: &[String],
-) {
+async fn assert_memberships_stored<C>(tables: &PgAccessGroupTables<'_, C>, replacement: &[String])
+where
+    C: GenericClient + Sync,
+{
     let team = tables
         .litellm_teamtable()
         .find("t1")
@@ -336,10 +342,10 @@ async fn assert_memberships_moved(database: &Database) {
     assert!(updated_at(database, "LiteLLM_AgentsTable", "agent_id", "agent-1").await > seeded_at());
 }
 
-async fn assert_rollback_left_no_trace<C: GenericClient + Sync>(
-    database: &Database,
-    tables: &PgAccessGroupTables<'_, C>,
-) {
+async fn assert_rollback_left_no_trace<C>(database: &Database, tables: &PgAccessGroupTables<'_, C>)
+where
+    C: GenericClient + Sync,
+{
     assert_eq!(
         tables
             .find_by_name("rolled-back")
