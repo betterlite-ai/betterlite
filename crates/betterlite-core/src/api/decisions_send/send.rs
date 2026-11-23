@@ -26,6 +26,7 @@ pub struct DecisionsSender<'env, Clients: DecisionsClients = HttpClients> {
 }
 
 impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
+    // ast-grep-ignore: no-one-line-functions - callers hand in the pool and the environment, and the fields stay private
     pub fn new(clients: &'env mut Clients, env: &'env PrePostEnv<'env>) -> Self {
         Self { clients, env }
     }
@@ -106,7 +107,11 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
         } else {
             config.sign_request(prepared.outbound_headers.clone(), context)
         };
-        let params = provider_params(&call.custom_llm_provider);
+        let params: Params = std::iter::once((
+            String::from("custom_llm_provider"),
+            JsonValue::Text(call.custom_llm_provider.clone()),
+        ))
+        .collect();
         let client = self
             .clients
             .select_async(&params)
@@ -170,10 +175,4 @@ where
         Ok(signed) => signed,
         Err(payload) => std::panic::resume_unwind(payload),
     })
-}
-
-// get_async_httpx_client(llm_provider=litellm.LlmProviders(custom_llm_provider))
-fn provider_params(provider: &str) -> Params {
-    let name = String::from("custom_llm_provider");
-    std::iter::once((name, JsonValue::Text(provider.to_owned()))).collect()
 }

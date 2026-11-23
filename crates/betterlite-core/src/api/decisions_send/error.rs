@@ -284,6 +284,7 @@ fn mapped(class: ErrorClass, source: Box<dyn Error + Send + Sync>) -> DecisionsS
     }
 }
 
+// ast-grep-ignore: no-one-line-functions - six exception paths name the provider and model the same way
 fn qualified_model(call: &DecisionsCall<'_>) -> String {
     format!("{}/{}", call.custom_llm_provider, call.model)
 }

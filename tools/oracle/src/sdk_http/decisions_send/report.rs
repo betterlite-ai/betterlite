@@ -4,24 +4,18 @@ use betterlite_core::api::decisions_send::error::visible_message;
 use betterlite_core::api::decisions_send::format::DecisionsOutput;
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
-use betterlite_models::decisions::Json;
 use betterlite_openai::decisions::call::error::PrepareError;
-use serde::Serialize;
 
 pub(super) fn output(response: DecisionsOutput) -> Result<RunOutcome, SdkHttpError> {
     let record = match response {
-        DecisionsOutput::SystemOne(systemone) => serialized(systemone)?,
-        DecisionsOutput::OpenAi(openai) => serialized(openai)?,
-    };
+        DecisionsOutput::SystemOne(systemone) => serde_json::to_value(systemone),
+        DecisionsOutput::OpenAi(openai) => serde_json::to_value(openai),
+    }
+    .map_err(SdkHttpError::Serialize)?;
     Ok(RunOutcome {
-        result: Some(record),
+        result: Some(serde_json::from_value(record).map_err(SdkHttpError::Serialize)?),
         failure: None,
     })
-}
-
-fn serialized<T: Serialize>(response: T) -> Result<Json, SdkHttpError> {
-    let record = serde_json::to_value(response).map_err(SdkHttpError::Serialize)?;
-    serde_json::from_value(record).map_err(SdkHttpError::Serialize)
 }
 
 // _map_upstream_exception's result: the class and the text the exception's __init__ built
