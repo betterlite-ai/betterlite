@@ -1,0 +1,20 @@
+kind: helper
+name: health-check-entry-chat-seed
+call:
+  b6750:
+    steps:
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+          custom_llm_provider: openai
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: {x-ratelimit-remaining-requests: "9"}
+        failure: null
+        raw_request: null
+env: {}
+compare: {ignore: []}
