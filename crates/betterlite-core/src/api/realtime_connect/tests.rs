@@ -653,19 +653,10 @@ async fn xai_arguments(dispatch: &Recorder, litellm_params: &IndexMap<String, Js
     xai.api_key = Some(secret("sk-global"));
     xai.xai_key = Some(secret("xai-key"));
     xai.xai_api_key = Some(secret("xai-env-key"));
-    xai_named_arguments(dispatch, &xai, litellm_params).await;
-    xai_base_fallbacks(dispatch, litellm_params).await;
-}
-
-async fn xai_named_arguments(
-    dispatch: &Recorder,
-    xai: &RealtimeConnectionSettings,
-    litellm_params: &IndexMap<String, Json>,
-) {
     let mut connect = params();
     connect.api_base = Some(String::from("https://named.example"));
     connect.generic_api_base = Some(String::from("https://generic.example"));
-    let connection = xai_connection(dispatch, xai, &connect, litellm_params).await;
+    let connection = xai_connection(dispatch, &xai, &connect, litellm_params).await;
     assert!(matches!(connection.branch, Branch::Xai));
     assert_eq!(
         connection.args.api_base.as_deref(),
@@ -679,6 +670,7 @@ async fn xai_named_arguments(
             .map(secrecy::ExposeSecret::expose_secret),
         Some("xai-key")
     );
+    xai_base_fallbacks(dispatch, litellm_params).await;
 }
 
 // get_llm_provider resolves XAI_API_BASE into the dynamic base, so it arrives through the resolution environment
