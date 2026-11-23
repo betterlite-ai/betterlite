@@ -360,6 +360,28 @@ def test_ocr_document_type_error() -> None:
     assert error_fields(theirs.value).status_code == ours.value.status_code
 
 
+def test_search_error_class() -> None:
+    server = SearchOcrServer(RATE_LIMITED)
+    try:
+        with pytest.raises(exceptions.RateLimitError) as ours:
+            search(
+                query="brave search",
+                search_provider=SEARCH_PROVIDER,
+                api_key=GOOD_KEY,
+                api_base=server.url,
+            )
+        with pytest.raises(REFERENCE_ERRORS.RateLimitError) as theirs:
+            REFERENCE.search(
+                query="brave search",
+                search_provider=SEARCH_PROVIDER,
+                api_key=GOOD_KEY,
+                api_base=server.url,
+            )
+    finally:
+        server.close()
+    assert error_fields(ours.value).status_code == error_fields(theirs.value).status_code
+
+
 def test_ocr_flag_unsupported() -> None:
     with pytest.raises(UnsupportedCallArgument) as error:
         ocr(model=OCR_MODEL, document=OCR_DOCUMENT, aocr=True)
