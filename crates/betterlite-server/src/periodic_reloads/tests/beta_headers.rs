@@ -134,6 +134,7 @@ async fn an_interval_reload_measures_from_the_last_reload(
     if due {
         let expected = expected_log.expect("the due case names its log line");
         assert!(text.contains(expected));
+        assert_eq!(harness.checks.reloads.last_beta_headers_reload(), Some(now));
     } else {
         assert!(!text.contains("Anthropic beta headers reload triggered by interval"));
         assert_eq!(
