@@ -1,7 +1,7 @@
 use axum::Json;
 use axum::extract::{Extension, State};
 use betterlite_db::reload_schedule::status_formatting::reload_schedule_status;
-use betterlite_models::source::{CatalogSnapshot, SourceKind};
+use betterlite_models::source::{CatalogProvenance, SourceKind};
 use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
@@ -60,11 +60,11 @@ pub(super) async fn model_cost_map_source(
     caller: Option<Extension<AuthContext>>,
 ) -> Result<Json<SourceBody>, ReloadError> {
     let snapshot = admin_read_snapshot(&state, caller)?;
-    Ok(Json(source_body(&snapshot)))
+    let provenance = &snapshot.provenance;
+    Ok(Json(source_body(provenance, snapshot.catalog.adopted_size)))
 }
 
-fn source_body(snapshot: &CatalogSnapshot) -> SourceBody {
-    let provenance = &snapshot.provenance;
+fn source_body(provenance: &CatalogProvenance, model_count: usize) -> SourceBody {
     let source = match provenance.kind {
         SourceKind::Local => "local",
         SourceKind::Remote => "remote",
@@ -77,6 +77,6 @@ fn source_body(snapshot: &CatalogSnapshot) -> SourceBody {
         loaded_at: provenance.loaded_at.map(|at| at.to_rfc3339()),
         source_revision: provenance.source_revision.clone(),
         etag: provenance.etag.clone(),
-        model_count: snapshot.catalog.adopted_size,
+        model_count,
     }
 }

@@ -61,14 +61,6 @@ pub(super) fn require_admin_view(principal: &Principal) -> Result<(), ReloadErro
     })
 }
 
-// the cancel handlers check the role and nothing else before the database
-pub(super) fn require_write_admin(
-    caller: Option<Extension<AuthContext>>,
-) -> Result<(), ReloadError> {
-    let principal = caller_principal(caller)?;
-    require_proxy_admin(&principal)
-}
-
 // the write handlers' database check, which LiteLLM's catch turns into a wrapped 500
 pub(super) fn write_store<'state>(
     state: &'state ReloadRoutesState,

@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::auth::auth_identity::AuthContext;
 use crate::reload_routes::ReloadRoutesState;
 
-use super::caller::{caller_principal, require_proxy_admin, require_write_admin, write_store};
+use super::caller::{caller_principal, require_proxy_admin, write_store};
 use super::error::{ReloadError, WrappedCause, store_call};
 use super::hours::parse_hours;
 
@@ -58,7 +58,7 @@ pub(super) async fn cancel_model_cost_map_reload(
     State(state): State<ReloadRoutesState>,
     caller: Option<Extension<AuthContext>>,
 ) -> Result<Json<CancelBody>, ReloadError> {
-    require_write_admin(caller)?;
+    require_proxy_admin(&caller_principal(caller)?)?;
     let store = write_store(&state, CANCEL_FAILED)?;
     store_call(store.clear_interval(), CANCEL_FAILED).await?;
     let now = (state.clock)();

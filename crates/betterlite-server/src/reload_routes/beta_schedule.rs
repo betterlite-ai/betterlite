@@ -7,7 +7,7 @@ use crate::auth::auth_identity::AuthContext;
 use crate::reload_routes::ReloadRoutesState;
 
 use super::beta_config::reload_config_value;
-use super::caller::{caller_principal, require_proxy_admin, require_write_admin, write_store};
+use super::caller::{caller_principal, require_proxy_admin, write_store};
 use super::error::{ReloadError, store_call};
 use super::hours::parse_hours;
 use super::wire::naive_utc_isoformat;
@@ -58,7 +58,7 @@ pub(super) async fn cancel_beta_headers_reload(
     State(state): State<ReloadRoutesState>,
     caller: Option<Extension<AuthContext>>,
 ) -> Result<Json<CancelBody>, ReloadError> {
-    require_write_admin(caller)?;
+    require_proxy_admin(&caller_principal(caller)?)?;
     let store = write_store(&state, CANCEL_FAILED)?;
     store_call(store.delete_beta_config(), CANCEL_FAILED).await?;
     store_call(store.invalidate_beta_config(), CANCEL_FAILED).await?;
