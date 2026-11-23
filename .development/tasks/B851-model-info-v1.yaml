@@ -23,7 +23,7 @@ description: >-
   do not add a new permission check to it. Listing callbacks still run for the targeted deployment.
 
   For the list path deepcopy router rows AND B844 alias rows, B759 expand wildcard deployments,
-  resolve allowed names using B847 access groups, B844 model names and B759 get_key_models/get_team_models.
+  resolve allowed names using B10047 access groups, B844 model names and B759 get_key_models/get_team_models.
   If both grants are empty, allowed names is None and the original list survives; otherwise call
   get_complete_model_list(return_wildcard_routes=False) and match internal OR string public names.
   Filter B1216 foreign BYOK rows before metadata projection. With DB always populate B848 annotations,

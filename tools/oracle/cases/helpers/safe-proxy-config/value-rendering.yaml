@@ -1,0 +1,24 @@
+kind: helper
+name: safe-proxy-config-value-rendering
+call:
+  b10058:
+    config:
+      litellm_settings:
+        "api_base": [openai, true]
+        "callbacks": [openai, not_a_known_value, 7, [simple-shuffle, false], null]
+        "failure_callback": [not_a_known_value, 7]
+        "service_callback": []
+        "success_callback": [[openai]]
+      router_settings:
+        "context_window_fallbacks": [[openai, not_a_known_value], openai]
+        "routing_strategy": simple-shuffle
+    general_settings:
+      "alerting": [openai, [azure, true], 5]
+      "alerting_threshold": 300
+      "allowed_routes": []
+      "database_args": {nested: true}
+      "key_management_system": local
+      "plugins": null
+      "store_model_in_db": false
+env: {}
+compare: {ignore: []}

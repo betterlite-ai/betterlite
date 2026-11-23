@@ -49,7 +49,7 @@ description: >-
   /openai/deployments/{model:path}/images/generations; POST /v1/images/edits, /images/edits
   and /openai/deployments/{model:path}/images/edits. Cover each alias once with
   steps distributed across the relevant case. There are no /openai/v1 or provider-prefix
-  aliases for these handlers. B8610's area aggregation, B8634's search/decisions mount,
+  aliases for these handlers. B10082's area aggregation, B8634's search/decisions mount,
   B8606's NVIDIA/OpenRouter passthrough mount and B8580's Eden Messages binding remain
   their owners' work. In particular, this task never merges any router again.
 scope:

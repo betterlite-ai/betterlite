@@ -1,0 +1,6 @@
+task: B10064
+deviations:
+  - what: "AssertionStoreUnavailable's message is 'the SSO identity assertion store is unavailable: <cause>', where LiteLLM raises AssertionStoreUnavailable(str(exc)), the cause's text alone; the cause is thiserror's #[source] here where Python sets __cause__."
+    why: The resolver turns this error into the arm's generic 503, so only the operator log reads the text, and the prefix names the store the class docstring asks for; the boxed source is what the task fixes so B4664 can raise the same error from an IdP failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L304-L308
+kept_bugs: []

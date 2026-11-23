@@ -1,0 +1,27 @@
+kind: helper
+name: model-access-groups-every-occurrence
+call:
+  b10047:
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          access_groups: [beta, beta]
+      - model_name: claude
+        litellm_params:
+          model: anthropic/claude
+        model_info:
+          id: b
+          access_groups: [beta, alpha]
+      - model_name: claude
+        litellm_params:
+          model: anthropic/claude
+        model_info:
+          id: c
+          access_groups: [beta]
+    model_group_alias: {}
+    arguments: {}
+env: {}
+compare: {ignore: []}

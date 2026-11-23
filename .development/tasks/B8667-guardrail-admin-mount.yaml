@@ -12,7 +12,7 @@ description: >-
 
 
   Area file. crates/betterlite-server/src/app/guardrails.rs, where the skeleton stubs `mount(router, state)` (inside the
-  auth layers), `mount_public(router, state)` and `async fn start(state)`, all called by B8610's app.rs. `mount` builds
+  auth layers), `mount_public(router, state)` and `async fn start(state)`, all called by B10082's app.rs. `mount` builds
   one `GuardrailRouteState` and passes the router through five calls in this order: `routes::mount_admin`, then
   `submit_mount::mount`, `policy_mount::mount` and `policy_tools::mount`, each `(router, state, &route_state)`, then
   `policy_api::mount` (declare the module only, with no dependency on B9321, which fills it). `start`

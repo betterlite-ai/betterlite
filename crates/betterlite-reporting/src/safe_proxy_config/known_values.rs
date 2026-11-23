@@ -1,0 +1,37 @@
+pub(crate) const KNOWN_VALUES: &str = "a2a a2a_agent agent_365 agentops ai21 ai21_chat aim aiml aiohttp_openai akto alice amazon_nova \
+    anthropic anthropic_cache_control_hook anthropic_text apertis aporia argilla arize \
+    arize_phoenix assemblyai auto_router aws_kms aws_polly aws_secret_manager aws_sqs aws_textract \
+    azure azure-blob azure/prompt_shield azure/text_moderations azure_ai azure_key_vault \
+    azure_sentinel azure_speech azure_storage azure_text baseten bedrock bedrock_mantle bitbucket \
+    black_forest_labs block_code_execution braintrust bytez cato_networks cerebras charity_engine \
+    chatgpt chutes cisco_ai_defense clarifai clickhouse cloudflare cloudzero codestral cognition \
+    cohere cohere_chat cometapi compactifai compresr compression_interception conduct cortecs \
+    cost-based-routing crowdstrike_aidr cursor custom custom_code custom_openai cyberark darkbloom \
+    dashscope databricks datadog datadog_llm_observability datadog_metrics datarobot decision_model \
+    deepeval deepgram deepinfra deepkeep deepseek disk docker_model_runner dotprompt during_call \
+    during_mcp_call dynamic_rate_limiter dynamic_rate_limiter_v3 dynamoai edenai elevenlabs empower \
+    enkryptai fal_ai featherless_ai fireworks_ai focus friendliai galadriel galileo gcs gcs_bucket \
+    gcs_pubsub gdc gemini generic_api generic_guardrail_api gigachat github github_copilot gitlab \
+    google_kms google_secret_manager gradient_ai grayswan groq guardrails_ai hashicorp_vault \
+    headroom helicone heroku hiddenlayer hide-secrets hosted_vllm huggingface humanloop hyperbolic \
+    ibm_guardrails inception infinity javelin jina_ai lago lakera lakera_v2 lambda_ai langflow \
+    langfuse langfuse_otel langgraph langsmith langtrace lar1 lasso latency-based-routing \
+    least-busy lemonade levo libertai litellm_agent litellm_content_filter litellm_proxy literalai \
+    llamafile llm_as_a_judge lm_studio local logfire logging_only manus maritalk mavvrik \
+    mcp_end_user_permission mcp_jwt_signer mcp_security meta meta_llama microsoft_purview milvus \
+    minimax mistral mlflow model_armor modelscope mongodb moonshot morph nadir nano-gpt nebius \
+    neosantara newrelic nlp_cloud noma noma_v2 novita nscale nvidia_nim nvidia_riva oci ollama \
+    ollama_chat onyx oobabooga openai openai_like openai_moderation openmeter openrouter \
+    opentelemetry opik otel ovalix ovhcloud pagerduty pangea panw_prisma_airs parasail perplexity \
+    petals pg_vector pillar pinstripes poe pointfive post_call post_mcp_call posthog pre_call \
+    pre_mcp_call predibase presidio prism prometheus prompt_security promptguard \
+    provider-budget-routing publicai qdrant-semantic qostodian_nexus qualifire qwen_ai_platform \
+    qwencloud ragflow realtime_input_transcription recraft redis redis-semantic reducto repelloai \
+    replicate resend_email rubrik runwayml s3 s3_v2 s3_vectors sagemaker sagemaker_chat \
+    sagemaker_nova sail sambanova sap scaleway scx-ai semantic_guard sendgrid_email signoz \
+    simple-shuffle singulr smtp_email snowflake soniox stability straiker strands_decider synthetic \
+    tencent tensormesh text-completion-codestral text-completion-inception text-completion-openai \
+    together_ai tool_permission topaz transcribe triton typesafe usage-based-routing \
+    usage-based-routing-v2 v0 valkey valkey-semantic vantage vector_store_pre_call_hook \
+    vercel_ai_gateway vertex_ai vertex_ai_beta vigil_guard vllm volcengine voyage wandb watsonx \
+    watsonx_text weave_otel xai xecguard xiaomi_mimo xinference zai zerobus zscaler_ai_guard";
