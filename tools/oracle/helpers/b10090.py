@@ -113,16 +113,15 @@ def apply_histogram(histogram: Histogram, update: Update) -> None:
 
 
 def scrape_lines(text: str) -> list[CommentLine | SampleLine]:
-    lines: list[CommentLine | SampleLine] = []
-    for line in text.split("\n"):
-        if not line:
-            continue
-        if line.startswith("#"):
-            lines.append({"comment": line})
-            continue
-        series, _, value = line.rpartition(" ")
-        lines.append({"series": series, "value": value})
-    return lines
+    parts = text.split("\n")
+    return [scrape_line(part) for part in parts if part]
+
+
+def scrape_line(line: str) -> CommentLine | SampleLine:
+    if line.startswith("#"):
+        return {"comment": line}
+    series, _, value = line.rpartition(" ")
+    return {"series": series, "value": value}
 
 
 def run(input_value: Input) -> Output:

@@ -8,8 +8,8 @@ deviations:
       family, where no order can show.
     link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/registry.py#L150-L164
   - what: >-
-      A gzipped scrape's compressed bytes differ from LiteLLM's gzip.compress output: flate2 compresses at level 6
-      with no header timestamp, Python at level 9 with the current time. The gunzipped body is byte-identical.
+      A gzipped scrape's compressed bytes differ from LiteLLM's gzip.compress output: betterlite compresses at
+      level 6 with no header timestamp, Python at level 9 with the current time. The gunzipped body is byte-identical.
     why: >-
       The timestamp and the level are encoder settings the declared bytes do not expose, and the helper cases
       compare the gunzipped lines and the gzipped flag, as the task instructs.
