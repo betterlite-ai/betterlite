@@ -1,8 +1,23 @@
+use std::sync::Mutex;
+use std::time::Duration;
+
+use betterlite_logging::logging_pre_post::env::{
+    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+};
+use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::decisions::Json;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use crate::speech::binary::{AudioSpeechCall, finish_audio_speech};
 use crate::speech::dispatch::SpeechGlobals;
+use crate::speech::logging::{PrePostLogger, SpeechLogger, SpeechPreCall};
 
 use super::support::{self, API_BASE, Inputs, Recorder, SECRET, json};
 
@@ -84,4 +99,83 @@ fn credentialed(key: &'static str, api_base: &'static str) -> AudioSpeechCall<'s
     call.api_key = Some(SecretString::from(key));
     call.api_base = Some(String::from(api_base));
     call
+}
+
+#[derive(Default)]
+struct Sink(Mutex<Vec<LogRecord>>);
+
+impl LogSink for Sink {
+    fn emit(&self, record: LogRecord) {
+        self.0
+            .lock()
+            .expect("the sink lock is not poisoned")
+            .push(record);
+    }
+}
+
+// PrePostLogger hands the speech pre-call to B249's pre_call, which fills the call details from it
+#[test]
+fn speech_pre_post_logger_records_the_pre_call() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+    let init: LoggingInit = serde_json::from_str(
+        r#"{"model":"tts-1","call_type":"speech","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
+    )
+    .expect("the logging fixture is valid");
+    let mut state = LoggingState::new(
+        init,
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        &redactor,
+        || String::from("generated"),
+        Duration::default,
+    )
+    .expect("the logging state builds");
+    let sink = Sink::default();
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &redactor,
+        log: &sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses"),
+    };
+    PrePostLogger {
+        state: &mut state,
+        env: &env,
+    }
+    .pre_call(SpeechPreCall {
+        input: "hello",
+        api_base: API_BASE,
+        data: IndexMap::from([(String::from("voice"), json(r#""alloy""#))]),
+    })
+    .expect("pre_call records");
+    let details = &state.model_call_details;
+    assert_eq!(
+        details.get("log_event_type"),
+        Some(&json(r#""pre_api_call""#))
+    );
+    assert_eq!(details.get("input"), Some(&json(r#""hello""#)));
+    let Some(Json::Object(args)) = details.get("additional_args") else {
+        panic!("pre_call records additional_args");
+    };
+    assert_eq!(
+        args.get("api_base"),
+        Some(&json(r#""https://example.openai.azure.com""#))
+    );
+    assert_eq!(
+        args.get("complete_input_dict"),
+        Some(&json(r#"{"voice":"alloy"}"#))
+    );
+    assert_eq!(
+        state.litellm_params.get("api_base"),
+        Some(&json(r#""https://example.openai.azure.com""#))
+    );
 }
