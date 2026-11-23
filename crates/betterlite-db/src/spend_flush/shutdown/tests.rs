@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
-use deadpool_postgres::{Manager, Pool};
+use deadpool_postgres::{Client, Manager, Pool};
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::Mutex as WriteLock;
@@ -496,9 +496,68 @@ async fn database() -> (PostgresFixture, PostgresStore) {
 }
 
 // A real statement barrier: the chunk's upsert waits on the table lock, the shutdown cancels before the commit mark, and the row travels back to the queue with nothing written.
-#[tokio::test]
-async fn a_cancelled_flush_keeps_a_blocked_daily_statement_off_the_database() {
-    let (fixture, store) = database().await;
+struct BlockedCommit {
+    fixture: PostgresFixture,
+    store: PostgresStore,
+    queue: Arc<DailySpendUpdateQueue>,
+    commits: TaskTracker,
+    shutdown: CancellationToken,
+    blocker: Client,
+    tasks: JoinSet<Result<(), DailyFlushError>>,
+}
+
+impl BlockedCommit {
+    async fn start() -> Self {
+        let (fixture, store) = database().await;
+        let queue = user_queue_with_one_row().await;
+        let parts = commit_parts(Arc::new(PostgresDailyChunks {
+            store: store.clone(),
+        }));
+        let commits = TaskTracker::new();
+        let shutdown = CancellationToken::new();
+        let blocker = lock_daily_table(&store).await;
+        let tasks = spawn_flush(&queue, parts, commits.clone(), shutdown.clone());
+        Self {
+            fixture,
+            store,
+            queue,
+            commits,
+            shutdown,
+            blocker,
+            tasks,
+        }
+    }
+
+    // A cancel that lands while the statement waits on the lock leaves the flush task running.
+    async fn cancel_while_blocked(&mut self) {
+        sleep(Duration::from_millis(200)).await;
+        self.shutdown.cancel();
+        yield_now().await;
+        assert!(self.tasks.try_join_next().is_none());
+        self.blocker.batch_execute("ROLLBACK").await.unwrap();
+    }
+
+    async fn committed_rows(&self) -> usize {
+        let reader = self.store.session().await.unwrap();
+        reader
+            .query("SELECT spend FROM \"LiteLLM_DailyUserSpend\"", &[])
+            .await
+            .unwrap()
+            .len()
+    }
+
+    async fn close(self) {
+        drop(self.blocker);
+        self.commits.close();
+        self.commits.wait().await;
+        if let Some(pool) = self.store.pool {
+            pool.close();
+        }
+        self.fixture.close_async().await.unwrap();
+    }
+}
+
+async fn user_queue_with_one_row() -> Arc<DailySpendUpdateQueue> {
     let queue = Arc::new(
         DailySpendUpdateQueue::new(100, 1000, 100, Arc::new(NoSpendQueueEventSink)).unwrap(),
     );
@@ -509,54 +568,41 @@ async fn a_cancelled_flush_keeps_a_blocked_daily_statement_off_the_database() {
         )]))
         .await
         .unwrap();
-    let parts = commit_parts(Arc::new(PostgresDailyChunks {
-        store: store.clone(),
-    }));
-    let commits = TaskTracker::new();
-    let shutdown = CancellationToken::new();
+    queue
+}
+
+async fn lock_daily_table(store: &PostgresStore) -> Client {
     let blocker = store.session().await.unwrap();
     blocker
         .batch_execute("BEGIN; LOCK TABLE \"LiteLLM_DailyUserSpend\" IN ACCESS EXCLUSIVE MODE")
         .await
         .unwrap();
+    blocker
+}
+
+fn spawn_flush(
+    queue: &Arc<DailySpendUpdateQueue>,
+    parts: Arc<DailyCommitParts<PostgresDailyChunks>>,
+    commits: TaskTracker,
+    shutdown: CancellationToken,
+) -> JoinSet<Result<(), DailyFlushError>> {
     let mut tasks = JoinSet::new();
-    let queued = Arc::clone(&queue);
-    let committing = Arc::clone(&parts);
-    let tracked = commits.clone();
-    let stopping = shutdown.clone();
+    let queued = Arc::clone(queue);
     tasks.spawn(async move {
-        flush_daily_spend_queue(
-            &queued,
-            DailySpendEntity::User,
-            &committing,
-            &tracked,
-            &stopping,
-        )
-        .await
+        flush_daily_spend_queue(&queued, DailySpendEntity::User, &parts, &commits, &shutdown).await
     });
-    sleep(Duration::from_millis(200)).await;
-    shutdown.cancel();
-    yield_now().await;
-    assert!(tasks.try_join_next().is_none());
+    tasks
+}
 
-    blocker.batch_execute("ROLLBACK").await.unwrap();
-    let settled = tasks.join_next().await.unwrap().unwrap();
+#[tokio::test]
+async fn a_cancelled_flush_keeps_a_blocked_daily_statement_off_the_database() {
+    let mut case = BlockedCommit::start().await;
+    case.cancel_while_blocked().await;
+
+    let settled = case.tasks.join_next().await.unwrap().unwrap();
     assert!(matches!(settled, Err(DailyFlushError::Cancelled { .. })));
-    let restored = queue.flush_aggregated_daily_rows().await.unwrap();
+    let restored = case.queue.flush_aggregated_daily_rows().await.unwrap();
     assert_eq!(restored.keys().collect::<Vec<_>>(), ["user-a"]);
-    let reader = store.session().await.unwrap();
-    let rows = reader
-        .query("SELECT spend FROM \"LiteLLM_DailyUserSpend\"", &[])
-        .await
-        .unwrap();
-    assert!(rows.is_empty());
-
-    drop(reader);
-    drop(blocker);
-    commits.close();
-    commits.wait().await;
-    if let Some(pool) = store.pool {
-        pool.close();
-    }
-    fixture.close_async().await.unwrap();
+    assert_eq!(case.committed_rows().await, 0);
+    case.close().await;
 }

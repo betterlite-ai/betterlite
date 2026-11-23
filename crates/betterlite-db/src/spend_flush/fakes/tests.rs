@@ -158,10 +158,9 @@ impl EntityTableWriter for FakeEntityWriter {
         self.events
             .push(format!("entity {} {}", table.name(), increments.len()));
         let failure = *self.failure.lock().unwrap_or_else(PoisonError::into_inner);
-        Box::pin(ready(match failure {
-            Some(kind) => Err(FakeEntityError { failure: kind }),
-            None => Ok(()),
-        }))
+        Box::pin(ready(
+            failure.map_or(Ok(()), |kind| Err(FakeEntityError { failure: kind })),
+        ))
     }
 }
 
@@ -352,10 +351,9 @@ impl WindowSpendCommit for FakeWindow {
     ) -> WindowCommitFuture<'run, FakeWindowError> {
         self.events.push(format!("window {}", transactions.len()));
         let failure = *self.failure.lock().unwrap_or_else(PoisonError::into_inner);
-        Box::pin(ready(match failure {
-            Some(kind) => Err(FakeWindowError { failure: kind }),
-            None => Ok(()),
-        }))
+        Box::pin(ready(
+            failure.map_or(Ok(()), |kind| Err(FakeWindowError { failure: kind })),
+        ))
     }
 
     fn failure(&self, error: &FakeWindowError) -> SpendFailure {
