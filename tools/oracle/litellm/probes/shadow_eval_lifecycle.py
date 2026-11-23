@@ -25,6 +25,8 @@ from typing_extensions import override
 
 from probes.protocol import MAX_MESSAGE_BYTES, Operation, ProbeError, Strict
 
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportPrivateImportUsage=false
+
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 BAD_REQUEST: Final = 400
 Role = Literal["absent", "proxy_admin", "proxy_admin_viewer", "internal_user", "customer"]
