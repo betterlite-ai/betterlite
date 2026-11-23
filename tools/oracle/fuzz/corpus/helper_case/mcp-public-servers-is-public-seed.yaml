@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-public-servers-is-public-seed
+call:
+  b10079:
+    function: is_public
+    server_id: seed-config
+    config_servers:
+      - {server_id: seed-config, name: Seed Config, transport: http}
+    db_servers:
+      - {server_id: seed-db, name: Seed Database, transport: http, available_on_public_internet: false}
+    public_mcp_servers: null
+    public_hub_strict: false
+    public_ids: [seed-db]
+env: {}
+compare: {ignore: []}

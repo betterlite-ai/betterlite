@@ -1,0 +1,36 @@
+kind: helper
+name: reservation-binding-non-object-values-absent
+call:
+  b10088:
+    function: lookup
+    metadata:
+      user_api_key_budget_reservation: null
+      user_api_key_auth: {budget_reservation: {id: from-auth}}
+calls:
+  - b10088:
+      function: lookup
+      metadata:
+        user_api_key_budget_reservation: [res-1]
+        user_api_key_auth: {budget_reservation: {id: from-auth}}
+  - b10088:
+      function: lookup
+      metadata:
+        user_api_key_budget_reservation: stamped
+        user_api_key_auth: {budget_reservation: {id: from-auth}}
+  - b10088:
+      function: lookup
+      metadata:
+        user_api_key_auth: not-an-object
+  - b10088:
+      function: lookup
+      metadata:
+        user_api_key_auth: {budget_reservation: null}
+  - b10088:
+      function: lookup
+      metadata:
+        user_api_key_auth: {budget_reservation: [res-1]}
+  - b10088:
+      function: lookup
+      metadata: {}
+env: {}
+compare: {ignore: []}

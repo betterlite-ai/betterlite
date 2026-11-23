@@ -1,0 +1,14 @@
+kind: helper
+name: reservation-binding-stamp-seed
+call:
+  b10088:
+    function: stamp
+    litellm_params: {metadata: {user_api_key_budget_reservation: {id: res-1}}, litellm_metadata: [1]}
+    callback_bound: true
+calls:
+  - b10088:
+      function: stamp
+      litellm_params: {}
+      callback_bound: false
+env: {}
+compare: {ignore: []}
