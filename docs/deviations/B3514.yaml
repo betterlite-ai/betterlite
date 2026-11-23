@@ -10,4 +10,7 @@ deviations:
       differs, and the oracle case decisions-send-invalid-provider-answer compares the class and
       ignores that pointer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L385
+  - what: A provider answer body is read up to the shared 16 MiB cap and a larger one is refused before it is decoded, where LiteLLM reads the whole body into memory.
+    why: An untrusted provider body needs a bound in a gateway, and the cap is the one the proxy and the other interactions already apply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1471-L1514
 kept_bugs: []
