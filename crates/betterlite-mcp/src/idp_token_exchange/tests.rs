@@ -396,6 +396,10 @@ async fn empty_user_id_is_no_user() {
     DenialSource::Proxy { code: "-500".to_owned() },
     "a signed code"
 )]
+#[case::proxy_unicode_digits(
+    DenialSource::Proxy { code: "٥٠٠".to_owned() },
+    "Unicode digits"
+)]
 #[tokio::test]
 async fn a_client_denial_answers_invalid_request_with_the_rejected_text(
     #[case] source: DenialSource,
