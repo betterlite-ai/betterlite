@@ -1,8 +1,8 @@
-// the keyset position the previous grouped page ended on; the stored key is a hash, so it carries the name that says so
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionCursor {
     pub last_activity: String,
     pub session_key: String,
+    // the stored key is a hash, so the name says so
     pub api_key_hash: String,
 }
 

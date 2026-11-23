@@ -90,57 +90,64 @@ where
     failure.map_or_else(|| Ok(values.to_vec()), |error| Err(error.error()))
 }
 
+impl Fake {
+    fn recorded<Item>(
+        &self,
+        kind: &str,
+        query: &SessionQuery,
+        values: &[Item],
+    ) -> Result<Vec<Item>, SessionsStoreError>
+    where
+        Item: Clone,
+    {
+        record(
+            &self.events,
+            format!("{kind} {:?} {}", query.params, query.sql),
+        );
+        outcome(self.failure, values)
+    }
+
+    fn counted(
+        &self,
+        kind: &str,
+        query: &SessionQuery,
+        count: i64,
+    ) -> Result<i64, SessionsStoreError> {
+        let event = format!("{kind} {:?} {}", query.params, query.sql);
+        record(&self.events, event);
+        self.failure.map_or(Ok(count), |error| Err(error.error()))
+    }
+}
+
 #[async_trait]
 impl SessionsStore for Fake {
     async fn session_groups(
         &self,
         query: &SessionQuery,
     ) -> Result<Vec<SessionGroupRow>, SessionsStoreError> {
-        record(
-            &self.events,
-            format!("groups {:?} {}", query.params, query.sql),
-        );
-        outcome(self.failure, &self.groups)
+        self.recorded("groups", query, &self.groups)
     }
 
     async fn session_group_count(&self, query: &SessionQuery) -> Result<i64, SessionsStoreError> {
-        record(
-            &self.events,
-            format!("group_count {:?} {}", query.params, query.sql),
-        );
-        self.failure
-            .map_or(Ok(self.group_count), |error| Err(error.error()))
+        self.counted("group_count", query, self.group_count)
     }
 
     async fn session_representatives(
         &self,
         query: &SessionQuery,
     ) -> Result<Vec<SpendLogListRow>, SessionsStoreError> {
-        record(
-            &self.events,
-            format!("representatives {:?} {}", query.params, query.sql),
-        );
-        outcome(self.failure, &self.representatives)
+        self.recorded("representatives", query, &self.representatives)
     }
 
     async fn session_rows(
         &self,
         query: &SessionQuery,
     ) -> Result<Vec<SessionSpendRow>, SessionsStoreError> {
-        record(
-            &self.events,
-            format!("rows {:?} {}", query.params, query.sql),
-        );
-        outcome(self.failure, &self.rows)
+        self.recorded("rows", query, &self.rows)
     }
 
     async fn session_row_count(&self, query: &SessionQuery) -> Result<i64, SessionsStoreError> {
-        record(
-            &self.events,
-            format!("row_count {:?} {}", query.params, query.sql),
-        );
-        self.failure
-            .map_or(Ok(self.row_count), |error| Err(error.error()))
+        self.counted("row_count", query, self.row_count)
     }
 }
 
@@ -251,17 +258,10 @@ pub(super) fn representative(
     api_key: &str,
     metadata: &str,
 ) -> SpendLogListRow {
-    serde_json::from_value(serde_json::json!({
-        "request_id": request_id,
-        "call_type": "acompletion",
-        "api_key": api_key,
-        "startTime": "2026-01-01T00:00:00",
-        "endTime": "2026-01-01T00:00:01",
-        "session_id": session_id,
-        "metadata": metadata,
-        "request_tags": "[{\"team\":\"a\"}]",
-    }))
-    .unwrap()
+    let text = format!(
+        "{{\"request_id\":\"{request_id}\",\"call_type\":\"acompletion\",\"api_key\":\"{api_key}\",\"startTime\":\"2026-01-01T00:00:00\",\"endTime\":\"2026-01-01T00:00:01\",\"session_id\":\"{session_id}\",\"metadata\":{metadata},\"request_tags\":\"[{{\\\"team\\\":\\\"a\\\"}}]\"}}"
+    );
+    serde_json::from_str(&text).unwrap()
 }
 
 pub(super) fn spend_row(
