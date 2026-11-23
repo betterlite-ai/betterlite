@@ -1,9 +1,9 @@
 task: B739
 deviations:
-  - what: A failure reading a cached default end-user budget or a cached team-member default budget escapes the lookup, so a broken cache fails the request instead of counting as a cache miss.
-    why: LiteLLM's DualCache swallows every read exception and answers None; the task requires the initial cache reads to sit outside the fetch catch and surface, so a cache outage is never hidden as "no budget configured".
+  - what: A failure reading a cached end-user row, a cached default end-user budget or a cached team-member default budget fails the lookup, where LiteLLM answers a cache miss and reads the database.
+    why: LiteLLM's DualCache swallows every read exception and answers None; the task keeps the initial cache reads outside the fetch catch and lets them surface, so a cache outage is never hidden as "no end user" or "no budget configured".
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L294-L297
-  - what: A cache write failure for the default end-user budget returns None where the fetched budget was found, and the same failure for the team-member default budget and for a fetched end-user row escapes the lookup.
-    why: LiteLLM's DualCache swallows every write exception, so the fetched budget or row is still returned; the task makes a default-budget write failure answer None and lets the team-member and end-user fetch paths see it, so a cache that cannot store the row is not served as if it had.
+  - what: A failed cache write after a database read is not treated as a successful cache write. The fetched default end-user budget answers None, the fetched team-member default budget propagates the write failure, and a fetched end-user row whose cache write fails is answered as a missing end user instead of the row LiteLLM still returns.
+    why: LiteLLM's DualCache swallows every write exception, so the fetched row or budget is returned as if it had been cached; the task makes a default-budget write failure answer None and lets the team-member write escape, so a cache that cannot store the row is not served as if it had.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L515-L518
 kept_bugs: []
