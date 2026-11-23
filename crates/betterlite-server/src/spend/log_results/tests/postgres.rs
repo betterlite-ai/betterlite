@@ -203,6 +203,12 @@ INSERT INTO "LiteLLM_SpendLogs"
 SELECT 'ten-' || lpad(i::text, 2, '0'), 'acompletion', 'k1', 0,
        '2024-02-03 00:00:00', '2024-02-03 00:00:01', 'n' || lpad(i::text, 2, '0'), 'alice', 's3'
 FROM generate_series(1, 10) AS i;
+
+INSERT INTO "LiteLLM_SpendLogs"
+(request_id, call_type, api_key, spend, "startTime", "endTime", model, "user", session_id)
+VALUES
+('long-short', 'acompletion', 'k1', 0, '2024-02-04 00:00:00', '2024-02-04 00:00:01', 'short', 'alice', 's4'),
+('long-name', 'acompletion', 'k1', 0, '2024-02-04 00:00:01', '2024-02-04 00:00:02', repeat('x', 300), 'alice', 's4');
 "#;
 
 fn find<'row>(
@@ -222,11 +228,16 @@ async fn session_aggregates_group_by_session_and_key() {
     execute(&pool, AGGREGATE_ROWS).await;
     let store = log_results_store(&pool);
     let lookup = SessionLookup {
-        session_ids: vec![String::from("s1"), String::from("s2"), String::from("s3")],
+        session_ids: vec![
+            String::from("s1"),
+            String::from("s2"),
+            String::from("s3"),
+            String::from("s4"),
+        ],
         api_keys: vec![String::from("k1"), String::from("k2")],
     };
     let aggregates = store.session_aggregates(&lookup).await.unwrap();
-    assert_eq!(aggregates.len(), 4);
+    assert_eq!(aggregates.len(), 5);
     let s1k1 = find(&aggregates, "s1", "k1");
     assert_eq!(s1k1.session_total_count, 3);
     assert_eq!(s1k1.session_total_spend, decimal("1"));
@@ -257,4 +268,9 @@ async fn session_aggregates_group_by_session_and_key() {
     let s3k1 = find(&aggregates, "s3", "k1");
     assert_eq!(s3k1.session_models.len(), 10);
     assert!(!s3k1.session_models_truncated);
+    // a name is kept to _SESSION_MODEL_NAME_MAX_LEN characters
+    let s4k1 = find(&aggregates, "s4", "k1");
+    assert_eq!(s4k1.session_models.len(), 2);
+    assert_eq!(s4k1.session_models[0], "short");
+    assert_eq!(s4k1.session_models[1], "x".repeat(256));
 }
