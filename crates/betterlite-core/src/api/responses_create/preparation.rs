@@ -1,11 +1,11 @@
 use super::call::{
     ResponsesCreateCall, input_value, named_locals, resolution_params, session_metadata, text_param,
 };
-use super::convert::{decision_json, json_value};
 use super::deps::PromptSource;
 use super::error::CreateError;
 use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_create_http::config::Headers;
+use crate::api::responses_json::{decision_json, json_value};
 use crate::api::responses_parameters::forwarded_headers::merge_forwarded_headers;
 use crate::api::responses_parameters::text_format::text_format_to_text;
 use crate::api::responses_provider_selection::ParameterMap;

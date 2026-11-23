@@ -1,7 +1,9 @@
+use betterlite_context::non_default_params::Params;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use std::collections::BTreeMap;
+
+// The three JSON enums share one shape, so a single template writes each direction of the bridge
 macro_rules! convert_json {
     ($name:ident, $source:ident, $target:ident, $source_list:ident, $target_list:ident) => {
         #[must_use]
@@ -24,12 +26,14 @@ macro_rules! convert_json {
         }
     };
 }
-convert_json!(json_value, Json, JsonValue, List, Array);
+
 convert_json!(decision_json, JsonValue, Json, Array, List);
+convert_json!(json_value, Json, JsonValue, List, Array);
+convert_json!(prompt_decision, PromptJson, Json, List, List);
 convert_json!(prompt_value, JsonValue, PromptJson, Array, List);
+convert_json!(decision_prompt, Json, PromptJson, List, List);
 convert_json!(value_from_prompt, PromptJson, JsonValue, List, Array);
-convert_json!(decision_prompt, PromptJson, Json, List, List);
-convert_json!(prompt_decision, Json, PromptJson, List, List);
+
 #[must_use]
 pub fn object_value(body: &Object) -> JsonValue {
     JsonValue::Object(
@@ -38,8 +42,9 @@ pub fn object_value(body: &Object) -> JsonValue {
             .collect(),
     )
 }
+
 #[must_use]
-pub fn object_from_params(params: &BTreeMap<String, JsonValue>) -> Object {
+pub fn object_from_params(params: &Params) -> Object {
     params
         .iter()
         .map(|(name, value)| (name.clone(), prompt_value(value)))

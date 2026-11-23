@@ -1,15 +1,11 @@
 use super::bridge::{BridgeCall, Created, StampedResponse};
-use super::convert::{
-    decision_json, decision_prompt, object_from_params, object_value, prompt_decision,
-};
 use super::deps::{CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps};
 use super::error::CreateError;
 use super::logging;
 use super::preparation::{Prepared, Resolved};
 use crate::api::response_id_traversal::metadata::AffinityMetadata;
-use crate::api::response_id_traversal::record::Record;
 use crate::api::response_id_traversal::response_id::{rewrite_typed_response, transcode};
-use crate::api::response_id_traversal::restore::restore_encrypted_item_ids;
+use crate::api::response_id_traversal::restore::restore_input_item_ids;
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
 use crate::api::responses_compact_http::service::{ClientKind, SuppliedClient};
 use crate::api::responses_create_http::config::{CreateParams, Params as HttpParams};
@@ -17,6 +13,7 @@ use crate::api::responses_create_http::service::{
     ClientSource, CreateCall, CreateDeps, CreateOutcome, LogContext, run,
 };
 use crate::api::responses_hook_policy::callbacks::DeploymentHookDispatcher;
+use crate::api::responses_json::{decision_json, object_from_params, object_value};
 use crate::api::responses_parameters::optional::optional_params_responses;
 use crate::api::responses_parameters::provider::DropPolicy;
 use crate::api::responses_provider_selection::ParameterMap;
@@ -28,7 +25,7 @@ use betterlite_models::call_helpers::drop_params::normalize_drop_params;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
-use betterlite_openai::response_input::{ResponsesInput, ResponsesItem};
+use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Object;
 use secrecy::ExposeSecret as _;
 use serde_json::Number;
@@ -135,7 +132,7 @@ fn request_parts<Provider>(
 where
     Provider: CreateCapabilities,
 {
-    let input = restored(&prep.input);
+    let input = restore_input_item_ids(&prep.input);
     let optional_params = object_from_params(filtered);
     let params = create_params(resolved, prep)?;
     let metadata = litellm_metadata(&prep.kwargs)?;
@@ -234,27 +231,6 @@ fn finish<Context>(
         CreateOutcome::Live(live) => Ok(Created::Live(live)),
         CreateOutcome::Synthetic(synthetic) => Ok(Created::Synthetic(synthetic)),
     }
-}
-fn restored(input: &ResponsesInput) -> ResponsesInput {
-    let ResponsesInput::Items(items) = input else {
-        return input.clone();
-    };
-    let mut record = Record::List(
-        items
-            .iter()
-            .map(|item| Record::from_json(decision_prompt(&item.0)))
-            .collect(),
-    );
-    restore_encrypted_item_ids(&mut record);
-    let Json::List(entries) = record.into_json() else {
-        return input.clone();
-    };
-    ResponsesInput::Items(
-        entries
-            .into_iter()
-            .map(|item| ResponsesItem(prompt_decision(&item)))
-            .collect(),
-    )
 }
 fn create_params(resolved: &Resolved, prep: &Prepared<'_>) -> Result<CreateParams, CreateError> {
     let mut map: HttpParams = transcode(&prep.kwargs)?;
