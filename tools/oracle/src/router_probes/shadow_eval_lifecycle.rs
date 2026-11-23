@@ -76,7 +76,9 @@ async fn scenario(input: &Input) -> Result<Output, OperationError> {
     };
     let cache = ProviderCache::default();
     let settings = AnthropicSettings::default();
-    let fixture = probe_snapshot(payload)?;
+    let info = Json::Object(JsonObject::new());
+    let fixture = Snapshot::build(&probe_rows(payload, &info), &payload.model_group_alias)
+        .map_err(invalid)?;
     let store = ProbeStore::build(payload)?;
     let mut probe = Probe {
         store: &store,
@@ -131,11 +133,6 @@ fn identity_of(role: Role, user_id: Option<&str>) -> Identity {
         user_id: user_id.map(str::to_owned),
         user_role: role_name(role).map(str::to_owned),
     }
-}
-
-fn probe_snapshot(payload: &Payload) -> Result<Snapshot, OperationError> {
-    let info = Json::Object(JsonObject::new());
-    Snapshot::build(&probe_rows(payload, &info), &payload.model_group_alias).map_err(invalid)
 }
 
 fn probe_rows<'payload>(input: &'payload Payload, info: &'payload Json) -> Vec<Row<'payload>> {

@@ -87,15 +87,7 @@ impl ProbeStore {
 }
 
 fn target_rows(input: &Payload) -> TargetRows {
-    TargetRows {
-        keys: key_rows(input),
-        teams: team_rows(input),
-        users: user_rows(input),
-    }
-}
-
-fn key_rows(input: &Payload) -> Vec<TargetKeyRow> {
-    input
+    let keys = input
         .rows
         .keys
         .iter()
@@ -105,11 +97,8 @@ fn key_rows(input: &Payload) -> Vec<TargetKeyRow> {
             key_name: seed.key_name.clone(),
             team_id: seed.team_id.clone(),
         })
-        .collect()
-}
-
-fn team_rows(input: &Payload) -> Vec<TargetTeamRow> {
-    input
+        .collect();
+    let teams = input
         .rows
         .teams
         .iter()
@@ -117,11 +106,8 @@ fn team_rows(input: &Payload) -> Vec<TargetTeamRow> {
             team_id: seed.team_id.clone(),
             team_alias: seed.team_alias.clone(),
         })
-        .collect()
-}
-
-fn user_rows(input: &Payload) -> Vec<TargetUserRow> {
-    input
+        .collect();
+    let users = input
         .rows
         .users
         .iter()
@@ -129,7 +115,8 @@ fn user_rows(input: &Payload) -> Vec<TargetUserRow> {
             user_id: seed.user_id.clone(),
             user_email: seed.user_email.clone(),
         })
-        .collect()
+        .collect();
+    TargetRows { keys, teams, users }
 }
 
 fn leg_rows(input: &Payload) -> Result<Vec<LegRow>, OperationError> {
