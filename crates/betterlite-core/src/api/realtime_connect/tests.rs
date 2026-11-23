@@ -301,7 +301,7 @@ async fn named_api_key_wins() {
     .await;
 }
 
-pub(super) async fn assert_api_key(
+async fn assert_api_key(
     dispatch: &Recorder,
     settings: &RealtimeConnectionSettings,
     model: &str,
