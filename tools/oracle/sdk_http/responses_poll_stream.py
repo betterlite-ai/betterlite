@@ -1,9 +1,8 @@
 import asyncio
-import contextlib
 import json
-from collections.abc import Iterator
 from datetime import UTC, datetime
 from functools import partial
+from types import SimpleNamespace
 
 from fastapi import Request, Response
 from litellm.caching.redis_cache import RedisCache
@@ -13,7 +12,7 @@ from litellm.proxy.auth.user_api_key_auth import UserAPIKeyAuth
 from litellm.proxy.proxy_server import (  # pyright: ignore[reportAny, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10082-L10096
     ProxyConfig,
     proxy_logging_obj,
-    select_data_generator,
+    select_data_generator,  # pyright: ignore[reportAny, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10082-L10096
 )
 from litellm.proxy.response_polling import background_streaming
 from litellm.proxy.response_polling.background_streaming import background_streaming_task
@@ -28,9 +27,6 @@ from typing_extensions import override
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 JSON_OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 TEXT: TypeAdapter[str] = TypeAdapter(str)
-CALL_ID = "b936-call"
-STATUS_CANCELLED = "cancelled"
-LITELLM_VERSION = "1.105.1"
 ScopeValue = str | int | bytes | list[tuple[bytes, bytes]] | tuple[str, int] | None
 
 
@@ -52,8 +48,7 @@ class ResponsesPollStreamRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         writes = run_call(self.responses_poll_stream, api_base)
-        output: JsonValue = {"responses_poll_stream": {"value": {"writes": writes}}}
-        return json.dumps(output)
+        return json.dumps({"responses_poll_stream": {"value": {"writes": writes}}})
 
 
 # the source's only clock is get_event_loop().time(), so the case scripts its readings
@@ -72,11 +67,8 @@ class ScriptedClock:
 
 
 # the module the source imports as asyncio: Event never receives, get_event_loop reads the clock
-class ScriptedAsyncio:
-    Event = asyncio.Event
-
-    def __init__(self, readings: list[float]) -> None:
-        self.get_event_loop = ScriptedClock(readings)
+def scripted_asyncio(readings: list[float]) -> SimpleNamespace:
+    return SimpleNamespace(Event=asyncio.Event, get_event_loop=ScriptedClock(readings))
 
 
 # RedisCache.__init__ builds a real client, so skip it and answer every cache call from the script
@@ -88,7 +80,6 @@ class CaptureCache(RedisCache):
         cancel_after_write: int | None,
     ) -> None:
         object.__init__(self)
-        self.key = key
         self.entries: dict[str, str] = {key: json.dumps(seed)}
         self.writes: list[JsonValue] = []
         self.cancel_after_write = cancel_after_write
@@ -101,7 +92,7 @@ class CaptureCache(RedisCache):
         if self.cancel_after_write == len(self.writes):
             # the cancel route writes the same key from outside the worker
             state = JSON_OBJECT.validate_json(self.entries[key])
-            state["status"] = STATUS_CANCELLED
+            state["status"] = "cancelled"
             self.entries[key] = json.dumps(state)
 
     @override
@@ -139,24 +130,14 @@ def provider_router(call: ResponsesPollStreamCall, api_base: str) -> Router:
 
 # the request body the proxy already read, plus the logging object its pre-call logic built
 def prepared_request(call: ResponsesPollStreamCall) -> dict[str, JsonValue | Logging]:
-    request_data: dict[str, JsonValue] = {**call.data, "litellm_call_id": CALL_ID}
+    request_data: dict[str, JsonValue] = {**call.data, "litellm_call_id": "b936-call"}
     logging_obj = function_setup(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L981-L988
         original_function="aresponses",
         rules_obj=Rules(),
         start_time=datetime.now(UTC),
         **request_data,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L981-L988
     )[0]
-    data: dict[str, JsonValue | Logging] = {**request_data, "litellm_logging_obj": logging_obj}
-    return data
-
-
-@contextlib.contextmanager
-def scripted_clock(readings: list[float]) -> Iterator[None]:
-    object.__setattr__(background_streaming, "asyncio", ScriptedAsyncio(readings))
-    try:
-        yield
-    finally:
-        object.__setattr__(background_streaming, "asyncio", asyncio)
+    return {**request_data, "litellm_logging_obj": logging_obj}
 
 
 async def run_worker(call: ResponsesPollStreamCall, api_base: str) -> list[JsonValue]:
@@ -175,12 +156,16 @@ async def run_worker(call: ResponsesPollStreamCall, api_base: str) -> list[JsonV
         proxy_config=ProxyConfig(), proxy_logging_obj=proxy_logging_obj,
         select_data_generator=partial(select_data_generator, responses_stream_errors=True),  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownArgumentType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10082-L10096
         user_model=None, user_temperature=None, user_request_timeout=None, user_max_tokens=None,
-        user_api_base=None, version=LITELLM_VERSION,
+        user_api_base=None, version="1.105.1",
     )
     return cache.writes
 
 
 def run_call(call: ResponsesPollStreamCall, api_base: str) -> list[JsonValue]:
     readings = [millis / 1000.0 for millis in call.clock_millis]
-    with scripted_clock(readings):
+    # the source reads the loop's clock; the case restores the real module after the worker finishes
+    object.__setattr__(background_streaming, "asyncio", scripted_asyncio(readings))
+    try:
         return asyncio.run(run_worker(call, api_base))
+    finally:
+        object.__setattr__(background_streaming, "asyncio", asyncio)

@@ -1,7 +1,7 @@
 use std::future::pending;
 
 use async_trait::async_trait;
-use betterlite_core::api::responses_poll_stream::ports::{ClientInbound, ClientMessage, PollScope};
+use betterlite_core::api::responses_poll_stream::ports::{ClientInbound, PollScope};
 use betterlite_models::decisions::Json;
 
 use super::Call;
@@ -12,9 +12,8 @@ pub(super) struct Paused;
 
 #[async_trait]
 impl ClientInbound for Paused {
-    async fn receive(&mut self) -> ClientMessage {
+    async fn receive(&mut self) {
         pending::<()>().await;
-        ClientMessage::Disconnect
     }
 }
 

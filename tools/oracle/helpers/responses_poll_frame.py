@@ -12,22 +12,16 @@ class Input(TypedDict):
 
 def frame_result(frame: str) -> JsonValue:
     payload = _sse_frame_data(frame)
-    result: JsonValue = None
     if payload is None:
-        result = {"kind": "no_data", "event": None}
-    elif payload == "[DONE]":
-        result = {"kind": "done", "event": None}
-    else:
-        try:
-            event = JSON.validate_json(payload)
-        except ValidationError:
-            result = {"kind": "malformed", "event": None}
-        else:
-            result = {"kind": "event", "event": event}
-    return result
+        return {"kind": "no_data", "event": None}
+    if payload == "[DONE]":
+        return {"kind": "done", "event": None}
+    try:
+        event = JSON.validate_json(payload)
+    except ValidationError:
+        return {"kind": "malformed", "event": None}
+    return {"kind": "event", "event": event}
 
 
 def run(input_value: Input) -> JsonValue:
-    results: list[JsonValue] = [frame_result(frame) for frame in input_value["frames"]]
-    output: JsonValue = {"results": results}
-    return output
+    return {"results": [frame_result(frame) for frame in input_value["frames"]]}

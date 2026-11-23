@@ -20,10 +20,7 @@ impl ScriptedClock {
 impl PollClock for ScriptedClock {
     fn now_millis(&self) -> u64 {
         let index = self.read.fetch_add(1, Ordering::Relaxed);
-        self.readings
-            .get(index)
-            .or_else(|| self.readings.last())
-            .copied()
-            .unwrap_or_default()
+        let position = index.min(self.readings.len().saturating_sub(1));
+        self.readings.get(position).copied().unwrap_or_default()
     }
 }

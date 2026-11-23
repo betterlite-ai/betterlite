@@ -50,7 +50,6 @@ pub(super) async fn execute(
         processor: &processor,
         clock: &clock,
         redactor: &redactor,
-        limits: ApiLimits::default(),
     }
     .run()
     .await

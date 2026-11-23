@@ -1,6 +1,5 @@
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::responses_poll_stream::frame::{PollFrame, decode_poll_stream_frame};
-use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
@@ -29,11 +28,10 @@ impl Helper for Op {
 fn frame_result(frame: &str) -> Result<Value, Box<HelperError>> {
     let decoded =
         decode_poll_stream_frame(frame.as_bytes(), ApiLimits::default()).or_value_error()?;
-    let (kind, event) = match decoded {
-        PollFrame::NoData => ("no_data", Json::Null),
-        PollFrame::Done => ("done", Json::Null),
-        PollFrame::Event(event) => ("event", event),
-        PollFrame::Malformed => ("malformed", Json::Null),
-    };
-    Ok(json!({ "kind": kind, "event": event }))
+    Ok(match decoded {
+        PollFrame::NoData => json!({ "kind": "no_data", "event": null }),
+        PollFrame::Done => json!({ "kind": "done", "event": null }),
+        PollFrame::Event(event) => json!({ "kind": "event", "event": event }),
+        PollFrame::Malformed => json!({ "kind": "malformed", "event": null }),
+    })
 }
