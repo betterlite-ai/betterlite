@@ -17,4 +17,4 @@ compare:
   upstream_headers: []
   ignore:
     - pointer: ""
-      why: LiteLLM answers a missing key with its unhandled-exception envelope, while betterlite answers the pinned internal-server-error text
+      why: LiteLLM's user_api_key_auth dependency answers a missing key with its 401 auth_error envelope, while betterlite's shared stage answers the pinned internal-server-error text; the status difference is recorded in docs/deviations/B992.yaml
