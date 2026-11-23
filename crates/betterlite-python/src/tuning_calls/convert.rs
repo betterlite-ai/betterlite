@@ -36,10 +36,11 @@ pub(crate) struct CancelCall {
 }
 
 // The three call shapes a native method decodes, so one runner serves them all.
+// The calls are boxed so no variant is much larger than another.
 pub(crate) enum NativeCall {
-    Create(CreateCall),
-    Read(ReadCall),
-    Cancel(CancelCall),
+    Create(Box<CreateCall>),
+    Read(Box<ReadCall>),
+    Cancel(Box<CancelCall>),
 }
 
 // The module settings litellm exposes, read by the same config section the file settings use.

@@ -71,28 +71,26 @@ impl TuningCore {
     // Every native call crosses here: one dispatch, then the operation the call names.
     pub(crate) async fn execute(&self, call: NativeCall) -> Result<String, Raised> {
         match call {
-            NativeCall::Create(create) => self.create(create).await,
+            NativeCall::Create(create) => self.create(*create).await,
             NativeCall::Read(read) => {
+                let ReadCall { input, settings } = *read;
                 let service = FineTuningRead {
                     dispatch: self.dispatch.clone(),
-                    settings: self.settings_of(read.settings)?,
+                    settings: self.settings_of(settings)?,
                 };
-                let outcome = service
-                    .run(&read.input)
-                    .await
-                    .map_err(TuningFailure::Read)?;
+                let outcome = service.run(&input).await.map_err(TuningFailure::Read)?;
                 read_text(outcome)
             }
             NativeCall::Cancel(cancel) => {
-                let settings = self.settings_of(cancel.settings)?;
+                let CancelCall {
+                    call: request,
+                    settings,
+                } = *cancel;
                 let service = FineTuningCancel {
                     dispatch: self.dispatch.clone(),
-                    settings,
+                    settings: self.settings_of(settings)?,
                 };
-                let job = service
-                    .run(&cancel.call)
-                    .await
-                    .map_err(TuningFailure::Cancel)?;
+                let job = service.run(&request).await.map_err(TuningFailure::Cancel)?;
                 serde_json::to_string(&job)
                     .map_err(|source| wire_failure(WireError::Encode { source }))
             }
@@ -151,41 +149,41 @@ impl NativeTuningSession {
 
     fn create(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: CreateCall = decode(raw)?;
-        sync_answer(py, &self.core, NativeCall::Create(call))
+        sync_answer(py, &self.core, NativeCall::Create(Box::new(call)))
     }
 
     fn acreate(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let call: CreateCall = decode(raw)?;
-        async_answer(py, &self.core, NativeCall::Create(call))
+        async_answer(py, &self.core, NativeCall::Create(Box::new(call)))
     }
 
     fn retrieve(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: ReadCall = decode(raw)?;
-        sync_answer(py, &self.core, NativeCall::Read(call))
+        sync_answer(py, &self.core, NativeCall::Read(Box::new(call)))
     }
 
     fn aretrieve(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let call: ReadCall = decode(raw)?;
-        async_answer(py, &self.core, NativeCall::Read(call))
+        async_answer(py, &self.core, NativeCall::Read(Box::new(call)))
     }
 
     fn list(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: ReadCall = decode(raw)?;
-        sync_answer(py, &self.core, NativeCall::Read(call))
+        sync_answer(py, &self.core, NativeCall::Read(Box::new(call)))
     }
 
     fn alist(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let call: ReadCall = decode(raw)?;
-        async_answer(py, &self.core, NativeCall::Read(call))
+        async_answer(py, &self.core, NativeCall::Read(Box::new(call)))
     }
 
     fn cancel(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<String> {
         let call: CancelCall = decode(raw)?;
-        sync_answer(py, &self.core, NativeCall::Cancel(call))
+        sync_answer(py, &self.core, NativeCall::Cancel(Box::new(call)))
     }
 
     fn acancel(&self, py: Python<'_>, raw: &str, _blobs: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let call: CancelCall = decode(raw)?;
-        async_answer(py, &self.core, NativeCall::Cancel(call))
+        async_answer(py, &self.core, NativeCall::Cancel(Box::new(call)))
     }
 }
