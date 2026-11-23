@@ -2,7 +2,7 @@ mod access;
 mod handlers;
 pub mod prometheus;
 pub mod query;
-mod responses;
+pub(crate) mod responses;
 pub mod rows;
 pub mod state;
 pub mod store;

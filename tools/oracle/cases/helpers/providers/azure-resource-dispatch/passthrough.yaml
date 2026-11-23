@@ -1,0 +1,29 @@
+kind: helper
+name: azure-resource-dispatch-passthrough
+call:
+  azure_resource_dispatch:
+    case: passthrough
+    streaming_steps:
+      - endpoint: "/chat/completions"
+        request_data:
+          stream: true
+      - endpoint: "/chat/completions"
+        request_data:
+          stream: false
+      - endpoint: "/embeddings"
+        request_data: {}
+    url_steps:
+      - model: "gpt-4.1-mini"
+        endpoint: "/chat/completions"
+        litellm_params: {}
+        request_query_params: null
+        api_base: "https://caller.test"
+        env_base: null
+      - model: "gpt-4.1-mini"
+        endpoint: "/chat/completions"
+        litellm_params: {}
+        request_query_params: null
+        api_base: null
+        env_base: "https://res.test"
+env: {}
+compare: {ignore: []}

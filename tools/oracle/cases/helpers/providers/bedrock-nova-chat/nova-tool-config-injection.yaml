@@ -1,0 +1,53 @@
+kind: helper
+name: nova-tool-config-injection
+call:
+  bedrock_nova_chat:
+    function: tool_config_injection
+    model: amazon.nova-pro-v1:0
+    messages:
+      - {role: system, content: be brief}
+      - {role: user, content: hi}
+    model_cost:
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: true}
+    optional_params:
+      tools:
+        - type: function
+          function:
+            name: lookup
+            description: finds things
+            parameters: {type: object, properties: {}}
+      cache_control_injection_points:
+        - {location: tool_config, control: {ttl: 1h}}
+        - {location: system}
+    litellm_params: {}
+calls:
+  - bedrock_nova_chat:
+      function: tool_config_injection
+      model: amazon.nova-pro-v1:0
+      messages:
+        - {role: user, content: hi}
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: true}
+      optional_params:
+        tools:
+          - type: function
+            function:
+              name: lookup
+              description: finds things
+              parameters: {type: object, properties: {}}
+        cache_control_injection_points:
+          - {location: tool_config}
+      litellm_params: {}
+  - bedrock_nova_chat:
+      function: tool_config_injection
+      model: amazon.nova-pro-v1:0
+      messages:
+        - {role: user, content: hi}
+      model_cost:
+        amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_prompt_caching: true, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: true}
+      optional_params:
+        cache_control_injection_points:
+          - {location: system}
+      litellm_params: {}
+env: {}
+compare: {ignore: []}

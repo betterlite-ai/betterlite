@@ -265,7 +265,7 @@ fn upload_resolves_the_timeout(#[case] timeout: Option<f64>, #[case] expected: f
 }
 
 #[test]
-fn upload_without_a_container_config_is_an_api_connection_failure() {
+fn upload_without_a_container_config_is_a_bad_request() {
     let mut fixture = Fixture::new();
     fixture.provider = Some("bogus".to_owned());
     let request = fixture.request();
@@ -274,11 +274,16 @@ fn upload_without_a_container_config_is_an_api_connection_failure() {
     let error = upload_container_file(&executor, fixture.deps(), &request)
         .expect_err("bogus has no container config");
 
-    let ErrorClass::ApiConnection(context) = &error.class else {
-        panic!("expected an api connection, got {:?}", error.class);
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
     };
-    assert_eq!(context.provider.as_deref(), Some("bogus"));
-    assert_eq!(context.model.as_deref(), Some(""));
+    assert_eq!(details.status.0, 400);
+    assert_eq!(
+        details.message,
+        "Container provider config not found for provider: bogus"
+    );
+    assert_eq!(details.provider.as_deref(), Some("bogus"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(executor.call_count(), 0);
 }
 
@@ -292,10 +297,16 @@ fn upload_for_a_known_provider_without_a_container_config_fails_the_same_way() {
     let error = upload_container_file(&executor, fixture.deps(), &request)
         .expect_err("anthropic has no container config");
 
-    let ErrorClass::ApiConnection(context) = &error.class else {
-        panic!("expected an api connection, got {:?}", error.class);
+    let ErrorClass::BadRequest(details) = &error.class else {
+        panic!("expected a bad request, got {:?}", error.class);
     };
-    assert_eq!(context.provider.as_deref(), Some("anthropic"));
+    assert_eq!(details.status.0, 400);
+    assert_eq!(
+        details.message,
+        "Container provider config not found for provider: anthropic"
+    );
+    assert_eq!(details.provider.as_deref(), Some("anthropic"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(executor.call_count(), 0);
 }
 

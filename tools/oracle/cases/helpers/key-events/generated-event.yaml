@@ -1,0 +1,26 @@
+kind: helper
+name: key-events-generated
+call:
+  key_events:
+    event: generated
+    data: {send_invite_email: true, key_alias: alias-a, team_id: team-a}
+    response: {key: sk-new-key-value, token_id: "", key_alias: alias-a, spend: 0.5, user_id: user-a, team_id: team-a}
+    row: null
+    rows: []
+    caller: {user_id: user-a, api_key: sk-caller-api-key, token: null, metadata: {}, team_metadata: null}
+    changed_by: null
+    admin_name: proxy-admin
+    audit: true
+    now: "2026-01-02T03:04:05Z"
+    id: "00000000-0000-4000-8000-000000000784"
+    settings: {store_virtual_keys: true, prefix_for_stored_virtual_keys: litellm, description: stored by betterlite, tags: {env: prod}}
+    client: true
+    runtime: ready
+    teams:
+      team-a: {secret_manager_settings: {region: us-east-1}}
+    secrets: {}
+    failing: []
+    alerting: [email]
+calls: []
+env: {}
+compare: {ignore: []}

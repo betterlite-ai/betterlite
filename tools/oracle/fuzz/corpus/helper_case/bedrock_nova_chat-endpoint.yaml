@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock_nova_chat-endpoint
+call:
+  bedrock_nova_chat:
+    function: endpoint
+    api_base: null
+    api_key: null
+    global_api_key: global-key
+    litellm_api_key: null
+    environment: {}
+env: {}
+compare: {ignore: []}

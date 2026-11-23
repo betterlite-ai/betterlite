@@ -1,0 +1,32 @@
+kind: probe
+name: shadow-eval-validation-parser-byte-bound
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_validation:
+        steps:
+          - parse:
+              text: '{"api_key_ids":["key-1"],"router_names":["shadow-router"],"shadow_percentage":50}'
+              pad_to: 1048577
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/shadow_eval_validation/steps/0/result
+      reference:
+        outcome: accepted
+        request:
+          api_key_ids: [key-1]
+          team_ids: []
+          user_ids: []
+          models: []
+          router_names: [shadow-router]
+          direction: forward
+          baseline_model: null
+          shadow_percentage: "50.00"
+          judge_model: anthropic/claude-sonnet-5
+          duration_days: 7
+          max_budget: "10.000000000000000"
+      rust: {outcome: over_limit, bytes: 1048577, limit: 1048576}
+      why: betterlite refuses a request past 1048576 bytes before decoding it, a bound LiteLLM's request model has no equivalent for
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L329-L513

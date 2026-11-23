@@ -1,0 +1,30 @@
+kind: helper
+name: shadow-result-aggregation-latest-error
+call:
+  b381:
+    group_id: job-3
+    legs:
+      - {id: leg-a, group_id: job-3, target_type: key, target_id: k1, router_name: router-a, direction: forward, judge_model: judge, shadow_percentage: 100.0, max_turns: 10, created_at: "2026-11-19T00:00:00Z", ends_at: "2026-11-26T00:00:00Z", stopped_at: null, stopped_by: null}
+      - {id: leg-b, group_id: job-3, target_type: team, target_id: t1, router_name: router-a, direction: reverse, judge_model: judge, shadow_percentage: 100.0, max_turns: 10, created_at: "2026-11-19T00:00:00Z", ends_at: "2026-11-26T00:00:00Z", stopped_at: null, stopped_by: null}
+    counts:
+      - {job_id: leg-a, attempt_count: 1, spend: 0.5}
+      - {job_id: leg-b, attempt_count: 1, spend: 0.5}
+    totals: {judged_count: 2, error_count: 2, judge_spend: 1.0}
+    errors:
+      - {job_id: leg-a, error: old failure, created_at: "2026-11-19T00:00:01Z"}
+      - {job_id: leg-b, error: newest failure, created_at: "2026-11-19T00:00:03Z"}
+    by_tier:
+      - {grp: simple, turn_count: 2, real_wins: 2, shadow_wins: 0, ties: 0, avg_confidence: 1.0, real_spend: 0.5, shadow_spend: 0.5, cache_hit_turns: 0}
+    by_model:
+      - {grp: gpt-5.2, turn_count: 2, real_wins: 2, shadow_wins: 0, ties: 0, avg_confidence: 1.0, real_spend: 0.5, shadow_spend: 0.5, cache_hit_turns: 0}
+    by_leg:
+      - {grp: leg-a, turn_count: 1, real_wins: 1, shadow_wins: 0, ties: 0, avg_confidence: 1.0, real_spend: 0.25, shadow_spend: 0.25, cache_hit_turns: 0}
+      - {grp: leg-b, turn_count: 1, real_wins: 1, shadow_wins: 0, ties: 0, avg_confidence: 1.0, real_spend: 0.25, shadow_spend: 0.25, cache_hit_turns: 0}
+    by_router:
+      - {grp: router-a, turn_count: 2, real_wins: 2, shadow_wins: 0, ties: 0, avg_confidence: 1.0, real_spend: 0.5, shadow_spend: 0.5, cache_hit_turns: 0}
+    funnel: {legs_with_rows: 2, not_sampled: 0, unjudgeable: 0, shed: 0, withheld: 0}
+    keys: []
+    teams: []
+    users: []
+env: {}
+compare: {ignore: []}

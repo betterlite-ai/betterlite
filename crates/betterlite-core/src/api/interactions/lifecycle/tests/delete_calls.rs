@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use betterlite_error::error::ErrorClass;
-use betterlite_http::interactions::base::Logging;
+use betterlite_http::interactions::base::{ClientError, Logging};
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
@@ -11,9 +11,9 @@ use indexmap::IndexMap;
 use serde_json::Number;
 
 use crate::api::interactions::lifecycle::delete;
-use crate::api::interactions::lifecycle::error::InteractionLifecycleError;
+use crate::api::interactions::lifecycle::error::{InteractionLifecycleError, failure};
 
-use super::support::{Call, base, deps, fixture, redactor, state, text};
+use super::support::{Call, FixtureError, base, deps, fixture, redactor, state, text};
 
 #[test]
 fn delete_reaches_the_provider_config_and_answers_with_its_result() {
@@ -180,7 +180,7 @@ fn delete_resolves_the_provider(#[case] provider: Option<&str>, #[case] expected
 }
 
 #[test]
-fn delete_rejects_a_provider_without_an_interactions_api() {
+fn delete_rejects_a_provider_without_an_interactions_api_as_a_bad_request() {
     let config = fixture();
     let call = Call::new("int-1").provider("openai");
     let mut http = Logging::default();
@@ -196,9 +196,37 @@ fn delete_rejects_a_provider_without_an_interactions_api() {
         failed.error.to_string(),
         "Interactions API not supported for: openai"
     );
-    assert!(matches!(failed.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failed.class else {
+        panic!("expected a bad request, got {:?}", failed.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(
+        details.message,
+        "Interactions API not supported for: openai"
+    );
     assert!(logging.optional_params.is_empty());
     assert!(logging.model_call_details.get("interaction_id").is_none());
+}
+
+#[test]
+fn delete_maps_a_client_unknown_provider_to_a_bad_request() {
+    let fault: InteractionLifecycleError<FixtureError> =
+        InteractionLifecycleError::Client(Box::new(ClientError::UnknownProvider {
+            provider: "nope".to_owned(),
+        }));
+    let failed = failure(fault, "nope", &redactor());
+    let ErrorClass::BadRequest(details) = &failed.class else {
+        panic!("expected a bad request, got {:?}", failed.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("nope"));
+    assert_eq!(
+        details.message,
+        "\"nope\" is not a provider betterlite knows"
+    );
 }
 
 #[test]

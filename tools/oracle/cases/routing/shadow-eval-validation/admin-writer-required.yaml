@@ -1,0 +1,15 @@
+kind: probe
+name: shadow-eval-validation-admin-writer-required
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_validation:
+        steps:
+          - access: absent
+          - access: proxy_admin_viewer
+          - access: proxy_admin
+          - access: internal_user
+          - access: customer
+compare:
+  ignore: []

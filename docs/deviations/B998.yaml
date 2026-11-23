@@ -1,0 +1,21 @@
+task: B998
+deviations:
+  - what: >-
+      A call-level azure_ad_token overrides AZURE_AD_TOKEN and is removed from the
+      image options, so it only ever becomes the request's bearer credential; in
+      LiteLLM the option lands in optional_params.extra_body before the pop reads it,
+      so the provider body carries the token while auth falls back to AZURE_AD_TOKEN.
+    why: >-
+      The task's DoD requires the call token to win over the environment and to be
+      popped from the options; sending a credential inside a provider body is a leak
+      no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L314-L318
+kept_bugs:
+  - what: >-
+      A provider that matches no branch returns the empty ImageResponse that was
+      built before dispatch, so the caller sees a 200 with no data instead of an
+      error about the unmapped provider.
+    why: >-
+      The task's DoD asks for the same fallthrough, and a setup that probes providers
+      by calling them would otherwise start receiving errors where LiteLLM answered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L552

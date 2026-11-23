@@ -1,0 +1,12 @@
+task: B784
+deviations:
+  - what: Key-event audit payloads are masked with betterlite's full default sensitive patterns, so a token or token_id in a before_value or updated_values is masked, where LiteLLM masks only key-named fields.
+    why: The records go through B2330's audit record constructor, the one stored-audit-row masker; B2330's deviation records the stronger masking, and the key-event equivalent pairs are compared in the oracle cases with empty token values so the stored rows still match field by field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3837
+  - what: An update event with audit enabled whose request names no key fails with betterlite's typed missing-key error; LiteLLM raises AttributeError from _hash_token_if_needed(None) while building the record.
+    why: Both fail the hook after the rename step, and a typed error names the missing field instead of a Python attribute failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L143
+  - what: The rotated-key email is attempted and never delivered; LiteLLM sends it through the enterprise email loggers that the oracle runs without, and the open-source v0 alerting path has no rotated-key email.
+    why: B898 owns delivery and records the same MIT fallback; the hook still runs the step in LiteLLM's order, so a failure there warns and the audit follows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L604-L611
+kept_bugs: []
