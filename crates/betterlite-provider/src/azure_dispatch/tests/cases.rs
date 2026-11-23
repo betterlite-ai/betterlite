@@ -152,11 +152,7 @@ fn deployment_route_base() {
 
 // Embeddings keep their own endpoint, key rank and SDK defaults: no chat token pop, no config merge.
 pub(super) fn embedding_dispatch() {
-    let mut composition = support::composition(&[
-        ("AZURE_API_KEY", "env-azure-key"),
-        ("AZURE_OPENAI_API_KEY", "env-openai-key"),
-    ]);
-    composition.chat_defaults = support::azure_defaults(r#"{"temperature":1}"#);
+    let composition = embedding_composition();
     let credentials = Credentials {
         api_base: Some(String::from(AZURE_BASE)),
         api_version: Some(String::from("2024-10-21")),
@@ -177,6 +173,16 @@ pub(super) fn embedding_dispatch() {
     assert_eq!(sent.len(), 1);
     embedding_request_shape(&sent[0]);
     embedding_reply(&result);
+}
+
+// the embedding case ranks the Azure key from the environment and names a chat default it must not merge
+fn embedding_composition() -> Composition {
+    let mut composition = support::composition(&[
+        ("AZURE_API_KEY", "env-azure-key"),
+        ("AZURE_OPENAI_API_KEY", "env-openai-key"),
+    ]);
+    composition.chat_defaults = support::azure_defaults(r#"{"temperature":1}"#);
+    composition
 }
 
 fn embedding_request_shape(request: &RecordedRequest) {

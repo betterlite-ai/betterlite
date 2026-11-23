@@ -41,21 +41,6 @@ fn auth_headers(resolved: &Resolved, version: Option<&str>) -> BTreeMap<String, 
     headers.extend(chosen);
     headers
 }
-// main.py merges kwargs.headers with kwargs.extra_headers, extra_headers winning, and sends the map only when non-empty
-fn chat_extra(
-    resolved: &Resolved,
-    optional: &mut Object,
-) -> Result<BTreeMap<String, String>, AzureProviderError> {
-    let mut merged = resolved.headers.clone().unwrap_or_default();
-    merged.extend(resolved.extra_headers.clone().unwrap_or_default());
-    let sent = (!merged.is_empty())
-        .then_some(merged)
-        .or_else(|| resolved.globals_headers.clone());
-    if let Some(headers) = &sent {
-        request::inject_headers(optional, &SecretHeaders(headers.clone()));
-    }
-    take_extra(optional)
-}
 fn url_for(
     api_base: Option<&str>,
     api_version: Option<&str>,
@@ -110,7 +95,16 @@ pub(crate) fn chat(
     mut optional: Object,
     openai_system_messages_first: bool,
 ) -> Result<Wire, AzureProviderError> {
-    let extra = chat_extra(resolved, &mut optional)?;
+    // main.py merges kwargs.headers with kwargs.extra_headers, extra_headers winning, and sends the map only when non-empty
+    let mut merged = resolved.headers.clone().unwrap_or_default();
+    merged.extend(resolved.extra_headers.clone().unwrap_or_default());
+    let sent = (!merged.is_empty())
+        .then_some(merged)
+        .or_else(|| resolved.globals_headers.clone());
+    if let Some(headers) = &sent {
+        request::inject_headers(&mut optional, &SecretHeaders(headers.clone()));
+    }
+    let extra = take_extra(&mut optional)?;
     retries(&mut optional, resolved.max_retries.as_ref())?;
     let json_mode = matches!(optional.shift_remove(JSON_MODE_KEY), Some(Json::Bool(true)));
     let base_model = call.credentials.base_model.as_deref();
