@@ -17,12 +17,15 @@ pub(super) fn apply_request_times(
     clock: KeyClock<'_>,
 ) -> Result<(), KeyPatchError> {
     match values.remove("duration") {
-        Some(JsonData::String(text)) if text.is_empty() => {}
-        Some(JsonData::String(text)) if text != "-1" => {
-            let expires = zulu_datetime(shifted_by(clock.now, &text, clock)?);
-            values.insert(String::from("expires"), JsonData::String(expires));
+        Some(JsonData::String(text)) => {
+            if text == "-1" {
+                values.insert(String::from("expires"), JsonData::Null);
+            } else if !text.is_empty() {
+                let expires = zulu_datetime(shifted_by(clock.now, &text, clock)?);
+                values.insert(String::from("expires"), JsonData::String(expires));
+            }
         }
-        Some(JsonData::Null | JsonData::String(_)) => {
+        Some(JsonData::Null) => {
             values.insert(String::from("expires"), JsonData::Null);
         }
         Some(
