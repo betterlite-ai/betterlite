@@ -295,11 +295,10 @@ fn access_groups_caches_only_the_no_argument_call() {
 fn access_groups_caches_an_empty_map() {
     let mut world = World::new(&[plain_row("gpt-4o", "a")]);
     let cache = AccessGroups::default();
-    assert!(
-        all_groups(&world, &cache)
-            .expect("the empty map")
-            .is_empty()
-    );
+    let mut first = all_groups(&world, &cache).expect("the empty map");
+    assert!(first.is_empty());
+    // the answer is the caller's own map, so changing it cannot reach the cached slot
+    first.insert("gamma".to_owned(), vec!["gpt-4o".to_owned()]);
     world.push(group_row("claude", "b", &["beta"]));
     assert!(
         all_groups(&world, &cache)
