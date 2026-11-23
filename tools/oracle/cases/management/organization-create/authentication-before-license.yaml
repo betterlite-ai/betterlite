@@ -1,0 +1,22 @@
+name: organization-authentication-before-license
+config: |
+  general_settings:
+    master_key: oracle-master
+# Fixture-less case: the oracle boots it as its own group, and the MIT router must never see premium_user set.
+env: {ORACLE_CASE_GROUP: organization-authentication-before-license}
+request:
+  method: GET
+  path: /organization/list
+  headers:
+    Authorization: Bearer sk-not-a-real-key
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: ""
+      why: >-
+        The 401 body belongs to B052's authentication stage on both servers; this case pins only that an
+        unauthenticated organization call is refused before the enterprise license guard, which MIT turns on.

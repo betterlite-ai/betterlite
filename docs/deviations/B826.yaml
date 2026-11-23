@@ -1,0 +1,41 @@
+task: B826
+deviations:
+  - what: >-
+      An authenticated caller reaches the organization creation handler without a license. LiteLLM's
+      router dependency rejects every organization call with 403 detail.error beginning "Organizations
+      are only available for LiteLLM Enterprise users." before the handler runs; betterlite omits that
+      guard and keeps the admin, database, budget and model checks behind it.
+    why: >-
+      README Decisions removes the paid tier: there is no license state to consult, so every deployment
+      is entitled. The MIT equality corpus can therefore only carry an authentication failure that runs
+      before the guard.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L96-L111
+  - what: >-
+      POST /organization/new answers 404 on the production router: betterlite's route admission does
+      not list the path, so the route-match gate refuses it before authentication. The handler itself is
+      mounted and is reached through the router's direct mount, which is how the native tests call it.
+    why: >-
+      route_match.rs and management_routes.rs are outside this task's scope; they belong to the tasks
+      that own route admission. Organization creation cannot be listed there from here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L360-L365
+  - what: >-
+      A body carrying the JSON literals NaN, Infinity or -Infinity is refused with a 422 body instead of
+      reaching the max_budget and soft_budget range checks. Python's json.loads accepts those literals and
+      the handler then answers 400 "must be a non-negative finite number. Received: nan".
+    why: >-
+      betterlite reads request bodies with serde_json, which accepts no non-finite number literals, so
+      the value never becomes a request field. Finite numbers and the 1e400 spellings that overflow to
+      infinity still reach the same 400 check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L458-L468
+  - what: >-
+      The created organization response carries litellm_budget_table and metadata as the objects
+      NewOrganizationResponse declares, projected from the request. LiteLLM serializes the created
+      budget row and the organization row through jsonify_object, so those mapping columns are stored,
+      and read back by the include, as JSON text; its response model declares dict for both, so a
+      creation that sends model_max_budget or metadata cannot satisfy the type it returns.
+    why: >-
+      docs/compatibility.md ends parity at the declared types: every LiteLLM_BudgetTable mapping field
+      and metadata is an object on the wire. No working setup can rely on a response that contradicts
+      the model it is validated against, and the equality corpus cannot reach creation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L546-L557
+kept_bugs: []
