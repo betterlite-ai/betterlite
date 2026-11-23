@@ -37,8 +37,11 @@ async fn identical_session_ids_stay_separate_per_key() {
     let mut second = aggregate("s1", "k2");
     second.session_total_count = 9;
     second.session_total_spend = decimal("9.5");
+    // a key the page never shows must not reach either row, even with the same session id
+    let mut stranger = aggregate("s1", "k3");
+    stranger.session_total_count = 99;
     let fake = Fake {
-        aggregates: vec![aggregate("s1", "k1"), second],
+        aggregates: vec![aggregate("s1", "k1"), second, stranger],
         ..Fake::default()
     };
     let events = fake.events.clone();

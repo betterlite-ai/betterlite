@@ -120,6 +120,7 @@ fn parses_the_calendar_edges() {
 #[case::empty("")]
 #[case::words("tomorrow")]
 #[case::trailing_space("2024-01-02 ")]
+#[case::fullwidth_digits("２０２４-01-02")]
 fn refuses_text_that_is_not_a_date(#[case] text: &str) {
     let error = parse_legacy_date(text).unwrap_err();
     assert_eq!(
