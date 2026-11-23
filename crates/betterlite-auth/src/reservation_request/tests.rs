@@ -28,7 +28,8 @@ use self::support::{
 // the TTL half of BaseCache's 60 second default
 const TTL: i64 = 60;
 const INTERVAL: Duration = Duration::from_secs(30);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(6000);
+// litellm.request_timeout's DEFAULT_REQUEST_TIMEOUT_SECONDS, 6000 seconds
+const REQUEST_TIMEOUT: Duration = Duration::from_mins(100);
 
 #[rstest]
 #[case::models("/models")]
@@ -279,14 +280,13 @@ async fn request_success_builds_the_record() {
         .await
         .expect("the reservation finishes")
         .expect("a reservation");
-    {
-        let state = lock(&handle.0);
-        assert_eq!(state.reserved_cost, amount("10"));
-        assert_eq!(state.entries, vec![reservation_entry(KEY, amount("10"))]);
-        assert!(!state.finalized);
-        assert!(!state.callback_bound);
-        assert_eq!(state.input_cost, amount("3"));
-    }
+    let state = lock(&handle.0);
+    assert_eq!(state.reserved_cost, amount("10"));
+    assert_eq!(state.entries, vec![reservation_entry(KEY, amount("10"))]);
+    assert!(!state.finalized);
+    assert!(!state.callback_bound);
+    assert_eq!(state.input_cost, amount("3"));
+    drop(state);
     assert_eq!(
         world.calls.names(),
         vec![
@@ -302,6 +302,7 @@ async fn request_success_builds_the_record() {
     let scopes = world.settlement.scope_keys.lock().expect("the scope log");
     assert_eq!(scopes.len(), 1);
     assert!(scopes[0].contains(KEY));
+    drop(scopes);
 }
 
 #[tokio::test]
@@ -359,7 +360,7 @@ async fn request_admission_receives_the_configured_policy() {
         .build();
     let mut services = world.services(None);
     services.budget_exceeded_status = 429;
-    services.throttle_percentage = Some(0.25);
+    services.throttle_percentage = Some(0.25_f64);
     let _handle = reserve_budget_for_request(&request, &services)
         .await
         .expect("the reservation finishes")
@@ -369,9 +370,10 @@ async fn request_admission_receives_the_configured_policy() {
     assert_eq!(seen[0].reservation_cost, amount("10"));
     assert!(seen[0].fail_closed_budget_enforcement);
     assert_eq!(seen[0].budget_exceeded_status, 429);
-    assert_eq!(seen[0].throttle_percentage, Some(0.25));
+    assert_eq!(seen[0].throttle_percentage, Some(0.25_f64));
     assert_eq!(seen[0].counters, 1);
     assert!(seen[0].has_token);
+    drop(seen);
 }
 
 #[tokio::test]
@@ -392,6 +394,7 @@ async fn request_counter_input_carries_the_request_facts() {
     assert_eq!(seen[0].tag_names, tags);
     assert!(seen[0].apply_user_budget_to_team_keys);
     assert!(seen[0].token_present);
+    drop(seen);
 }
 
 #[tokio::test(start_paused = true)]
@@ -603,4 +606,5 @@ async fn request_uses_the_counter_key_set_for_the_batch_scope() {
     assert_eq!(scopes.len(), 1);
     assert_eq!(scopes[0].len(), 2);
     assert!(scopes[0].contains("spend:key:tok2"));
+    drop(scopes);
 }
