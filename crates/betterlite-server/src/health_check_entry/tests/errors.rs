@@ -120,7 +120,7 @@ async fn error_cuts_the_stack_text_to_one_thousand_characters() {
 #[tokio::test]
 async fn error_cuts_characters_not_bytes() {
     let harness = Harness::new();
-    let message = "\u{e9}".repeat(700);
+    let message = "\u{e9}".repeat(1000);
     harness.backend.fail(&message);
     let outcome = harness
         .run(params(&[("model", "my-model")]), Some("chat"))

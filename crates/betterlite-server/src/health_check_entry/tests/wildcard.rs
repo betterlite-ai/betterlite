@@ -46,7 +46,10 @@ async fn wildcard_without_cheap_models_fails_with_the_provider_message() {
         .await;
     let failure = failed(outcome);
     let message = "Unable to health check wildcard model for provider openai. Add a model on your config.yaml or contribute here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json";
-    assert_eq!(failure.error, format!("{message}\nstack trace: {message}"));
+    assert_eq!(
+        failure.error,
+        format!("{message}\nstack trace: {message}\n{message}")
+    );
     assert!(matches!(failure.exception, HealthEntryError::Probe { .. }));
     assert_eq!(harness.backend.count(), 0);
 }

@@ -161,7 +161,10 @@ impl HealthCheckEntry {
                 self.backend.as_ref(),
             )
             .await
-            .map_err(|source| probe_failure(mode, source));
+            .map_err(|source| FlowFailure {
+                mode: Some(mode),
+                error: HealthEntryError::Probe { source },
+            });
         }
         let Some(plan) = plan_health_probe(&mode, &model, &provider, params, arguments) else {
             return Err(FlowFailure {
@@ -171,7 +174,10 @@ impl HealthCheckEntry {
         };
         let reply = run_health_probe(plan, self.backend.as_ref(), self.documents.as_ref())
             .await
-            .map_err(|source| probe_failure(mode, source))?;
+            .map_err(|source| FlowFailure {
+                mode: Some(mode),
+                error: HealthEntryError::Probe { source },
+            })?;
         Ok(health_check_response(&reply.hidden_headers))
     }
 
@@ -239,12 +245,5 @@ fn chat_mode(mode: Option<&str>) -> String {
     match mode {
         None | Some("") => DEFAULT_MODE.to_owned(),
         Some(name) => name.to_owned(),
-    }
-}
-
-const fn probe_failure(mode: String, source: HealthProbeError) -> FlowFailure {
-    FlowFailure {
-        mode: Some(mode),
-        error: HealthEntryError::Probe { source },
     }
 }
