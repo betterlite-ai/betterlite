@@ -153,6 +153,13 @@ fn assert_frame_routing() {
         ),
         r#"{"type":"response.create","response":{"input":"routed"},"other":1}"#
     );
+    assert_eq!(
+        routed_first_frame(
+            r#"{"type":"response.create","response":{"input":null}}"#,
+            Some(&routed)
+        ),
+        r#"{"type":"response.create","response":{"input":null},"input":"routed"}"#
+    );
     let matching = r#"{"type":"response.create","input":"routed"}"#;
     assert_eq!(routed_first_frame(matching, Some(&routed)), matching);
     let nested_matching = r#"{"type":"response.create","response":{"input":"routed"}}"#;
