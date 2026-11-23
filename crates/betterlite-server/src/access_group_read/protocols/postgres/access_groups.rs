@@ -74,7 +74,7 @@ impl<C: GenericClient + Sync> AccessGroupTable for PgAccessGroupTables<'_, C> {
         access_group_id: &str,
         changes: &AccessGroupChanges,
     ) -> Result<AccessGroupRecord, AccessGroupStoreError> {
-        let (statement, parameters) = update_statement(access_group_id, changes);
+        let (statement, parameters) = update_statement(&access_group_id, changes);
         let rows = self.query(&statement, &parameters).await?;
         let Some(row) = rows.first() else {
             return Err(AccessGroupStoreError::RecordNotFound);
@@ -110,14 +110,16 @@ impl AccessGroupRecord {
 
 // Prisma writes updated_by and the columns its data map names; updated_at always moves, and nothing else is touched
 fn update_statement<'change>(
-    access_group_id: &'change str,
+    access_group_id: &'change &'change str,
     changes: &'change AccessGroupChanges,
 ) -> (String, Vec<&'change (dyn ToSql + Sync)>) {
     let mut assignments = vec![
         String::from(r#""updated_by" = $2"#),
         String::from(r#""updated_at" = (NOW() AT TIME ZONE 'UTC')"#),
     ];
-    let mut parameters: Vec<&(dyn ToSql + Sync)> = vec![&access_group_id, &changes.updated_by];
+    // the id arrives by reference to the caller's binding, so the returned parameters can borrow it
+    let mut parameters: Vec<&'change (dyn ToSql + Sync)> =
+        vec![access_group_id, &changes.updated_by];
     if let Some(name) = &changes.access_group_name {
         push_parameter(&mut assignments, &mut parameters, "access_group_name", name);
     }
