@@ -27,10 +27,7 @@ async fn enqueues_a_model_usage_row_with_its_rollup_key() {
 
 #[tokio::test]
 async fn reads_a_failed_request_with_the_source_fallbacks() {
-    let payload = concat!(
-        r#"{"startTime":"2026-01-02T03:04:05Z","metadata":"{}","request_tags":"[]"#,
-        r#","spend":0.25,"prompt_tokens":3,"completion_tokens":4,"status":"error"}"#
-    );
+    let payload = r#"{"startTime":"2026-01-02T03:04:05Z","metadata":"{}","request_tags":"[]","spend":0.25,"prompt_tokens":3,"completion_tokens":4,"status":"error"}"#;
     let queue = bounded::<ModelUsageTransaction>(8);
     enqueue_model_usage(&queue, payload.as_bytes()).await;
     let rows = queue.drain(usize::MAX);
