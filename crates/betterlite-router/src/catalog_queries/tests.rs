@@ -7,7 +7,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use betterlite_config::sections::fallback_plans::Settings;
-use betterlite_config::sections::fallback_plans::chains::{FallbackChainEntry, FallbackTarget};
+use betterlite_config::sections::fallback_plans::chains::{
+    FallbackChainEntry, FallbackTarget, ParameterizedTarget,
+};
 use betterlite_config::sections::weighted_failover;
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
@@ -729,6 +731,23 @@ fn can_fall_back_reads_the_request_fallbacks_before_the_router_list() {
 fn can_fall_back_is_true_for_a_client_fallback_list() {
     let world = World::new(&[]);
     let call = Call::default().fallbacks(vec![FallbackChainEntry::Target(name("claude"))]);
+    let config = RouterConfig::new(plans(Vec::new(), Vec::new()));
+    let answer = world
+        .queries()
+        .messages_can_fall_back("gpt-4", &call.request(), &config.fallbacks())
+        .unwrap();
+    assert!(answer);
+}
+
+#[test]
+fn can_fall_back_is_true_for_a_parameterized_client_target() {
+    let world = World::new(&[]);
+    let call = Call::default().fallbacks(vec![FallbackChainEntry::Target(
+        FallbackTarget::Parameters(ParameterizedTarget {
+            model: "claude".to_owned(),
+            parameters: IndexMap::new(),
+        }),
+    )]);
     let config = RouterConfig::new(plans(Vec::new(), Vec::new()));
     let answer = world
         .queries()
