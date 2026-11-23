@@ -1,0 +1,140 @@
+kind: helper
+name: polling-missing-cancel-delete
+call:
+  responses_poll_state:
+    now: 1700000000
+    ttl: 3600
+    uuid: "00000000-0000-4000-8000-000000000001"
+    calls:
+      - op: get
+        polling_id: litellm_poll_absent
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: update
+        polling_id: litellm_poll_absent
+        redis: true
+        ttl: null
+        metadata: null
+        patch:
+          status: completed
+        seed: null
+      - op: cancel
+        polling_id: litellm_poll_absent
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: delete
+        polling_id: litellm_poll_absent
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: update
+        polling_id: litellm_poll_empty
+        redis: true
+        ttl: null
+        metadata: null
+        patch:
+          status: completed
+        seed:
+          raw: ""
+          response: null
+      - op: cancel
+        polling_id: litellm_poll_empty
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: get
+        polling_id: litellm_poll_live
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed:
+          raw: null
+          response:
+            id: litellm_poll_live
+            object: response
+            status: in_progress
+            output:
+              - id: one
+            usage:
+              total_tokens: 4
+      - op: cancel
+        polling_id: litellm_poll_live
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: delete
+        polling_id: litellm_poll_live
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: delete
+        polling_id: litellm_poll_live
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: get
+        polling_id: litellm_poll_corrupt
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed:
+          raw: '{"id":'
+          response: null
+      - op: update
+        polling_id: litellm_poll_corrupt
+        redis: true
+        ttl: null
+        metadata: null
+        patch:
+          status: completed
+        seed: null
+      - op: get
+        polling_id: litellm_poll_offline
+        redis: false
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: update
+        polling_id: litellm_poll_offline
+        redis: false
+        ttl: null
+        metadata: null
+        patch:
+          status: completed
+        seed: null
+      - op: cancel
+        polling_id: litellm_poll_offline
+        redis: false
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: delete
+        polling_id: litellm_poll_offline
+        redis: false
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+    selections: []
+env: {}
+compare: {ignore: []}

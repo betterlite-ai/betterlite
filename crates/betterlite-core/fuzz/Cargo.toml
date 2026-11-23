@@ -550,3 +550,10 @@ path = "fuzz_targets/tinyfish_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "responses_poll_state"
+path = "fuzz_targets/responses_poll_state.rs"
+test = false
+doc = false
+bench = false
