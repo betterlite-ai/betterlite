@@ -1,13 +1,14 @@
 #![cfg(test)]
 
 use crate::qwen_deepseek::error::DeepseekReplyError;
-use crate::qwen_deepseek::reply::Usage;
+use crate::qwen_deepseek::reply::{Reply, Usage};
 use crate::qwen_deepseek::tests::counter::CounterCall;
 use crate::qwen_deepseek::tests::support::{
     CREATED, deepseek, deepseek_fixture, headers, object, seeded, two_choices, with_tool_calls,
 };
 
 pub(in crate::qwen_deepseek::tests) fn deepseek_buffered_response() {
+    seed_defaults();
     base_reply_conversion();
     header_usage_replaces_the_counter();
     split_reasoning_and_content();
@@ -17,6 +18,16 @@ pub(in crate::qwen_deepseek::tests) fn deepseek_buffered_response() {
     tool_call_content_skips_the_split();
     prompt_errors();
     base_errors_pass_through();
+}
+
+// ModelResponse names the chat object even when the wire seed omits it.
+fn seed_defaults() {
+    let reply: Reply =
+        serde_json::from_str(r#"{"id": "chatcmpl-empty"}"#).expect("the seed parses");
+    assert_eq!(
+        reply.object, "chat.completion",
+        "an absent object takes the chat completion default"
+    );
 }
 
 fn base_reply_conversion() {
