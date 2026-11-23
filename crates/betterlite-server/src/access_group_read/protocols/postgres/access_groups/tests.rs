@@ -19,7 +19,7 @@ const fn untouched() -> AccessGroupChanges {
 
 #[test]
 fn update_statement_always_moves_updated_at_and_writes_updated_by() {
-    let group_id: &str = "group-1";
+    let group_id = "group-1";
     let changes = untouched();
     let (statement, parameters) = update_statement(&group_id, &changes);
     assert_eq!(parameters.len(), 2_usize);
@@ -44,7 +44,7 @@ fn update_statement_numbers_only_the_columns_the_caller_set() {
         assigned_key_ids: None,
         updated_by: Some("editor".to_owned()),
     };
-    let group_id: &str = "group-1";
+    let group_id = "group-1";
     let (statement, parameters) = update_statement(&group_id, &changes);
     assert_eq!(parameters.len(), 4_usize);
     assert!(statement.contains(r#""access_group_name" = $3"#));

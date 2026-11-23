@@ -4,16 +4,18 @@ mod support;
 
 use betterlite_db::postgres_store::errors::DbError;
 use chrono::NaiveDateTime;
+use deadpool_postgres::GenericClient;
 use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 use self::support::Database;
 use crate::access_group_read::protocols::error::AccessGroupStoreError;
 use crate::access_group_read::protocols::records::{
-    AccessGroupChanges, AgentRecord, FieldWrite, NewAccessGroup, TeamRecord,
+    AccessGroupChanges, AccessGroupRecord, AgentRecord, FieldWrite, NewAccessGroup, TeamRecord,
 };
 use crate::access_group_read::protocols::tables::{
-    AccessGroupTable, AccessGroupTx, AgentTable, KeyTable, TeamTable, TeamWhere,
+    AccessGroupTable as _, AccessGroupTx as _, AgentTable as _, KeyTable as _, TeamTable as _,
+    TeamWhere,
 };
 
 use super::PgAccessGroupTables;
@@ -92,15 +94,16 @@ async fn updated_at(
     row.get(0)
 }
 
-#[tokio::test]
-async fn a_created_group_reads_back_by_id_and_name() {
-    let database = Database::start().await;
-    let client = database.client().await;
-    let tables = PgAccessGroupTables { client: &client };
-    let created = tables
+async fn create_group<C: GenericClient + Sync>(
+    tables: &PgAccessGroupTables<'_, C>,
+) -> AccessGroupRecord {
+    tables
         .create(&new_group("math", Some("Math tools"), &["t1"]))
         .await
-        .expect("the access group row inserts");
+        .expect("the access group row inserts")
+}
+
+fn assert_created_group(created: &AccessGroupRecord) {
     assert_eq!(created.access_group_name, "math");
     assert_eq!(created.description.as_deref(), Some("Math tools"));
     assert_eq!(created.access_model_names, Some(groups(&["model-a"])));
@@ -112,18 +115,11 @@ async fn a_created_group_reads_back_by_id_and_name() {
     assert_eq!(created.created_at, created.updated_at);
     let parsed = Uuid::parse_str(&created.access_group_id).expect("the id is a UUID");
     assert_eq!(parsed.get_version_num(), 4_usize);
-    let by_id = tables
-        .litellm_accessgrouptable()
-        .find_by_id(&created.access_group_id)
-        .await
-        .expect("the id query runs");
-    assert_eq!(by_id, Some(created.clone()));
-    let by_name = tables
-        .litellm_accessgrouptable()
-        .find_by_name("math")
-        .await
-        .expect("the name query runs");
-    assert_eq!(by_name.as_ref(), Some(&created));
+}
+
+async fn assert_absent_groups_read_none<C: GenericClient + Sync>(
+    tables: &PgAccessGroupTables<'_, C>,
+) {
     assert_eq!(
         tables
             .find_by_name("absent")
@@ -138,6 +134,259 @@ async fn a_created_group_reads_back_by_id_and_name() {
             .expect("the id query runs"),
         None
     );
+}
+
+fn clearing_changes() -> AccessGroupChanges {
+    AccessGroupChanges {
+        access_group_name: None,
+        description: FieldWrite::Null,
+        access_model_names: None,
+        access_mcp_server_ids: None,
+        access_agent_ids: None,
+        assigned_team_ids: None,
+        assigned_key_ids: None,
+        updated_by: Some("editor".to_owned()),
+    }
+}
+
+fn assert_lists_unchanged(updated: &AccessGroupRecord) {
+    assert_eq!(updated.access_model_names, Some(groups(&["model-a"])));
+    assert_eq!(updated.access_mcp_server_ids, Some(Vec::new()));
+    assert_eq!(updated.assigned_team_ids, Some(groups(&["t1"])));
+    assert_eq!(updated.assigned_key_ids, Some(groups(&["token-a"])));
+}
+
+async fn restore_description<C: GenericClient + Sync>(
+    tables: &PgAccessGroupTables<'_, C>,
+    access_group_id: &str,
+    changes: &AccessGroupChanges,
+) {
+    let restored = AccessGroupChanges {
+        description: FieldWrite::Set("Math tools".to_owned()),
+        ..changes.clone()
+    };
+    let rewritten = tables
+        .update(access_group_id, &restored)
+        .await
+        .expect("the description writes");
+    assert_eq!(rewritten.description.as_deref(), Some("Math tools"));
+}
+
+fn renamed_changes() -> AccessGroupChanges {
+    AccessGroupChanges {
+        access_group_name: Some("renamed".to_owned()),
+        description: FieldWrite::Unchanged,
+        access_model_names: Some(groups(&["model-b"])),
+        access_mcp_server_ids: None,
+        access_agent_ids: None,
+        assigned_team_ids: Some(Vec::new()),
+        assigned_key_ids: None,
+        updated_by: None,
+    }
+}
+
+fn set_lists_changes() -> AccessGroupChanges {
+    AccessGroupChanges {
+        access_group_name: None,
+        description: FieldWrite::Unchanged,
+        access_model_names: None,
+        access_mcp_server_ids: Some(groups(&["server-b"])),
+        access_agent_ids: Some(groups(&["agent-b"])),
+        assigned_team_ids: None,
+        assigned_key_ids: Some(Vec::new()),
+        updated_by: None,
+    }
+}
+
+fn assert_renamed_only(updated: &AccessGroupRecord) {
+    assert_eq!(updated.access_group_name, "renamed");
+    assert_eq!(updated.description.as_deref(), Some("Math tools"));
+    assert_eq!(updated.access_model_names, Some(groups(&["model-b"])));
+    assert_eq!(updated.access_mcp_server_ids, Some(Vec::new()));
+    assert_eq!(updated.assigned_team_ids, Some(Vec::new()));
+    assert_eq!(updated.assigned_key_ids, Some(groups(&["token-a"])));
+    assert_eq!(updated.updated_by, None);
+}
+
+fn assert_lists_written(rewritten: &AccessGroupRecord) {
+    assert_eq!(rewritten.access_mcp_server_ids, Some(groups(&["server-b"])));
+    assert_eq!(rewritten.access_agent_ids, Some(groups(&["agent-b"])));
+    assert_eq!(rewritten.assigned_key_ids, Some(Vec::new()));
+    assert_eq!(rewritten.access_model_names, Some(groups(&["model-b"])));
+    assert_eq!(rewritten.assigned_team_ids, Some(Vec::new()));
+    assert_eq!(rewritten.access_group_name, "renamed");
+}
+
+async fn insert_null_rows(database: &Database) {
+    database
+        .execute(
+            r#"INSERT INTO "LiteLLM_AccessGroupTable" ("access_group_id", "access_group_name", "access_model_names", "access_mcp_server_ids", "access_agent_ids", "assigned_team_ids", "assigned_key_ids") VALUES ('g-null', 'null-group', NULL, NULL, NULL, NULL, NULL)"#,
+            &[],
+        )
+        .await;
+    database
+        .execute(
+            r#"INSERT INTO "LiteLLM_TeamTable" ("team_id", "access_group_ids") VALUES ('t-null', NULL)"#,
+            &[],
+        )
+        .await;
+    database
+        .execute(
+            r#"INSERT INTO "LiteLLM_VerificationToken" ("token", "access_group_ids") VALUES ('k-null', NULL)"#,
+            &[],
+        )
+        .await;
+    database
+        .execute(
+            r#"INSERT INTO "LiteLLM_AgentsTable" ("agent_id", "agent_name", "agent_card_params", "created_by", "updated_by", "access_group_ids") VALUES ('a-null', 'null-agent', '{}', 'seed', 'seed', NULL)"#,
+            &[],
+        )
+        .await;
+}
+
+async fn assert_null_group_reads_none<C: GenericClient + Sync>(
+    tables: &PgAccessGroupTables<'_, C>,
+) {
+    let group = tables
+        .find_by_id("g-null")
+        .await
+        .expect("the id query runs")
+        .expect("the group row");
+    assert_eq!(group.description, None);
+    assert_eq!(group.access_model_names, None);
+    assert_eq!(group.access_mcp_server_ids, None);
+    assert_eq!(group.access_agent_ids, None);
+    assert_eq!(group.assigned_team_ids, None);
+    assert_eq!(group.assigned_key_ids, None);
+}
+
+async fn assert_null_team_and_key_read_none<C: GenericClient + Sync>(
+    tables: &PgAccessGroupTables<'_, C>,
+) {
+    let team = tables
+        .litellm_teamtable()
+        .find("t-null")
+        .await
+        .expect("the team query runs")
+        .expect("the team row");
+    assert_eq!(team.access_group_ids, None);
+    assert_eq!(
+        tables
+            .litellm_teamtable()
+            .find("absent")
+            .await
+            .expect("the team query runs"),
+        None
+    );
+    let key = tables
+        .litellm_verificationtoken()
+        .find("k-null")
+        .await
+        .expect("the key query runs")
+        .expect("the key row");
+    assert_eq!(key.access_group_ids, None);
+}
+
+async fn write_membership_lists<C: GenericClient + Sync>(
+    tables: &PgAccessGroupTables<'_, C>,
+    replacement: &[String],
+) {
+    tables
+        .litellm_teamtable()
+        .set_access_group_ids("t1", replacement)
+        .await
+        .expect("the team write runs");
+    tables
+        .litellm_verificationtoken()
+        .set_access_group_ids("token-1", replacement)
+        .await
+        .expect("the key write runs");
+    tables
+        .litellm_agentstable()
+        .set_access_group_ids("agent-1", replacement)
+        .await
+        .expect("the agent write runs");
+}
+
+async fn assert_memberships_stored<C: GenericClient + Sync>(
+    tables: &PgAccessGroupTables<'_, C>,
+    replacement: &[String],
+) {
+    let team = tables
+        .litellm_teamtable()
+        .find("t1")
+        .await
+        .expect("the team query runs")
+        .expect("the team row");
+    assert_eq!(team.access_group_ids.as_deref(), Some(replacement));
+    assert_eq!(team.team_alias.as_deref(), Some("t1"));
+    let key = tables
+        .litellm_verificationtoken()
+        .find("token-1")
+        .await
+        .expect("the key query runs")
+        .expect("the key row");
+    assert_eq!(key.access_group_ids.as_deref(), Some(replacement));
+    let carrying = tables
+        .litellm_agentstable()
+        .find_carrying("g2")
+        .await
+        .expect("the carrying query runs");
+    assert_eq!(agent_ids(&carrying), groups(&["agent-1"]));
+}
+
+async fn assert_memberships_moved(database: &Database) {
+    assert!(updated_at(database, "LiteLLM_TeamTable", "team_id", "t1").await > seeded_at());
+    assert!(
+        updated_at(database, "LiteLLM_VerificationToken", "token", "token-1").await > seeded_at()
+    );
+    assert!(updated_at(database, "LiteLLM_AgentsTable", "agent_id", "agent-1").await > seeded_at());
+}
+
+async fn assert_rollback_left_no_trace<C: GenericClient + Sync>(
+    database: &Database,
+    tables: &PgAccessGroupTables<'_, C>,
+) {
+    assert_eq!(
+        tables
+            .find_by_name("rolled-back")
+            .await
+            .expect("the name query runs"),
+        None
+    );
+    let team = tables
+        .litellm_teamtable()
+        .find("t1")
+        .await
+        .expect("the team query runs")
+        .expect("the team row");
+    assert_eq!(team.access_group_ids, Some(groups(&["g1"])));
+    assert_eq!(
+        updated_at(database, "LiteLLM_TeamTable", "team_id", "t1").await,
+        seeded_at()
+    );
+}
+
+#[tokio::test]
+async fn a_created_group_reads_back_by_id_and_name() {
+    let database = Database::start().await;
+    let client = database.client().await;
+    let tables = PgAccessGroupTables { client: &client };
+    let created = create_group(&tables).await;
+    assert_created_group(&created);
+    let by_id = tables
+        .litellm_accessgrouptable()
+        .find_by_id(&created.access_group_id)
+        .await
+        .expect("the id query runs");
+    assert_eq!(by_id, Some(created.clone()));
+    let by_name = tables
+        .litellm_accessgrouptable()
+        .find_by_name("math")
+        .await
+        .expect("the name query runs");
+    assert_eq!(by_name.as_ref(), Some(&created));
+    assert_absent_groups_read_none(&tables).await;
     database.close().await;
 }
 
@@ -169,10 +418,7 @@ async fn an_update_can_clear_the_description() {
     let database = Database::start().await;
     let client = database.client().await;
     let tables = PgAccessGroupTables { client: &client };
-    let created = tables
-        .create(&new_group("math", Some("Math tools"), &["t1"]))
-        .await
-        .expect("the access group row inserts");
+    let created = create_group(&tables).await;
     age_row(
         &database,
         "LiteLLM_AccessGroupTable",
@@ -180,38 +426,18 @@ async fn an_update_can_clear_the_description() {
         &created.access_group_id,
     )
     .await;
-    let changes = AccessGroupChanges {
-        access_group_name: None,
-        description: FieldWrite::Null,
-        access_model_names: None,
-        access_mcp_server_ids: None,
-        access_agent_ids: None,
-        assigned_team_ids: None,
-        assigned_key_ids: None,
-        updated_by: Some("editor".to_owned()),
-    };
+    let changes = clearing_changes();
     let updated = tables
         .update(&created.access_group_id, &changes)
         .await
         .expect("the access group row updates");
     assert_eq!(updated.description, None);
     assert_eq!(updated.access_group_name, "math");
-    assert_eq!(updated.access_model_names, Some(groups(&["model-a"])));
-    assert_eq!(updated.access_mcp_server_ids, Some(Vec::new()));
-    assert_eq!(updated.assigned_team_ids, Some(groups(&["t1"])));
-    assert_eq!(updated.assigned_key_ids, Some(groups(&["token-a"])));
+    assert_lists_unchanged(&updated);
     assert_eq!(updated.updated_by.as_deref(), Some("editor"));
     assert_eq!(updated.created_at, created.created_at);
     assert!(updated.updated_at > seeded_at());
-    let restored = AccessGroupChanges {
-        description: FieldWrite::Set("Math tools".to_owned()),
-        ..changes.clone()
-    };
-    let rewritten = tables
-        .update(&created.access_group_id, &restored)
-        .await
-        .expect("the description writes");
-    assert_eq!(rewritten.description.as_deref(), Some("Math tools"));
+    restore_description(&tables, &created.access_group_id, &changes).await;
     let missing = tables
         .update("absent", &changes)
         .await
@@ -225,31 +451,13 @@ async fn an_update_writes_only_the_columns_the_caller_set() {
     let database = Database::start().await;
     let client = database.client().await;
     let tables = PgAccessGroupTables { client: &client };
-    let created = tables
-        .create(&new_group("math", Some("Math tools"), &["t1"]))
-        .await
-        .expect("the access group row inserts");
-    let changes = AccessGroupChanges {
-        access_group_name: Some("renamed".to_owned()),
-        description: FieldWrite::Unchanged,
-        access_model_names: Some(groups(&["model-b"])),
-        access_mcp_server_ids: None,
-        access_agent_ids: None,
-        assigned_team_ids: Some(Vec::new()),
-        assigned_key_ids: None,
-        updated_by: None,
-    };
+    let created = create_group(&tables).await;
+    let changes = renamed_changes();
     let updated = tables
         .update(&created.access_group_id, &changes)
         .await
         .expect("the access group row updates");
-    assert_eq!(updated.access_group_name, "renamed");
-    assert_eq!(updated.description.as_deref(), Some("Math tools"));
-    assert_eq!(updated.access_model_names, Some(groups(&["model-b"])));
-    assert_eq!(updated.access_mcp_server_ids, Some(Vec::new()));
-    assert_eq!(updated.assigned_team_ids, Some(Vec::new()));
-    assert_eq!(updated.assigned_key_ids, Some(groups(&["token-a"])));
-    assert_eq!(updated.updated_by, None);
+    assert_renamed_only(&updated);
     let renamed = tables
         .find_by_name("renamed")
         .await
@@ -263,26 +471,12 @@ async fn an_update_writes_only_the_columns_the_caller_set() {
             .expect("the name query runs"),
         None
     );
-    let lists = AccessGroupChanges {
-        access_group_name: None,
-        description: FieldWrite::Unchanged,
-        access_model_names: None,
-        access_mcp_server_ids: Some(groups(&["server-b"])),
-        access_agent_ids: Some(groups(&["agent-b"])),
-        assigned_team_ids: None,
-        assigned_key_ids: Some(Vec::new()),
-        updated_by: None,
-    };
+    let lists = set_lists_changes();
     let rewritten = tables
         .update(&created.access_group_id, &lists)
         .await
         .expect("the list columns write");
-    assert_eq!(rewritten.access_mcp_server_ids, Some(groups(&["server-b"])));
-    assert_eq!(rewritten.access_agent_ids, Some(groups(&["agent-b"])));
-    assert_eq!(rewritten.assigned_key_ids, Some(Vec::new()));
-    assert_eq!(rewritten.access_model_names, Some(groups(&["model-b"])));
-    assert_eq!(rewritten.assigned_team_ids, Some(Vec::new()));
-    assert_eq!(rewritten.access_group_name, "renamed");
+    assert_lists_written(&rewritten);
     database.close().await;
 }
 
@@ -341,64 +535,10 @@ async fn delete_removes_the_row_and_reports_a_missing_one() {
 async fn stored_nulls_read_as_none_on_every_record() {
     let database = Database::start().await;
     let client = database.client().await;
-    database
-        .execute(
-            r#"INSERT INTO "LiteLLM_AccessGroupTable" ("access_group_id", "access_group_name", "access_model_names", "access_mcp_server_ids", "access_agent_ids", "assigned_team_ids", "assigned_key_ids") VALUES ('g-null', 'null-group', NULL, NULL, NULL, NULL, NULL)"#,
-            &[],
-        )
-        .await;
-    database
-        .execute(
-            r#"INSERT INTO "LiteLLM_TeamTable" ("team_id", "access_group_ids") VALUES ('t-null', NULL)"#,
-            &[],
-        )
-        .await;
-    database
-        .execute(
-            r#"INSERT INTO "LiteLLM_VerificationToken" ("token", "access_group_ids") VALUES ('k-null', NULL)"#,
-            &[],
-        )
-        .await;
-    database
-        .execute(
-            r#"INSERT INTO "LiteLLM_AgentsTable" ("agent_id", "agent_name", "agent_card_params", "created_by", "updated_by", "access_group_ids") VALUES ('a-null', 'null-agent', '{}', 'seed', 'seed', NULL)"#,
-            &[],
-        )
-        .await;
+    insert_null_rows(&database).await;
     let tables = PgAccessGroupTables { client: &client };
-    let group = tables
-        .find_by_id("g-null")
-        .await
-        .expect("the id query runs")
-        .expect("the group row");
-    assert_eq!(group.description, None);
-    assert_eq!(group.access_model_names, None);
-    assert_eq!(group.access_mcp_server_ids, None);
-    assert_eq!(group.access_agent_ids, None);
-    assert_eq!(group.assigned_team_ids, None);
-    assert_eq!(group.assigned_key_ids, None);
-    let team = tables
-        .litellm_teamtable()
-        .find("t-null")
-        .await
-        .expect("the team query runs")
-        .expect("the team row");
-    assert_eq!(team.access_group_ids, None);
-    assert_eq!(
-        tables
-            .litellm_teamtable()
-            .find("absent")
-            .await
-            .expect("the team query runs"),
-        None
-    );
-    let key = tables
-        .litellm_verificationtoken()
-        .find("k-null")
-        .await
-        .expect("the key query runs")
-        .expect("the key row");
-    assert_eq!(key.access_group_ids, None);
+    assert_null_group_reads_none(&tables).await;
+    assert_null_team_and_key_read_none(&tables).await;
     let row = database
         .query_one(
             r#"SELECT "agent_id", "access_group_ids" FROM "LiteLLM_AgentsTable" WHERE "agent_id" = 'a-null'"#,
@@ -536,49 +676,9 @@ async fn membership_writes_store_the_list_and_move_updated_at() {
     age_row(&database, "LiteLLM_AgentsTable", "agent_id", "agent-1").await;
     let replacement = groups(&["g2", "g3"]);
     let tables = PgAccessGroupTables { client: &client };
-    tables
-        .litellm_teamtable()
-        .set_access_group_ids("t1", &replacement)
-        .await
-        .expect("the team write runs");
-    tables
-        .litellm_verificationtoken()
-        .set_access_group_ids("token-1", &replacement)
-        .await
-        .expect("the key write runs");
-    tables
-        .litellm_agentstable()
-        .set_access_group_ids("agent-1", &replacement)
-        .await
-        .expect("the agent write runs");
-    let team = tables
-        .litellm_teamtable()
-        .find("t1")
-        .await
-        .expect("the team query runs")
-        .expect("the team row");
-    assert_eq!(team.access_group_ids, Some(replacement.clone()));
-    assert_eq!(team.team_alias.as_deref(), Some("t1"));
-    let key = tables
-        .litellm_verificationtoken()
-        .find("token-1")
-        .await
-        .expect("the key query runs")
-        .expect("the key row");
-    assert_eq!(key.access_group_ids, Some(replacement.clone()));
-    let carrying = tables
-        .litellm_agentstable()
-        .find_carrying("g2")
-        .await
-        .expect("the carrying query runs");
-    assert_eq!(agent_ids(&carrying), groups(&["agent-1"]));
-    assert!(updated_at(&database, "LiteLLM_TeamTable", "team_id", "t1").await > seeded_at());
-    assert!(
-        updated_at(&database, "LiteLLM_VerificationToken", "token", "token-1").await > seeded_at()
-    );
-    assert!(
-        updated_at(&database, "LiteLLM_AgentsTable", "agent_id", "agent-1").await > seeded_at()
-    );
+    write_membership_lists(&tables, &replacement).await;
+    assert_memberships_stored(&tables, &replacement).await;
+    assert_memberships_moved(&database).await;
     database.close().await;
 }
 
@@ -616,42 +716,23 @@ async fn a_rolled_back_transaction_leaves_every_row_as_it_was() {
     age_row(&database, "LiteLLM_TeamTable", "team_id", "t1").await;
     let mut client = database.client().await;
     let transaction = client.transaction().await.expect("the transaction opens");
-    {
-        let tables = PgAccessGroupTables {
-            client: &transaction,
-        };
-        tables
-            .create(&new_group("rolled-back", None, &[]))
-            .await
-            .expect("the insert runs");
-        tables
-            .litellm_teamtable()
-            .set_access_group_ids("t1", &groups(&["g2"]))
-            .await
-            .expect("the team write runs");
-    }
+    let tables = PgAccessGroupTables {
+        client: &transaction,
+    };
+    tables
+        .create(&new_group("rolled-back", None, &[]))
+        .await
+        .expect("the insert runs");
+    tables
+        .litellm_teamtable()
+        .set_access_group_ids("t1", &groups(&["g2"]))
+        .await
+        .expect("the team write runs");
     transaction
         .rollback()
         .await
         .expect("the transaction rolls back");
-    let tables = PgAccessGroupTables { client: &client };
-    assert_eq!(
-        tables
-            .find_by_name("rolled-back")
-            .await
-            .expect("the name query runs"),
-        None
-    );
-    let team = tables
-        .litellm_teamtable()
-        .find("t1")
-        .await
-        .expect("the team query runs")
-        .expect("the team row");
-    assert_eq!(team.access_group_ids, Some(groups(&["g1"])));
-    assert_eq!(
-        updated_at(&database, "LiteLLM_TeamTable", "team_id", "t1").await,
-        seeded_at()
-    );
+    let after_rollback = PgAccessGroupTables { client: &client };
+    assert_rollback_left_no_trace(&database, &after_rollback).await;
     database.close().await;
 }
