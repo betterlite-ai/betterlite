@@ -1,10 +1,10 @@
 from pydantic import JsonValue
 
-from betterlite._integrations.custom_guardrail_params import GuardrailParams
-from betterlite._integrations.custom_guardrail_recording import (
+from betterlite._integrations.custom_guardrail_hook_logging import (
     is_guarded_hook,
     log_guardrail_information,
 )
+from betterlite._integrations.custom_guardrail_params import GuardrailParams
 from betterlite._integrations.guardrail_types import HookCallable
 
 

@@ -4,7 +4,7 @@ from betterlite._integrations.custom_guardrail_constants import (
     LOGS_GUARDRAIL_INFORMATION_MARKER,
     PRE_CALL_EXECUTED_GUARDRAILS_KEY,
 )
-from betterlite._integrations.custom_guardrail_recording import log_guardrail_information
+from betterlite._integrations.custom_guardrail_hook_logging import log_guardrail_information
 from betterlite._integrations.custom_guardrail_request import (
     is_guardrail_intervention,
     session_id_from_request_data,

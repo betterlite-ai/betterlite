@@ -23,7 +23,6 @@ from betterlite._integrations.guardrail_types import (
     GuardrailConfigModel,
     GuardrailValue,
 )
-from betterlite._native import NativeGuardrail
 from betterlite.exceptions._process import (
     GuardrailRaisedException,
     ModifyResponseException,
@@ -234,7 +233,8 @@ class GuardrailState(CustomLogger):
         if not session_id:
             return
         seen = await self._cached_text_hashes(cache, session_id)
-        merged = list(dict.fromkeys([*sorted(seen), *(self._scanned_text_hash(text) for text in texts)]))
+        hashes = [self._scanned_text_hash(text) for text in texts]
+        merged = list(dict.fromkeys([*sorted(seen), *hashes]))
         key = self._scanned_texts_cache_key(session_id)
         try:
             await cache.async_set_cache(
