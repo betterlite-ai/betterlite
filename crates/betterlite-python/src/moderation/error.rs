@@ -167,7 +167,19 @@ fn fields(source: RawSource<'_>, redactor: &Redactor) -> (String, Option<u16>, R
             stream_status(error),
             RawExceptionBody::default(),
         ),
-        RawSource::Moderation(error) => moderation_fields(error, redactor),
+        RawSource::Moderation(error) => {
+            let failure = route_error(error, redactor);
+            (
+                failure.message,
+                Some(failure.status),
+                RawExceptionBody {
+                    kind: failure.error_type,
+                    param: failure.param,
+                    code: failure.code,
+                    ..RawExceptionBody::default()
+                },
+            )
+        }
     }
 }
 
@@ -182,23 +194,6 @@ pub(crate) fn moderation_failure(
         return refused(Raised::Plain, failure.message, facts);
     }
     provider_failure(RawSource::Moderation(error), facts, redactor)
-}
-
-fn moderation_fields(
-    error: &ModerationError,
-    redactor: &Redactor,
-) -> (String, Option<u16>, RawExceptionBody) {
-    let failure = route_error(error, redactor);
-    (
-        failure.message,
-        Some(failure.status),
-        RawExceptionBody {
-            kind: failure.error_type,
-            param: failure.param,
-            code: failure.code,
-            ..RawExceptionBody::default()
-        },
-    )
 }
 
 fn stream_status(error: &TextCompletionError) -> Option<u16> {
