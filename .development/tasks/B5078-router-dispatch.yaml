@@ -68,7 +68,8 @@ pitfalls:
   - "A stream's `hidden_params()` must be read on each access, never copied once."
   - "A batch error item is an exception object in the list. Raising it hides the other results."
   - "Do not decode the anthropic bytes: callers forward them as they are."
+  - "Ruff flags LiteLLM's own signatures here (FBT001, FBT002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 5

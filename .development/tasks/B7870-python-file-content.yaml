@@ -109,7 +109,8 @@ pitfalls:
 - "An async-only native stream must still allow `close()` from sync code, and a sync-only one must allow `aclose()`, since LiteLLM tries both close methods."
 - "`chunk_size` is bytes and defaults to 1048576, so a test that streams a small file sees one chunk, not many."
 - "The non-streaming bytes arrive as a blob, so build `HttpxBinaryResponseContent` from the blob and don't decode text from the JSON."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, FBT001, FBT002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 4

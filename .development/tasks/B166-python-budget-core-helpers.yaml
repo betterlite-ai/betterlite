@@ -99,7 +99,8 @@ pitfalls:
 - "`created_at=time.time()` as a default is fixed at import time in LiteLLM, and copying that is intended."
 - "`safe_deep_copy` has a depth limit and handles exceptions and `datetime`; read L514-L563 before writing it."
 - "`filter_exceptions_from_params` stops at `max_depth=20` and must not loop on a cycle."
+- "Ruff flags LiteLLM's own signatures here (FBT001, FBT002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 1
 review_level: standard

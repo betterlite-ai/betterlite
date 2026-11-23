@@ -123,7 +123,8 @@ pitfalls:
 - '`A2ALocalhostURLError` builds its message from `localhost_url` and `base_url`, so the native payload must carry those two, not a message.'
 - '`send_message` called inside a running loop returns the coroutine unawaited, and outside it runs `asyncio.run`, so a test needs both.'
 - A generator that is not exhausted must still close the native stream, so use `try` and `finally` around the loop.
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, FBT001, FBT002, ASYNC109). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: security
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 8

@@ -100,7 +100,8 @@ pitfalls:
 - A list of images in `image_edit` must keep its order, since providers read the first as the main image.
 - A file object read once must be rewound, as B6040 does, because callers reuse it.
 - Do not guess a content type from bytes. Use the file name.
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, ASYNC109, ARG001). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 9
