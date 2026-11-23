@@ -1,0 +1,63 @@
+kind: helper
+name: end-user-id-legacy-header-name
+call:
+  b10050:
+    user_header_mappings: []
+    user_header_name: x-legacy-user
+    validate_end_user_id_in_db: false
+    requests:
+      - body: {}
+        headers:
+          - [x-legacy-user, legacy]
+          - [x-litellm-end-user-id, end-user]
+      - body: {}
+        headers:
+          - [x-legacy-user, legacy]
+      - body: {}
+        headers:
+          - [X-Legacy-User, legacy]
+      - body: {}
+        headers:
+          - [x-legacy-user, "  "]
+      - body: {user: body}
+        headers: null
+calls:
+  - b10050:
+      user_header_mappings: []
+      user_header_name: " x-legacy-user "
+      validate_end_user_id_in_db: false
+      requests:
+        - body: {}
+          headers:
+            - [x-legacy-user, legacy]
+  - b10050:
+      user_header_mappings: []
+      user_header_name: null
+      validate_end_user_id_in_db: false
+      requests:
+        - body: {}
+          headers:
+            - [x-legacy-user, legacy]
+  - b10050:
+      user_header_mappings: []
+      user_header_name: "   "
+      validate_end_user_id_in_db: false
+      requests:
+        - body: {}
+          headers:
+            - [x-legacy-user, legacy]
+  - b10050:
+      user_header_mappings:
+        - {header_name: x-legacy-user, litellm_user_role: internal_user}
+      user_header_name: x-legacy-user
+      validate_end_user_id_in_db: false
+      requests:
+        - body: {}
+          headers:
+            - [x-legacy-user, legacy]
+        - body: {}
+          headers:
+            - [x-internal, internal]
+env: {}
+compare:
+  ignore: []
