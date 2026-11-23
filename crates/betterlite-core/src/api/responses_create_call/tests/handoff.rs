@@ -19,6 +19,25 @@ pub(super) async fn parameter_handoff() {
     omitted(&calls[0]);
     assert_eq!(handoff.contexts(), vec![String::from("ctx")]);
     named_provider().await;
+    given_text().await;
+}
+
+// A caller's own text wins over text_format, which the conversion then leaves unread
+async fn given_text() {
+    let call = support::call_from(
+        r#"{"model":"openai/gpt-4o","input":"hello","text":{"format":{"type":"text"}},"text_format":{"type":"json_object"}}"#,
+    );
+    let handoff = ScriptedHandoff::new(Outcome::Completed(Some(support::stamped("resp_a"))));
+    let resolver = ScriptedResolver::default();
+    support::drive(&resolver, None, &handoff, &call)
+        .await
+        .expect("the wrapper answers");
+    let calls = handoff.calls();
+    assert_eq!(
+        calls[0].text,
+        Some(support::json(r#"{"format":{"type":"text"}}"#))
+    );
+    assert_eq!(calls[0].text_format, None);
 }
 
 // A caller-named provider is forwarded as given, and detection never sees the model
