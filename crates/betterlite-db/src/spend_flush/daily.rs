@@ -63,10 +63,10 @@ where
     if pending.is_empty() {
         return Ok(());
     }
-    let ports = Arc::clone(parts);
+    let deps = Arc::clone(parts);
     let started = start_daily_spend_commit(commits, move |phase| async move {
         let mut pending = pending;
-        let outcome = commit_daily_map(&ports, entity, &mut pending, phase).await;
+        let outcome = commit_daily_map(&deps, entity, &mut pending, phase).await;
         (pending, outcome)
     });
     let phase = started.phase;
@@ -76,7 +76,7 @@ where
         () = shutdown.cancelled() => None,
     };
     match joined {
-        Some(settled) => settle_daily_commit(queue, entity, settled).await,
+        Some(settled) => settle_daily_commit::<Writer>(queue, entity, settled).await,
         None => interrupt_daily_commit(queue, entity, phase, task).await,
     }
 }
@@ -145,7 +145,7 @@ where
         let settling = Arc::clone(queue);
         queue.track_interrupted_commit(async move {
             let settled = task.await;
-            requeue_interrupted_daily(&settling, entity, settled).await;
+            requeue_interrupted_daily::<Writer>(&settling, entity, settled).await;
         });
         return Err(DailyFlushError::Cancelled { entity });
     }
