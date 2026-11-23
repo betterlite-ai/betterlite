@@ -10,7 +10,7 @@ description: >-
   B8801 owns the pre-call step of the common request processing (these routes run its PreCall step; keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); B8804 swaps the step in the core route modules and lands first, so never build `PreCallStep::standalone`); B004 owns the rest of it and the exception handling (LiteLLM's ProxyBaseLLMRequestProcessing and _handle_llm_api_exception). These routes only build the data map and hand it over.
 
   Content route steps, in order. (1) Start data as {video_id}. The video_id is the whole path segment. (2) Call B672 decode_video_id_with_provider(video_id) and keep its custom_llm_provider and model_id.
-  (3) Pick custom_llm_provider as the first truthy value of: the custom-llm-provider header, the custom_llm_provider query parameter (both from B2400), the custom_llm_provider key of the JSON body (B2400, which reads the body through B1100), the provider from the decoded id. The body is only read when the header and the query are both empty, and a malformed body then fails with the 400 invalid_request_error from B1100 before the processing try block.
+  (3) Pick custom_llm_provider as the first truthy value of: the custom-llm-provider header, the custom_llm_provider query parameter (both from B10059), the custom_llm_provider key of the JSON body (B10059, which reads the body through B1100), the provider from the decoded id. The body is only read when the header and the query are both empty, and a malformed body then fails with the 400 invalid_request_error from B1100 before the processing try block.
   (4) When the pick is truthy, set data["custom_llm_provider"]. (5) When the decoded model_id is truthy and a router is loaded, call B844 resolve_model_name_from_model_id; when it gives a name, set data["model"]. (6) Call the common processing with route type avideo_content and model none.
   (7) Return a new response with the bytes as the body, media type video/mp4 and the single header Content-Disposition: attachment; filename=video_{video_id}.mp4. The step is inside the same try as the processing, so a failure goes through the common exception handling.
   Nothing else from the query reaches the call: variant, extra_query and every other query key are dropped, because data is only built from the steps above.
@@ -117,7 +117,7 @@ deviations: []
 out_of_scope:
   - "B3343 owns POST/GET /videos and GET /videos/{video_id}, with their cases. B3345 owns the character routes. B6360 owns the edit and extension routes in the same file."
   - "B3339 and B3340 own the call functions, B3334 the remix transport and B3333 the content transport; B672 owns the id codec; B844 owns resolve_model_name_from_model_id."
-  - "B8801 owns the pre-call step, B004 the rest of the common request processing, response headers and exception handling; B2400 the provider accessors; B1100 the body read; B052 authentication."
+  - "B8801 owns the pre-call step, B004 the rest of the common request processing, response headers and exception handling; B10059 the provider accessors; B1100 the body read; B052 authentication."
   - "video_reference_to_id, extract_model_from_target_model_names, get_custom_provider_from_data and encode_character_id_in_response in video_endpoints/utils.py are not used by these two routes."
 pitfalls:
   - The content route returns a new response, so custom headers set by the common processing are lost and only Content-Disposition is added.

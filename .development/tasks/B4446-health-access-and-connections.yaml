@@ -41,7 +41,7 @@ description: >-
   - B759: get_key_models for scoped model resolution.
   - B832: ModelManagementAuthChecks.can_user_make_model_call for final model-call authorization.
   - B844: Router.get_deployment, get_model_list, get_model_names, should_include_deployment for catalog lookup.
-  - B847: Router.get_model_access_groups for model access group resolution.
+  - B10047: Router.get_model_access_groups for model access group resolution.
   - B884: _BANNED_REQUEST_BODY_PARAMS table, a direct data dependency for client credential fields.
   - B4441: deployments_targeted_by_name, _update_litellm_params_for_health_check, run_with_timeout,
     _clean_endpoint_data, and the admin-only display-field set (ADMIN_ONLY_HEALTH_DISPLAY_PARAMS).

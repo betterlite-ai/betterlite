@@ -1,0 +1,38 @@
+kind: helper
+name: end-user-id-header-sources-seed
+call:
+  b10050:
+    user_header_mappings:
+      - {header_name: x-team-id, litellm_user_role: customer}
+      - {header_name: X-Org-Id, litellm_user_role: customer}
+      - {header_name: x-internal, litellm_user_role: internal_user}
+    user_header_name: x-legacy-user
+    validate_end_user_id_in_db: false
+    requests:
+      - body: {}
+        headers:
+          - [x-litellm-end-user-id, end-user]
+          - [x-team-id, team]
+      - body: {}
+        headers:
+          - [x-org-id, org]
+      - body: {user: body}
+        headers: null
+      - body: {user: 1.5}
+        headers: null
+      - body: {user: '{"a": 1}'}
+        headers:
+          - [x-litellm-customer-id, '{"a": 1}']
+calls:
+  - b10050:
+      user_header_mappings: []
+      user_header_name: x-legacy-user
+      validate_end_user_id_in_db: true
+      requests:
+        - body: {user: "[x"}
+          headers: null
+        - body: {user: '["md"]', safety_identifier: sid}
+          headers: null
+env: {}
+compare:
+  ignore: []

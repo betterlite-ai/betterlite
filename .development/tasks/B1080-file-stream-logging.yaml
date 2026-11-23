@@ -44,7 +44,8 @@ dod:
 - text: >-
     streaming_projection routes data={model:m,file_id:encoded,x:1} with credentials containing
     custom_llm_provider=openai,api_key=k and original_file_id=f: return provider=openai,id=f,
-    a copied payload with credentials and internal trusted snapshot, no model, and x=1. Original
+    a copied payload with credentials, no model, and x=1, and B10060's trusted snapshot as a separate
+    TrustedCredentials value, never inside the payload. Original
     input is unchanged. should_route=false or credentials=None returns the original payload and
     provider/id without copying or stripping model. Streaming predicate accepts exactly openai,
     hosted_vllm,litellm_proxy,vertex_ai; azure,bedrock,anthropic,empty and null do not qualify.
