@@ -1,14 +1,17 @@
 mod cold_storage;
+mod monitor;
 mod partition_switch;
 mod queue;
 pub mod retention;
 mod tests;
+use self::cold_storage::custom_logger;
 use self::queue::{logs_url, max_bytes};
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_money, resolve_number};
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
+use betterlite_db::spend_flush::monitor::SpendMonitorSettings;
 use betterlite_db::spend_partitions::calendar::PartitionInterval;
 use betterlite_db::spend_retention::batches::settings::{CleanupGeneralSettings, CleanupSettings};
 use betterlite_secret_managers::secret_lookup::text_to_bool;
@@ -81,6 +84,8 @@ pub struct Settings {
     pub precreate_ahead: i64,
     pub spend_log_queue_max_bytes: usize,
     pub spend_logs_url: Option<String>,
+    // the spend log queue monitor's threshold and base poll interval, read from the environment once with the rest of the section
+    pub spend_log_monitor: SpendMonitorSettings,
     pub retention: CleanupSettings,
     // the callback name ColdStorageHandler reads stored request bodies through; None reads none
     pub cold_storage_custom_logger: Option<String>,
@@ -126,10 +131,9 @@ impl Section for Raw {
             precreate_ahead: ahead,
             spend_log_queue_max_bytes: max_bytes(lookup)?,
             spend_logs_url: logs_url(lookup),
+            spend_log_monitor: monitor::monitor_settings(lookup)?,
             retention: retention::cleanup_settings(general.retention, lookup)?,
-            cold_storage_custom_logger: cold_storage::custom_logger(
-                &litellm.cold_storage_custom_logger,
-            )?,
+            cold_storage_custom_logger: custom_logger(&litellm.cold_storage_custom_logger)?,
         })
     }
 }

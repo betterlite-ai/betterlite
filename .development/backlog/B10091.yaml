@@ -1,14 +1,14 @@
 id: B10091
 milestone: M8 platform
 title: Lens billing key validation
-status: todo
+status: done
 depends_on: [B732]
 file: tasks/B10091-lens-key-validation.yaml
 covers:
   - "litellm/proxy/lens/billing.py"
 parent: B132
 split_from: B4504
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3066

@@ -1,0 +1,6 @@
+task: B10094
+deviations:
+  - what: Both variables are read when the config loads, and the wiring builds its lists once at startup, so a value that arrives later through environment_variables stored in the database applies after a restart. LiteLLM reads them on every redirect check, so the same change applies at once there.
+    why: rules.yaml keeps environment reads in betterlite-config and forbids reading the environment per request; the allowlists are deployment settings that change with a rollout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L309-L337
+kept_bugs: []
