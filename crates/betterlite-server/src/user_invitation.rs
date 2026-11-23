@@ -126,7 +126,7 @@ fn decode_row(row: &Row) -> Result<InvitationRecord, DbError> {
         id: row.try_get("id").map_err(backend::<Infallible>)?,
         user_id: row.try_get("user_id").map_err(backend::<Infallible>)?,
         is_accepted: row.try_get("is_accepted").map_err(backend::<Infallible>)?,
-        accepted_at: accepted_at.map(NaiveDateTime::and_utc),
+        accepted_at: accepted_at.map(|value| value.and_utc()),
         expires_at: expires_at.and_utc(),
         created_at: created_at.and_utc(),
         created_by: row.try_get("created_by").map_err(backend::<Infallible>)?,
