@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
-use super::convert::{CostCall, OcrCall, SearchCall, parse};
+use super::convert::{ConvertError, CostCall, OcrCall, SearchCall};
 use super::error::{NativeFailure, SessionError};
 use super::session::SessionCore;
 
@@ -24,7 +24,8 @@ impl NativeSearchSession {
 
     // the synchronous search: one attempt on the runtime, blocking this thread with the GIL released
     fn search(&self, py: Python<'_>, request: &str, _blobs: Vec<Vec<u8>>) -> PyResult<String> {
-        let call: SearchCall = parse(request)?;
+        let call: SearchCall =
+            serde_json::from_str(request).map_err(|source| ConvertError::Json { source })?;
         py.detach(|| get_runtime().block_on(self.core.search(call)))
             .map_err(NativeFailure::into_pyerr)
     }
@@ -36,7 +37,8 @@ impl NativeSearchSession {
         request: &str,
         _blobs: Vec<Vec<u8>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let call: SearchCall = parse(request)?;
+        let call: SearchCall =
+            serde_json::from_str(request).map_err(|source| ConvertError::Json { source })?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
             let answer = Box::pin(core.search(call))
@@ -48,14 +50,16 @@ impl NativeSearchSession {
 
     // search_provider_cost_per_query: a number pair, or the model-not-mapped outcome Python raises
     fn cost(&self, py: Python<'_>, request: &str, _blobs: Vec<Vec<u8>>) -> PyResult<String> {
-        let call: CostCall = parse(request)?;
+        let call: CostCall =
+            serde_json::from_str(request).map_err(|source| ConvertError::Json { source })?;
         py.detach(|| get_runtime().block_on(self.core.cost(call)))
             .map_err(NativeFailure::into_pyerr)
     }
 
     // the synchronous OCR call, with the caller's file bytes beside the request text
     fn ocr(&self, py: Python<'_>, request: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
-        let call: OcrCall = parse(request)?;
+        let call: OcrCall =
+            serde_json::from_str(request).map_err(|source| ConvertError::Json { source })?;
         py.detach(|| get_runtime().block_on(self.core.ocr(call, &blobs)))
             .map_err(NativeFailure::into_pyerr)
     }
@@ -67,7 +71,8 @@ impl NativeSearchSession {
         request: &str,
         blobs: Vec<Vec<u8>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let call: OcrCall = parse(request)?;
+        let call: OcrCall =
+            serde_json::from_str(request).map_err(|source| ConvertError::Json { source })?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
             let answer = Box::pin(core.ocr(call, &blobs))

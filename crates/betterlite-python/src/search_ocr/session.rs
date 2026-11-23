@@ -17,13 +17,10 @@ use betterlite_logging::logging_pre_post::env::{LogRecord, LogSink};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_wrapper::error::plain_error;
-use rust_decimal::prelude::ToPrimitive as _;
 use serde::Serialize;
 
 use self::logging::{class_failure, runtime_config};
-use super::convert::{
-    ConvertError, CostAnswer, CostCall, SearchAnswer, SearchCall, SessionWire, parse,
-};
+use super::convert::{ConvertError, CostAnswer, CostCall, SearchAnswer, SearchCall, SessionWire};
 use super::error::{NativeFailure, SessionError};
 use super::pricing::CatalogPricing;
 
@@ -45,7 +42,8 @@ pub(crate) struct SessionCore {
 
 impl SessionCore {
     pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
-        let wire: SessionWire = parse(text)?;
+        let wire: SessionWire =
+            serde_json::from_str(text).map_err(|source| ConvertError::Json { source })?;
         let environment = wire.environment.unwrap_or_else(process_environment);
         let config = runtime_config();
         let tls = TlsPolicy::resolve(&config, &environment, None)
@@ -119,7 +117,7 @@ impl SessionCore {
             &call.optional_params,
         )
         .await;
-        let (input, output) = match outcome {
+        let (input_cost, output_cost) = match outcome {
             Ok((input, output)) if negative => (-input, -output),
             Ok((input, output)) => (input, output),
             Err(SearchCostError::ModelInfo { source, .. }) => {
@@ -133,9 +131,6 @@ impl SessionCore {
                     Vec::new(),
                 ));
             }
-        };
-        let (Some(input_cost), Some(output_cost)) = (input.to_f64(), output.to_f64()) else {
-            return Err(NativeFailure::Convert(ConvertError::CostRange));
         };
         encode(&CostAnswer::Cost {
             input_cost,

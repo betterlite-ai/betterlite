@@ -9,6 +9,7 @@ use betterlite_ocr::response::OCRResponse;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::records::SearchResponse;
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -38,16 +39,6 @@ pub(crate) enum ConvertError {
     },
     #[error("the timeout of {seconds} seconds is not a valid duration")]
     Timeout { seconds: f64 },
-    #[error("the search cost does not fit a float")]
-    CostRange,
-}
-
-// The one text every native method takes: the call's arguments, already JSON, plus the files beside it.
-pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
-where
-    T: Deserialize<'text>,
-{
-    serde_json::from_str(text).map_err(|source| ConvertError::Json { source })
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -117,13 +108,13 @@ pub(crate) struct CostCall {
     pub(crate) model: String,
     #[serde(default)]
     pub(crate) custom_llm_provider: Option<String>,
-    #[serde(default = "one_query")]
+    #[serde(default = "default_number_of_queries")]
     pub(crate) number_of_queries: i64,
     #[serde(default)]
     pub(crate) optional_params: SearchOptionalParams,
 }
 
-const fn one_query() -> i64 {
+const fn default_number_of_queries() -> i64 {
     1_i64
 }
 
@@ -260,6 +251,11 @@ pub(crate) struct OcrAnswer<'answer> {
 #[derive(Debug, Serialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub(crate) enum CostAnswer {
-    Cost { input_cost: f64, output_cost: f64 },
-    Unmapped { message: String },
+    Cost {
+        input_cost: Decimal,
+        output_cost: Decimal,
+    },
+    Unmapped {
+        message: String,
+    },
 }

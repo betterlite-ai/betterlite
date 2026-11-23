@@ -1,5 +1,5 @@
 use super::{
-    ConvertError, CostAnswer, CostCall, OcrCall, SearchCall, SessionWire, parse, resolve_document,
+    ConvertError, CostAnswer, CostCall, OcrCall, SearchCall, SessionWire, resolve_document,
 };
 use betterlite_core::search::SearchOptions;
 use betterlite_models::decisions::Json;
@@ -30,7 +30,7 @@ fn request_search_call_reads_every_public_keyword() {
         "kwargs": {"objective": "find docs"}
     })
     .to_string();
-    let call: SearchCall = parse(&text).expect("the call parses");
+    let call: SearchCall = serde_json::from_str(&text).expect("the call parses");
     let request = call.into_request().expect("the request converts");
     assert_eq!(request.search_provider, "brave");
     assert_eq!(
@@ -67,7 +67,7 @@ fn request_search_call_reads_every_public_keyword() {
 #[test]
 fn request_search_call_defaults_every_option_to_absent() {
     let text = json!({"query": "docs", "search_provider": "brave"}).to_string();
-    let call: SearchCall = parse(&text).expect("the call parses");
+    let call: SearchCall = serde_json::from_str(&text).expect("the call parses");
     let request = call.into_request().expect("the request converts");
     assert_eq!(request.options, SearchOptions::default());
     assert!(request.extra_headers.is_empty());
@@ -80,7 +80,7 @@ fn request_search_call_defaults_every_option_to_absent() {
 fn request_search_call_rejects_a_negative_timeout() {
     let text =
         json!({"query": "docs", "search_provider": "brave", "timeout_seconds": -1.0}).to_string();
-    let call: SearchCall = parse(&text).expect("the call parses");
+    let call: SearchCall = serde_json::from_str(&text).expect("the call parses");
     let error = call.into_request().err().expect("the timeout is refused");
     assert!(matches!(error, ConvertError::Timeout { .. }));
 }
@@ -88,7 +88,7 @@ fn request_search_call_rejects_a_negative_timeout() {
 #[test]
 fn request_search_call_rejects_an_unknown_keyword() {
     let text = json!({"query": "docs", "search_provider": "brave", "unknown": true}).to_string();
-    let error = parse::<SearchCall>(&text)
+    let error = serde_json::from_str::<SearchCall>(&text)
         .err()
         .expect("the field is refused");
     assert!(matches!(error, ConvertError::Json { .. }));
@@ -96,7 +96,8 @@ fn request_search_call_rejects_an_unknown_keyword() {
 
 #[test]
 fn request_cost_call_defaults_to_one_query_and_no_params() {
-    let call: CostCall = parse(r#"{"model": "exa_ai/search"}"#).expect("the call parses");
+    let call: CostCall =
+        serde_json::from_str(r#"{"model": "exa_ai/search"}"#).expect("the call parses");
     assert_eq!(call.number_of_queries, 1_i64);
     assert!(call.custom_llm_provider.is_none());
     assert!(call.optional_params.max_results.is_none());
@@ -111,7 +112,7 @@ fn request_cost_call_reads_the_tiered_max_results() {
         "optional_params": {"max_results": 12}
     })
     .to_string();
-    let call: CostCall = parse(&text).expect("the call parses");
+    let call: CostCall = serde_json::from_str(&text).expect("the call parses");
     assert_eq!(call.number_of_queries, 3_i64);
     assert_eq!(call.custom_llm_provider.as_deref(), Some("exa_ai"));
     assert_eq!(call.optional_params.max_results, Some(12));
@@ -131,7 +132,7 @@ fn request_ocr_call_reads_the_document_and_connection() {
         "timeout_seconds": 4.0
     })
     .to_string();
-    let call: OcrCall = parse(&text).expect("the call parses");
+    let call: OcrCall = serde_json::from_str(&text).expect("the call parses");
     assert_eq!(call.model, "mistral-ocr-latest");
     assert_eq!(call.custom_llm_provider.as_deref(), Some("mistral"));
     assert_eq!(call.timeout_seconds, Some(4.0_f64));
@@ -244,10 +245,11 @@ fn error_document_without_a_type_names_the_field() {
 
 #[test]
 fn request_session_wire_reads_an_absent_environment_as_none() {
-    let wire: SessionWire = parse("{}").expect("the wire parses");
+    let wire: SessionWire = serde_json::from_str("{}").expect("the wire parses");
     assert!(wire.environment.is_none());
     let named: SessionWire =
-        parse(r#"{"environment": {"MISTRAL_API_KEY": "sk-test"}}"#).expect("the wire parses");
+        serde_json::from_str(r#"{"environment": {"MISTRAL_API_KEY": "sk-test"}}"#)
+            .expect("the wire parses");
     assert_eq!(
         named
             .environment

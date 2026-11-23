@@ -11,6 +11,8 @@ use pyo3::prelude::*;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+use crate::completion::error::NativeError;
+
 use super::convert::ConvertError;
 
 // Everything the session needs before it can answer a call; each variant names the outside value that failed.
@@ -78,7 +80,7 @@ impl From<ConvertError> for NativeFailure {
     }
 }
 
-// The JSON text NativeSearchError carries: LiteLLM's exception name and the fields its class keeps.
+// The payload NativeError carries: LiteLLM's exception name and the fields its class keeps.
 #[derive(Debug, Serialize)]
 struct NativeErrorPayload {
     #[serde(rename = "type")]
@@ -93,27 +95,30 @@ struct NativeErrorPayload {
     max_retries: Option<i64>,
 }
 
-impl NativeErrorPayload {
-    fn from_class(class: &ErrorClass, message: &str, headers: &[(String, String)]) -> Self {
-        let metadata = class.metadata();
-        let mut mapped_headers = BTreeMap::new();
-        if let ErrorClass::RateLimit(details) = class {
-            mapped_headers.clone_from(&details.headers);
-        }
-        for (name, value) in headers {
-            mapped_headers.insert(name.clone(), value.clone());
-        }
-        Self {
-            kind: class_name(class).to_owned(),
-            message: message.to_owned(),
-            status_code: class_status(class),
-            llm_provider: metadata.provider,
-            model: metadata.model,
-            body: None,
-            headers: mapped_headers,
-            num_retries: None,
-            max_retries: metadata.retry.max_retries.map(i64::from),
-        }
+// The payload NativeError carries: LiteLLM's exception name, the answer's message and the class's own fields.
+fn error_payload(
+    class: &ErrorClass,
+    message: &str,
+    headers: &[(String, String)],
+) -> NativeErrorPayload {
+    let metadata = class.metadata();
+    let mut mapped_headers = BTreeMap::new();
+    if let ErrorClass::RateLimit(details) = class {
+        mapped_headers.clone_from(&details.headers);
+    }
+    for (name, value) in headers {
+        mapped_headers.insert(name.clone(), value.clone());
+    }
+    NativeErrorPayload {
+        kind: class_name(class).to_owned(),
+        message: message.to_owned(),
+        status_code: class_status(class),
+        llm_provider: metadata.provider,
+        model: metadata.model,
+        body: None,
+        headers: mapped_headers,
+        num_retries: None,
+        max_retries: metadata.retry.max_retries.map(i64::from),
     }
 }
 
@@ -123,22 +128,11 @@ pub(crate) fn native_error(
     message: &str,
     headers: &[(String, String)],
 ) -> PyErr {
-    let payload = NativeErrorPayload::from_class(class, message, headers);
+    let payload = error_payload(class, message, headers);
     match serde_json::to_string(&payload) {
-        Ok(text) => Python::attach(|py| match native_error_class(py) {
-            Ok(error_class) => match error_class.call1((text,)) {
-                Ok(value) => PyErr::from_value(value),
-                Err(error) => error,
-            },
-            Err(error) => error,
-        }),
+        Ok(text) => NativeError::new_err(text),
         Err(_encoding) => PyRuntimeError::new_err(payload.message),
     }
-}
-
-fn native_error_class(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
-    py.import("betterlite._native")?
-        .getattr("NativeSearchError")
 }
 
 impl From<SessionError> for PyErr {
@@ -160,9 +154,7 @@ impl From<ConvertError> for PyErr {
             ConvertError::Json { .. } | ConvertError::Timeout { .. } => {
                 PyValueError::new_err(error.to_string())
             }
-            ConvertError::Encode { .. } | ConvertError::CostRange => {
-                PyRuntimeError::new_err(error.to_string())
-            }
+            ConvertError::Encode { .. } => PyRuntimeError::new_err(error.to_string()),
         }
     }
 }
