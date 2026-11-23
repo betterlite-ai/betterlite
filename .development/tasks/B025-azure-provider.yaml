@@ -104,6 +104,9 @@ description: >-
   operation.rs and prepared.rs as they are.
 scope:
   paths:
+  - "crates/betterlite-provider/src/prepared/deployment.rs"
+  - "crates/betterlite-provider/src/provider.rs"
+  - "crates/betterlite-provider/src/provider/tests.rs"
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/azure_dispatch.rs
   - crates/betterlite-provider/src/azure_dispatch/**
@@ -283,6 +286,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-provider/azure-header-retry-merge.yaml
 deviations: []
 out_of_scope:
+- Building one Azure Composition at startup and passing it into Provider::from_deployment through its five production callers, with a config section for the litellm globals and the AzureOpenAIConfig and AzureOpenAIO1Config defaults, is B10044 (after this task). Until then Provider::from_slug keeps Composition::from_environment(process_environment()) as its only environment read, and the inject-dependencies finding on it is that follow-up's work.
 - B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
   B157-B166 own Python SDK facades, callable hooks and SDK module globals.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
@@ -361,6 +365,6 @@ pitfalls:
 - Dynamic client invalidation compares the caller API version before environment/global fallback.
 - Azure text uses AzureOpenAIConfig defaults even though B540 performs the text call.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1650
   max_new_expects: 0
 review_level: security

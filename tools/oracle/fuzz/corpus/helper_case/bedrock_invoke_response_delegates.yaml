@@ -1,0 +1,52 @@
+kind: helper
+name: bedrock-invoke-response-delegate-seed
+call:
+  bedrock_invoke_response:
+    reply:
+      - model: anthropic.claude-3-5-sonnet-20240620-v1:0
+        body: '{"id": "msg_bdrk_seed", "model": "claude-plain", "type": "message", "role": "assistant", "content": [{"type": "text", "text": "seed"}], "stop_reason": "end_turn", "usage": {"input_tokens": 4, "output_tokens": 2}}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-seed
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.nova-pro-v1:0
+        body: '{"output": {"message": {"role": "assistant", "content": [{"text": "seed"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 4, "outputTokens": 2, "totalTokens": 6}}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-seed
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: twelvelabs.pegasus-1-2-v1:0
+        body: '{"message": "seed clip", "finishReason": "stop"}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "4"], [x-amzn-bedrock-output-token-count, "2"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-seed
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+env: {}
+compare: {ignore: []}

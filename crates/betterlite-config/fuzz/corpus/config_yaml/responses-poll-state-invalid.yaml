@@ -1,0 +1,6 @@
+litellm_settings:
+  responses:
+    background_mode:
+      polling_via_cache: {openai: true}
+      native_background_mode: 7
+      ttl: oops

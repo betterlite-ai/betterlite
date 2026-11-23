@@ -1,0 +1,10 @@
+litellm_settings:
+  responses:
+    background_mode:
+      polling_via_cache: "all"
+      native_background_mode: [gpt-4o]
+      ttl: 17
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o

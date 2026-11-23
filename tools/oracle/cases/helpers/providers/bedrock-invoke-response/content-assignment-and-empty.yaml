@@ -1,0 +1,81 @@
+kind: helper
+name: content-assignment-and-empty
+call:
+  bedrock_invoke_response:
+    reply:
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "assigned"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "4"], [x-amzn-bedrock-output-token-count, "0"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": ""}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "4"], [x-amzn-bedrock-output-token-count, "0"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "ignored"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "4"], [x-amzn-bedrock-output-token-count, "2"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-tool
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: prior, tool_calls: []}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "x"}]}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-empty
+          choices: []
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": [1, 2]}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "4"], [x-amzn-bedrock-output-token-count, "2"]]
+        messages: []
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-tool
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: prior, tool_calls: []}}
+env: {}
+compare: {ignore: []}

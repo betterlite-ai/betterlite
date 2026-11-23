@@ -1,0 +1,49 @@
+kind: helper
+name: azure-text-dispatch
+call:
+  azure_provider:
+    case: text
+    model: gpt-3.5-turbo-instruct
+    api_base: null
+    api_version: null
+    api_key: sk-text
+    azure_ad_token: null
+    headers: null
+    extra_headers:
+      x-text: "1"
+    extra_body: null
+    max_retries: null
+    messages:
+      - role: user
+        content: hi
+    optional_params:
+      max_tokens: 8
+    embedding: null
+    acompletion: false
+    environment:
+      AZURE_API_BASE: https://fixture.test
+      AZURE_API_VERSION: "2024-10-21"
+    globals:
+      api_base: null
+      api_version: null
+      api_key: null
+      azure_key: null
+      headers: null
+      azure_default_api_version: null
+    chat_defaults: null
+    o_series_defaults: null
+    status: 200
+    reply:
+      id: cmpl-1
+      object: text_completion
+      created: 1700000000
+      model: gpt-3.5-turbo-instruct
+      choices:
+        - text: hello
+          index: 0
+          logprobs: null
+          finish_reason: stop
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    second: null
+env: {}
+compare: {ignore: []}

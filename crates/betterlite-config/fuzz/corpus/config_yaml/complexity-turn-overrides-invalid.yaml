@@ -1,0 +1,11 @@
+model_list:
+  - model_name: turn-overrides-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        keyword_tier_rules:
+          - keywords: ["   "]
+            tier: COMPLEX
+        stall_escalation_window: 0
+        stall_escalation_repeat_threshold: 1
+        match_threshold: 1.5
