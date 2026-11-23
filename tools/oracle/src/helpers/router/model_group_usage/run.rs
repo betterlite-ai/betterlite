@@ -176,7 +176,8 @@ fn filter_answer(input: &Input, snapshot: &Snapshot) -> Result<Value, Failure> {
 }
 
 fn filtered_candidates(input: &Input, snapshot: &Snapshot) -> Result<Vec<DeploymentSpec>, Failure> {
-    let candidates = candidate_rows(input, snapshot)?;
+    let group = group_of(input, "filter")?;
+    let candidates = candidate_rows(input, snapshot, group)?;
     let metadata = input.metadata.as_ref().map(grants_of);
     let litellm_metadata = input.litellm_metadata.as_ref().map(grants_of);
     let no_inferred = |_model: &str| -> Option<String> { None };
@@ -188,7 +189,7 @@ fn filtered_candidates(input: &Input, snapshot: &Snapshot) -> Result<Vec<Deploym
     };
     Ok(filter_deployments_by_model_access_groups(
         AccessFilterRequest {
-            model: group_of(input, "filter")?,
+            model: group,
             deployments: &candidates,
             metadata: metadata.as_ref(),
             litellm_metadata: litellm_metadata.as_ref(),
@@ -199,18 +200,20 @@ fn filtered_candidates(input: &Input, snapshot: &Snapshot) -> Result<Vec<Deploym
     )?)
 }
 
-// The request's held deployments: the whole model list, or the case's own indices into it.
-fn candidate_rows(input: &Input, snapshot: &Snapshot) -> Result<Vec<DeploymentSpec>, Failure> {
+// The request's held deployments: the group's rows, or the case's own indices into them.
+fn candidate_rows(
+    input: &Input,
+    snapshot: &Snapshot,
+    group: &str,
+) -> Result<Vec<DeploymentSpec>, Failure> {
+    let rows = snapshot.rows(group);
     let Some(indices) = &input.candidates else {
-        return Ok(snapshot.catalog.models.clone());
+        return Ok(rows);
     };
     indices
         .iter()
         .map(|index| {
-            snapshot
-                .catalog
-                .models
-                .get(*index)
+            rows.get(*index)
                 .cloned()
                 .ok_or(Failure::Candidate { index: *index })
         })
