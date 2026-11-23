@@ -107,9 +107,9 @@ async fn run_step(
                 invalidate_during_read.then(|| user_id.clone());
             let outcome = store.fetch(user_id).await;
             *pending.lock().unwrap_or_else(PoisonError::into_inner) = None;
-            Ok(outcome_report("fetch", outcome, store, user_id))
+            Ok(report("fetch", outcome, store, user_id))
         }
-        Step::FetchUncached { user_id } => Ok(outcome_report(
+        Step::FetchUncached { user_id } => Ok(report(
             "fetch_uncached",
             store.fetch_uncached(user_id).await,
             store,
@@ -118,34 +118,25 @@ async fn run_step(
         Step::Persist { user_id, assertion } => {
             let built = decode_payload(&serde_json::to_string(assertion)?).or_value_error()?;
             store.persist(user_id, &built).await.or_value_error()?;
-            Ok(report("persist", "ok", None, store, user_id))
+            Ok(report("persist", Ok(None), store, user_id))
         }
-    }
-}
-
-fn outcome_report(
-    step: &str,
-    outcome: Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable>,
-    store: &DbSsoAssertionStore<CacheWatchingRows>,
-    user_id: &str,
-) -> Value {
-    match outcome {
-        Ok(found) => report(step, "ok", found.as_ref(), store, user_id),
-        Err(_unavailable) => report(step, "unavailable", None, store, user_id),
     }
 }
 
 fn report(
     step: &str,
-    outcome: &str,
-    found: Option<&SsoIdentityAssertion>,
+    outcome: Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable>,
     store: &DbSsoAssertionStore<CacheWatchingRows>,
     user_id: &str,
 ) -> Value {
+    let (label, found) = match outcome {
+        Ok(found) => ("ok", found),
+        Err(_unavailable) => ("unavailable", None),
+    };
     json!({
         "step": step,
-        "outcome": outcome,
-        "assertion": found.map(rendered),
+        "outcome": label,
+        "assertion": found.as_ref().map(rendered),
         "cached": store.cache.get(user_id).as_ref().map(rendered),
         "epoch": store.cache.epoch(),
         "reads": reads(store),
