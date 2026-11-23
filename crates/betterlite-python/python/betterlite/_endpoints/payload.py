@@ -60,6 +60,8 @@ CallValue: TypeAlias = (
     | Readable
     | TimeoutValue
     | SessionLike
+    | list["CallValue"]
+    | dict[str, "CallValue"]
 )
 
 
@@ -94,11 +96,9 @@ def plain_value(key: str, value: CallValue, blobs: list[bytes]) -> JsonValue:
         case bool() | str() | int() | float() | None:
             return JSON.validate_python(value)
         case dict():
-            fields: dict[str, CallValue] = value
-            return {name: plain_value(name, item, blobs) for name, item in fields.items()}
+            return {name: plain_value(name, item, blobs) for name, item in value.items()}
         case list():
-            items: list[CallValue] = value
-            return [plain_value(key, item, blobs) for item in items]
+            return [plain_value(key, item, blobs) for item in value]
         case TimeoutValue():
             return JSON.validate_python(timeout_seconds(value))
         case object():
