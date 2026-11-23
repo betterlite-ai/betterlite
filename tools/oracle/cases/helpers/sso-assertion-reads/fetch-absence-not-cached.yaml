@@ -1,0 +1,14 @@
+kind: helper
+name: fetch-absence-not-cached
+call:
+  b10064:
+    database: true
+    rows: []
+    failure: null
+    steps:
+      - {step: fetch, user_id: alice}
+      - {step: fetch, user_id: alice}
+      - {step: persist, user_id: alice, assertion: {id_token: first-login-token}}
+      - {step: fetch, user_id: alice}
+env: {}
+compare: {ignore: []}
