@@ -120,6 +120,11 @@ class SearchCall(TypedDict, total=False):
     api_base: str
 
 
+class BlockedCall(TypedDict, total=False):
+    client: str
+    shared_session: str
+
+
 # litellm's search and ocr decorators leave these untyped, so the reference keeps the shape
 REFERENCE: Reference = importlib.import_module("litellm")
 REFERENCE_ASYNC: ReferenceAsync = importlib.import_module("litellm")
@@ -202,6 +207,13 @@ def error_fields(error: BaseException) -> ErrorFields:
             return error
         case object():
             raise AssertionError("the error does not carry the fields")
+
+
+# a TypedDict keeps the refused name out of search's keywords, so the unpacking stays typed
+def blocked(name: str) -> BlockedCall:
+    if name == "client":
+        return BlockedCall(client=BLOCKED_VALUE)
+    return BlockedCall(shared_session=BLOCKED_VALUE)
 
 
 def ocr_call(server: SearchOcrServer) -> OcrCall:
@@ -363,14 +375,12 @@ def test_ocr_flag_unsupported() -> None:
 @pytest.mark.parametrize("name", ["client", "shared_session"])
 def test_search_unsupported(name: str) -> None:
     with pytest.raises(UnsupportedCallArgument) as error:
-        search(
-            query="brave search", search_provider=SEARCH_PROVIDER, **{name: BLOCKED_VALUE}
-        )
+        search(query="brave search", search_provider=SEARCH_PROVIDER, **blocked(name))
     assert error.value.argument == name
 
 
 @pytest.mark.parametrize("name", ["client", "shared_session"])
 def test_ocr_unsupported(name: str) -> None:
     with pytest.raises(UnsupportedCallArgument) as error:
-        ocr(model=OCR_MODEL, document=OCR_DOCUMENT, **{name: BLOCKED_VALUE})
+        ocr(model=OCR_MODEL, document=OCR_DOCUMENT, **blocked(name))
     assert error.value.argument == name
