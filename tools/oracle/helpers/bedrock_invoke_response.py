@@ -1,6 +1,6 @@
 import time
 from functools import partial
-from typing import Final, NotRequired, Protocol, TypedDict, Unpack, cast
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, Unpack, cast
 
 import httpx
 import litellm
@@ -48,7 +48,7 @@ class InvokeApi(Protocol):
 
 
 class MessageSeed(TypedDict):
-    role: str
+    role: Literal["assistant", "user", "system", "tool", "function"]
     content: str | None
     tool_calls: list[JsonValue] | None
 
