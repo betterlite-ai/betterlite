@@ -1,0 +1,36 @@
+task: B6042
+deviations:
+  - what: A text stream's usage-only chunk is dropped, and its usage moves onto the last chunk that carries a choice.
+    why: LiteLLM's convert_to_text_completion_object reads choices[0] unconditionally, so an include_usage stream whose provider appends a usage-only frame raises instead of finishing; no working setup can rely on that crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7341-L7373
+  - what: TextCompletionStreamWrapper.__anext__ raises StopAsyncIteration when the stream ends.
+    why: LiteLLM's __anext__ raises StopIteration from inside a coroutine, which an async for loop reports as an error rather than a normal end.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7384-L7398
+  - what: A token-id prompt routed to a chat provider is refused with a bare Exception whose message starts with "Unmapped prompt format".
+    why: LiteLLM wraps the token list as a user message's content, which an OpenAI chat endpoint rejects with its own 400; betterlite refuses before the request instead of sending a body no provider accepts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7642-L7649
+  - what: A list of token lists is sent as one prompt to the resolved provider instead of one request per prompt.
+    why: LiteLLM splits that prompt only on the huggingface branch, where a thread pool calls text_completion once per element and merges the choices; betterlite does not port the huggingface text branch in this task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7574-L7612
+  - what: The sync moderation request always names a model, defaulting to omni-moderation-latest.
+    why: LiteLLM omits model when the caller gives none and the OpenAI moderations API applies the same default, so the answer is the same while the wire body shows the model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7784-L7787
+  - what: A moderation call without any API key raises a bare Exception naming the missing key before any request.
+    why: LiteLLM builds its OpenAI client with a None key, whose own bare exception reports the missing key at construction time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7770
+  - what: amoderation strips only an "openai/" prefix from the model and treats any other provider prefix as part of the name.
+    why: LiteLLM runs get_llm_provider, which strips every provider prefix it recognizes; the async moderation route only reaches the OpenAI moderations endpoint, so a non-OpenAI route has no provider to send to in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7802-L7818
+  - what: A caller's client= is refused with UnsupportedCallArgument and logger_fn= is dropped with a warning.
+    why: LiteLLM forwards both into completion, where the client replaces its own and logger_fn joins its logging callbacks; betterlite builds its client and logs through its tracing layer, so accepting them would quietly ignore what the caller asked for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7659
+  - what: A positional argument that repeats a named one replaces it in atext_completion and is ignored in text_completion.
+    why: LiteLLM passes *args into completion after its named arguments, which raises TypeError for a repeated value; betterlite's native layer takes one fixed parameter list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7460
+  - what: mock_timeout=True raises the 408 timeout the SDK mock entry raises, and mock_response answers a chat completion that main.py converts to text; mock_delay and mock_tool_calls are not read on the text path.
+    why: the Rust text completion execution path has no mock entry of its own, so the native layer answers mocks itself and keeps the SDK's timeout status and message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L817-L825
+kept_bugs:
+  - what: A list of strings given as the prompt of a chat provider becomes one user message per string.
+    why: LiteLLM builds that message list before it knows the endpoint, and a setup that reads the chat answer of a multi-prompt text call relies on the message count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7628-L7631
