@@ -1,11 +1,10 @@
 import asyncio
 import importlib
 import inspect
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Coroutine, Sequence
 from typing import Final, Protocol, TypeAlias
 from urllib.parse import parse_qsl, urlsplit
 
-import litellm.exceptions as their_errors
 import openai
 import pytest
 from assistant_server import (
@@ -61,59 +60,44 @@ class Page(Protocol):
 
 
 Answer: TypeAlias = Dumpable | Page | Coroutine[None, None, Dumpable | Page | None] | None
-SyncCall: TypeAlias = Callable[..., Answer]
+RefResult: TypeAlias = Dumpable | Page | None
+CallArgument: TypeAlias = JsonValue
 
 
-class Reference(Protocol):
+class SyncCall(Protocol):
+    def __call__(self, *args: CallArgument, **kwargs: CallArgument) -> RefResult: ...
+
+
+class LiteLLMReference(Protocol):
     def __getattr__(self, name: str) -> SyncCall: ...
 
 
-LITELLM: Reference = importlib.import_module("litellm")
-FUNCTIONS: Final[dict[str, Callable[..., Answer]]] = {
-    "get_assistants": _records.get_assistants,
-    "create_assistants": _records.create_assistants,
-    "delete_assistant": _records.delete_assistant,
-    "create_thread": _records.create_thread,
-    "get_thread": _records.get_thread,
-    "aget_assistants": _records.aget_assistants,
-    "acreate_assistants": _records.acreate_assistants,
-    "adelete_assistant": _records.adelete_assistant,
-    "acreate_thread": _records.acreate_thread,
-    "aget_thread": _records.aget_thread,
-}
-REFERENCE_FUNCTIONS: Final[dict[str, SyncCall]] = {
-    "get_assistants": LITELLM.get_assistants,
-    "create_assistants": LITELLM.create_assistants,
-    "delete_assistant": LITELLM.delete_assistant,
-    "create_thread": LITELLM.create_thread,
-    "get_thread": LITELLM.get_thread,
-    "aget_assistants": LITELLM.aget_assistants,
-    "acreate_assistants": LITELLM.acreate_assistants,
-    "adelete_assistant": LITELLM.adelete_assistant,
-    "acreate_thread": LITELLM.acreate_thread,
-    "aget_thread": LITELLM.aget_thread,
-}
+class LiteLLMErrors(Protocol):
+    def __getattr__(self, name: str) -> type[Exception]: ...
 
 
-def shape(function: Callable[..., Answer]) -> list[tuple[str, str, bool]]:
-    parameters = inspect.signature(function).parameters
+LITELLM: LiteLLMReference = importlib.import_module("litellm")
+THEIR_ERRORS: LiteLLMErrors = importlib.import_module("litellm.exceptions")
+
+
+def shape(signature: inspect.Signature) -> list[tuple[str, str, bool]]:
+    parameters = signature.parameters
     return [
-        (name, str(parameter.kind), parameter.default is None)
+        (name, parameter.kind.name, parameter.default is None)
         for name, parameter in parameters.items()
     ]
 
 
-def dump_of(model: Dumpable) -> JsonValue:
-    dumped = model.model_dump_json()
-    return JSON.validate_json(dumped)
+def dump_pair(ours: Dumpable, reference: Dumpable) -> None:
+    ours_json = JSON.validate_json(ours.model_dump_json())
+    reference_json = JSON.validate_json(reference.model_dump_json())
+    assert ours_json == reference_json
 
 
 def answer_of(answer: Answer) -> Dumpable:
     match answer:
         case Dumpable() as model:
             return model
-        case Coroutine():
-            raise AssertionError("the call answered a coroutine without its flag")
         case object():
             raise AssertionError("the call answered no object")
 
@@ -122,14 +106,12 @@ def page_of(answer: Answer) -> Page:
     match answer:
         case Page() as page:
             return page
-        case Coroutine():
-            raise AssertionError("the call answered a coroutine without its flag")
         case object():
             raise AssertionError("the call answered no page")
 
 
 def page_view(page: Page) -> dict[str, JsonValue]:
-    data: list[JsonValue] = [dump_of(item) for item in page.data]
+    data: list[JsonValue] = [JSON.validate_json(item.model_dump_json()) for item in page.data]
     return {"data": data, "has_more": page.has_more}
 
 
@@ -153,72 +135,86 @@ def same_call(reference: RecordedCall, ours: RecordedCall) -> None:
     assert called_headers(ours) == called_headers(reference)
 
 
+def matched_calls(server: AssistantServer) -> None:
+    ours = server.calls.pop()
+    same_call(server.calls.pop(), ours)
+
+
+def create_reference(server: AssistantServer) -> RefResult:
+    arguments: dict[str, CallArgument] = {**CREATE, "api_key": GOOD_KEY, "api_base": server.url}
+    return LITELLM.create_assistants("openai", **arguments)
+
+
+def create_ours(server: AssistantServer) -> Answer:
+    return _records.create_assistants(
+        "openai", model="gpt-4o-mini", name="helper", description="a helper",
+        instructions="be brief", tools=[{"type": "code_interpreter"}],
+        tool_resources={"code_interpreter": {"file_ids": ["file_1"]}},
+        metadata={"team": "a"}, temperature=0.0, top_p=0.0, response_format="auto",
+        api_key=GOOD_KEY, api_base=server.url,
+    )
+
+
 def test_signature_matches_litellm() -> None:
-    for name, ours in FUNCTIONS.items():
-        assert shape(ours) == shape(REFERENCE_FUNCTIONS[name])
+    assert shape(inspect.signature(_records.get_assistants)) == shape(
+        inspect.signature(LITELLM.get_assistants))
+    assert shape(inspect.signature(_records.aget_assistants)) == shape(
+        inspect.signature(LITELLM.aget_assistants))
+    assert shape(inspect.signature(_records.create_assistants)) == shape(
+        inspect.signature(LITELLM.create_assistants))
+    assert shape(inspect.signature(_records.acreate_assistants)) == shape(
+        inspect.signature(LITELLM.acreate_assistants))
+    assert shape(inspect.signature(_records.delete_assistant)) == shape(
+        inspect.signature(LITELLM.delete_assistant))
+    assert shape(inspect.signature(_records.adelete_assistant)) == shape(
+        inspect.signature(LITELLM.adelete_assistant))
+    assert shape(inspect.signature(_records.create_thread)) == shape(
+        inspect.signature(LITELLM.create_thread))
+    assert shape(inspect.signature(_records.acreate_thread)) == shape(
+        inspect.signature(LITELLM.acreate_thread))
+    assert shape(inspect.signature(_records.get_thread)) == shape(
+        inspect.signature(LITELLM.get_thread))
+    assert shape(inspect.signature(_records.aget_thread)) == shape(
+        inspect.signature(LITELLM.aget_thread))
 
 
 def test_calls_list_assistants() -> None:
     with AssistantServer() as server:
-        reference = page_of(
-            LITELLM.get_assistants("openai", api_key=GOOD_KEY, api_base=server.url)
-        )
-        reference_call = server.calls.pop()
-        ours = page_of(_records.get_assistants("openai", api_key=GOOD_KEY, api_base=server.url))
-        same_call(reference_call, server.calls.pop())
+        args = {"api_key": GOOD_KEY, "api_base": server.url}
+        reference = page_of(LITELLM.get_assistants("openai", **args))
+        ours = page_of(_records.get_assistants("openai", **args))
+        matched_calls(server)
         assert page_view(ours) == page_view(reference)
 
 
 def test_calls_create_assistant() -> None:
     with AssistantServer() as server:
-        reference = answer_of(
-            LITELLM.create_assistants("openai", **CREATE, api_key=GOOD_KEY, api_base=server.url)
-        )
-        reference_call = server.calls.pop()
-        ours = answer_of(
-            _records.create_assistants("openai", **CREATE, api_key=GOOD_KEY, api_base=server.url)
-        )
-        same_call(reference_call, server.calls.pop())
-        assert dump_of(ours) == dump_of(reference)
+        reference = answer_of(create_reference(server))
+        ours = answer_of(create_ours(server))
+        matched_calls(server)
+        dump_pair(ours, reference)
 
 
 def test_calls_delete_assistant() -> None:
     with AssistantServer() as server:
-        reference = answer_of(
-            LITELLM.delete_assistant(
-                "openai", ASSISTANT_ID, api_key=GOOD_KEY, api_base=server.url
-            )
-        )
-        reference_call = server.calls.pop()
-        ours = answer_of(
-            _records.delete_assistant(
-                "openai", ASSISTANT_ID, api_key=GOOD_KEY, api_base=server.url
-            )
-        )
-        same_call(reference_call, server.calls.pop())
-        assert dump_of(ours) == dump_of(reference)
+        args = {"api_key": GOOD_KEY, "api_base": server.url}
+        reference = answer_of(LITELLM.delete_assistant("openai", ASSISTANT_ID, **args))
+        ours = answer_of(_records.delete_assistant("openai", ASSISTANT_ID, **args))
+        matched_calls(server)
+        dump_pair(ours, reference)
 
 
 def test_calls_threads() -> None:
     with AssistantServer() as server:
-        reference = answer_of(
-            LITELLM.create_thread("openai", **THREAD, api_key=GOOD_KEY, api_base=server.url)
-        )
-        reference_call = server.calls.pop()
-        ours = answer_of(
-            _records.create_thread("openai", **THREAD, api_key=GOOD_KEY, api_base=server.url)
-        )
-        same_call(reference_call, server.calls.pop())
-        assert dump_of(ours) == dump_of(reference)
-        reference_got = answer_of(
-            LITELLM.get_thread("openai", THREAD_ID, api_key=GOOD_KEY, api_base=server.url)
-        )
-        reference_thread_call = server.calls.pop()
-        ours_got = answer_of(
-            _records.get_thread("openai", THREAD_ID, api_key=GOOD_KEY, api_base=server.url)
-        )
-        same_call(reference_thread_call, server.calls.pop())
-        assert dump_of(ours_got) == dump_of(reference_got)
+        args = {"api_key": GOOD_KEY, "api_base": server.url}
+        reference = answer_of(LITELLM.create_thread("openai", **THREAD, **args))
+        ours = answer_of(_records.create_thread("openai", **THREAD, **args))
+        matched_calls(server)
+        dump_pair(ours, reference)
+        reference_got = answer_of(LITELLM.get_thread("openai", THREAD_ID, **args))
+        ours_got = answer_of(_records.get_thread("openai", THREAD_ID, **args))
+        matched_calls(server)
+        dump_pair(ours_got, reference_got)
 
 
 def test_calls_message_object() -> None:
@@ -228,25 +224,17 @@ def test_calls_message_object() -> None:
 
 def test_async_flag_coroutines() -> None:
     with AssistantServer() as server:
+        args = {"api_key": GOOD_KEY, "api_base": server.url}
         flagged = (
-            _records.get_assistants(
-                "openai", api_key=GOOD_KEY, api_base=server.url, aget_assistants=True
-            ),
+            _records.get_assistants("openai", aget_assistants=True, **args),
             _records.create_assistants(
-                "openai", "gpt-4o-mini", api_key=GOOD_KEY, api_base=server.url,
-                async_create_assistants=True,
-            ),
+                "openai", "gpt-4o-mini", async_create_assistants=True, **args),
             _records.delete_assistant(
-                "openai", ASSISTANT_ID, api_key=GOOD_KEY, api_base=server.url,
-                async_delete_assistants=True,
-            ),
+                "openai", ASSISTANT_ID, async_delete_assistants=True, **args),
             _records.create_thread(
-                "openai", messages=[{"role": "user", "content": "hi"}], api_key=GOOD_KEY,
-                api_base=server.url, acreate_thread=True,
-            ),
-            _records.get_thread(
-                "openai", THREAD_ID, api_key=GOOD_KEY, api_base=server.url, aget_thread=True
-            ),
+                "openai", messages=[{"role": "user", "content": "hi"}],
+                acreate_thread=True, **args),
+            _records.get_thread("openai", THREAD_ID, aget_thread=True, **args),
         )
         for answer in flagged:
             match answer:
@@ -254,47 +242,39 @@ def test_async_flag_coroutines() -> None:
                     answer.close()
                 case object():
                     raise AssertionError("the flag did not answer a coroutine")
-        page = asyncio.run(
-            _records.aget_assistants("openai", api_key=GOOD_KEY, api_base=server.url)
-        )
+        page = asyncio.run(_records.aget_assistants("openai", **args))
         assert page.has_more is False
-        thread = asyncio.run(
-            _records.acreate_thread(
-                "openai", messages=[{"role": "user", "content": "hi"}],
-                api_key=GOOD_KEY, api_base=server.url,
-            )
-        )
+        thread = asyncio.run(_records.acreate_thread(
+            "openai", messages=[{"role": "user", "content": "hi"}], **args))
         assert thread is not None
         assert thread.id == THREAD_ID
         number_flag = _records.create_thread(
-            "openai", messages=[{"role": "user", "content": "hi"}], api_key=GOOD_KEY,
-            api_base=server.url, acreate_thread=1,
-        )
+            "openai", messages=[{"role": "user", "content": "hi"}], acreate_thread=1, **args)
         assert not inspect.iscoroutine(number_flag)
 
 
 def test_error_class_and_client() -> None:
     with AssistantServer() as server:
+        good = {"api_key": GOOD_KEY, "api_base": server.url}
+        bad = {"api_key": BAD_KEY, "api_base": server.url}
         with pytest.raises(errors.AuthenticationError) as ours:
-            _records.get_assistants("openai", api_key=BAD_KEY, api_base=server.url)
+            _records.get_assistants("openai", **bad)
         with pytest.raises(openai.AuthenticationError) as reference:
-            LITELLM.get_assistants("openai", api_key=BAD_KEY, api_base=server.url)
+            LITELLM.get_assistants("openai", **bad)
         assert type(ours.value).__name__ == type(reference.value).__name__
         assert ours.value.status_code == UNAUTHORIZED_STATUS
         assert ours.value.model == ""
         assert "Incorrect API key" in str(ours.value)
         assert "Incorrect API key" in str(reference.value)
         with pytest.raises(errors.BadRequestError) as ours_unsupported:
-            _records.get_assistants("bedrock", api_key=GOOD_KEY, api_base=server.url)
-        with pytest.raises(their_errors.BadRequestError) as reference_unsupported:
-            LITELLM.get_assistants("bedrock", api_key=GOOD_KEY, api_base=server.url)
+            _records.get_assistants("bedrock", **good)
+        with pytest.raises(THEIR_ERRORS.BadRequestError) as reference_unsupported:
+            LITELLM.get_assistants("bedrock", **good)
         assert str(ours_unsupported.value) == str(reference_unsupported.value)
         assert ours_unsupported.value.model == "n/a"
         assert ours_unsupported.value.status_code == BAD_REQUEST_STATUS
         with pytest.raises(UnsupportedCallArgumentError, match="client"):
-            _records.get_assistants(
-                "openai", client=FAKE_CLIENT, api_key=GOOD_KEY, api_base=server.url
-            )
+            _records.get_assistants("openai", client=FAKE_CLIENT, **good)
         with pytest.raises(ValueError, match="async_create_assistants"):
             _records.create_assistants("openai", "gpt-4o-mini", async_create_assistants=1)
         with pytest.raises(ValueError, match="async_delete_assistants"):

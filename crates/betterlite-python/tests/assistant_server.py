@@ -104,6 +104,10 @@ class AssistantServer(ThreadingHTTPServer):
 
 class _Handler(BaseHTTPRequestHandler):
     owner: ClassVar[AssistantServer]
+    POST_ROUTES: ClassVar[dict[str, dict[str, JsonValue]]] = {
+        ASSISTANTS_PATH: ASSISTANT,
+        THREADS_PATH: THREAD,
+    }
 
     def do_GET(self) -> None:
         self.record({})
@@ -121,13 +125,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.record(self.body())
         if not self.authorized():
             return
-        if self.path == ASSISTANTS_PATH:
-            self.reply(OK, ASSISTANT)
+        route = self.POST_ROUTES.get(self.path)
+        if route is None:
+            self.send_error(NOT_FOUND)
             return
-        if self.path == THREADS_PATH:
-            self.reply(OK, THREAD)
-            return
-        self.send_error(NOT_FOUND)
+        self.reply(OK, route)
 
     def do_DELETE(self) -> None:
         self.record({})
