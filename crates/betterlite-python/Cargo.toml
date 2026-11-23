@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 async-trait = "0.1.92"
+betterlite-azure = { path = "../betterlite-azure" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
@@ -36,6 +37,7 @@ serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }
+url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]

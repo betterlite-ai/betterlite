@@ -1,0 +1,786 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+use betterlite_core::api::fine_tuning_cancel_call::{
+    AzureFineTuningCancel, FineTuningCancelError, FineTuningCancelTarget, FineTuningCancelValues,
+    OpenAiFineTuningCancel,
+};
+use betterlite_core::api::fine_tuning_create::{
+    AzureCreateCall, FineTuningCreateError, FineTuningCreateTarget, OpenAiCreateCall,
+};
+use betterlite_core::api::fine_tuning_read::{
+    AzureReadCall, FineTuningReadError, OpenAiReadCall, ReadOperation, ReadTarget, ReadValues,
+};
+use betterlite_core::api::resource_sdk_settings::timeout::{
+    FineTuningTimeout, StructuredTimeout, TimeoutError,
+};
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_models::decisions::Json;
+use betterlite_openai::fine_tuning::error::FineTuneError;
+use betterlite_openai::fine_tuning::job::FineTuneCreate;
+use http::Method;
+use http::header::{HeaderMap, HeaderName, HeaderValue};
+use pyo3::prelude::*;
+use secrecy::{ExposeSecret as _, SecretString};
+use url::Url;
+
+use super::super::error::{Failure, Raised, WireError};
+use super::super::register as register_tuning;
+use super::failures::{
+    cancel_failure, class_for, create_failure, provider_failure, read_failure, response_headers,
+    wire_failure,
+};
+use super::requests::{
+    azure_cancel_request, azure_create_request, azure_read_request, create_body, deadline,
+    openai_cancel_request, openai_create_request, openai_read_request,
+};
+use super::{
+    CancelCall, CreateCall, ReadCall, SettingsWire, cancel_request, create_request, parse,
+    read_request,
+};
+use crate::completion::register as register_completion;
+
+fn openai_timeout() -> FineTuningTimeout {
+    FineTuningTimeout::Seconds(30.0)
+}
+
+fn data() -> FineTuneCreate {
+    let mut record = FineTuneCreate {
+        model: "gpt-4o-mini".to_owned(),
+        training_file: "file-abc".to_owned(),
+        seed: Some(0),
+        suffix: Some("trial".to_owned()),
+        ..FineTuneCreate::default()
+    };
+    record.hyperparameters =
+        Some(serde_json::from_str(r#"{"n_epochs": 2}"#).expect("the sample map parses"));
+    record
+}
+
+fn openai_create() -> OpenAiCreateCall {
+    OpenAiCreateCall {
+        is_async: false,
+        data: data(),
+        api_base: "http://127.0.0.1:9/v1/".to_owned(),
+        api_key: Some(SecretString::from("sk-test")),
+        api_version: None,
+        organization: Some("org-1".to_owned()),
+        timeout: openai_timeout(),
+        max_retries: None,
+    }
+}
+
+fn azure_create() -> AzureCreateCall {
+    AzureCreateCall {
+        is_async: false,
+        data: data(),
+        api_base: Some("https://example.openai.azure.com".to_owned()),
+        api_key: Some(SecretString::from("sk-azure")),
+        api_version: None,
+        organization: Some("org-1".to_owned()),
+        timeout: openai_timeout(),
+        max_retries: None,
+    }
+}
+
+fn header(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+}
+
+fn json_body(request: &OutboundRequest) -> Json {
+    let RequestBody::Json(bytes) = &request.body else {
+        panic!("the request carries a JSON body")
+    };
+    serde_json::from_slice(bytes).expect("the request body is JSON")
+}
+
+fn body_of(bytes: &[u8]) -> Json {
+    serde_json::from_slice(bytes).expect("the request body is JSON")
+}
+
+fn field<'body>(body: &'body Json, name: &str) -> &'body Json {
+    let Json::Object(fields) = body else {
+        panic!("the body is not an object")
+    };
+    fields.get(name).expect("the body holds the field")
+}
+
+fn failure_of(raised: Raised) -> Failure {
+    match raised {
+        Raised::Failure(failure) => *failure,
+        Raised::Python(error) => panic!("expected a LiteLLM failure, got {error}"),
+    }
+}
+
+fn json_error() -> serde_json::Error {
+    serde_json::from_str::<Json>("{").expect_err("the text is not JSON")
+}
+
+#[test]
+fn request_openai_create_writes_the_sdk_wire() {
+    let request = openai_create_request(&openai_create(), None).unwrap();
+    assert_eq!(request.method, Method::POST);
+    assert_eq!(
+        request.url.as_str(),
+        "http://127.0.0.1:9/v1/fine_tuning/jobs"
+    );
+    assert!(request.query.is_empty());
+    assert_eq!(
+        header(&request.headers, "authorization").as_deref(),
+        Some("Bearer sk-test")
+    );
+    assert_eq!(
+        header(&request.headers, "openai-organization").as_deref(),
+        Some("org-1")
+    );
+    assert_eq!(
+        header(&request.headers, "content-type").as_deref(),
+        Some("application/json")
+    );
+    assert_eq!(request.deadline, Duration::from_secs(30));
+    assert_eq!(
+        json_body(&request),
+        serde_json::from_str::<Json>(
+            r#"{"model":"gpt-4o-mini","training_file":"file-abc","hyperparameters":{"n_epochs":2},"seed":0,"suffix":"trial"}"#
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn request_create_body_flattens_extra_body() {
+    let mut record = data();
+    record.extra.insert(
+        "extra_body".to_owned(),
+        serde_json::json!({"trainingType": 5}),
+    );
+    let body = body_of(&create_body(&record, false, None).unwrap());
+    assert_eq!(
+        field(&body, "trainingType"),
+        &serde_json::from_str::<Json>("5").unwrap()
+    );
+    let Json::Object(fields) = &body else {
+        panic!("the body is not an object")
+    };
+    assert!(!fields.contains_key("extra_body"));
+}
+
+#[test]
+fn request_create_body_keeps_the_integration_texts() {
+    let integrations = vec![
+        Json::Text("wandb".to_owned()),
+        Json::Text("tensorboard".to_owned()),
+    ];
+    let body = body_of(&create_body(&data(), false, Some(&integrations)).unwrap());
+    let Json::Object(fields) = &body else {
+        panic!("the body is not an object")
+    };
+    assert_eq!(fields.get("integrations"), Some(&Json::List(integrations)));
+}
+
+#[test]
+fn request_extra_body_overwrites_the_integrations_field() {
+    let mut record = data();
+    record.extra.insert(
+        "extra_body".to_owned(),
+        serde_json::json!({"integrations": []}),
+    );
+    let integrations = vec![Json::Text("wandb".to_owned())];
+    let body = body_of(&create_body(&record, false, Some(&integrations)).unwrap());
+    let Json::Object(fields) = &body else {
+        panic!("the body is not an object")
+    };
+    assert_eq!(fields.get("integrations"), Some(&Json::List(Vec::new())));
+}
+
+#[test]
+fn request_azure_create_defaults_the_training_type() {
+    let body = body_of(&create_body(&data(), true, None).unwrap());
+    assert_eq!(
+        field(&body, "trainingType"),
+        &serde_json::from_str::<Json>("1").unwrap()
+    );
+}
+
+#[test]
+fn request_azure_create_uses_the_api_key_header() {
+    let request = azure_create_request(&azure_create(), None).unwrap();
+    assert_eq!(
+        request.url.as_str(),
+        "https://example.openai.azure.com/openai/fine_tuning/jobs"
+    );
+    assert_eq!(
+        request.query,
+        vec![("api-version".to_owned(), "2025-02-01-preview".to_owned())]
+    );
+    assert_eq!(
+        header(&request.headers, "api-key").as_deref(),
+        Some("sk-azure")
+    );
+    assert_eq!(header(&request.headers, "authorization"), None);
+}
+
+#[test]
+fn request_azure_create_v1_uses_a_bearer_token() {
+    let mut call = azure_create();
+    call.api_version = Some("v1".to_owned());
+    let request = azure_create_request(&call, None).unwrap();
+    assert_eq!(
+        request.url.as_str(),
+        "https://example.openai.azure.com/openai/v1/fine_tuning/jobs"
+    );
+    assert!(request.query.is_empty());
+    assert_eq!(
+        header(&request.headers, "authorization").as_deref(),
+        Some("Bearer sk-azure")
+    );
+    assert_eq!(header(&request.headers, "api-key"), None);
+}
+
+#[test]
+fn request_azure_create_keeps_a_deployments_base() {
+    let mut call = azure_create();
+    call.api_base = Some("https://example.openai.azure.com/openai/deployments/deploy".to_owned());
+    let request = azure_create_request(&call, None).unwrap();
+    assert_eq!(
+        request.url.as_str(),
+        "https://example.openai.azure.com/openai/deployments/deploy/fine_tuning/jobs"
+    );
+}
+
+#[test]
+fn request_azure_create_reads_an_empty_version_as_absent() {
+    let mut call = azure_create();
+    call.api_version = Some(String::new());
+    let request = azure_create_request(&call, None).unwrap();
+    assert_eq!(
+        request.query,
+        vec![("api-version".to_owned(), "2025-02-01-preview".to_owned())]
+    );
+}
+
+#[test]
+fn request_list_sends_the_cursor_and_a_zero_limit() {
+    let key = SecretString::from("sk-test");
+    let timeout = openai_timeout();
+    let call = OpenAiReadCall {
+        values: ReadValues {
+            is_async: false,
+            operation: ReadOperation::List {
+                after: Some("cursor"),
+                limit: Some(0),
+            },
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+    };
+    let request = openai_read_request(&call).unwrap();
+    assert_eq!(request.method, Method::GET);
+    assert_eq!(
+        request.url.as_str(),
+        "http://127.0.0.1:9/v1/fine_tuning/jobs"
+    );
+    assert_eq!(
+        request.query,
+        vec![
+            ("after".to_owned(), "cursor".to_owned()),
+            ("limit".to_owned(), "0".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn request_list_drops_an_empty_cursor() {
+    let key = SecretString::from("sk-test");
+    let timeout = openai_timeout();
+    let call = OpenAiReadCall {
+        values: ReadValues {
+            is_async: false,
+            operation: ReadOperation::List {
+                after: Some(""),
+                limit: None,
+            },
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+    };
+    let request = openai_read_request(&call).unwrap();
+    assert!(request.query.is_empty());
+}
+
+#[test]
+fn request_retrieve_appends_the_job_id() {
+    let key = SecretString::from("sk-test");
+    let timeout = openai_timeout();
+    let call = OpenAiReadCall {
+        values: ReadValues {
+            is_async: true,
+            operation: ReadOperation::Retrieve { job_id: "ftjob-1" },
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: Some(&key),
+        api_version: None,
+        organization: Some("org-1"),
+    };
+    let request = openai_read_request(&call).unwrap();
+    assert_eq!(
+        request.url.as_str(),
+        "http://127.0.0.1:9/v1/fine_tuning/jobs/ftjob-1"
+    );
+    assert!(request.query.is_empty());
+    assert_eq!(
+        header(&request.headers, "openai-organization").as_deref(),
+        Some("org-1")
+    );
+}
+
+#[test]
+fn request_azure_list_names_the_api_version() {
+    let key = SecretString::from("sk-azure");
+    let timeout = openai_timeout();
+    let call = AzureReadCall {
+        values: ReadValues {
+            is_async: false,
+            operation: ReadOperation::List {
+                after: None,
+                limit: Some(5),
+            },
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: Some("https://example.openai.azure.com"),
+        api_key: Some(&key),
+        api_version: None,
+        organization: Some("org-1"),
+    };
+    let request = azure_read_request(&call).unwrap();
+    assert_eq!(
+        request.url.as_str(),
+        "https://example.openai.azure.com/openai/fine_tuning/jobs"
+    );
+    assert_eq!(
+        request.query,
+        vec![
+            ("api-version".to_owned(), "2025-02-01-preview".to_owned()),
+            ("limit".to_owned(), "5".to_owned()),
+        ]
+    );
+    assert_eq!(
+        header(&request.headers, "api-key").as_deref(),
+        Some("sk-azure")
+    );
+}
+
+#[test]
+fn request_cancel_posts_without_a_body() {
+    let key = SecretString::from("sk-test");
+    let timeout = openai_timeout();
+    let call = OpenAiFineTuningCancel {
+        values: FineTuningCancelValues {
+            is_async: false,
+            job_id: "ftjob-1",
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: Some(&key),
+        api_version: None,
+        organization: Some("org-1"),
+        client: None,
+    };
+    let request = openai_cancel_request(&call).unwrap();
+    assert_eq!(request.method, Method::POST);
+    assert_eq!(
+        request.url.as_str(),
+        "http://127.0.0.1:9/v1/fine_tuning/jobs/ftjob-1/cancel"
+    );
+    assert!(request.query.is_empty());
+    assert!(matches!(request.body, RequestBody::Empty));
+    assert_eq!(
+        header(&request.headers, "authorization").as_deref(),
+        Some("Bearer sk-test")
+    );
+}
+
+#[test]
+fn request_cancel_keeps_the_structured_read_timeout() {
+    let key = SecretString::from("sk-azure");
+    let timeout = FineTuningTimeout::Structured(StructuredTimeout {
+        connect: Some(5.0),
+        read: Some(15.0),
+        write: Some(25.0),
+        pool: None,
+    });
+    let call = AzureFineTuningCancel {
+        values: FineTuningCancelValues {
+            is_async: true,
+            job_id: "ftjob-1",
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: Some("https://example.openai.azure.com"),
+        api_key: Some(&key),
+        api_version: Some("2025-02-01-preview"),
+        organization: None,
+    };
+    let request = azure_cancel_request(&call).unwrap();
+    assert_eq!(request.deadline, Duration::from_secs(15));
+    assert_eq!(
+        request.query,
+        vec![("api-version".to_owned(), "2025-02-01-preview".to_owned())]
+    );
+}
+
+#[test]
+fn request_a_zero_timeout_falls_back_to_ten_minutes() {
+    assert_eq!(
+        deadline(&FineTuningTimeout::Seconds(0.0)),
+        Duration::from_secs(600)
+    );
+    let only_connect = FineTuningTimeout::Structured(StructuredTimeout {
+        connect: Some(5.0),
+        read: None,
+        write: None,
+        pool: None,
+    });
+    assert_eq!(deadline(&only_connect), Duration::from_secs(5));
+}
+
+#[test]
+fn request_settings_take_the_environment() {
+    let wire: SettingsWire =
+        serde_json::from_str(r#"{"api_base":"http://call/v1"}"#).expect("the settings parse");
+    let mut environment = BTreeMap::new();
+    environment.insert("OPENAI_API_KEY".to_owned(), "sk-env".to_owned());
+    environment.insert("OPENAI_BASE_URL".to_owned(), "http://env/v1".to_owned());
+    environment.insert("AZURE_API_VERSION".to_owned(), String::new());
+    let settings = wire.configured(&environment).unwrap();
+    assert_eq!(settings.api_base.as_deref(), Some("http://call/v1"));
+    assert_eq!(settings.openai_base_url.as_deref(), Some("http://env/v1"));
+    assert_eq!(settings.azure_api_version.as_deref(), Some(""));
+    assert_eq!(
+        settings
+            .openai_api_key
+            .as_ref()
+            .map(|key| key.expose_secret().to_owned()),
+        Some("sk-env".to_owned())
+    );
+}
+
+#[test]
+fn request_create_route_returns_the_azure_flag() {
+    let (request, is_azure) =
+        create_request(FineTuningCreateTarget::OpenAi(openai_create()), None).unwrap();
+    assert!(!is_azure);
+    assert_eq!(request.method, Method::POST);
+    let (azure, is_azure) =
+        create_request(FineTuningCreateTarget::Azure(azure_create()), None).unwrap();
+    assert!(is_azure);
+    assert_eq!(
+        header(&azure.headers, "api-key").as_deref(),
+        Some("sk-azure")
+    );
+}
+
+#[test]
+fn request_list_route_matches_the_direct_builder() {
+    let key = SecretString::from("sk-test");
+    let timeout = openai_timeout();
+    let call = OpenAiReadCall {
+        values: ReadValues {
+            is_async: false,
+            operation: ReadOperation::List {
+                after: None,
+                limit: None,
+            },
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+    };
+    let direct = openai_read_request(&call).unwrap();
+    let routed = read_request(ReadTarget::OpenAi(call)).unwrap();
+    assert_eq!(direct.url, routed.url);
+    assert_eq!(direct.method, routed.method);
+}
+
+#[test]
+fn request_cancel_route_builds_the_azure_url() {
+    let key = SecretString::from("sk-azure");
+    let timeout = openai_timeout();
+    let target = FineTuningCancelTarget::Azure(AzureFineTuningCancel {
+        values: FineTuningCancelValues {
+            is_async: false,
+            job_id: "ftjob-1",
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: Some("https://example.openai.azure.com"),
+        api_key: Some(&key),
+        api_version: None,
+        organization: None,
+    });
+    let request = cancel_request(target).unwrap();
+    assert_eq!(
+        request.url.as_str(),
+        "https://example.openai.azure.com/openai/fine_tuning/jobs/ftjob-1/cancel"
+    );
+}
+
+#[test]
+fn request_response_headers_keep_the_text_values() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("x-request-id"),
+        HeaderValue::from_static("abc"),
+    );
+    headers.insert(
+        HeaderName::from_static("retry-after"),
+        HeaderValue::from_static("1"),
+    );
+    let kept = response_headers(&headers);
+    assert_eq!(kept.get("x-request-id").map(String::as_str), Some("abc"));
+    assert_eq!(kept.get("retry-after").map(String::as_str), Some("1"));
+}
+
+#[test]
+fn request_register_adds_the_family() {
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "probe").unwrap();
+        register_completion(&module).unwrap();
+        register_tuning(&module).unwrap();
+        assert!(module.hasattr("NativeTuningSession").unwrap());
+        assert!(module.hasattr("NativeTuningError").unwrap());
+        assert!(module.hasattr("NativeError").unwrap());
+    });
+}
+
+#[test]
+fn error_provider_status_keeps_the_class_and_the_body() {
+    let body = serde_json::from_str::<Json>(
+        r#"{"error":{"message":"slow down","type":"rate_limit","param":null,"code":"429"}}"#,
+    )
+    .unwrap();
+    let mut headers = BTreeMap::new();
+    headers.insert("retry-after".to_owned(), "1".to_owned());
+    let failure = provider_failure(429, body.clone(), headers.clone());
+    assert_eq!(failure.kind, "RateLimitError");
+    assert_eq!(failure.status_code, Some(429));
+    assert_eq!(failure.message, "slow down");
+    assert_eq!(failure.body, Some(body));
+    assert_eq!(failure.headers, headers);
+}
+
+#[test]
+fn error_a_body_without_a_message_keeps_an_empty_one() {
+    let failure = provider_failure(500, Json::Text("oops".to_owned()), BTreeMap::new());
+    assert_eq!(failure.kind, "InternalServerError");
+    assert_eq!(failure.message, "");
+    assert_eq!(failure.body, Some(Json::Text("oops".to_owned())));
+}
+
+#[test]
+fn error_conflict_and_unknown_statuses_are_api_errors() {
+    assert_eq!(class_for(400), "BadRequestError");
+    assert_eq!(class_for(401), "AuthenticationError");
+    assert_eq!(class_for(403), "PermissionDeniedError");
+    assert_eq!(class_for(404), "NotFoundError");
+    assert_eq!(class_for(409), "APIError");
+    assert_eq!(class_for(422), "UnprocessableEntityError");
+    assert_eq!(class_for(429), "RateLimitError");
+    assert_eq!(class_for(500), "InternalServerError");
+    assert_eq!(class_for(503), "InternalServerError");
+    assert_eq!(class_for(418), "APIError");
+}
+
+#[test]
+fn error_unsupported_provider_is_a_bad_request() {
+    let raised = create_failure(FineTuningCreateError::Unsupported {
+        provider: "bedrock".to_owned(),
+    });
+    let failure = failure_of(raised);
+    assert_eq!(failure.kind, "BadRequestError");
+    assert_eq!(failure.status_code, Some(400));
+    assert_eq!(failure.model.as_deref(), Some("n/a"));
+    assert_eq!(failure.llm_provider.as_deref(), Some("bedrock"));
+    assert_eq!(
+        failure.message,
+        "LiteLLM doesn't support bedrock for 'create_batch'. Only 'openai' is supported."
+    );
+    assert_eq!(
+        failure.body,
+        Some(Json::Text("Unsupported provider".to_owned()))
+    );
+}
+
+#[test]
+fn error_parse_rejects_a_bad_request() {
+    let error = parse::<CreateCall>("not json").expect_err("the text is not a call");
+    assert!(matches!(error, WireError::Json { .. }));
+    let error =
+        parse::<ReadCall>(r#"{"input": {"nope": {}}}"#).expect_err("the input names no call");
+    assert!(matches!(error, WireError::Json { .. }));
+    let error = parse::<CancelCall>(r#"{"call": {"fine_tuning_job_id": 1}}"#)
+        .err()
+        .expect("the id is not text");
+    assert!(matches!(error, WireError::Json { .. }));
+}
+
+#[test]
+fn error_missing_openai_key() {
+    let mut call = openai_create();
+    call.api_key = None;
+    let error = openai_create_request(&call, None).expect_err("no key means no request");
+    assert!(matches!(error, WireError::MissingOpenAiKey));
+}
+
+#[test]
+fn error_missing_azure_base() {
+    let mut call = azure_create();
+    call.api_base = None;
+    let error = azure_create_request(&call, None).expect_err("no base means no request");
+    assert!(matches!(error, WireError::MissingAzureBase));
+}
+
+#[test]
+fn error_missing_azure_key() {
+    let mut call = azure_create();
+    call.api_key = None;
+    let error = azure_create_request(&call, None).expect_err("no key means no request");
+    assert!(matches!(error, WireError::MissingAzureKey));
+}
+
+#[test]
+fn error_missing_credentials_name_the_environment_variable() {
+    let failure = failure_of(wire_failure(WireError::MissingOpenAiKey));
+    assert_eq!(failure.kind, "Exception");
+    assert!(failure.message.contains("OPENAI_API_KEY"));
+    let failure = failure_of(wire_failure(WireError::MissingAzureBase));
+    assert!(failure.message.contains("AZURE_OPENAI_ENDPOINT"));
+}
+
+#[test]
+fn error_a_decode_failure_is_a_validation_error() {
+    let failure = failure_of(wire_failure(WireError::Decode {
+        source: FineTuneError::Decode {
+            source: json_error(),
+        },
+    }));
+    assert_eq!(failure.kind, "APIResponseValidationError");
+}
+
+#[test]
+fn error_an_unknown_wire_failure_is_an_exception() {
+    let failure = failure_of(wire_failure(WireError::Url {
+        source: Url::parse("::").expect_err("the text has no scheme"),
+    }));
+    assert_eq!(failure.kind, "Exception");
+}
+
+#[test]
+fn error_vertex_names_the_task() {
+    let failure = failure_of(wire_failure(WireError::Vertex));
+    assert_eq!(failure.kind, "Exception");
+    assert!(failure.message.contains("B1384"));
+}
+
+#[test]
+fn error_timeout_and_data_are_python_value_errors() {
+    assert!(matches!(
+        create_failure(FineTuningCreateError::Timeout(TimeoutError::NonFinite)),
+        Raised::Python(_)
+    ));
+    assert!(matches!(
+        create_failure(FineTuningCreateError::Data(json_error())),
+        Raised::Python(_)
+    ));
+    assert!(matches!(
+        read_failure(FineTuningReadError::Timeout(TimeoutError::NonFinite)),
+        Raised::Python(_)
+    ));
+    assert!(matches!(
+        cancel_failure(FineTuningCancelError::Timeout(TimeoutError::NonFinite)),
+        Raised::Python(_)
+    ));
+}
+
+#[test]
+fn error_read_failures_keep_their_class() {
+    let failure = failure_of(read_failure(FineTuningReadError::UnsupportedList {
+        provider: "bedrock".to_owned(),
+    }));
+    assert_eq!(failure.kind, "BadRequestError");
+    assert!(failure.message.contains("'create_batch'"));
+    let failure = failure_of(read_failure(FineTuningReadError::UnsupportedRetrieve {
+        provider: "bedrock".to_owned(),
+    }));
+    assert_eq!(failure.kind, "BadRequestError");
+    assert!(failure.message.contains("'retrieve_fine_tuning_job'"));
+}
+
+#[test]
+fn error_page_and_cancel_failures_keep_their_class() {
+    let failure = failure_of(read_failure(FineTuningReadError::Page {
+        source: json_error(),
+    }));
+    assert_eq!(failure.kind, "APIResponseValidationError");
+    let failure = failure_of(cancel_failure(FineTuningCancelError::Unsupported {
+        provider: "bedrock".to_owned(),
+    }));
+    assert_eq!(failure.kind, "BadRequestError");
+    assert_eq!(failure.status_code, Some(400));
+}
+
+#[test]
+fn error_a_dispatched_failure_keeps_the_native_class() {
+    let failure = failure_of(create_failure(FineTuningCreateError::Dispatch(
+        WireError::MissingOpenAiKey,
+    )));
+    assert_eq!(failure.kind, "Exception");
+    let failure = failure_of(read_failure(FineTuningReadError::Dispatch(
+        WireError::MissingAzureKey,
+    )));
+    assert_eq!(failure.kind, "Exception");
+    assert!(failure.message.contains("AZURE_OPENAI_API_KEY"));
+}
+
+#[test]
+fn error_a_read_call_needs_its_key() {
+    let timeout = openai_timeout();
+    let call = OpenAiReadCall {
+        values: ReadValues {
+            is_async: false,
+            operation: ReadOperation::List {
+                after: None,
+                limit: None,
+            },
+            timeout: &timeout,
+            max_retries: None,
+        },
+        api_base: "http://127.0.0.1:9/v1".to_owned(),
+        api_key: None,
+        api_version: None,
+        organization: None,
+    };
+    let error = openai_read_request(&call).expect_err("no key means no request");
+    assert!(matches!(error, WireError::MissingOpenAiKey));
+}
