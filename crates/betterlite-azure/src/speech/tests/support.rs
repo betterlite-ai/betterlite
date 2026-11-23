@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use betterlite_config::sections::azure_endpoints::Settings;
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::OutboundRequest;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
 use http::header::{HeaderMap, HeaderValue};
@@ -73,10 +73,10 @@ pub(crate) struct Cache {
 
 impl ClientCache for Cache {
     fn get(&self, identity: &ClientIdentity) -> Option<ClientKind> {
-        match self.entries.iter().find(|(known, _)| known == identity) {
-            Some((_, kind)) => Some(*kind),
-            None => None,
-        }
+        self.entries
+            .iter()
+            .find(|(known, _)| known == identity)
+            .map(|(_, kind)| *kind)
     }
 
     fn set(&mut self, identity: ClientIdentity, kind: ClientKind, _owned: bool) {
@@ -206,14 +206,14 @@ pub(crate) fn header<'request>(
     request: &'request OutboundRequest,
     name: &str,
 ) -> Option<&'request str> {
-    match request.headers.get(name) {
-        Some(value) => value.to_str().ok(),
-        None => None,
-    }
+    request
+        .headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
 }
 
 pub(crate) fn body(request: &OutboundRequest) -> Json {
-    let betterlite_http::proxy::outbound::RequestBody::Json(bytes) = &request.body else {
+    let RequestBody::Json(bytes) = &request.body else {
         panic!("the speech request body is JSON");
     };
     serde_json::from_slice(bytes).expect("the speech body parses")

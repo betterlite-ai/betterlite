@@ -52,9 +52,9 @@ pub fn probe_request(call: &ProbeCall<'_>) -> Result<OutboundRequest, AzureSpeec
 }
 
 pub fn finish_probe(
-    reply: Option<UpstreamResponse>,
+    answer: Option<UpstreamResponse>,
 ) -> Result<IndexMap<String, String>, AzureSpeechError> {
-    let Some(reply) = reply else {
+    let Some(reply) = answer else {
         return Err(AzureSpeechError::InvalidCompletion);
     };
     if !(200..300).contains(&reply.status) {
@@ -124,15 +124,15 @@ fn probe_body(model: Option<&str>, messages: Option<&Json>) -> Result<Vec<u8>, A
 }
 
 fn probe_timeout(timeout: Option<f64>) -> Result<Duration, AzureSpeechError> {
-    match timeout {
-        Some(seconds) => {
+    timeout.map_or_else(
+        || Ok(DEFAULT_TIMEOUT),
+        |seconds| {
             Duration::try_from_secs_f64(seconds).map_err(|_invalid| AzureSpeechError::Option {
                 option: String::from("timeout"),
                 problem: "is not a number of seconds",
             })
-        }
-        None => Ok(DEFAULT_TIMEOUT),
-    }
+        },
+    )
 }
 
 fn rate_limit_headers(headers: &HeaderMap) -> IndexMap<String, String> {

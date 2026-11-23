@@ -139,7 +139,10 @@ impl Resolved {
             litellm_params: &self.litellm_params,
             extra_headers: call.extra_headers,
             timeout: call.timeout,
-            api_key: self.api_key.as_ref().map(|key| key.expose_secret()),
+            api_key: self
+                .api_key
+                .as_ref()
+                .map(secrecy::ExposeSecret::expose_secret),
             api_base: self.api_base.as_deref(),
             provider: "azure",
             is_async: call.aspeech,
@@ -150,7 +153,7 @@ impl Resolved {
 // A string voice stays as it is, a dict voice contributes its name, and any other value becomes None.
 fn resolve_voice(voice: Option<&Json>) -> Result<Option<String>, AzureSpeechError> {
     match voice {
-        None | Some(Json::Null) => Ok(None),
+        None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_)) => Ok(None),
         Some(Json::Text(name)) => Ok(Some(name.clone())),
         Some(Json::Object(fields)) => match fields.get("name") {
             Some(Json::Text(name)) => Ok(Some(name.clone())),
@@ -162,7 +165,6 @@ fn resolve_voice(voice: Option<&Json>) -> Result<Option<String>, AzureSpeechErro
                 })
             }
         },
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => Ok(None),
     }
 }
 

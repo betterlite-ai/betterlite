@@ -55,19 +55,7 @@ pub fn audio_speech(
     options.shift_remove("max_retries");
     let complete_input = logged_body(call.model, call.voice, &options);
     let controls = Controls::take(&mut options)?;
-    let connection = SpeechConnection {
-        model: call.model.to_owned(),
-        api_key: call.api_key.clone(),
-        api_base: call.api_base.clone(),
-        api_version: call.api_version.clone(),
-        params: call.params.clone(),
-        provider: call.provider.clone(),
-        supplied: call.supplied.clone(),
-        session: call.session,
-        refresh_enabled: call.refresh_enabled,
-        aspeech: call.aspeech,
-    };
-    let selected = select_client(&connection, wiring)?;
+    let selected = select_client(&connection(call), wiring)?;
     logger.pre_call(SpeechPreCall {
         input: call.input,
         api_base: &selected.base_url,
@@ -97,6 +85,22 @@ pub fn audio_speech(
         body: RequestBody::Json(wire_body(call, options, controls.body)?),
         deadline: deadline(&call.params, controls.timeout)?,
     })
+}
+
+// The SDK construction arguments, which are exactly the call's own and none of its speech controls.
+fn connection(call: &AudioSpeechCall<'_>) -> SpeechConnection {
+    SpeechConnection {
+        model: call.model.to_owned(),
+        api_key: call.api_key.clone(),
+        api_base: call.api_base.clone(),
+        api_version: call.api_version.clone(),
+        params: call.params.clone(),
+        provider: call.provider.clone(),
+        supplied: call.supplied.clone(),
+        session: call.session,
+        refresh_enabled: call.refresh_enabled,
+        aspeech: call.aspeech,
+    }
 }
 
 // HttpxBinaryResponseContent(response=response.response): a non-2xx reply is the SDK's status error.
@@ -175,8 +179,8 @@ fn string_pairs(
         }
     };
     let mut pairs = Vec::with_capacity(fields.len());
-    for (name, value) in fields {
-        let Json::Text(text) = value else {
+    for (name, held) in fields {
+        let Json::Text(text) = held else {
             return Err(AzureSpeechError::Option {
                 option: option.to_owned(),
                 problem: "holds a value that is not a string",
@@ -187,7 +191,7 @@ fn string_pairs(
     Ok(pairs)
 }
 
-fn json_kind(value: &Json) -> &'static str {
+const fn json_kind(value: &Json) -> &'static str {
     match value {
         Json::Null => "null",
         Json::Bool(_) => "bool",
@@ -220,10 +224,9 @@ fn deadline(
     if let Some(timeout) = request_timeout {
         return Ok(timeout);
     }
-    match params.timeout {
-        Some(seconds) => seconds_duration(seconds),
-        None => Ok(DEFAULT_TIMEOUT),
-    }
+    params
+        .timeout
+        .map_or_else(|| Ok(DEFAULT_TIMEOUT), seconds_duration)
 }
 
 fn wire_body(

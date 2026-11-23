@@ -83,7 +83,15 @@ pub fn select_client<'data>(
     }
     let v1 = matches!(kind, ClientKind::OpenAi | ClientKind::AsyncOpenAi);
     match inputs {
-        Some(ClientInputs::Azure(azure)) => {
+        Some(inputs) => selected_from_inputs(inputs),
+        None if v1 => v1_fallback(connection),
+        None => azure_fallback(connection, custom_query.as_ref(), wiring),
+    }
+}
+
+fn selected_from_inputs(inputs: ClientInputs<'_>) -> Result<Selected<'_>, AzureSpeechError> {
+    match inputs {
+        ClientInputs::Azure(azure) => {
             let base_url = normalized_base_url(&azure.endpoint)?;
             let auth = azure_key(azure.azure_ad_token, azure.token_provider, azure.api_key);
             Ok(selected(
@@ -93,7 +101,7 @@ pub fn select_client<'data>(
                 auth,
             ))
         }
-        Some(ClientInputs::OpenAiV1(keys)) => {
+        ClientInputs::OpenAiV1(keys) => {
             let Some(base_url) = keys.base_url else {
                 return Err(AzureSpeechError::MissingBase);
             };
@@ -105,22 +113,15 @@ pub fn select_client<'data>(
                 auth,
             ))
         }
-        None => {
-            if v1 {
-                v1_fallback(connection)
-            } else {
-                azure_fallback(connection, custom_query.as_ref(), wiring)
-            }
-        }
     }
 }
 
-fn selected<'data>(
+const fn selected(
     family: Family,
     base_url: String,
     api_version: Option<String>,
-    auth: Key<'data>,
-) -> Selected<'data> {
+    auth: Key<'_>,
+) -> Selected<'_> {
     Selected {
         family,
         base_url,
@@ -151,23 +152,23 @@ fn client_request<'data>(
 }
 
 // The SDK sends an ad token or a token provider first, then the key.
-fn azure_key<'data>(
+fn azure_key(
     ad_token: Option<SecretString>,
-    provider: Option<TokenProvider<'data>>,
+    provider: Option<TokenProvider<'_>>,
     api_key: Option<SecretString>,
-) -> Key<'data> {
+) -> Key<'_> {
     match (ad_token, provider, api_key) {
         (Some(token), _, _) => Key::Bearer(token),
-        (None, Some(provider), _) => Key::Provider(provider),
+        (None, Some(callable), _) => Key::Provider(callable),
         (None, None, Some(key)) => Key::ApiKey(key),
         (None, None, None) => Key::Absent,
     }
 }
 
 // The v1 client keeps the first present of the key, the provider and the ad token.
-fn v1_key<'data>(key: Option<V1Key<'data>>) -> Key<'data> {
+fn v1_key(key: Option<V1Key<'_>>) -> Key<'_> {
     match key {
-        Some(V1Key::Static(key)) => Key::Bearer(key),
+        Some(V1Key::Static(static_key)) => Key::Bearer(static_key),
         Some(V1Key::Provider { provider, .. }) => Key::Provider(provider),
         None => Key::Absent,
     }
@@ -264,7 +265,7 @@ pub fn request_auth(
     }
 }
 
-fn no_credential(
+const fn no_credential(
     family: Family,
     caller_auth: bool,
 ) -> Result<Option<RequestAuth>, AzureSpeechError> {

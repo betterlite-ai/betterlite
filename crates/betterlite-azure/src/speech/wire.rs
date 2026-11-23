@@ -41,11 +41,11 @@ pub(super) fn compose_url(
 // The client's own api-version comes first and the caller's extra query overrides it, as the SDK's params merge does.
 fn merged_query(
     base_query: Option<&str>,
-    version: Option<&str>,
+    api_version: Option<&str>,
     extra_query: &[(String, String)],
 ) -> Option<String> {
     let mut pairs: Vec<String> = base_query.map(split_pairs).unwrap_or_default();
-    if let Some(version) = version {
+    if let Some(version) = api_version {
         let name = quote_plus("api-version");
         upsert(&mut pairs, format!("{name}={}", quote_plus(version)), &name);
     }
@@ -96,9 +96,10 @@ pub(super) fn binary_headers(
             }
         }
         Some(RequestAuth::Bearer(token)) => {
-            if !headers.contains_key(AUTHORIZATION) {
+            let name = AUTHORIZATION;
+            if !headers.contains_key(&name) {
                 let value = format!("Bearer {}", token.expose_secret());
-                headers.insert(AUTHORIZATION, sensitive_value("authorization", &value)?);
+                headers.insert(name, sensitive_value("authorization", &value)?);
             }
         }
         None => {}
