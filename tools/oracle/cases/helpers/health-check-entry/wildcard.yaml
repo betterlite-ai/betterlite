@@ -1,0 +1,52 @@
+kind: helper
+name: health-check-entry-wildcard
+call:
+  b6750:
+    steps:
+      # a star model probes the three cheapest chat models and drops the reply headers entirely
+      - params:
+          model: openai/*
+          messages: [{role: user, content: hi}]
+          custom_llm_provider: openai
+        mode: null
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: openai/*, provider: openai}
+        cheapest: [cheap-a, cheap-b, cheap-c]
+        headers:
+          x-ratelimit-remaining-requests: "5"
+          x-ms-region: eastus
+        failure: null
+        raw_request: null
+      # the wildcard branch runs before the mode check, so a mode it cannot run still succeeds
+      - params:
+          model: openai/*
+          custom_llm_provider: openai
+        mode: bogus-mode
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: openai/*, provider: openai}
+        cheapest: [cheap-a]
+        headers: null
+        failure: null
+        raw_request: null
+      # a scripted max_tokens survives and the remaining cheapest models replace the scripted fallbacks
+      - params:
+          model: openai/*
+          messages: [{role: user, content: hi}]
+          custom_llm_provider: openai
+          max_tokens: 128
+          fallbacks: [given-fallback]
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: openai/*, provider: openai}
+        cheapest: [cheap-a, cheap-b]
+        headers: null
+        failure: null
+        raw_request: null
+env: {}
+compare: {ignore: []}

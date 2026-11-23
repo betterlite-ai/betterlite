@@ -1,0 +1,111 @@
+kind: helper
+name: health-check-entry-errors
+call:
+  b6750:
+    steps:
+      # no model: the failure carries the model-not-set text and no raw request
+      - params:
+          messages: [{role: user, content: hi}]
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: null
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # no mode yet and resolution fails: the missing-mode text, which has no raw request key at all
+      - params:
+          model: gpt-4o
+        mode: null
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: null
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # a probed model fails: the normal text, with the raw request the call wrote
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: null
+        failure: provider said no
+        raw_request:
+          raw_request_api_base: https://api.example.com
+          raw_request_body: {model: gpt-4o}
+          raw_request_headers: {authorization: redacted}
+          error: upstream returned 500
+      # a mode outside the fourteen names fails with the unsupported-mode text
+      - params:
+          model: gpt-4o
+        mode: bogus
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # a message longer than the cut leaves both sides an exactly thousand character stack text
+      - params:
+          model: gpt-4o
+          messages: [{role: user, content: hi}]
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: gpt-4o, provider: openai}
+        cheapest: []
+        headers: null
+        failure: the deployment reported that it was not ready to answer the health check, because the upstream connection was still being established and the credentials had not finished loading, and the retry budget was exhausted before the first response arrived, so the health check gave up waiting for a provider reply and reported the failure instead of a success, while the deployment stayed in its starting state for longer than the configured timeout allowed, which the log records as a single failed probe without any further detail, and the same starting state was reported by every other probe of the same deployment during that period, which is why the health endpoint marked the deployment unhealthy and stopped routing traffic to it until the next cycle
+        raw_request: null
+      # a star model with no cheapest model to probe fails with the wildcard text
+      - params:
+          model: openai/*
+          custom_llm_provider: openai
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: openai/*, provider: openai}
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+      # the catalog mode is set before resolution fails, so the failure uses the normal text
+      - params:
+          model: gpt-4o
+        mode: null
+        prompt: null
+        inputs: null
+        catalog: {gpt-4o: embedding}
+        resolution: null
+        cheapest: []
+        headers: null
+        failure: null
+        raw_request: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/0/outcome/stack_length
+      why: Python appends a traceback whose text length differs from betterlite's cause chain
+    - pointer: /value/1/outcome/stack_length
+      why: Python appends a traceback whose text length differs from betterlite's cause chain
+    - pointer: /value/2/outcome/stack_length
+      why: Python appends a traceback whose text length differs from betterlite's cause chain
+    - pointer: /value/3/outcome/stack_length
+      why: Python appends a traceback whose text length differs from betterlite's cause chain
+    - pointer: /value/5/outcome/stack_length
+      why: Python appends a traceback whose text length differs from betterlite's cause chain
+    - pointer: /value/6/outcome/stack_length
+      why: Python appends a traceback whose text length differs from betterlite's cause chain

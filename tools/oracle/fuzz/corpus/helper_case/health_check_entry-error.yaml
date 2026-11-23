@@ -1,0 +1,23 @@
+kind: helper
+name: health-check-entry-error-seed
+call:
+  b6750:
+    steps:
+      - params:
+          model: openai/*
+          custom_llm_provider: openai
+        mode: chat
+        prompt: null
+        inputs: null
+        catalog: {}
+        resolution: {model: openai/*, provider: openai}
+        cheapest: [cheap-a, cheap-b]
+        headers: null
+        failure: the cheapest model refused the probe
+        raw_request:
+          raw_request_api_base: https://api.example.com
+          raw_request_body: {model: cheap-a}
+          raw_request_headers: {authorization: redacted}
+          error: upstream returned 500
+env: {}
+compare: {ignore: []}
