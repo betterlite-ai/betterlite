@@ -77,7 +77,7 @@ where
     };
     match joined {
         Some(settled) => settle_daily_commit::<Writer>(queue, entity, settled).await,
-        None => interrupt_daily_commit(queue, entity, phase, task).await,
+        None => interrupt_daily_commit::<Writer>(queue, entity, phase, task).await,
     }
 }
 
