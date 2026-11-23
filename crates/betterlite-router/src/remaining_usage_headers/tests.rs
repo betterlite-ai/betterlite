@@ -200,6 +200,35 @@ fn io_headers_follow_litellm_order() {
 }
 
 #[test]
+fn io_headers_extreme_limits_saturate() {
+    let moment = UNIX_EPOCH.checked_add(Duration::from_secs(60)).unwrap();
+    let headers = build_io_token_rate_limit_headers(
+        IoLimits {
+            itpm: Some(i64::MIN),
+            otpm: Some(i64::MAX),
+        },
+        Some(1),
+        Some(-1),
+        moment,
+    );
+    let actual: Vec<(String, i64)> = headers
+        .iter()
+        .map(|(name, value)| (name.clone(), *value))
+        .collect();
+    assert_eq!(
+        actual,
+        vec![
+            (INPUT_LIMIT.to_owned(), i64::MIN),
+            (INPUT_REMAINING.to_owned(), 0),
+            (INPUT_RESET.to_owned(), 60),
+            (OUTPUT_LIMIT.to_owned(), i64::MAX),
+            (OUTPUT_REMAINING.to_owned(), i64::MAX),
+            (OUTPUT_RESET.to_owned(), 60),
+        ]
+    );
+}
+
+#[test]
 fn merge_keeps_present_value() {
     let mut additional = AdditionalHeaders::new();
     additional.insert(INPUT_LIMIT.to_owned(), Json::Number(Number::from(9_i64)));
