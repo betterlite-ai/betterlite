@@ -1,6 +1,7 @@
 use betterlite_models::catalog::ModelCatalog;
-use betterlite_models::metadata::identity::Mode;
 use betterlite_models::resolution::{ResolutionError, ResolutionRequest, ResolvedModel};
+
+use crate::health_probe_settings::model_info::mode_name;
 
 // get_llm_provider behind the entry: the caller injects the resolver with its catalog, provider sets and defaults
 pub trait ProviderResolver: Send + Sync {
@@ -27,28 +28,5 @@ impl CatalogModes for ModelCatalog {
         metadata.mode.map_or(CatalogMode::NoMode, |mode| {
             CatalogMode::Mode(mode_name(mode).to_owned())
         })
-    }
-}
-
-// the catalog's mode strings, which are exactly the serde names of the metadata Mode
-const fn mode_name(mode: Mode) -> &'static str {
-    match mode {
-        Mode::AudioSpeech => "audio_speech",
-        Mode::AudioTranscription => "audio_transcription",
-        Mode::Chat => "chat",
-        Mode::Completion => "completion",
-        Mode::Embedding => "embedding",
-        Mode::Evaluation => "evaluation",
-        Mode::Guardrail => "guardrail",
-        Mode::ImageEdit => "image_edit",
-        Mode::ImageGeneration => "image_generation",
-        Mode::Moderation => "moderation",
-        Mode::Ocr => "ocr",
-        Mode::Realtime => "realtime",
-        Mode::Rerank => "rerank",
-        Mode::Responses => "responses",
-        Mode::Search => "search",
-        Mode::VectorStore => "vector_store",
-        Mode::VideoGeneration => "video_generation",
     }
 }
