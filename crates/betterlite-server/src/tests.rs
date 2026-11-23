@@ -29,7 +29,7 @@ async fn run_serves_requests_with_the_chat_executor_it_was_given() {
         lookup: environment.clone(),
     };
     let config = loader
-        .load("model_list:\n  - {model_name: g, litellm_params: {model: bedrock/m}}\n")
+        .load("model_list:\n  - {model_name: g, litellm_params: {model: deepseek/m}}\n")
         .unwrap();
     let chat = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
     let mut server = JoinSet::new();
