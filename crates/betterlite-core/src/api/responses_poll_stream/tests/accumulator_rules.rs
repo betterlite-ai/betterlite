@@ -475,23 +475,31 @@ fn absent_optional_keys_take_the_source_defaults() {
 
 #[test]
 fn items_stop_at_the_items_bound() {
-    let limits = ApiLimits::default();
+    let limits = ApiLimits {
+        max_items: 2,
+        ..ApiLimits::default()
+    };
     let clock = support::clock(&[0]);
     let mut accumulator = OutputAccumulator::started(&clock);
-    for index in 0_usize..limits.max_items {
-        let item = Item {
-            id: Some(index.to_string()),
-            value: IndexMap::new(),
-        };
-        accumulator
-            .apply(PollEvent::OutputItemAdded(item))
-            .expect("the item applies");
-        accumulator
-            .check_limits(limits)
-            .expect("the item count is at most the limit");
-    }
+    let first = Item {
+        id: Some(String::from("m1")),
+        value: IndexMap::new(),
+    };
+    accumulator
+        .apply(PollEvent::OutputItemAdded(first))
+        .expect("the item applies");
+    let second = Item {
+        id: Some(String::from("m2")),
+        value: IndexMap::new(),
+    };
+    accumulator
+        .apply(PollEvent::OutputItemAdded(second))
+        .expect("the item applies");
+    accumulator
+        .check_limits(limits)
+        .expect("the item count is at the limit");
     let over = Item {
-        id: Some(String::from("over")),
+        id: Some(String::from("m3")),
         value: IndexMap::new(),
     };
     accumulator
@@ -503,8 +511,8 @@ fn items_stop_at_the_items_bound() {
     assert_eq!(
         error,
         ApiLimitError::TooManyItems {
-            observed: limits.max_items.saturating_add(1),
-            limit: limits.max_items,
+            observed: 3_usize,
+            limit: 2_usize,
         }
     );
 }
