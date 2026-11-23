@@ -1,0 +1,68 @@
+kind: helper
+name: safe-proxy-config-section-shapes
+call:
+  b10058:
+    config:
+      guardrails:
+        - litellm_params:
+            "mode": pre_call
+      litellm_settings:
+        "cache_params":
+          "type": redis
+        "success_callback": [openai]
+      model_list:
+        - litellm_params:
+            "model": openai/gpt-4
+      router_settings:
+        "routing_strategy": simple-shuffle
+    general_settings:
+      "store_model_in_db": true
+calls:
+  - b10058:
+      config:
+        guardrails: nope
+        litellm_settings: []
+        model_list: {litellm_params: {model: openai/gpt-4}}
+        router_settings: 7
+      general_settings: {}
+  - b10058:
+      config:
+        guardrails:
+          - nope
+          - litellm_params: {mode: pre_call}
+          - 7
+          - litellm_params: [nope]
+          - litellm_params: {mode: post_call}
+      general_settings: {}
+  - b10058:
+      config:
+        model_list:
+          - litellm_params: {model: openai/gpt-4}
+          - litellm_params: {model: azure/text-embedding-3-small}
+          - litellm_params: {model: openai/gpt-4o}
+          - litellm_params: {model: not-a-provider/model}
+          - litellm_params: {model: anthropic/claude}
+          - nope
+          - litellm_params: []
+          - litellm_params: {model: 7}
+          - litellm_params: {}
+      general_settings: {}
+  - b10058:
+      config:
+        model_list:
+          - litellm_params: {model: GPT-4/claude}
+          - litellm_params: {model: openai}
+          - litellm_params: {model: /claude}
+      general_settings: {}
+  - b10058:
+      config:
+        general_settings: {store_model_in_db: true}
+      general_settings: {}
+  - b10058:
+      config:
+        litellm_settings:
+          "cache_params": nope
+          "success_callback": [openai]
+      general_settings: {}
+env: {}
+compare: {ignore: []}

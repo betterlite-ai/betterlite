@@ -6,7 +6,7 @@ description: >-
 
   The scorer_defaults endpoint returns the three baseline collections the complexity router ships with: `DEFAULT_DIMENSION_WEIGHTS`,
   `DEFAULT_TIER_BOUNDARIES` and `DEFAULT_TOKEN_THRESHOLDS` from B328.
-  The fuse_presets endpoint calls B353's `get_fuse_presets` and returns its catalog.
+  The fuse_presets endpoint calls B10087's `get_fuse_presets` (betterlite-router::fuse_presets) and returns its catalog.
   The autorouter_presets endpoint fetches from `litellm_settings.autorouter_presets_url`. LiteLLM reads `LITELLM_AUTOROUTER_PRESETS_URL` only as the import-time default of
   `litellm.autorouter_presets_url` (litellm/__init__.py L438-L441), so a configured litellm_settings value wins over the environment, and the
   environment wins over the default `https://raw.githubusercontent.com/BerriAI/litellm/main/litellm/proxy/public_endpoints/autorouter_presets.json`
@@ -44,7 +44,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L422-L441
     why: The get_complexity_scorer_defaults handler and its return type.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L444-L449
-    why: The get_public_fuse_presets handler that delegates to B353's get_fuse_presets.
+    why: The get_public_fuse_presets handler that delegates to B10087's get_fuse_presets.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L495-L515
     why: The adapter and remote fetch function with httpx client and five-second timeout.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L518-L572
@@ -58,7 +58,7 @@ references:
 dod:
   - text: The scorer_defaults endpoint returns the three baseline defaults from B328 with the same structure LiteLLM uses.
     proof: [oracle, settings-tests]
-  - text: The fuse_presets endpoint calls B353's get_fuse_presets and returns its catalog unchanged.
+  - text: The fuse_presets endpoint calls B10087's get_fuse_presets and returns its catalog unchanged.
     proof: [oracle]
   - text: The autorouter_presets endpoint fetches from litellm_settings.autorouter_presets_url, falls back to bundled on any failure, and caches once per process.
     proof: [oracle, fallback-tests]
@@ -104,7 +104,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - |
-    B353's `get_fuse_presets` implementation and the FusePresetCatalog type it returns; B3192
+    B10087's `get_fuse_presets` implementation and the FusePresetCatalog type it returns; B3192
     only calls and serializes the result.
   - |
     B328's complexity router constants (DEFAULT_DIMENSION_WEIGHTS, DEFAULT_TIER_BOUNDARIES, DEFAULT_TOKEN_THRESHOLDS);

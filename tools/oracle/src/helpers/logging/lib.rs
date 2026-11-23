@@ -5,7 +5,7 @@
 )]
 
 betterlite_oracle_helper_api::helper_group! {
-    "audit_attribution" => audit_attribution, "b10050" => b10050, "b115" => b115, "b203" => b203,
+    "audit_attribution" => audit_attribution, "b10050" => b10050, "b10088" => b10088, "b115" => b115, "b203" => b203,
     "b3605" => b3605,
     "b3608" => b3608,
     "b3609" => b3609, "b3841" => b3841, "b3843" => b3843, "b3844" => b3844, "b3845" => b3845,

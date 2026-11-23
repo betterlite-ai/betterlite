@@ -10,7 +10,7 @@ description: >-
   /debug/report is not part of it: B4171 fills routes/debug_report.rs, which B1100's route registry already merges.
 
 
-  Where. crates/betterlite-server/src/app/admin.rs is the area file B8610's app.rs calls; the skeleton declares the
+  Where. crates/betterlite-server/src/app/admin.rs is the area file B10082's app.rs calls; the skeleton declares the
   submodule `debugging` there as an empty file. Put this task's code in app/admin/debugging.rs with tests in
   app/admin/debugging/tests.rs. In admin.rs add one line to `mount` that merges `debugging::mount(router, state)` and
   touch no other line, since other admin parts add their own calls. Nothing goes into mount_public: LiteLLM serves none
