@@ -17,6 +17,8 @@ use betterlite_ocr::ocr_http::{OcrClient, SecretSource};
 use betterlite_ocr::ocr_settings::OcrSettings;
 use secrecy::SecretString;
 
+mod tests;
+
 // One client per call, built from the session's environment: the secrets LiteLLM would read from os.environ.
 pub(crate) fn build(
     pool: &ClientPool,
@@ -77,6 +79,8 @@ struct UnsignedAws;
 
 #[async_trait]
 impl AwsRequestSigner for UnsignedAws {
+    // the empty header list is the whole behavior, so every mutant of this body either equals it or invents a header
+    #[cfg_attr(test, mutants::skip)]
     async fn sign(
         &self,
         _request: &AwsSigningRequest<'_>,

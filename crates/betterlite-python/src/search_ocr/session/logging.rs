@@ -21,6 +21,8 @@ use uuid::Uuid;
 use super::SessionCore;
 use crate::search_ocr::error::NativeFailure;
 
+mod tests;
+
 impl SessionCore {
     // litellm.search's logging object: the call's own ids, no messages and no callbacks to hand records on
     pub(super) fn logging_state(&self, provider: &str) -> Result<LoggingState, NativeFailure> {

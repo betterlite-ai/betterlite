@@ -26,6 +26,7 @@ use super::pricing::CatalogPricing;
 
 mod logging;
 mod ocr;
+mod tests;
 
 const POOL_CAPACITY: usize = 4;
 
@@ -125,7 +126,7 @@ async fn cost_answer(
     )
     .await;
     match outcome {
-        Ok((input, output)) if call.number_of_queries < 0 => Ok(CostAnswer::Cost {
+        Ok((input, output)) if call.number_of_queries.is_negative() => Ok(CostAnswer::Cost {
             input_cost: -input,
             output_cost: -output,
         }),

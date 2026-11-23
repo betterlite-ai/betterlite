@@ -10,6 +10,8 @@ use betterlite_models::price_fields::nested::TierPricing;
 use betterlite_tokenizer::model_capabilities::BEDROCK_NAMES;
 use rust_decimal::prelude::ToPrimitive as _;
 
+mod tests;
+
 // get_model_info raises for a model the catalog cannot resolve; search_provider_cost_per_query keeps its text.
 #[derive(Debug, thiserror::Error)]
 #[error("{0} isn't mapped yet")]

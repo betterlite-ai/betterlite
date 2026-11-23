@@ -12,6 +12,8 @@ use crate::search_ocr::convert::{OcrAnswer, OcrCall, resolve_document};
 use crate::search_ocr::error::{NativeFailure, SessionError};
 use crate::search_ocr::ocr_client;
 
+mod tests;
+
 impl SessionCore {
     // litellm.ocr: bind the request, run the provider call and hand back the normalized response
     pub(crate) async fn ocr(

@@ -15,6 +15,8 @@ use crate::completion::error::NativeError;
 
 use super::convert::ConvertError;
 
+mod tests;
+
 // Everything the session needs before it can answer a call; each variant names the outside value that failed.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SessionError {

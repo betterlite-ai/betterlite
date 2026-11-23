@@ -4,6 +4,7 @@ mod native;
 mod ocr_client;
 mod pricing;
 mod session;
+mod tests;
 
 use pyo3::prelude::*;
 

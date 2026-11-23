@@ -114,6 +114,8 @@ pub(crate) struct CostCall {
     pub(crate) optional_params: SearchOptionalParams,
 }
 
+// a single constant: the mutant that returns 1 again is equivalent, so the body is skipped rather than tested
+#[cfg_attr(test, mutants::skip)]
 const fn default_number_of_queries() -> i64 {
     1_i64
 }
