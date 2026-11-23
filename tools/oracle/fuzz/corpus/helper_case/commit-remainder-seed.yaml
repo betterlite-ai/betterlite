@@ -1,0 +1,13 @@
+kind: helper
+name: commit-remainder-corpus-seed
+call:
+  commit_remainder:
+    calls:
+      - retries: 0
+        rows: 2
+        script: ["connect_error"]
+      - retries: 1
+        rows: 3
+        script: ["read_timeout"]
+env: {}
+compare: {ignore: []}

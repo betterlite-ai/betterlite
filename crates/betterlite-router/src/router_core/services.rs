@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::cooldown_state::filter::HealthInputs;
+use crate::deployment_affinity::DeploymentAffinity;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::generalization_integration::model_generalizations::ModelGeneralizations;
 use crate::least_busy::LeastBusy;
@@ -43,6 +44,12 @@ pub trait RouteServices: Send + Sync {
         deployments: Vec<DeploymentSpec>,
     ) -> Result<Vec<DeploymentSpec>, Cancelled> {
         Ok(deployments)
+    }
+
+    // Router.add_optional_pre_call_checks and _ensure_deployment_affinity_callback leave the affinity check out unless the config turns it on
+    #[must_use]
+    fn deployment_affinity(&self) -> Option<&DeploymentAffinity> {
+        None
     }
 
     // Router.add_optional_pre_call_checks leaves PromptCachingDeploymentCheck out unless the config names it

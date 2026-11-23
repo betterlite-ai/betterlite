@@ -1,0 +1,12 @@
+task: B324
+deviations:
+  - what: "A caller or session pin whose cache key is longer than the route key's 1024-byte limit is skipped: the filter keeps the healthy pool and the hook writes no pin, where LiteLLM would use the long key."
+    why: "B372's affinity key is a route key with that limit; this check treats the refusal as a best-effort miss instead of failing the request."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/deployment_affinity_check.py#L411-L413"
+  - what: "A negative router_settings.deployment_affinity_ttl_seconds, or one above u32's range, fails the config load with an error naming the field, where LiteLLM keeps any int."
+    why: "LiteLLM declares deployment_affinity_ttl_seconds as an int defaulting to 3600 with no lower bound, and its in-memory cache treats the ttl as seconds, so a negative value only makes every pin expire as it is written and no request ever reads one back. betterlite holds the ttl as an unsigned integer, so the shared loader refuses the value before this section sees it; a negative or oversized ttl is a config mistake rather than a working setup, and the tests assert the rejection names the field."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L827"
+  - what: "When only model_group_affinity_config registers the check, betterlite runs it before the prompt caching check, where LiteLLM appends it after PromptCachingDeploymentCheck, which add_optional_pre_call_checks added first."
+    why: "betterlite has one stage order, deployment affinity then prompt caching, which is the order LiteLLM produces whenever a global affinity flag or a complexity-router pin registers the check first. In the per-group-only config with a prompt pin and an identity pin naming different deployments, the two orders keep different pools."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1226-L1230"
+kept_bugs: []

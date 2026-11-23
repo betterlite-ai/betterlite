@@ -1,0 +1,13 @@
+kind: helper
+name: committed-prefix-and-unsafe-current
+call:
+  commit_remainder:
+    calls:
+      - retries: 3
+        rows: 201
+        script: ["ok", "data_rejected"]
+      - retries: 1
+        rows: 201
+        script: ["ok", "connect_error", "ok"]
+env: {}
+compare: {ignore: []}

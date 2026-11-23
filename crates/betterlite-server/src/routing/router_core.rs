@@ -7,6 +7,7 @@ use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::error::LoggerError;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_models::decisions::Json;
+use betterlite_router::deployment_affinity::DeploymentAffinity;
 use betterlite_router::model_rate_limits::service::ModelRateLimits;
 use betterlite_router::prompt_affinity::service::{PromptAffinity, SuccessEvent};
 use betterlite_router::request_scheduler::service::RequestScheduler;
@@ -22,6 +23,7 @@ use betterlite_router::static_eligibility::tokens::TokenLimits;
 use betterlite_router::strategy_dispatch::service::StrategyDispatch;
 use rand::Rng;
 
+use crate::routing::deployment_affinity;
 use crate::routing::prompt_affinity::{PromptAffinityError, PromptAffinityInputs, build};
 use crate::routing::request_scheduler;
 
@@ -35,6 +37,7 @@ pub struct RouterServices {
     prompt_affinity: Option<PromptAffinity>,
     model_rate_limits: Option<ModelRateLimits>,
     request_scheduler: Option<Arc<RequestScheduler>>,
+    deployment_affinity: Option<DeploymentAffinity>,
 }
 
 impl RouterServices {
@@ -50,6 +53,7 @@ impl RouterServices {
             prompt_affinity: build(&config.sections.prompt_affinity, inputs)?,
             model_rate_limits: None,
             request_scheduler: request_scheduler::build(config),
+            deployment_affinity: deployment_affinity::from_config(config),
         })
     }
 
@@ -62,6 +66,10 @@ impl RouterServices {
 }
 
 impl RouteServices for RouterServices {
+    fn deployment_affinity(&self) -> Option<&DeploymentAffinity> {
+        self.deployment_affinity.as_ref()
+    }
+
     fn prompt_affinity(&self) -> Option<&PromptAffinity> {
         self.prompt_affinity.as_ref()
     }
@@ -137,5 +145,15 @@ where
         policy: inputs.policy,
         clients: inputs.clients,
     };
-    pipeline::route(&context, dispatch, resolved, random).await
+    let attempt = pipeline::route(&context, dispatch, resolved, random).await?;
+    // async_pre_call_deployment_hook runs once the route selected, on the metadata the call carries
+    if let Some(affinity) = services.deployment_affinity() {
+        deployment_affinity::record_selection(
+            affinity,
+            &attempt.deployment,
+            inputs.policy.prompt.request_kwargs,
+        )
+        .await;
+    }
+    Ok(attempt)
 }
