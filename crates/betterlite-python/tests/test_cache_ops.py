@@ -188,7 +188,7 @@ class FailingReadBackend(RecordingBackend):
     fail_read: bool = True
 
 
-# A semantic backend answers the similarity on the metadata copy the lookup handed it, as RedisCache does.
+# A semantic backend writes the similarity into the metadata copy it was handed.
 class SimilarityBackend(RecordingBackend):
     def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue:
         match kwargs.get("metadata"):
@@ -208,7 +208,7 @@ class StoredEnvelope(TypedDict):
 ENVELOPE: Final[TypeAdapter[StoredEnvelope]] = TypeAdapter(StoredEnvelope)
 
 
-# Each package stamps the write with its own clock, so the stores are compared on the response each key holds.
+# Each package stamps its own clock, so the stores are compared on each response.
 def stored_responses(backend: RecordingBackend) -> dict[str, JsonValue]:
     return {
         key: ENVELOPE.validate_python(value)["response"]
@@ -225,14 +225,16 @@ class Cache(CacheOperations):
         ttl: float | None = None,
         mode: str = "default_on",
         native: NativeCache | None = None,
+        cache_type: LiteLLMCacheType = LiteLLMCacheType.LOCAL,
+        flush_size: int | None = None,
     ) -> None:
         self.cache = backend
-        self.type = LiteLLMCacheType.LOCAL
+        self.type = cache_type
         self.namespace = namespace
         self.ttl = ttl
         self.mode = mode
         self.supported_call_types = None
-        self.redis_flush_size = None
+        self.redis_flush_size = flush_size
         self.semantic_cache_scope = "key"
         self._native_cache = native
 
@@ -405,14 +407,15 @@ def test_cache_ops_write_failure(caplog: pytest.LogCaptureFixture) -> None:
 def test_cache_ops_embed_keys() -> None:
     ours, reference = matched_caches(RecordingBackend(), RecordingBackend())
     embedding = LITELLM_EMBEDDING.EmbeddingResponse(**EMBEDDING_RESPONSE)
-    ours_key, ours_data, _ = ours.add_embedding_response_to_cache(
+    ours_key, ours_data, ours_stored = ours.add_embedding_response_to_cache(
         embedding, "a", dict(EMBEDDING), 0
     )
-    reference_key, reference_data, _ = reference.add_embedding_response_to_cache(
-        embedding, "a", dict(EMBEDDING), 0
+    reference_key, reference_data, reference_stored = (
+        reference.add_embedding_response_to_cache(embedding, "a", dict(EMBEDDING), 0)
     )
     assert ours_key == reference_key
     assert ours_data["response"] == reference_data["response"]
+    assert ours_stored["cache_key"] == reference_stored["cache_key"]
 
 
 def test_cache_ops_pipeline_write() -> None:
@@ -444,6 +447,29 @@ def test_cache_ops_batch_write() -> None:
     asyncio.run(reference.batch_cache_write(CHAT_RESPONSE, **CHAT))
     assert stored_responses(ours_backend) == stored_responses(reference_backend)
     assert ours.get_cache(None, **CHAT) == reference.get_cache(None, **CHAT) == CHAT_RESPONSE
+
+
+def test_cache_ops_flush_write() -> None:
+    ours_backend = RecordingBackend()
+    ours = Cache(ours_backend, cache_type=LiteLLMCacheType.REDIS, flush_size=1000)
+    asyncio.run(ours.async_add_cache(CHAT_RESPONSE, None, **CHAT))
+    reference_backend = RecordingBackend()
+    reference = LITELLM_CACHE.Cache(
+        _backend=reference_backend, type="redis", redis_flush_size=1000
+    )
+    asyncio.run(reference.async_add_cache(CHAT_RESPONSE, None, **CHAT))
+    assert [name for name, _key in ours_backend.calls] == ["batch_cache_write"]
+    assert [name for name, _key in reference_backend.calls] == ["batch_cache_write"]
+    assert stored_responses(ours_backend) == stored_responses(reference_backend)
+
+
+def test_cache_ops_skip_write() -> None:
+    backend = RecordingBackend()
+    cache = Cache(backend)
+    embedding = LITELLM_EMBEDDING.EmbeddingResponse(**EMBEDDING_RESPONSE)
+    extra: dict[str, JsonValue] = {**EMBEDDING, "input": ["a", "b", "c"]}
+    asyncio.run(cache.async_add_cache_pipeline(embedding, None, **extra))
+    assert backend.values == {}
 
 
 def test_cache_ops_streaming() -> None:
