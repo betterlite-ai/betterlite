@@ -216,35 +216,16 @@ fn real_answer(
     response_headers: BTreeMap<String, String>,
     response: EmbeddingResponse,
 ) -> Result<EmbeddingAnswer, CallFailure> {
-    let facts = &context.facts;
     let response_ms = context
         .started
         .elapsed()
         .as_secs_f64()
         .mul_add(1000.0_f64, 0.0_f64);
-    let overhead = provider_ms.mul_add(-1.0_f64, response_ms).max(0.0_f64);
-    let cost = response_cost(
-        context.arguments,
-        &context.session.catalog,
-        facts.model,
-        facts.provider,
-        response.usage.prompt_tokens,
-    );
-    let api_base = hidden_api_base(context);
-    let hidden_facts = HiddenFacts {
-        call_id: facts.call_id,
-        api_base: api_base.as_deref(),
-        litellm_model: &context.arguments.model,
-        model_id: model_info_id(context.arguments),
-        provider: Some(facts.provider),
-        wrapped: context.entry == Entry::Sync,
-    };
-    let hidden = hidden_params(
-        &hidden_facts,
-        cost,
-        AdditionalHeaders::new(),
+    let hidden = real_hidden(
+        context,
         response_ms,
-        Some(overhead),
+        provider_ms,
+        response.usage.prompt_tokens,
     );
     let usage = serde_json::to_string(&response.usage)
         .and_then(|text| serde_json::from_str::<Json>(&text))
@@ -258,6 +239,39 @@ fn real_answer(
         response_headers,
         response_ms,
     })
+}
+// the logging object's values for a provider answer: the call's own base, the wrapper's overhead and the priced usage
+fn real_hidden(
+    context: &CallContext<'_>,
+    response_ms: f64,
+    provider_ms: f64,
+    prompt_tokens: u32,
+) -> HiddenParams {
+    let facts = &context.facts;
+    let overhead = provider_ms.mul_add(-1.0_f64, response_ms).max(0.0_f64);
+    let cost = response_cost(
+        context.arguments,
+        &context.session.catalog,
+        facts.model,
+        facts.provider,
+        prompt_tokens,
+    );
+    let api_base = hidden_api_base(context);
+    let hidden_facts = HiddenFacts {
+        call_id: facts.call_id,
+        api_base: api_base.as_deref(),
+        litellm_model: &context.arguments.model,
+        model_id: model_info_id(context.arguments),
+        provider: Some(facts.provider),
+        wrapped: context.entry == Entry::Sync,
+    };
+    hidden_params(
+        &hidden_facts,
+        cost,
+        AdditionalHeaders::new(),
+        response_ms,
+        Some(overhead),
+    )
 }
 // set_hidden_params reports get_api_base over the call's own kwargs, never the resolved deployment
 fn hidden_api_base(context: &CallContext<'_>) -> Option<String> {

@@ -39,7 +39,33 @@ pub(crate) fn hidden_params(
     response_ms: f64,
     overhead_ms: Option<f64>,
 ) -> HiddenParams {
-    let mut hidden: HiddenParams = [
+    let mut hidden = metadata(facts, cost, additional_headers, response_ms);
+    if let Some(overhead) = overhead_ms.and_then(Number::from_f64) {
+        hidden.insert(
+            String::from("litellm_overhead_time_ms"),
+            Json::Number(overhead),
+        );
+    }
+    if let Some(provider) = facts.provider {
+        hidden.insert(
+            String::from("custom_llm_provider"),
+            Json::Text(provider.to_owned()),
+        );
+    }
+    // an awaited answer never runs the wrapper's set_hidden_params, so only the provider stamp survives
+    if !facts.wrapped {
+        hidden.retain(|name, _| name.as_str() == "custom_llm_provider");
+    }
+    hidden
+}
+// the base hidden params every answer carries, before the wrapper's optional stamps
+fn metadata(
+    facts: &HiddenFacts<'_>,
+    cost: Json,
+    additional_headers: AdditionalHeaders,
+    response_ms: f64,
+) -> HiddenParams {
+    [
         (
             "_response_ms",
             Number::from_f64(response_ms).map_or(Json::Null, Json::Number),
@@ -65,24 +91,7 @@ pub(crate) fn hidden_params(
     ]
     .into_iter()
     .map(|(name, value)| (String::from(name), value))
-    .collect();
-    if let Some(overhead) = overhead_ms.and_then(Number::from_f64) {
-        hidden.insert(
-            String::from("litellm_overhead_time_ms"),
-            Json::Number(overhead),
-        );
-    }
-    if let Some(provider) = facts.provider {
-        hidden.insert(
-            String::from("custom_llm_provider"),
-            Json::Text(provider.to_owned()),
-        );
-    }
-    // an awaited answer never runs the wrapper's set_hidden_params, so only the provider stamp survives
-    if !facts.wrapped {
-        hidden.retain(|name, _| name.as_str() == "custom_llm_provider");
-    }
-    hidden
+    .collect()
 }
 // LiteLLM prices a request against the custom pair when both halves are given, and the catalog otherwise
 #[must_use]
