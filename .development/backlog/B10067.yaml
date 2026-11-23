@@ -1,0 +1,14 @@
+id: B10067
+milestone: M4 keys, spend and management
+title: Env credential login switch
+status: todo
+depends_on: [B002, B171]
+file: tasks/B10067-env-credential-login.yaml
+covers:
+  - "litellm/proxy/auth/login_utils.py"
+parent: B056
+split_from: B788
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

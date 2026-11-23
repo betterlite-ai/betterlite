@@ -1,0 +1,116 @@
+id: B10078
+title: MCP servers from access groups
+description: >-
+  LiteLLM turns MCP access group names into server ids with three static methods of MCPRequestHandler in user_api_key_auth_mcp.py: _get_config_server_ids_for_access_groups (L3595), _get_db_server_ids_for_access_groups (L3607) and _get_mcp_servers_from_access_groups (L3631). At the pin the combined one has many callers: the key and team grants (L2597, L2713, B4669), the org, end-user, user and agent ceilings (L2917, L3022, L3158, L3506), the permission filter in operations.py (L462, B3815) and _resolve_team_allowed_mcp_servers in object_permission_utils.py (L450, B817). This task builds the three on their own, so B817 waits on this small task instead of all of B4669, and every caller uses this one copy.
+
+
+  Layout. Two modules, both empty stubs their parents already declare. betterlite-mcp module access_group_servers, crates/betterlite-mcp/src/access_group_servers.rs with its tests in access_group_servers/tests.rs, holds the three functions, the read port and the error enum AccessGroupServersError. betterlite-db module mcp::access_group_servers, crates/betterlite-db/src/mcp/access_group_servers.rs with its tests in access_group_servers/tests.rs, holds the one Postgres read. betterlite-mcp already depends on betterlite-db, and betterlite-server depends on both, so every caller can reach the code.
+
+
+  The Postgres read. LiteLLM runs `MCPServerRepository(prisma_client, use_writer=use_writer).table.find_many(where={"mcp_access_groups": {"hasSome": access_groups}})`. Build it as one more method on B4711's handle, `McpTableStore::server_ids_with_any_access_group(&self, access_groups: &[String], use_writer: bool) -> Result<Vec<String>, McpTableError>`, in the new betterlite-db module (an inherent impl block beside B4711's own; McpTableStore lives in crates/betterlite-db/src/mcp/table_access/store.rs). Run one statement, `SELECT "server_id" FROM "LiteLLM_MCPServerTable" WHERE "mcp_access_groups" && $1`, with the whole group list bound as a single text[] parameter. Use `self.client.writer` when use_writer is true, and otherwise `self.reader()`, which already falls back to the writer when the replica is marked unavailable; that is the writer_db-or-db pick of LiteLLM's PrismaTableRepository.table. Map session and query failures into McpTableError the way store.rs does. Return the ids in row order. It returns McpTableError like every other read on this handle, so the module adds no error enum of its own.
+
+
+  The read port. Declare `pub trait AccessGroupServerRows: Send + Sync` in access_group_servers.rs with `type Error: std::error::Error + Send + Sync + 'static;` and `fn server_ids_with_any_access_group(&self, access_groups: &[String], use_writer: bool) -> impl Future<Output = Result<Vec<String>, Self::Error>> + Send;`. Implement it for McpTableStore by calling the method above (Error = McpTableError). Tests use an in-memory fake that records each call's use_writer flag and can be told to fail.
+
+
+  Functions to build in access_group_servers.rs (LiteLLM names in backticks).
+
+  1. `config_server_ids_for_access_groups(registry: &ServerRegistry, access_groups: &[String]) -> Vec<String>` (`_get_config_server_ids_for_access_groups`). Walk B10020's config map, `registry.config_servers` (crate-visible; crates/betterlite-mcp/src/registry/servers.rs), in its order. Keep the map key of every record whose `fields.access_groups` is Some, non-empty and holds at least one requested name, compared as exact strings. Never read db_servers or get_registry here: LiteLLM passes global_mcp_server_manager.config_mcp_servers.
+
+  2. `db_server_ids_for_access_groups<R: AccessGroupServerRows>(rows: Option<&R>, access_groups: &[String], use_writer: bool) -> Result<Vec<String>, AccessGroupServersError<R::Error>>` (`_get_db_server_ids_for_access_groups`). An empty request or no rows (LiteLLM's prisma_client None) gives an empty list without calling the port. Otherwise return the port's ids. When the port fails: with use_writer the error comes back as AccessGroupServersError::Rows, which keeps the port's error as its #[source]; without it, log at debug `Error getting MCP servers from access groups: {error}` and return an empty list.
+
+  3. `servers_from_access_groups<R: AccessGroupServerRows>(registry: &SharedRegistry, rows: Option<&R>, access_groups: &[String], requires_fresh_policy: bool) -> Result<Vec<String>, AccessGroupServersError<R::Error>>` (`_get_mcp_servers_from_access_groups`). Take B10020's SharedRegistry read lock, collect the config ids with function 1, and drop the guard before anything awaits, since no lock may be held across an .await. Then call function 2 with use_writer = requires_fresh_policy. The result is the config ids followed by the database ids that are not already in it. With requires_fresh_policy true a database error reaches the caller. LiteLLM's outer except, which re-raises under the fresh policy and otherwise warns `Failed to get MCP servers from access groups: %s` and returns [], has nothing to catch in typed Rust: the config walk cannot fail, and function 2 only fails when use_writer is true, which is exactly when that arm re-raises. So without the fresh policy this function never fails, and a database fault leaves the config ids in the answer. Keep all three functions and the port public; B4669, B817 and the later ceilings call them.
+
+
+  All names are LiteLLM's. There is no config key or env var in these functions. They run on every MCP request that carries access groups, so keep to the one read listed.
+
+
+  Oracle. Only function 1 is pure; the other two read proxy_server's prisma_client and global_mcp_server_manager, so they get native tests. The b10078 helper takes config servers as an ordered list of records (server_id, name, transport and an access_groups list or null) and the requested access_groups, and returns the matched ids sorted, since LiteLLM returns a set. The Python side builds MCPServer records into a dict keyed by server_id and calls MCPRequestHandler._get_config_server_ids_for_access_groups directly. The Rust side deserializes the same records into MCPServer, as crates/betterlite-mcp/src/registry/servers/tests.rs does, and builds a ServerRegistry with them as its config servers. Add helper_case corpus seeds named mcp-access-group-servers-*.
+
+
+  Tests in access_group_servers::tests, names starting with config_ for function 1 (a match on one shared name of several, no shared name, a record with access_groups None and one with an empty list never matching, an empty request matching nothing, a database server carrying the requested group ignored), database_ for function 2 (empty request and no rows skip the port, the port receives use_writer, a fault without use_writer gives an empty list and a debug event, with use_writer the fault comes back) and combined_ for function 3 (config ids first then new database ids without duplicates, requires_fresh_policy reaching the port as use_writer, a fresh-policy fault returned, a fault without the fresh policy keeping the config ids). Tests in mcp::access_group_servers::tests run on Postgres: rows sharing one group are returned, rows with disjoint or empty arrays are not, a draft row still counts, and with use_writer the read goes to the writer. For the last, build PrismaClient with the writer and the reader on two separate test databases (mcp_table_access/tests/database.rs builds one at L137) and seed a row on the writer only. There is no fuzz target: every input is a typed value.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/access_group_servers.rs
+    - crates/betterlite-mcp/src/access_group_servers/**
+    - crates/betterlite-db/src/mcp/access_group_servers.rs
+    - crates/betterlite-db/src/mcp/access_group_servers/**
+    - tools/oracle/cases/helpers/mcp-access-group-servers/**
+    - "tools/oracle/fuzz/corpus/helper_case/mcp-access-group-servers-*"
+    - tools/oracle/helpers/b10078.py
+    - tools/oracle/helpers/b10078/**
+    - tools/oracle/src/helpers/mcp/b10078.rs
+    - tools/oracle/src/helpers/mcp/b10078/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3594-L3664
+    why: Owned. The config and database helpers and the combined lookup, with the use_writer and requires_fresh_policy error rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/table_repositories.py#L19-L40
+    why: PrismaTableRepository.table picks writer_db when use_writer is set and db otherwise; MCPServerRepository (L70-L71) is that base over litellm_mcpservertable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L448-L452
+    why: B817's call, with requires_fresh_policy left at False.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2694-L2720
+    why: B4669's team grant call, which passes requires_fresh_policy through.
+dod:
+  - text: The config lookup returns, in config order, the ids of config servers whose access_groups share a name with the request; None or empty access_groups and an empty request never match, and database servers are not read.
+    proof: [config-tests, oracle, helper-python]
+  - text: The database lookup skips the port for an empty request or no rows, passes use_writer, logs a fault at debug and returns an empty list without use_writer, and returns the fault with it.
+    proof: [database-tests]
+  - text: The combined lookup returns the config ids followed by new database ids, passes requires_fresh_policy as use_writer, returns a database fault under the fresh policy and keeps the config ids when a fault happens without it.
+    proof: [combined-tests]
+  - text: The Postgres read returns rows whose mcp_access_groups overlap the request, drafts included, skips disjoint and empty arrays, and reads the writer when use_writer is true.
+    proof: [rows-tests]
+  - text: New mcp-access-group-servers seeds for b10078 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: config-tests
+      why: The config access group match is missing, reads database servers or matches an empty group list.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^access_group_servers::tests::config_/)'
+    - id: database-tests
+      why: The database lookup calls the port when it should not, or its use_writer error rule is missing or wrong.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^access_group_servers::tests::database_/)'
+    - id: combined-tests
+      why: The union, the fresh-policy pass-through or the fault handling of the combined lookup is missing or wrong.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^access_group_servers::tests::combined_/)'
+    - id: rows-tests
+      why: The Postgres overlap read is missing, filters drafts, or ignores use_writer.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::access_group_servers::tests::/)'
+    - id: helper-python
+      why: The b10078 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10078.py tools/oracle/helpers/b10078)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10078 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mcp-access-group-servers-*")" &&
+        grep -lE 'b10078"?:' tools/oracle/fuzz/corpus/helper_case/mcp-access-group-servers-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-mcp --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-access-group-servers/config-access-group-match.yaml
+  - tools/oracle/cases/helpers/mcp-access-group-servers/config-empty-groups-never-match.yaml
+  - tools/oracle/cases/helpers/mcp-access-group-servers/config-no-requested-groups.yaml
+deviations:
+  - what: Reads go through the SharedRegistry and the AccessGroupServerRows port the caller passes, not through proxy_server's prisma_client and global_mcp_server_manager.
+    why: betterlite has no module-level state; the ids a caller gets back are the same.
+  - what: Lists LiteLLM builds from a Python set come back de-duplicated in first-seen order.
+    why: Python's set order is not stable, so no client can rely on it; tests and cases compare as sets.
+out_of_scope:
+  - "litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py: _get_allowed_mcp_servers_for_key, _get_key_access_group_mcp_server_extras, _get_allowed_mcp_servers_for_team, _team_ids_for_mcp_grant, _resolve_user_team_ids, _team_granted_servers and _allowed_mcp_servers_for_single_team: B4669, which calls servers_from_access_groups here. get_mcp_access_groups and its four siblings (L3666-L3795): no caller at the pin, as B4669 says. Every other function has the owner B137's out_of_scope names."
+  - "_resolve_team_allowed_mcp_servers in object_permission_utils.py: B817. The org, end-user, user and agent ceilings that also call the combined lookup: B4670 and B4668. The permission filter in operations.py: B3815."
+  - "ServerRegistry, its config map and SharedRegistry: B10020. Filling the config map: B6764. McpTableStore and its other reads: B4711."
+  - "Building the McpTableStore and handing it with the SharedRegistry to the callers: each caller's wiring."
+pitfalls:
+  - "_get_db_server_ids_for_access_groups swallows its own fault at debug level when use_writer is false, so the combined lookup still returns the config ids it found; the warning arm that returns [] is never reached that way."
+  - "With requires_fresh_policy true a fault has to reach the caller, since B4669's team path returns it as an error there instead of granting an empty list."
+  - "The where clause holds only hasSome, so draft and pending_review rows grant their ids too; do not add B4711's NOT_DRAFT_PREDICATE."
+  - "hasSome is array overlap (&&), not containment (@>): one shared name is enough to match."
+  - "The config walk reads only config_servers, so a database server that shares a config server's id does not change which config ids match."
+  - "MCPServer has no default for transport, so the Python helper sets transport on every record it builds."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

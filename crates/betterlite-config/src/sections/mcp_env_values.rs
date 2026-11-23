@@ -5,7 +5,7 @@ use serde::de::IgnoredAny;
 use std::collections::{BTreeMap, BTreeSet};
 mod tests;
 const PREFIX_SEPARATOR_VAR: &str = "MCP_TOOL_PREFIX_SEPARATOR";
-const STDIO_ENABLED_VAR: &str = "LITELLM_ENABLE_MCP_STDIO";
+pub const MCP_STDIO_ENABLED_ENV_VAR: &str = "LITELLM_ENABLE_MCP_STDIO";
 const STDIO_EXTRA_COMMANDS_VAR: &str = "LITELLM_MCP_STDIO_EXTRA_COMMANDS";
 const DEFAULT_PREFIX_SEPARATOR: &str = "-";
 // litellm/constants.py's MCP_STDIO_ALLOWED_COMMANDS base set
@@ -46,8 +46,8 @@ impl Section for Raw {
             .lookup(PREFIX_SEPARATOR_VAR)
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| DEFAULT_PREFIX_SEPARATOR.to_owned());
-        let flag_text = lookup.lookup(STDIO_ENABLED_VAR).unwrap_or_default();
-        let enabled = betterlite_env::flag(STDIO_ENABLED_VAR, &flag_text)?.unwrap_or(false);
+        let flag_text = lookup.lookup(MCP_STDIO_ENABLED_ENV_VAR).unwrap_or_default();
+        let enabled = betterlite_env::flag(MCP_STDIO_ENABLED_ENV_VAR, &flag_text)?.unwrap_or(false);
         Ok(PayloadRules {
             prefix_separator,
             stdio: StdioPolicy {
@@ -58,6 +58,13 @@ impl Section for Raw {
             },
         })
     }
+}
+#[must_use]
+pub fn is_mcp_stdio_flag_key(env_var_name: &str) -> bool {
+    env_var_name
+        .to_uppercase()
+        .as_str()
+        .eq(MCP_STDIO_ENABLED_ENV_VAR)
 }
 // constants.py: the base set plus the comma parts of the extra list, empty parts dropped
 fn allowed_commands(extra: Option<&str>) -> BTreeSet<String> {

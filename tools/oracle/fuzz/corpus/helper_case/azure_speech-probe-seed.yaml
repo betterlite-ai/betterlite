@@ -1,0 +1,19 @@
+kind: helper
+name: azure_speech-probe-seed
+call:
+  azure_speech:
+    probe:
+      scenarios:
+        - outcome: reply
+          model: gpt-4o
+          api_key: sk-azure-fixture
+          api_base: https://example.openai.azure.com
+          api_version: "2024-06-01"
+          reply: {status: 200, headers: {x-ms-region: eastus}, body: "{}"}
+        - outcome: request
+          api_key: sk-azure-fixture
+          api_base: https://gateway.ai.cloudflare.com/v1/acct/gw/azure
+          api_version: "2024-06-01"
+          mode: image_generation
+env: {}
+compare: {ignore: []}
