@@ -1,4 +1,5 @@
 import datetime as dt
+import importlib
 import inspect
 from inspect import Signature
 from typing import Final, Protocol
@@ -56,7 +57,6 @@ STAMP_START: Final = 1.0
 STAMP_END: Final = 2.0
 UNMAPPED_MATCH: Final = "This model isn't mapped yet"
 PROVIDER_MATCH: Final = "LLM Provider NOT provided"
-REFERENCE_ERROR: Final[tuple[str, str]] = ("litellm.exceptions", "BadRequestError")
 MODEL_MISSING_MATCH: Final = "Model is None"
 HIDDEN: Final[dict[str, JsonValue]] = {"additional_headers": {COST_HEADER: HEADER_COST}}
 STRING_HEADER: Final[dict[str, JsonValue]] = {"additional_headers": {COST_HEADER: "0.00042"}}
@@ -88,6 +88,22 @@ BREAKDOWN_KWARGS: Final[tuple[str, ...]] = (
 class DefaultView(Protocol):
     @property
     def default(self) -> JsonValue: ...
+
+
+class ReferenceCall(Protocol):
+    def __call__(self, *args: JsonValue, **kwargs: JsonValue) -> JsonValue: ...
+
+
+class ReferenceModule(Protocol):
+    def __getattr__(self, name: str) -> ReferenceCall: ...
+
+
+class ReferenceErrors(Protocol):
+    def __getattr__(self, name: str) -> type[BaseException]: ...
+
+
+REFERENCE: ReferenceModule = importlib.import_module("litellm.cost_calculator")
+REFERENCE_ERRORS: ReferenceErrors = importlib.import_module("litellm.exceptions")
 
 
 class Recorder(CostLogging):
@@ -167,66 +183,22 @@ def reference_cached_chat(model: str) -> ReferenceChat:
     return ReferenceChat(model=model, usage=usage)
 
 
-# The tables below are LiteLLM's rows at the pin; mypy rejects naming its Any callables.
-PARAM_KIND: Final = "POSITIONAL_OR_KEYWORD"
-REQUIRED: Final = "<class 'inspect._empty'>"
-COST_PER_TOKEN_SIGNATURE: Final[tuple[tuple[str, str, str], ...]] = (
-    ("model", PARAM_KIND, "''"), ("prompt_tokens", PARAM_KIND, "0"),
-    ("completion_tokens", PARAM_KIND, "0"), ("response_time_ms", PARAM_KIND, "0.0"),
-    ("custom_llm_provider", PARAM_KIND, "None"), ("region_name", PARAM_KIND, "None"),
-    ("prompt_characters", PARAM_KIND, "None"),
-    ("completion_characters", PARAM_KIND, "None"),
-    ("cache_creation_input_tokens", PARAM_KIND, "0"),
-    ("cache_read_input_tokens", PARAM_KIND, "0"),
-    ("custom_cost_per_token", PARAM_KIND, "None"),
-    ("custom_cost_per_second", PARAM_KIND, "None"),
-    ("number_of_queries", PARAM_KIND, "None"), ("usage_object", PARAM_KIND, "None"),
-    ("rerank_billed_units", PARAM_KIND, "None"), ("call_type", PARAM_KIND, "'completion'"),
-    ("audio_transcription_file_duration", PARAM_KIND, "0.0"),
-    ("service_tier", PARAM_KIND, "None"), ("data_residency", PARAM_KIND, "None"),
-    ("vertex_location", PARAM_KIND, "None"), ("response", PARAM_KIND, "None"),
-    ("request_model", PARAM_KIND, "None"), ("custom_model_info", PARAM_KIND, "None"),
-)
-COMPLETION_COST_SIGNATURE: Final[tuple[tuple[str, str, str], ...]] = (
-    ("completion_response", PARAM_KIND, "None"), ("model", PARAM_KIND, "None"),
-    ("prompt", PARAM_KIND, "''"), ("messages", PARAM_KIND, "[]"),
-    ("completion", PARAM_KIND, "''"), ("total_time", PARAM_KIND, "0.0"),
-    ("call_type", PARAM_KIND, "None"), ("custom_llm_provider", PARAM_KIND, "None"),
-    ("region_name", PARAM_KIND, "None"), ("size", PARAM_KIND, "None"),
-    ("quality", PARAM_KIND, "None"), ("n", PARAM_KIND, "None"),
-    ("custom_cost_per_token", PARAM_KIND, "None"),
-    ("custom_cost_per_second", PARAM_KIND, "None"),
-    ("optional_params", PARAM_KIND, "None"), ("custom_pricing", PARAM_KIND, "None"),
-    ("base_model", PARAM_KIND, "None"),
-    ("standard_built_in_tools_params", PARAM_KIND, "None"),
-    ("litellm_model_name", PARAM_KIND, "None"), ("router_model_id", PARAM_KIND, "None"),
-    ("litellm_logging_obj", PARAM_KIND, "None"), ("service_tier", PARAM_KIND, "None"),
-    ("data_residency", PARAM_KIND, "None"), ("vertex_location", PARAM_KIND, "None"),
-)
-RESPONSE_COST_SIGNATURE: Final[tuple[tuple[str, str, str], ...]] = (
-    ("response_object", PARAM_KIND, REQUIRED), ("model", PARAM_KIND, REQUIRED),
-    ("custom_llm_provider", PARAM_KIND, REQUIRED), ("call_type", PARAM_KIND, REQUIRED),
-    ("optional_params", PARAM_KIND, REQUIRED), ("cache_hit", PARAM_KIND, "None"),
-    ("base_model", PARAM_KIND, "None"), ("custom_pricing", PARAM_KIND, "None"),
-    ("prompt", PARAM_KIND, "''"), ("standard_built_in_tools_params", PARAM_KIND, "None"),
-    ("litellm_model_name", PARAM_KIND, "None"), ("router_model_id", PARAM_KIND, "None"),
-    ("litellm_logging_obj", PARAM_KIND, "None"), ("service_tier", PARAM_KIND, "None"),
-    ("data_residency", PARAM_KIND, "None"), ("vertex_location", PARAM_KIND, "None"),
-    ("region_name", PARAM_KIND, "None"),
-)
-
-
 def test_cost_per_token_signature() -> None:
-    assert tuple(signature_rows(inspect.signature(cost_per_token))) == COST_PER_TOKEN_SIGNATURE
+    assert signature_rows(inspect.signature(cost_per_token)) == signature_rows(
+        inspect.signature(REFERENCE.cost_per_token)
+    )
 
 
 def test_completion_cost_signature() -> None:
-    assert tuple(signature_rows(inspect.signature(completion_cost))) == COMPLETION_COST_SIGNATURE
+    assert signature_rows(inspect.signature(completion_cost)) == signature_rows(
+        inspect.signature(REFERENCE.completion_cost)
+    )
 
 
 def test_response_cost_signature() -> None:
-    signature = inspect.signature(response_cost_calculator)
-    assert tuple(signature_rows(signature)) == RESPONSE_COST_SIGNATURE
+    assert signature_rows(inspect.signature(response_cost_calculator)) == signature_rows(
+        inspect.signature(REFERENCE.response_cost_calculator)
+    )
 
 
 def test_cost_per_token_plain() -> None:
@@ -301,9 +273,8 @@ def test_cost_per_token_unmapped() -> None:
 def test_cost_per_token_provider() -> None:
     with pytest.raises(BadRequestError, match=PROVIDER_MATCH) as ours_error:
         cost_per_token(model=UNKNOWN_MODEL)
-    with pytest.raises(Exception, match=PROVIDER_MATCH) as reference_error:
+    with pytest.raises(REFERENCE_ERRORS.BadRequestError, match=PROVIDER_MATCH) as reference_error:
         reference_cost_per_token(model=UNKNOWN_MODEL)
-    assert (reference_error.type.__module__, reference_error.type.__name__) == REFERENCE_ERROR
     assert str(ours_error.value) == str(reference_error.value)
 
 
