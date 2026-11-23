@@ -2,6 +2,7 @@ use super::*;
 use betterlite_error::error::class_message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_wrapper::error::{class_name, class_status};
+use rstest::rstest;
 
 use crate::skill_calls::error::{NO_DATABASE, NativeErrorPayload, no_database_failure};
 
@@ -178,13 +179,18 @@ fn request_extra_query_must_be_an_object() {
 fn request_timeout_is_seconds() {
     let parsed = skill_arguments(arguments(r#"{"skill_id": "s1", "timeout": 0.5}"#)).unwrap();
     assert_eq!(parsed.params.timeout, Some(Duration::from_millis(500)));
-    for bad in ["\"5\"", "-1", "true"] {
-        let text = format!(r#"{{"skill_id": "s1", "timeout": {bad}}}"#);
-        let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(&text)) else {
-            panic!("a timeout of {bad} is a field error");
-        };
-        assert_eq!(name, "timeout");
-    }
+}
+
+#[rstest]
+#[case::text("\"5\"")]
+#[case::negative("-1")]
+#[case::flag("true")]
+fn request_timeout_rejects_a_value_of_the_wrong_type(#[case] bad: &str) {
+    let text = format!(r#"{{"skill_id": "s1", "timeout": {bad}}}"#);
+    let Err(RequestError::FieldType { name, .. }) = skill_arguments(arguments(&text)) else {
+        panic!("a timeout of {bad} is a field error");
+    };
+    assert_eq!(name, "timeout");
 }
 
 #[test]

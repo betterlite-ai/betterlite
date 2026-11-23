@@ -1,14 +1,8 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::env_integer::timeout::TimeoutError;
-use betterlite_config::loader::ConfigError;
 use betterlite_core::api::skills::get_delete::call::LITELLM_PROXY_PROVIDER;
-use betterlite_env::EnvError;
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::{ErrorClass, class_message};
-use betterlite_http::error::HttpError;
-use betterlite_models::decisions::Json;
-use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
 use betterlite_sdk::call_wrapper::error::{class_name, class_status};
 use pyo3::PyErr;
@@ -45,42 +39,15 @@ pub(crate) enum SessionError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the proxy environment could not be read: {source}")]
-    Proxy {
-        #[source]
-        source: EnvError,
-    },
-    #[error("the outbound http client could not be built: {source}")]
-    Client {
-        #[source]
-        source: HttpError,
-    },
-    #[error("the request timeout setting could not be read: {source}")]
-    Timeout {
-        #[source]
-        source: TimeoutError,
-    },
-    #[error("the anthropic credentials could not be read: {source}")]
-    Credentials {
-        #[source]
-        source: ConfigError,
-    },
-    #[error("the secret redactor could not be built: {source}")]
-    Redactor {
-        #[source]
-        source: RedactionError,
-    },
+    #[error("the skill session could not be built: {message}")]
+    Setup { message: String },
 }
 
 impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
         match &error {
             SessionError::Json { .. } => PyValueError::new_err(error.to_string()),
-            SessionError::Proxy { .. }
-            | SessionError::Client { .. }
-            | SessionError::Timeout { .. }
-            | SessionError::Credentials { .. }
-            | SessionError::Redactor { .. } => PyRuntimeError::new_err(error.to_string()),
+            SessionError::Setup { .. } => PyRuntimeError::new_err(error.to_string()),
         }
     }
 }
@@ -94,7 +61,6 @@ pub(crate) struct NativeErrorPayload {
     pub(crate) status_code: Option<u16>,
     pub(crate) llm_provider: Option<String>,
     pub(crate) model: Option<String>,
-    pub(crate) body: Option<Json>,
     pub(crate) headers: BTreeMap<String, String>,
     pub(crate) num_retries: Option<i64>,
     pub(crate) max_retries: Option<i64>,
@@ -113,7 +79,6 @@ impl NativeErrorPayload {
             status_code: class_status(class),
             llm_provider: metadata.provider,
             model: metadata.model,
-            body: None,
             headers,
             num_retries: None,
             max_retries: metadata.retry.max_retries.map(i64::from),

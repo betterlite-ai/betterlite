@@ -38,20 +38,14 @@ struct Exchange {
     timeout_status: Option<u16>,
 }
 
-impl Exchange {
-    const fn read() -> Self {
-        Self {
-            after: GET_SKILLS_TIMEOUT,
-            timeout_status: None,
-        }
-    }
-
-    const fn write(after: Duration) -> Self {
-        Self {
-            after,
-            timeout_status: Some(408),
-        }
-    }
+// One upstream call: the parts each operation assembles, with the deadline its LiteLLM handler gives it.
+struct UpstreamCall {
+    method: Method,
+    url: String,
+    headers: HeaderMap,
+    query: Vec<(String, String)>,
+    body: RequestBody,
+    deadline: Exchange,
 }
 
 // The session's http side: the calls every skill operation can make without a database.
@@ -67,12 +61,17 @@ impl SkillsHttpHandler for HttpSkills {
         async move {
             let response = exchange(
                 &self.client,
-                Method::GET,
-                &request.url,
-                request.headers,
-                Vec::new(),
-                RequestBody::Empty,
-                Exchange::read(),
+                UpstreamCall {
+                    method: Method::GET,
+                    url: request.url,
+                    headers: request.headers,
+                    query: Vec::new(),
+                    body: RequestBody::Empty,
+                    deadline: Exchange {
+                        after: GET_SKILLS_TIMEOUT,
+                        timeout_status: None,
+                    },
+                },
             )
             .await?;
             ensure_success(&response, request.config)?;
@@ -90,12 +89,17 @@ impl SkillsHttpHandler for HttpSkills {
         async move {
             let response = exchange(
                 &self.client,
-                Method::DELETE,
-                &request.url,
-                request.headers,
-                Vec::new(),
-                RequestBody::Empty,
-                Exchange::write(request.timeout),
+                UpstreamCall {
+                    method: Method::DELETE,
+                    url: request.url,
+                    headers: request.headers,
+                    query: Vec::new(),
+                    body: RequestBody::Empty,
+                    deadline: Exchange {
+                        after: request.timeout,
+                        timeout_status: Some(408_u16),
+                    },
+                },
             )
             .await?;
             ensure_success(&response, request.config)?;
@@ -115,12 +119,17 @@ impl SkillsListHttpHandler for HttpSkills {
         async move {
             let response = exchange(
                 &self.client,
-                Method::GET,
-                &request.url,
-                request.headers,
-                request.query_params,
-                RequestBody::Empty,
-                Exchange::read(),
+                UpstreamCall {
+                    method: Method::GET,
+                    url: request.url,
+                    headers: request.headers,
+                    query: request.query_params,
+                    body: RequestBody::Empty,
+                    deadline: Exchange {
+                        after: GET_SKILLS_TIMEOUT,
+                        timeout_status: None,
+                    },
+                },
             )
             .await?;
             ensure_success(&response, request.config)?;
@@ -147,12 +156,17 @@ impl SkillsCreateHttpHandler for CreateTransport {
             let (headers, body) = create_body(&request, &self.blobs)?;
             let response = exchange(
                 &self.client,
-                Method::POST,
-                &request.url,
-                headers,
-                Vec::new(),
-                body,
-                Exchange::write(request.timeout),
+                UpstreamCall {
+                    method: Method::POST,
+                    url: request.url,
+                    headers,
+                    query: Vec::new(),
+                    body,
+                    deadline: Exchange {
+                        after: request.timeout,
+                        timeout_status: Some(408_u16),
+                    },
+                },
             )
             .await?;
             ensure_success(&response, request.config)?;
@@ -189,7 +203,7 @@ fn create_body(
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
-    let resolved = convert::files(request.custom_llm_provider, files, &mut owned)
+    let resolved = convert::files(request.custom_llm_provider, files, owned.as_mut_slice())
         .map_err(|error| provider_failure(400, error.to_string(), false))?;
     drop(owned);
     headers.remove(CONTENT_TYPE);
@@ -203,22 +217,22 @@ fn create_body(
 
 async fn exchange(
     client: &ProxiedClient,
-    method: Method,
-    url: &str,
-    headers: HeaderMap,
-    query: Vec<(String, String)>,
-    body: RequestBody,
-    deadline: Exchange,
+    call: UpstreamCall,
 ) -> Result<UpstreamResponse, SkillsHandlerError> {
-    let parsed = Url::parse(url).map_err(|_invalid| {
-        provider_failure(500, format!("the skills url {url} is not a URL"), true)
+    let url = Url::parse(&call.url).map_err(|_invalid| {
+        provider_failure(
+            500,
+            format!("the skills url {} is not a URL", call.url),
+            true,
+        )
     })?;
+    let deadline = call.deadline;
     let request = OutboundRequest {
-        method,
-        url: parsed,
-        query,
-        headers,
-        body,
+        method: call.method,
+        url,
+        query: call.query,
+        headers: call.headers,
+        body: call.body,
         deadline: deadline.after,
     };
     client
@@ -234,26 +248,12 @@ fn ensure_success(
     if (200_u16..300_u16).contains(&response.status) {
         return Ok(());
     }
-    let headers = error_headers(response);
-    let class = config.get_error_class(&body_text(&response.body), response.status, &headers);
+    let class = config.get_error_class(
+        &body_text(&response.body),
+        response.status,
+        &BTreeMap::new(),
+    );
     Err(SkillsHandlerError::from(class))
-}
-
-fn error_headers(response: &UpstreamResponse) -> BTreeMap<String, String> {
-    let mut pairs: BTreeMap<String, String> = BTreeMap::new();
-    for (name, value) in &response.headers {
-        let Ok(text) = value.to_str() else {
-            continue;
-        };
-        pairs
-            .entry(name.as_str().to_owned())
-            .and_modify(|present: &mut String| {
-                present.push_str(", ");
-                present.push_str(text);
-            })
-            .or_insert_with(|| text.to_owned());
-    }
-    pairs
 }
 
 fn transport_failure(error: &TransportError, deadline: Exchange) -> SkillsHandlerError {

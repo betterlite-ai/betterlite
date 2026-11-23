@@ -51,11 +51,6 @@ pub(super) struct SkillFile {
     pub(super) content_type: Option<String>,
     pub(super) bytes: Vec<u8>,
 }
-// The call's arguments: the JSON object Python sent, minus the named parameters each call takes.
-pub(super) struct Common {
-    pub(super) params: SkillsCallParams,
-    pub(super) litellm_call_id: Option<String>,
-}
 pub(super) struct SkillArguments {
     pub(super) params: SkillsCallParams,
     pub(super) skill_id: String,
@@ -89,10 +84,10 @@ pub(super) fn skill_arguments(
     let skill_id = text(&provider, arguments.remove("skill_id"), "skill_id")?
         .ok_or_else(|| RequestError::field(&provider, "skill_id"))?;
     Ok(SkillArguments {
-        params: common.params,
+        params: common.0,
         skill_id,
         kwargs: arguments,
-        litellm_call_id: common.litellm_call_id,
+        litellm_call_id: common.1,
     })
 }
 pub(super) fn create_arguments(
@@ -114,12 +109,12 @@ pub(super) fn create_arguments(
     };
     let extra_body = object(&provider, arguments.remove("extra_body"), "extra_body")?;
     Ok(CreateArguments {
-        params: common.params,
+        params: common.0,
         display_title,
         files,
         extra_body,
         kwargs: arguments,
-        litellm_call_id: common.litellm_call_id,
+        litellm_call_id: common.1,
     })
 }
 pub(super) fn list_arguments(
@@ -141,12 +136,12 @@ pub(super) fn list_arguments(
     let page = text(&provider, arguments.remove("page"), "page")?;
     let source = text(&provider, arguments.remove("source"), "source")?;
     Ok(ListArguments {
-        params: common.params,
+        params: common.0,
         limit,
         page,
         source,
         kwargs: arguments,
-        litellm_call_id: common.litellm_call_id,
+        litellm_call_id: common.1,
     })
 }
 // Each file Python sent is a $file marker: the bytes stay in the call's blobs and the marker names one.
@@ -190,7 +185,10 @@ fn provider(arguments: &mut IndexMap<String, Json>) -> Result<String, RequestErr
     }
 }
 // api_key and api_base stay in kwargs, since LiteLLM reads them there as well as from the call's own arguments
-fn common(provider: &str, arguments: &mut IndexMap<String, Json>) -> Result<Common, RequestError> {
+fn common(
+    provider: &str,
+    arguments: &mut IndexMap<String, Json>,
+) -> Result<(SkillsCallParams, Option<String>), RequestError> {
     let api_key =
         text(provider, arguments.get("api_key").cloned(), "api_key")?.map(SecretString::from);
     let api_base = text(provider, arguments.get("api_base").cloned(), "api_base")?;
@@ -202,17 +200,15 @@ fn common(provider: &str, arguments: &mut IndexMap<String, Json>) -> Result<Comm
         arguments.get("litellm_call_id").cloned(),
         "litellm_call_id",
     )?;
-    Ok(Common {
-        params: SkillsCallParams {
-            api_key,
-            api_base,
-            extra_headers,
-            extra_query,
-            timeout,
-            custom_llm_provider: Some(provider.to_owned()),
-        },
-        litellm_call_id,
-    })
+    let params = SkillsCallParams {
+        api_key,
+        api_base,
+        extra_headers,
+        extra_query,
+        timeout,
+        custom_llm_provider: Some(provider.to_owned()),
+    };
+    Ok((params, litellm_call_id))
 }
 fn text(
     provider: &str,

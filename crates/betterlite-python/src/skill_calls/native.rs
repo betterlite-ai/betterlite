@@ -5,11 +5,12 @@ use indexmap::IndexMap;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
-use serde::Serialize;
+
+use betterlite_core::api::skills::get_delete::error::SkillAction;
 
 use crate::skill_calls::convert;
 use crate::skill_calls::error::{SkillFailure, native_error};
-use crate::skill_calls::session::SkillCore;
+use crate::skill_calls::session::{SkillCore, SkillOutcome};
 
 // betterlite.skills.main's module-level entry points, one session owning the client every call goes through.
 #[pyclass(module = "betterlite._native")]
@@ -22,7 +23,7 @@ impl NativeSkillSession {
         convert::parse(request).map_err(|error| PyValueError::new_err(error.to_string()))
     }
 
-    fn answer<T: Serialize>(outcome: Result<T, SkillFailure>) -> PyResult<String> {
+    fn answer(outcome: Result<SkillOutcome, SkillFailure>) -> PyResult<String> {
         let value = outcome.map_err(|failure| native_error(&failure))?;
         serde_json::to_string(&value).map_err(|error| PyRuntimeError::new_err(error.to_string()))
     }
@@ -52,7 +53,8 @@ impl NativeSkillSession {
 
     fn get_skill(&self, py: Python<'_>, request: &str, _blobs: Vec<Vec<u8>>) -> PyResult<String> {
         let arguments = Self::arguments(request)?;
-        let outcome = py.detach(|| get_runtime().block_on(self.core.get(arguments)));
+        let outcome =
+            py.detach(|| get_runtime().block_on(self.core.skill(SkillAction::Get, arguments)));
         Self::answer(outcome)
     }
 
@@ -63,7 +65,8 @@ impl NativeSkillSession {
         _blobs: Vec<Vec<u8>>,
     ) -> PyResult<String> {
         let arguments = Self::arguments(request)?;
-        let outcome = py.detach(|| get_runtime().block_on(self.core.delete(arguments)));
+        let outcome =
+            py.detach(|| get_runtime().block_on(self.core.skill(SkillAction::Delete, arguments)));
         Self::answer(outcome)
     }
 
@@ -105,7 +108,7 @@ impl NativeSkillSession {
         let arguments = Self::arguments(request)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
-            let outcome = core.get(arguments).await;
+            let outcome = core.skill(SkillAction::Get, arguments).await;
             Python::attach(|_attached| Self::answer(outcome))
         })
     }
@@ -119,7 +122,7 @@ impl NativeSkillSession {
         let arguments = Self::arguments(request)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
-            let outcome = core.delete(arguments).await;
+            let outcome = core.skill(SkillAction::Delete, arguments).await;
             Python::attach(|_attached| Self::answer(outcome))
         })
     }
