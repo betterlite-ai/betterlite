@@ -241,15 +241,16 @@ class CacheOperations:
                 len(records),
             )
             return
-        stored = dict(kwargs)
+        stored: dict[str, JsonValue] = dict(kwargs)
         if self.ttl is not None:
             stored["ttl"] = self.ttl
         entries: list[tuple[str, JsonValue]] = []
         for index, item in enumerate(inputs):
-            key, cached_data, stored = self.add_embedding_response_to_cache(
+            key, cached_data, written = self.add_embedding_response_to_cache(
                 result, item, kwargs, index
             )
             entries.append((key, cached_data))
+            stored = written
         backend = self.cache if dynamic is None else dynamic
         await backend.async_set_cache_pipeline(entries, **stored)
 

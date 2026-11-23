@@ -55,7 +55,8 @@ pub(crate) fn cache_decode(request: &str) -> PyResult<String> {
     let call = convert::parse_call(request)?;
     let cached = call.cached_value()?;
     let max_age = call.max_age()?;
-    let decoded = decode_cached(cached.as_ref(), max_age, convert::wall_clock())?;
+    let decoded =
+        decode_cached(cached.as_ref(), max_age, convert::wall_clock()).map_err(CacheError::from)?;
     Ok(convert::value_text(&decoded)?)
 }
 
@@ -82,7 +83,8 @@ pub(crate) fn cache_embedding(settings: &str, request: &str) -> PyResult<String>
         &result,
         call.input_value()?,
         call.result_index(),
-    )?;
+    )
+    .map_err(CacheError::from)?;
     Ok(convert::embedding_text(&entry)?)
 }
 

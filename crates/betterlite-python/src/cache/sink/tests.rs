@@ -2,7 +2,7 @@
 
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 use betterlite_redact::structured::Payload;
-use pyo3::Python;
+use pyo3::prelude::*;
 
 use super::{PythonConsole, PythonLog, debug_on, emit, logger, payload_text};
 

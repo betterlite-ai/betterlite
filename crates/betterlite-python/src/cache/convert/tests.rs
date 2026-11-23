@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_cache::embedding::embedding_cache::EmbeddingCacheEntry;
 use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use betterlite_cache::types::embedding::EmbeddingPayload;
 use betterlite_context::local_ttl_cache::CacheValue;
@@ -206,7 +207,7 @@ fn cache_result_the_embedding_response_keeps_its_records() {
 fn cache_result_the_embedding_envelope_keeps_the_cached_data() {
     let mut cached_data = std::collections::BTreeMap::new();
     cached_data.insert("response".to_owned(), CacheValue::Text("cached".to_owned()));
-    let entry = betterlite_cache::embedding::embedding_cache::EmbeddingCacheEntry {
+    let entry = EmbeddingCacheEntry {
         cache_key: "embedding-key".to_owned(),
         cached_data: CacheValue::Object(cached_data),
         cached_embedding: CacheValue::Null,

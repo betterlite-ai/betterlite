@@ -5,7 +5,8 @@ from collections.abc import Iterator
 from typing import Final, Protocol
 
 import pytest
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
+from typing_extensions import TypedDict
 
 from betterlite._cache_ops import CacheOperations
 from betterlite._cache_ops.types import CacheStore
@@ -187,6 +188,22 @@ class FailingReadBackend(RecordingBackend):
     fail_read: bool = True
 
 
+class StoredEnvelope(TypedDict):
+    timestamp: float
+    response: JsonValue
+
+
+ENVELOPE: Final[TypeAdapter[StoredEnvelope]] = TypeAdapter(StoredEnvelope)
+
+
+# Each package stamps the write with its own clock, so the stores are compared on the response each key holds.
+def stored_responses(backend: RecordingBackend) -> dict[str, JsonValue]:
+    return {
+        key: ENVELOPE.validate_python(value)["response"]
+        for key, value in backend.values.items()
+    }
+
+
 class Cache(CacheOperations):
     def __init__(
         self,
@@ -339,10 +356,10 @@ def test_cache_ops_write_entries() -> None:
     ours, reference = matched_caches(ours_backend, reference_backend)
     ours.add_cache(CHAT_RESPONSE, None, **CHAT)
     reference.add_cache(CHAT_RESPONSE, **CHAT)
-    assert sorted(ours_backend.values) == sorted(reference_backend.values)
+    assert stored_responses(ours_backend) == stored_responses(reference_backend)
     asyncio.run(ours.async_add_cache(CHAT_RESPONSE, None, **CHAT))
     asyncio.run(reference.async_add_cache(CHAT_RESPONSE, None, **CHAT))
-    assert sorted(ours_backend.values) == sorted(reference_backend.values)
+    assert stored_responses(ours_backend) == stored_responses(reference_backend)
     assert ours.get_cache(None, **CHAT) == reference.get_cache(None, **CHAT) == CHAT_RESPONSE
     off, off_reference = matched_caches(RecordingBackend(), RecordingBackend(), mode="default_off")
     off.add_cache(CHAT_RESPONSE, None, **CHAT)
@@ -382,7 +399,7 @@ def test_cache_ops_pipeline_write() -> None:
     embedding = LITELLM_EMBEDDING.EmbeddingResponse(**EMBEDDING_RESPONSE)
     asyncio.run(ours.async_add_cache_pipeline(embedding, None, **EMBEDDING))
     asyncio.run(reference.async_add_cache_pipeline(embedding, None, **EMBEDDING))
-    assert sorted(ours_backend.values) == sorted(reference_backend.values)
+    assert stored_responses(ours_backend) == stored_responses(reference_backend)
     assert len(ours_backend.values) == EMBEDDING_WRITES
     first = {**EMBEDDING, "input": "a"}
     second = {**EMBEDDING, "input": "b"}
@@ -402,7 +419,7 @@ def test_cache_ops_batch_write() -> None:
     ours, reference = matched_caches(ours_backend, reference_backend)
     asyncio.run(ours.batch_cache_write(CHAT_RESPONSE, **CHAT))
     asyncio.run(reference.batch_cache_write(CHAT_RESPONSE, **CHAT))
-    assert sorted(ours_backend.values) == sorted(reference_backend.values)
+    assert stored_responses(ours_backend) == stored_responses(reference_backend)
     assert ours.get_cache(None, **CHAT) == reference.get_cache(None, **CHAT) == CHAT_RESPONSE
 
 

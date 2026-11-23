@@ -155,12 +155,10 @@ pub(crate) fn request_ttl(request: &EnvelopeRequest, ttl: Option<f64>) -> Option
 }
 
 pub(crate) fn flush_size(size: Option<usize>) -> Result<Option<i64>, CacheError> {
-    match size {
-        Some(present) => i64::try_from(present)
-            .map(Some)
-            .map_err(|_range| CacheError::FlushSize { size: present }),
-        None => Ok(None),
-    }
+    size.map(|present| {
+        i64::try_from(present).map_err(|_range| CacheError::FlushSize { size: present })
+    })
+    .transpose()
 }
 
 // ast-grep-ignore: no-one-line-functions

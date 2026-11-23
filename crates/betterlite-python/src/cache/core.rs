@@ -140,7 +140,7 @@ impl CacheCore {
 async fn open_cache(wire: &CacheSettingsWire, clock: Clock) -> Result<Cache, CacheError> {
     let dependencies = dependencies(clock);
     let mut callbacks = CacheCallbacks::default();
-    let environment = BTreeMap::new();
+    let environment: BTreeMap<String, String> = BTreeMap::new();
     Cache::open(wire.settings(), &mut callbacks, &environment, &dependencies)
         .await
         .map_err(|source| CacheError::Construction {
