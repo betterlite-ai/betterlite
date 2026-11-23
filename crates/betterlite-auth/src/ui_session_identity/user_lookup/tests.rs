@@ -215,11 +215,13 @@ struct Case {
 fn case(with_store: bool) -> Case {
     let store = Arc::new(FakeStore::default());
     let cache = Arc::new(FakeCache::new());
-    let handle: Arc<dyn UserStore> = Arc::clone(&store);
-    let cached: Arc<dyn UserCache> = Arc::clone(&cache);
+    let store_handle: Arc<FakeStore> = Arc::clone(&store);
+    let reader: Arc<dyn UserStore> = store_handle;
+    let cache_handle: Arc<FakeCache> = Arc::clone(&cache);
+    let cached: Arc<dyn UserCache> = cache_handle;
     let lookup = UserLookup {
         cache: cached,
-        store: with_store.then_some(handle),
+        store: with_store.then_some(reader),
         cadence: Arc::new(Cadence::new(100, Arc::new(WallClock))),
         db_cache_expiry: 5,
         budget_reset: Arc::new(NoBudgetReset),
