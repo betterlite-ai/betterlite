@@ -46,6 +46,12 @@ TOOL_CHOICES: Final[list[dict[str, JsonValue] | str]] = [
     "none",
 ]
 MODIFIED_MESSAGES: Final[list[dict[str, JsonValue]]] = [{"role": "user", "content": TEXT}]
+IMAGE_MESSAGES: Final[list[dict[str, JsonValue]]] = [
+    {
+        "role": "user",
+        "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}],
+    }
+]
 MODIFIED_CASES: Final[list[tuple[str, int, float | None, float | None]]] = [
     ("gpt-4o", 55, None, None),
     (UNKNOWN_MODEL, 55, None, None),
@@ -197,6 +203,16 @@ def test_counter_unknown_type() -> None:
         )
 
 
+def test_counter_image_block_raises() -> None:
+    with pytest.raises(ValueError, match="not counted"):
+        betterlite.token_counter(
+            model="gpt-4o",
+            messages=IMAGE_MESSAGES,
+            use_default_image_token_count=True,
+            default_token_count=250,
+        )
+
+
 def test_counter_disabled() -> None:
     betterlite.disable_token_counter = True
     litellm.disable_token_counter = True
@@ -305,6 +321,11 @@ def test_image_dimensions() -> None:
     assert betterlite.get_image_dimensions(PNG_DATA) == theirs == PNG_SIZE
     gif_theirs: tuple[int, int] = get_image_dimensions(GIF_DATA)
     assert betterlite.get_image_dimensions(GIF_DATA) == gif_theirs == GIF_SIZE
+
+
+def test_image_url_is_refused() -> None:
+    with pytest.raises(_native.NativeTokensError):
+        betterlite.get_image_dimensions("https://example.com/image.png")
 
 
 def test_image_resize() -> None:
