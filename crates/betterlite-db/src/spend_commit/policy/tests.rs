@@ -347,9 +347,7 @@ async fn deadline_reports_a_timeout() {
     };
     let pending = std::future::pending::<Result<(), Infallible>>();
     let outcome = deadline.run(pending).await;
-    let SpendTransactionError::Timeout { seconds } = outcome.unwrap_err() else {
-        panic!("expected a timed out transaction");
-    };
+    let SpendTransactionError::Timeout { seconds } = outcome.unwrap_err();
     assert_eq!(seconds, 0);
 }
 

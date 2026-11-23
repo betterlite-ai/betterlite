@@ -456,6 +456,27 @@ async fn retry_safe_failure_keeps_its_chunk_and_reports_twice() {
 }
 
 #[tokio::test]
+async fn other_failure_keeps_its_chunk_without_retrying() {
+    let writer = ScriptedWriter::new(vec![Step::Other]);
+    let ports = Ports::new();
+    let commit = DailyChunkCommit {
+        writer: &writer,
+        policy: ports.policy(3),
+        phase: Arc::new(CommitPhase::new()),
+    };
+    let mut pending = pending_rows(3, "user_id");
+    let error = commit
+        .update_daily_spend(DailySpendEntity::User, &mut pending)
+        .await
+        .unwrap_err();
+    assert_eq!(error.spend_failure(), SpendFailure::Other);
+    assert_eq!(pending.len(), 3);
+    assert_eq!(writer.chunks().len(), 1);
+    assert!(ports.pause.delays().is_empty());
+    assert_eq!(ports.sink.events().len(), 1);
+}
+
+#[tokio::test]
 async fn exhausted_retryable_failure_retries_once_and_reports_twice() {
     let writer = ScriptedWriter::new(vec![Step::Deadlock, Step::ConnectError]);
     let ports = Ports::new();
