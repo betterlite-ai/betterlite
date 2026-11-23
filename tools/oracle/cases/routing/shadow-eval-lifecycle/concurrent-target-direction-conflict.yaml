@@ -41,4 +41,5 @@ probes:
               body: {text: '{"router_names": ["shadow-router"], "api_key_ids": ["key-1"], "judge_model": "judge-model", "shadow_percentage": 10, "max_budget": 10}'}
 compare:
   ignore:
-    - /output/shadow_eval_lifecycle/steps/0/detail
+    - pointer: /output/shadow_eval_lifecycle/steps/0/detail
+      why: the probe reports LiteLLM's HTTP status in detail, while betterlite reports its own error text
