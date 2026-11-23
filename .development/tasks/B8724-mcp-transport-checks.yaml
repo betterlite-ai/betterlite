@@ -15,7 +15,7 @@ description: >-
 
   3. proxy_error_to_http(code: Option<&str>, message, headers) -> McpHttpError is _proxy_exception_to_http_exception: status is the code parsed as an integer after trimming, else 500; detail is the message; headers are kept, and an empty map counts as none.
 
-  4. The client allowlist. allowlist_from_settings(general_settings) -> Option<McpClientAllowlist> calls B8191's load_mcp_client_allowlist on the general_settings snapshot it is given; it is LiteLLM's _load_mcp_client_allowlist, which re-reads general_settings on every request, so the caller passes the current snapshot each time. jwt_client_field_set(general_settings) -> bool is true when that allowlist exists and its jwt_field is set; B8621 fills B4666's jwt_client_field_set from it. reject_disallowed_client(allowlist: Option<&McpClientAllowlist>, headers, auth: Option<&UserAPIKeyAuth>) -> Result<(), McpHttpError> is reject_disallowed_mcp_client: an auth that B4672's is_ui_session_credential accepts passes untouched; otherwise B8191's check_mcp_client_allowed with the auth's jwt_claims (None without auth) and the headers; a rejection logs the warning "Rejected MCP request from a disallowed client application: {details}" and fails with 403 whose detail is the rejection's response body object {"error": "Forbidden", "details": ...}.
+  4. The client allowlist. allowlist_from_settings(general_settings) -> Option<McpClientAllowlist> calls B8191's load_mcp_client_allowlist on the general_settings snapshot it is given; it is LiteLLM's _load_mcp_client_allowlist, which re-reads general_settings on every request, so the caller passes the current snapshot each time. jwt_client_field_set(general_settings) -> bool is true when that allowlist exists and its jwt_field is set; B8621 fills B4666's jwt_client_field_set from it. reject_disallowed_client(allowlist: Option<&McpClientAllowlist>, headers, auth: Option<&UserAPIKeyAuth>) -> Result<(), McpHttpError> is reject_disallowed_mcp_client: an auth that B10070's is_ui_session_credential (betterlite_auth::ui_session_identity) accepts passes untouched; otherwise B8191's check_mcp_client_allowed with the auth's jwt_claims (None without auth) and the headers; a rejection logs the warning "Rejected MCP request from a disallowed client application: {details}" and fails with 403 whose detail is the rejection's response body object {"error": "Forbidden", "details": ...}.
 
   McpHttpError { status: u16, detail: serde_json::Value, headers: Vec<(String, String)> } is the error every check returns; B8727 renders it.
 
@@ -113,7 +113,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/mcp-transport-checks/forwarded-authorization.yaml
 deviations: []
 out_of_scope:
-  - "load_mcp_client_allowlist, check_mcp_client_allowed and the rest of client_allowlist.py: B8191. is_ui_session_credential: B4672. configured_versions: B8190. The CORS origin list: B8591."
+  - "load_mcp_client_allowlist, check_mcp_client_allowed and the rest of client_allowlist.py: B8191. is_ui_session_credential: B10070. configured_versions: B8190. The CORS origin list: B8591."
   - "Where each check runs and how its error is rendered: B8727."
 pitfalls:
   - "The Origin check reads every Origin header, so a request with one allowed and one unknown Origin is refused."

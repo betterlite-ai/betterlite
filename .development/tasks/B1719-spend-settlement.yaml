@@ -24,64 +24,69 @@ description: >-
   rethrowing. Do not roll back a successful database write or replay it on this path.
   Inline the source's one-expression release/invalidation wrappers at their call sites;
   the interface methods themselves remain named operations for B8481 to implement over B3003.
-  Extract the core_helpers reservation lookup and callback-bound stamping into
-  betterlite-auth::reservation_state. A dictionary-valued direct stamp wins over the
-  auth-object field; nonmapping values are absent. Bind/unbind updates both existing
-  metadata buckets and their shared reservation identities, without creating a bucket.
-  Pure reservation_state oracle cases cover these projections. Native fault tests drive
+  B10088 owns the core_helpers reservation lookup and the callback_bound stamp (core_helpers.py
+  L369-L406) in betterlite-logging::reservation_binding, below betterlite-auth so the pass-through
+  stream can call it too. The cost callback finds the request's reservation with its
+  reservation_from_metadata before this coordinator runs, so the coordinator parses or stamps no metadata. Native fault tests drive
   the production coordinator with typed ports and an ordered effect journal, independently
   failing reconcile, write, release, invalidation, prefetch and increment; include a real
-  PostgreSQL/Redis success test. The roughly 220 callback and 32 extracted helper source
-  lines fit 750 changed lines, with most test space reserved for irreversible write order.
+  PostgreSQL/Redis success test. The roughly 220 callback source lines fit 750 changed lines, with most test space reserved for irreversible write order.
+
+
+  The callback binder. LiteLLM's bind stamps one shared dict, so its request-end release
+  (release_unbound_budget_reservation) sees callback_bound and leaves a bound reservation for
+  the cost callback. In betterlite the metadata holds a JSON copy, while B3003's
+  release_unbound_reservation (reservation_settlement::release) reads callback_bound on the
+  ReservationHandle. Build the half that closes this gap in betterlite-auth::reservation_state,
+  the module stub lib.rs already declares: `RequestReservationBinder { reservation: Option<ReservationHandle> }`,
+  built per request with that request's handle, implementing B10088's ReservationBinder. Its bind
+  calls B10088's stamp_callback_bound(litellm_params, true), then, when a handle is present, sets
+  callback_bound to true under the handle's lock; with no handle it only stamps. No lock is held
+  across an await. This is the binder B3607 and B3609 receive through B8931's wiring, and nothing
+  else sets the handle flag. Its tests in reservation_state/tests.rs use a recording
+  SettlementCounters fake (reservation_settlement's fake is private to that module's tests):
+  after bind, release_unbound_reservation makes no counter call and the handle stays unfinalized;
+  without bind it releases the reservation to zero and finalizes it; with no handle, bind still
+  stamps both metadata buckets.
 scope:
   paths:
     - crates/betterlite-server/src/spend/settlement.rs
     - crates/betterlite-server/src/spend/settlement/**
     - crates/betterlite-auth/src/reservation_state.rs
     - crates/betterlite-auth/src/reservation_state/**
-    - tools/oracle/src/helpers/auth/reservation_state.rs
-    - tools/oracle/src/helpers/auth/reservation_state/**
-    - tools/oracle/helpers/reservation_state.py
-    - tools/oracle/helpers/reservation_state/**
-    - tools/oracle/cases/helpers/reservation-state/**
-    - tools/oracle/fuzz/corpus/helper_case/reservation-state-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L695-L908
     why: Database/counter ordering and distinct reservation cleanup paths.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L369-L406
-    why: Shared reservation selection and ownership transfer to callbacks.
+    why: B10088 owns the reservation lookup and the callback_bound stamp; this coordinator takes the reservation the cost callback found with them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L468-L478
+    why: release_unbound_budget_reservation leaves a reservation alone once callback_bound is True, which the binder must also make true on the handle.
 dod:
   - text: Each settlement failure preserves the committed database result and performs only its prescribed cleanup before returning or propagating.
     proof: [settlement-tests]
-  - text: Callback binding reaches existing reservation records in both metadata namespaces with direct-stamp precedence.
-    proof: [reservation-tests, oracle, reservation-python, reservation-corpus]
+  - text: After RequestReservationBinder binds, release_unbound_reservation leaves the reservation on the counters and unfinalized, and without binding it releases it to zero; bind stamps callback_bound in both metadata buckets, with or without a handle.
+    proof: [binder-tests]
 checks:
   optional: []
   commands:
     - id: settlement-tests
       why: The write/counter boundary or an individual cleanup path is unimplemented.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::settlement::/)'
-    - id: reservation-tests
-      why: Reservation metadata selection or callback ownership is missing.
+    - id: binder-tests
+      why: Binding stamps the metadata but leaves the handle unbound, so the request-end release frees a reservation the callback still owns.
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_state::/)'
-    - id: reservation-python
-      why: Shared reservation projections are not compared with core_helpers.
-      run: test -f tools/oracle/helpers/reservation_state.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-    - id: reservation-corpus
-      why: Reservation ownership has no helper decoder seed.
-      run: grep -rlq 'reservation_state:' tools/oracle/fuzz/corpus/helper_case/reservation-state-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-oracle_cases:
-  - tools/oracle/cases/helpers/reservation-state/direct-and-auth-object-precedence.yaml
-  - tools/oracle/cases/helpers/reservation-state/bind-unbind-two-existing-buckets.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B3001 owns reservation estimates, B3004 and B8480 the reservation algorithms and B8270 the release layer; B8481 implements this lower settlement port over B3003 when enabling reservations.
   - B070 owns update_database, B8593 increment_spend_counters, B8376 the proxy cache operations, B069 success callback orchestration and B1720 failure handling; B206 retains unrelated core_helpers functions and B1717 provider cost stamping.
+  - "The core_helpers reservation helpers, budget_reservation_from_metadata, bind_budget_reservation_to_callbacks and unbind_budget_reservation_from_callbacks (core_helpers.py L369-L406) and the ReservationBinder trait: B10088 in betterlite-logging::reservation_binding."
+  - "Calling the binder after a successful logging enqueue: B3607 and B3609. Handing each request's RequestReservationBinder to them: B8931."
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as reservation_state in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/reservation_state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/reservation_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A failed reconciliation finalizes the reservation but still permits the already incurred cost to be persisted.
   - Counter failure follows the database write, so retrying the entire callback would charge the row twice.
+  - "Stamping the metadata alone looks right in every logged payload but leaves ReservationHandle.callback_bound false, so release_unbound_reservation still frees the reservation when the request ends and the cost callback then settles a released one."
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

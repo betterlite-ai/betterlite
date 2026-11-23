@@ -4,7 +4,8 @@ description: >-
   Build the visibility/query projections consumed by B813. B736 get_user_object uses user_id_upsert=False;
   organization-admin discovery returns None on ValueError, missing user or no org_admin memberships.
   Own-team lookup uses check_db_only=True and returns () only for UserNotFoundError or a missing user.
-  Keep other errors visible. B2314 supplies user_api_key_has_admin_view; B742 supplies allowed_route_check_inside_route,
+  Keep other errors visible. B2314 supplies user_api_key_has_admin_view; B10052 supplies allowed_route_check_inside_route as
+  allowed_inside_route (betterlite-auth resolved_key::self_access),
   B801 the typed tables/log sanitizer, B724 TeamRepository and B1231 response types.
 
   V2 admin/viewer callers retain any requested user_id without org scope. Org admins cannot request

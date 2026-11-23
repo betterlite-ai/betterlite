@@ -1,0 +1,107 @@
+id: B10064
+title: SSO assertion reads and the assertion store port
+description: >-
+  An MCP server with auth_type oauth2_id_jag spends the IdP id_token a user's SSO login kept as an RFC 8693 subject_token (LiteLLM calls this EMA egress). The id_jag credential path (B4667) and the renewing store (B4664) read that token through one port, LiteLLM's SSOAssertionStore protocol. This task builds the read side of sso_assertion_store.py: the port, its outage error, and DbSSOAssertionStore's fetch and fetch_uncached. The rest of the file is on main already: B10003 the record and its payload, B10010 the rows and the master-key rotation, and B10011 the cache, the store struct with persist, the retention gate and retain. B4663 kept only the IdP exchange, so the credential path waits on this read side alone.
+
+
+  Layout. betterlite-mcp, submodule sso_assertions::read: crates/betterlite-mcp/src/sso_assertions/read.rs, with its tests in read/tests.rs. The file is an empty stub that sso_assertions.rs declares. B10003's assertion module (SsoIdentityAssertion, decode_payload), B10010's sso_assertion_rows in betterlite-db (AssertionRows, MemoryAssertionRows and the decrypt field name and policy), B1600's DbCipher and B10011's cache and store modules are used as they are. Names stop at 30 characters, so fetch_sso_identity_assertion becomes DbSsoAssertionStore::fetch and _read_assertion_from_db becomes fetch_uncached.
+
+
+  The port. trait SsoAssertionStore has fn fetch(&self, user_id: &str) -> impl Future<Output = Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable>> + Send, the same shape as AssertionRows. Ok(None) means the user never signed in through SSO, or what is stored can't be used; AssertionStoreUnavailable means the store could not answer. AssertionStoreUnavailable keeps its cause as #[source] Box<dyn Error + Send + Sync>, so B4664 can raise it from an IdP failure too. The store is B10011's DbSsoAssertionStore<R: AssertionRows> with its pub fields rows, cipher, cache and config_declares_id_jag; this module adds an inherent impl block with fetch_uncached and implements SsoAssertionStore for it. Do not move or copy the struct.
+
+
+  fetch returns a cache hit, otherwise reads the cache epoch, calls fetch_uncached and caches a found assertion with set_if_unchanged and that epoch. fetch_uncached never touches the cache: rows None (LiteLLM's prisma_client None) or no row is None, the row is decrypted with B10010's field name and policy, a failed decrypt is None, and a payload that B10003's decode_payload refuses logs the warning "Stored SSO identity assertion for user_id=%s could not be parsed; treating as absent." and is None. A row read failure is AssertionStoreUnavailable from both methods. Neither method judges expiry.
+
+
+  This task parses no outside bytes of its own: the payload text from a database row goes through B10003's decode_payload, and B10003's sso_assertion_decode fuzz target covers it.
+
+
+  Oracle. Helper cases on the b10064 operation; no route reaches this code yet. The Python adapter reuses B10010's Prisma double (tools/oracle/helpers/b10010/prisma_double.py), fixes LITELLM_SALT_KEY, points litellm.proxy.proxy_server.prisma_client at the double as LiteLLM's test_sso_assertion_store.py does, and calls the pinned DbSSOAssertionStore methods; the Rust side takes the same steps over B10010's MemoryAssertionRows. A case lists its steps (fetch, fetch_uncached, and B10011's persist when a row must exist first). Each step reports the decrypted fields it got and the double's read and write counts; ciphertext never appears, since every encryption draws a fresh nonce. exp values in cases are whole seconds, and no case waits for a cache entry to expire, because LiteLLM's cache takes no clock here.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/sso_assertions/read.rs
+    - crates/betterlite-mcp/src/sso_assertions/read/**
+    - tools/oracle/cases/helpers/sso-assertion-reads/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-assertion-reads-*
+    - tools/oracle/helpers/b10064.py
+    - tools/oracle/helpers/b10064/**
+    - tools/oracle/src/helpers/mcp/b10064.rs
+    - tools/oracle/src/helpers/mcp/b10064/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L224-L314
+    why: Owned. The row read, the cached fetch, AssertionStoreUnavailable, the store protocol and DbSSOAssertionStore's two methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/resolver.py#L234-L248
+    why: Call site. The id_jag arm reads through fetch and turns AssertionStoreUnavailable into a 503, in B4667's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L461-L470
+    why: Call site. The refresher reads through fetch_uncached, so that method stays public.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/_experimental/mcp_server/outbound_credentials/test_sso_assertion_store.py#L57-L70
+    why: LiteLLM's own Prisma double; B10010 wrote the shared one the adapter imports.
+dod:
+  - text: A stored payload with only some fields, and one whose expires_at text has no offset, reads back through the store with the same fields as in LiteLLM.
+    proof: [read-tests, oracle, helper-python]
+  - text: A row LiteLLM encrypted opens to the same fields here.
+    proof: [oracle, helper-python]
+  - text: The token and refresh token text appear in no Debug output, log line or error text of fetch or fetch_uncached.
+    proof: [read-tests]
+  - text: fetch skips the row read on a hit, caches a found assertion, reads the row again after an absent result, and returns an expired assertion unjudged.
+    proof: [read-tests, oracle, helper-python]
+  - text: An invalidate that lands during a fetch's row read stops that fetch from caching the old assertion.
+    proof: [read-tests, oracle, helper-python]
+  - text: fetch_uncached reads the row every time and leaves the cache as it was.
+    proof: [read-tests, oracle, helper-python]
+  - text: A row that won't decrypt reads as absent, and a payload that won't parse logs the fixed warning and reads as absent; neither reaches the caller as an error.
+    proof: [read-tests, oracle, helper-python]
+  - text: A row read failure is AssertionStoreUnavailable from fetch and fetch_uncached, and no database at all reads as absent.
+    proof: [read-tests, oracle, helper-python]
+  - text: The b10064 adapter passes the strict Python checks and a new helper seed names the operation.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: read-tests
+      why: The fetch and fetch_uncached tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^sso_assertions::read::tests::/)'
+    - id: helper-python
+      why: The b10064 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10064.py tools/oracle/helpers/b10064)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10064 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/sso-assertion-reads-*")" &&
+        grep -lE 'b10064"?:' tools/oracle/fuzz/corpus/helper_case/sso-assertion-reads-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-mcp --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-assertion-reads/persist-then-read.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/read-optional-fields.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/read-naive-expiry.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/read-litellm-ciphertext.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/read-undecryptable-row.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/read-unparseable-payload.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/fetch-cache-hit.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/fetch-absence-not-cached.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/fetch-epoch-guard.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/fetch-uncached-skips-cache.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/fetch-store-outage.yaml
+  - tools/oracle/cases/helpers/sso-assertion-reads/no-database.yaml
+deviations: []
+out_of_scope:
+  - "SSOAssertionCache, persist_sso_identity_assertion, ema_assertion_retention_enabled, retain_sso_identity_assertion_for_ema, the DbSSOAssertionStore struct and the mcp_sso_assertion_cache section: B10011."
+  - "_assertion_table, _mcp_server_table, _SSOAssertionTable and _MCPServerTable: B10010's AssertionRows replaces them. rotate_sso_identity_assertions_master_key: B10010."
+  - "SSOIdentityAssertion, _IdTokenClaims, _StoredAssertionPayload, assertion_from_sso_login, assertion_expired and the payload encode and decode, with their fuzz target and login and expiry cases: B10003."
+  - "decrypt_value_helper (the StoredCipher): B1600."
+  - "Reading through SsoAssertionStore in the id_jag credential path and judging expiry there: B4667. RefreshingSSOAssertionStore and renewing a stale assertion: B4664."
+  - "Building the store with its rows and cipher and handing it to the credential resolver: B8622."
+  - "idp_token_exchange.py, the other half of what was B4663: B4663."
+pitfalls:
+  - "fetch reads seen_epoch after the cache miss and before the row read; reading it after the row read lets a login slip between the two and the old assertion comes back for a full TTL."
+  - "Only a found assertion is cached, so a user who has no row yet gets a row read on every fetch and their first login takes effect at once."
+  - "An expired assertion still comes back from fetch: the id_jag path (B4667) and the renewing store (B4664) decide what is stale, and a filter here would hide stale tokens from the refresher."
+  - "fetch and fetch_uncached return AssertionStoreUnavailable for a row read failure; only B10011's retain swallows errors, so don't add a catch-all here."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
