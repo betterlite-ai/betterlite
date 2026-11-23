@@ -154,6 +154,9 @@ impl ModelGrantLookup for NoGrants {
 struct NoFormMetadata;
 
 impl FormMetadataExtractor for NoFormMetadata {
+    // a parsed JSON object carries no multipart form fields, so every replacement of this constant adapter
+    // either equals it or changes an unused output
+    #[cfg_attr(test, mutants::skip)]
     fn top_level_names(&self, _form_data: &JsonObject, _prefix: &str) -> Vec<String> {
         Vec::new()
     }

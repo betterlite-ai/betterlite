@@ -7,7 +7,9 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use rstest::rstest;
 
+use crate::health_access_and_connections::connection_error::model_call_rejection;
 use crate::health_access_and_connections::visibility::HealthRouter;
+use crate::model_write_fields::error::ModelWriteError;
 
 use super::support::{
     FakeProbe, FakeTeams, call, call_body, deployment, detail_error, failing_router, fake_router,
@@ -64,6 +66,19 @@ fn status_of(body: &JsonObject) -> &str {
         Some(Json::Text(status)) => status,
         _ => panic!("the body carries a status"),
     }
+}
+
+#[test]
+fn a_rejection_renders_its_detail() {
+    let view_only = model_call_rejection(ModelWriteError::ViewOnly, None);
+    assert_eq!(view_only.to_string(), VIEW_ONLY);
+    let missing = model_call_rejection(
+        ModelWriteError::TeamMissing {
+            team_id: "t9".to_owned(),
+        },
+        None,
+    );
+    assert_eq!(missing.to_string(), "Team id=t9 does not exist in db");
 }
 
 #[tokio::test]
