@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use betterlite_auth::auth_identity::records::Principal;
 use rstest::rstest;
 
-use super::support::{Answer, Fixture, admin, internal, json, seen, stored_row, viewer};
+use super::support::{Answer, FakeKind, Fixture, admin, internal, json, seen, stored_row, viewer};
 
 const OWN_PAYLOAD: &str = r#"{"messages":"own","metadata":{"user_api_key_user_id":"alice"}}"#;
 const FOREIGN_PAYLOAD: &str =
@@ -22,7 +22,11 @@ async fn refuses_a_request_without_an_identity() {
 #[tokio::test]
 async fn a_non_admin_without_a_database_is_refused_before_any_callback() {
     let mut fixture = Fixture::new(None);
-    fixture.payload_logger("first", Answer::Found(OWN_PAYLOAD.to_owned()));
+    fixture.logger(
+        FakeKind::Payload,
+        "first",
+        Answer::Found(OWN_PAYLOAD.to_owned()),
+    );
     let events = Arc::clone(&fixture.events);
     let reply = fixture
         .call(
@@ -41,7 +45,11 @@ async fn a_non_admin_without_a_database_is_refused_before_any_callback() {
 #[tokio::test]
 async fn a_foreign_id_is_refused_before_its_dates_are_read() {
     let mut fixture = Fixture::new(Some(vec![stored_row("req-1", None, Some("mallory"))]));
-    fixture.payload_logger("first", Answer::Found(OWN_PAYLOAD.to_owned()));
+    fixture.logger(
+        FakeKind::Payload,
+        "first",
+        Answer::Found(OWN_PAYLOAD.to_owned()),
+    );
     let events = Arc::clone(&fixture.events);
     let reply = fixture
         .call(
@@ -67,7 +75,11 @@ async fn a_foreign_id_is_refused_before_its_dates_are_read() {
 #[tokio::test]
 async fn an_authorized_bad_date_is_a_server_error(#[case] caller: Principal, #[case] query: &str) {
     let mut fixture = Fixture::new(Some(vec![stored_row("req-1", None, Some("alice"))]));
-    fixture.payload_logger("first", Answer::Found(OWN_PAYLOAD.to_owned()));
+    fixture.logger(
+        FakeKind::Payload,
+        "first",
+        Answer::Found(OWN_PAYLOAD.to_owned()),
+    );
     let events = Arc::clone(&fixture.events);
     let reply = fixture
         .call(&format!("/spend/logs/ui/req-1?{query}"), Some(&caller))
@@ -83,9 +95,17 @@ async fn an_authorized_bad_date_is_a_server_error(#[case] caller: Principal, #[c
 #[tokio::test]
 async fn asks_callbacks_in_order_and_serves_the_first_payload() {
     let mut fixture = Fixture::new(Some(vec![stored_row("req-1", None, Some("alice"))]));
-    fixture.payload_logger("first", Answer::Missing);
-    fixture.payload_logger("second", Answer::Found(OWN_PAYLOAD.to_owned()));
-    fixture.payload_logger("third", Answer::Found(FOREIGN_PAYLOAD.to_owned()));
+    fixture.logger(FakeKind::Payload, "first", Answer::Missing);
+    fixture.logger(
+        FakeKind::Payload,
+        "second",
+        Answer::Found(OWN_PAYLOAD.to_owned()),
+    );
+    fixture.logger(
+        FakeKind::Payload,
+        "third",
+        Answer::Found(FOREIGN_PAYLOAD.to_owned()),
+    );
     let events = Arc::clone(&fixture.events);
     let reply = fixture
         .call(
@@ -110,8 +130,12 @@ async fn asks_callbacks_in_order_and_serves_the_first_payload() {
 #[tokio::test]
 async fn a_failing_callback_is_a_server_error() {
     let mut fixture = Fixture::new(Some(vec![stored_row("req-1", None, Some("alice"))]));
-    fixture.payload_logger("first", Answer::Fails);
-    fixture.payload_logger("second", Answer::Found(OWN_PAYLOAD.to_owned()));
+    fixture.logger(FakeKind::Payload, "first", Answer::Fails);
+    fixture.logger(
+        FakeKind::Payload,
+        "second",
+        Answer::Found(OWN_PAYLOAD.to_owned()),
+    );
     let reply = fixture
         .call("/spend/logs/ui/req-1", Some(&internal("alice")))
         .await;
@@ -125,7 +149,11 @@ async fn a_foreign_payload_under_a_shared_call_id_is_refused() {
         stored_row("req-foreign", Some("call-shared"), Some("mallory")),
     ];
     let mut fixture = Fixture::new(Some(rows));
-    fixture.payload_logger("first", Answer::Found(FOREIGN_PAYLOAD.to_owned()));
+    fixture.logger(
+        FakeKind::Payload,
+        "first",
+        Answer::Found(FOREIGN_PAYLOAD.to_owned()),
+    );
     let events = Arc::clone(&fixture.events);
     let reply = fixture
         .call("/spend/logs/ui/call-shared", Some(&internal("alice")))
@@ -146,7 +174,11 @@ async fn a_foreign_payload_under_a_shared_call_id_is_refused() {
 #[tokio::test]
 async fn an_admin_is_served_any_callback_payload(#[case] caller: Principal) {
     let mut fixture = Fixture::new(Some(vec![stored_row("req-1", None, Some("mallory"))]));
-    fixture.payload_logger("first", Answer::Found(FOREIGN_PAYLOAD.to_owned()));
+    fixture.logger(
+        FakeKind::Payload,
+        "first",
+        Answer::Found(FOREIGN_PAYLOAD.to_owned()),
+    );
     let events = Arc::clone(&fixture.events);
     let reply = fixture.call("/spend/logs/ui/req-1", Some(&caller)).await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -166,7 +198,7 @@ async fn an_admin_without_a_database_reads_callbacks_by_the_url_id(
     #[case] expected: &str,
 ) {
     let mut fixture = Fixture::new(None);
-    fixture.payload_logger("first", answer);
+    fixture.logger(FakeKind::Payload, "first", answer);
     let events = Arc::clone(&fixture.events);
     let reply = fixture
         .call(
@@ -189,7 +221,7 @@ async fn the_exact_request_id_outranks_a_colliding_call_id() {
     let mut exact = stored_row("req-b", None, Some("alice"));
     exact.row.messages = Some(json(r#""by request id""#));
     let mut fixture = Fixture::new(Some(vec![own, exact]));
-    fixture.payload_logger("first", Answer::Missing);
+    fixture.logger(FakeKind::Payload, "first", Answer::Missing);
     let events = Arc::clone(&fixture.events);
     let reply = fixture
         .call("/spend/logs/ui/req-b", Some(&internal("alice")))
@@ -211,7 +243,11 @@ async fn a_call_id_lookup_asks_callbacks_for_the_stored_request_id() {
         Some("call-9"),
         Some("alice"),
     )]));
-    fixture.payload_logger("first", Answer::Found(OWN_PAYLOAD.to_owned()));
+    fixture.logger(
+        FakeKind::Payload,
+        "first",
+        Answer::Found(OWN_PAYLOAD.to_owned()),
+    );
     let events = Arc::clone(&fixture.events);
     let reply = fixture
         .call("/spend/logs/ui/call-9", Some(&internal("alice")))
@@ -224,7 +260,7 @@ async fn a_call_id_lookup_asks_callbacks_for_the_stored_request_id() {
 #[tokio::test]
 async fn no_payload_and_no_row_answers_null() {
     let mut fixture = Fixture::new(Some(Vec::new()));
-    fixture.payload_logger("first", Answer::Missing);
+    fixture.logger(FakeKind::Payload, "first", Answer::Missing);
     let reply = fixture
         .call("/spend/logs/ui/req-gone", Some(&admin()))
         .await;
@@ -240,7 +276,8 @@ async fn a_row_without_a_callback_payload_is_resolved_through_cold_storage() {
     placeholder.row.proxy_server_request = Some(json(r#""{}""#));
     placeholder.row.metadata = Some(json(r#""{\"cold_storage_object_key\":\"k-1\"}""#));
     let mut fixture = Fixture::new(Some(vec![placeholder]));
-    fixture.cold_reader(
+    fixture.logger(
+        FakeKind::Cold,
         "s3_v2",
         Answer::Found(r#"{"messages":["cold"],"response":"cold"}"#.to_owned()),
     );

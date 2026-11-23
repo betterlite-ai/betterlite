@@ -7,7 +7,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use serde::Serialize;
 
 use super::LogPayloadState;
-use super::content::{RequestResponsePayload, resolve_request_response_payload};
+use super::content::{RequestResponsePayload, resolve_row_payload};
 use super::dates::{DetailDates, decode_detail_dates};
 use super::error::LogPayloadError;
 use crate::auth::auth_identity::AuthContext;
@@ -89,7 +89,7 @@ async fn view(
     let Some(row) = resolved.and_then(|found| found.row) else {
         return Ok(None);
     };
-    let payload = resolve_request_response_payload(&row, &state.cold_storage).await;
+    let payload = resolve_row_payload(&row, &state.cold_storage).await;
     Ok(Some(PayloadBody::Row(payload)))
 }
 

@@ -7,9 +7,7 @@ use betterlite_logging::spend_bodies::support::Fields;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::spend::log_payload::cold_storage::ColdStorageHandler;
-use betterlite_server::spend::log_payload::content::{
-    RequestResponsePayload, resolve_request_response_payload,
-};
+use betterlite_server::spend::log_payload::content::{RequestResponsePayload, resolve_row_payload};
 use betterlite_server::spend::log_payload::daily_summary::{
     DailySummaryRow, SummaryFilters, SummaryValue, daily_summary_items, daily_summary_sql,
 };
@@ -27,13 +25,13 @@ const COLD_LOGGER: &str = "s3_v2";
 
 pub(crate) struct Op;
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     steps: Vec<Step>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 enum Step {
     Detail { row: DetailRow, cold: ColdAnswer },
@@ -59,7 +57,7 @@ struct ColdAnswer {
     fails: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SummaryStep {
     start_date: String,
@@ -175,7 +173,7 @@ async fn detail(row: &DetailRow, cold: &ColdAnswer) -> StepAnswer {
         user: None,
         team_id: None,
     };
-    let body = resolve_request_response_payload(&stored, &handler).await;
+    let body = resolve_row_payload(&stored, &handler).await;
     let cold_keys = reader
         .keys
         .lock()

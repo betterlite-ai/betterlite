@@ -149,15 +149,15 @@ pub(super) enum Answer {
     Fails,
 }
 
-// a payload callback that records each id and window it is asked for
-pub(super) struct FakePayloadLogger {
+// a fake callback: a payload logger that records each id and window, or a cold reader that records each key
+pub(super) struct FakeLogger {
     pub(super) name: &'static str,
     pub(super) answer: Answer,
     pub(super) events: Events,
 }
 
 #[async_trait]
-impl PayloadLogger for FakePayloadLogger {
+impl PayloadLogger for FakeLogger {
     async fn request_response_payload(
         &self,
         request_id: &str,
@@ -180,15 +180,8 @@ impl PayloadLogger for FakePayloadLogger {
     }
 }
 
-// a cold-storage logger that records each object key it is asked for
-pub(super) struct FakeColdReader {
-    pub(super) name: &'static str,
-    pub(super) answer: Answer,
-    pub(super) events: Events,
-}
-
 #[async_trait]
-impl ColdStorageReader for FakeColdReader {
+impl ColdStorageReader for FakeLogger {
     async fn proxy_server_request(&self, object_key: &str) -> Result<Option<Fields>, LoggerError> {
         record(&self.events, format!("cold {} {object_key}", self.name));
         match &self.answer {
@@ -204,8 +197,8 @@ impl ColdStorageReader for FakeColdReader {
 
 #[derive(Default)]
 pub(super) struct FakeLoggers {
-    pub(super) payload: Vec<Arc<FakePayloadLogger>>,
-    pub(super) cold: Vec<Arc<FakeColdReader>>,
+    pub(super) payload: Vec<Arc<FakeLogger>>,
+    pub(super) cold: Vec<Arc<FakeLogger>>,
 }
 
 impl ActiveLoggers for FakeLoggers {
@@ -213,7 +206,7 @@ impl ActiveLoggers for FakeLoggers {
         self.payload
             .iter()
             .map(|logger| {
-                let shared: Arc<dyn PayloadLogger> = Arc::<FakePayloadLogger>::clone(logger);
+                let shared: Arc<dyn PayloadLogger> = Arc::<FakeLogger>::clone(logger);
                 shared
             })
             .collect()
@@ -224,7 +217,7 @@ impl ActiveLoggers for FakeLoggers {
             .cold
             .iter()
             .find(|reader| reader.name == callback_name)?;
-        let shared: Arc<dyn ColdStorageReader> = Arc::<FakeColdReader>::clone(found);
+        let shared: Arc<dyn ColdStorageReader> = Arc::<FakeLogger>::clone(found);
         Some(shared)
     }
 }
@@ -329,6 +322,12 @@ pub(super) fn internal(user_id: &str) -> Principal {
     principal(Vec::new(), Some(user_id))
 }
 
+// which list the fixture's fake joins: the callbacks the route searches, or the cold reader it selects
+pub(super) enum FakeKind {
+    Payload,
+    Cold,
+}
+
 // the route over its own router, with a database only when a table is given
 pub(super) struct Fixture {
     pub(super) table: Option<Vec<StoredRow>>,
@@ -347,23 +346,19 @@ impl Fixture {
         }
     }
 
-    pub(super) fn payload_logger(&mut self, name: &'static str, answer: Answer) {
-        let events = Arc::clone(&self.events);
-        self.loggers.payload.push(Arc::new(FakePayloadLogger {
+    pub(super) fn logger(&mut self, kind: FakeKind, name: &'static str, answer: Answer) {
+        let logger = Arc::new(FakeLogger {
             name,
             answer,
-            events,
-        }));
-    }
-
-    pub(super) fn cold_reader(&mut self, name: &'static str, answer: Answer) {
-        let events = Arc::clone(&self.events);
-        self.loggers.cold.push(Arc::new(FakeColdReader {
-            name,
-            answer,
-            events,
-        }));
-        self.selected = Some(name);
+            events: Arc::clone(&self.events),
+        });
+        match kind {
+            FakeKind::Payload => self.loggers.payload.push(logger),
+            FakeKind::Cold => {
+                self.loggers.cold.push(logger);
+                self.selected = Some(name);
+            }
+        }
     }
 
     pub(super) async fn call(self, uri: &str, caller: Option<&Principal>) -> Reply {

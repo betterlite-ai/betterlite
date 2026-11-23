@@ -1,16 +1,11 @@
 use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_models::decisions::Json;
 use rstest::rstest;
 
-use super::support::{
-    Answer, Events, FakeColdReader, FakeLoggers, cold_handler, fields, json, seen,
-};
+use super::support::{Answer, Events, FakeLogger, FakeLoggers, cold_handler, fields, json, seen};
 use crate::spend::log_payload::cold_storage::ColdStorageHandler;
-use crate::spend::log_payload::content::{
-    RequestResponsePayload, resolve_request_response_payload,
-};
+use crate::spend::log_payload::content::{RequestResponsePayload, resolve_row_payload};
 use crate::spend::visibility::store::PayloadRow;
 
 const KEYED: &str = r#"{"cold_storage_object_key":"2025/01/01/req-1.json"}"#;
@@ -40,17 +35,12 @@ fn payload(
     response: Option<&str>,
     request: Option<&str>,
 ) -> RequestResponsePayload {
-    let decode = |text: &str| -> Json { serde_json::from_str(text).unwrap() };
-    RequestResponsePayload {
-        messages: messages.map(decode),
-        response: response.map(decode),
-        proxy_server_request: request.map(decode),
-    }
+    RequestResponsePayload::from_row(&row(messages, response, request, None))
 }
 
 fn cold(answer: Answer) -> (ColdStorageHandler, Events) {
     let events = Events::default();
-    let reader = Arc::new(FakeColdReader {
+    let reader = Arc::new(FakeLogger {
         name: "s3_v2",
         answer,
         events: Arc::clone(&events),
@@ -75,7 +65,7 @@ async fn one_stored_field_keeps_cold_storage_closed(
 ) {
     let (handler, events) = cold(Answer::Found(COLD.to_owned()));
     let stored = row(messages, response, request, Some(KEYED));
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     assert_eq!(resolved, payload(messages, response, request));
     assert!(seen(&events).is_empty());
 }
@@ -92,7 +82,7 @@ async fn empty_stored_fields_are_replaced_by_cold_storage(
 ) {
     let (handler, events) = cold(Answer::Found(COLD.to_owned()));
     let stored = row(messages, response, request, Some(KEYED));
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     assert_eq!(
         resolved,
         payload(
@@ -108,7 +98,7 @@ async fn empty_stored_fields_are_replaced_by_cold_storage(
 async fn a_cold_payload_without_a_field_answers_null_for_it() {
     let (handler, _events) = cold(Answer::Found(r#"{"response":"done"}"#.to_owned()));
     let stored = row(Some(r#""{}""#), None, None, Some(KEYED));
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     assert_eq!(resolved, payload(None, Some(r#""done""#), None));
 }
 
@@ -126,7 +116,7 @@ async fn falls_back_to_the_database_values(
 ) {
     let (handler, events) = cold(answer);
     let stored = row(Some(r#""{}""#), Some("{}"), None, metadata);
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     assert_eq!(resolved, payload(Some(r#""{}""#), Some("{}"), None));
     assert_eq!(seen(&events).len(), reads);
 }
@@ -141,7 +131,7 @@ async fn a_truncated_audit_takes_only_the_cold_audit() {
         Some(TRUNCATED_AUDIT),
         Some(KEYED),
     );
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     assert_eq!(
         resolved,
         payload(
@@ -167,7 +157,7 @@ async fn a_truncated_audit_overlays_the_stored_snapshot_without_a_cold_request(
 ) {
     let (handler, _events) = cold(Answer::Found(cold_payload.to_owned()));
     let stored = row(None, None, Some(TRUNCATED_AUDIT), Some(KEYED));
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     let request = r#"{"model":"m","classifier_input":{"text":"full"}}"#;
     assert_eq!(resolved, payload(None, None, Some(request)));
 }
@@ -176,7 +166,7 @@ async fn a_truncated_audit_overlays_the_stored_snapshot_without_a_cold_request(
 async fn a_truncated_audit_keeps_the_row_when_cold_has_no_audit() {
     let (handler, events) = cold(Answer::Found(COLD.to_owned()));
     let stored = row(Some(r#"["db"]"#), None, Some(TRUNCATED_AUDIT), Some(KEYED));
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     assert_eq!(
         resolved,
         payload(Some(r#"["db"]"#), None, Some(TRUNCATED_AUDIT))
@@ -192,7 +182,7 @@ async fn a_truncated_audit_keeps_the_row_when_cold_has_no_audit() {
 async fn only_a_truncated_audit_reopens_cold_storage(#[case] request: &str) {
     let (handler, events) = cold(Answer::Found(COLD.to_owned()));
     let stored = row(None, None, Some(request), Some(KEYED));
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     assert_eq!(resolved, payload(None, None, Some(request)));
     assert!(seen(&events).is_empty());
 }
@@ -202,7 +192,7 @@ async fn a_cold_audit_overlays_the_cold_request_snapshot() {
     let cold_payload = r#"{"messages":"m","proxy_server_request":"{\"model\":\"cold\",\"classifier_input\":{\"old\":1}}","classifier_input":{"new":2}}"#;
     let (handler, _events) = cold(Answer::Found(cold_payload.to_owned()));
     let stored = row(None, None, None, Some(KEYED));
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     let request = r#"{"model":"cold","classifier_input":{"new":2}}"#;
     assert_eq!(resolved, payload(Some(r#""m""#), None, Some(request)));
 }
@@ -212,7 +202,7 @@ async fn a_cold_audit_without_any_snapshot_starts_from_an_empty_request() {
     let cold_payload = r#"{"proxy_server_request":{},"originating_request_masked":"{\"a\":1}"}"#;
     let (handler, _events) = cold(Answer::Found(cold_payload.to_owned()));
     let stored = row(None, None, Some("{}"), Some(KEYED));
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     let request = r#"{"originating_request_masked":{"a":1}}"#;
     assert_eq!(resolved, payload(None, None, Some(request)));
 }
@@ -220,12 +210,12 @@ async fn a_cold_audit_without_any_snapshot_starts_from_an_empty_request() {
 #[tokio::test]
 async fn an_injected_cold_reader_wins_over_the_configured_callback() {
     let events = Events::default();
-    let configured = Arc::new(FakeColdReader {
+    let configured = Arc::new(FakeLogger {
         name: "s3_v2",
         answer: Answer::Found(COLD.to_owned()),
         events: Arc::clone(&events),
     });
-    let injected = Arc::new(FakeColdReader {
+    let injected = Arc::new(FakeLogger {
         name: "injected",
         answer: Answer::Found(r#"{"messages":"injected"}"#.to_owned()),
         events: Arc::clone(&events),
@@ -250,7 +240,7 @@ async fn an_injected_cold_reader_wins_over_the_configured_callback() {
 #[tokio::test]
 async fn without_an_active_cold_logger_nothing_is_read(#[case] selected: Option<&str>) {
     let events = Events::default();
-    let reader = Arc::new(FakeColdReader {
+    let reader = Arc::new(FakeLogger {
         name: "s3_v2",
         answer: Answer::Found(COLD.to_owned()),
         events: Arc::clone(&events),
@@ -275,7 +265,7 @@ async fn database_values_are_served_as_stored_json() {
     let (handler, _events) = cold(Answer::Missing);
     let mut stored = row(Some(r#"[{"role":"user"}]"#), None, None, None);
     stored.response = Some(JsonData::String("plain text".to_owned()));
-    let resolved = resolve_request_response_payload(&stored, &handler).await;
+    let resolved = resolve_row_payload(&stored, &handler).await;
     let body = serde_json::to_string(&resolved).unwrap();
     assert_eq!(
         body,

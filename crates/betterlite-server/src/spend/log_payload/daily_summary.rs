@@ -12,8 +12,9 @@ const MODELS_KEY: &str = "models";
 const NULL_USER_KEY: &str = "null";
 
 // the optional filters _spend_logs_daily_summary_sql binds after the two time bounds; request_id matches only itself
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SummaryFilters<'filter> {
+    // a key the caller sent, so the struct derives no Debug
     pub api_key: Option<&'filter str>,
     pub request_id: Option<&'filter str>,
     pub user_id: Option<&'filter str>,
@@ -25,8 +26,8 @@ pub struct SummaryQuery {
     pub params: Vec<String>,
 }
 
-// one row of the grouped query, in its column names
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+// one row of the grouped query, in its column names; no Debug: the api_key column can carry a key
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct DailySummaryRow {
     pub day: String,
     pub api_key: Option<String>,

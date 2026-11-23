@@ -24,18 +24,42 @@ pub struct RequestResponsePayload {
     pub proxy_server_request: Option<Json>,
 }
 
+impl RequestResponsePayload {
+    // the row's own three columns, before any fallback
+    #[must_use]
+    pub fn from_row(row: &PayloadRow) -> Self {
+        Self {
+            messages: row.messages.as_ref().map(column_json),
+            response: row.response.as_ref().map(column_json),
+            proxy_server_request: row.proxy_server_request.as_ref().map(column_json),
+        }
+    }
+}
+
 // _spend_log_field_has_content: a number or a boolean counts, even zero or false
 #[must_use]
 pub fn has_content(value: Option<&Json>) -> bool {
     match value {
         None | Some(Json::Null) => false,
-        // str.strip also drops the four ASCII separators Rust does not count as whitespace
-        Some(Json::Text(text)) => !EMPTY_VALUES.contains(&text.trim_matches(|letter: char| {
-            letter.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&letter)
-        })),
-        Some(Json::List(items)) => !items.is_empty(),
-        Some(Json::Object(fields)) => !fields.is_empty(),
-        Some(Json::Bool(_) | Json::Number(_)) => true,
+        Some(Json::Text(text)) => !is_blank_json_text(text),
+        Some(json) => !is_empty_container(json),
+    }
+}
+
+// str.strip also drops the four ASCII separators Rust does not count as whitespace
+fn is_blank_json_text(text: &str) -> bool {
+    let stripped = text.trim_matches(|letter: char| {
+        letter.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&letter)
+    });
+    EMPTY_VALUES.contains(&stripped)
+}
+
+// only a list or an object can be empty here; null and text are settled before this is asked
+fn is_empty_container(value: &Json) -> bool {
+    match value {
+        Json::List(items) => items.is_empty(),
+        Json::Object(fields) => fields.is_empty(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => false,
     }
 }
 
@@ -43,11 +67,14 @@ pub fn has_content(value: Option<&Json>) -> bool {
 #[must_use]
 pub fn holds_truncation(value: &Json) -> bool {
     match value {
-        Json::Text(text) => text.contains(TRUNCATED_PAYLOAD_FIELD),
+        Json::Object(fields) => {
+            let key_marked = fields
+                .keys()
+                .any(|key| key.contains(TRUNCATED_PAYLOAD_FIELD));
+            key_marked || fields.values().any(holds_truncation)
+        }
         Json::List(items) => items.iter().any(holds_truncation),
-        Json::Object(fields) => fields
-            .iter()
-            .any(|(key, item)| key.contains(TRUNCATED_PAYLOAD_FIELD) || holds_truncation(item)),
+        Json::Text(text) => text.contains(TRUNCATED_PAYLOAD_FIELD),
         Json::Null | Json::Bool(_) | Json::Number(_) => false,
     }
 }
@@ -56,26 +83,25 @@ pub fn holds_truncation(value: &Json) -> bool {
 #[must_use]
 pub fn request_snapshot(value: &Json) -> Option<Fields> {
     match value {
-        Json::Text(text) => match decode_classifier_snapshot(text.as_bytes()) {
-            Some(Json::Object(fields)) => Some(fields),
-            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-            | None => None,
-        },
+        Json::Text(text) => decode_classifier_snapshot(text.as_bytes()).and_then(object_fields),
         Json::Object(fields) => Some(fields.clone()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
     }
 }
 
+fn object_fields(value: Json) -> Option<Fields> {
+    match value {
+        Json::Object(fields) => Some(fields),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    }
+}
+
 // _resolve_request_response_payload: the row's own content wins unless its classifier audit was truncated
-pub async fn resolve_request_response_payload(
+pub async fn resolve_row_payload(
     row: &PayloadRow,
     cold_storage: &ColdStorageHandler,
 ) -> RequestResponsePayload {
-    let stored = RequestResponsePayload {
-        messages: row.messages.as_ref().map(column_json),
-        response: row.response.as_ref().map(column_json),
-        proxy_server_request: row.proxy_server_request.as_ref().map(column_json),
-    };
+    let stored = RequestResponsePayload::from_row(row);
     let stored_request = stored
         .proxy_server_request
         .as_ref()
