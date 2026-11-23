@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-public-servers-explicit-empty-list
+call:
+  b10079:
+    function: is_public
+    server_id: cfg-listed
+    config_servers:
+      - {server_id: cfg-listed, name: Listed Config, transport: http}
+    db_servers: []
+    public_mcp_servers: [cfg-listed]
+    public_hub_strict: true
+    public_ids: []
+env: {}
+compare: {ignore: []}

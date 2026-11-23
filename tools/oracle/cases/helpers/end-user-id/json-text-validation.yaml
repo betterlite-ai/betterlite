@@ -1,0 +1,44 @@
+kind: helper
+name: end-user-id-json-text-validation
+call:
+  b10050:
+    user_header_mappings: []
+    user_header_name: null
+    validate_end_user_id_in_db: true
+    requests:
+      - body: {user: '{"a": 1}'}
+        headers: null
+      - body:
+          user: "[1]"
+          safety_identifier: sid
+        headers: null
+      - body: {user: ' {"a": 1} '}
+        headers: null
+      - body: {user: "[x"}
+        headers: null
+      - body: {user: '{"a": '}
+        headers: null
+      - body: {user: "{not json"}
+        headers: null
+      - body: {user: body}
+        headers:
+          - [x-litellm-customer-id, '{"a": 1}']
+      - body: {user: '"text"'}
+        headers: null
+      - body: {user: "7"}
+        headers: null
+calls:
+  - b10050:
+      user_header_mappings: []
+      user_header_name: null
+      validate_end_user_id_in_db: false
+      requests:
+        - body: {user: '{"a": 1}'}
+          headers: null
+        - body: {user: "[1]"}
+          headers: null
+        - body: {user: " [1] "}
+          headers: null
+env: {}
+compare:
+  ignore: []

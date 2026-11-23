@@ -91,8 +91,8 @@ description: >-
 
 
   Public mounts, merged by `mount_public` (none of them has a key dependency in LiteLLM). The /metrics endpoint is B3886's
-  `metrics_router(state.shared.prometheus_registry.clone())`, merged only when `prometheus` is in config.sections.callback_settings.callbacks, since LiteLLM mounts it only then (callback_utils.py L407-L410); the Prometheus auth layer above decides whether it needs a key, so it must not sit behind
-  the key auth layers. The admin UI static mounts live in app/edge/ui.rs. At mount time, with the env read once: B8591's
+  `metrics_router(registry.clone(), registry.multiprocess_dir())` with registry = `state.shared.prometheus_registry`, merged only when `prometheus` is in config.sections.callback_settings.callbacks, since LiteLLM mounts it only then (callback_utils.py L407-L410); the Prometheus auth layer above decides whether it needs a key, so it must not sit behind
+  the key auth layers. multiprocess_dir() is B10096's: the folder B8613 built the registry's writer over when PROMETHEUS_MULTIPROC_DIR is set, so the scrape reads the files this process writes, and None otherwise. metrics_router returns a Result. B8613 already stopped startup on a folder the writer refused, so an error here means the folder went away after startup; mount_public has no error channel (B10082), so log it at error with the folder and mount no /metrics, as the UI mounts below do on a failed step. The admin UI static mounts live in app/edge/ui.rs. At mount time, with the env read once: B8591's
   `select_ui_folder(env, packaged)` where packaged is the `ui` folder next to the running executable
   (std::env::current_exe), then B8591's restructure step and root path rewrite with the server root path from B4200's
   request_root_paths section, then three tower-http ServeDir services: `/_next` and `/litellm-asset-prefix/_next` over
@@ -112,7 +112,8 @@ description: >-
   ProxyFailure answer is re-rendered with the call id header when general_settings asks for it; a 405 gets the JSON
   detail and the allow header; any other response passes byte for byte; the preflight and simple CORS answers for unset,
   listed and refused origins; /metrics with require_auth_for_metrics_endpoint on answers 401 without a key and the scrape
-  with one, while /v1/models is never touched by the Prometheus layer; a panicking route answers the 500 envelope and the
+  with one, while /v1/models is never touched by the Prometheus layer; /metrics over a registry built with B10096's writer on a
+  temporary folder answers a counter incremented through that registry, without `_created`; a panicking route answers the 500 envelope and the
   server still answers the next request; the sink gets category, route and status once per billable request and is never
   called without a database; a reservation stamped by an inner handler reaches the releaser after the response; the span
   layer with an in-memory exporter makes one SERVER span with the passthrough name for /openai/v1/models, none for
@@ -130,7 +131,11 @@ description: >-
   cors-credentials-env-false (LITELLM_CORS_ALLOW_CREDENTIALS "false" with a listed origin) and
   method-not-allowed-detail (GET /v1/embeddings with the master key: 405, the JSON detail and the allow header). Moved
   here from B3886, which could not pass them before this mount: the 14 cases in tools/oracle/cases/prometheus-scrape/
-  listed under oracle_cases; write each from B3886's text.
+  listed under oracle_cases; write each from B3886's text. Two more in the same folder show B10097's metrics, both with
+  prometheus in litellm_settings.callbacks and the master key on every request, comparing status and body:
+  in-flight-gauge (GET /metrics?name[]=litellm_in_flight_requests answers the gauge at 1.0, since the scrape is itself in
+  flight) and admission-gauges (general_settings.max_in_flight_requests_per_worker 4; GET /v1/models, then GET
+  /metrics?name[]=litellm_admission_admitted_requests and GET /metrics?name[]=litellm_admission_queued_requests, both 0.0).
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -174,7 +179,7 @@ dod:
     proof: [layers-tests, oracle]
   - text: CORS preflight and simple answers match Starlette for the wildcard, listed, refused and credentials settings, also on a 401.
     proof: [layers-tests, oracle]
-  - text: /metrics answers through the Prometheus auth layer and B3886's router as LiteLLM does, with and without require_auth_for_metrics_endpoint, and is not mounted when prometheus is not in litellm_settings.callbacks.
+  - text: /metrics answers through the Prometheus auth layer and B3886's router as LiteLLM does, with and without require_auth_for_metrics_endpoint, renders the folder of a registry built with B10096's writer, and is not mounted when prometheus is not in litellm_settings.callbacks.
     proof: [layers-tests, oracle]
   - text: A panic in a route answers LiteLLM's 500 internal_server_error envelope.
     proof: [layers-tests]
@@ -186,6 +191,8 @@ dod:
     proof: [ui-tests]
   - text: The seven edge layer cases and the fourteen /metrics cases moved from B3886 match LiteLLM through the booted proxy.
     proof: [layer-cases, oracle]
+  - text: The in-flight-gauge and admission-gauges cases show B10097's metrics as LiteLLM's scrape does.
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -220,6 +227,8 @@ oracle_cases:
   - tools/oracle/cases/prometheus-scrape/unknown-metric-name.yaml
   - tools/oracle/cases/prometheus-scrape/concurrent-identical-requests.yaml
   - tools/oracle/cases/prometheus-scrape/large-response-chunking.yaml
+  - tools/oracle/cases/prometheus-scrape/in-flight-gauge.yaml
+  - tools/oracle/cases/prometheus-scrape/admission-gauges.yaml
 deviations:
   - what: The server span starts inside the root path, admission control, size limit, gzip, security header and Redis batch layers, so a 413 from the size limit or a request refused by admission control has no SERVER span.
     why: Those layers are applied in server.rs outside router(), and app::wrap is the outermost hook an area part has. LiteLLM's FastAPIInstrumentor wraps the whole middleware stack.
