@@ -503,3 +503,10 @@ path = "fuzz_targets/shadow_req.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "shadow_body"
+path = "fuzz_targets/shadow_body.rs"
+test = false
+doc = false
+bench = false
