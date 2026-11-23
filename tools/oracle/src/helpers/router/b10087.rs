@@ -76,21 +76,22 @@ fn text_answer(text: &str) -> HelperResult {
                 text: None,
             });
         }
-        // ProfileText::try_from builds only the two text errors, so a catalog error cannot reach here
-        Err(FusePresetsError::Catalog(source)) => {
+        // ProfileText::try_from builds only the two text errors, so no other variant can reach here
+        Err(error @ (FusePresetsError::Catalog(_) | FusePresetsError::SourcesEmpty)) => {
             return Err(Box::new(HelperError {
-                class: "CatalogError".to_owned(),
+                class: "ProfileTextError".to_owned(),
                 status: None,
                 error_type: None,
                 param: None,
                 code: None,
-                message: source.to_string(),
+                message: error.to_string(),
             }));
         }
     };
+    let stripped: &str = profile.as_ref();
     to_json(TextAnswer {
         kind: TextKind::Accepted,
-        text: Some(profile.to_string()),
+        text: Some(stripped.to_owned()),
     })
 }
 

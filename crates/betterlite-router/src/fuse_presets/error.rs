@@ -8,6 +8,8 @@ pub enum FusePresetsError {
         "a fuse profile text is {length} characters once stripped, over the {limit} character limit"
     )]
     TextTooLong { length: usize, limit: usize },
+    #[error("a fuse preset needs at least one source")]
+    SourcesEmpty,
     #[error("the bundled fuse preset catalog is not valid")]
     Catalog(#[from] serde_json::Error),
 }

@@ -61,7 +61,6 @@ fn catalog_bundled_file_holds_the_version_and_ids_in_file_order() {
 fn catalog_bundled_file_carries_each_preset_text_and_source() {
     let catalog = get_fuse_presets().unwrap();
     assert_eq!(catalog.models[0].label, "GPT-6 Astra");
-    assert_eq!(catalog.models[0].text.to_string(), ASTRA_TEXT);
     let astra: &str = catalog.models[0].text.as_ref();
     assert_eq!(astra, ASTRA_TEXT);
     assert_eq!(catalog.models[0].model, "gpt-6-astra");
@@ -69,7 +68,8 @@ fn catalog_bundled_file_carries_each_preset_text_and_source() {
         catalog.models[0].sources.as_slice(),
         ["https://developers.openai.com/api/docs/models/gpt-6-astra"]
     );
-    assert_eq!(catalog.harnesses[1].text.to_string(), CLAUDE_CODE_TEXT);
+    let claude_code: &str = catalog.harnesses[1].text.as_ref();
+    assert_eq!(claude_code, CLAUDE_CODE_TEXT);
     assert_eq!(
         catalog.harnesses[1].sources.as_slice(),
         ["https://code.claude.com/docs/en/how-claude-code-works"]
@@ -172,10 +172,8 @@ fn resolve_fuse_profile_returns_text_or_preset_text(
 ) {
     let profile = text.map(|value| ProfileText::try_from(value.to_owned()).unwrap());
     let resolved = resolve_fuse_profile(profile.as_ref(), preset_id, kind).unwrap();
-    assert_eq!(
-        resolved.map(|value| value.to_string()),
-        expected.map(str::to_owned)
-    );
+    let resolved_text: Option<&str> = resolved.as_ref().map(|value| value.as_ref());
+    assert_eq!(resolved_text, expected);
 }
 
 #[rstest]
@@ -185,8 +183,8 @@ fn resolve_fuse_profile_returns_text_or_preset_text(
 #[case::line_breaks("\r\n profile \r\n", "profile")]
 fn profile_text_strips_surrounding_whitespace(#[case] raw: &str, #[case] stripped: &str) {
     let text = ProfileText::try_from(raw.to_owned()).unwrap();
-    assert_eq!(text.to_string(), stripped);
-    assert_eq!(text.as_ref(), stripped);
+    let stripped_text: &str = text.as_ref();
+    assert_eq!(stripped_text, stripped);
 }
 
 #[rstest]
@@ -202,7 +200,8 @@ fn profile_text_whitespace_only_is_too_short(#[case] raw: &str) {
 fn profile_text_accepts_exactly_4000_characters_after_stripping() {
     let raw = format!("  {}  ", "x".repeat(MAX_PROFILE_TEXT_CHARACTERS));
     let text = ProfileText::try_from(raw).unwrap();
-    assert_eq!(text.to_string().chars().count(), 4000);
+    let stripped: &str = text.as_ref();
+    assert_eq!(stripped.chars().count(), 4000);
 }
 
 #[test]
@@ -222,7 +221,7 @@ fn profile_text_rejects_4001_characters() {
 fn profile_text_counts_characters_not_bytes() {
     let raw = format!("\t{}\n", "é".repeat(MAX_PROFILE_TEXT_CHARACTERS));
     let text = ProfileText::try_from(raw).unwrap();
-    let rendered = text.to_string();
-    assert_eq!(rendered.chars().count(), 4000);
-    assert_eq!(rendered.len(), 8000);
+    let stripped: &str = text.as_ref();
+    assert_eq!(stripped.chars().count(), 4000);
+    assert_eq!(stripped.len(), 8000);
 }

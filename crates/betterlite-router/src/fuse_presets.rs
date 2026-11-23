@@ -1,9 +1,8 @@
 pub mod error;
 
-use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use error::FusePresetsError;
 
@@ -42,31 +41,84 @@ impl AsRef<str> for ProfileText {
     }
 }
 
-impl fmt::Display for ProfileText {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.0.as_str())
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "RawFuseModelPreset")]
 pub struct FuseModelPreset {
     pub id: String,
     pub label: String,
     pub text: ProfileText,
-    #[serde(deserialize_with = "non_empty_sources")]
     pub sources: Vec<String>,
     pub model: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+// try_from owns the public Deserialize impl, so extra="forbid" lives on this twin
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RawFuseModelPreset {
+    id: String,
+    label: String,
+    text: ProfileText,
+    sources: Vec<String>,
+    model: String,
+}
+
+impl TryFrom<RawFuseModelPreset> for FuseModelPreset {
+    type Error = FusePresetsError;
+
+    fn try_from(raw: RawFuseModelPreset) -> Result<Self, FusePresetsError> {
+        let RawFuseModelPreset {
+            id,
+            label,
+            text,
+            sources,
+            model,
+        } = raw;
+        Ok(Self {
+            id,
+            label,
+            text,
+            sources: checked_sources(sources)?,
+            model,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(try_from = "RawFuseHarnessPreset")]
 pub struct FuseHarnessPreset {
     pub id: String,
     pub label: String,
     pub text: ProfileText,
-    #[serde(deserialize_with = "non_empty_sources")]
     pub sources: Vec<String>,
+}
+
+// try_from owns the public Deserialize impl, so extra="forbid" lives on this twin
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawFuseHarnessPreset {
+    id: String,
+    label: String,
+    text: ProfileText,
+    sources: Vec<String>,
+}
+
+impl TryFrom<RawFuseHarnessPreset> for FuseHarnessPreset {
+    type Error = FusePresetsError;
+
+    fn try_from(raw: RawFuseHarnessPreset) -> Result<Self, FusePresetsError> {
+        let RawFuseHarnessPreset {
+            id,
+            label,
+            text,
+            sources,
+        } = raw;
+        Ok(Self {
+            id,
+            label,
+            text,
+            sources: checked_sources(sources)?,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -126,15 +178,9 @@ pub fn resolve_fuse_profile(
     Ok(Some(text.cloned().unwrap_or(preset_text)))
 }
 
-fn non_empty_sources<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let sources = Vec::<String>::deserialize(deserializer)?;
+fn checked_sources(sources: Vec<String>) -> Result<Vec<String>, FusePresetsError> {
     if sources.is_empty() {
-        return Err(serde::de::Error::custom(
-            "a fuse preset needs at least one source",
-        ));
+        return Err(FusePresetsError::SourcesEmpty);
     }
     Ok(sources)
 }
