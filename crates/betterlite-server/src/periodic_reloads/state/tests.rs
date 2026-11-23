@@ -5,7 +5,7 @@ use std::thread;
 
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::source::{CatalogProvenance, CatalogSnapshot, SourceKind};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeZone as _, Utc};
 use rstest::rstest;
 
 use super::PeriodicReloads;
