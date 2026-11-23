@@ -4,6 +4,7 @@ pub mod denial;
 pub mod grant;
 pub mod pattern;
 pub mod sentinel;
+pub mod user_model;
 pub mod view;
 
 mod tests;

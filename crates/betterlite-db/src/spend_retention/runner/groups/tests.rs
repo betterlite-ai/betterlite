@@ -409,7 +409,8 @@ async fn the_session_rollups_split_their_group_time() {
     let metrics = CleanupMetrics::new(&registry);
     let progress = RunProgress::default();
     let mut run = group_run(&mut case.client, &cleanup, &metrics, &progress, start);
-    let deadline = deadline_after(start, 100);
+    // one step past the second table's last batch start, which would otherwise get the 1 ms floor
+    let deadline = deadline_after(start, 105);
     let window = GroupWindow {
         retention_seconds: 2_592_000,
         deadline,

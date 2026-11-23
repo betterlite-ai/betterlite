@@ -8,8 +8,8 @@ use betterlite_openai::response_input::ResponsesInput;
 use indexmap::IndexMap;
 
 use super::call::CompactResponsesCall;
-use super::convert::{decision_json, prompt_decision};
 use super::execute::Resolved;
+use crate::api::responses_json::{decision_json, prompt_decision};
 
 pub(super) fn log_call(
     state: &mut LoggingState,

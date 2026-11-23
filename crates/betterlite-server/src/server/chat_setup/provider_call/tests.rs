@@ -22,6 +22,7 @@ use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::streaming::ChatCalls;
 use crate::server::chat_setup::chat_executor;
 use crate::state::anthropic_runtime;
+use crate::state::azure_runtime;
 use crate::state::shared::Shared;
 
 use super::embedding::embedding_error;
@@ -82,7 +83,8 @@ fn chat_calls(source: &str, environment: &BTreeMap<String, String>) -> ChatCalls
         client: executor.client.clone(),
     };
     let slot = anthropic_runtime::Slot::new(&config, &shared);
-    ChatCalls::new(&config, Arc::new(executor), &slot).unwrap()
+    let azure = azure_runtime::Slot::new(&config);
+    ChatCalls::new(&config, Arc::new(executor), &slot, &azure).unwrap()
 }
 
 async fn call(
@@ -122,6 +124,31 @@ async fn call(
         .unwrap()
         .to_vec();
     (status, body, sent, forwarded)
+}
+
+// the server's config names the Azure base and version, and only the startup environment holds the key
+#[tokio::test]
+async fn azure_chat_uses_the_startup_composition() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let source = format!(
+        "litellm_settings:\n  api_base: '{base}'\n  api_version: '2024-06-01'\n  headers: {{x-gateway: gateway-value}}\nmodel_list:\n  - {{model_name: g, litellm_params: {{model: azure/up}}, model_info: {{id: dep-1}}}}\n"
+    );
+    let environment = BTreeMap::from([("AZURE_API_KEY".to_owned(), "startup-key".to_owned())]);
+    let calls = chat_calls(&source, &environment);
+    let request = Request::post("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(PLAIN))
+        .unwrap();
+    let router = chat_routes_with_call_id(Arc::new(calls), false).unwrap();
+    let (sent, answered) = tokio::join!(upstream(listener, (200, ANSWER)), router.oneshot(request));
+    assert_eq!(answered.unwrap().status().as_u16(), 200);
+    assert!(
+        sent.starts_with("post /openai/deployments/up/chat/completions?api-version=2024-06-01 "),
+        "{sent}"
+    );
+    assert!(sent.contains("api-key: startup-key"), "{sent}");
+    assert!(sent.contains("x-gateway: gateway-value"), "{sent}");
 }
 
 // LiteLLM's AttributeError after the 422 loop surfaces as a 500, so the rejected-fields error stays an operation error

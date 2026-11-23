@@ -2,7 +2,7 @@ id: B3211
 milestone: M4 keys, spend and management
 title: Serve UI discovery with deployment URL and capability settings
 status: todo
-depends_on: [B001, B002, B003, B171, B799, B881, B4200, B4470, B7323]
+depends_on: [B001, B002, B003, B171, B799, B881, B4200, B4470, B7323, B10075]
 file: tasks/B3211-ui-discovery.yaml
 covers:
   - "litellm/proxy/discovery_endpoints/ui_discovery_endpoints.py"

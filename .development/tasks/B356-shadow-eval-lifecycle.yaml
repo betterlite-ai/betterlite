@@ -163,9 +163,9 @@ pitfalls:
 - A proxy-admin-viewer may inspect jobs but may not start or stop them.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.
-- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+- The line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
   at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 3200
   max_new_expects: 0

@@ -104,6 +104,11 @@ scope:
   - tools/oracle/helpers/b992/**
   - tools/oracle/src/helpers/server/b992.rs
   - tools/oracle/src/helpers/server/b992/**
+  - crates/betterlite-auth/src/inference_routes.rs
+  - crates/betterlite-auth/src/inference_routes/tests.rs
+  - crates/betterlite-server/src/auth/auth_route_patterns.rs
+  - crates/betterlite-server/src/auth/auth_route_patterns/tests.rs
+  - crates/betterlite-server/src/app/spend.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L277-L388

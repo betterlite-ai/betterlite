@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 
 use crate::operation::{
     ChatOperation, EmbeddingOperation, OperationError, OperationRequest, OperationResult,
@@ -46,7 +47,7 @@ struct CallOptions {
 }
 #[derive(Clone)]
 pub struct Azure {
-    pub(crate) composition: call::Composition,
+    pub(crate) composition: Arc<call::Composition>,
 }
 // the composition is the environment the adapter reads, not its identity, and its values stay out of Debug output
 impl fmt::Debug for Azure {
