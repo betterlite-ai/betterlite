@@ -1,6 +1,8 @@
 from collections.abc import Awaitable
 
-class NativeBatchError(Exception): ...
+from betterlite._native_completion import NativeError
+
+class NativeBatchError(NativeError): ...
 
 class NativeBatchSession:
     def __init__(self, settings: str) -> None: ...

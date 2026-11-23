@@ -131,7 +131,7 @@ fn hidden_params(
 ) -> HiddenParams {
     HiddenParams {
         llm_provider: provider,
-        // LiteLLM reads model_id from model_info.id, and model_info is not part of the batch surface
+        // LiteLLM takes model_id from model_info.id, which the Python facade writes into this key after the call
         model_id: None,
         litellm_model_name: model,
         api_base,

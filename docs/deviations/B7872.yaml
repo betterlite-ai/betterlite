@@ -7,7 +7,7 @@ deviations:
   why: "This build has no azure, vertex, anthropic, bedrock or mistral batch executor; the provider tasks that add one remove its branch from this list."
   link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L313"
 - what: "`_hidden_params` carries `llm_provider`, `model_id`, `litellm_model_name` and `api_base` only."
-  why: "The call id, response cost and timings are LiteLLM logging values the Rust call does not produce; the four keys the task names are set as LiteLLM sets them."
+  why: "The timing and logging keys LiteLLM adds to every response (`_response_ms`, `litellm_overhead_time_ms`, `litellm_call_id`, `response_cost`, `additional_headers`, `callback_duration_ms`) come from its callback machinery, which the Rust call has no part in. `model_id` (from `model_info.id`), `litellm_model_name` and `api_base` match LiteLLM's keys and values; `llm_provider`, which the task asks for, is an extra key, since a batch result from LiteLLM sets no provider in `_hidden_params` (only `custom_llm_provider` on chat responses)."
   link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/response_metadata.py#L124"
 - what: "An unsupported `custom_llm_provider` on create answers with B1036's message \"custom_llm_provider=... is not supported for create_batch\", not LiteLLM's \"LiteLLM doesn't support custom_llm_provider=... for 'create_batch'\"."
   why: "The text belongs to the core create error (B1036); the class, status and llm_provider are LiteLLM's."

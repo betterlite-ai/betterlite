@@ -4,58 +4,34 @@ from dataclasses import dataclass
 from typing import Final, Literal, TypeAlias
 
 from pydantic import JsonValue, PrivateAttr, TypeAdapter
-from typing_extensions import override
+from typing_extensions import TypedDict, override
 
 from betterlite._endpoints.payload import CallValue, to_call_payload
 from betterlite._endpoints.runner import acall_native, call_native
 from betterlite._endpoints.settings import read_settings
-from betterlite._native import NativeBatchError, NativeBatchSession
+from betterlite._native import NativeBatchError, NativeBatchSession, NativeError
 from betterlite.types.utils.base import ResponseObject
 from betterlite.types.utils.usage import Usage
 
+# call_native types its error argument as NativeError, so the class joins that family.
+NativeBatchError.__bases__ = (NativeError,)
+
 BatchPath: TypeAlias = Literal[
-    "/v1/chat/completions",
-    "/v1/embeddings",
-    "/v1/completions",
-    "/v1/responses",
-    "/v1/ocr",
-    "/v1/images/generations",
-    "/v1/images/edits",
-    "/v1/videos/generations",
-    "/v1/videos",
-    "/v1/videos/edits",
-    "/v1/videos/extensions",
+    "/v1/chat/completions", "/v1/embeddings", "/v1/completions", "/v1/responses", "/v1/ocr",
+    "/v1/images/generations", "/v1/images/edits", "/v1/videos/generations",
+    "/v1/videos", "/v1/videos/edits", "/v1/videos/extensions",
 ]
 BatchState: TypeAlias = Literal[
-    "validating",
-    "failed",
-    "in_progress",
-    "finalizing",
-    "completed",
-    "expired",
-    "cancelling",
-    "cancelled",
+    "validating", "failed", "in_progress", "finalizing",
+    "completed", "expired", "cancelling", "cancelled",
 ]
 CreateProvider: TypeAlias = Literal[
-    "openai",
-    "azure",
-    "vertex_ai",
-    "bedrock",
-    "hosted_vllm",
-    "litellm_proxy",
-    "mistral",
-    "xai",
+    "openai", "azure", "vertex_ai", "bedrock",
+    "hosted_vllm", "litellm_proxy", "mistral", "xai",
 ]
 ReadProvider: TypeAlias = Literal[
-    "openai",
-    "azure",
-    "vertex_ai",
-    "bedrock",
-    "hosted_vllm",
-    "litellm_proxy",
-    "anthropic",
-    "mistral",
-    "xai",
+    "openai", "azure", "vertex_ai", "bedrock", "hosted_vllm",
+    "litellm_proxy", "anthropic", "mistral", "xai",
 ]
 
 # the GenericLiteLLMParams fields create_batch reads, under the names the Rust input takes
@@ -79,6 +55,12 @@ SETTING_NAMES: Final[tuple[str, ...]] = (
     "vertex_location", "vertex_project",
 )
 
+
+class BatchModelInfo(TypedDict, total=False):
+    id: str | None
+
+
+MODEL_INFO: Final[TypeAdapter[BatchModelInfo | None]] = TypeAdapter(BatchModelInfo | None)
 BATCH_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 
@@ -148,54 +130,63 @@ def param_value(kwargs: Mapping[str, CallValue], name: str) -> CallValue:
     return None
 
 
-def param_values(
+def batch_session() -> NativeBatchSession:
+    settings = json.dumps({"settings": read_settings(SETTING_NAMES)})
+    return NativeBatchSession(settings)
+
+
+def forwarded_values(
     kwargs: Mapping[str, CallValue], names: tuple[str, ...]
 ) -> dict[str, CallValue]:
-    return {name: param_value(kwargs, name) for name in names}
-
-
-def session_settings() -> str:
-    return json.dumps({"settings": read_settings(SETTING_NAMES)})
+    return {
+        "model": param_value(kwargs, "model"),
+        "optional_params": {name: param_value(kwargs, name) for name in names},
+        "client": param_value(kwargs, "client"),
+        "shared_session": param_value(kwargs, "shared_session"),
+        "logger_fn": param_value(kwargs, "logger_fn"),
+    }
 
 
 def create_values(
     arguments: CreateArguments, kwargs: Mapping[str, CallValue]
 ) -> dict[str, CallValue]:
-    return {
-        "completion_window": arguments.completion_window,
-        "endpoint": arguments.endpoint,
-        "input_file_id": arguments.input_file_id,
-        "custom_llm_provider": arguments.custom_llm_provider,
-        "metadata": arguments.metadata,
-        "extra_headers": arguments.extra_headers,
-        "extra_body": arguments.extra_body,
-        "output_expires_after": arguments.output_expires_after,
-        "model": param_value(kwargs, "model"),
-        "optional_params": param_values(kwargs, CREATE_OPTIONAL),
-        "client": param_value(kwargs, "client"),
-        "shared_session": param_value(kwargs, "shared_session"),
-        "logger_fn": param_value(kwargs, "logger_fn"),
-    }
+    values = forwarded_values(kwargs, CREATE_OPTIONAL)
+    values.update(
+        {
+            "completion_window": arguments.completion_window,
+            "endpoint": arguments.endpoint,
+            "input_file_id": arguments.input_file_id,
+            "custom_llm_provider": arguments.custom_llm_provider,
+            "metadata": arguments.metadata,
+            "extra_headers": arguments.extra_headers,
+            "extra_body": arguments.extra_body,
+            "output_expires_after": arguments.output_expires_after,
+        }
+    )
+    return values
 
 
 def retrieve_values(
     arguments: RetrieveArguments, kwargs: Mapping[str, CallValue]
 ) -> dict[str, CallValue]:
-    return {
-        "batch_id": arguments.batch_id,
-        "provider": arguments.custom_llm_provider,
-        "extra_headers": arguments.extra_headers,
-        "extra_body": arguments.extra_body,
-        "model": param_value(kwargs, "model"),
-        "optional_params": param_values(kwargs, READ_OPTIONAL),
-        "client": param_value(kwargs, "client"),
-        "shared_session": param_value(kwargs, "shared_session"),
-        "logger_fn": param_value(kwargs, "logger_fn"),
-    }
+    values = forwarded_values(kwargs, READ_OPTIONAL)
+    values.update(
+        {
+            "batch_id": arguments.batch_id,
+            "provider": arguments.custom_llm_provider,
+            "extra_headers": arguments.extra_headers,
+            "extra_body": arguments.extra_body,
+        }
+    )
+    return values
 
 
-def batch_from(answer: JsonValue) -> LiteLLMBatch:
+def batch_from(answer: JsonValue, kwargs: Mapping[str, CallValue]) -> LiteLLMBatch:
     values = BATCH_OBJECT.validate_python(answer)
+    hidden = BATCH_OBJECT.validate_python(values["_hidden_params"])
+    info = MODEL_INFO.validate_python(param_value(kwargs, "model_info"))
+    hidden["model_id"] = None if info is None else info.get("id")
+    values["_hidden_params"] = hidden
     return LiteLLMBatch(**values)
 
 
@@ -212,15 +203,8 @@ def create_batch(
 ) -> LiteLLMBatch | Awaitable[LiteLLMBatch]:
     if kwargs.pop("acreate_batch", None) is True:
         return acreate_batch(
-            completion_window,
-            endpoint,
-            input_file_id,
-            custom_llm_provider,
-            metadata,
-            extra_headers,
-            extra_body,
-            output_expires_after,
-            **kwargs,
+            completion_window, endpoint, input_file_id, custom_llm_provider,
+            metadata, extra_headers, extra_body, output_expires_after, **kwargs,
         )
     arguments = CreateArguments(
         completion_window=completion_window,
@@ -233,9 +217,9 @@ def create_batch(
         output_expires_after=output_expires_after,
     )
     payload = to_call_payload(create_values(arguments, kwargs))
-    session = NativeBatchSession(session_settings())
+    session = batch_session()
     answer = call_native(session.create, payload, NativeBatchError)
-    return batch_from(answer)
+    return batch_from(answer, kwargs)
 
 
 async def acreate_batch(
@@ -260,9 +244,9 @@ async def acreate_batch(
         output_expires_after=output_expires_after,
     )
     payload = to_call_payload(create_values(arguments, kwargs))
-    session = NativeBatchSession(session_settings())
+    session = batch_session()
     answer = await acall_native(session.acreate, payload, NativeBatchError)
-    return batch_from(answer)
+    return batch_from(answer, kwargs)
 
 
 def retrieve_batch(
@@ -285,9 +269,9 @@ def retrieve_batch(
         extra_body=extra_body,
     )
     payload = to_call_payload(retrieve_values(arguments, kwargs))
-    session = NativeBatchSession(session_settings())
+    session = batch_session()
     answer = call_native(session.retrieve, payload, NativeBatchError)
-    return batch_from(answer)
+    return batch_from(answer, kwargs)
 
 
 async def aretrieve_batch(
@@ -306,6 +290,6 @@ async def aretrieve_batch(
         extra_body=extra_body,
     )
     payload = to_call_payload(retrieve_values(arguments, kwargs))
-    session = NativeBatchSession(session_settings())
+    session = batch_session()
     answer = await acall_native(session.aretrieve, payload, NativeBatchError)
-    return batch_from(answer)
+    return batch_from(answer, kwargs)
