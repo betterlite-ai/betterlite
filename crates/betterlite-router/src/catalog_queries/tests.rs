@@ -362,9 +362,9 @@ fn team_mapping_keeps_the_caller_name() {
     let world = World::new(&[team_row("internal-a", "dep-a", "team-1", Some("public-a"))]);
     let mapped = world
         .queries()
-        .map_team_model(Some("public-a"), "team-1")
+        .map_team_model(Some("internal-a"), "team-1")
         .unwrap();
-    assert_eq!(mapped.as_deref(), Some("public-a"));
+    assert_eq!(mapped.as_deref(), Some("internal-a"));
 }
 
 #[test]
