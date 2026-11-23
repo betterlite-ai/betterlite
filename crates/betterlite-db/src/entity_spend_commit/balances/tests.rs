@@ -26,6 +26,10 @@ const KEY_TOTAL_SPEND: &str =
     r#"SELECT total_spend::numeric FROM "LiteLLM_VerificationToken" WHERE token = $1"#;
 const END_USER_SPEND: &str =
     r#"SELECT spend::numeric FROM "LiteLLM_EndUserTable" WHERE user_id = $1"#;
+const KEY_LAST_ACTIVE: &str =
+    r#"SELECT last_active FROM "LiteLLM_VerificationToken" WHERE token = $1"#;
+const KEY_UPDATED_AT: &str =
+    r#"SELECT updated_at FROM "LiteLLM_VerificationToken" WHERE token = $1"#;
 
 #[rstest]
 #[case::users(SpendTable::UserList, USER_SPEND, "u1", "u2")]
@@ -93,6 +97,70 @@ async fn existing_rows_increment_and_missing_rows_stay_missing(
     database.close().await;
 }
 
+// Prisma writes request_now into every @updatedAt column of a non-empty update, so each flushed row carries the flush moment.
+#[rstest]
+#[case::users(
+    SpendTable::UserList,
+    "u1",
+    r#"SELECT updated_at FROM "LiteLLM_UserTable" WHERE user_id = $1"#
+)]
+#[case::keys(SpendTable::KeyList, "k1", KEY_UPDATED_AT)]
+#[case::teams(
+    SpendTable::TeamList,
+    "t1",
+    r#"SELECT updated_at FROM "LiteLLM_TeamTable" WHERE team_id = $1"#
+)]
+#[case::orgs(
+    SpendTable::OrgList,
+    "o 1",
+    r#"SELECT updated_at FROM "LiteLLM_OrganizationTable" WHERE organization_id = $1"#
+)]
+#[case::org_members(
+    SpendTable::OrgMemberList,
+    "organization_id::o%201::user_id::u%201",
+    r#"SELECT updated_at FROM "LiteLLM_OrganizationMembership" WHERE 'organization_id::' || replace(organization_id, ' ', '%20') || '::user_id::' || replace(user_id, ' ', '%20') = $1"#
+)]
+#[case::projects(
+    SpendTable::ProjectList,
+    "p1",
+    r#"SELECT updated_at FROM "LiteLLM_ProjectTable" WHERE project_id = $1"#
+)]
+#[case::tags(
+    SpendTable::TagList,
+    "tag1",
+    r#"SELECT updated_at FROM "LiteLLM_TagTable" WHERE tag_name = $1"#
+)]
+#[case::access_groups(
+    SpendTable::ModelAccessGroupList,
+    "g1",
+    r#"SELECT updated_at FROM "LiteLLM_ModelAccessGroupBudgetTable" WHERE access_group_name = $1"#
+)]
+#[case::agents(
+    SpendTable::AgentList,
+    "a1",
+    r#"SELECT updated_at FROM "LiteLLM_AgentsTable" WHERE agent_id = $1"#
+)]
+#[tokio::test]
+async fn every_flushed_row_advances_updated_at(
+    #[case] table: SpendTable,
+    #[case] id: &str,
+    #[case] updated_at_sql: &str,
+) {
+    let database = Database::open(1).await;
+    database.seed(SEED_SQL).await;
+    let ports = Ports::new();
+    let writer = ports.tables(database.store.clone());
+    writer
+        .write_table(table, &increments(&[(id, "0.5")]))
+        .await
+        .unwrap();
+    assert_eq!(
+        timestamp(&database.client, updated_at_sql, id).await,
+        flush_moment()
+    );
+    database.close().await;
+}
+
 #[tokio::test]
 async fn end_users_are_created_unblocked_then_incremented() {
     let database = Database::open(1).await;
@@ -149,11 +217,14 @@ async fn keys_advance_spend_total_spend_and_last_active() {
         database.spend(KEY_TOTAL_SPEND, "k1").await,
         Some(amount("3.5"))
     );
-    assert_eq!(last_active(&database.client, "k1").await, flush_moment());
+    assert_eq!(
+        timestamp(&database.client, KEY_LAST_ACTIVE, "k1").await,
+        flush_moment()
+    );
     database.close().await;
 }
 
-// The source stamps last_active from a fresh datetime.now inside its per-token loop, so each key row reads the clock again.
+// The source stamps last_active from a fresh datetime.now inside its per-token loop, and Prisma stamps @updatedAt per statement, so each key row reads the clock once more.
 #[tokio::test]
 async fn each_key_row_stamps_its_own_last_active() {
     let database = Database::open(1).await;
@@ -174,23 +245,27 @@ async fn each_key_row_stamps_its_own_last_active() {
         .write_table(SpendTable::KeyList, &rows)
         .await
         .unwrap();
-    assert_eq!(last_active(&database.client, "k1").await, flush_moment());
     assert_eq!(
-        last_active(&database.client, "k2").await,
+        timestamp(&database.client, KEY_LAST_ACTIVE, "k1").await,
+        flush_moment()
+    );
+    assert_eq!(
+        timestamp(&database.client, KEY_UPDATED_AT, "k1").await,
+        flush_moment()
+    );
+    assert_eq!(
+        timestamp(&database.client, KEY_LAST_ACTIVE, "k2").await,
+        flush_moment_tick(1)
+    );
+    assert_eq!(
+        timestamp(&database.client, KEY_UPDATED_AT, "k2").await,
         flush_moment_tick(1)
     );
     database.close().await;
 }
 
-async fn last_active(client: &Client, token: &str) -> NaiveDateTime {
-    client
-        .query_one(
-            r#"SELECT last_active FROM "LiteLLM_VerificationToken" WHERE token = $1"#,
-            &[&token],
-        )
-        .await
-        .unwrap()
-        .get(0)
+async fn timestamp(client: &Client, sql: &str, id: &str) -> NaiveDateTime {
+    client.query_one(sql, &[&id]).await.unwrap().get(0)
 }
 
 // The rows are decoded before the session is taken: with no pool, a write that opened one first would fail as a statement.

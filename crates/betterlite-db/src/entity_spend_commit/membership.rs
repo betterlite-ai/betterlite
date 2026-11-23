@@ -6,6 +6,7 @@ use serde::Serialize;
 use thiserror::Error;
 use tokio_postgres::types::Json;
 
+use crate::key_user_writes::retry::WriteClock;
 use crate::postgres_store::session::DbSession;
 
 // TEAM_ADVISORY_LOCK_SQL: the per-team lock the team endpoints hold while they change a roster, so the roster check cannot interleave with them
@@ -29,7 +30,7 @@ ON CONFLICT (user_id, team_id) DO UPDATE
 SET spend = "LiteLLM_TeamMembership".spend + EXCLUDED.spend,
     total_spend = "LiteLLM_TeamMembership".total_spend + EXCLUDED.total_spend"#;
 
-pub const ORG_MEMBER_SPEND_SQL: &str = r#"UPDATE "LiteLLM_OrganizationMembership" SET spend = spend + $3::numeric::double precision WHERE organization_id = $1 AND user_id = $2"#;
+pub const ORG_MEMBER_SPEND_SQL: &str = r#"UPDATE "LiteLLM_OrganizationMembership" SET spend = spend + $3::numeric::double precision, updated_at = $4 WHERE organization_id = $1 AND user_id = $2"#;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 #[error("member key {key:?} does not hold the four `::` components of an id pair")]
@@ -133,10 +134,11 @@ pub enum MemberSpendWrite<'rows> {
     Team(TeamMemberWrite<'rows>),
 }
 
-// _write_team_member_spend and the org member updates: the roster-checked upsert behind the sorted per-team advisory locks, and one increment per existing organization membership.
+// _write_team_member_spend and the org member updates: the roster-checked upsert behind the sorted per-team advisory locks, and one increment per existing organization membership, each statement stamping its own now into @updatedAt.
 pub(super) async fn write_member_spend(
     transaction: &DbSession<'_>,
     write: MemberSpendWrite<'_>,
+    clock: &dyn WriteClock,
 ) -> Result<(), tokio_postgres::Error> {
     match write {
         MemberSpendWrite::Team(members) => {
@@ -152,8 +154,12 @@ pub(super) async fn write_member_spend(
         MemberSpendWrite::Organization(rows) => {
             let statement = transaction.prepare(ORG_MEMBER_SPEND_SQL).await?;
             for row in rows {
+                let at = clock.now().naive_utc();
                 transaction
-                    .execute(&statement, &[&row.organization_id, &row.user_id, &row.cost])
+                    .execute(
+                        &statement,
+                        &[&row.organization_id, &row.user_id, &row.cost, &at],
+                    )
                     .await?;
             }
         }

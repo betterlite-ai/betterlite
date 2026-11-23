@@ -11,16 +11,16 @@ use crate::postgres_store::session::{DbSession, PostgresStore};
 use crate::spend_commit::tables::SpendTable;
 use crate::spend_commit::transaction::{SpendDeadline, SpendTransactionError};
 
-// update_many with an increment: a missing user, team, org, project, tag, access group or agent row is left missing.
-pub const USER_SPEND_SQL: &str = r#"UPDATE "LiteLLM_UserTable" SET spend = spend + $2::numeric::double precision WHERE user_id = $1"#;
-pub const TEAM_SPEND_SQL: &str = r#"UPDATE "LiteLLM_TeamTable" SET spend = spend + $2::numeric::double precision WHERE team_id = $1"#;
-pub const ORG_SPEND_SQL: &str = r#"UPDATE "LiteLLM_OrganizationTable" SET spend = spend + $2::numeric::double precision WHERE organization_id = $1"#;
-pub const PROJECT_SPEND_SQL: &str = r#"UPDATE "LiteLLM_ProjectTable" SET spend = spend + $2::numeric::double precision WHERE project_id = $1"#;
-pub const TAG_SPEND_SQL: &str = r#"UPDATE "LiteLLM_TagTable" SET spend = spend + $2::numeric::double precision WHERE tag_name = $1"#;
-pub const ACCESS_GROUP_SPEND_SQL: &str = r#"UPDATE "LiteLLM_ModelAccessGroupBudgetTable" SET spend = spend + $2::numeric::double precision WHERE access_group_name = $1"#;
-pub const AGENT_SPEND_SQL: &str = r#"UPDATE "LiteLLM_AgentsTable" SET spend = spend + $2::numeric::double precision WHERE agent_id = $1"#;
+// update_many with an increment: a missing user, team, org, project, tag, access group or agent row is left missing, and @updatedAt stamps $3.
+pub const USER_SPEND_SQL: &str = r#"UPDATE "LiteLLM_UserTable" SET spend = spend + $2::numeric::double precision, updated_at = $3 WHERE user_id = $1"#;
+pub const TEAM_SPEND_SQL: &str = r#"UPDATE "LiteLLM_TeamTable" SET spend = spend + $2::numeric::double precision, updated_at = $3 WHERE team_id = $1"#;
+pub const ORG_SPEND_SQL: &str = r#"UPDATE "LiteLLM_OrganizationTable" SET spend = spend + $2::numeric::double precision, updated_at = $3 WHERE organization_id = $1"#;
+pub const PROJECT_SPEND_SQL: &str = r#"UPDATE "LiteLLM_ProjectTable" SET spend = spend + $2::numeric::double precision, updated_at = $3 WHERE project_id = $1"#;
+pub const TAG_SPEND_SQL: &str = r#"UPDATE "LiteLLM_TagTable" SET spend = spend + $2::numeric::double precision, updated_at = $3 WHERE tag_name = $1"#;
+pub const ACCESS_GROUP_SPEND_SQL: &str = r#"UPDATE "LiteLLM_ModelAccessGroupBudgetTable" SET spend = spend + $2::numeric::double precision, updated_at = $3 WHERE access_group_name = $1"#;
+pub const AGENT_SPEND_SQL: &str = r#"UPDATE "LiteLLM_AgentsTable" SET spend = spend + $2::numeric::double precision, updated_at = $3 WHERE agent_id = $1"#;
 
-pub const KEY_SPEND_SQL: &str = r#"UPDATE "LiteLLM_VerificationToken" SET spend = spend + $2::numeric::double precision, total_spend = total_spend + $2::numeric::double precision, last_active = $3 WHERE token = $1"#;
+pub const KEY_SPEND_SQL: &str = r#"UPDATE "LiteLLM_VerificationToken" SET spend = spend + $2::numeric::double precision, total_spend = total_spend + $2::numeric::double precision, last_active = $3, updated_at = $3 WHERE token = $1"#;
 
 // update_end_user_spend: spend flushing is what creates an end user, unblocked and holding its first cost.
 pub const END_USER_SPEND_SQL: &str = r#"INSERT INTO "LiteLLM_EndUserTable" (user_id, spend, blocked) VALUES ($1, $2::numeric::double precision, false) ON CONFLICT (user_id) DO UPDATE SET spend = "LiteLLM_EndUserTable".spend + EXCLUDED.spend"#;
@@ -33,10 +33,10 @@ pub struct PostgresEntityTables<'clock> {
 
 // What one table's transaction writes.
 enum TableWrite<'rows> {
-    // the statement an increment-only table issues and the rows it binds
+    // a table without an updated_at column: the statement it issues and the rows it binds
     Rows(&'static str, &'rows BTreeMap<String, Decimal>),
-    // the key table alone advances last_active, so its rows are bound with the flush moment
-    Keys(&'rows BTreeMap<String, Decimal>),
+    // a table whose update stamps the flush moment into $3: updated_at, and for keys last_active as well
+    Stamped(&'static str, &'rows BTreeMap<String, Decimal>),
     Members(MemberSpendWrite<'rows>),
 }
 
@@ -48,27 +48,27 @@ impl PostgresEntityTables<'_> {
         increments: &BTreeMap<String, Decimal>,
     ) -> Result<(), EntityTableError> {
         let write = match table {
-            SpendTable::UserList => TableWrite::Rows(USER_SPEND_SQL, increments),
+            SpendTable::UserList => TableWrite::Stamped(USER_SPEND_SQL, increments),
             SpendTable::EndUserList => TableWrite::Rows(END_USER_SPEND_SQL, increments),
-            SpendTable::KeyList => TableWrite::Keys(increments),
-            SpendTable::TeamList => TableWrite::Rows(TEAM_SPEND_SQL, increments),
+            SpendTable::KeyList => TableWrite::Stamped(KEY_SPEND_SQL, increments),
+            SpendTable::TeamList => TableWrite::Stamped(TEAM_SPEND_SQL, increments),
             SpendTable::TeamMemberList => {
                 let rows = team_member_rows(increments)
                     .map_err(|source| EntityTableError::Key { table, source })?;
                 TableWrite::Members(MemberSpendWrite::Team(rows))
             }
-            SpendTable::OrgList => TableWrite::Rows(ORG_SPEND_SQL, increments),
+            SpendTable::OrgList => TableWrite::Stamped(ORG_SPEND_SQL, increments),
             SpendTable::OrgMemberList => {
                 let rows = org_member_rows(increments)
                     .map_err(|source| EntityTableError::Key { table, source })?;
                 TableWrite::Members(MemberSpendWrite::Organization(rows))
             }
-            SpendTable::ProjectList => TableWrite::Rows(PROJECT_SPEND_SQL, increments),
-            SpendTable::TagList => TableWrite::Rows(TAG_SPEND_SQL, increments),
+            SpendTable::ProjectList => TableWrite::Stamped(PROJECT_SPEND_SQL, increments),
+            SpendTable::TagList => TableWrite::Stamped(TAG_SPEND_SQL, increments),
             SpendTable::ModelAccessGroupList => {
-                TableWrite::Rows(ACCESS_GROUP_SPEND_SQL, increments)
+                TableWrite::Stamped(ACCESS_GROUP_SPEND_SQL, increments)
             }
-            SpendTable::AgentList => TableWrite::Rows(AGENT_SPEND_SQL, increments),
+            SpendTable::AgentList => TableWrite::Stamped(AGENT_SPEND_SQL, increments),
         };
         let committing = AtomicBool::new(false);
         match self.deadline.run(self.run_table(write, &committing)).await {
@@ -111,14 +111,12 @@ async fn execute_table(
 ) -> Result<(), tokio_postgres::Error> {
     match write {
         TableWrite::Rows(sql, rows) => increment_rows(transaction, sql, rows, None).await,
-        TableWrite::Keys(rows) => {
-            increment_rows(transaction, KEY_SPEND_SQL, rows, Some(clock)).await
-        }
-        TableWrite::Members(members) => write_member_spend(transaction, members).await,
+        TableWrite::Stamped(sql, rows) => increment_rows(transaction, sql, rows, Some(clock)).await,
+        TableWrite::Members(members) => write_member_spend(transaction, members, clock).await,
     }
 }
 
-// One prepared statement per sorted id; the key table also reads its last_active from the clock on each row.
+// One prepared statement per sorted id, and a stamped table reads the clock once per statement as Prisma's request_now does.
 async fn increment_rows(
     transaction: &DbSession<'_>,
     sql: &str,

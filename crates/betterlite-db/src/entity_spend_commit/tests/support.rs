@@ -269,20 +269,20 @@ pub(crate) fn transactions(tables: &[(SpendTable, &[(&str, &str)])]) -> SpendTab
         .collect()
 }
 
-// One existing row for every entity table, each holding spend 1 and, where it has one, total_spend 3.
+// One existing row for every entity table, each holding spend 1 and, where it has one, total_spend 3; updated_at starts in 2000 so a flush's stamp shows.
 pub(crate) const SEED_SQL: &str = r#"
 INSERT INTO "LiteLLM_BudgetTable" (budget_id, created_by, updated_by) VALUES ('b1', 'test', 'test');
-INSERT INTO "LiteLLM_UserTable" (user_id, spend) VALUES ('u1', 1), ('u 1', 1);
+INSERT INTO "LiteLLM_UserTable" (user_id, spend, updated_at) VALUES ('u1', 1, '2000-01-01 00:00:00'), ('u 1', 1, '2000-01-01 00:00:00');
 INSERT INTO "LiteLLM_EndUserTable" (user_id, spend) VALUES ('e1', 1);
-INSERT INTO "LiteLLM_VerificationToken" (token, spend, total_spend) VALUES ('k1', 1, 3);
-INSERT INTO "LiteLLM_TeamTable" (team_id, spend, members_with_roles) VALUES ('t1', 1, '[{"user_id": "u1", "role": "user"}]');
+INSERT INTO "LiteLLM_VerificationToken" (token, spend, total_spend, updated_at) VALUES ('k1', 1, 3, '2000-01-01 00:00:00');
+INSERT INTO "LiteLLM_TeamTable" (team_id, spend, members_with_roles, updated_at) VALUES ('t1', 1, '[{"user_id": "u1", "role": "user"}]', '2000-01-01 00:00:00');
 INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, spend, total_spend) VALUES ('u1', 't1', 1, 3);
-INSERT INTO "LiteLLM_OrganizationTable" (organization_id, organization_alias, budget_id, created_by, updated_by, spend) VALUES ('o 1', 'org', 'b1', 'test', 'test', 1);
-INSERT INTO "LiteLLM_OrganizationMembership" (user_id, organization_id, spend) VALUES ('u 1', 'o 1', 1);
-INSERT INTO "LiteLLM_ProjectTable" (project_id, created_by, updated_by, spend) VALUES ('p1', 'test', 'test', 1);
-INSERT INTO "LiteLLM_TagTable" (tag_name, spend) VALUES ('tag1', 1);
-INSERT INTO "LiteLLM_ModelAccessGroupBudgetTable" (access_group_name, spend) VALUES ('g1', 1);
-INSERT INTO "LiteLLM_AgentsTable" (agent_id, agent_name, agent_card_params, created_by, updated_by, spend) VALUES ('a1', 'agent', '{}', 'test', 'test', 1);
+INSERT INTO "LiteLLM_OrganizationTable" (organization_id, organization_alias, budget_id, created_by, updated_by, spend, updated_at) VALUES ('o 1', 'org', 'b1', 'test', 'test', 1, '2000-01-01 00:00:00');
+INSERT INTO "LiteLLM_OrganizationMembership" (user_id, organization_id, spend, updated_at) VALUES ('u 1', 'o 1', 1, '2000-01-01 00:00:00');
+INSERT INTO "LiteLLM_ProjectTable" (project_id, created_by, updated_by, spend, updated_at) VALUES ('p1', 'test', 'test', 1, '2000-01-01 00:00:00');
+INSERT INTO "LiteLLM_TagTable" (tag_name, spend, updated_at) VALUES ('tag1', 1, '2000-01-01 00:00:00');
+INSERT INTO "LiteLLM_ModelAccessGroupBudgetTable" (access_group_name, spend, updated_at) VALUES ('g1', 1, '2000-01-01 00:00:00');
+INSERT INTO "LiteLLM_AgentsTable" (agent_id, agent_name, agent_card_params, created_by, updated_by, spend, updated_at) VALUES ('a1', 'agent', '{}', 'test', 'test', 1, '2000-01-01 00:00:00');
 "#;
 
 // Spend of one team membership, looked up by "team/user".
