@@ -1,0 +1,14 @@
+kind: helper
+name: azure-openai-speech
+call:
+  azure_media_dispatch:
+    case: openai_speech
+    api_base: https://example.openai.azure.com
+    api_version: "2024-06-01"
+    model: tts-1
+    input: hello
+    voice: alloy
+    api_key: sk-azure-fixture
+    options: {}
+env: {}
+compare: {ignore: []}

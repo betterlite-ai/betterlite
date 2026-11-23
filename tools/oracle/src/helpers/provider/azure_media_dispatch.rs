@@ -4,10 +4,13 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::transcription::reply::{StoredDuration, TranscriptionReply};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_provider::azure_media_dispatch::AzureMediaRequest;
+use betterlite_provider::azure_media_dispatch::call::AzureMediaOperation;
 use betterlite_provider::azure_media_dispatch::error::AzureMediaError;
+use betterlite_provider::azure_media_dispatch::test_support::exchange::exchange_request_with;
 use betterlite_provider::azure_media_dispatch::test_support::{Outcome, Reply};
 use betterlite_provider::azure_media_dispatch::{AzureMediaResult, ImageEditOutcome};
-use betterlite_provider::operation::OperationResult;
+use betterlite_provider::operation::{OperationRequest, OperationResult};
 use http::HeaderMap;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -18,6 +21,7 @@ use crate::openai_media_dispatch::{OTHER_OUTCOME, failure};
 mod case;
 mod edit;
 mod generation;
+mod speech;
 mod tests;
 mod transcription;
 
@@ -46,8 +50,25 @@ async fn dispatch_input(input: &Input) -> HelperResult {
     match input.case {
         Kind::ImageGeneration => generation::image_generation(input).await,
         Kind::ImageEdit => edit::image_edit(input).await,
+        Kind::OpenAiSpeech => speech::run(input, speech::Arm::OpenAi).await,
+        Kind::NativeSsml => speech::run(input, speech::Arm::Native).await,
         Kind::Transcription => transcription::transcription(input).await,
     }
+}
+
+// Every media arm dispatches the same unit request with an untouched speech logger; only the logging fixture can fail
+pub(super) async fn exchange(
+    operation: AzureMediaOperation,
+    replies: Vec<Reply>,
+) -> Result<Outcome, Box<HelperError>> {
+    exchange_request_with(
+        OperationRequest::AzureMedia(AzureMediaRequest),
+        operation,
+        replies,
+        |_logging| {},
+    )
+    .await
+    .map_err(|error| failure("RuntimeError", error))
 }
 
 // The case's reply as the wire body the JSON legs decode

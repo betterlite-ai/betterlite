@@ -1,0 +1,5 @@
+kind: helper
+name: safe-proxy-config-seed
+call: {b10058: {config: {litellm_settings: {success_callback: [openai]}}, general_settings: {store_model_in_db: true}}}
+env: {}
+compare: {ignore: []}

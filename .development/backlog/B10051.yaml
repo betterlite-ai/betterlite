@@ -1,0 +1,14 @@
+id: B10051
+milestone: M4 keys, spend and management
+title: User model grant check
+status: done
+depends_on: [B171, B720, B747, B759, B871]
+file: tasks/B10051-user-model-access.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: B886
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3050

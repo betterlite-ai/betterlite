@@ -8,7 +8,7 @@ description: >-
   Invitations on the LiteLLM_InvitationLink table. POST /invitation/new: no database is 400 db_not_connected_error;
   the caller must be PROXY_ADMIN or pass the org-admin check, else 400 not_allowed_access with ", your role=<role>"; a
   non-proxy-admin must also pass B863's admin_can_invite_user for the target user, else 400 "You can only create
-  invitations for users in your organization or team."; then create_invitation_for_user makes the row. GET
+  invitations for users in your organization or team."; then B10092's create_invitation_for_user (server module user_invitation) makes the row, with the caller's user_id as the actor and "default_user_id" as the proxy admin name, and the route answers its InvitationRecord. GET
   /invitation/info?invitation_id=: same access rules, a missing row is 400 "Invitation id does not exist in the
   database.". POST /invitation/update: needs the caller's user_id (500 "Unable to identify user id. Received=<id>") and
   sets is_accepted, accepted_at and updated_by. POST /invitation/delete: a proxy admin deletes any row, an org admin
@@ -55,12 +55,12 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "Mounting the routes and their HTTP oracle cases: B8670."
-  - "create_invitation_for_user: B797. admin_can_invite_user: B863. Login form: B799. The data generator selector: B7324. The router's priority scheduler is the router's own."
+  - "create_invitation_for_user and the InvitationRecord row: B10092. admin_can_invite_user: B863. Login form: B799. The data generator selector: B7324. The router's priority scheduler is the router's own."
 pitfalls:
   - Invitation refusals for access are 400, not 403, except the org-admin delete limit.
   - /queue/chat/completions sets x-litellm-priority from data["priority"] and fails when the request has none, as LiteLLM does.
   - /fallback/login is not behind key auth.
-  - "This task builds the _types.py record InvitationModel (L3955); no other task builds it."
+  - "_types.py InvitationModel (L3955) is B10092's InvitationRecord; the info, update and delete routes read and answer that type and never declare a second one."
 review_level: security
 budget:
   max_changed_lines: 1500
