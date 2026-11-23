@@ -550,6 +550,8 @@ fn assert_python_has_no_proxy_server() {
         "litellm.proxy.pass_through_endpoints.success_handler",
         "litellm.proxy.pass_through_endpoints.streaming_handler",
     ];
+    // this driver measures the proxy's own background streaming task, so it imports the worker it drives
+    let proxy_worker_driver = "responses_poll_stream.py";
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("sdk_http");
     for entry in fs::read_dir(folder).unwrap() {
         let path = entry.unwrap().path();
@@ -558,10 +560,15 @@ fn assert_python_has_no_proxy_server() {
             for module in sdk_proxy_modules {
                 source = source.replace(module, "");
             }
-            assert!(
-                !source.contains("fastapi") && !source.contains("litellm.proxy"),
-                "{path:?}"
-            );
+            if path.ends_with(proxy_worker_driver) {
+                // the exemption holds only while the driver still drives that task
+                assert!(source.contains("background_streaming_task"), "{path:?}");
+            } else {
+                assert!(
+                    !source.contains("fastapi") && !source.contains("litellm.proxy"),
+                    "{path:?}"
+                );
+            }
         }
     }
 }
