@@ -19,11 +19,12 @@ from betterlite._completion import (
     config_completion,
     valid_model,
 )
+from betterlite._embeddings import aembedding, embedding
 
 __all__ = [
     "AsyncCompletions", "Chat", "Completions", "CustomStreamWrapper",
     "LiteLLM", "TokenCountResponse", "UnknownNativeError", "UnsupportedCallArgument",
     "aadapter_completion", "acompletion", "acompletion_with_retries", "acount_tokens",
-    "acreate", "adapter_completion", "check_valid_key", "completion",
-    "completion_with_retries", "config_completion", "valid_model",
+    "acreate", "adapter_completion", "aembedding", "check_valid_key", "completion",
+    "completion_with_retries", "config_completion", "embedding", "valid_model",
 ]

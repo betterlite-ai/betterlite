@@ -1,11 +1,11 @@
 id: B847
 title: Model group usage and remaining-limit metadata
 description: >-
-  Implement ModelGroupUsage and access-group projections with B844 catalog lookup, B846 metadata,
-  B2226/B360 ordered cache reads, B301 RouterCacheEnum, B019 IO/remaining-header builders, B016 response
-  preparation and model-id attachment, B304 find_deployment_metadata and B2350 routing decision
-  headers. B2350 moves the small projections below their routing callers, removing the B366 cycle.
-  Counter writes and reservation algorithms are not called here.
+  Implement ModelGroupUsage and the access-group filter with B844 catalog lookup, B846 metadata,
+  B10047's access-group map and cached group info, B2226/B360 ordered cache reads, B301 RouterCacheEnum,
+  B10046's IO/remaining-header builders, B016 response preparation and model-id attachment, B304
+  find_deployment_metadata and B2350 routing decision headers. B2350 moves the small projections below
+  their routing callers, removing the B366 cycle. Counter writes and reservation algorithms are not called here.
 
 
   For both usage functions sample an injected UTC clock and format HH-MM. Use the backend
@@ -19,16 +19,14 @@ description: >-
   batch response instead of assigning values to a different key group.
 
 
-  _cached_get_model_group_info uses B846 and caches None too, with DEFAULT_MAX_LRU_CACHE_SIZE default
-  64 read through B2225's config loader (constants.py L493, int at import). Invalid integer text stops
-  startup; zero/negative capacity disables caching as Python lru_cache does. No TTL exists. Use B844's
-  shared invalidation handles so equal-length price edits clear this cache. B2225's named
-  loads_default_max_lru_cache_size loader cases prove the setting; this task tests capacity effects.
+  Group metadata comes from B10047's GroupInfoCache::cached_get_model_group_info
+  (Router._cached_get_model_group_info). That task owns the LRU, its DEFAULT_MAX_LRU_CACHE_SIZE capacity,
+  the cached None and the invalidation, so this task keeps no metadata cache of its own.
 
 
-  Remaining usage starts from cached metadata. If either IO limit is present, first call the IO usage
-  function and B019's header builder: x-ratelimit-limit/remaining/reset-input-tokens and the output
-  equivalents, clamped remaining to zero and seconds to the next minute. Then, independently, read
+  Remaining usage starts from that cached metadata. If either IO limit is present, first call the IO usage
+  function and B10046's build_io_token_rate_limit_headers with the injected clock's reading; it writes
+  the input and output limit, remaining and reset headers, floored at zero. Then, independently, read
   ordinary counters when either tpm or rpm is present. Emit x-ratelimit-remaining-tokens,
   x-ratelimit-limit-tokens, x-ratelimit-remaining-requests and x-ratelimit-limit-requests only for
   configured limits, with missing usage treated as zero. Ordinary negative remaining values are not
@@ -38,16 +36,13 @@ description: >-
   set_response_headers prepares the response through B016 and returns None immediately for None.
   Obtain the existing additional_headers, attach a missing model id from request metadata, always
   assign x-litellm-model-group (including None), apply quality headers then update complexity headers,
-  and only for a non-null group merge remaining usage through B019. Existing rate-limit headers win
+  and only for a non-null group merge remaining usage through B10046's apply_remaining_usage_headers. Existing rate-limit headers win
   over the calculated values; group/quality/complexity assignments follow the source overwrite order.
   Test parsed response objects, dicts and the stream wrapper without consuming stream events.
 
 
-  get_model_access_groups caches only calls with all three args None. Otherwise use get_model_list
-  with model_name/team_id, skip empty model_info, treat absent/null access_groups as [], and append
-  public row names once per group occurrence without deduplication. model_access_group filters exactly;
-  an empty string argument disables the no-args cache. _filter_deployments_by_model_access_groups
-  returns its original list for empty candidates, no kwargs/principal, empty union of models and
+  _filter_deployments_by_model_access_groups reads the requested model's groups through B10047's
+  AccessGroups::get_model_access_groups(model, None, request team id) and returns its original list for empty candidates, no kwargs/principal, empty union of models and
   team_models, direct model grant, '*', 'all-proxy-models', no model groups or no group intersection.
   Principal precedence is metadata.user_api_key_auth OR litellm_metadata.user_api_key_auth. Only an
   intersecting access-group-only grant filters candidates by nonempty group intersection, preserving
@@ -61,9 +56,8 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/router.py:
   Router.get_model_group_usage (L11200-L11265; 57 source lines), Router.get_model_group_io_token_usage
-  (L11267-L11317; 44 source lines), Router._cached_get_model_group_info (L11320-L11326; 6 source lines),
-  Router.get_remaining_model_group_usage (L11331-L11365; 25 source lines), Router.set_response_headers
-  (L11367-L11395; 23 source lines), Router.get_model_access_groups (L12120-L12164; 35 source lines), Router._filter_deployments_by_model_access_groups
+  (L11267-L11317; 44 source lines), Router.get_remaining_model_group_usage (L11331-L11365; 25 source lines),
+  Router.set_response_headers (L11367-L11395; 23 source lines), Router._filter_deployments_by_model_access_groups
   (L12941-L12993; 41 source lines).
 
 
@@ -74,10 +68,10 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The seven methods contain 200 nonblank noncomment lines excluding docstrings. Allow 240 production,
-  320 tests, 110 adapters and 35 wiring lines, 705 within 750. Pure helper comparisons use ready typed
-  counter results and response records; native async tests assert exact cache request keys/order,
-  no-read fast paths, cache capacity and invalidation, without a database or new byte parser.
+  The five methods contain 170 nonblank noncomment lines excluding docstrings. Allow 205 production,
+  280 tests, 100 adapters and 30 wiring lines, 615 within 750. Pure helper comparisons use ready typed
+  counter results and response records; native async tests assert exact cache request keys/order and
+  no-read fast paths, without a database or new byte parser.
 scope:
   paths:
     - crates/betterlite-router/src/model_group_usage.rs
@@ -92,14 +86,10 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/model-group-usage-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11200-L11326
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11200-L11317
     why: Pinned implementation and exact ownership boundary for model_group_usage.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11331-L11395
     why: Pinned implementation and exact ownership boundary for model_group_usage.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12099-L12164
-    why: get_model_access_groups starts at L12120; preceding invalidation is B844, consumed as a shared cache handle.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L493-L493
-    why: DEFAULT_MAX_LRU_CACHE_SIZE is parsed with int and defaults 64; B2225 owns its loader.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12941-L12993
     why: Own Router._filter_deployments_by_model_access_groups; preserve caller-visible values and failure
       ordering.
@@ -107,17 +97,13 @@ references:
     why: Own Router.get_model_group_usage; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11267-L11317
     why: Own Router.get_model_group_io_token_usage; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11320-L11326
-    why: Own Router._cached_get_model_group_info; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11331-L11365
     why: Own Router.get_remaining_model_group_usage; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11367-L11395
     why: Own Router.set_response_headers; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12120-L12164
-    why: Own Router.get_model_access_groups; preserve caller-visible values and failure ordering.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: remaining_rpm, remaining_tpm,
-      input_output_usage, missing_counter, response_headers, access_group_filter, invalidate_group_cache.'
+      input_output_usage, missing_counter, response_headers, access_group_filter.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -126,7 +112,7 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: batch_key_order, skip_missing_identity, empty_batch, short_batch, batch_error, cache_capacity, cache_none and invalidate_group_cache prove the async/cache call contracts.
+  - text: batch_key_order, skip_missing_identity, empty_batch, short_batch and batch_error prove the async cache read contracts.
     proof: [behavior-tests]
 checks:
   optional:
@@ -153,7 +139,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-group-usage/missing-counter.yaml
   - tools/oracle/cases/helpers/model-group-usage/response-headers.yaml
   - tools/oracle/cases/helpers/model-group-usage/access-group-filter.yaml
-  - tools/oracle/cases/helpers/model-group-usage/invalidate-group-cache.yaml
   - tools/oracle/cases/helpers/model-group-usage/boolean-and-invalid-counters.yaml
   - tools/oracle/cases/helpers/model-group-usage/zero-versus-none.yaml
   - tools/oracle/cases/helpers/model-group-usage/duplicate-deployment-sum.yaml
@@ -166,9 +151,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-group-usage/model-id-precedence.yaml
   - tools/oracle/cases/helpers/model-group-usage/existing-rate-headers-win.yaml
   - tools/oracle/cases/helpers/model-group-usage/decision-header-order.yaml
-  - tools/oracle/cases/helpers/model-group-usage/access-group-duplicates.yaml
-  - tools/oracle/cases/helpers/model-group-usage/access-group-exact-filter.yaml
-  - tools/oracle/cases/helpers/model-group-usage/access-group-cache-scope.yaml
   - tools/oracle/cases/helpers/model-group-usage/auth-metadata-precedence.yaml
   - tools/oracle/cases/helpers/model-group-usage/no-principal-or-grants.yaml
   - tools/oracle/cases/helpers/model-group-usage/direct-and-wildcard-bypass.yaml
@@ -176,6 +158,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-group-usage/group-only-empty-result.yaml
 deviations: []
 out_of_scope:
+  - 'build_io_token_rate_limit_headers (io_token_rate_limit_check.py L719-L738) and apply_remaining_usage_headers
+    (add_retry_fallback_headers.py L179-L185): B10046. litellm/router.py: Router._cached_get_model_group_info (L11320-L11326)
+    and Router.get_model_access_groups (L12120-L12164) with their caches: B10047. This task calls all four.'
   - 'litellm/router.py: B846 owns _cost_value_as_float (L391-L397). B9710 owns _replay_live_router_model_cost (L707-L710),
     Router._inherit_builtin_cache_pricing (L8800-L8826), Router._inherit_builtin_service_tier_pricing
     (L8839-L8861), Router._inherit_builtin_base_rates_for_off_peak (L8864-L8907), Router._inherit_builtin_tiered_output_rate

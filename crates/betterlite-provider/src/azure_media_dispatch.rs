@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
 
 use betterlite_azure::images::generation::GeneratedImage;
+use betterlite_azure::native_speech::response::HttpxBinaryResponseContent;
 use betterlite_azure::transcription::native::reply::NativeTranscriptionReply;
 use betterlite_openai::api::image_contracts::records::{ImageFiles, ImageParams};
 use betterlite_openai::image_generation::reply::ImageGenerationReply;
 use betterlite_openai::transcription::reply::TranscriptionReply;
+
+use crate::api::speech_http::SpeechBinaryResponse;
 
 pub mod call;
 pub mod error;
@@ -16,6 +19,7 @@ mod edit;
 mod image;
 mod parts;
 pub mod runtime;
+mod speech;
 mod tests;
 mod transcription;
 
@@ -27,6 +31,8 @@ pub struct AzureMediaRequest;
 pub enum AzureMediaResult {
     ImageGeneration(Box<GeneratedImage>),
     ImageEdit(Box<ImageEditOutcome>),
+    OpenAiSpeech(Box<HttpxBinaryResponseContent>),
+    NativeSsml(Box<SpeechBinaryResponse>),
     Transcription(Box<TranscriptionReply>),
     NativeTranscription(Box<NativeTranscriptionReply>),
 }

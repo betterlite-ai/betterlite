@@ -1,0 +1,14 @@
+id: B10047
+milestone: M4 keys, spend and management
+title: Model access-group map and cached model group info
+status: todo
+depends_on: [B844, B846, B2225]
+file: tasks/B10047-model-group-lookups.yaml
+covers:
+  - "litellm/router.py"
+parent: B016
+split_from: B847
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

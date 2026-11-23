@@ -16,12 +16,13 @@ description: >-
 
   Team allowed-server resolution defaults prisma_client=null. If direct mcp_servers includes the
   all-proxy-mcpservers literal, immediately return every registry id (B10020's get_all_mcp_server_ids: LiteLLM returns the registry keys, and both maps are keyed by server_id),
-  and do not consult groups/tool grants. Otherwise union direct IDs, B4669
-  MCPRequestHandler._get_mcp_servers_from_access_groups results and tool-permission keys; parse a stored
-  JSON tool map before extracting keys. B4669 uses requires_fresh_policy=false here, so a group lookup
-  exception warns and contributes []; malformed JSON or any decoded non-map result raises instead.
+  and do not consult groups/tool grants. Otherwise union direct IDs, the results of B10078's
+  servers_from_access_groups (MCPRequestHandler._get_mcp_servers_from_access_groups, called with the SharedRegistry,
+  the McpTableStore this task receives as its rows port and requires_fresh_policy=false) and tool-permission keys; parse a stored
+  JSON tool map before extracting keys. Without the fresh policy a database fault inside that lookup is logged at debug
+  by B10078 and the lookup still returns the config servers whose access_groups match; malformed JSON or any decoded non-map result raises instead.
   Resolve the union and then add each unresolved ORIGINAL identifier back to the result. This is the
-  opposite of stale-key cleanup. Native all_proxy_uses_registry_keys, group_failure_warns_and_drops,
+  opposite of stale-key cleanup. Native all_proxy_uses_registry_keys, group_failure_keeps_config_servers,
   team_union_retains_unresolved and stored_tool_json_errors preserve those distinctions. The shared
   byte decoder decode_mcp_tool_grants_json accepts stored JSON text and rejects malformed/non-map forms,
   including the strings "null", "[]", "false" and "0"; only falsey raw values normalize to {} before
@@ -46,7 +47,7 @@ description: >-
   The B856 helper operation calls only dedupe, stale-field cleanup and flatten functions with
   supplied typed snapshots. Database/registry/group resolver tests are native; real Postgres fixtures
   use POSTGRES_TEST_URL or testcontainers when absent, failing on connection errors. B171 owns the
-  existing helper seed parser. Test log/drop effects of the B4669 dependency without invoking FastAPI
+  existing helper seed parser. Test the log and fallback effects of B10078's lookup without invoking FastAPI
   handlers from Python helpers.
 
 
@@ -156,7 +157,7 @@ out_of_scope:
     (L641-L651), validate_key_mcp_servers_against_team (L654-L794), _validate_requested_toolsets (L797-L839),
     _extract_requested_vector_stores (L842-L851), validate_key_vector_stores_against_team (L854-L879),
     _extract_requested_search_tools (L882-L891), validate_key_search_tools_against_team (L894-L941).'
-  - B6764 (config file) and B6765 (database) own registry population and B10020 owns ServerRegistry, get_registry, get_allow_all_keys_server_ids and get_all_mcp_server_ids; B4669 owns MCP access-group lookup and its warning fallback.
+  - B6764 (config file) and B6765 (database) own registry population and B10020 owns ServerRegistry, get_registry, get_allow_all_keys_server_ids and get_all_mcp_server_ids; B10078 owns the MCP access-group lookup (servers_from_access_groups) and its database fallback.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as mcp_permission_ids in the server group. Replace the stub Op in tools/oracle/src/helpers/server/mcp_permission_ids.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mcp_permission_ids.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Stale-field cleanup drops unresolved aliases, but team allowed-server reads deliberately retain them.

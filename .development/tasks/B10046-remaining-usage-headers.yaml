@@ -1,0 +1,91 @@
+id: B10046
+title: IO token and remaining usage rate-limit headers
+description: >-
+  B847's remaining-usage and response-header code calls two small LiteLLM helpers that B019 used to own: build_io_token_rate_limit_headers in io_token_rate_limit_check.py and apply_remaining_usage_headers in add_retry_fallback_headers.py. At the pin their only callers are Router.get_remaining_model_group_usage (router.py L11342) and Router.set_response_headers (router.py L11394), both B847's, and B019's reservation, reconcile and refund code calls neither. This task builds the two helpers on their own, so B847 waits on this small task instead of all of B019.
+
+
+  Layout. Module remaining_usage_headers in betterlite-router, crates/betterlite-router/src/remaining_usage_headers.rs with its tests in remaining_usage_headers/tests.rs. The file is an empty stub its parent declares. Define `pub type RemainingUsage = IndexMap<String, i64>`, the dict[str, int] that get_remaining_model_group_usage returns; B847 starts from the map this task builds and adds the ordinary token and request headers to it.
+
+
+  The IO header builder. `build_io_token_rate_limit_headers(limits: IoLimits, current_itpm: Option<i64>, current_otpm: Option<i64>, now: SystemTime) -> RemainingUsage`, where IoLimits is B365's io_token_reservations::limits::IoLimits with its itpm and otpm fields. Take the reset once, with B365's io_token_reservations::clock::seconds_until_minute_reset(now), before either limit is looked at, and use that one value on both sides. When itpm is set, insert x-ratelimit-limit-input-tokens (the limit), then x-ratelimit-remaining-input-tokens (the limit minus the current usage, with None counted as 0, and never below 0), then x-ratelimit-reset-input-tokens (the reset). When otpm is set, insert the three output-token headers the same way and in the same order after them. A limit that is None adds none of its headers, so two None limits give an empty map. Subtract with saturating arithmetic, since Python ints never overflow. The caller passes the reading of its own injected clock (B365's IoClock); this function never reads the system clock.
+
+
+  The merge. `apply_remaining_usage_headers(additional_headers: &mut AdditionalHeaders, remaining: &RemainingUsage)`, where AdditionalHeaders is betterlite_models::call_helpers::headers::AdditionalHeaders, the IndexMap<String, Json> that B016's ensure_additional_headers hands out. Walk the remaining map in order and insert each entry as a JSON integer (Json::Number from the i64) only when its key is absent. A key already in the map keeps its value, a null one included, so headers a provider or an earlier step set win over the computed ones. LiteLLM also skips a None value; a RemainingUsage value is always an integer, so that test has no Rust counterpart.
+
+
+  Oracle. The b10046 helper runs one function per case: build, with the two limits, the two usages and the instant as epoch seconds, or apply, with a header object and a remaining map. The Python side calls LiteLLM's two functions directly. For build it patches get_utc_datetime on the io_token_rate_limit_check module with the case's instant, as tools/oracle/litellm/probes/io_token_reservations.py does at L105, so the reset is fixed. The Rust side passes the same instant as a SystemTime. Add helper_case corpus seeds named remaining-usage-headers-*.
+
+
+  Tests in remaining_usage_headers::tests, names starting with io_headers_ for the builder and merge_ for the merge: both limits with input usage above its limit (remaining 0) and no output usage (remaining equals the limit), input only, output only, neither, a zero limit, the reset at second 0 (60) and second 59 (1) of a minute, the header order, a present key with a value and a present key with null both kept, and inserted keys following the remaining map's order. There is no fuzz target: both functions take typed values.
+scope:
+  paths:
+    - crates/betterlite-router/src/remaining_usage_headers.rs
+    - crates/betterlite-router/src/remaining_usage_headers/**
+    - tools/oracle/cases/helpers/remaining-usage-headers/**
+    - tools/oracle/fuzz/corpus/helper_case/remaining-usage-headers-*
+    - tools/oracle/helpers/b10046.py
+    - tools/oracle/helpers/b10046/**
+    - tools/oracle/src/helpers/router/b10046.rs
+    - tools/oracle/src/helpers/router/b10046/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L719-L738
+    why: Owned. build_io_token_rate_limit_headers, its header names, order, floor at 0 and shared reset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py#L69-L71
+    why: seconds_until_minute_reset, already on main as B365's clock::seconds_until_minute_reset; called once per build.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L179-L185
+    why: Owned. apply_remaining_usage_headers, insert only when the key is absent.
+dod:
+  - text: The IO builder writes the limit, remaining and reset headers for each configured side in LiteLLM's order, counts a None usage as 0, floors remaining at 0, emits headers for a zero limit and none for a None limit.
+    proof: [io-headers-tests, oracle, helper-python]
+  - text: Both reset headers carry one seconds_until_minute_reset value taken from the instant passed in, 60 at second 0 and 1 at second 59.
+    proof: [io-headers-tests, oracle]
+  - text: The merge inserts only absent keys, keeps a present key with a value or with null, and follows the remaining map's order.
+    proof: [merge-tests, oracle, helper-python]
+  - text: New remaining-usage-headers seeds for b10046 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: io-headers-tests
+      why: An IO header is missing, misnamed, out of order, not floored, or its reset differs between the two sides.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^remaining_usage_headers::tests::io_headers_/)'
+    - id: merge-tests
+      why: A computed header replaces one already present, or a missing one is not inserted.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^remaining_usage_headers::tests::merge_/)'
+    - id: helper-python
+      why: The b10046 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10046.py tools/oracle/helpers/b10046)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10046 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/remaining-usage-headers-*")" &&
+        grep -lE '^[[:space:]]+b10046:' tools/oracle/fuzz/corpus/helper_case/remaining-usage-headers-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/remaining-usage-headers/io-both-limits-floored.yaml
+  - tools/oracle/cases/helpers/remaining-usage-headers/io-input-only-minute-end.yaml
+  - tools/oracle/cases/helpers/remaining-usage-headers/io-output-only.yaml
+  - tools/oracle/cases/helpers/remaining-usage-headers/io-zero-limit.yaml
+  - tools/oracle/cases/helpers/remaining-usage-headers/io-no-limits.yaml
+  - tools/oracle/cases/helpers/remaining-usage-headers/merge-present-keys-win.yaml
+deviations: []
+out_of_scope:
+  - "Router.get_remaining_model_group_usage, Router.set_response_headers, the IO and ordinary usage counter reads and the unfloored x-ratelimit-remaining-tokens and -requests headers: B847, the only caller of both functions."
+  - "litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py: B365 owns set_io_token_rate_limit_request_kwargs (L48-L62), get_io_token_rate_limit_request_kwargs (L65-L66), seconds_until_minute_reset (L69-L71), get_deployment_io_token_limits (L74-L89), deployment_has_io_token_limits (L92-L94), _get_cache_keys (L97-L106), _estimate_input_tokens (L109-L122), _model_max_output_tokens (L125-L133), _resolve_max_tokens (L136-L153), _get_usage_tokens (L156-L177), _extract_response_usage (L180-L183), _usage_is_present (L186-L200), _resolve_reconcile_usage_tokens (L203-L234), _stash_reservation_in_metadata (L237-L258), _extract_reservation (L261-L269), _as_mutable_mapping (L272-L274), _reservation_channels (L277-L290), _read_reservation_from_kwargs (L293-L297), _clear_reservation_from_kwargs (L300-L309), _reservation_value (L312-L322), _rate_limit_error (L325-L343), _sync_increment_with_rollback (L346-L367), _increment_with_rollback (L370-L394), io_token_pre_call_check (L397-L456) and async_io_token_pre_call_check (L459-L525)."
+  - "litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py: B019 owns io_token_reconcile_success (L528-L576), async_io_token_reconcile_success (L579-L637), io_token_refund_failure (L640-L661), refund_stale_reservation_before_retry (L664-L688) and async_io_token_refund_failure (L691-L716)."
+  - "litellm/router_utils/add_retry_fallback_headers.py: B366 owns _routing_header_mapping (L26-L31), _header_string (L34-L38), complexity_router_decision_headers (L41-L68) and replace_complexity_router_headers (L71-L80); B311 owns HiddenParamsAsyncIteratorWrapper (L83-L105); B016 owns prepare_response_for_header_attachment (L108-L115), response_has_hidden_params (L118-L121), ensure_response_additional_headers (L124-L131), apply_response_model_id (L134-L144), response_total_token_count (L167-L176), _write_hidden_params (L212-L216) and _ensure_additional_headers_dict (L219-L225); B338 owns apply_quality_router_decision_headers (L147-L164); B2202 owns _normalize_hidden_params (L188-L193) and get_hidden_params_dict (L196-L209); B398 owns get_fallback_error_info (L228-L238), _coerce_error_dicts (L241-L242), get_fallback_errors_from_headers (L245-L258), _add_headers_to_response (L261-L281) and add_fallback_headers_to_response (L301-L334); B017 owns add_retry_headers_to_response (L284-L298)."
+pitfalls:
+  - "LiteLLM tests each limit with `is not None`, so an itpm or otpm of 0 still writes its three headers, with remaining 0."
+  - "The input and output reset headers share the one seconds_until_minute_reset value taken before either limit is checked; reading the clock per side can split them across a minute edge."
+  - "Only x-ratelimit-remaining-input-tokens and x-ratelimit-remaining-output-tokens are floored at 0; B847's x-ratelimit-remaining-tokens and x-ratelimit-remaining-requests can go negative, so no shared clamp belongs here."
+  - "apply_remaining_usage_headers tests key presence, so an x-ratelimit-* key already holding null still blocks the computed value."
+  - "io_token_rate_limit_check.py imports get_utc_datetime from litellm.utils at L26, so the b10046 Python helper patches the name on io_token_rate_limit_check; patching litellm.utils leaves the reset on the wall clock."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

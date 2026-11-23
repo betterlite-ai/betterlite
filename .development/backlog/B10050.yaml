@@ -1,0 +1,14 @@
+id: B10050
+milestone: M4 keys, spend and management
+title: End-user id from request headers and body
+status: todo
+depends_on: [B171, B192, B1104, B1218, B3865]
+file: tasks/B10050-end-user-id-extraction.yaml
+covers:
+  - "litellm/proxy/auth/auth_utils.py"
+parent: B052
+split_from: B880
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
