@@ -1,7 +1,7 @@
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::responses_poll_stream::frame::{PollFrame, decode_poll_stream_frame};
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};

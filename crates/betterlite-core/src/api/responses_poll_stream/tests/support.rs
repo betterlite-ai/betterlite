@@ -104,12 +104,12 @@ impl PollRequestProcessor for ScriptedProcessor {
             detached_receive_pending: first.is_pending(),
         };
         *self.captured.lock().unwrap_or_else(PoisonError::into_inner) = Some(captured);
-        match self
+        let answer = self
             .answer
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+            .take();
+        match answer {
             Some(Answer::Streaming(steps)) => {
                 Ok(PollProcessed::Streaming(Box::new(ScriptedChunks {
                     steps: steps.into_iter(),
@@ -348,7 +348,10 @@ pub(super) fn field(record: &Json, name: &str) -> Json {
 pub(super) fn text(record: &Json, name: &str) -> String {
     match field(record, name) {
         Json::Text(value) => value,
-        other => panic!("{name} is not text: {other:?}"),
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            panic!("{name} is not text: {other:?}")
+        }
     }
 }
 

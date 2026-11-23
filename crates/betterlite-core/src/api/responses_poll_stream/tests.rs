@@ -86,7 +86,7 @@ async fn failure_messages_are_bounded_and_redacted() {
     let source = cancel_failure::failed_chunk_source("the provider stream broke").await;
     cancel_failure::assert_failed_message(&source, "the provider stream broke");
     let (scenario, error) = cancel_failure::failed_write().await;
-    cancel_failure::assert_write_error(&scenario, error);
+    cancel_failure::assert_write_error(&scenario, &error);
 }
 
 const CORPUS: &str = concat!(

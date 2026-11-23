@@ -87,13 +87,13 @@ pub(super) fn message_of(scenario: &Scenario) -> String {
 }
 
 pub(super) fn assert_cancelled_then_completed(scenario: &Scenario) {
-    let statuses: Vec<String> = scenario
-        .cache
-        .writes()
-        .iter()
-        .map(|record| support::text(record, "status"))
-        .collect();
-    assert!(statuses.contains(&String::from("cancelled")));
+    assert!(
+        scenario
+            .cache
+            .writes()
+            .iter()
+            .any(|record| support::text(record, "status") == "cancelled")
+    );
     assert_eq!(
         support::text(&support::last_write(&scenario.cache), "status"),
         "completed"
@@ -128,7 +128,7 @@ pub(super) fn assert_error_logged(messages: &[String]) {
     );
 }
 
-pub(super) fn assert_write_error(scenario: &Scenario, error: PollStreamError) {
+pub(super) fn assert_write_error(scenario: &Scenario, error: &PollStreamError) {
     assert!(matches!(error, PollStreamError::Polling(_)));
     assert_eq!(scenario.cache.writes().len(), 1);
 }
