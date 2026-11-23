@@ -1,12 +1,10 @@
 id: B2400
-title: Shared endpoint provider hints and exception handling
+title: Shared endpoint exception handling and support
 description: >-
-  Implement get_custom_llm_provider_from_request_headers, get_custom_llm_provider_from_request_query,
-  get_custom_llm_provider_from_request_body, handle_exception_on_proxy and
-  _recreate_writer_on_read_only_transaction in betterlite-server::api::proxy_endpoint_support.
-  The provider header is custom-llm-provider; query/body use custom_llm_provider. Accessors return
-  their individual optional value, including empty strings. Routes retain responsibility for truthy
-  path/header/query/body/default precedence. B1100 supplies cached body decoding and its errors.
+  Implement handle_exception_on_proxy and _recreate_writer_on_read_only_transaction in
+  betterlite-server::api::proxy_endpoint_support. The three provider accessors of
+  openai_endpoint_utils.py (get_custom_llm_provider_from_request_headers, _query and _body) are
+  B10059's, in api::provider_hints; this task does not build them.
 
   Also own is_known_model (utils.py:8260-8274) and ProxyLogging._arelease_max_parallel_requests_on_disconnect
   (4134-4156). The first returns false for an absent model/router and otherwise tests exact membership in
@@ -25,22 +23,20 @@ description: >-
   param. Existing ProxyException retains its fields and headers; a supplied x-litellm-call-id fills only
   an absent header. Other exceptions use status_code or 500, internal_server_error, normalized param,
   and B4170's strip_bug_report_notice for the message. B4170 also owns should_report_bug
-  and bug_report_notice, including LITELLM_DISABLE_BUG_REPORT_LINK, and B4171 owns build_proxy_bug_report;
+  and bug_report_notice, including LITELLM_DISABLE_BUG_REPORT_LINK, and B10058 owns build_proxy_bug_report (betterlite-reporting safe_proxy_config);
   inject their diagnostic service. ProxyException serializes code as a string. No request credentials enter logs.
 
   Register HelperCall::ProxyEndpointSupport and Python proxy_endpoint_support. The helper adapters
   compare pure projections from decoded records and exception values; they never call FastAPI handlers.
-  Body-read caching and recovery scheduling have native integration tests. Route owners exercise the
-  resulting HTTP behavior. No byte decoder is added. The owned spans contain 92 nonblank/non-comment
-  Python lines including docstrings; allow 145 implementation, 175 tests, 100 adapters, 90 fixtures and
-  30 wiring lines, 540 total.
+  Recovery scheduling has native integration tests. Route owners exercise the
+  resulting HTTP behavior. No byte decoder is added. The owned spans contain about 70 nonblank/non-comment
+  Python lines including docstrings; allow 120 implementation, 150 tests, 85 adapters, 75 fixtures and
+  25 wiring lines, 455 total.
   This task adds no server state, so leave state.rs to B1100.
 scope:
   paths:
   - crates/betterlite-server/src/api/proxy_endpoint_support.rs
   - crates/betterlite-server/src/api/proxy_endpoint_support/**
-  - crates/betterlite-server/src/api.rs
-  - crates/betterlite-server/src/api/**
   - crates/betterlite-server/Cargo.toml
   - tools/oracle/src/helpers/server/proxy_endpoint_support.rs
   - tools/oracle/src/helpers/server/proxy_endpoint_support/**
@@ -54,8 +50,6 @@ scope:
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L15-L49
   why: remove_sensitive_info_from_deployment, the six removed credential fields and the masker call with the two rate limit keys always excluded.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L81
-  why: Own the three provider accessors; header spelling differs from the query/body key and precedence belongs to callers.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8199-L8237
   why: Own exception conversion and recovery submission, including HTTPException's internal_server_error type.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L55-L83
@@ -65,12 +59,6 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4134-L4156
   why: Realtime disconnect cleanup awaits only the v3 limiter hook; absent or differently typed hooks do nothing.
 dod:
-- text: >-
-    provider_hint_sources returns null for absent keys and "" for empty strings. Header custom-llm-provider=azure,
-    query custom_llm_provider=openai and body custom_llm_provider=bedrock remain independent results. Uppercase
-    CUSTOM-LLM-PROVIDER matches azure; a custom_llm_provider header does not match. The body accessor does not
-    validate its field type: null remains null and 123 remains 123 for the caller's subsequent validation.
-  proof: [provider-hints, oracle, helper-python]
 - text: >-
     proxy_error_records maps HTTPException(404,detail="missing") to 404/internal_server_error/param=null/code="404";
     a generic failure without status to 500/internal_server_error/null/"500"; status_code=429,param="file" to
@@ -82,10 +70,9 @@ dod:
     and adds no header when no call id is supplied. Other headers survive all three cases.
   proof: [call-id, oracle, helper-python]
 - text: >-
-    recovery_and_body_reuse submits one postgres_read_only_transaction recovery for a classified read-only failure
+    recovery_submission submits one postgres_read_only_transaction recovery for a classified read-only failure
     with a database, zero without a database or for another failure. Mapping completes before recovery; shutdown
-    joins recovery work. Reading an already decoded custom_llm_provider=openai body causes no second byte read;
-    malformed JSON preserves B1100's decoding error.
+    joins recovery work.
   proof: [integration-tests]
 - text: >-
     diagnostics_order records exception logging before classification and recovery before conversion. Only the generic
@@ -111,9 +98,6 @@ dod:
 checks:
   optional: []
   commands:
-  - id: provider-hints
-    why: source spelling, absence or empty values changed
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::provider_hint_sources($|::)/)'
   - id: exception-records
     why: exception classes no longer select the prescribed error fields
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::proxy_error_records($|::)/)'
@@ -121,8 +105,8 @@ checks:
     why: forwarding an exception overwrites its existing call id
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::call_id_precedence($|::)/)'
   - id: integration-tests
-    why: recovery detaches from shutdown or provider hints consume the body twice
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::recovery_and_body_reuse($|::)/)'
+    why: recovery detaches from shutdown or is submitted for the wrong failure
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::recovery_submission($|::)/)'
   - id: diagnostics
     why: generic and existing proxy exceptions take the same diagnostic path
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::diagnostics_order($|::)/)'
@@ -142,7 +126,6 @@ checks:
     why: the new helper tag has no branch-added seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-*)" && grep -qE '^[[:space:]]+proxy_endpoint_support:' tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-- tools/oracle/cases/helpers/proxy-endpoint-support/provider-hint-sources.yaml
 - tools/oracle/cases/helpers/proxy-endpoint-support/proxy-error-records.yaml
 - tools/oracle/cases/helpers/proxy-endpoint-support/call-id-precedence.yaml
 - tools/oracle/cases/helpers/proxy-endpoint-support/diagnostics-order.yaml
@@ -151,13 +134,13 @@ deviations: []
 out_of_scope:
 - "The model info routes that call redact_deployment: B849 and B851. The masker itself: B244."
 - Other utils.py functions retain existing owners; B8399 owns the ProxyLogging lifecycle and B8396 PrismaClient.recreate_read_only_writer.
-- B4170 owns bug-report rendering and B4171 the proxy configuration report; this task uses its diagnostic interface.
+- B4170 owns bug-report rendering and B10058 the proxy configuration report and build_proxy_bug_report; this task uses its diagnostic interface.
+- "The three provider accessors (openai_endpoint_utils.py L52-L81): B10059, in api::provider_hints."
 - B3046 owns the limiter's disconnect release and B3035 its slot accounting; this task owns only ProxyLogging's hook selection and await.
 - B087, B086, B1032-B1034, B1050-B1051, B1133 and B1075 own their route-specific provider precedence.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as proxy_endpoint_support in the server group. Replace the stub Op in tools/oracle/src/helpers/server/proxy_endpoint_support.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/proxy_endpoint_support.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - HTTPException(404) becomes internal_server_error here; the Responses request processor uses a different mapper.
-- An empty provider field is returned unchanged; only the calling route decides whether to fall through.
 - Reusing ProxyException preserves its original x-litellm-call-id even when another id is supplied.
 review_level: standard
 budget:
