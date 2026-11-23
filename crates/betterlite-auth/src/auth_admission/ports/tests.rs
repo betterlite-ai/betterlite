@@ -18,6 +18,8 @@ fn empty_key() -> UserAPIKeyAuth {
     UserAPIKeyAuth::construct(AuthInput::Dict(BTreeMap::new())).unwrap()
 }
 
+fn shared_across_threads<T: Send + Sync + ?Sized>(_value: &T) {}
+
 struct MarkingAdmission;
 
 #[async_trait]
@@ -166,6 +168,14 @@ fn seed_receives_the_auth_and_safe_headers() {
         destinations.end_users.lock().unwrap().as_slice(),
         [Some(String::from("tenant-user"))]
     );
+}
+
+#[test]
+fn ports_are_object_safe_and_send_and_sync() {
+    let admission: Arc<dyn ManagedAdmission> = Arc::new(MarkingAdmission);
+    shared_across_threads(admission.as_ref());
+    let destinations: Arc<dyn TenantDestinations> = Arc::new(RecordingDestinations::default());
+    shared_across_threads(destinations.as_ref());
 }
 
 #[test]
