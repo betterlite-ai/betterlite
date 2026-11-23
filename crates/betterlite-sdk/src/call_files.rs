@@ -86,25 +86,7 @@ fn call_file(
             key: key.to_owned(),
         });
     };
-    let index = match fields.get(BLOB_KEY) {
-        None | Some(Json::Null) => {
-            return Err(CallFilesError::MissingBlob {
-                key: key.to_owned(),
-            });
-        }
-        Some(Json::Number(number)) => {
-            number
-                .as_u64()
-                .ok_or_else(|| CallFilesError::InvalidIndex {
-                    key: key.to_owned(),
-                })?
-        }
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            return Err(CallFilesError::InvalidIndex {
-                key: key.to_owned(),
-            });
-        }
-    };
+    let index = blob_index(key, fields.get(BLOB_KEY))?;
     let Ok(position) = usize::try_from(index) else {
         return Err(CallFilesError::UnknownBlob {
             key: key.to_owned(),
@@ -129,6 +111,22 @@ fn call_file(
         name,
         content_type,
         bytes: take(blob),
+    })
+}
+
+fn blob_index(key: &str, raw: Option<&Json>) -> Result<u64, CallFilesError> {
+    let value = raw
+        .filter(|field| !matches!(field, Json::Null))
+        .ok_or_else(|| CallFilesError::MissingBlob {
+            key: key.to_owned(),
+        })?;
+    let Json::Number(number) = value else {
+        return Err(CallFilesError::InvalidIndex {
+            key: key.to_owned(),
+        });
+    };
+    number.as_u64().ok_or_else(|| CallFilesError::InvalidIndex {
+        key: key.to_owned(),
     })
 }
 

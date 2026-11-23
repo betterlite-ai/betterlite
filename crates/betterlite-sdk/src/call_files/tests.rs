@@ -174,7 +174,7 @@ fn call_files_move_the_blob_out_of_the_list() {
     let files = files_from_payload(&request, &mut blobs).unwrap();
 
     assert_eq!(files.len(), 1);
-    assert_eq!(blobs, vec![Vec::new()]);
+    assert_eq!(blobs, vec![Vec::<u8>::new()]);
 }
 
 #[test]
