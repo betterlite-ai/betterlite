@@ -28,7 +28,7 @@ use betterlite_openai::decisions::openai::request::wire::{
     InputWire, QuestionWire, RequestWire as OpenAiRequestWire,
 };
 use betterlite_openai::decisions::transformation::provider_config::{
-    ParseResponseError, SigningContext,
+    DecisionsProviderConfig, ParseResponseError, SigningContext,
 };
 use betterlite_openai::decisions::transformation::wire::{
     ProviderRequestWire, RequestWire as SystemOneRequestWire,
@@ -45,7 +45,6 @@ use serde_json::Number;
 use super::super::clients::{
     DecisionsAsyncClient, DecisionsClients, DecisionsRequest, DecisionsSyncClient,
 };
-use super::super::config::DecisionsSendConfig;
 use super::super::error::DecisionsSendError;
 use super::super::format::DecisionsOutput;
 use super::super::send::DecisionsSender;
@@ -242,7 +241,7 @@ impl TestConfig {
     }
 }
 
-impl DecisionsSendConfig for TestConfig {
+impl DecisionsProviderConfig for TestConfig {
     fn validate_environment(
         &self,
         headers: &Headers,

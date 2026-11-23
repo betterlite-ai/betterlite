@@ -8,7 +8,8 @@ use betterlite_openai::decisions::openai::response::to_openai::ir_to_openai_resp
 use betterlite_openai::decisions::transformation::responses::to_systemone::ir_to_systemone_response;
 use rust_decimal::Decimal;
 
-use super::config::DecisionsSendConfig;
+use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
+
 use crate::helpers::set_response_cost_in_hidden_params;
 
 // DecisionsResponse | OpenAIDecisionResponse, chosen by the request format rather than the provider
@@ -19,8 +20,8 @@ pub enum DecisionsOutput {
 }
 
 // _format_response: convert through the request's shape, then set the hidden params on the result
-pub(crate) fn format_response(
-    config: &dyn DecisionsSendConfig,
+pub(crate) fn format_response<T: DecisionsProviderConfig>(
+    config: &T,
     call: &DecisionsCall<'_>,
     response: &ir::DecisionResponse,
 ) -> Result<DecisionsOutput, ResponseConversionError> {

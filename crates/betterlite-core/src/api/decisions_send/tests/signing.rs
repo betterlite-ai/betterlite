@@ -1,7 +1,6 @@
 use std::thread;
 
 use super::support::*;
-use crate::api::decisions_send::clients::DecisionsBody;
 
 // signing: content when the config signed a body, JSON when it did not, and the async AWS split
 
@@ -12,10 +11,7 @@ fn signing_signed_body_is_sent_as_content() {
     let decisions = systemone_call("typesafe", None);
     fixture.send(&decisions).expect("the call answers");
     let requests = fixture.wire.requests();
-    match &requests[0].body {
-        DecisionsBody::Signed(bytes) => assert_eq!(bytes, b"{\"signed\":true}"),
-        DecisionsBody::Json(_) => panic!("a signed body must be sent as content"),
-    }
+    assert_eq!(requests[0].body, b"{\"signed\":true}".to_vec());
 }
 
 #[test]
@@ -24,13 +20,8 @@ fn signing_unsigned_body_is_sent_as_json() {
     let decisions = systemone_call("typesafe", None);
     fixture.send(&decisions).expect("the call answers");
     let requests = fixture.wire.requests();
-    match &requests[0].body {
-        DecisionsBody::Json(bytes) => {
-            let sent = serde_json::to_string(&decisions.body).expect("the wire serializes");
-            assert_eq!(bytes, sent.as_bytes());
-        }
-        DecisionsBody::Signed(_) => panic!("an unsigned result must be sent as JSON"),
-    }
+    let sent = serde_json::to_string(&decisions.body).expect("the wire serializes");
+    assert_eq!(requests[0].body, sent.into_bytes());
 }
 
 #[test]

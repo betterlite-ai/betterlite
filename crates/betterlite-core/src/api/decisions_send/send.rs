@@ -6,18 +6,20 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::decisions::call::DecisionsCall;
-use betterlite_openai::decisions::transformation::provider_config::SigningContext;
+use betterlite_openai::decisions::call::provider::ProviderConfig;
+use betterlite_openai::decisions::transformation::provider_config::{
+    DecisionsProviderConfig, SigningContext,
+};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_redact::secret::Redactor;
 
 use super::clients::{DecisionsAsyncClient, DecisionsClients, DecisionsSyncClient};
-use super::config::{self, DecisionsSendConfig};
-use super::error::{DecisionsSendError, send_failure, status_failure};
+use super::error::{DecisionsSendError, mapped_failure, send_failure};
 use super::format::{DecisionsOutput, format_response};
 use super::request::{self, Prepared};
+use crate::api::vector_store_http_write::error::status_facts;
 use crate::api::vector_store_http_write::service::ClientKind;
 
-// The send stage: B173's pooled clients, B249's logging environment, and the call B3513 prepared
 pub struct DecisionsSender<'env, Clients: DecisionsClients = HttpClients> {
     clients: &'env mut Clients,
     env: &'env PrePostEnv<'env>,
@@ -28,26 +30,44 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
         Self { clients, env }
     }
 
+    // ProviderConfigManager.get_provider_decisions_config boxes one config per provider
     pub fn send(
         &mut self,
         call: &DecisionsCall<'_>,
     ) -> Result<DecisionsOutput, DecisionsSendError> {
-        self.send_with(call, config::of(&call.provider_config))
+        match &call.provider_config {
+            ProviderConfig::Openai(config) => self.send_with(call, config.as_ref()),
+            ProviderConfig::Openrouter(config) => self.send_with(call, config.as_ref()),
+            ProviderConfig::AzureAi(config) => self.send_with(call, config.as_ref()),
+            ProviderConfig::Perplexity(config) => self.send_with(call, config.as_ref()),
+            ProviderConfig::Typesafe(config) => self.send_with(call, config.as_ref()),
+            ProviderConfig::StrandsDecider(config) => self.send_with(call, config.as_ref()),
+            ProviderConfig::Cloudflare(config) => self.send_with(call, config.as_ref()),
+            ProviderConfig::HostedVllm(config) => self.send_with(call, config.as_ref()),
+        }
     }
 
     pub async fn asend(
         &mut self,
         call: &DecisionsCall<'_>,
     ) -> Result<DecisionsOutput, DecisionsSendError> {
-        self.asend_with(call, config::of(&call.provider_config))
-            .await
+        match &call.provider_config {
+            ProviderConfig::Openai(config) => self.asend_with(call, config.as_ref()).await,
+            ProviderConfig::Openrouter(config) => self.asend_with(call, config.as_ref()).await,
+            ProviderConfig::AzureAi(config) => self.asend_with(call, config.as_ref()).await,
+            ProviderConfig::Perplexity(config) => self.asend_with(call, config.as_ref()).await,
+            ProviderConfig::Typesafe(config) => self.asend_with(call, config.as_ref()).await,
+            ProviderConfig::StrandsDecider(config) => self.asend_with(call, config.as_ref()).await,
+            ProviderConfig::Cloudflare(config) => self.asend_with(call, config.as_ref()).await,
+            ProviderConfig::HostedVllm(config) => self.asend_with(call, config.as_ref()).await,
+        }
     }
 
     // decisions(): inline signing, the pool's default client, one blocking POST
-    pub(crate) fn send_with(
+    pub(crate) fn send_with<T: DecisionsProviderConfig>(
         &mut self,
         call: &DecisionsCall<'_>,
-        config: &dyn DecisionsSendConfig,
+        config: &T,
     ) -> Result<DecisionsOutput, DecisionsSendError> {
         let prepared = request::prepare(config, call, self.env)?;
         let signed = config.sign_request(
@@ -60,8 +80,7 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
             .map_err(|error| super::error::plain(call, self.env.redactor, Box::new(error)))?;
         let wire = request::wire(call, self.env.redactor, &prepared, signed)?;
         let started = Instant::now();
-        let outcome = client.send_blocking(wire);
-        let reply = outcome.map_err(|error| {
+        let reply = client.send_blocking(wire).map_err(|error| {
             send_failure(
                 config,
                 call,
@@ -75,10 +94,10 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
     }
 
     // adecisions(): signing off the request task only for AWS, then the provider's async client
-    pub(crate) async fn asend_with(
+    pub(crate) async fn asend_with<T: DecisionsProviderConfig + Sync>(
         &mut self,
         call: &DecisionsCall<'_>,
-        config: &dyn DecisionsSendConfig,
+        config: &T,
     ) -> Result<DecisionsOutput, DecisionsSendError> {
         let prepared = request::prepare(config, call, self.env)?;
         let context = signing_context(call, &prepared);
@@ -94,8 +113,7 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
             .map_err(|error| super::error::plain(call, self.env.redactor, Box::new(error)))?;
         let wire = request::wire(call, self.env.redactor, &prepared, signed)?;
         let started = Instant::now();
-        let outcome = client.send(wire).await;
-        let reply = outcome.map_err(|error| {
+        let reply = client.send(wire).await.map_err(|error| {
             send_failure(
                 config,
                 call,
@@ -110,14 +128,14 @@ impl<'env, Clients: DecisionsClients> DecisionsSender<'env, Clients> {
 }
 
 // raise_for_status, then transform_decisions_response, then _format_response
-fn finish(
-    config: &dyn DecisionsSendConfig,
+fn finish<T: DecisionsProviderConfig>(
+    config: &T,
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
     reply: &UpstreamResponse,
 ) -> Result<DecisionsOutput, DecisionsSendError> {
     if reply.status >= 400 {
-        return Err(status_failure(config, call, redactor, reply));
+        return Err(mapped_failure(config, call, redactor, &status_facts(reply)));
     }
     let response = config
         .transform_decisions_response(
@@ -156,10 +174,6 @@ where
 
 // get_async_httpx_client(llm_provider=litellm.LlmProviders(custom_llm_provider))
 fn provider_params(provider: &str) -> Params {
-    let mut params = Params::new();
-    params.insert(
-        String::from("custom_llm_provider"),
-        JsonValue::Text(provider.to_owned()),
-    );
-    params
+    let name = String::from("custom_llm_provider");
+    std::iter::once((name, JsonValue::Text(provider.to_owned()))).collect()
 }

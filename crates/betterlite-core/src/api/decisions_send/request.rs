@@ -5,6 +5,7 @@ use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::decisions::call::DecisionsCall;
+use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_redact::secret::Redactor;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
@@ -12,12 +13,10 @@ use indexmap::IndexMap;
 use serde_json::Error as JsonError;
 use url::Url;
 
-use super::clients::{DecisionsBody, DecisionsRequest};
-use super::config::DecisionsSendConfig;
+use super::clients::DecisionsRequest;
 use super::error::{DecisionsSendError, plain};
 use crate::api::vector_store_http_write::error::WriteError;
 
-// _prepare_decisions_request's result: the url, the headers logging sees, and one copy of the body
 pub(crate) struct Prepared {
     pub(crate) url: String,
     pub(crate) outbound_headers: Headers,
@@ -25,8 +24,8 @@ pub(crate) struct Prepared {
 }
 
 // validate_environment, then get_complete_url, then the body copy, then the optional pre_call, in that order
-pub(crate) fn prepare(
-    config: &dyn DecisionsSendConfig,
+pub(crate) fn prepare<T: DecisionsProviderConfig>(
+    config: &T,
     call: &DecisionsCall<'_>,
     env: &PrePostEnv<'_>,
 ) -> Result<Prepared, DecisionsSendError> {
@@ -47,8 +46,7 @@ pub(crate) fn prepare(
     })
 }
 
-// logging_obj.pre_call(input=data, api_key=..., model=model, additional_args={...}) runs only when a
-// logging object exists, and sees the headers before sign_request changed them
+// pre_call runs only when a logging object exists, and sees the headers from before sign_request changed them
 fn log(
     call: &DecisionsCall<'_>,
     env: &PrePostEnv<'_>,
@@ -117,10 +115,7 @@ pub(crate) fn wire(
             }),
         )
     })?;
-    let body = match signed_body {
-        Some(bytes) => DecisionsBody::Signed(bytes),
-        None => DecisionsBody::Json(prepared.body.clone().into_bytes()),
-    };
+    let body = signed_body.unwrap_or_else(|| prepared.body.clone().into_bytes());
     Ok(DecisionsRequest {
         url,
         headers,

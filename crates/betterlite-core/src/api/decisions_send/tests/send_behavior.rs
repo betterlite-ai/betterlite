@@ -20,7 +20,6 @@ use secrecy::SecretString;
 use serde_json::Number;
 
 use super::support::*;
-use crate::api::decisions_send::clients::DecisionsBody;
 use crate::api::decisions_send::format::DecisionsOutput;
 use crate::api::decisions_send::send::DecisionsSender;
 
@@ -144,13 +143,8 @@ fn send_behavior_passes_the_timeout_and_posts_once() {
     let requests = fixture.wire.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].timeout, Some(Duration::from_secs(2)));
-    match &requests[0].body {
-        DecisionsBody::Json(bytes) => {
-            let sent = serde_json::to_string(&decisions.body).expect("the wire serializes");
-            assert_eq!(bytes, sent.as_bytes());
-        }
-        DecisionsBody::Signed(_) => panic!("an unsigned config sends JSON"),
-    }
+    let sent = serde_json::to_string(&decisions.body).expect("the wire serializes");
+    assert_eq!(requests[0].body, sent.into_bytes());
 }
 
 #[test]

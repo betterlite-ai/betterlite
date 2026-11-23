@@ -13,19 +13,11 @@ use betterlite_http::proxy::limits::read_bounded;
 use http::header::HeaderMap;
 use url::Url;
 
-// The body a decisions call carries: the signed bytes when sign_request built them, else the JSON copy
-#[derive(Debug)]
-pub enum DecisionsBody {
-    Json(Vec<u8>),
-    Signed(Vec<u8>),
-}
-
-// The wire request both client kinds POST
 #[derive(Debug)]
 pub struct DecisionsRequest {
     pub url: Url,
     pub headers: HeaderMap,
-    pub body: DecisionsBody,
+    pub body: Vec<u8>,
     pub timeout: Option<Duration>,
 }
 
@@ -63,7 +55,6 @@ impl DecisionsSyncClient for SyncSender {
     }
 }
 
-// The async client B173's factory built for this call, held the same way
 #[derive(Clone)]
 pub struct AsyncSender(Arc<AsyncSend>);
 
@@ -89,7 +80,6 @@ impl DecisionsClients for HttpClients {
     }
 }
 
-// The blocking sender: one request, sent once, its reply read under the shared cap
 fn sync_sender(clients: &mut HttpClients, params: &Params) -> Result<SyncSender, ClientError> {
     let client = clients.sync_client(params, None)?;
     Ok(SyncSender(Arc::new(
@@ -105,7 +95,7 @@ fn sync_sender(clients: &mut HttpClients, params: &Params) -> Result<SyncSender,
                 builder = builder.timeout(deadline);
             }
             let sent = builder
-                .body(body_bytes(body))
+                .body(body)
                 .send()
                 .map_err(RequestFailure::Transport)?;
             let status = sent.status().as_u16();
@@ -115,7 +105,6 @@ fn sync_sender(clients: &mut HttpClients, params: &Params) -> Result<SyncSender,
     )))
 }
 
-// The async sender: the same POST sent as a future, read under the same cap
 fn async_sender(clients: &mut HttpClients, params: &Params) -> Result<AsyncSender, ClientError> {
     let client = async_client(clients, params, None)?;
     Ok(AsyncSender(Arc::new(
@@ -125,7 +114,7 @@ fn async_sender(clients: &mut HttpClients, params: &Params) -> Result<AsyncSende
                 let mut builder = cloned
                     .post(request.url)
                     .headers(request.headers)
-                    .body(body_bytes(request.body));
+                    .body(request.body);
                 if let Some(timeout) = request.timeout {
                     builder = builder.timeout(timeout);
                 }
@@ -143,13 +132,6 @@ fn async_sender(clients: &mut HttpClients, params: &Params) -> Result<AsyncSende
             })
         },
     )))
-}
-
-// A signed body goes out as content and an unsigned one as JSON; on the wire both are the request body
-fn body_bytes(body: DecisionsBody) -> Vec<u8> {
-    match body {
-        DecisionsBody::Json(bytes) | DecisionsBody::Signed(bytes) => bytes,
-    }
 }
 
 // The blocking answer, read up to the shared cap so a provider answer cannot grow without bound

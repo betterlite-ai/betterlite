@@ -5,30 +5,27 @@ use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::details::{TimeoutDetails, TimeoutStatus};
 use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
 use betterlite_http::interactions::base::RequestFailure;
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
 use betterlite_openai::decisions::call::DecisionsCall;
 use betterlite_openai::decisions::openai::response::ResponseConversionError;
-use betterlite_openai::decisions::transformation::provider_config::ParseResponseError;
+use betterlite_openai::decisions::transformation::provider_config::{
+    DecisionsProviderConfig, ParseResponseError,
+};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
-use super::config::DecisionsSendConfig;
 use crate::api::vector_store_http_write::error::{
     BaseLlmException, FailureFacts, HeaderMap as JsonHeaders, display_facts, handle_error,
-    status_facts, timeout_facts,
+    timeout_facts,
 };
 use crate::api::vector_store_http_write::service::ClientKind;
 
-// The HTTP handler's own exception, returned unchanged by exception_type because it is already a LiteLLM class
 const TIMEOUT_PREFIX: &str = "litellm.Timeout: ";
 
-// The suite the sync and async HTTP handlers report a deadline through; exception_type returns it as is
 const TIMEOUT_MODEL: &str = "default-model-name";
 const TIMEOUT_PROVIDER: &str = "litellm-httpx-handler";
 
-// What decisions.send raises once _map_upstream_exception has replaced the original exception
 #[derive(Debug, Error)]
 pub enum DecisionsSendError {
     #[error("{message}")]
@@ -88,7 +85,6 @@ pub fn visible_message(class: &ErrorClass) -> String {
     }
 }
 
-// exception_type's catchall: a plain exception with no integer status becomes APIConnectionError
 pub(crate) fn plain(
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
@@ -108,8 +104,7 @@ pub(crate) fn plain(
     mapped(class, error)
 }
 
-// _handle_error's exception, asked for its class by the provider config: a synthesized status takes
-// _map_upstream_exception's direct APIConnectionError, anything else exception_type's status mapping
+// A synthesized status takes _map_upstream_exception's direct APIConnectionError, anything else exception_type's mapping
 pub(crate) fn provider_error(
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
@@ -132,8 +127,7 @@ pub(crate) fn provider_error(
     mapped(class, Box::new(error))
 }
 
-// A provider answer that fails parse_response: transform_decisions_response raises a 500 BaseLLMException
-// for valid JSON of the wrong shape, while JSON that does not parse at all escapes as a ValidationError
+// A wrong-shape answer raises a 500 BaseLLMException, while JSON that does not parse escapes as a ValidationError
 pub(crate) fn transform_error(
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
@@ -165,20 +159,9 @@ pub(crate) fn transform_error(
     mapped(class, Box::new(error))
 }
 
-// A status of 400 or more: the handler raises the provider config's own error class for it
-pub(crate) fn status_failure(
-    config: &dyn DecisionsSendConfig,
-    call: &DecisionsCall<'_>,
-    redactor: &Redactor,
-    reply: &UpstreamResponse,
-) -> DecisionsSendError {
-    mapped_failure(config, call, redactor, &status_facts(reply))
-}
-
-// A failed send: a deadline is already litellm.Timeout from the client, and every other httpx.HTTPError
-// goes through _handle_error
-pub(crate) fn send_failure(
-    config: &dyn DecisionsSendConfig,
+// A failed send: a deadline is already litellm.Timeout from the client, and every other httpx.HTTPError goes through _handle_error
+pub(crate) fn send_failure<T: DecisionsProviderConfig>(
+    config: &T,
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
     error: RequestFailure,
@@ -193,10 +176,9 @@ pub(crate) fn send_failure(
     mapped_failure(config, call, redactor, &display_facts(error.to_string()))
 }
 
-// _handle_error with a provider config: B2402's conversion picks the status, text and masked headers,
-// and get_error_class raises the provider's own error, which keeps a status the conversion synthesized
-fn mapped_failure(
-    config: &dyn DecisionsSendConfig,
+// _handle_error with a provider config: B2402's conversion picks the status and masked headers, then get_error_class raises the provider's own error
+pub(crate) fn mapped_failure<T: DecisionsProviderConfig>(
+    config: &T,
     call: &DecisionsCall<'_>,
     redactor: &Redactor,
     facts: &FailureFacts,

@@ -1,5 +1,4 @@
 pub mod clients;
-mod config;
 pub mod error;
 pub mod format;
 mod request;

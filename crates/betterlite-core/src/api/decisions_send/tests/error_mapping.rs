@@ -13,7 +13,7 @@ use url::Url;
 
 use super::support::*;
 use crate::api::decisions_send::clients::{
-    DecisionsAsyncClient, DecisionsBody, DecisionsClients, DecisionsRequest, DecisionsSyncClient,
+    DecisionsAsyncClient, DecisionsClients, DecisionsRequest, DecisionsSyncClient,
 };
 use crate::api::decisions_send::error::{DecisionsSendError, provider_error, send_failure};
 use crate::api::vector_store_http_write::error::BaseLlmException;
@@ -37,7 +37,7 @@ fn timeout_failure() -> RequestFailure {
         url: Url::parse(&format!("http://{}/slow", serving.address))
             .expect("the fixture url parses"),
         headers: HeaderMap::new(),
-        body: DecisionsBody::Json(Vec::new()),
+        body: Vec::new(),
         timeout: Some(Duration::from_millis(20)),
     };
     let failure = client
@@ -57,7 +57,7 @@ async fn async_timeout_failure() -> RequestFailure {
         url: Url::parse(&format!("http://{}/slow", serving.address))
             .expect("the fixture url parses"),
         headers: HeaderMap::new(),
-        body: DecisionsBody::Json(Vec::new()),
+        body: Vec::new(),
         timeout: Some(Duration::from_millis(20)),
     };
     let failure = client
@@ -80,7 +80,7 @@ fn connection_failure() -> RequestFailure {
         url: Url::parse(&format!("http://127.0.0.1:{port}/v1/systemone"))
             .expect("the fixture url parses"),
         headers: HeaderMap::new(),
-        body: DecisionsBody::Json(Vec::new()),
+        body: Vec::new(),
         timeout: Some(Duration::from_millis(500)),
     };
     client
