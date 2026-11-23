@@ -161,20 +161,20 @@ pub(super) struct ScriptedCache {
 }
 
 impl ScriptedCache {
-    pub(super) fn new() -> Arc<Self> {
+    pub(super) fn new() -> Self {
         Self::build(None, None, 45.0_f64)
     }
 
-    pub(super) fn with_ttl(ttl: f64) -> Arc<Self> {
+    pub(super) fn with_ttl(ttl: f64) -> Self {
         Self::build(None, None, ttl)
     }
 
-    pub(super) fn failing(fail_reads: Option<Surface>, fail_writes: Option<Surface>) -> Arc<Self> {
+    pub(super) fn failing(fail_reads: Option<Surface>, fail_writes: Option<Surface>) -> Self {
         Self::build(fail_reads, fail_writes, 45.0_f64)
     }
 
-    fn build(fail_reads: Option<Surface>, fail_writes: Option<Surface>, ttl: f64) -> Arc<Self> {
-        Arc::new(Self {
+    fn build(fail_reads: Option<Surface>, fail_writes: Option<Surface>, ttl: f64) -> Self {
+        Self {
             registry: Mutex::new(None),
             budgets: Mutex::new(BTreeMap::new()),
             end_users: Mutex::new(BTreeMap::new()),
@@ -183,7 +183,7 @@ impl ScriptedCache {
             fail_reads,
             fail_writes,
             ttl,
-        })
+        }
     }
 
     pub(super) fn put_budget(&self, cache_key: &str, budget: LiteLLMBudgetTable) {
