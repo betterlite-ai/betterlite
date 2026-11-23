@@ -367,9 +367,11 @@ pub(super) fn field(record: &Json, name: &str) -> Json {
 // a record the store wrote since owners existed keeps the response behind its envelope
 pub(super) fn response(record: &Json) -> Json {
     match field(record, "response") {
-        value @ Json::Object(_) => value,
+        Json::Object(fields) => Json::Object(fields),
         Json::Null => record.clone(),
-        other => panic!("response is not an object: {other:?}"),
+        other @ (Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            panic!("response is not an object: {other:?}")
+        }
     }
 }
 
