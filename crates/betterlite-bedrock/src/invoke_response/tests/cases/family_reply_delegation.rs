@@ -35,8 +35,7 @@ pub(in crate::invoke_response::tests) fn family_reply_delegation() {
     request_messages_feed_the_prefix_prompt();
     invalid_response_header_names_are_rejected();
     repeated_response_headers_stay_duplicate();
-    anthropic_json_mode_reads_the_tool_arguments();
-    nova_json_mode_reads_the_tool_arguments();
+    json_mode_replies_read_the_tool_arguments();
 }
 
 fn anthropic_reply() {
@@ -139,32 +138,32 @@ fn invalid_response_header_names_are_rejected() {
     ));
 }
 
-fn anthropic_json_mode_reads_the_tool_arguments() {
-    let mut case = fixture();
-    case.model = CLAUDE_MODEL.to_owned();
-    case.json_mode = Some(true);
-    let run = decode(&case, CLAUDE_JSON_REPLY);
-    let envelope = run.envelope();
+fn json_mode_replies_read_the_tool_arguments() {
+    let mut anthropic = fixture();
+    anthropic.model = CLAUDE_MODEL.to_owned();
+    anthropic.json_mode = Some(true);
+    let anthropic_run = decode(&anthropic, CLAUDE_JSON_REPLY);
+    let envelope = anthropic_run.envelope();
+    assert!(envelope.choices[0].message.tool_calls.is_none());
     assert_eq!(
         envelope.choices[0].message.content.as_deref(),
         Some(r#"{"answer": 42}"#)
     );
-    assert!(envelope.choices[0].message.tool_calls.is_none());
     assert_eq!(envelope.choices[0].finish_reason.as_deref(), Some("stop"));
-}
+    assert_eq!(envelope.model.as_deref(), Some("claude-json"));
 
-fn nova_json_mode_reads_the_tool_arguments() {
-    let mut case = fixture();
-    case.model = NOVA_MODEL.to_owned();
-    case.optional.json_mode = Some(true);
-    let run = decode(&case, NOVA_JSON_REPLY);
-    let reply = run.nova();
+    let mut nova = fixture();
+    nova.model = NOVA_MODEL.to_owned();
+    nova.optional.json_mode = Some(true);
+    let nova_run = decode(&nova, NOVA_JSON_REPLY);
+    let reply = nova_run.nova();
+    assert!(reply.choices[0].message.tool_calls.is_none());
     assert_eq!(
         reply.choices[0].message.content.as_deref(),
         Some(r#"{"answer": 42}"#)
     );
-    assert!(reply.choices[0].message.tool_calls.is_none());
     assert_eq!(reply.choices[0].finish_reason.as_str(), "stop");
+    assert_eq!(reply.model, NOVA_MODEL);
 }
 
 // httpx keeps a repeated response header as two values, and the Anthropic header reader joins them
