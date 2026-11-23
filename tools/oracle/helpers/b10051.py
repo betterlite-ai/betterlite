@@ -1,10 +1,11 @@
 import asyncio
-from typing import TypedDict
+from typing import Final, TypedDict
 
 import litellm
-from litellm.proxy._types import LiteLLM_UserTable, ModelAccessDeniedProxyException as ModelDenied
+from litellm.proxy._types import LiteLLM_UserTable
+from litellm.proxy._types import ModelAccessDeniedProxyException as ModelDenied
 from litellm.proxy.auth.auth_checks import can_user_call_model
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 
 class Check(TypedDict):
@@ -28,11 +29,14 @@ class CheckView(TypedDict):
     error: DenialView | None
 
 
+USER_ROWS: Final[TypeAdapter[LiteLLM_UserTable]] = TypeAdapter(LiteLLM_UserTable)
+
+
 def user_row(check: Check) -> LiteLLM_UserTable | None:
     row = check["user"]
     if row is None:
         return None
-    return LiteLLM_UserTable.model_validate(row)
+    return USER_ROWS.validate_python(row)
 
 
 async def run_check(check: Check) -> CheckView:
@@ -50,10 +54,10 @@ async def run_check(check: Check) -> CheckView:
 
 
 async def run_checks(checks: list[Check]) -> list[CheckView]:
-    views: list[CheckView] = []
-    for check in checks:
-        views.append(await run_check(check))
-    return views
+    return [
+        await run_check(check)
+        for check in checks
+    ]
 
 
 def run(input_value: Input) -> list[CheckView]:
