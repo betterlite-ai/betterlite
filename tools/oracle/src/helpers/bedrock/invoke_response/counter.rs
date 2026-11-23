@@ -1,0 +1,80 @@
+use std::convert::Infallible;
+use std::thread;
+
+use async_trait::async_trait;
+use betterlite_anthropic::usage::ReasoningTokenCounter as AnthropicReasoningCounter;
+use betterlite_bedrock::converse_usage::transform::ReasoningTokenCounter as ConverseReasoningCounter;
+use betterlite_bedrock::pegasus::counter::TokenCounter;
+use betterlite_tokenizer::count::error::CountError;
+use betterlite_tokenizer::count::request::Message;
+use serde_json::{Value, from_value, json};
+
+use betterlite_oracle_runner::helpers::{HelperCall, invoke};
+
+pub(super) struct NoReasoning;
+
+impl AnthropicReasoningCounter for NoReasoning {
+    type Failure = Infallible;
+
+    fn count_reasoning_tokens(&self, _text: &str) -> Result<usize, Self::Failure> {
+        Ok(0)
+    }
+}
+
+impl ConverseReasoningCounter for NoReasoning {
+    type Failure = Infallible;
+
+    fn count_reasoning_tokens(&self, _text: &str) -> Result<i64, Self::Failure> {
+        Ok(0)
+    }
+}
+
+// The oracle answer for a fallback count is the token_count helper, so no tokenizer runs twice here.
+pub(super) struct TokenizerCounter {
+    pub(super) messages: Value,
+}
+
+#[async_trait]
+impl TokenCounter for TokenizerCounter {
+    async fn count_messages(&self, messages: &[Message]) -> Result<i64, CountError> {
+        let expected: Vec<Message> =
+            from_value(self.messages.clone()).map_err(|source| CountError::Json { source })?;
+        // Message deserializes but never serializes, so the count can only run once the slice matches the case JSON.
+        if format!("{messages:?}") != format!("{expected:?}") {
+            return Err(CountError::MissingInput);
+        }
+        count(json!({
+            "function": "token_counter",
+            "model": "",
+            "messages": self.messages,
+        }))
+    }
+
+    async fn count_text(&self, text: &str) -> Result<i64, CountError> {
+        count(json!({
+            "function": "token_counter",
+            "model": "",
+            "text": text,
+            "count_response_tokens": true,
+        }))
+    }
+}
+
+// The token_count helper starts its own runtime, so the call runs off the runtime this decode drives.
+fn count(input: Value) -> Result<i64, CountError> {
+    let counted = thread::spawn(move || {
+        invoke(
+            &[betterlite_oracle_tokenizer::GROUP],
+            &HelperCall {
+                operation: String::from("token_count"),
+                input,
+            },
+        )
+    })
+    .join()
+    .map_err(|_panic| CountError::MissingInput)?;
+    let Some(value) = counted.value else {
+        return Err(CountError::MissingInput);
+    };
+    from_value(value).map_err(|_error| CountError::MissingInput)
+}

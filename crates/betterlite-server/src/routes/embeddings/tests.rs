@@ -478,7 +478,7 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
         lookup: BTreeMap::new(),
     }
     .load(
-        "model_list:\n  - {model_name: emb, litellm_params: {model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k}}\n",
+        "model_list:\n  - {model_name: emb, litellm_params: {model: deepseek/embed, api_base: 'http://127.0.0.1:1', api_key: k}}\n",
     )
     .expect("config");
     let executor =
@@ -496,7 +496,7 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
     let envelope: ErrorEnvelope = serde_json::from_slice(&body).expect("JSON");
     assert_eq!(
         envelope.error.message,
-        "betterlite does not serve azure embeddings yet"
+        "betterlite does not serve deepseek embeddings yet"
     );
 }
 
@@ -564,7 +564,8 @@ async fn a_mocked_vertex_ai_embedding_never_reaches_the_vertex_call() {
 #[tokio::test]
 async fn another_provider_never_reaches_the_vertex_call() {
     let (status, calls) =
-        status_with_vertex("model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k").await;
+        status_with_vertex("model: deepseek/embed, api_base: 'http://127.0.0.1:1', api_key: k")
+            .await;
     assert_eq!(calls, 0);
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 }
