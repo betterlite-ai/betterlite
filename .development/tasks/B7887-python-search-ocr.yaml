@@ -10,6 +10,7 @@ description: >-
   Python side, `python/betterlite/search/main.py`, `cost.py`, `__init__.py` and `python/betterlite/ocr/dispatch.py`, `__init__.py`. `search(query, search_provider, max_results, search_domain_filter, max_tokens_per_page, country, api_key, api_base, timeout, extra_headers, **kwargs)` builds its optional params with `_build_search_optional_params` (L27-L59). It becomes a plain function with the same output. `ocr` and `aocr` take `*args, **kwargs`, bind them to the public request with the four helpers of dispatch.py (L15-L63) and return an `OCRResponse` from B167. A document is a URL, a base64 data URL or bytes. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
 scope:
   paths:
+  - "crates/betterlite-python/ruff.toml"
   - crates/betterlite-python/src/search_ocr.rs
   - crates/betterlite-python/src/search_ocr/**
   - crates/betterlite-python/python/betterlite/_native_search_ocr.pyi
