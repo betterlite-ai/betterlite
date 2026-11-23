@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::api::api_boundaries::ApiLimits;
@@ -86,18 +87,18 @@ const CORPUS: &str = concat!(
 
 #[test]
 fn replays_corpus() {
-    let mut seeds = Vec::new();
-    for entry in fs::read_dir(CORPUS).expect("the corpus directory exists") {
-        seeds.push(entry.expect("the corpus entry lists").path());
-    }
+    let seeds: Vec<PathBuf> = fs::read_dir(CORPUS)
+        .expect("the corpus directory exists")
+        .map(|entry| entry.expect("the corpus entry lists").path())
+        .collect();
     assert!(!seeds.is_empty(), "the corpus has seeds");
-    for path in seeds {
-        let bytes = fs::read(&path).expect("the seed reads");
+    seeds.iter().for_each(|path| {
+        let bytes = fs::read(path).expect("the seed reads");
         let decoded = decode_responses_poll_state(&bytes, ApiLimits::default());
         let rejected = matches!(
             path.file_name().and_then(|name| name.to_str()),
             Some("malformed.json" | "array.json" | "scalar.json" | "empty.bin")
         );
         assert_eq!(decoded.is_err(), rejected, "{}", path.display());
-    }
+    });
 }
