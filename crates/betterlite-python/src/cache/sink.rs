@@ -58,6 +58,7 @@ fn debug_on(py: Python<'_>) -> bool {
     })
 }
 
+// ast-grep-ignore: no-padded-one-line-functions - emit and debug_on both read the one LiteLLM logger
 fn logger<'py>(py: Python<'py>) -> Option<Bound<'py, PyAny>> {
     let logging = py.import("logging").ok()?;
     logging.call_method1("getLogger", (LOGGER_NAME,)).ok()

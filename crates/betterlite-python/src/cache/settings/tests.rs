@@ -4,6 +4,7 @@ use betterlite_cache::types::cache_type::CacheMode;
 use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use betterlite_cache::types::call_type::SUPPORTED_CALL_TYPES;
 use betterlite_cache::types::semantic::SemanticCacheScope;
+use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 
 use super::CacheSettingsWire;
 
@@ -31,7 +32,10 @@ fn an_explicit_settings_key_reaches_both_settings_types() {
         supported_call_types: None,
         semantic_cache_scope: SemanticCacheScope::EndUser,
         include_provider_params: true,
-        ..CacheSettingsWire::default()
+        default_in_redis_ttl: None,
+        redis: RedisOverrides::default(),
+        redis_flush_size: None,
+        disk_cache_dir: None,
     };
     let settings = wire.settings();
     assert_eq!(settings.ttl, Some(30.0_f64));

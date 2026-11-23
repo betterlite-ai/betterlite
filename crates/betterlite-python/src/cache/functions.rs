@@ -8,10 +8,12 @@ use betterlite_cache::disk::Clock;
 use betterlite_cache::embedding::embedding_cache::add_embedding_entry_to_cache;
 use betterlite_cache::envelope::backend::{EnvelopeBackend, StoredBackend};
 use betterlite_cache::envelope::decode::decode_cached;
+use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use pyo3::prelude::*;
 
 use super::convert;
 use super::error::CacheError;
+use super::settings::CacheSettingsWire;
 
 mod tests;
 
@@ -38,7 +40,7 @@ pub(crate) fn cache_envelope(settings: &str, request: &str) -> PyResult<String> 
     let hooks = convert::hooks()?;
     let key = convert::resolve_key(&mut envelope, &wire.key_settings(), &hooks)?;
     let result = call.result_value()?;
-    let ttl = convert::request_ttl(&envelope, wire.effective_ttl());
+    let ttl = convert::request_ttl(&envelope, effective_ttl(&wire));
     Ok(convert::envelope_text(
         &key,
         convert::wall_clock(),
@@ -72,7 +74,7 @@ pub(crate) fn cache_embedding(settings: &str, request: &str) -> PyResult<String>
     })?;
     let stored: Arc<dyn CacheBackend> = Arc::new(MemoryCache { operations });
     let backend: Arc<dyn EnvelopeBackend> = Arc::new(StoredBackend { backend: stored });
-    let facade = convert::facade(&wire, backend, wire.effective_ttl(), clock)?;
+    let facade = convert::facade(&wire, backend, effective_ttl(&wire), clock)?;
     let result = call.embedding_result()?;
     let entry = add_embedding_entry_to_cache(
         &facade,
@@ -82,4 +84,19 @@ pub(crate) fn cache_embedding(settings: &str, request: &str) -> PyResult<String>
         call.result_index(),
     )?;
     Ok(convert::embedding_text(&entry)?)
+}
+
+// Cache::open's ttl rule, for the two entry points that answer without opening a backend: a per-kind default wins over ttl.
+fn effective_ttl(wire: &CacheSettingsWire) -> Option<f64> {
+    match wire.cache_type {
+        LiteLlmCacheType::Local => wire.default_in_memory_ttl.or(wire.ttl),
+        LiteLlmCacheType::Redis
+        | LiteLlmCacheType::RedisSemantic
+        | LiteLlmCacheType::ValkeySemantic => wire.default_in_redis_ttl.or(wire.ttl),
+        LiteLlmCacheType::S3
+        | LiteLlmCacheType::Disk
+        | LiteLlmCacheType::QdrantSemantic
+        | LiteLlmCacheType::AzureBlob
+        | LiteLlmCacheType::Gcs => wire.ttl,
+    }
 }

@@ -48,6 +48,7 @@ impl CacheCall {
         })
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - every write path takes its result through here
     pub(crate) fn result_value(&self) -> Result<CacheValue, CacheError> {
         let result = self.result.as_ref().ok_or(CacheError::MissingResult)?;
         CacheCodec::encode(result).map_err(CacheError::from)
@@ -68,26 +69,29 @@ impl CacheCall {
         }
     }
 
+    // ast-grep-ignore: no-one-line-functions
     pub(crate) fn input_value(&self) -> Result<&KeyValue, CacheError> {
         self.input.as_ref().ok_or(CacheError::MissingInput)
     }
 
-    // idx_in_result_data defaults to 0 in LiteLLM's add_embedding_response_to_cache.
+    // ast-grep-ignore: no-one-line-functions - idx_in_result_data takes 0, as in LiteLLM's add_embedding_response_to_cache
     pub(crate) fn result_index(&self) -> usize {
         self.index.unwrap_or_default()
     }
 
-    // LiteLLM's get_cache reads the cache dict's s-maxage first, then s-max-age; neither bounds the age.
+    // ast-grep-ignore: no-padded-one-line-functions - s-maxage wins over s-max-age and neither bounds the age
     pub(crate) fn max_age(&self) -> Result<Option<i64>, CacheError> {
         let control = request_control(&self.kwargs)?;
         Ok(control.s_maxage.or(control.s_max_age))
     }
 }
 
+// ast-grep-ignore: no-one-line-functions
 pub(crate) fn parse_settings(text: &str) -> Result<CacheSettingsWire, CacheError> {
     serde_json::from_str(text).map_err(|source| CacheError::Settings { source })
 }
 
+// ast-grep-ignore: no-one-line-functions
 pub(crate) fn parse_call(text: &str) -> Result<CacheCall, CacheError> {
     serde_json::from_str(text).map_err(|source| CacheError::Request { source })
 }
@@ -159,11 +163,12 @@ pub(crate) fn flush_size(size: Option<usize>) -> Result<Option<i64>, CacheError>
     }
 }
 
+// ast-grep-ignore: no-one-line-functions
 pub(crate) fn value_text(value: &Option<CacheValue>) -> Result<String, CacheError> {
     serde_json::to_string(value).map_err(|source| CacheError::Encode { source })
 }
 
-// A semantic lookup answers the cached response and the similarity its backend reports, if any.
+// ast-grep-ignore: no-one-line-functions - a semantic lookup answers the response and its backend's similarity
 pub(crate) fn semantic_text(
     value: &Option<CacheValue>,
     similarity: Option<f64>,

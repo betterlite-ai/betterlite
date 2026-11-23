@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use betterlite_cache::cache_key::settings::CacheKeySettings;
 use betterlite_cache::configuration::settings::CacheSettings;
+use betterlite_cache::configuration::settings::DEFAULT_REDIS_MAJOR_VERSION;
+use betterlite_cache::configuration::settings::DEFAULT_REDIS_TTL_SECONDS;
 use betterlite_cache::types::cache_type::{CacheMode, LiteLlmCacheType};
 use betterlite_cache::types::call_type::{CachingSupportedCallType, SUPPORTED_CALL_TYPES};
 use betterlite_cache::types::semantic::SemanticCacheScope;
@@ -66,8 +68,10 @@ impl CacheSettingsWire {
             semantic_cache_scope: self.semantic_cache_scope,
             redis: self.redis.clone(),
             redis_flush_size: self.redis_flush_size,
+            redis_default_ttl: DEFAULT_REDIS_TTL_SECONDS,
+            redis_default_major_version: DEFAULT_REDIS_MAJOR_VERSION,
             disk_cache_dir: self.disk_cache_dir.clone(),
-            ..CacheSettings::default()
+            backend: None,
         }
     }
 
@@ -78,21 +82,6 @@ impl CacheSettingsWire {
             namespace: self.namespace.clone(),
             semantic_cache_scope: self.semantic_cache_scope,
             include_provider_params: self.include_provider_params,
-        }
-    }
-
-    // Cache::open's ttl rule, for the free functions that answer without a backend: a per-kind default wins over ttl.
-    pub(crate) fn effective_ttl(&self) -> Option<f64> {
-        match self.cache_type {
-            LiteLlmCacheType::Local => self.default_in_memory_ttl.or(self.ttl),
-            LiteLlmCacheType::Redis
-            | LiteLlmCacheType::RedisSemantic
-            | LiteLlmCacheType::ValkeySemantic => self.default_in_redis_ttl.or(self.ttl),
-            LiteLlmCacheType::S3
-            | LiteLlmCacheType::Disk
-            | LiteLlmCacheType::QdrantSemantic
-            | LiteLlmCacheType::AzureBlob
-            | LiteLlmCacheType::Gcs => self.ttl,
         }
     }
 }

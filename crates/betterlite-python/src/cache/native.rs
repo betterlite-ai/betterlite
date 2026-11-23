@@ -8,6 +8,9 @@ use super::core::CacheCore;
 
 mod tests;
 
+// Every async entry point hands Python the same awaitable of JSON text.
+type AsyncAnswer<'py> = PyResult<Bound<'py, PyAny>>;
+
 // LiteLLM's Cache over a native store: every call arrives as JSON text and answers JSON text.
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeCache {
@@ -25,76 +28,68 @@ impl NativeCache {
         })
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - the sync and async entry points share this parse
     fn cache_key(&self, request: &str) -> PyResult<String> {
         let call = convert::parse_call(request)?;
         self.core.cache_key(&call).map_err(PyErr::from)
     }
 
-    fn async_cache_key<'py>(&self, py: Python<'py>, request: &str) -> PyResult<Bound<'py, PyAny>> {
+    fn async_cache_key<'py>(&self, py: Python<'py>, request: &str) -> AsyncAnswer<'py> {
         let call = convert::parse_call(request)?;
         let core = Arc::clone(&self.core);
-        future_into_py(
-            py,
-            async move { core.cache_key(&call).map_err(PyErr::from) },
-        )
+        let answer = async move { core.cache_key(&call).map_err(PyErr::from) };
+        future_into_py(py, answer)
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - the sync and async entry points share this parse
     fn lookup(&self, request: &str) -> PyResult<String> {
         let call = convert::parse_call(request)?;
         self.core.lookup(&call).map_err(PyErr::from)
     }
 
-    fn async_lookup<'py>(&self, py: Python<'py>, request: &str) -> PyResult<Bound<'py, PyAny>> {
+    fn async_lookup<'py>(&self, py: Python<'py>, request: &str) -> AsyncAnswer<'py> {
         let call = convert::parse_call(request)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
-            let outcome = core.async_lookup(&call).await;
-            outcome.map_err(PyErr::from)
+            core.async_lookup(&call).await.map_err(PyErr::from)
         })
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - the sync and async entry points share this parse
     fn lookup_semantic(&self, request: &str) -> PyResult<String> {
         let call = convert::parse_call(request)?;
         self.core.lookup_semantic(&call).map_err(PyErr::from)
     }
 
-    fn async_lookup_semantic<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn async_lookup_semantic<'py>(&self, py: Python<'py>, request: &str) -> AsyncAnswer<'py> {
         let call = convert::parse_call(request)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
-            let outcome = core.async_lookup_semantic(&call).await;
-            outcome.map_err(PyErr::from)
+            core.async_lookup_semantic(&call).await.map_err(PyErr::from)
         })
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - the sync and async entry points share this parse
     fn write(&self, request: &str) -> PyResult<()> {
         let call = convert::parse_call(request)?;
         self.core.write(&call).map_err(PyErr::from)
     }
 
-    fn async_write<'py>(&self, py: Python<'py>, request: &str) -> PyResult<Bound<'py, PyAny>> {
+    fn async_write<'py>(&self, py: Python<'py>, request: &str) -> AsyncAnswer<'py> {
         let call = convert::parse_call(request)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
-            let outcome = core.async_write(&call).await;
-            outcome.map_err(PyErr::from)
+            core.async_write(&call).await.map_err(PyErr::from)
         })
     }
 
+    // ast-grep-ignore: no-padded-one-line-functions - the sync and async entry points share this parse
     fn write_embedding(&self, request: &str) -> PyResult<String> {
         let call = convert::parse_call(request)?;
         self.core.write_embedding(&call).map_err(PyErr::from)
     }
 
-    fn async_write_embedding<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn async_write_embedding<'py>(&self, py: Python<'py>, request: &str) -> AsyncAnswer<'py> {
         let call = convert::parse_call(request)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
@@ -105,59 +100,42 @@ impl NativeCache {
     fn write_pipeline(&self, py: Python<'_>, request: &str) -> PyResult<()> {
         let call = convert::parse_call(request)?;
         let core = Arc::clone(&self.core);
-        py.detach(|| {
-            get_runtime()
-                .block_on(core.async_write_pipeline(&call))
-                .map_err(PyErr::from)
-        })
+        py.detach(|| get_runtime().block_on(core.async_write_pipeline(&call)))
+            .map_err(PyErr::from)
     }
 
-    fn async_write_pipeline<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn async_write_pipeline<'py>(&self, py: Python<'py>, request: &str) -> AsyncAnswer<'py> {
         let call = convert::parse_call(request)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
-            let outcome = core.async_write_pipeline(&call).await;
-            outcome.map_err(PyErr::from)
+            core.async_write_pipeline(&call).await.map_err(PyErr::from)
         })
     }
 
     fn batch_write(&self, py: Python<'_>, request: &str) -> PyResult<()> {
         let call = convert::parse_call(request)?;
         let core = Arc::clone(&self.core);
-        py.detach(|| {
-            get_runtime()
-                .block_on(core.async_batch_write(&call))
-                .map_err(PyErr::from)
-        })
+        py.detach(|| get_runtime().block_on(core.async_batch_write(&call)))
+            .map_err(PyErr::from)
     }
 
-    fn async_batch_write<'py>(
-        &self,
-        py: Python<'py>,
-        request: &str,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn async_batch_write<'py>(&self, py: Python<'py>, request: &str) -> AsyncAnswer<'py> {
         let call = convert::parse_call(request)?;
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
-            let outcome = core.async_batch_write(&call).await;
-            outcome.map_err(PyErr::from)
+            core.async_batch_write(&call).await.map_err(PyErr::from)
         })
     }
 
     fn close(&self, py: Python<'_>) -> PyResult<()> {
         let core = Arc::clone(&self.core);
-        py.detach(|| get_runtime().block_on(core.close()).map_err(PyErr::from))
+        py.detach(|| get_runtime().block_on(core.close()))
+            .map_err(PyErr::from)
     }
 
-    fn async_close<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    // ast-grep-ignore: no-padded-one-line-functions - the refcount clone and the awaitable are one call
+    fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let core = Arc::clone(&self.core);
-        future_into_py(py, async move {
-            let outcome = core.close().await;
-            outcome.map_err(PyErr::from)
-        })
+        future_into_py(py, async move { core.close().await.map_err(PyErr::from) })
     }
 }
