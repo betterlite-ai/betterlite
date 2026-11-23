@@ -22,8 +22,8 @@ use self::support::{
     COST_MAP_SCHEDULE, COST_MAP_SCHEDULE_2_HOURS, COST_MAP_SOURCE, COST_MAP_STATUS, FORBIDDEN_ROLE,
     FakeCatalog, FakeStore, Harness, READS, STORE_FAILURE, WRITES, at, at_year, context,
     env_forced_provenance, json_data, key_caller, key_with, local_provenance, master, moment,
-    parsed, platform_admin, platform_viewer, provenance_loaded_at, reloaded_provenance, send,
-    snapshot, with_micros,
+    one_hour_before_datetime_max, parsed, platform_admin, platform_viewer, provenance_loaded_at,
+    reloaded_provenance, send, snapshot, with_micros,
 };
 
 #[tokio::test]
@@ -720,6 +720,25 @@ async fn oneshot_answers_a_beta_status_whose_next_run_overflows(
     let reply = parsed(&text);
     assert_eq!(reply["scheduled"], true);
     assert_eq!(reply["next_run"], JsonValue::Null);
+}
+
+#[tokio::test]
+async fn oneshot_answers_a_beta_status_whose_next_run_is_datetime_max() {
+    let mut harness = Harness::new();
+    harness.store = Some(FakeStore::with_beta(json_data(
+        r#"{"interval_hours": 1, "force_reload": false}"#,
+    )));
+    harness
+        .reloads
+        .set_last_beta_headers_reload(one_hour_before_datetime_max());
+    let (status, text) = send(&harness, Some(master()), Method::GET, BETA_STATUS).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        parsed(&text),
+        parsed(
+            r#"{"scheduled": true, "interval_hours": 1, "last_run": "9999-12-31T22:59:59.999999", "next_run": "9999-12-31T23:59:59.999999"}"#
+        )
+    );
 }
 
 #[tokio::test]

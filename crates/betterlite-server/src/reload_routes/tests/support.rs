@@ -67,6 +67,13 @@ pub(crate) fn moment() -> DateTime<Utc> {
     at(12, 0, 0)
 }
 
+pub(crate) fn one_hour_before_datetime_max() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(9999, 12, 31, 22, 59, 59)
+        .unwrap()
+        .checked_add_signed(TimeDelta::microseconds(999_999))
+        .unwrap()
+}
+
 pub(crate) fn with_micros(base: DateTime<Utc>, micros: i64) -> DateTime<Utc> {
     base.checked_add_signed(TimeDelta::microseconds(micros))
         .unwrap()
