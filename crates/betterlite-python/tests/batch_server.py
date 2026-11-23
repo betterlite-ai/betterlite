@@ -4,7 +4,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
-from typing import ClassVar, Final, Literal, Protocol, Self
+from typing import ClassVar, Final, Protocol, Self
 
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict, override
@@ -20,8 +20,8 @@ BATCH_ID = "batch_abc123"
 MISSING_ID = "batch_missing"
 INPUT_FILE_ID = "file-abc123"
 BATCH_PATH = "/v1/batches"
-WINDOW: Final[Literal["24h"]] = "24h"
-ENDPOINT: Final[Literal["/v1/chat/completions"]] = "/v1/chat/completions"
+WINDOW: Final = "24h"
+ENDPOINT: Final = "/v1/chat/completions"
 MODEL = "gpt-4o"
 DEPLOYMENT_ID = "deployment-abc"
 MODEL_INFO: dict[str, JsonValue] = {"id": DEPLOYMENT_ID}
