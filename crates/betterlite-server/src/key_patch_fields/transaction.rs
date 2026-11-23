@@ -59,7 +59,7 @@ pub async fn update_key_row_with_soft_budget(
         write.changed_by,
     )
     .await?;
-    let data = write_key_row(&transaction, &hashed, values, write.now).await?;
+    let data = write_key_row(&transaction, &hashed, &values, write.now).await?;
     transaction.commit().await.map_err(database_failure)?;
     Ok(KeyPatchOutcome {
         token: hashed,
@@ -111,10 +111,10 @@ impl SoftBudgetStore for TransactionBudgetStore<'_, '_> {
 async fn write_key_row(
     transaction: &DbSession<'_>,
     hashed: &str,
-    values: Row,
+    values: &Row,
     now: DateTime<Utc>,
 ) -> Result<Row, KeyPatchError> {
-    let mut record = with_settings_updated_at(&values, now);
+    let mut record = with_settings_updated_at(values, now);
     record.insert(String::from("token"), JsonData::String(hashed.to_owned()));
     record
         .entry(String::from("updated_at"))

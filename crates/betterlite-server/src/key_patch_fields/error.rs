@@ -72,10 +72,9 @@ impl KeyPatchError {
             }
             Self::DatabaseNotConnected => (Some(500_u16), Some(DetailShape::Error)),
             Self::KeyNotFound => (Some(404_u16), Some(DetailShape::Text)),
-            Self::RouterWeights(error) => (
-                error.status_code().map(|code| code.as_u16()),
-                Some(DetailShape::Text),
-            ),
+            Self::RouterWeights(error) => {
+                (error.status_code().map(u16::from), Some(DetailShape::Text))
+            }
             Self::ModelBudget(_)
             | Self::ObjectPermission(_)
             | Self::Clock(_)

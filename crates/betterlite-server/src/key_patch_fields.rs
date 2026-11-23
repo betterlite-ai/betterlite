@@ -26,7 +26,7 @@ pub fn drop_request_only_fields(fields: &mut Row) {
     }
 }
 
-pub(crate) fn string_of(value: &JsonData) -> Option<&str> {
+pub(crate) const fn string_of(value: &JsonData) -> Option<&str> {
     match value {
         JsonData::String(text) => Some(text),
         JsonData::Null
@@ -37,9 +37,13 @@ pub(crate) fn string_of(value: &JsonData) -> Option<&str> {
     }
 }
 
-pub(crate) fn object_of(value: &JsonData) -> Option<&Row> {
-    let JsonData::Object(fields) = value else {
-        return None;
-    };
-    Some(fields)
+pub(crate) const fn object_of(value: &JsonData) -> Option<&Row> {
+    match value {
+        JsonData::Object(fields) => Some(fields),
+        JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::String(_)
+        | JsonData::Array(_) => None,
+    }
 }

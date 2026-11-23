@@ -68,6 +68,7 @@ where
 }
 
 // the pydantic dump prepare_metadata_fields folds, without nulls, with each datetime rendered as isoformat
+#[must_use]
 pub fn metadata_fields(request: &UpdateKeyRequest, supplied: Row) -> Row {
     let expiry = request
         .update
