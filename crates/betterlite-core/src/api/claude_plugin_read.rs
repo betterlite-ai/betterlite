@@ -159,10 +159,10 @@ impl ClaudePluginReadInput {
         match &self.operation {
             ClaudePluginReadOperation::List { .. } => {
                 let mut plugins = Vec::with_capacity(rows.len());
-                for row in rows {
-                    if !visibility.allows(&record(&row)) {
-                        continue;
-                    }
+                let visible = rows
+                    .into_iter()
+                    .filter(|row| visibility.allows(&record(row)));
+                for row in visible {
                     plugins.push(list_item(row)?);
                 }
                 plugins.sort_by(|left, right| {

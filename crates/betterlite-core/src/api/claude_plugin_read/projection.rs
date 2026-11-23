@@ -177,7 +177,7 @@ fn string_list(
     field: &'static str,
     value: Json,
 ) -> Result<Option<Vec<String>>, ClaudePluginReadFailure> {
-    if let Json::Null = value {
+    if value == Json::Null {
         return Ok(None);
     }
     let Json::List(items) = value else {

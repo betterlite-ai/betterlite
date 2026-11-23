@@ -26,6 +26,7 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, Duration, TimeZone as _, Utc};
 use indexmap::IndexMap;
 use rstest::rstest;
+use serde::Deserialize;
 use tower::ServiceExt as _;
 
 use super::flow::plugin_row;
@@ -312,13 +313,19 @@ async fn booted_call(application: Router, path: &str, authorization: Option<&str
     send(application, request).await
 }
 
+#[derive(Deserialize)]
+struct ListedBody {
+    plugins: Vec<ListedPlugin>,
+}
+
+#[derive(Deserialize)]
+struct ListedPlugin {
+    name: String,
+}
+
 fn names(reply: &Reply) -> Vec<String> {
-    let body: serde_json::Value = serde_json::from_str(&reply.text).expect("the body is JSON");
-    let plugins = body["plugins"].as_array().expect("the plugins array");
-    plugins
-        .iter()
-        .map(|plugin| plugin["name"].as_str().expect("a plugin name").to_owned())
-        .collect()
+    let body: ListedBody = serde_json::from_str(&reply.text).expect("the body is a plugin list");
+    body.plugins.into_iter().map(|plugin| plugin.name).collect()
 }
 
 fn pagination_store() -> Arc<FakeStore> {
@@ -595,42 +602,20 @@ async fn list_visibility(store: &Arc<FakeStore>) {
 }
 
 async fn get_visibility(store: &Arc<FakeStore>) {
-    let hidden = call(
-        store,
-        Some(&plain_user()),
-        "/claude-code/plugins/private-plugin",
-    )
-    .await;
+    let user = plain_user();
+    let private = "/claude-code/plugins/private-plugin";
+    let hidden = call(store, Some(&user), private).await;
     assert_eq!(hidden.status, StatusCode::FORBIDDEN);
     assert_eq!(hidden.text, NOT_GRANTED_DETAIL);
-    let public = call(
-        store,
-        Some(&plain_user()),
-        "/claude-code/plugins/public-plugin",
-    )
-    .await;
+    let public = call(store, Some(&user), "/claude-code/plugins/public-plugin").await;
     assert_eq!(public.status, StatusCode::OK);
-    let granted = call(
-        store,
-        Some(&key_caller(KEY_PRIVATE_GRANT)),
-        "/claude-code/plugins/private-plugin",
-    )
-    .await;
+    let key = key_caller(KEY_PRIVATE_GRANT);
+    let granted = call(store, Some(&key), private).await;
     assert_eq!(granted.status, StatusCode::OK);
     assert_eq!(granted.text, PRIVATE_DETAIL);
-    let team = call(
-        store,
-        Some(&key_caller(KEY_TEAM_GRANT)),
-        "/claude-code/plugins/private-plugin",
-    )
-    .await;
+    let team = call(store, Some(&key_caller(KEY_TEAM_GRANT)), private).await;
     assert_eq!(team.status, StatusCode::OK);
-    let disjoint = call(
-        store,
-        Some(&key_caller(KEY_DISJOINT)),
-        "/claude-code/plugins/private-plugin",
-    )
-    .await;
+    let disjoint = call(store, Some(&key_caller(KEY_DISJOINT)), private).await;
     assert_eq!(disjoint.status, StatusCode::FORBIDDEN);
     assert_eq!(disjoint.text, NOT_GRANTED_DETAIL);
 }
