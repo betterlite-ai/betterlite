@@ -9,17 +9,11 @@ use thiserror::Error;
 pub enum BackendError<Source> {
     #[error("the backend does not accept the decode argument")]
     UnsupportedDecode,
-    #[error("the backend connection closed: {source}")]
-    Closed {
-        #[source]
-        source: Source,
-    },
+    #[error("the backend connection closed: {0}")]
+    Closed(#[source] Source),
     // transparent would duplicate the Error bound thiserror infers for Source, which is denied
-    #[error("{source}")]
-    Failed {
-        #[from]
-        source: Source,
-    },
+    #[error("{0}")]
+    Failed(#[from] Source),
 }
 
 pub trait NativeWsBackend: Send + Sync {

@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt::Display;
 
 use async_trait::async_trait;
 use betterlite_error::error::{ErrorClass, class_message};
@@ -23,20 +22,7 @@ use crate::api::responses_ws_native::error::WsNativeError;
 use crate::api::responses_ws_native::request::json_object;
 use crate::cost::realtime::error::RealtimeCostError;
 
-pub(super) struct BackendEnd {
-    pub(super) error: String,
-}
-
-impl BackendEnd {
-    fn failed<Source>(error: Source) -> Self
-    where
-        Source: Display,
-    {
-        Self {
-            error: error.to_string(),
-        }
-    }
-}
+pub(super) type BackendEnd = String;
 
 #[derive(Debug, Error)]
 pub(super) enum ClientRelayError {
@@ -84,28 +70,28 @@ where
                 let wrapped = {
                     let request_data = self.request_data.lock().await;
                     let unmasked = unmask_response_event(&policy, &request_data, &text)
-                        .map_err(BackendEnd::failed)?;
+                        .map_err(|error| error.to_string())?;
                     let masked = mask_response_completed(&policy, &request_data, &unmasked)
                         .await
-                        .map_err(BackendEnd::failed)?;
+                        .map_err(|error| error.to_string())?;
                     drop(request_data);
                     self.wrap_response_event(&masked)
-                        .map_err(BackendEnd::failed)?
+                        .map_err(|error| error.to_string())?
                 };
                 self.store_event(&wrapped)
                     .await
-                    .map_err(BackendEnd::failed)?;
+                    .map_err(|error| error.to_string())?;
                 self.setup
                     .websocket
                     .send_text(&wrapped)
                     .await
-                    .map_err(BackendEnd::failed)?;
+                    .map_err(|error| error.to_string())?;
             }
             Ok(())
         }
         .await;
         if let Err(end) = forwarded {
-            tracing::error!("Error in responses WS backend_to_client: {}", end.error);
+            tracing::error!("Error in responses WS backend_to_client: {end}");
         }
         self.log_messages().await
     }
@@ -153,7 +139,7 @@ where
             };
             let message = match received {
                 Ok(message) => message,
-                Err(BackendError::Closed { source }) => {
+                Err(BackendError::Closed(source)) => {
                     tracing::debug!("Responses WS backend connection closed: {source}");
                     return Ok(None);
                 }
@@ -163,7 +149,7 @@ where
                 ResponsesWebSocketMessage::Text(text) => text,
                 ResponsesWebSocketMessage::Bytes(bytes) => match String::from_utf8(bytes) {
                     Ok(text) => text,
-                    Err(error) => return Err(BackendEnd::failed(error)),
+                    Err(error) => return Err(error.to_string()),
                 },
             };
             let guarded = !self
@@ -171,7 +157,7 @@ where
                 .output_guardrail_callbacks
                 .unwrap_or_default()
                 .is_empty();
-            if !guarded || !output_dropped(&text).map_err(BackendEnd::failed)? {
+            if !guarded || !output_dropped(&text).map_err(|error| error.to_string())? {
                 return Ok(Some(text));
             }
         }
@@ -221,11 +207,9 @@ where
 {
     match error {
         BackendError::UnsupportedDecode => {
-            BackendEnd::failed("the backend does not accept the decode argument")
+            String::from("the backend does not accept the decode argument")
         }
-        BackendError::Closed { source } | BackendError::Failed { source } => {
-            BackendEnd::failed(source)
-        }
+        BackendError::Closed(source) | BackendError::Failed(source) => source.to_string(),
     }
 }
 

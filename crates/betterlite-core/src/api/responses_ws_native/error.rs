@@ -13,11 +13,8 @@ pub enum WsNativeError {
     Validation { message: String },
     #[error(transparent)]
     Parameters(#[from] ResponsesParametersError),
-    #[error("the frame could not be written as JSON: {source}")]
-    Encode {
-        #[from]
-        source: serde_json::Error,
-    },
+    #[error("the frame could not be written as JSON: {0}")]
+    Encode(#[from] serde_json::Error),
     #[error(transparent)]
     Rewrite(#[from] ResponseRewriteError),
 }

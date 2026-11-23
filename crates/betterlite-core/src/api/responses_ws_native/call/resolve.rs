@@ -25,13 +25,10 @@ pub(super) struct ResolvedCall {
     pub(super) provider_config: Option<ResponsesApiConfig>,
 }
 
-pub(super) fn resolve_call<Client, Handler, HandlerError>(
+pub(super) fn resolve_call<Client, Handler, HandlerError: Error + 'static>(
     deps: &NativeWsDeps<'_, Handler>,
     call: &NativeWsCall<'_, Client>,
-) -> Result<ResolvedCall, NativeWsCallError<HandlerError>>
-where
-    HandlerError: Error + 'static,
-{
+) -> Result<ResolvedCall, NativeWsCallError<HandlerError>> {
     let resolved = deps.resolution.resolve(&ResolutionRequest {
         model: call.model,
         custom_llm_provider: None,
@@ -126,13 +123,11 @@ fn litellm_params_for_ws(
 ) -> IndexMap<String, Json> {
     let mut params = IndexMap::new();
     params.insert(String::from("metadata"), resolved_metadata(kwargs));
-    params.insert(
-        String::from("litellm_metadata"),
-        kwargs
-            .get("litellm_metadata")
-            .cloned()
-            .unwrap_or(Json::Null),
-    );
+    let litellm_metadata = kwargs
+        .get("litellm_metadata")
+        .cloned()
+        .unwrap_or(Json::Null);
+    params.insert(String::from("litellm_metadata"), litellm_metadata);
     params.insert(String::from("data_residency"), residency_json(residency));
     params
 }

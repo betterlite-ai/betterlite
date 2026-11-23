@@ -585,9 +585,9 @@ async fn recv_fallback_and_connection_closed() {
         script.push_back(Ok(ResponsesWebSocketMessage::Bytes(
             br#"{"type":"response.completed"}"#.to_vec(),
         )));
-        script.push_back(Err(BackendError::Closed {
-            source: TestError(String::from("the backend connection closed")),
-        }))
+        script.push_back(Err(BackendError::Closed(TestError(String::from(
+            "the backend connection closed",
+        )))))
     };
     let logging = RecordingLogging::default();
     let redactor = redactor();

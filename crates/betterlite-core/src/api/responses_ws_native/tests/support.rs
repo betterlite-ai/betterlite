@@ -187,16 +187,15 @@ impl ScriptedBackend {
     }
 
     pub(super) fn closing(&self) -> &Self {
-        lock(&self.recv_raw_script).push_back(Err(BackendError::Closed {
-            source: TestError(String::from("the backend connection closed")),
-        }));
+        lock(&self.recv_raw_script).push_back(Err(BackendError::Closed(TestError(String::from(
+            "the backend connection closed",
+        )))));
         self
     }
 
     pub(super) fn failing(&self, message: &str) -> &Self {
-        lock(&self.recv_raw_script).push_back(Err(BackendError::Failed {
-            source: TestError(message.to_owned()),
-        }));
+        lock(&self.recv_raw_script)
+            .push_back(Err(BackendError::Failed(TestError(message.to_owned()))));
         self
     }
 
@@ -208,11 +207,9 @@ impl ScriptedBackend {
 const CLOSED: &str = "the backend connection closed";
 
 fn next_message(script: &ReceiveScript) -> Received {
-    lock(script).pop_front().unwrap_or_else(|| {
-        Err(BackendError::Closed {
-            source: TestError(String::from(CLOSED)),
-        })
-    })
+    lock(script)
+        .pop_front()
+        .unwrap_or_else(|| Err(BackendError::Closed(TestError(String::from(CLOSED)))))
 }
 
 async fn frame(mode: ReceiveMode, script: &ReceiveScript, raw: bool) -> Received {

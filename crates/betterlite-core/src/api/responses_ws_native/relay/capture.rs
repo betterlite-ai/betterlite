@@ -198,17 +198,14 @@ fn collect_item(item: &Json, collected: &mut Vec<IndexMap<String, Json>>) {
         Some(Json::Text(text)) => collected.push(user_message(Json::Text(text.clone()))),
         Some(Json::List(blocks)) => {
             for block in blocks {
-                let Json::Object(block_fields) = block else {
-                    continue;
-                };
-                if !matches!(block_fields.get("type"), Some(Json::Text(kind)) if kind == "input_text")
+                if let Json::Object(block_fields) = block
+                    && matches!(
+                        block_fields.get("type"),
+                        Some(Json::Text(kind)) if kind == "input_text"
+                    )
+                    && let Some(text) = block_fields.get("text")
+                    && is_supplied(text)
                 {
-                    continue;
-                }
-                let Some(text) = block_fields.get("text") else {
-                    continue;
-                };
-                if is_supplied(text) {
                     collected.push(user_message(text.clone()));
                 }
             }
@@ -218,8 +215,8 @@ fn collect_item(item: &Json, collected: &mut Vec<IndexMap<String, Json>>) {
 }
 
 fn user_message(content: Json) -> IndexMap<String, Json> {
-    let mut message = IndexMap::new();
-    message.insert(String::from("role"), Json::Text(String::from("user")));
-    message.insert(String::from("content"), content);
-    message
+    IndexMap::from([
+        (String::from("role"), Json::Text(String::from("user"))),
+        (String::from("content"), content),
+    ])
 }

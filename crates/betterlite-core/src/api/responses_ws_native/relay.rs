@@ -93,10 +93,7 @@ where
 fn raw_request_data(fields: &IndexMap<String, Json>) -> RequestData {
     let mut data = RequestData::new();
     for (name, value) in fields {
-        let Ok(text) = serde_json::to_string(value) else {
-            continue;
-        };
-        let Ok(raw) = RawValue::from_string(text) else {
+        let Ok(raw) = serde_json::to_string(value).and_then(RawValue::from_string) else {
             continue;
         };
         data.insert(name.clone(), raw);
