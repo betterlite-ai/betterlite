@@ -49,12 +49,8 @@ fn cipher() -> Cipher {
 fn error_json(error: &KeyPatchError) -> Value {
     let (status, _) = error.response();
     let exception = error.proxy_exception();
-    let (kind, param, code) = exception.map_or((None, None, None), |exception| {
-        (
-            Some(exception.error_type),
-            exception.param,
-            Some(exception.code),
-        )
+    let (kind, param, code) = exception.map_or((None, None, None), |raised| {
+        (Some(raised.error_type), raised.param, Some(raised.code))
     });
     json!({"status": status, "type": kind, "param": param, "code": code})
 }
@@ -90,7 +86,7 @@ pub(super) fn answer(call: &Call) -> Result<Value, CallFailed> {
 fn answered<T>(
     outcome: Result<T, KeyPatchError>,
     warnings: &[PatchWarning],
-    effects: Vec<Value>,
+    effects: &[Value],
 ) -> Result<Value, CallFailed>
 where
     T: Serialize,
@@ -129,7 +125,7 @@ fn metadata_answer(body: &Value, existing_metadata: &Row) -> Result<Value, CallF
             warnings: &mut warnings,
         },
     );
-    answered(outcome.map(|()| values), &warnings, Vec::new())
+    answered(outcome.map(|()| values), &warnings, &[])
 }
 
 fn soft_budget_answer(
@@ -151,7 +147,7 @@ fn soft_budget_answer(
         existing.budget_id.as_deref(),
         "admin",
     ));
-    answered(outcome, &[], store.snapshot())
+    answered(outcome, &[], &store.snapshot())
 }
 
 fn token_answer(request_key: Option<&str>, existing_token: Option<&str>) -> Value {
@@ -185,7 +181,7 @@ fn prepare_answer(body: &Value, stored: &Row) -> Result<Value, CallFailed> {
         warnings: &mut warnings,
     };
     let outcome = runtime()?.block_on(prepare_key_update_data(&request, &cipher, &mut context));
-    answered(outcome, &warnings, Vec::new())
+    answered(outcome, &warnings, &[])
 }
 
 #[derive(Default)]
