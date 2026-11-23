@@ -5,6 +5,7 @@ from typing import Final, NotRequired, TypedDict, cast
 
 import httpx
 import litellm
+import litellm.llms.azure.azure as azure_module
 import openai
 from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -16,13 +17,11 @@ from openai import AzureOpenAI
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-import litellm.llms.azure.azure as azure_module
 from azure_images import clear_ambient
 
 litellm.suppress_debug_info = True
 
 CONFIG: Final[AzureAVATextToSpeechConfig] = AzureAVATextToSpeechConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L34
-ANSWER: Final = "handler-answer"
 
 
 class Reply(TypedDict):
@@ -58,10 +57,6 @@ class NativeCall(TypedDict):
     environment: NotRequired[dict[str, str]]
 
 
-class NativeSelection(TypedDict):
-    calls: list[NativeCall]
-
-
 class ProbeScenario(TypedDict):
     outcome: str
     api_key: str
@@ -73,23 +68,11 @@ class ProbeScenario(TypedDict):
     reply: NotRequired[Reply]
 
 
-class ProbeCases(TypedDict):
-    scenarios: list[ProbeScenario]
-
-
-class Input(TypedDict, total=False):
-    audio_speech: AudioSpeech
-    supported_params: AudioSpeech
-    native_speech_selection: NativeSelection
-    probe: ProbeCases
-
-
 AUDIO: Final[TypeAdapter[AudioSpeech]] = TypeAdapter(AudioSpeech)
 OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 TEXT: Final[TypeAdapter[str]] = TypeAdapter(str)
 SECONDS: Final[TypeAdapter[float | int]] = TypeAdapter(float | int)
-EMPTY_REPLY: Final[Reply] = {"status": 200, "body": "{}"}
 
 
 class Recorder:
@@ -102,7 +85,9 @@ class Recorder:
 
     def respond(self, request: httpx.Request) -> httpx.Response:
         self.seen.append(request)
-        return httpx.Response(self.status, headers=self.headers, content=self.body.encode(), request=request)
+        return httpx.Response(
+            self.status, headers=self.headers, content=self.body.encode(), request=request
+        )
 
 
 class SpeechLog(Logging):
@@ -132,7 +117,8 @@ def wire_view(sent: httpx.Request) -> JsonValue:
     return {
         "method": sent.method, "url": str(sent.url), "api_key": headers.get("api-key"),
         "authorization": headers.get("authorization"), "accept": headers.get("accept"),
-        "x_extra": headers.get("x-extra"), "body": None if not sent.content else JSON.validate_json(sent.content),
+        "x_extra": headers.get("x-extra"),
+        "body": None if not sent.content else JSON.validate_json(sent.content),
     }
 
 
@@ -144,19 +130,21 @@ def audio_view(case: AudioSpeech) -> JsonValue:
     litellm.client_session = httpx.Client(transport=httpx.MockTransport(recorder.respond))
     litellm.aclient_session = httpx.AsyncClient(transport=httpx.MockTransport(recorder.respond))
     aspeech = case.get("aspeech")
-    options = case.get("optional_params")
+    raw_options = case.get("optional_params")
+    options: dict[str, JsonValue] = {} if raw_options is None else dict(raw_options)
     error: openai.APIStatusError | None = None
     status = 0
     content = b""
     try:
-        answered = AzureChatCompletion().audio_speech(
+        answered = AzureChatCompletion().audio_speech(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1362-L1426
             model=case["model"], input=case["input"], voice=case["voice"], aspeech=aspeech,
-            optional_params={} if options is None else dict(options), api_key=case.get("api_key"),
-            api_base=case["api_base"], api_version=case["api_version"], organization=None, max_retries=2,
+            optional_params=options, api_key=case.get("api_key"), api_base=case["api_base"],
+            api_version=case["api_version"], organization=None, max_retries=2,
             timeout=600.0, logging_obj=log, litellm_params=None,
         )
         if aspeech is True:
-            response = asyncio.run(cast("Coroutine[object, object, HttpxBinaryResponseContent]", answered))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1362-L1426
+            pending = cast("Coroutine[object, object, HttpxBinaryResponseContent]", answered)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1362-L1426
+            response = asyncio.run(pending)
         else:
             response = answered
         status = response.response.status_code
@@ -177,14 +165,15 @@ class RecordingHandler:
 
     def text_to_speech_handler(self, **kwargs: JsonValue) -> str:
         self.calls.append({
-            "voice": kwargs["voice"], "litellm_params": OBJECT.validate_python(kwargs["litellm_params"]),
+            "voice": kwargs["voice"], "extra_headers": kwargs["extra_headers"],
+            "litellm_params": OBJECT.validate_python(kwargs["litellm_params"]),
             "optional_params": OBJECT.validate_python(kwargs["text_to_speech_optional_params"]),
-            "extra_headers": kwargs["extra_headers"], "is_async": kwargs["_is_async"],
+            "is_async": kwargs["_is_async"], "client": kwargs["client"],
             "timeout": str(int(SECONDS.validate_python(kwargs["timeout"]))),
-            "provider": TEXT.validate_python(kwargs["custom_llm_provider"]), "client": kwargs["client"],
-            "result": ANSWER, "error": None,
+            "provider": TEXT.validate_python(kwargs["custom_llm_provider"]),
+            "result": "handler-answer", "error": None,
         })
-        return ANSWER
+        return "handler-answer"
 
 
 def native_view(call: NativeCall) -> JsonValue:
@@ -198,14 +187,16 @@ def native_view(call: NativeCall) -> JsonValue:
     environment = {} if environment_value is None else environment_value
     for name, value in environment.items():
         os.environ[name] = value
-    optional_value = call.get("optional_params")
-    litellm_value = call.get("litellm_params")
+    raw_optional = call.get("optional_params")
+    raw_params = call.get("litellm_params")
+    optional_params: dict[str, JsonValue] = {} if raw_optional is None else dict(raw_optional)
+    litellm_params: dict[str, JsonValue] = {} if raw_params is None else dict(raw_params)
     handler = RecordingHandler()
-    _answered = CONFIG.dispatch_text_to_speech(
+    _answered: object = CONFIG.dispatch_text_to_speech(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L62-L134
         model=call["model"], input=call["input"], aspeech=call.get("aspeech") is True,
-        optional_params={} if optional_value is None else dict(optional_value),
-        litellm_params_dict={} if litellm_value is None else dict(litellm_value), logging_obj=SpeechLog(),
-        timeout=float(call["timeout_seconds"]), api_base=call.get("api_base"), api_key=call.get("api_key"),
+        optional_params=optional_params, litellm_params_dict=litellm_params,
+        logging_obj=SpeechLog(), timeout=float(call["timeout_seconds"]),
+        api_base=call.get("api_base"), api_key=call.get("api_key"),
         voice=cast("str | dict[str, JsonValue] | None", call.get("voice")),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L110-L118
         extra_headers=cast("dict[str, object] | None", call.get("extra_headers")),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L76
         base_llm_http_handler=cast("BaseLLMHTTPHandler", handler),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L119-L134
@@ -218,7 +209,6 @@ def native_view(call: NativeCall) -> JsonValue:
 class NoHeadersReply:
     def create(self, **kwargs: JsonValue) -> None:
         self.sent = kwargs
-        return None
 
 
 class NoHeadersClient:
@@ -229,7 +219,9 @@ class NoHeadersClient:
         self.with_raw_response = NoHeadersReply()
 
 
-def probe_headers(scenario: ProbeScenario) -> tuple[dict[str, JsonValue] | None, dict[str, JsonValue] | None]:
+def probe_headers(
+    scenario: ProbeScenario,
+) -> tuple[dict[str, JsonValue] | None, dict[str, JsonValue] | None]:
     mode = scenario.get("mode")
     invalid = scenario["outcome"] == "invalid_completion"
     saved: type[AzureOpenAI] | None = None
@@ -239,13 +231,13 @@ def probe_headers(scenario: ProbeScenario) -> tuple[dict[str, JsonValue] | None,
     headers: dict[str, JsonValue] | None = None
     raised: dict[str, JsonValue] | None = None
     try:
-        headers = OBJECT.validate_python(
-            AzureChatCompletion().get_headers(
-                model=scenario.get("model"), api_key=scenario["api_key"], api_base=scenario["api_base"],
-                api_version=scenario["api_version"], timeout=600.0, mode="chat" if mode is None else mode,
-                messages=scenario.get("messages"),
-            )
+        raw_headers: dict[str, JsonValue] = AzureChatCompletion().get_headers(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1473-L1540
+            model=scenario.get("model"), api_key=scenario["api_key"],
+            api_base=scenario["api_base"], api_version=scenario["api_version"],
+            timeout=600.0, mode="chat" if mode is None else mode,
+            messages=scenario.get("messages"),
         )
+        headers = OBJECT.validate_python(raw_headers)
     except openai.APIStatusError as caught:
         raised = {"status": caught.status_code}
     except Exception as caught:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1519-L1529
@@ -260,7 +252,7 @@ def probe_view(scenario: ProbeScenario) -> JsonValue:
     clear_ambient()
     litellm.in_memory_llm_clients_cache = LLMClientCache()
     reply = scenario.get("reply")
-    recorder = Recorder(EMPTY_REPLY if reply is None else reply)
+    recorder = Recorder({"status": 200, "body": "{}"} if reply is None else reply)
     litellm.client_session = httpx.Client(transport=httpx.MockTransport(recorder.respond))
     headers, raised = probe_headers(scenario)
     sent = recorder.seen[0] if recorder.seen else None
@@ -274,19 +266,22 @@ def probe_view(scenario: ProbeScenario) -> JsonValue:
     }
 
 
-def run(input_value: Input) -> JsonValue:
+def run(input_value: dict[str, JsonValue]) -> JsonValue:
     match next(iter(input_value), None):
         case "audio_speech":
             return audio_view(AUDIO.validate_python(input_value.get("audio_speech")))
         case "supported_params":
             supported_case = AUDIO.validate_python(input_value.get("supported_params"))
-            supported = CONFIG.get_supported_openai_params(supported_case["model"])
-            return {"supported": JSON.validate_python(supported), "speech": audio_view(supported_case)}
+            supported: list[str] = CONFIG.get_supported_openai_params(supported_case["model"])  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L136-L143
+            speech = audio_view(supported_case)
+            return {"supported": JSON.validate_python(supported), "speech": speech}
         case "native_speech_selection":
-            calls = TypeAdapter(NativeSelection).validate_python(input_value.get("native_speech_selection"))["calls"]
+            selection = OBJECT.validate_python(input_value.get("native_speech_selection"))
+            calls = TypeAdapter(list[NativeCall]).validate_python(selection["calls"])
             return [native_view(call) for call in calls]
         case "probe":
-            scenarios = TypeAdapter(ProbeCases).validate_python(input_value.get("probe"))["scenarios"]
+            cases = OBJECT.validate_python(input_value.get("probe"))
+            scenarios = TypeAdapter(list[ProbeScenario]).validate_python(cases["scenarios"])
             return [probe_view(scenario) for scenario in scenarios]
         case _:
             raise ValueError("expected an azure_speech variant")

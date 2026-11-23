@@ -216,13 +216,11 @@ class AvaConfig(AzureAVATextToSpeechConfig):
 
 
 def wire_fields(sent: httpx.Request, key_header: str) -> dict[str, JsonValue]:
+    headers: dict[str, str] = dict(sent.headers)
     return {
-        "method": sent.method,
-        "url": str(sent.url),
-        "api_key": sent.headers.get(key_header),
-        "authorization": sent.headers.get("authorization"),
-        "accept": sent.headers.get("accept"),
-        "output_format": sent.headers.get("x-microsoft-outputformat"),
+        "method": sent.method, "url": str(sent.url),
+        "api_key": headers.get(key_header), "authorization": headers.get("authorization"),
+        "accept": headers.get("accept"), "output_format": headers.get("x-microsoft-outputformat"),
     }
 
 
@@ -231,20 +229,12 @@ def openai_answer(case: SpeechCase) -> JsonValue:
     litellm.in_memory_llm_clients_cache = LLMClientCache()
     recorder = Recorder(b"ID3")
     litellm.client_session = httpx.Client(transport=httpx.MockTransport(recorder.respond))
-    response = AzureChatCompletion().audio_speech(
-        model=case["model"],
-        input=case["input"],
-        voice=case["voice"],
-        optional_params=dict(case["options"]),
-        api_key=case["api_key"],
-        api_base=case["api_base"],
-        api_version=case["api_version"],
-        organization=None,
-        max_retries=2,
-        timeout=600.0,
-        logging_obj=SpeechLog(),
-        aspeech=False,
-        litellm_params=None,
+    options: dict[str, JsonValue] = dict(case["options"])
+    response = AzureChatCompletion().audio_speech(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1362-L1426
+        model=case["model"], input=case["input"], voice=case["voice"],
+        optional_params=options, api_key=case["api_key"], api_base=case["api_base"],
+        api_version=case["api_version"], organization=None, max_retries=2,
+        timeout=600.0, logging_obj=SpeechLog(), aspeech=False, litellm_params=None,
     )
     sent = recorder.seen[0]
     return {
@@ -261,28 +251,22 @@ def native_answer(case: SsmlCase) -> JsonValue:
     handler = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.respond)))
     litellm.in_memory_llm_clients_cache = LLMClientCache()
     litellm.in_memory_llm_clients_cache.set_cache(key=CLIENT_KEY, value=handler)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/llm_caching_handler.py#L58
-    answered = AvaConfig().dispatch_text_to_speech(
-        model=case["model"],
-        input=case["input"],
-        voice=case["voice"],
-        optional_params=dict(case["options"]),
-        litellm_params_dict={},
-        logging_obj=SpeechLog(),
-        timeout=600.0,
-        extra_headers=None,
-        base_llm_http_handler=BaseLLMHTTPHandler(),
-        aspeech=False,
-        api_base=case["api_base"],
-        api_key=case["api_key"],
+    options: dict[str, JsonValue] = dict(case["options"])
+    no_params: dict[str, JsonValue] = {}
+    answered = AvaConfig().dispatch_text_to_speech(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L108-L134
+        model=case["model"], input=case["input"], voice=case["voice"],
+        optional_params=options, litellm_params_dict=no_params,
+        logging_obj=SpeechLog(), timeout=600.0, extra_headers=None,
+        base_llm_http_handler=BaseLLMHTTPHandler(), aspeech=False,
+        api_base=case["api_base"], api_key=case["api_key"],
     )
     response = cast("HttpxBinaryResponseContent", answered)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L108-L134
     sent = recorder.seen[0]
-    return {
-        **wire_fields(sent, "ocp-apim-subscription-key"),
-        "body": sent.content.decode(),
-        "status": response.response.status_code,
-        "content": response.response.content.decode(),
-    }
+    fields = wire_fields(sent, "ocp-apim-subscription-key")
+    fields["body"] = sent.content.decode()
+    fields["status"] = response.response.status_code
+    fields["content"] = response.response.content.decode()
+    return fields
 
 
 def run(input_value: Call) -> JsonValue:
