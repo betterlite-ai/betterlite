@@ -1,10 +1,13 @@
+use std::slice;
+
 use chrono::{DateTime, Utc};
 
 use crate::shadow_eval_lifecycle::error::LifecycleError;
-use crate::shadow_eval_lifecycle::response::{apply_target_labels, job_from_legs, target_ids};
+use crate::shadow_eval_lifecycle::response::{apply_target_labels, job_from_legs};
 use crate::shadow_eval_lifecycle::store::ShadowLifecycleStore;
 use crate::shadow_eval_models::job::ShadowJobResponse;
 use crate::shadow_eval_models::{ShadowEvalStatus, ShadowEvalTargetType};
+use crate::shadow_result_aggregation::labels::target_ids_of;
 
 // stop_shadow_eval_job: the statement claims the job only while a leg still samples, then the response reports what happened
 pub async fn stop_shadow_eval_job<Store>(
@@ -43,12 +46,11 @@ where
             status: status_text(current.status).to_owned(),
         });
     }
+    let keys = target_ids_of(slice::from_ref(&job), ShadowEvalTargetType::Key);
+    let teams = target_ids_of(slice::from_ref(&job), ShadowEvalTargetType::Team);
+    let users = target_ids_of(slice::from_ref(&job), ShadowEvalTargetType::User);
     let rows = store
-        .load_targets(
-            &target_ids(&legs, ShadowEvalTargetType::Key),
-            &target_ids(&legs, ShadowEvalTargetType::Team),
-            &target_ids(&legs, ShadowEvalTargetType::User),
-        )
+        .load_targets(&keys, &teams, &users)
         .await
         .map_err(|error| LifecycleError::Database(Box::new(error)))?;
     apply_target_labels(&mut job, &rows);

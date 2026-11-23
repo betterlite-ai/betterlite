@@ -28,13 +28,16 @@ use crate::shadow_eval_lifecycle::body::decode_shadow_body;
 use crate::shadow_eval_lifecycle::error::LifecycleError;
 use crate::shadow_eval_lifecycle::start::{StartDeps, start_shadow_eval};
 use crate::shadow_eval_lifecycle::store::{
-    ClaimedTarget, InsertRejection, LegAttemptStats, LegRow, NewLeg, ShadowLifecycleStore,
-    TargetKeyRow, TargetRows, TargetTeamRow, TargetUserRow, target_type_text,
+    ClaimedTarget, InsertRejection, NewLeg, ShadowLifecycleStore, TargetKeyRow, TargetRows,
+    TargetTeamRow, TargetUserRow,
 };
 use crate::shadow_eval_models::ShadowEvalTargetType;
 use crate::shadow_eval_models::job::ShadowJobResponse;
 use crate::shadow_eval_validation::request::{SHADOW_EVAL_TURN_VALVE, StartShadowEvalRequest};
 use crate::shadow_eval_validation::router_view::{AnthropicCredentials, ShadowEvalRouter};
+use crate::shadow_result_aggregation::legs::LegRow;
+use crate::shadow_result_aggregation::responses::LegAttemptCount;
+use crate::shadow_result_aggregation::targets::target_type_name;
 
 pub(super) const JUDGE: &str = "judge-model";
 pub(super) const TIER: &str = "tier-model";
@@ -260,7 +263,7 @@ impl ShadowLifecycleStore for FakeStore {
         self.calls
             .lock()
             .unwrap()
-            .push(format!("sweep:{}", target_type_text(target_type)));
+            .push(format!("sweep:{}", target_type_name(target_type)));
         let attempts = self.attempts.lock().unwrap();
         let mut legs = self.legs.lock().unwrap();
         for leg in &mut *legs {
@@ -335,7 +338,7 @@ impl ShadowLifecycleStore for FakeStore {
             .collect())
     }
 
-    async fn attempt_stats(&self, job_ids: &[String]) -> Result<Vec<LegAttemptStats>, Self::Error> {
+    async fn attempt_stats(&self, job_ids: &[String]) -> Result<Vec<LegAttemptCount>, Self::Error> {
         self.calls.lock().unwrap().push("stats".to_owned());
         let legs = self.legs.lock().unwrap();
         let attempts = self.attempts.lock().unwrap();
@@ -347,7 +350,7 @@ impl ShadowLifecycleStore for FakeStore {
                 if count == 0 {
                     return None;
                 }
-                Some(LegAttemptStats {
+                Some(LegAttemptCount {
                     job_id: leg.id.clone(),
                     attempt_count: count,
                     spend: attempt_spend(&attempts, leg),

@@ -5,6 +5,7 @@ use thiserror::Error;
 use crate::shadow_eval_lifecycle::body::ShadowBodyError;
 use crate::shadow_eval_models::ShadowEvalModelError;
 use crate::shadow_eval_validation::error::{AccessError, ShadowEvalValidationError};
+use crate::shadow_result_aggregation::error::ShadowResultsError;
 
 // the detail LiteLLM's CommonProxyErrors.db_not_connected_error carries
 pub const DB_NOT_CONNECTED: &str = "DB not connected. This endpoint needs a database; set DATABASE_URL to a PostgreSQL connection string (postgresql://...) to enable it. See https://docs.litellm.ai/docs/proxy/virtual_keys";
@@ -19,6 +20,8 @@ pub enum LifecycleError {
     Body(#[from] ShadowBodyError),
     #[error(transparent)]
     Model(#[from] ShadowEvalModelError),
+    #[error(transparent)]
+    Results(#[from] ShadowResultsError),
     #[error("the caller's identity could not be read")]
     Caller(#[source] serde_json::Error),
     #[error("{}", DB_NOT_CONNECTED)]
@@ -49,6 +52,7 @@ impl LifecycleError {
             Self::AlreadyClaimed { .. } | Self::ConcurrentClaim { .. } => 409,
             Self::JobNotFound { .. } => 404,
             Self::Model(_)
+            | Self::Results(_)
             | Self::Caller(_)
             | Self::DatabaseUnavailable
             | Self::Database(_)

@@ -8,7 +8,7 @@ use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection as JobDirection;
 use crate::shadow_eval_lifecycle::error::LifecycleError;
 use crate::shadow_eval_lifecycle::response::{apply_target_labels, job_from_legs};
 use crate::shadow_eval_lifecycle::store::{
-    ClaimedTarget, InsertRejection, NewLeg, ShadowLifecycleStore, TargetRows, target_type_text,
+    ClaimedTarget, InsertRejection, NewLeg, ShadowLifecycleStore, TargetRows,
 };
 use crate::shadow_eval_models::job::ShadowJobResponse;
 use crate::shadow_eval_models::{ShadowEvalModelError, ShadowEvalTargetType};
@@ -19,6 +19,7 @@ use crate::shadow_eval_validation::router_view::{AnthropicCredentials, ShadowEva
 use crate::shadow_eval_validation::start::{
     StartContext, TargetKey, TargetRecords, validate_start,
 };
+use crate::shadow_result_aggregation::targets::target_type_name;
 
 // everything B345's validate_start reads, passed down from the server state
 pub struct StartDeps<'deps> {
@@ -152,7 +153,7 @@ where
         .map(|row| {
             format!(
                 "{} {} (job {})",
-                target_type_text(row.target_type),
+                target_type_name(row.target_type),
                 row.target_id,
                 row.group_id
             )

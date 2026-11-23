@@ -28,9 +28,9 @@ use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_lifecycle::body::ShadowBodyError;
 use crate::shadow_eval_lifecycle::error::LifecycleError;
 use crate::shadow_eval_lifecycle::response::job_from_legs;
-use crate::shadow_eval_lifecycle::store::LegRow;
 use crate::shadow_eval_models::ShadowEvalTargetType;
 use crate::shadow_eval_validation::error::AccessError;
+use crate::shadow_result_aggregation::legs::LegRow;
 
 fn principal(user_id: &str, roles: &[Role]) -> Principal {
     Principal {

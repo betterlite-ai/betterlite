@@ -7,9 +7,11 @@ use super::PostgresLifecycleError;
 use super::sql::LEG_COLUMNS;
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_lifecycle::store::{
-    ClaimedTarget, LegAttemptStats, LegRow, NewLeg, TargetKeyRow, TargetTeamRow, TargetUserRow,
-    parse_target_type,
+    ClaimedTarget, NewLeg, TargetKeyRow, TargetTeamRow, TargetUserRow,
 };
+use crate::shadow_result_aggregation::legs::LegRow;
+use crate::shadow_result_aggregation::responses::LegAttemptCount;
+use crate::shadow_result_aggregation::targets::parse_target_type;
 
 pub(super) fn leg_parameters<'legs>(
     legs: &'legs [NewLeg],
@@ -103,8 +105,8 @@ pub(super) fn leg_row(row: &Row) -> Result<LegRow, PostgresLifecycleError> {
     })
 }
 
-pub(super) fn attempt_row(row: &Row) -> Result<LegAttemptStats, PostgresLifecycleError> {
-    Ok(LegAttemptStats {
+pub(super) fn attempt_row(row: &Row) -> Result<LegAttemptCount, PostgresLifecycleError> {
+    Ok(LegAttemptCount {
         job_id: row.try_get("job_id").map_err(backend)?,
         attempt_count: row.try_get("attempt_count").map_err(backend)?,
         spend: row.try_get("spend").map_err(backend)?,

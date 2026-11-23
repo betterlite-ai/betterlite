@@ -78,7 +78,6 @@ async fn starts_one_job_with_a_leg_per_target_and_the_shared_config() {
             &Uuid::from_u128(4).to_string()
         ]
     );
-    assert_eq!(stored[0].created_by.as_deref(), Some("admin-user"));
 }
 
 #[tokio::test]

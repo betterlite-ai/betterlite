@@ -204,6 +204,18 @@ async fn funnel_ids(pool: &Pool) -> Vec<String> {
         .collect()
 }
 
+async fn created_by_of(pool: &Pool, id: &str) -> Option<String> {
+    let client = pool.get().await.unwrap();
+    let row = client
+        .query_one(
+            r#"SELECT "created_by" FROM "LiteLLM_ShadowEvalJob" WHERE "id" = $1"#,
+            &[&id],
+        )
+        .await
+        .unwrap();
+    row.get("created_by")
+}
+
 fn leg(id: &str, kind: ShadowEvalTargetType, target: &str) -> NewLeg {
     NewLeg {
         id: id.to_owned(),
@@ -370,6 +382,8 @@ async fn create_legs_writes_every_column_and_rejects_a_second_claim() {
     duplicate.direction = ShadowEvalDirection::Reverse;
     let rejected = store.create_legs(&[duplicate]).await;
     let after = store.legs("job-1").await.unwrap();
+    let written_by = created_by_of(&pool, "leg-a").await;
+    let team_by = created_by_of(&pool, "leg-b").await;
     pool.close();
     fixture.close_async().await.unwrap();
     let ids: Vec<&str> = read.iter().map(|row| row.id.as_str()).collect();
@@ -390,7 +404,7 @@ async fn create_legs_writes_every_column_and_rejects_a_second_claim() {
     assert_eq!(written.shadow_percentage, 25.0_f64);
     assert_eq!(written.max_turns, 10_000);
     assert_eq!(written.max_budget, Some(Decimal::new(15, 1)));
-    assert_eq!(written.created_by.as_deref(), Some("admin-user"));
+    assert_eq!(written_by.as_deref(), Some("admin-user"));
     assert_eq!(written.created_at, at(2026, 11, 23, 12));
     assert_eq!(written.ends_at, at(2026, 12, 23, 12));
     assert_eq!(written.stopped_at, None);
@@ -406,7 +420,7 @@ async fn create_legs_writes_every_column_and_rejects_a_second_claim() {
         written_team.arm_router_names(),
         vec!["legacy-router".to_owned()]
     );
-    assert_eq!(written_team.created_by, None);
+    assert_eq!(team_by, None);
     rejected.unwrap_or_else(|rejection| match rejection {
         InsertRejection::UniqueViolation => {}
         InsertRejection::Database(error) => {

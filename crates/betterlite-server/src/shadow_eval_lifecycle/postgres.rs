@@ -20,13 +20,14 @@ use self::sql::{
     ATTEMPT_COUNTS_SQL, CLAIMED_SQL, KEYS_SQL, LEGS_SQL, SEED_FUNNEL_SQL, STOP_JOB_SQL,
     SWEEP_FINISHED_SQL, TEAMS_SQL, USERS_SQL, insert_legs,
 };
-use super::store::{
-    ClaimedTarget, InsertRejection, LegAttemptStats, LegRow, NewLeg, ShadowLifecycleStore,
-    StoreDecodeError, TargetRows, target_type_text,
-};
+use super::store::{ClaimedTarget, InsertRejection, NewLeg, ShadowLifecycleStore, TargetRows};
 use crate::jobs::ptu::attribution::NoOidc;
 use crate::shadow_eval_job_loading::jobs::{ShadowEvalDirection, ShadowJobError};
 use crate::shadow_eval_models::ShadowEvalTargetType;
+use crate::shadow_result_aggregation::error::ShadowResultsError;
+use crate::shadow_result_aggregation::legs::LegRow;
+use crate::shadow_result_aggregation::responses::LegAttemptCount;
+use crate::shadow_result_aggregation::targets::target_type_name;
 use crate::state::ServerState;
 
 // the rows a shadow eval write touches, over the same pool builder the cache activity routes use
@@ -42,7 +43,7 @@ pub enum PostgresLifecycleError {
     #[error("the stored shadow eval direction could not be read")]
     Direction(#[from] ShadowJobError),
     #[error("the stored shadow eval target type could not be read")]
-    TargetType(#[from] StoreDecodeError),
+    TargetType(#[from] ShadowResultsError),
 }
 
 // the startup wiring the route needs: the writer URL the CLI resolved, or none while no database is configured
@@ -124,7 +125,7 @@ impl ShadowLifecycleStore for PostgresShadowLifecycleStore {
     ) -> Result<(), Self::Error> {
         let client = self.store.session().await?;
         let targets = ids.to_vec();
-        let kind = target_type_text(target_type);
+        let kind = target_type_name(target_type);
         client
             .execute(SWEEP_FINISHED_SQL, &[&targets, &kind])
             .await
@@ -170,7 +171,7 @@ impl ShadowLifecycleStore for PostgresShadowLifecycleStore {
         let ends: Vec<NaiveDateTime> = legs.iter().map(|leg| leg.ends_at.naive_utc()).collect();
         let kinds: Vec<&str> = legs
             .iter()
-            .map(|leg| target_type_text(leg.target_type))
+            .map(|leg| target_type_name(leg.target_type))
             .collect();
         let headings: Vec<&str> = legs.iter().map(|leg| leg.direction.as_str()).collect();
         let parameters = leg_parameters(legs, &created, &ends, &kinds, &headings);
@@ -206,7 +207,7 @@ impl ShadowLifecycleStore for PostgresShadowLifecycleStore {
         rows.iter().map(leg_row).collect()
     }
 
-    async fn attempt_stats(&self, job_ids: &[String]) -> Result<Vec<LegAttemptStats>, Self::Error> {
+    async fn attempt_stats(&self, job_ids: &[String]) -> Result<Vec<LegAttemptCount>, Self::Error> {
         let client = self.store.session().await?;
         let ids = job_ids.to_vec();
         let rows = client

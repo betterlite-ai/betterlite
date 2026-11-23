@@ -3,10 +3,11 @@ use std::error::Error as StdError;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
-use thiserror::Error;
 
 use crate::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use crate::shadow_eval_models::ShadowEvalTargetType;
+use crate::shadow_result_aggregation::legs::LegRow;
+use crate::shadow_result_aggregation::responses::LegAttemptCount;
 
 // one LiteLLM_VerificationToken row the start endpoint loads for its targets
 #[derive(Clone)]
@@ -90,46 +91,6 @@ impl NewLeg {
     }
 }
 
-// one LiteLLM_ShadowEvalJob row read back for a job response; a row is one target's leg
-#[derive(Clone)]
-pub struct LegRow {
-    pub id: String,
-    pub group_id: String,
-    pub target_type: ShadowEvalTargetType,
-    pub target_id: String,
-    pub router_name: String,
-    pub router_names: Vec<String>,
-    pub models: Vec<String>,
-    pub direction: ShadowEvalDirection,
-    pub baseline_model: Option<String>,
-    pub judge_model: String,
-    pub shadow_percentage: f64,
-    pub max_turns: i64,
-    pub max_budget: Option<Decimal>,
-    pub created_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
-    pub stopped_at: Option<DateTime<Utc>>,
-    pub stopped_by: Option<String>,
-}
-
-impl LegRow {
-    // rows from before router_names existed hold the whole router set in router_name alone
-    #[must_use]
-    pub fn arm_router_names(&self) -> Vec<String> {
-        if self.router_names.is_empty() {
-            return vec![self.router_name.clone()];
-        }
-        self.router_names.clone()
-    }
-}
-
-// one leg's attempt count and recorded eval spend, frozen at its stopped_at by the adapter's read
-pub struct LegAttemptStats {
-    pub job_id: String,
-    pub attempt_count: i64,
-    pub spend: Decimal,
-}
-
 // a leg insert either landed or lost the partial unique index to a concurrent start
 pub enum InsertRejection<DatabaseError> {
     UniqueViolation,
@@ -165,7 +126,7 @@ pub trait ShadowLifecycleStore: Send + Sync {
 
     async fn legs(&self, group_id: &str) -> Result<Vec<LegRow>, Self::Error>;
 
-    async fn attempt_stats(&self, job_ids: &[String]) -> Result<Vec<LegAttemptStats>, Self::Error>;
+    async fn attempt_stats(&self, job_ids: &[String]) -> Result<Vec<LegAttemptCount>, Self::Error>;
 
     async fn stop_job(
         &self,
@@ -173,30 +134,4 @@ pub trait ShadowLifecycleStore: Send + Sync {
         operator: &str,
         stamp: DateTime<Utc>,
     ) -> Result<u64, Self::Error>;
-}
-
-#[must_use]
-pub const fn target_type_text(target_type: ShadowEvalTargetType) -> &'static str {
-    match target_type {
-        ShadowEvalTargetType::Key => "key",
-        ShadowEvalTargetType::Team => "team",
-        ShadowEvalTargetType::User => "user",
-    }
-}
-
-pub fn parse_target_type(raw: &str) -> Result<ShadowEvalTargetType, StoreDecodeError> {
-    match raw {
-        "key" => Ok(ShadowEvalTargetType::Key),
-        "team" => Ok(ShadowEvalTargetType::Team),
-        "user" => Ok(ShadowEvalTargetType::User),
-        other => Err(StoreDecodeError::UnknownTargetType {
-            target_type: other.to_owned(),
-        }),
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum StoreDecodeError {
-    #[error("target_type {target_type} is not key, team or user")]
-    UnknownTargetType { target_type: String },
 }
