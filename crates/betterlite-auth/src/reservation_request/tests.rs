@@ -231,6 +231,7 @@ async fn request_error_releases_the_applied_entries() {
             "max_cost",
             "scope",
             "admit",
+            "scope_end",
             "release"
         ]
     );
@@ -271,7 +272,14 @@ async fn request_without_applied_entries_returns_none() {
     assert!(outcome.is_none());
     assert_eq!(
         world.calls.names(),
-        vec!["counters", "input_tokens", "max_cost", "scope", "admit"]
+        vec![
+            "counters",
+            "input_tokens",
+            "max_cost",
+            "scope",
+            "admit",
+            "scope_end"
+        ]
     );
 }
 
@@ -300,6 +308,7 @@ async fn request_success_builds_the_record() {
             "max_cost",
             "scope",
             "admit",
+            "scope_end",
             "input_cost"
         ]
     );

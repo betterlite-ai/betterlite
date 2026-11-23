@@ -284,9 +284,17 @@ pub(super) struct ScriptedSettlement {
     pub(super) calls: Arc<Calls>,
 }
 
-struct NoScope;
+struct RecordingScope {
+    calls: Arc<Calls>,
+}
 
-impl ScopeHold for NoScope {}
+impl ScopeHold for RecordingScope {}
+
+impl Drop for RecordingScope {
+    fn drop(&mut self) {
+        self.calls.record("scope_end");
+    }
+}
 
 #[async_trait]
 impl ReservationSettlement for ScriptedSettlement {
@@ -296,7 +304,9 @@ impl ReservationSettlement for ScriptedSettlement {
             .lock()
             .expect("the scope log")
             .push(counter_keys.clone());
-        Box::new(NoScope)
+        Box::new(RecordingScope {
+            calls: Arc::clone(&self.calls),
+        })
     }
 
     async fn release_entries(
