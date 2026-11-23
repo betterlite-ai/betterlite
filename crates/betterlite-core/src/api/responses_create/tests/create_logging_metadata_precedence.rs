@@ -48,10 +48,7 @@ fn assert_logged(harness: &Harness) {
         params.get("data_residency"),
         Some(&Json::Text(String::from("eu")))
     );
-    assert!(
-        params.get("metadata").is_none(),
-        "a null metadata is dropped"
-    );
+    assert!(params.get("metadata").is_none(), "null metadata dropped");
     assert_eq!(
         params.get("provider_affinity_header"),
         Some(&Json::Text(String::from("X-Session")))
