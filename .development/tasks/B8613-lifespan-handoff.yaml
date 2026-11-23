@@ -85,8 +85,12 @@ description: >-
   and B8372 run takes this one, and Started carries it for B8680's billable sink. Also make one B3067 `VantageLoggers`
   Arc here, pass it to B8372, and carry it in Started so B8610 exposes it as shared.vantage_loggers.
   13. Prometheus registry. One B3875 `CollectorRegistry` as an Arc, before anything registers a collector; pass it
-  wherever B8374's merged code takes a registry. Started carries it: B8655 registers its collectors into it and B3886's
-  metrics_router renders it.
+  wherever B8374's merged code takes a registry. When the env map holds PROMETHEUS_MULTIPROC_DIR (B8375 puts the folder it
+  prepared there, as proxy_cli L696 sets os.environ; empty text counts as set), it is B10096's
+  `CollectorRegistry::multiprocess(MultiProcessWriter::new(folder, std::process::id())?)`, so every metric registered
+  into it also writes the .db files B3887's listener and the multiprocess scrape read, and a folder the writer refuses
+  stops startup with its error. Without the variable it is `CollectorRegistry::default()`. Started carries it: B8655
+  registers its collectors into it, and B8680 hands it and its multiprocess_dir() to B3886's metrics_router.
   14. Shutdown state. One B4448 `ShutdownState`, with the drain timeout from the health_readiness section and B022's
   in-flight source made here too. B8374's start_shutdown and wait_for_drain use this one. Started carries both, so the
   server's in-flight layer and wait_for_drain count the same requests (B8610 hands them to ServerState).
@@ -128,7 +132,9 @@ description: >-
   the missing plugin support error, the guardrail callback source
   answers a guardrail added after start, the tracker drains before the response cache disconnect, the gateway
   accumulator and the spend producer drain once each, Started.python_hooks is Arc::ptr_eq with the LifespanInputs
-  python_hooks, and run_proxy still calls start, server::run and stop in that order. lifespan collector tests (names
+  python_hooks, an env map with PROMETHEUS_MULTIPROC_DIR naming a temporary folder gives a registry whose
+  multiprocess_dir is that folder while one without it gives none and one naming a file stops startup, and run_proxy
+  still calls start, server::run and stop in that order. lifespan collector tests (names
   start with `collector_`) assert startup and shutdown map to start and stop. No oracle case: the order is not visible
   to a client.
 scope:

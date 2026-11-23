@@ -10,7 +10,7 @@ description: >-
   Keep the text raw. No trimming, lowercasing or splitting here: B4655's parse_trusted_redirect_origins and B10062's native_callbacks own that, and betterlite-mcp depends on betterlite-config, so this crate can't call them. This task parses no outside bytes either, since the text passes through untouched, so there is no fuzz target.
 
 
-  Who reads it. B8623 builds the OAuth flows of B7531 and B7532, which call B4655's validate_trusted_redirect_uri directly, and B8702 builds B7971's RedirectTrust port and fills the native callback list B4674's register_aggregate_client takes. Both run the two parsers on these strings once, when they build their state. That is why the section is its own task: B8623 merges before B8702, so a section inside B8702 would arrive after its first caller.
+  Who reads it. B8623 runs the two parsers on these strings once, when it builds McpState's OAuth state, and hands the one RedirectAllowlists to the B7531 and B7532 flows, which call B4655's validate_trusted_redirect_uri directly. B8702 takes the same value for B7971's RedirectTrust port and for the native callback list B4674's register_aggregate_client takes. That is why the section is its own task: B8623 merges before B8702, so a section inside B8702 would arrive after its first caller.
 
 
   Tests in sections::mcp_redirect_trust::tests load complete YAML through B002's Loader with an injected environment: unset_variables_read_empty (no variable set, and a config file with an unrelated general_settings block), reads_both_variables (each set to text with spaces around commas, mixed letter case, a `*.` entry and a `myapp://host/oauth/*` entry, which come back unchanged) and empty_variables_read_empty (both set to "").
@@ -44,7 +44,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L309-L337
 out_of_scope:
   - "Parsing MCP_TRUSTED_REDIRECT_ORIGINS (_parse_trusted_redirect_origins) and matching entries: B4655. Parsing MCP_TRUSTED_NATIVE_REDIRECT_URIS into the native callback list (_parse_trusted_native_redirect_uris) and the native match: B10062."
-  - "Passing the parsed lists to validate_trusted_redirect_uri and register_aggregate_client: B8623 for the OAuth flows, B8702 for the browser routes."
+  - "Building the parsed lists and passing them to validate_trusted_redirect_uri and register_aggregate_client: B8623 builds them once for the OAuth flows, and B8702 passes the same value to the browser routes."
   - "PROXY_BASE_URL, the other setting the trusted-redirect check reads: the proxy_base_url section, on main."
 pitfalls:
   - "Unset and empty both read as empty text, as LiteLLM's empty default treats them alike; don't make the fields Option."

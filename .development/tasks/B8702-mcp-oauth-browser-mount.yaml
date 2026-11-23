@@ -25,12 +25,11 @@ description: >-
   B7971 and the B7532 flows, as LiteLLM shares the function.
 
 
-  Redirect allowlists. RedirectTrust holds one B4655 RedirectAllowlists, built once in ports.rs from B10094's
-  config.sections.mcp_redirect_trust with a struct literal: origins is B4655's
-  parse_trusted_redirect_origins(&trusted_origins) and native_callbacks is B10062's
-  native_callbacks(&native_redirect_uris). validate passes it to validate_trusted_redirect_uri on every call, and
-  nothing here reads the environment. B7971's register path calls B4674's register_aggregate_client, whose last
-  argument is the native callback list: hand it the same native_callbacks, next to token_exchange_available. Three
+  Redirect allowlists. RedirectTrust holds McpState's one B4655 RedirectAllowlists, `oauth.redirect_allowlists`, which
+  B8623 builds from B10094's config.sections.mcp_redirect_trust and also hands to the B7531 and B7532 flows; build no
+  second one. validate passes it to validate_trusted_redirect_uri on every call, and nothing here reads the environment.
+  B7971's register path calls B4674's register_aggregate_client, whose last argument is the native callback list:
+  fill OauthBrowser's native_callbacks field from the same value, next to token_exchange_available. Three
   booted cases in mcp-oauth-browser prove the wiring end to end. Each configures one oauth2 MCP server with a client_id,
   an authorization_url and a token_url (no DCR bridge, no identity binding) and calls GET /<server>/authorize with
   state, an S256 code_challenge and a redirect_uri on a host that is neither the proxy nor loopback:

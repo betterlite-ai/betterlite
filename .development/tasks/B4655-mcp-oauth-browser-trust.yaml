@@ -242,7 +242,7 @@ out_of_scope:
   - 'litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py: _purge_expired_codes (L70-75),
     _verify_pkce (L58-63), _oauth_token_error (L77-83), _build_authorize_html (L187-200+) are owned by B4678.'
   - 'Reading MCP_TRUSTED_REDIRECT_ORIGINS and MCP_TRUSTED_NATIVE_REDIRECT_URIS: B10094''s mcp_redirect_trust section.
-    Building RedirectAllowlists from it: B8623 for the OAuth flows of B7531 and B7532, B8702 for B7971''s RedirectTrust port.'
+    Building RedirectAllowlists from it: B8623, once, for the B7531 and B7532 flows, B8702''s RedirectTrust port and B7971''s register path.'
 
 pitfalls:
   - 'The JWT decode must reject any token with type=="byok_session", since the MCP /token endpoint also

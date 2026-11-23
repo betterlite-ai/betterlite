@@ -102,7 +102,7 @@ out_of_scope:
   - "validate_loopback_redirect_uri, validate_trusted_redirect_uri, _parse_trusted_redirect_origins, _matches_trusted_origin_entry, _resolve_proxy_base_for_redirect, _trusted_redirect_uri_is_allowed, _build_trusted_redirect_rejection_message, _raise_trusted_redirect_uri_rejected and _origin_label: B4655, which calls this module."
   - "get_request_base_url, _strip_default_port, the resource URL helpers and the rest of oauth_utils.py: B4654."
   - "register_aggregate_client's own https-or-loopback-http rule and the invalid_redirect_uri translation: B4674."
-  - "Reading MCP_TRUSTED_NATIVE_REDIRECT_URIS from the environment: B10094's mcp_redirect_trust section. Building the list from it: B8623 for the OAuth flows, B8702 for the browser routes and B4674's registration."
+  - "Reading MCP_TRUSTED_NATIVE_REDIRECT_URIS from the environment: B10094's mcp_redirect_trust section. Building the list from it: B8623, once; B8702 passes the same list to the browser routes and B4674's registration."
   - "urlparse and parse_ipv6: B5082, on main."
 pitfalls:
   - "Rust's Ipv6Addr::is_loopback is true only for ::1, but Python 3.13 says ::ffff:127.0.0.1 is loopback; check to_ipv4_mapped first or a mapped loopback callback is refused."

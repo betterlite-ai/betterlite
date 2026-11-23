@@ -25,8 +25,8 @@ description: >-
   so a folder that is empty text or not a directory fails the build with B10095's error, as LiteLLM's mount fails at startup.
   Without one it nests `make_metrics_app(ScrapeSource::Registry(registry))`, the registry B8655's prometheus arm registers B3875's
   collectors into. Either way the app sits at /metrics, so it serves /metrics and every path under /metrics/.
-  The folder is an argument because betterlite-server reads no environment (rules.yaml): the caller passes the folder
-  PROMETHEUS_MULTIPROC_DIR names whenever the variable is set, empty text included, and None when it is unset. B8680 merges metrics_router through app::edge::mount_public and installs PrometheusAuthMiddleware in
+  The folder is an argument because betterlite-server reads no environment (rules.yaml): B8680 passes the
+  registry's multiprocess_dir(), the folder B8613 built B10096's writer over from PROMETHEUS_MULTIPROC_DIR, and None when the variable is unset. B8680 merges metrics_router through app::edge::mount_public and installs PrometheusAuthMiddleware in
   app::edge::wrap, between the billable metrics layer and CORS as LiteLLM orders them; this task mounts and installs nothing.
 
   Oracle cases, which B8680 owns because it mounts the endpoint, with the real gateway and real proxy_server: every path under /metrics/,
@@ -99,7 +99,7 @@ out_of_scope:
     completes. That is B3884's responsibility (refresh during the scrape, emit after).
   - Multiprocess-directory cleanup and worker-exit notifications. That is B3887's responsibility.
   - "MultiProcessCollector, the .db file format and merge, and the ScrapeSource seam in make_metrics_app: B10095."
-  - "Reading PROMETHEUS_MULTIPROC_DIR and passing the folder in: B8680, which mounts metrics_router."
+  - "Reading PROMETHEUS_MULTIPROC_DIR and building the registry with B10096's writer: B8613. Passing the registry's folder in: B8680, which mounts metrics_router."
   - "litellm/integrations/prometheus_metrics_endpoint.py (ScrapeRequest, parse_scrape_request, render_scrape,
     CoalescedScrapeRenderer, _chunks, make_metrics_asgi_app) and the text encoders behind it: B10090, whose make_metrics_app this task nests."
   - Routes other than /metrics and /metrics/*. This task builds only the /metrics router; B8680 mounts it.
@@ -111,8 +111,8 @@ pitfalls:
   - Buffering ASGI messages can hold memory during auth; set a reasonable limit or stream the body
     for large payloads. LiteLLM buffers without a limit; betterlite may be tighter if needed.
     For now match LiteLLM's approach.
-  - metrics_router never reads PROMETHEUS_MULTIPROC_DIR itself; LiteLLM tests only that the variable is in the environment,
-    so an empty value still takes the multiprocess branch and fails, and the caller must pass Some for it rather than None.
+  - metrics_router never reads PROMETHEUS_MULTIPROC_DIR itself. LiteLLM tests only that the variable is in the environment,
+    so an empty value takes the multiprocess branch and fails; B8613 already stops startup on it, and metrics_router still refuses an empty folder it is given.
 
 review_level: security
 budget:
