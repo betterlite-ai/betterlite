@@ -72,10 +72,10 @@ fn database_text(error: &DbError) -> String {
     else {
         return error.to_string();
     };
-    match diagnostics.driver.as_db_error() {
-        Some(database) => database.message().to_owned(),
-        None => error.to_string(),
-    }
+    diagnostics.driver.as_db_error().map_or_else(
+        || error.to_string(),
+        |database| database.message().to_owned(),
+    )
 }
 
 pub async fn create_invitation_for_user(
