@@ -20,7 +20,7 @@ use crate::auth_user_lookup::ports::{BudgetResetCalculator, DefaultTeamEnrollmen
 use crate::auth_user_lookup::rows::UserCreateData;
 use crate::auth_user_lookup::store::{UserStore, UserStoreError, UserStoreResult};
 use crate::resolved_key::auth::UserAPIKeyAuth;
-use crate::ui_session_identity::UiSessionTeams;
+use crate::ui_session_identity::UiSessionTeams as _;
 
 #[derive(Default)]
 struct FakeStore {
@@ -57,12 +57,12 @@ impl UserStore for FakeStore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((user_id.to_owned(), use_writer));
-        if let Some(error) = self
+        let failure = self
             .failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+            .take();
+        if let Some(error) = failure {
             return Err(error);
         }
         Ok(self
@@ -238,13 +238,13 @@ fn case(with_store: bool) -> Case {
 }
 
 fn row(user_id: &str, teams: &[&str]) -> JsonData {
-    let teams = teams
+    let team_ids = teams
         .iter()
         .map(|team_id| JsonData::String((*team_id).to_owned()))
         .collect();
     JsonData::Object(BTreeMap::from([
         ("user_id".to_owned(), JsonData::String(user_id.to_owned())),
-        ("teams".to_owned(), JsonData::Array(teams)),
+        ("teams".to_owned(), JsonData::Array(team_ids)),
     ]))
 }
 
