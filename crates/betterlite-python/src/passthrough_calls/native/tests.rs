@@ -97,6 +97,30 @@ fn a_streaming_call_hands_out_the_chunks_then_stops() {
 }
 
 #[test]
+fn closing_a_stream_stops_the_chunks_it_has_not_handed_out() {
+    Python::initialize();
+    let body = "x".repeat(1_usize << 20);
+    let serving = serve(reply("200 OK", &[], &body), Duration::ZERO).unwrap();
+    let socket = serving.address;
+    Python::attach(|py| {
+        let session = NativePassthroughSession::new(ENVIRONMENT).unwrap();
+        let answer = session
+            .call(py, &request(&socket, true), Vec::new())
+            .unwrap();
+        let tuple = answer.bind(py).cast::<PyTuple>().unwrap();
+        let object = tuple.get_item(2).unwrap();
+        let class = object.cast::<NativePassthroughStream>().unwrap();
+        let stream = class.borrow();
+        let first = stream.next_chunk(py).unwrap().unwrap();
+        // the upstream body outlasts the first read, so a closed stream still had chunks to give
+        assert!(first.bind(py).as_bytes().len() < body.len());
+        stream.close(py);
+        assert!(stream.next_chunk(py).unwrap().is_none());
+    });
+    serving.finish().unwrap();
+}
+
+#[test]
 fn an_upstream_error_is_the_family_exception_with_the_status() {
     Python::initialize();
     let answer = reply("404 Not Found", &[], r#"{"error": "missing"}"#);
