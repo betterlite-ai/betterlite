@@ -1,25 +1,18 @@
 id: B880
-title: End-user identity extraction and registry validation
+title: End-user id registry validation
 description: >-
-  Extract end-user identity from typed body/header inputs, coerce supported numeric IDs and validate configured
-  database existence without widening key/team scope. Preserve user_header_mappings precedence and validate_end_user_id_in_db=false
-  default. Accept parsed request fields; HTTP request decoding remains the request envelope owner.
+  Validate an extracted end-user ID against the database without widening key/team scope, and keep the
+  validate_end_user_id_in_db=false default. Accept parsed request fields; HTTP request decoding remains
+  the request envelope owner.
 
-  Extraction checks case-insensitive x-litellm-customer-id before x-litellm-end-user-id, then configured
-  CUSTOMER-role mappings in list order, then deprecated general_settings.user_header_name only if no
-  usable mapping names exist. Mappings accept a dict or list, skip non-dicts/missing role/missing header,
-  compare the role case-insensitively and lowercase the header name. A mapping whose header is absent
-  still suppresses the deprecated header fallback. Deprecated names must be nonblank strings but retain
-  their original whitespace for matching. Next try body.user, litellm_metadata.user, metadata.user_id
-  and safety_identifier in that order. Metadata may be a dictionary or JSON string decoded by B192;
-  malformed JSON and nonobjects act as empty objects. The JSON decoder and its fuzz target stay B192's.
+  The ID comes from B10050's request_end_user_id (betterlite-logging end_user::extraction), which reads
+  the standard customer headers, the customer header mappings, the deprecated user_header_name and the
+  body sources, and coerces the value. This stage calls it with the request's HeaderMap, the parsed body
+  and B10050's IdSettings built from config.sections, then validates the result; it builds none of that
+  lookup.
 
-  ID coercion drops None, booleans and structured objects; numbers become their Python-compatible text,
-  strings are trimmed and blank becomes None. With validate_end_user_id_in_db enabled, strings starting
-  with { or [ are dropped only when B192 parsing actually yields an object/array; malformed strings and
-  other JSON scalars survive. Disabled validation preserves JSON-encoded identifiers. No ID means None.
-  Validation disabled or no DB returns the supplied ID unchanged. With a DB use the raw-cache key
-  end_user_validation:<id>, treating exactly "valid" and "invalid" as hits. A positive hit preserves
+  No ID means None. Validation disabled or no DB returns the supplied ID unchanged. With a DB use the
+  raw-cache key end_user_validation:<id>, treating exactly "valid" and "invalid" as hits. A positive hit preserves
   the ID. A negative hit preserves it only when max_end_user_budget_id is truthy or the key's
   end_user_budget_id is not None (including empty string); otherwise return None, never an auth error.
 
@@ -38,14 +31,13 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/auth_checks.py:
   resolve_and_validate_end_user_id (L1981-L2041; 53 source lines), _end_user_id_exists_in_db (L2044-L2083;
-  38 source lines). litellm/proxy/auth/auth_utils.py: get_customer_user_header_from_mapping (L1511-L1530;
-  18 source lines), _get_customer_id_from_standard_headers (L1533-L1557; 21 source lines), _coerce_user_id_to_str
-  (L1560-L1592; 26 source lines), get_end_user_id_from_request_body (L1595-L1678; 52 source lines).
+  38 source lines). B10050 owns the four auth_utils.py extraction functions (L1511-L1678).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.validate_end_user_id_in_db=False;
-  litellm_settings.max_end_user_budget_id=None; general_settings.user_header_mappings=None;
-  general_settings.user_header_name=None. The 300/60-second validation TTLs are constants, not settings.
+  Pinned settings read by this component come typed from config.sections, with no section of its own:
+  litellm_settings.validate_end_user_id_in_db=False and litellm_settings.max_end_user_budget_id=None from
+  B1218's end_user_registry section, both already loaded on main. The header settings reach B10050 through
+  B1104's request_headers section. The 300/60-second validation TTLs are constants, not settings.
 
 
   Add the end_user_identity operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -60,18 +52,9 @@ description: >-
   cache clocks to prove the separate valid and invalid TTLs without timing-dependent sleeps.
 
 
-  Write betterlite-config::end_user_identity::tests::validation_default_off, budget_id_none_and_empty,
-  mapping_dict_and_list, deprecated_header_loads and malformed_mapping_entries_skipped.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  Sizing: 208 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  220 production, 260 behavior/Postgres tests, 75 adapters, 65 wiring and 60 config lines,
-  680 within a 700-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Sizing: 91 nonblank, noncomment pinned source lines after B10050 took the 117 extraction lines. Only
+  the repository fixture/corpus/lock exclusions apply; production SQL counts. Do not duplicate dependency
+  implementations.
 
 
   Server wiring tests live under betterlite-server::auth::end_user_identity::tests: stage_is_registered
@@ -96,44 +79,25 @@ scope:
     - crates/betterlite-server/src/state/end_user_identity.rs
     - crates/betterlite-server/src/state/end_user_identity/**
     - tools/oracle/cases/auth/end-user-identity/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/fuzz/corpus/config_yaml/end-user-identity-*
     - crates/betterlite-server/src/auth/end_user_identity.rs
     - crates/betterlite-server/src/auth/end_user_identity/**
-    - crates/betterlite-config/src/sections/end_user_identity.rs
-    - crates/betterlite-config/src/sections/end_user_identity/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1981-L2041
     why: Own resolve_and_validate_end_user_id; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2044-L2083
     why: Own _end_user_id_exists_in_db; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1511-L1530
-    why: Own get_customer_user_header_from_mapping; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1533-L1557
-    why: Own _get_customer_id_from_standard_headers; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1560-L1592
-    why: Own _coerce_user_id_to_str; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1595-L1678
-    why: Own get_end_user_id_from_request_body; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1902-L1910
+    why: The auth path extracts the ID (B10050) and then validates it here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L476-L481
     why: litellm_settings.validate_end_user_id_in_db default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L470-L475
     why: litellm_settings.max_end_user_budget_id default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1614-L1619
-    why: general_settings.user_header_mappings default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1614-L1638
-    why: Mapping versus deprecated-header precedence and the actual settings reads.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1585-L1588
-    why: The ordered two standard customer-ID header literals.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: numeric_user_id, unknown_enforced_user,
-      header_precedence, standard_header_order_casefold, customer_mapping_order,
-      malformed_mapping_skipped, absent_mapped_header_blocks_legacy, legacy_whitespace_name,
-      body_metadata_safety_precedence, metadata_json_object_only, id_trim_blank_bool_structure,
-      json_identifier_opt_in, malformed_json_identifier_kept, validation_off_no_db_passthrough,
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: unknown_enforced_user,
+      validation_off_no_db_passthrough,
       positive_cache_300, negative_cache_60, unknown_cache_value_miss,
       key_empty_budget_preserves_id, global_empty_budget_does_not,
       end_user_before_user, email_only_with_at, no_user_upsert,
@@ -151,13 +115,8 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
-  - text: The real server constructor invokes the production auth stage and its failures stop downstream
-      execution.
+  - text: The real server constructor invokes the production auth stage, which takes the ID from B10050's
+      request_end_user_id with the request headers, and its failures stop downstream execution.
     proof:
       - stage-wiring-tests
       - behavior-tests
@@ -179,25 +138,12 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/end-user-identity-*")"
         && grep -rlq "end_user_identity" tools/oracle/fuzz/corpus/helper_case/end-user-identity-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::end_user_identity::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/end-user-identity-*")"
-        && grep -rlq "validate_end_user_id_in_db" crates/betterlite-config/fuzz/corpus/config_yaml/end-user-identity-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: stage-wiring-tests
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::end_user_identity::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/end-user-identity/numeric-user-id.yaml
   - tools/oracle/cases/helpers/end-user-identity/unknown-enforced-user.yaml
-  - tools/oracle/cases/helpers/end-user-identity/header-precedence.yaml
-  - tools/oracle/cases/helpers/end-user-identity/coercion-and-json-identifiers.yaml
-  - tools/oracle/cases/helpers/end-user-identity/header-and-metadata-order.yaml
   - tools/oracle/cases/helpers/end-user-identity/validation-cache-budget-matrix.yaml
   - tools/oracle/cases/helpers/end-user-identity/lookup-failure-order.yaml
   - tools/oracle/cases/auth/end-user-identity/numeric-user-id.yaml
@@ -256,7 +202,7 @@ out_of_scope:
     (L2166-L2172), get_model_access_group_budgets_batch (L2176-L2204), _fetch_uncached_tags (L2207-L2243),
     get_tag_objects_batch (L2247-L2287).'
   - 'litellm/proxy/auth/auth_checks.py: B742 owns _is_api_route_allowed (L1313-L1337), _allowed_routes_check
-    (L1350-L1369), allowed_routes_check (L1372-L1401), allowed_route_check_inside_route (L1404-L1417).'
+    (L1350-L1369), allowed_routes_check (L1372-L1401); B10052 owns allowed_route_check_inside_route (L1404-L1417).'
   - 'litellm/proxy/auth/auth_checks.py: B747 owns _get_resources_from_access_groups (L4237-L4297), _get_models_from_access_groups
     (L4300-L4316), _get_mcp_server_ids_from_access_groups (L4319-L4337), _get_agent_ids_from_access_groups
     (L4340-L4358), _resolve_all_team_model_sentinel_for_auth_check (L4361-L4372), _check_model_access_helper
@@ -299,7 +245,7 @@ out_of_scope:
     stamp_matched_model_access_groups (L4917-L4954).'
   - 'litellm/proxy/auth/auth_checks.py: B886 owns can_key_call_model (L4957-L5005), can_key_call_resolved_model
     (L5008-L5100), can_org_access_model (L5103-L5119), can_team_access_model (L5122-L5164), get_authorized_resources_from_key_access_groups
-    (L5167-L5212), _key_access_group_grants_model (L5215-L5246), can_project_access_model (L5249-L5266),
+    (L5167-L5212), _key_access_group_grants_model (L5215-L5246), can_project_access_model (L5249-L5266); B10051 owns
     can_user_call_model (L5269-L5297).'
   - 'litellm/proxy/auth/auth_checks.py: B887 owns _check_team_member_budget (L5823-L5910), _check_team_member_model_access
     (L5913-L5972), _team_max_budget_check (L5975-L6022), _team_multi_budget_check (L6025-L6062), _team_soft_budget_check
@@ -319,53 +265,8 @@ out_of_scope:
     identifier search finds only this definition.'
   - 'litellm/proxy/auth/auth_checks.py::model_in_access_group: no production caller at the pinned commit;
     repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/auth_utils.py: B054 owns custom_auth_common_checks_warning (L1361-L1375), warn_once_if_custom_auth_skips_common_checks
-    (L1381-L1397), log_once_if_budget_reservation_disabled (L1400-L1415).'
-  - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665),
-    get_request_route_template (L706-L722), normalize_request_route (L726-L837); B882 owns get_request_route (L668-L703).'
-  - 'litellm/proxy/auth/auth_utils.py: B744 owns is_invalid_virtual_key_error (L41-L58), mark_invalid_virtual_key_error
-    (L61-L75), _get_request_ip_address (L78-L87), _check_valid_ip (L90-L108), pre_db_read_auth_checks
-    (L562-L618), check_if_request_size_is_safe (L840-L898), check_response_size_is_safe (L901-L939), bytes_to_mb
-    (L942-L946).'
-  - 'litellm/proxy/auth/auth_utils.py: B745 owns _get_deployment_default_limit (L950-L975), _get_deployment_default_rpm_limit
-    (L978-L979), _get_deployment_default_tpm_limit (L982-L983), get_key_own_model_rate_limit (L986-L1003),
-    get_key_model_rpm_limit (L1006-L1035), get_key_model_tpm_limit (L1038-L1067), _validated_output_token_estimate
-    (L1080-L1092), _validated_output_token_estimates_per_model (L1095-L1107), _estimated_output_tokens_from_metadata
-    (L1110-L1130), get_estimated_output_tokens (L1133-L1151), OutputTokenEstimateRequest.metadata (L1161-L1161),
-    OutputTokenEstimateRequest.default_estimated_output_tokens (L1164-L1164), OutputTokenEstimateRequest.default_estimated_output_tokens_per_model
-    (L1167-L1167), OutputTokenEstimateRequest.model_fields_set (L1170-L1170), _requested_output_token_estimates
-    (L1173-L1194), enforce_output_token_estimates_are_admin_only (L1197-L1228), BatchEnqueuedTokenLimitRequest.metadata
-    (L1235-L1235), BatchEnqueuedTokenLimitRequest.model_fields_set (L1238-L1238), enforce_batch_enqueued_token_limit_is_admin_only
-    (L1241-L1268), get_model_rate_limit_from_metadata (L1271-L1278), get_key_mcp_rpm_limit (L1297-L1320),
-    get_team_mcp_rpm_limit (L1323-L1328), get_key_tag_rpm_limit (L1331-L1342).'
-  - 'litellm/proxy/auth/auth_utils.py: B746 owns _append_model_candidates (L1731-L1743), _dedupe_model_candidates
-    (L1746-L1751), _get_case_insensitive_mapping_value (L1754-L1763), _route_matches_any_marker (L1766-L1768),
-    _route_uses_model_routing_sources (L1771-L1772), _extract_models_from_managed_resource_id (L1775-L1842),
-    _resolve_model_id_with_router (L1845-L1852), get_cache_prediction_deployments (L1855-L1864), _cache_prediction_model_candidates
-    (L1867-L1877), _extract_model_candidates_from_request (L1880-L1943), _format_model_candidates (L1946-L1953),
-    request_dispatched_to_pass_through_endpoint (L1956-L1974), request_dispatched_to_provider_pass_through
-    (L1977-L1979), get_model_from_request (L1982-L2061), _router_model_from_azure_route (L2064-L2068),
-    _model_from_bedrock_route (L2071-L2083).'
-  - 'litellm/proxy/auth/auth_utils.py: B881 owns has_user_setup_sso (L1431-L1451), _is_google_ready (L1454-L1455),
-    _is_microsoft_ready (L1458-L1463), _is_generic_oauth_ready (L1466-L1473), _is_saml_ready (L1476-L1490),
-    is_sso_provider_fully_configured (L1493-L1508), abbreviate_api_key (L2086-L2089).'
-  - 'litellm/proxy/auth/auth_utils.py: B884 owns check_regex_or_str_match (L159-L165), _is_param_allowed
-    (L168-L189), _allow_model_level_clientside_configurable_parameters (L192-L220), _build_banned_observability_params
-    (L281-L303), _check_banned_params (L380-L420), _iter_fallback_field_values (L430-L435), _iter_fallback_targets
-    (L438-L455), iter_request_fallback_targets (L458-L460), _reject_url_valued_fallback_target (L463-L474),
-    is_request_body_safe (L477-L539), _coerce_metadata_to_dict (L542-L559).'
-  - 'litellm/proxy/auth/auth_utils.py::check_complete_credentials: no caller at the pin; removed implicit
-    caller-credential bypass.'
-  - 'litellm/proxy/auth/auth_utils.py::get_team_model_rpm_limit: no production caller at the pinned commit;
-    repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/auth_utils.py::get_team_model_tpm_limit: no production caller at the pinned commit;
-    repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/auth_utils.py::get_project_model_rpm_limit: no production caller at the pinned
-    commit; repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/auth_utils.py::get_project_model_tpm_limit: no production caller at the pinned
-    commit; repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/auth_utils.py::is_pass_through_provider_route: no production caller at the pinned
-    commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/auth/auth_utils.py: B10050 owns the four end-user extraction functions (L1511-L1678), and
+    this task no longer covers the file; its other owners are listed in B10050.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as end_user_identity in the server group. Replace the stub Op in tools/oracle/src/helpers/server/end_user_identity.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/end_user_identity.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

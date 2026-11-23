@@ -3,7 +3,7 @@ title: Passthrough response cost and attribution primitives
 description: >-
   Build the shared pieces that every provider pass-through logging handler uses to price a relayed response and to tie its spend to a key, tags and an end user.
   They live in betterlite-server under src/pass_through_logging, in four modules. The skeleton declares them.
-  Every function is pure or takes its collaborators through the constructor or an argument: B068's completion_cost service, B1717's custom pricing detection, B253's router model id helper, B247's per-call log (LiteLLM's model_call_details and litellm_call_id), B190's get_standard_logging_object_payload and B880's get_end_user_id_from_request_body.
+  Every function is pure or takes its collaborators through the constructor or an argument: B068's completion_cost service, B1717's custom pricing detection, B253's router model id helper, B247's per-call log (LiteLLM's model_call_details and litellm_call_id), B190's get_standard_logging_object_payload and B10050's request_end_user_id (LiteLLM's get_end_user_id_from_request_body).
   Nothing here holds module-level state.
 
 
@@ -23,11 +23,11 @@ description: >-
   cost_partial_stream_or_zero(partial_response, model, call_log) runs resolve_costing_model then compute_response_cost; any error logs at warn "Anthropic passthrough: could not cost the partial usage of an interrupted stream (model={model}): {error}" and returns 0.0.
 
 
-  response_payload (base_passthrough_logging_handler.py, the two helpers the base class owns). end_user_from_request_body(request_body) returns B880's get_end_user_id_from_request_body(request_body) with no headers when the body is present and not empty, else none. It serves the Anthropic helper of the same name too; the two are the same code.
+  response_payload (base_passthrough_logging_handler.py, the two helpers the base class owns). end_user_from_request_body(request_body, settings) returns B10050's request_end_user_id(request_body, None, settings), which is get_end_user_id_from_request_body with no headers, when the body is present and not empty, else none; settings is B10050's IdSettings, which the caller builds from config.sections. It serves the Anthropic helper of the same name too; the two are the same code.
   create_response_logging_payload(response, model, kwargs, end_user, start_time, end_time, call_log) returns the kwargs, which are a typed ResponseLoggingKwargs struct (response_cost, model, the end user under litellm_params.proxy_server_request.body.user, standard_logging_object, and the passthrough request body it reads). The steps run in this order and each one's effect stays when a later one fails: cost with B068's completion_cost on the response and model; store response_cost and model on the kwargs; store response_cost in the call log's "response_cost" (the pass-through success path reads spend from there); when the kwargs carry a passthrough request body and the end_user argument (an optional string computed by the caller, not looked up here) is non-empty, set litellm_params.proxy_server_request to {"body": {"user": user}} replacing whatever was there; build B190's standard logging object with status "success" and store it; log it at debug level as indented JSON; set the response id to the call log's litellm_call_id, the response model to the model and the call log's "model" to the model. Any error in these steps logs at error level "Error creating LLM passthrough response logging payload: {error}" and returns the kwargs as they stand at that point, never an Err.
 
 
-  Tests: module tests under pass_through_logging::batch_attribution::tests, ::stream_fields::tests, ::response_costing::tests and ::response_payload::tests, each test name starting with the group word the checks use (batch_, fields_, costing_, payload_). Fakes stand in for the cost service and the call log; the real B880 function runs where it is cheap.
+  Tests: module tests under pass_through_logging::batch_attribution::tests, ::stream_fields::tests, ::response_costing::tests and ::response_payload::tests, each test name starting with the group word the checks use (batch_, fields_, costing_, payload_). Fakes stand in for the cost service and the call log; the real B10050 function runs where it is cheap.
   No route reaches this code yet, so the oracle cases are helper cases for the pure functions (is_collection_route, request_tags_from_metadata, the two extractors, resolve_costing_model, cost_relevant_speed); B102 and the handlers that call these add the HTTP cases. The helper calls the pinned Python static functions with a stub logging object and never copies the algorithm.
 scope:
   paths:
@@ -61,7 +61,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L253-L327
     why: _cost_partial_stream_or_zero, _compute_response_cost and the message_start field readers.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1595-L1678
-    why: get_end_user_id_from_request_body, which B880 owns and these helpers call with no headers.
+    why: get_end_user_id_from_request_body, which B10050 builds as request_end_user_id and these helpers call with no headers.
   - url: https://docs.python.org/3/library/stdtypes.html#str.splitlines
     why: The exact list of line boundaries str.splitlines uses, longer than Rust's lines().
 dod:
@@ -148,7 +148,7 @@ out_of_scope:
   - "_split_sse_chunk_into_events, _build_complete_streaming_response, _collapse_pure_text_chunks, _build_complete_streaming_response_legacy, _extract_sse_data and _build_usage_only_response_from_chunks: B3631 owns the stream reconstruction."
   - "batch_creation_handler, _store_batch_managed_object and get_actual_model_id_from_router: B3633 owns Anthropic batch logging. It spawns the managed object write and calls log_batch_registration_result from here."
   - "The OpenAI override of _get_user_from_metadata (returns request_body['user'] unchanged) and every other function in openai_passthrough_logging_handler.py: B3635, B3636 and B3637 own them. B3637 must not call this task's end_user_from_request_body for that override."
-  - "get_end_user_id_from_request_body (B880), completion_cost (B068), get_standard_logging_object_payload (B190), the per-call log (B247), the router model id helper (B253) and the custom pricing detection (B1717)."
+  - "get_end_user_id_from_request_body (B10050, betterlite-logging end_user::extraction), completion_cost (B068), get_standard_logging_object_payload (B190), the per-call log (B247), the router model id helper (B253) and the custom pricing detection (B1717)."
   - "The PassthroughStandardLoggingPayload type from litellm/types/passthrough_endpoints/pass_through_endpoints.py: this task only reads its request_body, and the route tasks that fill the rest define the struct."
 pitfalls:
   - The OpenAI handler overrides _get_user_from_metadata and returns the raw request_body["user"], while the base and Anthropic versions go through get_end_user_id_from_request_body; do not merge the three.

@@ -5,8 +5,8 @@ description: >-
   it and reads its status. These are nine handlers in proxy_server.py (L19335-L19850), all hidden from the OpenAPI schema
   (include_in_schema=False) and all behind the normal key check (the server's authentication middleware). Build crates/betterlite-server/src/reload_routes.rs
   (declared by the skeleton) with `pub fn routes()` like the sibling route modules; B8676 mounts it.
-  They read and write the same per-pod state as the timer checks: B8385's `PeriodicReloads` (cost map applied revision,
-  cost map loaded_at, last beta headers reload time), through its accessors. Never keep a second copy of that state.
+  They read and write the same per-pod state as the timer checks: B10055's `PeriodicReloads` in periodic_reloads::state
+  (cost map applied revision, cost map loaded_at, last beta headers reload time), through its accessors. Never keep a second copy of that state.
 
   Roles. The five write handlers (both reloads, both schedules, both cancels) require user_role to be exactly proxy_admin;
   anyone else gets 403 with detail "Access denied. Admin role required. Current role: {user_role}". The three read
@@ -15,8 +15,8 @@ description: >-
 
   Cost map. `POST /reload/model_cost_map`: without a database, 500 "Database connection not available". Refetch with B194
   from the configured cost map URL; an unavailable result is 502 "Failed to reload model cost map: {reason}. Current pricing
-  data was kept.". Otherwise adopt the map the way B8385's check does (its _swap_in_model_cost_map port returns the model
-  count), set loaded_at to now, read B194's provenance, then set the applied revision to what B4145's record_manual_reload
+  data was kept.". Otherwise hand the reloaded snapshot and now to B10055's swap_in_model_cost_map (it sets loaded_at and
+  returns the model count), read B194's provenance, then set the applied revision to what B4145's record_manual_reload
   returns, so this pod does not reload again on its next poll. Log "Model cost map reloaded successfully in current pod.
   Models count: {n}" and return {"message": "Price data reloaded successfully! {n} models updated.", "status": "success",
   "models_count": n, "timestamp": now in ISO form, then every provenance field}. Both HTTP errors pass through unchanged;
@@ -43,7 +43,7 @@ description: >-
   parsing last reload time: {error}" and leaves it null), and the answer is {"scheduled": true, "interval_hours",
   "last_run": the stored last reload time, "next_run"}.
 
-  Tests run every handler against fake PeriodicReloads, config repository, catalog and beta header sources and a fixed
+  Tests run every handler against a fresh PeriodicReloads and fake config repository, catalog and beta header sources and a fixed
   clock. HTTP oracle cases (B8676 writes and runs them, not this task) under tools/oracle/cases/reload-routes/ cover the paths a booted proxy without a database can
   show: a non-admin key on a write route (403), hours=0 (400), the cost map reload and schedule without a database
   (the 500 texts in the pitfalls), both status routes without a database, and the cost map source route with model_count.
@@ -88,7 +88,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "The timer checks and the PeriodicReloads state: B8385. The reload schedule rows and their status shape: B4145. Cost map refetch, adoption, provenance and source info: B194. The beta headers config reload: B959."
+  - "The timer checks: B8385. The PeriodicReloads state and the _swap_in_model_cost_map port: B10055. The reload schedule rows and their status shape: B4145. Cost map refetch, adoption, provenance and source info: B194. The beta headers config reload: B959."
   - "Mounting the routes and their HTTP oracle cases: B8676."
 pitfalls:
   - "Only the cost map reload re-raises HTTP errors. The schedule and cancel handlers and the beta headers reload catch every exception, their own 500 included, so a missing database reads \"Failed to schedule model cost map reload: 500: Database connection not available\" (and the same for the other wrapped handlers)."

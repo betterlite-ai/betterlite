@@ -17,8 +17,8 @@ description: >-
   with process(data, route_type, caller) and handle_exception(error, caller, data). The production implementation is B004's common
   request processing and its exception handling (LiteLLM's ProxyBaseLLMRequestProcessing.base_process_llm_request and
   _handle_llm_api_exception). B8635 supplies it at wiring time (ContainerRequests), so this task only declares the trait and tests against a fake.
-  (3) A ProviderHints value taken from B2400's accessors, already read from the request: the custom-llm-provider header and the
-  custom_llm_provider query value, both Option<String>. The functions never read the JSON body, so B2400's body accessor is not used.
+  (3) A ProviderHints value taken from B10059's accessors (api::provider_hints), already read from the request: the custom-llm-provider header and the
+  custom_llm_provider query value, both Option<String>. The functions never read the JSON body, so B10059's body accessor is not used.
 
   Provider pick (both functions). The provider is the first truthy value of the custom-llm-provider header, then the
   custom_llm_provider query value, then the literal "openai". An empty string is not truthy, so it falls through to the next
@@ -88,7 +88,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L453-L512
     why: get_form_data and convert_upload_files_to_file_data, which shape the upload data (B1101).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L64-L81
-    why: The header and query provider accessors; each returns its own value, including an empty string (B2400).
+    why: The header and query provider accessors; each returns its own value, including an empty string (B10059).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L586-L598
     why: Container route types skip model routing and call the router method of the same name, so data has no model.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoints.json#L40-L49
@@ -158,7 +158,7 @@ out_of_scope:
   - "_get_container_provider_config in handler_factory.py has no caller at the pin (grep for it finds only its definition): B3372 lists it as out of scope with that reason."
   - "assert_user_can_access_container and get_container_forwarding_params: B3362 owns them; this task adapts them behind ContainerAccess."
   - "common_processing_pre_call_logic: B8801 (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)). ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004 owns them."
-  - "get_form_data and convert_upload_files_to_file_data: B1101 owns them. The provider accessors: B2400."
+  - "get_form_data and convert_upload_files_to_file_data: B1101 owns them. The provider accessors: B10059."
   - "The generated container file operations that the route type finally reaches (acontainer_file_call): B3368 owns them."
 
 pitfalls:
