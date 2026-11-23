@@ -67,8 +67,7 @@ pub fn config_server_ids_for_access_groups(
     server_ids
 }
 
-// LiteLLM's _get_db_server_ids_for_access_groups: the fault is swallowed at debug unless the caller needs the writer
-// ast-grep-ignore: no-long-names
+// ast-grep-ignore: no-long-names - LiteLLM's _get_db_server_ids_for_access_groups swallows a fault at debug unless the caller needs the writer
 pub async fn db_server_ids_for_access_groups<R: AccessGroupServerRows>(
     rows: Option<&R>,
     access_groups: &[String],
