@@ -148,7 +148,7 @@ pub(crate) fn resolve_document(
     blobs: &[Vec<u8>],
 ) -> Result<OcrDocumentInput, OcrError> {
     let OcrJson::Object(fields) = document else {
-        return decode_document(document);
+        return decode_document(document).map(OcrDocumentInput::from);
     };
     let kind = match fields.get("type") {
         Some(OcrJson::Text(kind)) => kind.as_str(),
@@ -166,7 +166,7 @@ pub(crate) fn resolve_document(
         }
     };
     if kind != FILE_DOCUMENT_TYPE {
-        return decode_document(document);
+        return decode_document(document).map(OcrDocumentInput::from);
     }
     file_document(fields, blobs)
 }
