@@ -15,10 +15,12 @@ from litellm.litellm_core_utils.token_counter import (
     uses_legacy_message_accounting,
 )
 from litellm.litellm_core_utils.tokenizer import HuggingFace
+from litellm.types.utils import Message as LiteLLMMessage
 from pydantic import JsonValue
 
 import betterlite
 from betterlite import _native
+from betterlite.types.utils import Message
 
 TEXT: Final = "hello world"
 TEXT_IDS: Final[list[int]] = [15339, 1917]
@@ -108,6 +110,18 @@ def test_counter_list_text() -> None:
 def test_counter_message_roles(message: dict[str, JsonValue]) -> None:
     ours = betterlite.token_counter(model="gpt-4o", messages=[message])
     theirs: int = litellm.token_counter(model="gpt-4o", messages=[message])
+    assert ours == theirs
+
+
+def test_counter_message_objects() -> None:
+    ours = betterlite.token_counter(
+        model="gpt-4o",
+        messages=[Message(role="user", content=TEXT)],
+    )
+    theirs: int = litellm.token_counter(
+        model="gpt-4o",
+        messages=[LiteLLMMessage(role="user", content=TEXT)],
+    )
     assert ours == theirs
 
 

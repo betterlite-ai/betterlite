@@ -7,10 +7,10 @@ from betterlite.types.utils import Message
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
-# LiteLLM's convert_list_message_to_dict dumps a Message model; a plain dict passes through
+# LiteLLM dumps a Message without its None fields; a plain dict passes through
 def message_json(message: dict[str, JsonValue] | Message) -> JsonValue:
     match message:
         case Message():
-            return message.model_dump()
+            return message.model_dump(exclude_none=True)
         case dict():
             return message
