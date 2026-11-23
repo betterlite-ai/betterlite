@@ -89,8 +89,12 @@ where
         request: HandlerRequest<'_>,
     ) -> impl Future<Output = Result<Self::Output, HandlerFailure>> + Send {
         async move {
-            let optional_params = object_of(request.optional_params)?;
-            let litellm_params = object_of(request.litellm_params)?;
+            let optional_json =
+                serde_json::to_value(request.optional_params).map_err(encode_failure)?;
+            let optional_params = serde_json::from_value(optional_json).map_err(encode_failure)?;
+            let litellm_json =
+                serde_json::to_value(request.litellm_params).map_err(encode_failure)?;
+            let litellm_params = serde_json::from_value(litellm_json).map_err(encode_failure)?;
             let params = SpeechParams {
                 api_key: request.api_key.map(SecretString::from),
                 api_base: request.api_base.map(str::to_owned),
@@ -121,12 +125,6 @@ where
             answered.map_err(speech_failure)
         }
     }
-}
-
-// The handler's params are untyped JSON on the Python side; the leaf hands typed records, so they are re-read as a JSON object.
-fn object_of(fields: &IndexMap<String, Json>) -> Result<Object, HandlerFailure> {
-    let value = serde_json::to_value(fields).map_err(encode_failure)?;
-    serde_json::from_value(value).map_err(encode_failure)
 }
 
 fn encode_failure(source: serde_json::Error) -> HandlerFailure {

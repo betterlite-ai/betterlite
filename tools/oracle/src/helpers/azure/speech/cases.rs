@@ -95,7 +95,7 @@ fn audio_call(case: &AudioSpeech) -> AudioSpeechCall<'_> {
         voice: &case.voice,
         optional_params: case.optional_params.clone(),
         aspeech: case.aspeech,
-        api_key: optional_secret(case.api_key.as_deref()),
+        api_key: case.api_key.as_deref().map(SecretString::from),
         api_base: Some(case.api_base.clone()),
         api_version: Some(case.api_version.clone()),
         params: LiteLlmParams::default(),
@@ -121,8 +121,8 @@ fn pre_call_view(logger: &Recorder) -> Value {
 fn native_view(runtime: &Runtime, call: &NativeCall) -> HelperResult {
     let globals = SpeechGlobals {
         api_base: call.globals.api_base.clone(),
-        api_key: optional_secret(call.globals.api_key.as_deref()),
-        azure_key: optional_secret(call.globals.azure_key.as_deref()),
+        api_key: call.globals.api_key.as_deref().map(SecretString::from),
+        azure_key: call.globals.azure_key.as_deref().map(SecretString::from),
     };
     let environment = SpeechEnvironment {
         globals: &globals,
@@ -135,7 +135,7 @@ fn native_view(runtime: &Runtime, call: &NativeCall) -> HelperResult {
         optional_params: &call.optional_params,
         litellm_params: call.litellm_params.clone(),
         api_base: call.api_base.clone(),
-        api_key: optional_secret(&call.api_key),
+        api_key: call.api_key.as_deref().map(SecretString::from),
         timeout: Some(Duration::from_secs(call.timeout_seconds)),
         extra_headers: call.extra_headers.as_ref(),
         aspeech: call.aspeech,
@@ -251,10 +251,6 @@ fn error_view(error: &AzureSpeechError) -> Value {
         Some(status) => json!({"status": status}),
         None => json!({"class": error.class(), "message": error.to_string()}),
     }
-}
-
-fn optional_secret(value: Option<&str>) -> Option<SecretString> {
-    value.map(SecretString::from)
 }
 
 fn blocking_runtime() -> Result<Runtime, Box<HelperError>> {

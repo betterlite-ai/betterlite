@@ -19,17 +19,9 @@ use crate::openai_media_dispatch::failure;
 
 const SPEECH_REPLY: &[u8] = b"ID3";
 
-pub(super) async fn openai_speech(input: &Input) -> HelperResult {
-    speech(input, Arm::OpenAi).await
-}
-
-pub(super) async fn native_ssml(input: &Input) -> HelperResult {
-    speech(input, Arm::Native).await
-}
-
 // The two speech arms differ only in the operation they build, the credential header and the reply body they read.
 #[derive(Clone, Copy)]
-enum Arm {
+pub(super) enum Arm {
     OpenAi,
     Native,
 }
@@ -75,7 +67,7 @@ impl Arm {
     }
 }
 
-async fn speech(input: &Input, arm: Arm) -> HelperResult {
+pub(super) async fn run(input: &Input, arm: Arm) -> HelperResult {
     let outcome = exchange(arm.operation(input), vec![speech_reply()])
         .await
         .map_err(|error| failure("RuntimeError", error))?;

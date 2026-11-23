@@ -47,8 +47,8 @@ async fn dispatch_input(input: &Input) -> HelperResult {
     match input.case {
         Kind::ImageGeneration => generation::image_generation(input).await,
         Kind::ImageEdit => edit::image_edit(input).await,
-        Kind::OpenAiSpeech => speech::openai_speech(input).await,
-        Kind::NativeSsml => speech::native_ssml(input).await,
+        Kind::OpenAiSpeech => speech::run(input, speech::Arm::OpenAi).await,
+        Kind::NativeSsml => speech::run(input, speech::Arm::Native).await,
         Kind::Transcription => transcription::transcription(input).await,
     }
 }
