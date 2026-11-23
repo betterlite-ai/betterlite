@@ -202,6 +202,20 @@ async fn provider_name_dropped() {
         body.get("x_custom").is_none(),
         "a provider-specific name the list names is not sent either"
     );
+    // a dropped name leaves the request's own extra_body, and its other keys reach the body at the top level
+    let in_extra_body = format!(
+        r#"{{"model":"{MODEL}","messages":{MESSAGES},"extra_body":{{"x_secret":1,"keep":2}},"additional_drop_params":["x_secret"]}}"#
+    );
+    let base_body = sent_body(DeploymentDropPolicy::default(), &in_extra_body).await;
+    assert!(
+        base_body.get("x_secret").is_none(),
+        "the drop list filters the extra_body merge"
+    );
+    assert_eq!(
+        support::field(&base_body, "keep"),
+        &support::number_value(2),
+        "the other extra_body key is sent at the top level"
+    );
 }
 
 async fn nested_path_dropped() {
