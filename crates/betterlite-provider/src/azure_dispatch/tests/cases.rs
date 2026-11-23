@@ -405,6 +405,7 @@ pub(super) fn o_series_dispatch() {
     azure_defaults_branch(&composition);
     model_selects_branch(&composition);
     decode_stamps_client_model(&composition);
+    o_series_fixture_stamp(&composition);
 }
 
 fn o_series_model_base(composition: &Composition) {
@@ -472,4 +473,21 @@ fn decode_stamps_client_model(composition: &Composition) {
         panic!("a chat completion");
     };
     assert_eq!(completion.model, "o1-group");
+}
+
+// the fixture dispatch stamps an o-series reply with the provider name, as the SDK path does
+fn o_series_fixture_stamp(composition: &Composition) {
+    let credentials = Credentials {
+        api_base: Some(String::from(AZURE_BASE)),
+        base_model: Some(String::from("o1-preview")),
+        ..support::credentials()
+    };
+    let call = support::chat("deployment-1", Object::new(), credentials);
+    let answer = Fixture::ok(support::CHAT_REPLY);
+    let result = dispatch(composition, Request::Chat(Box::new(call)), &answer);
+    assert_eq!(result.error, Json::Null);
+    assert_eq!(
+        support::reply_text(&result, "model"),
+        Some("azure/gpt-4o-2024-08-06")
+    );
 }
