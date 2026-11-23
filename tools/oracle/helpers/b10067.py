@@ -60,4 +60,5 @@ def answer(call: Call) -> bool:
 
 
 def run(input_value: Input) -> JsonValue:
-    return JSON.validate_python([answer(call) for call in input_value["calls"]])
+    answers: list[bool] = [answer(call) for call in input_value["calls"]]
+    return JSON.validate_python(answers)
