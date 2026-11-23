@@ -65,6 +65,7 @@ impl SpendLogsMonitorSlot {
             shutdown.clone(),
         ));
         *handle = Some(MonitorHandle { shutdown, task });
+        drop(handle);
         Ok(())
     }
 

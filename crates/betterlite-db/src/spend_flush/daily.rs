@@ -56,25 +56,22 @@ pub async fn flush_daily_spend_queue<Writer>(
 where
     Writer: DailyChunkWriter + 'static,
 {
-    let pending = queue
+    let drained = queue
         .flush_aggregated_daily_rows()
         .await
         .map_err(|source| DailyFlushError::Queue { entity, source })?;
-    if pending.is_empty() {
+    if drained.is_empty() {
         return Ok(());
     }
     let deps = Arc::clone(parts);
     let started = start_daily_spend_commit(commits, move |phase| async move {
-        let mut pending = pending;
+        let mut pending = drained;
         let outcome = commit_daily_map(&deps, entity, &mut pending, phase).await;
         (pending, outcome)
     });
     let phase = started.phase;
     let mut task = started.task;
-    let joined = tokio::select! {
-        outcome = &mut task => Some(outcome),
-        () = shutdown.cancelled() => None,
-    };
+    let joined = shutdown.run_until_cancelled(&mut task).await;
     match joined {
         Some(settled) => settle_daily_commit::<Writer>(queue, entity, settled).await,
         None => interrupt_daily_commit::<Writer>(queue, entity, phase, task).await,
@@ -196,7 +193,7 @@ async fn requeue_daily_rows<Failure>(
     remaining: DailySpendUpdate,
     error: &Failure,
 ) where
-    Failure: StdError,
+    Failure: StdError + Sync,
 {
     if remaining.is_empty() {
         return;
