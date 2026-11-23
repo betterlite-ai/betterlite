@@ -31,10 +31,10 @@ async fn sums_every_queue_and_the_funnel_in_the_census() {
         .unwrap();
     harness.baseline.push(baseline_record()).await.unwrap();
     harness.funnel.record("job-1", FunnelStage::Shed);
-    let job = harness.job();
-    assert_eq!(queued_spend_transactions(&job.queues), 6);
+    assert_eq!(queued_spend_transactions(&harness.job().queues), 6);
     drop(harness.logs.dequeue(1));
-    assert_eq!(queued_spend_transactions(&job.queues), 5);
+    assert_eq!(queued_spend_transactions(&harness.job().queues), 5);
+    drop(harness);
 }
 
 #[tokio::test]
@@ -55,6 +55,7 @@ async fn a_baseline_only_backlog_runs_the_job() {
     harness.job().update_spend_logs_job().await.unwrap();
     assert_eq!(harness.accounting.appended(), 1);
     assert!(!harness.trace.ran("log"));
+    drop(harness);
 }
 
 #[tokio::test]
@@ -67,6 +68,7 @@ async fn a_funnel_only_backlog_runs_the_job() {
     assert_eq!(flushed[0].0, "job-1");
     assert_eq!(flushed[0].1.total(), 1);
     assert!(!harness.trace.ran("log"));
+    drop(harness);
 }
 
 #[tokio::test]
@@ -76,14 +78,12 @@ async fn a_pass_waits_for_the_write_lock() {
         .logs
         .enqueue(&[guardrail_row("r1")], QueuePosition::Tail);
     let held = harness.write_lock.lock().await;
-    assert!(
-        timeout(
-            Duration::from_millis(20),
-            harness.job().update_spend_logs_job()
-        )
-        .await
-        .is_err()
-    );
+    timeout(
+        Duration::from_millis(20),
+        harness.job().update_spend_logs_job(),
+    )
+    .await
+    .unwrap_err();
     assert_eq!(harness.log_writer.rows().len(), 0);
     drop(held);
     harness.job().update_spend_logs_job().await.unwrap();
@@ -153,6 +153,7 @@ async fn a_failed_log_write_stops_the_pass_and_returns_the_rows() {
     assert_eq!(harness.tool_usage.len(), 1);
     assert!(!harness.trace.ran("guardrail"));
     assert!(!harness.trace.ran("tool"));
+    drop(harness);
 }
 
 #[tokio::test]
@@ -167,6 +168,7 @@ async fn a_cancelled_pass_requeues_the_popped_rows_once() {
     assert_eq!(harness.logs.len(), 1);
     assert_eq!(harness.log_writer.calls(), 0);
     assert!(!harness.trace.ran("guardrail"));
+    drop(harness);
 }
 
 #[tokio::test]
@@ -176,17 +178,15 @@ async fn a_dropped_write_returns_the_popped_rows_to_the_queue_head() {
     harness
         .logs
         .enqueue(&[guardrail_row("r1")], QueuePosition::Tail);
-    let job = harness.job();
-    let mut write = Box::pin(job.write_popped_logs());
-    assert!(
-        timeout(Duration::from_millis(20), write.as_mut())
-            .await
-            .is_err()
-    );
+    let mut write = Box::pin(async { harness.job().write_popped_logs().await });
+    timeout(Duration::from_millis(20), write.as_mut())
+        .await
+        .unwrap_err();
     assert_eq!(harness.logs.len(), 0);
     assert_eq!(harness.log_writer.calls(), 1);
     drop(write);
     assert_eq!(harness.logs.len(), 1);
+    drop(harness);
 }
 
 #[tokio::test]
@@ -219,6 +219,7 @@ async fn drains_10000_tool_records_and_every_model_record_in_one_pass() {
     let rollups = harness.model_writer.rollups();
     assert_eq!(rollups.len(), 1);
     assert_eq!(rollups[0].request_count, 10_001);
+    drop(harness);
 }
 
 #[tokio::test]
@@ -294,4 +295,5 @@ async fn an_unreadable_row_skips_only_its_guardrail_usage() {
     let rows = harness.guardrail_sink.rows();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].request_id, "r2");
+    drop(harness);
 }

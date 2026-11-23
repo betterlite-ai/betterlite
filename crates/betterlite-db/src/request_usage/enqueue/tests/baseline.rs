@@ -32,6 +32,7 @@ async fn a_captured_observation_replaces_the_actual_turn() {
     assert_eq!(records[0].router_name, "auto-router");
     assert_eq!(records[0].baseline_model, "anthropic/claude-opus-5");
     assert!(case.flushed().await);
+    drop(case);
 }
 
 #[rstest]
@@ -49,6 +50,7 @@ async fn a_capture_naming_another_log_keeps_the_actual_turn(
     assert_eq!(case.turn_count(), 1);
     assert!(case.baseline_records().is_empty());
     assert!(!case.flushed().await);
+    drop(case);
 }
 
 #[tokio::test]
@@ -60,6 +62,7 @@ async fn an_unreadable_capture_keeps_the_actual_turn() {
         .await;
     assert_eq!(case.turn_count(), 1);
     assert!(case.baseline_records().is_empty());
+    drop(case);
 }
 
 #[tokio::test]
@@ -69,6 +72,7 @@ async fn a_non_text_capture_names_no_observation() {
     case.enqueue(&turn_payload(metadata)).await;
     assert_eq!(case.turn_count(), 1);
     assert!(case.baseline_records().is_empty());
+    drop(case);
 }
 
 #[tokio::test]
@@ -129,6 +133,7 @@ async fn a_capture_without_the_logs_api_key_or_session_is_rejected(
     };
     let error = case.enqueue_baseline(&daily, &input).await.unwrap_err();
     assert!(matches!(error, BaselineCaptureError::MissingLogIdentity));
+    drop(case);
 }
 
 #[tokio::test]
@@ -168,6 +173,7 @@ async fn a_capture_without_the_logs_spend_or_request_id_is_rejected() {
         missing_request_id,
         BaselineCaptureError::MissingRequestId
     ));
+    drop(case);
 }
 
 #[rstest]
@@ -192,6 +198,7 @@ async fn a_capture_whose_evidence_field_is_not_a_mapping_is_rejected(#[case] evi
     let error = case.enqueue_baseline(&daily, &input).await.unwrap_err();
     assert!(matches!(error, BaselineCaptureError::Mapping { .. }));
     assert!(case.baseline_records().is_empty());
+    drop(case);
 }
 
 #[tokio::test]
@@ -213,6 +220,7 @@ async fn a_capture_with_falsey_evidence_fields_is_published() {
     assert_eq!(outcome, CaptureOutcome::Captured);
     assert_eq!(case.baseline_records().len(), 1);
     assert!(case.flushed().await);
+    drop(case);
 }
 
 #[tokio::test]
@@ -235,6 +243,7 @@ async fn a_capture_prices_the_routing_decisions_classifier_cost() {
     let records = case.baseline_records();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].pricing.classifier_cost, Decimal::new(25, 2));
+    drop(case);
 }
 
 #[tokio::test]
@@ -272,6 +281,7 @@ async fn a_published_capture_carries_the_logs_daily_attribution() {
             entity_id: Some("t1".to_owned()),
         }]
     );
+    drop(case);
 }
 
 #[tokio::test]
@@ -292,6 +302,7 @@ async fn a_capture_naming_another_log_publishes_nothing() {
     let outcome = case.enqueue_baseline(&daily, &input).await.unwrap();
     assert_eq!(outcome, CaptureOutcome::Retained);
     assert!(case.baseline_records().is_empty());
+    drop(case);
 }
 
 #[tokio::test]
@@ -311,4 +322,5 @@ async fn no_serialized_capture_publishes_nothing() {
     let outcome = case.enqueue_baseline(&daily, &input).await.unwrap();
     assert_eq!(outcome, CaptureOutcome::Retained);
     assert!(case.baseline_records().is_empty());
+    drop(case);
 }

@@ -135,8 +135,8 @@ impl SpendLogsWriter for FakeLogWriter {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .pop_front();
-            if let Some(failure) = failure {
-                return Err(failure);
+            if let Some(scripted) = failure {
+                return Err(scripted);
             }
             self.rows
                 .lock()
@@ -346,8 +346,10 @@ impl FakeToolWriter {
 
     fn store_rollups(&self, rollups: &[ToolDayRollup]) -> Result<(), ToolFailure> {
         self.check()?;
-        let mut stored = self.rollups.lock().unwrap_or_else(PoisonError::into_inner);
-        stored.extend_from_slice(rollups);
+        self.rollups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(rollups);
         Ok(())
     }
 }
@@ -421,8 +423,10 @@ impl FakeModelWriter {
 
     fn store_rollups(&self, rollups: &[ModelUsageRollup]) -> Result<(), ModelFailure> {
         self.check()?;
-        let mut stored = self.rollups.lock().unwrap_or_else(PoisonError::into_inner);
-        stored.extend_from_slice(rollups);
+        self.rollups
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(rollups);
         Ok(())
     }
 }

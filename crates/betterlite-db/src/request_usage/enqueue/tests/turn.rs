@@ -35,6 +35,7 @@ async fn enqueues_one_turn_for_a_routed_request() {
         NaiveDateTime::parse_from_str("2026-01-02T03:04:05", "%Y-%m-%dT%H:%M:%S").unwrap()
     );
     assert!(case.baseline_records().is_empty());
+    drop(case);
 }
 
 #[rstest]
@@ -50,6 +51,7 @@ async fn skips_a_turn_that_names_no_routing_decision(#[case] metadata: &str) {
     case.enqueue_result(&turn_payload(metadata)).await.unwrap();
     assert!(case.turns().is_empty());
     assert!(case.baseline_records().is_empty());
+    drop(case);
 }
 
 #[tokio::test]
@@ -60,6 +62,7 @@ async fn a_routed_request_the_turn_builder_does_not_count_appends_no_turn() {
     case.enqueue(&payload).await;
     assert!(case.turns().is_empty());
     assert!(case.baseline_records().is_empty());
+    drop(case);
 }
 
 #[tokio::test]
@@ -71,6 +74,7 @@ async fn a_request_with_no_router_catalog_enqueues_nothing() {
     assert!(case.turns().is_empty());
     assert!(case.baseline_records().is_empty());
     assert!(!case.flushed().await);
+    drop(case);
 }
 
 #[rstest]
@@ -90,6 +94,7 @@ async fn a_capture_without_a_routing_decision_publishes_nothing(#[case] with_dec
     assert!(case.turns().is_empty());
     assert!(case.baseline_records().is_empty());
     assert!(!case.flushed().await);
+    drop(case);
 }
 
 #[tokio::test]
@@ -108,6 +113,7 @@ async fn prices_a_routed_turn_with_the_rates_of_both_models() {
     let turns = case.turns();
     assert_eq!(turns.len(), 1);
     assert_eq!(turns[0].saved_spend, Decimal::new(104, 1));
+    drop(case);
 }
 
 #[tokio::test]
@@ -118,6 +124,7 @@ async fn rejects_metadata_that_is_not_a_mapping() {
         .await
         .unwrap_err();
     assert!(matches!(error, TurnEnqueueError::Metadata(_)));
+    drop(case);
 }
 
 #[tokio::test]
@@ -127,6 +134,7 @@ async fn an_unreadable_request_leaves_every_queue_empty() {
     assert!(case.turns().is_empty());
     assert!(case.baseline_records().is_empty());
     assert!(!case.flushed().await);
+    drop(case);
 }
 
 #[tokio::test]
@@ -134,6 +142,7 @@ async fn rejects_a_request_whose_payload_is_not_json() {
     let case = TurnCase::new();
     let error = case.enqueue_result("not json").await.unwrap_err();
     assert!(matches!(error, TurnEnqueueError::Payload(_)));
+    drop(case);
 }
 
 #[rstest]
@@ -150,6 +159,7 @@ async fn rejects_an_end_time_that_is_not_a_bill_time(#[case] end_time: &str) {
     );
     let error = case.enqueue_result(&payload).await.unwrap_err();
     assert!(matches!(error, TurnEnqueueError::EndTime));
+    drop(case);
 }
 
 #[tokio::test]
@@ -171,4 +181,5 @@ async fn reports_a_turn_queue_that_no_longer_admits_records() {
         .unwrap_err();
     assert!(matches!(error, TurnEnqueueError::Queue(_)));
     assert!(case.turns().is_empty());
+    drop(case);
 }

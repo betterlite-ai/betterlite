@@ -25,18 +25,15 @@ async fn a_full_queue_holds_the_record_until_a_drain_frees_room() {
         .unwrap();
     let waiting = queue.push(2_u8);
     tokio::pin!(waiting);
-    assert!(
-        timeout(Duration::from_millis(20), waiting.as_mut())
-            .await
-            .is_err()
-    );
+    timeout(Duration::from_millis(20), waiting.as_mut())
+        .await
+        .unwrap_err();
     assert_eq!(queue.len(), 1);
     assert_eq!(queue.drain(1), vec![1_u8]);
-    assert!(
-        timeout(Duration::from_secs(5), waiting.as_mut())
-            .await
-            .is_ok()
-    );
+    timeout(Duration::from_secs(5), waiting.as_mut())
+        .await
+        .expect("room after the drain")
+        .unwrap();
     assert_eq!(queue.drain(1), vec![2_u8]);
     assert!(queue.is_empty());
 }
@@ -50,11 +47,9 @@ async fn closing_wakes_a_producer_waiting_for_room() {
         .unwrap();
     let waiting = queue.push(2_u8);
     tokio::pin!(waiting);
-    assert!(
-        timeout(Duration::from_millis(20), waiting.as_mut())
-            .await
-            .is_err()
-    );
+    timeout(Duration::from_millis(20), waiting.as_mut())
+        .await
+        .unwrap_err();
     assert_eq!(queue.close(), 1);
     let outcome = timeout(Duration::from_secs(5), waiting.as_mut()).await;
     assert!(matches!(outcome, Ok(Err(UsageQueueError::Closed))));

@@ -44,7 +44,7 @@ impl Environment {
         }
     }
 
-    pub(super) fn pricing(&self) -> DailyPricing<'_, CasePrices> {
+    fn pricing(&self) -> DailyPricing<'_, CasePrices> {
         DailyPricing {
             context: &self.prices,
             zone: &self.zone,
@@ -87,19 +87,23 @@ impl PriceLookup for CasePrices {
 
     fn effective_priced_model(
         &self,
-        name: &str,
-        provider_hint: Option<&str>,
+        model: &str,
+        custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.effective_model_info(name, provider_hint)
+        self.effective_model_info(model, custom_llm_provider)
             .map(Self::priced)
     }
 }
 
 impl SavingsPricingContext for CasePrices {
-    fn resolve_model(&self, name: &str, provider_hint: Option<&str>) -> Option<ModelIdentity> {
+    fn resolve_model(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<ModelIdentity> {
         let identity = ModelIdentity {
-            model: name.to_owned(),
-            provider: provider_hint.unwrap_or_default().to_owned(),
+            model: model.to_owned(),
+            provider: custom_llm_provider.unwrap_or_default().to_owned(),
         };
         Some(identity)
     }
@@ -260,9 +264,9 @@ pub(super) fn turn_metadata(capture: Option<&str>) -> String {
     let mut metadata = String::from(
         r#"{"routing_decision":{"router_model_name":"auto-router","savings_baseline_model":"anthropic/claude-opus-5"}"#,
     );
-    if let Some(capture) = capture {
-        let quoted = serde_json::to_string(capture).unwrap();
-        metadata.push_str(&format!(r#","autorouter_baseline_observation":{quoted}"#));
+    if let Some(observation) = capture {
+        metadata.push_str(r#","autorouter_baseline_observation":"#);
+        metadata.push_str(&serde_json::to_string(observation).unwrap());
     }
     metadata.push('}');
     metadata
