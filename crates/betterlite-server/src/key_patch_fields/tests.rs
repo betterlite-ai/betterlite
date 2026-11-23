@@ -47,7 +47,9 @@ async fn metadata_omitted_copies_explicit_null_retained() {
 #[tokio::test]
 async fn reserved_id_immutable_and_preserved() {
     let fixture = fixture();
-    let stored = existing(r#"{"token": "tok", "metadata": {"service_account_id": "sa-1"}}"#);
+    let stored = existing(
+        r#"{"token": "tok", "team_id": "team-1", "metadata": {"service_account_id": "sa-1"}}"#,
+    );
     let omitted = prepared_row(&fixture, &stored, &update_request(r#"{"key": "tok"}"#)).await;
     assert_metadata(&omitted, r#"{"service_account_id": "sa-1"}"#);
     let same = r#"{"key": "tok", "metadata": {"service_account_id": "sa-1"}}"#;
@@ -65,7 +67,7 @@ async fn reserved_id_immutable_and_preserved() {
         prepare_error(&fixture, &stored, &cleared).await,
         KeyPatchError::ImmutableMetadata { .. }
     ));
-    let plain = existing(r#"{"token": "tok", "metadata": {"team": "t1"}}"#);
+    let plain = existing(r#"{"token": "tok", "team_id": "team-1", "metadata": {"team": "t1"}}"#);
     let fresh = r#"{"key": "tok", "metadata": {"service_account_id": "sa-1"}}"#;
     let fresh_values = prepared_row(&fixture, &plain, &update_request(fresh)).await;
     assert_metadata(&fresh_values, r#"{"service_account_id": "sa-1"}"#);
