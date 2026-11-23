@@ -1,28 +1,23 @@
-import datetime
+import datetime as dt
 import inspect
 from inspect import Signature
 from typing import Final, Protocol
 
 import pytest
 from litellm.constants import DEFAULT_REPLICATE_GPU_PRICE_PER_SECOND as REPLICATE_RATE
+from litellm.cost_calculator import completion_cost as reference_completion_cost
+from litellm.cost_calculator import cost_per_token as reference_cost_per_token
 from litellm.cost_calculator import (
-    completion_cost as reference_completion_cost,
-    cost_per_token as reference_cost_per_token,
     get_response_cost_from_hidden_params as reference_header_cost,
-    get_usage_object as reference_usage_object,
-    has_hidden_params as reference_has_hidden_params,
-    response_cost_calculator as reference_response_cost,
 )
-from litellm.exceptions import (
-    BadRequestError as ReferenceBadRequest,
-    ModelNotMappedError as ReferenceNotMapped,
-)
+from litellm.cost_calculator import get_usage_object as reference_usage_object
+from litellm.cost_calculator import has_hidden_params as reference_has_hidden_params
+from litellm.cost_calculator import response_cost_calculator as reference_response_cost
+from litellm.exceptions import ModelNotMappedError as ReferenceNotMapped
 from litellm.litellm_core_utils.litellm_logging import Logging as ReferenceLogging
-from litellm.types.utils import (
-    EmbeddingResponse as ReferenceEmbedding,
-    ModelResponse as ReferenceChat,
-    Usage as ReferenceUsage,
-)
+from litellm.types.utils import EmbeddingResponse as ReferenceEmbedding
+from litellm.types.utils import ModelResponse as ReferenceChat
+from litellm.types.utils import Usage as ReferenceUsage
 from pydantic import BaseModel, JsonValue
 from typing_extensions import override
 
@@ -61,10 +56,12 @@ STAMP_START: Final = 1.0
 STAMP_END: Final = 2.0
 UNMAPPED_MATCH: Final = "This model isn't mapped yet"
 PROVIDER_MATCH: Final = "LLM Provider NOT provided"
+REFERENCE_ERROR: Final[tuple[str, str]] = ("litellm.exceptions", "BadRequestError")
 MODEL_MISSING_MATCH: Final = "Model is None"
 HIDDEN: Final[dict[str, JsonValue]] = {"additional_headers": {COST_HEADER: HEADER_COST}}
 STRING_HEADER: Final[dict[str, JsonValue]] = {"additional_headers": {COST_HEADER: "0.00042"}}
 EMPTY_PARAMS: Final[dict[str, JsonValue]] = {}
+EMPTY_HEADERS: Final[dict[str, JsonValue]] = {"additional_headers": {}}
 EMPTY_MESSAGES: Final[list[JsonValue]] = []
 BREAKDOWN_KWARGS: Final[tuple[str, ...]] = (
     "input_cost",
@@ -170,22 +167,66 @@ def reference_cached_chat(model: str) -> ReferenceChat:
     return ReferenceChat(model=model, usage=usage)
 
 
+# The tables below are LiteLLM's rows at the pin; mypy rejects naming its Any callables.
+PARAM_KIND: Final = "POSITIONAL_OR_KEYWORD"
+REQUIRED: Final = "<class 'inspect._empty'>"
+COST_PER_TOKEN_SIGNATURE: Final[tuple[tuple[str, str, str], ...]] = (
+    ("model", PARAM_KIND, "''"), ("prompt_tokens", PARAM_KIND, "0"),
+    ("completion_tokens", PARAM_KIND, "0"), ("response_time_ms", PARAM_KIND, "0.0"),
+    ("custom_llm_provider", PARAM_KIND, "None"), ("region_name", PARAM_KIND, "None"),
+    ("prompt_characters", PARAM_KIND, "None"),
+    ("completion_characters", PARAM_KIND, "None"),
+    ("cache_creation_input_tokens", PARAM_KIND, "0"),
+    ("cache_read_input_tokens", PARAM_KIND, "0"),
+    ("custom_cost_per_token", PARAM_KIND, "None"),
+    ("custom_cost_per_second", PARAM_KIND, "None"),
+    ("number_of_queries", PARAM_KIND, "None"), ("usage_object", PARAM_KIND, "None"),
+    ("rerank_billed_units", PARAM_KIND, "None"), ("call_type", PARAM_KIND, "'completion'"),
+    ("audio_transcription_file_duration", PARAM_KIND, "0.0"),
+    ("service_tier", PARAM_KIND, "None"), ("data_residency", PARAM_KIND, "None"),
+    ("vertex_location", PARAM_KIND, "None"), ("response", PARAM_KIND, "None"),
+    ("request_model", PARAM_KIND, "None"), ("custom_model_info", PARAM_KIND, "None"),
+)
+COMPLETION_COST_SIGNATURE: Final[tuple[tuple[str, str, str], ...]] = (
+    ("completion_response", PARAM_KIND, "None"), ("model", PARAM_KIND, "None"),
+    ("prompt", PARAM_KIND, "''"), ("messages", PARAM_KIND, "[]"),
+    ("completion", PARAM_KIND, "''"), ("total_time", PARAM_KIND, "0.0"),
+    ("call_type", PARAM_KIND, "None"), ("custom_llm_provider", PARAM_KIND, "None"),
+    ("region_name", PARAM_KIND, "None"), ("size", PARAM_KIND, "None"),
+    ("quality", PARAM_KIND, "None"), ("n", PARAM_KIND, "None"),
+    ("custom_cost_per_token", PARAM_KIND, "None"),
+    ("custom_cost_per_second", PARAM_KIND, "None"),
+    ("optional_params", PARAM_KIND, "None"), ("custom_pricing", PARAM_KIND, "None"),
+    ("base_model", PARAM_KIND, "None"),
+    ("standard_built_in_tools_params", PARAM_KIND, "None"),
+    ("litellm_model_name", PARAM_KIND, "None"), ("router_model_id", PARAM_KIND, "None"),
+    ("litellm_logging_obj", PARAM_KIND, "None"), ("service_tier", PARAM_KIND, "None"),
+    ("data_residency", PARAM_KIND, "None"), ("vertex_location", PARAM_KIND, "None"),
+)
+RESPONSE_COST_SIGNATURE: Final[tuple[tuple[str, str, str], ...]] = (
+    ("response_object", PARAM_KIND, REQUIRED), ("model", PARAM_KIND, REQUIRED),
+    ("custom_llm_provider", PARAM_KIND, REQUIRED), ("call_type", PARAM_KIND, REQUIRED),
+    ("optional_params", PARAM_KIND, REQUIRED), ("cache_hit", PARAM_KIND, "None"),
+    ("base_model", PARAM_KIND, "None"), ("custom_pricing", PARAM_KIND, "None"),
+    ("prompt", PARAM_KIND, "''"), ("standard_built_in_tools_params", PARAM_KIND, "None"),
+    ("litellm_model_name", PARAM_KIND, "None"), ("router_model_id", PARAM_KIND, "None"),
+    ("litellm_logging_obj", PARAM_KIND, "None"), ("service_tier", PARAM_KIND, "None"),
+    ("data_residency", PARAM_KIND, "None"), ("vertex_location", PARAM_KIND, "None"),
+    ("region_name", PARAM_KIND, "None"),
+)
+
+
 def test_cost_per_token_signature() -> None:
-    assert signature_rows(inspect.signature(cost_per_token)) == signature_rows(
-        inspect.signature(reference_cost_per_token)
-    )
+    assert tuple(signature_rows(inspect.signature(cost_per_token))) == COST_PER_TOKEN_SIGNATURE
 
 
 def test_completion_cost_signature() -> None:
-    assert signature_rows(inspect.signature(completion_cost)) == signature_rows(
-        inspect.signature(reference_completion_cost)
-    )
+    assert tuple(signature_rows(inspect.signature(completion_cost))) == COMPLETION_COST_SIGNATURE
 
 
 def test_response_cost_signature() -> None:
-    assert signature_rows(inspect.signature(response_cost_calculator)) == signature_rows(
-        inspect.signature(reference_response_cost)
-    )
+    signature = inspect.signature(response_cost_calculator)
+    assert tuple(signature_rows(signature)) == RESPONSE_COST_SIGNATURE
 
 
 def test_cost_per_token_plain() -> None:
@@ -195,29 +236,21 @@ def test_cost_per_token_plain() -> None:
 
 
 def test_cost_per_token_cached() -> None:
-    ours = cost_per_token(
-        model=CACHED_MODEL, prompt_tokens=100, completion_tokens=10,
+    ours = cost_per_token(CACHED_MODEL, 100, 10, custom_llm_provider=ANTHROPIC,
+                          cache_read_input_tokens=50, cache_creation_input_tokens=20)
+    assert_pair_matches(ours, reference_cost_per_token(
+        CACHED_MODEL, 100, 10, custom_llm_provider=ANTHROPIC,
         cache_read_input_tokens=50, cache_creation_input_tokens=20,
-        custom_llm_provider=ANTHROPIC,
-    )
-    reference = reference_cost_per_token(
-        model=CACHED_MODEL, prompt_tokens=100, completion_tokens=10,
-        cache_read_input_tokens=50, cache_creation_input_tokens=20,
-        custom_llm_provider=ANTHROPIC,
-    )
-    assert_pair_matches(ours, reference)
+    ))
 
 
 def test_cost_per_token_custom() -> None:
-    ours = cost_per_token(
-        model=CHAT_MODEL, prompt_tokens=10, completion_tokens=5,
+    custom = {"input_cost_per_token": 0.5, "output_cost_per_token": 1.5}
+    ours = cost_per_token(CHAT_MODEL, 10, 5, custom_cost_per_token=custom)
+    assert_pair_matches(ours, reference_cost_per_token(
+        CHAT_MODEL, 10, 5,
         custom_cost_per_token={"input_cost_per_token": 0.5, "output_cost_per_token": 1.5},
-    )
-    reference = reference_cost_per_token(
-        model=CHAT_MODEL, prompt_tokens=10, completion_tokens=5,
-        custom_cost_per_token={"input_cost_per_token": 0.5, "output_cost_per_token": 1.5},
-    )
-    assert_pair_matches(ours, reference)
+    ))
 
 
 def test_cost_per_token_tiered() -> None:
@@ -268,8 +301,9 @@ def test_cost_per_token_unmapped() -> None:
 def test_cost_per_token_provider() -> None:
     with pytest.raises(BadRequestError, match=PROVIDER_MATCH) as ours_error:
         cost_per_token(model=UNKNOWN_MODEL)
-    with pytest.raises(ReferenceBadRequest, match=PROVIDER_MATCH) as reference_error:
+    with pytest.raises(Exception, match=PROVIDER_MATCH) as reference_error:
         reference_cost_per_token(model=UNKNOWN_MODEL)
+    assert (reference_error.type.__module__, reference_error.type.__name__) == REFERENCE_ERROR
     assert str(ours_error.value) == str(reference_error.value)
 
 
@@ -300,15 +334,12 @@ def test_completion_cost_embedding() -> None:
 
 
 def test_completion_cost_custom() -> None:
-    ours = completion_cost(
-        our_chat(CHAT_MODEL, 10, 5),
-        custom_cost_per_token={"input_cost_per_token": 0.5, "output_cost_per_token": 1.5},
-    )
-    reference = reference_completion_cost(
+    custom = {"input_cost_per_token": 0.5, "output_cost_per_token": 1.5}
+    ours = completion_cost(our_chat(CHAT_MODEL, 10, 5), custom_cost_per_token=custom)
+    assert ours == pytest.approx(reference_completion_cost(
         reference_chat(CHAT_MODEL, 10, 5),
         custom_cost_per_token={"input_cost_per_token": 0.5, "output_cost_per_token": 1.5},
-    )
-    assert ours == pytest.approx(reference, rel=RELATIVE)
+    ), rel=RELATIVE)
 
 
 def test_completion_cost_tiered() -> None:
@@ -398,7 +429,7 @@ def test_response_cost_breakdown() -> None:
     ours = completion_cost(our_cached_chat(CACHED_MODEL), litellm_logging_obj=recorder)
     logger = ReferenceLogging(
         model=CACHED_MODEL, messages=EMPTY_MESSAGES, stream=False, call_type="completion",
-        start_time=datetime.datetime.now(tz=datetime.UTC), litellm_call_id="b8063-cost",
+        start_time=dt.datetime.now(tz=dt.UTC), litellm_call_id="b8063-cost",
         function_id="b8063-cost",
     )
     reference = reference_completion_cost(
@@ -457,14 +488,18 @@ def test_response_cost_breakdown() -> None:
     )
 
 
+def assert_usage_matches(ours: Usage | None, reference: ReferenceUsage | None) -> None:
+    assert ours is not None
+    assert reference is not None
+    assert (ours.prompt_tokens, ours.completion_tokens, ours.total_tokens) == (
+        reference.prompt_tokens, reference.completion_tokens, reference.total_tokens,
+    )
+
+
 def test_usage_object_present() -> None:
     ours = get_usage_object(our_chat(CHAT_MODEL, 10, 5))
     reference = reference_usage_object(reference_chat(CHAT_MODEL, 10, 5))
-    assert ours is not None
-    assert reference is not None
-    assert ours.prompt_tokens == reference.prompt_tokens
-    assert ours.completion_tokens == reference.completion_tokens
-    assert ours.total_tokens == reference.total_tokens
+    assert_usage_matches(ours, reference)
 
 
 def test_usage_object_absent() -> None:
@@ -476,26 +511,14 @@ def test_usage_object_mapping() -> None:
     usage: Final[dict[str, JsonValue]] = {
         "usage": {"prompt_tokens": 4, "completion_tokens": 2, "total_tokens": 6},
     }
-    ours = get_usage_object(usage)
-    reference = reference_usage_object(usage)
-    assert ours is not None
-    assert reference is not None
-    assert ours.prompt_tokens == reference.prompt_tokens
-    assert ours.completion_tokens == reference.completion_tokens
-    assert ours.total_tokens == reference.total_tokens
+    assert_usage_matches(get_usage_object(usage), reference_usage_object(usage))
 
 
 def test_usage_object_response_api() -> None:
     response: Final[dict[str, JsonValue]] = {
         "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
     }
-    ours = get_usage_object(response)
-    reference = reference_usage_object(response)
-    assert ours is not None
-    assert reference is not None
-    assert ours.prompt_tokens == reference.prompt_tokens
-    assert ours.completion_tokens == reference.completion_tokens
-    assert ours.total_tokens == reference.total_tokens
+    assert_usage_matches(get_usage_object(response), reference_usage_object(response))
 
 
 def test_hidden_params_response() -> None:
@@ -508,11 +531,11 @@ def test_hidden_params_response() -> None:
 def test_hidden_params_cost() -> None:
     assert get_response_cost_from_hidden_params(HIDDEN) == HEADER_COST
     assert get_response_cost_from_hidden_params(STRING_HEADER) == float("0.00042")
-    assert get_response_cost_from_hidden_params({"additional_headers": {}}) is None
+    assert get_response_cost_from_hidden_params(EMPTY_HEADERS) is None
     assert get_response_cost_from_hidden_params(EMPTY_PARAMS) is None
     assert reference_header_cost(HIDDEN) == HEADER_COST
     assert reference_header_cost(STRING_HEADER) == float("0.00042")
-    assert reference_header_cost({"additional_headers": {}}) is None
+    assert reference_header_cost(EMPTY_HEADERS) is None
     assert reference_header_cost(EMPTY_PARAMS) is None
 
 
