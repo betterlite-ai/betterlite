@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_config::loader::startup::process_environment;
-use betterlite_config::sections::Section;
+use betterlite_config::sections::Section as _;
 use betterlite_config::sections::openai_credentials::{Raw, Settings};
 use betterlite_core::api::container_create_list::handler::GenericCollectionHandler;
 use betterlite_core::api::container_create_list::{
@@ -29,6 +29,8 @@ use super::super::stack;
 use super::super::transport::Source;
 
 pub(super) mod asynchronous;
+
+mod tests;
 
 const CREATE: &str = "create_container";
 const LIST: &str = "list_containers";
@@ -153,11 +155,10 @@ impl SessionCore {
         let (configs, logging, handler) =
             self.operation_stack(wire, &request, resource_call_type(delete))?;
         let operations = self.operations(&handler, &configs, &logging);
-        let reply = match delete {
-            true => operations.delete_container(&request)?,
-            false => operations.retrieve_container(&request)?,
-        };
-        encode(&reply)
+        match delete {
+            true => encode(&operations.delete_container(&request)?),
+            false => encode(&operations.retrieve_container(&request)?),
+        }
     }
 
     // the pieces every create or list call shares, with the call type and call id its logging object takes

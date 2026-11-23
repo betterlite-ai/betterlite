@@ -61,9 +61,8 @@ async fn aresource(
     let (configs, logging, handler) =
         core.operation_stack(wire, &request, resource_call_type(delete))?;
     let operations = core.operations(&handler, &configs, &logging);
-    let reply = match delete {
-        true => operations.adelete_container(&request).await?,
-        false => operations.aretrieve_container(&request).await?,
-    };
-    encode(&reply)
+    match delete {
+        true => encode(&operations.adelete_container(&request).await?),
+        false => encode(&operations.aretrieve_container(&request).await?),
+    }
 }

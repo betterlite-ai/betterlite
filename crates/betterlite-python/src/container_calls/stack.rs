@@ -158,7 +158,7 @@ impl ContainerIdDecoder for Decoder {
     }
 }
 
-const fn params_field() -> ContainerFieldTypeError {
+pub(crate) const fn params_field() -> ContainerFieldTypeError {
     ContainerFieldTypeError {
         field: "litellm_params",
     }
@@ -195,7 +195,7 @@ pub(crate) fn logging_state(
     Ok(Mutex::new(state))
 }
 
-fn init(call_type: &str, call_id: Option<&str>) -> LoggingInit {
+pub(crate) fn init(call_type: &str, call_id: Option<&str>) -> LoggingInit {
     LoggingInit {
         model: String::new(),
         call_type: call_type.to_owned(),
