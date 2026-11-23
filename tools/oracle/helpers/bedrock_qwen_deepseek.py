@@ -198,8 +198,8 @@ def reply_view(transformed: ModelResponse) -> JsonValue:
 
 def qwen_reply_config(projection: Projection) -> ReplyApi:
     if projection == "qwen2":
-        return cast("ReplyApi", AmazonQwen2Config())  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen2_transformation.py#L27-L35
-    return cast("ReplyApi", AmazonQwen3Config())  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py#L25-L46
+        return cast("ReplyApi", AmazonQwen2Config())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen2_transformation.py#L27-L35
+    return cast("ReplyApi", AmazonQwen3Config())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py#L25-L46
 
 
 def deepseek_config() -> ReplyApi:
@@ -241,7 +241,9 @@ def qwen_request_result(config: QwenRequestApi, call: QwenRequestCall) -> JsonVa
         return {"error": {"class": type(failure).__name__, "status": None}}
     return {
         "ok": {
-            "supported": config.get_supported_openai_params(call["model"]),
+            "supported": cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py#L52-L60
+                JsonValue, config.get_supported_openai_params(call["model"])
+            ),
             "mapped": mapped,
             "body": body,
         }
@@ -273,7 +275,7 @@ def deepseek_reply_result(config: ReplyApi, call: DeepseekReplyCall) -> JsonValu
 
 
 def run(argument: Input) -> JsonValue:
-    request_config = cast("QwenRequestApi", AmazonQwen3Config())  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py#L52-L82
+    request_config = cast("QwenRequestApi", AmazonQwen3Config())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py#L52-L82
     results: list[JsonValue] = [
         *[qwen_reply_result(call) for call in argument["qwen_reply"]],
         *[qwen_request_result(request_config, call) for call in argument["qwen_request"]],
