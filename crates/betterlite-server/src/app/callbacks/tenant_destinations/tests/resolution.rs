@@ -125,6 +125,28 @@ async fn failure_vars_merge_into_eligible_backend() {
 }
 
 #[tokio::test]
+async fn incomplete_backend_names_no_destination() {
+    let runtime = build_runtime();
+    let sinks = RecordingSinks::new();
+    let _fan_out = attach(&runtime, &sinks);
+    let adapter = build_adapter(&runtime, setup(allowed_hosts(&[TENANT_A])));
+    let partial = format!(
+        r#"{{"callback_name": "langfuse_otel", "callback_vars": {{"langfuse_host": "{TENANT_A}", "langfuse_public_key": "pk-a"}}}}"#
+    );
+    let entries = format!("{partial},{}", newrelic_entry("nr-a"));
+    let key = build_key(&logging(&entries));
+    let (_, destinations) = request_slot_scope(async {
+        adapter.seed(&key, &no_headers()).expect("the key seeds");
+        slot(&runtime)
+    })
+    .await;
+    assert_eq!(
+        endpoints(&destinations),
+        vec![NEWRELIC_US_ENDPOINT.to_owned()]
+    );
+}
+
+#[tokio::test]
 async fn unbuildable_destination_keeps_operator() {
     let runtime = build_runtime();
     let sinks = RecordingSinks::new();
