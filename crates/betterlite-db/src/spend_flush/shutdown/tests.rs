@@ -1,7 +1,6 @@
 #![cfg(test)]
 
-use std::io::{Result as IoResult, Write};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -13,17 +12,18 @@ use tokio::sync::Mutex as WriteLock;
 use tokio::task::{JoinSet, yield_now};
 use tokio::time::{sleep, timeout};
 use tokio_postgres::NoTls;
-use tracing::subscriber::DefaultGuard;
-use tracing_subscriber::fmt::MakeWriter;
 
 use super::{MAX_DRAIN_PASSES, MonitorStartError, SpendLogsMonitorSlot, drain_spend_logs_queue};
 use crate::daily_spend_sql::entities::{DailySpendEntity, SpendRow};
 use crate::daily_spend_sql::values::SpendColumnValue;
+use crate::gateway_request_tracking::test_support::captured_logs;
 use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::postgres_store::session::PostgresStore;
 use crate::redis_spend::buffer::RedisUpdateBuffer;
 use crate::redis_spend::events::NoRedisBufferEventSink;
 use crate::redis_spend::keys::REDIS_SPEND_LOGS_BUFFER_KEY;
+use crate::redis_spend::lists::SpendBufferLists;
+use crate::redis_spend::log_row::{SpendLogRow, SpendLogValue};
 use crate::spend_commit::daily::postgres::PostgresDailyChunks;
 use crate::spend_commit::policy::SpendFailure;
 use crate::spend_flush::daily::{DailyCommitParts, DailyFlushError, flush_daily_spend_queue};
@@ -34,7 +34,6 @@ use crate::spend_flush::fakes::tests::{
 use crate::spend_flush::monitor::SpendMonitorSettings;
 use crate::spend_log_storage::rows::writer::NoSpendLogFailureSink;
 use crate::spend_log_storage::rows::{QueuePosition, SpendLogQueue};
-use crate::spend_log_storage::tests::support::{ids, ordinary_row};
 use crate::spend_queues::daily::{DailySpendUpdate, DailySpendUpdateQueue};
 use crate::spend_queues::events::NoSpendQueueEventSink;
 use tokio_util::sync::CancellationToken;
@@ -231,17 +230,23 @@ impl DrainCase {
     }
 
     fn enqueue(&self, request_ids: &[&str]) {
-        let rows: Vec<_> = request_ids
+        let rows: Vec<SpendLogRow> = request_ids
             .iter()
-            .map(|request_id| ordinary_row(request_id))
+            .map(|request_id| {
+                SpendLogRow::from([(
+                    "request_id".to_owned(),
+                    SpendLogValue::Text((*request_id).to_owned()),
+                )])
+            })
             .collect();
         self.queue.enqueue(&rows, QueuePosition::Tail);
     }
 }
 
 fn redis_buffer(lists: &Arc<RecordingLists>) -> RedisUpdateBuffer {
+    let port: Arc<dyn SpendBufferLists> = Arc::clone(lists);
     RedisUpdateBuffer {
-        lists: Some(Arc::clone(lists)),
+        lists: Some(port),
         enabled: true,
         dequeue_count: 5,
         events: Arc::new(NoRedisBufferEventSink),
@@ -262,55 +267,6 @@ fn monitor_settings(base_interval: Duration) -> SpendMonitorSettings {
         queue_size_threshold: 100,
         base_interval,
     }
-}
-
-// The shutdown's own log lines, kept instead of printed, so a test can read what a drain reported.
-#[derive(Clone, Default)]
-struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
-
-impl CapturedLogs {
-    fn has(&self, needle: &str) -> bool {
-        let written = self
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        String::from_utf8(written)
-            .expect("the log writer records UTF-8")
-            .contains(needle)
-    }
-}
-
-impl Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> IoResult<usize> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-}
-
-impl<'writer> MakeWriter<'writer> for CapturedLogs {
-    type Writer = Self;
-
-    fn make_writer(&'writer self) -> Self::Writer {
-        self.clone()
-    }
-}
-
-fn capture_logs() -> (CapturedLogs, DefaultGuard) {
-    let logs = CapturedLogs::default();
-    let guard = tracing_subscriber::fmt()
-        .with_writer(logs.clone())
-        .with_ansi(false)
-        .with_max_level(tracing::Level::ERROR)
-        .set_default();
-    (logs, guard)
 }
 
 #[tokio::test]
@@ -403,7 +359,16 @@ async fn rows_redis_cannot_take_go_back_to_the_memory_head() {
     let outcome = case.drain(&memory_only_buffer()).await;
 
     outcome.unwrap();
-    assert_eq!(ids(&case.queue.dequeue(10)), ["a", "b"]);
+    let parked: Vec<String> = case
+        .queue
+        .dequeue(10)
+        .into_iter()
+        .map(|row| match row.get("request_id") {
+            Some(SpendLogValue::Text(request_id)) => request_id.clone(),
+            Some(_) | None => String::new(),
+        })
+        .collect();
+    assert_eq!(parked, ["a", "b"]);
     assert!(case.lists.pushes().is_empty());
 }
 
@@ -452,12 +417,12 @@ async fn a_stopped_monitor_runs_no_further_pass() {
 #[tokio::test]
 async fn a_drain_that_leaves_rows_logs_how_many_are_lost() {
     let case = DrainCase::new(vec![1]);
-    let (logs, _capture) = capture_logs();
+    let (logs, _capture) = captured_logs();
 
     let outcome = case.drain(&memory_only_buffer()).await;
 
     outcome.unwrap();
-    assert!(logs.has(&format!(
+    assert!(logs.text().contains(&format!(
         "1 spend log rows still queued after {MAX_DRAIN_PASSES} drain passes"
     )));
 }
@@ -467,12 +432,12 @@ async fn a_drain_that_empties_on_its_last_census_logs_no_lost_rows() {
     let mut census = vec![1; usize::try_from(MAX_DRAIN_PASSES).unwrap()];
     census.push(0);
     let case = DrainCase::new(census);
-    let (logs, _capture) = capture_logs();
+    let (logs, _capture) = captured_logs();
 
     let outcome = case.drain(&memory_only_buffer()).await;
 
     outcome.unwrap();
-    assert!(!logs.has("still queued"));
+    assert!(!logs.text().contains("still queued"));
 }
 
 // The row the real daily user upsert writes, with every column that table requires.
