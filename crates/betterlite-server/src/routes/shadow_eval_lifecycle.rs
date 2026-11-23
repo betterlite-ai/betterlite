@@ -159,7 +159,6 @@ fn lifecycle_response(
     };
     let status = match error.status_code() {
         400 => StatusCode::BAD_REQUEST,
-        401 => StatusCode::UNAUTHORIZED,
         403 => StatusCode::FORBIDDEN,
         404 => StatusCode::NOT_FOUND,
         409 => StatusCode::CONFLICT,
@@ -222,3 +221,5 @@ async fn start_job(
     let mut ids = std::iter::repeat_with(Uuid::new_v4);
     start_shadow_eval(store, deps, request, caller, Utc::now(), &mut ids).await
 }
+
+mod tests;
