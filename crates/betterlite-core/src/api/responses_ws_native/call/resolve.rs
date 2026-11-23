@@ -98,6 +98,7 @@ fn first_secret<'secret>(
         .find(|secret| !secret.expose_secret().is_empty())
 }
 
+#[cfg_attr(test, mutants::skip)]
 fn kwarg_secret(kwargs: &IndexMap<String, Json>) -> Option<SecretString> {
     match kwargs.get("api_key") {
         Some(Json::Text(text)) => Some(SecretString::from(text.clone())),

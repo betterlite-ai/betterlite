@@ -31,6 +31,7 @@ use crate::api::responses_provider_selection::provider_config::{
     ConfigLookup, NativeConfig, ResponsesApiConfig,
 };
 use crate::api::responses_stream_events::ProjectQuotaCallback;
+use crate::api::responses_ws_frame_policy::InputGuardrail;
 use crate::api::responses_ws_native::call::{
     NativeWsCall, NativeWsDeps, NativeWsProviderHandler, NativeWsResolution, ProviderWsRequest,
     WsResolved, responses_websocket,
@@ -59,6 +60,14 @@ pub(super) fn object(text: &str) -> Event {
 
 pub(super) fn json(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
+}
+
+pub(super) fn unmask_tokens(text: &str, pii_tokens: &IndexMap<String, String>) -> String {
+    let mut unmasked = text.to_owned();
+    for (token, original) in pii_tokens {
+        unmasked = unmasked.replace(token.as_str(), original);
+    }
+    unmasked
 }
 
 pub(super) fn redactor() -> Redactor {
@@ -547,6 +556,7 @@ pub(super) struct Entry {
     pub(super) globals: LiteLlmGlobals,
     pub(super) openai_api_key: Option<String>,
     pub(super) configs: FakeConfigs,
+    pub(super) logging: Arc<RecordingLogging>,
 }
 
 impl Entry {
@@ -560,13 +570,12 @@ impl Entry {
     pub(super) async fn request(&self) -> RecordedRequest {
         let handler = RecordingHandler::recording_only();
         let client = TestClient::new(Vec::new());
-        let logging = RecordingLogging::default();
         let openai = self.openai_api_key.as_deref().map(SecretString::from);
         let caller_key = self.api_key.as_deref().map(SecretString::from);
         let deps = NativeWsDeps {
             resolution: &self.resolution,
             configs: &self.configs,
-            logging: &logging,
+            logging: &*self.logging,
             globals: &self.globals,
             openai_api_key: openai.as_ref(),
             auto_summary: false,
@@ -621,6 +630,7 @@ pub(super) struct RelayParts<'relay> {
     pub(super) redactor: &'relay Redactor,
     pub(super) first_message: Option<String>,
     pub(super) request_data: Option<Event>,
+    pub(super) guardrails: Option<&'relay [InputGuardrail<'relay, EchoGuard>]>,
     pub(super) outputs: Option<&'relay [EchoGuard]>,
     pub(super) quota: Option<&'relay [Arc<dyn ProjectQuotaCallback>]>,
     pub(super) authorized_model: Option<&'relay str>,
@@ -642,6 +652,7 @@ impl<'relay> RelayParts<'relay> {
             redactor,
             first_message: None,
             request_data: None,
+            guardrails: None,
             outputs: None,
             quota: None,
             authorized_model: None,
@@ -659,7 +670,7 @@ impl<'relay> RelayParts<'relay> {
             user_api_key_dict: None,
             request_data: self.request_data,
             first_message: self.first_message,
-            guardrail_callbacks: None,
+            guardrail_callbacks: self.guardrails,
             output_guardrail_callbacks: self.outputs,
             quota_callbacks: self.quota,
             authorized_model: self.authorized_model,

@@ -14,7 +14,9 @@ use secrecy::SecretString;
 use crate::api::decisions_send::error::visible_message;
 use crate::api::responses_provider_selection::provider_config::{NativeConfig, ResponsesApiConfig};
 use crate::api::responses_stream_events::ProjectQuotaCallback;
-use crate::api::responses_ws_frame_policy::{DELTA_EVENT_TYPES, OUTPUT_DONE_EVENT_TYPES};
+use crate::api::responses_ws_frame_policy::{
+    DELTA_EVENT_TYPES, InputGuardrail, OUTPUT_DONE_EVENT_TYPES,
+};
 use crate::api::responses_ws_native::call::{NativeWsCall, NativeWsDeps, responses_websocket};
 use crate::api::responses_ws_native::error::WsNativeError;
 use crate::api::responses_ws_native::logging::traceback_text;
@@ -27,7 +29,7 @@ use crate::api::responses_ws_native::request::{
 use support::{
     CloseMode, EchoGuard, Entry, Event, FakeConfigs, FakeResolution, ReceiveMode, RecordingHandler,
     RecordingLogging, RejectFirstQuota, RelayParts, ScriptedBackend, TestClient, TestError,
-    capture_traces, json, lock, object, redactor,
+    capture_traces, json, lock, object, redactor, unmask_tokens,
 };
 
 const FIRST_FRAME: &str = r#"{"type":"response.create","input":"hello"}"#;
@@ -158,6 +160,14 @@ fn assert_frame_routing() {
         routed_first_frame(nested_matching, Some(&routed)),
         nested_matching
     );
+    let spaced_flat = r#"{ "type": "response.create", "input": "routed" }"#;
+    assert_eq!(routed_first_frame(spaced_flat, Some(&routed)), spaced_flat);
+    let spaced_nested =
+        r#"{ "type": "response.create", "response": { "input": "routed" }, "other": 1 }"#;
+    assert_eq!(
+        routed_first_frame(spaced_nested, Some(&routed)),
+        spaced_nested
+    );
 }
 
 fn assert_reasoning_defaults() {
@@ -214,6 +224,14 @@ fn assert_malformed_inputs() {
         ws_request_defaults(&object(r#"{"extra_body":[1]}"#), false),
         Err(WsNativeError::Validation { .. })
     ));
+    assert!(matches!(
+        build_litellm_metadata_for_ws(&object(r#"{"litellm_metadata":5}"#)),
+        Err(WsNativeError::TypeError { kind: "int" })
+    ));
+    let zero = build_litellm_metadata_for_ws(&object(r#"{"litellm_metadata":0}"#)).unwrap();
+    assert!(zero.is_empty());
+    let blank = build_litellm_metadata_for_ws(&object(r#"{"litellm_metadata":""}"#)).unwrap();
+    assert!(blank.is_empty());
 }
 
 async fn entry_routing_request() -> support::RecordedRequest {
@@ -254,6 +272,47 @@ async fn merged_metadata_request() -> support::RecordedRequest {
         r#"{"litellm_metadata":{"trace":"t1"},"metadata":{"guardrails":["pii"]},"guardrails":["fallback"]}"#,
     );
     entry.request().await
+}
+
+async fn logged_params(kwargs: &str) -> Event {
+    let mut entry = Entry::new();
+    entry.kwargs = object(kwargs);
+    entry.request().await;
+    lock(&entry.logging.updates)[0].litellm_params.clone()
+}
+
+async fn assert_logged_metadata() {
+    let caller_metadata = logged_params(r#"{"metadata":{"guardrails":["pii"]}}"#).await;
+    assert_eq!(
+        caller_metadata.get("metadata"),
+        Some(&Json::Object(object(r#"{"guardrails":["pii"]}"#)))
+    );
+    let litellm_metadata = logged_params(r#"{"litellm_metadata":{"trace":"t1"}}"#).await;
+    assert_eq!(
+        litellm_metadata.get("metadata"),
+        Some(&Json::Object(object(r#"{"trace":"t1"}"#)))
+    );
+    let empty_litellm_metadata = logged_params(r#"{"litellm_metadata":{}}"#).await;
+    assert_eq!(empty_litellm_metadata.get("metadata"), Some(&Json::Null));
+    let mut residency = Entry::new();
+    residency.resolution.api_base = Some(String::from("https://eu.api.openai.com/v1"));
+    residency.request().await;
+    assert_eq!(
+        lock(&residency.logging.updates)[0]
+            .litellm_params
+            .get("data_residency"),
+        Some(&Json::Text(String::from("eu")))
+    );
+}
+
+async fn assert_logged_credentials() {
+    let mut kwargs_key = Entry::new();
+    kwargs_key.kwargs = object(r#"{"api_key":"sk-kwarg"}"#);
+    kwargs_key.globals.api_key = Some(SecretString::from("sk-global"));
+    assert_eq!(
+        kwargs_key.request().await.api_key.as_deref(),
+        Some("sk-kwarg")
+    );
 }
 
 async fn guardrail_precedence() -> (Event, Event) {
@@ -329,6 +388,8 @@ async fn metadata_and_credentials() {
         }))
     );
     assert_eq!(absent, None);
+    assert_logged_metadata().await;
+    assert_logged_credentials().await;
 }
 
 fn constructor_defaults(relay: &ResponsesWsRelay<'_, EchoGuard, TestClient, ScriptedBackend>) {
@@ -430,6 +491,32 @@ fn assert_encrypted_wrapping() {
     assert_eq!(wrapped_item(empty, encrypted_metadata()), empty);
 }
 
+async fn unmasked_backend_frame() {
+    let client = TestClient::new(Vec::new());
+    let backend = ScriptedBackend::new();
+    backend
+        .text(
+            r#"{"type":"response.completed","response":{"output":[{"content":[{"text":"hi <EMAIL_ADDRESS_1>"}]}]}}"#,
+        )
+        .closing();
+    let logging = RecordingLogging::default();
+    let redactor = redactor();
+    let guardrails = [InputGuardrail {
+        callback: EchoGuard,
+        unmask_pii_text: &unmask_tokens,
+    }];
+    let mut parts = RelayParts::standard(&client, &backend, &logging, &redactor);
+    parts.guardrails = Some(&guardrails);
+    parts.request_data = Some(object(
+        r#"{"metadata":{"pii_tokens":{"<EMAIL_ADDRESS_1>":"a@example.com"}}}"#,
+    ));
+    let relay = parts.relay();
+    relay.backend_to_client().await.unwrap();
+    let sent = client.sent();
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0].contains("hi a@example.com"));
+}
+
 #[tokio::test]
 async fn event_capture_and_input_log() {
     let client = TestClient::new(Vec::new());
@@ -445,6 +532,7 @@ async fn event_capture_and_input_log() {
     stored_events(&relay).await;
     collected_input(&relay, &logging).await;
     assert_encrypted_wrapping();
+    unmasked_backend_frame().await;
 }
 
 async fn recv_fallback_and_connection_closed() {
@@ -644,7 +732,7 @@ async fn rate_limit_drop() {
     rejected_send_failure_is_swallowed().await;
 }
 
-async fn failure_is_mapped_and_billed() {
+async fn logged_failure() -> (RecordingLogging, ErrorClass) {
     let client = TestClient::new(Vec::new());
     let backend = ScriptedBackend::new();
     let logging = RecordingLogging::default();
@@ -669,6 +757,11 @@ async fn failure_is_mapped_and_billed() {
         .await
         .unwrap();
     relay.log_messages().await.unwrap();
+    let failure = lock(&logging.failures)[0].clone();
+    (logging, failure)
+}
+
+fn assert_failure_usage(logging: &RecordingLogging) {
     assert_eq!(
         logging.effects(),
         texts(&[
@@ -690,15 +783,17 @@ async fn failure_is_mapped_and_billed() {
         lock(&logging.charged).clone(),
         vec![(Some(String::from("flex")), None)]
     );
-    let failures = lock(&logging.failures).clone();
-    let metadata = failures[0].metadata();
+}
+
+fn assert_failure_mapping(logging: &RecordingLogging, failure: &ErrorClass) {
+    let metadata = failure.metadata();
     assert_eq!(metadata.status_code, 500);
     assert_eq!(
         metadata.error_type,
         WireField::Text(String::from("internal_server_error"))
     );
     assert_eq!(metadata.param, WireField::Null);
-    let visible = visible_message(&failures[0]);
+    let visible = visible_message(failure);
     assert_eq!(
         visible,
         "litellm.InternalServerError: InternalServerError: OpenAIException - upstream broke"
@@ -707,7 +802,13 @@ async fn failure_is_mapped_and_billed() {
         lock(&logging.tracebacks)[0],
         format!("Traceback (most recent call last):\n{visible}")
     );
-    assert_eq!(lock(&logging.tracebacks)[0], traceback_text(&failures[0]));
+    assert_eq!(lock(&logging.tracebacks)[0], traceback_text(failure));
+}
+
+async fn failure_is_mapped_and_billed() {
+    let (logging, failure) = logged_failure().await;
+    assert_failure_usage(&logging);
+    assert_failure_mapping(&logging, &failure);
 }
 
 async fn success_dispatches_only() {
