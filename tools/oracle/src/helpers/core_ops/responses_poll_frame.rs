@@ -20,7 +20,7 @@ impl Helper for Op {
         let results = input
             .frames
             .iter()
-            .map(|frame| frame_result(frame))
+            .map(|frame| frame_result(frame.as_str()))
             .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
         Ok(json!({ "results": results }))
     }

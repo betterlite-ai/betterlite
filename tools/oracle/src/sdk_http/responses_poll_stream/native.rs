@@ -31,7 +31,7 @@ pub(super) async fn execute(
         &call.seed,
         call.cancel_after_write,
     )?);
-    let cache: Arc<dyn PollingCache> = Arc::clone(&capture);
+    let cache: Arc<dyn PollingCache> = Arc::<CaptureCache>::clone(&capture);
     let store = ResponsePollingStore {
         cache: Some(cache),
         ttl: DEFAULT_TTL,
