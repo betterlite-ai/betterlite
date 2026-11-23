@@ -7,9 +7,11 @@ import litellm
 from litellm.constants import AZURE_OPENAI_AUDIO_PROVIDERS
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
 from litellm.llms.azure.common_utils import get_azure_ad_token
+from litellm.llms.azure.realtime.handler import azure_realtime_protocol_for_client
 from litellm.llms.base_llm.realtime.transformation import BaseRealtimeConfig
 from litellm.llms.xai.common_utils import XAIModelInfo
 from litellm.secret_managers.main import get_secret_str
+from litellm.types.realtime import RealtimeQueryParams
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
@@ -35,6 +37,18 @@ AWS_FIELDS = (
 )
 TEXT = TypeAdapter(str | None)
 OBJECT = TypeAdapter(dict[str, JsonValue] | None)
+QUERY = TypeAdapter(RealtimeQueryParams)
+
+
+class Scope(TypedDict):
+    headers: list[tuple[bytes, bytes]]
+
+
+# the oracle's client sends no OpenAI-Beta header, so LiteLLM's own negotiation sees a headerless scope
+class HeaderlessClient:
+    @property
+    def scope(self) -> Scope:
+        return {"headers": []}
 
 
 class Scenario(TypedDict):
@@ -186,9 +200,9 @@ def azure_branch(case: Case) -> dict[str, JsonValue]:
     configured = first_text([text_field(case.params, "realtime_protocol"),
         text_field(case.params, "generic_realtime_protocol"),
         get_secret_str("LITELLM_AZURE_REALTIME_PROTOCOL")])
-    protocol = "GA"
-    if configured is not None:
-        protocol = configured
+    protocol = azure_realtime_protocol_for_client(
+        configured, query_params=QUERY.validate_python(case.query), websocket=HeaderlessClient()
+    )
     details: dict[str, JsonValue] = {
         "api_version": version, "protocol": protocol, "azure_ad_token": ad_token}
     branch = record(case, "azure", details)
@@ -248,7 +262,7 @@ def vertex_branch(case: Case) -> dict[str, JsonValue]:
         "location": location, "token_calls": token_calls,
     }
     branch = record(case, "vertex", details)
-    branch["api_base"] = case.api_base
+    branch["api_base"] = first_text([case.api_base, text_field(case.params, "generic_api_base")])
     branch["api_key"] = None
     branch["headers"] = pairs(merge_headers(case.params))
     return branch

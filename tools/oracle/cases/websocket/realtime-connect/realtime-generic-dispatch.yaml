@@ -24,6 +24,10 @@ call:
           guardrails: []
           litellm_metadata: {guardrails: [third]}
         query_params: {model: alias}
+      - model: meta/muse-1
+        params:
+          guardrails: [second]
+          litellm_metadata: {guardrails: [third]}
       - model: anthropic/claude-x
 env: {}
 compare: {ignore: []}
