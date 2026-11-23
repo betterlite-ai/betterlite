@@ -70,6 +70,7 @@ impl FakeSocket {
     }
 }
 
+// the pinned service awaits sleep(0) in every socket method, so the fake yields once per call too
 impl ResponsesClientWebSocket for FakeSocket {
     type Error = BackendError<IoError>;
 
@@ -77,13 +78,18 @@ impl ResponsesClientWebSocket for FakeSocket {
         &'call self,
         data: &'call str,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'call {
-        self.record(data);
-        ready(Ok(()))
+        async move {
+            yield_now().await;
+            self.record(data);
+            Ok(())
+        }
     }
 
-    async fn receive_text(&self) -> Result<String, Self::Error> {
-        yield_now().await;
-        self.pop_frame()
+    fn receive_text(&self) -> impl Future<Output = Result<String, Self::Error>> + Send + '_ {
+        async move {
+            yield_now().await;
+            self.pop_frame()
+        }
     }
 }
 
@@ -94,23 +100,35 @@ impl NativeWsBackend for FakeSocket {
         &self,
     ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<Self::Error>>> + Send + '_
     {
-        ready(self.pop_frame().map(ResponsesWebSocketMessage::Text))
+        async move {
+            yield_now().await;
+            self.pop_frame().map(ResponsesWebSocketMessage::Text)
+        }
     }
 
-    async fn recv(&self) -> Result<ResponsesWebSocketMessage, BackendError<Self::Error>> {
-        self.recv_raw().await
+    fn recv(
+        &self,
+    ) -> impl Future<Output = Result<ResponsesWebSocketMessage, BackendError<Self::Error>>> + Send + '_
+    {
+        self.recv_raw()
     }
 
     fn send<'call>(
         &'call self,
         message: &'call str,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'call {
-        self.record(message);
-        ready(Ok(()))
+        async move {
+            yield_now().await;
+            self.record(message);
+            Ok(())
+        }
     }
 
     fn close(&self) -> impl Future<Output = Result<(), Self::Error>> + Send + '_ {
-        ready(Ok(()))
+        async move {
+            yield_now().await;
+            Ok(())
+        }
     }
 }
 
