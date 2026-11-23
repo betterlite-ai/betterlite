@@ -31,7 +31,7 @@ use futures_util::stream::{self, BoxStream, StreamExt as _};
 use super::CompletionCalls;
 use super::streaming::{self, StreamRoute, StreamUsage, provider_stream};
 use crate::routes::completions::streaming::pump::{FrameSource, Pump, next_frame};
-use crate::server::chat_setup::provider_call::{CallError, answer_chat};
+use crate::server::chat_setup::provider_call::{CallError, Runtimes, answer_chat};
 
 const MISMATCHED: &str = "the provider answered a different operation";
 
@@ -86,8 +86,10 @@ pub(super) async fn chat_bridge(
         &chat,
         &call.deployment,
         control,
-        Some(runtime),
-        &calls.state.azure_runtime.composition,
+        Runtimes {
+            anthropic: Some(runtime),
+            azure: &calls.state.azure_runtime.composition,
+        },
     )
     .await;
     let (result, headers, time) = answered.map_err(|error| chat_call_failure(error, calls))?;

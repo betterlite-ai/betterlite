@@ -36,7 +36,7 @@ use tokio::sync::OnceCell;
 use super::CallContext;
 use super::headers::stream_headers;
 use crate::routes::completions::streaming::{StreamRoute, StreamUsage, provider_stream};
-use crate::server::chat_setup::provider_call::{CallError, answer_chat, control_options};
+use crate::server::chat_setup::provider_call::{CallError, Runtimes, answer_chat, control_options};
 use crate::server::error::ChatCallsError;
 use crate::state::anthropic_runtime::Slot;
 use crate::state::azure_runtime;
@@ -99,8 +99,10 @@ impl ChatCall for ChatCalls {
             call.request,
             &call.deployment,
             control,
-            Some(&self.anthropic),
-            &self.azure,
+            Runtimes {
+                anthropic: Some(&self.anthropic),
+                azure: &self.azure,
+            },
         )
         .await
         .map_err(chat_failure)?;
