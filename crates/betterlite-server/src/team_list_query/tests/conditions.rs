@@ -12,14 +12,30 @@ use super::support::{
 };
 
 fn scope_seed() -> String {
-    [
-        organization_insert("org-1"),
-        organization_insert("org-2"),
-        team_insert("in-scope", "gamma team", Some("org-1"), &[], &[]),
-        team_insert("out-of-scope", "gamma other", Some("org-2"), &[], &[]),
-        team_insert("own-outside", "nothing", Some("org-2"), &[], &[]),
-    ]
-    .concat()
+    let mut seed = organization_insert("org-1");
+    seed.push_str(&organization_insert("org-2"));
+    seed.push_str(&team_insert(
+        "in-scope",
+        "gamma team",
+        Some("org-1"),
+        &[],
+        &[],
+    ));
+    seed.push_str(&team_insert(
+        "out-of-scope",
+        "gamma other",
+        Some("org-2"),
+        &[],
+        &[],
+    ));
+    seed.push_str(&team_insert(
+        "own-outside",
+        "nothing",
+        Some("org-2"),
+        &[],
+        &[],
+    ));
+    seed
 }
 
 #[tokio::test]

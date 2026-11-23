@@ -7,6 +7,12 @@ use super::{TeamListQueryError, TeamListRejection};
 // the membership role value LitellmUserRoles.ORG_ADMIN carries
 const ORG_ADMIN_ROLE: &str = "org_admin";
 
+// which absent rows a caller answers as an empty result instead of an error
+enum MissingRow {
+    NotFoundOnly,
+    AnyMissing,
+}
+
 // get_user_object without an upsert: the caller is read, never created
 pub(super) const fn request(user_id: &str, check_db_only: Option<bool>) -> UserLookupRequest<'_> {
     UserLookupRequest {
@@ -28,16 +34,32 @@ pub(super) fn org_ids_where_admin(user: &LiteLLMUserTable) -> Vec<String> {
         .collect()
 }
 
+async fn find_row(
+    lookup: &UserLookup,
+    user_id: &str,
+    check_db_only: Option<bool>,
+    tolerated: MissingRow,
+) -> Result<Option<LiteLLMUserTable>, TeamListQueryError> {
+    match lookup
+        .get_user_object(request(user_id, check_db_only))
+        .await
+    {
+        Ok(found) => Ok(found),
+        Err(UserLookupError::NotFound(_)) => Ok(None),
+        Err(error @ UserLookupError::UserMissing(_)) => match tolerated {
+            MissingRow::NotFoundOnly => Err(TeamListQueryError::from(error)),
+            MissingRow::AnyMissing => Ok(None),
+        },
+        Err(other) => Err(TeamListQueryError::from(other)),
+    }
+}
+
 // _get_org_admin_org_ids answers None to both ValueError forms; an outage keeps propagating
 pub async fn org_admin_org_ids(
     lookup: &UserLookup,
     user_id: &str,
 ) -> Result<Option<Vec<String>>, TeamListQueryError> {
-    let found = match lookup.get_user_object(request(user_id, None)).await {
-        Ok(found) => found,
-        Err(UserLookupError::NotFound(_) | UserLookupError::UserMissing(_)) => return Ok(None),
-        Err(other) => return Err(TeamListQueryError::from(other)),
-    };
+    let found = find_row(lookup, user_id, None, MissingRow::AnyMissing).await?;
     let Some(user) = found else {
         return Ok(None);
     };
@@ -50,12 +72,8 @@ pub async fn user_team_ids_from_db(
     lookup: &UserLookup,
     user_id: &str,
 ) -> Result<Vec<String>, TeamListQueryError> {
-    let found = match lookup.get_user_object(request(user_id, Some(true))).await {
-        Ok(found) => found,
-        Err(UserLookupError::NotFound(_)) => return Ok(Vec::new()),
-        Err(other) => return Err(TeamListQueryError::from(other)),
-    };
-    Ok(found.map(|user| user.teams).unwrap_or_default())
+    let found = find_row(lookup, user_id, Some(true), MissingRow::NotFoundOnly).await?;
+    Ok(found.map_or_else(Vec::new, |user| user.teams))
 }
 
 // a requested user's team membership filter; a missing or unreadable row is 404
@@ -66,10 +84,7 @@ pub async fn requested_user_teams(
     let not_found = TeamListQueryError::from(TeamListRejection::UserNotFound {
         user_id: user_id.to_owned(),
     });
-    match lookup.get_user_object(request(user_id, None)).await {
-        Ok(Some(user)) => Ok(user.teams),
-        Ok(None) => Err(not_found),
-        Err(UserLookupError::NotFound(_) | UserLookupError::UserMissing(_)) => Err(not_found),
-        Err(other) => Err(TeamListQueryError::from(other)),
-    }
+    let found = find_row(lookup, user_id, None, MissingRow::AnyMissing).await?;
+    let user = found.ok_or(not_found)?;
+    Ok(user.teams)
 }
