@@ -176,9 +176,10 @@ pub(super) async fn prepare_error(
     stored: &LiteLLMVerificationToken,
     request: &UpdateKeyRequest,
 ) -> KeyPatchError {
-    match prepared(fixture, stored, request).await.0 {
+    let (outcome, _) = prepared(fixture, stored, request).await;
+    match outcome {
         Err(error) => error,
-        Ok(values) => panic!("a rejected patch returned {values:?}"),
+        Ok(patch) => panic!("a rejected patch returned {patch:?}"),
     }
 }
 
@@ -260,10 +261,11 @@ pub(super) fn assert_isoformat() {
 
 pub(super) async fn assert_router_unavailable(
     fixture: &Fixture,
-    stored: &LiteLLMVerificationToken,
-    request: &UpdateKeyRequest,
+    key: &LiteLLMVerificationToken,
+    patch: &UpdateKeyRequest,
 ) {
-    let error = prepare_error(fixture, stored, request).await;
+    let (outcome, _) = prepared(fixture, key, patch).await;
+    let error = outcome.expect_err("a rejected router patch");
     assert!(matches!(
         error,
         KeyPatchError::RouterWeights(RouterWeightError::DatabaseUnavailable)

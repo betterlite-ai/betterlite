@@ -16,37 +16,41 @@ pub(super) fn apply_request_times(
     values: &mut Row,
     clock: KeyClock<'_>,
 ) -> Result<(), KeyPatchError> {
-    let expiry = match values.remove("duration") {
-        Some(JsonData::String(text)) if text.is_empty() => None,
-        Some(JsonData::String(text)) if text != "-1" => Some(JsonData::String(zulu_datetime(
-            shifted_by(clock.now, &text, clock)?,
-        ))),
-        Some(JsonData::Null | JsonData::String(_)) => Some(JsonData::Null),
+    match values.remove("duration") {
+        Some(JsonData::String(text)) if text.is_empty() => {}
+        Some(JsonData::String(text)) if text != "-1" => {
+            let expires = zulu_datetime(shifted_by(clock.now, &text, clock)?);
+            values.insert(String::from("expires"), JsonData::String(expires));
+        }
+        Some(JsonData::Null | JsonData::String(_)) => {
+            values.insert(String::from("expires"), JsonData::Null);
+        }
         Some(
             JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
         )
-        | None => None,
-    };
-    if let Some(expires) = expiry {
-        values.insert(String::from("expires"), expires);
+        | None => {}
     }
-    let Some(removed) = values.remove("budget_duration") else {
-        return Ok(());
-    };
-    if let JsonData::String(text) = &removed {
-        if !text.is_empty() {
-            let reset = microsecond_precision(budget_reset(text, clock)?);
+    match values.remove("budget_duration") {
+        Some(JsonData::String(text)) if !text.is_empty() => {
+            let reset = microsecond_precision(budget_reset(&text, clock)?);
             values.insert(
                 String::from("budget_reset_at"),
                 JsonData::String(zulu_datetime(reset)),
             );
-            values.insert(String::from("budget_duration"), removed);
+            values.insert(String::from("budget_duration"), JsonData::String(text));
         }
-        return Ok(());
-    }
-    if matches!(removed, JsonData::Null) {
-        values.insert(String::from("budget_duration"), JsonData::Null);
-        values.insert(String::from("budget_reset_at"), JsonData::Null);
+        Some(JsonData::Null) => {
+            values.insert(String::from("budget_duration"), JsonData::Null);
+            values.insert(String::from("budget_reset_at"), JsonData::Null);
+        }
+        Some(
+            JsonData::String(_)
+            | JsonData::Bool(_)
+            | JsonData::Number(_)
+            | JsonData::Array(_)
+            | JsonData::Object(_),
+        )
+        | None => {}
     }
     Ok(())
 }
