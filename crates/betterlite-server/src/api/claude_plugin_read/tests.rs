@@ -168,7 +168,9 @@ fn at(hour: u32, minute: u32, second: u32) -> DateTime<Utc> {
 }
 
 fn beta_created() -> DateTime<Utc> {
-    at(10, 1, 15) + Duration::microseconds(250_000)
+    at(10, 1, 15)
+        .checked_add_signed(Duration::microseconds(250_000))
+        .expect("the fixed instant")
 }
 
 fn stored_row(name: &str, enabled: bool, created: DateTime<Utc>) -> StoredPluginRow {
@@ -633,7 +635,7 @@ async fn enabled_only_visibility(store: &Arc<FakeStore>) {
 async fn disabled_plugin_visibility() {
     admin_visibility(&visibility_store()).await;
     list_visibility(&visibility_store()).await;
-    get_visibility(&visibility_store()).await;
+    Box::pin(get_visibility(&visibility_store())).await;
     enabled_only_visibility(&visibility_store()).await;
 }
 
@@ -857,7 +859,7 @@ fn run_filters_rows_visibility_refuses() {
     let listed = serde_json::to_value(&result).expect("the result serializes");
     assert_eq!(listed["count"].as_u64(), Some(1));
     assert_eq!(listed["plugins"][0]["name"], "visible-plugin");
-    assert_eq!(listed["plugins"][0]["source"], serde_json::json!({}));
+    assert_eq!(listed["plugins"][0]["source"].to_string(), "{}");
     let get = ClaudePluginReadInput {
         operation: ClaudePluginReadOperation::Get {
             plugin_name: "hidden-plugin".to_owned(),
