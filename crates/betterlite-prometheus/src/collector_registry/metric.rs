@@ -1,6 +1,7 @@
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::SystemTime;
 
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use crate::collector_factory::collector::{Collector, MetricUpdate, MetricValue};
@@ -100,12 +101,13 @@ pub enum SeriesRemoval {
     Unsupported,
 }
 
-// one registered collector: the description, the label set of this handle and the samples clones share
+// one registered collector: the description, the label set of this handle, the samples clones share and when it was created
 #[derive(Clone, Debug)]
 pub struct PrometheusMetric {
     pub description: Arc<CollectorDescription>,
     pub label_values: Vec<String>,
-    pub samples: Arc<Mutex<BTreeMap<Vec<String>, Sample>>>,
+    pub samples: Arc<Mutex<IndexMap<Vec<String>, Sample>>>,
+    pub created: SystemTime,
 }
 
 impl PrometheusMetric {
@@ -122,6 +124,7 @@ impl PrometheusMetric {
             CollectorKind::Counter => name.strip_suffix("_total").unwrap_or(name),
             CollectorKind::Gauge | CollectorKind::Histogram => name,
         };
+        let created = SystemTime::now();
         let description = CollectorDescription {
             name: registered_name.to_owned(),
             kind,
@@ -132,10 +135,22 @@ impl PrometheusMetric {
                 .collect(),
             buckets,
         };
+        let mut samples = IndexMap::new();
+        // prometheus_client builds the one series of a label-less metric in the constructor, so it is written before any update
+        if description.label_names.is_empty() {
+            let sample = Sample {
+                total: MetricValue::Finite(Decimal::ZERO),
+                count: 0,
+                buckets: vec![0; description.buckets.len()],
+                created,
+            };
+            let _inserted = samples.insert(Vec::new(), sample);
+        }
         Self {
             description: Arc::new(description),
             label_values: Vec::new(),
-            samples: Arc::new(Mutex::new(BTreeMap::new())),
+            samples: Arc::new(Mutex::new(samples)),
+            created,
         }
     }
 
@@ -170,7 +185,7 @@ impl PrometheusMetric {
             .samples
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .remove(&label_key(label_values));
+            .shift_remove(&label_key(label_values));
         if removed.is_some() {
             SeriesRemoval::Removed
         } else {
@@ -185,6 +200,17 @@ impl PrometheusMetric {
             .unwrap_or_else(PoisonError::into_inner)
             .get(&label_key(label_values))
             .cloned()
+    }
+
+    // prometheus_client writes a family's series in the order their label sets were first used, its dict's order
+    #[must_use]
+    pub fn series_in_use_order(&self) -> Vec<(Vec<String>, Sample)> {
+        self.samples
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(|(labels, sample)| (labels.clone(), sample.clone()))
+            .collect()
     }
 }
 
@@ -215,22 +241,30 @@ impl Collector for PrometheusMetric {
             description: Arc::clone(&self.description),
             label_values: values,
             samples: Arc::clone(&self.samples),
+            created: self.created,
         }
     }
 
     fn update(&self, update: MetricUpdate) {
         let mut samples = self.samples.lock().unwrap_or_else(PoisonError::into_inner);
         if update == MetricUpdate::Remove {
-            samples.remove(&self.label_values);
+            let _removed = samples.shift_remove(&self.label_values);
             return;
         }
         let bounds = self.description.buckets.as_slice();
+        // a label-less metric's series is the constructor's, with the metric's own creation time; a child stamps now
+        let created = if self.description.label_names.is_empty() {
+            self.created
+        } else {
+            SystemTime::now()
+        };
         let sample = samples
             .entry(self.label_values.clone())
             .or_insert_with(|| Sample {
                 total: MetricValue::Finite(Decimal::ZERO),
                 count: 0,
                 buckets: vec![0; bounds.len()],
+                created,
             });
         match (self.description.kind, update) {
             (CollectorKind::Counter | CollectorKind::Gauge, MetricUpdate::Inc(value)) => {
