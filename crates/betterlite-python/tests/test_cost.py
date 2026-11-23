@@ -485,6 +485,19 @@ def test_usage_object_mapping() -> None:
     assert ours.total_tokens == reference.total_tokens
 
 
+def test_usage_object_response_api() -> None:
+    response: Final[dict[str, JsonValue]] = {
+        "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+    }
+    ours = get_usage_object(response)
+    reference = reference_usage_object(response)
+    assert ours is not None
+    assert reference is not None
+    assert ours.prompt_tokens == reference.prompt_tokens
+    assert ours.completion_tokens == reference.completion_tokens
+    assert ours.total_tokens == reference.total_tokens
+
+
 def test_hidden_params_response() -> None:
     assert has_hidden_params(our_chat(CHAT_MODEL, 10, 5))
     assert has_hidden_params(EMPTY_PARAMS) is False
