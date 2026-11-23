@@ -266,7 +266,7 @@ def test_send_has_client_headers() -> None:
     assert posts[0]["headers"].get(EXTRA_HEADER) == EXTRA_VALUE
 
 
-def test_direct_sets_agent_headers() -> None:
+def test_send_direct_sets_agent_headers() -> None:
     recorder = Recorder()
     agent_headers: dict[str, JsonValue] = {TRACE_HEADER: AGENT_TRACE}
     with AgentServer(recorder) as server:
@@ -362,7 +362,7 @@ def test_get_card_relative_path() -> None:
     assert paths == [LEGACY_CARD_PATH]
 
 
-def test_create_client_normalizes() -> None:
+def test_create_client_card_normalizes() -> None:
     with AgentServer(Recorder(interfaces=True)) as server:
         settings = settings_of(server)
         base_url, text = asyncio.run(created_card(settings))
