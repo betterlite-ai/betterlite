@@ -4215,6 +4215,7 @@ name = "betterlite-python"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "betterlite-azure",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -4243,6 +4244,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "url",
  "uuid",
 ]
 
