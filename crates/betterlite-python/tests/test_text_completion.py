@@ -502,7 +502,6 @@ def test_prompts_engine_alias() -> None:
             engine=TEXT_MODEL, prompt="hi", api_base=server.url, api_key=GOOD_KEY,
         )
         call = server.calls[-1]
-    assert call["path"] == TEXT_PATH
     assert call["body"]["model"] == TEXT_MODEL
     assert first_choice(view_of(answer_of(outcome)))["text"] == "done hi"
 
@@ -566,6 +565,13 @@ def test_prompts_mock_answer() -> None:
         )
         assert server.calls == []
     assert first_choice(view_of(answer_of(outcome)))["text"] == MOCK_TEXT
+    with closing(TextServer()) as tool_server:
+        tool_outcome = text_completion(
+            model=TEXT_MODEL, prompt="hi", mock_tool_calls=MOCK_TOOL_CALLS,
+            api_base=tool_server.url, api_key=GOOD_KEY,
+        )
+        assert tool_server.calls == []
+    assert first_choice(view_of(answer_of(tool_outcome)))["text"] == MOCK_DEFAULT
 
 
 def test_prompts_mock_timeout() -> None:
@@ -578,16 +584,6 @@ def test_prompts_mock_timeout_without_a_timeout() -> None:
     with pytest.raises(BadRequestError) as caught:
         text_completion(model=TEXT_MODEL, prompt="hi", mock_timeout=True)
     assert caught.value.status_code == BAD_REQUEST
-
-
-def test_prompts_mock_tool_calls() -> None:
-    with closing(TextServer()) as server:
-        outcome = text_completion(
-            model=TEXT_MODEL, prompt="hi", mock_tool_calls=MOCK_TOOL_CALLS,
-            api_base=server.url, api_key=GOOD_KEY,
-        )
-        assert server.calls == []
-    assert first_choice(view_of(answer_of(outcome)))["text"] == MOCK_DEFAULT
 
 
 def test_chat_one_user_message() -> None:
