@@ -1,11 +1,13 @@
 #![cfg(test)]
 
+use betterlite_error::error::ErrorClass;
 use pyo3_async_runtimes::tokio::get_runtime;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::SessionCore;
 use crate::search_ocr::convert::{CostAnswer, CostCall, OcrCall, SearchCall};
+use crate::search_ocr::error::NativeFailure;
 
 fn session() -> SessionCore {
     SessionCore::build(r#"{"environment": {}}"#).expect("the session builds")
@@ -43,6 +45,17 @@ fn cost_reports_a_model_the_catalog_lacks() {
         answer,
         r#"{"outcome":"unmapped","message":"nonesuch/search isn't mapped yet"}"#
     );
+}
+
+#[test]
+fn search_refuses_a_non_text_query_with_bad_request() {
+    let call: SearchCall = serde_json::from_str(r#"{"query": 7, "search_provider": "brave"}"#)
+        .expect("the search call parses");
+    let outcome = get_runtime().block_on(session().search(call));
+    match outcome.expect_err("the query is refused") {
+        NativeFailure::Class { class, .. } => assert!(matches!(class, ErrorClass::BadRequest(_))),
+        other => panic!("the failure is not a class: {other:?}"),
+    }
 }
 
 #[test]

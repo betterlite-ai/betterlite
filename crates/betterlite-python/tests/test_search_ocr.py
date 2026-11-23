@@ -8,10 +8,12 @@ from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Protocol, TypeAlias, TypedDict, runtime_checkable
 
+import httpx
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
 from betterlite import exceptions
+from betterlite._completion.arguments import TimeoutValues
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite.ocr import aocr, ocr
 from betterlite.search import asearch, search, search_provider_cost_per_query
@@ -54,7 +56,7 @@ ERROR_BODY: Final[dict[str, JsonValue]] = {"message": "the provider refused"}
 BLOCKED_VALUE: Final = "an object Rust cannot take"
 DUMP: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
-CallArgument: TypeAlias = JsonValue
+CallArgument: TypeAlias = JsonValue | TimeoutValues
 
 
 @runtime_checkable
@@ -118,6 +120,7 @@ class SearchCall(TypedDict, total=False):
     max_results: int
     api_key: str
     api_base: str
+    timeout: httpx.Timeout
 
 
 class BlockedCall(TypedDict, total=False):
@@ -277,6 +280,15 @@ def test_ocr_signature_extra_args() -> None:
 def test_search_calls() -> None:
     with closing(SearchOcrServer(OK)) as server:
         call = search_call(server)
+        ours = DUMP.validate_json(search(**call).model_dump_json())
+        theirs = DUMP.validate_json(REFERENCE.search(**call).model_dump_json())
+        assert ours == theirs
+
+
+def test_search_timeout_values() -> None:
+    with closing(SearchOcrServer(OK)) as server:
+        call = search_call(server)
+        call["timeout"] = httpx.Timeout(2.0)
         ours = DUMP.validate_json(search(**call).model_dump_json())
         theirs = DUMP.validate_json(REFERENCE.search(**call).model_dump_json())
         assert ours == theirs
