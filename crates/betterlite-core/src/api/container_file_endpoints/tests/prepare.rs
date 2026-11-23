@@ -2,6 +2,7 @@
 
 use std::sync::PoisonError;
 
+use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::containers::container_file_http::request::ParamValue;
@@ -164,6 +165,12 @@ fn prepare_unknown_provider_fails_before_the_handler() {
         failure.error.to_string(),
         "\"bogus\" is not a provider betterlite knows"
     );
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.provider.as_deref(), Some("bogus"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert!(fixture.decoder.seen().is_empty());
     assert!(fixture.lookup.asked().is_empty());
     assert!(fixture.handler.seen().is_empty());
@@ -186,6 +193,12 @@ fn prepare_unknown_decoded_provider_fails_after_decoding() {
         failure.error.to_string(),
         "\"bogus\" is not a provider betterlite knows"
     );
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.provider.as_deref(), Some("bogus"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(fixture.decoder.seen().len(), 1);
     assert!(fixture.lookup.asked().is_empty());
     assert!(fixture.handler.seen().is_empty());
@@ -208,6 +221,16 @@ fn prepare_missing_provider_config_fails_with_litellms_text() {
         failure.error.to_string(),
         "Container provider config not found for: openai"
     );
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(
+        details.message,
+        "Container provider config not found for: openai"
+    );
+    assert_eq!(details.provider.as_deref(), Some("openai"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert_eq!(fixture.decoder.seen().len(), 1);
     assert_eq!(fixture.lookup.asked(), vec![ProviderId::Openai]);
     assert!(fixture.handler.seen().is_empty());

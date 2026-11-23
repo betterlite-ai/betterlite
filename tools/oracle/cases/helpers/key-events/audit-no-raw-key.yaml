@@ -1,0 +1,25 @@
+kind: helper
+name: key-events-audit-no-raw-key
+call:
+  key_events:
+    event: generated
+    data: {send_invite_email: false, key_alias: alias-raw}
+    response: {key: sk-raw-secret-value-1234, token_id: "", spend: 0.0, user_id: user-a}
+    row: null
+    rows: []
+    caller: {user_id: user-a, api_key: sk-caller-api-key, token: null, metadata: {}, team_metadata: null}
+    changed_by: null
+    admin_name: proxy-admin
+    audit: true
+    now: "2026-01-02T03:04:05Z"
+    id: "00000000-0000-4000-8000-000000000790"
+    settings: {store_virtual_keys: true, prefix_for_stored_virtual_keys: litellm, description: null, tags: null}
+    client: false
+    runtime: absent
+    teams: {}
+    secrets: {}
+    failing: []
+    alerting: []
+calls: []
+env: {}
+compare: {ignore: []}

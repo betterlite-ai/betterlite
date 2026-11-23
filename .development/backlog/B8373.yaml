@@ -1,14 +1,14 @@
 id: B8373
 milestone: M8 platform
 title: Proxy startup checks, budget seeding and tuning baselines
-status: todo
+status: done
 depends_on: [B733, B1659, B3703, B869]
 file: tasks/B8373-startup-checks.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2997

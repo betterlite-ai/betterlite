@@ -1,0 +1,31 @@
+kind: helper
+name: connection-certainty-and-sqlstate-classes
+call:
+  commit_remainder:
+    calls:
+      - retries: 3
+        rows: 1
+        script: ["connect_error", "ok"]
+      - retries: 0
+        rows: 1
+        script: ["connect_error"]
+      - retries: 3
+        rows: 1
+        script: ["read_timeout"]
+      - retries: 3
+        rows: 1
+        script: ["read_error"]
+      - retries: 3
+        rows: 1
+        script: ["data_rejected"]
+      - retries: 3
+        rows: 1
+        script: ["deadlock", "ok"]
+      - retries: 3
+        rows: 1
+        script: ["unknown_sqlstate"]
+      - retries: 3
+        rows: 1
+        script: ["other_failure"]
+env: {}
+compare: {ignore: []}

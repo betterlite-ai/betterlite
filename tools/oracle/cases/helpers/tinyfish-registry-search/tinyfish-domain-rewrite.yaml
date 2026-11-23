@@ -1,0 +1,69 @@
+kind: helper
+name: tinyfish-domain-rewrite
+call:
+  b048:
+    op: request
+    query: "rust"
+    optional_params: {search_domain_filter: ["a.com", "b.com"]}
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {}
+    reply: null
+calls:
+  - b048:
+      op: request
+      query: ["rust", "lang"]
+      optional_params: {search_domain_filter: ["a.com"]}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {search_domain_filter: []}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {search_domain_filter: "a.com"}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {search_domain_filter: [1]}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {search_domain_filter: null}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+  - b048:
+      op: request
+      query: "rust"
+      optional_params: {search_domain_filter: ["a.com"], country: "US"}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply: null
+env: {}
+compare: {ignore: []}
