@@ -22,7 +22,7 @@ def provider_settings() -> str:
     names: list[str] = sorted(configured)
     settings: dict[str, JsonValue] = {
         "custom_provider_map": JSON.validate_python(entries),
-        "model_list_set": names,
+        "model_list_set": JSON.validate_python(names),
         "api_key": JSON.validate_python(betterlite.api_key),
         "api_base": JSON.validate_python(betterlite.api_base),
         "xai_key": JSON.validate_python(betterlite.xai_key),

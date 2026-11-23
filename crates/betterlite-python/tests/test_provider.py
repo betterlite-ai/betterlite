@@ -178,7 +178,7 @@ def test_lookup_params_fill() -> None:
     assert ours == theirs
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def custom_maps() -> Iterator[list[str]]:
     betterlite.custom_provider_map = [{"provider": "myprovider"}]
     litellm.custom_provider_map = [{"provider": "myprovider", "custom_handler": CustomLLM()}]
