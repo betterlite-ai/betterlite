@@ -15,6 +15,7 @@ from litellm.proxy._types import (
     LiteLLM_TeamMembership,
     LiteLLM_TeamTable,
     LiteLLM_UserTable,
+    ManagedAgentContext,
     ProxyException,
 )
 from litellm.proxy.auth.handle_jwt import JWTHandler
@@ -94,7 +95,7 @@ class Answer(TypedDict):
     logs: list[LogEntry]
 
 
-# The JWTAuthBuilderResult fields this double fills, typed so no expression of the pinned dict is built.
+# The JWTAuthBuilderResult fields this double fills, typed so its Any never types an expression.
 class JwtAuthResult(TypedDict):
     is_proxy_admin: bool
     team_object: LiteLLM_TeamTable | None
@@ -109,6 +110,7 @@ class JwtAuthResult(TypedDict):
     org_id: str | None
     team_membership: LiteLLM_TeamMembership | None
     jwt_claims: dict[str, JsonValue]
+    managed_agent_context: NotRequired[ManagedAgentContext | None]
     agent_id: str | None
 
 

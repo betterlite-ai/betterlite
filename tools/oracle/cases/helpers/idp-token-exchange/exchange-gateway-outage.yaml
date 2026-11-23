@@ -4,7 +4,7 @@ call:
   b4663:
     prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
     subject_token: header.payload.signature
-    authorizer: {kind: http, status: 503, detail: the JWKS at https://idp.example/jwks.json was unreachable}
+    authorizer: {kind: http, status: 503, detail: "the JWKS at https://idp.example/jwks.json was unreachable"}
     cause: null
 calls:
   - b4663:
