@@ -17,6 +17,7 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 FILE_KEY: Final = "$file"
 DEFAULT_NAME: Final = "file"
+MIN_TUPLE_ITEMS: Final = 2
 REFUSED: Final[tuple[str, ...]] = ("client", "shared_session")
 LOGGER_FN: Final = "logger_fn"
 LOGGER_FN_DROPPED: Final = "logger_fn is not called: the endpoint call runs in Rust"
@@ -123,7 +124,7 @@ def file_value(key: str, value: CallValue, blobs: list[bytes]) -> JsonValue:
 
 
 def tuple_file(key: str, items: tuple[CallValue, ...], blobs: list[bytes]) -> JsonValue:
-    if len(items) < 2:
+    if len(items) < MIN_TUPLE_ITEMS:
         raise TypeError(f"{key} is not a file: a tuple needs a name and its content")
     name = tuple_name(key, items[0])
     content_type = tuple_content_type(key, items[2:3])

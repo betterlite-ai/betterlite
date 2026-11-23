@@ -53,16 +53,18 @@ POOL_SECONDS: Final = 0.25
 PLAIN_TIMEOUT: Final = 30
 EMBEDDING_MODEL: Final = "text-embedding-3-small"
 MODEL: Final = "gpt-4o"
-AUTH_ERROR: Final = json.dumps(
-    {
-        "type": "AuthenticationError",
-        "message": "bad key",
-        "status_code": UNAUTHORIZED,
-        "llm_provider": "openai",
-        "model": EMBEDDING_MODEL,
-    }
-)
-UNKNOWN_ERROR: Final = json.dumps({"type": "NoSuchError", "message": "x"})
+MODEL_BODY: Final[dict[str, JsonValue]] = {"model": MODEL}
+SPEECH_BODY: Final[dict[str, JsonValue]] = {"model": "tts-1"}
+AUTH_ERROR_BODY: Final[dict[str, JsonValue]] = {
+    "type": "AuthenticationError",
+    "message": "bad key",
+    "status_code": UNAUTHORIZED,
+    "llm_provider": "openai",
+    "model": EMBEDDING_MODEL,
+}
+AUTH_ERROR: Final = json.dumps(AUTH_ERROR_BODY)
+UNKNOWN_ERROR_BODY: Final[dict[str, JsonValue]] = {"type": "NoSuchError", "message": "x"}
+UNKNOWN_ERROR: Final = json.dumps(UNKNOWN_ERROR_BODY)
 LIST_ANSWER: Final[dict[str, JsonValue]] = {"object": "list", "data": []}
 TIMEOUT: Final = httpx.Timeout(
     READ_SECONDS,
@@ -363,10 +365,10 @@ def test_server_answers_routes() -> None:
     with closing(EndpointServer()) as server:
         for path, expected in RESPONSES.items():
             response = httpx.post(
-                f"{server.url}{path}", json={"model": MODEL}, headers=AUTHORIZATION
+                f"{server.url}{path}", json=MODEL_BODY, headers=AUTHORIZATION
             )
             assert response.status_code == OK
-            assert response.headers.get("content-type") == JSON_TYPE
+            assert response.headers["content-type"] == JSON_TYPE
             body = JSON_OBJECT.validate_json(response.content)
             assert body == expected
 
@@ -374,10 +376,10 @@ def test_server_answers_routes() -> None:
 def test_server_speech_bytes() -> None:
     with closing(EndpointServer()) as server:
         response = httpx.post(
-            f"{server.url}{SPEECH_PATH}", json={"model": "tts-1"}, headers=AUTHORIZATION
+            f"{server.url}{SPEECH_PATH}", json=SPEECH_BODY, headers=AUTHORIZATION
         )
         assert response.status_code == OK
-        assert response.headers.get("content-type") == SPEECH_TYPE
+        assert response.headers["content-type"] == SPEECH_TYPE
         assert response.content == SPEECH_BYTES
 
 
@@ -385,7 +387,7 @@ def test_server_rejects_bad_key() -> None:
     with closing(EndpointServer()) as server:
         response = httpx.post(
             f"{server.url}/v1/embeddings",
-            json={"model": MODEL},
+            json=MODEL_BODY,
             headers={"Authorization": f"Bearer {BAD_KEY}"},
         )
         assert response.status_code == UNAUTHORIZED
@@ -399,11 +401,11 @@ def test_server_rejects_bad_key() -> None:
 def test_server_records_and_counts() -> None:
     with closing(EndpointServer()) as server:
         for _ in range(2):
-            httpx.post(f"{server.url}/v1/embeddings", json={"model": MODEL}, headers=AUTHORIZATION)
-        httpx.post(f"{server.url}/v1/rerank", json={"model": MODEL}, headers=AUTHORIZATION)
+            httpx.post(f"{server.url}/v1/embeddings", json=MODEL_BODY, headers=AUTHORIZATION)
+        httpx.post(f"{server.url}/v1/rerank", json=MODEL_BODY, headers=AUTHORIZATION)
         assert server.counts == {"/v1/embeddings": 2, "/v1/rerank": 1}
         paths = [record["path"] for record in server.calls]
         assert paths == ["/v1/embeddings", "/v1/embeddings", "/v1/rerank"]
-        assert JSON_OBJECT.validate_json(server.calls[0]["body"]) == {"model": MODEL}
+        assert JSON_OBJECT.validate_json(server.calls[0]["body"]) == MODEL_BODY
         headers = {name.lower(): value for name, value in server.calls[0]["headers"].items()}
         assert headers["authorization"] == f"Bearer {GOOD_KEY}"

@@ -7,7 +7,6 @@ from typing_extensions import get_type_hints
 
 from betterlite.types import embedding as betterlite_embedding
 from betterlite.types import rerank as betterlite_rerank
-from betterlite.types.images import main as betterlite_images
 from betterlite.types.utils.base import ResponseObject
 
 DEFAULT_TIMEOUT: Final = 600
@@ -39,42 +38,55 @@ THEIR_EMBEDDING: ModelClasses = importlib.import_module("litellm.types.embedding
 THEIR_RERANK: ModelClasses = importlib.import_module("litellm.types.rerank")
 THEIR_RERANK_TYPES: TypedDicts = importlib.import_module("litellm.types.rerank")
 THEIR_IMAGES: TypedDicts = importlib.import_module("litellm.types.images.main")
+OUR_RERANK_TYPES: TypedDicts = importlib.import_module("betterlite.types.rerank")
+OUR_IMAGE_TYPES: TypedDicts = importlib.import_module("betterlite.types.images.main")
 
 TYPED_DICTS: dict[str, tuple[TypedDictClass, TypedDictClass]] = {
     "OptionalRerankParams": (
-        betterlite_rerank.OptionalRerankParams,
+        OUR_RERANK_TYPES.OptionalRerankParams,
         THEIR_RERANK_TYPES.OptionalRerankParams,
     ),
     "RerankBilledUnits": (
-        betterlite_rerank.RerankBilledUnits,
+        OUR_RERANK_TYPES.RerankBilledUnits,
         THEIR_RERANK_TYPES.RerankBilledUnits,
     ),
-    "RerankTokens": (betterlite_rerank.RerankTokens, THEIR_RERANK_TYPES.RerankTokens),
+    "RerankTokens": (OUR_RERANK_TYPES.RerankTokens, THEIR_RERANK_TYPES.RerankTokens),
     "RerankResponseMeta": (
-        betterlite_rerank.RerankResponseMeta,
+        OUR_RERANK_TYPES.RerankResponseMeta,
         THEIR_RERANK_TYPES.RerankResponseMeta,
     ),
     "RerankResponseDocument": (
-        betterlite_rerank.RerankResponseDocument,
+        OUR_RERANK_TYPES.RerankResponseDocument,
         THEIR_RERANK_TYPES.RerankResponseDocument,
     ),
     "RerankResponseResult": (
-        betterlite_rerank.RerankResponseResult,
+        OUR_RERANK_TYPES.RerankResponseResult,
         THEIR_RERANK_TYPES.RerankResponseResult,
     ),
     "ImageEditOptionalRequestParams": (
-        betterlite_images.ImageEditOptionalRequestParams,
+        OUR_IMAGE_TYPES.ImageEditOptionalRequestParams,
         THEIR_IMAGES.ImageEditOptionalRequestParams,
     ),
     "ImageEditRequestParams": (
-        betterlite_images.ImageEditRequestParams,
+        OUR_IMAGE_TYPES.ImageEditRequestParams,
         THEIR_IMAGES.ImageEditRequestParams,
     ),
 }
 
-RESULTS: Final[list[dict[str, JsonValue]]] = [
-    {"index": RESULT_INDEX, "relevance_score": RELEVANCE}
-]
+RESULTS: Final[list[JsonValue]] = [{"index": RESULT_INDEX, "relevance_score": RELEVANCE}]
+EMBEDDING_EXTRA: Final[dict[str, JsonValue]] = {"model": "m", "dimensions": EXTRA_DIMENSIONS}
+EMPTY_DOCUMENTS: Final[list[str | dict[str, JsonValue]]] = []
+RERANK_EXTRA: Final[dict[str, JsonValue]] = {
+    "model": "m",
+    "query": "q",
+    "documents": [],
+    "bogus": 1,
+}
+RERANK_RESPONSE_EXTRA: Final[dict[str, JsonValue]] = {
+    "id": "r",
+    "results": RESULTS,
+    "bogus": 1,
+}
 
 
 def required_fields(model: type[BaseModel]) -> list[bool]:
@@ -119,7 +131,7 @@ def test_embedding_request_filled() -> None:
 
 def test_embedding_request_extra() -> None:
     dumped = compare_dump(
-        betterlite_embedding.EmbeddingRequest(model="m", dimensions=EXTRA_DIMENSIONS),
+        betterlite_embedding.EmbeddingRequest.model_validate(EMBEDDING_EXTRA),
         THEIR_EMBEDDING.EmbeddingRequest(model="m", dimensions=EXTRA_DIMENSIONS),
     )
     assert dumped["dimensions"] == EXTRA_DIMENSIONS
@@ -146,8 +158,8 @@ def test_rerank_request_dump() -> None:
 
 def test_rerank_request_extra() -> None:
     dumped = compare_dump(
-        betterlite_rerank.RerankRequest(model="m", query="q", documents=[], bogus=1),
-        THEIR_RERANK.RerankRequest(model="m", query="q", documents=[], bogus=1),
+        betterlite_rerank.RerankRequest.model_validate(RERANK_EXTRA),
+        THEIR_RERANK.RerankRequest(model="m", query="q", documents=EMPTY_DOCUMENTS, bogus=1),
     )
     assert "bogus" not in dumped
 
@@ -167,8 +179,9 @@ def test_truncation_params_frozen() -> None:
     )
     assert betterlite_rerank.HostedVLLMRerankTruncationParams.model_config.get("frozen") is True
     assert THEIR_RERANK.HostedVLLMRerankTruncationParams.model_config.get("frozen") is True
+    field = "truncate_prompt_tokens"
     with pytest.raises(ValidationError):
-        model.truncate_prompt_tokens = OTHER_TOKENS
+        setattr(model, field, OTHER_TOKENS)
     assert model.truncate_prompt_tokens == TRUNCATE_TOKENS
     dumped = compare_dump(model, reference)
     assert dumped["truncate_prompt_tokens"] == TRUNCATE_TOKENS
@@ -182,7 +195,7 @@ def test_rerank_response_fields() -> None:
 
 def test_rerank_response_dump() -> None:
     dumped = compare_dump(
-        betterlite_rerank.RerankResponse(id="r", results=RESULTS, bogus=1),
+        betterlite_rerank.RerankResponse.model_validate(RERANK_RESPONSE_EXTRA),
         THEIR_RERANK.RerankResponse(id="r", results=RESULTS, bogus=1),
     )
     assert dumped["meta"] is None
