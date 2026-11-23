@@ -171,11 +171,11 @@ impl DailyChunkWriter for ScriptedWriter {
                     }
                     Err(_cancelled) => Err(ScriptedFailure::cancelled()),
                 },
-                step @ Step::CancelledRetryable
-                | step @ Step::ConnectError
-                | step @ Step::Rejected
-                | step @ Step::Deadlock
-                | step @ Step::Other => Err(error_for(step)),
+                step @ (Step::CancelledRetryable
+                | Step::ConnectError
+                | Step::Rejected
+                | Step::Deadlock
+                | Step::Other) => Err(error_for(step)),
             }
         })
     }
@@ -223,7 +223,7 @@ impl RetryPause for RecordingPause {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(delay);
-        Box::pin(std::future::ready(()))
+        Box::pin(ready(()))
     }
 }
 
