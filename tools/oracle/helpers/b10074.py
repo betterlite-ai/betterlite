@@ -92,16 +92,14 @@ def sealed_view(sealed: dict[str, JsonValue], key: str | None) -> dict[str, Json
 
 def answer(proxy_config: ProxyConfig, input_value: Input, call: Call) -> dict[str, JsonValue]:
     new_key = call["new_key"]
+    if call["operation"] == "decrypt_env":
+        return ENV_MAP.validate_python(proxy_config._decrypt_db_variables(call["values"]))  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7614-L7622
     key = resolve_write_key(input_value, new_key)
-    match call["operation"]:
-        case "decrypt_env":
-            return ENV_MAP.validate_python(proxy_config._decrypt_db_variables(call["values"]))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7614-L7622
-        case "encrypt_env":
-            sealed = ENV_MAP.validate_python(proxy_config._encrypt_env_variables(call["values"], new_key))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7575-L7583
-            return sealed_view(sealed, key)
-        case "encrypt_env_for_db":
-            sealed = ENV_MAP.validate_python(proxy_config._encrypt_env_variables_for_db(call["values"], new_key))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7624-L7643
-            return sealed_view(sealed, key)
+    if call["operation"] == "encrypt_env":
+        sealed = ENV_MAP.validate_python(proxy_config._encrypt_env_variables(call["values"], new_key))  # type: ignore[misc]  # noqa: SLF001, E501  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7575-L7583
+        return sealed_view(sealed, key)
+    stored = ENV_MAP.validate_python(proxy_config._encrypt_env_variables_for_db(call["values"], new_key))  # type: ignore[misc]  # noqa: SLF001, E501  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7624-L7643
+    return sealed_view(stored, key)
 
 
 def call_answer(proxy_config: ProxyConfig, input_value: Input, call: Call) -> JsonValue:

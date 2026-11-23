@@ -50,29 +50,23 @@ pub fn decrypt_env<N, D>(values: &JsonMap, cipher: &StoredCipher<N, D>) -> JsonM
 where
     D: SecretDiagnostics,
 {
-    let mut decrypted = JsonMap::new();
-    for (key, value) in values {
-        decrypted.insert(key.clone(), decrypt_entry(key, value.clone(), cipher));
-    }
-    decrypted
+    values
+        .iter()
+        .map(|(key, value)| (key.clone(), decrypt_entry(key, value.clone(), cipher)))
+        .collect()
 }
 
 // The Admin UI posts stored ciphertext back, so the decrypt pass runs first and the write seals each value once.
-pub fn encrypt_env_for_db<N, D>(
+pub fn encrypt_env_for_db<N: NonceSource, D: SecretDiagnostics>(
     values: &JsonMap,
     cipher: &StoredCipher<N, D>,
     new_key: Option<&SecretString>,
-) -> Result<JsonMap, EnvValueCodecError>
-where
-    N: NonceSource,
-    D: SecretDiagnostics,
-{
-    let mut encrypted = JsonMap::new();
-    for (key, value) in values {
-        let opened = decrypt_entry(key, value.clone(), cipher);
-        encrypted.insert(key.clone(), encrypt_entry(key, opened, cipher, new_key)?);
+) -> Result<JsonMap, EnvValueCodecError> {
+    let mut opened = decrypt_env(values, cipher);
+    for (key, value) in &mut opened {
+        *value = encrypt_entry(key, value.clone(), cipher, new_key)?;
     }
-    Ok(encrypted)
+    Ok(opened)
 }
 
 fn encrypt_entry<N, D>(
@@ -98,7 +92,8 @@ fn decrypt_entry<N, D>(key: &str, value: JsonValue, cipher: &StoredCipher<N, D>)
 where
     D: SecretDiagnostics,
 {
-    match cipher.decrypt_value(stored_value(value.clone()), key, KEEP_ORIGINAL) {
+    let stored = stored_value(value.clone());
+    match cipher.decrypt_value(stored, key, KEEP_ORIGINAL) {
         Some(opened) => plain_value(opened),
         None => value,
     }
