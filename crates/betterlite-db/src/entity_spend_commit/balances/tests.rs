@@ -15,7 +15,7 @@ use crate::entity_spend_commit::tests::support::{
 };
 use crate::entity_spend_commit::{EntityTableError, EntityTableWriter as _};
 use crate::postgres_store::session::PostgresStore;
-use crate::spend_commit::policy::{SpendFailure, SpendUpdateFailure};
+use crate::spend_commit::policy::{SpendFailure, SpendUpdateFailure as _};
 use crate::spend_commit::tables::SpendTable;
 use crate::spend_commit::transaction::SpendDeadline;
 
@@ -85,7 +85,10 @@ async fn existing_rows_increment_and_missing_rows_stay_missing(
     let writer = ports.tables(database.store.clone());
     let rows = increments(&[(existing, "0.5"), (missing, "0.25")]);
     writer.write_table(table, &rows).await.unwrap();
-    assert_eq!(database.spend(spend_sql, existing).await, amount("1.5"));
+    assert_eq!(
+        database.spend(spend_sql, existing).await,
+        Some(amount("1.5"))
+    );
     assert_eq!(database.spend(spend_sql, missing).await, None);
     database.close().await;
 }
@@ -101,13 +104,22 @@ async fn end_users_are_created_unblocked_then_incremented() {
         .write_table(SpendTable::EndUserList, &rows)
         .await
         .unwrap();
-    assert_eq!(database.spend(END_USER_SPEND, "e1").await, amount("1.5"));
-    assert_eq!(database.spend(END_USER_SPEND, "e2").await, amount("0.25"));
+    assert_eq!(
+        database.spend(END_USER_SPEND, "e1").await,
+        Some(amount("1.5"))
+    );
+    assert_eq!(
+        database.spend(END_USER_SPEND, "e2").await,
+        Some(amount("0.25"))
+    );
     writer
         .write_table(SpendTable::EndUserList, &rows)
         .await
         .unwrap();
-    assert_eq!(database.spend(END_USER_SPEND, "e2").await, amount("0.5"));
+    assert_eq!(
+        database.spend(END_USER_SPEND, "e2").await,
+        Some(amount("0.5"))
+    );
     let blocked: bool = database
         .client
         .query_one(
@@ -132,8 +144,11 @@ async fn keys_advance_spend_total_spend_and_last_active() {
         .write_table(SpendTable::KeyList, &rows)
         .await
         .unwrap();
-    assert_eq!(database.spend(KEY_SPEND, "k1").await, amount("1.5"));
-    assert_eq!(database.spend(KEY_TOTAL_SPEND, "k1").await, amount("3.5"));
+    assert_eq!(database.spend(KEY_SPEND, "k1").await, Some(amount("1.5")));
+    assert_eq!(
+        database.spend(KEY_TOTAL_SPEND, "k1").await,
+        Some(amount("3.5"))
+    );
     assert_eq!(last_active(&database.client, "k1").await, flush_moment());
     database.close().await;
 }
@@ -205,12 +220,15 @@ async fn zero_then_fractional_costs_share_one_connection() {
     let writer = ports.tables(database.store.clone());
     write_member_and_user(&writer, "0").await;
     write_member_and_user(&writer, "0.5").await;
-    assert_eq!(database.spend(MEMBER_SPEND, "t1/u1").await, amount("1.5"));
+    assert_eq!(
+        database.spend(MEMBER_SPEND, "t1/u1").await,
+        Some(amount("1.5"))
+    );
     assert_eq!(
         database.spend(MEMBER_TOTAL_SPEND, "t1/u1").await,
-        amount("3.5")
+        Some(amount("3.5"))
     );
-    assert_eq!(database.spend(USER_SPEND, "u1").await, amount("1.5"));
+    assert_eq!(database.spend(USER_SPEND, "u1").await, Some(amount("1.5")));
     database.close().await;
 }
 
@@ -264,7 +282,7 @@ async fn a_refused_statement_is_reported_without_a_retry() {
     assert!(committed.is_empty());
     assert!(ports.pause.delays().is_empty());
     assert_eq!(ports.failures.count(), 1);
-    assert_eq!(database.spend(USER_SPEND, "u 1").await, amount("1"));
+    assert_eq!(database.spend(USER_SPEND, "u 1").await, Some(amount("1")));
     database.close().await;
 }
 
@@ -290,7 +308,7 @@ async fn a_statement_timeout_leaves_nothing_applied() {
     assert!(matches!(error, EntityTableError::Timeout { .. }));
     assert_eq!(error.spend_failure(), SpendFailure::Other);
     hold.rollback().await.unwrap();
-    assert_eq!(database.spend(USER_SPEND, "u1").await, amount("1"));
+    assert_eq!(database.spend(USER_SPEND, "u1").await, Some(amount("1")));
     database.close().await;
 }
 

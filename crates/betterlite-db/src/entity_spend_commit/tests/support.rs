@@ -290,8 +290,8 @@ pub(crate) const MEMBER_SPEND: &str =
     r#"SELECT spend::numeric FROM "LiteLLM_TeamMembership" WHERE team_id || '/' || user_id = $1"#;
 pub(crate) const MEMBER_TOTAL_SPEND: &str = r#"SELECT total_spend::numeric FROM "LiteLLM_TeamMembership" WHERE team_id || '/' || user_id = $1"#;
 
-pub(crate) fn amount(text: &str) -> Option<Decimal> {
-    Some(Decimal::from_str(text).unwrap())
+pub(crate) fn amount(text: &str) -> Decimal {
+    Decimal::from_str(text).unwrap()
 }
 
 #[derive(Parser)]

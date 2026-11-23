@@ -18,7 +18,7 @@ use crate::entity_spend_commit::tests::support::{
     increments, transactions,
 };
 use crate::entity_spend_commit::{EntityTableError, EntityTableWriter as _};
-use crate::spend_commit::policy::{SpendFailure, SpendUpdateFailure};
+use crate::spend_commit::policy::{SpendFailure, SpendUpdateFailure as _};
 use crate::spend_commit::tables::SpendTable;
 
 const ORG_MEMBER_SPEND: &str = r#"SELECT spend::numeric FROM "LiteLLM_OrganizationMembership" WHERE organization_id || '/' || user_id = $1"#;
@@ -132,10 +132,13 @@ async fn a_rostered_member_is_created_with_spend_and_total_spend() {
         .write_table(SpendTable::TeamMemberList, &rows)
         .await
         .unwrap();
-    assert_eq!(database.spend(MEMBER_SPEND, "a/u2").await, amount("0.5"));
+    assert_eq!(
+        database.spend(MEMBER_SPEND, "a/u2").await,
+        Some(amount("0.5"))
+    );
     assert_eq!(
         database.spend(MEMBER_TOTAL_SPEND, "a/u2").await,
-        amount("0.5")
+        Some(amount("0.5"))
     );
     assert_eq!(database.spend(MEMBER_SPEND, "a-x/u2").await, None);
     database.close().await;
@@ -155,10 +158,13 @@ async fn an_existing_membership_still_increments_after_removal() {
         .write_table(SpendTable::TeamMemberList, &rows)
         .await
         .unwrap();
-    assert_eq!(database.spend(MEMBER_SPEND, "t1/u1").await, amount("1.5"));
+    assert_eq!(
+        database.spend(MEMBER_SPEND, "t1/u1").await,
+        Some(amount("1.5"))
+    );
     assert_eq!(
         database.spend(MEMBER_TOTAL_SPEND, "t1/u1").await,
-        amount("3.5")
+        Some(amount("3.5"))
     );
     database.close().await;
 }
@@ -234,7 +240,10 @@ async fn team_locks_are_taken_in_sorted_team_order() {
         tokio::join!(writer.write_table(SpendTable::TeamMemberList, &rows), probe);
     written.unwrap();
     assert!(!team_a_free);
-    assert_eq!(database.spend(MEMBER_SPEND, "a-x/u1").await, amount("1"));
+    assert_eq!(
+        database.spend(MEMBER_SPEND, "a-x/u1").await,
+        Some(amount("1"))
+    );
     database.close().await;
 }
 
@@ -263,7 +272,7 @@ async fn a_malformed_org_member_key_takes_the_ordinary_failure_path() {
     assert_eq!(ports.failures.count(), 1);
     assert_eq!(
         database.spend(ORG_MEMBER_SPEND, "o 1/u 1").await,
-        amount("1")
+        Some(amount("1"))
     );
     database.close().await;
 }
