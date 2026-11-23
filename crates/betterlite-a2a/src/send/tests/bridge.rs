@@ -76,6 +76,25 @@ async fn send_routing_reports_a_completion_failure() {
 }
 
 #[tokio::test]
+async fn send_routing_reports_a_params_failure() {
+    let mut fixture = SendFixture::new();
+    let mut params = params_with_provider(Some(AgentJson::String("langgraph".to_owned())));
+    params.insert("model".to_owned(), AgentJson::Bool(true));
+    let call = send_call("hello", None, params);
+
+    let result = fixture.send(call, None).await;
+
+    assert!(matches!(
+        result,
+        Err(SendEntryError::Bridge(BridgeError::Completion(
+            CompletionError::Params(ParamsError::NotText { field: "model" })
+        )))
+    ));
+    assert!(recorded_calls(&fixture.completion).is_empty());
+    assert!(selected_configs(&fixture.providers).is_empty());
+}
+
+#[tokio::test]
 async fn stream_routing_uses_the_completion_bridge_for_a_non_empty_provider() {
     let mut fixture = SendFixture::new();
     fixture.completion.chunks = Ok(vec![Ok(chunk("a")), Ok(chunk("b"))]);
