@@ -48,10 +48,10 @@ impl Helper for Op {
 
 fn gate(role: Option<&UserRole>, operation: IndexOperation) -> HelperResult {
     let mut fields = BTreeMap::new();
-    if let Some(role) = role {
+    if let Some(assigned) = role {
         fields.insert(
             String::from("user_role"),
-            JsonData::String(role.to_string()),
+            JsonData::String(assigned.to_string()),
         );
     }
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).or_value_error()?;

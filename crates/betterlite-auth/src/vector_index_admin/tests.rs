@@ -13,10 +13,10 @@ use crate::vector_index_admin::{
 
 fn construct(role: Option<UserRole>) -> UserAPIKeyAuth {
     let mut fields = BTreeMap::new();
-    if let Some(role) = role {
+    if let Some(assigned) = role {
         fields.insert(
             String::from("user_role"),
-            JsonData::String(role.to_string()),
+            JsonData::String(assigned.to_string()),
         );
     }
     UserAPIKeyAuth::construct(AuthInput::Dict(fields))

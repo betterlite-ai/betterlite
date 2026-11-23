@@ -31,7 +31,7 @@ fn a_proxy_admin_passes_the_gate() {
 fn a_role_that_is_not_the_proxy_admin_is_refused(#[case] role: &str, #[case] operation: &str) {
     assert_eq!(
         run(&json!({"function": "gate", "user_role": role, "operation": operation})),
-        json!({"passed": false, "status": 403})
+        json!({"passed": false, "status": 403_u16})
     );
 }
 
@@ -39,7 +39,7 @@ fn a_role_that_is_not_the_proxy_admin_is_refused(#[case] role: &str, #[case] ope
 fn a_caller_without_a_role_is_refused() {
     assert_eq!(
         run(&json!({"function": "gate", "user_role": null, "operation": "create"})),
-        json!({"passed": false, "status": 403})
+        json!({"passed": false, "status": 403_u16})
     );
 }
 
