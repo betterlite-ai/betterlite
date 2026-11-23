@@ -32,7 +32,10 @@ use crate::tool_spend::{FlushFuture, RetryPause, ToolSpendFailure, ToolSpendWrit
 use super::support::Trace;
 
 // Every fake keeps what it was handed behind one lock, so a poisoned lock still yields its rows.
-fn append<T: Clone>(store: &Mutex<Vec<T>>, items: &[T]) {
+fn append<T>(store: &Mutex<Vec<T>>, items: &[T])
+where
+    T: Clone,
+{
     store
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
