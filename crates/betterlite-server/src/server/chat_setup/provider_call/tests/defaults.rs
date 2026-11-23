@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_models::controls::control_options::ControlOptions;
@@ -12,6 +13,7 @@ use rand::rngs::StdRng;
 use rstest::rstest;
 
 use crate::server::chat_setup::chat_executor;
+use crate::state::azure_runtime;
 
 #[rstest]
 #[case::aiohttp_without_a_base_or_key(
@@ -46,7 +48,8 @@ fn provider_framework_tests_behavior(
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
     let resolved = executor.deployments.first().unwrap();
-    let provider = Provider::from_deployment(resolved).unwrap();
+    let azure = Arc::new(azure_runtime::build(&config));
+    let provider = Provider::from_deployment(resolved, &azure).unwrap();
     let inputs = Deployment::from_chat(resolved);
     let operation = OperationRequest::Chat(Box::new(ChatOperation {
         model: inputs.model.clone(),

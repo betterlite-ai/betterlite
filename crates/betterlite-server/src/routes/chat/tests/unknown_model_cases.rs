@@ -95,8 +95,8 @@ async fn ask(
     let mut state = ServerState::new(&config, Arc::clone(&executor), shared);
     state.model_read_through.read_through = read_through;
     let slot = anthropic_runtime::Slot::new(&config, &state.shared);
+    let calls = ChatCalls::new(&config, executor, &slot, &state.azure_runtime).expect("calls");
     let shared_state = Arc::new(state);
-    let calls = ChatCalls::new(&config, executor, &slot).expect("calls");
     let router = chat_routes_with_call_id(Arc::new(calls), false)
         .expect("routes")
         .layer(Extension(Arc::clone(&shared_state)));
