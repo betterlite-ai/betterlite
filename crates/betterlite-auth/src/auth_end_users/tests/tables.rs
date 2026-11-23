@@ -4,14 +4,13 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::session::PostgresStore;
 use rstest::rstest;
 
 use super::super::postgres::BudgetTable;
-use super::super::rows::{EndUserRowError, EndUserRowTable};
+use super::super::rows::EndUserRowTable;
 use crate::auth_read::table::{
     AuthReadError, AuthTable, Create, FindMany, FindOne, Presence, Update,
 };
