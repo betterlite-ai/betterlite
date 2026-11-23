@@ -1,8 +1,17 @@
 use std::collections::BTreeSet;
 
+use betterlite_config::types::{Config, ModelDeployment};
+use betterlite_models::decisions::Json;
 use betterlite_models::judge_primitives::provider_qualified::ProviderCache;
+use betterlite_models::model_registration::JsonObject;
 use betterlite_models::resolution::ResolutionContext;
+use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::model_catalog_lookup::alias::{self, AliasMap};
+use betterlite_router::routing_groups::index::RoutingGroupIndex;
+use uuid::Uuid;
 
+use crate::cost_estimate_route::deployments::{DeploymentSetError, routing_groups};
 use crate::judge_targets::sdk::JudgeSdk;
 use crate::shadow_eval_validation::error::ShadowEvalValidationError;
 use crate::shadow_eval_validation::models::{
@@ -10,6 +19,67 @@ use crate::shadow_eval_validation::models::{
 };
 use crate::shadow_eval_validation::request::StartShadowEvalRequest;
 use crate::shadow_eval_validation::router_view::{AnthropicCredentials, ShadowEvalRouter};
+
+// The proxy's configured deployments as start validation reads them, built from the same indices the cost quote serves.
+pub struct ShadowCatalog {
+    pub catalog: DeploymentCatalog,
+    pub aliases: AliasMap,
+    pub groups: RoutingGroupIndex,
+}
+
+impl ShadowCatalog {
+    // a row that cannot be indexed fails the whole build, as the cost quote's own deployment set does
+    pub fn from_config(config: &Config) -> Result<Self, DeploymentSetError> {
+        let mut catalog = DeploymentCatalog::default();
+        for (index, deployment) in config.model_list.iter().enumerate() {
+            let provider = config
+                .sections
+                .provider_resolution
+                .deployments
+                .get(index)
+                .and_then(Option::as_deref);
+            let spec = deployment_spec(deployment, provider)?;
+            catalog.index_patterns(&spec)?;
+            catalog.model_names.insert(spec.model_name.clone());
+            catalog.push(spec);
+        }
+        let groups = routing_groups(config, &catalog.model_names)?;
+        let aliases = alias::from_config(&config.sections.deployment_catalog.model_group_alias);
+        Ok(Self {
+            catalog,
+            aliases,
+            groups,
+        })
+    }
+}
+
+// Deployment.__init__ over one config row: its params, its info id, and the provider the config resolved.
+fn deployment_spec(
+    deployment: &ModelDeployment,
+    provider: Option<&str>,
+) -> Result<DeploymentSpec, DeploymentSetError> {
+    let mut params = JsonObject::new();
+    if let Some(model) = deployment.litellm_params.model.as_ref() {
+        params.insert("model".to_owned(), Json::Text(model.clone()));
+    }
+    if let Some(slug) = provider {
+        params.insert(
+            "custom_llm_provider".to_owned(),
+            Json::Text(slug.to_owned()),
+        );
+    }
+    let mut info = JsonObject::new();
+    if let Some(id) = deployment.model_info.id.as_ref() {
+        info.insert("id".to_owned(), Json::Text(id.clone()));
+    }
+    Ok(DeploymentSpec::new(
+        deployment.model_name.clone(),
+        params,
+        info,
+        JsonObject::new(),
+        || Uuid::new_v4().to_string(),
+    )?)
+}
 
 pub struct TargetKey<'rows> {
     pub token: &'rows str,

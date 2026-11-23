@@ -39,13 +39,20 @@ use crate::shadow_eval_lifecycle::start::{StartCall, StartDeps, start_shadow_eva
 use crate::shadow_eval_lifecycle::stop::stop_shadow_eval_job;
 use crate::shadow_eval_models::job::ShadowJobResponse;
 use crate::shadow_eval_validation::request::StartShadowEvalRequest;
-use crate::shadow_eval_validation::router_view::AnthropicCredentials;
+use crate::shadow_eval_validation::router_view::{AnthropicCredentials, ShadowEvalRouter};
+use crate::shadow_eval_validation::start::ShadowCatalog;
 use crate::state::ServerState;
 use crate::tracing_routes::router::unauthenticated;
 
+// the database and the configured-deployment view start-time validation reads, resolved once when the router is built
+struct LifecycleDeps {
+    store: PostgresShadowLifecycleStore,
+    catalog: Option<ShadowCatalog>,
+}
+
 // what start-time model resolution and validation read, resolved once when the router is built
 struct LifecycleState {
-    store: Option<Arc<PostgresShadowLifecycleStore>>,
+    store: Option<Arc<LifecycleDeps>>,
     api_key: Option<SecretString>,
     api_base: Option<String>,
     anthropic: AnthropicSettings,
@@ -82,7 +89,20 @@ fn lifecycle_state(state: &Arc<ServerState>) -> LifecycleState {
     let credentials = &state.config.sections.anthropic_credentials;
     let sdk = &state.config.sections.resource_sdk_settings;
     LifecycleState {
-        store: store_from_state(state).map(Arc::new),
+        store: store_from_state(state).map(|store| {
+            Arc::new(LifecycleDeps {
+                store,
+                // an unindexable model list is logged and leaves no router, so every start answers the unconfigured-400
+                catalog: ShadowCatalog::from_config(&state.config)
+                    .inspect_err(|error| {
+                        tracing::warn!(
+                            %error,
+                            "shadow eval: the configured deployments could not be indexed"
+                        );
+                    })
+                    .ok(),
+            })
+        }),
         api_key: sdk.api_key.clone(),
         api_base: sdk.api_base.clone(),
         anthropic: AnthropicSettings {
@@ -146,9 +166,10 @@ fn gate<'state>(
     success: StatusCode,
 ) -> Result<(&'state PostgresShadowLifecycleStore, Identity), Box<Response>> {
     let identity = identity_of_caller(caller)?;
-    let store = require_writer(&identity, action, state.store.as_deref())
+    let configured = state.store.as_deref().map(|deps| &deps.store);
+    let permitted = require_writer(&identity, action, configured)
         .map_err(|error| Box::new(lifecycle_response(Err(error), success)))?;
-    Ok((store, identity))
+    Ok((permitted, identity))
 }
 
 fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, Box<Response>> {
@@ -228,15 +249,28 @@ async fn start_job(
     start_shadow_eval(store, deps, request, &mut call).await
 }
 
-// this server installs no live DeploymentCatalog yet, so a start answers the no-router 400 until one is installed
-const fn start_deps<'deps>(
+// the provider inference a wildcard lookup tries after a bare name, which start validation never needs
+static INFERRED_PROVIDER: fn(&str) -> Option<String> = |_model| None;
+
+// the router view start validation reads: the configured deployments, or none when the config could not be indexed
+fn start_deps<'deps>(
     state: &'deps LifecycleState,
     sdk: &'deps dyn JudgeSdk,
     resolution: &'deps ResolutionContext<'deps>,
     cache: &'deps ProviderCache,
 ) -> StartDeps<'deps> {
+    let router = state
+        .store
+        .as_deref()
+        .and_then(|deps| deps.catalog.as_ref())
+        .map(|catalog| ShadowEvalRouter {
+            catalog: &catalog.catalog,
+            model_group_alias: &catalog.aliases,
+            routing_groups: &catalog.groups,
+            inferred_provider: &INFERRED_PROVIDER,
+        });
     StartDeps {
-        router: None,
+        router,
         sdk,
         cache,
         resolution,
