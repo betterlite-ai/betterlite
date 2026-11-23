@@ -47,17 +47,25 @@ impl PollingCache for CaptureCache {
     async fn write(&self, key: &str, value: &str, _ttl: i64) -> Result<(), PollingCacheError> {
         let parsed = serde_json::from_str::<Json>(value)
             .map_err(|error| PollingCacheError::Write(error.to_string()))?;
-        let count = {
-            let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
-            writes.push(parsed);
-            writes.len()
-        };
+        let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
+        writes.push(parsed);
+        let count = writes.len();
+        drop(writes);
         self.entries
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .insert(key.to_owned(), value.to_owned());
         if self.cancel_after_write == Some(count) {
-            cancel(self, key)?;
+            // the cancel route writes the same key from outside the worker, and it never reads it back
+            let mut response: IndexMap<String, Json> = serde_json::from_str(value)
+                .map_err(|error| PollingCacheError::Write(error.to_string()))?;
+            response.insert("status".to_owned(), Json::Text("cancelled".to_owned()));
+            let encoded = serde_json::to_string(&Json::Object(response))
+                .map_err(|error| PollingCacheError::Write(error.to_string()))?;
+            self.entries
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(key.to_owned(), encoded);
         }
         Ok(())
     }
@@ -66,22 +74,4 @@ impl PollingCache for CaptureCache {
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         Ok(i64::from(entries.remove(key).is_some()))
     }
-}
-
-// the cancel route writes the same key from outside the worker, and the worker never reads it back
-fn cancel(cache: &CaptureCache, key: &str) -> Result<(), PollingCacheError> {
-    let entries = cache.entries.lock().unwrap_or_else(PoisonError::into_inner);
-    let Some(stored) = entries.get(key).cloned() else {
-        return Ok(());
-    };
-    drop(entries);
-    let mut response: IndexMap<String, Json> = serde_json::from_str(&stored)
-        .map_err(|error| PollingCacheError::Write(error.to_string()))?;
-    response.insert("status".to_owned(), Json::Text("cancelled".to_owned()));
-    let encoded = serde_json::to_string(&Json::Object(response))
-        .map_err(|error| PollingCacheError::Write(error.to_string()))?;
-    let mut written = cache.entries.lock().unwrap_or_else(PoisonError::into_inner);
-    written.insert(key.to_owned(), encoded);
-    drop(written);
-    Ok(())
 }

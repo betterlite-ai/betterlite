@@ -39,24 +39,20 @@ pub struct Outcome {
 impl CallKind for Call {
     fn validate(&self, _limits: &OracleLimits) -> Result<(), SdkHttpError> {
         if self.clock_millis.is_empty() {
-            return Err(SdkHttpError::Invalid(String::from(
-                "the case scripts no clock readings",
-            )));
+            let message = String::from("the case scripts no clock readings");
+            return Err(SdkHttpError::Invalid(message));
         }
         if !matches!(self.seed, Json::Object(_)) {
-            return Err(SdkHttpError::Invalid(String::from(
-                "the seed must be a response object",
-            )));
+            let message = String::from("the seed must be a response object");
+            return Err(SdkHttpError::Invalid(message));
         }
         if !matches!(self.data.get("model"), Some(Json::Text(_))) {
-            return Err(SdkHttpError::Invalid(String::from(
-                "the data needs a string model",
-            )));
+            let message = String::from("the data needs a string model");
+            return Err(SdkHttpError::Invalid(message));
         }
         if matches!(self.cancel_after_write, Some(0)) {
-            return Err(SdkHttpError::Invalid(String::from(
-                "cancel_after_write counts from one",
-            )));
+            let message = String::from("cancel_after_write counts from one");
+            return Err(SdkHttpError::Invalid(message));
         }
         Ok(())
     }

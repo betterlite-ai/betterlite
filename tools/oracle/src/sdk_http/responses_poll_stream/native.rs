@@ -26,11 +26,9 @@ pub(super) async fn execute(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let capture = Arc::new(CaptureCache::new(
-        get_cache_key(&call.polling_id),
-        &call.seed,
-        call.cancel_after_write,
-    )?);
+    let key = get_cache_key(&call.polling_id);
+    let seeded = CaptureCache::new(key, &call.seed, call.cancel_after_write)?;
+    let capture = Arc::new(seeded);
     let cache: Arc<dyn PollingCache> = Arc::<CaptureCache>::clone(&capture);
     let store = ResponsePollingStore {
         cache: Some(cache),

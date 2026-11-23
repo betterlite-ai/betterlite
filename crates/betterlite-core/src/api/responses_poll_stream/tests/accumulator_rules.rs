@@ -1,10 +1,12 @@
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::support;
+use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::responses_poll_stream::accumulator::OutputAccumulator;
 use crate::api::responses_poll_stream::clock::PollClock;
-use crate::api::responses_poll_stream::event::{PollEvent, PollEventError};
+use crate::api::responses_poll_stream::event::{Item, PollEvent, PollEventError};
 
 fn event(source: &str) -> PollEvent {
     PollEvent::decode(&support::json(source)).expect("the event decodes")
@@ -42,6 +44,10 @@ const ADDED_M2: &str =
     r#"{"item":{"content":[],"id":"m2","marker":"second"},"type":"response.output_item.added"}"#;
 const REPLACED_M1: &str =
     r#"{"item":{"content":[],"id":"m1","marker":"replaced"},"type":"response.output_item.done"}"#;
+const PART_A: &str = r#"{"item_id":"m1","part":{"text":"a","type":"output_text"},"type":"response.content_part.added"}"#;
+const PART_B: &str = r#"{"item_id":"m1","part":{"text":"b","type":"output_text"},"type":"response.content_part.added"}"#;
+const PART_EMPTY: &str = r#"{"item_id":"m1","part":{"text":"","type":"output_text"},"type":"response.content_part.added"}"#;
+const PART_DONE_C: &str = r#"{"content_index":1,"item_id":"m1","part":{"text":"c","type":"output_text"},"type":"response.content_part.done"}"#;
 
 pub(super) fn duplicate_ids_keep_insertion_order() {
     let clock = support::clock(&[0]);
@@ -90,18 +96,21 @@ pub(super) fn part_done_replaces_selected_part() {
     accumulator
         .apply(event(ADDED_M1))
         .expect("the item applies");
-    let sources = [
-        r#"{"item_id":"m1","part":{"text":"a","type":"output_text"},"type":"response.content_part.added"}"#,
-        r#"{"item_id":"m1","part":{"text":"b","type":"output_text"},"type":"response.content_part.added"}"#,
-        r#"{"content_index":1,"item_id":"m1","part":{"text":"c","type":"output_text"},"type":"response.content_part.done"}"#,
-    ];
-    for source in sources {
-        accumulator.apply(event(source)).expect("the event applies");
-    }
-    let parts = content(&forced(&mut accumulator, &clock));
-    assert_eq!(parts.len(), 2);
-    assert_eq!(support::text(&parts[0], "text"), "a");
-    assert_eq!(support::text(&parts[1], "text"), "c");
+    // the flush before each event clears the earlier dirt, so every flush below proves that event dirtied
+    let before = content(&forced(&mut accumulator, &clock));
+    assert!(before.is_empty());
+    accumulator.apply(event(PART_A)).expect("the part applies");
+    let added_a = content(&forced(&mut accumulator, &clock));
+    assert_eq!(support::text(&added_a[0], "text"), "a");
+    accumulator.apply(event(PART_B)).expect("the part applies");
+    let added_b = content(&forced(&mut accumulator, &clock));
+    assert_eq!(added_b.len(), 2);
+    accumulator
+        .apply(event(PART_DONE_C))
+        .expect("the part applies");
+    let done = content(&forced(&mut accumulator, &clock));
+    assert_eq!(support::text(&done[0], "text"), "a");
+    assert_eq!(support::text(&done[1], "text"), "c");
 }
 
 pub(super) fn part_done_negative_index_keeps_parts() {
@@ -139,11 +148,14 @@ pub(super) fn delta_out_of_range_marks_dirty() {
     let mut accumulator = OutputAccumulator::started(&clock);
     let added = r#"{"item":{"content":[{"text":"a","type":"output_text"}],"id":"m1"},"type":"response.output_item.added"}"#;
     accumulator.apply(event(added)).expect("the item applies");
+    let before = content(&forced(&mut accumulator, &clock));
+    assert_eq!(support::text(&before[0], "text"), "a");
     let delta =
         r#"{"content_index":3,"delta":"x","item_id":"m1","type":"response.output_text.delta"}"#;
     accumulator.apply(event(delta)).expect("the delta applies");
-    let parts = content(&forced(&mut accumulator, &clock));
-    assert_eq!(support::text(&parts[0], "text"), "a");
+    // the item's dirt is already flushed, so this flush happens only if the delta marked the state
+    let after = content(&forced(&mut accumulator, &clock));
+    assert_eq!(support::text(&after[0], "text"), "a");
 }
 
 #[test]
@@ -184,6 +196,33 @@ fn delta_beyond_the_first_part_errors() {
     assert_eq!(error, PollEventError::ContentIndex { index: -2 });
 }
 
+pub(super) fn delta_text_is_keyed_by_item_and_part() {
+    let clock = support::clock(&[0]);
+    let mut accumulator = OutputAccumulator::started(&clock);
+    accumulator
+        .apply(event(ADDED_M1))
+        .expect("the item applies");
+    accumulator
+        .apply(event(PART_EMPTY))
+        .expect("the first part applies");
+    accumulator
+        .apply(event(PART_EMPTY))
+        .expect("the second part applies");
+    let added = content(&forced(&mut accumulator, &clock));
+    assert_eq!(added.len(), 2);
+    let sources = [
+        r#"{"content_index":0,"delta":"A","item_id":"m1","type":"response.output_text.delta"}"#,
+        r#"{"content_index":1,"delta":"B","item_id":"m1","type":"response.output_text.delta"}"#,
+        r#"{"content_index":0,"delta":"C","item_id":"m1","type":"response.output_text.delta"}"#,
+    ];
+    for source in sources {
+        accumulator.apply(event(source)).expect("the delta applies");
+    }
+    let parts = content(&forced(&mut accumulator, &clock));
+    assert_eq!(support::text(&parts[0], "text"), "AC");
+    assert_eq!(support::text(&parts[1], "text"), "B");
+}
+
 pub(super) fn item_done_replaces_item() {
     let clock = support::clock(&[0]);
     let mut accumulator = OutputAccumulator::started(&clock);
@@ -209,10 +248,15 @@ fn terminal_output_merges_by_id() {
     accumulator
         .apply(event(ADDED_M1))
         .expect("the item applies");
+    assert_eq!(
+        output_ids(&forced(&mut accumulator, &clock)),
+        vec![String::from("m1")]
+    );
     let terminal = r#"{"response":{"output":[{"content":[],"id":"m2"}],"status":"completed"},"type":"response.completed"}"#;
     accumulator
         .apply(event(terminal))
         .expect("the terminal applies");
+    // the item's dirt is already flushed, so this flush happens only if the terminal merge marked the state
     assert_eq!(
         output_ids(&forced(&mut accumulator, &clock)),
         vec![String::from("m1"), String::from("m2")]
@@ -389,6 +433,121 @@ fn in_progress_and_unknown_events_do_not_dirty(#[case] source: &str) {
 }
 
 #[test]
+fn absent_optional_keys_take_the_source_defaults() {
+    assert_eq!(event("{}"), PollEvent::Unknown);
+    let PollEvent::OutputItemAdded(item) = event(r#"{"type":"response.output_item.added"}"#) else {
+        panic!("the delivered item decodes");
+    };
+    assert_eq!(item.id, None);
+    assert!(item.value.is_empty());
+    let PollEvent::ContentPartAdded(item_id, part) =
+        event(r#"{"type":"response.content_part.added"}"#)
+    else {
+        panic!("the added part decodes");
+    };
+    assert_eq!(item_id, None);
+    assert_eq!(part, support::json("{}"));
+    let PollEvent::ContentPartDone(done_item_id, done_part, done_index) =
+        event(r#"{"type":"response.content_part.done"}"#)
+    else {
+        panic!("the done part decodes");
+    };
+    assert_eq!(done_item_id, None);
+    assert_eq!(done_part, support::json("{}"));
+    assert_eq!(done_index, 0);
+    let PollEvent::OutputTextDelta(delta_item_id, delta_index, delta) =
+        event(r#"{"type":"response.output_text.delta"}"#)
+    else {
+        panic!("the delta decodes");
+    };
+    assert_eq!(delta_item_id, None);
+    assert_eq!(delta_index, 0);
+    assert_eq!(delta, "");
+    let clock = support::clock(&[0]);
+    let mut accumulator = OutputAccumulator::started(&clock);
+    accumulator
+        .apply(event(r#"{"type":"response.completed"}"#))
+        .expect("the terminal applies");
+    let patch = Json::Object(accumulator.final_patch().0);
+    assert_eq!(support::text(&patch, "status"), "completed");
+    assert_eq!(support::field(&patch, "usage"), Json::Null);
+}
+
+#[test]
+fn items_stop_at_the_items_bound() {
+    let limits = ApiLimits::default();
+    let clock = support::clock(&[0]);
+    let mut accumulator = OutputAccumulator::started(&clock);
+    for index in 0_usize..limits.max_items {
+        let item = Item {
+            id: Some(index.to_string()),
+            value: IndexMap::new(),
+        };
+        accumulator
+            .apply(PollEvent::OutputItemAdded(item))
+            .expect("the item applies");
+        accumulator
+            .check_limits(limits)
+            .expect("the item count is at most the limit");
+    }
+    let over = Item {
+        id: Some(String::from("over")),
+        value: IndexMap::new(),
+    };
+    accumulator
+        .apply(PollEvent::OutputItemAdded(over))
+        .expect("the item applies");
+    let error = accumulator
+        .check_limits(limits)
+        .expect_err("the item past the limit is refused");
+    assert_eq!(
+        error,
+        ApiLimitError::TooManyItems {
+            observed: limits.max_items.saturating_add(1),
+            limit: limits.max_items,
+        }
+    );
+}
+
+#[test]
+fn delta_text_stops_at_the_json_bound() {
+    let limits = ApiLimits::default();
+    let clock = support::clock(&[0]);
+    let mut accumulator = OutputAccumulator::started(&clock);
+    accumulator
+        .apply(event(ADDED_M1))
+        .expect("the item applies");
+    let text = "x".repeat(limits.max_json_bytes);
+    accumulator
+        .apply(PollEvent::OutputTextDelta(
+            Some(String::from("m1")),
+            0,
+            text,
+        ))
+        .expect("the delta applies");
+    accumulator
+        .check_limits(limits)
+        .expect("the text is exactly at the limit");
+    accumulator
+        .apply(PollEvent::OutputTextDelta(
+            Some(String::from("m1")),
+            0,
+            String::from("x"),
+        ))
+        .expect("the delta applies");
+    let error = accumulator
+        .check_limits(limits)
+        .expect_err("the byte past the limit is refused");
+    assert_eq!(
+        error,
+        ApiLimitError::JsonTooLarge {
+            observed: limits.max_json_bytes.saturating_add(1),
+            limit: limits.max_json_bytes,
+        }
+    );
+}
+
+#[test]
 fn reducer_rules() {
     duplicate_ids_keep_insertion_order();
     missing_ids_are_ignored();
@@ -396,5 +555,6 @@ fn reducer_rules() {
     part_done_negative_index_keeps_parts();
     delta_negative_index_updates_last_part();
     delta_out_of_range_marks_dirty();
+    delta_text_is_keyed_by_item_and_part();
     item_done_replaces_item();
 }

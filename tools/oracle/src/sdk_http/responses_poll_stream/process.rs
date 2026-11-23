@@ -106,8 +106,7 @@ impl PollChunkSource for ProviderChunks {
     async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, PollProcessorError> {
         loop {
             if let Some(payload) = self.pending.pop_front() {
-                let mut frame = Vec::with_capacity(payload.len().saturating_add(8));
-                frame.extend_from_slice(b"data: ");
+                let mut frame = b"data: ".to_vec();
                 frame.extend_from_slice(&payload);
                 frame.extend_from_slice(b"\n\n");
                 return Ok(Some(frame));
@@ -115,20 +114,16 @@ impl PollChunkSource for ProviderChunks {
             if self.finished {
                 return Ok(None);
             }
-            match self.body.next().await {
-                None => {
-                    self.finished = true;
-                    self.pending.extend(self.parser.finish());
-                }
-                Some(Err(error)) => {
-                    let message = format!("the provider stream failed: {error}");
-                    return Err(PollProcessorError { message });
-                }
-                Some(Ok(bytes)) => {
-                    let payloads = self.parser.push(&bytes).processor_failure()?;
-                    self.pending.extend(payloads);
-                }
-            }
+            let Some(chunk) = self.body.next().await else {
+                self.finished = true;
+                self.pending.extend(self.parser.finish());
+                continue;
+            };
+            let bytes = chunk.map_err(|error| PollProcessorError {
+                message: format!("the provider stream failed: {error}"),
+            })?;
+            self.pending
+                .extend(self.parser.push(&bytes).processor_failure()?);
         }
     }
 }

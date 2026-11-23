@@ -10,6 +10,7 @@ mod accumulator_rules;
 mod cancel_failure;
 mod clock;
 mod frame_selection;
+mod limits;
 mod provider_call;
 mod support;
 mod terminal_merge;
@@ -35,6 +36,7 @@ async fn polling_text_flush_order() {
     accumulator_rules::part_done_negative_index_keeps_parts();
     accumulator_rules::delta_negative_index_updates_last_part();
     accumulator_rules::delta_out_of_range_marks_dirty();
+    accumulator_rules::delta_text_is_keyed_by_item_and_part();
     accumulator_rules::item_done_replaces_item();
 }
 
@@ -45,6 +47,7 @@ async fn polling_terminal_merge() {
     terminal_merge::assert_only_m1(&terminal_merge::empty_terminal_output().await);
     terminal_merge::assert_failure_captured(&terminal_merge::failure_terminal().await);
     terminal_merge::assert_terminal_fields(&terminal_merge::terminal_fields().await);
+    terminal_merge::assert_defaults_completed(&terminal_merge::absent_optional_keys().await);
     let (scenario, warnings) = terminal_merge::non_streaming().await;
     terminal_merge::assert_completed_without_iterating(&scenario, &warnings);
 }

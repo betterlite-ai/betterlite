@@ -9,6 +9,9 @@ use crate::api::responses_poll_stream::frame::{
 
 const ITEM_ADDED: &str =
     r#"{"item":{"content":[],"id":"m1","type":"message"},"type":"response.output_item.added"}"#;
+const PART_ADDED: &str = r#"{"item_id":"m1","part":{"text":"","type":"output_text"},"type":"response.content_part.added"}"#;
+const DELTA: &str =
+    r#"{"content_index":0,"delta":"A","item_id":"m1","type":"response.output_text.delta"}"#;
 
 #[rstest]
 #[case::json_event("data: {\"type\":\"x\"}\n\n", "event")]
@@ -104,8 +107,14 @@ pub(super) async fn done_before_terminal() -> (Scenario, Vec<String>) {
 }
 
 pub(super) async fn unknown_event_flushes() -> (Scenario, Vec<String>) {
-    let chunks = support::frames(&[ITEM_ADDED, r#"{"type":"response.something_else"}"#]);
-    run_chunks(chunks, &[1000, 1000, 1200]).await
+    let chunks = support::frames(&[
+        ITEM_ADDED,
+        PART_ADDED,
+        r#"{"type":"response.something_else"}"#,
+        DELTA,
+        r#"{"response":{"status":"completed"},"type":"response.completed"}"#,
+    ]);
+    run_chunks(chunks, &[1000, 1000, 1000, 1200, 1300, 1400, 1500]).await
 }
 
 pub(super) async fn non_text_status() -> Scenario {
@@ -147,9 +156,11 @@ pub(super) fn assert_completed(scenario: &Scenario) {
 
 pub(super) fn assert_flushed_before_final(scenario: &Scenario) {
     let writes = scenario.cache.writes();
+    assert_eq!(writes.len(), 4);
     assert_eq!(support::text(&writes[0], "status"), "in_progress");
-    assert!(matches!(
-        support::field(&writes[1], "output"),
-        Json::List(_)
-    ));
+    assert_eq!(support::text(&writes[1], "status"), "in_progress");
+    assert_eq!(support::first_text(&writes[1]), "");
+    assert_eq!(support::first_text(&writes[2]), "A");
+    assert_eq!(support::text(&writes[3], "status"), "completed");
+    assert_eq!(support::first_text(&writes[3]), "A");
 }

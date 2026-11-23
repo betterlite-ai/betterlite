@@ -154,7 +154,8 @@ impl PollClock for ScriptedClock {
 pub(super) struct RecordingCache {
     entries: Mutex<BTreeMap<String, String>>,
     written: Mutex<Vec<String>>,
-    failing_from: AtomicUsize,
+    pub(super) attempted: AtomicUsize,
+    failing_at: AtomicUsize,
     pub(super) reads: AtomicUsize,
 }
 
@@ -163,7 +164,8 @@ impl Default for RecordingCache {
         Self {
             entries: Mutex::new(BTreeMap::new()),
             written: Mutex::new(Vec::new()),
-            failing_from: AtomicUsize::new(usize::MAX),
+            attempted: AtomicUsize::new(0),
+            failing_at: AtomicUsize::new(usize::MAX),
             reads: AtomicUsize::new(0),
         }
     }
@@ -193,8 +195,8 @@ impl RecordingCache {
         self.written().iter().map(|text| json(text)).collect()
     }
 
-    pub(super) fn fail_writes_from(&self, position: usize) {
-        self.failing_from.store(position, Ordering::SeqCst);
+    pub(super) fn fail_write_at(&self, position: usize) {
+        self.failing_at.store(position, Ordering::SeqCst);
     }
 }
 
@@ -206,8 +208,9 @@ impl PollingCache for RecordingCache {
     }
 
     async fn write(&self, key: &str, value: &str, _ttl: i64) -> Result<(), PollingCacheError> {
-        let position = self.written().len();
-        if position >= self.failing_from.load(Ordering::SeqCst) {
+        let position = self.attempted.fetch_add(1, Ordering::SeqCst);
+        if position == self.failing_at.load(Ordering::SeqCst) {
+            self.failing_at.store(usize::MAX, Ordering::SeqCst);
             return Err(PollingCacheError::Write(String::from(
                 "scripted write failure",
             )));
@@ -243,12 +246,13 @@ pub(super) struct Scenario {
     pub(super) processor: Arc<ScriptedProcessor>,
     pub(super) inbound: Arc<RecordingInbound>,
     pub(super) store: ResponsePollingStore,
+    limits: ApiLimits,
     request: Option<PollRequest>,
 }
 
 pub(super) fn scenario(readings: &[u64], answer: Answer) -> Scenario {
     let cache = RecordingCache::seeded();
-    let store = store_for(&cache);
+    let store = store_for(&cache, ApiLimits::default());
     let inbound = Arc::new(RecordingInbound::default());
     let request = PollRequest {
         scope: PollScope {
@@ -278,6 +282,7 @@ pub(super) fn scenario(readings: &[u64], answer: Answer) -> Scenario {
         }),
         inbound,
         store,
+        limits: ApiLimits::default(),
         request: Some(request),
     }
 }
@@ -289,12 +294,12 @@ pub(super) fn clock(readings: &[u64]) -> ScriptedClock {
     }
 }
 
-pub(super) fn store_for(cache: &Arc<RecordingCache>) -> ResponsePollingStore {
+pub(super) fn store_for(cache: &Arc<RecordingCache>, limits: ApiLimits) -> ResponsePollingStore {
     let handle: Option<Arc<dyn PollingCache>> = Some(Arc::<RecordingCache>::clone(cache));
     ResponsePollingStore {
         cache: handle,
         ttl: 3600,
-        limits: ApiLimits::default(),
+        limits,
     }
 }
 
@@ -313,10 +318,17 @@ impl Scenario {
             processor: self.processor.as_ref(),
             clock: self.clock.as_ref(),
             redactor: &redactor,
-            limits: ApiLimits::default(),
+            limits: self.limits,
         }
         .run()
         .await
+    }
+
+    // B1087 resolves one ApiLimits for both the store and the worker, so a scenario scripts both
+    pub(super) fn with_limits(mut self, limits: ApiLimits) -> Self {
+        self.store.limits = limits;
+        self.limits = limits;
+        self
     }
 }
 

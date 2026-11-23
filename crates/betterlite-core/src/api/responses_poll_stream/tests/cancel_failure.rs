@@ -1,9 +1,11 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use betterlite_models::decisions::Json;
 use tokio::sync::oneshot::{self, Sender};
 
 use super::support::{self, Answer, AnswerStep, POLLING_ID, RecordingCache, Scenario};
+use crate::api::api_boundaries::ApiLimits;
 use crate::api::responses_poll_state::access::PollAccess;
 use crate::api::responses_poll_stream::worker::PollStreamError;
 
@@ -30,7 +32,7 @@ pub(super) async fn cancelled_mid_stream() -> Scenario {
 }
 
 async fn cancel(cache: &Arc<RecordingCache>, release: Sender<()>) {
-    let store = support::store_for(cache);
+    let store = support::store_for(cache, ApiLimits::default());
     store
         .cancel_polling(POLLING_ID, PollAccess::AuthDisabled)
         .await
@@ -73,7 +75,7 @@ pub(super) fn assert_failed_message(scenario: &Scenario, message: &str) {
 
 pub(super) async fn failed_write() -> (Scenario, PollStreamError) {
     let mut scenario = support::scenario(&[1000], Answer::Failure(String::from("boom")));
-    scenario.cache.fail_writes_from(1);
+    scenario.cache.fail_write_at(1);
     let error = scenario
         .run()
         .await
@@ -131,6 +133,9 @@ pub(super) fn assert_error_logged(messages: &[String]) {
 pub(super) fn assert_write_error(scenario: &Scenario, error: &PollStreamError) {
     assert!(matches!(error, PollStreamError::Polling(_)));
     assert_eq!(scenario.cache.writes().len(), 1);
+    // a retried final write would succeed now that the scripted failure is spent, so the attempt count
+    // proves the worker tried that write once and no record landed after it
+    assert_eq!(scenario.cache.attempted.load(Ordering::SeqCst), 2);
 }
 
 pub(super) fn assert_redacted(message: &str) {

@@ -12,6 +12,26 @@ const DELTA: &str =
 const COMPLETED_WITH_M2: &str = r#"{"response":{"output":[{"content":[],"id":"m2","type":"message"}],"status":"completed"},"type":"response.completed"}"#;
 const COMPLETED_EMPTY: &str =
     r#"{"response":{"output":[],"status":"completed"},"type":"response.completed"}"#;
+const COMPLETED_WITH_FIELDS: &str = r#"{"response":{"incomplete_details":{},"instructions":"","max_output_tokens":0,"model":"b936-model","parallel_tool_calls":false,"previous_response_id":"resp_prev","reasoning":{"effort":"low"},"status":"completed","store":false,"temperature":0,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_p":0.5,"truncation":"disabled","usage":{"input_tokens":7,"output_tokens":0,"total_tokens":7},"user":""},"type":"response.completed"}"#;
+// every ResponsesAPIResponse field background_streaming.py copies into the terminal update
+const TERMINAL_NAMES: [&str; 16] = [
+    "usage",
+    "reasoning",
+    "tool_choice",
+    "tools",
+    "model",
+    "instructions",
+    "temperature",
+    "top_p",
+    "max_output_tokens",
+    "previous_response_id",
+    "text",
+    "truncation",
+    "parallel_tool_calls",
+    "user",
+    "store",
+    "incomplete_details",
+];
 
 pub(super) async fn with_events(events: &[&str]) -> Scenario {
     let steps: Vec<AnswerStep> = support::frames(events)
@@ -41,8 +61,19 @@ pub(super) async fn failure_terminal() -> Scenario {
 }
 
 pub(super) async fn terminal_fields() -> Scenario {
-    let completed = r#"{"response":{"incomplete_details":{},"parallel_tool_calls":false,"status":"completed","temperature":0,"tools":[],"usage":{"input_tokens":0}},"type":"response.completed"}"#;
-    with_events(&[ITEM_ADDED, completed]).await
+    with_events(&[ITEM_ADDED, COMPLETED_WITH_FIELDS]).await
+}
+
+pub(super) async fn absent_optional_keys() -> Scenario {
+    with_events(&[
+        "{}",
+        r#"{"type":"response.output_item.added"}"#,
+        r#"{"type":"response.content_part.added"}"#,
+        r#"{"type":"response.content_part.done"}"#,
+        r#"{"type":"response.output_text.delta"}"#,
+        r#"{"type":"response.completed"}"#,
+    ])
+    .await
 }
 
 pub(super) async fn non_streaming() -> (Scenario, Vec<String>) {
@@ -86,17 +117,27 @@ pub(super) fn assert_failure_captured(scenario: &Scenario) {
 
 pub(super) fn assert_terminal_fields(scenario: &Scenario) {
     let record = support::last_write(&scenario.cache);
-    assert_eq!(
-        support::field(&record, "usage"),
-        support::json(r#"{"input_tokens":0}"#)
-    );
-    assert_eq!(support::field(&record, "temperature"), support::json("0"));
-    assert_eq!(support::field(&record, "tools"), support::json("[]"));
-    assert_eq!(
-        support::field(&record, "parallel_tool_calls"),
-        Json::Bool(false)
-    );
-    assert_eq!(support::field(&record, "incomplete_details"), Json::Null);
+    assert_eq!(support::text(&record, "status"), "completed");
+    let event = support::json(COMPLETED_WITH_FIELDS);
+    let Json::Object(response) = support::field(&event, "response") else {
+        panic!("the completed event carries a response object");
+    };
+    for name in TERMINAL_NAMES {
+        assert_eq!(
+            support::field(&record, name),
+            response[name],
+            "terminal field {name}"
+        );
+    }
+    assert_eq!(support::field(&record, "error"), Json::Null);
+}
+
+pub(super) fn assert_defaults_completed(scenario: &Scenario) {
+    let record = support::last_write(&scenario.cache);
+    assert_eq!(support::text(&record, "status"), "completed");
+    assert_eq!(support::field(&record, "output"), Json::List(Vec::new()));
+    assert_eq!(support::field(&record, "error"), Json::Null);
+    assert_eq!(support::field(&record, "usage"), Json::Null);
 }
 
 pub(super) fn assert_completed_without_iterating(scenario: &Scenario, warnings: &[String]) {

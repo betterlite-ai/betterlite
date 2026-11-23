@@ -4,7 +4,7 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use thiserror::Error;
 
-use crate::api::api_boundaries::ApiLimits;
+use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::responses_poll_state::access::PollAccess;
 use crate::api::responses_poll_state::error::PollingError;
 use crate::api::responses_poll_state::record::PollPatch;
@@ -46,6 +46,8 @@ pub enum PollStreamError {
     Frame(#[from] PollFrameError),
     #[error(transparent)]
     Event(#[from] PollEventError),
+    #[error(transparent)]
+    Limit(#[from] ApiLimitError),
     #[error(transparent)]
     Polling(#[from] PollingError),
 }
@@ -125,6 +127,7 @@ impl BackgroundStreaming<'_> {
             self.write_patch(&status_patch(STATUS_IN_PROGRESS)).await?;
         }
         state.apply(event)?;
+        state.check_limits(self.limits)?;
         if let Some(output) = state.flush_if_due(self.clock) {
             let patch = PollPatch(IndexMap::from([(String::from("output"), output)]));
             self.write_patch(&patch).await?;

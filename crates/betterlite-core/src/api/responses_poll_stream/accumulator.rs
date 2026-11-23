@@ -1,6 +1,9 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
+use crate::api::api_boundaries::{
+    ApiBoundariesInput, ApiLimitError, ApiLimits, ItemsBoundary, JsonBoundary,
+};
 use crate::api::responses_poll_state::record::PollPatch;
 
 use super::UPDATE_INTERVAL;
@@ -11,6 +14,7 @@ use super::event::{Item, PollEvent, PollEventError, TERMINAL_FIELDS, Terminal};
 pub struct OutputAccumulator {
     output_items: IndexMap<String, IndexMap<String, Json>>,
     accumulated_text: IndexMap<(String, i64), String>,
+    text_bytes: usize,
     terminal: Option<Terminal>,
     error: Option<Json>,
     dirty: bool,
@@ -24,6 +28,7 @@ impl OutputAccumulator {
         Self {
             output_items: IndexMap::new(),
             accumulated_text: IndexMap::new(),
+            text_bytes: 0,
             terminal: None,
             error: None,
             dirty: false,
@@ -47,6 +52,15 @@ impl OutputAccumulator {
             PollEvent::InProgress | PollEvent::Unknown => {}
         }
         Ok(())
+    }
+
+    // the polling store refuses a record over these bounds on every later read, so the worker stops first
+    pub fn check_limits(&self, limits: ApiLimits) -> Result<(), ApiLimitError> {
+        let known_count = self.output_items.len();
+        limits.check(ApiBoundariesInput::Items(ItemsBoundary { known_count }))?;
+        limits.check(ApiBoundariesInput::Json(JsonBoundary {
+            known_bytes: self.text_bytes,
+        }))
     }
 
     fn store_item(&mut self, item: Item) {
@@ -104,6 +118,7 @@ impl OutputAccumulator {
         let key = (id, content_index);
         let accumulated = self.accumulated_text.entry(key).or_default();
         accumulated.push_str(delta);
+        self.text_bytes = self.text_bytes.saturating_add(delta.len());
         let text = accumulated.clone();
         if let Some(Json::List(parts)) = item.get_mut("content")
             && let Some(position) = part_index(content_index, parts.len())?
