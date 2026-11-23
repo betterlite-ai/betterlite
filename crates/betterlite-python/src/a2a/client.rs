@@ -77,7 +77,7 @@ impl NativeA2aClient {
     fn send_message<'py>(&self, py: Python<'py>, call: &str) -> PyResult<Bound<'py, PyAny>> {
         let wire: Call = parse(call)?;
         let client = Self::copy_client(&self.client);
-        future_into_py(py, send::send(Some(client), wire))
+        future_into_py(py, async move { send::send(Some(client), wire).await })
     }
 
     fn send_message_streaming<'py>(
