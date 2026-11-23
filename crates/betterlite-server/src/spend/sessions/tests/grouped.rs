@@ -383,6 +383,16 @@ async fn a_full_page_without_an_extra_group_ends_the_list() {
     assert_eq!(kinds(&events), ["groups", "representatives"]);
 }
 
+// the cap only flags a total it had to clamp, so a count landing exactly on it reports itself
+#[tokio::test]
+async fn a_count_at_the_cap_stays_uncapped() {
+    let fake = fake(Vec::new(), 10_000, Vec::new());
+    let (page, events) = page_of(fake, &request(&[], Vec::new(), 5, 2, None)).await;
+    assert_eq!(page.page.total, 10_000);
+    assert!(!page.page.total_is_capped);
+    assert_eq!(kinds(&events), ["groups", "group_count"]);
+}
+
 // the offset clause only joins a window that still has a limit to offset
 #[test]
 fn a_zero_window_binds_no_offset() {
