@@ -128,12 +128,12 @@ def registry_value(provider: str) -> JsonValue:
     if found is None:
         return None
     # the base signature carries bare dicts, so the URL hook is read through the typed view
-    config: RegistryConfig = found
+    config_view: RegistryConfig = found
     view: dict[str, JsonValue] = {
         "display": found.ui_friendly_name(),
         "method": found.get_http_method(),
         "rich": found.supports_rich_search_input(),
-        "endpoint": config.get_complete_url(None, dict[str, JsonValue](), None),
+        "endpoint": config_view.get_complete_url(None, dict[str, JsonValue](), None),
     }
     return JSON.validate_python(view)
 
