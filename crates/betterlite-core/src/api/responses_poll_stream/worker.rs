@@ -153,16 +153,13 @@ impl BackgroundStreaming<'_> {
 }
 
 fn status_patch(status: &str) -> PollPatch {
-    PollPatch(IndexMap::from([(
-        String::from("status"),
-        Json::Text(status.to_owned()),
-    )]))
+    let mut fields = IndexMap::with_capacity(1);
+    fields.insert(String::from("status"), Json::Text(status.to_owned()));
+    PollPatch(fields)
 }
 
 fn output_patch(output: Json) -> PollPatch {
-    let mut fields = IndexMap::with_capacity(1);
-    fields.insert(String::from("output"), output);
-    PollPatch(fields)
+    PollPatch(IndexMap::from([(String::from("output"), output)]))
 }
 
 // the source's failed record: type, message and code, and no param
@@ -172,11 +169,11 @@ fn failure_patch(message: &str) -> PollPatch {
         (String::from("message"), Json::Text(message.to_owned())),
         (String::from("code"), Json::Text(String::from(ERROR_CODE))),
     ]));
-    PollPatch(IndexMap::from([
-        (
-            String::from("status"),
-            Json::Text(String::from(FAILED_STATUS)),
-        ),
-        (String::from("error"), error),
-    ]))
+    let mut patch = IndexMap::with_capacity(2);
+    patch.insert(
+        String::from("status"),
+        Json::Text(String::from(FAILED_STATUS)),
+    );
+    patch.insert(String::from("error"), error);
+    PollPatch(patch)
 }

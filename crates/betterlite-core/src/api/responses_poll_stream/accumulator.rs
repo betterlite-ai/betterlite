@@ -22,12 +22,8 @@ impl OutputAccumulator {
     #[must_use]
     pub fn started(clock: &dyn PollClock) -> Self {
         Self {
-            output_items: IndexMap::new(),
-            accumulated_text: IndexMap::new(),
-            terminal: None,
-            error: None,
-            dirty: false,
             last_update_millis: clock.now_millis(),
+            ..Self::default()
         }
     }
 
@@ -101,10 +97,8 @@ impl OutputAccumulator {
         let Some(item) = self.output_items.get_mut(&id) else {
             return Ok(());
         };
-        let accumulated = self
-            .accumulated_text
-            .entry((id, content_index))
-            .or_default();
+        let key = (id, content_index);
+        let accumulated = self.accumulated_text.entry(key).or_default();
         accumulated.push_str(delta);
         let text = accumulated.clone();
         if let Some(Json::List(parts)) = item.get_mut("content")
@@ -134,8 +128,7 @@ impl OutputAccumulator {
 
     #[must_use]
     pub fn final_patch(&self) -> PollPatch {
-        let capacity = TERMINAL_FIELDS.split(' ').count().saturating_add(2);
-        let mut fields = IndexMap::with_capacity(capacity);
+        let mut fields = IndexMap::new();
         let status = Json::Text(self.final_status().to_owned());
         fields.insert(String::from("status"), status);
         let terminal = self.terminal.as_ref();

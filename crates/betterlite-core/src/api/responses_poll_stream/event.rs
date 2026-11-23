@@ -115,10 +115,7 @@ fn terminal_kind(name: &str) -> Option<TerminalKind> {
 
 // an absent or null member is absent; any other value is handed on as given
 fn member<'fields>(fields: &'fields Fields, name: &str) -> Option<&'fields Json> {
-    match fields.get(name) {
-        None | Some(Json::Null) => None,
-        Some(value) => Some(value),
-    }
+    fields.get(name).filter(|value| **value != Json::Null)
 }
 
 fn text_field(fields: &Fields, name: &'static str) -> Result<Option<String>, PollEventError> {
