@@ -107,6 +107,22 @@ fn the_index_name_is_a_literal_with_a_lookahead(
 }
 
 #[rstest]
+#[case::overlapping_occurrence("DELETE", "/indexes/indexes/index", "index", true)]
+#[case::overlapping_followed_by_another_char("DELETE", "/indexes/indexes/index2", "index", false)]
+#[case::overlapping_before_the_query("DELETE", "/indexes/indexes/index?x=1", "index", true)]
+fn an_occurrence_overlapping_a_rejected_start_is_still_found(
+    #[case] method: &str,
+    #[case] path: &str,
+    #[case] index_name: &str,
+    #[case] expected: bool,
+) {
+    assert_eq!(
+        is_index_lifecycle_request(method, path, index_name),
+        expected
+    );
+}
+
+#[rstest]
 #[case::unrelated("DELETE", "/v1/vector_stores/vs-1")]
 #[case::post_unrelated("POST", "/v1/vector_stores/vs-1")]
 #[case::empty("POST", "")]

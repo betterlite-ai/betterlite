@@ -19,10 +19,15 @@ pub fn is_index_lifecycle_request(method: &str, path: &str, index_name: &str) ->
 
 fn suffix_after_index_name<'path>(path: &'path str, index_name: &str) -> Option<&'path str> {
     let needle = format!("/indexes/{index_name}");
-    path.match_indices(needle.as_str())
-        .filter_map(|(start, _)| {
-            let end = start.checked_add(needle.len())?;
-            path.get(end..)
-        })
-        .find(|suffix| suffix.is_empty() || suffix.starts_with('/') || suffix.starts_with('?'))
+    let mut rest = path;
+    loop {
+        let (start, _) = rest.match_indices(needle.as_str()).next()?;
+        let tail = rest.get(start..)?;
+        let suffix = tail.get(needle.len()..)?;
+        if suffix.is_empty() || suffix.starts_with('/') || suffix.starts_with('?') {
+            return Some(suffix);
+        }
+        // re.search resumes one character after a failed start, so it still finds an overlapping occurrence.
+        rest = tail.get(1..)?;
+    }
 }
