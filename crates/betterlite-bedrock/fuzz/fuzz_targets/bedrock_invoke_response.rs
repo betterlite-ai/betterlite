@@ -27,7 +27,7 @@ use betterlite_tokenizer::count::request::Message;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use libfuzzer_sys::fuzz_target;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 const INIT: &str = r#"{"model":"amazon.titan-text-express-v1","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"fuzz-call","function_id":"fuzz-function","litellm_trace_id":"fuzz-trace"}"#;
 const SEED: &str = r#"{"id":"chatcmpl-fuzz","object":"chat.completion","created":0,"model":"","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":null,"annotations":null,"audio":null,"refusal":null},"finish_reason":null,"logprobs":null}],"system_fingerprint":null,"service_tier":null}"#;
@@ -116,6 +116,16 @@ fn replay(bytes: &[u8]) {
     let Ok(seed) = serde_json::from_str::<ChatResponse>(SEED) else {
         return;
     };
+    decode(&runtime, &mut state, &env, bytes, seed);
+}
+
+fn decode(
+    runtime: &Runtime,
+    state: &mut LoggingState,
+    env: &PrePostEnv<'_>,
+    bytes: &[u8],
+    seed: ChatResponse,
+) {
     let params: IndexMap<String, Json> = IndexMap::new();
     let mappings: IndexMap<String, String> = IndexMap::new();
     let messages = Json::List(Vec::new());
@@ -133,10 +143,7 @@ fn replay(bytes: &[u8]) {
         disable_add_prefix_to_prompt: false,
         now: 0.0,
         ids: &UuidV4,
-        log: LogContext {
-            state: &mut state,
-            env: &env,
-        },
+        log: LogContext { state, env },
     };
     let raw = RawInvokeReply {
         status: 200,

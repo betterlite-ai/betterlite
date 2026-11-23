@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
 use tracing::field::{Field, Visit};
+use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
@@ -40,63 +41,64 @@ fn invalid_utf8_becomes_replacement_characters() {
     assert_eq!(run.message(), "{\"results\": [\u{FFFD}]}");
 }
 
+static MALFORMED_PAYLOADS: [(&str, &str, &str); 11] = [
+    (
+        MODEL,
+        r#"{"other": 1}"#,
+        "the results field is missing or malformed",
+    ),
+    (
+        MODEL,
+        r#"{"results": 5}"#,
+        "the results field is missing or malformed",
+    ),
+    (
+        MODEL,
+        r#"{"results": []}"#,
+        "the results field is missing or malformed",
+    ),
+    (MODEL, "[1, 2]", "the response body is not a JSON object"),
+    (
+        "ai21.j2-mid-v1",
+        "{}",
+        "the completions field is missing or malformed",
+    ),
+    (
+        "meta.llama3-70b-instruct-v1:0",
+        "{}",
+        "the generation field is missing or malformed",
+    ),
+    (
+        "cohere.command-r-v1:0",
+        r#"{"generations": []}"#,
+        "the generations field is missing or malformed",
+    ),
+    (
+        "cohere.command-r-v1:0",
+        r#"{"generations": [{"finish_reason": "COMPLETE"}]}"#,
+        "the generations.text field is missing or malformed",
+    ),
+    (
+        "cohere.command-r-v1:0",
+        r#"{"generations": [{"text": "x", "finish_reason": ["a"]}]}"#,
+        "the generations.finish_reason field has a type its declared shape does not allow",
+    ),
+    (
+        "mistral.mistral-large-2402-v1:0",
+        r#"{"wrong": true}"#,
+        "Unexpected mistral completion response",
+    ),
+    (
+        "mistral.mistral-large-2402-v1:0",
+        r#"{"choices": [{"message": {"content": "x"}}]}"#,
+        "the choices.finish_reason field is missing or malformed",
+    ),
+];
+
 fn malformed_family_payloads_are_processing_errors() {
-    let cases = [
-        (
-            MODEL,
-            r#"{"other": 1}"#,
-            "the results field is missing or malformed",
-        ),
-        (
-            MODEL,
-            r#"{"results": 5}"#,
-            "the results field is missing or malformed",
-        ),
-        (
-            MODEL,
-            r#"{"results": []}"#,
-            "the results field is missing or malformed",
-        ),
-        (MODEL, "[1, 2]", "the response body is not a JSON object"),
-        (
-            "ai21.j2-mid-v1",
-            "{}",
-            "the completions field is missing or malformed",
-        ),
-        (
-            "meta.llama3-70b-instruct-v1:0",
-            "{}",
-            "the generation field is missing or malformed",
-        ),
-        (
-            "cohere.command-r-v1:0",
-            r#"{"generations": []}"#,
-            "the generations field is missing or malformed",
-        ),
-        (
-            "cohere.command-r-v1:0",
-            r#"{"generations": [{"finish_reason": "COMPLETE"}]}"#,
-            "the generations.text field is missing or malformed",
-        ),
-        (
-            "cohere.command-r-v1:0",
-            r#"{"generations": [{"text": "x", "finish_reason": ["a"]}]}"#,
-            "the generations.finish_reason field has a type its declared shape does not allow",
-        ),
-        (
-            "mistral.mistral-large-2402-v1:0",
-            r#"{"wrong": true}"#,
-            "Unexpected mistral completion response",
-        ),
-        (
-            "mistral.mistral-large-2402-v1:0",
-            r#"{"choices": [{"message": {"content": "x"}}]}"#,
-            "the choices.finish_reason field is missing or malformed",
-        ),
-    ];
-    for (model, payload, expected) in cases {
+    for (model, payload, expected) in &MALFORMED_PAYLOADS {
         let mut case = fixture();
-        case.model = model.to_owned();
+        case.model = String::from(*model);
         let run = decode(&case, payload);
         assert_eq!(run.status(), Some(422), "{model}: {payload}");
         assert_eq!(
@@ -148,7 +150,7 @@ impl<Inner: Subscriber> Layer<Inner> for Captured {
 fn debug_log_carries_the_rendered_reply() {
     let captured = Captured::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     let _run = decode(&fixture(), r#"{"results": [{"outputText": "the answer"}]}"#);
     drop(guard);
     let messages = captured.logged();

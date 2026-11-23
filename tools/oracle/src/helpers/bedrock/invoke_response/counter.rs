@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::thread;
 
 use async_trait::async_trait;
 use betterlite_anthropic::usage::ReasoningTokenCounter as AnthropicReasoningCounter;
@@ -57,7 +58,7 @@ impl TokenCounter for TokenizerCounter {
 // The token_count helper starts its own runtime, so the call runs off the runtime this decode drives.
 fn count(input: Value) -> Result<i64, CountError> {
     let groups = [betterlite_oracle_tokenizer::GROUP];
-    let counted = std::thread::spawn(move || {
+    let counted = thread::spawn(move || {
         invoke(
             &groups,
             &HelperCall {

@@ -7,7 +7,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -98,9 +98,6 @@ fn reply_case(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
     let sink = Silent;
     let (mut state, env) = logging(&redactor, &sink)?;
     let optional = OptionalParams::default();
-    let counter = TokenizerCounter {
-        messages: call.messages.clone(),
-    };
     let decode_call = InvokeReplyCall {
         model: &call.model,
         messages: &call.messages,
@@ -124,17 +121,22 @@ fn reply_case(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
         headers: &call.headers,
         body: call.body.as_bytes(),
     };
-    let runtime = Builder::new_current_thread()
-        .build()
-        .map_err(|error| value_error(error.to_string()))?;
-    match runtime.block_on(decode_invoke_reply(
+    match decode_runtime()?.block_on(decode_invoke_reply(
         decode_call,
         &raw,
         build_response(&call.response),
-        &counter,
+        &TokenizerCounter {
+            messages: call.messages.clone(),
+        },
         &NoReasoning,
     )) {
         Ok(reply) => Ok(reply_json(&reply)),
         Err(error) => Err(reply_error(&error)),
     }
+}
+
+fn decode_runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
+        .build()
+        .map_err(|error| value_error(error.to_string()))
 }

@@ -30,7 +30,7 @@ fn replay_bedrock_invoke_response_corpus() -> usize {
         match (&run.reply, name.starts_with("valid-")) {
             (Err(_error), true) => panic!("{name}: {}", run.message()),
             (Ok(_reply), false) => panic!("{name} parsed as a reply"),
-            (Ok(_reply), true) | (Err(_error), false) => {}
+            (Ok(_), true) | (Err(_), false) => {}
         }
         seeds = seeds.saturating_add(1);
     }

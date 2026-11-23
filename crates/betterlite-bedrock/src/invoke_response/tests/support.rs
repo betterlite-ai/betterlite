@@ -107,32 +107,7 @@ pub(super) fn decode(fixture: &Fixture, body: &str) -> Run {
 pub(super) fn decode_with(fixture: &Fixture, body: &[u8], counter: &FixtureCounter) -> Run {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
     let sink = DiscardingSink;
-    let init: LoggingInit = serde_json::from_str(INIT).expect("the logging fixture is valid");
-    let mut state = LoggingState::new(
-        init,
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        &redactor,
-        || String::from("generated"),
-        Duration::default,
-    )
-    .expect("the logging fixture builds");
-    let env = PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor: &redactor,
-        log: &sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: DateTime::<FixedOffset>::parse_from_rfc3339(LOG_TIME).expect("the clock parses"),
-    };
+    let (mut state, env) = logging(&redactor, &sink);
     let ids = FixedIds {
         values: Mutex::new(fixture.ids.clone()),
     };
@@ -170,6 +145,39 @@ pub(super) fn decode_with(fixture: &Fixture, body: &[u8], counter: &FixtureCount
         reply,
         calls: counter.calls(),
     }
+}
+
+fn logging<'log>(
+    redactor: &'log Redactor,
+    sink: &'log DiscardingSink,
+) -> (LoggingState, PrePostEnv<'log>) {
+    let init: LoggingInit = serde_json::from_str(INIT).expect("the logging fixture is valid");
+    let state = LoggingState::new(
+        init,
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || String::from("generated"),
+        Duration::default,
+    )
+    .expect("the logging fixture builds");
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: sink,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::<FixedOffset>::parse_from_rfc3339(LOG_TIME).expect("the clock parses"),
+    };
+    (state, env)
 }
 
 struct DiscardingSink;
