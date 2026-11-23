@@ -159,7 +159,9 @@ fn fields(source: RawSource<'_>, redactor: &Redactor) -> (String, Option<u16>, R
             RawExceptionBody {
                 kind: error.error_type.clone(),
                 param: error.param.clone(),
-                ..RawExceptionBody::default()
+                code: None,
+                message: None,
+                error: None,
             },
         ),
         RawSource::Stream(error) => (
@@ -176,7 +178,8 @@ fn fields(source: RawSource<'_>, redactor: &Redactor) -> (String, Option<u16>, R
                     kind: failure.error_type,
                     param: failure.param,
                     code: failure.code,
-                    ..RawExceptionBody::default()
+                    message: None,
+                    error: None,
                 },
             )
         }
