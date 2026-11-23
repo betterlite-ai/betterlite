@@ -153,10 +153,10 @@ impl ShadowLifecycleStore for ProbeStore {
         let Some(first) = group.first().copied() else {
             return Ok(0);
         };
-        let first_leg = legs.get(first).ok_or(ProbeStoreError {
+        let head = legs.get(first).ok_or_else(|| ProbeStoreError {
             message: format!("the stop read lost leg {first}"),
         })?;
-        let window_open = first_leg.ends_at > self.now;
+        let window_open = head.ends_at > self.now;
         let still_sampling = group.iter().any(|index| {
             legs.get(*index).is_some_and(|leg| {
                 leg.stopped_at.is_none()

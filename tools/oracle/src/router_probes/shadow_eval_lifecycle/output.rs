@@ -1,21 +1,22 @@
 use betterlite_server::shadow_eval_job_loading::jobs::ShadowEvalDirection;
 use betterlite_server::shadow_eval_models::ShadowEvalStatus;
 use betterlite_server::shadow_eval_models::ShadowEvalTargetType;
-use betterlite_server::shadow_eval_models::job::{ShadowJobResponse, ShadowLeg};
+use betterlite_server::shadow_eval_models::job::ShadowJobResponse;
+use betterlite_server::shadow_eval_models::leg::ShadowLeg;
 use betterlite_server::shadow_result_aggregation::legs::LegRow;
 use betterlite_server::shadow_result_aggregation::targets::target_type_name;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Output {
-    pub steps: Vec<StepOutcome>,
-    pub jobs: Vec<String>,
+pub(super) struct OutputFields {
+    pub(super) steps: Vec<StepOutcome>,
+    pub(super) jobs: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
-pub enum StepOutcome {
-    Succeeded { status: u16, job: JobView },
+pub(super) enum StepOutcome {
+    Succeeded { status: u16, job: Box<JobView> },
     Failed { status: u16, detail: String },
     Accepted,
     Invalid,
@@ -23,33 +24,33 @@ pub enum StepOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct JobView {
-    pub job_id: String,
-    pub router_name: String,
-    pub router_names: Vec<String>,
-    pub models: Vec<String>,
-    pub direction: ShadowEvalDirection,
-    pub baseline_model: Option<String>,
-    pub judge_model: String,
-    pub shadow_percentage: String,
-    pub created_at_millis: i64,
-    pub ends_at_millis: i64,
-    pub stopped_by: Option<String>,
-    pub status: String,
-    pub targets: Vec<TargetView>,
+pub(super) struct JobView {
+    pub(super) job_id: String,
+    pub(super) router_name: String,
+    pub(super) router_names: Vec<String>,
+    pub(super) models: Vec<String>,
+    pub(super) direction: ShadowEvalDirection,
+    pub(super) baseline_model: Option<String>,
+    pub(super) judge_model: String,
+    pub(super) shadow_percentage: String,
+    pub(super) created_at_millis: i64,
+    pub(super) ends_at_millis: i64,
+    pub(super) stopped_by: Option<String>,
+    pub(super) status: String,
+    pub(super) targets: Vec<TargetView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TargetView {
-    pub target_type: ShadowEvalTargetType,
-    pub target_id: String,
-    pub max_turns: i64,
-    pub max_budget: Option<String>,
-    pub stopped_at_millis: Option<i64>,
-    pub attempt_count: Option<i64>,
-    pub spend: Option<String>,
-    pub target_alias: Option<String>,
-    pub key_name: Option<String>,
+pub(super) struct TargetView {
+    pub(super) target_type: ShadowEvalTargetType,
+    pub(super) target_id: String,
+    pub(super) max_turns: i64,
+    pub(super) max_budget: Option<String>,
+    pub(super) stopped_at_millis: Option<i64>,
+    pub(super) attempt_count: Option<i64>,
+    pub(super) spend: Option<String>,
+    pub(super) target_alias: Option<String>,
+    pub(super) key_name: Option<String>,
 }
 
 const fn status_text(status: ShadowEvalStatus) -> &'static str {
@@ -75,7 +76,7 @@ fn target_view(leg: ShadowLeg) -> TargetView {
 }
 
 impl JobView {
-    pub(crate) fn of(response: ShadowJobResponse) -> Self {
+    pub(super) fn of(response: ShadowJobResponse) -> Self {
         let job = response.job;
         Self {
             job_id: job.job_id,
@@ -97,13 +98,12 @@ impl JobView {
 
 // one stored leg as a single exact cell, so both sides can sort and compare it without an enum order
 pub(super) fn leg_state(leg: &LegRow) -> String {
-    let stopped_at = match leg.stopped_at {
-        Some(stamp) => stamp.timestamp_millis().to_string(),
-        None => String::new(),
-    };
-    let stopped_by = leg.stopped_by.as_deref().unwrap_or_default();
+    let stopped = leg
+        .stopped_at
+        .map_or_else(String::new, |stamp| stamp.timestamp_millis().to_string());
+    let actor = leg.stopped_by.as_deref().unwrap_or_default();
     format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{:.2}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{:.2}|{stopped}|{actor}",
         leg.id,
         leg.group_id,
         target_type_name(leg.target_type),
@@ -114,7 +114,5 @@ pub(super) fn leg_state(leg: &LegRow) -> String {
         leg.judge_model,
         leg.max_turns,
         leg.shadow_percentage,
-        stopped_at,
-        stopped_by,
     )
 }
