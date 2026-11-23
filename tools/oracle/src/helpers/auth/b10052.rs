@@ -43,6 +43,6 @@ impl Helper for Op {
                 row.requested_user_id.as_deref(),
             ));
         }
-        Ok(serde_json::to_value(&answers).or_value_error()?)
+        serde_json::to_value(&answers).or_value_error()
     }
 }
