@@ -12,6 +12,8 @@ use indexmap::IndexMap;
 
 use super::{NativeErrorPayload, payload};
 
+mod tests;
+
 // litellm's own errors for an unsupported provider carry this model instead of the caller's
 const UNSUPPORTED_MODEL: &str = "n/a";
 const UNSUPPORTED_PREFIX: &str = "LiteLLM doesn't support ";

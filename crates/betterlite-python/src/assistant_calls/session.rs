@@ -40,6 +40,8 @@ use super::convert::{self, ModuleSettings, ThreadRequest};
 use super::error::CallError;
 use super::error::family::ThreadOutcome;
 
+mod tests;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SessionError {
     #[error("the proxy environment could not be read: {source}")]
