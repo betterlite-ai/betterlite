@@ -111,10 +111,11 @@ fn provider_extra_body(
     if drops.iter().any(|name| name == "extra_body") {
         return IndexMap::new();
     }
-    let mut extra = IndexMap::new();
-    if let Some(JsonValue::Object(base)) = forwarded.shift_remove("extra_body") {
-        extra = base;
-    }
+    let mut extra = if let Some(JsonValue::Object(base)) = forwarded.shift_remove("extra_body") {
+        base
+    } else {
+        IndexMap::new()
+    };
     for (name, value) in forwarded.drain(..) {
         if value != JsonValue::Null && !mapping.dropped_fields.contains(&name) {
             extra.insert(name, value);
@@ -145,7 +146,6 @@ pub(crate) fn listed_parameters(
     )
     .map_err(|source| OperationError::Parameters { source })
 }
-
 // get_optional_params deletes every nested additional_drop_params path from the mapped parameters last (utils.py L5035-L5041)
 pub(crate) fn drop_nested_paths<T>(
     optional: &mut IndexMap<String, T>,
