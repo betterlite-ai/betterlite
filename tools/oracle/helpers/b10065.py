@@ -32,4 +32,3 @@ def run(input_value: Input) -> Answer:
             return Answer(ok=True, error=None)
         case Error(error):
             return Answer(ok=False, error=error.tag)
-    raise ValueError("the result is neither Ok nor Error")
