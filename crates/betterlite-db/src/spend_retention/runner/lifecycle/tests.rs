@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use betterlite_prometheus::collector_registry::CollectorRegistry;
 use rstest::rstest;
-use tokio::time::{Instant, sleep};
+use tokio::time::{Instant, timeout};
 use tokio_postgres::Client;
 
 use crate::cleanup_metrics::{CleanupMetrics, RunOutcome};
@@ -95,13 +95,13 @@ where
     Run: Future + Send,
 {
     loop {
-        tokio::select! {
-            _finished = &mut run => panic!("the cleanup finished before it could be cancelled"),
-            () = sleep(Duration::from_millis(5)) => {
-                if count_rows(observer, SPEND_COUNT).await < below {
-                    return;
-                }
-            }
+        let finished = timeout(Duration::from_millis(5), &mut run).await.is_ok();
+        assert!(
+            !finished,
+            "the cleanup finished before it could be cancelled"
+        );
+        if count_rows(observer, SPEND_COUNT).await < below {
+            return;
         }
     }
 }
@@ -355,7 +355,12 @@ async fn a_completed_run_logs_the_groups_in_order_at_info() {
         "daily tag spend rows",
     ]
     .map(|needle| position(&contents, needle));
-    assert!(order.as_slice().windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(
+        order
+            .iter()
+            .zip(order.iter().skip(1))
+            .all(|(first, second)| first < second)
+    );
     assert!(contents.contains("outcome=completed"));
     assert!(!contents.contains("WARN"));
     case.close().await;

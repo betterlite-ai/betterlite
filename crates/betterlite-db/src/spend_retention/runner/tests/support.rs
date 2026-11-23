@@ -83,7 +83,7 @@ pub(crate) const USER_SESSION_IDS: &str =
 pub(crate) const HEALTH_IDS: &str =
     r#"SELECT health_check_id FROM "LiteLLM_HealthCheckTable" ORDER BY health_check_id"#;
 pub(crate) const TAG_IDS: &str = r#"SELECT "id" FROM "LiteLLM_DailyTagSpend" ORDER BY "id""#;
-pub(crate) const PARTITION_NAMES: &str = r#"SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relname LIKE 'LiteLLM\_SpendLogs\_%' ORDER BY c.relname"#;
+pub(crate) const PARTITION_NAMES: &str = r"SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relname LIKE 'LiteLLM\_SpendLogs\_%' ORDER BY c.relname";
 
 // the SpendLogs table comes from the partition fixture; the runner's other five tables are created beside it
 pub(crate) async fn provision() -> SpendPartitionCase {
