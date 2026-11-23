@@ -363,7 +363,8 @@ def test_ocr_req_format_error() -> None:
     )
     ours, theirs = both_raise(call, OURS_UNSUPPORTED, THEIRS_UNSUPPORTED)
     assert error_fields(theirs).status_code == error_fields(ours).status_code
-    assert "bogus" in error_fields(ours).message and "bogus" in error_fields(theirs).message
+    assert "bogus" in error_fields(ours).message
+    assert "bogus" in error_fields(theirs).message
 
 
 def test_ocr_flag_unsupported() -> None:
