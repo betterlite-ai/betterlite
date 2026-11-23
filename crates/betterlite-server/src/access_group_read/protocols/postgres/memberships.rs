@@ -55,9 +55,7 @@ impl<C: GenericClient + Sync> TeamTable for PgAccessGroupTables<'_, C> {
         team_id: &str,
         ids: &[String],
     ) -> Result<(), AccessGroupStoreError> {
-        let parameters: [&(dyn ToSql + Sync); 2] = [&team_id, &ids];
-        self.execute_changing_one(SET_TEAM_GROUPS_SQL, &parameters)
-            .await
+        self.write_list(SET_TEAM_GROUPS_SQL, team_id, ids).await
     }
 }
 
@@ -72,9 +70,8 @@ impl<C: GenericClient + Sync> KeyTable for PgAccessGroupTables<'_, C> {
         &self,
         access_group_id: &str,
     ) -> Result<Vec<KeyRecord>, AccessGroupStoreError> {
-        let parameters: [&(dyn ToSql + Sync); 1] = [&access_group_id];
-        let rows = self.query(FIND_KEYS_CARRYING_SQL, &parameters).await?;
-        rows.iter().map(KeyRecord::from_row).collect()
+        self.carrying_records(FIND_KEYS_CARRYING_SQL, access_group_id, KeyRecord::from_row)
+            .await
     }
 
     async fn set_access_group_ids(
@@ -82,9 +79,7 @@ impl<C: GenericClient + Sync> KeyTable for PgAccessGroupTables<'_, C> {
         token: &str,
         ids: &[String],
     ) -> Result<(), AccessGroupStoreError> {
-        let parameters: [&(dyn ToSql + Sync); 2] = [&token, &ids];
-        self.execute_changing_one(SET_KEY_GROUPS_SQL, &parameters)
-            .await
+        self.write_list(SET_KEY_GROUPS_SQL, token, ids).await
     }
 }
 
@@ -93,9 +88,12 @@ impl<C: GenericClient + Sync> AgentTable for PgAccessGroupTables<'_, C> {
         &self,
         access_group_id: &str,
     ) -> Result<Vec<AgentRecord>, AccessGroupStoreError> {
-        let parameters: [&(dyn ToSql + Sync); 1] = [&access_group_id];
-        let rows = self.query(FIND_AGENTS_CARRYING_SQL, &parameters).await?;
-        rows.iter().map(AgentRecord::from_row).collect()
+        self.carrying_records(
+            FIND_AGENTS_CARRYING_SQL,
+            access_group_id,
+            AgentRecord::from_row,
+        )
+        .await
     }
 
     async fn set_access_group_ids(
@@ -103,9 +101,7 @@ impl<C: GenericClient + Sync> AgentTable for PgAccessGroupTables<'_, C> {
         agent_id: &str,
         ids: &[String],
     ) -> Result<(), AccessGroupStoreError> {
-        let parameters: [&(dyn ToSql + Sync); 2] = [&agent_id, &ids];
-        self.execute_changing_one(SET_AGENT_GROUPS_SQL, &parameters)
-            .await
+        self.write_list(SET_AGENT_GROUPS_SQL, agent_id, ids).await
     }
 }
 

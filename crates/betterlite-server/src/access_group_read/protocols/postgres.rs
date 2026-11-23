@@ -65,6 +65,27 @@ impl<C: GenericClient + Sync> PgAccessGroupTables<'_, C> {
         };
         AccessGroupRecord::from_row(row).map(Some)
     }
+
+    async fn write_list(
+        &self,
+        statement: &str,
+        key: &str,
+        ids: &[String],
+    ) -> Result<(), AccessGroupStoreError> {
+        let parameters: [&(dyn ToSql + Sync); 2] = [&key, &ids];
+        self.execute_changing_one(statement, &parameters).await
+    }
+
+    async fn carrying_records<R>(
+        &self,
+        statement: &str,
+        access_group_id: &str,
+        decode: fn(&Row) -> Result<R, AccessGroupStoreError>,
+    ) -> Result<Vec<R>, AccessGroupStoreError> {
+        let parameters: [&(dyn ToSql + Sync); 1] = [&access_group_id];
+        let rows = self.query(statement, &parameters).await?;
+        rows.iter().map(decode).collect()
+    }
 }
 
 impl<C: GenericClient + Sync> AccessGroupTx for PgAccessGroupTables<'_, C> {
