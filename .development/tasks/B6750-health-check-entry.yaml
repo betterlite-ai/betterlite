@@ -66,6 +66,9 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-server/src/lib.rs"
+    - "crates/betterlite-server/src/health_probe_settings.rs"
+    - "crates/betterlite-server/src/health_probe_settings/model_info.rs"
     - crates/betterlite-server/src/health_check_entry.rs
     - crates/betterlite-server/src/health_check_entry/**
     - tools/oracle/cases/helpers/health-check-entry/**
