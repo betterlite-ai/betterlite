@@ -74,7 +74,7 @@ impl Adapter for Azure {
         deployment: &Deployment,
         _catalog: &CatalogCapabilities,
     ) -> Result<PreparedRequest, OperationError> {
-        // LiteLLM's router hands its own stream default to every routed call, so a routed body always carries the key
+        // LiteLLM's router passes its own stream default to a routed chat, so the chat body always carries the key
         match request.kind() {
             RequestKind::Chat(chat) => prepared(
                 &self.composition,
