@@ -620,11 +620,11 @@ fn probe_requires_options() {
 
 // the caller's authorization header stands in for the SDK's key, and a call with neither fails as ValueError
 fn credential_paths() {
-    let caller = support::pairs(&[(
+    let auth_headers = support::pairs(&[(
         "extra_headers",
         json(r#"{"authorization":"Bearer caller"}"#),
     )]);
-    let mut call = support::call("tts", "hello", "alloy", caller);
+    let mut call = support::call("tts", "hello", "alloy", auth_headers);
     call.api_key = None;
     let request = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
         .expect("the caller's authorization authenticates the call");
@@ -704,11 +704,11 @@ fn unusable_headers() {
 
 // a base that already names the deployment keeps its own query, and extra_query overrides a repeated key
 fn base_queries() {
-    let optional = support::pairs(&[(
+    let query_params = support::pairs(&[(
         "extra_query",
         json(r#"{"api-version":"1999-01-01","trace":"abc"}"#),
     )]);
-    let mut call = support::call("tts", "hello", "alloy", optional);
+    let mut call = support::call("tts", "hello", "alloy", query_params);
     call.api_base = Some(String::from(
         "https://gateway.example/openai/deployments/tts?foo=bar&",
     ));
@@ -724,30 +724,38 @@ fn base_queries() {
 fn wrong_controls() {
     let body = support::pairs(&[("extra_body", json("\"hi\""))]);
     let body_call = support::call("tts", "hello", "alloy", body);
-    let error = support::start(&mut Inputs::default(), &body_call, &mut Recorder::default())
+    let body_error = support::start(&mut Inputs::default(), &body_call, &mut Recorder::default())
         .expect_err("a text extra_body cannot merge");
-    assert_eq!(error.class(), "RuntimeError");
+    assert_eq!(body_error.class(), "RuntimeError");
     assert!(
-        error
+        body_error
             .to_string()
             .contains("Unexpected JSON data type, string, cannot merge with `extra_body`")
     );
     let headers = support::pairs(&[("extra_headers", json("\"x\""))]);
     let headers_call = support::call("tts", "hello", "alloy", headers);
-    let error = support::start(
+    let headers_error = support::start(
         &mut Inputs::default(),
         &headers_call,
         &mut Recorder::default(),
     )
     .expect_err("a text extra_headers is not a mapping");
-    assert!(error.to_string().contains("is not a mapping of strings"));
+    assert!(
+        headers_error
+            .to_string()
+            .contains("is not a mapping of strings")
+    );
     let timeout = support::pairs(&[("timeout", json("\"5\""))]);
     let timeout_call = support::call("tts", "hello", "alloy", timeout);
-    let error = support::start(
+    let timeout_error = support::start(
         &mut Inputs::default(),
         &timeout_call,
         &mut Recorder::default(),
     )
     .expect_err("a text timeout is not a number of seconds");
-    assert!(error.to_string().contains("is not a number of seconds"));
+    assert!(
+        timeout_error
+            .to_string()
+            .contains("is not a number of seconds")
+    );
 }

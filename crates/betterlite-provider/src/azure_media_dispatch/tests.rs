@@ -664,13 +664,13 @@ fn ava_speech_maps_openai_params() {
             String::from("speed"),
         ]
     );
-    let optional = object(r#"{"response_format":"mp3","speed":1.5}"#);
+    let openai_params = object(r#"{"response_format":"mp3","speed":1.5}"#);
     let options = SpeechMappingOptions {
         voice: Some(SpeechVoice::Name(String::from("alloy"))),
         drop_params: false,
         kwargs: object(r#"{"style":"cheerful","styledegree":"1.5","role":"Girl","lang":"en-US"}"#),
     };
-    let (voice, mapped) = config.map_openai_params("tts", optional, &options);
+    let (voice, mapped) = config.map_openai_params("tts", openai_params, &options);
     assert_eq!(voice.as_deref(), Some("en-US-JennyNeural"));
     assert_eq!(
         mapped,
