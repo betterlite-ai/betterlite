@@ -622,8 +622,9 @@ fn probe_requires_options() {
         messages: None,
     };
     let base_error = probe_request(&absent).expect_err("a probe needs an api_base");
-    let (base_class, _base_status) = base_error.kind();
-    assert_eq!(base_class, "Exception");
+    let (base_class, base_status) = base_error.kind();
+    assert_eq!(base_class, "ValueError");
+    assert_eq!(base_status, None);
     let empty = ProbeCall {
         model: Some("gpt-4o"),
         api_key: "",
