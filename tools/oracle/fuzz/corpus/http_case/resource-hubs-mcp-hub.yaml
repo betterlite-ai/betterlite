@@ -1,0 +1,7 @@
+name: resource-hubs-mcp-hub
+config: 'general_settings: {master_key: oracle-master}'
+env: {}
+request: {method: GET, path: /public/mcp_hub, headers: {}, body: null}
+upstream: []
+public_mcp_servers: [cfg-listed]
+compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
