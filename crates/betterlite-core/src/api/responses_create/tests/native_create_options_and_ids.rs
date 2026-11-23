@@ -6,15 +6,21 @@ use betterlite_openai::response_input::ResponsesInput;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use secrecy::SecretString;
 
+use super::builders::{
+    body_json, call, failure, field, header_values, item_input, json, kwargs, number_is, object,
+    prompt_json, response_json, run_create, text, values,
+};
 use super::support::{
-    Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams, body_json, call,
-    field, header_values, item_input, json, kwargs, number_is, object, response_json, run_create,
-    text, values,
+    Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams, Wire,
 };
 use crate::api::response_id_codecs::encrypted::build_encrypted_item_id;
 use crate::api::response_id_codecs::response::build_response_id;
+use crate::api::responses_compact_http::service::{ClientKind, SuppliedClient};
 use crate::api::responses_create::bridge::Created;
 use crate::api::responses_create::call::input_value;
+use crate::api::responses_create::deps::ResponsesCreateDeps;
+use crate::api::responses_create_http::service::CreateHooks;
+use crate::api::responses_hook_policy::callbacks::CallbackLists;
 
 pub(crate) async fn options_and_ids() {
     let rig = Rig::new();
@@ -215,4 +221,98 @@ fn input_values() {
         input_value(&listed),
         JsonValue::Array(values(r#"[{"role":"user","content":"hi"}]"#))
     );
+}
+
+pub(crate) async fn allowed_params_and_unsupported() {
+    let mut rig = Rig::new();
+    rig.configs.supported = Some(vec![String::from("temperature")]);
+    rig.wire.queue(200, OK_RESPONSE);
+    let gateway = NoInterception;
+    let bridge = RecordingBridge::new(&rig.events);
+    let nothing = Nothing;
+    let seams = Seams::new(&rig, &nothing, &gateway, &bridge);
+    let mut allowed = call("openai/gpt-4o");
+    allowed.service_tier = Some(String::from("flex"));
+    allowed.allowed_openai_params = Some(vec![String::from("service_tier")]);
+    let mut harness = Harness::new();
+    run_create(&seams.deps(), &allowed, &mut harness)
+        .await
+        .expect("an allowed openai param passes the supported check");
+    let requests = rig.wire.requests();
+    let body = object(&body_json(&requests[0]));
+    assert_eq!(text(&body, "service_tier"), "flex");
+
+    let mut refused = call("openai/gpt-4o");
+    refused.service_tier = Some(String::from("flex"));
+    let error = run_create(&seams.deps(), &refused, &mut harness)
+        .await
+        .err()
+        .expect("an unsupported param fails without drop_params");
+    let rejected = failure(&error);
+    assert_eq!(rejected.class, "UnsupportedParamsError");
+    assert_eq!(rejected.status, 400);
+    assert_eq!(rejected.kind, None);
+    assert_eq!(rejected.param, None);
+    assert_eq!(rejected.code, None);
+    assert_eq!(rig.wire.requests().len(), 1);
+}
+
+pub(crate) async fn supplied_client_transport() {
+    let rig = Rig::new();
+    let supplied = Wire::new(&rig.events);
+    supplied.queue(200, OK_RESPONSE);
+    let gateway = NoInterception;
+    let bridge = RecordingBridge::new(&rig.events);
+    let nothing = Nothing;
+    let deps = ResponsesCreateDeps {
+        resolver: &rig.resolver,
+        lookup: &rig.lookup,
+        configs: &rig.configs,
+        source: &rig.source,
+        supplied: Some(SuppliedClient {
+            kind: ClientKind::Sync,
+            transport: &supplied,
+        }),
+        environment: &rig.variables,
+        prompts: None,
+        file_mapping: None,
+        hooks: CreateHooks {
+            callbacks: CallbackLists {
+                global: &[],
+                dynamic: &[],
+            },
+            resolver: &nothing,
+            dispatcher: &nothing,
+            executor: &nothing,
+            logging: None,
+        },
+        interception: &gateway,
+        bridge: &bridge,
+        drop_params: false,
+        reasoning_auto_summary: false,
+    };
+    let mut harness = Harness::new();
+    run_create(&deps, &call("openai/gpt-4o"), &mut harness)
+        .await
+        .expect("the supplied client carries the request");
+    assert_eq!(supplied.requests().len(), 1);
+    assert!(rig.wire.requests().is_empty());
+    assert!(rig.source.created().is_empty());
+}
+
+pub(crate) async fn extra_body() {
+    let rig = Rig::new();
+    rig.wire.queue(200, OK_RESPONSE);
+    let gateway = NoInterception;
+    let bridge = RecordingBridge::new(&rig.events);
+    let nothing = Nothing;
+    let seams = Seams::new(&rig, &nothing, &gateway, &bridge);
+    let mut request = call("openai/gpt-4o");
+    request.extra_body = Some(object(&prompt_json(r#"{"x":1}"#)));
+    let mut harness = Harness::new();
+    run_create(&seams.deps(), &request, &mut harness)
+        .await
+        .expect("the extra body reaches the native request");
+    let body = object(&body_json(&rig.wire.requests()[0]));
+    number_is(&body, "x", 1.0_f64);
 }

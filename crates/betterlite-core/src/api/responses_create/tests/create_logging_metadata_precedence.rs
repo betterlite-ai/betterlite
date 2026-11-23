@@ -1,8 +1,10 @@
 use betterlite_models::decisions::Json;
 
+use super::builders::{
+    body_json, call, failure, json, kwargs, object, response_json, run_create, text,
+};
 use super::support::{
     FakeCall, Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams,
-    body_json, call, failure, json, kwargs, object, response_json, run_create, text,
 };
 use crate::api::response_id_codecs::response::build_response_id;
 use crate::api::responses_compact_http::service::SharedSession;
@@ -153,6 +155,19 @@ pub(crate) async fn residency_and_client() {
         Some(&Json::Null)
     );
     assert_eq!(rig.source.created().len(), 2);
+
+    rig.wire.queue(200, OK_RESPONSE);
+    let mut asynchronous = call("openai/gpt-4o");
+    asynchronous.kwargs = kwargs(r#"{"aresponses":true}"#);
+    asynchronous.shared_session = Some(SharedSession(9_u64));
+    let mut third = Harness::new();
+    run_create(&seams.deps(), &asynchronous, &mut third)
+        .await
+        .expect("the asynchronous create answers");
+    assert_eq!(
+        rig.source.created(),
+        vec![(Some(true), false), (None, false), (None, true)]
+    );
 }
 
 pub(crate) async fn stamped_and_synthetic() {

@@ -4,10 +4,13 @@ use std::time::Duration;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::response_input::ResponsesInput;
 
+use super::builders::{
+    body_json, call, field, json, kwargs, number_is, object, prompt_json, run_create, text, tools,
+    value_number, values,
+};
 use super::support::{
     BridgeRecord, Gateway, Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig,
-    Seams, body_json, call, field, json, kwargs, number_is, object, prompt_json, run_create, text,
-    tools, value_number, values,
+    Seams,
 };
 
 pub(crate) async fn bridge_selection() {
@@ -69,6 +72,13 @@ fn assert_bridge_kwargs(record: &BridgeRecord) {
         record.kwargs.get("extra_body"),
         values(r#"[{"x":1}]"#).first()
     );
+    assert_eq!(
+        record.kwargs.get("allowed_openai_params"),
+        Some(&JsonValue::Array(vec![
+            JsonValue::Text(String::from("custom_option")),
+            JsonValue::Text(String::from("client_metadata")),
+        ]))
+    );
 }
 
 async fn passing_with_and_without_tools(nothing: &Nothing, harness: &mut Harness) {
@@ -83,6 +93,10 @@ async fn passing_with_and_without_tools(nothing: &Nothing, harness: &mut Harness
         .expect("a bridged call without tools passes the file search by");
     assert!(gateway.file_search_record().is_none());
     assert_eq!(bridge.calls().len(), 1);
+    assert_eq!(
+        bridge.calls()[0].kwargs.get("allowed_openai_params"),
+        Some(&JsonValue::Null)
+    );
     assert!(rig.wire.requests().is_empty());
 
     plain.tools = Some(tools(

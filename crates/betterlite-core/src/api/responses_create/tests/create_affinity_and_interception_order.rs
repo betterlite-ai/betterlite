@@ -4,12 +4,14 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use betterlite_prompts::file_ids::mapping::FileIdMapping;
 
-use super::support::{
-    Gateway, Harness, NoInterception, Nothing, OK_RESPONSE, PromptMark, RecordingBridge, Rig,
-    Seams, call, failure, field, header_values, json, kwargs, list, object, response_json,
-    run_create, text, tools,
+use super::builders::{
+    call, failure, field, header_values, json, kwargs, list, object, response_json, run_create,
+    text, tools,
 };
-use crate::api::responses_create::convert::reencode;
+use super::support::{
+    Gateway, Harness, NoInterception, Nothing, OK_RESPONSE, PromptMark, RecordingBridge, Rig, Seams,
+};
+use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_create::error::CreateError;
 use crate::api::responses_provider_selection::provider_config::CompatibilityFailure;
 
@@ -155,7 +157,7 @@ fn assert_mcp_dispatch(gateway: &Gateway, rig: &Rig) {
     assert!(!record.kwargs.contains_key("text_format"));
     let reached = record.tools.expect("the tools reach MCP");
     assert_eq!(reached.len(), 2);
-    let code_tool: PromptJson = reencode(&reached[1]).expect("the tool converts");
+    let code_tool: PromptJson = transcode(&reached[1]).expect("the tool converts");
     let container = object(field(&object(&code_tool), "container"));
     assert_eq!(
         list(field(&container, "file_ids")),

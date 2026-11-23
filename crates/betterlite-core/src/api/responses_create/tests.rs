@@ -1,17 +1,24 @@
 #![cfg(test)]
 
+mod builders;
 mod chat_create_prefix_and_reasoning;
 mod create_affinity_and_interception_order;
 mod create_logging_metadata_precedence;
 mod mock_response_literals;
 mod native_create_options_and_ids;
-mod seams;
 mod support;
 
 #[tokio::test]
 async fn native_create_options_and_ids() {
     native_create_options_and_ids::options_and_ids().await;
     native_create_options_and_ids::encrypted_item_ids().await;
+}
+
+#[tokio::test]
+async fn native_create_execution_edges() {
+    native_create_options_and_ids::allowed_params_and_unsupported().await;
+    native_create_options_and_ids::supplied_client_transport().await;
+    native_create_options_and_ids::extra_body().await;
 }
 
 #[tokio::test]

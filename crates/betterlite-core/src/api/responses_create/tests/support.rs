@@ -36,13 +36,13 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 
+use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_agentic_execution::executor::{
     AnthropicContinuation, ContinuationExecutor, ResponsesContinuation,
 };
 use crate::api::responses_compact_http::error::ConfigFailure;
 use crate::api::responses_compact_http::service::SharedSession;
 use crate::api::responses_create::bridge::{BridgeCall, ChatBridge, Created, StampedResponse};
-use crate::api::responses_create::convert::reencode;
 use crate::api::responses_create::deps::{
     ConfigRequest, CreateCapabilities, CreateConfigFactory, PromptSource, ResponsesCreateDeps,
 };
@@ -69,8 +69,6 @@ use crate::api::responses_provider_selection::prompting::{
 use crate::api::responses_provider_selection::provider_config::{ConfigLookup, NativeConfig};
 use crate::api::responses_provider_selection::resolution::ModelResolver;
 use crate::api::vector_store_http_write::error::{BaseLlmException, ClientError, HeaderMap};
-
-pub(crate) use super::seams::*;
 
 pub(crate) const OK_RESPONSE: &str = r#"{"id":"resp_a","created_at":100,"object":"response","status":"completed","model":"gpt-4o","output":[]}"#;
 
@@ -677,7 +675,7 @@ pub(crate) struct DispatchRecord {
 impl From<&DispatchArgs<'_>> for DispatchRecord {
     fn from(args: &DispatchArgs<'_>) -> Self {
         Self {
-            input: reencode(args.input).expect("the dispatch input converts"),
+            input: transcode(args.input).expect("the dispatch input converts"),
             reasoning: args.reasoning.cloned(),
             tools: args.tools.map(<[JsonValue]>::to_vec),
             kwargs: args.kwargs.clone(),

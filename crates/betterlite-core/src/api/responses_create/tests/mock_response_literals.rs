@@ -1,17 +1,17 @@
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 
-use super::support::{
-    Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams, call, field,
-    kwargs, list, number_is, object, response_json, run_create, text, values,
+use super::builders::{
+    call, field, kwargs, list, number_is, object, response_json, run_create, text, values,
 };
-use crate::api::responses_create::convert::reencode;
+use super::support::{Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams};
+use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_create::execute::{
     DEFAULT_MOCK_TEXT, has_file_search_tool, mock_responses_api_response,
 };
 
 pub(crate) fn literal_and_default() {
     let literal = mock_responses_api_response(Some("hi")).expect("the mock response parses");
-    let value: PromptJson = reencode(&literal).expect("the mock response serializes");
+    let value: PromptJson = transcode(&literal).expect("the mock response serializes");
     let body = object(&value);
     assert_eq!(
         text(&body, "id"),
@@ -25,7 +25,7 @@ pub(crate) fn literal_and_default() {
     let default_response =
         mock_responses_api_response(None).expect("the default mock response parses");
     let default_body: PromptJson =
-        reencode(&default_response).expect("the default mock response serializes");
+        transcode(&default_response).expect("the default mock response serializes");
     let default_output = list(field(&object(&default_body), "output"));
     let default_content = list(field(&object(&default_output[0]), "content"));
     assert_eq!(
