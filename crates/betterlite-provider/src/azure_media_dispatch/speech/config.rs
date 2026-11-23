@@ -59,7 +59,7 @@ impl TextToSpeechConfig for AvaSpeechConfig {
         };
         let (mapped_voice, mapped) = map_native_openai_params(voice.as_ref(), &optional, &kwargs)
             .unwrap_or_else(|_| (None, MappedParams::default()));
-        (mapped_voice, strings_object(&mapped_fields(&mapped)))
+        (mapped_voice, strings_object(mapped_fields(&mapped)))
     }
 
     fn validate_environment(

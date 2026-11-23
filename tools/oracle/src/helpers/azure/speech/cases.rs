@@ -59,7 +59,7 @@ fn audio_view(case: &AudioSpeech) -> HelperResult {
         Ok(request) => request,
         Err(error) => {
             let pre_call = pre_call_view(&logger);
-            return Ok(audio_answer(Value::Null, pre_call, Some(&error)));
+            return Ok(audio_answer(&Value::Null, &pre_call, Some(&error)));
         }
     };
     let sent = upstream(&case.reply)?;
@@ -75,11 +75,11 @@ fn audio_view(case: &AudioSpeech) -> HelperResult {
             },
             "error": Value::Null,
         })),
-        Err(error) => Ok(audio_answer(view, pre_call, Some(&error))),
+        Err(error) => Ok(audio_answer(&view, &pre_call, Some(&error))),
     }
 }
 
-fn audio_answer(request: Value, pre_call: Value, error: Option<&AzureSpeechError>) -> Value {
+fn audio_answer(request: &Value, pre_call: &Value, error: Option<&AzureSpeechError>) -> Value {
     json!({
         "request": request,
         "pre_call": pre_call,
@@ -149,10 +149,10 @@ fn native_view(runtime: &Runtime, call: &NativeCall) -> HelperResult {
         Ok(answer) => (Value::String(answer), Value::Null),
         Err(failure) => (Value::Null, error_view(&failure)),
     };
-    Ok(record_view(record, answer, error))
+    Ok(record_view(&record, &answer, &error))
 }
 
-fn record_view(record: HandlerRecord, answer: Value, error: Value) -> Value {
+fn record_view(record: &HandlerRecord, answer: &Value, error: &Value) -> Value {
     json!({
         "voice": record.voice,
         "litellm_params": record.litellm_params,
@@ -170,26 +170,26 @@ fn record_view(record: HandlerRecord, answer: Value, error: Value) -> Value {
 fn probe_view(scenario: &ProbeScenario) -> HelperResult {
     if matches!(scenario.outcome, Outcome::InvalidCompletion) {
         let error = AzureSpeechError::InvalidCompletion;
-        return Ok(probe_answer(Value::Null, Value::Null, Some(&error)));
+        return Ok(probe_answer(&Value::Null, &Value::Null, Some(&error)));
     }
     let request = match probe_request(&probe_call(scenario)) {
         Ok(request) => request,
-        Err(error) => return Ok(probe_answer(Value::Null, Value::Null, Some(&error))),
+        Err(error) => return Ok(probe_answer(&Value::Null, &Value::Null, Some(&error))),
     };
     let view = request_view(&request)?;
     if matches!(scenario.outcome, Outcome::Request) {
-        return Ok(probe_answer(view, Value::Null, None));
+        return Ok(probe_answer(&view, &Value::Null, None));
     }
     let Some(reply) = &scenario.reply else {
         return Err(fixture_failure("a reply scenario carries its reply"));
     };
     match finish_probe(Some(upstream(reply)?)) {
-        Ok(headers) => Ok(probe_answer(view, json!({"headers": headers}), None)),
-        Err(error) => Ok(probe_answer(view, Value::Null, Some(&error))),
+        Ok(headers) => Ok(probe_answer(&view, &json!({"headers": headers}), None)),
+        Err(error) => Ok(probe_answer(&view, &Value::Null, Some(&error))),
     }
 }
 
-fn probe_answer(request: Value, reply: Value, error: Option<&AzureSpeechError>) -> Value {
+fn probe_answer(request: &Value, reply: &Value, error: Option<&AzureSpeechError>) -> Value {
     json!({
         "request": request,
         "reply": reply,

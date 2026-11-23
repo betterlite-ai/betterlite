@@ -50,7 +50,7 @@ pub fn speech_logging() -> Result<SpeechLogging, FixtureError> {
         },
         &redactor,
         || String::from("generated"),
-        Duration::default(),
+        Duration::default,
     )?;
     Ok(SpeechLogging {
         redactor,
