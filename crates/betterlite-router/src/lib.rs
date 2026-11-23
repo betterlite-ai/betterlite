@@ -20,6 +20,7 @@ pub mod chat_stream_fallback;
 pub mod classifier_context;
 pub mod classifier_message_text;
 pub mod classifier_verdict;
+pub mod compaction_executor;
 pub mod compaction_history;
 pub mod complexity_adaptive_placement;
 pub mod complexity_config;
