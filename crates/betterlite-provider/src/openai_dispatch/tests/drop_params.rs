@@ -174,7 +174,7 @@ pub(super) async fn deployment_additional_drop_params() {
     assert!(body.get("additional_drop_params").is_none());
     request_list_replaces_the_deployment_list().await;
     provider_name_dropped().await;
-    nested_path_refused().await;
+    nested_path_dropped().await;
 }
 
 async fn request_list_replaces_the_deployment_list() {
@@ -204,19 +204,26 @@ async fn provider_name_dropped() {
     );
 }
 
-async fn nested_path_refused() {
-    // docs/deviations/B9992.yaml: the shared mapping refuses a nested path instead of deleting the nested key
+async fn nested_path_dropped() {
+    // utils.py L5035-L5041: a dotted additional_drop_params entry deletes the nested key and the call goes out
     let nested = format!(
-        r#"{{"model":"{MODEL}","messages":{MESSAGES},"additional_drop_params":["metadata.trace_id"]}}"#
+        r#"{{"model":"{MODEL}","messages":{MESSAGES},"logit_bias":{{"1":2,"2":3}},"additional_drop_params":["logit_bias.1"]}}"#
     );
-    let error = refused(DeploymentDropPolicy::default(), &nested).await;
-    let OperationError::Parameters {
-        source: ParameterError::NestedDropPath { path },
-    } = error
-    else {
-        panic!("a nested drop path is a Parameters error");
-    };
-    assert_eq!(path, "metadata.trace_id");
+    let body = sent_body(DeploymentDropPolicy::default(), &nested).await;
+    let expected = IndexMap::from([(String::from("2"), support::number_value(3))]);
+    assert_eq!(
+        support::field(&body, "logit_bias"),
+        &JsonValue::Object(expected),
+        "the nested path removes only the named key"
+    );
+    let metadata = format!(
+        r#"{{"model":"{MODEL}","messages":{MESSAGES},"metadata":{{"trace_id":"t-1"}},"additional_drop_params":["metadata.trace_id"]}}"#
+    );
+    let served = sent_body(DeploymentDropPolicy::default(), &metadata).await;
+    assert!(
+        served.get("metadata").is_none(),
+        "a nested path under metadata still serves the call"
+    );
 }
 
 pub(super) async fn openai_unsupported_param() {

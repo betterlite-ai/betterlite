@@ -35,6 +35,7 @@ const REMOTE_FILE: &str = "anthropic_provider_remote_file";
 const REMOTE_FILE_ERROR: &str = "anthropic_provider_remote_file_error";
 const DEPLOYMENT_DROP_PARAMS: &str = "anthropic_provider_deployment_drop_params";
 const REQUEST_DROP_PARAMS_WINS: &str = "anthropic_provider_request_drop_params_wins";
+const NESTED_DROP_PATH: &str = "anthropic_provider_nested_drop_path";
 
 // One row per anthropic-provider oracle case file, then one per loopback gateway case.
 #[rstest]
@@ -58,6 +59,7 @@ const REQUEST_DROP_PARAMS_WINS: &str = "anthropic_provider_request_drop_params_w
 #[case::anthropic_provider_remote_file_error(Family::Gateway(REMOTE_FILE_ERROR))]
 #[case::anthropic_provider_deployment_drop_params(Family::Gateway(DEPLOYMENT_DROP_PARAMS))]
 #[case::anthropic_provider_request_drop_params_wins(Family::Gateway(REQUEST_DROP_PARAMS_WINS))]
+#[case::anthropic_provider_nested_drop_path(Family::Gateway(NESTED_DROP_PATH))]
 #[tokio::test]
 async fn anthropic_dispatch_cases(#[case] family: Family) {
     match family {

@@ -29,6 +29,7 @@ pub(super) async fn check(name: &str) {
         "anthropic_provider_remote_file_error" => cases::remote_file_error().await,
         "anthropic_provider_deployment_drop_params" => deployment_drop_params().await,
         "anthropic_provider_request_drop_params_wins" => request_drop_params_wins().await,
+        "anthropic_provider_nested_drop_path" => nested_drop_path().await,
         other => panic!("unknown anthropic gateway case {other}"),
     }
 }
@@ -85,4 +86,26 @@ async fn request_drop_params_wins() {
     };
     assert_eq!(names, vec![String::from("logit_bias")]);
     assert!(harness.requests().await.is_empty());
+}
+
+// A request's dotted additional_drop_params entry deletes the nested key and the call is served.
+async fn nested_drop_path() {
+    let mut harness = support::Harness::start(vec![buffered()]).await;
+    let result = support::complete(
+        &harness,
+        support::chat(&chat_body(
+            r#","x_custom":{"keep":1,"drop":2},"additional_drop_params":["x_custom.drop"]"#,
+        )),
+    )
+    .await
+    .expect("the nested drop path keeps the call");
+    assert!(matches!(
+        result,
+        OperationResult::Anthropic(AnthropicResult::Reply(_))
+    ));
+    let requests = harness.requests().await;
+    assert_eq!(requests.len(), 1);
+    let text = from_utf8(&requests[0].body).expect("the request body is text");
+    assert!(text.contains("\"keep\""), "{text}");
+    assert!(!text.contains("\"drop\""), "{text}");
 }
