@@ -1,0 +1,354 @@
+kind: helper
+name: qwen-usage-and-failure
+call:
+  bedrock_qwen_deepseek:
+    qwen_reply:
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages:
+      - role: user
+        content: hi
+      body: '{"generation": "x", "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 99}}'
+      response:
+        id: chatcmpl-usage-qwen2
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+        created: 0
+        model: ''
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": "x", "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 99}}'
+      response:
+        id: chatcmpl-usage-qwen3
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": "x", "usage": {}}'
+      response:
+        id: chatcmpl-usage-empty
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": "x", "usage": {"completion_tokens": 4}}'
+      response:
+        id: chatcmpl-usage-partial
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": "x"}'
+      response:
+        id: chatcmpl-usage-kept
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+        created: 0
+        model: ''
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": "x"}'
+      response:
+        id: chatcmpl-usage-absent
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": "x", "usage": []}'
+      response:
+        id: chatcmpl-usage-list
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": "x", "usage": null}'
+      response:
+        id: chatcmpl-usage-null
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": "x", "usage": "x"}'
+      response:
+        id: chatcmpl-usage-text
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": "x", "usage": {"prompt_tokens": 5.5}}'
+      response:
+        id: chatcmpl-usage-float
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: not json
+      response:
+        id: chatcmpl-invalid-json
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": '
+      response:
+        id: chatcmpl-truncated
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '[]'
+      response:
+        id: chatcmpl-array
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '5'
+      response:
+        id: chatcmpl-number
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: 'null'
+      response:
+        id: chatcmpl-null
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen2
+      model: qwen.qwen2-72b-instruct
+      messages: []
+      body: '{"generation": 5}'
+      response:
+        id: chatcmpl-number-generation
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": 5}'
+      response:
+        id: chatcmpl-qwen3-number
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    - projection: qwen3
+      model: qwen.qwen3-32b-v1:0
+      messages: []
+      body: '{"generation": null}'
+      response:
+        id: chatcmpl-qwen3-null
+        choices:
+        - index: 0
+          finish_reason: null
+          message:
+            role: assistant
+            content: null
+            provider_specific_fields: null
+        created: 0
+        model: ''
+        usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+    qwen_request: []
+    deepseek_reply: []
+env: {}
+compare:
+  ignore: []
