@@ -1,12 +1,12 @@
 from typing import Literal, TypedDict
 
-from fastapi import HTTPException
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.vector_store_endpoints import utils as vector_store_utils
 from litellm.proxy.vector_store_endpoints.utils import (
     assert_proxy_admin_for_vector_store_index_management,
 )
 from pydantic import JsonValue
+from starlette.exceptions import HTTPException
 
 Operation = Literal["create", "delete", "update", "list"]
 
