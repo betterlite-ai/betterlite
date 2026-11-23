@@ -7,6 +7,7 @@ use rstest::rstest;
 
 use crate::shadow_eval_lifecycle::body::decode_shadow_body;
 
+mod postgres;
 mod shadow_eval_lifecycle_behaviors;
 mod shadow_eval_lifecycle_boundaries;
 mod support;

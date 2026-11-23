@@ -31,7 +31,7 @@ use crate::state::ServerState;
 
 // the rows a shadow eval write touches, over the same pool builder the cache activity routes use
 pub struct PostgresShadowLifecycleStore {
-    store: PostgresStore,
+    pub(super) store: PostgresStore,
 }
 
 // a read or write that failed: the driver's error, or a stored value none of the typed columns accept
@@ -98,22 +98,22 @@ impl ShadowLifecycleStore for PostgresShadowLifecycleStore {
         users: &[String],
     ) -> Result<TargetRows, Self::Error> {
         let client = self.store.session().await?;
+        let key_ids = keys.to_vec();
+        let team_ids = teams.to_vec();
+        let user_ids = users.to_vec();
         let mut rows = TargetRows::default();
-        if !keys.is_empty() {
-            let ids = keys.to_vec();
-            let found = client.query(KEYS_SQL, &[&ids]).await.map_err(backend)?;
-            rows.keys = found.iter().map(key_row).collect::<Result<_, _>>()?;
-        }
-        if !teams.is_empty() {
-            let ids = teams.to_vec();
-            let found = client.query(TEAMS_SQL, &[&ids]).await.map_err(backend)?;
-            rows.teams = found.iter().map(team_row).collect::<Result<_, _>>()?;
-        }
-        if !users.is_empty() {
-            let ids = users.to_vec();
-            let found = client.query(USERS_SQL, &[&ids]).await.map_err(backend)?;
-            rows.users = found.iter().map(user_row).collect::<Result<_, _>>()?;
-        }
+        let key_rows = client.query(KEYS_SQL, &[&key_ids]).await.map_err(backend)?;
+        rows.keys = key_rows.iter().map(key_row).collect::<Result<_, _>>()?;
+        let team_rows = client
+            .query(TEAMS_SQL, &[&team_ids])
+            .await
+            .map_err(backend)?;
+        rows.teams = team_rows.iter().map(team_row).collect::<Result<_, _>>()?;
+        let user_rows = client
+            .query(USERS_SQL, &[&user_ids])
+            .await
+            .map_err(backend)?;
+        rows.users = user_rows.iter().map(user_row).collect::<Result<_, _>>()?;
         Ok(rows)
     }
 
