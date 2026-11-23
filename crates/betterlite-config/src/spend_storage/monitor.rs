@@ -8,8 +8,8 @@ use betterlite_env::EnvError;
 use super::initial_environment_integer;
 use crate::loader::{ConfigError, EnvironmentLookup};
 
-pub const ENV_QUEUE_SIZE_THRESHOLD: &str = "SPEND_LOG_QUEUE_SIZE_THRESHOLD";
-pub const ENV_QUEUE_POLL_INTERVAL: &str = "SPEND_LOG_QUEUE_POLL_INTERVAL";
+pub(super) const ENV_QUEUE_SIZE_THRESHOLD: &str = "SPEND_LOG_QUEUE_SIZE_THRESHOLD";
+pub(super) const ENV_QUEUE_POLL_INTERVAL: &str = "SPEND_LOG_QUEUE_POLL_INTERVAL";
 
 // SPEND_LOG_QUEUE_SIZE_THRESHOLD and SPEND_LOG_QUEUE_POLL_INTERVAL of litellm/constants.py, read once here so no pass consults the environment again.
 pub(super) fn monitor_settings<L>(lookup: &L) -> Result<SpendMonitorSettings, ConfigError>
@@ -50,7 +50,7 @@ where
     if !seconds.is_finite() {
         return Err(setting_error());
     }
-    if seconds <= 0.0 {
+    if seconds <= 0.0_f64 {
         return Ok(Duration::ZERO);
     }
     match Duration::try_from_secs_f64(seconds) {
