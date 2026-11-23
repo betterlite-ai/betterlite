@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::error::Error as _;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use indexmap::IndexMap;
@@ -30,10 +30,9 @@ struct RecordingAdmission {
 
 impl RecordingAdmission {
     fn refuse(&self) -> Result<(), AdmissionError> {
-        match &self.refusal {
-            Some(refusal) => Err(refusal.clone()),
-            None => Ok(()),
-        }
+        self.refusal
+            .as_ref()
+            .map_or(Ok(()), |refusal| Err(refusal.clone()))
     }
 }
 
@@ -84,11 +83,15 @@ impl TenantDestinations for RecordingDestinations {
                 source: Box::new(TenantExporterFailure),
             });
         }
-        self.records.headers.lock().unwrap().push(headers.clone());
+        self.records
+            .headers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(headers.clone());
         self.records
             .end_users
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .push(auth.view.end_user_id.clone());
         Ok(())
     }
