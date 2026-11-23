@@ -105,13 +105,12 @@ pub(crate) fn card_headers(
                     name: name.clone(),
                     source,
                 })?;
-            let header_value =
-                HeaderValue::try_from(value.expose_secret().as_str()).map_err(|source| {
-                    A2aCallError::HeaderValue {
-                        name: name.clone(),
-                        source,
-                    }
-                })?;
+            let header_value = HeaderValue::try_from(value.expose_secret()).map_err(|source| {
+                A2aCallError::HeaderValue {
+                    name: name.clone(),
+                    source,
+                }
+            })?;
             Ok((header_name, header_value))
         })
         .collect()

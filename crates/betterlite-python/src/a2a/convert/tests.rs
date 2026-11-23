@@ -57,7 +57,7 @@ fn header(headers: Option<&BTreeMap<String, String>>, name: &str) -> Option<Stri
 fn secret_header(headers: Option<&BTreeMap<String, SecretString>>, name: &str) -> Option<String> {
     headers
         .and_then(|pairs| pairs.get(name))
-        .map(|value| value.expose_secret().clone())
+        .map(|value| value.expose_secret().to_owned())
 }
 
 #[test]
