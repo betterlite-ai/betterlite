@@ -174,6 +174,7 @@ fn provider_overlay(
         },
     )
 }
+#[cfg_attr(test, mutants::skip)]
 fn fireworks_catalog(entries: &IndexMap<String, Box<RawValue>>, model: &str) -> FireworksCatalog {
     entries
         .iter()

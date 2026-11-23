@@ -5,7 +5,7 @@ use betterlite_models::model_metadata_resolution::error::ADD_MODEL_URL;
 use indexmap::IndexMap;
 use pyo3_async_runtimes::tokio::get_runtime;
 
-use super::{max_tokens, model_info, provider_info};
+use super::{is_openai_model, max_tokens, model_info, provider_info};
 use crate::model_info::convert::{self, ModelQuery, ProviderQuery, RuntimeEntries};
 use crate::model_info::error::ModelInfoError;
 use crate::model_info::state::Runtime;
@@ -176,6 +176,32 @@ fn model_info_lookup_max_tokens_returns_null_for_an_entry_without_keys() {
         .block_on(max_tokens(&runtime, "openai/gpt-4"))
         .unwrap();
     assert_eq!(found, None);
+}
+
+#[test]
+fn model_info_lookup_max_tokens_raises_for_a_resolved_name_without_an_entry() {
+    let runtime = runtime();
+    let error = get_runtime()
+        .block_on(max_tokens(&runtime, "openai/acme-absent-model"))
+        .unwrap_err();
+    assert!(matches!(error, ModelInfoError::MaxTokens { .. }));
+}
+
+#[test]
+fn model_info_lookup_reads_the_provider_from_a_runtime_entry() {
+    let runtime = runtime();
+    let entries: RuntimeEntries =
+        convert::parse(r#"{"entries":{"acme-probe":{"litellm_provider":"openai"}},"removed":[]}"#)
+            .unwrap();
+    runtime.apply_runtime_entries(entries);
+    let state = runtime.state();
+    let resolution = runtime.resolution(&state);
+    assert!(is_openai_model(
+        &resolution,
+        &state.entries,
+        "acme-probe",
+        None
+    ));
 }
 
 #[test]
