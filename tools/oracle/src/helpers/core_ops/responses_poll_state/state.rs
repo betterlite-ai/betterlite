@@ -64,8 +64,26 @@ pub(super) async fn call_result(
         Ok(value) => (value, Value::Null),
         Err(failure) => (Value::Null, Value::String(label(&failure).to_owned())),
     };
-    let effects = snapshot_effects(cache, effects_start);
-    let logs = snapshot_logs(watch, logs_start);
+    let effects = Value::Array(
+        cache
+            .effects
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .skip(effects_start)
+            .cloned()
+            .collect(),
+    );
+    let logs = Value::Array(
+        watch
+            .lines
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .skip(logs_start)
+            .cloned()
+            .collect(),
+    );
     Ok(json!({
         "returned": returned,
         "error": error,
@@ -102,16 +120,6 @@ fn store_for(input: &Input, call: &StateCall, cache: &Arc<ScriptedCache>) -> Res
         ttl: call.ttl.unwrap_or(input.ttl),
         limits: ApiLimits::default(),
     }
-}
-
-fn snapshot_effects(cache: &ScriptedCache, start: usize) -> Value {
-    let guard = cache.effects.lock().unwrap_or_else(PoisonError::into_inner);
-    Value::Array(guard.iter().skip(start).cloned().collect())
-}
-
-fn snapshot_logs(watch: &Watch, start: usize) -> Value {
-    let guard = watch.lines.lock().unwrap_or_else(PoisonError::into_inner);
-    Value::Array(guard.iter().skip(start).cloned().collect())
 }
 
 async fn execute(

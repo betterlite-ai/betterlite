@@ -1,13 +1,18 @@
+use std::fmt::Debug;
+
 use betterlite_models::decisions::Json;
 
 use super::super::access::{PollAccess, PollDenial};
 use super::super::access::{PollCaller, PollOwner};
+use super::super::error::PollingError;
 use super::super::get_cache_key;
 use super::super::store::StoredPollState;
 use super::super::store::{NewPollRequest, ResponsePollingStore};
 use super::support::{self, CacheOperation, FakeCache};
 
 const ID: &str = "litellm_poll_owner";
+const COMPLETED: &str = r#"{"status":"completed"}"#;
+const LEGACY: &str = r#"{"id":"litellm_poll_legacy","status":"queued","output":[]}"#;
 const ENVELOPE: &str = concat!(
     r#"{"owner":{"user_id":"a","team_id":"t","key_fingerprint":"k"},"#,
     r#""response":{"id":"litellm_poll_owner","object":"response","#,
@@ -83,7 +88,7 @@ async fn assert_owner_update(
     access: PollAccess<'_>,
 ) {
     let _update = store
-        .update_state(ID, access, &support::patch(r#"{"status":"completed"}"#))
+        .update_state(ID, access, &support::patch(COMPLETED))
         .await
         .expect("the owner may patch the state");
     let envelope = support::stored(cache, ID);
@@ -150,55 +155,51 @@ async fn assert_auth_disabled(store: &ResponsePollingStore) {
     assert!(state.is_some());
 }
 
+async fn read_as(store: &ResponsePollingStore, caller: &PollCaller) -> bool {
+    store
+        .get_state(ID, support::access(caller))
+        .await
+        .expect("the caller reads the state")
+        .is_some()
+}
+
+fn assert_denied<T: Debug>(result: Result<T, PollingError>, denial: PollDenial) {
+    support::assert_denial(result.expect_err("the caller is denied"), denial);
+}
+
+async fn expect_denial(store: &ResponsePollingStore, caller: &PollCaller, denial: PollDenial) {
+    assert_denied(store.get_state(ID, support::access(caller)).await, denial);
+}
+
+async fn assert_update_denied(
+    store: &ResponsePollingStore,
+    id: &str,
+    caller: &PollCaller,
+    denial: PollDenial,
+) {
+    let result = store
+        .update_state(id, support::access(caller), &support::patch(COMPLETED))
+        .await;
+    assert_denied(result, denial);
+}
+
 async fn assert_user_denials(store: &ResponsePollingStore) {
     let other = support::caller(Some("b"), Some("t"), false, None);
-    support::assert_denial(
-        store
-            .get_state(ID, support::access(&other))
-            .await
-            .expect_err("another user is denied"),
-        PollDenial::User,
-    );
+    expect_denial(store, &other, PollDenial::User).await;
     let no_user = support::caller(None, Some("t"), false, None);
-    support::assert_denial(
-        store
-            .get_state(ID, support::access(&no_user))
-            .await
-            .expect_err("a caller without the record's user is denied"),
-        PollDenial::User,
-    );
+    expect_denial(store, &no_user, PollDenial::User).await;
 }
 
 async fn assert_team_denials(store: &ResponsePollingStore) {
     let other_team = support::caller(Some("a"), Some("x"), false, None);
-    support::assert_denial(
-        store
-            .update_state(
-                ID,
-                support::access(&other_team),
-                &support::patch(r#"{"status":"completed"}"#),
-            )
-            .await
-            .expect_err("another team is denied"),
-        PollDenial::Team,
-    );
+    assert_update_denied(store, ID, &other_team, PollDenial::Team).await;
     let no_team = support::caller(Some("a"), None, false, None);
-    support::assert_denial(
-        store
-            .get_state(ID, support::access(&no_team))
-            .await
-            .expect_err("a caller without the record's team is denied"),
-        PollDenial::Team,
-    );
+    expect_denial(store, &no_team, PollDenial::Team).await;
 }
 
 async fn assert_admin_reads(store: &ResponsePollingStore) {
     let admin = support::caller(Some("root"), Some("x"), true, None);
-    let state = store
-        .get_state(ID, support::access(&admin))
-        .await
-        .expect("the proxy admin reads everything");
-    assert!(state.is_some());
+    assert!(read_as(store, &admin).await);
 }
 
 pub(super) async fn fingerprint_denials(cache: &FakeCache, store: &ResponsePollingStore) {
@@ -238,67 +239,36 @@ pub(super) async fn fingerprint_denials(cache: &FakeCache, store: &ResponsePolli
 }
 
 pub(super) async fn record_shape_denials(cache: &FakeCache, store: &ResponsePollingStore) {
-    let writes = cache.count(CacheOperation::Write);
     let caller = support::caller(Some("a"), Some("t"), false, None);
-    assert_ownerless_denied(cache, store, &caller).await;
-    assert_anonymous_denied(cache, store, &caller).await;
-    assert_eq!(cache.count(CacheOperation::Write), writes);
+    let records = [
+        ("litellm_poll_legacy", LEGACY, PollDenial::OwnerlessRecord),
+        (
+            "litellm_poll_anonymous",
+            ANONYMOUS,
+            PollDenial::AnonymousRecord,
+        ),
+    ];
+    for (id, raw, denial) in records {
+        let read_start = cache.effects().len();
+        cache.seed(&get_cache_key(id), raw);
+        assert_denied(store.get_state(id, support::access(&caller)).await, denial);
+        assert_auth_disabled_reads(store, id).await;
+        assert_eq!(cache.effects().len(), read_start.saturating_add(2));
+    }
+    let update_start = cache.effects().len();
+    assert_update_denied(
+        store,
+        "litellm_poll_legacy",
+        &caller,
+        PollDenial::OwnerlessRecord,
+    )
+    .await;
+    assert_eq!(cache.effects().len(), update_start.saturating_add(1));
 }
 
-async fn assert_ownerless_denied(
-    cache: &FakeCache,
-    store: &ResponsePollingStore,
-    caller: &PollCaller,
-) {
-    let legacy_id = "litellm_poll_legacy";
-    cache.seed(
-        &get_cache_key(legacy_id),
-        r#"{"id":"litellm_poll_legacy","status":"queued","output":[]}"#,
-    );
-    support::assert_denial(
-        store
-            .get_state(legacy_id, support::access(caller))
-            .await
-            .expect_err("the ownerless record is denied"),
-        PollDenial::OwnerlessRecord,
-    );
-    let readable = store
-        .get_state(legacy_id, PollAccess::AuthDisabled)
-        .await
-        .expect("auth-disabled reads the ownerless record");
-    assert!(readable.is_some());
-    support::assert_denial(
-        store
-            .update_state(
-                legacy_id,
-                support::access(caller),
-                &support::patch(r#"{"status":"completed"}"#),
-            )
-            .await
-            .expect_err("the ownerless update is denied"),
-        PollDenial::OwnerlessRecord,
-    );
-}
-
-async fn assert_anonymous_denied(
-    cache: &FakeCache,
-    store: &ResponsePollingStore,
-    caller: &PollCaller,
-) {
-    let anonymous_id = "litellm_poll_anonymous";
-    cache.seed(&get_cache_key(anonymous_id), ANONYMOUS);
-    support::assert_denial(
-        store
-            .get_state(anonymous_id, support::access(caller))
-            .await
-            .expect_err("the anonymous record is denied"),
-        PollDenial::AnonymousRecord,
-    );
-    let readable = store
-        .get_state(anonymous_id, PollAccess::AuthDisabled)
-        .await
-        .expect("auth-disabled reads the anonymous record");
-    assert!(readable.is_some());
+async fn assert_auth_disabled_reads(store: &ResponsePollingStore, id: &str) {
+    let state = store.get_state(id, PollAccess::AuthDisabled).await;
+    assert!(state.expect("auth-disabled reads the record").is_some());
 }
 
 fn owned() -> Json {

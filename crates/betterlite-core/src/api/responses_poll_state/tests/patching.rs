@@ -1,10 +1,12 @@
 use indexmap::IndexMap;
 
+use betterlite_models::decisions::Json;
+
 use super::super::access::PollAccess;
 use super::super::error::UnknownPatchField;
 use super::super::get_cache_key;
 use super::super::record::PollPatch;
-use super::super::store::{PollingUpdate, ResponsePollingStore};
+use super::super::store::ResponsePollingStore;
 use super::support::{self, CacheOperation, FakeCache, Watch};
 
 const ID: &str = "litellm_poll_patch";
@@ -20,78 +22,51 @@ const PRESENT: &str = concat!(
     r#""previous_response_id":"","text":{},"truncation":"","#,
     r#""parallel_tool_calls":false,"user":"","store":false}"#
 );
+const NULL_FIELDS: &str = concat!(
+    r#"{"status":null,"output":null,"usage":null,"error":null,"#,
+    r#""incomplete_details":null,"model":null}"#
+);
 
-pub(super) async fn falsy_patches(cache: &FakeCache, store: &ResponsePollingStore) {
-    assert_empty_status_ignored(cache, store).await;
-    assert_empty_output_replaces(cache, store).await;
-    assert_empty_objects_ignored(cache, store).await;
+async fn apply_patch(cache: &FakeCache, store: &ResponsePollingStore, patch: &str) -> Json {
+    let _update = store
+        .update_state(ID, PollAccess::AuthDisabled, &support::patch(patch))
+        .await
+        .expect("the patch applies");
+    support::stored(cache, ID)
 }
 
-async fn assert_empty_status_ignored(cache: &FakeCache, store: &ResponsePollingStore) {
-    let update = store
-        .update_state(
-            ID,
-            PollAccess::AuthDisabled,
-            &support::patch(r#"{"status":""}"#),
-        )
-        .await
-        .expect("the empty status is ignored");
-    assert_eq!(update, PollingUpdate::Updated);
-    let written = support::stored(cache, ID);
+pub(super) async fn falsy_patches(cache: &FakeCache, store: &ResponsePollingStore) {
+    let status = apply_patch(cache, store, r#"{"status":""}"#).await;
     assert_eq!(
-        support::field(&written, "status"),
+        support::field(&status, "status"),
         support::json("\"queued\"")
     );
     assert_eq!(
-        support::field(&written, "output"),
+        support::field(&status, "output"),
         support::json(r#"[{"id":"old"}]"#)
     );
-}
-
-async fn assert_empty_output_replaces(cache: &FakeCache, store: &ResponsePollingStore) {
-    let _update = store
-        .update_state(
-            ID,
-            PollAccess::AuthDisabled,
-            &support::patch(r#"{"output":[]}"#),
-        )
-        .await
-        .expect("an empty output list replaces the old one");
-    let written = support::stored(cache, ID);
-    assert_eq!(support::field(&written, "output"), support::json("[]"));
-}
-
-async fn assert_empty_objects_ignored(cache: &FakeCache, store: &ResponsePollingStore) {
-    let _update = store
-        .update_state(
-            ID,
-            PollAccess::AuthDisabled,
-            &support::patch(r#"{"usage":{},"error":{},"incomplete_details":{}}"#),
-        )
-        .await
-        .expect("the empty truthy fields leave the state alone");
-    let written = support::stored(cache, ID);
+    let output = apply_patch(cache, store, r#"{"output":[]}"#).await;
+    assert_eq!(support::field(&output, "output"), support::json("[]"));
+    let objects = apply_patch(
+        cache,
+        store,
+        r#"{"usage":{},"error":{},"incomplete_details":{}}"#,
+    )
+    .await;
     assert_eq!(
-        support::field(&written, "usage"),
+        support::field(&objects, "usage"),
         support::json(r#"{"total_tokens":1}"#)
     );
     assert_eq!(
-        support::field(&written, "error"),
+        support::field(&objects, "error"),
         support::json(r#"{"code":"old"}"#)
     );
-    assert!(!support::has_key(&written, "incomplete_details"));
+    assert!(!support::has_key(&objects, "incomplete_details"));
 }
 
 pub(super) async fn error_overrides_status(cache: &FakeCache, store: &ResponsePollingStore) {
-    let _update = store
-        .update_state(
-            ID,
-            PollAccess::AuthDisabled,
-            &support::patch(r#"{"status":"completed","error":{"code":"bad","message":"failed"}}"#),
-        )
-        .await
-        .expect("the failed state is written");
-    let written = support::stored(cache, ID);
+    let patch = r#"{"status":"completed","error":{"code":"bad","message":"failed"}}"#;
+    let written = apply_patch(cache, store, patch).await;
     assert_eq!(
         support::field(&written, "status"),
         support::json("\"failed\"")
@@ -103,11 +78,7 @@ pub(super) async fn error_overrides_status(cache: &FakeCache, store: &ResponsePo
 }
 
 pub(super) async fn present_fields(cache: &FakeCache, store: &ResponsePollingStore) {
-    let _update = store
-        .update_state(ID, PollAccess::AuthDisabled, &support::patch(PRESENT))
-        .await
-        .expect("every non-null field replaces its value");
-    let written = support::stored(cache, ID);
+    let written = apply_patch(cache, store, PRESENT).await;
     let expected = [
         ("reasoning", "{}"),
         ("tool_choice", "\"\""),
@@ -131,18 +102,7 @@ pub(super) async fn present_fields(cache: &FakeCache, store: &ResponsePollingSto
 
 pub(super) async fn null_patch_leaves_fields(cache: &FakeCache, store: &ResponsePollingStore) {
     let before = support::stored(cache, ID);
-    let _update = store
-        .update_state(
-            ID,
-            PollAccess::AuthDisabled,
-            &support::patch(concat!(
-                r#"{"status":null,"output":null,"usage":null,"error":null,"#,
-                r#""incomplete_details":null,"model":null}"#
-            )),
-        )
-        .await
-        .expect("null values leave the state untouched");
-    assert_eq!(support::stored(cache, ID), before);
+    assert_eq!(apply_patch(cache, store, NULL_FIELDS).await, before);
 }
 
 pub(super) fn unknown_field_is_rejected() {

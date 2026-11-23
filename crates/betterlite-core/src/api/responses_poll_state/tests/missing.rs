@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use betterlite_models::decisions::Json;
 
 use crate::api::api_boundaries::ApiLimits;
@@ -8,6 +10,13 @@ use super::super::error::PollingError;
 use super::super::get_cache_key;
 use super::super::store::{PollingUpdate, ResponsePollingStore};
 use super::support::{self, CacheOperation, FakeCache, Watch};
+
+const PRESENT: &str = concat!(
+    r#"{"id":"litellm_poll_present","object":"response","#,
+    r#""status":"in_progress","output":[]}"#
+);
+const FAILING: &str = r#"{"id":"litellm_poll_failures","status":"in_progress","output":[]}"#;
+const COMPLETED: &str = r#"{"status":"completed"}"#;
 
 pub(super) async fn missing_state(cache: &FakeCache, store: &ResponsePollingStore) {
     let id = "litellm_poll_missing";
@@ -95,7 +104,7 @@ async fn assert_corrupt_values(cache: &FakeCache, store: &ResponsePollingStore) 
         .update_state(
             corrupt,
             PollAccess::AuthDisabled,
-            &support::patch(r#"{"status":"completed"}"#),
+            &support::patch(COMPLETED),
         )
         .await
         .expect_err("an unreadable cached value fails the update too");
@@ -107,11 +116,7 @@ pub(super) async fn untyped_state_update(cache: &FakeCache, store: &ResponsePoll
     let id = "litellm_poll_untyped";
     cache.seed(&get_cache_key(id), r#"{"output":{"not":"a list"}}"#);
     let update = store
-        .update_state(
-            id,
-            PollAccess::AuthDisabled,
-            &support::patch(r#"{"status":"completed"}"#),
-        )
+        .update_state(id, PollAccess::AuthDisabled, &support::patch(COMPLETED))
         .await
         .expect("a state without status or with a non-list output still updates");
     assert_eq!(update, PollingUpdate::Updated);
@@ -128,10 +133,7 @@ pub(super) async fn untyped_state_update(cache: &FakeCache, store: &ResponsePoll
 
 pub(super) async fn present_state(cache: &FakeCache, store: &ResponsePollingStore) {
     let id = "litellm_poll_present";
-    cache.seed(
-        &get_cache_key(id),
-        r#"{"id":"litellm_poll_present","object":"response","status":"in_progress","output":[]}"#,
-    );
+    cache.seed(&get_cache_key(id), PRESENT);
     assert_present_read(cache, store, id).await;
     assert_present_cancel(cache, store, id).await;
     assert_present_delete(cache, store, id).await;
@@ -176,87 +178,83 @@ async fn assert_present_cancel(cache: &FakeCache, store: &ResponsePollingStore, 
 }
 
 async fn assert_present_delete(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
-    let deleted = store.delete_polling(id).await.expect("the delete succeeds");
-    assert!(deleted);
+    assert!(store.delete_polling(id).await.expect("the delete succeeds"));
     assert!(cache.entry(&get_cache_key(id)).is_none());
-    let deleted_again = store
-        .delete_polling(id)
-        .await
-        .expect("a delete without a key still succeeds");
-    assert!(deleted_again);
+    assert!(
+        store
+            .delete_polling(id)
+            .await
+            .expect("a delete without a key still succeeds")
+    );
 }
 
 pub(super) async fn failing_cache(cache: &FakeCache, store: &ResponsePollingStore) {
     let id = "litellm_poll_failures";
-    cache.seed(
-        &get_cache_key(id),
-        r#"{"id":"litellm_poll_failures","status":"in_progress","output":[]}"#,
-    );
-    assert_read_failures(cache, store, id).await;
-    assert_write_failures(cache, store, id).await;
+    cache.seed(&get_cache_key(id), FAILING);
+    assert_read_failure(cache, store, id).await;
+    assert_read_failure_on_update(cache, store, id).await;
+    assert_write_failure_on_update(cache, store, id).await;
+    assert_write_failure_on_create(cache, store, id).await;
     assert_delete_failure(cache, store, id).await;
 }
 
-async fn assert_read_failures(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
-    cache.fail_next(CacheOperation::Read);
-    let error = store
-        .get_state(id, PollAccess::AuthDisabled)
+async fn complete(store: &ResponsePollingStore, id: &str) -> Result<PollingUpdate, PollingError> {
+    store
+        .update_state(id, PollAccess::AuthDisabled, &support::patch(COMPLETED))
         .await
-        .expect_err("the read error propagates");
+}
+
+fn expect_read_error<T: Debug>(result: Result<T, PollingError>) {
+    let error = result.expect_err("the read failure propagates");
     assert!(matches!(
         error,
         PollingError::Cache(PollingCacheError::Read(_))
     ));
-    cache.fail_next(CacheOperation::Read);
-    let update_error = store
-        .update_state(
-            id,
-            PollAccess::AuthDisabled,
-            &support::patch(r#"{"status":"completed"}"#),
-        )
-        .await
-        .expect_err("the update read error propagates");
-    assert!(matches!(
-        update_error,
-        PollingError::Cache(PollingCacheError::Read(_))
-    ));
 }
 
-async fn assert_write_failures(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
-    cache.fail_next(CacheOperation::Write);
-    let error = store
-        .update_state(
-            id,
-            PollAccess::AuthDisabled,
-            &support::patch(r#"{"status":"completed"}"#),
-        )
-        .await
-        .expect_err("the write error propagates");
+fn expect_write_error<T: Debug>(result: Result<T, PollingError>) {
+    let error = result.expect_err("the write failure propagates");
     assert!(matches!(
         error,
         PollingError::Cache(PollingCacheError::Write(_))
     ));
-    cache.fail_next(CacheOperation::Write);
-    let create_error = store
-        .create_initial_state(support::new_request(id, None))
-        .await
-        .expect_err("the create write error propagates");
-    assert!(matches!(
-        create_error,
-        PollingError::Cache(PollingCacheError::Write(_))
-    ));
 }
 
-async fn assert_delete_failure(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
-    cache.fail_next(CacheOperation::Delete);
-    let error = store
-        .delete_polling(id)
-        .await
-        .expect_err("the delete error propagates");
+fn expect_delete_error<T: Debug>(result: Result<T, PollingError>) {
+    let error = result.expect_err("the delete failure propagates");
     assert!(matches!(
         error,
         PollingError::Cache(PollingCacheError::Delete(_))
     ));
+}
+
+async fn assert_read_failure(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
+    cache.fail_next(CacheOperation::Read);
+    expect_read_error(store.get_state(id, PollAccess::AuthDisabled).await);
+}
+
+async fn assert_read_failure_on_update(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
+    cache.fail_next(CacheOperation::Read);
+    expect_read_error(complete(store, id).await);
+}
+
+async fn assert_write_failure_on_update(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
+    cache.fail_next(CacheOperation::Write);
+    expect_write_error(complete(store, id).await);
+}
+
+async fn assert_write_failure_on_create(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
+    cache.fail_next(CacheOperation::Write);
+    expect_write_error(
+        store
+            .create_initial_state(support::new_request(id, None))
+            .await,
+    );
+}
+
+async fn assert_delete_failure(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
+    cache.fail_next(CacheOperation::Delete);
+    expect_delete_error(store.delete_polling(id).await);
 }
 
 pub(super) async fn absent_cache() {
