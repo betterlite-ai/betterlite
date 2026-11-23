@@ -73,7 +73,7 @@ def _search_values(
     options = _build_search_optional_params(
         max_results, search_domain_filter, max_tokens_per_page, country
     )
-    values: dict[str, CallValue] = {
+    return {
         **options,
         "query": JSON.validate_python(query),
         "search_provider": search_provider,
@@ -88,7 +88,6 @@ def _search_values(
         "api_base": api_base,
         "extra_headers": extra_headers,
     }
-    return values
 
 
 # The native call and its exception family: the two twins differ only in the wait.
