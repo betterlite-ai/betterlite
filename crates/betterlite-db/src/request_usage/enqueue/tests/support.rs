@@ -137,7 +137,7 @@ pub(super) struct TurnCase {
 
 impl TurnCase {
     pub(super) fn new() -> Self {
-        let logs = SpendLogQueue::new(1_048_576);
+        let logs = SpendLogQueue::new(0x0010_0000);
         let signal = Arc::new(Notify::new());
         logs.set_flush_signal(Some(Arc::clone(&signal)));
         Self {

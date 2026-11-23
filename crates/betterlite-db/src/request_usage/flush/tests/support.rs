@@ -123,7 +123,7 @@ impl Harness {
         let trace = Trace::default();
         Self {
             trace: trace.clone(),
-            logs: SpendLogQueue::new(8_388_608),
+            logs: SpendLogQueue::new(0x0080_0000),
             tool_usage: UsageQueue::new(20_000).unwrap(),
             model_usage: UsageQueue::new(20_000).unwrap(),
             turns_queue: UsageQueue::new(20_000).unwrap(),

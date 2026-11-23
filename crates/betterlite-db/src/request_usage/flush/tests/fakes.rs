@@ -13,8 +13,8 @@ use crate::baseline::records::BaselineAccountingRecord;
 use crate::baseline::store::error::StoreError;
 use crate::baseline::store::{AppendResult, BaselineAccounting, ProjectResult};
 use crate::guardrail_usage_rollups::{
-    GuardrailCounts, GuardrailFailure as GuardrailRollupFailure, GuardrailIndexRow,
-    GuardrailRollupSink, MetricsKey, RollupFuture, UsageUnitIncrement, UsageUnitKey,
+    GuardrailCounts, GuardrailIndexRow, GuardrailRollupFailure, GuardrailRollupSink, MetricsKey,
+    RollupFuture, UsageUnitIncrement, UsageUnitKey,
 };
 use crate::key_user_writes::retry::WriteClock;
 use crate::migration_ledger::lock::JitterSource;
