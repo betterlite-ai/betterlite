@@ -281,6 +281,7 @@ def test_error_class_and_client() -> None:
             LITELLM.get_assistants("openai", api_key=BAD_KEY, api_base=server.url)
         assert type(ours.value).__name__ == type(reference.value).__name__
         assert ours.value.status_code == UNAUTHORIZED_STATUS
+        assert ours.value.model == ""
         assert "Incorrect API key" in str(ours.value)
         assert "Incorrect API key" in str(reference.value)
         with pytest.raises(errors.BadRequestError) as ours_unsupported:
