@@ -1,0 +1,47 @@
+kind: helper
+name: queued-record-and-cache-key
+call:
+  responses_poll_state:
+    now: 1700000000
+    ttl: 3600
+    uuid: "00000000-0000-4000-8000-000000000001"
+    calls:
+      - op: generate
+        polling_id: ""
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: create
+        polling_id: litellm_poll_queued
+        redis: true
+        ttl: null
+        metadata:
+          trace: a
+        patch: {}
+        seed: null
+      - op: get
+        polling_id: litellm_poll_queued
+        redis: true
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+      - op: create
+        polling_id: litellm_poll_short_ttl
+        redis: true
+        ttl: 17
+        metadata: null
+        patch: {}
+        seed: null
+      - op: create
+        polling_id: litellm_poll_no_cache
+        redis: false
+        ttl: null
+        metadata: null
+        patch: {}
+        seed: null
+    selections: []
+env: {}
+compare: {ignore: []}

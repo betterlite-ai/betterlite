@@ -1,0 +1,114 @@
+kind: helper
+name: polling-patch-truthiness
+call:
+  responses_poll_state:
+    now: 1700000000
+    ttl: 3600
+    uuid: "00000000-0000-4000-8000-000000000001"
+    calls:
+      - op: update
+        polling_id: litellm_poll_falsy
+        redis: true
+        ttl: null
+        metadata: null
+        seed:
+          raw: null
+          response:
+            id: litellm_poll_falsy
+            object: response
+            status: queued
+            output:
+              - id: old
+            usage:
+              total_tokens: 1
+            error:
+              code: old
+            incomplete_details:
+              reason: old
+        patch:
+          status: ""
+          output: []
+          usage: {}
+          error: {}
+          incomplete_details: {}
+      - op: update
+        polling_id: litellm_poll_error
+        redis: true
+        ttl: null
+        metadata: null
+        seed:
+          raw: null
+          response:
+            id: litellm_poll_error
+            object: response
+            status: queued
+            output:
+              - id: old
+            usage:
+              total_tokens: 1
+            error:
+              code: old
+        patch:
+          status: completed
+          error:
+            code: bad
+            message: failed
+      - op: update
+        polling_id: litellm_poll_present
+        redis: true
+        ttl: null
+        metadata: null
+        seed:
+          raw: null
+          response:
+            id: litellm_poll_present
+            object: response
+            status: queued
+            output:
+              - id: old
+            usage:
+              total_tokens: 1
+            error:
+              code: old
+        patch:
+          status: null
+          output: null
+          reasoning: {}
+          tool_choice: ""
+          tools: []
+          model: ""
+          instructions: ""
+          temperature: 0
+          top_p: 0
+          max_output_tokens: 0
+          previous_response_id: ""
+          text: {}
+          truncation: ""
+          parallel_tool_calls: false
+          user: ""
+          store: false
+      - op: update
+        polling_id: litellm_poll_usage
+        redis: true
+        ttl: 17
+        metadata: null
+        seed:
+          raw: null
+          response:
+            id: litellm_poll_usage
+            object: response
+            status: queued
+            output:
+              - id: old
+            usage:
+              total_tokens: 1
+            error:
+              code: old
+        patch:
+          usage:
+            total_tokens: 2
+          incomplete_details:
+            reason: max_output_tokens
+    selections: []
+env: {}
+compare: {ignore: []}

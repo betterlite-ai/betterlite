@@ -1,0 +1,24 @@
+kind: sdk_http
+name: decisions-send-systemone-typesafe
+env: {}
+call:
+  decisions_send:
+    runs:
+      - model: model-1
+        questions: {first: {type: noul, instructions: "Is it true?"}}
+        custom_llm_provider: typesafe
+        api_key: sk-call
+        api_base: "{mock}"
+        kwargs: {state: "The order shipped on Tuesday."}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      model: model-1
+      answers: {first: {type: noul, noul: 0.9}}
+      usage: {input_tokens: 3, output_tokens: 5}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
