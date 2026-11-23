@@ -3515,6 +3515,10 @@ name = "betterlite-oracle-prometheus"
 version = "0.1.0"
 dependencies = [
  "betterlite-oracle-helper-api",
+ "betterlite-prometheus",
+ "flate2",
+ "rust_decimal",
+ "serde",
  "serde_json",
 ]
 
@@ -4017,9 +4021,15 @@ dependencies = [
 name = "betterlite-prometheus"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "flate2",
+ "futures-util",
+ "indexmap",
  "rstest",
  "rust_decimal",
  "thiserror",
+ "tokio",
+ "tower",
  "tracing",
 ]
 
