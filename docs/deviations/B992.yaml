@@ -19,7 +19,7 @@ deviations:
       An invalid virtual key with no database answers 400 with betterlite's own message "the API key is not valid", where LiteLLM reports the ProxyException message "No connected db.".
     why: >-
       Status, type no_db_connection, null param and code "400" match LiteLLM; the authentication stage (B003) owns the wording, and auth_invalid.yaml ignores /error/message.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1883-L1888
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2125-L2133
 kept_bugs:
   - what: >-
       The name-conflict answer says "A skill named '<name>' already exists. Update the existing skill instead of adding it again." for a plugin, and betterlite keeps that wording.
