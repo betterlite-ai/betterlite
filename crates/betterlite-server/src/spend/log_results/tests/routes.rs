@@ -44,7 +44,7 @@ async fn an_internal_user_reads_only_their_own_rows() {
         summary_failure: None,
         aggregate_failure: None,
     };
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let reply = call(
         state(Some(Arc::new(fake))),
         "/spend/logs?user_id=root&api_key=sk-live&request_id=r1&start_date=2024-01-02&end_date=2024-01-03&summarize=false",
@@ -73,7 +73,7 @@ async fn an_internal_user_reads_only_their_own_rows() {
 #[tokio::test]
 async fn an_internal_user_without_a_user_id_reads_every_user() {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let reply = call(
         state(Some(Arc::new(fake))),
         "/spend/logs?user_id=root&summarize=false",
@@ -91,7 +91,7 @@ async fn an_internal_user_without_a_user_id_reads_every_user() {
 #[tokio::test]
 async fn an_admin_keeps_the_requested_user() {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let reply = call(
         state(Some(Arc::new(fake))),
         "/spend/logs?user_id=bob&summarize=false",
@@ -109,7 +109,7 @@ async fn an_admin_keeps_the_requested_user() {
 #[tokio::test]
 async fn a_viewer_keeps_the_requested_user() {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let reply = call(
         state(Some(Arc::new(fake))),
         "/spend/logs?user_id=bob&summarize=false",
@@ -125,7 +125,7 @@ async fn a_viewer_keeps_the_requested_user() {
 #[tokio::test]
 async fn an_api_key_that_is_not_sk_is_read_as_is() {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let reply = call(
         state(Some(Arc::new(fake))),
         "/spend/logs?api_key=raw-key&summarize=false",
@@ -146,7 +146,7 @@ async fn an_api_key_that_is_not_sk_is_read_as_is() {
 #[tokio::test]
 async fn one_date_alone_lists_rows_and_ignores_summarize(#[case] uri: &str) {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let reply = call(state(Some(Arc::new(fake))), uri, Some(&admin())).await;
     assert_eq!(reply.status, StatusCode::OK);
     let recorded = seen(&events);
@@ -172,7 +172,7 @@ async fn a_summary_pads_only_after_the_last_day_through_end_date() {
         summary_failure: None,
         aggregate_failure: None,
     };
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let reply = call(
         state(Some(Arc::new(fake))),
         "/spend/logs?api_key=sk-live&request_id=r1&start_date=2024-01-02&end_date=2024-01-04",
@@ -221,7 +221,7 @@ async fn no_database_answers_the_exact_error() {
 #[tokio::test]
 async fn a_signed_year_is_forwarded_instead_of_refused() {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let reply = call(
         state(Some(Arc::new(fake))),
         "/spend/logs?start_date=-100-01-01&end_date=2024-01-01&summarize=false",
@@ -249,7 +249,7 @@ async fn no_database_wins_over_a_bad_date() {
 #[tokio::test]
 async fn a_bad_date_answers_the_parse_error() {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let reply = call(
         state(Some(Arc::new(fake))),
         "/spend/logs?start_date=2024-13-01&end_date=2024-01-02",

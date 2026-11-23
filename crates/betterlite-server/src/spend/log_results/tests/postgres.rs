@@ -241,21 +241,21 @@ async fn session_aggregates_group_by_session_and_key() {
     let aggregates = store.session_aggregates(&lookup).await.unwrap();
     assert_eq!(aggregates.len(), 5);
     let shared = find(&aggregates, "s1", "k1");
-    assert_eq!(shared.session_total_count, 4);
+    assert_eq!(shared.session_total_count, 4_i32);
     assert_eq!(shared.session_total_spend, decimal("1"));
     assert_eq!(shared.session_total_duration_ms, 5_200);
-    assert_eq!(shared.mcp_tool_call_count, 1);
+    assert_eq!(shared.mcp_tool_call_count, 1_i32);
     assert_eq!(shared.mcp_tool_call_spend, decimal("0.25"));
-    assert_eq!(shared.session_cache_hit_count, 1);
-    assert_eq!(shared.session_llm_count, 2);
-    assert_eq!(shared.session_agent_count, 1);
+    assert_eq!(shared.session_cache_hit_count, 1_i32);
+    assert_eq!(shared.session_llm_count, 2_i32);
+    assert_eq!(shared.session_agent_count, 1_i32);
     assert_eq!(shared.session_total_prompt_tokens, 11);
     assert_eq!(shared.session_completion_tokens, 22);
     assert_eq!(shared.session_total_tokens, 35);
     assert_eq!(shared.session_models, ["gpt-4o"]);
     assert!(!shared.session_models_truncated);
     let other_key = find(&aggregates, "s1", "k2");
-    assert_eq!(other_key.session_total_count, 1);
+    assert_eq!(other_key.session_total_count, 1_i32);
     assert_eq!(other_key.session_total_spend, decimal("9"));
 }
 
@@ -271,7 +271,7 @@ async fn session_models_stop_at_ten_after_the_name_is_cut() {
     };
     let aggregates = store.session_aggregates(&lookup).await.unwrap();
     let eleven = find(&aggregates, "s2", "k1");
-    assert_eq!(eleven.session_total_count, 12);
+    assert_eq!(eleven.session_total_count, 12_i32);
     assert_eq!(
         eleven.session_models,
         [

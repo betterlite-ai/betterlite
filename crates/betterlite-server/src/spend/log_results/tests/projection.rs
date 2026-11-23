@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::JsonData;
 
@@ -35,11 +36,11 @@ fn object(value: &JsonData) -> &BTreeMap<String, JsonData> {
 #[tokio::test]
 async fn identical_session_ids_stay_separate_per_key() {
     let mut second = aggregate("s1", "k2");
-    second.session_total_count = 9;
+    second.session_total_count = 9_i32;
     second.session_total_spend = decimal("9.5");
     // a key the page never shows must not reach either row, even with the same session id
     let mut stranger = aggregate("s1", "k3");
-    stranger.session_total_count = 99;
+    stranger.session_total_count = 99_i32;
     let fake = Fake {
         events: Events::default(),
         rows: Vec::new(),
@@ -49,7 +50,7 @@ async fn identical_session_ids_stay_separate_per_key() {
         summary_failure: None,
         aggregate_failure: None,
     };
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let rows = vec![
         list_row("r1", Some("s1"), Some("k1")),
         list_row("r2", Some("s1"), Some("k2")),
@@ -68,7 +69,7 @@ async fn identical_session_ids_stay_separate_per_key() {
 #[tokio::test]
 async fn the_lookup_holds_truthy_ids_and_non_null_keys_once() {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let rows = vec![
         list_row("r1", Some("s1"), Some("k1")),
         list_row("r2", Some("s1"), Some("k1")),
@@ -87,7 +88,7 @@ async fn the_lookup_holds_truthy_ids_and_non_null_keys_once() {
 #[tokio::test]
 async fn rows_without_a_session_id_skip_the_query() {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let rows = vec![
         list_row("r1", None, Some("k1")),
         list_row("r2", Some(""), Some("k1")),
@@ -102,7 +103,7 @@ async fn rows_without_a_session_id_skip_the_query() {
 #[tokio::test]
 async fn a_row_without_stats_counts_one_call_and_invents_no_fields() {
     let fake = Fake::default();
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let built = build(
         Some(&fake),
         blank_page(vec![list_row("r1", Some("s1"), Some("k1"))]),
@@ -189,7 +190,7 @@ async fn a_zero_mcp_count_adds_neither_mcp_field() {
 #[tokio::test]
 async fn a_nonzero_mcp_count_adds_both_mcp_fields() {
     let mut stats = aggregate("s1", "k1");
-    stats.mcp_tool_call_count = 2;
+    stats.mcp_tool_call_count = 2_i32;
     stats.mcp_tool_call_spend = decimal("0.5");
     let fake = Fake {
         events: Events::default(),
@@ -275,7 +276,7 @@ async fn public_v2_skips_the_query_and_keeps_the_envelope() {
         summary_failure: None,
         aggregate_failure: None,
     };
-    let events = fake.events.clone();
+    let events = Arc::clone(&fake.events);
     let rows = vec![list_row("r1", Some("s1"), Some("k1"))];
     let built = build(Some(&fake), blank_page(rows), false).await;
     assert!(seen(&events).is_empty());

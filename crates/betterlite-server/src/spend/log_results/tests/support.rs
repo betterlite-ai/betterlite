@@ -117,10 +117,7 @@ fn outcome<Item>(failure: Option<Failure>, values: &[Item]) -> Result<Vec<Item>,
 where
     Item: Clone,
 {
-    match failure {
-        Some(failure) => Err(failure.store_error()),
-        None => Ok(values.to_vec()),
-    }
+    failure.map_or_else(|| Ok(values.to_vec()), |error| Err(error.store_error()))
 }
 
 #[async_trait]
@@ -159,10 +156,10 @@ impl SessionAggregateReader for Fake {
                 lookup.api_keys.join("|")
             ),
         );
-        match self.aggregate_failure {
-            Some(failure) => Err(failure.reader_error()),
-            None => Ok(self.aggregates.clone()),
-        }
+        self.aggregate_failure.map_or_else(
+            || Ok(self.aggregates.clone()),
+            |error| Err(error.reader_error()),
+        )
     }
 }
 
@@ -224,8 +221,8 @@ pub(super) fn list_row(
     session_id: Option<&str>,
     api_key: Option<&str>,
 ) -> SpendLogListRow {
-    let session = session_id.map_or(String::from("null"), |id| format!("\"{id}\""));
-    let key = api_key.map_or(String::from("null"), |key| format!("\"{key}\""));
+    let session = session_id.map_or_else(|| String::from("null"), |id| format!("\"{id}\""));
+    let key = api_key.map_or_else(|| String::from("null"), |key| format!("\"{key}\""));
     let text = format!(
         "{{\"request_id\":\"{request_id}\",\"call_type\":\"acompletion\",\"api_key\":{key},\"startTime\":\"2026-01-01T00:00:00+00:00\",\"endTime\":\"2026-01-01T00:00:01+00:00\",\"session_id\":{session}}}"
     );
