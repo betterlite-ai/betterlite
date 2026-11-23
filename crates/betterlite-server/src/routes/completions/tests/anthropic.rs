@@ -77,6 +77,20 @@ struct TextCacheCreation {
     ephemeral_1h_input_tokens: i64,
 }
 
+// the adapter's closing frame when the caller asks for usage; its details outrun the chat usage type
+#[derive(Deserialize)]
+struct UsageFrame {
+    usage: Option<StreamedUsage>,
+}
+
+#[derive(Deserialize)]
+struct StreamedUsage {
+    prompt_tokens: i64,
+    completion_tokens: i64,
+    total_tokens: i64,
+    prompt_tokens_details: TextPromptDetails,
+}
+
 fn local_environment() -> BTreeMap<String, String> {
     BTreeMap::from([(
         String::from("LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS"),
@@ -120,6 +134,16 @@ fn stream_events(events: &[&str]) -> String {
         body.push_str("\n\n");
         body
     })
+}
+
+// the last frame the route sends with a usage object: the adapter's closing usage chunk
+fn closing_usage(raw: &str) -> StreamedUsage {
+    raw.lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .filter_map(|frame| serde_json::from_str::<UsageFrame>(frame).ok())
+        .filter_map(|frame| frame.usage)
+        .last()
+        .expect("the closing usage frame")
 }
 
 async fn buffered_text() {
@@ -229,23 +253,16 @@ async fn usage_stream_text() {
         "{}",
         answered.raw
     );
-    assert!(
-        answered.raw.contains(r#""prompt_tokens":10"#),
-        "{}",
-        answered.raw
-    );
-    assert!(
-        answered.raw.contains(r#""total_tokens":12"#),
-        "{}",
-        answered.raw
-    );
-    assert!(
-        answered.raw.contains(
-            r#""cache_creation_token_details":{"ephemeral_5m_input_tokens":8,"ephemeral_1h_input_tokens":0}"#
-        ),
-        "{}",
-        answered.raw
-    );
+    let usage = closing_usage(&answered.raw);
+    assert_eq!(usage.prompt_tokens, 10);
+    assert_eq!(usage.completion_tokens, 2);
+    assert_eq!(usage.total_tokens, 12);
+    let details = usage
+        .prompt_tokens_details
+        .cache_creation_token_details
+        .expect("the streamed cache breakdown");
+    assert_eq!(details.ephemeral_5m_input_tokens, 8);
+    assert_eq!(details.ephemeral_1h_input_tokens, 0);
     assert!(
         answered.raw.ends_with("data: [DONE]\n\n"),
         "{:?}",
