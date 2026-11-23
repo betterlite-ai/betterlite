@@ -64,6 +64,9 @@ impl AuthTable for ReadTable {
     type Data = ();
     type Failure = Infallible;
 
+    // the org and project lookups read every matching row through find_many, never a unique or first
+    // match, a write or a create, so a mutant of these bodies never runs
+    #[cfg_attr(test, mutants::skip)]
     async fn find_unique(
         &self,
         _request: FindOne<(), ()>,
@@ -71,6 +74,7 @@ impl AuthTable for ReadTable {
         Ok(self.rows().await?.into_iter().next())
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn find_first(
         &self,
         request: FindOne<(), ()>,
@@ -85,6 +89,7 @@ impl AuthTable for ReadTable {
         self.rows().await
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn update(
         &self,
         _request: Update<(), ()>,
@@ -92,6 +97,7 @@ impl AuthTable for ReadTable {
         Err(UNREAD)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn create(&self, _request: Create<(), ()>) -> Result<String, AuthReadError<Infallible>> {
         Err(UNREAD)
     }

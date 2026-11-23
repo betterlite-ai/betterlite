@@ -13,11 +13,24 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
+use crate::auth_org_lookup::error::{OrgFailure, OrgLookupError, is_outage};
 use crate::auth_org_lookup::ports::OrgStore as _;
 use crate::auth_org_lookup::store::DatabaseOrgStore;
 use crate::auth_prefetch::rows::CachedProject;
 
 const SEED: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (budget_id, max_budget, allowed_models, created_by, updated_by) VALUES ('b1', 10.5, ARRAY['gpt-4o']::TEXT[], 'a', 'a'); INSERT INTO \"LiteLLM_OrganizationTable\" (organization_id, organization_alias, budget_id, created_by, updated_by) VALUES ('o1', 'acme', 'b1', 'a', 'a'), ('o2', 'shared', 'b1', 'a', 'a'), ('o3', 'shared', 'b1', 'a', 'a'); INSERT INTO \"LiteLLM_ProjectTable\" (project_id, project_alias, budget_id, created_by, updated_by) VALUES ('p1', 'proj', 'b1', 'a', 'a')";
+
+// Postgres has no SELECT trigger, so the org table becomes a view whose predicate raises the server's
+// stale-plan message, the one driver error that only the message tells apart from an ordinary fault
+const STALE_PLAN_SETUP: &str = "
+ALTER TABLE \"LiteLLM_OrganizationTable\" RENAME TO \"LiteLLM_OrganizationTable_base\";
+CREATE FUNCTION raise_select_error() RETURNS boolean LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'cached plan must not change result type';
+END
+$$;
+CREATE VIEW \"LiteLLM_OrganizationTable\" AS
+    SELECT * FROM \"LiteLLM_OrganizationTable_base\" WHERE raise_select_error()";
 
 #[derive(Parser)]
 struct Environment {
@@ -114,6 +127,19 @@ async fn relation_projection() {
         .reader_unavailable
         .store(true, Ordering::SeqCst);
     assert!(writer_only.find_org("o1", false).await.unwrap().is_some());
+
+    store
+        .session()
+        .await
+        .unwrap()
+        .batch_execute(STALE_PLAN_SETUP)
+        .await
+        .unwrap();
+    let stale = database.find_org("o1", false).await.unwrap_err();
+    assert!(
+        is_outage(&OrgLookupError::Failure(OrgFailure::Store(stale))),
+        "a stale plan on the replica is an outage, not a missing row"
+    );
 
     database.tasks.close();
     database.tasks.wait().await;

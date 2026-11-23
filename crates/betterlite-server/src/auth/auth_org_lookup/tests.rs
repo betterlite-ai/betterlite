@@ -10,7 +10,11 @@ use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
+use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_auth::auth_org_lookup::error::{OrgFailure, OrgLookupError};
+use betterlite_auth::auth_org_lookup::organization::OrgLookup;
+use betterlite_auth::auth_org_lookup::ports::OrgCache;
+use betterlite_auth::auth_prefetch::rows::CachedProject;
 use betterlite_auth::auth_read::table::AuthReadError;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -275,4 +279,70 @@ async fn failure_stops_downstream() {
         "{failure_body}"
     );
     assert!(!failure_reached);
+}
+
+// the cache the real lookup is built with when a test only needs the domain answer
+struct NoCache;
+
+#[async_trait]
+impl OrgCache for NoCache {
+    async fn read_org(
+        &self,
+        _key: &str,
+        _local_only: bool,
+    ) -> Result<Option<OrganizationTable>, AuthCacheError> {
+        Ok(None)
+    }
+
+    async fn write_org(
+        &self,
+        _key: &str,
+        _org: &OrganizationTable,
+        _ttl: f64,
+    ) -> Result<(), AuthCacheError> {
+        Ok(())
+    }
+
+    async fn read_project(&self, _key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
+        Ok(None)
+    }
+
+    async fn write_project(
+        &self,
+        _key: &str,
+        _project: &CachedProject,
+        _ttl: f64,
+    ) -> Result<(), AuthCacheError> {
+        Ok(())
+    }
+
+    fn management_ttl(&self) -> f64 {
+        60.0_f64
+    }
+}
+
+#[tokio::test]
+async fn the_trait_runs_the_production_lookup() {
+    let lookup = OrgLookup {
+        store: None,
+        cache: Arc::new(NoCache),
+        in_memory_ttl: 5.0_f64,
+    };
+    let error = lookup
+        .org_object("o1", &AllowRequestsOnOutage::Boolean(false))
+        .await
+        .unwrap_err();
+    assert_eq!(error.http(), None);
+    assert!(matches!(error, OrgLookupError::NoDatabase));
+}
+
+#[test]
+fn rule_debug_shows_the_org_id() {
+    let rule = OrgRule {
+        org_id: Some("o1".to_owned()),
+        ..OrgRule::default()
+    };
+    let rendered = format!("{rule:?}");
+    assert!(rendered.starts_with("OrgRule"), "{rendered}");
+    assert!(rendered.contains("\"o1\""), "{rendered}");
 }
