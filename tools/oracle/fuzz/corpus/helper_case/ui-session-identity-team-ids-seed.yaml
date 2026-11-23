@@ -1,0 +1,10 @@
+kind: helper
+name: ui-session-identity-team-ids-seed
+call:
+  b10070:
+    operation: team_ids
+    auth: {team_id: litellm-dashboard, user_id: user-1, requires_fresh_policy: true}
+    database: true
+    lookup: {kind: teams, teams: [team-1, "", team-1, litellm-dashboard]}
+env: {}
+compare: {ignore: []}
