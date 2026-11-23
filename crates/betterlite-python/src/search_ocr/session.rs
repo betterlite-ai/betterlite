@@ -15,14 +15,22 @@ use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::ClientPool;
 use betterlite_logging::logging_pre_post::env::{LogRecord, LogSink};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
+use betterlite_ocr::ocr_input::wire::{OcrWireRequest, decode_request_input};
+use betterlite_ocr::ocr_route::aocr;
+use betterlite_ocr::ocr_settings::OcrSettings;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_wrapper::error::plain_error;
 use serde::Serialize;
 
-use self::logging::{class_failure, runtime_config};
-use super::convert::{ConvertError, CostAnswer, CostCall, SearchAnswer, SearchCall, SessionWire};
+use self::logging::{class_failure, logging_state, pre_post_env, provider_of};
+use super::convert::{
+    ConvertError, CostAnswer, CostCall, OcrAnswer, OcrCall, SearchAnswer, SearchCall, SessionWire,
+    resolve_document,
+};
 use super::error::{NativeFailure, SessionError};
 use super::pricing::CatalogPricing;
+use crate::completion::setup::runtime_config;
+use crate::search_ocr::ocr_client;
 
 mod logging;
 mod ocr;
@@ -73,8 +81,8 @@ impl SessionCore {
             environment: &self.environment,
         };
         let sink = SilentSink;
-        let env = self.pre_post_env(&sink);
-        let mut state = self.logging_state(&request.search_provider)?;
+        let env = pre_post_env(self, &sink);
+        let mut state = logging_state(self, &request.search_provider)?;
         let mut log = LogContext {
             state: &mut state,
             env: &env,
@@ -109,6 +117,47 @@ impl SessionCore {
             catalog: Arc::clone(&self.catalog),
         };
         encode(&cost_answer(&pricing, call).await?)
+    }
+
+    // litellm.ocr: bind the request, run the provider call and hand back the normalized response
+    pub(crate) async fn ocr(
+        &self,
+        call: OcrCall,
+        blobs: &[Vec<u8>],
+    ) -> Result<String, NativeFailure> {
+        let provider = provider_of(&call.model, call.custom_llm_provider.as_deref()).to_owned();
+        let model = call.model.clone();
+        let document = resolve_document(&call.document, blobs)
+            .map_err(|error| ocr::ocr_failure(self, &error, &model, &provider))?;
+        let optional_params = ocr::consumed_params(self, &call, &model, &provider)?;
+        let wire = OcrWireRequest {
+            model: call.model,
+            document,
+            api_key: call.api_key,
+            api_base: call.api_base,
+            custom_llm_provider: call.custom_llm_provider,
+            extra_headers: call.extra_headers,
+            optional_params,
+            input_sources: call.input_sources,
+            timeout_seconds: call.timeout_seconds,
+        };
+        let request = decode_request_input(wire)
+            .map_err(|error| ocr::ocr_failure(self, &error, &model, &provider))?;
+        let client = ocr_client::build(
+            &self.pool,
+            &self.tls,
+            &self.proxy,
+            OcrSettings::from_environment(&self.environment),
+            &self.environment,
+        )
+        .map_err(|source| NativeFailure::Session(SessionError::Client { source }))?;
+        match aocr(client, request).await {
+            Ok(response) => encode(&OcrAnswer {
+                response: &response,
+                provider_native_response: response.provider_native_response.as_ref(),
+            }),
+            Err(error) => Err(ocr::ocr_failure(self, &error, &model, &provider)),
+        }
     }
 }
 

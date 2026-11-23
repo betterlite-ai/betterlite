@@ -2,7 +2,7 @@
 
 use betterlite_ocr::json::Json;
 
-use super::SessionCore;
+use super::{SessionCore, consumed_params};
 use crate::search_ocr::convert::OcrCall;
 
 #[test]
@@ -16,8 +16,7 @@ fn consumed_params_keeps_only_the_names_the_provider_reads() {
         }"#,
     )
     .expect("the ocr call parses");
-    let kept = session
-        .consumed_params(&call, "mistral-ocr-latest", "mistral")
+    let kept = consumed_params(&session, &call, "mistral-ocr-latest", "mistral")
         .expect("the provider config resolves");
     assert_eq!(
         kept.get("req_format"),
