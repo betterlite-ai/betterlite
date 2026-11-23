@@ -1,7 +1,7 @@
 task: B7874
 deviations:
   - what: A non-None client or shared_session raises UnsupportedCallArgument, where LiteLLM forwards the Python client to its SDK handler.
-    why: A Python HTTP client cannot drive the Rust request path (B158); every endpoint family refuses the same two arguments, and test_error_class_and_cause covers the ordinary path.
+    why: A Python HTTP client cannot drive the Rust request path (B158); every endpoint family refuses the same two arguments, and test_error_client_is_refused proves this family does too.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L239-L241
   - what: This task ships no helper oracle cases; the pytest checks run both packages against one local HTTP server and compare the recorded request and the returned job.
     why: The fine-tuning calls need an HTTP server to answer them, and the case env the oracle caches cannot carry one.
@@ -14,7 +14,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L77-L93
   - what: A 409 answer and any status outside 400, 401, 403, 404, 422, 429 and 5xx raise APIError, where the openai client raises ConflictError for 409 and APIStatusError elsewhere.
     why: The family's error table predates this task and has no ConflictError entry; the status code and response body are still on the raised error.
-    link: ""
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L100
   - what: A structured timeout becomes one request deadline (read, then connect, write and pool), and no attempt is retried, where LiteLLM hands the httpx.Timeout and max_retries to the SDK client.
     why: The Rust outbound request carries a single deadline, and the timeout resolution belongs to B2487.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L191-L194

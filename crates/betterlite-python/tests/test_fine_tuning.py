@@ -20,6 +20,7 @@ from tuning_server import (
     TuningServer,
 )
 
+from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._native import NativeTuningError
 from betterlite.exceptions import AuthenticationError
 from betterlite.fine_tuning.main import (
@@ -426,3 +427,8 @@ def test_error_class_and_cause() -> None:
             pass
         case BaseException() | None:
             raise AssertionError("the provider error kept no native cause")
+
+
+def test_error_client_is_refused() -> None:
+    with pytest.raises(UnsupportedCallArgument):
+        create_fine_tuning_job(model=MODEL, training_file=TRAINING_FILE, client="client")
