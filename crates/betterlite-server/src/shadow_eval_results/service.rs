@@ -90,10 +90,8 @@ fn newest_first(legs: Vec<LegRow>) -> Vec<(String, Vec<LegRow>)> {
         by_group.entry(leg.group_id.clone()).or_default().push(leg);
     }
     let mut groups: Vec<(String, Vec<LegRow>)> = by_group.into_iter().collect();
-    groups.sort_by_key(|(_group_id, group_legs)| Reverse(newest_leg(group_legs)));
+    groups.sort_by_key(|(_group_id, group_legs)| {
+        Reverse(group_legs.iter().map(|leg| leg.created_at).max())
+    });
     groups
-}
-
-fn newest_leg(legs: &[LegRow]) -> Option<DateTime<Utc>> {
-    legs.iter().map(|leg| leg.created_at).max()
 }

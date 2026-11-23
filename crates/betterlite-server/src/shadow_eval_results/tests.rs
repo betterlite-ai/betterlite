@@ -199,12 +199,12 @@ impl ShadowResultsRepository for FakeStore {
         &self,
         leg_ids: &[String],
     ) -> RepositoryResult<Vec<LegAttemptCount>> {
-        Ok(self
-            .counts
+        let found: Vec<LegAttemptCount> = leg_ids
             .iter()
-            .filter(|row| leg_ids.contains(&row.job_id))
+            .flat_map(|leg_id| self.counts.iter().filter(move |row| row.job_id == *leg_id))
             .cloned()
-            .collect())
+            .collect();
+        Ok(found)
     }
 
     async fn funnel_totals(&self, _leg_ids: &[String]) -> RepositoryResult<Option<FunnelTotals>> {
@@ -307,9 +307,17 @@ fn list_store() -> FakeStore {
     FakeStore {
         legs: vec![older, newer, sibling],
         counts: vec![count("leg-1", 2, "0.5"), count("leg-2", 1, "0.25")],
+        totals: None,
+        errors: Vec::new(),
+        by_tier: Vec::new(),
+        by_model: Vec::new(),
+        by_leg: Vec::new(),
+        by_router: Vec::new(),
+        funnel: None,
         keys: vec![label("k1", Some("key alias"), Some("sk-...abcd"))],
         teams: vec![label("t1", Some("team alias"), None)],
-        ..FakeStore::default()
+        users: Vec::new(),
+        list_calls: Mutex::new(Vec::new()),
     }
 }
 
@@ -532,17 +540,14 @@ async fn assert_statuses(case: StatusCase) {
 }
 
 fn assert_labels(jobs: &[ShadowJobResponse], expected: &[(&str, Option<&str>, Option<&str>)]) {
-    let seen: Vec<(&str, Option<&str>, Option<&str>)> = jobs
-        .iter()
-        .flat_map(|job| job.job.targets.iter())
-        .map(|target| {
-            (
-                target.target_id.as_str(),
-                target.target_alias.as_deref(),
-                target.key_name.as_deref(),
-            )
-        })
-        .collect();
+    let mut seen: Vec<(&str, Option<&str>, Option<&str>)> = Vec::new();
+    for target in jobs.iter().flat_map(|job| job.job.targets.iter()) {
+        seen.push((
+            target.target_id.as_str(),
+            target.target_alias.as_deref(),
+            target.key_name.as_deref(),
+        ));
+    }
     assert_eq!(seen, expected);
 }
 

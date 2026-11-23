@@ -33,8 +33,7 @@ pub struct Output {
     steps: Vec<StepOutcome>,
 }
 
-// A dumped response keeps the wire shape LiteLLM's own model_dump_json writes, so the
-// comparison is field for field instead of a hand-copied view of every response field.
+// a dumped response keeps the wire shape LiteLLM's model_dump_json writes, field for field
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 enum StepOutcome {
@@ -105,7 +104,7 @@ async fn scenario(input: &Input) -> Result<Output, OperationError> {
         .unwrap_or(0);
     let now = timestamp(millis)?;
     let store = ProbeStore::build(payload)?;
-    let steps: Vec<Step> = payload_list(payload, "steps")?;
+    let steps: Vec<Step> = payload_optional(payload, "steps")?.unwrap_or_default();
     let mut outcomes = Vec::with_capacity(steps.len());
     for step in &steps {
         let outcome = match step {
@@ -136,7 +135,10 @@ async fn list_outcome(
     };
     match list_shadow_eval_jobs(store, &query, now).await {
         Ok(jobs) => Ok(StepOutcome::Listed {
-            jobs: jobs.iter().map(response).collect::<Result<_, _>>()?,
+            jobs: jobs
+                .iter()
+                .map(|job| serde_json::to_value(job).map_err(invalid))
+                .collect::<Result<_, _>>()?,
         }),
         Err(error) => Ok(StepOutcome::Failed {
             status: error.status_code(),
@@ -163,7 +165,7 @@ fn job_outcome(
 ) -> Result<StepOutcome, OperationError> {
     match result {
         Ok(job) => Ok(StepOutcome::Detailed {
-            job: response(&job)?,
+            job: serde_json::to_value(&job).map_err(invalid)?,
         }),
         Err(error) => Ok(StepOutcome::Failed {
             status: error.status_code(),
@@ -182,10 +184,6 @@ fn viewer<'store>(
             status: error.status_code(),
         }
     })
-}
-
-fn response(job: &ShadowJobResponse) -> Result<Value, OperationError> {
-    serde_json::to_value(job).map_err(invalid)
 }
 
 fn query_bytes(step: &ListStep) -> Result<Vec<u8>, OperationError> {
@@ -215,13 +213,6 @@ const fn role_name(role: Role) -> Option<&'static str> {
         Role::InternalUser => Some("internal_user"),
         Role::Customer => Some("customer"),
     }
-}
-
-fn payload_list<T>(payload: &Value, name: &'static str) -> Result<Vec<T>, OperationError>
-where
-    T: DeserializeOwned,
-{
-    Ok(payload_optional(payload, name)?.unwrap_or_default())
 }
 
 fn payload_optional<T>(payload: &Value, name: &'static str) -> Result<Option<T>, OperationError>

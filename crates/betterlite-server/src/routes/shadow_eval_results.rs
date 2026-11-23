@@ -19,6 +19,8 @@ use crate::shadow_eval_results::service::{get_shadow_eval_job, list_shadow_eval_
 use crate::state::ServerState;
 use crate::tracing_routes::router::unauthenticated;
 
+const VIEW_ACTION: &str = "view shadow evals";
+
 // what the listing and detail reads open, resolved once when the router is built
 struct ResultsState {
     store: Option<Arc<PgShadowResults>>,
@@ -40,62 +42,48 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         .with_state(results)
 }
 
-// FastAPI validates the query before the endpoint runs and checks the role before the database
+// FastAPI checks the auth (401) before it validates the query (422); the endpoint checks the role (403)
 async fn list_route(
     State(state): State<Arc<ResultsState>>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
-) -> Response {
-    let identity = match identity_of_caller(caller.as_ref()) {
-        Ok(identity) => identity,
-        Err(response) => return *response,
-    };
-    let query = match decode_shadow_query(raw_query.as_deref().unwrap_or_default().as_bytes()) {
-        Ok(query) => query,
-        Err(error) => return failure(&ShadowResultsRouteError::from(error)),
-    };
-    let store = match require_viewer(&identity, "view shadow evals", state.store.as_deref()) {
-        Ok(store) => store,
-        Err(error) => return failure(&error),
-    };
-    match list_shadow_eval_jobs(store, &query, Utc::now()).await {
-        Ok(jobs) => Json(jobs).into_response(),
-        Err(error) => failure(&error),
-    }
+) -> Result<Response, Response> {
+    let identity = identity_of_caller(caller.as_ref())?;
+    let query = decode_shadow_query(raw_query.as_deref().unwrap_or_default().as_bytes())
+        .map_err(|error| failure(&ShadowResultsRouteError::from(error)))?;
+    let store = require_viewer(&identity, VIEW_ACTION, state.store.as_deref())
+        .map_err(|error| failure(&error))?;
+    let jobs = list_shadow_eval_jobs(store, &query, Utc::now())
+        .await
+        .map_err(|error| failure(&error))?;
+    Ok(Json(jobs).into_response())
 }
 
 async fn detail_route(
     State(state): State<Arc<ResultsState>>,
     Path(job_id): Path<String>,
     caller: Option<Extension<AuthContext>>,
-) -> Response {
-    let identity = match identity_of_caller(caller.as_ref()) {
-        Ok(identity) => identity,
-        Err(response) => return *response,
-    };
-    let store = match require_viewer(&identity, "view shadow evals", state.store.as_deref()) {
-        Ok(store) => store,
-        Err(error) => return failure(&error),
-    };
+) -> Result<Response, Response> {
+    let identity = identity_of_caller(caller.as_ref())?;
+    let store = require_viewer(&identity, VIEW_ACTION, state.store.as_deref())
+        .map_err(|error| failure(&error))?;
     match get_shadow_eval_job(store, &job_id, Utc::now()).await {
-        Ok(job) => Json(job).into_response(),
-        Err(error) => failure(&error),
+        Ok(job) => Ok(Json(job).into_response()),
+        Err(error) => Err(failure(&error)),
     }
 }
 
-fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, Box<Response>> {
+fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, Response> {
     let Some(extension) = caller else {
-        return Err(Box::new(unauthenticated()));
+        return Err(unauthenticated());
     };
     caller_identity(&extension.principal).map_err(|error| {
         let detail = format!("the caller's identity could not be read: {error}");
-        Box::new(
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(DetailBody { detail }),
-            )
-                .into_response(),
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(DetailBody { detail }),
         )
+            .into_response()
     })
 }
 

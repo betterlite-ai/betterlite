@@ -18,7 +18,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{payload_list, payload_optional};
+use super::payload_optional;
 use crate::router_probes::error::OperationError;
 
 // an error attempt seed as the stored row carries it, before the leg id joins it to its job
@@ -58,7 +58,8 @@ pub(super) struct ProbeStore {
 impl ProbeStore {
     pub(super) fn build(payload: &Value) -> Result<Self, OperationError> {
         let rows: LabelRows = payload_optional(payload, "rows")?.unwrap_or_default();
-        let errors: Vec<(String, ErrorAttempt)> = payload_list::<ErrorRow>(payload, "errors")?
+        let error_rows: Vec<ErrorRow> = payload_optional(payload, "errors")?.unwrap_or_default();
+        let errors: Vec<(String, ErrorAttempt)> = error_rows
             .into_iter()
             .map(|row| {
                 let attempt = ErrorAttempt {
@@ -69,24 +70,20 @@ impl ProbeStore {
             })
             .collect();
         Ok(Self {
-            legs: payload_list(payload, "jobs")?,
-            counts: payload_list(payload, "counts")?,
+            legs: payload_optional(payload, "jobs")?.unwrap_or_default(),
+            counts: payload_optional(payload, "counts")?.unwrap_or_default(),
             totals: payload_optional(payload, "totals")?,
             errors,
-            by_tier: payload_list(payload, "by_tier")?,
-            by_model: payload_list(payload, "by_model")?,
-            by_leg: payload_list(payload, "by_leg")?,
-            by_router: payload_list(payload, "by_router")?,
+            by_tier: payload_optional(payload, "by_tier")?.unwrap_or_default(),
+            by_model: payload_optional(payload, "by_model")?.unwrap_or_default(),
+            by_leg: payload_optional(payload, "by_leg")?.unwrap_or_default(),
+            by_router: payload_optional(payload, "by_router")?.unwrap_or_default(),
             funnel: payload_optional(payload, "funnel")?,
             keys: rows.keys,
             teams: rows.teams,
             users: rows.users,
         })
     }
-}
-
-fn newest(legs: &[LegRow]) -> Option<DateTime<Utc>> {
-    legs.iter().map(|leg| leg.created_at).max()
 }
 
 #[async_trait]
@@ -106,7 +103,7 @@ impl ShadowLegReads for ProbeStore {
             }
         }
         let mut groups: Vec<(String, Vec<&LegRow>)> = selected.into_iter().collect();
-        groups.sort_by_key(|(_group, legs)| Reverse(newest(legs)));
+        groups.sort_by_key(|(_group, legs)| Reverse(legs.iter().map(|leg| leg.created_at).max()));
         let keep = usize::try_from(limit).unwrap_or(usize::MAX);
         let wanted: Vec<&str> = groups
             .iter()

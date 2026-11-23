@@ -18,13 +18,17 @@ fn state() -> Arc<ResultsState> {
 // the middleware answers an absent caller, so neither handler may run its own read first
 #[tokio::test]
 async fn an_unauthenticated_list_answers_401() {
-    let response = list_route(State(state()), None, RawQuery(None)).await;
+    let response = list_route(State(state()), None, RawQuery(None))
+        .await
+        .unwrap_err();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
 async fn an_unauthenticated_detail_answers_401() {
-    let response = detail_route(State(state()), Path("job-1".to_owned()), None).await;
+    let response = detail_route(State(state()), Path("job-1".to_owned()), None)
+        .await
+        .unwrap_err();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
