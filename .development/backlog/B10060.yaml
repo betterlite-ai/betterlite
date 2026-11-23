@@ -1,0 +1,14 @@
+id: B10060
+milestone: M5 api families
+title: Deployment credential lookup and merge
+status: done
+depends_on: [B176, B9964, B171]
+file: tasks/B10060-model-credentials.yaml
+covers:
+  - "litellm/proxy/openai_files_endpoints/common_utils.py"
+parent: B087
+split_from: B1020
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3053

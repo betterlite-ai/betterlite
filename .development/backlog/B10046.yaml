@@ -1,7 +1,7 @@
 id: B10046
 milestone: M2 routing
 title: IO token and remaining usage rate-limit headers
-status: todo
+status: done
 depends_on: [B206, B365]
 file: tasks/B10046-remaining-usage-headers.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/router_utils/add_retry_fallback_headers.py"
 parent: B019
 split_from: B019
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3041

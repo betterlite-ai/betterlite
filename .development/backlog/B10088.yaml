@@ -1,0 +1,14 @@
+id: B10088
+milestone: M4 keys, spend and management
+title: Budget reservation lookup and callback binding in request metadata
+status: done
+depends_on: []
+file: tasks/B10088-reservation-binding.yaml
+covers:
+  - "litellm/litellm_core_utils/core_helpers.py"
+parent: B069
+split_from: B1719
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3065

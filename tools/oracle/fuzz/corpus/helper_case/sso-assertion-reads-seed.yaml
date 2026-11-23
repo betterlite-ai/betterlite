@@ -1,0 +1,13 @@
+kind: helper
+name: sso-assertion-reads-seed
+call:
+  b10064:
+    database: true
+    rows: []
+    failure: null
+    steps:
+      - {step: persist, user_id: alice, assertion: {id_token: seed-token}}
+      - {step: fetch, user_id: alice}
+      - {step: fetch_uncached, user_id: alice}
+env: {}
+compare: {ignore: []}

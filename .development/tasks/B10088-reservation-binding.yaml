@@ -1,0 +1,92 @@
+id: B10088
+title: Budget reservation lookup and callback binding in request metadata
+description: >-
+  B3609's pass-through stream marks the request's budget reservation as owned by the success callbacks right after it enqueues the logging call, and B1719's spend settlement works on the reservation the cost callback reads out of the request metadata. Both use only LiteLLM's reservation helpers in core_helpers.py L369-L406, not B1719's settlement coordinator. This task builds those helpers. B1719 first planned them in betterlite-auth, but betterlite-auth depends on betterlite-logging, where B3609's code lives, so that call would be a crate cycle. They go in betterlite-logging instead: its LoggingState holds litellm_params, and betterlite-server, betterlite-core and betterlite-sdk all reach it.
+
+
+  Layout. Module reservation_binding in betterlite-logging, crates/betterlite-logging/src/reservation_binding.rs, with its tests in reservation_binding/tests.rs. The file is an empty stub lib.rs already declares. The inputs are the JSON maps the logging object already carries: litellm_params and each metadata bucket are `IndexMap<String, Json>` with betterlite_models::decisions::Json, as LoggingState.litellm_params is. The module needs no auth type and touches no reservation counter.
+
+
+  The lookup. `reservation_from_metadata(metadata: &IndexMap<String, Json>) -> Option<&IndexMap<String, Json>>` is LiteLLM's budget_reservation_from_metadata with _budget_reservation_on_auth_object folded in. The direct stamp user_api_key_budget_reservation wins when it is an object. Otherwise the answer is the budget_reservation member of user_api_key_auth, when user_api_key_auth is an object and that member is an object too. Any other value, null included, counts as absent, and a direct stamp that is not an object does not hide a valid auth-object reservation. LiteLLM's getattr branch reads a UserAPIKeyAuth object; in betterlite's metadata the auth record is already JSON, so the object branch covers it.
+
+
+  The stamp. `stamp_callback_bound(litellm_params: &mut IndexMap<String, Json>, callback_bound: bool)` covers _stamp_budget_reservation_callback_bound and both public wrappers: bind_budget_reservation_to_callbacks is a call with true, unbind_budget_reservation_from_callbacks a call with false. Write no wrapper for either (rules.yaml no-one-line-functions, and both LiteLLM names are over the 30-character limit); name them in the doc comment so a reader can trace them. For "metadata" and then "litellm_metadata": skip a bucket that is absent or not an object, find its reservation by the lookup rule, and set that reservation's callback_bound member to the bool, replacing it in place when present and appending it when missing. Never create a bucket, a reservation or an auth record. In LiteLLM both buckets usually point at one shared dict; here each bucket holds its own copy, so stamping both gives the same records.
+
+
+  The binder port. Declare `pub trait ReservationBinder: Send + Sync` here with one method, `fn bind(&self, litellm_params: &mut IndexMap<String, Json>)`. Callers in betterlite-logging (B3609's stream) and betterlite-server (B3607's byte relay) bind through it, since the reservation record they must also mark, B3003's ReservationHandle, lives in betterlite-auth, which betterlite-logging cannot reach. B1719's reservation_state provides the production binder; this module only declares the trait, with no implementation and no test of its own.
+
+
+  Oracle. Helper cases on the b10088 operation with two variants. lookup takes one metadata bucket and answers the reservation or null. stamp takes litellm_params and the bool and answers litellm_params after the stamp. The Python adapter builds plain dicts from the case and calls budget_reservation_from_metadata, bind_budget_reservation_to_callbacks and unbind_budget_reservation_from_callbacks from litellm.litellm_core_utils.core_helpers; the Rust side calls the two production functions. Add helper_case corpus seeds named reservation-binding-*. These cases replace the two reservation_state cases B1719 had planned.
+
+
+  Tests in reservation_binding/tests.rs, names starting with lookup_ or stamp_, as rstest tables. Lookup: the direct stamp over an auth-object reservation, the auth object alone, a direct stamp that is null, a list or text falling back to the auth object, an auth object that is not an object, and nothing at all. Stamp: both buckets holding a reservation, only litellm_metadata holding one, a bucket that is not an object skipped, no bucket created when absent, an existing callback_bound replaced in place, a missing one appended, and unbind after bind leaving false.
+scope:
+  paths:
+    - crates/betterlite-logging/src/reservation_binding.rs
+    - crates/betterlite-logging/src/reservation_binding/**
+    - tools/oracle/cases/helpers/reservation-binding/**
+    - tools/oracle/fuzz/corpus/helper_case/reservation-binding-*
+    - tools/oracle/helpers/b10088.py
+    - tools/oracle/helpers/b10088/**
+    - tools/oracle/src/helpers/logging/b10088.rs
+    - tools/oracle/src/helpers/logging/b10088/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L369-L406
+    why: Owned. _budget_reservation_on_auth_object, budget_reservation_from_metadata, _stamp_budget_reservation_callback_bound and the bind and unbind wrappers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L235-L275
+    why: Call site. The pass-through stream binds after arming deferred logging or after a successful enqueue, in B3609's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L675-L676
+    why: Call site. The cost callback reads the reservation through budget_reservation_from_metadata before settlement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2001-L2007
+    why: Call site. The SDK client wrapper binds before the call runs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2209-L2214
+    why: Call site. The SDK client wrapper unbinds after a failed call.
+dod:
+  - text: reservation_from_metadata prefers an object direct stamp, falls back to the auth record's object budget_reservation, and treats every non-object value as absent.
+    proof: [lookup-tests, oracle, helper-python]
+  - text: stamp_callback_bound sets callback_bound on the reservation of each existing object bucket, metadata and litellm_metadata, replacing it in place or appending it, and creates no bucket or reservation.
+    proof: [stamp-tests, oracle]
+  - text: New reservation-binding seeds for b10088 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: lookup-tests
+      why: The auth record's reservation wins over the direct stamp, or a non-object value is taken as a reservation.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^reservation_binding::tests::lookup_/)'
+    - id: stamp-tests
+      why: A bucket is skipped, created or stamped on the wrong reservation, or callback_bound moves position.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^reservation_binding::tests::stamp_/)'
+    - id: helper-python
+      why: The b10088 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10088.py tools/oracle/helpers/b10088)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10088 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/reservation-binding-*")" &&
+        grep -lE '^[[:space:]]+b10088:' tools/oracle/fuzz/corpus/helper_case/reservation-binding-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-logging --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/reservation-binding/direct-stamp-over-auth-record.yaml
+  - tools/oracle/cases/helpers/reservation-binding/non-object-values-absent.yaml
+  - tools/oracle/cases/helpers/reservation-binding/bind-both-buckets.yaml
+  - tools/oracle/cases/helpers/reservation-binding/unbind-without-creating.yaml
+deviations: []
+out_of_scope:
+  - "The settlement coordinator, its port and its cleanup order in proxy_track_cost_callback.py: B1719. The cost callback that reads the reservation: B069."
+  - "Reservation records, settlement, release and ReservationHandle: B3003 in betterlite-auth. The request-end release layer: B8270."
+  - "Setting callback_bound on B3003's ReservationHandle, which the request-end release reads, and the production ReservationBinder that does it together with this stamp: B1719's betterlite-auth reservation_state."
+  - "Choosing when to bind or unbind: each caller (B3609, B3607, the pass-through endpoints and the SDK client wrapper)."
+  - "litellm/litellm_core_utils/core_helpers.py: every other function, with B206 and the owners B1719's out_of_scope names."
+pitfalls:
+  - "isinstance(stamped, dict) decides the lookup, so a direct stamp of null, a list or a string falls through to the auth record instead of hiding it."
+  - "Python's dict assignment keeps an existing callback_bound where it is and appends a new one at the end; IndexMap::insert does the same, while shift_remove and insert would move it."
+  - "The stamp walks metadata before litellm_metadata and skips a bucket that is not a mapping; creating an empty bucket would change what later readers of litellm_params see."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

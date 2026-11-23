@@ -3,13 +3,15 @@ title: Native compaction loopback executor
 description: >-
   Port litellm/proxy/native_compaction.py (90 lines). When a request asks for native compaction, the router needs a
   summary from a model, and LiteLLM gets it by sending a second, child request to its own proxy over an in-memory ASGI
-  client. The file builds that executor. B336 owns the router side: the executor trait (LiteLLM's `CompactionExecutor`),
-  `native_compaction_call` and the code that asks the executor for a summary. This task builds the executor that answers.
+  client. The file builds that executor. B10084 owns the executor trait (LiteLLM's `CompactionExecutor`) and
+  `native_compaction_call` in betterlite-router's compaction_executor module, and B336 owns the code that asks the
+  executor for a summary. This task builds the executor that answers.
 
   Code goes in crates/betterlite-server/src/compaction_loopback.rs and compaction_loopback/. Files: executor.rs (the
   struct and the trait impl), target.rs (the child path and URL), headers.rs (the header filter) and error.rs.
   `LoopbackError` is a thiserror enum with `ChildFailed { status: u16 }`, `InvalidChildBody` and `MissingModel`.
-  Each maps to HTTP 400 with the type `invalid_request_error`, like LiteLLM's BadRequestError.
+  Each maps to HTTP 400 with the type `invalid_request_error`, like LiteLLM's BadRequestError, and execute hands it
+  back inside B10084's CompactionExecutorError so its text reaches B336 unchanged.
 
   `LoopbackExecutor` holds the app service to call (the same axum router the gateway serves, taken as a tower
   `Service` the caller passes in, so no network is used), the parent request's URL, its `root_path` (the mount
@@ -18,8 +20,8 @@ description: >-
   inherited privacy context variable each time it is called (native_compaction.py L42), and B336 sets that variable
   right before the summary call. So the flag is an argument of each call.
 
-  Its `execute(protocol, payload, parent_model, logging_disabled)` method implements B336's executor trait: `protocol`
-  is `chat` or `messages`, `payload` is a JSON object, `parent_model` is an optional string and `logging_disabled` is the
+  Its `execute(protocol, payload, parent_model, logging_disabled)` method implements B10084's CompactionExecutor trait: `protocol`
+  is B3545's CompactionProtocol (chat or messages), `payload` is a JSON object (B3545's Mapping), `parent_model` is an optional string and `logging_disabled` is the
   bool B336 decided for this summary call. It does this:
   1. The child path is `/v1/chat/completions` for chat and `/v1/messages` for messages. The URL is the parent URL with
      its path replaced by `root_path` (trailing slashes cut) plus the child path, and with the query and fragment removed.
@@ -30,7 +32,7 @@ description: >-
      lowercase compare is the same.
   3. The model name is `payload["model"]` as text. A missing or non-string model is `MissingModel`. LiteLLM raises a
      KeyError there.
-  4. Around the call, B336's `native_compaction_call(parent_model, model)` scope is held, and the message logging
+  4. Around the call, B10084's `native_compaction_call(parent_model, model)` scope is held, and the message logging
      privacy flag (B188's PrivacyContext) is set to the call's `logging_disabled`. B336 already ORed in what the parent
      inherited, and LiteLLM runs the child in a fresh context, so nothing else is inherited. Both scopes must also be on
      the task that runs the child request, because LiteLLM starts it with a fresh context copy and the scopes were set
@@ -60,7 +62,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L86-L90
     why: Installing the executor for one call. That stays with the request pipeline.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L40-L60
-    why: The executor protocol and its context variable. B336 turns them into a trait.
+    why: The executor protocol and its context variable. B10084 turns them into a trait.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L351-L355
     why: UNTRUSTED_REQUEST_HEADER_CONTROL_FIELDS holds the one name, litellm-disable-message-redaction.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L15-L21
@@ -109,7 +111,7 @@ deviations:
     why: Same effect, no socket, and axum already serves a tower service.
 
 out_of_scope:
-  - "CompactionExecutor, native_compaction_call, the compaction state and the summary request: B336."
+  - "CompactionExecutor, CompactionExecutorError and native_compaction_call: B10084. The compaction state and the summary request: B336."
   - "The privacy scope itself (inherit_message_logging_privacy): B188."
   - "Building the executor from the client request: B100. Passing it to B336's compact_to_fit on the gateway routes (common_request_processing.py L2626, native_compaction.py L86-L90): B9810."
   - "get_async_asgi_client (litellm/llms/custom_httpx/asgi_handler.py): B171 inventory, replaced here by the tower service."

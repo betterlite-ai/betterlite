@@ -1,0 +1,101 @@
+id: B10050
+title: End-user id from request headers and body
+description: >-
+  Three callers read the caller's end-user id the way LiteLLM's get_end_user_id_from_request_body does: B880's end-user auth stage, B3630's end_user_from_request_body for pass-through cost logging, and B3604's _get_user_from_metadata. Only B880 then checks the id against the database. This task builds the lookup alone, so the two logging callers no longer wait for B880's database half, and B880 calls it instead of building it.
+
+
+  Layout. Module extraction under betterlite-logging's end_user module: crates/betterlite-logging/src/end_user/extraction.rs, with tests in end_user/extraction/tests.rs. The file is an empty stub that end_user.rs (B1716's module, merged) declares; nothing else in end_user changes. The home is betterlite-logging on purpose: B3604 is in betterlite-logging and betterlite-auth depends on betterlite-logging, so a module in betterlite-auth would be a crate cycle for B3604, while betterlite-auth (B880) and betterlite-server (B3630) already depend on betterlite-logging. It also reaches B192's safe_json_loads and B3865's python_json in the same crate.
+
+
+  Settings. No new config section. `IdSettings<'config>` borrows B1104's `betterlite_config::sections::request_headers::Settings`, which already loads general_settings.user_header_mappings (a list of header_name and litellm_user_role, internal_user or customer, empty by default) and general_settings.user_header_name (None by default), and carries `validate_end_user_id_in_db: bool` from B1218's `sections::end_user_registry::Settings` (litellm_settings.validate_end_user_id_in_db, false by default). Callers build it from config.sections; nothing here reads a global.
+
+
+  The lookup. `request_end_user_id(body: &JsonObject, headers: Option<&HeaderMap>, settings: &IdSettings<'_>) -> Option<String>`, with betterlite_models' JsonObject and http's HeaderMap, tries these sources in order and returns the first one that coerces to an id. With headers: first `standard_header_id`, which reads x-litellm-customer-id and then x-litellm-end-user-id (LiteLLM's STANDARD_CUSTOMER_ID_HEADERS) whatever is configured; then the configured headers. `customer_header_names(mappings)` returns the lowercased header_name of every customer mapping whose name is not empty, in list order; internal_user mappings are never read here. When that list is not empty, its headers are tried in order, and user_header_name is skipped even if none of them is on the request. When the list is empty, user_header_name is tried if it is not blank after trimming; the name is matched as configured, so a name with spaces around it matches no header. Without headers, both header steps are skipped, which is how the pass-through callers call it. Then the body: "user", litellm_metadata's "user", metadata's "user_id", and "safety_identifier". litellm_metadata and metadata count only as objects: an object is read as is, a string goes through safe_json_loads and counts only when it decodes to an object, and anything else, malformed text included, is an empty object. That is LiteLLM's nested _as_dict, not B884's _coerce_metadata_to_dict.
+
+
+  Coercion. `coerce_user_id(value, validate)` is _coerce_user_id_to_str: null, booleans, lists and objects give None; a number gives Python's str text, taken from python_json::dumps of the number, so 7 is "7", 1.50 is "1.5" and 1e3 is "1000.0"; a string is trimmed and a blank one gives None. When validate is on and the trimmed text starts with { or [, it goes through safe_json_loads and is dropped only when that yields an object or a list; malformed text and JSON scalars stay. Header values are text and take the same string path.
+
+
+  Oracle. Helper cases on the b10050 operation, one settings snapshot and a list of requests per case (body, and headers or null), answering the list of ids. The Python side sets proxy_server.general_settings to the case's user_header_mappings and user_header_name and litellm.validate_end_user_id_in_db, then calls get_end_user_id_from_request_body for each request. The Rust side builds IdSettings and a HeaderMap from the same input and calls request_end_user_id. Cases send settings of the declared types: user_header_mappings as a list of mappings with a known role.
+
+
+  Tests in end_user/extraction/tests.rs: standard_headers_first, standard_header_casefold, blank_standard_header_falls_through, customer_mappings_in_order, absent_mapped_header_blocks_legacy, legacy_name_needs_text, internal_user_mapping_ignored, no_headers_skips_header_steps, body_source_order, metadata_string_object_only, numbers_use_python_text, trim_blank_bool_and_structures, json_text_dropped_when_validating and malformed_json_text_kept.
+scope:
+  paths:
+    - crates/betterlite-logging/src/end_user/extraction.rs
+    - crates/betterlite-logging/src/end_user/extraction/**
+    - tools/oracle/cases/helpers/end-user-id/**
+    - tools/oracle/fuzz/corpus/helper_case/end-user-id-*
+    - tools/oracle/helpers/b10050.py
+    - tools/oracle/helpers/b10050/**
+    - tools/oracle/src/helpers/logging/b10050.rs
+    - tools/oracle/src/helpers/logging/b10050/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1511-L1530
+    why: Owned. get_customer_user_header_from_mapping, the customer header names in list order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1533-L1557
+    why: Owned. _get_customer_id_from_standard_headers, the two standard headers in order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1560-L1592
+    why: Owned. _coerce_user_id_to_str and its validate_end_user_id_in_db gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1595-L1678
+    why: Owned. get_end_user_id_from_request_body, the six checks and the nested _as_dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1583-L1588
+    why: STANDARD_CUSTOMER_ID_HEADERS and their order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L476
+    why: litellm.validate_end_user_id_in_db, False by default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L87-L94
+    why: Call site without headers in the pass-through logging base class (B3630, B3604).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1902
+    why: Call site with the request headers, followed by B880's database validation.
+dod:
+  - text: The standard headers come first, then the customer mappings in list order, then user_header_name only when no customer mapping names a header, then the four body sources; a call without headers skips both header steps.
+    proof: [extraction-tests, oracle, helper-python]
+  - text: litellm_metadata and metadata count only as objects or as strings that decode to objects, and ids are trimmed, blanks, booleans and structures skipped, and numbers written as Python writes them.
+    proof: [extraction-tests, oracle, helper-python]
+  - text: With validate_end_user_id_in_db on, an id whose text decodes to an object or list is skipped and malformed JSON text is kept; with it off, both are kept.
+    proof: [extraction-tests, oracle, helper-python, helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: extraction-tests
+      why: The end-user id lookup reads a source out of order, coerces a value differently or ignores the validation flag.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^end_user::extraction::/)'
+    - id: helper-python
+      why: The b10050 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10050.py tools/oracle/helpers/b10050)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10050 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/end-user-id-*")" &&
+        grep -lE 'b10050"?:' tools/oracle/fuzz/corpus/helper_case/end-user-id-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-logging --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/end-user-id/header-sources.yaml
+  - tools/oracle/cases/helpers/end-user-id/legacy-header-name.yaml
+  - tools/oracle/cases/helpers/end-user-id/body-sources.yaml
+  - tools/oracle/cases/helpers/end-user-id/json-text-validation.yaml
+deviations:
+  - what: A metadata or litellm_metadata string, or an id starting with { or [, longer than 1 MiB or nested past 64 levels counts as malformed, so the metadata reads as empty and the id is kept even with validation on.
+    why: B192's safe_json_loads bounds every untrusted JSON string; LiteLLM's json.loads has no size bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py#L9-L16
+out_of_scope:
+  - "resolve_and_validate_end_user_id and _end_user_id_exists_in_db (auth_checks.py L1981-L2083), the database check, its cache and the auth stage that calls this lookup: B880."
+  - "safe_json_loads, its bounds and its fuzz target: B192. Number text: B3865's python_json. Loading user_header_mappings and user_header_name: B1104; validate_end_user_id_in_db: B1218."
+  - "The internal_user header mapping and the deprecated user_header_name as forwarded user information: B1104 (betterlite-core request_headers::user_mapping)."
+  - "Other functions in auth_utils.py: B054 owns the custom auth warnings (L1361-L1415), B741 and B882 the request route helpers (L621-L837), B744 the pre-DB checks and size limits (L41-L108, L562-L618, L840-L946), B745 the rate limit and output token helpers (L950-L1342), B746 the model candidates (L1731-L2083), B881 the SSO readiness checks and abbreviate_api_key (L1431-L1508, L2086-L2089), B884 the request body safety checks (L159-L559)."
+  - "check_complete_credentials, get_team_model_rpm_limit, get_team_model_tpm_limit, get_project_model_rpm_limit, get_project_model_tpm_limit and is_pass_through_provider_route in auth_utils.py: no caller at the pin."
+pitfalls:
+  - "Starlette decodes header bytes as latin-1, so read a HeaderValue's bytes as latin-1 instead of calling to_str, which fails on any byte above 0x7e and would skip the header."
+  - "Python's str.strip also removes \\x1c to \\x1f, which Rust's str::trim keeps; an id padded with them has to come out the same."
+  - "The validation gate reads only the first character of the trimmed text, so ' {\"a\": 1}' is dropped once trimmed, and '[x' is kept because it does not decode."
+  - "\"user\": false must skip to litellm_metadata, not become \"False\"; a bool is not a number here even though Python's bool is an int."
+  - "x-litellm-customer-id wins over x-litellm-end-user-id and over every configured header, even a customer mapping."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

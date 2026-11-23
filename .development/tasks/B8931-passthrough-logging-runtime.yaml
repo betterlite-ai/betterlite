@@ -70,7 +70,9 @@ description: >-
   The stream-start scan and the end-of-stream router must see the same per-call poller marker.
   Build StreamLoggingRouter with those adapters. Supply B3609's production stream collaborators
   with this router, B8930's byte injector, B3632's Anthropic partial-usage reconstruction, and
-  the shared logging worker. Adapt B3607's ReservationBinder to B1719's bind operation. The
+  the shared logging worker. Build each request's binder as B1719's RequestReservationBinder
+  (betterlite-auth::reservation_state, over the request's ReservationHandle) and hand it to B3607
+  and B3609 as B10088's ReservationBinder port (betterlite-logging::reservation_binding). The
   buffered, byte-relay, SSE and WebSocket completion paths must share this binder and worker.
   B3609 still owns when they are called, including no bind after rejected queue admission.
 

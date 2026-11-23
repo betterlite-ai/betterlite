@@ -1,7 +1,7 @@
 id: B894
 milestone: M4 keys, spend and management
 title: Key patch fields and soft-budget persistence
-status: todo
+status: done
 depends_on: [B192, B199, B722, B725, B732, B739, B770, B771, B816, B856, B860, B861, B1200, B1224, B2301, B2304, B2317, B2362]
 file: tasks/B894-key-patch-fields.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/_types.py"
 parent: B055
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3040

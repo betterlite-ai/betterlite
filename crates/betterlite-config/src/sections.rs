@@ -181,10 +181,10 @@ pub mod dynamic_rate_limit_policy;
 pub mod dynamoai_moderation;
 pub mod embedding_host_settings;
 pub mod embedding_provider_settings;
-pub mod end_user_identity;
 pub mod end_user_registry;
 pub mod enkryptai_detection;
 pub mod enterprise_ml_credentials;
+pub mod env_credential_login;
 pub mod error_body_call_id;
 pub mod executed_batch_runner;
 pub mod fallback_budget;
@@ -274,6 +274,7 @@ pub mod mcp_client_side_auth;
 pub mod mcp_discovery;
 pub mod mcp_env_values;
 pub mod mcp_gateway_env;
+pub mod mcp_redirect_trust;
 pub mod mcp_registry;
 pub mod mcp_required_fields;
 pub mod mcp_sso_assertion_cache;
@@ -600,7 +601,7 @@ sections! {
     deepseek_identity, default_user_teams, deployment_affinity, deployment_catalog,
     deployment_clients, deployment_identity, detailed_timing, drop_params, dynamic_rate_limit_health,
     dynamic_rate_limit_policy, dynamoai_moderation, embedding_host_settings,
-    embedding_provider_settings, end_user_identity, end_user_registry, enkryptai_detection,
+    embedding_provider_settings, end_user_registry, enkryptai_detection, env_credential_login,
     error_body_call_id, executed_batch_runner, fallback_budget, fallback_plans,
     file_upload_options, file_upload_routing, file_upload_validation, fine_tuning_provider_config, focus_export_schedule,
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
@@ -616,7 +617,7 @@ sections! {
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
     login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
     mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_env_values,
-    mcp_gateway_env, mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
+    mcp_gateway_env, mcp_redirect_trust, mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
     messages_native_call, messages_native_stream, messages_response_call,
     messages_responses_output, messages_thinking, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response, mock_testing_params,

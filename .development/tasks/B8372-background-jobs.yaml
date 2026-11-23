@@ -8,7 +8,7 @@ description: >-
   Result<RegisteredJobs, BackgroundJobError>`, on B8370's ProxyScheduler. `BackgroundJobInputs` holds the typed general
   settings view, the database handle, the shared PodLockManager from the spend writer, the alerting interface, the router
   handle, the auth cache, the env map, B3102's GatewayRequestAccumulator (the one Shared holds, which update_gateway_requests_job flushes), B8381's DeploymentSync,
-  B8384's DbObjectSync and B8385's PeriodicReloads; `RegisteredJobs` returns the scheduler and the B731 worker heartbeat so B8374 can
+  B8384's DbObjectSync and B10055's PeriodicReloads; `RegisteredJobs` returns the scheduler and the B731 worker heartbeat so B8374 can
   stop both at shutdown.
 
   Order, as in LiteLLM (L10562-L10988). Build the scheduler with B8370's JobDefaults. budget_interval =

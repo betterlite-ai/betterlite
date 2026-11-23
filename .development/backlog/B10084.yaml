@@ -1,0 +1,14 @@
+id: B10084
+milestone: M2 routing
+title: Compaction executor trait and child-call scope
+status: todo
+depends_on: [B3545]
+file: tasks/B10084-compaction-executor.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/context_compaction.py"
+parent: B021
+split_from: B336
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -87,7 +87,8 @@ pitfalls:
 - "`list` takes `after`, `before`, `limit` and `order`, and `retrieve` and `delete` take no body fields, so keep each signature as it is."
 - "A function named `list` in a module that also uses the `list` type is a trap, so use `builtins.list` for every annotation."
 - "`update` sends only fields that are not None, so an explicit empty `metadata` dict must still be sent."
+- "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, A001, ASYNC109). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 12

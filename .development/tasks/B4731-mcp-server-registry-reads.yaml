@@ -1,10 +1,10 @@
 id: B4731
 title: MCP server registry reads and server resolution
 description: >-
-  Build every read of the in-memory MCP server registry that does not depend on who is asking: the lookups by id and name, the client IP and public-hub rules, permission list expansion, the table view of a server and the server_resolution.py pair that routes use. In LiteLLM these are methods of MCPServerManager plus server_resolution.py. B10020 already built the registry type itself and its registry-order reads, B6591 builds the per-caller allowed list on top, B4717 and B4671 call the reads, and B6590 owns the MCPServer record they hold.
+  Build every read of the in-memory MCP server registry that does not depend on who is asking: the lookups by id and name, the client IP rule, permission list expansion, the table view of a server and the server_resolution.py pair that routes use. In LiteLLM these are methods of MCPServerManager plus server_resolution.py. B10020 already built the registry type itself and its registry-order reads, B10079 builds the public-hub rules, B6591 builds the per-caller allowed list on top, B4717 and B4671 call the reads, and B6590 owns the MCPServer record they hold.
 
 
-  Code goes in betterlite-mcp, module registry: crates/betterlite-mcp/src/registry.rs, registry/** and a tests.rs beside each file, except registry/servers.rs and its folder, which are B10020's. betterlite-mcp already depends on betterlite-db and betterlite-config. Add betterlite-auth (path ../betterlite-auth) to its Cargo.toml if it is not there yet, for B2314's UserAPIKeyAuth (betterlite_auth::resolved_key::auth::UserAPIKeyAuth), which authorize_server and its access port take. B10020's registry::servers defines ServerRegistry (config_servers and db_servers, two pub(crate) IndexMap<String, MCPServer>, and settings: RegistrySettings { public_mcp_servers: Vec<String>, public_hub_strict: bool, internal_ip_ranges: Option<Vec<String>> }), its constructor and `pub type SharedRegistry = Arc<tokio::sync::RwLock<ServerRegistry>>;`. Add this task's reads as more `impl ServerRegistry` blocks in registry.rs and its submodules, and don't add a field or a second registry type. B9997 fills the settings from config: public_mcp_servers comes from litellm_settings.public_mcp_servers (B002, default empty), public_hub_strict from litellm_settings.public_mcp_hub_strict_whitelist (default true) and internal_ip_ranges from general_settings.mcp_internal_ip_ranges (B743).
+  Code goes in betterlite-mcp, module registry: crates/betterlite-mcp/src/registry.rs, registry/** and a tests.rs beside each file, except registry/servers.rs and registry/public_servers.rs with their folders, which are B10020's and B10079's. betterlite-mcp already depends on betterlite-db and betterlite-config. Add betterlite-auth (path ../betterlite-auth) to its Cargo.toml if it is not there yet, for B2314's UserAPIKeyAuth (betterlite_auth::resolved_key::auth::UserAPIKeyAuth), which authorize_server and its access port take. B10020's registry::servers defines ServerRegistry (config_servers and db_servers, two pub(crate) IndexMap<String, MCPServer>, and settings: RegistrySettings { public_mcp_servers: Vec<String>, public_hub_strict: bool, internal_ip_ranges: Option<Vec<String>> }), its constructor and `pub type SharedRegistry = Arc<tokio::sync::RwLock<ServerRegistry>>;`. Add this task's reads as more `impl ServerRegistry` blocks in registry.rs and its submodules, and don't add a field or a second registry type. B9997 fills the settings from config: public_mcp_servers comes from litellm_settings.public_mcp_servers (B002, default empty), public_hub_strict from litellm_settings.public_mcp_hub_strict_whitelist (default true) and internal_ip_ranges from general_settings.mcp_internal_ip_ranges (B743).
 
 
   Functions to build, each a method on ServerRegistry unless said otherwise (LiteLLM name in backticks).
@@ -15,7 +15,7 @@ description: >-
 
   3. `server_by_id` (`get_mcp_server_by_id`), inputs: server_id and client_ip. The first record in registry order with that server_id, or None when it is not accessible from the ip. `server_by_name` (`get_mcp_server_by_name`): three passes over the registry in order, alias equal to the name, then server_name equal, then name equal. The first match of the first pass that has any match decides, and when that match is not accessible from the ip the answer is None (it does not fall through to the next pass or the next record). `filtered_registry` (`get_filtered_registry`): the registry unchanged for no ip, else only the accessible records, as a Vec of (server_id, record) pairs in registry order.
 
-  4. `is_server_public` (`is_mcp_server_public`), inputs: server_id and optional public_ids (default settings.public_mcp_servers). The record is looked up in db_servers first, then config_servers (not the union order). True when the record exists and (its id is in public_ids, or the hub is not strict and the record has available_on_public_internet). `public_servers` (`get_public_mcp_servers`): every registry record that is_server_public, in registry order, with the public ids taken once.
+  4. Already built by B10079 in registry/public_servers.rs: `is_server_public` (`is_mcp_server_public`) and `public_servers` (`get_public_mcp_servers`), with the strict hub flag. Don't build them again.
 
   5. `expand_permission_list` (`expand_permission_list`), input: identifiers. Empty input gives an empty list. For each identifier: if it is a registry key it stays. Otherwise every registry record whose alias, server_name or name equals it contributes its server_id (duplicate names grant all matches). An identifier that matches nothing passes through unchanged and is logged at debug with the identifier quoted (use {:?} so control characters are escaped). The result is de-duplicated in first-seen order. `expand_tool_permissions` (`expand_tool_permissions`): input is an optional map from key to tool list. None or empty gives an empty map. Each key expands through expand_permission_list into server ids; for every id take that key's tools; then group by server id, sorted by id, and union the tool lists in first-seen order without duplicates. The wildcard entry "*" is an ordinary tool name here.
 
@@ -37,8 +37,8 @@ scope:
   lint_tables: false
 
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6911-L6984
-    why: ip accessibility, lookup by id, is_mcp_server_public and get_public_mcp_servers, with the strict hub flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6911-L6952
+    why: ip accessibility and lookup by id.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6986-L7103
     why: expand_permission_list, expand_tool_permissions, get_mcp_server_by_name three-pass priority and get_filtered_registry.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7333-L7397
@@ -57,8 +57,6 @@ references:
 dod:
   - text: IP accessibility is true without an ip, for a public-internet server and for an id in the public list, and otherwise follows B743's internal range check; lookup by id returns None when blocked, and lookup by name tries alias, then server_name, then name, and a blocked first match gives None without trying further.
     proof: [lookup-tests]
-  - text: Public servers use the strict allow-list by default, include public-internet servers only when the hub is not strict, and look a server up in the database map before the config map.
-    proof: [lookup-tests]
   - text: Permission list expansion passes through ids, expands aliases, server names and names to every match, keeps unknown entries, drops duplicates, and expand_tool_permissions groups and unions tool lists by expanded id sorted by id.
     proof: [expand-tests]
   - text: The table view fills is_config, credentials scopes, URL precedence, empty-list defaults and env vars as described, with no health fields.
@@ -74,7 +72,7 @@ checks:
   optional: []
   commands:
     - id: lookup-tests
-      why: ip access, lookup by id or name, or the public server rules are missing or wrong
+      why: ip access or lookup by id or name is missing or wrong
       run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::tests::lookup_/)'
     - id: expand-tests
       why: permission or tool permission expansion is missing or wrong
@@ -92,7 +90,7 @@ checks:
 oracle_cases: []
 
 deviations:
-  - what: Settings (public ids, strict flag, internal ranges) are read from a RegistrySettings struct, not from litellm globals and the live general_settings dict on every call.
+  - what: Settings (public ids, internal ranges) are read from a RegistrySettings struct, not from litellm globals and the live general_settings dict on every call.
     why: betterlite has no module-level state and its config is immutable after load.
   - what: authorize_server returns an AuthorizeError value, not an HTTPException.
     why: this crate has no HTTP framework; the route layer renders the same 404 and 403 bodies.
@@ -103,6 +101,7 @@ out_of_scope:
   - "ServerRegistry, RegistrySettings, its constructor, the SharedRegistry alias and the registry-order reads (get_registry, get_all_mcp_server_ids, get_allow_all_keys_server_ids, is_config_declared_server, get_mcp_servers_from_ids): B10020."
   - "get_allowed_mcp_servers, operator_open_server_ids, the BYOM submitted-server cache, resolve_toolset_tool_permissions and get_all_allowed_mcp_servers: B6591."
   - "The MCPServer record: B6590."
+  - "is_mcp_server_public and get_public_mcp_servers (is_server_public, public_servers): B10079."
   - "can_access_mcp_server and the ContextServers port: B4672. The production ServerAccessCheck over them: the MCP identity wiring (B8621)."
   - "Registry mutation and reload (load_servers_from_config, reload_servers_from_database, add_server, update_server, remove_server, build_mcp_server_from_table), OAuth discovery, health_check_server, _run_health_checks and get_all_mcp_servers_with_health_and_teams: B6592 owns them."
   - "Filling ToolOwners (initialize_tool_name_to_mcp_server_name_mapping) and the catalog guards: B4682 and the tool listing task."
@@ -110,7 +109,6 @@ out_of_scope:
 
 pitfalls:
   - "get_mcp_server_by_name stops at the first matching pass; a blocked alias match returns None and does not try server_name or name."
-  - "is_server_public looks in the database map first and then the config map, and the strict flag defaults to true: a public-internet server is not on the hub unless its id is in the list."
   - "expand_permission_list keeps an unknown identifier on purpose, because the later access check denies it by comparing with the real server id."
   - "known_prefix_to_server walks the registry in reverse so the first registered server wins a shared prefix."
   - "A Temp resolution is never authorized for a non-admin, even when the user could reach the same id in the registry."
