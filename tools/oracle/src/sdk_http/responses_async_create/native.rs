@@ -40,7 +40,7 @@ pub(super) async fn execute(
     let bridge = NoBridge;
     let nothing = Nothing;
     let (drop_params, auto_summary) = env_flags(env);
-    let deps = CreateDeps {
+    let deps = ResponsesCreateDeps {
         resolver: &resolver,
         lookup: &configs,
         configs: &configs,
