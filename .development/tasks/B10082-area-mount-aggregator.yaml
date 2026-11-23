@@ -1,0 +1,122 @@
+id: B10082
+title: Area mount aggregator
+description: >-
+  The server groups its integration wiring into twelve areas under crates/betterlite-server/src/app/, and app.rs
+  already declares each of them as `pub mod` (pub, so a part whose ports nothing calls yet passes its own dead_code
+  lint). What is missing is the one place that calls them. Today routes.rs router() calls `spend::mount` (B3099's
+  cache activity routes) by hand, and every other area has nowhere to put a route. This task builds that
+  aggregator, so area parts like B8681 can fill their own app/<area>.rs and never touch routes.rs, server.rs or
+  app.rs. It is native structure with no LiteLLM source. B8610 keeps Shared, the server inputs, the call to
+  app::start in server::run, the health routes and the WebSocket auth pass; it builds on this.
+
+
+  Area stubs. Each of app/mcp.rs, inference.rs, pass_through.rs, agents.rs, cache_secrets.rs, callbacks.rs,
+  spend.rs, guardrails.rs, management.rs, admin.rs, health.rs and edge.rs gets three public functions next to its
+  existing `pub mod` lines: `mount(router: Router, state: &Arc<ServerState>) -> Router` for routes that need a key,
+  `mount_public(router: Router, state: &Arc<ServerState>) -> Router` for routes LiteLLM serves with no key check,
+  and `start(state: &Arc<ServerState>)`, the area's startup work, awaited once before the server listens. Each stub
+  returns the router it got, or finishes at once. app/edge.rs also gets `wrap(router: Router, state:
+  &Arc<ServerState>) -> Router`, the place B8680 and the outer error handler of B789 and B8591 add the layers that
+  must sit outside every route and auth layer. spend.rs already has a real `mount` and `cli_writer_store`; leave
+  both as they are and add only mount_public and start there.
+
+
+  app.rs gets four public functions. `mount`, `mount_public` and `start` call that function of every area exactly
+  once, in this order: mcp, inference, pass_through, agents, cache_secrets, callbacks, spend, guardrails,
+  management, admin, health, edge. mount and mount_public thread the router through the twelve calls; `start` is
+  `pub async fn start(state: &Arc<ServerState>)` and awaits the twelve in turn. `wrap` calls only `edge::wrap`.
+
+
+  routes.rs router() changes in three places and nowhere else. The hand call `spend::mount(application, &state)`
+  becomes `app::mount(application, &state)`, still after chat, embeddings, the stub router and SCIM are merged and
+  before the two auth layers, so area routes pass the same auth stages as every other route. After the layers (and
+  after the existing merge of the cost-estimate and compliance routes) it merges the routes of
+  `app::mount_public(Router::new(), &state)`, so those skip the auth stages. The very last step of router() is
+  `app::wrap(router, &state)`. Fallback: axum keeps one fallback per router and Router::merge panics when both sides
+  carry one. base_application's Not Found fallback stays where it is, before app::mount; the pass-through area's
+  mount may replace it later (B8643's configured fallback), and nothing merged after app::mount sets a fallback, so
+  a mount_public or wrap that brings one is a bug.
+
+
+  Tests in crates/betterlite-server/src/app/tests.rs (declared from app.rs; names start with `aggregator_`).
+  aggregator_keeps_area_routes_behind_auth builds router() with routes::tests' helpers and a config with a master
+  key: GET /global/activity/cache_hits without a key answers 401, and with the master key it reaches the cache
+  activity route (any status but 404), which proves app::mount still mounts spend and sits inside the auth layers.
+  aggregator_stubs_pass_router_through gives app::mount, app::mount_public and app::wrap a router with one test
+  route and asserts the route still answers 200 through each. aggregator_start_completes awaits app::start on a test
+  state. The existing routes and server tests stay green.
+scope:
+  paths:
+    - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/tests.rs
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/inference.rs
+    - crates/betterlite-server/src/app/pass_through.rs
+    - crates/betterlite-server/src/app/agents.rs
+    - crates/betterlite-server/src/app/cache_secrets.rs
+    - crates/betterlite-server/src/app/callbacks.rs
+    - crates/betterlite-server/src/app/spend.rs
+    - crates/betterlite-server/src/app/guardrails.rs
+    - crates/betterlite-server/src/app/management.rs
+    - crates/betterlite-server/src/app/admin.rs
+    - crates/betterlite-server/src/app/health.rs
+    - crates/betterlite-server/src/app/edge.rs
+    - crates/betterlite-server/src/routes.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19949-L19953
+    why: LiteLLM includes its routers on one app, some of them without the auth dependency; the aggregator is the native place those includes land.
+  - url: https://docs.rs/axum/latest/axum/struct.Router.html#method.merge
+    why: merge panics when both routers have a fallback, and a layer only wraps the routes added before it.
+dod:
+  - text: Every area file has public mount, mount_public and start stubs (edge also wrap), and app.rs calls each area's mount, mount_public and start exactly once in the fixed order and edge::wrap once.
+    proof: [aggregator-shape, aggregator-tests]
+  - text: router() calls app::mount before the auth layers instead of spend::mount, merges app::mount_public after them and calls app::wrap last, and sets no fallback after app::mount.
+    proof: [aggregator-shape, aggregator-tests]
+  - text: Spend's cache activity route still answers through router(), 401 without a key and reachable with the master key.
+    proof: [aggregator-tests]
+  - text: The existing routes, server and cache activity tests still pass with the new router().
+    proof: [router-regression]
+checks:
+  optional: []
+  commands:
+    - id: aggregator-tests
+      why: an aggregator function is missing, drops the router it got, or area routes no longer sit behind auth
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::tests::aggregator_/)'
+    - id: aggregator-shape
+      why: an area is skipped, called twice or out of order, or router() puts an aggregator call on the wrong side of the auth layers
+      run: |-
+        app=crates/betterlite-server/src/app.rs
+        routes=crates/betterlite-server/src/routes.rs
+        areas='mcp inference pass_through agents cache_secrets callbacks spend guardrails management admin health edge'
+        for function in mount mount_public start; do
+          seen=$(grep -oE "[a-z_]+::$function\(" "$app" | sed "s/::$function(//" | tr '\n' ' ' | sed 's/ $//')
+          test "$seen" = "$areas" || { echo "app::$function calls: $seen"; exit 1; }
+        done
+        test "$(grep -cF 'edge::wrap(' "$app")" = 1 || { echo "app::wrap must call edge::wrap once"; exit 1; }
+        if grep -qF 'spend::mount(' "$routes"; then echo "routes.rs still mounts spend by hand"; exit 1; fi
+        for call in 'app::mount(' 'app::mount_public(' 'app::wrap('; do
+          test "$(grep -cF "$call" "$routes")" = 1 || { echo "routes.rs must call $call once"; exit 1; }
+        done
+        keyed=$(grep -nF 'app::mount(' "$routes" | cut -d: -f1)
+        gate=$(grep -nF 'middleware::from_fn(stage)' "$routes" | cut -d: -f1)
+        public=$(grep -nF 'app::mount_public(' "$routes" | cut -d: -f1)
+        outer=$(grep -nF 'app::wrap(' "$routes" | cut -d: -f1)
+        test "$keyed" -lt "$gate" && test "$gate" -lt "$public" && test "$public" -lt "$outer" || { echo "router() must call app::mount, the auth layers, app::mount_public and app::wrap in that order"; exit 1; }
+    - id: router-regression
+      why: the new router() broke an existing route, health, fallback or startup test
+      run: grep -qF 'app::mount(' crates/betterlite-server/src/routes.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::/) | test(/^server::/) | test(/^cache_activity_routes::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "What each area mounts, mounts publicly, starts and wraps: the area wiring parts, in app/<area>.rs and app/<area>/** (B8681 fills edge's mount_public, B8680 edge's wrap)."
+  - "Shared, the server inputs, awaiting app::start in server::run before the listener binds, moving the health routes into health::mount_public, the WebSocket auth pass and with_key_auth: B8610."
+  - "The route and state registry, ServerState and the stub route modules: B1100. Spend's cache activity routes and cli_writer_store: B3099."
+pitfalls:
+  - The Extension(state) layer in router() sits on the keyed routes only, so a handler merged through mount_public cannot read Extension<Arc<ServerState>>; public routers carry their state with with_state.
+  - "The workspace denies every clippy group, so a pass-through stub draws must_use_candidate (pub fn returning a value), missing_const_for_fn and unused_async (an async fn that awaits nothing); give the stubs #[must_use] and a non-async start that returns std::future::ready(()), since the expect budget is 0."
+  - spend::mount and cli_writer_store are pub(crate) and api/claude_plugin_write.rs imports cli_writer_store; don't change their visibility or signatures while adding the stubs beside them.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
