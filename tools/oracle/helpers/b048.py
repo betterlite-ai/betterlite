@@ -15,7 +15,7 @@ from xai_files import LOG
 Params: TypeAlias = dict[str, JsonValue]
 Headers: TypeAlias = dict[str, str]
 Validate: TypeAlias = Callable[[Headers, str | None, str | None], Headers]
-Url: TypeAlias = Callable[[str | None, Params, Params], str]
+Url: TypeAlias = Callable[[str | None, Params, Params | None], str]
 TransformRequest: TypeAlias = Callable[[str | list[str], Params], object]  # ast-grep-ignore
 TransformReply: TypeAlias = Callable[[httpx.Response, Logging], BaseModel]
 
@@ -62,6 +62,11 @@ class TinyfishConfig(Protocol):
 
     @property
     def transform_search_response(self) -> TransformReply: ...
+
+
+class RegistryConfig(Protocol):
+    @property
+    def get_complete_url(self) -> Url: ...
 
 
 class ErrorRecord(BaseModel):
@@ -122,11 +127,13 @@ def registry_value(provider: str) -> JsonValue:
         return None
     if found is None:
         return None
+    # the base signature carries bare dicts, so the URL hook is read through the typed view
+    config: RegistryConfig = found
     view: dict[str, JsonValue] = {
         "display": found.ui_friendly_name(),
         "method": found.get_http_method(),
         "rich": found.supports_rich_search_input(),
-        "endpoint": found.get_complete_url(None, dict[str, JsonValue](), None),
+        "endpoint": config.get_complete_url(None, dict[str, JsonValue](), None),
     }
     return JSON.validate_python(view)
 
