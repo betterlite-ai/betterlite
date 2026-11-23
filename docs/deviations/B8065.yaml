@@ -1,0 +1,45 @@
+task: B8065
+deviations:
+  - what: Cached values are JSON, and the ast.literal_eval fallback in LiteLLM's freshness check is not run.
+    why: B4297 stores JSON envelopes, and evaluating Python text read from a shared store is unsafe. A response stored as a plain string that is not JSON text is a miss rather than a parsed Python literal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L562-L569
+  - what: A dynamic_cache_object wins over the instance's native cache; LiteLLM checks its native runtime before the dynamic object.
+    why: B8066's Cache always builds a NativeCache, where LiteLLM's OSS cache never has one, so the native-first order would make a caller's BaseCache a no-op. B8066's DoD requires a user backend as the dynamic object of get_cache and add_cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L622-L643
+  - what: add_cache takes an explicit dynamic_cache_object argument; LiteLLM's synchronous add_cache has none.
+    why: LiteLLM's sync add_cache only ever writes through self.cache, and B8066's DoD requires a user BaseCache as the dynamic object of add_cache, so the argument is added to the sync call as async_add_cache already has it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L714-L736
+  - what: ping and delete_cache_keys return None when the backend does not declare them; LiteLLM's getattr raises AttributeError for a local cache.
+    why: A backend in betterlite is a protocol, not a class with getattr, and LiteLLM's `if cache_ping:` shows the intent is a no-op for a backend without the method. A local backend answers None instead of raising AttributeError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L989-L999
+  - what: A backend lookup in async_get_cache applies the sync freshness rule, where s-maxage wins over s-max-age; LiteLLM's async path reads s-max-age first.
+    why: Both paths share Rust's cache_decode, one freshness rule, and this task's rule is that s-maxage wins. The two values differ only when a request carries both controls with different values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L672-L679
+  - what: A file value contributes the JSON string the request carries to the cache key; LiteLLM keys a file object by its .name and ignores a plain string file.
+    why: The wire is JSON, so a file object reaches Rust as its string text. A metadata file_checksum, file_name or litellm_params file_name still wins in both, which is how a transcription request is keyed in practice.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L446-L458
+  - what: get_cache_key does not write the derived key back into the caller's litellm_params.preset_cache_key; LiteLLM mutates the request dict it was handed.
+    why: docs/compatibility.md keeps changes made to the caller's dict out of betterlite, and a later call derives the same key without the stored preset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L403-L406
+  - what: The second parameter of add_embedding_response_to_cache is named input_value where LiteLLM names it input.
+    why: ruff's A002 forbids a parameter named after a builtin and this task allows no noqa line. Every call in LiteLLM's own code passes it positionally, so only a keyword call by name observes the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L866-L872
+  - what: _log_add_cache_failure is inlined into each write handler, so a Redis backend's failure logs the same message through the LiteLLM logger instead of log_redis_failure.
+    why: ruff's BLE001 exempts a broad except only when the handler itself logs, and this task allows no noqa line. The logged text, "LiteLLM Cache: exception in add_cache: <error>", is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L735-L743
+  - what: This task has no helper oracle cases.
+    why: The pytest file compares both packages, and the key and envelope cases belong to B4296 and B4297.
+    link: ""
+kept_bugs:
+  - what: batch_cache_write on a local cache raises NotImplementedError.
+    why: LiteLLM's InMemoryCache inherits BaseCache's raising batch_cache_write, and a proxy that buffers a local batch relies on the call failing rather than the entry appearing, so betterlite keeps the same error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L51-L53
+  - what: A cache read that fails returns None and never raises into the caller.
+    why: LiteLLM wraps get_cache and async_get_cache in a bare except and logs the traceback at debug, and the completion path relies on a broken cache degrading to a miss.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L644-L646
+  - what: A cache write that fails is logged and swallowed.
+    why: LiteLLM's add_cache and async_add_cache log the failure and return, and a completion that already succeeded must not fail on a cache write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L725-L736
+  - what: generate_streaming_content sleeps CACHED_STREAMING_CHUNK_DELAY between chunks.
+    why: LiteLLM paces a replayed cached stream by 0.02 seconds per chunk unless the environment overrides it, and a client reading a cached stream sees the same timing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L524-L537
