@@ -10,9 +10,9 @@ use betterlite_config::sections::Section as _;
 use betterlite_config::sections::openai_credentials::Raw as OpenAiCredentialsRaw;
 use betterlite_core::api::vector_store_http_write::service::LogContext;
 use betterlite_core::api::vector_store_search::error::VectorStoreSearchError;
+use betterlite_core::api::vector_store_search::service::SdkDeps;
 use betterlite_core::api::vector_store_search::service::create_call::create as create_store;
 use betterlite_core::api::vector_store_search::service::search_call::search as search_store;
-use betterlite_core::api::vector_store_search::service::{SdkDeps, create_call, search_call};
 use betterlite_logging::logging_pre_post::env::{DebugSettings, GlobalFlags, PrePostEnv};
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
@@ -31,7 +31,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use super::convert::{CreateWire, SearchWire, parse};
+use super::convert::{CreateWire, SearchWire, create_call, parse, search_call};
 use super::error::SessionError;
 use super::seams::{Configs, Executors, Filters, Inline};
 use super::source::{ProxiedSource, SilentSink};

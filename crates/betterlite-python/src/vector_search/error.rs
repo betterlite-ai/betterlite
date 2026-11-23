@@ -91,8 +91,7 @@ impl From<ConvertError> for PyErr {
 impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
         match &error {
-            SessionError::Json(ConvertError::Json { .. })
-            | SessionError::Json(ConvertError::Files { .. }) => {
+            SessionError::Json(ConvertError::Json { .. } | ConvertError::Files { .. }) => {
                 PyValueError::new_err(error.to_string())
             }
             SessionError::Json(ConvertError::Encode { .. })
