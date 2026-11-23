@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+use betterlite_error::error::ErrorClass;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -187,7 +188,8 @@ impl ProjectQuotaCallback for TestQuota {
         _requested_model: Option<&str>,
         _estimated_input_tokens: i64,
         _estimated_output_tokens: i64,
-    ) {
+    ) -> Result<(), ErrorClass> {
+        Ok(())
     }
 }
 

@@ -1,0 +1,15 @@
+task: B1028
+deviations:
+  - what: An upload or delete whose timeout or request_timeout is infinite or NaN, as a number or as text such as "inf", fails before any request with a timeout error.
+    why: LiteLLM's float(timeout) accepts inf and nan and hands them to the HTTP client, so the call never times out and can hang forever.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L214
+kept_bugs:
+  - what: The unsupported-provider message of create_file lists only openai, azure, vertex_ai, manus and anthropic, though every provider with a files config is served.
+    why: Callers match the message text, and the list is part of the 400 LiteLLM returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L284
+  - what: The unsupported-provider message of file_delete lists only openai, azure, gemini, manus and anthropic, and its synthesized request names the method CREATE_THREAD.
+    why: Callers match the message and the error's request, and both are part of the 400 LiteLLM returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L625
+  - what: create_file called with no provider fails with the ValueError "None is not a valid LlmProviders" instead of a 400.
+    why: The sync function's provider default is None, and SDK callers that catch this ValueError rely on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L236

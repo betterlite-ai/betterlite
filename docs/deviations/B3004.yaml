@@ -1,0 +1,21 @@
+task: B3004
+deviations:
+  - what: >-
+      The over-budget policy computes the spend before the reservation, the remaining budget
+      and the 1e-12 tolerance with rust_decimal checked arithmetic, where LiteLLM subtracts
+      Python floats; a cost outside the decimal range is AdmissionError::Overflow.
+    why: >-
+      betterlite keeps money as Decimal everywhere, and the exact decimal keeps the same
+      remaining-budget and overshoot decisions for every input while making a value no field
+      can hold an error instead of an infinity carried into the next comparison.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L187-L201
+  - what: >-
+      When the reservation pipeline fails, betterlite invalidates every counter of the group
+      and drops the group's entries. It has no step that releases an entry whose invalidation
+      failed, because SettlementCounters::invalidate returns nothing to raise.
+    why: >-
+      betterlite's invalidation path reports no failure, so a failed Redis delete is logged
+      where it happens and the counter is dropped rather than released; the next read reseeds
+      it from the database, exactly as the invalidation already makes necessary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1048-L1086
+kept_bugs: []

@@ -1,0 +1,63 @@
+task: B158
+deviations:
+  - what: Passing `client` or `shared_session` raises `UnsupportedCallArgument`.
+    why: A Python HTTP client cannot drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5145-L5205
+  - what: "`logger_fn` is accepted and never called, and a warning is logged once per call."
+    why: The call runs in Rust and has no point to call back into Python at each step.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5350-L5360
+  - what: "`LiteLLM.params` does not hold `self`, where LiteLLM's `locals()` does."
+    why: The key is an accident of `locals()`, and it would pass the client into `create` as an argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L363-L375
+  - what: "`betterlite.main.encoding` raises AttributeError, where LiteLLM's `__getattr__` gives a tiktoken encoding."
+    why: Token counting is Rust and no tiktoken object exists in the wheel.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L9400-L9411
+  - what: The retry functions run without tenacity, so the "tenacity import failed" path never appears.
+    why: A plain loop needs no optional package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6087-L6136
+  - what: A synchronous mock ignores `mock_delay`; only the awaitable call waits, in the Rust async target.
+    why: The Rust mock target that builds the answer is shared by both paths, and only its async half sleeps the delay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L953-L961
+  - what: A call triggered only by `mock_timeout=True` with no `timeout` and no `mock_response` raises betterlite's "the mock call carries no mock response" instead of answering the default mock completion.
+    why: The Rust mock plan needs a response or tool calls before it can answer, while LiteLLM substitutes "This is a mock request" for an absent mock_response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L930-L940
+  - what: A mock stream that asks for a mid-stream failure or carries a `ModelResponse` raises at the call (or refuses the object), where LiteLLM raises once a stream has started or turns the response object into chunks.
+    why: The stream is built from payloads Rust buffers before the Python wrapper exists, and the Rust mock answer type decides between text and object answers before the stream is built.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L942-L1057
+  - what: Stream chunks are the provider's payloads, so `created` stays the provider's timestamp and no final finish chunk is synthesized when a provider ends a stream without one.
+    why: The native stream hands out the SSE payloads the SDK parsed, and LiteLLM's wrapper rewrites them while holding a live iterator.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L855-L880
+  - what: A timeout given as a connect/read/write/pool mapping reaches Rust as that mapping, and the shared transport sums the four phases into one deadline.
+    why: The Rust transport enforces one deadline per call, as recorded in B5659's deviations; Python forwards the mapping unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5145-L5160
+  - what: The probes `check_valid_key`, `valid_model` and the token-count probe send their own native call without the proxy auth headers a completion call adds.
+    why: The proxy auth provider is a Python object that only the completion path reads; the probes call a separate native method.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7156-L7171
+  - what: "`LiteLLM(default_headers=...)` is passed into the call but reaches no request, because the Rust call's header merge reads the `headers` and `extra_headers` arguments and the settings' proxy headers, with no client default slot."
+    why: default_headers is a client default LiteLLM applies in its provider client; the Rust call's client is the session's and carries no per-call defaults.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L363-L375
+  - what: "A caller's `headers` and `extra_headers` and the proxy auth map are merged into the prepared call, but the Python bridge's chat port sends the provider only the request body, so none of them reaches the upstream request as a header; LiteLLM hands the merged map to its provider client as request headers."
+    why: The merged map sits on the prepared call's headers and the chat port has no header argument, so the bridge cannot apply it; delivering it belongs to the SDK completion call (B5656) and the Python chat port (B5659), both outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5342-L5356
+  - what: "`config_completion` reads the config file as UTF-8, where LiteLLM's `read_config_args` opens it with the locale default."
+    why: The wheel's JSON is UTF-8 everywhere and the lint rules require an explicit encoding; only a config written in another encoding differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7477-L7489
+  - what: "`betterlite.proxy_auth`, `config_path`, `num_retries` and `adapters` are untyped in the wheel's globals, so this module reads typed `proxy_auth`, `config_path`, `num_retries` and `adapter_entries` seams; `betterlite.adapters` itself is not searched."
+    why: The globals module is outside this task's scope, and its None or JSON-list types reject a provider, a retry count or an adapter object; the seams are the hand-off the tests use until those globals are typed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1232-L1233
+  - what: "`LiteLLM()` reads the retry default from `num_retries` when the object is built, where LiteLLM's signature default froze `litellm.num_retries` at import."
+    why: A caller who sets the global after import expects the next client to use it, and the task text asks for the read at construction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L363-L374
+  - what: "A supplied `openai.APIError` mock is raised unchanged, where LiteLLM's completion hands it to `exception_type` and answers `APIConnectionError`."
+    why: The mock rule raises an APIError as is, and keeping the caller's object keeps `except` clauses and identity checks on it working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6076-L6084
+  - what: "`config_completion` merges the config over the supplied arguments, where LiteLLM's `completion(**kwargs, **config_args)` raises `TypeError` on a key both carry."
+    why: The merge keeps LiteLLM's stated intent that config args overwrite supplied ones, and a config that works against LiteLLM passes each key only once.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8845-L8853
+  - what: A mock exception maps by LiteLLM's OpenAI status table whatever the provider, so status 403, 413 or 529 raises APIError on an anthropic model, and `llm_provider` stays the requested provider (custom_llm_provider, else openai) rather than the model prefix's provider.
+    why: The mock answer is built before any provider call, so LiteLLM's per-provider exception mappers and prefix resolution never run; the Python mock path keeps the OpenAI table the task describes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2486-L2495
+  - what: "`adapter_completion` and `aadapter_completion` check every value as JSON before the adapter's `translate_completion_input_params` runs, so a `response_format` class reaches the adapter as its json_schema mapping where LiteLLM passes the class."
+    why: The adapter's translated kwargs go straight into the Rust call, which takes JSON; a class or a `Message` object would fail that check before completion_from_arguments could convert it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7741-L7761
+kept_bugs: []

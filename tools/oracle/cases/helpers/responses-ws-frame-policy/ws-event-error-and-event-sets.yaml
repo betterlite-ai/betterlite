@@ -1,0 +1,54 @@
+kind: helper
+name: ws-event-error-and-event-sets
+call:
+  responses_ws_frame_policy:
+    steps:
+    - kind: failure
+      events:
+      - type: error
+        error:
+          type: rate_limit_exceeded
+          message: slow down
+      - type: error
+      - type: error
+        error: boom
+      - type: error
+        response:
+          error:
+            code: rate_limit_exceeded
+      - type: response.failed
+        response:
+          error:
+            code: rate_limit_exceeded
+            message: slow down
+      - type: response.failed
+        response:
+          error:
+            code: server_error
+      - type: response.failed
+        error:
+          code: rate_limit_exceeded
+      - type: response.failed
+        response: failed
+      - type: response.failed
+      - type: response.completed
+        response:
+          error:
+            code: rate_limit_exceeded
+      - type: response.incomplete
+        error:
+          code: rate_limit_exceeded
+    - kind: sets
+      candidates:
+      - error
+      - response.failed
+      - response.completed
+      - response.incomplete
+      - response.created
+      - response.output_item.added
+      - response.output_item.done
+      - response.output_text.delta
+      - response.content_part.done
+env: {}
+compare:
+  ignore: []

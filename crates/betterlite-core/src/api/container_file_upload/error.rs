@@ -84,8 +84,11 @@ where
             &DispatchInput::Raw(Box::new(exception(error.to_string(), provider, None))),
             redactor,
         ),
+        // the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+        ContainerFileUploadError::ProviderConfigMissing { .. } => ErrorClass::BadRequest(Box::new(
+            ResponseDetails::for_provider(error.to_string(), Some(MODEL.to_owned()), provider),
+        )),
         ContainerFileUploadError::Mock(_)
-        | ContainerFileUploadError::ProviderConfigMissing { .. }
         | ContainerFileUploadError::Logging(_)
         | ContainerFileUploadError::Params(_) => {
             let mut raw = exception(error.to_string(), provider, None);
