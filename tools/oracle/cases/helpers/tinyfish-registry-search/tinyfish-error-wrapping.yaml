@@ -1,0 +1,105 @@
+kind: helper
+name: tinyfish-error-wrapping
+call:
+  b048:
+    op: request
+    query: "q"
+    optional_params: {}
+    api_key: "caller-key"
+    api_base: null
+    environment: {}
+    headers: {}
+    reply:
+      status: 429
+      body: '{"error":{"message":"rate limited","code":"rate_limit"}}'
+calls:
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 500
+        body: 'plain gateway failure'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 400
+        body: '{"error":{"message":""}}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: 'not json at all'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: '{broken'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 503
+        body: '{"error":[1,2]}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 200
+        body: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 500
+        body: '{"error":{"message":"inner only","details":[]}}'
+  - b048:
+      op: request
+      query: "q"
+      optional_params: {}
+      api_key: "caller-key"
+      api_base: null
+      environment: {}
+      headers: {}
+      reply:
+        status: 500
+        body: '{"error":null}'
+env: {}
+compare: {ignore: []}
