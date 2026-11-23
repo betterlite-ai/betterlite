@@ -90,6 +90,7 @@ struct FakeStore {
     unique_violation: AtomicBool,
     fail_find: AtomicBool,
     fail_write: AtomicBool,
+    vanish_on_update: AtomicBool,
 }
 
 impl FakeStore {
@@ -99,6 +100,7 @@ impl FakeStore {
             unique_violation: AtomicBool::new(false),
             fail_find: AtomicBool::new(false),
             fail_write: AtomicBool::new(false),
+            vanish_on_update: AtomicBool::new(false),
         }
     }
 
@@ -157,6 +159,9 @@ impl ClaudePluginStore for FakeStore {
     async fn update(&self, write: PluginChanges) -> Result<Option<StoredPlugin>, TableError> {
         if self.fail_write.load(Ordering::SeqCst) {
             return Err(TableError::MissingRow);
+        }
+        if self.vanish_on_update.load(Ordering::SeqCst) {
+            return Ok(None);
         }
         let mut guard = self.state.lock().expect("the fake store");
         let Some(existing) = guard.rows.get_mut(&write.name) else {
@@ -490,6 +495,27 @@ async fn plugin_update_source(
     assert_eq!(row.version.as_deref(), Some("2.0.0"));
     assert!(row.enabled);
     drop(guard);
+}
+
+// the row can disappear between the presence check and the conditional update, which LiteLLM answers 404
+#[tokio::test]
+async fn update_that_loses_the_row_answers_not_found() {
+    let store = Arc::new(FakeStore::new());
+    store.seed("update-plugin", true);
+    store.vanish_on_update.store(true, Ordering::SeqCst);
+    let reply = call(
+        &store,
+        &master(),
+        "PUT",
+        "/claude-code/plugins/update-plugin",
+        Some(UPDATE_BODY),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        reply.text,
+        r#"{"detail":{"error":"Plugin 'update-plugin' not found"}}"#
+    );
 }
 
 async fn toggle_call(store: &Arc<FakeStore>, plugin_name: &str, action: &str) -> Reply {
