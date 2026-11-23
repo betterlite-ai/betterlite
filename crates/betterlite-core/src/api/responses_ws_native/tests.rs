@@ -467,6 +467,8 @@ async fn collected_input(
         "not-json",
         r#"{"type":"response.create","input":[{"type":"message","role":"assistant","content":[{"type":"input_text","text":"no"}]}]}"#,
         r#"{"type":"response.create","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":""}]}]}"#,
+        r#"{"type":"response.create","input":[{"type":"message","role":"user","content":[{"type":"input_image","text":"ignored"}]}]}"#,
+        r#"{"type":"response.create","input":[{"type":"message","role":"user","content":[{"type":"input_text"}]}]}"#,
         r#"{"type":"response.create","input":[1,"text",null]}"#,
         r#"{"type":"other","input":"ignored"}"#,
     ];
@@ -478,7 +480,7 @@ async fn collected_input(
         object(r#"{"role":"user","content":"world"}"#),
     ];
     assert_eq!(relay.input_messages.lock().await.clone(), expected);
-    assert_eq!(lock(&logging.pre_calls).len(), 7);
+    assert_eq!(lock(&logging.pre_calls).len(), 9);
     assert!(
         lock(&logging.pre_calls)
             .iter()
