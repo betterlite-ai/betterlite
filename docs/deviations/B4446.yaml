@@ -9,7 +9,7 @@ deviations:
   - what: A non-string litellm_params mode is removed and the probe runs with no mode instead of forwarding the raw value.
     why: mode is a Literal of mode names in LiteLLM's own signature, so only a string can name a mode; a number would fail inside ahealth_check with a provider type error rather than probe without one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2207-L2207
-  - what: A non-string model_info.team_id answers 500 with "Failed to test connection: the model_info team_id must be a string"; LiteLLM's pydantic Deployment validation raises inside its generic except, which gives the same status and envelope with pydantic's own text.
+  - what: "A non-string model_info.team_id answers 500 with \"Failed to test connection: the model_info team_id must be a string\"; LiteLLM's pydantic Deployment validation raises inside its generic except, which gives the same status and envelope with pydantic's own text."
     why: A value of the wrong type is an error that names the field (docs/compatibility), and the envelope stays LiteLLM's Failed to test connection 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2197-L2206
   - what: The role in the non-team 403 is the snake_case role value, such as internal_user; LiteLLM interpolates the Python enum object, whose repr text docs/compatibility excludes.

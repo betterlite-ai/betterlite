@@ -7,7 +7,6 @@ use betterlite_config::sections::health_probe_policy::Settings as ProbePolicy;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use serde::Serialize;
 
 use crate::health_access_and_connections::visibility::HealthRouter;
 use crate::health_check_entry::{HealthCheckEntry, HealthCheckFailure, HealthCheckOutcome};
@@ -64,8 +63,7 @@ impl ModelCallAuthorizer {
     }
 }
 
-// what the connection route reads: the live router, the probe, the catalog the health settings resolve against,
-// the policy, the client-credential opt-in and the model management check, absent when no database is connected
+// what the route reads: router, probe, catalog, policy, the client-credential opt-in and the model management check
 #[derive(Clone)]
 pub struct TestConnectionState {
     pub router: Option<Arc<dyn HealthRouter>>,
@@ -123,7 +121,10 @@ where
 
 fn outcome_object(outcome: HealthCheckOutcome) -> Result<JsonObject, ConnectionProbeError> {
     match outcome {
-        HealthCheckOutcome::Healthy(response) => encode(&response),
+        HealthCheckOutcome::Healthy(response) => {
+            let encoded = serde_json::to_value(&response).map_err(encode_error)?;
+            serde_json::from_value(encoded).map_err(encode_error)
+        }
         HealthCheckOutcome::Failed(failure) => failure_object(&failure),
     }
 }
@@ -135,7 +136,10 @@ fn failure_object(failure: &HealthCheckFailure) -> Result<JsonObject, Connection
     let missing_mode = failure.raw_request.is_none() && failure.error.contains(MISSING_MODE_MARKER);
     if !missing_mode {
         let raw = match &failure.raw_request {
-            Some(record) => Json::Object(encode(record)?),
+            Some(record) => {
+                let encoded = serde_json::to_value(record).map_err(encode_error)?;
+                Json::Object(serde_json::from_value(encoded).map_err(encode_error)?)
+            }
             None => Json::Null,
         };
         result.insert("raw_request_typed_dict".to_owned(), raw);
@@ -147,14 +151,6 @@ fn timeout_object() -> JsonObject {
     let mut result = JsonObject::new();
     result.insert("error".to_owned(), Json::Text(TIMEOUT_ERROR.to_owned()));
     result
-}
-
-fn encode<T>(value: &T) -> Result<JsonObject, ConnectionProbeError>
-where
-    T: Serialize,
-{
-    let encoded = serde_json::to_value(value).map_err(encode_error)?;
-    serde_json::from_value(encoded).map_err(encode_error)
 }
 
 fn encode_error(source: serde_json::Error) -> ConnectionProbeError {

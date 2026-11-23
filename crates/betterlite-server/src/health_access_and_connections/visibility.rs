@@ -113,7 +113,10 @@ pub struct LiveRouter<'router> {
 
 impl LiveRouter<'_> {
     #[cfg_attr(test, mutants::skip)]
-    fn with_lookup<T>(&self, read: impl for<'read> FnOnce(CatalogLookup<'read>) -> T) -> T {
+    fn with_lookup<F, T>(&self, read: F) -> T
+    where
+        F: for<'read> FnOnce(CatalogLookup<'read>) -> T,
+    {
         let catalog = self.catalog.load_full();
         let inferred_provider = |model: &str| (self.inferred_provider)(model);
         let lookup = CatalogLookup {

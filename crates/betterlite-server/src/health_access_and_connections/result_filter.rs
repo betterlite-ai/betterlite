@@ -46,8 +46,8 @@ pub fn filter_health_check_results_by_model_ids(
 ) -> JsonObject {
     let healthy = retained_rows(results.get("healthy_endpoints"), allowed_model_ids);
     let unhealthy = retained_rows(results.get("unhealthy_endpoints"), allowed_model_ids);
-    let healthy_count = count_of(healthy.len());
-    let unhealthy_count = count_of(unhealthy.len());
+    let healthy_count = Number::from(u64::try_from(healthy.len()).unwrap_or(u64::MAX));
+    let unhealthy_count = Number::from(u64::try_from(unhealthy.len()).unwrap_or(u64::MAX));
     let mut filtered = JsonObject::new();
     filtered.insert(
         "healthy_endpoints".to_owned(),
@@ -78,8 +78,4 @@ fn retained_rows(
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
         })
         .collect()
-}
-
-fn count_of(length: usize) -> Number {
-    Number::from(u64::try_from(length).unwrap_or(u64::MAX))
 }

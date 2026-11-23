@@ -18,8 +18,7 @@ use crate::health_access_and_connections::connection_error::{
     ConnectionError, model_call_rejection,
 };
 use crate::health_access_and_connections::connection_flow::{
-    ModelLookup, lookup_deployment, merge_request_params, reject_request_connection_fields,
-    take_mode,
+    ModelLookup, lookup_deployment, merge_request_params, reject_banned_params, take_mode,
 };
 use crate::health_access_and_connections::connection_state::TestConnectionState;
 use crate::health_access_and_connections::credential_scope::reject_os_environ_references;
@@ -173,20 +172,19 @@ fn reject_request_fields(
     Ok(())
 }
 
-// B884's body check on the request's params: no outbound URL or banned field reaches the probe from a request,
-// and health_check_params is the one nested map the health settings apply to the probe params
+// B884's check on the params, the model_info and the health_check_params map the probe settings read
 fn reject_connection_fields(
     request_params: &JsonObject,
     request_model_info: Option<&JsonObject>,
     allow_client_side_credentials: bool,
 ) -> Result<(), ConnectionError> {
-    reject_request_connection_fields(request_params, allow_client_side_credentials)?;
+    reject_banned_params(request_params, allow_client_side_credentials)?;
     let Some(info) = request_model_info else {
         return Ok(());
     };
-    reject_request_connection_fields(info, allow_client_side_credentials)?;
+    reject_banned_params(info, allow_client_side_credentials)?;
     if let Some(Json::Object(health_params)) = info.get("health_check_params") {
-        reject_request_connection_fields(health_params, allow_client_side_credentials)?;
+        reject_banned_params(health_params, allow_client_side_credentials)?;
     }
     Ok(())
 }

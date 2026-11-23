@@ -98,19 +98,8 @@ impl FakeRouter {
             _ => true,
         }
     }
-}
 
-impl HealthRouter for FakeRouter {
-    fn get_deployment(&self, model_id: &str) -> Result<Option<DeploymentSpec>, LookupFailure> {
-        self.guard()?;
-        Ok(self
-            .deployments
-            .iter()
-            .find(|row| row.id() == Some(model_id))
-            .cloned())
-    }
-
-    fn get_model_list(
+    fn scoped(
         &self,
         model_name: Option<&str>,
         team_id: Option<&str>,
@@ -124,15 +113,29 @@ impl HealthRouter for FakeRouter {
             .cloned()
             .collect())
     }
+}
 
-    fn get_model_names(&self, team_id: Option<&str>) -> Result<Vec<String>, LookupFailure> {
+impl HealthRouter for FakeRouter {
+    fn get_deployment(&self, model_id: &str) -> Result<Option<DeploymentSpec>, LookupFailure> {
         self.guard()?;
-        Ok(self
+        let found = self
             .deployments
             .iter()
-            .filter(|row| self.team_allows(row, team_id))
-            .map(|row| row.model_name.clone())
-            .collect())
+            .find(|row| row.id() == Some(model_id));
+        Ok(found.cloned())
+    }
+
+    fn get_model_list(
+        &self,
+        model_name: Option<&str>,
+        team_id: Option<&str>,
+    ) -> Result<Vec<DeploymentSpec>, LookupFailure> {
+        self.scoped(model_name, team_id)
+    }
+
+    fn get_model_names(&self, team_id: Option<&str>) -> Result<Vec<String>, LookupFailure> {
+        let rows = self.scoped(None, team_id)?;
+        Ok(rows.into_iter().map(|row| row.model_name).collect())
     }
 
     fn get_model_access_groups(&self) -> Result<AccessGroupMap, LookupFailure> {

@@ -3,8 +3,7 @@ use betterlite_models::model_registration::JsonObject;
 use serde_json::Number;
 
 use crate::health_access_and_connections::connection_flow::{
-    ModelLookup, lookup_deployment, merge_request_params, reject_request_connection_fields,
-    take_mode,
+    ModelLookup, lookup_deployment, merge_request_params, reject_banned_params, take_mode,
 };
 
 use super::support::{deployment, fake_router, object, text};
@@ -242,18 +241,18 @@ fn another_credential_strips_the_config_connections_but_keeps_the_rest() {
 #[test]
 fn a_request_url_or_opt_in_only_field_is_refused_unless_the_opt_in_covers_it() {
     let url = object(vec![("api_base", text("https://elsewhere"))]);
-    assert!(reject_request_connection_fields(&url, false).is_err());
-    assert!(reject_request_connection_fields(&url, true).is_err());
+    assert!(reject_banned_params(&url, false).is_err());
+    assert!(reject_banned_params(&url, true).is_err());
     let model_list = object(vec![("model_list", Json::List(Vec::new()))]);
-    assert!(reject_request_connection_fields(&model_list, true).is_err());
+    assert!(reject_banned_params(&model_list, true).is_err());
     let opt_in_only = object(vec![("user_config", Json::Object(JsonObject::new()))]);
-    assert!(reject_request_connection_fields(&opt_in_only, false).is_err());
-    assert!(reject_request_connection_fields(&opt_in_only, true).is_ok());
+    assert!(reject_banned_params(&opt_in_only, false).is_err());
+    assert!(reject_banned_params(&opt_in_only, true).is_ok());
     let clean = object(vec![
         ("model", text("gpt")),
         ("api_key", text("sk-request")),
     ]);
-    assert!(reject_request_connection_fields(&clean, false).is_ok());
+    assert!(reject_banned_params(&clean, false).is_ok());
 }
 
 #[test]
@@ -262,7 +261,7 @@ fn a_nested_metadata_url_is_refused_too() {
         "metadata",
         Json::Object(object(vec![("api_base", text("https://elsewhere"))])),
     )]);
-    assert!(reject_request_connection_fields(&nested, false).is_err());
+    assert!(reject_banned_params(&nested, false).is_err());
 }
 
 #[test]

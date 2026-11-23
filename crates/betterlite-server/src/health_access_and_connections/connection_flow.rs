@@ -16,8 +16,7 @@ pub struct ModelLookup {
     pub model_info: Option<JsonObject>,
 }
 
-// The route's lookup block: an id wins, then the proxy model name, then a deployment whose provider model is the name;
-// every failure leaves the request probed with its own params only.
+// The deployment a request matches: an id wins, then the proxy name, then a provider model; a failure leaves its params
 #[must_use]
 pub fn lookup_deployment(
     router: Option<&dyn HealthRouter>,
@@ -105,7 +104,7 @@ pub fn merge_request_params(
 }
 
 // B884's request-body check on the request's own params: no outbound URL reaches the probe from a request
-pub fn reject_request_connection_fields(
+pub fn reject_banned_params(
     params: &JsonObject,
     allow_client_side_credentials: bool,
 ) -> Result<(), SafetyError> {
@@ -154,8 +153,7 @@ impl ModelGrantLookup for NoGrants {
 struct NoFormMetadata;
 
 impl FormMetadataExtractor for NoFormMetadata {
-    // a parsed JSON object carries no multipart form fields, so every replacement of this constant adapter
-    // either equals it or changes an unused output
+    // a parsed JSON object carries no multipart form fields, so no replacement of this constant adapter is observable
     #[cfg_attr(test, mutants::skip)]
     fn top_level_names(&self, _form_data: &JsonObject, _prefix: &str) -> Vec<String> {
         Vec::new()

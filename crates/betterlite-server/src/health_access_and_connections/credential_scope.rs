@@ -1,8 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
-// _CONFIG_CONNECTION_FIELDS: every field that names a connection, from _ADMIN_CONFIG_FIELDS_TO_CLEAR_ON_BASE_OVERRIDE,
-// clientside_credential_keys and litellm_credential_name.
+// _CONFIG_CONNECTION_FIELDS: the admin clear-on-override fields, clientside_credential_keys and litellm_credential_name
 pub const CONFIG_CONNECTION_FIELDS: [&str; 56] = [
     "api_base",
     "api_key",
@@ -84,20 +83,7 @@ fn has_environment_reference(value: &Json) -> bool {
     }
 }
 
-// Python truthiness, as the endpoint's `if requested_credential` and `mode or ...` read it.
-#[must_use]
-pub fn is_truthy(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|value| value != 0.0),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(map) => !map.is_empty(),
-    }
-}
-
-// _request_inherits_config_credentials: a request naming a stored credential of its own does not borrow the config's.
+// _request_inherits_config_credentials: a request naming a stored credential of its own does not borrow the config's; a blank name is no name.
 #[must_use]
 pub fn inherits_config_credentials(
     config_params: &JsonObject,
@@ -106,8 +92,8 @@ pub fn inherits_config_credentials(
     banned: &[&str],
 ) -> bool {
     let requested = request_params.get("litellm_credential_name");
-    if requested.is_some_and(is_truthy) && requested != config_params.get("litellm_credential_name")
-    {
+    let names_credential = matches!(requested, Some(Json::Text(name)) if !name.is_empty());
+    if names_credential && requested != config_params.get("litellm_credential_name") {
         return false;
     }
     if allow_client_side_credentials {

@@ -1,11 +1,10 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use rstest::rstest;
 use serde_json::Number;
 
 use crate::health_access_and_connections::credential_scope::{
     CONFIG_CONNECTION_FIELDS, EnvironmentReference, config_base_for_health_check,
-    inherits_config_credentials, is_truthy, reject_os_environ_references,
+    inherits_config_credentials, reject_os_environ_references,
 };
 
 use super::support::{object, text};
@@ -53,27 +52,6 @@ fn keys_and_other_text_are_never_refused() {
     );
 }
 
-#[rstest]
-#[case::true_value(Json::Bool(true))]
-#[case::nonzero_number(Json::Number(Number::from(1_u64)))]
-#[case::nonempty_text(text("x"))]
-#[case::nonempty_list(Json::List(vec![Json::Null]))]
-#[case::nonempty_object(Json::Object(object(vec![("a", text("b"))])))]
-fn truthy_values_are_truthy(#[case] value: Json) {
-    assert!(is_truthy(&value));
-}
-
-#[rstest]
-#[case::null(Json::Null)]
-#[case::false_value(Json::Bool(false))]
-#[case::zero_number(Json::Number(Number::from(0_u64)))]
-#[case::empty_text(text(""))]
-#[case::empty_list(Json::List(Vec::new()))]
-#[case::empty_object(Json::Object(JsonObject::new()))]
-fn falsy_values_are_falsy(#[case] value: Json) {
-    assert!(!is_truthy(&value));
-}
-
 #[test]
 fn a_request_credential_of_its_own_keeps_the_config_out() {
     let config = object(vec![
@@ -108,7 +86,7 @@ fn a_request_credential_of_its_own_keeps_the_config_out() {
         "litellm_credential_name",
         Json::Number(Number::from(5_u64)),
     )]);
-    assert!(!inherits_config_credentials(
+    assert!(inherits_config_credentials(
         &config,
         &numeric,
         false,

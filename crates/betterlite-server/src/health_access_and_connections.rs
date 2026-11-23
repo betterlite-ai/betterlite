@@ -6,5 +6,4 @@ pub mod credential_scope;
 pub mod result_filter;
 pub mod visibility;
 
-#[cfg(test)]
 mod tests;

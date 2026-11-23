@@ -20,26 +20,19 @@ const VIEW_ONLY_DETAIL: &str = "View-only users cannot manage models.";
 const TEAM_ID_DETAIL: &str = "the model_info team_id must be a string";
 
 // LiteLLM raises HTTPException with a text detail or with {"error": ...}; both land under {"detail": ...}
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("{detail}")]
 pub struct Rejection {
     pub status: StatusCode,
     pub detail: RejectionDetail,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum RejectionDetail {
+    #[error("{0}")]
     Message(String),
+    #[error("{0}")]
     Error(String),
-}
-
-impl fmt::Display for Rejection {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.detail {
-            RejectionDetail::Message(message) | RejectionDetail::Error(message) => {
-                formatter.write_str(message)
-            }
-        }
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
