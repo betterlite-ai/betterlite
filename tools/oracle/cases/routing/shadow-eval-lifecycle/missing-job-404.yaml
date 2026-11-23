@@ -1,0 +1,20 @@
+kind: probe
+name: shadow-eval-lifecycle-missing-job-404
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_lifecycle:
+        router:
+          - model_name: judge-model
+            litellm_params: {model: openai/gpt-4o-mini}
+        now_millis: 1700000000000
+        steps:
+          - stop:
+              role: proxy_admin
+              store: true
+              user_id: admin-user
+              job_id: missing
+compare:
+  ignore:
+    - /output/shadow_eval_lifecycle/steps/0/detail

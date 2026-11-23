@@ -1,0 +1,39 @@
+kind: probe
+name: shadow-eval-lifecycle-repeat-stop-400
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_lifecycle:
+        router:
+          - model_name: judge-model
+            litellm_params: {model: openai/gpt-4o-mini}
+        rows:
+          keys:
+            - {token: key-1, key_alias: prod-key, key_name: sk-...abcd, team_id: team-1}
+        jobs:
+          - id: leg-a
+            group_id: job-1
+            target_type: key
+            target_id: key-1
+            router_name: shadow-router
+            router_names: [shadow-router]
+            models: []
+            direction: forward
+            judge_model: judge-model
+            shadow_percentage: "10.00"
+            max_turns: 10000
+            max_budget: "10.00"
+            created_at_millis: 1699000000000
+            ends_at_millis: 1701000000000
+            stopped_at_millis: 1699989200000
+        now_millis: 1700000000000
+        steps:
+          - stop:
+              role: proxy_admin
+              store: true
+              user_id: admin-user
+              job_id: job-1
+compare:
+  ignore:
+    - /output/shadow_eval_lifecycle/steps/0/detail

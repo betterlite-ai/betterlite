@@ -1,0 +1,30 @@
+kind: probe
+name: shadow-eval-lifecycle-seed-failure-keeps-job
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      shadow_eval_lifecycle:
+        router:
+          - model_name: judge-model
+            litellm_params: {model: openai/gpt-4o-mini}
+          - model_name: tier-model
+            litellm_params: {model: anthropic/claude-sonnet-5}
+          - model_name: shadow-router
+            litellm_params:
+              model: auto_router/complexity_router
+              complexity_router_default_model: tier-model
+        rows:
+          keys:
+            - {token: key-1, key_alias: prod-key, key_name: sk-...abcd, team_id: team-1}
+        now_millis: 1700000000000
+        minted: [11111111-1111-1111-1111-111111111111, 22222222-2222-2222-2222-222222222222]
+        seeds_fail: true
+        steps:
+          - start:
+              role: proxy_admin
+              store: true
+              user_id: admin-user
+              body: {text: '{"router_names": ["shadow-router"], "api_key_ids": ["key-1"], "judge_model": "judge-model", "shadow_percentage": 10, "max_budget": 10}'}
+compare:
+  ignore: []
