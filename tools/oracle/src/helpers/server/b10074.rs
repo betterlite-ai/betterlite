@@ -80,13 +80,11 @@ fn answer(cipher: &Cipher, call: &Call) -> Value {
         Operation::EncryptEnvForDb => encrypt_env_for_db(&call.values, cipher, new_key.as_ref()),
         Operation::DecryptEnv => return Value::Object(decrypt_env(&call.values, cipher)),
     };
-    match sealed {
-        Ok(values) => {
-            let key = write_key(cipher, new_key.as_ref());
-            sealed_view(&values, key.as_ref())
-        }
-        Err(_) => json!({"failed": true}),
-    }
+    let Ok(values) = sealed else {
+        return json!({"failed": true});
+    };
+    let key = write_key(cipher, new_key.as_ref());
+    sealed_view(&values, key.as_ref())
 }
 
 fn write_key(cipher: &Cipher, new_key: Option<&SecretString>) -> Option<SecretString> {
@@ -99,7 +97,7 @@ fn write_key(cipher: &Cipher, new_key: Option<&SecretString>) -> Option<SecretSt
 fn sealed_view(sealed: &Map<String, Value>, write_key: Option<&SecretString>) -> Value {
     let mut view = Map::new();
     for (name, value) in sealed {
-        let entry = match value {
+        let resolved = match value {
             Value::String(text) => sealed_entry(text, write_key),
             Value::Null
             | Value::Bool(_)
@@ -107,7 +105,7 @@ fn sealed_view(sealed: &Map<String, Value>, write_key: Option<&SecretString>) ->
             | Value::Array(_)
             | Value::Object(_) => Some(value.clone()),
         };
-        let Some(entry) = entry else {
+        let Some(entry) = resolved else {
             return json!({"failed": true});
         };
         view.insert(name.clone(), entry);
