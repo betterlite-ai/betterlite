@@ -27,19 +27,24 @@ SETTINGS: Final[tuple[str, ...]] = ("api_base", "api_key", "openai_key", "organi
 BOOKKEEPING: Final[tuple[str, ...]] = ("async_call", "litellm_logging_obj")
 # a token provider is a Python callable the payload cannot carry into Rust
 REFUSED: Final = "azure_ad_token_provider"
+# the operation each request names for the one native session
+CREATE: Final = "create_container"
+LIST: Final = "list_containers"
+RETRIEVE: Final = "retrieve_container"
+DELETE: Final = "delete_container"
 
 OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 Provider: TypeAlias = Literal["openai", "azure", "azure_text"]
 
 
-# the call as the session takes it: the arguments, the module settings and what Rust drops
-def call_payload(values: Mapping[str, CallValue]) -> CallPayload:
+# the call as the session takes it: the operation, the arguments and the module settings behind them
+def call_payload(operation: str, values: Mapping[str, CallValue]) -> CallPayload:
     if values.get(REFUSED) is not None:
         raise UnsupportedCallArgument(REFUSED)
     arguments = {name: given for name, given in values.items() if given is not None}
     kept = {name: given for name, given in arguments.items() if name not in BOOKKEEPING}
-    return to_call_payload({**kept, "settings": read_settings(SETTINGS)})
+    return to_call_payload({**kept, "settings": read_settings(SETTINGS), "operation": operation})
 
 
 # a keyword the caller left unset stays out, so the fallback it would hide applies instead
@@ -58,16 +63,10 @@ def omit_none(**named: CallValue) -> dict[str, CallValue]:
 
 # retrieve and delete take the same request, and a managed id inside container_id decodes in Rust
 def operation_values(
-    kwargs: Mapping[str, CallValue],
-    container_id: str,
-    timeout: float | TimeoutValues,
-    api_key: str | None,
-    api_base: str | None,
-    api_version: str | None,
-    custom_llm_provider: Provider,
-    extra_headers: dict[str, JsonValue] | None,
-    extra_query: dict[str, JsonValue] | None,
-    extra_body: dict[str, JsonValue] | None,
+    kwargs: Mapping[str, CallValue], container_id: str, timeout: float | TimeoutValues,
+    api_key: str | None, api_base: str | None, api_version: str | None,
+    custom_llm_provider: Provider, extra_headers: dict[str, JsonValue] | None,
+    extra_query: dict[str, JsonValue] | None, extra_body: dict[str, JsonValue] | None,
 ) -> dict[str, CallValue]:
     named = omit_none(
         container_id=container_id, timeout=timeout, api_key=api_key, api_base=api_base,
@@ -82,8 +81,7 @@ def created(answer: JsonValue) -> ContainerObject:
     fields = OBJECT.validate_python(answer)
     hidden = OBJECT.validate_python(fields.pop("_hidden_params", {}))
     container = ContainerObject.model_validate(fields)
-    # a pydantic private attribute lives in this dict, which is where LiteLLM's assignment lands
-    private = container.__pydantic_private__
+    private: dict[str, JsonValue] | None = container.__pydantic_private__
     if private is None:
         raise RuntimeError("ContainerObject keeps no private attribute storage")
     private["_hidden_params"] = hidden
@@ -92,14 +90,14 @@ def created(answer: JsonValue) -> ContainerObject:
 
 def create_from_values(values: Mapping[str, CallValue]) -> ContainerObject:
     answer = call_native(
-        NativeContainerSession("{}").create_container, call_payload(values), NativeContainerError
+        NativeContainerSession("{}").call, call_payload(CREATE, values), NativeContainerError
     )
     return created(answer)
 
 
 async def acreate_from_values(values: Mapping[str, CallValue]) -> ContainerObject:
     answer = await acall_native(
-        NativeContainerSession("{}").acreate_container, call_payload(values),
+        NativeContainerSession("{}").acall, call_payload(CREATE, values),
         NativeContainerError,
     )
     return created(answer)
@@ -107,21 +105,21 @@ async def acreate_from_values(values: Mapping[str, CallValue]) -> ContainerObjec
 
 def list_from_values(values: Mapping[str, CallValue]) -> ContainerListResponse:
     answer = call_native(
-        NativeContainerSession("{}").list_containers, call_payload(values), NativeContainerError
+        NativeContainerSession("{}").call, call_payload(LIST, values), NativeContainerError
     )
     return ContainerListResponse.model_validate(answer)
 
 
 async def alist_from_values(values: Mapping[str, CallValue]) -> ContainerListResponse:
     answer = await acall_native(
-        NativeContainerSession("{}").alist_containers, call_payload(values), NativeContainerError
+        NativeContainerSession("{}").acall, call_payload(LIST, values), NativeContainerError
     )
     return ContainerListResponse.model_validate(answer)
 
 
 async def aretrieve_from_values(values: Mapping[str, CallValue]) -> ContainerObject:
     answer = await acall_native(
-        NativeContainerSession("{}").aretrieve_container, call_payload(values),
+        NativeContainerSession("{}").acall, call_payload(RETRIEVE, values),
         NativeContainerError,
     )
     return ContainerObject.model_validate(answer)
@@ -182,16 +180,13 @@ def list_containers(
     extra_body: dict[str, JsonValue] | None = None,
     **kwargs: CallValue,
 ) -> ContainerListResponse:
-    values: dict[str, CallValue] = {
+    query: dict[str, CallValue] = {"after": after, "limit": limit, "order": order}
+    connection: dict[str, CallValue] = {
         "timeout": timeout, "api_key": api_key, "api_base": api_base,
         "api_version": api_version, "custom_llm_provider": custom_llm_provider,
         "extra_headers": extra_headers, "extra_query": extra_query, "extra_body": extra_body,
     }
-    # the query carries after, limit and order only when the caller set them
-    for name, value in (("after", after), ("limit", limit), ("order", order)):
-        if value is not None:
-            values[name] = value
-    return list_from_values(merged(kwargs, values))
+    return list_from_values(merged(kwargs, {**connection, **query}))
 
 
 async def alist_containers(
@@ -233,7 +228,7 @@ def retrieve_container(
         custom_llm_provider, extra_headers, extra_query, extra_body,
     )
     answer = call_native(
-        NativeContainerSession("{}").retrieve_container, call_payload(values), NativeContainerError
+        NativeContainerSession("{}").call, call_payload(RETRIEVE, values), NativeContainerError
     )
     return ContainerObject.model_validate(answer)
 
@@ -273,7 +268,7 @@ def delete_container(
         custom_llm_provider, extra_headers, extra_query, extra_body,
     )
     return DeleteContainerResult.model_validate(
-        call_native(session.delete_container, call_payload(values), NativeContainerError)
+        call_native(session.call, call_payload(DELETE, values), NativeContainerError)
     )
 
 
@@ -295,6 +290,6 @@ async def adelete_container(
         ),
     }
     answer = await acall_native(
-        NativeContainerSession("{}").adelete_container, call_payload(values), NativeContainerError
+        NativeContainerSession("{}").acall, call_payload(DELETE, values), NativeContainerError
     )
     return DeleteContainerResult.model_validate(answer)
