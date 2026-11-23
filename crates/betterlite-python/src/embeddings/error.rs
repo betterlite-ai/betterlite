@@ -1,0 +1,213 @@
+use super::convert::{ConvertError, NativeEmbeddingErrorPayload};
+use betterlite_core::operation::embedding::route_error;
+use betterlite_env::EnvError;
+use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
+use betterlite_error::error::details::{ResponseDetails, TimeoutDetails, TimeoutStatus};
+use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_http::error::HttpError;
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_models::resolution::ResolutionError;
+use betterlite_openai::embedding::EmbeddingError;
+use betterlite_provider::operation::OperationError;
+use betterlite_redact::secret::Redactor;
+use pyo3::PyErr;
+use pyo3::create_exception;
+use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
+create_exception!(betterlite_native, NativeEmbeddingError, PyException);
+// openai.OpenAI's own message when every key source is empty; LiteLLM's wrapper re-raises it as a 500
+const MISSING_CREDENTIALS: &str = "Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable.";
+const TIMEOUT_ERROR: &str = "APITimeoutError - Request timed out. Error_str: Request timed out.";
+// the identity every answer and every error carries back to Python
+pub(crate) struct CallFacts<'facts> {
+    pub(crate) call_id: &'facts str,
+    pub(crate) model: &'facts str,
+    pub(crate) provider: &'facts str,
+}
+// One failed call: a LiteLLM exception class, or a value main.py must reject before the provider runs.
+#[derive(Debug)]
+pub(crate) enum CallFailure {
+    Class(Box<ErrorClass>),
+    Invalid(String),
+}
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum SessionError {
+    #[error(transparent)]
+    Json(#[from] ConvertError),
+    #[error("the proxy environment could not be read: {source}")]
+    Proxy {
+        #[source]
+        source: EnvError,
+    },
+    #[error("the outbound http client could not be built: {source}")]
+    Client {
+        #[source]
+        source: HttpError,
+    },
+    #[error("the redactor could not be built: {message}")]
+    Redact { message: String },
+}
+fn context(message: String, model: Option<String>, provider: Option<String>) -> ErrorContext {
+    ErrorContext {
+        message,
+        model,
+        provider,
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    }
+}
+pub(crate) fn bad_request(
+    message: String,
+    model: Option<String>,
+    provider: Option<String>,
+) -> CallFailure {
+    let details = ResponseDetails::<400>::from(context(message, model, provider));
+    CallFailure::Class(Box::new(ErrorClass::BadRequest(Box::new(details))))
+}
+pub(crate) fn internal_server(
+    message: String,
+    model: Option<String>,
+    provider: Option<String>,
+) -> CallFailure {
+    CallFailure::Class(Box::new(ErrorClass::InternalServer(Box::new(context(
+        message, model, provider,
+    )))))
+}
+// main.py's exception_type renders a request timeout as LiteLLM's 408 Timeout
+pub(crate) fn timeout_failure(
+    message: String,
+    model: Option<String>,
+    provider: Option<String>,
+) -> CallFailure {
+    let details = TimeoutDetails {
+        context: context(message, model, provider),
+        original_status: TimeoutStatus(408_u16),
+    };
+    CallFailure::Class(Box::new(ErrorClass::Timeout(Box::new(details))))
+}
+pub(crate) fn unsupported_params(message: String) -> CallFailure {
+    CallFailure::Class(Box::new(ErrorClass::UnsupportedParams(Box::new(context(
+        message, None, None,
+    )))))
+}
+// LiteLLM's mock "error" answer is a plain Exception, which carries neither a status nor a body
+pub(crate) fn plain_exception(message: String) -> CallFailure {
+    CallFailure::Class(Box::new(ErrorClass::Unclassified(Box::new(context(
+        message, None, None,
+    )))))
+}
+pub(crate) fn call_failure(failure: &CallFailure) -> PyErr {
+    match failure {
+        CallFailure::Class(class) => class_error(class),
+        CallFailure::Invalid(message) => PyValueError::new_err(message.clone()),
+    }
+}
+fn class_error(class: &ErrorClass) -> PyErr {
+    let payload = NativeEmbeddingErrorPayload::from_class(class);
+    match serde_json::to_string(&payload) {
+        Ok(text) => NativeEmbeddingError::new_err(text),
+        Err(_encoding) => PyRuntimeError::new_err(payload.message),
+    }
+}
+impl From<ConvertError> for PyErr {
+    fn from(error: ConvertError) -> Self {
+        match &error {
+            ConvertError::Json { .. } => PyValueError::new_err(error.to_string()),
+            ConvertError::Encode { .. } | ConvertError::Answer { .. } => {
+                PyRuntimeError::new_err(error.to_string())
+            }
+        }
+    }
+}
+impl From<SessionError> for PyErr {
+    fn from(error: SessionError) -> Self {
+        match &error {
+            SessionError::Json(_) => PyValueError::new_err(error.to_string()),
+            SessionError::Proxy { .. }
+            | SessionError::Client { .. }
+            | SessionError::Redact { .. } => PyRuntimeError::new_err(error.to_string()),
+        }
+    }
+}
+pub(crate) fn resolution_failure(error: &ResolutionError, model: &str) -> CallFailure {
+    bad_request(error.to_string(), Some(model.to_owned()), None)
+}
+// Every prepare, execute and decode failure, as the LiteLLM exception class main.py re-raises.
+pub(crate) fn operation_failure(
+    error: OperationError,
+    facts: &CallFacts<'_>,
+    redactor: &Redactor,
+) -> CallFailure {
+    match error {
+        OperationError::MissingApiKey => {
+            class_failure(raw_error(MISSING_CREDENTIALS, Some(500), facts), redactor)
+        }
+        OperationError::Provider { response } => provider_failure(*response, facts, redactor),
+        OperationError::Timeout => timeout_failure(
+            String::from(TIMEOUT_ERROR),
+            Some(facts.model.to_owned()),
+            Some(facts.provider.to_owned()),
+        ),
+        OperationError::Http { source } => {
+            class_failure(raw_error(&source.to_string(), None, facts), redactor)
+        }
+        kept @ (OperationError::UnavailableAdapter { .. }
+        | OperationError::UnsupportedOperation { .. }
+        | OperationError::Encode { .. }
+        | OperationError::Decode { .. }
+        | OperationError::TooLarge { .. }
+        | OperationError::InvalidHeader { .. }
+        | OperationError::TransformRetry(_)
+        | OperationError::Parameters { .. }
+        | OperationError::RejectedFields { .. }
+        | OperationError::Anthropic { .. }) => internal_server(
+            kept.to_string(),
+            Some(facts.model.to_owned()),
+            Some(facts.provider.to_owned()),
+        ),
+    }
+}
+// the provider's own error body, rendered the way the embeddings route renders it, then classified
+fn provider_failure(
+    response: UpstreamResponse,
+    facts: &CallFacts<'_>,
+    redactor: &Redactor,
+) -> CallFailure {
+    let route = route_error(
+        &EmbeddingError::Provider {
+            response: Box::new(response),
+        },
+        redactor,
+    );
+    class_failure(
+        RawException {
+            model: facts.model.to_owned(),
+            custom_llm_provider: facts.provider.to_owned(),
+            error_str: route.message,
+            status_code: Some(route.failure.status),
+            status_code_is_synthesized: false,
+            message: None,
+            body: None,
+            exception_type: String::new(),
+        },
+        redactor,
+    )
+}
+fn raw_error(error_str: &str, status_code: Option<u16>, facts: &CallFacts<'_>) -> RawException {
+    RawException {
+        model: facts.model.to_owned(),
+        custom_llm_provider: facts.provider.to_owned(),
+        error_str: String::from(error_str),
+        status_code,
+        status_code_is_synthesized: false,
+        message: None,
+        body: None,
+        exception_type: String::new(),
+    }
+}
+fn class_failure(raw: RawException, redactor: &Redactor) -> CallFailure {
+    let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
+    CallFailure::Class(Box::new(class))
+}
