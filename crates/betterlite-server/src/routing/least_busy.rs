@@ -29,14 +29,14 @@ pub fn build(config: &Config) -> Option<Arc<LeastBusy>> {
     }))
 }
 
-// a shared store that cannot be built leaves this worker's counters alone, as a router without Redis keeps them
-fn shared_store(config: &Config) -> Option<RoutingStateStore> {
+// a shared store that cannot be built leaves this worker's counters and pins local, as a router without Redis keeps them
+pub(crate) fn shared_store(config: &Config) -> Option<RoutingStateStore> {
     let settings = shared_settings(config)?;
     let opened = Instant::now();
     match RoutingStateStore::new(&settings, Arc::new(move || opened.elapsed())) {
         Ok(store) => Some(store),
         Err(error) => {
-            tracing::error!(%error, "the least-busy shared counter store cannot be built");
+            tracing::error!(%error, "the shared router store cannot be built");
             None
         }
     }
@@ -51,14 +51,14 @@ fn shared_settings(config: &Config) -> Option<SharedSettings> {
         }),
         Err(StateStoreError::NotConfigured) => None,
         Err(error) => {
-            tracing::error!(%error, "the least-busy shared counter settings are unreadable");
+            tracing::error!(%error, "the shared router store settings are unreadable");
             None
         }
     }
 }
 
 // the local tier's ttl counts from wall time, while the breaker measures the time since it opened
-fn wall_clock() -> Clock {
+pub(crate) fn wall_clock() -> Clock {
     Arc::new(|| {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)

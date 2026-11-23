@@ -42,7 +42,7 @@ sha2.workspace = true
 speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true

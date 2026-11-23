@@ -1,3 +1,4 @@
+mod partition_switch;
 mod queue;
 pub mod retention;
 mod tests;
@@ -121,10 +122,7 @@ impl Section for Raw {
             precreate_ahead: ahead,
             spend_log_queue_max_bytes: max_bytes(lookup)?,
             spend_logs_url: logs_url(lookup),
-            retention: CleanupSettings {
-                general: general.retention,
-                defaults: retention::cleanup_defaults(lookup)?,
-            },
+            retention: retention::cleanup_settings(general.retention, lookup)?,
         })
     }
 }

@@ -1,7 +1,7 @@
 id: B1745
 milestone: M4 keys, spend and management
 title: Commit entity balances in order and preserve roster removal races
-status: todo
+status: done
 depends_on: [B4326, B171, B198, B204, B700, B724, B733, B860, B1746]
 file: tasks/B1745-entity-spend-commit.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/utils.py"
 parent: B070
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3011
