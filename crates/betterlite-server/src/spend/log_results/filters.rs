@@ -1,5 +1,5 @@
 use betterlite_auth::user_roles::UserRole;
-use betterlite_models::key_digest::hashing::hash_token;
+use betterlite_db::key_user_writes::hash::hash_token_if_needed;
 use chrono::NaiveDate;
 use secrecy::ExposeSecret as _;
 
@@ -31,14 +31,10 @@ impl LegacyFilters {
     ) -> Result<Self, LegacyDateError> {
         Ok(Self {
             // only an sk- key is hashed before it reaches the api_key column
-            api_key: query.api_key.as_ref().map(|secret| {
-                let api_key = secret.expose_secret();
-                if api_key.starts_with("sk-") {
-                    hash_token(api_key)
-                } else {
-                    api_key.to_owned()
-                }
-            }),
+            api_key: query
+                .api_key
+                .as_ref()
+                .map(|secret| hash_token_if_needed(secret.expose_secret())),
             request_id: query.request_id.clone(),
             user_id,
             window: legacy_window(query.start_date.as_deref(), query.end_date.as_deref())?,
@@ -52,13 +48,10 @@ pub fn scoped_user_id(
     caller_user_id: Option<&str>,
     requested_user_id: Option<&str>,
 ) -> Option<String> {
-    match role {
-        UserRole::InternalUser | UserRole::InternalUserViewer => caller_user_id.map(str::to_owned),
-        UserRole::ProxyAdmin
-        | UserRole::ProxyAdminViewer
-        | UserRole::OrgAdmin
-        | UserRole::Team
-        | UserRole::Customer => requested_user_id.map(str::to_owned),
+    if role.is_internal_user_role() {
+        caller_user_id.map(str::to_owned)
+    } else {
+        requested_user_id.map(str::to_owned)
     }
 }
 
@@ -71,7 +64,6 @@ fn legacy_window(
     };
     let start = parse_legacy_date(start_text)?;
     let end = parse_legacy_date(end_text)?;
-    // midnights are written directly since to_rfc3339 panics on the years chrono tolerates
     Ok(Some(LegacyWindow {
         start_iso: format!("{}T00:00:00+00:00", start.format("%Y-%m-%d")),
         end_iso: format!("{}T00:00:00+00:00", end.format("%Y-%m-%d")),
