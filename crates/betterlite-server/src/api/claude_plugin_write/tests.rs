@@ -673,18 +673,20 @@ async fn route_aliases(#[case] method: &str, #[case] path: &str, #[case] body: O
     );
 }
 
+#[rstest]
+#[case::create("POST", "/claude-code/plugins")]
+#[case::item("PUT", "/claude-code/plugins/auth-plugin")]
+#[case::enable("POST", "/claude-code/plugins/auth-plugin/enable")]
+#[case::disable("POST", "/claude-code/plugins/auth-plugin/disable")]
+#[case::delete("DELETE", "/claude-code/plugins/auth-plugin")]
 #[tokio::test]
-async fn auth_missing() {
-    let reply = booted_call(
-        booted("oracle-master"),
-        "POST",
-        "/claude-code/plugins",
-        None,
-        Some(ROUTE_CREATE),
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(reply.text, "Internal Server Error");
+async fn auth_missing(#[case] method: &str, #[case] path: &str) {
+    let reply = booted_call(booted("oracle-master"), method, path, None, None).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        reply.text,
+        r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":"None","code":"401"}}"#
+    );
 }
 
 #[tokio::test]
