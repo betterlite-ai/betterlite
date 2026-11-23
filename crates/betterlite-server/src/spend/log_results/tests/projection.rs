@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
 
-use super::support::{Failure, Fake, aggregate, as_json, decimal, json, list_row, seen};
+use super::support::{Events, Failure, Fake, aggregate, as_json, decimal, json, list_row, seen};
 use crate::spend::log_results::projection::{
     SpendLogListRow, SpendLogsPage, build_ui_spend_logs_response,
 };
@@ -41,8 +41,13 @@ async fn identical_session_ids_stay_separate_per_key() {
     let mut stranger = aggregate("s1", "k3");
     stranger.session_total_count = 99;
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
+        summary: Vec::new(),
         aggregates: vec![aggregate("s1", "k1"), second, stranger],
-        ..Fake::default()
+        row_failure: None,
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let events = fake.events.clone();
     let rows = vec![
@@ -120,8 +125,13 @@ async fn a_row_without_stats_counts_one_call_and_invents_no_fields() {
 #[tokio::test]
 async fn stats_fill_every_session_field() {
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
+        summary: Vec::new(),
         aggregates: vec![aggregate("s1", "k1")],
-        ..Fake::default()
+        row_failure: None,
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let built = build(
         Some(&fake),
@@ -137,17 +147,27 @@ async fn stats_fill_every_session_field() {
     assert_eq!(row.session_llm_count, Some(2));
     assert_eq!(row.session_agent_count, Some(1));
     assert_eq!(row.session_total_prompt_tokens, Some(10));
-    assert_eq!(row.session_total_completion_tokens, Some(20));
+    assert_eq!(row.session_completion_tokens, Some(20));
     assert_eq!(row.session_total_tokens, Some(30));
     assert_eq!(row.session_models, Some(vec![String::from("m")]));
     assert_eq!(row.session_models_truncated, Some(false));
+    let fields = object(&as_json(row));
+    assert_eq!(
+        fields.get("session_total_completion_tokens"),
+        Some(&json("20"))
+    );
 }
 
 #[tokio::test]
 async fn a_zero_mcp_count_adds_neither_mcp_field() {
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
+        summary: Vec::new(),
         aggregates: vec![aggregate("s1", "k1")],
-        ..Fake::default()
+        row_failure: None,
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let built = build(
         Some(&fake),
@@ -169,8 +189,13 @@ async fn a_nonzero_mcp_count_adds_both_mcp_fields() {
     stats.mcp_tool_call_count = 2;
     stats.mcp_tool_call_spend = decimal("0.5");
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
+        summary: Vec::new(),
         aggregates: vec![stats],
-        ..Fake::default()
+        row_failure: None,
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let built = build(
         Some(&fake),
@@ -189,8 +214,13 @@ async fn a_nonzero_mcp_count_adds_both_mcp_fields() {
 #[tokio::test]
 async fn a_database_failure_falls_back_to_plain_counts() {
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
+        summary: Vec::new(),
+        aggregates: Vec::new(),
+        row_failure: None,
+        summary_failure: None,
         aggregate_failure: Some(Failure::Database),
-        ..Fake::default()
     };
     let built = build(
         Some(&fake),
@@ -205,8 +235,13 @@ async fn a_database_failure_falls_back_to_plain_counts() {
 #[tokio::test]
 async fn a_malformed_aggregate_row_propagates() {
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
+        summary: Vec::new(),
+        aggregates: Vec::new(),
+        row_failure: None,
+        summary_failure: None,
         aggregate_failure: Some(Failure::Row),
-        ..Fake::default()
     };
     let result = build_ui_spend_logs_response(
         Some(&fake),
@@ -228,8 +263,13 @@ async fn no_reader_leaves_plain_counts() {
 #[tokio::test]
 async fn public_v2_skips_the_query_and_keeps_the_envelope() {
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
+        summary: Vec::new(),
         aggregates: vec![aggregate("s1", "k1")],
-        ..Fake::default()
+        row_failure: None,
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let events = fake.events.clone();
     let rows = vec![list_row("r1", Some("s1"), Some("k1"))];

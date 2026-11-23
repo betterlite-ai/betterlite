@@ -68,8 +68,8 @@ pub struct SessionLookup {
     pub api_keys: Vec<String>,
 }
 
-// _SessionSpendStats, decoded from the aggregate row; the truncation flag is set after the models read
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+// _SessionSpendStats, decoded from the aggregate row; no Debug since api_key holds a key or its hash
+#[derive(Clone, PartialEq, Eq, Deserialize)]
 pub struct SessionAggregate {
     pub session_id: String,
     pub api_key: String,
@@ -84,7 +84,8 @@ pub struct SessionAggregate {
     pub session_llm_count: i32,
     pub session_agent_count: i32,
     pub session_total_prompt_tokens: i64,
-    pub session_total_completion_tokens: i64,
+    #[serde(rename = "session_total_completion_tokens")]
+    pub session_completion_tokens: i64,
     pub session_total_tokens: i64,
     pub session_models: Vec<String>,
     #[serde(skip)]

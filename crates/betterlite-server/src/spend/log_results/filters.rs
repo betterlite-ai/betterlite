@@ -1,6 +1,7 @@
 use betterlite_auth::user_roles::UserRole;
 use betterlite_models::key_digest::hashing::hash_token;
 use chrono::NaiveDate;
+use secrecy::ExposeSecret as _;
 
 use super::dates::{LegacyDateError, parse_legacy_date};
 use super::query::LegacySpendQuery;
@@ -13,7 +14,7 @@ pub struct LegacyWindow {
     pub end_date: NaiveDate,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct LegacyFilters {
     // already hashed when the caller sent an sk- key
     pub api_key: Option<String>,
@@ -30,7 +31,8 @@ impl LegacyFilters {
     ) -> Result<Self, LegacyDateError> {
         Ok(Self {
             // only an sk- key is hashed before it reaches the api_key column
-            api_key: query.api_key.as_deref().map(|api_key| {
+            api_key: query.api_key.as_ref().map(|secret| {
+                let api_key = secret.expose_secret();
                 if api_key.starts_with("sk-") {
                     hash_token(api_key)
                 } else {
@@ -69,8 +71,7 @@ fn legacy_window(
     };
     let start = parse_legacy_date(start_text)?;
     let end = parse_legacy_date(end_text)?;
-    // midnight of the given day read as UTC; written directly since to_rfc3339 would panic on
-    // the out-of-range years chrono tolerates while parsing
+    // midnights are written directly since to_rfc3339 panics on the years chrono tolerates
     Ok(Some(LegacyWindow {
         start_iso: format!("{}T00:00:00+00:00", start.format("%Y-%m-%d")),
         end_iso: format!("{}T00:00:00+00:00", end.format("%Y-%m-%d")),

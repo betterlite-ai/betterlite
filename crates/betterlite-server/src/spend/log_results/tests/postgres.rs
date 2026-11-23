@@ -250,7 +250,7 @@ async fn session_aggregates_group_by_session_and_key() {
     assert_eq!(s1k1.session_llm_count, 2);
     assert_eq!(s1k1.session_agent_count, 1);
     assert_eq!(s1k1.session_total_prompt_tokens, 11);
-    assert_eq!(s1k1.session_total_completion_tokens, 22);
+    assert_eq!(s1k1.session_completion_tokens, 22);
     assert_eq!(s1k1.session_total_tokens, 35);
     assert_eq!(s1k1.session_models, ["gpt-4o"]);
     assert!(!s1k1.session_models_truncated);

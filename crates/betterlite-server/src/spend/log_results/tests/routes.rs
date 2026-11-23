@@ -8,8 +8,8 @@ use betterlite_models::key_digest::hashing::hash_token;
 use rstest::rstest;
 
 use super::support::{
-    Failure, Fake, Reply, admin, call, internal, internal_without_user, json, row, seen, state,
-    summary_row, viewer,
+    Events, Failure, Fake, Reply, admin, call, internal, internal_without_user, json, row, seen,
+    state, summary_row, viewer,
 };
 use crate::spend::log_results::capped::TRUNCATION_HEADER;
 
@@ -36,8 +36,13 @@ const BAD_DATE_BODY: &str = r#"{"error":{"message":"/spend/logs Errortime data '
 #[tokio::test]
 async fn an_internal_user_reads_only_their_own_rows() {
     let fake = Fake {
+        events: Events::default(),
         rows: vec![row("req-1", "2024-01-02T00:00:00+00:00")],
-        ..Fake::default()
+        summary: Vec::new(),
+        aggregates: Vec::new(),
+        row_failure: None,
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let events = fake.events.clone();
     let reply = call(
@@ -133,28 +138,28 @@ async fn an_api_key_that_is_not_sk_is_read_as_is() {
     assert!(recorded[0].starts_with("rows raw-key "));
 }
 
+// one date is never parsed, so a malformed one cannot fail the request
+#[rstest]
+#[case::start_only("/spend/logs?start_date=2024-01-02")]
+#[case::end_only("/spend/logs?end_date=2024-01-03&summarize=true")]
+#[case::invalid_start("/spend/logs?start_date=2024-13-01")]
 #[tokio::test]
-async fn one_date_alone_lists_rows_and_ignores_summarize() {
-    for uri in [
-        "/spend/logs?start_date=2024-01-02",
-        "/spend/logs?end_date=2024-01-03&summarize=true",
-        // one date is never parsed, so a malformed one cannot fail the request
-        "/spend/logs?start_date=2024-13-01",
-    ] {
-        let fake = Fake::default();
-        let events = fake.events.clone();
-        let reply = call(state(Some(Arc::new(fake))), uri, Some(&admin())).await;
-        assert_eq!(reply.status, StatusCode::OK);
-        let recorded = seen(&events);
-        assert_eq!(recorded.len(), 1);
-        assert!(recorded[0].starts_with("rows  "));
-        assert!(!recorded[0].contains(">="));
-    }
+async fn one_date_alone_lists_rows_and_ignores_summarize(#[case] uri: &str) {
+    let fake = Fake::default();
+    let events = fake.events.clone();
+    let reply = call(state(Some(Arc::new(fake))), uri, Some(&admin())).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let recorded = seen(&events);
+    assert_eq!(recorded.len(), 1);
+    assert!(recorded[0].starts_with("rows  "));
+    assert!(!recorded[0].contains(">="));
 }
 
 #[tokio::test]
 async fn a_summary_pads_only_after_the_last_day_through_end_date() {
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
         summary: vec![summary_row(
             "2024-01-02",
             Some("k1"),
@@ -162,7 +167,10 @@ async fn a_summary_pads_only_after_the_last_day_through_end_date() {
             "gpt",
             "1.5",
         )],
-        ..Fake::default()
+        aggregates: Vec::new(),
+        row_failure: None,
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let events = fake.events.clone();
     let reply = call(
@@ -256,8 +264,13 @@ async fn a_bad_date_answers_the_parse_error() {
 #[tokio::test]
 async fn exactly_ten_thousand_rows_set_the_truncation_header() {
     let fake = Fake {
+        events: Events::default(),
         rows: many_rows(10_000),
-        ..Fake::default()
+        summary: Vec::new(),
+        aggregates: Vec::new(),
+        row_failure: None,
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let reply = call(state(Some(Arc::new(fake))), "/spend/logs", Some(&admin())).await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -267,8 +280,13 @@ async fn exactly_ten_thousand_rows_set_the_truncation_header() {
 #[tokio::test]
 async fn nine_thousand_nine_hundred_ninety_nine_rows_do_not() {
     let fake = Fake {
+        events: Events::default(),
         rows: many_rows(9_999),
-        ..Fake::default()
+        summary: Vec::new(),
+        aggregates: Vec::new(),
+        row_failure: None,
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let reply = call(state(Some(Arc::new(fake))), "/spend/logs", Some(&admin())).await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -303,8 +321,13 @@ async fn a_store_failure_answers_with_litellm_status_and_body(
     #[case] body: &str,
 ) {
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
+        summary: Vec::new(),
+        aggregates: Vec::new(),
         row_failure: Some(failure),
-        ..Fake::default()
+        summary_failure: None,
+        aggregate_failure: None,
     };
     let reply = call(state(Some(Arc::new(fake))), "/spend/logs", Some(&admin())).await;
     assert_eq!(reply.status, status);
@@ -314,8 +337,13 @@ async fn a_store_failure_answers_with_litellm_status_and_body(
 #[tokio::test]
 async fn a_summary_failure_wraps_into_the_internal_error() {
     let fake = Fake {
+        events: Events::default(),
+        rows: Vec::new(),
+        summary: Vec::new(),
+        aggregates: Vec::new(),
+        row_failure: None,
         summary_failure: Some(Failure::Database),
-        ..Fake::default()
+        aggregate_failure: None,
     };
     let reply = call(
         state(Some(Arc::new(fake))),
@@ -328,7 +356,7 @@ async fn a_summary_failure_wraps_into_the_internal_error() {
 }
 
 #[tokio::test]
-async fn an_unparseable_summarize_answers_the_framework_422() {
+async fn an_unparsable_summarize_answers_the_framework_422() {
     let reply = call(
         state(Some(Arc::new(Fake::default()))),
         "/spend/logs?summarize=maybe",

@@ -4,9 +4,10 @@ use std::str::from_utf8;
 
 use chrono::NaiveDate;
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
 use super::super::dates::parse_legacy_date;
-use super::super::query::{LegacyQueryError, LegacySpendQuery, decode_legacy_spend_query};
+use super::super::query::{LegacyQueryError, decode_legacy_spend_query};
 
 // every corpus file is a raw query string the decoder must answer without panicking
 #[rstest]
@@ -25,23 +26,21 @@ fn reads_every_parameter_and_defaults_summarize_to_true() {
     )
     .unwrap();
     assert_eq!(
-        query,
-        LegacySpendQuery {
-            api_key: Some(String::from("sk-live")),
-            end_date: Some(String::from("2024-01-03")),
-            request_id: Some(String::from("r1")),
-            start_date: Some(String::from("2024-01-02")),
-            summarize: true,
-            user_id: Some(String::from("alice")),
-        }
+        query.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-live")
     );
+    assert_eq!(query.end_date.as_deref(), Some("2024-01-03"));
+    assert_eq!(query.request_id.as_deref(), Some("r1"));
+    assert_eq!(query.start_date.as_deref(), Some("2024-01-02"));
+    assert!(query.summarize);
+    assert_eq!(query.user_id.as_deref(), Some("alice"));
 }
 
 #[test]
 fn an_empty_query_reads_only_the_default() {
     let query = decode_legacy_spend_query(b"").unwrap();
     assert!(query.summarize);
-    assert_eq!(query.api_key, None);
+    assert!(query.api_key.is_none());
     assert_eq!(query.end_date, None);
     assert_eq!(query.request_id, None);
     assert_eq!(query.start_date, None);
@@ -51,7 +50,10 @@ fn an_empty_query_reads_only_the_default() {
 #[test]
 fn decodes_percent_encoding_and_plus_signs() {
     let query = decode_legacy_spend_query(b"api_key=a%26b%3Dc&user_id=a+b").unwrap();
-    assert_eq!(query.api_key.as_deref(), Some("a&b=c"));
+    assert_eq!(
+        query.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("a&b=c")
+    );
     assert_eq!(query.user_id.as_deref(), Some("a b"));
 }
 
@@ -67,7 +69,7 @@ fn the_last_repeated_parameter_wins() {
 fn unknown_parameters_are_ignored() {
     let query = decode_legacy_spend_query(b"page=2&span_type=llm&summarize=false").unwrap();
     assert!(!query.summarize);
-    assert_eq!(query.api_key, None);
+    assert!(query.api_key.is_none());
 }
 
 #[rstest]

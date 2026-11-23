@@ -8,8 +8,7 @@ use super::session::{
     SessionAggregate, SessionAggregateError, SessionAggregateReader, SessionLookup,
 };
 
-// _SPEND_LOG_LIST_COLUMNS plus the enrichment _build_ui_spend_logs_response writes onto the UI rows
-// (no Debug: the api_key column holds a key or its hash)
+// _SPEND_LOG_LIST_COLUMNS plus the enrichment _build_ui_spend_logs_response writes; no Debug, api_key holds a key
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpendLogListRow {
     pub request_id: String,
@@ -100,8 +99,12 @@ pub struct SpendLogListRow {
     pub session_agent_count: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_total_prompt_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_total_completion_tokens: Option<i64>,
+    #[serde(
+        rename = "session_total_completion_tokens",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub session_completion_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_total_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -120,8 +123,7 @@ pub struct SpendLogsPage {
     pub total_is_capped: bool,
 }
 
-// _build_ui_spend_logs_response: one pair-keyed aggregate query serves the page, and a driver
-// failure falls back to rows without aggregates
+// _build_ui_spend_logs_response: one pair-keyed aggregate query serves the page; a driver failure keeps plain rows
 pub async fn build_ui_spend_logs_response<Reader>(
     reader: Option<&Reader>,
     mut page: SpendLogsPage,
@@ -219,7 +221,7 @@ fn apply_aggregates(
         row.session_llm_count = Some(i64::from(stats.session_llm_count));
         row.session_agent_count = Some(i64::from(stats.session_agent_count));
         row.session_total_prompt_tokens = Some(stats.session_total_prompt_tokens);
-        row.session_total_completion_tokens = Some(stats.session_total_completion_tokens);
+        row.session_completion_tokens = Some(stats.session_completion_tokens);
         row.session_total_tokens = Some(stats.session_total_tokens);
         row.session_models = Some(stats.session_models.clone());
         row.session_models_truncated = Some(stats.session_models_truncated);

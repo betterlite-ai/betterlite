@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -76,7 +77,9 @@ impl Failure {
                 error_type: "budget_exceeded".to_owned(),
                 param: None,
                 code: ExceptionCode::Status(429),
-                ..ProxyExceptionInit::default()
+                headers: BTreeMap::new(),
+                openai_code: None,
+                provider_specific_fields: BTreeMap::new(),
             })),
             Self::Http => StoreError::Http {
                 status: 403,
@@ -107,6 +110,16 @@ pub(super) struct Fake {
     pub(super) aggregate_failure: Option<Failure>,
 }
 
+fn outcome<Item: Clone>(
+    failure: Option<Failure>,
+    values: &[Item],
+) -> Result<Vec<Item>, StoreError> {
+    match failure {
+        Some(failure) => Err(failure.store_error()),
+        None => Ok(values.to_vec()),
+    }
+}
+
 #[async_trait]
 impl LogResultsStore for Fake {
     async fn spend_logs(&self, query: &SpendLogRowsQuery) -> Result<Vec<SpendLogRow>, StoreError> {
@@ -114,10 +127,7 @@ impl LogResultsStore for Fake {
             &self.events,
             format!("rows {} {}", query.params.join("|"), query.sql),
         );
-        match self.row_failure {
-            Some(failure) => Err(failure.store_error()),
-            None => Ok(self.rows.clone()),
-        }
+        outcome(self.row_failure, &self.rows)
     }
 
     async fn daily_summary(
@@ -128,10 +138,7 @@ impl LogResultsStore for Fake {
             &self.events,
             format!("summary {} {}", query.params.join("|"), query.sql),
         );
-        match self.summary_failure {
-            Some(failure) => Err(failure.store_error()),
-            None => Ok(self.summary.clone()),
-        }
+        outcome(self.summary_failure, &self.summary)
     }
 }
 
@@ -235,7 +242,7 @@ pub(super) fn aggregate(session_id: &str, api_key: &str) -> SessionAggregate {
         session_llm_count: 2,
         session_agent_count: 1,
         session_total_prompt_tokens: 10,
-        session_total_completion_tokens: 20,
+        session_completion_tokens: 20,
         session_total_tokens: 30,
         session_models: vec![String::from("m")],
         session_models_truncated: false,

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use axum::response::{IntoResponse, Response};
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::table_ops::rows::RowError;
@@ -16,7 +18,7 @@ const NO_DATABASE_MESSAGE: &str = "Database not connected. Connect a database to
 
 #[derive(Debug, thiserror::Error)]
 pub enum LogResultsError {
-    // FastAPI rejects an unparseable query parameter before the endpoint runs
+    // FastAPI rejects an unparsable query parameter before the endpoint runs
     #[error(transparent)]
     Query(#[from] LegacyQueryError),
     #[error("the caller's identity could not be read")]
@@ -50,24 +52,30 @@ fn spend_logs_error(message: String) -> Response {
         error_type: String::from(INTERNAL_ERROR_TYPE),
         param: Some(String::from(NONE_PARAM)),
         code: ExceptionCode::Status(500),
-        ..ProxyExceptionInit::default()
+        headers: BTreeMap::new(),
+        openai_code: None,
+        provider_specific_fields: BTreeMap::new(),
     });
     denial_response(&exception)
+}
+
+// HTTPException: its detail becomes the message and its status the code
+fn http_exception_response(status: u16, detail: &str) -> Response {
+    denial_response(&ProxyException::new(ProxyExceptionInit {
+        message: detail.to_owned(),
+        error_type: String::from(INTERNAL_ERROR_TYPE),
+        param: Some(String::from(NONE_PARAM)),
+        code: ExceptionCode::Status(i64::from(status)),
+        headers: BTreeMap::new(),
+        openai_code: None,
+        provider_specific_fields: BTreeMap::new(),
+    }))
 }
 
 fn store_response(error: &StoreError) -> Response {
     match error {
         StoreError::Proxy(exception) => denial_response(exception),
-        // HTTPException: its detail becomes the message and its status the code
-        StoreError::Http { status, detail } => {
-            denial_response(&ProxyException::new(ProxyExceptionInit {
-                message: detail.clone(),
-                error_type: String::from(INTERNAL_ERROR_TYPE),
-                param: Some(String::from(NONE_PARAM)),
-                code: ExceptionCode::Status(i64::from(*status)),
-                ..ProxyExceptionInit::default()
-            }))
-        }
+        StoreError::Http { status, detail } => http_exception_response(*status, detail),
         StoreError::Database(source) => spend_logs_error(source.to_string()),
         StoreError::Row(source) => spend_logs_error(source.to_string()),
     }
