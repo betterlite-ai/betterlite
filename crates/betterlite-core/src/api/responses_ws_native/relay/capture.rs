@@ -72,18 +72,17 @@ where
     }
 
     async fn failure_exception(&self) -> Option<ErrorClass> {
-        let failed = {
-            let messages = self.messages.lock().await;
-            messages
-                .iter()
-                .find(|event| {
-                    matches!(
-                        event.get("type"),
-                        Some(Json::Text(kind)) if FAILURE_EVENT_TYPES.contains(&kind.as_str())
-                    )
-                })
-                .cloned()?
-        };
+        let messages = self.messages.lock().await;
+        let failed = messages
+            .iter()
+            .find(|event| {
+                matches!(
+                    event.get("type"),
+                    Some(Json::Text(kind)) if FAILURE_EVENT_TYPES.contains(&kind.as_str())
+                )
+            })
+            .cloned()?;
+        drop(messages);
         let object = match ws_event_error(&failed) {
             Some(Json::Object(fields)) => StreamErrorObject::Mapping(fields),
             Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))

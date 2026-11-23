@@ -213,14 +213,12 @@ where
     }
 
     async fn masked_client_frame(&self, message: &str) -> Result<String, ClientRelayError> {
-        let masked = {
-            let mut request_data = self.request_data.lock().await;
-            mask_response_create(&self.policy(), &mut request_data, message)
-                .await
-                .map_err(|error| ClientRelayError::Frame(error.to_string()))?
-                .into_owned()
-        };
-        Ok(masked)
+        let mut request_data = self.request_data.lock().await;
+        let masked = mask_response_create(&self.policy(), &mut request_data, message)
+            .await
+            .map_err(|error| ClientRelayError::Frame(error.to_string()))?;
+        drop(request_data);
+        Ok(masked.into_owned())
     }
 }
 
