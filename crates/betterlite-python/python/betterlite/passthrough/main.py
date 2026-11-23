@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from typing import Final, TypeAlias, TypeVar
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import Unpack
 
 from betterlite._completion.arguments import SessionLike
 from betterlite._completion.errors import raise_native_error
@@ -156,45 +157,12 @@ async def acall_route(route: RouteValues) -> ResponseParts:
         return await session.acall(payload.text, payload.blobs)
 
 
-def route_values(
-    method: str,
-    endpoint: str,
-    model: str,
-    custom_llm_provider: str | None,
-    api_base: str | None,
-    api_key: str | None,
-    request_query_params: dict[str, JsonValue] | None,
-    request_headers: dict[str, str] | None,
-    content: bytes | None,
-    data: dict[str, CallValue] | None,
-    files: Files | None,
-    json: JsonValue,
-    params: Params | None,
-    cookies: Cookies | None,
-    client: SessionLike | None,
-    kwargs: Mapping[str, CallValue],
-) -> RouteValues:
-    return RouteValues(
-        method=method,
-        endpoint=endpoint,
-        model=model,
-        custom_llm_provider=custom_llm_provider,
-        api_base=api_base,
-        api_key=api_key,
-        request_query_params=request_query_params,
-        request_headers=request_headers,
-        content=content,
-        data=data,
-        files=files,
-        json=json,
-        params=params,
-        cookies=cookies,
-        client=client,
-        kwargs=kwargs,
-    )
+def route_values(**values: Unpack[RouteValues]) -> RouteValues:
+    route: RouteValues = values
+    return route
 
 
-def llm_passthrough_route(
+def llm_passthrough_route(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L393
     *,
     method: str,
     endpoint: str,
@@ -234,7 +202,7 @@ def llm_passthrough_route(
     return reply_response(*call_route(route), PassthroughStreamingResponse)
 
 
-async def allm_passthrough_route(
+async def allm_passthrough_route(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L268
     *,
     method: str,
     endpoint: str,
@@ -255,9 +223,22 @@ async def allm_passthrough_route(
 ) -> AsyncStreamReply:
     body = None if content is None else await acontent_bytes(content)
     route = route_values(
-        method, endpoint, model, custom_llm_provider, api_base, api_key,
-        request_query_params, request_headers, body, data, files, json, params,
-        cookies, client, kwargs,
+        method=method,
+        endpoint=endpoint,
+        model=model,
+        custom_llm_provider=custom_llm_provider,
+        api_base=api_base,
+        api_key=api_key,
+        request_query_params=request_query_params,
+        request_headers=request_headers,
+        content=body,
+        data=data,
+        files=files,
+        json=json,
+        params=params,
+        cookies=cookies,
+        client=client,
+        kwargs=kwargs,
     )
     # ast-grep-ignore: no-long-names
     return reply_response(*await acall_route(route), AsyncPassthroughStreamingResponse)

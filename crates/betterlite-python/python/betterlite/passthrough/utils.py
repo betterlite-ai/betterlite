@@ -51,7 +51,7 @@ class BasePassthroughUtils:
     def forward_headers_from_request(
         request_headers: Mapping[str, str],
         headers: Mapping[str, str],
-        forward_headers: bool | None = False,
+        forward_headers: bool | None = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L62
     ) -> dict[str, str]:
         forwarded = _native.forward_headers_from_request(
             HEADERS.dump_json(dict(request_headers)).decode(),
