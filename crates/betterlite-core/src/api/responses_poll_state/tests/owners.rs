@@ -163,7 +163,10 @@ async fn read_as(store: &ResponsePollingStore, caller: &PollCaller) -> bool {
         .is_some()
 }
 
-fn assert_denied<T: Debug>(result: Result<T, PollingError>, denial: PollDenial) {
+fn assert_denied<T>(result: Result<T, PollingError>, denial: PollDenial)
+where
+    T: Debug,
+{
     support::assert_denial(result.expect_err("the caller is denied"), denial);
 }
 

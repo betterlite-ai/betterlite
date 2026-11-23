@@ -100,31 +100,19 @@ impl FakeCache {
 
     fn failing(&self, operation: CacheOperation) -> bool {
         let mut failure = self.failure.lock().unwrap_or_else(PoisonError::into_inner);
-        if *failure == Some(operation) {
+        let matched = *failure == Some(operation);
+        if matched {
             *failure = None;
-            return true;
         }
-        false
+        drop(failure);
+        matched
     }
 
-    fn record(
-        &self,
-        operation: CacheOperation,
-        key: &str,
-        ttl: Option<i64>,
-        hit: bool,
-        value: Option<String>,
-    ) {
+    fn record(&self, effect: CacheEffect) {
         self.effects
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(CacheEffect {
-                operation,
-                key: key.to_owned(),
-                ttl,
-                hit,
-                value,
-            });
+            .push(effect);
     }
 
     fn put(&self, key: &str, value: &str) {
@@ -159,20 +147,26 @@ impl FakeCache {
 impl PollingCache for FakeCache {
     async fn read(&self, key: &str) -> Result<Option<Vec<u8>>, PollingCacheError> {
         let value = self.entry(key).map(String::into_bytes);
-        self.record(CacheOperation::Read, key, None, value.is_some(), None);
+        self.record(CacheEffect {
+            operation: CacheOperation::Read,
+            key: key.to_owned(),
+            ttl: None,
+            hit: value.is_some(),
+            value: None,
+        });
         self.check(CacheOperation::Read)?;
         Ok(value)
     }
 
     async fn write(&self, key: &str, value: &str, ttl: i64) -> Result<(), PollingCacheError> {
         let hit = self.entry(key).is_some();
-        self.record(
-            CacheOperation::Write,
-            key,
-            Some(ttl),
+        self.record(CacheEffect {
+            operation: CacheOperation::Write,
+            key: key.to_owned(),
+            ttl: Some(ttl),
             hit,
-            Some(value.to_owned()),
-        );
+            value: Some(value.to_owned()),
+        });
         self.check(CacheOperation::Write)?;
         self.put(key, value);
         Ok(())
@@ -181,7 +175,13 @@ impl PollingCache for FakeCache {
     async fn delete(&self, key: &str) -> Result<i64, PollingCacheError> {
         self.check(CacheOperation::Delete)?;
         let present = self.take(key);
-        self.record(CacheOperation::Delete, key, None, present, None);
+        self.record(CacheEffect {
+            operation: CacheOperation::Delete,
+            key: key.to_owned(),
+            ttl: None,
+            hit: present,
+            value: None,
+        });
         Ok(i64::from(present))
     }
 }
@@ -360,7 +360,11 @@ pub(super) fn owner(user: &str, team: &str, fingerprint: &str) -> PollOwner {
 pub(super) fn assert_denial(error: PollingError, denial: PollDenial) {
     match error {
         PollingError::Forbidden(found) => assert_eq!(found, denial),
-        other => panic!("expected a forbidden polling error, got {other}"),
+        other @ PollingError::Cache(_)
+        | other @ PollingError::Decode(_)
+        | other @ PollingError::Encode(_) => {
+            panic!("expected a forbidden polling error, got {other}")
+        }
     }
 }
 

@@ -33,7 +33,7 @@ pub enum PollingUpdate {
 }
 
 // the envelope is ours; a plain response object is a record written before owners existed
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum StoredPollState {
     Record(PollRecord),

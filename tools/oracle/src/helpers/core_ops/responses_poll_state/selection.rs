@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::invalid;
-use super::watch::Watch;
+use super::watch::{Watch, tail};
 
 #[derive(Deserialize)]
 pub(super) struct Selection {
@@ -61,10 +61,7 @@ pub(super) fn result(selection: &Selection, watch: &Watch) -> Result<Value, Box<
         redis_available: selection.redis,
     };
     let enabled = should_use_polling_for_request(request, &settings, projection.as_ref());
-    let logs = {
-        let guard = watch.lines.lock().unwrap_or_else(PoisonError::into_inner);
-        Value::Array(guard.iter().skip(start).cloned().collect())
-    };
+    let logs = tail(&watch.lines, start);
     Ok(json!({"enabled": enabled, "logs": logs}))
 }
 

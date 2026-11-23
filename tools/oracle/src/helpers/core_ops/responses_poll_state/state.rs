@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use super::Input;
 use super::cache::ScriptedCache;
-use super::watch::Watch;
+use super::watch::{Watch, tail};
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -64,26 +64,8 @@ pub(super) async fn call_result(
         Ok(value) => (value, Value::Null),
         Err(failure) => (Value::Null, Value::String(label(&failure).to_owned())),
     };
-    let effects = Value::Array(
-        cache
-            .effects
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .skip(effects_start)
-            .cloned()
-            .collect(),
-    );
-    let logs = Value::Array(
-        watch
-            .lines
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .skip(logs_start)
-            .cloned()
-            .collect(),
-    );
+    let effects = tail(&cache.effects, effects_start);
+    let logs = tail(&watch.lines, logs_start);
     Ok(json!({
         "returned": returned,
         "error": error,

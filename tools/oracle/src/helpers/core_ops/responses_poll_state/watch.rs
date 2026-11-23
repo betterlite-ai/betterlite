@@ -44,3 +44,15 @@ pub(super) fn install() -> (DefaultGuard, Watch) {
     let subscriber = tracing_subscriber::registry().with(watch.clone());
     (set_default(subscriber), watch)
 }
+
+pub(super) fn tail(values: &Mutex<Vec<Value>>, start: usize) -> Value {
+    Value::Array(
+        values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .skip(start)
+            .cloned()
+            .collect(),
+    )
+}

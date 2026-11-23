@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use betterlite_models::decisions::Json;
 
 use crate::api::api_boundaries::ApiLimits;
@@ -48,6 +46,10 @@ pub(super) async fn missing_state(cache: &FakeCache, store: &ResponsePollingStor
             .await
             .expect("the missing delete still succeeds")
     );
+    assert_missing_counts(cache);
+}
+
+fn assert_missing_counts(cache: &FakeCache) {
     assert_eq!(cache.count(CacheOperation::Write), 0);
     assert_eq!(cache.count(CacheOperation::Read), 3);
     assert_eq!(cache.count(CacheOperation::Delete), 1);
@@ -204,24 +206,21 @@ async fn complete(store: &ResponsePollingStore, id: &str) -> Result<PollingUpdat
         .await
 }
 
-fn expect_read_error<T: Debug>(result: Result<T, PollingError>) {
-    let error = result.expect_err("the read failure propagates");
+fn expect_read_error(error: PollingError) {
     assert!(matches!(
         error,
         PollingError::Cache(PollingCacheError::Read(_))
     ));
 }
 
-fn expect_write_error<T: Debug>(result: Result<T, PollingError>) {
-    let error = result.expect_err("the write failure propagates");
+fn expect_write_error(error: PollingError) {
     assert!(matches!(
         error,
         PollingError::Cache(PollingCacheError::Write(_))
     ));
 }
 
-fn expect_delete_error<T: Debug>(result: Result<T, PollingError>) {
-    let error = result.expect_err("the delete failure propagates");
+fn expect_delete_error(error: PollingError) {
     assert!(matches!(
         error,
         PollingError::Cache(PollingCacheError::Delete(_))
@@ -230,31 +229,34 @@ fn expect_delete_error<T: Debug>(result: Result<T, PollingError>) {
 
 async fn assert_read_failure(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Read);
-    expect_read_error(store.get_state(id, PollAccess::AuthDisabled).await);
+    let result = store.get_state(id, PollAccess::AuthDisabled).await;
+    expect_read_error(result.expect_err("the read failure propagates"));
 }
 
 async fn assert_read_failure_on_update(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Read);
-    expect_read_error(complete(store, id).await);
+    let result = complete(store, id).await;
+    expect_read_error(result.expect_err("the read failure propagates"));
 }
 
 async fn assert_write_failure_on_update(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Write);
-    expect_write_error(complete(store, id).await);
+    let result = complete(store, id).await;
+    expect_write_error(result.expect_err("the write failure propagates"));
 }
 
 async fn assert_write_failure_on_create(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Write);
-    expect_write_error(
-        store
-            .create_initial_state(support::new_request(id, None))
-            .await,
-    );
+    let result = store
+        .create_initial_state(support::new_request(id, None))
+        .await;
+    expect_write_error(result.expect_err("the write failure propagates"));
 }
 
 async fn assert_delete_failure(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Delete);
-    expect_delete_error(store.delete_polling(id).await);
+    let result = store.delete_polling(id).await;
+    expect_delete_error(result.expect_err("the delete failure propagates"));
 }
 
 pub(super) async fn absent_cache() {
