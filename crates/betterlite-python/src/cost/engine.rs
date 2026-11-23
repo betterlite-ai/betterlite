@@ -25,7 +25,6 @@ use betterlite_provider::pricing::image::ProviderImagePricing;
 use betterlite_tokenizer::count::error::CountError;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde::de::DeserializeOwned;
 
 use crate::cost::billing::{CallRequest, CompletionRequest, RerankUnits};
 use crate::cost::breakdown::Capture;
@@ -122,17 +121,21 @@ impl Engine {
             Some(found) => found,
             None => ResponseKind::Other,
         };
+        let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
         match kind {
             ResponseKind::Transcription => {
-                let typed: TranscriptionUsage = typed_usage(mapping)?;
+                let typed: TranscriptionUsage =
+                    serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
                 usage_answer(kind, BillingUsage::Transcription(&typed))
             }
             ResponseKind::DecisionsIr => {
-                let typed: DecisionsUsage = typed_usage(mapping)?;
+                let typed: DecisionsUsage =
+                    serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
                 usage_answer(kind, BillingUsage::DecisionsIr(&typed))
             }
             ResponseKind::DecisionsOpenAi => {
-                let typed: DecisionUsage = typed_usage(mapping)?;
+                let typed: DecisionUsage =
+                    serde_json::from_str(&text).map_err(BillingUsageError::Json)?;
                 usage_answer(kind, BillingUsage::DecisionsOpenAi(&typed))
             }
             ResponseKind::Chat
@@ -221,15 +224,6 @@ fn usage_from_mapping(
         service_tier: None,
         hidden_params: None,
     })
-}
-
-// A typed usage the kind declares, read from the usage mapping Python dumped.
-fn typed_usage<T>(mapping: &IndexMap<String, Json>) -> Result<T, BillingUsageError>
-where
-    T: DeserializeOwned,
-{
-    let text = serde_json::to_string(mapping).map_err(BillingUsageError::Json)?;
-    serde_json::from_str(&text).map_err(BillingUsageError::Json)
 }
 
 fn usage_answer(kind: ResponseKind, usage: BillingUsage<'_>) -> Result<Option<Usage>, EngineError> {
