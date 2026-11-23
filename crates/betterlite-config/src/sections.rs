@@ -184,6 +184,7 @@ pub mod embedding_provider_settings;
 pub mod end_user_registry;
 pub mod enkryptai_detection;
 pub mod enterprise_ml_credentials;
+pub mod env_credential_login;
 pub mod error_body_call_id;
 pub mod executed_batch_runner;
 pub mod fallback_budget;
@@ -599,7 +600,7 @@ sections! {
     deepseek_identity, default_user_teams, deployment_affinity, deployment_catalog,
     deployment_clients, deployment_identity, detailed_timing, drop_params, dynamic_rate_limit_health,
     dynamic_rate_limit_policy, dynamoai_moderation, embedding_host_settings,
-    embedding_provider_settings, end_user_registry, enkryptai_detection,
+    embedding_provider_settings, end_user_registry, enkryptai_detection, env_credential_login,
     error_body_call_id, executed_batch_runner, fallback_budget, fallback_plans,
     file_upload_options, file_upload_routing, file_upload_validation, fine_tuning_provider_config, focus_export_schedule,
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,

@@ -1,0 +1,14 @@
+id: B10066
+milestone: M9 agents and mcp
+title: MCP refresh ownership and binding denial types
+status: todo
+depends_on: [B4715]
+file: tasks/B10066-mcp-binding-port-types.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py"
+parent: B137
+split_from: B4659
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
