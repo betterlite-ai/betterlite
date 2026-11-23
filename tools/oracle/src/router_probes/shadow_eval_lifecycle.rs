@@ -76,24 +76,11 @@ async fn scenario(input: &Input) -> Result<Output, OperationError> {
     };
     let cache = ProviderCache::default();
     let settings = AnthropicSettings::default();
-    let info = Json::Object(JsonObject::new());
-    let Snapshot {
-        catalog: fixture_catalog,
-        aliases: fixture_aliases,
-        groups: fixture_groups,
-        provider: fixture_provider,
-    } = Snapshot::build(&probe_rows(payload, &info), &payload.model_group_alias)
-        .map_err(invalid)?;
-    // the boxed closure is neither Send nor Sync, and no lifecycle step reads it
-    drop(fixture_provider);
+    let fixture = fixture_of(payload, &Json::Object(JsonObject::new()))?;
     let store = ProbeStore::build(payload)?;
     let mut probe = Probe {
         store: &store,
-        fixture: Fixture {
-            catalog: fixture_catalog,
-            aliases: fixture_aliases,
-            groups: fixture_groups,
-        },
+        fixture,
         settings: &settings,
         cache: &cache,
         resolution: &resolution,
@@ -108,6 +95,18 @@ async fn scenario(input: &Input) -> Result<Output, OperationError> {
         steps,
         jobs: store.states(),
     })))
+}
+
+// a snapshot's boxed provider closure is neither Send nor Sync, so it is dropped before any await
+fn fixture_of(payload: &Payload, info: &Json) -> Result<Fixture, OperationError> {
+    let snapshot =
+        Snapshot::build(&probe_rows(payload, info), &payload.model_group_alias).map_err(invalid)?;
+    drop(snapshot.provider);
+    Ok(Fixture {
+        catalog: snapshot.catalog,
+        aliases: snapshot.aliases,
+        groups: snapshot.groups,
+    })
 }
 
 fn parse_outcome(body: &Body) -> Result<StepOutcome, OperationError> {
