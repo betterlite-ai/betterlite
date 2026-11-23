@@ -13,9 +13,10 @@ use crate::auth::auth_identity::AuthContext;
 use crate::plugin_routes::routes::{Identity, caller_identity};
 use crate::shadow_eval_results::access::require_viewer;
 use crate::shadow_eval_results::error::ShadowResultsRouteError;
-use crate::shadow_eval_results::postgres::{PgShadowResults, store_from_state};
+use crate::shadow_eval_results::postgres::store_from_state;
 use crate::shadow_eval_results::query::decode_shadow_query;
 use crate::shadow_eval_results::service::{get_shadow_eval_job, list_shadow_eval_jobs};
+use crate::shadow_result_aggregation::postgres::PgShadowResults;
 use crate::state::ServerState;
 use crate::tracing_routes::router::unauthenticated;
 

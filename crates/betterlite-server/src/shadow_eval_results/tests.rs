@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod corpus;
 mod postgres;
 mod state;
 
@@ -479,14 +480,14 @@ async fn assert_list(case: ListCase) {
     let jobs = list_shadow_eval_jobs(store, &case.query, case.now)
         .await
         .unwrap();
-    let seen: Vec<&str> = jobs.iter().map(|job| job.job_id.as_str()).collect();
+    let seen: Vec<&str> = jobs.iter().map(|job| job.job.job_id.as_str()).collect();
     assert_eq!(seen, case.expected_jobs);
     assert_targets(&jobs, &case.expected_targets);
     assert_attempts(&jobs, &case.expected_attempts);
     assert_labels(&jobs, &case.expected_labels);
     let statuses: Vec<(&str, ShadowEvalStatus)> = jobs
         .iter()
-        .map(|job| (job.job_id.as_str(), job.status))
+        .map(|job| (job.job.job_id.as_str(), job.status))
         .collect();
     assert_eq!(statuses, case.expected_statuses);
     let calls = store.recording_list_calls();
@@ -507,7 +508,7 @@ fn assert_targets(
                 .iter()
                 .map(|target| (target.target_type, target.target_id.as_str()))
                 .collect();
-            (job.job_id.as_str(), targets)
+            (job.job.job_id.as_str(), targets)
         })
         .collect();
     assert_eq!(seen, expected);
@@ -534,7 +535,7 @@ async fn assert_statuses(case: StatusCase) {
         .unwrap();
     let seen: Vec<(&str, ShadowEvalStatus)> = jobs
         .iter()
-        .map(|job| (job.job_id.as_str(), job.status))
+        .map(|job| (job.job.job_id.as_str(), job.status))
         .collect();
     assert_eq!(seen, case.expected);
 }
@@ -709,27 +710,6 @@ async fn assert_pair(target_type: Option<ShadowEvalTargetType>, target_id: Optio
     let outcome = list_shadow_eval_jobs(&store, &query(target_type, target_id, 50), at(500)).await;
     let error = outcome.err().unwrap();
     assert_eq!(error.status_code(), 400);
-}
-
-mod corpus {
-    use std::fs;
-    use std::path::PathBuf;
-
-    use rstest::rstest;
-
-    use super::super::query::decode_shadow_query;
-
-    #[rstest]
-    fn replays_the_shadow_q_corpus(#[files("fuzz/corpus/shadow_q/*")] path: PathBuf) {
-        let bytes = fs::read(&path).unwrap();
-        let parsed = decode_shadow_query(&bytes);
-        let name = path.file_name().and_then(|name| name.to_str()).unwrap();
-        if name.starts_with("shadow-eval-results-valid") {
-            drop(parsed.unwrap());
-        } else {
-            drop(parsed.unwrap_err());
-        }
-    }
 }
 
 async fn assert_missing_job(store: &FakeStore, job_id: &str) {
