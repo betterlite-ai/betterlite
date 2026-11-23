@@ -1,0 +1,26 @@
+kind: helper
+name: prerequisites-refusal-order
+call:
+  b4663:
+    prerequisites: {jwt_auth_enabled: false, has_database: false, maps_jwts_to_virtual_keys: false}
+    subject_token: garbage
+    authorizer: {kind: result, user_id: user-1}
+    cause: null
+calls:
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: false, maps_jwts_to_virtual_keys: true}
+      subject_token: garbage
+      authorizer: {kind: result, user_id: user-1}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: true}
+      subject_token: garbage
+      authorizer: {kind: result, user_id: user-1}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: garbage
+      authorizer: {kind: result, user_id: user-1}
+      cause: null
+env: {}
+compare: {ignore: []}

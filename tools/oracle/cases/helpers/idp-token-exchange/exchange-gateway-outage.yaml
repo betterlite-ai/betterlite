@@ -1,0 +1,36 @@
+kind: helper
+name: exchange-gateway-outage
+call:
+  b4663:
+    prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+    subject_token: header.payload.signature
+    authorizer: {kind: http, status: 503, detail: the JWKS at https://idp.example/jwks.json was unreachable}
+    cause: null
+calls:
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: http, status: 500, detail: the IdP answered 500}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: proxy, code: "500", message: the IdP answered 500}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: proxy, code: "0500", message: a padded status}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: proxy, code: "1000", message: a four-digit status}
+      cause: null
+  - b4663:
+      prerequisites: {jwt_auth_enabled: true, has_database: true, maps_jwts_to_virtual_keys: false}
+      subject_token: header.payload.signature
+      authorizer: {kind: proxy, code: "99999", message: a status past u16}
+      cause: null
+env: {}
+compare: {ignore: []}
