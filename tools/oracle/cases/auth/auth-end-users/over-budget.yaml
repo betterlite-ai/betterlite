@@ -1,0 +1,39 @@
+kind: helper
+name: auth-end-users-over-budget-row
+call:
+  auth_end_users:
+    function: end_user_object
+    database: true
+    validate_in_db: true
+    end_user_id: u-over
+    end_user_row:
+      user_id: u-over
+      blocked: false
+      spend: 150.0
+      budget_id: b-limit
+      litellm_budget_table: {budget_id: b-limit, max_budget: 100.0}
+calls:
+  - auth_end_users:
+      function: end_user_object
+      database: true
+      validate_in_db: true
+      end_user_id: u-equal
+      end_user_row:
+        user_id: u-equal
+        blocked: false
+        spend: 100.0
+        budget_id: b-limit
+        litellm_budget_table: {budget_id: b-limit, max_budget: 100.0}
+  - auth_end_users:
+      function: end_user_object
+      database: true
+      validate_in_db: true
+      end_user_id: u-zero
+      end_user_row:
+        user_id: u-zero
+        blocked: false
+        spend: 1.0
+        budget_id: b-zero
+        litellm_budget_table: {budget_id: b-zero, max_budget: 0.0}
+env: {}
+compare: {ignore: []}
