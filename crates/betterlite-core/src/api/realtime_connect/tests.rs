@@ -207,7 +207,53 @@ async fn realtime_openai_and_azure_credentials() {
     named_api_key_wins().await;
     azure_settings_key_fallbacks().await;
     openai_settings_key_fallbacks().await;
+    azure_generic_precedence(&dispatch, &settings, &litellm_params).await;
     azure_protocol_negotiation(&litellm_params).await;
+}
+
+async fn azure_generic_precedence(
+    dispatch: &Recorder,
+    settings: &RealtimeConnectionSettings,
+    litellm_params: &IndexMap<String, Json>,
+) {
+    let mut connect = params();
+    connect.generic_api_base = Some(String::from("https://generic.example"));
+    connect.generic_api_version = Some(String::from("2025-06-01"));
+    connect.generic_realtime_protocol = Some(String::from("beta"));
+    let call = call("azure/my-deployment", &connect, None, litellm_params, false);
+    let (_, result) = run(dispatch, settings, &call).await;
+    let connection = result.unwrap();
+    let Branch::Azure {
+        api_version,
+        protocol,
+        ..
+    } = &connection.branch
+    else {
+        panic!("an azure model must take the azure branch");
+    };
+    assert_eq!(
+        connection.args.api_base.as_deref(),
+        Some("https://generic.example")
+    );
+    assert_eq!(api_version, "2025-06-01");
+    assert_eq!(protocol, "beta");
+    azure_environment_protocol(dispatch, settings, litellm_params).await;
+}
+
+async fn azure_environment_protocol(
+    dispatch: &Recorder,
+    settings: &RealtimeConnectionSettings,
+    litellm_params: &IndexMap<String, Json>,
+) {
+    let mut configured = settings.clone();
+    configured.azure_realtime_protocol = Some(String::from("beta"));
+    let connect = params();
+    let call = call("azure/my-deployment", &connect, None, litellm_params, false);
+    let (_, result) = run(dispatch, &configured, &call).await;
+    let Branch::Azure { protocol, .. } = result.unwrap().branch else {
+        panic!("an azure model must take the azure branch");
+    };
+    assert_eq!(protocol, "beta");
 }
 
 async fn named_api_key_wins() {
@@ -493,6 +539,7 @@ async fn realtime_bedrock_and_xai_arguments() {
     bedrock_full_arguments(&dispatch, &litellm_params).await;
     bedrock_ignores_generic_and_global(&dispatch, &litellm_params).await;
     xai_arguments(&dispatch, &litellm_params).await;
+    xai_key_fallbacks(&dispatch).await;
 }
 
 fn bedrock_params() -> RealtimeConnectParams {
@@ -685,6 +732,15 @@ async fn xai_connection(
     result.unwrap()
 }
 
+async fn xai_key_fallbacks(dispatch: &Recorder) {
+    let mut generic = settings();
+    generic.api_key = Some(secret("sk-global"));
+    assert_api_key(dispatch, &generic, "xai/grok-4", &params(), "sk-global").await;
+    let mut from_env = settings();
+    from_env.xai_api_key = Some(secret("xai-env-key"));
+    assert_api_key(dispatch, &from_env, "xai/grok-4", &params(), "xai-env-key").await;
+}
+
 #[tokio::test]
 async fn realtime_vertex_credentials_and_refresh() {
     let tokens = ScriptedTokens::with(vec![
@@ -708,6 +764,25 @@ async fn realtime_vertex_credentials_and_refresh() {
     vertex_settings_credentials().await;
     vertex_placement_settings(&litellm_params).await;
     vertex_ai_credentials_alias(&litellm_params).await;
+    vertex_generic_base(&litellm_params).await;
+}
+
+async fn vertex_generic_base(litellm_params: &IndexMap<String, Json>) {
+    let tokens = ScriptedTokens::with(vec![Ok((
+        secret("token"),
+        String::from("resolved-project"),
+    ))]);
+    let dispatch = Recorder::with_tokens(tokens);
+    let mut connect = params();
+    connect.generic_api_base = Some(String::from("https://vertex-generic.example"));
+    let model = "vertex_ai/gemini-live";
+    let call = call(model, &connect, None, litellm_params, false);
+    let (_, result) = run(&dispatch, &settings(), &call).await;
+    let connection = result.unwrap();
+    assert_eq!(
+        connection.args.api_base.as_deref(),
+        Some("https://vertex-generic.example")
+    );
 }
 
 async fn vertex_placement_settings(litellm_params: &IndexMap<String, Json>) {
@@ -833,6 +908,8 @@ fn vertex_setup() -> (
     connect.vertex_location = Some(String::new());
     connect.vertex_ai_location = Some(String::from("ai-location"));
     connect.timeout = Some(4.0_f64);
+    connect.api_base = Some(String::from("https://vertex-named.example"));
+    connect.generic_api_base = Some(String::from("https://vertex-generic.example"));
     let query = IndexMap::from([(String::from("model"), String::from("gemini-live"))]);
     (settings, connect, named_credentials, query)
 }
@@ -859,7 +936,10 @@ async fn assert_vertex_connection(
     assert_eq!(access_token.expose_secret(), "token-a");
     assert_eq!(project, "resolved-project");
     assert_eq!(location.as_deref(), Some("ai-location"));
-    assert_eq!(connection.args.api_base, None);
+    assert_eq!(
+        connection.args.api_base.as_deref(),
+        Some("https://vertex-named.example")
+    );
     assert!(connection.args.api_key.is_none());
     assert_eq!(connection.args.timeout, Some(4.0_f64));
     let ConnectionQuery::Transport(Some(query)) = &connection.args.query_params else {
