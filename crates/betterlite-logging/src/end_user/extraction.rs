@@ -108,16 +108,13 @@ fn body_end_user_id(body: &JsonObject, validate: bool) -> Option<String> {
     if let Some(end_user_id) = metadata_id(body, METADATA_FIELD, METADATA_USER_FIELD, validate) {
         return Some(end_user_id);
     }
-    body.get(SAFETY_IDENTIFIER_FIELD)
-        .and_then(|value| coerce_user_id(value, validate))
+    coerce_user_id(body.get(SAFETY_IDENTIFIER_FIELD)?, validate)
 }
 
 // the nested _as_dict: an object counts as is, a string only when it decodes to an object, and null counts as empty
 fn metadata_id(body: &JsonObject, bucket: &str, field: &str, validate: bool) -> Option<String> {
     match body.get(bucket) {
-        Some(Json::Object(fields)) => fields
-            .get(field)
-            .and_then(|value| coerce_user_id(value, validate)),
+        Some(Json::Object(fields)) => coerce_user_id(fields.get(field)?, validate),
         Some(Json::Text(text)) => decoded_metadata_id(text, field, validate),
         None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_)) => None,
     }
@@ -130,9 +127,7 @@ fn decoded_metadata_id(text: &str, field: &str, validate: bool) -> Option<String
     let Ok(Json::Object(fields)) = serde_json::from_value::<Json>(parsed) else {
         return None;
     };
-    fields
-        .get(field)
-        .and_then(|value| coerce_user_id(value, validate))
+    coerce_user_id(fields.get(field)?, validate)
 }
 
 // _coerce_user_id_to_str: a number keeps Python's str text, a string is trimmed, and everything else is dropped
