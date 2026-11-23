@@ -23,7 +23,8 @@ description: >-
   migration and readiness with `--use_prisma_db_push`, `--enforce_prisma_migration_check` and B717's resolver flags
   (`--use_v2_migration_resolver` is deprecated and prints LiteLLM's yellow notice when passed). Then choose_port (port 4000
   in use moves to a random port), check_metrics_port, NUM_WORKERS set to the worker count, B4177's Prometheus multiprocess
-  dir preparation, and `--skip_server_startup`: print "LiteLLM: Setup complete. Skipping server startup as requested." and
+  dir preparation (a folder it returns goes into the env map run_proxy gets as PROMETHEUS_MULTIPROC_DIR, as proxy_cli
+  L696 sets os.environ, so B8613's registry writes where the metrics process reads), and `--skip_server_startup`: print "LiteLLM: Setup complete. Skipping server startup as requested." and
   exit 0 after migrations. Otherwise start B4177's metrics process when `--prometheus_metrics_port` is set (printing the green
   "Serving Prometheus metrics on {host}:{port}/metrics (pid {pid})" line), build B4176's worker options (keepalive,
   healthcheck timeout, max requests and jitter, limit concurrency, SSL cert and key with the green "Using SSL with certfile"
@@ -78,7 +79,7 @@ dod:
     proof: [cli-tests]
   - text: The database block, migrations and skip_server_startup run in LiteLLM's order and skip_server_startup exits 0 with its message.
     proof: [cli-tests, oracle, helper-python]
-  - text: The port checks, NUM_WORKERS, metrics process and the chosen launcher follow run_server.
+  - text: The port checks, NUM_WORKERS, the prepared multiprocess folder in run_proxy's env map, the metrics process and the chosen launcher follow run_server.
     proof: [cli-tests, oracle, helper-python]
   - text: LifespanInputs gets one PythonHooks built from CONFIG_FILE_PATH, else --config, as python_hooks and, through PyStartupHooks over the same Arc, as startup_hooks.
     proof: [cli-tests]

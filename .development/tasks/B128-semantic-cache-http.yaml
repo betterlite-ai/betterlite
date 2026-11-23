@@ -196,7 +196,7 @@ out_of_scope:
   - Redis index construction and cache operations are B4382; Qdrant collection construction and cache operations are B4383.
   - Cache construction and callback registration are B4299, with semantic backend and embedder composition in B8651; this task verifies their existing settings without adding a config section.
   - Cache-key derivation is B4296, response envelopes and fail-open outer reads are B4297, request normalization is B4300, hit conversion is B4302, lookup orchestration is B4305 and writes are B4304.
-  - ResponseCacheReinit and the shared slot are B8612, startup is B8613, server state and area aggregation are B8610, and cache route mounts are B8650.
+  - ResponseCacheReinit and the shared slot are B8612, startup is B8613, server state is B8610, area aggregation is B10082, and cache route mounts are B8650.
   - Readiness cache reports are B4448 and B8540; Valkey inherits RedisSemanticCache, so their production index-info adapter must support B8296 as well as B4382.
   - HTTP handlers and authentication remain with B014, B4309 and their auth dependencies; the generic inference-cache connection is B9560's ResponseCacheStep.
 pitfalls:

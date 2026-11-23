@@ -3675,6 +3675,7 @@ name = "betterlite-oracle-reporting"
 version = "0.1.0"
 dependencies = [
  "betterlite-oracle-helper-api",
+ "betterlite-reporting",
  "serde_json",
 ]
 

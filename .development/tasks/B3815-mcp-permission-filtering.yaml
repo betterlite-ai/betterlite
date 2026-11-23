@@ -117,7 +117,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/mcp_end_user_permission.py#L136-L139
 out_of_scope:
   - Tool permission evaluation at call time (B3813) and response enforcement (B3814).
-  - Access group expansion via MCPRequestHandler._get_mcp_servers_from_access_groups, owned by B4669.
+  - Access group expansion via MCPRequestHandler._get_mcp_servers_from_access_groups, owned by B10078.
   - MCP server registry management beyond registry lookups.
   - Configuration UI and settings exposure beyond the basic config model.
   - CustomGuardrail base class implementation and callback dispatcher integration (B5471 for the base class, B8666 for live class dispatch).

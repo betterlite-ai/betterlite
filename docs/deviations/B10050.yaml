@@ -1,0 +1,9 @@
+task: B10050
+deviations:
+  - what: A metadata or litellm_metadata string, or an id starting with { or [, longer than 1 MiB or nested past 64 levels counts as malformed, so the metadata reads as empty and the id is kept even with validation on.
+    why: B192's safe_json_loads bounds every untrusted JSON string; LiteLLM's json.loads has no size bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py#L9-L16
+  - what: A number id too large for a float, such as 1e999, comes out as "Infinity" instead of Python's "inf".
+    why: The number text is B3865's python_json, which writes Python's json.dumps spelling of a non-finite float rather than str's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1560-L1592
+kept_bugs: []
