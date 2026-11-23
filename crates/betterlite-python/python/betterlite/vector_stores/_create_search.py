@@ -270,7 +270,7 @@ async def asearch(
     custom_llm_provider: str | None = None, router: UnsupportedHandle | None = None,
     **kwargs: CallValue,
 ) -> VectorStoreSearchResponse:
-    # LiteLLM's asearch takes the direct executor at L307-L309; B1059 embeds on its own, so refuse it
+    # LiteLLM's asearch pops the executor at L307-L309; B1059 embeds on its own, so refuse it
     executor = kwargs.pop("_direct_vector_store_embedding_executor", None)
     if executor is not None:
         raise UnsupportedCallArgument("_direct_vector_store_embedding_executor")
