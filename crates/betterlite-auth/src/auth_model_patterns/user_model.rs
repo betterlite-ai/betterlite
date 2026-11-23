@@ -26,10 +26,11 @@ pub fn can_user_call_model(
         return ModelAccessDecision::Allowed;
     };
     let models = user_models(user);
+    // LiteLLM raises the key type here on purpose, even though the object is a user
     if models.iter().any(|name| name.as_str() == NO_DEFAULT_MODELS) {
         let requested = requested_text(model);
-        // LiteLLM raises the key type here on purpose, even though the object is a user
-        return ModelAccessDecision::Denied(Box::new(ModelAccessDeniedProxyException::new(
+        // ast-grep-ignore: no-long-names
+        let denial = ModelAccessDeniedProxyException::new(
             model_denied_client_message(&requested),
             format!(
                 "User not allowed to access model. No default model access, only team models \
@@ -38,7 +39,8 @@ pub fn can_user_call_model(
             ProxyErrorTypes::KeyModelAccessDenied.to_string(),
             Some("model".to_owned()),
             ExceptionCode::Status(403),
-        )));
+        );
+        return ModelAccessDecision::Denied(Box::new(denial));
     }
     can_object_call_model(
         model,
