@@ -123,7 +123,7 @@ mod video_content_remix;
 mod video_create;
 mod video_edit;
 
-use crate::app::spend;
+use crate::app;
 use crate::auth::auth_route_patterns::{self, AuthSettings};
 use crate::auth::route_match::stage;
 use crate::compliance_checks::router as compliance_router;
@@ -292,15 +292,16 @@ pub(crate) fn router(
         .merge(embeddings)
         .merge(stub_router!(&state))
         .merge(scim_router(&state));
-    let mounted = spend::mount(application, &state);
-    mounted
+    let mut router = app::mount(application, &state)
         .layer(middleware::from_fn_with_state(
             auth,
             auth_route_patterns::stage,
         ))
         .layer(middleware::from_fn(stage))
-        .layer(Extension(state))
-        .merge(outside_gate)
+        .layer(Extension(Arc::clone(&state)))
+        .merge(outside_gate);
+    router = router.merge(app::mount_public(Router::new(), &state));
+    app::wrap(router, &state)
 }
 
 fn base_application(shutting_down: Arc<AtomicBool>) -> Router {
