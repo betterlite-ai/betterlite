@@ -111,6 +111,15 @@ async fn rejects_metadata_that_is_not_a_mapping() {
 }
 
 #[tokio::test]
+async fn an_unreadable_request_leaves_every_queue_empty() {
+    let case = TurnCase::new();
+    case.enqueue("not json").await;
+    assert!(case.turns().is_empty());
+    assert!(case.baseline_records().is_empty());
+    assert!(!case.flushed().await);
+}
+
+#[tokio::test]
 async fn rejects_a_request_whose_payload_is_not_json() {
     let case = TurnCase::new();
     let error = case.enqueue_result("not json").await.unwrap_err();
