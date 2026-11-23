@@ -302,7 +302,6 @@ impl ToolSpendFailure for ToolFailure {
 }
 
 // The tool writer counts index rows and keeps the rollups it was handed.
-#[derive(Default)]
 pub(super) struct FakeToolWriter {
     pub(super) trace: Trace,
     index_rows: AtomicUsize,
@@ -312,8 +311,12 @@ pub(super) struct FakeToolWriter {
 
 impl FakeToolWriter {
     pub(super) fn new(trace: Trace) -> Self {
-        let writer = Self::default();
-        Self { trace, ..writer }
+        Self {
+            trace,
+            index_rows: AtomicUsize::new(0),
+            rollups: Mutex::new(Vec::new()),
+            fail: AtomicBool::new(false),
+        }
     }
 
     pub(super) fn fail(&self) {
