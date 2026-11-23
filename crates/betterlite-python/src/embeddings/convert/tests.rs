@@ -51,8 +51,11 @@ where
 {
     serde_json::from_str(text)
 }
+fn session_from(settings: &str) -> EmbeddingSession {
+    EmbeddingSession::build(settings).unwrap()
+}
 fn session() -> EmbeddingSession {
-    EmbeddingSession::build(r#"{"environment": {}}"#).unwrap()
+    session_from(r#"{"environment": {}}"#)
 }
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -141,25 +144,33 @@ fn answer_once(listener: &TcpListener, status: &str, body: &str) -> String {
     stream.write_all(reply.as_bytes()).unwrap();
     String::from_utf8(received).unwrap()
 }
+fn served_in(
+    embedding_session: &EmbeddingSession,
+    status: &str,
+    body: &str,
+    api_key: Option<&str>,
+) -> (String, Result<EmbeddingAnswer, CallFailure>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address: SocketAddr = listener.local_addr().unwrap();
+    let key = api_key.map_or_else(String::new, |value| format!(", \"api_key\": \"{value}\""));
+    let wire: EmbeddingCallWire = parse(&format!(
+        r#"{{"arguments": {{"model": "text-embedding-3-small", "input": "hi", "api_base": "http://{address}/v1", "timeout": 5, "headers": {{"x-custom": "one"}}{key}}}}"#
+    ))
+    .unwrap();
+    thread::scope(|scope| {
+        let server = scope.spawn(|| answer_once(&listener, status, body));
+        let outcome = get_runtime().block_on(call(embedding_session, wire, Entry::Sync));
+        // a call that failed before it connected would leave the server waiting in accept
+        let _unblock = TcpStream::connect(address);
+        (server.join().unwrap(), outcome)
+    })
+}
 fn served_call(
     status: &str,
     body: &str,
     api_key: &str,
 ) -> (String, Result<EmbeddingAnswer, CallFailure>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address: SocketAddr = listener.local_addr().unwrap();
-    let wire: EmbeddingCallWire = parse(&format!(
-        r#"{{"arguments": {{"model": "text-embedding-3-small", "input": "hi", "api_key": "{api_key}", "api_base": "http://{address}/v1", "timeout": 5, "headers": {{"x-custom": "one"}}}}}}"#
-    ))
-    .unwrap();
-    let embedding_session = session();
-    thread::scope(|scope| {
-        let server = scope.spawn(|| answer_once(&listener, status, body));
-        let outcome = get_runtime().block_on(call(&embedding_session, wire, Entry::Sync));
-        // a call that failed before it connected would leave the server waiting in accept
-        let _unblock = TcpStream::connect(address);
-        (server.join().unwrap(), outcome)
-    })
+    served_in(&session(), status, body, Some(api_key))
 }
 fn arguments(text: &str) -> EmbeddingArguments {
     parse(text).unwrap()
@@ -472,6 +483,19 @@ fn request_extra_body_and_unknown_kwargs_join_the_body() {
     assert!(body.contains(r#""truncate":"END""#), "{body}");
     assert!(body.contains(r#""input_type":"query""#), "{body}");
     assert!(!body.contains("extra_body"), "{body}");
+}
+#[test]
+fn request_litellm_default_params_stay_out_of_the_body() {
+    let request = built(
+        r#"{"input": "hi", "request_timeout": 30, "organization": "org-1",
+            "base_url": "http://base", "default_headers": {"x-base": "1"},
+            "deployment_id": "one", "max_retries": 2, "truncate": "END"}"#,
+        SMALL,
+        &[],
+    )
+    .unwrap();
+    let keys: Vec<&str> = request.passthrough.keys().map(String::as_str).collect();
+    assert_eq!(keys, ["truncate"]);
 }
 #[test]
 fn error_dimensions_on_ada_raise_unsupported_params() {
@@ -853,6 +877,16 @@ fn request_a_provider_answer_carries_headers_and_hidden_params() {
     };
     assert!(overhead.as_f64() <= total.as_f64());
     assert_ne!(hidden.get("response_cost"), Some(&Json::Null));
+}
+#[test]
+fn request_the_environment_key_authorizes_the_call() {
+    let keyed = session_from(r#"{"environment": {"OPENAI_API_KEY": "sk-env"}}"#);
+    let (sent, outcome) = served_in(&keyed, "200 OK", EMBEDDING_BODY, None);
+    outcome.unwrap();
+    assert!(
+        sent.to_lowercase().contains("authorization: bearer sk-env"),
+        "{sent}"
+    );
 }
 #[test]
 fn error_a_served_401_raises_the_authentication_class() {
