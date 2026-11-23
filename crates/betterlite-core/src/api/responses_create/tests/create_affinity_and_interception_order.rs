@@ -253,7 +253,7 @@ fn assert_file_search_dispatch(gateway: &Gateway, rig: &Rig) {
 }
 
 pub(crate) async fn encrypted_support() {
-    let rig = Rig::new();
+    let mut rig = Rig::new();
     rig.lookup.encrypted = false;
     let gateway = Gateway::requesting_and_passing(&rig.events);
     let bridge = RecordingBridge::new(&rig.events);

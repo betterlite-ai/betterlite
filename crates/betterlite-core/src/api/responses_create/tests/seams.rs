@@ -61,6 +61,10 @@ pub(crate) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the JSON parses")
 }
 
+pub(crate) fn prompt_json(text: &str) -> PromptJson {
+    serde_json::from_str(text).expect("the JSON parses")
+}
+
 pub(crate) fn tools(text: &str) -> Vec<ResponsesTool> {
     serde_json::from_str(text).expect("the tools are JSON")
 }

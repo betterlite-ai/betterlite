@@ -5,7 +5,8 @@ use betterlite_openai::response_input::ResponsesInput;
 
 use super::support::{
     Gateway, Harness, NoInterception, Nothing, OK_RESPONSE, RecordingBridge, Rig, Seams, body_json,
-    call, field, json, kwargs, number_is, object, run_create, text, tools, value_number, values,
+    call, field, json, kwargs, number_is, object, prompt_json, run_create, text, tools,
+    value_number, values,
 };
 
 pub(crate) async fn bridge_selection() {
@@ -21,7 +22,7 @@ pub(crate) async fn bridge_selection() {
         String::from("custom_option"),
         String::from("client_metadata"),
     ]);
-    prefixed.extra_body = Some(object(&json(r#"{"x":1}"#)));
+    prefixed.extra_body = Some(object(&prompt_json(r#"{"x":1}"#)));
     let mut harness = Harness::new();
     run_create(&seams.deps(), &prefixed, &mut harness)
         .await

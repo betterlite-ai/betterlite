@@ -44,7 +44,7 @@ use crate::api::responses_compact_http::service::SharedSession;
 use crate::api::responses_create::bridge::{BridgeCall, ChatBridge, Created, StampedResponse};
 use crate::api::responses_create::convert::reencode;
 use crate::api::responses_create::deps::{
-    ConfigRequest, CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps,
+    ConfigRequest, CreateCapabilities, CreateConfigFactory, PromptSource, ResponsesCreateDeps,
 };
 use crate::api::responses_create::error::{BridgeError, InterceptionError};
 use crate::api::responses_create::execute::mock_responses_api_response;
@@ -888,6 +888,8 @@ impl PromptManager for PromptMark {
     }
 }
 
+impl PromptSource for PromptMark {}
+
 pub(crate) struct Rig {
     pub(crate) events: Events,
     pub(crate) wire: Wire,
@@ -925,7 +927,7 @@ pub(crate) struct Seams<'seams> {
     pub(crate) rig: &'seams Rig,
     pub(crate) interception: &'seams dyn CreateInterception<()>,
     pub(crate) bridge: &'seams dyn ChatBridge<()>,
-    pub(crate) prompts: Option<&'seams dyn PromptManager>,
+    pub(crate) prompts: Option<&'seams dyn PromptSource>,
     pub(crate) file_mapping: Option<&'seams FileIdMapping>,
     pub(crate) nothing: &'seams Nothing,
     pub(crate) drop_params: bool,
