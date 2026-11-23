@@ -134,7 +134,7 @@ deviations:
   - what: A failure to mint a token (a signing fault, a token over the size limit, a failed random source) answers 500 server_error "failed to mint the session credential" in every case. LiteLLM checks only that the result is a MintedSessionToken.
     why: B4652 returns a typed MintError, and the same single answer keeps the wire text identical.
 out_of_scope:
-  - "gateway_dcr_flow.py constants, models, OauthError, sealing, register_aggregate_client, the port traits (ReloadUser, MintProxyCredential, ExchangeSubjectToken), the refusing defaults, supported_grant_types, ClaimOutcome, claim_refusal and the single-use guard with peek: B4674."
+  - "gateway_dcr_flow.py constants, models, OauthError, sealing, register_aggregate_client, the port traits (ReloadUser, MintProxyCredential), the refusing defaults, supported_grant_types, ClaimOutcome, claim_refusal and the single-use guard with peek: B4674. ExchangeSubjectToken: B10063."
   - "register, authorize, the connect flow, consent, is_proxy_api_resource, resolve_scoped_resource_server and the discovery document: B4675."
   - "Session token minting, opening and claims: B4652. open_session_refresh_bearer and signing key resolution: B4653."
   - "The routes /token, /{mcp_server_name}/token, /revoke and /introspect in discoverable_endpoints.py, and the server-level token exchange branch of token_endpoint: B7321, mounted by B8624."

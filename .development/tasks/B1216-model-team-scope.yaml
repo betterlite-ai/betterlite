@@ -14,7 +14,7 @@ description: >-
   authorization. B724 team lookup warns on missing row and logs exceptions, returning None; filtering
   then returns []. No 404 is manufactured.
 
-  Gather IDs from B847 get_model_access_groups and B844 get_model_list. Empty team.models or
+  Gather IDs from B10047 get_model_access_groups and B844 get_model_list. Empty team.models or
   all-proxy-models includes router IDs except rows assigned to another team; omit missing IDs. Otherwise
   expand access groups and query each resolved name with team_id. Also query B725 ModelRepository by
   resolved names only (no additional team predicate); add truthy model_id values, and debug-log/drop DB

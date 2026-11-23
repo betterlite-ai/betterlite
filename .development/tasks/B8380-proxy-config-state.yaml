@@ -17,7 +17,7 @@ description: >-
   merged section equals the stored one, write JSON), then apply the written section to its store and invalidate the
   config param through B8397. Top-level keys outside those sections and the exclusions that differ from the baseline
   are inserted as config rows. With include_env_vars, environment_variables are encrypted for the database with
-  B8382 and inserted. Then the snapshot and baseline become baseline plus new config. Without a database it writes the
+  B10074 and inserted. Then the snapshot and baseline become baseline plus new config. Without a database it writes the
   config as YAML to the config file path.
 
   `reject_config_owned_writes(section, changed)` and `reject_config_owned_deletes(section, keys)` raise
@@ -27,7 +27,7 @@ description: >-
   shadowed keys, keys, section, stored_database_values_ignored, and resolution "edit {path} to change it, or remove it
   from the file to let the database own it" (them for several). `save_environment_variables(updates, db)` is a no-op
   without a DB-backed config; otherwise it merges into the environment_variables row: a None value deletes the key,
-  other values are encrypted with B8382, unnamed keys stay, then the param is invalidated. `team_config(team_id)` ports
+  other values are encrypted with B10074, unnamed keys stay, then the param is invalidated. `team_config(team_id)` ports
   load_team_config and _get_team_config: read litellm_settings.default_team_settings from the snapshot, fail when an
   entry has no team_id (the message masks the entry), pick the matching team and resolve its os.environ/ values.
 

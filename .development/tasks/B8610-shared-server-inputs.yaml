@@ -65,7 +65,7 @@ description: >-
   without a settlement backend; application() returns that error and run stops before it binds. `prompts`: B4059's
   one InMemoryPromptRegistry (betterlite-prompts) that B8613 made and config load filled, read by chat and by B8672's
   prompt routes. B8293's init_prompts and B4060's mutations take &mut, so it is an Arc of a RwLock: use the lock type
-  the merged prompt route modules (B4061, B4062) take. `periodic_reloads: Arc<PeriodicReloads>` (B8385, a
+  the merged prompt route modules (B4061, B4062) take. `periodic_reloads: Arc<PeriodicReloads>` (B10055, a
   betterlite-server type): the one reload state the lifespan timer checks write and B8586's routes read.
   `deployment_sync: Arc<dyn DeploymentSyncPort>` (B8611's port; B8613 implements it over B8381's DeploymentSync, which
   lives in crates/betterlite) for the add_deployment call of B8594 and B8596, and `auto_router_catalog: Arc<dyn

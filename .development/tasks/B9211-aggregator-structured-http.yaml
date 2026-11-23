@@ -123,7 +123,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - Every method and helper in the referenced transforms stays with B5832, B5834, B5836, B6080 or B6100; B8310 and B8311 keep all provider construction and dispatch code, and B5834 fills the Perplexity Responses, search and decisions wiring into B8310's stubs.
-  - B080 owns Responses handlers, B8275 search handlers and B8276 decisions handlers; B8634 owns the search/decisions mounts and selectors, with B8610's one area aggregator.
+  - B080 owns Responses handlers, B8275 search handlers and B8276 decisions handlers; B8634 owns the search/decisions mounts and selectors, with B10082's one area aggregator.
   - B3271 through B3276 own search registration, routing, pricing and transport; B3510 through B3515 own decisions records, translation, preparation and execution.
   - Responses retrieval, deletion, websocket transport and streaming regressions remain with B080 and their existing parts; Eden AI Messages already has B8580 HTTP proofs.
 pitfalls:
