@@ -146,14 +146,6 @@ fn keyword_call(model: Option<&str>) -> Invocation {
     }
 }
 
-// the caller wrote model=None, so the key is there and the wrapper passes the null on
-fn null_keyword_call() -> Invocation {
-    Invocation {
-        call: call_of(None, "cat"),
-        model_position: ModelPosition::KeywordNull,
-    }
-}
-
 fn positional_call(prompt: &str, model: Option<&str>) -> Invocation {
     Invocation {
         call: call_of(model, prompt),
@@ -552,33 +544,36 @@ fn missing_model_fails_before_any_call() {
     );
 }
 
-// get_llm_provider(model=None) raises its own BadRequestError, which is what a present null reaches
+// get_llm_provider's None check runs before api_base is read: a present null model is not the absent key
 fn null_model_is_a_bad_request() {
+    let mut call = call_of(None, "cat");
+    call.api_base = Some(String::from("https://images.example.test/v1"));
     let (result, entry) = scripted(
         Script::Response(empty_created_and_data()),
-        null_keyword_call(),
+        Invocation {
+            call,
+            model_position: ModelPosition::KeywordNull,
+        },
     );
-    let error = result.expect_err("get_llm_provider rejects a null model");
-    let (class, message) = raised_class(&error);
-    assert!(
-        matches!(class, ErrorClass::BadRequest(_)),
-        "get_llm_provider's own BadRequestError is returned, got {class:?}"
-    );
+    let Err(AimageGenerationError::Raised { class, message }) = result else {
+        panic!("get_llm_provider answers a null model with its own BadRequestError");
+    };
     assert_eq!(
         message,
         "GetLLMProvider Exception - model parameter is required but was None. Please provide a valid model name.\n\noriginal model: None"
     );
-    assert_eq!(class.metadata().status_code, 400);
+    assert!(
+        matches!(class, ErrorClass::BadRequest(_)),
+        "the failure is get_llm_provider's 400, got {class:?}"
+    );
+    let metadata = class.metadata();
+    assert_eq!(metadata.status_code, 400);
     assert_eq!(
-        class.metadata().provider.as_deref(),
+        metadata.provider.as_deref(),
         Some(""),
         "get_llm_provider names no provider for a None model"
     );
-    assert_eq!(
-        entry.calls.load(Ordering::SeqCst),
-        0,
-        "no generation runs for a null model"
-    );
+    assert_eq!(entry.calls.load(Ordering::SeqCst), 0);
 }
 
 fn positional_model_drives_attribution() {
