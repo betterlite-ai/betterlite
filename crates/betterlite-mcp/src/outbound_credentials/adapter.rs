@@ -1,0 +1,170 @@
+pub mod challenge;
+pub mod errors;
+pub mod prepare;
+mod specs;
+
+use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPTokenEndpointAuthMethod, MCPTransport};
+use secrecy::SecretString;
+
+use crate::credential_contracts::auth_config::AuthConfig;
+use crate::credential_contracts::auth_config::simple::{NoneConfig, PassthroughConfig};
+use crate::credential_contracts::errors::CredResult;
+use crate::credential_contracts::header_carrier::{DEFAULT_CREDENTIAL_HEADER, HeaderCarrier};
+use crate::credential_contracts::server_spec::{ServerSpec, Subject};
+use crate::credential_contracts::token_endpoint_auth::TokenEndpointAuthMethod;
+use crate::credentials::McpAuthType;
+use crate::server_record::MCPServer;
+
+const VALUE_PREFIX_BEARER: &str = "Bearer";
+
+#[derive(Debug, Clone, Default)]
+pub struct UserPrincipal {
+    pub org_id: Option<String>,
+    pub team_id: Option<String>,
+    pub user_id: Option<String>,
+}
+
+pub fn to_subject(principal: Option<&UserPrincipal>, subject_token: Option<&str>) -> Subject {
+    let inbound_token = present(subject_token).map(SecretString::from);
+    let Some(principal) = principal else {
+        return Subject {
+            tenant_id: String::new(),
+            subject_id: String::new(),
+            inbound_token,
+        };
+    };
+    let tenant_id = present(principal.org_id.as_deref())
+        .or_else(|| present(principal.team_id.as_deref()))
+        .unwrap_or_default();
+    let subject_id = present(principal.user_id.as_deref()).unwrap_or_default();
+    Subject {
+        tenant_id,
+        subject_id,
+        inbound_token,
+    }
+}
+
+pub fn to_server_spec(server: &MCPServer) -> CredResult<Option<ServerSpec>> {
+    let fields = &server.fields;
+    if fields.is_byok && fields.auth_type != Some(MCPAuth::Oauth2TokenExchange) {
+        return Ok(None);
+    }
+    let resource = resource_of(server);
+    match fields.auth_type {
+        Some(MCPAuth::ApiKey) => specs::shared_key(server, &resource, "X-API-Key", "", false),
+        Some(MCPAuth::BearerToken) => specs::shared_key(
+            server,
+            &resource,
+            "Authorization",
+            VALUE_PREFIX_BEARER,
+            false,
+        ),
+        Some(MCPAuth::Token) => {
+            specs::shared_key(server, &resource, "Authorization", "token", false)
+        }
+        Some(MCPAuth::Authorization) => {
+            specs::shared_key(server, &resource, "Authorization", "", false)
+        }
+        Some(MCPAuth::Basic) => {
+            specs::shared_key(server, &resource, "Authorization", "Basic", true)
+        }
+        Some(MCPAuth::Oauth2) => specs::oauth2(server, &resource),
+        Some(MCPAuth::Oauth2IdJag) => specs::id_jag(server, &resource),
+        Some(MCPAuth::TruePassthrough | MCPAuth::OauthDelegate) => {
+            Ok(Some(passthrough_spec(server, &resource)))
+        }
+        Some(MCPAuth::Oauth2TokenExchange) => specs::token_exchange(server, &resource),
+        Some(MCPAuth::AwsSigv4) => Ok(None),
+        None | Some(MCPAuth::None) => {
+            if server.is_oauth_passthrough() {
+                return Ok(None);
+            }
+            Ok(Some(none_spec(server, &resource)))
+        }
+    }
+}
+
+// The static-header family is the only set prepare_mcp_client checks; every other mode leaves the client untouched.
+pub(super) fn static_auth_type(auth_type: Option<MCPAuth>) -> Option<McpAuthType> {
+    match auth_type {
+        Some(MCPAuth::ApiKey) => Some(McpAuthType::ApiKey),
+        Some(MCPAuth::BearerToken) => Some(McpAuthType::BearerToken),
+        Some(MCPAuth::Basic) => Some(McpAuthType::Basic),
+        Some(MCPAuth::Authorization) => Some(McpAuthType::Authorization),
+        Some(MCPAuth::Token) => Some(McpAuthType::Token),
+        Some(
+            MCPAuth::None
+            | MCPAuth::Oauth2
+            | MCPAuth::AwsSigv4
+            | MCPAuth::Oauth2TokenExchange
+            | MCPAuth::Oauth2IdJag
+            | MCPAuth::TruePassthrough
+            | MCPAuth::OauthDelegate,
+        )
+        | None => None,
+    }
+}
+
+pub(super) fn static_header_slots(server: &MCPServer) -> Vec<String> {
+    let slots = server.fields.static_headers.as_ref();
+    slots
+        .map(|headers| headers.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+pub(super) fn token_header(server: &MCPServer) -> String {
+    let configured = present(server.fields.upstream_token_header.as_deref());
+    configured.unwrap_or_else(|| DEFAULT_CREDENTIAL_HEADER.to_owned())
+}
+
+pub(super) fn present(value: Option<&str>) -> Option<String> {
+    let filled = value.filter(|text| !text.is_empty());
+    filled.map(str::to_owned)
+}
+
+pub(super) fn token_endpoint_method(
+    raw: Option<MCPTokenEndpointAuthMethod>,
+) -> Option<TokenEndpointAuthMethod> {
+    match raw {
+        Some(MCPTokenEndpointAuthMethod::ClientSecretBasic) => {
+            Some(TokenEndpointAuthMethod::ClientSecretBasic)
+        }
+        Some(MCPTokenEndpointAuthMethod::ClientSecretPost) => {
+            Some(TokenEndpointAuthMethod::ClientSecretPost)
+        }
+        None => None,
+    }
+}
+
+pub(super) fn credential_header(server: &MCPServer) -> CredResult<HeaderCarrier> {
+    HeaderCarrier::new(&token_header(server), VALUE_PREFIX_BEARER)
+}
+
+pub(super) const fn stdio_transport(server: &MCPServer) -> bool {
+    matches!(server.fields.transport, MCPTransport::Stdio)
+}
+
+fn resource_of(server: &MCPServer) -> String {
+    let url = present(server.fields.url.as_deref());
+    url.unwrap_or_else(|| server.fields.server_id.clone())
+}
+
+fn none_spec(server: &MCPServer, resource: &str) -> ServerSpec {
+    let config = AuthConfig::None(NoneConfig);
+    let server_id = server.fields.server_id.clone();
+    ServerSpec {
+        server_id,
+        resource: resource.to_owned(),
+        config,
+    }
+}
+
+fn passthrough_spec(server: &MCPServer, resource: &str) -> ServerSpec {
+    let config = AuthConfig::Passthrough(PassthroughConfig);
+    let server_id = server.fields.server_id.clone();
+    ServerSpec {
+        server_id,
+        resource: resource.to_owned(),
+        config,
+    }
+}

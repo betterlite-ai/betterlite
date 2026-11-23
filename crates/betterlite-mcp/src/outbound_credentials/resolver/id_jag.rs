@@ -1,0 +1,208 @@
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
+use secrecy::{ExposeSecret, SecretString};
+use sha2::{Digest as _, Sha256};
+use tracing::warn;
+
+use crate::credential_contracts::auth_config::id_jag::{ClientAuth, IdJagConfig};
+use crate::credential_contracts::errors::{CredError, CredResult};
+use crate::credential_contracts::server_spec::{ServerSpec, Subject};
+use crate::credentials::ResolvedAuth;
+use crate::sso_assertions::assertion::assertion_expired;
+
+use crate::outbound_credentials::auth::StaticAuth;
+use crate::outbound_credentials::collaborators::{
+    AssertionStore, ExchangedToken, TokenEndpointClient,
+};
+use crate::outbound_credentials::token_cache::ExchangedTokenCache;
+
+use super::Collaborators;
+
+const TOKEN_EXCHANGE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:token-exchange";
+const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+const ID_JAG_REQUESTED_TOKEN_TYPE: &str = "urn:ietf:params:oauth:token-type:id-jag";
+
+const MISSING_CALLER: &str = "ID-JAG requires an identified caller; this request carries neither an identity token nor a resolved LiteLLM user.";
+const NO_ASSERTION: &str = "ID-JAG requires an IdP identity assertion for this user and none is stored. Sign in through LiteLLM SSO so the gateway captures one.";
+const EXPIRED_ASSERTION: &str = "The stored IdP identity assertion for this user has expired. Sign in through LiteLLM SSO again to capture a current one.";
+
+// Every miss is 412: ID-JAG exists to assert one user, so a missing subject has no safe substitute, while a store outage is the caller's 503.
+pub(super) async fn subject_token(
+    subject: &Subject,
+    store: &dyn AssertionStore,
+    now: DateTime<Utc>,
+) -> CredResult<SecretString> {
+    if let Some(inbound) = &subject.inbound_token {
+        return Ok(inbound.clone());
+    }
+    if subject.subject_id.is_empty() {
+        return Err(CredError::PreconditionRequired(MISSING_CALLER.to_owned()));
+    }
+    let fetched = store.fetch(&subject.subject_id).await;
+    let assertion = match fetched {
+        Ok(Some(assertion)) => assertion,
+        Ok(None) => return Err(CredError::PreconditionRequired(NO_ASSERTION.to_owned())),
+        Err(_unavailable) => {
+            warn!(
+                user_id = %subject.subject_id,
+                "ID-JAG: the IdP identity assertion store is unreachable"
+            );
+            return Err(CredError::UpstreamUnavailable(
+                "The IdP identity assertion store is unreachable, so ID-JAG cannot resolve a subject."
+                    .to_owned(),
+            ));
+        }
+    };
+    if assertion_expired(&assertion, now) {
+        return Err(CredError::PreconditionRequired(
+            EXPIRED_ASSERTION.to_owned(),
+        ));
+    }
+    Ok(assertion.id_token.clone())
+}
+
+pub(super) async fn exchange(
+    subject: &Subject,
+    server: &ServerSpec,
+    config: &IdJagConfig,
+    subject_token: &SecretString,
+    collaborators: &Collaborators,
+) -> CredResult<Arc<dyn ResolvedAuth>> {
+    let slot = slot_key(subject, server);
+    let fingerprint = fingerprint(subject_token, &server.server_id, config);
+    let endpoint: &dyn TokenEndpointClient = &*collaborators.token_endpoint;
+    let compute = exchange_legs(config, subject_token, endpoint);
+    let access_token = collaborators
+        .exchanged_tokens
+        .get_or_compute(&slot, &fingerprint, compute)
+        .await?;
+    let (header_name, header_value) = config.header.header(access_token.expose_secret());
+    let auth = StaticAuth::new(&header_name, &header_value)?;
+    Ok(Arc::new(auth))
+}
+
+// The slot is addressed by the principal, never by the credential material, so invalidate stays computable while the assertion store is down.
+pub(super) fn invalidate(subject: &Subject, server: &ServerSpec, cache: &ExchangedTokenCache) {
+    let slot = slot_key(subject, server);
+    cache.invalidate(&slot);
+}
+
+async fn exchange_legs(
+    config: &IdJagConfig,
+    subject_token: &SecretString,
+    endpoint: &dyn TokenEndpointClient,
+) -> CredResult<ExchangedToken> {
+    let first_leg = first_leg_params(config, subject_token);
+    let assertion = endpoint
+        .fetch(
+            &config.org_token_endpoint,
+            &config.client_id,
+            &first_leg,
+            &config.client_auth,
+        )
+        .await?;
+    let second_leg = second_leg_params(&assertion.access_token);
+    endpoint
+        .fetch(
+            &config.resource_token_endpoint,
+            &config.client_id,
+            &second_leg,
+            &config.client_auth,
+        )
+        .await
+}
+
+fn first_leg_params(
+    config: &IdJagConfig,
+    subject_token: &SecretString,
+) -> BTreeMap<String, String> {
+    let mut params = BTreeMap::new();
+    params.insert(
+        "grant_type".to_owned(),
+        TOKEN_EXCHANGE_GRANT_TYPE.to_owned(),
+    );
+    params.insert(
+        "requested_token_type".to_owned(),
+        ID_JAG_REQUESTED_TOKEN_TYPE.to_owned(),
+    );
+    params.insert(
+        "subject_token".to_owned(),
+        subject_token.expose_secret().to_owned(),
+    );
+    params.insert(
+        "subject_token_type".to_owned(),
+        config.subject_token_type.clone(),
+    );
+    let audience = config.audience.as_deref().filter(|value| !value.is_empty());
+    if let Some(audience) = audience {
+        params.insert("audience".to_owned(), audience.to_owned());
+    }
+    let resource = config.resource.as_deref().filter(|value| !value.is_empty());
+    if let Some(resource) = resource {
+        params.insert("resource".to_owned(), resource.to_owned());
+    }
+    if !config.scopes.is_empty() {
+        params.insert("scope".to_owned(), config.scopes.join(" "));
+    }
+    params
+}
+
+fn second_leg_params(assertion: &SecretString) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("grant_type".to_owned(), JWT_BEARER_GRANT_TYPE.to_owned()),
+        ("assertion".to_owned(), assertion.expose_secret().to_owned()),
+    ])
+}
+
+fn slot_key(subject: &Subject, server: &ServerSpec) -> String {
+    let inbound = subject
+        .inbound_token
+        .as_ref()
+        .map(ExposeSecret::expose_secret)
+        .unwrap_or_default();
+    let material = format!(
+        "{}\u{0}{}\u{0}{}\u{0}{}",
+        subject.tenant_id, subject.subject_id, server.server_id, inbound
+    );
+    sha256_hex(&material)
+}
+
+// Everything an exchange depends on goes into the fingerprint, so a rotated assertion or an edited server re-mints instead of serving a bearer authorized under the old policy.
+fn fingerprint(subject_token: &SecretString, server_id: &str, config: &IdJagConfig) -> String {
+    let client_auth = client_auth_fingerprint(&config.client_auth);
+    let material = format!(
+        "{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}",
+        subject_token.expose_secret(),
+        server_id,
+        config.org_token_endpoint,
+        config.resource_token_endpoint,
+        config.client_id,
+        client_auth,
+        config.subject_token_type,
+        config.audience.as_deref().unwrap_or_default(),
+        config.resource.as_deref().unwrap_or_default(),
+        config.scopes.join(" "),
+    );
+    sha256_hex(&material)
+}
+
+fn client_auth_fingerprint(client_auth: &ClientAuth) -> String {
+    match client_auth {
+        ClientAuth::PrivateKeyJwt(jwt) => format!(
+            "private_key_jwt\u{0}{}\u{0}{}\u{0}{}",
+            jwt.private_key.expose_secret(),
+            jwt.key_id.as_deref().unwrap_or_default(),
+            jwt.signing_alg
+        ),
+        ClientAuth::ClientSecret(secret) => {
+            format!("client_secret\u{0}{}", secret.client_secret.expose_secret())
+        }
+    }
+}
+
+fn sha256_hex(material: &str) -> String {
+    let digest = Sha256::digest(material.as_bytes());
+    hex::encode(digest)
+}
