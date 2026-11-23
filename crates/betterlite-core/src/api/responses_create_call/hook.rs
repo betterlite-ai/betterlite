@@ -7,7 +7,6 @@ use betterlite_openai::response_input::ResponsesInput;
 use crate::api::response_id_traversal::response_id::transcode;
 use crate::api::responses_create::call::ResponsesCreateCall;
 use crate::api::responses_create::error::CreateError;
-use crate::api::responses_parameters::error::ResponsesParametersError;
 use crate::api::responses_parameters::prompt_merge::{
     ClientMessage, input_to_chat_messages, merge_prompt_management_input,
 };
@@ -44,10 +43,16 @@ pub(super) async fn prompted(
     if !port.runs_prompt_hooks(&hook) {
         return Ok(PreparedCall::settled(converted, provider, &call.model));
     }
-    let original = input_json(&call.input)
-        .map_err(|error| AsyncCreateError::create(error, &provider, &call.model))?;
-    let client_input = input_to_chat_messages(Some(&original))
-        .map_err(|error| merge_failure(error, &provider, &call.model))?;
+    let original = transcode(&call.input).map_err(|error| {
+        AsyncCreateError::create(CreateError::from(error), &provider, &call.model)
+    })?;
+    let client_input = input_to_chat_messages(Some(&original)).map_err(|error| {
+        AsyncCreateError::create(
+            CreateError::Prompt(PromptError::Merge(error)),
+            &provider,
+            &call.model,
+        )
+    })?;
     let bridged = bridges(deps.lookup, call, &provider, &kwargs);
     let answer = match run_hook(port, call, &mut kwargs, &client_input, bridged).await {
         Ok(answer) => answer,
@@ -65,11 +70,6 @@ pub(super) async fn prompted(
     let input = state.input()?;
     let final_provider = state.provider(deps.resolver)?;
     Ok(state.outcome(input, final_provider, converted))
-}
-
-fn merge_failure(error: ResponsesParametersError, provider: &str, model: &str) -> AsyncCreateError {
-    let cause = CreateError::Prompt(PromptError::Merge(error));
-    AsyncCreateError::create(cause, provider, model)
 }
 
 // LiteLLM's kwargs at the hook: the caller's extras plus the base and key the call carries as named arguments
@@ -122,10 +122,6 @@ fn text_value<'map>(kwargs: &'map ParameterMap, name: &str) -> Option<&'map str>
     }
 }
 
-fn input_json(input: &ResponsesInput) -> Result<JsonValue, CreateError> {
-    transcode(input).map_err(CreateError::from)
-}
-
 fn merge_request<'request>(
     model: &'request str,
     messages: &'request [ClientMessage],
@@ -162,7 +158,7 @@ pub(super) async fn run_hook(
         );
     }
     let request = merge_request(&call.model, client_input, kwargs);
-    let answer = port.async_get_chat_completion_prompt(&request).await;
+    let answer = port.async_merge_prompt(&request).await;
     if bridged {
         kwargs.shift_remove(CARRY_UNMATCHED_MESSAGE_POINTS);
     }
@@ -178,11 +174,18 @@ struct Answer<'call> {
 
 impl Answer<'_> {
     fn input(&self) -> Result<ResponsesInput, AsyncCreateError> {
-        let original = input_json(&self.call.input)
-            .map_err(|error| AsyncCreateError::create(error, &self.provider, &self.answer.model))?;
+        let original = transcode(&self.call.input).map_err(|error| {
+            AsyncCreateError::create(CreateError::from(error), &self.provider, &self.answer.model)
+        })?;
         let merged = match merge_prompt_management_input(&original, &self.answer.messages) {
             Ok(outcome) => outcome.input,
-            Err(error) => return Err(merge_failure(error, &self.provider, &self.answer.model)),
+            Err(error) => {
+                return Err(AsyncCreateError::create(
+                    CreateError::Prompt(PromptError::Merge(error)),
+                    &self.provider,
+                    &self.answer.model,
+                ));
+            }
         };
         transcode(&merged).map_err(|error| {
             AsyncCreateError::create(

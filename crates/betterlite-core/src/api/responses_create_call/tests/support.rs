@@ -113,20 +113,6 @@ pub(super) struct Harness {
     pub(super) state: LoggingState,
 }
 
-impl Harness {
-    pub(super) fn new() -> Self {
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
-        let now =
-            DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses");
-        Self {
-            state: logging_state(&redactor),
-            redactor,
-            sink: Sink,
-            now,
-        }
-    }
-}
-
 fn logging_state(redactor: &Redactor) -> LoggingState {
     let init: LoggingInit = serde_json::from_str(
         r#"{"model":"gpt-4o","call_type":"responses","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
@@ -304,7 +290,7 @@ impl AsyncPromptPort for ScriptedPort {
         self.runs
     }
 
-    async fn async_get_chat_completion_prompt(
+    async fn async_merge_prompt(
         &self,
         request: &MergeRequest<'_>,
     ) -> Result<MergeAnswer, PromptManagerError> {
@@ -361,31 +347,37 @@ pub(super) enum Outcome {
     Failed(CreateError),
 }
 
+struct ScriptedState {
+    calls: Vec<ResponsesCreateCall>,
+    contexts: Vec<String>,
+    script: Option<Outcome>,
+}
+
 pub(super) struct ScriptedHandoff {
-    script: Mutex<Option<Outcome>>,
-    calls: Mutex<Vec<ResponsesCreateCall>>,
-    contexts: Mutex<Vec<String>>,
+    state: Mutex<ScriptedState>,
     polls: Arc<AtomicUsize>,
 }
 
 impl ScriptedHandoff {
     pub(super) fn new(outcome: Outcome) -> Self {
         Self {
-            script: Mutex::new(Some(outcome)),
-            calls: Mutex::new(Vec::new()),
-            contexts: Mutex::new(Vec::new()),
+            state: Mutex::new(ScriptedState {
+                calls: Vec::new(),
+                contexts: Vec::new(),
+                script: Some(outcome),
+            }),
             polls: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub(super) fn calls(&self) -> Vec<ResponsesCreateCall> {
-        let calls = self.calls.lock().expect("the call lock is free");
-        calls.clone()
+        let state = self.state.lock().expect("the handoff lock is free");
+        state.calls.clone()
     }
 
     pub(super) fn contexts(&self) -> Vec<String> {
-        let contexts = self.contexts.lock().expect("the context lock is free");
-        contexts.clone()
+        let state = self.state.lock().expect("the handoff lock is free");
+        state.contexts.clone()
     }
 
     pub(super) fn polls(&self) -> usize {
@@ -423,13 +415,11 @@ impl SyncHandoff<Token> for ScriptedHandoff {
     where
         Token: 'call,
     {
-        let mut calls = self.calls.lock().expect("the call lock is free");
-        calls.push(call.clone());
-        drop(calls);
-        let mut contexts = self.contexts.lock().expect("the context lock is free");
-        contexts.push(context.0.to_owned());
-        drop(contexts);
-        let script = self.script.lock().expect("the script lock is free").take();
+        let mut state = self.state.lock().expect("the handoff lock is free");
+        state.calls.push(call.clone());
+        state.contexts.push(context.0.to_owned());
+        let script = state.script.take();
+        drop(state);
         match script.expect("one handoff per run") {
             Outcome::Completed(outcome) => CreateReturn::Completed(outcome),
             Outcome::Failed(error) => CreateReturn::Pending(Box::pin(future::ready(Err(error)))),
@@ -447,7 +437,14 @@ pub(super) async fn drive(
     handoff: &ScriptedHandoff,
     call: &ResponsesCreateCall,
 ) -> Result<Created<Token>, AsyncCreateError> {
-    let mut harness = Harness::new();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+    let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses");
+    let mut harness = Harness {
+        state: logging_state(&redactor),
+        redactor,
+        sink: Sink,
+        now,
+    };
     let environment = environment(&harness.redactor, &harness.sink, harness.now);
     let lookup = Lookup;
     let deps = AsyncCreateDeps {
@@ -462,25 +459,12 @@ pub(super) async fn drive(
     aresponses(&deps, handoff, call, Token("ctx"), &mut log).await
 }
 
-pub(super) fn response_id(created: &Created<Token>) -> String {
+pub(super) fn typed(created: &Created<Token>) -> &StampedResponse {
     match created {
-        Created::Responses(stamped) => stamped.response.id.clone(),
+        Created::Responses(stamped) => stamped,
         Created::Raw(_) | Created::Live(_) | Created::Synthetic(_) | Created::Chat(_) => {
             panic!("the run answers a typed response")
         }
-    }
-}
-
-pub(super) fn hidden_provider(created: &Created<Token>) -> Option<String> {
-    match created {
-        Created::Responses(stamped) => match stamped.hidden.get("custom_llm_provider") {
-            Some(Json::Text(provider)) => Some(provider.clone()),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => None,
-        },
-        Created::Raw(_) | Created::Live(_) | Created::Synthetic(_) | Created::Chat(_) => None,
     }
 }
 

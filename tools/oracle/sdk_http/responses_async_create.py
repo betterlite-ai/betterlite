@@ -24,9 +24,7 @@ AsyncCreateResult: TypeAlias = Coroutine[object, object, ResponsesAPIResponse]
 
 # litellm's @client decorator erases the wrapper signature, so the protocol names the call
 class AsyncCalls(Protocol):
-    def aresponses(
-        self, *, litellm_logging_obj: Logging | None = None, **kwargs: JsonValue
-    ) -> AsyncCreateResult: ...
+    def aresponses(self, **kwargs: JsonValue | Logging | None) -> AsyncCreateResult: ...
 
 
 CALLS: Final[AsyncCalls] = cast(AsyncCalls, litellm)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L575-L609
@@ -146,7 +144,7 @@ class ScriptedLogging(Logging):
         self.recording = {"checks": 0, "ran": 0, "sync_checks": 0, "calls": []}
 
     @override
-    def should_run_prompt_management_hooks(  # ast-grep-ignore: no-long-names
+    def should_run_prompt_management_hooks(
         self,
         non_default_params: dict[str, JsonValue],
         prompt_id: str | None = None,
@@ -172,7 +170,6 @@ class ScriptedLogging(Logging):
         prompt_management_logger: CustomLogger | None = None,
         prompt_label: str | None = None,
         prompt_version: int | None = None,
-        # ast-grep-ignore: no-loose-types
         request_kwargs: dict[str, object] | None = None,
         injected_for_every_deployment: bool = False,
     ) -> tuple[str, list[AllMessageValues], dict[str, JsonValue]]:
@@ -180,10 +177,10 @@ class ScriptedLogging(Logging):
         del prompt_management_logger, prompt_label, prompt_version, request_kwargs
         del injected_for_every_deployment
         self.recording["sync_checks"] += 1
-        return model, messages, {}
+        return model, messages, {}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998-L1005
 
     @override
-    async def async_get_chat_completion_prompt(  # ast-grep-ignore: no-long-names
+    async def async_get_chat_completion_prompt(
         self,
         model: str,
         messages: list[AllMessageValues],
@@ -195,7 +192,6 @@ class ScriptedLogging(Logging):
         tools: list[dict[str, JsonValue]] | None = None,
         prompt_label: str | None = None,
         prompt_version: int | None = None,
-        # ast-grep-ignore: no-loose-types
         request_kwargs: dict[str, object] | None = None,
         injected_for_every_deployment: bool = False,
     ) -> tuple[str, list[AllMessageValues], dict[str, JsonValue]]:
@@ -213,8 +209,8 @@ class ScriptedLogging(Logging):
             "aresponses": bool(non_default_params.get("aresponses")),
         }
         self.recording["calls"].append(call)
-        merged = cast(list[AllMessageValues], script["messages"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998-L1005
-        return script["model"], merged, dict(script["optional_params"])
+        merged = cast(list[AllMessageValues], script["messages"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998-L1005
+        return script["model"], merged, dict(script["optional_params"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998-L1005
 
 
 def called(run: AsyncRun, api_base: str, scripted: ScriptedLogging | None) -> AsyncCreateResult:
@@ -226,7 +222,8 @@ def called(run: AsyncRun, api_base: str, scripted: ScriptedLogging | None) -> As
 
 def observation(scripted: ScriptedLogging | None) -> JsonValue:
     if scripted is None:
-        return JSON.validate_python({"checks": 0, "ran": 0, "sync_checks": 0, "calls": []})
+        empty: Observation = {"checks": 0, "ran": 0, "sync_checks": 0, "calls": []}
+        return JSON.validate_python(empty)
     return JSON.validate_python(scripted.recording)
 
 

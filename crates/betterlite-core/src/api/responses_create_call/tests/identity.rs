@@ -14,15 +14,20 @@ pub(super) async fn result_identity() {
     untyped_passthrough().await;
 }
 
+fn assert_identity(created: &Created<Token>, expected: &str) {
+    let typed = support::typed(created);
+    assert_eq!(typed.response.id, expected);
+    assert_eq!(
+        typed.hidden.get("custom_llm_provider"),
+        Some(&support::json("\"openai\""))
+    );
+}
+
 async fn completed() {
     let created = run(Outcome::Completed(Some(support::stamped("resp_a")))).await;
     let expected = build_response_id(Some("openai"), Some("deployment_a"), "resp_a");
-    assert_eq!(support::response_id(&created), expected);
-    assert_eq!(
-        support::hidden_provider(&created).as_deref(),
-        Some("openai")
-    );
-    let decoded = decode_response_id(&support::response_id(&created));
+    assert_identity(&created, &expected);
+    let decoded = decode_response_id(&support::typed(&created).response.id);
     assert_eq!(
         decoded.custom_llm_provider,
         Some(Some(String::from("openai")))
@@ -35,11 +40,7 @@ async fn completed() {
 async fn mock_shortcut() {
     let created = run(Outcome::Completed(Some(support::stamped(MOCK_ID)))).await;
     let expected = build_response_id(Some("openai"), Some("deployment_a"), MOCK_ID);
-    assert_eq!(support::response_id(&created), expected);
-    assert_eq!(
-        support::hidden_provider(&created).as_deref(),
-        Some("openai")
-    );
+    assert_identity(&created, &expected);
 }
 
 // A coroutine answer is awaited once, then stamped the same way
@@ -53,21 +54,13 @@ async fn pending_once() {
     assert_eq!(handoff.polls(), 2);
     assert_eq!(handoff.calls().len(), 1);
     let expected = build_response_id(Some("openai"), Some("deployment_a"), "resp_a");
-    assert_eq!(support::response_id(&created), expected);
-    assert_eq!(
-        support::hidden_provider(&created).as_deref(),
-        Some("openai")
-    );
+    assert_identity(&created, &expected);
 }
 
 async fn encoded_untouched() {
     let encoded = build_response_id(Some("openai"), Some("deployment_a"), "resp_a");
     let created = run(Outcome::Completed(Some(support::stamped(&encoded)))).await;
-    assert_eq!(support::response_id(&created), encoded);
-    assert_eq!(
-        support::hidden_provider(&created).as_deref(),
-        Some("openai")
-    );
+    assert_identity(&created, &encoded);
 }
 
 // Only a typed response is rewritten; an iterator, a raw body and a bridged answer pass through

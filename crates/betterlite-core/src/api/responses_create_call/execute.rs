@@ -5,50 +5,13 @@ use crate::api::response_id_traversal::metadata::AffinityMetadata;
 use crate::api::response_id_traversal::response_id::{rewrite_typed_response, transcode};
 use crate::api::responses_create::bridge::Created;
 use crate::api::responses_create::error::CreateError;
-use crate::api::responses_create_http::service::LogContext;
 use crate::api::responses_provider_selection::ParameterMap;
 
-use super::deps::{CreateReturn, SyncHandoff};
 use super::error::AsyncCreateError;
 use super::prepare::PreparedCall;
 
-// The sync execution answers at once or hands back its coroutine; aresponses awaits that coroutine exactly once
-pub(super) async fn finish<Context, Handoff>(
-    execution: &Handoff,
-    prepared: PreparedCall,
-    context: Context,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Created<Context>, AsyncCreateError>
-where
-    Context: Send,
-    Handoff: SyncHandoff<Context>,
-{
-    let returned = execution.handoff(&prepared.call, context, log);
-    let awaited = match returned {
-        CreateReturn::Completed(outcome) => Ok(outcome),
-        CreateReturn::Pending(pending) => pending.await.map(Some),
-    };
-    let outcome = match awaited {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            return Err(AsyncCreateError::create(
-                error,
-                &prepared.provider,
-                &prepared.model,
-            ));
-        }
-    };
-    match outcome {
-        Some(created) => identity(created, &prepared),
-        None => Err(AsyncCreateError::null_response(
-            prepared.provider,
-            prepared.model,
-        )),
-    }
-}
-
 // LiteLLM's isinstance(response, ResponsesAPIResponse) branch: encode the id with the deployment model_id, stamp the provider
-fn identity<Context>(
+pub(super) fn identity<Context>(
     created: Created<Context>,
     prepared: &PreparedCall,
 ) -> Result<Created<Context>, AsyncCreateError> {

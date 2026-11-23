@@ -22,7 +22,7 @@ use crate::api::responses_provider_selection::resolution::ModelResolver;
 pub trait AsyncPromptPort: Send + Sync {
     fn runs_prompt_hooks(&self, request: &HookRequest<'_>) -> bool;
 
-    async fn async_get_chat_completion_prompt(
+    async fn async_merge_prompt(
         &self,
         request: &MergeRequest<'_>,
     ) -> Result<MergeAnswer, PromptManagerError>;

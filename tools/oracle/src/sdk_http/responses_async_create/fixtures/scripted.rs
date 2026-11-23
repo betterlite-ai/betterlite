@@ -73,7 +73,7 @@ impl AsyncPromptPort for ScriptedPort {
         runs
     }
 
-    async fn async_get_chat_completion_prompt(
+    async fn async_merge_prompt(
         &self,
         request: &MergeRequest<'_>,
     ) -> Result<MergeAnswer, PromptManagerError> {
