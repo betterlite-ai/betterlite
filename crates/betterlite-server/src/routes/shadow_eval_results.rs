@@ -4,7 +4,7 @@ use axum::Json;
 use axum::Router;
 use axum::extract::{Extension, Path, RawQuery, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use chrono::Utc;
 use serde::Serialize;
@@ -43,7 +43,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         .with_state(results)
 }
 
-// the handlers' failure path; the box keeps their Err small enough for the lint table
+// the handlers' failure path; the box keeps their Err one pointer wide for the lint table
 struct RouteFailure(Box<Response>);
 
 impl From<Response> for RouteFailure {
@@ -61,20 +61,19 @@ impl IntoResponse for RouteFailure {
 // FastAPI checks the auth (401) before it validates the query (422), then the endpoint checks the role (403)
 async fn shadow_eval_read(
     State(state): State<Arc<ResultsState>>,
-    job_id: Option<Path<String>>,
+    job: Option<Path<String>>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
 ) -> Result<Response, RouteFailure> {
     let identity = identity_of_caller(caller.as_ref())?;
-    if let Some(Path(job_id)) = job_id {
-        let store = viewer_store(&state, &identity)?;
-        answered(get_shadow_eval_job(store, &job_id, Utc::now()).await)
-    } else {
+    let Some(Path(job_id)) = job else {
         let query = decode_shadow_query(raw_query.as_deref().unwrap_or_default().as_bytes())
             .map_err(|error| RouteFailure::from(failure(&ShadowResultsRouteError::from(error))))?;
         let store = viewer_store(&state, &identity)?;
-        answered(list_shadow_eval_jobs(store, &query, Utc::now()).await)
-    }
+        return answered(list_shadow_eval_jobs(store, &query, Utc::now()).await);
+    };
+    let store = viewer_store(&state, &identity)?;
+    answered(get_shadow_eval_job(store, &job_id, Utc::now()).await)
 }
 
 fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identity, RouteFailure> {
@@ -94,9 +93,10 @@ fn identity_of_caller(caller: Option<&Extension<AuthContext>>) -> Result<Identit
 }
 
 // the one read each route serves, answered with the shared failure body
-fn answered<T: Serialize>(
-    read: Result<T, ShadowResultsRouteError>,
-) -> Result<Response, RouteFailure> {
+fn answered<T>(read: Result<T, ShadowResultsRouteError>) -> Result<Response, RouteFailure>
+where
+    T: Serialize,
+{
     match read {
         Ok(value) => Ok(Json(value).into_response()),
         Err(error) => Err(RouteFailure::from(failure(&error))),

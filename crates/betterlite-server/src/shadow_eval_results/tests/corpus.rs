@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use super::super::query::decode_shadow_query;
+use super::super::query::{ShadowQueryError, decode_shadow_query};
 
 #[rstest]
 fn replays_the_shadow_q_corpus(#[files("fuzz/corpus/shadow_q/*")] path: PathBuf) {
@@ -13,9 +13,11 @@ fn replays_the_shadow_q_corpus(#[files("fuzz/corpus/shadow_q/*")] path: PathBuf)
     let parsed = decode_shadow_query(&bytes);
     let name = path.file_name().and_then(|name| name.to_str()).unwrap();
     if name.starts_with("shadow-eval-results-valid") {
-        let _query = parsed.unwrap();
+        assert_eq!(parsed.unwrap().limit, 10);
     } else {
-        // a bind keeps the error value without a mem::drop over a type that needs none
-        let _error = parsed.unwrap_err();
+        assert_eq!(
+            parsed.unwrap_err(),
+            ShadowQueryError::Invalid { parameter: "limit" }
+        );
     }
 }

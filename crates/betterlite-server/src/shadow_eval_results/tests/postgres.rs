@@ -133,7 +133,7 @@ async fn legs_of_group_decode_every_column_of_one_job() {
     assert_eq!(ids(&legs), vec!["leg-a1", "leg-a2"]);
     let key_leg = legs.iter().find(|leg| leg.id == "leg-a2").unwrap();
     assert_eq!(key_leg.direction, ShadowEvalDirection::Reverse);
-    assert!((key_leg.shadow_percentage - 25.5_f64).abs() < 1e-9_f64);
+    assert_eq!(key_leg.shadow_percentage.to_bits(), 25.5_f64.to_bits());
     assert_eq!(key_leg.max_turns, 50);
     assert_eq!(key_leg.max_budget, None);
     assert_eq!(key_leg.stopped_by.as_deref(), Some("alice"));
