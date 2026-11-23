@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::end_user_registry::Settings;
+use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::identity_rows::end_user::LiteLLMEndUserTable;
@@ -19,7 +20,9 @@ use tokio_util::task::TaskTracker;
 use super::super::check::{EndUserBudgetError, check_end_user_budget};
 use super::super::object::{EndUserObjects, EndUserRequest};
 use super::super::postgres::DatabaseEndUsers;
+use super::super::rows::{EndUserFetchError, EndUserRows as _};
 use super::support::{TestCache, money, reseed_over, spend_dual_cache, test_cache};
+use crate::auth_read::table::AuthReadError;
 use crate::current_spend::CurrentSpend;
 use crate::end_user_registry::EndUserRegistry;
 use crate::spend_reads::batch::NoSpendBatch;
@@ -236,5 +239,24 @@ async fn database_rows_and_conflicting_spend() {
     check_with_cached_spend(&store, &with_budget, None)
         .await
         .expect("the database spend of the row is within budget");
+    close(fixture, pool).await;
+}
+
+// the configured lookup deadline bounds the row read, so a stalled database cannot park the request
+#[tokio::test]
+async fn end_user_read_carries_the_lookup_deadline() {
+    let (fixture, pool) = database().await;
+    seed(&pool).await;
+    let mut rows = database_rows(&pool);
+    rows.default_deadline_seconds = 0.0_f64;
+    let error = rows
+        .find_end_user("with-budget")
+        .await
+        .expect_err("a zero lookup deadline fails the bounded read");
+    let EndUserFetchError::Read(source) = error;
+    assert!(matches!(
+        *source,
+        AuthReadError::Lookup(DbLookupError::Deadline(_))
+    ));
     close(fixture, pool).await;
 }

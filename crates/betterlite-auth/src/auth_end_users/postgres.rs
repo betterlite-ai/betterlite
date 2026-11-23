@@ -124,10 +124,16 @@ impl EndUserRows for DatabaseEndUsers {
         let session = access.read.session().await.map_err(|source| {
             EndUserFetchError::Read(Box::new(AuthReadError::Repository(widen(source))))
         })?;
-        let table = EndUserRowTable {
+        let table = Arc::new(EndUserRowTable {
             client: Some(session),
+        });
+        let context = ReadContext {
+            default_deadline_seconds: self.default_deadline_seconds,
+            tracker: Arc::clone(&self.tracker),
+            tasks: self.tasks.clone(),
         };
-        table
+        let bounded = AuthReadAdapter::Dictable.open(table, "end_user".to_owned(), context);
+        bounded
             .find_unique(FindOne {
                 filter: end_user_id.to_owned(),
                 include: Presence::Omitted,

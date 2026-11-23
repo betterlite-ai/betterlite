@@ -2,12 +2,17 @@
 
 use betterlite_db::budget_permission_rows::LiteLLMBudgetTable;
 
-use super::super::cache::{EndUserCache as _, EndUserCacheKey, options};
+use super::super::cache::{EndUserCache as _, EndUserCacheKey};
 use super::support::{budget_fixture, test_cache};
+use crate::auth_cache::{WriteOptions, WriteTtl};
 
 #[test]
 fn written_rows_carry_the_management_ttl() {
-    let written = options(33.0_f64);
+    let written = WriteOptions {
+        ttl: Some(WriteTtl { seconds: 33.0_f64 }),
+        local_only: false,
+        refresh_ttl: false,
+    };
     assert_eq!(
         written.ttl.map(|ttl| ttl.seconds.to_bits()),
         Some(33.0_f64.to_bits())

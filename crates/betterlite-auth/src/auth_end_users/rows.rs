@@ -52,7 +52,7 @@ pub trait BudgetRows: Send + Sync {
     ) -> Result<Option<LiteLLMBudgetTable>, BudgetFetchError>;
 }
 
-// B2315's unbounded end-user table: Prisma's find_unique with the two include relations baked in.
+// The end-user row get_end_user_object reads, with Prisma's two include relations baked into the query.
 pub struct EndUserRowTable {
     pub client: Option<deadpool_postgres::Client>,
 }

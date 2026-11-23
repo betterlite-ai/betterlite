@@ -46,14 +46,6 @@ pub trait EndUserCache: RegistryCache {
         Row: Serialize + Sync;
 }
 
-pub(super) const fn options(ttl: f64) -> WriteOptions {
-    WriteOptions {
-        ttl: Some(WriteTtl { seconds: ttl }),
-        local_only: false,
-        refresh_ttl: false,
-    }
-}
-
 #[async_trait]
 impl<T: AuthCacheTier + 'static> EndUserCache for AuthCache<T> {
     async fn read_row<Row>(&self, cache_key: &str) -> Result<Option<Row>, PayloadError>
@@ -72,6 +64,11 @@ impl<T: AuthCacheTier + 'static> EndUserCache for AuthCache<T> {
     where
         Row: Serialize + Sync,
     {
-        self.async_set(Some(cache_key), row, options(ttl)).await
+        let options = WriteOptions {
+            ttl: Some(WriteTtl { seconds: ttl }),
+            local_only: false,
+            refresh_ttl: false,
+        };
+        self.async_set(Some(cache_key), row, options).await
     }
 }
