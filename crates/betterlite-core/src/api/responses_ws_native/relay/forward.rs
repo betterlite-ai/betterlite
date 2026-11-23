@@ -65,9 +65,9 @@ pub(super) trait ForwardSteps {
 
     async fn forward_client_frames(&self) -> Result<(), ClientRelayError>;
 
-    async fn accept_and_relay(&self, message: &str) -> Result<(), ClientRelayError>;
-
     async fn relay_client_frame(&self, message: &str) -> Result<(), ClientRelayError>;
+
+    async fn masked_client_frame(&self, message: &str) -> Result<String, ClientRelayError>;
 }
 
 #[async_trait]
@@ -178,40 +178,30 @@ where
         }
     }
 
-    async fn accept_and_relay(&self, message: &str) -> Result<(), ClientRelayError> {
-        if enforce_or_reject_frame(&self.policy(), self.setup.websocket, message)
-            .await
-            .map_err(|error| ClientRelayError::Frame(class_message(&error)))?
-        {
-            self.relay_client_frame(message).await?;
-        }
-        Ok(())
-    }
-
     async fn forward_client_frames(&self) -> Result<(), ClientRelayError> {
-        if let Some(first) = self.setup.first_message.as_deref() {
-            self.accept_and_relay(first).await?;
-        }
+        let mut first = self.setup.first_message.clone();
         loop {
-            let message = self
-                .setup
-                .websocket
-                .receive_text()
+            let message = if let Some(queued) = first.take() {
+                queued
+            } else {
+                self.setup
+                    .websocket
+                    .receive_text()
+                    .await
+                    .map_err(|error| ClientRelayError::Frame(error.to_string()))?
+            };
+            let policy = self.policy();
+            let accepted = enforce_or_reject_frame(&policy, self.setup.websocket, &message)
                 .await
-                .map_err(|error| ClientRelayError::Frame(error.to_string()))?;
-            self.accept_and_relay(&message).await?;
+                .map_err(|error| ClientRelayError::Frame(class_message(&error)))?;
+            if accepted {
+                self.relay_client_frame(&message).await?;
+            }
         }
     }
 
     async fn relay_client_frame(&self, message: &str) -> Result<(), ClientRelayError> {
-        let masked = {
-            let policy = self.policy();
-            let mut request_data = self.request_data.lock().await;
-            mask_response_create(&policy, &mut request_data, message)
-                .await
-                .map_err(|error| ClientRelayError::Frame(error.to_string()))?
-                .into_owned()
-        };
+        let masked = self.masked_client_frame(message).await?;
         self.store_input(&masked).await;
         self.store_event(&masked).await?;
         self.setup
@@ -219,6 +209,14 @@ where
             .send(&masked)
             .await
             .map_err(|error| ClientRelayError::Send(error.to_string()))
+    }
+
+    async fn masked_client_frame(&self, message: &str) -> Result<String, ClientRelayError> {
+        let mut request_data = self.request_data.lock().await;
+        let masked = mask_response_create(&self.policy(), &mut request_data, message)
+            .await
+            .map_err(|error| ClientRelayError::Frame(error.to_string()))?;
+        Ok(masked.into_owned())
     }
 }
 

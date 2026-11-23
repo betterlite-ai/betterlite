@@ -388,9 +388,13 @@ pub(super) struct FakeResolution {
 
 impl FakeResolution {
     pub(super) fn openai() -> Self {
+        Self::named(String::from("gpt-4o"), String::from("openai"))
+    }
+
+    fn named(model: String, provider: String) -> Self {
         Self {
-            model: String::from("gpt-4o"),
-            provider: Some(String::from("openai")),
+            model,
+            provider: Some(provider),
             api_base: None,
             api_key: None,
         }
@@ -557,13 +561,18 @@ pub(super) struct Entry {
 
 impl Entry {
     pub(super) fn new() -> Self {
+        let model = String::from("gpt-4o");
+        let api_base = None;
+        let api_key = None;
+        let timeout = None;
+        let resolution = FakeResolution::openai();
         Self {
-            model: String::from("gpt-4o"),
-            api_base: None,
-            api_key: None,
-            timeout: None,
+            model,
+            api_base,
+            api_key,
+            timeout,
             kwargs: Event::new(),
-            resolution: FakeResolution::openai(),
+            resolution,
             globals: LiteLlmGlobals::default(),
             openai_api_key: None,
             configs: FakeConfigs::default(),
