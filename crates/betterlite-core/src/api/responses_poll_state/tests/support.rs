@@ -360,9 +360,7 @@ pub(super) fn owner(user: &str, team: &str, fingerprint: &str) -> PollOwner {
 pub(super) fn assert_denial(error: PollingError, denial: PollDenial) {
     match error {
         PollingError::Forbidden(found) => assert_eq!(found, denial),
-        other @ PollingError::Cache(_)
-        | other @ PollingError::Decode(_)
-        | other @ PollingError::Encode(_) => {
+        other @ (PollingError::Cache(_) | PollingError::Decode(_) | PollingError::Encode(_)) => {
             panic!("expected a forbidden polling error, got {other}")
         }
     }

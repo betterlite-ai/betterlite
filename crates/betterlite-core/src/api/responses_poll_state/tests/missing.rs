@@ -206,23 +206,23 @@ async fn complete(store: &ResponsePollingStore, id: &str) -> Result<PollingUpdat
         .await
 }
 
-fn expect_read_error(error: PollingError) {
+fn expect_read_error(error: &PollingError) {
     assert!(matches!(
-        error,
+        *error,
         PollingError::Cache(PollingCacheError::Read(_))
     ));
 }
 
-fn expect_write_error(error: PollingError) {
+fn expect_write_error(error: &PollingError) {
     assert!(matches!(
-        error,
+        *error,
         PollingError::Cache(PollingCacheError::Write(_))
     ));
 }
 
-fn expect_delete_error(error: PollingError) {
+fn expect_delete_error(error: &PollingError) {
     assert!(matches!(
-        error,
+        *error,
         PollingError::Cache(PollingCacheError::Delete(_))
     ));
 }
@@ -230,19 +230,19 @@ fn expect_delete_error(error: PollingError) {
 async fn assert_read_failure(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Read);
     let result = store.get_state(id, PollAccess::AuthDisabled).await;
-    expect_read_error(result.expect_err("the read failure propagates"));
+    expect_read_error(&result.expect_err("the read failure propagates"));
 }
 
 async fn assert_read_failure_on_update(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Read);
     let result = complete(store, id).await;
-    expect_read_error(result.expect_err("the read failure propagates"));
+    expect_read_error(&result.expect_err("the read failure propagates"));
 }
 
 async fn assert_write_failure_on_update(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Write);
     let result = complete(store, id).await;
-    expect_write_error(result.expect_err("the write failure propagates"));
+    expect_write_error(&result.expect_err("the write failure propagates"));
 }
 
 async fn assert_write_failure_on_create(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
@@ -250,13 +250,13 @@ async fn assert_write_failure_on_create(cache: &FakeCache, store: &ResponsePolli
     let result = store
         .create_initial_state(support::new_request(id, None))
         .await;
-    expect_write_error(result.expect_err("the write failure propagates"));
+    expect_write_error(&result.expect_err("the write failure propagates"));
 }
 
 async fn assert_delete_failure(cache: &FakeCache, store: &ResponsePollingStore, id: &str) {
     cache.fail_next(CacheOperation::Delete);
     let result = store.delete_polling(id).await;
-    expect_delete_error(result.expect_err("the delete failure propagates"));
+    expect_delete_error(&result.expect_err("the delete failure propagates"));
 }
 
 pub(super) async fn absent_cache() {

@@ -96,9 +96,10 @@ fn seed_response(cache: &ScriptedCache, key: &str, seed: &Seed) -> Result<(), Bo
 }
 
 fn store_for(input: &Input, call: &StateCall, cache: &Arc<ScriptedCache>) -> ResponsePollingStore {
-    let handle: Option<Arc<dyn PollingCache>> = call.redis.then_some(Arc::clone(cache));
+    let concrete = Arc::clone(cache);
+    let shared: Arc<dyn PollingCache> = concrete;
     ResponsePollingStore {
-        cache: handle,
+        cache: call.redis.then_some(shared),
         ttl: call.ttl.unwrap_or(input.ttl),
         limits: ApiLimits::default(),
     }
