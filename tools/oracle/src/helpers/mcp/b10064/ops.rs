@@ -11,7 +11,7 @@ use betterlite_mcp::credential_contracts::byok_cache::SystemClock;
 use betterlite_mcp::sso_assertions::assertion::{SsoIdentityAssertion, decode_payload};
 use betterlite_mcp::sso_assertions::cache::{CacheState, SsoAssertionCache};
 use betterlite_mcp::sso_assertions::read::{
-    AssertionStoreUnavailable, SsoAssertionStore, fetch_uncached,
+    AssertionStoreUnavailable, SsoAssertionStore as _, fetch_uncached,
 };
 use betterlite_mcp::sso_assertions::store::DbSsoAssertionStore;
 use betterlite_oracle_helper_api::error::OrHelperError as _;

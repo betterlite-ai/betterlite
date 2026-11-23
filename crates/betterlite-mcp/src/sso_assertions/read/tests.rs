@@ -22,7 +22,7 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-use super::{SsoAssertionStore, fetch_uncached};
+use super::{SsoAssertionStore as _, fetch_uncached};
 use crate::credential_contracts::byok_cache::SystemClock;
 use crate::sso_assertions::assertion::SsoIdentityAssertion;
 use crate::sso_assertions::cache::{CacheState, SsoAssertionCache};
