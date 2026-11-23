@@ -1,0 +1,14 @@
+id: B10058
+milestone: M8 platform
+title: Safe proxy config lines for bug reports
+status: done
+depends_on: [B4170, B9979, B171]
+file: tasks/B10058-safe-proxy-config-lines.yaml
+covers:
+  - "litellm/proxy/bug_report_config.py"
+parent: B121
+split_from: B4171
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3049
