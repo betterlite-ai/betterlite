@@ -71,39 +71,26 @@ pub enum AzureSpeechError {
 impl AzureSpeechError {
     #[must_use]
     pub fn status(&self) -> Option<u16> {
-        match self {
-            Self::Client(error) => error.status(),
-            Self::Status(error) => Some(error.status),
-            Self::Handler { status, .. } => *status,
-            Self::Transport(_)
-            | Self::Logging(_)
-            | Self::BaseUrl(_)
-            | Self::RequestUrl { .. }
-            | Self::HeaderName { .. }
-            | Self::HeaderValue { .. }
-            | Self::Option { .. }
-            | Self::UnableToHandleAuth
-            | Self::MissingKey
-            | Self::ModelNotSet
-            | Self::InvalidCompletion
-            | Self::DuplicateArgument { .. }
-            | Self::ExtraBody { .. }
-            | Self::Encode(_)
-            | Self::UnsupportedClient => None,
-        }
+        let (_class, status) = self.kind();
+        status
     }
 
     // the Python exception class each failure arrives as
     #[must_use]
     pub fn class(&self) -> &str {
+        let (class, _status) = self.kind();
+        class
+    }
+
+    fn kind(&self) -> (&str, Option<u16>) {
         match self {
-            Self::Status(_) => "APIStatusError",
-            Self::UnableToHandleAuth => "ValueError",
-            Self::MissingKey => "OpenAIError",
-            Self::DuplicateArgument { .. } => "TypeError",
-            Self::ExtraBody { .. } => "RuntimeError",
-            Self::Client(error) => error.class(),
-            Self::Handler { class, .. } => class,
+            Self::Client(error) => (error.class(), error.status()),
+            Self::Status(error) => ("APIStatusError", Some(error.status)),
+            Self::Handler { class, status, .. } => (class, *status),
+            Self::UnableToHandleAuth => ("ValueError", None),
+            Self::MissingKey => ("OpenAIError", None),
+            Self::DuplicateArgument { .. } => ("TypeError", None),
+            Self::ExtraBody { .. } => ("RuntimeError", None),
             Self::Transport(_)
             | Self::Logging(_)
             | Self::BaseUrl(_)
@@ -114,7 +101,7 @@ impl AzureSpeechError {
             | Self::ModelNotSet
             | Self::InvalidCompletion
             | Self::Encode(_)
-            | Self::UnsupportedClient => "Exception",
+            | Self::UnsupportedClient => ("Exception", None),
         }
     }
 }

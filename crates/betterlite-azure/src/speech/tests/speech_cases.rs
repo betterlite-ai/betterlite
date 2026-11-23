@@ -40,6 +40,54 @@ async fn speech_cases(#[case] case: u8) {
     }
 }
 
+// The dispatch call every handler case shares, with each case setting only the slots it is about.
+struct CallSpec<'data> {
+    environment: &'data SpeechEnvironment<'data>,
+    optional: &'data IndexMap<String, Json>,
+    voice: Option<&'data Json>,
+    litellm_params: IndexMap<String, Json>,
+    api_base: Option<&'data str>,
+    api_key: Option<&'data str>,
+    timeout: Option<Duration>,
+    extra_headers: Option<&'data BTreeMap<String, String>>,
+    aspeech: bool,
+}
+
+impl<'data> CallSpec<'data> {
+    fn new(
+        environment: &'data SpeechEnvironment<'data>,
+        optional: &'data IndexMap<String, Json>,
+    ) -> Self {
+        Self {
+            environment,
+            optional,
+            voice: None,
+            litellm_params: IndexMap::new(),
+            api_base: None,
+            api_key: None,
+            timeout: None,
+            extra_headers: None,
+            aspeech: false,
+        }
+    }
+
+    fn request(self) -> DispatchCall<'data> {
+        DispatchCall {
+            model: "tts-1",
+            input: "hello",
+            voice: self.voice,
+            optional_params: self.optional,
+            litellm_params: self.litellm_params,
+            api_base: self.api_base.map(str::to_owned),
+            api_key: self.api_key.map(SecretString::from),
+            timeout: self.timeout,
+            extra_headers: self.extra_headers,
+            aspeech: self.aspeech,
+            environment: self.environment,
+        }
+    }
+}
+
 fn openai_audio_speech_path() {
     let mut inputs = Inputs::default();
     let mut logger = Recorder::default();
@@ -66,6 +114,10 @@ fn openai_audio_speech_path() {
     assert_eq!(pre.api_base, "https://example.openai.azure.com/openai/");
     assert_eq!(pre.data, json(r#"{"model":"tts","voice":"alloy"}"#));
     assert_eq!(inputs.cache.entries.len(), 1);
+    speech_response_bytes();
+}
+
+fn speech_response_bytes() {
     let content = finish_audio_speech(support::response(
         200,
         &[("content-type", "audio/mpeg")],
@@ -106,14 +158,39 @@ fn v1_audio_speech() {
 }
 
 async fn native_speech_selection() {
-    let headers = BTreeMap::from([(String::from("x-call"), String::from("1"))]);
+    let globals = speech_globals();
+    let environment = speech_variables();
     let optional = support::pairs(&[("speed", json("1.5"))]);
-    let globals = SpeechGlobals {
+    let speech_environment = SpeechEnvironment {
+        globals: &globals,
+        environment: &environment,
+    };
+    let headers = BTreeMap::from([(String::from("x-call"), String::from("1"))]);
+    let voice = json(r#"{"name":"alloy"}"#);
+    let mut spec = CallSpec::new(&speech_environment, &optional);
+    spec.voice = Some(&voice);
+    spec.timeout = Some(Duration::from_secs(5));
+    spec.extra_headers = Some(&headers);
+    spec.aspeech = true;
+    let mut handler = RecordingHandler::default();
+    dispatch_text_to_speech(spec.request(), &mut handler)
+        .await
+        .expect("the handler answers");
+    assert_native_request(&handler, &headers, &optional);
+    resolve_chains(&globals, &environment).await;
+    voice_rules(&globals, &environment, &optional).await;
+}
+
+fn speech_globals() -> SpeechGlobals {
+    SpeechGlobals {
         api_base: Some(String::from("https://global.example")),
         api_key: Some(SecretString::from("sk-global-key")),
         azure_key: Some(SecretString::from("sk-azure-global")),
-    };
-    let environment = BTreeMap::from([
+    }
+}
+
+fn speech_variables() -> BTreeMap<String, String> {
+    BTreeMap::from([
         (
             String::from("AZURE_API_BASE"),
             String::from("https://env.example"),
@@ -123,30 +200,15 @@ async fn native_speech_selection() {
             String::from("sk-openai-env"),
         ),
         (String::from("AZURE_API_KEY"), String::from("sk-azure-env")),
-    ]);
-    let speech_environment = SpeechEnvironment {
-        globals: &globals,
-        environment: &environment,
-    };
-    let voice = json(r#"{"name":"alloy"}"#);
-    let call = DispatchCall {
-        model: "tts-1",
-        input: "hello",
-        voice: Some(&voice),
-        optional_params: &optional,
-        litellm_params: IndexMap::new(),
-        api_base: None,
-        api_key: None,
-        timeout: Some(Duration::from_secs(5)),
-        extra_headers: Some(&headers),
-        aspeech: true,
-        environment: &speech_environment,
-    };
-    let mut handler = RecordingHandler::default();
-    dispatch_text_to_speech(call, &mut handler)
-        .await
-        .expect("the handler answers");
-    let request = first(&handler);
+    ])
+}
+
+fn assert_native_request(
+    handler: &RecordingHandler,
+    headers: &BTreeMap<String, String>,
+    optional: &IndexMap<String, Json>,
+) {
+    let request = first(handler);
     assert_eq!(request.api_base.as_deref(), Some("https://global.example"));
     assert_eq!(request.api_key.as_deref(), Some("sk-global-key"));
     assert_eq!(request.voice.as_deref(), Some("alloy"));
@@ -164,9 +226,7 @@ async fn native_speech_selection() {
         request.litellm_params.get("api_key"),
         Some(&Json::Text(String::from("sk-global-key")))
     );
-    assert_eq!(request.optional_params, optional);
-    resolve_chains(&globals, &environment).await;
-    voice_rules(&globals, &environment, &optional).await;
+    assert_eq!(&request.optional_params, optional);
 }
 
 // Every slot of the base and key chains resolves on its own, in the source order.
@@ -180,79 +240,34 @@ async fn resolve_chains(globals: &SpeechGlobals, environment: &BTreeMap<String, 
         ("api_base", json("\"https://params.example\"")),
         ("api_key", json("\"sk-params\"")),
     ]);
-    let call = DispatchCall {
-        model: "tts-1",
-        input: "hello",
-        voice: None,
-        optional_params: &optional,
+    let explicit = CallSpec {
+        api_base: Some("https://explicit.example"),
+        api_key: Some("sk-explicit"),
         litellm_params: params.clone(),
-        api_base: Some(String::from("https://explicit.example")),
-        api_key: Some(SecretString::from("sk-explicit")),
-        timeout: None,
-        extra_headers: None,
-        aspeech: false,
-        environment: &speech_environment,
+        ..CallSpec::new(&speech_environment, &optional)
     };
-    let request = resolved(call).await;
-    assert_eq!(
-        request.api_base.as_deref(),
-        Some("https://explicit.example")
-    );
-    assert_eq!(request.api_key.as_deref(), Some("sk-explicit"));
-    assert!(!request.is_async);
-    let call = DispatchCall {
-        model: "tts-1",
-        input: "hello",
-        voice: None,
-        optional_params: &optional,
+    assert_chain(explicit, "https://explicit.example", "sk-explicit").await;
+    let from_params = CallSpec {
         litellm_params: params,
-        api_base: None,
-        api_key: None,
-        timeout: None,
-        extra_headers: None,
-        aspeech: false,
-        environment: &speech_environment,
+        ..CallSpec::new(&speech_environment, &optional)
     };
-    let request = resolved(call).await;
-    assert_eq!(request.api_base.as_deref(), Some("https://params.example"));
-    assert_eq!(request.api_key.as_deref(), Some("sk-params"));
-    let call = DispatchCall {
-        model: "tts-1",
-        input: "hello",
-        voice: None,
-        optional_params: &optional,
-        litellm_params: IndexMap::new(),
-        api_base: None,
-        api_key: None,
-        timeout: None,
-        extra_headers: None,
-        aspeech: false,
-        environment: &speech_environment,
-    };
-    let request = resolved(call).await;
-    assert_eq!(request.api_base.as_deref(), Some("https://global.example"));
-    assert_eq!(request.api_key.as_deref(), Some("sk-global-key"));
+    assert_chain(from_params, "https://params.example", "sk-params").await;
+    let from_globals = CallSpec::new(&speech_environment, &optional);
+    assert_chain(from_globals, "https://global.example", "sk-global-key").await;
+    resolve_env_chains(environment, &optional).await;
+}
+
+async fn resolve_env_chains(
+    environment: &BTreeMap<String, String>,
+    optional: &IndexMap<String, Json>,
+) {
     let no_globals = SpeechGlobals::default();
-    let environment_only = SpeechEnvironment {
+    let without_globals = SpeechEnvironment {
         globals: &no_globals,
         environment,
     };
-    let call = DispatchCall {
-        model: "tts-1",
-        input: "hello",
-        voice: None,
-        optional_params: &optional,
-        litellm_params: IndexMap::new(),
-        api_base: None,
-        api_key: None,
-        timeout: None,
-        extra_headers: None,
-        aspeech: false,
-        environment: &environment_only,
-    };
-    let request = resolved(call).await;
-    assert_eq!(request.api_base.as_deref(), Some("https://env.example"));
-    assert_eq!(request.api_key.as_deref(), Some("sk-openai-env"));
+    let from_environment = CallSpec::new(&without_globals, optional);
+    assert_chain(from_environment, "https://env.example", "sk-openai-env").await;
     let azure_only = BTreeMap::from([
         (
             String::from("AZURE_API_BASE"),
@@ -260,26 +275,19 @@ async fn resolve_chains(globals: &SpeechGlobals, environment: &BTreeMap<String, 
         ),
         (String::from("AZURE_API_KEY"), String::from("sk-azure-env")),
     ]);
-    let fallback_environment = SpeechEnvironment {
+    let azure_key_environment = SpeechEnvironment {
         globals: &no_globals,
         environment: &azure_only,
     };
-    let call = DispatchCall {
-        model: "tts-1",
-        input: "hello",
-        voice: None,
-        optional_params: &optional,
-        litellm_params: IndexMap::new(),
-        api_base: None,
-        api_key: None,
-        timeout: None,
-        extra_headers: None,
-        aspeech: false,
-        environment: &fallback_environment,
-    };
-    let request = resolved(call).await;
-    assert_eq!(request.api_base.as_deref(), Some("https://env.example"));
-    assert_eq!(request.api_key.as_deref(), Some("sk-azure-env"));
+    let from_azure_key = CallSpec::new(&azure_key_environment, optional);
+    assert_chain(from_azure_key, "https://env.example", "sk-azure-env").await;
+}
+
+async fn assert_chain(spec: CallSpec<'_>, expected_base: &str, expected_key: &str) {
+    let request = resolved(spec).await;
+    assert_eq!(request.api_base.as_deref(), Some(expected_base));
+    assert_eq!(request.api_key.as_deref(), Some(expected_key));
+    assert!(!request.is_async);
 }
 
 async fn voice_rules(
@@ -291,71 +299,58 @@ async fn voice_rules(
         globals,
         environment,
     };
-    let text = json("\"alloy\"");
-    let named = json(r#"{"name":"echo"}"#);
-    let nameless = json("{}");
-    let number = json("7");
-    let null = json("null");
-    let named_request = voice_request(Some(&named), &speech_environment, optional).await;
-    assert_eq!(named_request.voice.as_deref(), Some("echo"));
-    let nameless_request = voice_request(Some(&nameless), &speech_environment, optional).await;
-    assert_eq!(nameless_request.voice, None);
-    let number_request = voice_request(Some(&number), &speech_environment, optional).await;
-    assert_eq!(number_request.voice, None);
-    let text_request = voice_request(Some(&text), &speech_environment, optional).await;
-    assert_eq!(text_request.voice.as_deref(), Some("alloy"));
-    let null_request = voice_request(Some(&null), &speech_environment, optional).await;
-    assert_eq!(null_request.voice, None);
+    voice_values(&speech_environment, optional).await;
     let wrong = json(r#"{"name":3}"#);
-    let call = DispatchCall {
-        model: "tts-1",
-        input: "hello",
-        voice: Some(&wrong),
-        optional_params: optional,
-        litellm_params: IndexMap::new(),
-        api_base: None,
-        api_key: None,
-        timeout: None,
-        extra_headers: None,
-        aspeech: false,
-        environment: &speech_environment,
-    };
-    let error = failure(call).await;
+    let mut spec = CallSpec::new(&speech_environment, optional);
+    spec.voice = Some(&wrong);
+    let error = failure(spec).await;
     assert_eq!(error.class(), "Exception");
 }
 
-async fn voice_request(
-    voice: Option<&Json>,
-    environment: &SpeechEnvironment<'_>,
-    optional: &IndexMap<String, Json>,
-) -> HandlerRecord {
-    let call = DispatchCall {
-        model: "tts-1",
-        input: "hello",
-        voice,
-        optional_params: optional,
-        litellm_params: IndexMap::new(),
-        api_base: None,
-        api_key: None,
-        timeout: None,
-        extra_headers: None,
-        aspeech: false,
-        environment,
-    };
-    resolved(call).await
+async fn voice_values(environment: &SpeechEnvironment<'_>, optional: &IndexMap<String, Json>) {
+    let echo = json(r#"{"name":"echo"}"#);
+    let nameless = json("{}");
+    let number = json("7");
+    let text = json("\"alloy\"");
+    let null = json("null");
+    assert_eq!(
+        voice_of(Some(&echo), environment, optional)
+            .await
+            .as_deref(),
+        Some("echo")
+    );
+    assert_eq!(voice_of(Some(&nameless), environment, optional).await, None);
+    assert_eq!(voice_of(Some(&number), environment, optional).await, None);
+    assert_eq!(
+        voice_of(Some(&text), environment, optional)
+            .await
+            .as_deref(),
+        Some("alloy")
+    );
+    assert_eq!(voice_of(Some(&null), environment, optional).await, None);
 }
 
-async fn resolved(call: DispatchCall<'_>) -> HandlerRecord {
+async fn voice_of<'data>(
+    voice: Option<&'data Json>,
+    environment: &'data SpeechEnvironment<'data>,
+    optional: &'data IndexMap<String, Json>,
+) -> Option<String> {
+    let mut spec = CallSpec::new(environment, optional);
+    spec.voice = voice;
+    resolved(spec).await.voice
+}
+
+async fn resolved(spec: CallSpec<'_>) -> HandlerRecord {
     let mut handler = RecordingHandler::default();
-    dispatch_text_to_speech(call, &mut handler)
+    dispatch_text_to_speech(spec.request(), &mut handler)
         .await
         .expect("the handler answers");
     first(&handler)
 }
 
-async fn failure(call: DispatchCall<'_>) -> AzureSpeechError {
+async fn failure(spec: CallSpec<'_>) -> AzureSpeechError {
     let mut handler = RecordingHandler::default();
-    let error = dispatch_text_to_speech(call, &mut handler)
+    let error = dispatch_text_to_speech(spec.request(), &mut handler)
         .await
         .expect_err("the dispatch fails");
     assert!(handler.requests.is_empty());
@@ -364,8 +359,7 @@ async fn failure(call: DispatchCall<'_>) -> AzureSpeechError {
 
 fn first(handler: &RecordingHandler) -> HandlerRecord {
     assert_eq!(handler.requests.len(), 1);
-    let request = handler.requests[0].clone();
-    request
+    handler.requests[0].clone()
 }
 
 fn binary_speech_body() {
@@ -395,6 +389,12 @@ fn binary_speech_body() {
             r#"{"model":"tts","input":"hello","voice":"alloy","response_format":"mp3","speed":1.5,"instructions":"hi"}"#
         )
     );
+    logged_speech_options(logger);
+    options_from_params();
+    duplicate_option();
+}
+
+fn logged_speech_options(logger: Recorder) {
     let pre = logger.pre.expect("the pre-call runs");
     assert_eq!(
         pre.data,
@@ -402,15 +402,24 @@ fn binary_speech_body() {
             r#"{"model":"tts","voice":"alloy","extra_query":{"trace":"abc"},"extra_body":{"instructions":"hi"},"timeout":5,"response_format":"mp3","speed":1.5}"#
         )
     );
-    let mut timed = support::call("tts", "hello", "alloy", IndexMap::new());
-    timed.params.timeout = Some(12.0_f64);
-    let timeout_from_params = support::start(&mut inputs, &timed, &mut Recorder::default())
-        .expect("the client timeout applies")
-        .deadline;
-    assert_eq!(timeout_from_params, Duration::from_secs(12));
-    let duplicate = support::pairs(&[("model", json("\"other\""))]);
-    let call = support::call("tts", "hello", "alloy", duplicate);
-    let error = support::start(&mut inputs, &call, &mut Recorder::default())
+}
+
+fn options_from_params() {
+    let mut call = support::call("tts", "hello", "alloy", IndexMap::new());
+    call.params.timeout = Some(12.0_f64);
+    let request = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
+        .expect("the client timeout applies");
+    assert_eq!(request.deadline, Duration::from_secs(12));
+}
+
+fn duplicate_option() {
+    let call = support::call(
+        "tts",
+        "hello",
+        "alloy",
+        support::pairs(&[("model", json("\"other\""))]),
+    );
+    let error = support::start(&mut Inputs::default(), &call, &mut Recorder::default())
         .expect_err("a reserved option is a duplicate argument");
     assert_eq!(error.class(), "TypeError");
 }
@@ -450,8 +459,13 @@ fn azure_rate_limit_probe() {
         support::body(&request),
         json(r#"{"model":"gpt-4o","messages":[{"role":"user","content":"Hey"}]}"#)
     );
+    probe_messages();
+    probe_rate_limit_headers();
+}
+
+fn probe_messages() {
     let given = json(r#"[{"role":"user","content":"Hi"}]"#);
-    let with_messages = ProbeCall {
+    let call = ProbeCall {
         model: Some("gpt-4o"),
         api_key: API_KEY,
         api_base: Some(API_BASE),
@@ -460,12 +474,15 @@ fn azure_rate_limit_probe() {
         mode: ProbeMode::Chat,
         messages: Some(&given),
     };
-    let request = probe_request(&with_messages).expect("the probe request builds");
+    let request = probe_request(&call).expect("the probe request builds");
     assert_eq!(request.deadline, Duration::from_secs(2));
     assert_eq!(
         support::body(&request),
         json(r#"{"model":"gpt-4o","messages":[{"role":"user","content":"Hi"}]}"#)
     );
+}
+
+fn probe_rate_limit_headers() {
     let found = finish_probe(Some(support::response(
         200,
         &[
@@ -515,11 +532,16 @@ fn azure_probe_cloudflare() {
         mode: ProbeMode::Chat,
         messages: None,
     };
-    let request = probe_request(&trailing).expect("the gateway probe builds");
+    let slashed = probe_request(&trailing).expect("the gateway probe builds");
     assert_eq!(
-        request.url.as_str(),
+        slashed.url.as_str(),
         "https://gateway.ai.cloudflare.com/v1/acct/gw/azure/gpt-4o/chat/completions?api-version=2024-06-01"
     );
+    cloudflare_unnamed();
+    probe_requires_options();
+}
+
+fn cloudflare_unnamed() {
     let unnamed = ProbeCall {
         model: None,
         api_key: API_KEY,
@@ -546,6 +568,9 @@ fn azure_probe_cloudflare() {
     let error = probe_request(&unnamed_azure).expect_err("a chat probe needs a model");
     assert_eq!(error.class(), "Exception");
     assert_eq!(error.status(), None);
+}
+
+fn probe_requires_options() {
     let image = ProbeCall {
         model: None,
         api_key: API_KEY,
@@ -569,8 +594,8 @@ fn azure_probe_cloudflare() {
         mode: ProbeMode::Chat,
         messages: None,
     };
-    let error = probe_request(&absent).expect_err("a probe needs an api_base");
-    assert_eq!(error.class(), "Exception");
+    let base_error = probe_request(&absent).expect_err("a probe needs an api_base");
+    assert_eq!(base_error.class(), "Exception");
     let empty = ProbeCall {
         model: Some("gpt-4o"),
         api_key: "",
@@ -580,6 +605,6 @@ fn azure_probe_cloudflare() {
         mode: ProbeMode::Chat,
         messages: None,
     };
-    let error = probe_request(&empty).expect_err("an empty key cannot authenticate");
-    assert_eq!(error.class(), "ValueError");
+    let key_error = probe_request(&empty).expect_err("an empty key cannot authenticate");
+    assert_eq!(key_error.class(), "ValueError");
 }
