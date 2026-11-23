@@ -155,6 +155,37 @@ async fn text_over_the_bound_fails_the_record() {
     assert_decodable(&scenario, limits);
 }
 
+// a delta for a content index with no part grows only the accumulated text, which the store never sees
+#[tokio::test]
+async fn deltas_without_a_part_past_the_json_bound_fail_the_record() {
+    let text = "x".repeat(300);
+    let delta = format!(
+        r#"{{"content_index":0,"delta":"{text}","item_id":"m1","type":"response.output_text.delta"}}"#
+    );
+    let limits = ApiLimits {
+        max_json_bytes: 500,
+        max_event_bytes: 16 * 1024 * 1024,
+        max_items: 64 * 1024,
+    };
+    let steps: Vec<AnswerStep> = support::frames(&[ITEM_ADDED, delta.as_str(), delta.as_str()])
+        .into_iter()
+        .map(AnswerStep::Chunk)
+        .collect();
+    let mut scenario =
+        support::scenario(&[0, 0, 0, 200], Answer::Streaming(steps)).with_limits(limits);
+    scenario
+        .run()
+        .await
+        .expect("the worker records its outcome");
+    // the due flush is refused before it writes, so only the status and the failed record land
+    assert_eq!(scenario.cache.writes().len(), 2);
+    assert_failed_message(
+        &scenario,
+        "the request JSON body is 604 bytes; the maximum is 500",
+    );
+    assert_decodable(&scenario, limits);
+}
+
 #[tokio::test]
 async fn terminal_fields_over_the_bound_fail_the_record() {
     let instructions = "i".repeat(600);
