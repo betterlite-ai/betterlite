@@ -8,4 +8,11 @@ deviations:
       The existing diagnostic policy applies to the responses create path too, and the oracle case ignores only the
       message pointer of the compatibility failure.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1450-L1458
+  - what: >-
+      A text_format object whose type is not json_schema is sent as text.format unchanged, while LiteLLM raises
+      a KeyError and returns a 500 for it.
+    why: >-
+      LiteLLM indexes text_format["json_schema"] for every object, so a valid json_object format fails the call
+      before any provider sees it; betterlite passes the caller's format through so text.format reaches the POST.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1050-L1067
 kept_bugs: []

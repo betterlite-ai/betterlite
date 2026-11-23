@@ -3,7 +3,7 @@ use super::call::ResponsesCreateCall;
 use super::convert::{decision_json, json_value, reencode};
 use super::deps::{ConfigRequest, CreateCapabilities, CreateConfigFactory, ResponsesCreateDeps};
 use super::error::CreateError;
-use super::interception::{CreateInterception, FileSearchArgs, Interception, dispatch_args};
+use super::interception::{FileSearchArgs, Interception, dispatch_args};
 use super::native::{NativeCall, bridge, native};
 use super::preparation::{self, Prepared, Resolved};
 use crate::api::responses_agentic_execution::executor::ContinuationExecutor;
@@ -216,8 +216,8 @@ fn requested_params(
     prep: &Prepared<'_>,
     auto_summary: bool,
 ) -> Result<(Params, JsonValue), CreateError> {
-    let mut locals: Params = prep.local_vars.iter().cloned().collect();
-    locals.extend(prep.kwargs.iter().cloned());
+    let mut locals: Params = prep.local_vars.clone().into_iter().collect();
+    locals.extend(prep.kwargs.clone());
     let kwargs = JsonValue::Object(prep.kwargs.clone());
     locals.insert(String::from("kwargs"), kwargs);
     let reasoning = request_reasoning(&locals, auto_summary)?;

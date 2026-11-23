@@ -1,4 +1,4 @@
-use super::bridge::{BridgeCall, ChatBridge, Created, StampedResponse};
+use super::bridge::{BridgeCall, Created, StampedResponse};
 use super::convert::{
     decision_json, decision_prompt, object_from_params, object_value, prompt_decision, reencode,
 };
@@ -29,9 +29,9 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::response_input::{ResponsesInput, ResponsesItem};
+use betterlite_prompts::arguments::json::Object;
 use secrecy::ExposeSecret as _;
 use serde_json::Number;
-use std::time::Duration;
 pub(super) struct NativeCall<'call, Provider> {
     pub(super) prep: &'call Prepared<'call>,
     pub(super) resolved: &'call Resolved,
@@ -41,10 +41,10 @@ pub(super) struct NativeCall<'call, Provider> {
 }
 struct RequestParts {
     input: ResponsesInput,
-    optional_params: HttpParams,
+    optional_params: Object,
     params: CreateParams,
     metadata: Option<HttpParams>,
-    duration: Duration,
+    seconds: f64,
     fake: Json,
 }
 pub(super) async fn native<S, F, D, E, Context>(
@@ -90,7 +90,7 @@ where
         params: &parts.params,
         extra_headers: prep.extra_headers.as_ref(),
         extra_body: prep.call.extra_body.as_ref(),
-        timeout: Some(parts.duration),
+        timeout: Some(parts.seconds),
         fake_stream: Some(&parts.fake),
         litellm_metadata: parts.metadata.as_ref(),
         shared_session: prep.call.shared_session,
@@ -141,8 +141,6 @@ where
     let metadata = litellm_metadata(&prep.kwargs)?;
     let call_timeout = prep.call.timeout.filter(|value| *value != 0.0_f64);
     let seconds = call_timeout.unwrap_or(timeout.seconds);
-    let duration = Duration::try_from_secs_f64(seconds)
-        .map_err(|_error| CreateError::InvalidTimeout { seconds })?;
     let fake = Json::Bool(provider.should_fake_stream(
         &resolved.model,
         prep.call.stream,
@@ -153,7 +151,7 @@ where
         optional_params,
         params,
         metadata,
-        duration,
+        seconds,
         fake,
     })
 }
@@ -276,7 +274,7 @@ fn litellm_metadata(kwargs: &ParameterMap) -> Result<Option<HttpParams>, CreateE
     match kwargs.get("litellm_metadata") {
         None => Ok(Some(HttpParams::new())),
         Some(JsonValue::Null) => Ok(None),
-        Some(value @ JsonValue::Object(_)) => reencode(value).map(Some).map_err(CreateError::from),
+        Some(JsonValue::Object(fields)) => reencode(fields).map(Some).map_err(CreateError::from),
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
         ) => Err(CreateError::Field {

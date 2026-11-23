@@ -113,7 +113,7 @@ pub(super) fn session_metadata(
 ) -> Result<Option<SessionMetadata>, CreateError> {
     match value {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(_)) => reencode(value).map(Some).map_err(CreateError::Encode),
+        Some(Json::Object(fields)) => reencode(fields).map(Some).map_err(CreateError::Encode),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             Err(CreateError::Field {
                 field,

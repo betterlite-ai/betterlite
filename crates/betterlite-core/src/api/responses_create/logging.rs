@@ -72,6 +72,11 @@ fn litellm_params(
         String::from("metadata"),
         metadata.map_or(Json::Null, decision_json),
     );
+    params.insert(
+        String::from("provider_affinity_header"),
+        all.get("provider_affinity_header")
+            .map_or(Json::Null, decision_json),
+    );
     params
 }
 fn residency_json(residency: Option<DataResidency>) -> Json {

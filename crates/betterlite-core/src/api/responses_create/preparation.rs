@@ -62,7 +62,7 @@ pub fn begin<'call>(
     let extra_headers = merged_headers(call, &kwargs)?;
     let text = response_text(call)?;
     let (model, provider, use_chat) = resolved_names(call, resolver, flags.use_chat)?;
-    let mut local_vars = named_locals(call, text.as_ref());
+    let mut local_vars: ParameterMap = named_locals(call, text.as_ref()).into_iter().collect();
     let outcome = apply_prompt_management(
         PromptRequest {
             input: input_value(&call.input),
@@ -116,8 +116,24 @@ fn request_flags(kwargs: &mut ParameterMap) -> Flags {
     }
 }
 fn response_text(call: &ResponsesCreateCall) -> Result<Option<Json>, CreateError> {
-    let text_format = call.text_format.as_ref().map(json_value);
-    let given_text = call.text.as_ref().map(json_value);
+    let text_format = call
+        .text_format
+        .as_ref()
+        .filter(|value| **value != Json::Null)
+        .map(json_value);
+    let given_text = call
+        .text
+        .as_ref()
+        .filter(|value| **value != Json::Null)
+        .map(json_value);
+    if given_text.is_none()
+        && let Some(JsonValue::Object(fields)) = text_format.as_ref()
+        && !matches!(fields.get("type"), Some(JsonValue::Text(kind)) if kind == "json_schema")
+    {
+        let format = JsonValue::Object(fields.clone());
+        let envelope = IndexMap::from([(String::from("format"), format)]);
+        return Ok(Some(decision_json(&JsonValue::Object(envelope))));
+    }
     Ok(
         text_format_to_text(text_format.as_ref(), given_text.as_ref())?
             .as_ref()
@@ -136,9 +152,9 @@ fn resolved_names(
     } else {
         let mut params = CallParams::default();
         let mut local_vars = ParameterMap::new();
-        let (resolved, provider) =
+        let (resolved_model, named_provider) =
             resolve_model_provider(resolver, &normalized, None, &mut params, &mut local_vars)?;
-        (resolved, Some(provider))
+        (resolved_model, Some(named_provider))
     };
     Ok((model, provider, use_chat))
 }
