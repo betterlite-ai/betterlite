@@ -64,6 +64,7 @@ out_of_scope:
   - "Routing, retry, fallback and cooldown logic is B6020 and B6021. The native bridge is B6022. Router construction and settings JSON is B8356."
   - "Other Router call types (embeddings, images, audio and the like) are plugged in by later parts."
 pitfalls:
+  - "A test that compares a private LiteLLM field, such as _hidden_params, carries a noqa for SLF001 with the pinned LiteLLM link on the same line, as crates/betterlite-python/tests/test_chat_response_objects.py does; four of the expects are for those lines."
   - "Do not call `asyncio.run` or start a thread for `completion`; the native blocking method releases the GIL."
   - "A stream's `hidden_params()` must be read on each access, never copied once."
   - "A batch error item is an exception object in the list. Raising it hides the other results."
@@ -72,4 +73,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 5
+  max_new_expects: 9

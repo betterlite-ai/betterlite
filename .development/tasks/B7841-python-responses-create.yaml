@@ -168,6 +168,7 @@ out_of_scope:
 - The mock response and the result classes are B7840.
 - The error table and `UnsupportedCallArgument` are B158, and the payload, runner and settings helpers are B6040.
 pitfalls:
+- "A test that compares a private LiteLLM field, such as _hidden_params, carries a noqa for SLF001 with the pinned LiteLLM link on the same line, as crates/betterlite-python/tests/test_chat_response_objects.py does; four of the expects are for those lines."
 - 'The `responses` attribute of `betterlite` is the function, and the `betterlite.responses` package must still import, so `main.py` is reached by `import betterlite.responses.main` and the star line must come last.'
 - '`aresponses=True` in kwargs must be popped before the payload is built, or it reaches Rust as a request field.'
 - 'For `_require_encrypted_task_support` and `use_chat_completions_api` only the exact value True counts, but `_skip_mcp_handler` counts by truthiness.'
@@ -178,4 +179,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 20
+  max_new_expects: 24

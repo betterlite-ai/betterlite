@@ -97,6 +97,7 @@ out_of_scope:
 - The shared helpers and image edit parameter types are B6040.
 - The per-provider image request code is in the provider tasks and the SDK image entries.
 pitfalls:
+- "A test that compares a private LiteLLM field, such as _hidden_params, carries a noqa for SLF001 with the pinned LiteLLM link on the same line, as crates/betterlite-python/tests/test_chat_response_objects.py does; four of the expects are for those lines."
 - A list of images in `image_edit` must keep its order, since providers read the first as the main image.
 - A file object read once must be rewound, as B6040 does, because callers reuse it.
 - Do not guess a content type from bytes. Use the file name.
@@ -104,4 +105,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 9
+  max_new_expects: 13

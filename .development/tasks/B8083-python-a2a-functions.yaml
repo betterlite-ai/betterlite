@@ -118,6 +118,7 @@ out_of_scope:
 - The `A2AClient` class and the package `__init__.py` files are B168.
 - '`_set_usage_on_logging_obj`, `_set_agent_id_on_logging_obj`, `_a2a_cost_params`, `_card_http_kwargs`, `_agent_card_path`, `_set_litellm_params_on_logging_obj`, `_get_a2a_model_info`, `_get_a2a_client_agent_card`, `_send_message_via_completion_bridge`, `_get_a2a_call_context`, `_to_core_send_message_request`, `_to_compat_stream_response`, `_send_message`, `_execute_a2a_send_with_retry`, `_stream_messages`, `_execute_a2a_stream_with_retry` and `_build_streaming_logging_obj` run in Rust (B4801, B4810, B4814) and have no Python face.'
 pitfalls:
+- "A test that compares a private LiteLLM field, such as _hidden_params, carries a noqa for SLF001 with the pinned LiteLLM link on the same line, as crates/betterlite-python/tests/test_chat_response_objects.py does; four of the expects are for those lines."
 - '`A2AError.message` already has the "litellm.A2AError: " prefix, so building it twice gives a doubled prefix in every subclass.'
 - '`A2AConnectionError` always has `status_code` 503 and `A2AAgentCardError` 404 unless the discovery error passes its own, so never read the code from the native payload for the first.'
 - '`A2ALocalhostURLError` builds its message from `localhost_url` and `base_url`, so the native payload must carry those two, not a message.'
@@ -127,4 +128,4 @@ pitfalls:
 review_level: security
 budget:
   max_changed_lines: 1500
-  max_new_expects: 8
+  max_new_expects: 12
