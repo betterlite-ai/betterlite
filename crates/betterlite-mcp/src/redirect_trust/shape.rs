@@ -103,7 +103,7 @@ pub fn validate_redirect_uri_shape(
     native_callbacks: &[String],
 ) -> Result<RedirectShape, RedirectUriRejected> {
     if parsed.scheme != "http" && parsed.scheme != "https" {
-        if matches_trusted_native_redirect_uri(parsed, native_callbacks) {
+        if matches_native_callback(parsed, native_callbacks) {
             return Ok(RedirectShape::NativeCallback);
         }
         let scheme = parsed.scheme.as_str();
@@ -157,7 +157,7 @@ fn web_redirect_uri_rejection(parsed: &Parsed) -> Option<RedirectUriRejected> {
     None
 }
 
-fn matches_trusted_native_redirect_uri(parsed: &Parsed, native_callbacks: &[String]) -> bool {
+fn matches_native_callback(parsed: &Parsed, native_callbacks: &[String]) -> bool {
     if !parsed.fragment.is_empty()
         || !parsed.query.is_empty()
         || parsed.netloc.is_empty()
