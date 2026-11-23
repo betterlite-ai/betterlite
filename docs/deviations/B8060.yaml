@@ -40,3 +40,6 @@ kept_bugs:
 - what: "A model name LiteLLM does not know is normalized to `gpt-3.5-turbo`, so it counts with cl100k_base and the gpt-3.5 message overhead instead of failing or using the model's own encoding."
   why: "`_fix_model_name` falls back to the gpt-3.5 id for every unknown name, and callers pass deployment aliases that rely on that fallback."
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L682-L690
+- what: "`uses_legacy_message_accounting` answers False for `gpt-3.5-turbo-0301` itself, because `_fix_model_name` normalizes that id, which the bundled cost map does not list, to `gpt-3.5-turbo` before the comparison."
+  why: The comparison can only succeed for a listed model named `gpt-3.5-turbo-0301`, and the cost map lists none, so a setup that asks about that id sees False today; the comparison is carried rather than reordered around the fallback.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L677-L690
