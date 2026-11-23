@@ -1,0 +1,127 @@
+kind: helper
+name: base-family-outputs
+call:
+  bedrock_invoke_response:
+    reply:
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "the answer", "tokenCount": 9}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "11"], [x-amzn-bedrock-output-token-count, "4"]]
+        messages: []
+        request_data: {model: amazon.titan-text-express-v1}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: cohere.command-r-v1:0
+        body: '{"text": "direct", "generations": [{"text": "ignored", "finish_reason": "MAX_TOKENS"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "5"], [x-amzn-bedrock-output-token-count, "1"]]
+        messages: []
+        request_data: {model: cohere.command-r-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-cohere
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: cohere.command-r-v1:0
+        body: '{"generations": [{"text": "generated", "finish_reason": "MAX_TOKENS"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "6"], [x-amzn-bedrock-output-token-count, "2"]]
+        messages: []
+        request_data: {model: cohere.command-r-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-cohere
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: ai21.j2-ultra-v1
+        body: '{"completions": [{"data": {"text": "j2 text"}}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "7"], [x-amzn-bedrock-output-token-count, "3"]]
+        messages: []
+        request_data: {model: ai21.j2-ultra-v1}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-ai21
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: meta.llama3-70b-instruct-v1:0
+        body: '{"generation": "llama text"}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "8"], [x-amzn-bedrock-output-token-count, "4"]]
+        messages: []
+        request_data: {model: meta.llama3-70b-instruct-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-meta
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: mistral.mistral-large-2402-v1:0
+        body: '{"outputs": [{"text": "mistral text", "stop_reason": "stop"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "9"], [x-amzn-bedrock-output-token-count, "5"]]
+        messages: []
+        request_data: {model: mistral.mistral-large-2402-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-mistral
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: mistral.mistral-large-2402-v1:0
+        body: '{"choices": [{"message": {"content": "chosen"}, "finish_reason": "length"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "10"], [x-amzn-bedrock-output-token-count, "6"]]
+        messages: []
+        request_data: {model: mistral.mistral-large-2402-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-mistral
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: vendor.unknown-model
+        body: '{"results": [{"outputText": "titan fallback"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, "1"], [x-amzn-bedrock-output-token-count, "1"]]
+        messages: []
+        request_data: {model: vendor.unknown-model}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-unknown
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+env: {}
+compare: {ignore: []}
