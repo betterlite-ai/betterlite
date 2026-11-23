@@ -10,7 +10,6 @@ from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-OBJECTS: Final = TypeAdapter(dict[str, object])
 STARTED: Final = datetime.fromisoformat("2026-01-01T00:00:00+00:00")
 
 
@@ -64,33 +63,22 @@ class Socket(ResponsesClientWebSocket, ResponsesBackendWebSocket):
 async def run_scenario(scenario: Scenario) -> JsonValue:
     client = Socket(scenario["client_frames"])
     backend = Socket(scenario["backend_frames"])
-    logging_obj = Logging(
-        model="gpt-4o",
-        messages=None,
-        stream=True,
-        call_type="responses",
-        start_time=STARTED,
-        litellm_call_id="call-1",
-        function_id="fn-1",
-    )
+    logging_obj = Logging("gpt-4o", None, stream=True, call_type="responses", start_time=STARTED,
+                          litellm_call_id="call-1", function_id="fn-1")
     relay = ResponsesWebSocketStreaming(
         websocket=client,
         backend_ws=backend,
         logging_obj=logging_obj,
-        request_data=OBJECTS.validate_python(scenario["request_data"]),
+        request_data=TypeAdapter(dict[str, object]).validate_python(scenario["request_data"]),
         first_message=scenario["first_message"],
     )
     failure_returned = await relay.bidirectional_forward() is not None
-    return JSON.validate_python(
-        {
-            "sent_to_client": JSON.validate_python(client.sent),
-            "sent_to_backend": JSON.validate_python(backend.sent),
-            "messages": JSON.validate_python(relay.messages),
-            "input_messages": JSON.validate_python(relay.input_messages),
-            "litellm_metadata": JSON.validate_python(relay.litellm_metadata),
-            "failure_returned": failure_returned,
-        }
-    )
+    answer: dict[str, object] = {
+        "sent_to_client": client.sent, "sent_to_backend": backend.sent,
+        "messages": relay.messages, "input_messages": relay.input_messages,
+        "litellm_metadata": relay.litellm_metadata, "failure_returned": failure_returned,
+    }
+    return JSON.validate_python(answer)
 
 
 def run(argument: Scenario) -> JsonValue:
