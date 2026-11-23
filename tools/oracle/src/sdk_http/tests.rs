@@ -562,7 +562,10 @@ fn assert_python_has_no_proxy_server() {
             }
             if path.ends_with(proxy_worker_driver) {
                 // the exemption holds only while the driver still drives that task
-                assert!(source.contains("background_streaming_task"), "{path:?}");
+                assert!(
+                    source.contains("await background_streaming_task("),
+                    "{path:?}"
+                );
             } else {
                 assert!(
                     !source.contains("fastapi") && !source.contains("litellm.proxy"),
