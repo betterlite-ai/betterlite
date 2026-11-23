@@ -1,0 +1,10 @@
+kind: helper
+name: log-payload-seed
+call:
+  log_payload:
+    steps:
+      - {"operation": "detail", "row": {"request_id": "req-1", "messages": "{}", "response": [], "proxy_server_request": null, "metadata": "{\"cold_storage_object_key\": \"k-1\"}"}, "cold": {"payload": {"messages": ["cold"], "classifier_input": {"text": "full"}}, "fails": false}}
+      - {"operation": "metadata", "values": ["5", "not json", {"a": 1}, null]}
+      - {"operation": "daily_summary", "start_date": "2025-01-01", "end_date": "2025-01-01", "api_key": "spend", "request_id": null, "user_id": null, "rows": [{"day": "2025-01-01", "api_key": "spend", "user": null, "model": "m", "spend": 0.5}]}
+env: {}
+compare: {ignore: []}

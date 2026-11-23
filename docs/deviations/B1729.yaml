@@ -1,0 +1,21 @@
+task: B1729
+deviations:
+  - what: The detail route reads start_date and end_date with chrono's %Y-%m-%d %H:%M:%S, so it also accepts whitespace before a number, a year that is shorter than four digits or carries a sign, and a leap second 60, and it rejects non-ASCII digits. LiteLLM's strptime answers 500 for the first three and accepts the last.
+    why: chrono is the parser the workspace already uses for this format. The dates only narrow which logged payload a callback may return after the caller is authorized, and LiteLLM's own UI sends plain YYYY-MM-DD HH:MM:SS text, so no working setup depends on those edge forms.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3432-L3435
+  - what: Payload callbacks are asked in the order the registry holds them. LiteLLM collects them in a set, so its order follows object hashes.
+    why: A set's order changes from one process to the next, so no setup with two payload callbacks can rely on it, and a fixed order makes the first match repeatable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L370-L387
+  - what: Daily summary totals are summed as Decimal instead of float, so a total of values that binary floats can't hold exactly (0.1 plus 0.2) answers 0.3 where LiteLLM answers 0.30000000000000004.
+    why: Spend is money, and the workspace keeps money in Decimal from the moment it is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L327-L342
+  - what: In a daily summary's users map, rows without a user and rows whose user is the literal text null are summed under one "null" key. LiteLLM writes the None key and the "null" key as two members with the same name.
+    why: A JSON object with a repeated key keeps only one of them in most readers, so LiteLLM's answer already loses one total; summing them keeps both amounts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L327-L331
+  - what: Metadata text nested deeper than 128 levels, or holding NaN, Infinity or a lone UTF-16 surrogate, hydrates to {} where json.loads decodes it.
+    why: serde_json caps nesting to bound the work an untrusted row can cause and reads only standard JSON; the column holds JSON LiteLLM wrote with json.dumps, which never produces those forms by default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3294-L3302
+kept_bugs:
+  - what: A start_date or end_date that does not match %Y-%m-%d %H:%M:%S answers a bare 500 Internal Server Error once the caller is authorized, not a 4xx.
+    why: The task keeps LiteLLM's server-error boundary for this input and B8663 compares the status over HTTP; authorization still runs first, so a foreign id answers 403 before any date is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3432-L3435

@@ -1,0 +1,8 @@
+kind: helper
+name: log-payload-metadata-scalar-and-malformed-json
+call:
+  log_payload:
+    steps:
+      - {"operation": "metadata", "values": ["{\"status\": \"failure\", \"error_information\": {\"error_code\": \"429\"}}", "5", "\"text\"", "null", "true", "[1, 2.50, 1.5e3]", "12345678901234567890", " {\"padded\": true} ", "{\"a\": 1, \"a\": 2}", "not json", "", "{\"status\": \"failure\"", "{'single': 'quotes'}", {"already": "an object"}, ["already", "a list"], 7, false, null]}
+env: {}
+compare: {ignore: []}
