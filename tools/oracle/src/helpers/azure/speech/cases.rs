@@ -239,10 +239,10 @@ fn request_body(body: &RequestBody) -> Result<Value, Box<HelperError>> {
 }
 
 fn header<'request>(request: &'request OutboundRequest, name: &str) -> Option<&'request str> {
-    match request.headers.get(name) {
-        Some(value) => value.to_str().ok(),
-        None => None,
-    }
+    request
+        .headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
 }
 
 // A status failure is compared as the SDK's status code; any other failure as its class and message.
