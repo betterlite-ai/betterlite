@@ -44,9 +44,9 @@ pub(super) async fn prompted(
     if !port.runs_prompt_hooks(&hook) {
         return Ok(PreparedCall::settled(converted, provider, &call.model));
     }
-    let input = input_json(&call.input)
+    let original = input_json(&call.input)
         .map_err(|error| AsyncCreateError::create(error, &provider, &call.model))?;
-    let client_input = input_to_chat_messages(Some(&input))
+    let client_input = input_to_chat_messages(Some(&original))
         .map_err(|error| merge_failure(error, &provider, &call.model))?;
     let bridged = bridges(deps.lookup, call, &provider, &kwargs);
     let answer = match run_hook(port, call, &mut kwargs, &client_input, bridged).await {

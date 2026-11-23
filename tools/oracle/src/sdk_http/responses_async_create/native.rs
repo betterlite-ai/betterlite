@@ -106,7 +106,9 @@ async fn run_once(
         env: &environment,
     };
     let execution = CreateExecution { deps };
-    let prompts = port.as_ref().map(|port| port as &dyn AsyncPromptPort);
+    let prompts = port
+        .as_ref()
+        .map(|scripted| scripted as &dyn AsyncPromptPort);
     let create = AsyncCreateDeps {
         resolver: deps.resolver,
         lookup: deps.lookup,
