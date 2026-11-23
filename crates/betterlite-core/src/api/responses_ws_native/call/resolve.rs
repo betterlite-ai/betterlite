@@ -11,7 +11,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::{NativeWsCall, NativeWsCallError, NativeWsDeps};
 use crate::api::responses_provider_selection::prefixes::strip_responses_routing_prefix;
 use crate::api::responses_provider_selection::provider_config::{
-    ConfigLookup, ResponsesApiConfig, resolve_provider_config,
+    ResponsesApiConfig, resolve_provider_config,
 };
 use crate::api::responses_stream_events::JsonShape;
 use crate::api::responses_ws_native::logging::WsCallUpdate;
@@ -58,7 +58,16 @@ where
         deps.globals.openai_key.as_ref(),
         deps.openai_api_key,
     ]);
-    let provider_config = resolve_config(deps.configs, &model, provider, api_base.as_deref());
+    let provider_config = match provider {
+        Some(name) => resolve_provider_config(
+            deps.configs,
+            &model,
+            name,
+            &JsonValue::Null,
+            api_base.as_deref(),
+        ),
+        None => None,
+    };
     Ok(ResolvedCall {
         model,
         provider: resolved.provider,
@@ -109,16 +118,6 @@ fn kwarg_secret(kwargs: &IndexMap<String, Json>) -> Option<SecretString> {
             None
         }
     }
-}
-
-fn resolve_config(
-    configs: &(dyn ConfigLookup + Sync),
-    model: &str,
-    provider: Option<&str>,
-    api_base: Option<&str>,
-) -> Option<ResponsesApiConfig> {
-    let name = provider?;
-    resolve_provider_config(configs, model, name, &JsonValue::Null, api_base)
 }
 
 fn litellm_params_for_ws(
