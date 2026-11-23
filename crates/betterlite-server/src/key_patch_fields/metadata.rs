@@ -34,10 +34,7 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    if let Some(JsonData::Object(fields)) = values.get("metadata") {
-        check_key_logging_config(Some(&Payload(fields.clone())), context.flags)
-            .map_err(|error| KeyPatchError::LoggingMetadata(Box::new(error)))?;
-    }
+    check_logging(values.get("metadata"), context.flags)?;
     if !values.contains_key("metadata") {
         values.insert(
             String::from("metadata"),
@@ -45,6 +42,34 @@ where
         );
     }
     let mut casted = values.get("metadata").and_then(object_of).cloned();
+    preserve_reserved(&mut casted, existing_metadata)?;
+    project_catalog(request, &mut casted, context.warnings);
+    let metadata = match casted {
+        Some(fields) => {
+            let value = serde_json::to_value(JsonData::Object(fields))?;
+            let encrypted = transform_callback_vars(&value, &Transform::Encrypt(context.cipher));
+            serde_json::from_value(encrypted)?
+        }
+        None => JsonData::Null,
+    };
+    values.insert(String::from("metadata"), metadata);
+    Ok(())
+}
+
+// raise_on_invalid_key_logging_config: a bad logging config fails before anything merges into it.
+fn check_logging(metadata: Option<&JsonData>, flags: FeatureFlags) -> Result<(), KeyPatchError> {
+    let Some(JsonData::Object(fields)) = metadata else {
+        return Ok(());
+    };
+    check_key_logging_config(Some(&Payload(fields.clone())), flags)
+        .map_err(|error| KeyPatchError::LoggingMetadata(Box::new(error)))
+}
+
+// A stored reserved field is set once: an omitted one is restored, and a changed or cleared one is the 400.
+fn preserve_reserved(
+    casted: &mut Option<Row>,
+    existing_metadata: &Row,
+) -> Result<(), KeyPatchError> {
     for field in RESERVED_METADATA_FIELDS {
         let Some(stored) = existing_metadata
             .get(field)
@@ -64,30 +89,22 @@ where
             fields.insert(field.to_owned(), stored.clone());
         }
     }
-    match casted.as_mut() {
-        Some(fields) => {
-            for (field, value) in request {
-                if is_catalog_field(field) {
-                    fields.insert(field.clone(), value.clone());
-                }
-            }
+    Ok(())
+}
+
+// Every catalog field the request supplies lands in the map; a null metadata map keeps the loop's logged failure.
+fn project_catalog(request: &Row, casted: &mut Option<Row>, warnings: &mut Vec<PatchWarning>) {
+    let Some(fields) = casted.as_mut() else {
+        if request.keys().any(|field| is_catalog_field(field)) {
+            warnings.push(METADATA_WARNING);
         }
-        None => {
-            if request.keys().any(|field| is_catalog_field(field)) {
-                context.warnings.push(METADATA_WARNING);
-            }
+        return;
+    };
+    for (field, value) in request {
+        if is_catalog_field(field) {
+            fields.insert(field.clone(), value.clone());
         }
     }
-    let metadata = match casted {
-        Some(fields) => {
-            let value = serde_json::to_value(JsonData::Object(fields))?;
-            let encrypted = transform_callback_vars(&value, &Transform::Encrypt(context.cipher));
-            serde_json::from_value(encrypted)?
-        }
-        None => JsonData::Null,
-    };
-    values.insert(String::from("metadata"), metadata);
-    Ok(())
 }
 
 #[must_use]

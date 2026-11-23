@@ -15,23 +15,7 @@ pub(super) fn apply_request_times(
     values: &mut Row,
     clock: KeyClock<'_>,
 ) -> Result<(), KeyPatchError> {
-    match values.remove("duration") {
-        Some(JsonData::String(text)) => {
-            if text == "-1" {
-                values.insert(String::from("expires"), JsonData::Null);
-            } else if !text.is_empty() {
-                let expires = zulu_datetime(shifted_by(clock.now, &text, clock)?);
-                values.insert(String::from("expires"), JsonData::String(expires));
-            }
-        }
-        Some(JsonData::Null) => {
-            values.insert(String::from("expires"), JsonData::Null);
-        }
-        Some(
-            JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) | JsonData::Object(_),
-        )
-        | None => {}
-    }
+    apply_duration(values, clock)?;
     match values.remove("budget_duration") {
         Some(JsonData::String(text)) if !text.is_empty() => {
             let reset = microsecond_precision(budget_reset(&text, clock)?);
@@ -44,6 +28,31 @@ pub(super) fn apply_request_times(
         Some(JsonData::Null) => {
             values.insert(String::from("budget_duration"), JsonData::Null);
             values.insert(String::from("budget_reset_at"), JsonData::Null);
+        }
+        Some(
+            JsonData::String(_)
+            | JsonData::Bool(_)
+            | JsonData::Number(_)
+            | JsonData::Array(_)
+            | JsonData::Object(_),
+        )
+        | None => {}
+    }
+    Ok(())
+}
+
+// "-1" and null clear expires, any other nonempty spec sets it, and "" or a non-string leaves the column alone.
+fn apply_duration(values: &mut Row, clock: KeyClock<'_>) -> Result<(), KeyPatchError> {
+    match values.remove("duration") {
+        Some(JsonData::String(text)) if text == "-1" => {
+            values.insert(String::from("expires"), JsonData::Null);
+        }
+        Some(JsonData::String(text)) if !text.is_empty() => {
+            let expires = zulu_datetime(shifted_by(clock.now, &text, clock)?);
+            values.insert(String::from("expires"), JsonData::String(expires));
+        }
+        Some(JsonData::Null) => {
+            values.insert(String::from("expires"), JsonData::Null);
         }
         Some(
             JsonData::String(_)
