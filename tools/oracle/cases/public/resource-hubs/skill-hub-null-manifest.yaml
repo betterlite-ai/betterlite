@@ -1,0 +1,15 @@
+kind: helper
+name: resource-hubs-skill-hub-null-manifest
+call:
+  b3194:
+    function: skill_hub
+    plugins:
+      - id: plugin-null
+        name: null-manifest
+        manifest_json: null
+        enabled: true
+        created_at: null
+        updated_at: null
+    table_error: false
+env: {}
+compare: {ignore: []}
