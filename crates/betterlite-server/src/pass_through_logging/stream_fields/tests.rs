@@ -221,6 +221,16 @@ fn fields_resolve_logged_model_falls_to_the_chunk_model() {
 }
 
 #[test]
+fn fields_resolve_logged_model_falls_to_the_chunk_model_without_a_logged_model() {
+    let call_log = logging_state(&[], &[]);
+    let chunks = [Chunk::Text(format!("{MODEL_EVENT}\n"))];
+    assert_eq!(
+        resolve_logged_model(&call_log, &body(r#"{}"#), &chunks).expect("valid text"),
+        "chunk-model"
+    );
+}
+
+#[test]
 fn fields_resolve_logged_model_returns_the_first_value_without_a_chunk_model() {
     let call_log = logging_state(&[("model", Json::Text("unknown".to_owned()))], &[]);
     let chunks = [Chunk::Text("event: ping\n".to_owned())];

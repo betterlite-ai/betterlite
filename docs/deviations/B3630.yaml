@@ -47,12 +47,28 @@ deviations:
       logging types and docs/compatibility.md keeps Python's str() out of the port.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L154-L167
   - what: >-
-      resolve_costing_model accepts a model_group only when it is a JSON string; a truthy
-      non-string would be returned by LiteLLM and then fail on .removeprefix.
+      resolve_costing_model accepts the deployment model and the model_group only when they
+      are JSON strings; a truthy non-string would be returned by LiteLLM, and a non-string
+      model_group would then fail on .removeprefix.
     why: >-
-      A non-string model group falls through to the model the caller gave, so the function
-      returns a string for every input, which its signature promises.
+      A non-string deployment or model group falls through to the model the caller gave, so
+      the function returns a string for every input, which its signature promises.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L139-L151
+  - what: >-
+      The cost path reads custom_llm_provider only when it is a JSON string. LiteLLM
+      interpolates any truthy value, so 5 makes the model it costs "5/<model>".
+    why: >-
+      A provider of the wrong type is treated as absent, which costs the model under the
+      name the caller used; Python's f-string coercion is the runtime behavior
+      docs/compatibility.md leaves out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L271-L293
+  - what: >-
+      A bytes chunk that is not valid UTF-8 makes the reader return a typed error naming the
+      chunk index; LiteLLM lets Python's UnicodeDecodeError out of the reader.
+    why: >-
+      The Rust twin of an exception is the returned error, and the caller decides whether the
+      stream still gets logged; the chunk index is in the error text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L296-L327
 kept_bugs:
   - what: >-
       A cancelled batch-registration task logs the error text "None", because LiteLLM formats

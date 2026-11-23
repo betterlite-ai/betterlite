@@ -90,6 +90,26 @@ fn costing_resolve_prefers_the_deployment_over_the_model_group() {
 }
 
 #[test]
+fn costing_resolve_skips_an_unusable_deployment_for_the_model_group() {
+    let unknown = logging_state(
+        &[
+            ("model", Json::Text("unknown".to_owned())),
+            ("metadata", object(r#"{"model_group": "group"}"#)),
+        ],
+        &[],
+    );
+    assert_eq!(resolve_costing_model("unknown", &unknown), "group");
+    let empty = logging_state(
+        &[
+            ("model", Json::Text(String::new())),
+            ("metadata", object(r#"{"model_group": "group"}"#)),
+        ],
+        &[],
+    );
+    assert_eq!(resolve_costing_model("", &empty), "group");
+}
+
+#[test]
 fn costing_resolve_ignores_an_unknown_deployment_and_an_empty_group() {
     let call_log = logging_state(
         &[
