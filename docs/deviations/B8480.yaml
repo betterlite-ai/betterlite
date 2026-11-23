@@ -1,0 +1,43 @@
+task: B8480
+deviations:
+  - what: >-
+      The renewal stops when the shared reservation record is finalized or no longer held by
+      anyone, where LiteLLM stops when the asyncio task that took the reservation is done. The
+      renewal task runs on the server's TaskTracker and holds a weak reference to the record,
+      where LiteLLM keeps every renewal in the module-level _lease_renewals set and polls
+      asyncio.current_task().
+    why: >-
+      A tokio handler has no task handle to poll. The release layer (B8270) finalizes every
+      unclaimed reservation when the request ends, and a claimed one is finalized by its cost
+      callback, so the stop point is the same in practice; dropping the last holder ends the
+      renewal where a done task would, without keeping a handle alive past the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L145
+  - what: >-
+      The reservation record does not carry input_tokens. LiteLLM writes
+      max(input_token_counts.values(), default=None) into the dict, and nothing in LiteLLM or
+      betterlite reads it back; the shared record is B3003's ReservationState, with reserved_cost,
+      entries, finalized, callback_bound and input_cost.
+    why: >-
+      The field has no reader in LiteLLM 1.105.1, so storing it would add a field no settlement,
+      release or cost path consults; adding it to B3003's record belongs to that task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L341
+  - what: >-
+      A spend counter Redis cache whose default TTL is zero starts no renewal, where LiteLLM
+      creates the renewal task with interval 0.0, and asyncio.sleep(0) then refreshes every key
+      in a tight loop until the request timeout.
+    why: >-
+      The TTL is BaseCache's 60 seconds unless configured, and a zero TTL means the counter keys
+      never expire, so there is nothing to renew; LiteLLM's zero-interval loop only spends CPU
+      and Redis calls for up to REQUEST_TIMEOUT seconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L124
+  - what: >-
+      A request timeout too large for the renewal's monotonic deadline starts the renewal with a
+      deadline that has already passed, so no key is ever refreshed, where LiteLLM's float
+      deadline simply never expires and the renewal keeps refreshing until the request task ends.
+    why: >-
+      The deadline is a tokio Instant and std's checked_add answers None past the clock's range,
+      and a timeout beyond that range cannot be waited out. Ending the renewal at once keeps the
+      task from sleeping on an unrepresentable deadline, and no request a working setup runs
+      outlives the representable range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L142
+kept_bugs: []

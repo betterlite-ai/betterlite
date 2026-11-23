@@ -1,0 +1,17 @@
+model_list:
+  - model_name: turn-overrides-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        keyword_tier_rules:
+          - keywords: [invoice, receipt]
+            tier: COMPLEX
+          - keywords: ["  refund  ", urgent]
+            tier: REASONING
+        stall_escalation_enabled: true
+        stall_escalation_window: 8
+        stall_escalation_repeat_threshold: 2
+        semantic_keyword_matching: false
+        embedding_model: text-embedding-3-small
+        match_threshold: 0.75
+        route_housekeeping_to_cheapest_tier: false

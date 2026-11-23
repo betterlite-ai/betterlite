@@ -1,0 +1,6 @@
+task: B1699
+deviations:
+  - what: A full baseline observation queue applies producer backpressure at the configured spend queue capacity instead of growing the proxy's list without a limit; a record keeps its capacity slot while a flush leases it, and closing the queue wakes producers still waiting for a slot with an error.
+    why: Observations must remain owned and retryable under the bounded-memory rule; capacity includes leased in-flight records until acknowledgment, so a requeue never waits for a slot and a full queue can neither deadlock nor discard a record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L620-L639
+kept_bugs: []

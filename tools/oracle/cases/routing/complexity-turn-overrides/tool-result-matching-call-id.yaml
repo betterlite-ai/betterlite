@@ -1,0 +1,22 @@
+kind: probe
+name: complexity-turn-overrides-tool-result-matching-call-id
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_turn_overrides:
+        tiers: {SIMPLE: [s], MEDIUM: [m], COMPLEX: [c], REASONING: [r]}
+        stall_escalation_enabled: true
+        stall_escalation_window: 6
+        stall_escalation_repeat_threshold: 3
+        messages:
+          - {role: assistant, content: [{type: tool_use, id: a, name: search, input: {q: 1}}]}
+          - {role: assistant, content: [{type: tool_use, id: b, name: search, input: {q: 2}}]}
+          - {role: assistant, content: [{type: tool_use, id: c, name: search, input: {q: 3}}]}
+          - role: user
+            content:
+              - {type: tool_result, tool_use_id: a, is_error: true}
+              - {type: tool_result, tool_use_id: c, is_error: false}
+              - {type: tool_result, tool_use_id: b, is_error: true}
+              - {type: tool_result, tool_use_id: d, is_error: true}
+compare: {ignore: []}
