@@ -10,7 +10,7 @@ pub fn pad_summary(
     items: Vec<IndexMap<String, SummaryValue>>,
     end_date: NaiveDate,
 ) -> Vec<IndexMap<String, SummaryValue>> {
-    let Some(last_day) = items.iter().filter_map(summary_day).next_back() else {
+    let Some(last_day) = items.iter().rev().find_map(summary_day) else {
         return items;
     };
     let mut padded = items;

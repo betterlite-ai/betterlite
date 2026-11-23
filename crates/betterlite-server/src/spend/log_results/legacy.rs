@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::extract::{Extension, RawQuery, State};
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_auth::auth_identity::roles::effective_user_role;
 use indexmap::IndexMap;

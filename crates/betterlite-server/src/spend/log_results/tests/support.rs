@@ -54,7 +54,10 @@ pub(super) fn decimal(text: &str) -> Decimal {
 }
 
 // a value through its wire JSON, the way a response body reaches a client
-pub(super) fn as_json<T: Serialize>(value: &T) -> JsonData {
+pub(super) fn as_json<T>(value: &T) -> JsonData
+where
+    T: Serialize,
+{
     json(&serde_json::to_string(value).unwrap())
 }
 
@@ -110,10 +113,10 @@ pub(super) struct Fake {
     pub(super) aggregate_failure: Option<Failure>,
 }
 
-fn outcome<Item: Clone>(
-    failure: Option<Failure>,
-    values: &[Item],
-) -> Result<Vec<Item>, StoreError> {
+fn outcome<Item>(failure: Option<Failure>, values: &[Item]) -> Result<Vec<Item>, StoreError>
+where
+    Item: Clone,
+{
     match failure {
         Some(failure) => Err(failure.store_error()),
         None => Ok(values.to_vec()),

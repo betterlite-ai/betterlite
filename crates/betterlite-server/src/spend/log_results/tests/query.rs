@@ -4,7 +4,7 @@ use std::str::from_utf8;
 
 use chrono::NaiveDate;
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::super::dates::parse_legacy_date;
 use super::super::query::{LegacyQueryError, decode_legacy_spend_query};
