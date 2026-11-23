@@ -15,4 +15,4 @@ def run(input_value: Input) -> bool:
     try:
         return proxy_server.should_load_db_object(object_type=input_value["object_type"])
     finally:
-        proxy_server.general_settings = dict[str, JsonValue]()
+        proxy_server.general_settings = {}
