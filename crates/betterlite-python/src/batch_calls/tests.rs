@@ -25,6 +25,7 @@ use betterlite_openai::batches::sdk::Timeout;
 use betterlite_openai::xai_batches::error::XaiBatchesError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::get_runtime;
+use rstest::rstest;
 use serde::Deserialize;
 
 use super::convert::{CallMode, HiddenParams, parse};
@@ -335,29 +336,32 @@ fn register_adds_the_batch_classes() {
 }
 
 // every sync session method runs its call and hands back the provider and model the payload asked for
-#[test]
-fn session_errors_name_the_provider_and_model_the_payload_asked_for() {
+#[rstest]
+#[case::create("create", CREATE_REFUSED)]
+#[case::retrieve("retrieve", READ_REFUSED)]
+fn session_errors_name_the_provider_and_model_the_payload_asked_for(
+    #[case] method: &str,
+    #[case] payload: &str,
+) {
     Python::initialize();
     Python::attach(|py| {
         let module = PyModule::new(py, "probe").unwrap();
         register(&module).unwrap();
         let class = module.getattr("NativeBatchSession").unwrap();
         let session = class.call1((EMPTY_ENVIRONMENT,)).unwrap();
-        for (method, payload) in [("create", CREATE_REFUSED), ("retrieve", READ_REFUSED)] {
-            let error = session
-                .call_method1(method, (payload, Vec::<Vec<u8>>::new()))
-                .unwrap_err();
-            let message = error.value(py).to_string();
-            assert!(message.starts_with(r#"{"type":"#), "{method}: {message}");
-            assert!(
-                message.contains(r#""llm_provider":"openai""#),
-                "{method}: {message}"
-            );
-            assert!(
-                message.contains(r#""model":"gpt-4o""#),
-                "{method}: {message}"
-            );
-        }
+        let error = session
+            .call_method1(method, (payload, Vec::<Vec<u8>>::new()))
+            .unwrap_err();
+        let message = error.value(py).to_string();
+        assert!(message.starts_with(r#"{"type":"#), "{method}: {message}");
+        assert!(
+            message.contains(r#""llm_provider":"openai""#),
+            "{method}: {message}"
+        );
+        assert!(
+            message.contains(r#""model":"gpt-4o""#),
+            "{method}: {message}"
+        );
     });
 }
 
