@@ -143,7 +143,7 @@ fn logging_state(details: &JsonObject) -> Result<LoggingState, Box<HelperError>>
         },
         &redactor,
         || String::from("generated"),
-        Duration::default,
+        || Duration::ZERO,
     )
     .or_value_error()?;
     for (name, value) in details {
