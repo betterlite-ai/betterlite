@@ -62,6 +62,8 @@ fn a_list_loads_only_the_kinds_it_names() {
     assert!(should_load_db_object(&store, "mcp"));
     assert!(!should_load_db_object(&store, "model_cost_map"));
     assert!(!should_load_db_object(&store, "agents"));
+    assert!(!should_load_db_object(&store, "Models"));
+    assert!(!should_load_db_object(&store, "model"));
     drop(guard);
     assert!(logs.contents().is_empty());
 }
