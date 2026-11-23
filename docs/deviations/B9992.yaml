@@ -4,8 +4,8 @@ deviations:
       An additional_drop_params entry that names a nested path (a dot or a bracket, like metadata.trace_id) answers
       OperationError::Parameters with ParameterError::NestedDropPath and drops nothing. The chat route maps only
       ParameterError::Unsupported and ParameterError::Encode to a 400, so this refusal reaches the client as HTTP 500
-      internal_server_error with type internal_server_error and param null. LiteLLM keeps the entry out of the check
-      and deletes the nested key from optional_params after mapping, then sends the call.
+      internal_server_error with type internal_server_error and param null. LiteLLM maps the parameters and then
+      deletes each dotted path from the mapped parameters with delete_nested_value, answering 200.
     why: >-
       The shared parameter mapping (map_listed_parameters, B9989) refuses a nested drop path until the path engine
       lands in B213, and the config loader already refuses a model_list entry's dotted path the same way. Answering an
