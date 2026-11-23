@@ -1,7 +1,7 @@
 id: B324
 milestone: M2 routing
 title: Atomic caller and session deployment affinity
-status: todo
+status: done
 depends_on: [B016, B372, B903, B323, B301, B002]
 file: tasks/B324-deployment-affinity.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/caching/affinity_cache.py"
 parent: B020
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2962

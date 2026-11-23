@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::deployment_affinity::error::DeploymentAffinityError;
 use crate::deployment_catalog::error::CatalogLookupError;
 use crate::least_busy::error::LeastBusyError;
 use crate::prompt_affinity::service::PromptAffinityError;
@@ -26,6 +27,9 @@ pub enum RoutingError {
     // the prompt caching check raises a prefix it cannot read, as async_callback_filter_deployments does
     #[error(transparent)]
     PromptAffinity(#[from] PromptAffinityError),
+    // the affinity check names a request field it cannot read, as async_callback_filter_deployments does
+    #[error(transparent)]
+    DeploymentAffinity(#[from] DeploymentAffinityError),
     #[error("the deployments cannot be weighed for a simple-shuffle pick")]
     Shuffle {
         #[from]
@@ -50,6 +54,7 @@ impl RoutingError {
             | Self::NoDeployment(_)
             | Self::Cancelled
             | Self::PromptAffinity(_)
+            | Self::DeploymentAffinity(_)
             | Self::Shuffle { .. }
             | Self::Metric { .. }
             | Self::LeastBusy(_) => None,
