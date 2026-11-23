@@ -57,6 +57,7 @@ pub(crate) async fn reload<Rows>(
     db: &Rows,
     reloads: &PeriodicReloads,
     sources: &ReloadSources,
+    now: DateTime<Utc>,
 ) -> Result<(), BetaReloadError<Rows::Error>>
 where
     Rows: ReloadConfigRows,
@@ -70,7 +71,6 @@ where
     if config.interval_hours.is_none() && !config.force_reload {
         return Ok(());
     }
-    let now = sources.clock.utc_now();
     if !reload_is_due(reloads, &config, now) {
         return Ok(());
     }

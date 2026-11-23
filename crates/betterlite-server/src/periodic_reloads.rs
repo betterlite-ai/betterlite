@@ -42,7 +42,9 @@ impl PeriodicReloadChecks {
     where
         Rows: ReloadConfigRows,
     {
-        if let Err(error) = beta_headers::reload(db, &self.reloads, &self.sources).await {
+        // the check samples the clock once, so the due test and the stored reload time share it
+        let now = self.sources.clock.utc_now();
+        if let Err(error) = beta_headers::reload(db, &self.reloads, &self.sources, now).await {
             tracing::error!("Error in _check_and_reload_anthropic_beta_headers: {error}");
         }
     }
