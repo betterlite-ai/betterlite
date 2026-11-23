@@ -1,0 +1,143 @@
+id: B10096
+title: Prometheus multiprocess writer
+description: >-
+  When PROMETHEUS_MULTIPROC_DIR is set, prometheus_client keeps every metric value of the process in `.db` files in that folder instead of in memory: MultiProcessValue replaces the value class, so each inc, set and observe writes the file at once. B3887's dedicated listener and the helm metrics sidecar (B8134) read only those files, and so does B3886's /metrics once the variable is set (B10095 reads and merges them). Nothing in betterlite writes the files, so all three read an empty folder. This task ports the write side for the kinds and gauge modes LiteLLM uses: counters, histograms, and gauges in mode all (the default), livesum (in_flight_requests_middleware.py, admission_control_middleware.py) and livemax (spend_log_cleanup_metrics.py). It also wires the writer into metric updates itself, because the hook sits in B3875's collector registry and no other task owns that code once B10090 has landed.
+
+
+  Layout. Submodule multiprocess::writer of B10095's module: crates/betterlite-prometheus/src/multiprocess/writer.rs is an empty stub that multiprocess.rs declares, and the tests go in multiprocess/writer/tests.rs. The entry layout lives once, in multiprocess/files.rs: split the encoding of one entry out of B10095's encode_db_file so the writer and encode_db_file share it. The folder check also lives once: the writer calls the function B10095's MultiProcessCollector::new uses, with its MultiprocessError variant and text. betterlite-prometheus still depends on no betterlite crate.
+
+
+  The writer. `MultiProcessWriter::new(directory: PathBuf, pid: u32) -> Result<Self, MultiprocessError>` refuses an empty path or one that is not a directory with that check and opens nothing yet. `directory(&self) -> &Path` returns the folder. Each file opens on its first write, as MmapedDict does: `counter_<pid>.db`, `histogram_<pid>.db` and `gauge_<mode>_<pid>.db` in the folder, read and write, created when missing. An empty file grows to 65536 zero bytes and gets used = 8. A file that already holds entries keeps its size and its entries (a restarted container often gets the same pid): decode it with B10095's decode_db_file, find each value's position from the layout, and continue from the stored values, as MmapedDict does through _read_all_values. A new key is written as one entry at used, the file doubling with set_len while the entry does not fit, and only then does the new used go into bytes 0 to 4, so a reader never sees a used that covers half an entry. A value change writes the value and the timestamp, 16 bytes, at the key's position. Write with std::os::unix::fs::FileExt::write_all_at in little-endian, never through a memory map (rules.yaml forbids unsafe). One Mutex holds the open files, their used and capacity, and the position and current value of every key. The pid comes in through the constructor; B8613 passes std::process::id().
+
+
+  Keys and values follow MultiProcessValue and mmap_key. A key is the JSON array [metric name, sample name, labels object, help], the labels object mapping each label name to its value (B3875's "None" for a missing one). Write it with serde_json over a BTreeMap, compact; see deviations. A counter registered as `x` writes the sample `x_total`. A gauge writes `x` into the file of its mode. A histogram writes `x_sum` and one `x_bucket` per bound with the label le set to B10090's floatToGoString port of the bound. The bucket values are per-bucket counts, not cumulative, and there is no `x_count`. When a series is first written, every key it owns is created with 0.0 in prometheus_client's order (a counter's `x_total`, a gauge's `x`, a histogram's `x_sum` and then each `x_bucket` in bound order), and then the update applies. inc adds to the stored value and set replaces it, both as f64. observe adds the amount to `x_sum` and 1.0 to the first bucket whose bound the amount does not exceed (B3875's `within`), and to no bucket for NaN. Values convert from MetricValue: Finite through rust_decimal's to_f64, the other three as the matching f64. Every timestamp is 0.0, since LiteLLM uses no mostrecent mode.
+
+
+  The gauge mode. `pub enum GaugeMode { All, LiveSum, LiveMax }` in collector_registry::metric, with as_str "all", "livesum" and "livemax". CollectorDescription gets `multiprocess_mode: GaugeMode`, All from PrometheusMetric::new, and `PrometheusMetric::with_multiprocess_mode(self, mode: GaugeMode) -> Self` sets it. Do not add a parameter to new: 35 call sites in three crates use it. In betterlite-db's cleanup_metrics, the rows_remaining gauge takes LiveMax as LiteLLM's does, and every other instrument there stays All. LiteLLM's livesum gauges (litellm_in_flight_requests and the two admission gauges) have no creation site in betterlite yet, so nothing outside tests sets LiveSum.
+
+
+  Wiring. A metric's handles share their description and samples through Arcs, and the writer must reach them the same way, or the handle a caller keeps after `registry.register(metric.clone())` (cleanup_metrics.rs, prometheus_services.rs) never writes. Add to PrometheusMetric the field `multiprocess: Arc<OnceLock<Arc<MultiProcessWriter>>>`, empty from new and shared by Clone and by labels. `CollectorRegistry::multiprocess(writer: MultiProcessWriter) -> Self` builds a registry that holds the writer, Default stays a registry without one, and `multiprocess_dir(&self) -> Option<&Path>` returns the writer's folder. Once register's duplicate check passes, it binds the registry's writer into the metric's slot. A metric already bound to another writer is refused with a new CollectorRegistryError::MultiprocessBound naming it; binding the same writer again is fine. At binding, a metric without label names writes its zero entries, since prometheus_client builds that series together with the metric; a labelled series is first written at its first update. PrometheusMetric::update changes the in-process sample and then, still holding the samples lock, hands the update to the bound writer, so the file sees updates in the same order. A write that fails logs at error with the file path and the error and leaves the in-process value changed (see deviations). A removal, through update or remove_series, keeps the file entry and logs prometheus_client's warning at warn, "Removal of labels has not been implemented in  multi-process mode yet." (two spaces, as written there). A series that comes back continues from the stored value, as a new MmapedValue reads it from the file.
+
+
+  Who builds the registry. B8613's startup step 13 makes the one registry with CollectorRegistry::multiprocess over MultiProcessWriter::new(folder, std::process::id()) when the env map holds PROMETHEUS_MULTIPROC_DIR, which B8375 sets to the folder it prepared. B8680 passes multiprocess_dir() to B3886's metrics_router. This task builds neither.
+
+
+  Tests. multiprocess::writer::tests: new refusing an empty path and a file; a first write making counter_<pid>.db of 65536 bytes whose bytes equal encode_db_file of the expected entries; growth to 131072 bytes once the entries pass 64 KiB; the three gauge file names; histogram sums and per-bucket counts with an amount exactly on a bound, one above every finite bound and NaN; a file an earlier writer with the same pid left, continued and not rewritten; a write into a folder removed after new, which logs an error and does not panic; and B10095's MultiProcessCollector reading the files back to the expected families. collector_registry tests whose names start with multiprocess_: a handle kept before register writes, a labels handle writes, an unlabelled metric writes its zero entries at register, a default registry writes nothing, a second writer gives MultiprocessBound, a removed series keeps its entry and continues on its next inc, and multiprocess_dir returns the folder. In betterlite-db, cleanup_metrics::tests::rows_remaining_writes_livemax registers the instruments into a multiprocess registry over a temporary folder and checks that the rows remaining value lands in gauge_livemax_<pid>.db.
+
+
+  Oracle. Helper cases on the b10096 operation; no route reaches this code until B8613 and B8680 land. A case gives a pid, the metrics (kind counter, gauge or histogram, name, help, label names, buckets for a histogram, mode for a gauge), the updates in order (metric index, label values, and inc, set, observe or remove with a number) and a call: files, or scrape with an accept header. The Python side points PROMETHEUS_MULTIPROC_DIR at a fresh temporary folder and, for this case only, sets prometheus_client.values.ValueClass to values.MultiProcessValue(lambda: pid), restoring both afterwards. prometheus_client picks its value class when it is imported, before the case sets the variable, and metrics.py reads values.ValueClass at each construction so tests can swap it. It builds Counter, Gauge and Histogram with registry=None and runs the updates. The Rust side builds the same metrics through PrometheusMetric::new, with_multiprocess_mode and a CollectorRegistry::multiprocess over its own temporary folder. files answers, for each file name in sorted order, the file length, used, and each entry in file order as the key parsed from JSON, the value and the timestamp; Python reads with MmapedDict.read_all_values_from_file and Rust with decode_db_file, so the two key spellings compare equal. scrape answers what B10095's b10095 scrape call answers over the folder, sorted the same way. Add helper case corpus seeds named prometheus-writer-*.
+scope:
+  paths:
+    - crates/betterlite-prometheus/src/multiprocess.rs
+    - crates/betterlite-prometheus/src/multiprocess/**
+    - crates/betterlite-prometheus/src/collector_registry.rs
+    - crates/betterlite-prometheus/src/collector_registry/**
+    - crates/betterlite-prometheus/Cargo.toml
+    - crates/betterlite-db/src/cleanup_metrics.rs
+    - crates/betterlite-db/src/cleanup_metrics/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/prometheus-writer/**
+    - tools/oracle/fuzz/corpus/helper_case/prometheus-writer-*
+    - tools/oracle/helpers/b10096.py
+    - tools/oracle/helpers/b10096/**
+    - tools/oracle/src/helpers/prometheus/b10096.rs
+    - tools/oracle/src/helpers/prometheus/b10096/**
+    - tools/oracle/src/helpers/prometheus/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L39-L125
+    why: The spec. MultiProcessValue names the files, opens them on first use, and writes on every inc and set.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/mmap_dict.py#L50-L145
+    why: The spec for the file. MmapedDict's open of an existing file, _init_value with its padding and doubling, write_value, and mmap_key.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L213-L227
+    why: remove warns under multiprocess mode and drops only the in-memory child.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L304-L307
+    why: Counter._metric_init, whose value key is `x_total`.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L380-L438
+    why: Gauge's multiprocess modes and how inc and set reach the value.
+  - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L624-L657
+    why: Histogram._metric_init and observe; `_sum` first, then one non-cumulative bucket per bound with le from floatToGoString.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup_metrics.py#L75-L82
+    why: Call site. The livemax gauge, betterlite's rows_remaining in cleanup_metrics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/in_flight_requests_middleware.py#L65-L76
+    why: Call site. The livesum gauge, which betterlite does not create yet.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L201-L209
+    why: Call site. The two livesum admission gauges, which betterlite does not create yet.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L675-L702
+    why: The folder the CLI prepares and puts into PROMETHEUS_MULTIPROC_DIR for the workers (B8375, B8613).
+dod:
+  - text: The writer creates counter_<pid>.db, histogram_<pid>.db and gauge_<mode>_<pid>.db for all, livesum and livemax with MmapedDict's layout, starting at 64 KiB and doubling, and continues a file an earlier process with the same pid left.
+    proof: [writer-tests, oracle, helper-python]
+  - text: Counters write `x_total`, gauges `x` in their mode's file, histograms `x_sum` and per-bucket counts with le from floatToGoString, every key of a new series created first in prometheus_client's order.
+    proof: [writer-tests, oracle, helper-python]
+  - text: A metric registered into CollectorRegistry::multiprocess writes each inc, set and observe through every handle, the one kept before register included; an unlabelled metric writes its zero entries at register; a removal keeps the entry; a default registry writes nothing; a second writer is refused.
+    proof: [registry-binding-tests, oracle]
+  - text: MultiProcessWriter::new refuses an empty path or a non-directory with B10095's error, and multiprocess_dir returns the folder.
+    proof: [writer-tests, registry-binding-tests]
+  - text: The cleanup rows_remaining gauge writes into the livemax file.
+    proof: [cleanup-mode-test]
+  - text: B10095's collector reads the written files back to the families prometheus_client's own writer gives, and every earlier collector_registry, multiprocess and scrape_endpoint test still passes.
+    proof: [writer-tests, registry-binding-tests, oracle]
+  - text: The b10096 adapters pass the strict Python checks and a new prometheus-writer seed replays through the shared helper case parser.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: writer-tests
+      why: The file layout, the growth, the continued file, the key shapes or the folder check differ from MultiProcessValue and MmapedDict.
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^multiprocess::writer::tests::/)'
+    - id: registry-binding-tests
+      why: A handle does not write, the unlabelled zero entries are missing, a removal touches the file, or the change broke an earlier registry, multiprocess or scrape test.
+      run: >-
+        cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^collector_registry::tests::(.*::)?multiprocess_/)' &&
+        cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^(collector_registry|multiprocess|scrape_endpoint)::/)'
+    - id: cleanup-mode-test
+      why: The rows remaining gauge is not written in livemax mode.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^cleanup_metrics::tests::rows_remaining_writes_livemax$/)'
+    - id: helper-python
+      why: The b10096 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10096.py tools/oracle/helpers/b10096)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10096 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/prometheus-writer-*")" &&
+        grep -lE 'b10096"?:' tools/oracle/fuzz/corpus/helper_case/prometheus-writer-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-prometheus --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/prometheus-writer/counter-labels.yaml
+  - tools/oracle/cases/helpers/prometheus-writer/gauge-modes.yaml
+  - tools/oracle/cases/helpers/prometheus-writer/histogram-buckets.yaml
+  - tools/oracle/cases/helpers/prometheus-writer/unlabelled-zero.yaml
+  - tools/oracle/cases/helpers/prometheus-writer/remove-keeps-entry.yaml
+  - tools/oracle/cases/helpers/prometheus-writer/scrape-round-trip.yaml
+deviations:
+  - what: >-
+      Keys in the .db files are compact JSON from serde_json (no spaces after commas and colons, non-ASCII written as UTF-8). prometheus_client writes json.dumps with sort_keys, ", " and ": " separators and \u escapes.
+    why: Every reader, prometheus_client's MultiProcessCollector and B10095's, parses the key before it merges, so both spellings give the same scrape; matching json.dumps byte for byte would need yet another copy of a Python JSON formatter in a crate that may depend on no other betterlite crate.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/mmap_dict.py#L141-L145
+  - what: A file write that fails (the folder was removed or turned read-only) logs an error naming the file and leaves the in-process value changed. prometheus_client raises the OSError from the metric call.
+    why: Collector::update has no error channel, and the request that moved the metric must not fail because a metrics file did; LiteLLM's callers mostly catch the exception and log it too.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L71-L85
+  - what: PROMETHEUS_MULTIPROC_DIR set to empty text or to a path that is not a directory stops startup (B8613 builds the writer). LiteLLM starts, writes its files into the working directory for empty text or fails at the first metric it builds, and fails its /metrics mount only when prometheus is a callback.
+    why: One check when the registry is built gives one clear error at boot, instead of files in the working directory or metric calls that fail later.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L71-L80
+out_of_scope:
+  - "Building the registry with the writer at startup: B8613. Putting the prepared folder into the env map: B8375. Passing multiprocess_dir to metrics_router: B8680."
+  - "Reading and merging the files, decode_db_file, encode_db_file, the scrape source and mark_process_dead: B10095. Wiping the folder at startup and removing a dead worker's live files: B3887 and B5070."
+  - "The modes mostrecent, livemostrecent, min, livemin, max, sum and liveall, set_to_current_time and summaries: LiteLLM uses none of them."
+  - "Creating litellm_in_flight_requests and the two admission gauges with livesum: no betterlite task creates these gauges yet."
+  - "Forking: prometheus_client resets its files when the pid changes after fork(); betterlite never forks a worker (launch_plan refuses more than one)."
+pitfalls:
+  - "A handle stored before register must write too: callers keep `metric` and register `metric.clone()`, so the writer slot is shared state created in new, never a plain field set on the registry's copy."
+  - "Histogram files hold per-bucket counts and `_sum` only; the reader builds the cumulative buckets and `_count`. Writing B3875's cumulative counts double-counts every bucket after the first."
+  - "used goes into the header only after the entry bytes are written, and the file grows before either; a reader in another process trusts used."
+  - "A removed series keeps its value in the file and a new handle for the same labels continues from it; the writer's stored value is the truth for the file, never the in-process Sample."
+  - "The bucket for an observation is the first bound it does not exceed, the same `within` B3875's in-process histogram uses; NaN lands in no bucket but still goes into `_sum`."
+  - "Take the writer's lock inside the samples lock in update, never the other way round, and never while holding the registry lock."
+review_level: standard
+budget:
+  max_changed_lines: 1400
+  max_new_expects: 0

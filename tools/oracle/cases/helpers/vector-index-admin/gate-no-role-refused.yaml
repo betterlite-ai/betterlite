@@ -1,0 +1,9 @@
+kind: helper
+name: vector-index-admin-gate-no-role-refused
+call:
+  b10071: {function: gate, user_role: null, operation: "create"}
+calls:
+  - b10071: {function: gate, user_role: "org_admin", operation: "create"}
+  - b10071: {function: gate, user_role: "internal_user", operation: "delete"}
+env: {}
+compare: {ignore: []}

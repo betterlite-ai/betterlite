@@ -190,7 +190,7 @@ out_of_scope:
   - B8272 owns ModelInsightsMetric, ModelInsightMetric, ModelInsightDailyMetric, ModelInsightDailyTotal, ModelInsightTaskSummary, ModelInsightsResponse and ModelInsightTasksResponse; B1734 owns ModelInsightTask. Add types/model_insights.py to B8272's covers as the planner report requests; this task must not create duplicate response records.
   - B1734 owns load_model_insight_tasks, its immutable JSON catalog and all model-usage rollup writes; B7954 owns the Python model-insights facade. No callable remainder exists in these files.
   - B3125 owns every function in prompt_caching_requests.py, including the nested current_router and token SQL builders, and both cache endpoint registrations. B1693/B1694 own extraction and savings algorithms; only their HTTP composition is exercised here.
-  - B8676 mounts model-insights routes, B066 composes prompt-cache routes, and B8610 supplies the shared state and area aggregator. B9280 proves counting, observation callbacks and cache-aware routing through the existing Messages route.
+  - B8676 mounts model-insights routes, B066 composes prompt-cache routes, and B8610 supplies the shared state and B10082 the area aggregator. B9280 proves counting, observation callbacks and cache-aware routing through the existing Messages route.
   - B860 owns Postgres provisioning and principal seeds; B9942 owns Prisma bootstrap; B709 owns product schema and migrations. Private fixture SQL must never become a second application migrator.
 pitfalls:
   - daily_totals includes models outside top_models and therefore cannot be reconstructed by summing the filtered daily array.

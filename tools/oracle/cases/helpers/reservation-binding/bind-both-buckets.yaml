@@ -1,0 +1,40 @@
+kind: helper
+name: reservation-binding-bind-both-buckets
+call:
+  b10088:
+    function: stamp
+    litellm_params:
+      metadata:
+        user_api_key_budget_reservation: {id: res-1, callback_bound: false, cost: 1}
+        team: t1
+      litellm_metadata:
+        user_api_key_budget_reservation: {id: res-1}
+      model: gpt-4
+    callback_bound: true
+calls:
+  - b10088:
+      function: stamp
+      litellm_params:
+        litellm_metadata:
+          user_api_key_budget_reservation: {id: res-2}
+      callback_bound: true
+  - b10088:
+      function: stamp
+      litellm_params:
+        metadata: [not, an, object]
+        litellm_metadata:
+          user_api_key_auth: {budget_reservation: {id: res-3}}
+      callback_bound: true
+  - b10088:
+      function: stamp
+      litellm_params:
+        metadata: {team: t1}
+      callback_bound: true
+  - b10088:
+      function: stamp
+      litellm_params:
+        metadata:
+          user_api_key_budget_reservation: {}
+      callback_bound: true
+env: {}
+compare: {ignore: []}
