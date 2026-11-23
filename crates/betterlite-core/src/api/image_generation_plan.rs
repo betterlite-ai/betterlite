@@ -18,7 +18,7 @@ pub mod invocation;
 mod tests;
 
 use error::AimageGenerationError;
-use invocation::{GenerationReturn, Invocation};
+use invocation::{GenerationReturn, Invocation, ModelLookup};
 
 // image_generation as aimage_generation runs it: one call, made inside the request's own context.
 pub trait ImageGenerationEntry {
@@ -72,16 +72,23 @@ pub async fn aimage_generation<Entry>(
 where
     Entry: ImageGenerationEntry + Sync,
 {
-    let model = invocation
-        .model()
-        .ok_or(AimageGenerationError::MissingModel)?
-        .to_owned();
+    // kwargs["model"] raises when the key is absent, while a present null reaches get_llm_provider
+    let model = match invocation.model() {
+        ModelLookup::Named(model) => Some(model.to_owned()),
+        ModelLookup::Null => None,
+        ModelLookup::Missing => return Err(AimageGenerationError::MissingModel),
+    };
     // kwargs["aimg_generation"] = True, whatever the caller passed
     invocation
         .call
         .kwargs
         .insert(String::from("aimg_generation"), Json::Bool(true));
-    let provider = error::attribution(plan.resolution, plan.redactor, &invocation.call, &model)?;
+    let provider = error::attribution(
+        plan.resolution,
+        plan.redactor,
+        &invocation.call,
+        model.as_deref(),
+    )?;
     let slot = logging.request_slot.clone();
     enter_request_slot(slot, async {
         let returned = plan
@@ -89,23 +96,31 @@ where
             .generate(&invocation, logging)
             .await
             .map_err(|failure| error::raised(plan.redactor, failure))?;
-        match returned {
-            GenerationReturn::Response(response) => Ok(*response),
-            GenerationReturn::Mapping(mapping) => serde_json::to_value(mapping)
-                .and_then(serde_json::from_value)
-                .map_err(|source| {
-                    error::refused(plan.redactor, &source.to_string(), &model, &provider)
-                }),
-            GenerationReturn::Coroutine(pending) => pending
-                .await
-                .map_err(|failure| error::raised(plan.redactor, failure)),
-            GenerationReturn::Unexpected => Err(error::refused(
-                plan.redactor,
-                error::INVALID_RESPONSE,
-                &model,
-                &provider,
-            )),
-        }
+        normalize(returned, plan.redactor, model.as_deref(), &provider).await
     })
     .await
+}
+
+// the wrapper's isinstance chain over what image_generation answered
+async fn normalize(
+    returned: GenerationReturn<'_>,
+    redactor: &Redactor,
+    model: Option<&str>,
+    provider: &str,
+) -> Result<ImageResponse, AimageGenerationError> {
+    match returned {
+        GenerationReturn::Response(response) => Ok(*response),
+        GenerationReturn::Mapping(mapping) => serde_json::to_value(mapping)
+            .and_then(serde_json::from_value)
+            .map_err(|source| error::refused(redactor, &source.to_string(), model, provider)),
+        GenerationReturn::Coroutine(pending) => pending
+            .await
+            .map_err(|failure| error::raised(redactor, failure)),
+        GenerationReturn::Unexpected => Err(error::refused(
+            redactor,
+            error::INVALID_RESPONSE,
+            model,
+            provider,
+        )),
+    }
 }

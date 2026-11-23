@@ -6,11 +6,15 @@ use thiserror::Error;
 
 use crate::api::image_generation_call::call::ImageGenerationCall;
 use crate::api::image_generation_call::error::{
-    ImageGenerationException, provider_failure, value_failure,
+    ImageGenerationException, provider_failure, resolution_failure, value_failure,
 };
 
 // exception_type's provider when the wrapper's own get_llm_provider set none
 const FALLBACK_PROVIDER: &str = "openai";
+
+// get_llm_provider's early validation for a model it was handed as None
+const MODEL_REQUIRED: &str =
+    "model parameter is required but was None. Please provide a valid model name.";
 
 // the ValueError aimage_generation raises for a return value it does not accept
 pub(super) const INVALID_RESPONSE: &str =
@@ -35,10 +39,15 @@ pub(super) fn attribution(
     resolution: &ResolutionContext<'_>,
     redactor: &Redactor,
     call: &ImageGenerationCall,
-    model: &str,
+    model: Option<&str>,
 ) -> Result<String, AimageGenerationError> {
+    let Some(named) = model else {
+        // the wrapper's present null keyword reaches this early validation, not the KeyError
+        let raw = resolution_failure(MODEL_REQUIRED, None);
+        return Err(classified(redactor, raw));
+    };
     let request = ResolutionRequest {
-        model,
+        model: named,
         custom_llm_provider: None,
         api_base: call.api_base.as_deref(),
         api_key: None,
@@ -47,7 +56,7 @@ pub(super) fn attribution(
         Ok(found) => Ok(found.provider.slug().to_owned()),
         Err(source) => {
             // get_llm_provider raises its own BadRequestError with llm_provider "", which exception_type returns unchanged
-            let raw = provider_failure(400, &source.to_string(), model, "", "BadRequestError");
+            let raw = provider_failure(400, &source.to_string(), named, "", "BadRequestError");
             Err(classified(redactor, raw))
         }
     }
@@ -73,12 +82,12 @@ pub(super) fn raised(
 pub(super) fn refused(
     redactor: &Redactor,
     message: &str,
-    model: &str,
+    model: Option<&str>,
     provider: &str,
 ) -> AimageGenerationError {
     classified(
         redactor,
-        value_failure(message, Some(model), Some(attributed(provider))),
+        value_failure(message, model, Some(attributed(provider))),
     )
 }
 

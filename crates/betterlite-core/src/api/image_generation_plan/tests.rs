@@ -146,6 +146,14 @@ fn keyword_call(model: Option<&str>) -> Invocation {
     }
 }
 
+// the caller wrote model=None, so the key is there and the wrapper passes the null on
+fn null_keyword_call() -> Invocation {
+    Invocation {
+        call: call_of(None, "cat"),
+        model_position: ModelPosition::KeywordNull,
+    }
+}
+
 fn positional_call(prompt: &str, model: Option<&str>) -> Invocation {
     Invocation {
         call: call_of(model, prompt),
@@ -238,7 +246,10 @@ impl Fixtures {
 enum Script {
     Response(ImageResponse),
     Mapping(Json),
-    Coroutine(ImageResponse, Arc<AtomicUsize>),
+    Coroutine(
+        Result<ImageResponse, ImageGenerationException>,
+        Arc<AtomicUsize>,
+    ),
     Unexpected,
     Failure(ImageGenerationException),
 }
@@ -288,10 +299,10 @@ fn scripted_return<'call>(
         None => panic!("the scripted entry runs once"),
         Some(Script::Response(response)) => Ok(GenerationReturn::Response(Box::new(response))),
         Some(Script::Mapping(mapping)) => Ok(GenerationReturn::Mapping(mapping)),
-        Some(Script::Coroutine(response, awaits)) => {
+        Some(Script::Coroutine(answer, awaits)) => {
             let pending: PendingGeneration<'call> = Box::pin(async move {
                 awaits.fetch_add(1, Ordering::SeqCst);
-                Ok(response)
+                answer
             });
             Ok(GenerationReturn::Coroutine(pending))
         }
@@ -373,7 +384,7 @@ fn mapping_is_built_into_a_response() {
 fn coroutine_is_awaited_once() {
     let awaits = Arc::new(AtomicUsize::new(0));
     let (result, entry) = scripted(
-        Script::Coroutine(empty_created_and_data(), Arc::clone(&awaits)),
+        Script::Coroutine(Ok(empty_created_and_data()), Arc::clone(&awaits)),
         keyword_call(Some("openai/dall-e-2")),
     );
     assert_eq!(
@@ -384,6 +395,35 @@ fn coroutine_is_awaited_once() {
         awaits.load(Ordering::SeqCst),
         1,
         "the coroutine is awaited once"
+    );
+    assert_eq!(entry.calls.load(Ordering::SeqCst), 1);
+}
+
+// the production entry is a coroutine, so its provider failure surfaces only when the wrapper awaits it
+fn failing_coroutine_reaches_the_caller() {
+    let awaits = Arc::new(AtomicUsize::new(0));
+    let (result, entry) = scripted(
+        Script::Coroutine(
+            Err(unsupported_params("n is not supported")),
+            Arc::clone(&awaits),
+        ),
+        keyword_call(Some("openai/dall-e-2")),
+    );
+    let error = result.expect_err("the coroutine's exception is re-raised");
+    let (class, message) = raised_class(&error);
+    assert!(
+        matches!(class, ErrorClass::UnsupportedParams(_)),
+        "the awaited failure keeps its class, got {class:?}"
+    );
+    assert_eq!(
+        message,
+        "litellm.UnsupportedParamsError: n is not supported"
+    );
+    assert_eq!(class.metadata().status_code, 400);
+    assert_eq!(
+        awaits.load(Ordering::SeqCst),
+        1,
+        "the failing coroutine is awaited once"
     );
     assert_eq!(entry.calls.load(Ordering::SeqCst), 1);
 }
@@ -434,7 +474,7 @@ fn caller_provider_does_not_drive_attribution() {
 }
 
 fn empty_provider_falls_back_to_openai() {
-    let fallback = refused(&redactor(), INVALID_RESPONSE, "some-model", "");
+    let fallback = refused(&redactor(), INVALID_RESPONSE, Some("some-model"), "");
     let (class, _) = raised_class(&fallback);
     assert_eq!(
         connection(class).provider.as_deref(),
@@ -512,6 +552,35 @@ fn missing_model_fails_before_any_call() {
     );
 }
 
+// get_llm_provider(model=None) raises its own BadRequestError, which is what a present null reaches
+fn null_model_is_a_bad_request() {
+    let (result, entry) = scripted(
+        Script::Response(empty_created_and_data()),
+        null_keyword_call(),
+    );
+    let error = result.expect_err("get_llm_provider rejects a null model");
+    let (class, message) = raised_class(&error);
+    assert!(
+        matches!(class, ErrorClass::BadRequest(_)),
+        "get_llm_provider's own BadRequestError is returned, got {class:?}"
+    );
+    assert_eq!(
+        message,
+        "GetLLMProvider Exception - model parameter is required but was None. Please provide a valid model name.\n\noriginal model: None"
+    );
+    assert_eq!(class.metadata().status_code, 400);
+    assert_eq!(
+        class.metadata().provider.as_deref(),
+        Some(""),
+        "get_llm_provider names no provider for a None model"
+    );
+    assert_eq!(
+        entry.calls.load(Ordering::SeqCst),
+        0,
+        "no generation runs for a null model"
+    );
+}
+
 fn positional_model_drives_attribution() {
     let (result, entry) = scripted(
         Script::Unexpected,
@@ -559,6 +628,7 @@ fn async_generation_result_shapes() {
     returned_response_is_used_as_it_is();
     mapping_is_built_into_a_response();
     coroutine_is_awaited_once();
+    failing_coroutine_reaches_the_caller();
     unexpected_return_is_refused();
     unexpected_return_keeps_the_azure_provider();
     caller_provider_does_not_drive_attribution();
@@ -571,6 +641,7 @@ fn async_generation_result_shapes() {
 #[test]
 fn async_generation_model_lookup() {
     missing_model_fails_before_any_call();
+    null_model_is_a_bad_request();
     positional_model_drives_attribution();
     positional_model_alone_resolves();
 }
@@ -831,11 +902,13 @@ impl HttpCase {
             resolution: &resolution,
             redactor: &self.redactor,
         };
-        let (marker, (result, logging)) = self.runtime.block_on(request_slot_scope(async move {
-            let mut logging = logging_state();
-            let result = aimage_generation(&facade, invocation, &mut logging).await;
-            (result, logging)
-        }));
+        // no ambient scope here, so only the wrapper's own re-entry makes the fixture see the captured slot
+        let (marker, mut logging) = self
+            .runtime
+            .block_on(request_slot_scope(async { logging_state() }));
+        let result = self
+            .runtime
+            .block_on(aimage_generation(&facade, invocation, &mut logging));
         HttpRun {
             result,
             logging,

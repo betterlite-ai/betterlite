@@ -23,13 +23,23 @@ pub enum GenerationReturn<'call> {
     Unexpected,
 }
 
-// Which of the two places Python binds the wrapper's model from.
+// Which place Python binds the wrapper's model from, and whether a keyword model was null.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelPosition {
     // args[0], which image_generation reads as its prompt
     Positional,
-    // kwargs["model"]
+    // kwargs["model"] with a name; with no name the key was absent and the lookup raises KeyError
     Keyword,
+    // kwargs["model"] present as null, so get_llm_provider sees None instead of a missing key
+    KeywordNull,
+}
+
+// The wrapper's pre-try model lookup: a name, a present null, or the key it never had.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelLookup<'model> {
+    Named(&'model str),
+    Null,
+    Missing,
 }
 
 // The image_generation call the caller bound, with the position its first argument came from.
@@ -40,12 +50,17 @@ pub struct Invocation {
 }
 
 impl Invocation {
-    // args[0] if len(args) > 0 else kwargs["model"]; a caller that passed neither saw a KeyError
+    // args[0] if len(args) > 0 else kwargs["model"]; a null value is not the absent key
     #[must_use]
-    pub fn model(&self) -> Option<&str> {
+    pub fn model(&self) -> ModelLookup<'_> {
         match self.model_position {
-            ModelPosition::Positional => Some(&self.call.prompt),
-            ModelPosition::Keyword => self.call.model.as_deref(),
+            ModelPosition::Positional => ModelLookup::Named(&self.call.prompt),
+            ModelPosition::Keyword => self
+                .call
+                .model
+                .as_deref()
+                .map_or(ModelLookup::Missing, ModelLookup::Named),
+            ModelPosition::KeywordNull => ModelLookup::Null,
         }
     }
 }
