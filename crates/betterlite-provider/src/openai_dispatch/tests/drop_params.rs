@@ -174,6 +174,8 @@ pub(super) async fn deployment_additional_drop_params() {
     assert!(body.get("additional_drop_params").is_none());
     request_list_replaces_the_deployment_list().await;
     provider_name_dropped().await;
+    extra_body_dropped().await;
+    provider_param_and_model_guards().await;
     standard_parameter_nested_paths().await;
     nested_path_dropped().await;
 }
@@ -216,6 +218,41 @@ async fn provider_name_dropped() {
         support::field(&base_body, "keep"),
         &support::number_value(2),
         "the other extra_body key is sent at the top level"
+    );
+}
+
+async fn extra_body_dropped() {
+    // utils.py L5062: naming extra_body in the drop list drops the whole extra body, not only its keys
+    let dropped = format!(
+        r#"{{"model":"{MODEL}","messages":{MESSAGES},"extra_body":{{"x-extra":{{"keep":1}}}},"additional_drop_params":["extra_body"]}}"#
+    );
+    let body = sent_body(DeploymentDropPolicy::default(), &dropped).await;
+    assert!(
+        body.get("x-extra").is_none(),
+        "the whole extra body is dropped, so its keys are not sent"
+    );
+    assert!(
+        body.get("extra_body").is_none(),
+        "no extra_body key reaches the provider"
+    );
+}
+
+async fn provider_param_and_model_guards() {
+    // utils.py L5065: a null provider-specific value stays out of extra_body
+    let null_param = format!(r#"{{"model":"{MODEL}","messages":{MESSAGES},"x_custom":null}}"#);
+    let body = sent_body(DeploymentDropPolicy::default(), &null_param).await;
+    assert!(
+        body.get("x_custom").is_none(),
+        "a null provider param is not sent"
+    );
+    // utils.py L5074-L5077: model is a routing key, so a request extra_body model does not replace it
+    let rerouted =
+        format!(r#"{{"model":"{MODEL}","messages":{MESSAGES},"extra_body":{{"model":"gpt-4o"}}}}"#);
+    let routed = sent_body(DeploymentDropPolicy::default(), &rerouted).await;
+    assert_eq!(
+        support::field(&routed, "model"),
+        &JsonValue::Text(String::from(MODEL)),
+        "the routing model stays"
     );
 }
 
