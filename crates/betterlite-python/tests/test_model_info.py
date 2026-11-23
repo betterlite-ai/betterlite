@@ -1,23 +1,32 @@
 import asyncio
+import dataclasses
+import importlib
 import random
 import re
 from collections.abc import Iterator, Mapping
-from typing import Final
+from typing import Final, Protocol, TypedDict
 
-import litellm
 import pytest
 from litellm.exceptions import ModelNotMappedError as LiteLLMModelNotMapped
 from litellm.litellm_core_utils.get_model_cost_map import (
-    ModelCostMapReloaded as LiteModelCostMapReloaded,
-    ModelCostMapReloadUnavailable as LiteModelCostMapReloadUnavailable,
     adopt_model_cost_map as litellm_adopt_model_cost_map,
+)
+from litellm.litellm_core_utils.get_model_cost_map import (
     get_model_cost_map_loaded_at as litellm_loaded_at,
+)
+from litellm.litellm_core_utils.get_model_cost_map import (
     get_model_cost_map_provenance as litellm_provenance,
+)
+from litellm.litellm_core_utils.get_model_cost_map import (
     get_model_cost_map_source_info as litellm_source_info,
+)
+from litellm.litellm_core_utils.get_model_cost_map import (
     refetch_model_cost_map as litellm_refetch,
 )
 from litellm.utils import (
     get_max_tokens as litellm_get_max_tokens,
+)
+from litellm.utils import (
     get_provider_info as litellm_get_provider_info,
 )
 from model_map_server import (
@@ -64,13 +73,29 @@ ADOPT_MAX_TOKENS: Final = 5
 _MODEL_INFO: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 
-def fields_of(info: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
-    copy = dict(info)
-    return copy
+class _LiteReloadView(TypedDict, total=False):
+    model_cost_map: dict[str, JsonValue]
+    revision: str | None
+    etag: str | None
+    reason: str
+
+
+_LITE_RELOAD: Final[TypeAdapter[_LiteReloadView]] = TypeAdapter(_LiteReloadView)
+
+
+class ReferenceCall(Protocol):
+    def __call__(self, *args: JsonValue, **kwargs: JsonValue) -> JsonValue: ...
+
+
+class ReferenceModule(Protocol):
+    def __getattr__(self, name: str) -> ReferenceCall: ...
+
+
+REFERENCE: ReferenceModule = importlib.import_module("litellm")
 
 
 def without_params(info: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
-    copy = fields_of(info)
+    copy = dict(info)
     copy.pop(UNSUPPORTED_PARAMS, None)
     return copy
 
@@ -102,13 +127,9 @@ def assert_source_info_matches() -> None:
     assert theirs["loaded_at"] is not None
 
 
-def assert_provenance_matches() -> None:
-    assert get_model_cost_map_provenance() == litellm_provenance()
-
-
 def test_lookup_fixed_models() -> None:
     for model in FIXED_MODELS:
-        theirs = _MODEL_INFO.validate_python(litellm.get_model_info(model))
+        theirs = _MODEL_INFO.validate_python(REFERENCE.get_model_info(model))
         ours = get_model_info(model)
         if model in PARAMS_DIFFER:
             assert without_params(ours) == without_params(theirs)
@@ -118,7 +139,7 @@ def test_lookup_fixed_models() -> None:
 
 def test_lookup_unmapped_model() -> None:
     with pytest.raises(LiteLLMModelNotMapped) as theirs:
-        litellm.get_model_info(UNMAPPED_MODEL)
+        REFERENCE.get_model_info(UNMAPPED_MODEL)
     with pytest.raises(ModelNotMappedError) as ours:
         get_model_info(UNMAPPED_MODEL)
     assert str(ours.value) == str(theirs.value)
@@ -136,7 +157,9 @@ def test_lookup_max_tokens() -> None:
 
 def test_lookup_provider_info() -> None:
     for model, provider in (("grok-3", "xai"), (FIREWORKS_MODEL, "fireworks_ai")):
-        assert get_provider_info(model, provider) == litellm_get_provider_info(model, provider)
+        theirs = litellm_get_provider_info(model, provider)
+        assert theirs is not None
+        assert get_provider_info(model, provider) == _MODEL_INFO.validate_python(theirs)
     assert get_provider_info("gpt-4", "openai") is None
     assert litellm_get_provider_info("gpt-4", "openai") is None
 
@@ -150,7 +173,9 @@ def test_lookup_cache_attributes() -> None:
 
 
 def test_lookup_api_key_matches() -> None:
-    theirs = _MODEL_INFO.validate_python(litellm.get_model_info("gpt-4", api_key="sk-test"))
+    theirs = _MODEL_INFO.validate_python(
+        REFERENCE.get_model_info("gpt-4", api_key="sk-test")
+    )
     ours = get_model_info("gpt-4", api_key="sk-test")
     assert ours == theirs
 
@@ -199,10 +224,10 @@ def test_reporter_local_shapes(
     server: ModelMapServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(LOCAL_MAP_ENV, "true")
-    litellm.get_model_cost_map(server.url + GOOD_PATH)
+    _ = REFERENCE.get_model_cost_map(server.url + GOOD_PATH)
     get_model_cost_map(server.url + GOOD_PATH)
     assert_source_info_matches()
-    assert_provenance_matches()
+    assert get_model_cost_map_provenance() == litellm_provenance()
     info = get_model_cost_map_source_info()
     assert info["source"] == "local"
     assert info["url"] is None
@@ -219,7 +244,7 @@ def test_reload_good_body(
 ) -> None:
     monkeypatch.delenv(LOCAL_MAP_ENV, raising=False)
     url = server.url + GOOD_PATH
-    theirs = _MODEL_INFO.validate_python(litellm.get_model_cost_map(url))
+    theirs = _MODEL_INFO.validate_python(REFERENCE.get_model_cost_map(url))
     ours = get_model_cost_map(url)
     assert ours == theirs
     info = get_model_cost_map_source_info()
@@ -235,7 +260,7 @@ def test_reload_corrupt_body(
 ) -> None:
     monkeypatch.delenv(LOCAL_MAP_ENV, raising=False)
     url = server.url + CORRUPT_PATH
-    theirs = _MODEL_INFO.validate_python(litellm.get_model_cost_map(url))
+    theirs = _MODEL_INFO.validate_python(REFERENCE.get_model_cost_map(url))
     ours = get_model_cost_map(url)
     assert ours == theirs
     our_reason = get_model_cost_map_source_info()["fallback_reason"]
@@ -254,15 +279,16 @@ def test_reload_retry_then_good(
     our_url = server.url + RETRY_BETTERLITE_PATH
     theirs = asyncio.run(litellm_refetch(their_url))
     ours = asyncio.run(refetch_model_cost_map(our_url))
-    matched = False
-    match (ours, theirs):
-        case (ModelCostMapReloaded(), LiteModelCostMapReloaded()):
-            matched = True
-            assert ours.model_cost_map == theirs.model_cost_map
-            assert ours.revision == theirs.revision
+    their_fields: JsonValue = dataclasses.asdict(theirs)
+    reloaded = _LITE_RELOAD.validate_python(their_fields)
+    match ours:
+        case ModelCostMapReloaded():
+            assert reloaded["model_cost_map"] == ours.model_cost_map
+            assert reloaded["revision"] == ours.revision
             assert ours.etag == f"etag{RETRY_BETTERLITE_PATH}"
-            assert theirs.etag == f"etag{RETRY_LITELLM_PATH}"
-    assert matched
+            assert reloaded["etag"] == f"etag{RETRY_LITELLM_PATH}"
+        case ModelCostMapReloadUnavailable():
+            pytest.fail("our refetch answered unavailable")
     our_info = get_model_cost_map_source_info()
     their_info = litellm_source_info()
     assert set(our_info) == set(their_info)
@@ -282,13 +308,14 @@ def test_reload_refetch_corrupt(
     url = server.url + CORRUPT_PATH
     theirs = asyncio.run(litellm_refetch(url))
     ours = asyncio.run(refetch_model_cost_map(url))
-    matched = False
-    match (ours, theirs):
-        case (ModelCostMapReloadUnavailable(), LiteModelCostMapReloadUnavailable()):
-            matched = True
+    their_fields: JsonValue = dataclasses.asdict(theirs)
+    unavailable = _LITE_RELOAD.validate_python(their_fields)
+    match ours:
+        case ModelCostMapReloadUnavailable():
             assert ours.reason.startswith(f"invalid JSON from {url}")
-            assert theirs.reason.startswith(f"invalid JSON from {url}")
-    assert matched
+            assert unavailable["reason"].startswith(f"invalid JSON from {url}")
+        case ModelCostMapReloaded():
+            pytest.fail("our refetch reloaded a corrupt map")
 
 
 def test_unsupported_options(server: ModelMapServer) -> None:
@@ -305,7 +332,8 @@ def test_reload_adopt_cost_map(
     server: ModelMapServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv(LOCAL_MAP_ENV, raising=False)
-    their_backup = _MODEL_INFO.validate_python(litellm.get_model_cost_map(server.url + GOOD_PATH))
+    loaded = REFERENCE.get_model_cost_map(server.url + GOOD_PATH)
+    their_backup = _MODEL_INFO.validate_python(loaded)
     our_backup = betterlite.model_cost
     adopted: dict[str, JsonValue] = {
         "adopt-probe": {"litellm_provider": "openai", "max_tokens": ADOPT_MAX_TOKENS}
@@ -317,8 +345,9 @@ def test_reload_adopt_cost_map(
         assert ours_count == theirs_count == 1
         assert get_model_info("adopt-probe")["max_tokens"] == ADOPT_MAX_TOKENS
         assert get_model_cost_mutation_generation() > generation
-        assert adopt_model_cost_map({}) == 0
-        assert litellm_adopt_model_cost_map({}) == 0
+        empty: dict[str, JsonValue] = {}
+        assert adopt_model_cost_map(empty) == 0
+        assert litellm_adopt_model_cost_map(empty) == 0
     finally:
         adopt_model_cost_map(our_backup)
         litellm_adopt_model_cost_map(their_backup)
