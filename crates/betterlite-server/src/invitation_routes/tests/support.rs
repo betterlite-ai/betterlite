@@ -1,0 +1,482 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::http::{HeaderMap, Request, StatusCode};
+use betterlite_auth::auth_identity::records::{Principal, SourceKey};
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use betterlite_config::loader::ConfigLoader;
+use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::postgres_store::errors::DbError;
+use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_error::proxy_exception::ProxyException;
+use betterlite_models::model_registration::JsonObject;
+use betterlite_openai::openai_base_config::Object as JsonMap;
+use betterlite_pyhost::json_values::JsonValue;
+use betterlite_router::request_scheduler::service::RequestScheduler;
+use betterlite_router::router_core::headers;
+use chrono::{DateTime, Utc};
+use futures_util::StreamExt as _;
+use futures_util::stream;
+use tower::ServiceExt as _;
+
+use crate::auth::auth_identity::AuthContext;
+use crate::invitation_routes::routes;
+use crate::invitation_routes::state::{
+    InvitationDatabase, InvitationRouteState, InvitationScope, QueueAnswer, QueueCompletion,
+    QueueCompletionRequest, QueueFailureHook, QueueRouteState, QueueRouter,
+};
+use crate::invitation_routes::store::{InvitationStore, InvitationStoreError};
+use crate::routing::request_scheduler::build;
+use crate::sse_data_generator::types::{StreamFailure, StreamItem, StreamSource};
+use crate::user_invitation::{InvitationError, InvitationRecord};
+
+pub(super) fn parse(text: &str) -> JsonValue {
+    serde_json::from_str(text).expect("the body is JSON")
+}
+
+pub(super) fn moment(seconds: i64) -> DateTime<Utc> {
+    DateTime::from_timestamp(seconds, 0).expect("a moment")
+}
+
+pub(super) fn record(id: &str, user_id: &str, created_by: &str) -> InvitationRecord {
+    InvitationRecord {
+        id: id.to_owned(),
+        user_id: user_id.to_owned(),
+        is_accepted: false,
+        accepted_at: None,
+        expires_at: moment(1_800_000_000),
+        created_at: moment(1_780_000_000),
+        created_by: created_by.to_owned(),
+        updated_at: moment(1_780_000_000),
+        updated_by: created_by.to_owned(),
+    }
+}
+
+pub(super) fn caller(principal: &str) -> AuthContext {
+    let decoded: Principal = serde_json::from_str(principal).expect("a principal");
+    AuthContext { principal: decoded }
+}
+
+pub(super) fn master() -> AuthContext {
+    caller(r#"{"principal_type":"service_account","subject":"master_key","auth_method":"api_key"}"#)
+}
+
+pub(super) fn platform_admin() -> AuthContext {
+    caller(
+        r#"{"principal_type":"human","subject":"admin","auth_method":"api_key","roles":["platform_admin"],"user":{"id":"admin-user"}}"#,
+    )
+}
+
+pub(super) fn platform_viewer() -> AuthContext {
+    caller(
+        r#"{"principal_type":"human","subject":"viewer","auth_method":"api_key","roles":["platform_viewer"],"user":{"id":"viewer"}}"#,
+    )
+}
+
+pub(super) fn org_admin() -> AuthContext {
+    caller(
+        r#"{"principal_type":"human","subject":"org-admin","auth_method":"api_key","roles":["org_admin"],"user":{"id":"org-admin"}}"#,
+    )
+}
+
+pub(super) fn internal_user() -> AuthContext {
+    caller(
+        r#"{"principal_type":"human","subject":"member","auth_method":"api_key","user":{"id":"member"}}"#,
+    )
+}
+
+pub(super) fn userless_admin() -> AuthContext {
+    caller(
+        r#"{"principal_type":"service_account","subject":"admin","auth_method":"api_key","roles":["platform_admin"]}"#,
+    )
+}
+
+pub(super) fn key_caller(fields: &str) -> AuthContext {
+    with_key(
+        r#"{"principal_type":"service_account","subject":"key-owner","auth_method":"api_key"}"#,
+        fields,
+    )
+}
+
+pub(super) fn with_key(principal: &str, fields: &str) -> AuthContext {
+    let decoded: BTreeMap<String, JsonData> = serde_json::from_str(fields).expect("key fields");
+    let key = UserAPIKeyAuth::construct(AuthInput::Dict(decoded)).expect("a key");
+    let mut context = caller(principal);
+    context.principal.source_key = SourceKey(Some(key));
+    context
+}
+
+pub(super) async fn send(
+    router: &Router,
+    method: &str,
+    uri: &str,
+    body: &str,
+    who: Option<AuthContext>,
+) -> (StatusCode, HeaderMap, String) {
+    let headers = [("content-type", "application/json"), ("host", "proxy.test")];
+    send_with(router, method, uri, body, who, &headers).await
+}
+
+pub(super) async fn send_with(
+    router: &Router,
+    method: &str,
+    uri: &str,
+    body: &str,
+    who: Option<AuthContext>,
+    headers: &[(&str, &str)],
+) -> (StatusCode, HeaderMap, String) {
+    let mut builder = Request::builder().method(method).uri(uri);
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    if let Some(context) = who {
+        builder = builder.extension(context);
+    }
+    let request = builder
+        .body(Body::from(body.to_owned()))
+        .expect("a request");
+    let response = router.clone().oneshot(request).await.expect("a response");
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("a body");
+    let text = String::from_utf8(bytes.to_vec()).expect("utf8");
+    (status, headers, text)
+}
+
+#[derive(Default)]
+pub(super) struct StoreRows {
+    pub(super) records: BTreeMap<String, InvitationRecord>,
+    pub(super) created: Vec<(String, Option<String>)>,
+    pub(super) updated: Vec<(String, bool, String)>,
+    pub(super) deleted: Vec<String>,
+    pub(super) create_error: Option<InvitationError>,
+    pub(super) read_error: Option<DbError>,
+    pub(super) update_error: Option<DbError>,
+    pub(super) delete_error: Option<DbError>,
+}
+
+#[derive(Default)]
+pub(super) struct FakeStore {
+    pub(super) rows: Mutex<StoreRows>,
+}
+
+impl FakeStore {
+    pub(super) fn with_records(records: Vec<InvitationRecord>) -> Self {
+        let store = Self::default();
+        {
+            let mut rows = store.rows.lock().expect("the store lock");
+            for record in records {
+                rows.records.insert(record.id.clone(), record);
+            }
+        }
+        store
+    }
+}
+
+#[async_trait]
+impl InvitationStore for FakeStore {
+    async fn create(
+        &self,
+        user_id: &str,
+        actor_user_id: Option<&str>,
+    ) -> Result<InvitationRecord, InvitationStoreError> {
+        let mut rows = self.rows.lock().expect("the store lock");
+        if let Some(error) = rows.create_error.take() {
+            return Err(InvitationStoreError::Create(error));
+        }
+        rows.created
+            .push((user_id.to_owned(), actor_user_id.map(str::to_owned)));
+        Ok(record(
+            "fresh-id",
+            user_id,
+            actor_user_id.unwrap_or("default_user_id"),
+        ))
+    }
+
+    async fn info(
+        &self,
+        invitation_id: &str,
+    ) -> Result<Option<InvitationRecord>, InvitationStoreError> {
+        let mut rows = self.rows.lock().expect("the store lock");
+        if let Some(error) = rows.read_error.take() {
+            return Err(InvitationStoreError::Read(error));
+        }
+        Ok(rows.records.get(invitation_id).cloned())
+    }
+
+    async fn update(
+        &self,
+        invitation_id: &str,
+        is_accepted: bool,
+        updated_by: &str,
+    ) -> Result<Option<InvitationRecord>, InvitationStoreError> {
+        let mut rows = self.rows.lock().expect("the store lock");
+        if let Some(error) = rows.update_error.take() {
+            return Err(InvitationStoreError::Update(error));
+        }
+        rows.updated
+            .push((invitation_id.to_owned(), is_accepted, updated_by.to_owned()));
+        let found = rows.records.get_mut(invitation_id);
+        Ok(found.map(|row| {
+            row.is_accepted = is_accepted;
+            row.updated_by = updated_by.to_owned();
+            row.clone()
+        }))
+    }
+
+    async fn delete(
+        &self,
+        invitation_id: &str,
+    ) -> Result<Option<InvitationRecord>, InvitationStoreError> {
+        let mut rows = self.rows.lock().expect("the store lock");
+        if let Some(error) = rows.delete_error.take() {
+            return Err(InvitationStoreError::Delete(error));
+        }
+        rows.deleted.push(invitation_id.to_owned());
+        Ok(rows.records.remove(invitation_id))
+    }
+}
+
+pub(super) struct FakeScope {
+    pub(super) privileged: bool,
+    pub(super) can_invite: bool,
+    pub(super) calls: Mutex<Vec<String>>,
+}
+
+impl FakeScope {
+    pub(super) fn new(privileged: bool, can_invite: bool) -> Self {
+        Self {
+            privileged,
+            can_invite,
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(super) fn calls(&self) -> Vec<String> {
+        self.calls.lock().expect("the scope lock").clone()
+    }
+}
+
+#[async_trait]
+impl InvitationScope for FakeScope {
+    async fn has_admin_privileges(&self, _caller: &Principal) -> bool {
+        self.calls
+            .lock()
+            .expect("the scope lock")
+            .push("has_admin_privileges".to_owned());
+        self.privileged
+    }
+
+    async fn can_invite_user(&self, _caller: &Principal, target_user_id: &str) -> bool {
+        self.calls
+            .lock()
+            .expect("the scope lock")
+            .push(format!("can_invite_user:{target_user_id}"));
+        self.can_invite
+    }
+}
+
+pub(super) fn invitation_router(
+    store: &Arc<FakeStore>,
+    scope: &Arc<FakeScope>,
+) -> InvitationRouteState {
+    let invitations: Arc<dyn InvitationStore> = Arc::clone(store);
+    let scope: Arc<dyn InvitationScope> = Arc::clone(scope);
+    InvitationRouteState {
+        invitations: Some(InvitationDatabase { invitations, scope }),
+        queue: QueueRouteState::default(),
+    }
+}
+
+pub(super) fn router_for(state: InvitationRouteState) -> Router {
+    routes(state)
+}
+
+pub(super) enum Reply {
+    Object(JsonObject),
+    Stream,
+    Failure(String),
+}
+
+pub(super) fn object(text: &str) -> JsonObject {
+    serde_json::from_str(text).expect("a JSON object")
+}
+
+#[derive(Default)]
+pub(super) struct CompletionState {
+    pub(super) calls: Vec<(JsonMap, bool)>,
+    pub(super) reply: Option<Reply>,
+    pub(super) items: Option<Vec<Result<StreamItem, StreamFailure>>>,
+}
+
+pub(super) struct FakeCompletion {
+    pub(super) healthy: usize,
+    pub(super) state: Mutex<CompletionState>,
+}
+
+impl FakeCompletion {
+    pub(super) fn new(reply: Reply) -> Self {
+        Self {
+            healthy: 1,
+            state: Mutex::new(CompletionState {
+                calls: Vec::new(),
+                reply: Some(reply),
+                items: None,
+            }),
+        }
+    }
+
+    pub(super) fn streaming(items: Vec<Result<StreamItem, StreamFailure>>) -> Self {
+        let completion = Self::new(Reply::Object(object("{}")));
+        completion.state.lock().expect("the completion lock").items = Some(items);
+        completion
+    }
+
+    pub(super) fn calls(&self) -> Vec<(JsonMap, bool)> {
+        self.state
+            .lock()
+            .expect("the completion lock")
+            .calls
+            .clone()
+    }
+
+    pub(super) fn seen(&self) -> JsonMap {
+        self.calls()
+            .first()
+            .map(|(data, _stream)| data.clone())
+            .expect("the completion ran")
+    }
+}
+
+pub(super) fn failure(message: &str) -> Box<ErrorClass> {
+    Box::new(ErrorClass::Unclassified(Box::new(ErrorContext {
+        message: message.to_owned(),
+        model: None,
+        provider: None,
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    })))
+}
+
+#[async_trait]
+impl QueueCompletion for FakeCompletion {
+    fn healthy_deployments(&self, _model: &str) -> usize {
+        self.healthy
+    }
+
+    async fn complete(
+        &self,
+        request: QueueCompletionRequest<'_>,
+    ) -> Result<QueueAnswer, Box<ErrorClass>> {
+        let (reply, items) = {
+            let mut state = self.state.lock().expect("the completion lock");
+            state.calls.push((request.data.clone(), request.stream));
+            let reply = state.reply.take().unwrap_or(Reply::Object(object("{}")));
+            (reply, state.items.take())
+        };
+        match reply {
+            Reply::Failure(message) => Err(failure(&message)),
+            Reply::Stream => Ok(QueueAnswer {
+                response: headers::Response::Stream,
+                stream: None,
+            }),
+            Reply::Object(body) => {
+                let stream = items.map(|items| StreamSource {
+                    items: stream::iter(items).boxed(),
+                    hidden: JsonObject::new(),
+                    snapshot: None,
+                });
+                Ok(QueueAnswer {
+                    response: headers::Response::Object(body),
+                    stream,
+                })
+            }
+        }
+    }
+}
+
+pub(super) struct FakeHook {
+    pub(super) data: Mutex<Vec<JsonMap>>,
+    pub(super) seen: Mutex<Vec<(String, String)>>,
+    pub(super) replacement: Option<ProxyException>,
+}
+
+impl FakeHook {
+    pub(super) fn new(replacement: Option<ProxyException>) -> Self {
+        Self {
+            data: Mutex::new(Vec::new()),
+            seen: Mutex::new(Vec::new()),
+            replacement,
+        }
+    }
+
+    pub(super) fn call_count(&self) -> usize {
+        self.data.lock().expect("the hook lock").len()
+    }
+
+    pub(super) fn seen(&self) -> Vec<(String, String)> {
+        self.seen.lock().expect("the hook lock").clone()
+    }
+}
+
+#[async_trait]
+impl QueueFailureHook for FakeHook {
+    async fn post_call_failure(
+        &self,
+        _caller: &Principal,
+        exception: &ProxyException,
+        request_data: &JsonMap,
+    ) -> Option<ProxyException> {
+        self.data
+            .lock()
+            .expect("the hook lock")
+            .push(request_data.clone());
+        self.seen
+            .lock()
+            .expect("the hook lock")
+            .push((exception.message.clone(), exception.code.clone()));
+        self.replacement.clone()
+    }
+}
+
+pub(super) fn scheduler() -> Arc<RequestScheduler> {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("model_list: []\n")
+    .expect("the scheduler config loads");
+    build(&config).expect("a scheduler")
+}
+
+pub(super) fn queue_state(
+    scheduler: &Arc<RequestScheduler>,
+    completion: &Arc<FakeCompletion>,
+    failure: Option<Arc<dyn QueueFailureHook>>,
+) -> QueueRouteState {
+    let completion: Arc<dyn QueueCompletion> = Arc::clone(completion);
+    QueueRouteState {
+        router: Some(QueueRouter {
+            scheduler: Arc::clone(scheduler),
+            completion,
+        }),
+        failure,
+        ..QueueRouteState::default()
+    }
+}
+
+pub(super) fn queue_router(state: QueueRouteState) -> Router {
+    routes(InvitationRouteState {
+        invitations: None,
+        queue: state,
+    })
+}
