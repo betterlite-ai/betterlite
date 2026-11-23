@@ -1,11 +1,13 @@
 use std::future::{Future, ready};
 
+use async_trait::async_trait;
 use betterlite_a2a::completion_bridge::EventSource;
 use betterlite_a2a::completion_bridge::completion::{
-    CompletionCall, CompletionPort, ModelResponse, StreamedChunks,
+    CompletionCall, CompletionPort, StreamedChunks,
 };
 use betterlite_a2a::completion_bridge::dispatch::{A2AProviderDispatch, BridgeEvents};
 use betterlite_a2a::completion_bridge::params::BridgeCall;
+use betterlite_a2a::completion_bridge::wire::ModelResponse;
 use betterlite_a2a::provider_selector::A2AProviderConfig;
 use betterlite_a2a::streaming_iterator::{StreamSuccessCall, StreamSuccessDispatch};
 use betterlite_core::agents::json::AgentJson;
@@ -77,6 +79,7 @@ impl EventSource for SystemSource {
 // Python has no logging callbacks registered for these objects, so the streaming accounting ends at B4810's log state.
 pub(crate) struct NoDispatch;
 
+#[async_trait]
 impl StreamSuccessDispatch for NoDispatch {
     async fn dispatch(&mut self, _logging: &mut LoggingState, _call: StreamSuccessCall) {}
 }
