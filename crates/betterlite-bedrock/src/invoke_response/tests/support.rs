@@ -59,7 +59,8 @@ pub(super) fn fixture() -> Fixture {
     Fixture {
         model: MODEL.to_owned(),
         messages: json(r#"[{"role": "user", "content": "hi"}]"#),
-        counted_messages: Vec::new(),
+        counted_messages: serde_json::from_str(r#"[{"role": "user", "content": "hi"}]"#)
+            .expect("the counted messages parse"),
         request_data: object(r#"{"model": "amazon.titan-text-express-v1"}"#),
         optional_params: IndexMap::new(),
         litellm_params: IndexMap::new(),

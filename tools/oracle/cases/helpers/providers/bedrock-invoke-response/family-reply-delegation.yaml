@@ -93,5 +93,35 @@ call:
           id: chatcmpl-pegasus
           choices:
             - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: anthropic.claude-3-5-sonnet-20240620-v1:0
+        body: '{"id": "msg_bdrk_json", "model": "claude-json", "type": "message", "role": "assistant", "content": [{"type": "tool_use", "id": "toolu_01", "name": "json_tool_call", "input": {"answer": 42}}], "stop_reason": "tool_use", "usage": {"input_tokens": 10, "output_tokens": 5}}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {model: anthropic.claude-3-5-sonnet-20240620-v1:0}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: true
+        now: 1700000000.0
+        response:
+          id: chatcmpl-json
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.nova-pro-v1:0
+        body: '{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "toolu_02", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}'
+        status: 200
+        headers: []
+        messages: []
+        request_data: {model: amazon.nova-pro-v1:0}
+        optional_params: {json_mode: true}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-nova-json
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
 env: {}
 compare: {ignore: []}

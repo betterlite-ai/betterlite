@@ -19,11 +19,13 @@ pub(in crate::invoke_response::tests) fn response_header_token_counts() {
 
 fn missing_headers_fall_back_to_the_counter() {
     let case = fixture();
+    assert!(!case.counted_messages.is_empty());
+    let counted = format!("{:?}", case.counted_messages);
     let run = decode(&case, r#"{"results": [{"outputText": "counted text"}]}"#);
     assert_eq!(
         run.calls,
         vec![
-            CounterCall::Messages,
+            CounterCall::Messages(counted),
             CounterCall::Text(String::from("counted text"))
         ]
     );
@@ -36,11 +38,12 @@ fn missing_headers_fall_back_to_the_counter() {
 fn empty_headers_fall_back_to_the_counter() {
     let mut case = fixture();
     case.headers = headers("", "");
+    let counted = format!("{:?}", case.counted_messages);
     let run = decode(&case, r#"{"results": [{"outputText": "fallback"}]}"#);
     assert_eq!(
         run.calls,
         vec![
-            CounterCall::Messages,
+            CounterCall::Messages(counted),
             CounterCall::Text(String::from("fallback"))
         ]
     );

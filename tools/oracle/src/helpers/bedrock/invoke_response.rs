@@ -4,12 +4,13 @@ use betterlite_bedrock::image_call::plan::LogContext;
 use betterlite_bedrock::invoke_response::{InvokeReplyCall, RawInvokeReply, decode_invoke_reply};
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_tokenizer::count::request::Message;
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::{Value, json};
-use tokio::runtime::{Builder, Runtime};
+use serde_json::{Value, from_value, json, to_value};
+use tokio::runtime::Builder;
 
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod counter;
@@ -19,7 +20,7 @@ mod tests;
 mod view;
 
 use counter::{NoReasoning, TokenizerCounter};
-use error::{reply_error, value_error};
+use error::reply_error;
 use fixture::{Silent, build_response, logging};
 use view::reply_json;
 
@@ -93,15 +94,16 @@ impl Helper for Op {
 }
 
 fn reply_case(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
-    let redactor =
-        Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| value_error(error.to_string()))?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let sink = Silent;
     let (mut state, env) = logging(&redactor, &sink)?;
-    let optional = OptionalParams::default();
+    let messages = to_value(&call.messages)?;
+    let counted: Vec<Message> = from_value(messages.clone())?;
+    let optional: OptionalParams = from_value(to_value(&call.optional_params)?)?;
     let decode_call = InvokeReplyCall {
         model: &call.model,
         messages: &call.messages,
-        counted_messages: &[],
+        counted_messages: &counted,
         request_data: &call.request_data,
         optional_params: &call.optional_params,
         optional: &optional,
@@ -121,22 +123,15 @@ fn reply_case(call: &ReplyCall) -> Result<Value, Box<HelperError>> {
         headers: &call.headers,
         body: call.body.as_bytes(),
     };
-    match decode_runtime()?.block_on(decode_invoke_reply(
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
+    match runtime.block_on(decode_invoke_reply(
         decode_call,
         &raw,
         build_response(&call.response),
-        &TokenizerCounter {
-            messages: call.messages.clone(),
-        },
+        &TokenizerCounter { messages },
         &NoReasoning,
     )) {
         Ok(reply) => Ok(reply_json(&reply)),
         Err(error) => Err(reply_error(&error)),
     }
-}
-
-fn decode_runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread()
-        .build()
-        .map_err(|error| value_error(error.to_string()))
 }

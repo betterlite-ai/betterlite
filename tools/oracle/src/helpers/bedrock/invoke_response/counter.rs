@@ -5,10 +5,9 @@ use async_trait::async_trait;
 use betterlite_anthropic::usage::ReasoningTokenCounter as AnthropicReasoningCounter;
 use betterlite_bedrock::converse_usage::transform::ReasoningTokenCounter as ConverseReasoningCounter;
 use betterlite_bedrock::pegasus::counter::TokenCounter;
-use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
-use serde_json::{Value, json};
+use serde_json::{Value, from_value, json};
 
 use betterlite_oracle_runner::helpers::{HelperCall, invoke};
 
@@ -32,12 +31,18 @@ impl ConverseReasoningCounter for NoReasoning {
 
 // The oracle answer for a fallback count is the token_count helper, so no tokenizer runs twice here.
 pub(super) struct TokenizerCounter {
-    pub(super) messages: Json,
+    pub(super) messages: Value,
 }
 
 #[async_trait]
 impl TokenCounter for TokenizerCounter {
-    async fn count_messages(&self, _messages: &[Message]) -> Result<i64, CountError> {
+    async fn count_messages(&self, messages: &[Message]) -> Result<i64, CountError> {
+        let expected: Vec<Message> =
+            from_value(self.messages.clone()).map_err(|source| CountError::Json { source })?;
+        // Message deserializes but never serializes, so the count can only run once the slice matches the case JSON.
+        if format!("{messages:?}") != format!("{expected:?}") {
+            return Err(CountError::MissingInput);
+        }
         count(json!({
             "function": "token_counter",
             "model": "",
@@ -57,10 +62,9 @@ impl TokenCounter for TokenizerCounter {
 
 // The token_count helper starts its own runtime, so the call runs off the runtime this decode drives.
 fn count(input: Value) -> Result<i64, CountError> {
-    let groups = [betterlite_oracle_tokenizer::GROUP];
     let counted = thread::spawn(move || {
         invoke(
-            &groups,
+            &[betterlite_oracle_tokenizer::GROUP],
             &HelperCall {
                 operation: String::from("token_count"),
                 input,

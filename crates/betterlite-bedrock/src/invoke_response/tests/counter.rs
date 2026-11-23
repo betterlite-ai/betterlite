@@ -15,7 +15,7 @@ use crate::pegasus::counter::TokenCounter;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum CounterCall {
-    Messages,
+    Messages(String),
     Text(String),
 }
 
@@ -52,9 +52,9 @@ impl FixtureCounter {
 
 #[async_trait]
 impl TokenCounter for FixtureCounter {
-    async fn count_messages(&self, _messages: &[Message]) -> Result<i64, CountError> {
+    async fn count_messages(&self, messages: &[Message]) -> Result<i64, CountError> {
         if let Ok(mut calls) = self.calls.lock() {
-            calls.push(CounterCall::Messages);
+            calls.push(CounterCall::Messages(format!("{messages:?}")));
         }
         self.messages.ok_or(CountError::MissingInput)
     }

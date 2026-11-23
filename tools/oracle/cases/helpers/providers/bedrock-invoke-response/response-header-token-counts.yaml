@@ -63,5 +63,35 @@ call:
           id: chatcmpl-supplied
           choices:
             - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "counted text"}]}'
+        status: 200
+        headers: []
+        messages: [{role: user, content: hi}]
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
+      - model: amazon.titan-text-express-v1
+        body: '{"results": [{"outputText": "counted text"}]}'
+        status: 200
+        headers: [[x-amzn-bedrock-input-token-count, ""], [x-amzn-bedrock-output-token-count, ""]]
+        messages: [{role: user, content: hi}]
+        request_data: {}
+        optional_params: {}
+        litellm_params: {}
+        tool_name_mappings: {}
+        json_mode: null
+        now: 1700000000.0
+        response:
+          id: chatcmpl-supplied
+          choices:
+            - {index: 0, finish_reason: null, message: {role: assistant, content: null, tool_calls: null}}
 env: {}
 compare: {ignore: []}

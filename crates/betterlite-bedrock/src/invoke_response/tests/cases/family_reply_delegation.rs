@@ -24,6 +24,8 @@ const CLAUDE_REPLY: &str = r#"{
 }"#;
 const NOVA_REPLY: &str = r#"{"output": {"message": {"role": "assistant", "content": [{"text": "done"}]}}, "stopReason": "end_turn", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}"#;
 const PREFIX_REPLY: &str = r#"{"id": "msg_prefix", "model": "claude-plain", "type": "message", "role": "assistant", "content": [{"type": "text", "text": "fix"}], "stop_reason": "end_turn", "usage": {"input_tokens": 1, "output_tokens": 1}}"#;
+const CLAUDE_JSON_REPLY: &str = r#"{"id": "msg_bdrk_json", "model": "claude-json", "type": "message", "role": "assistant", "content": [{"type": "tool_use", "id": "toolu_01", "name": "json_tool_call", "input": {"answer": 42}}], "stop_reason": "tool_use", "usage": {"input_tokens": 10, "output_tokens": 5}}"#;
+const NOVA_JSON_REPLY: &str = r#"{"output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": "toolu_02", "name": "json_tool_call", "input": {"answer": 42}}}]}}, "stopReason": "tool_use", "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}}"#;
 
 pub(in crate::invoke_response::tests) fn family_reply_delegation() {
     anthropic_reply();
@@ -33,6 +35,8 @@ pub(in crate::invoke_response::tests) fn family_reply_delegation() {
     request_messages_feed_the_prefix_prompt();
     invalid_response_header_names_are_rejected();
     repeated_response_headers_stay_duplicate();
+    anthropic_json_mode_reads_the_tool_arguments();
+    nova_json_mode_reads_the_tool_arguments();
 }
 
 fn anthropic_reply() {
@@ -133,6 +137,34 @@ fn invalid_response_header_names_are_rejected() {
         run.failure(),
         InvokeReplyError::InvalidHeader { name } if name == "bad header"
     ));
+}
+
+fn anthropic_json_mode_reads_the_tool_arguments() {
+    let mut case = fixture();
+    case.model = CLAUDE_MODEL.to_owned();
+    case.json_mode = Some(true);
+    let run = decode(&case, CLAUDE_JSON_REPLY);
+    let envelope = run.envelope();
+    assert_eq!(
+        envelope.choices[0].message.content.as_deref(),
+        Some(r#"{"answer": 42}"#)
+    );
+    assert!(envelope.choices[0].message.tool_calls.is_none());
+    assert_eq!(envelope.choices[0].finish_reason.as_deref(), Some("stop"));
+}
+
+fn nova_json_mode_reads_the_tool_arguments() {
+    let mut case = fixture();
+    case.model = NOVA_MODEL.to_owned();
+    case.optional.json_mode = Some(true);
+    let run = decode(&case, NOVA_JSON_REPLY);
+    let reply = run.nova();
+    assert_eq!(
+        reply.choices[0].message.content.as_deref(),
+        Some(r#"{"answer": 42}"#)
+    );
+    assert!(reply.choices[0].message.tool_calls.is_none());
+    assert_eq!(reply.choices[0].finish_reason.as_str(), "stop");
 }
 
 // httpx keeps a repeated response header as two values, and the Anthropic header reader joins them
