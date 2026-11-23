@@ -111,8 +111,7 @@ class SkillCall(Protocol):
 
 class AsyncSkillCall(Protocol):
     def __call__(self, skill_id: str, extra_headers: dict[str, str] | None = None,
-                 extra_query: dict[str, JsonValue] | None = None, timeout: float | None = None,
-                 custom_llm_provider: str | None = None,
+                 extra_query: dict[str, JsonValue] | None = None,
                  **kwargs: CallValue) -> Awaitable[BaseModel]: ...
 
 
@@ -359,7 +358,8 @@ def test_signature_get_and_delete() -> None:
                         custom_llm_provider=ANTHROPIC,
                         api_base=server.url,
                         api_key=GOOD_KEY,
-                    )
+                    ),
+                    None,
                 )
             )
             our_call = server.calls[-3]
