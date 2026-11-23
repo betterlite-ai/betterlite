@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::future::pending;
 use std::io::Error as IoError;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -156,7 +157,7 @@ impl VertexAccessTokenSource for ScriptedTokens {
         Box::pin(async move {
             match answer {
                 Some(TokenAnswer::Ready(result)) => result,
-                Some(TokenAnswer::Pending) => std::future::pending().await,
+                Some(TokenAnswer::Pending) => pending().await,
                 None => Err(VertexTokenError {
                     message: String::from("no answer"),
                 }),

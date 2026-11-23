@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::ProviderIdentity;
 use indexmap::IndexMap;
+use tokio::time::timeout;
 
 use super::super::branches::{DirectProvider, direct_connection};
 use super::super::dispatch::Prepared;
@@ -230,8 +231,8 @@ async fn vertex_refresh_keeps_the_configured_credential_timeout() {
         panic!("expected a Vertex connection");
     };
     let mut refresh_future = refresh.resolve_access_token();
-    let inside = tokio::time::timeout(Duration::from_secs(4), &mut refresh_future).await;
+    let inside = timeout(Duration::from_secs(4), &mut refresh_future).await;
     assert!(inside.is_err(), "the refresh must stay pending at 4s");
-    let after = tokio::time::timeout(Duration::from_secs(2), &mut refresh_future).await;
+    let after = timeout(Duration::from_secs(2), &mut refresh_future).await;
     assert!(matches!(after, Ok(Err(AccessTokenError))));
 }
