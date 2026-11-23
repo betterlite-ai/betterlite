@@ -5,13 +5,14 @@ import time
 from collections.abc import Iterator
 from typing import Final
 
+from pydantic import JsonValue
+
 import betterlite
 from betterlite._cache_ops import wire
 from betterlite._cache_ops.types import CacheLifecycle, CacheSettings, CacheStore, StoredAnswer
 from betterlite._native import NativeCache, cache_decode, cache_embedding, cache_envelope, cache_key
 from betterlite.types.caching import CachingSupportedCallTypes, LiteLLMCacheType
 from betterlite.types.utils.base import InitValue
-from pydantic import JsonValue
 
 _LOGGER: Final = logging.getLogger("LiteLLM")
 _CHUNK_SIZE: Final = 5
@@ -36,6 +37,7 @@ class CacheOperations:
     redis_flush_size: int | None
     semantic_cache_scope: str
 
+    # ast-grep-ignore: no-one-line-functions - the key request is one call into the wire
     def get_cache_key(self, **kwargs: JsonValue) -> str:
         return self._derive(wire.text_of({"kwargs": wire.key_arguments(kwargs)}))
 
@@ -45,49 +47,32 @@ class CacheOperations:
         match kwargs.get("cache"):
             case dict() as control:
                 return control.get("use-cache") is True
-            case None | str() | int() | float() | bool() | list():
+            case None | str() | int() | float() | list():
                 return False
 
     def get_cache(
         self, dynamic_cache_object: CacheStore | None = None, **kwargs: JsonValue
     ) -> JsonValue:
-        try:
-            if not self.should_use_cache(**kwargs):
-                return None
-            return self._read(dynamic_cache_object, kwargs)
-        except Exception:
-            _LOGGER.debug("An exception occurred", exc_info=True)
+        if not self.should_use_cache(**kwargs):
             return None
+        return self._read(dynamic_cache_object, kwargs)
 
     async def async_get_cache(
         self, dynamic_cache_object: CacheStore | None = None, **kwargs: JsonValue
     ) -> JsonValue:
-        try:
-            if not self.should_use_cache(**kwargs):
-                return None
-            return await self._async_read(dynamic_cache_object, kwargs)
-        except Exception:
-            _LOGGER.debug("An exception occurred", exc_info=True)
+        if not self.should_use_cache(**kwargs):
             return None
+        return await self._async_read(dynamic_cache_object, kwargs)
 
     def add_cache(
-        self,
-        result: InitValue,
-        dynamic_cache_object: CacheStore | None = None,
+        self, result: InitValue, dynamic_cache_object: CacheStore | None = None,
         **kwargs: JsonValue,
     ) -> None:
-        try:
-            if not self.should_use_cache(**kwargs):
-                return
+        if self.should_use_cache(**kwargs):
             self._write(result, dynamic_cache_object, kwargs)
-        except Exception as error:
-            # LiteLLM's _log_add_cache_failure inlined: ruff's BLE001 exempts a logging handler.
-            _LOGGER.exception("LiteLLM Cache: exception in add_cache: %s", error)
 
     async def async_add_cache(
-        self,
-        result: InitValue,
-        dynamic_cache_object: CacheStore | None = None,
+        self, result: InitValue, dynamic_cache_object: CacheStore | None = None,
         **kwargs: JsonValue,
     ) -> None:
         try:
@@ -97,10 +82,10 @@ class CacheOperations:
                 await self.batch_cache_write(result, **kwargs)
                 return
             await self._async_write(result, dynamic_cache_object, kwargs)
-        except Exception as error:
-            _LOGGER.exception("LiteLLM Cache: exception in add_cache: %s", error)
+        except Exception:
+            _LOGGER.exception("LiteLLM Cache: exception in add_cache")
 
-    def add_embedding_response_to_cache(
+    def add_embedding_response_to_cache(  # ast-grep-ignore: no-long-names
         self,
         result: InitValue,
         input_value: JsonValue,
@@ -108,20 +93,21 @@ class CacheOperations:
         idx_in_result_data: int = 0,
     ) -> tuple[str, dict[str, JsonValue], dict[str, JsonValue]]:
         answer = self._entry(kwargs, result, input_value, idx_in_result_data)
-        return answer["cache_key"], answer["cached_data"], wire.stored_arguments(kwargs, answer)
+        stored = wire.stored_arguments(kwargs, answer)
+        # LiteLLM's embedding path writes the entry's key into the kwargs its backend receives.
+        stored["cache_key"] = answer["cache_key"]
+        return answer["cache_key"], answer["cached_data"], stored
 
     async def async_add_cache_pipeline(
-        self,
-        result: InitValue,
-        dynamic_cache_object: CacheStore | None = None,
+        self, result: InitValue, dynamic_cache_object: CacheStore | None = None,
         **kwargs: JsonValue,
     ) -> None:
         try:
             if not self.should_use_cache(**kwargs):
                 return
             await self._pipeline(result, dynamic_cache_object, kwargs)
-        except Exception as error:
-            _LOGGER.exception("LiteLLM Cache: exception in add_cache: %s", error)
+        except Exception:
+            _LOGGER.exception("LiteLLM Cache: exception in add_cache")
 
     async def batch_cache_write(self, result: InitValue, **kwargs: JsonValue) -> None:
         key, cached_data, stored = self._add_cache_logic(result, kwargs)
@@ -137,64 +123,95 @@ class CacheOperations:
         match self.cache:
             case CacheLifecycle() as cache:
                 return await cache.ping()
-        return None
+            case CacheStore():
+                return None
 
     async def delete_cache_keys(self, keys: list[str]) -> None:
         match self.cache:
             case CacheLifecycle() as cache:
                 await cache.delete_cache_keys(keys)
+            case CacheStore():
+                pass
 
     async def disconnect(self) -> None:
         match self.cache:
             case CacheLifecycle() as cache:
                 await cache.disconnect()
+            case CacheStore():
+                pass
 
+    # LiteLLM's get_cache swallows a failing backend after one debug line, as async_read does.
     def _read(self, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]) -> JsonValue:
+        try:
+            return self._read_any(dynamic, kwargs)
+        except Exception:
+            _LOGGER.debug("An exception occurred", exc_info=True)
+            return None
+
+    def _read_any(self, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]) -> JsonValue:
         native = self._native_cache
-        if dynamic is not None or native is None:
-            return self._backend_read(dynamic, kwargs)
+        if dynamic is None and native is not None:
+            return self._native_read(native, kwargs)
+        return self._backend_read(dynamic, kwargs)
+
+    def _native_read(self, native: NativeCache, kwargs: dict[str, JsonValue]) -> JsonValue:
         request = wire.text_of({"kwargs": kwargs})
-        if not self._is_semantic_cache():
+        if self.type not in _SEMANTIC_TYPES:
             return wire.value_of(native.lookup(request))
         response, similarity = wire.semantic_answer(native.lookup_semantic(request))
         wire.stamp_similarity(kwargs, similarity)
         return response
 
-    async def _async_read(
-        self, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]
-    ) -> JsonValue:
-        native = self._native_cache
-        if dynamic is not None or native is None:
-            # An async backend lookup gets every kwarg; the sync one gets the prompt and metadata.
-            backend = self.cache if dynamic is None else dynamic
-            key = self._derive(wire.text_of({"kwargs": kwargs}))
-            return self._get_cache_logic(await backend.async_get_cache(key, **kwargs), kwargs)
-        request = wire.text_of({"kwargs": kwargs})
-        if not self._is_semantic_cache():
-            return wire.value_of(await native.async_lookup(request))
-        response, similarity = wire.semantic_answer(await native.async_lookup_semantic(request))
-        wire.stamp_similarity(kwargs, similarity)
-        return response
-
+    # LiteLLM's _get_cache_logic: Rust checks the age against the cache control and decodes.
     def _backend_read(
-        self, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]
-    ) -> JsonValue:
+        self, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]) -> JsonValue:
         backend = self.cache if dynamic is None else dynamic
         lookup = wire.lookup_arguments(kwargs)
         cached = backend.get_cache(self._derive(wire.text_of({"kwargs": kwargs})), **lookup)
         wire.carry_similarity(kwargs, lookup)
-        return self._get_cache_logic(cached, kwargs)
+        return wire.value_of(cache_decode(wire.text_of({"kwargs": kwargs, "value": cached})))
+
+    async def _async_read(
+        self, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]) -> JsonValue:
+        try:
+            return await self._async_read_any(dynamic, kwargs)
+        except Exception:
+            _LOGGER.debug("An exception occurred", exc_info=True)
+            return None
+
+    async def _async_read_any(
+        self, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]) -> JsonValue:
+        native = self._native_cache
+        if dynamic is None and native is not None:
+            request = wire.text_of({"kwargs": kwargs})
+            if self.type not in _SEMANTIC_TYPES:
+                return wire.value_of(await native.async_lookup(request))
+            response, similarity = wire.semantic_answer(await native.async_lookup_semantic(request))
+            wire.stamp_similarity(kwargs, similarity)
+            return response
+        return await self._backend_read_async(dynamic, kwargs)
+
+    # An async backend lookup gets every kwarg; the sync one gets the prompt and metadata.
+    async def _backend_read_async(
+        self, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]) -> JsonValue:
+        backend = self.cache if dynamic is None else dynamic
+        key = self._derive(wire.text_of({"kwargs": kwargs}))
+        cached = await backend.async_get_cache(key, **kwargs)
+        return wire.value_of(cache_decode(wire.text_of({"kwargs": kwargs, "value": cached})))
 
     def _write(
         self, result: InitValue, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]
     ) -> None:
-        native = self._native_cache
-        if native is not None and dynamic is None:
-            native.write(wire.write_call(kwargs, result))
-            return
-        key, cached_data, stored = self._add_cache_logic(result, kwargs)
-        backend = self.cache if dynamic is None else dynamic
-        backend.set_cache(key, cached_data, **stored)
+        try:
+            native = self._native_cache
+            if native is not None and dynamic is None:
+                native.write(wire.write_call(kwargs, result))
+                return
+            key, cached_data, stored = self._add_cache_logic(result, kwargs)
+            backend = self.cache if dynamic is None else dynamic
+            backend.set_cache(key, cached_data, **stored)
+        except Exception:
+            _LOGGER.exception("LiteLLM Cache: exception in add_cache")
 
     async def _async_write(
         self, result: InitValue, dynamic: CacheStore | None, kwargs: dict[str, JsonValue]
@@ -235,10 +252,6 @@ class CacheOperations:
             entries.append((key, cached_data))
         backend = self.cache if dynamic is None else dynamic
         await backend.async_set_cache_pipeline(entries, **stored)
-
-    # LiteLLM's _get_cache_logic: Rust checks the age against the cache control and decodes.
-    def _get_cache_logic(self, cached: JsonValue, kwargs: dict[str, JsonValue]) -> JsonValue:
-        return wire.value_of(cache_decode(wire.text_of({"kwargs": kwargs, "value": cached})))
 
     # LiteLLM's _add_cache_logic: the key, the envelope to store and the kwargs the write carries.
     def _add_cache_logic(
@@ -282,6 +295,3 @@ class CacheOperations:
         if self.ttl is not None:
             settings["ttl"] = self.ttl
         return json.dumps(settings)
-
-    def _is_semantic_cache(self) -> bool:
-        return self.type in _SEMANTIC_TYPES

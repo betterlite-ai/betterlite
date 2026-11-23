@@ -5,6 +5,7 @@ from typing_extensions import TypedDict
 
 
 # The BaseCache methods every backend answers, the ones a dynamic_cache_object has too.
+@runtime_checkable
 class CacheStore(Protocol):
     def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue: ...
 

@@ -20,7 +20,7 @@ _SIMILARITY: Final = "semantic-similarity"
 def dumped(value: InitValue) -> JsonValue:
     answer = dump_value(value)
     match answer:
-        case None | str() | int() | float() | bool():
+        case None | str() | int() | float():
             return answer
         case Mapping() as fields:
             return {name: dumped(item) for name, item in fields.items()}
@@ -30,27 +30,29 @@ def dumped(value: InitValue) -> JsonValue:
             raise TypeError("dump_value answers JSON for a model")
 
 
-def text_of(body: dict[str, JsonValue]) -> str:
+def text_of(body: dict[str, JsonValue]) -> str:  # ast-grep-ignore: no-one-line-functions
     return json.dumps(body, default=str)
 
 
-# Key derivation hashes the request params; a cache_key kwarg is a lookup answer, not one.
+# ast-grep-ignore: no-one-line-functions - key derivation skips a lookup's cache_key
 def key_arguments(kwargs: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
     return {name: value for name, value in kwargs.items() if name != "cache_key"}
 
 
+# ast-grep-ignore: no-one-line-functions
 def write_call(kwargs: Mapping[str, JsonValue], result: InitValue) -> str:
     return text_of({"kwargs": dict(kwargs), "result": dumped(result)})
 
 
-def stored_of(text: str) -> StoredAnswer:
+def stored_of(text: str) -> StoredAnswer:  # ast-grep-ignore: no-one-line-functions
     return _STORED.validate_json(text)
 
 
-def value_of(text: str) -> JsonValue:
+def value_of(text: str) -> JsonValue:  # ast-grep-ignore: no-one-line-functions
     return _VALUE.validate_json(text)
 
 
+# ast-grep-ignore: no-one-line-functions
 def semantic_answer(text: str) -> tuple[JsonValue, float | None]:
     return _SEMANTIC.validate_json(text)
 
@@ -59,7 +61,6 @@ def stored_arguments(
     kwargs: Mapping[str, JsonValue], answer: StoredAnswer
 ) -> dict[str, JsonValue]:
     stored = dict(kwargs)
-    stored["cache_key"] = answer["cache_key"]
     ttl = answer["ttl"]
     if ttl is not None:
         stored["ttl"] = ttl
@@ -75,7 +76,7 @@ def lookup_arguments(kwargs: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
     match kwargs.get("metadata"):
         case Mapping() as metadata:
             lookup["metadata"] = dict(metadata)
-        case None | str() | int() | float() | bool() | list():
+        case None | str() | int() | float() | list():
             return lookup
     return lookup
 
@@ -98,7 +99,7 @@ def _object_fields(value: JsonValue | None) -> dict[str, JsonValue]:
     match value:
         case dict() as fields:
             return fields
-        case None | str() | int() | float() | bool() | list():
+        case None | str() | int() | float() | list():
             return {}
 
 
@@ -115,11 +116,11 @@ def embedding_inputs(kwargs: Mapping[str, JsonValue]) -> tuple[int, list[JsonVal
 
 def embedding_records(result: InitValue) -> list[JsonValue]:
     match dumped(result):
-        case Mapping() as fields:
+        case dict() as fields:
             match fields.get("data"):
                 case list() as records:
                     return [*records]
-                case None | str() | int() | float() | bool() | Mapping():
+                case None | str() | int() | float() | dict():
                     return []
-        case None | str() | int() | float() | bool() | Sequence():
+        case None | str() | int() | float() | Sequence():
             return []
