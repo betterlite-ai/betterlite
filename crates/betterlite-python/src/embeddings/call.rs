@@ -1,7 +1,5 @@
 use super::convert::{EmbeddingArguments, EmbeddingCallWire, EmbeddingSettingsWire};
-use super::error::{
-    CallFacts, CallFailure, internal_server, operation_failure, plain_exception, resolution_failure,
-};
+use super::error::{CallFacts, CallFailure, Raised, operation_failure, raised, resolution_failure};
 use super::request;
 use super::response::{
     EmbeddingAnswer, HiddenFacts, hidden_params, milliseconds, mock_usage, response_cost,
@@ -101,7 +99,8 @@ pub(crate) async fn call(
         .decode(&prepared, upstream)
         .map_err(|error| operation_failure(error, &facts, &session.redactor))?;
     let OperationResult::Embedding(response) = decoded else {
-        return Err(internal_server(
+        return Err(raised(
+            Raised::InternalServer,
             String::from("the provider answered a different operation than the one sent"),
             Some(facts.model.to_owned()),
             Some(facts.provider.to_owned()),
@@ -127,7 +126,7 @@ fn mock_answer(
     started: Instant,
 ) -> Result<EmbeddingAnswer, CallFailure> {
     if matches!(mock, Json::Text(text) if text == "error") {
-        return Err(plain_exception(String::from(MOCK_ERROR)));
+        return Err(raised(Raised::Plain, String::from(MOCK_ERROR), None, None));
     }
     let response_ms = milliseconds(started.elapsed());
     let api_base = mock_api_base(arguments, settings, &session.environment);

@@ -1,5 +1,5 @@
 use super::convert::EmbeddingArguments;
-use super::error::{CallFailure, bad_request, internal_server, unsupported_params};
+use super::error::{CallFailure, Raised, raised};
 use betterlite_context::embedding_optional_params::embedding_optional_params;
 use betterlite_context::embedding_optional_params::error::EmbeddingParamsError;
 use betterlite_context::embedding_optional_params::request::EmbeddingRequest as ParamsRequest;
@@ -45,7 +45,7 @@ pub(crate) fn build(
         kwargs.insert(name.clone(), json_value(value)?);
     }
     let filtered = filter_out_litellm_params(&kwargs, &EXCLUDED);
-    let passed = passed_params(arguments, model, &filtered)?;
+    let passed = passed_params(arguments, model, &filtered);
     let allowed = arguments.allowed_openai_params.clone().unwrap_or_default();
     let additional_drop = arguments.additional_drop_params.clone().unwrap_or_default();
     let mut params = embedding_optional_params(&ParamsRequest {
@@ -66,8 +66,9 @@ pub(crate) fn build(
     .map_err(|error| params_failure(&error))?;
     let requested = requested_encoding(arguments.encoding_format.as_deref(), &params, environment);
     params.remove("encoding_format");
-    let dimensions = take_dimensions(&mut params);
-    let user = take_text(&mut params, "user");
+    // the mapping keeps or drops the caller's own value, so its presence decides and the typed argument fills it
+    let dimensions = params.remove("dimensions").and(arguments.dimensions);
+    let user = params.remove("user").and(arguments.user.clone());
     let mut fields = body_fields(&mut params)?;
     let encoding_format = encoding_field(requested, &mut fields);
     let value =
@@ -87,11 +88,7 @@ pub(crate) fn build(
     })
 }
 // get_optional_params_embeddings' locals(): the named arguments plus the kwargs it was handed
-fn passed_params(
-    arguments: &EmbeddingArguments,
-    model: &str,
-    filtered: &Params,
-) -> Result<Params, CallFailure> {
+fn passed_params(arguments: &EmbeddingArguments, model: &str, filtered: &Params) -> Params {
     let mut passed = filtered.clone();
     passed.insert(String::from("model"), JsonValue::Text(model.to_owned()));
     if let Some(user) = &arguments.user {
@@ -109,18 +106,27 @@ fn passed_params(
             JsonValue::Text(format.clone()),
         );
     }
-    Ok(passed)
+    passed
 }
 fn params_failure(error: &EmbeddingParamsError) -> CallFailure {
     match error {
-        EmbeddingParamsError::DimensionsUnsupported { .. } => {
-            unsupported_params(String::from(DIMENSIONS_MESSAGE))
+        EmbeddingParamsError::DimensionsUnsupported { .. } => raised(
+            Raised::UnsupportedParams,
+            String::from(DIMENSIONS_MESSAGE),
+            None,
+            None,
+        ),
+        EmbeddingParamsError::Unsupported { .. } => {
+            raised(Raised::UnsupportedParams, error.to_string(), None, None)
         }
-        EmbeddingParamsError::Unsupported { .. } => unsupported_params(error.to_string()),
-        EmbeddingParamsError::WrongType(..) => bad_request(error.to_string(), None, None),
+        EmbeddingParamsError::WrongType(..) => {
+            raised(Raised::BadRequest, error.to_string(), None, None)
+        }
         EmbeddingParamsError::MissingMapper { .. }
         | EmbeddingParamsError::Params(_)
-        | EmbeddingParamsError::Mapper(_) => internal_server(error.to_string(), None, None),
+        | EmbeddingParamsError::Mapper(_) => {
+            raised(Raised::InternalServer, error.to_string(), None, None)
+        }
     }
 }
 // encoding_format or the one the params carry or LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT, dropping "none"
@@ -169,42 +175,6 @@ fn encoding_field(
         }
         None => None,
     }
-}
-fn take_dimensions(params: &mut Params) -> Option<u32> {
-    let dimensions = match params.get("dimensions") {
-        Some(JsonValue::Number(number)) => {
-            number.as_u64().and_then(|value| u32::try_from(value).ok())
-        }
-        Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Text(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        )
-        | None => None,
-    };
-    if dimensions.is_some() {
-        params.remove("dimensions");
-    }
-    dimensions
-}
-fn take_text(params: &mut Params, name: &str) -> Option<String> {
-    let text = match params.get(name) {
-        Some(JsonValue::Text(value)) => Some(value.clone()),
-        Some(
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        )
-        | None => None,
-    };
-    if text.is_some() {
-        params.remove(name);
-    }
-    text
 }
 // the OpenAI handler's raw post spreads extra_body into the body; every other optional param is a body field
 fn body_fields(params: &mut Params) -> Result<BTreeMap<String, Json>, CallFailure> {

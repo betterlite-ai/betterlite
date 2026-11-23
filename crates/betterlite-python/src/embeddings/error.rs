@@ -46,8 +46,22 @@ pub(crate) enum SessionError {
     #[error("the redactor could not be built: {message}")]
     Redact { message: String },
 }
-fn context(message: String, model: Option<String>, provider: Option<String>) -> ErrorContext {
-    ErrorContext {
+// The LiteLLM exception classes main.py raises itself, around the provider's own errors.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Raised {
+    BadRequest,
+    InternalServer,
+    Timeout,
+    UnsupportedParams,
+    Plain,
+}
+pub(crate) fn raised(
+    kind: Raised,
+    message: String,
+    model: Option<String>,
+    provider: Option<String>,
+) -> CallFailure {
+    let context = ErrorContext {
         message,
         model,
         provider,
@@ -56,47 +70,22 @@ fn context(message: String, model: Option<String>, provider: Option<String>) -> 
         body_type: None,
         body_param: None,
         body_code: None,
-    }
-}
-pub(crate) fn bad_request(
-    message: String,
-    model: Option<String>,
-    provider: Option<String>,
-) -> CallFailure {
-    let details = ResponseDetails::<400>::from(context(message, model, provider));
-    CallFailure::Class(Box::new(ErrorClass::BadRequest(Box::new(details))))
-}
-pub(crate) fn internal_server(
-    message: String,
-    model: Option<String>,
-    provider: Option<String>,
-) -> CallFailure {
-    CallFailure::Class(Box::new(ErrorClass::InternalServer(Box::new(context(
-        message, model, provider,
-    )))))
-}
-// main.py's exception_type renders a request timeout as LiteLLM's 408 Timeout
-pub(crate) fn timeout_failure(
-    message: String,
-    model: Option<String>,
-    provider: Option<String>,
-) -> CallFailure {
-    let details = TimeoutDetails {
-        context: context(message, model, provider),
-        original_status: TimeoutStatus(408_u16),
     };
-    CallFailure::Class(Box::new(ErrorClass::Timeout(Box::new(details))))
-}
-pub(crate) fn unsupported_params(message: String) -> CallFailure {
-    CallFailure::Class(Box::new(ErrorClass::UnsupportedParams(Box::new(context(
-        message, None, None,
-    )))))
-}
-// LiteLLM's mock "error" answer is a plain Exception, which carries neither a status nor a body
-pub(crate) fn plain_exception(message: String) -> CallFailure {
-    CallFailure::Class(Box::new(ErrorClass::Unclassified(Box::new(context(
-        message, None, None,
-    )))))
+    let class = match kind {
+        Raised::BadRequest => {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::<400>::from(context)))
+        }
+        Raised::InternalServer => ErrorClass::InternalServer(Box::new(context)),
+        // main.py's exception_type renders a request timeout as LiteLLM's 408 Timeout
+        Raised::Timeout => ErrorClass::Timeout(Box::new(TimeoutDetails {
+            context,
+            original_status: TimeoutStatus(408_u16),
+        })),
+        Raised::UnsupportedParams => ErrorClass::UnsupportedParams(Box::new(context)),
+        // LiteLLM's mock "error" answer is a plain Exception, which carries neither a status nor a body
+        Raised::Plain => ErrorClass::Unclassified(Box::new(context)),
+    };
+    CallFailure::Class(Box::new(class))
 }
 pub(crate) fn call_failure(failure: &CallFailure) -> PyErr {
     match failure {
@@ -111,28 +100,25 @@ fn class_error(class: &ErrorClass) -> PyErr {
         Err(_encoding) => PyRuntimeError::new_err(payload.message),
     }
 }
-impl From<ConvertError> for PyErr {
-    fn from(error: ConvertError) -> Self {
-        match &error {
-            ConvertError::Json { .. } => PyValueError::new_err(error.to_string()),
-            ConvertError::Encode { .. } | ConvertError::Answer { .. } => {
-                PyRuntimeError::new_err(error.to_string())
-            }
-        }
-    }
-}
 impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
-        match &error {
-            SessionError::Json(_) => PyValueError::new_err(error.to_string()),
-            SessionError::Proxy { .. }
+        let message = error.to_string();
+        match error {
+            SessionError::Json(ConvertError::Json { .. }) => PyValueError::new_err(message),
+            SessionError::Json(ConvertError::Encode { .. } | ConvertError::Answer { .. })
+            | SessionError::Proxy { .. }
             | SessionError::Client { .. }
-            | SessionError::Redact { .. } => PyRuntimeError::new_err(error.to_string()),
+            | SessionError::Redact { .. } => PyRuntimeError::new_err(message),
         }
     }
 }
 pub(crate) fn resolution_failure(error: &ResolutionError, model: &str) -> CallFailure {
-    bad_request(error.to_string(), Some(model.to_owned()), None)
+    raised(
+        Raised::BadRequest,
+        error.to_string(),
+        Some(model.to_owned()),
+        None,
+    )
 }
 // Every prepare, execute and decode failure, as the LiteLLM exception class main.py re-raises.
 pub(crate) fn operation_failure(
@@ -145,7 +131,8 @@ pub(crate) fn operation_failure(
             class_failure(raw_error(MISSING_CREDENTIALS, Some(500), facts), redactor)
         }
         OperationError::Provider { response } => provider_failure(*response, facts, redactor),
-        OperationError::Timeout => timeout_failure(
+        OperationError::Timeout => raised(
+            Raised::Timeout,
             String::from(TIMEOUT_ERROR),
             Some(facts.model.to_owned()),
             Some(facts.provider.to_owned()),
@@ -162,7 +149,8 @@ pub(crate) fn operation_failure(
         | OperationError::TransformRetry(_)
         | OperationError::Parameters { .. }
         | OperationError::RejectedFields { .. }
-        | OperationError::Anthropic { .. }) => internal_server(
+        | OperationError::Anthropic { .. }) => raised(
+            Raised::InternalServer,
             kept.to_string(),
             Some(facts.model.to_owned()),
             Some(facts.provider.to_owned()),

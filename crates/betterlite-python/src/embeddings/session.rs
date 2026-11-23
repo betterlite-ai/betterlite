@@ -1,5 +1,5 @@
 use super::convert::{EmbeddingArguments, EmbeddingSettingsWire, SessionWire, parse};
-use super::error::{CallFacts, CallFailure, SessionError, bad_request};
+use super::error::{CallFacts, CallFailure, Raised, SessionError, raised};
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo, ProxyTrust};
@@ -161,7 +161,8 @@ pub(crate) fn deployment(
         &session.context(globals),
     )
     .map_err(|error| {
-        bad_request(
+        raised(
+            Raised::BadRequest,
             error.to_string(),
             Some(facts.model.to_owned()),
             Some(facts.provider.to_owned()),
