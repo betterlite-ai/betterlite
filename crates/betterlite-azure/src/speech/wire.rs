@@ -7,7 +7,8 @@ use super::client::RequestAuth;
 use super::error::AzureSpeechError;
 use crate::transcription::encoding::quote_plus;
 
-// The SDK appends the route to a client base that ends in a slash, adds the deployment segment and merges the query.
+// The SDK appends the route to a client base ending in a slash, adds the deployment segment and merges the query.
+// Every selected client hands a base with that slash, so nothing here adds one.
 pub(super) fn compose_url(
     base: &str,
     deployment: Option<&str>,
@@ -18,9 +19,6 @@ pub(super) fn compose_url(
     let mut parsed = HttpxUrl::parse(base).map_err(AzureSpeechError::BaseUrl)?;
     let base_query = parsed.query.take();
     parsed.fragment = None;
-    if !parsed.path.ends_with('/') {
-        parsed.path.push('/');
-    }
     let prefix = match deployment {
         Some(name) if !parsed.path.contains("/deployments") => format!("deployments/{name}/"),
         Some(_) | None => String::new(),
