@@ -1,0 +1,108 @@
+name: claude-plugin-read-list-pagination
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+database:
+  seed:
+    dashboard: {logs: []}
+steps:
+  - request:
+      method: POST
+      path: /claude-code/plugins
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        name: read-alpha
+        source: {source: github, repo: org/read-alpha}
+        version: "2.1.0"
+        description: First plugin
+        author: {name: Ada, email: ada@example.com}
+        homepage: https://example.com/alpha
+        keywords: [one, two]
+        category: dev
+        domain: Productivity
+        namespace: workflows
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugin/id, why: each peer generates its own plugin id}
+  - request:
+      method: POST
+      path: /claude-code/plugins
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        name: read-beta
+        source: {source: url, url: "https://github.com/org/read-beta.git"}
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugin/id, why: each peer generates its own plugin id}
+  - request:
+      method: GET
+      path: /claude-code/plugins
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugins/0/id, why: each peer generates its own plugin id}
+        - {pointer: /plugins/0/created_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/0/updated_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/1/id, why: each peer generates its own plugin id}
+        - {pointer: /plugins/1/created_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/1/updated_at, why: each peer stamps the row with its own clock}
+  - request:
+      method: GET
+      path: /claude-code/plugins?enabled_only=true
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugins/0/id, why: each peer generates its own plugin id}
+        - {pointer: /plugins/0/created_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/0/updated_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/1/id, why: each peer generates its own plugin id}
+        - {pointer: /plugins/1/created_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/1/updated_at, why: each peer stamps the row with its own clock}
+  - request:
+      method: GET
+      path: /claude-code/plugins?enabled_only=1
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugins/0/id, why: each peer generates its own plugin id}
+        - {pointer: /plugins/0/created_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/0/updated_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/1/id, why: each peer generates its own plugin id}
+        - {pointer: /plugins/1/created_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/1/updated_at, why: each peer stamps the row with its own clock}
+  - request:
+      method: GET
+      path: /claude-code/plugins?enabled_only=false
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: []
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /plugins/0/id, why: each peer generates its own plugin id}
+        - {pointer: /plugins/0/created_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/0/updated_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/1/id, why: each peer generates its own plugin id}
+        - {pointer: /plugins/1/created_at, why: each peer stamps the row with its own clock}
+        - {pointer: /plugins/1/updated_at, why: each peer stamps the row with its own clock}
