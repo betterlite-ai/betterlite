@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
 
 use betterlite_core::agents::json::AgentJson;
-use betterlite_core::agents::provider::a2a::JsonRpcId;
+use betterlite_core::agents::provider::a2a::{JsonRpcId, LiteLLMSendMessageResponse};
 
 use crate::completion_bridge::dispatch::{BridgeError, CompletionError};
 use crate::completion_bridge::params::ParamsError;
@@ -208,4 +210,23 @@ async fn stream_routing_reports_a_provider_failure() {
             "boom"
         ))))
     ));
+}
+
+type BufferedAnswer = Result<LiteLLMSendMessageResponse, SendEntryError<TestFailure, TestFailure>>;
+
+#[tokio::test]
+async fn buffered_send_future_is_send() {
+    let mut fixture = SendFixture::new();
+    let call = send_call(
+        "hello",
+        None,
+        params_with_provider(Some(AgentJson::String("langflow".to_owned()))),
+    );
+    // future_into_py needs a Send future, so this stops compiling if asend_message stops being Send
+    let future: Pin<Box<dyn Future<Output = BufferedAnswer> + Send + '_>> =
+        Box::pin(fixture.send(call, None));
+
+    let answer = future.await.expect("the provider answers");
+
+    assert_eq!(answer.id, Some(JsonRpcId::String("provider".to_owned())));
 }
