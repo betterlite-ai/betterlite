@@ -1,0 +1,12 @@
+kind: helper
+name: io-input-only-minute-end
+call:
+  b10046:
+    function: build
+    itpm: 20
+    otpm: null
+    current_itpm: 3
+    current_otpm: null
+    now: 119
+env: {}
+compare: {ignore: []}
