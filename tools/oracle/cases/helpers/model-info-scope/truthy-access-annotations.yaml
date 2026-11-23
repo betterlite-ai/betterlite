@@ -1,0 +1,20 @@
+kind: helper
+name: model-info-scope-truthy-access-annotations
+call:
+  model_info_scope:
+    function: filter
+    all_models:
+      - model_name: kept-by-string
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: a1, direct_access: "yes"}
+      - model_name: kept-by-list
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: b1, access_via_team_ids: [""]}
+      - model_name: zeroed
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: c1, direct_access: 0, access_via_team_ids: []}
+      - model_name: empty-text
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: d1, direct_access: "", access_via_team_ids: {}}
+env: {}
+compare: {ignore: []}
