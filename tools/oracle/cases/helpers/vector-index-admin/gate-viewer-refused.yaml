@@ -1,0 +1,10 @@
+kind: helper
+name: vector-index-admin-gate-viewer-refused
+call:
+  b10071: {function: gate, user_role: "proxy_admin_viewer", operation: "create"}
+calls:
+  - b10071: {function: gate, user_role: "proxy_admin_viewer", operation: "delete"}
+  - b10071: {function: gate, user_role: "proxy_admin_viewer", operation: "update"}
+  - b10071: {function: gate, user_role: "proxy_admin_viewer", operation: "list"}
+env: {}
+compare: {ignore: []}
