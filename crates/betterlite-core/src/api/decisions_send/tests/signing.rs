@@ -1,5 +1,8 @@
+use std::future::ready;
+
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
+use tokio::runtime::Handle;
 
 use super::support::*;
 use crate::api::decisions_send::signing::{BlockingSigning, SigningSeam as _};
@@ -68,9 +71,13 @@ async fn signing_blocking_seam_stays_inline_on_a_current_thread_runtime() {
     assert_eq!(signed, (Headers::new(), None));
 }
 
+// Handle::block_on is allowed only inside block_in_place's blocking region, so the closure proves where it ran
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn signing_blocking_seam_signs_off_the_task_with_aws() {
-    let sign = || (Headers::new(), Some(b"{\"signed\":true}".to_vec()));
+async fn signing_blocking_seam_signs_inside_the_blocking_region() {
+    let sign = || {
+        Handle::current().block_on(ready(()));
+        (Headers::new(), Some(b"{\"signed\":true}".to_vec()))
+    };
     let signed = BlockingSigning.sign(true, &sign).await;
     assert_eq!(
         signed,
