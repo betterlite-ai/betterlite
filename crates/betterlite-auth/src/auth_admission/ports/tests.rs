@@ -18,7 +18,11 @@ fn empty_key() -> UserAPIKeyAuth {
     UserAPIKeyAuth::construct(AuthInput::Dict(BTreeMap::new())).unwrap()
 }
 
-fn shared_across_threads<T: Send + Sync + ?Sized>(_value: &T) {}
+fn assert_send_sync<T>()
+where
+    T: Send + Sync + ?Sized,
+{
+}
 
 struct RecordingAdmission {
     refusal: Option<AdmissionError>,
@@ -58,10 +62,15 @@ impl ManagedAdmission for RecordingAdmission {
     }
 }
 
-struct RecordingDestinations {
-    failing: bool,
+#[derive(Default)]
+struct SeedRecords {
     headers: Mutex<Vec<IndexMap<String, String>>>,
     end_users: Mutex<Vec<Option<String>>>,
+}
+
+struct RecordingDestinations {
+    failing: bool,
+    records: Arc<SeedRecords>,
 }
 
 impl TenantDestinations for RecordingDestinations {
@@ -75,8 +84,9 @@ impl TenantDestinations for RecordingDestinations {
                 source: Box::new(TenantExporterFailure),
             });
         }
-        self.headers.lock().unwrap().push(headers.clone());
-        self.end_users
+        self.records.headers.lock().unwrap().push(headers.clone());
+        self.records
+            .end_users
             .lock()
             .unwrap()
             .push(auth.view.end_user_id.clone());
@@ -137,12 +147,11 @@ async fn admission_error_keeps_its_status_and_detail(#[case] status: u16, #[case
 
 #[test]
 fn seed_receives_the_auth_and_safe_headers() {
-    let destinations = Arc::new(RecordingDestinations {
+    let records = Arc::new(SeedRecords::default());
+    let port: Arc<dyn TenantDestinations> = Arc::new(RecordingDestinations {
         failing: false,
-        headers: Mutex::new(Vec::new()),
-        end_users: Mutex::new(Vec::new()),
+        records: Arc::clone(&records),
     });
-    let port: Arc<dyn TenantDestinations> = Arc::clone(&destinations);
     let mut auth = empty_key();
     auth.view.end_user_id = Some(String::from("tenant-user"));
     let mut headers = IndexMap::new();
@@ -152,31 +161,24 @@ fn seed_receives_the_auth_and_safe_headers() {
     );
     headers.insert(String::from("x-tenant"), String::from("acme"));
     port.seed(&auth, &headers).unwrap();
-    assert_eq!(destinations.headers.lock().unwrap().first(), Some(&headers));
+    assert_eq!(records.headers.lock().unwrap().first(), Some(&headers));
     assert_eq!(
-        destinations.end_users.lock().unwrap().as_slice(),
+        records.end_users.lock().unwrap().as_slice(),
         [Some(String::from("tenant-user"))]
     );
 }
 
 #[test]
 fn ports_are_object_safe_and_send_and_sync() {
-    let admission: Arc<dyn ManagedAdmission> = Arc::new(RecordingAdmission { refusal: None });
-    shared_across_threads(admission.as_ref());
-    let destinations: Arc<dyn TenantDestinations> = Arc::new(RecordingDestinations {
-        failing: false,
-        headers: Mutex::new(Vec::new()),
-        end_users: Mutex::new(Vec::new()),
-    });
-    shared_across_threads(destinations.as_ref());
+    assert_send_sync::<dyn ManagedAdmission>();
+    assert_send_sync::<dyn TenantDestinations>();
 }
 
 #[test]
 fn destination_seed_error_shows_only_its_cause() {
     let port: Arc<dyn TenantDestinations> = Arc::new(RecordingDestinations {
         failing: true,
-        headers: Mutex::new(Vec::new()),
-        end_users: Mutex::new(Vec::new()),
+        records: Arc::new(SeedRecords::default()),
     });
     let auth = empty_key();
     let error = port.seed(&auth, &IndexMap::new()).unwrap_err();
