@@ -53,9 +53,9 @@ const BETA_MANIFEST: &str =
 const GAMMA_MANIFEST: &str =
     r#"{"name":"plugin-gamma","source":{"source":"github","repo":"org/gamma","branch":"main"}}"#;
 
-const ALPHA_ITEM: &str = r#"{"id":"plugin-alpha","name":"plugin-alpha","version":"1.0.0","description":"seeded","source":{"source":"github","repo":"org/alpha"},"author":{"name":"Ada","email":"ada@example.com"},"homepage":"https://example.com/alpha","keywords":["one","two"],"category":"dev","domain":"Productivity","namespace":"workflows","enabled":true,"created_at":"2026-03-15T10:00:00+00:00","updated_at":"2026-03-15T10:00:00+00:00"}"#;
-const BETA_ITEM: &str = r#"{"id":"plugin-beta","name":"plugin-beta","version":"1.0.0","description":"seeded","source":{"source":"url","url":"https://example.com/beta.git"},"author":null,"homepage":null,"keywords":null,"category":null,"domain":null,"namespace":null,"enabled":true,"created_at":"2026-03-15T10:01:15.250000+00:00","updated_at":"2026-03-15T10:01:15.250000+00:00"}"#;
-const GAMMA_ITEM: &str = r#"{"id":"plugin-gamma","name":"plugin-gamma","version":"1.0.0","description":"seeded","source":{"source":"github","repo":"org/gamma","branch":"main"},"author":null,"homepage":null,"keywords":null,"category":null,"domain":null,"namespace":null,"enabled":false,"created_at":"2026-03-15T10:02:00+00:00","updated_at":"2026-03-15T10:02:00+00:00"}"#;
+const ALPHA_ITEM: &str = r#"{"id":"id-plugin-alpha","name":"plugin-alpha","version":"1.0.0","description":"seeded","source":{"source":"github","repo":"org/alpha"},"author":{"name":"Ada","email":"ada@example.com"},"homepage":"https://example.com/alpha","keywords":["one","two"],"category":"dev","domain":"Productivity","namespace":"workflows","enabled":true,"created_at":"2026-03-15T10:00:00+00:00","updated_at":"2026-03-15T10:00:00+00:00"}"#;
+const BETA_ITEM: &str = r#"{"id":"id-plugin-beta","name":"plugin-beta","version":"1.0.0","description":"seeded","source":{"source":"url","url":"https://example.com/beta.git"},"author":null,"homepage":null,"keywords":null,"category":null,"domain":null,"namespace":null,"enabled":true,"created_at":"2026-03-15T10:01:15.250000+00:00","updated_at":"2026-03-15T10:01:15.250000+00:00"}"#;
+const GAMMA_ITEM: &str = r#"{"id":"id-plugin-gamma","name":"plugin-gamma","version":"1.0.0","description":"seeded","source":{"source":"github","repo":"org/gamma","branch":"main"},"author":null,"homepage":null,"keywords":null,"category":null,"domain":null,"namespace":null,"enabled":false,"created_at":"2026-03-15T10:02:00+00:00","updated_at":"2026-03-15T10:02:00+00:00"}"#;
 
 const FULL_GET_MANIFEST: &str = r#"{"name":"plugin-get","source":{"source":"github","repo":"org/get"},"author":{"name":"Ada","email":"ada@example.com"},"homepage":"https://example.com/get","keywords":["one","two"],"category":"dev","domain":"Productivity","namespace":"workflows"}"#;
 const RAW_GET_MANIFEST: &str = r#"{"source":{"source":"github","repo":"org/raw","custom":1},"author":{"name":"Ada","unknown":true},"homepage":123,"keywords":"raw","category":["a"]}"#;
@@ -63,11 +63,11 @@ const NULL_FIELDS_MANIFEST: &str = r#"{"source":{"source":"github","repo":"org/n
 const NO_EMAIL_MANIFEST: &str = r#"{"author":{"name":"Ada","extra":"ignored"}}"#;
 const NULL_EMAIL_MANIFEST: &str = r#"{"author":{"name":"Ada","email":null}}"#;
 
-const FULL_GET_BODY: &str = r#"{"id":"plugin-get","name":"plugin-get","version":"1.0.0","description":"seeded","source":{"source":"github","repo":"org/get"},"author":{"name":"Ada","email":"ada@example.com"},"homepage":"https://example.com/get","keywords":["one","two"],"category":"dev","enabled":true,"created_at":"2026-03-15T10:03:00+00:00","updated_at":"2026-03-15T10:03:00+00:00","created_by":"alice"}"#;
-const MINIMAL_GET_BODY: &str = r#"{"id":"plugin-get","name":"plugin-get","version":"1.0.0","description":"seeded","source":null,"author":null,"homepage":null,"keywords":null,"category":null,"enabled":true,"created_at":"2026-03-15T10:03:00+00:00","updated_at":"2026-03-15T10:03:00+00:00","created_by":"alice"}"#;
-const RAW_GET_BODY: &str = r#"{"id":"plugin-get","name":"plugin-get","version":"1.0.0","description":"seeded","source":{"source":"github","repo":"org/raw","custom":1},"author":{"name":"Ada","unknown":true},"homepage":123,"keywords":"raw","category":["a"],"enabled":true,"created_at":"2026-03-15T10:03:00+00:00","updated_at":"2026-03-15T10:03:00+00:00","created_by":"alice"}"#;
+const FULL_GET_BODY: &str = r#"{"id":"id-plugin-get","name":"plugin-get","version":"1.0.0","description":"seeded","source":{"source":"github","repo":"org/get"},"author":{"name":"Ada","email":"ada@example.com"},"homepage":"https://example.com/get","keywords":["one","two"],"category":"dev","enabled":true,"created_at":"2026-03-15T10:03:00+00:00","updated_at":"2026-03-15T10:03:00+00:00","created_by":"alice"}"#;
+const MINIMAL_GET_BODY: &str = r#"{"id":"id-plugin-get","name":"plugin-get","version":"1.0.0","description":"seeded","source":null,"author":null,"homepage":null,"keywords":null,"category":null,"enabled":true,"created_at":"2026-03-15T10:03:00+00:00","updated_at":"2026-03-15T10:03:00+00:00","created_by":"alice"}"#;
+const RAW_GET_BODY: &str = r#"{"id":"id-plugin-get","name":"plugin-get","version":"1.0.0","description":"seeded","source":{"source":"github","repo":"org/raw","custom":1},"author":{"name":"Ada","unknown":true},"homepage":123,"keywords":"raw","category":["a"],"enabled":true,"created_at":"2026-03-15T10:03:00+00:00","updated_at":"2026-03-15T10:03:00+00:00","created_by":"alice"}"#;
 
-const PRIVATE_DETAIL: &str = r#"{"id":"plugin-private-plugin","name":"private-plugin","version":"1.0.0","description":"seeded","source":null,"author":null,"homepage":null,"keywords":null,"category":null,"enabled":false,"created_at":"2026-03-15T11:01:00+00:00","updated_at":"2026-03-15T11:01:00+00:00","created_by":"alice"}"#;
+const PRIVATE_DETAIL: &str = r#"{"id":"id-private-plugin","name":"private-plugin","version":"1.0.0","description":"seeded","source":null,"author":null,"homepage":null,"keywords":null,"category":null,"enabled":false,"created_at":"2026-03-15T11:01:00+00:00","updated_at":"2026-03-15T11:01:00+00:00","created_by":"alice"}"#;
 const NOT_GRANTED_DETAIL: &str =
     r#"{"detail":{"error":"Plugin 'private-plugin' is not granted to this key"}}"#;
 const NOT_FOUND_DETAIL: &str = r#"{"detail":{"error":"Plugin 'plugin-absent' not found"}}"#;
@@ -175,7 +175,7 @@ fn beta_created() -> DateTime<Utc> {
 
 fn stored_row(name: &str, enabled: bool, created: DateTime<Utc>) -> StoredPluginRow {
     StoredPluginRow {
-        id: format!("plugin-{name}"),
+        id: format!("id-{name}"),
         name: name.to_owned(),
         version: Some("1.0.0".to_owned()),
         description: Some("seeded".to_owned()),
@@ -211,7 +211,7 @@ fn list_body(items: &[&str]) -> String {
 
 fn default_item(source: &str, author: &str) -> String {
     format!(
-        r#"{{"id":"plugin-default","name":"plugin-default","version":"1.0.0","description":"seeded","source":{source},"author":{author},"homepage":null,"keywords":null,"category":null,"domain":null,"namespace":null,"enabled":true,"created_at":"2026-03-15T12:02:00+00:00","updated_at":"2026-03-15T12:02:00+00:00"}}"#
+        r#"{{"id":"id-plugin-default","name":"plugin-default","version":"1.0.0","description":"seeded","source":{source},"author":{author},"homepage":null,"keywords":null,"category":null,"domain":null,"namespace":null,"enabled":true,"created_at":"2026-03-15T12:02:00+00:00","updated_at":"2026-03-15T12:02:00+00:00"}}"#
     )
 }
 
