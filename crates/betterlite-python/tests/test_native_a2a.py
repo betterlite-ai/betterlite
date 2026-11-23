@@ -179,6 +179,16 @@ def send_call(
     return json.dumps(call)
 
 
+async def direct_card(settings: str) -> str:
+    fetched = _native.get_agent_card(settings)
+    return await fetched
+
+
+async def direct_send(call: str) -> str:
+    sent = _native.send_message_direct(call)
+    return await sent
+
+
 async def drain(stream: _native.NativeA2aStream) -> list[str]:
     chunks: list[str] = []
     while True:
@@ -266,7 +276,7 @@ def test_direct_sets_agent_headers() -> None:
             agent_id=AGENT_ID,
             agent_extra_headers=agent_headers,
         )
-        text = asyncio.run(_native.send_message_direct(call))
+        text = asyncio.run(direct_send(call))
     assert text
     posts = [entry for entry in recorder.calls if entry["method"] == "POST"]
     assert len(posts) == SINGLE
@@ -320,7 +330,7 @@ def test_get_card_returns_card() -> None:
     extra_headers: dict[str, JsonValue] = {EXTRA_HEADER: EXTRA_VALUE}
     with AgentServer(recorder) as server:
         settings = settings_of(server, extra_headers=extra_headers)
-        text = asyncio.run(_native.get_agent_card(settings))
+        text = asyncio.run(direct_card(settings))
     card = TypeAdapter(CardView).validate_json(text)
     unstructured = TypeAdapter(dict[str, JsonValue]).validate_json(text)
     assert card["name"] == AGENT_NAME
@@ -336,7 +346,7 @@ def test_get_card_returns_card() -> None:
 def test_get_card_probes_legacy() -> None:
     recorder = Recorder(legacy_card=True)
     with AgentServer(recorder) as server:
-        text = asyncio.run(_native.get_agent_card(settings_of(server)))
+        text = asyncio.run(direct_card(settings_of(server)))
     assert TypeAdapter(CardView).validate_json(text)["name"] == AGENT_NAME
     paths = [entry["path"] for entry in recorder.calls]
     assert paths == [CARD_PATH, LEGACY_CARD_PATH]
@@ -347,7 +357,7 @@ def test_get_card_relative_path() -> None:
     recorder = Recorder(legacy_card=True)
     with AgentServer(recorder) as server:
         settings = settings_of(server, relative_card_path=LEGACY_CARD_PATH)
-        asyncio.run(_native.get_agent_card(settings))
+        asyncio.run(direct_card(settings))
     paths = [entry["path"] for entry in recorder.calls]
     assert paths == [LEGACY_CARD_PATH]
 
@@ -422,7 +432,7 @@ def test_errors_report_connection() -> None:
 def test_errors_missing_request() -> None:
     call: dict[str, JsonValue] = {"api_base": "http://127.0.0.1:1"}
     with pytest.raises(_native.NativeA2aError) as raised:
-        asyncio.run(_native.send_message_direct(json.dumps(call)))
+        asyncio.run(direct_send(json.dumps(call)))
     payload = TypeAdapter(ErrorView).validate_json(str(raised.value))
     assert payload["type"] == "ValueError"
     assert payload["message"] == "request is required"
@@ -432,7 +442,7 @@ def test_errors_missing_request() -> None:
 def test_errors_missing_client() -> None:
     call: dict[str, JsonValue] = {"request": request_of(REQUEST_ID)}
     with pytest.raises(_native.NativeA2aError) as raised:
-        asyncio.run(_native.send_message_direct(json.dumps(call)))
+        asyncio.run(direct_send(json.dumps(call)))
     payload = TypeAdapter(ErrorView).validate_json(str(raised.value))
     assert payload["type"] == "ValueError"
     assert payload["message"] == MISSING_CLIENT
@@ -450,7 +460,7 @@ def test_errors_recover_localhost() -> None:
     recorder = Recorder(card_url=LOCALHOST_URL)
     with AgentServer(recorder) as server:
         call = send_call(api_base=server.url)
-        text = asyncio.run(_native.send_message_direct(call))
+        text = asyncio.run(direct_send(call))
     methods = [entry["method"] for entry in recorder.calls]
     assert methods == ["GET", "POST"]
     body = TypeAdapter(SendView).validate_json(text)
