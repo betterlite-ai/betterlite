@@ -144,6 +144,14 @@ impl TurnCase {
         }
     }
 
+    // The public record one rate key answers with, as the provider/model spelling the lookup receives.
+    pub(super) fn add_price(&mut self, key: &str, record: &str) {
+        self.environment.prices.prices.insert(
+            key.to_owned(),
+            serde_json::from_str::<PriceRecord>(record).unwrap(),
+        );
+    }
+
     pub(super) async fn enqueue(&self, payload: &str) {
         let pricing = self.environment.pricing();
         let environment = TurnEnvironment {
@@ -151,6 +159,16 @@ impl TurnCase {
             endpoints: &self.environment.endpoints,
         };
         enqueue_autorouter_turn(Some(&self.queues()), &environment, payload.as_bytes()).await;
+    }
+
+    // The same enqueue with no router catalog in scope, which the source's get_llm_router leaves None.
+    pub(super) async fn enqueue_without_queues(&self, payload: &str) {
+        let pricing = self.environment.pricing();
+        let environment = TurnEnvironment {
+            pricing: &pricing,
+            endpoints: &self.environment.endpoints,
+        };
+        enqueue_autorouter_turn(None, &environment, payload.as_bytes()).await;
     }
 
     pub(super) async fn enqueue_result(&self, payload: &str) -> Result<(), TurnEnqueueError> {

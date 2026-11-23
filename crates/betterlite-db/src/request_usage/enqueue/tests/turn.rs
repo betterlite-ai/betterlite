@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use crate::autorouter_turn_sql::transaction::TurnTime;
 use crate::request_usage::turn_enqueue::TurnEnqueueError;
 
-use super::support::{TurnCase, turn_metadata, turn_payload};
+use super::support::{TurnCase, captured, turn_metadata, turn_payload};
 
 #[tokio::test]
 async fn enqueues_one_turn_for_a_routed_request() {
@@ -48,10 +48,56 @@ async fn skips_a_turn_that_names_no_routing_decision() {
     ];
     for metadata in cases {
         let case = TurnCase::new();
-        case.enqueue(&turn_payload(&metadata)).await;
+        case.enqueue_result(&turn_payload(&metadata)).await.unwrap();
         assert!(case.turns().is_empty());
         assert!(case.baseline_records().is_empty());
     }
+}
+
+#[tokio::test]
+async fn a_request_with_no_router_catalog_enqueues_nothing() {
+    let case = TurnCase::new();
+    let capture = captured("sk-capture", "sess-1");
+    case.enqueue_without_queues(&turn_payload(&turn_metadata(Some(&capture))))
+        .await;
+    assert!(case.turns().is_empty());
+    assert!(case.baseline_records().is_empty());
+    assert!(!case.flushed().await);
+}
+
+#[tokio::test]
+async fn a_capture_without_a_routing_decision_publishes_nothing() {
+    let capture = captured("sk-capture", "sess-1");
+    let quoted = serde_json::to_string(&capture).unwrap();
+    let cases = [
+        format!(r#"{{"autorouter_baseline_observation":{quoted}}}"#),
+        format!(r#"{{"routing_decision":{{}},"autorouter_baseline_observation":{quoted}}}"#),
+    ];
+    for metadata in cases {
+        let case = TurnCase::new();
+        case.enqueue(&turn_payload(&metadata)).await;
+        assert!(case.turns().is_empty());
+        assert!(case.baseline_records().is_empty());
+        assert!(!case.flushed().await);
+    }
+}
+
+#[tokio::test]
+async fn prices_a_routed_turn_with_the_rates_of_both_models() {
+    let mut case = TurnCase::new();
+    case.add_price(
+        "/anthropic/claude-opus-5",
+        r#"{"input_cost_per_token": 0.5, "output_cost_per_token": 2.0}"#,
+    );
+    case.add_price(
+        "anthropic/anthropic/claude-sonnet-5",
+        r#"{"input_cost_per_token": 0.1, "output_cost_per_token": 0.4}"#,
+    );
+    let metadata = r#"{"routing_decision":{"router_model_name":"auto-router","savings_baseline_model":"anthropic/claude-opus-5"},"usage_object":{"prompt_tokens":10,"completion_tokens":4,"total_tokens":14}}"#;
+    case.enqueue(&turn_payload(metadata)).await;
+    let turns = case.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].saved_spend, Decimal::new(104, 1));
 }
 
 #[tokio::test]

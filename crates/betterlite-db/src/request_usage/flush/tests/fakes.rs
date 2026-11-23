@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::future::{Future, ready};
+use std::future::{Future, pending, ready};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -79,6 +79,7 @@ pub(super) struct FakeLogWriter {
     failures: Mutex<VecDeque<ScriptedFailure>>,
     rows: Mutex<Vec<SpendLogRow>>,
     calls: AtomicUsize,
+    stalled: AtomicBool,
 }
 
 impl FakeLogWriter {
@@ -88,7 +89,13 @@ impl FakeLogWriter {
             failures: Mutex::new(VecDeque::new()),
             rows: Mutex::new(Vec::new()),
             calls: AtomicUsize::new(0),
+            stalled: AtomicBool::new(false),
         }
+    }
+
+    // A write that never settles, so a test can drop the pass at its await.
+    pub(super) fn stall(&self) {
+        self.stalled.store(true, Ordering::SeqCst);
     }
 
     pub(super) fn fail_next(&self, failure: ScriptedFailure) {
@@ -120,6 +127,9 @@ impl SpendLogsWriter for FakeLogWriter {
         Box::pin(async move {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.trace.record("log");
+            if self.stalled.load(Ordering::SeqCst) {
+                pending::<()>().await;
+            }
             let failure = self
                 .failures
                 .lock()

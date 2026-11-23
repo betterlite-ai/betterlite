@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::request_usage::flush::{SpendLogsJobError, total_queued_spend_transactions};
 use crate::shadow_tables::rows::FunnelStage;
 use crate::spend_log_storage::rows::QueuePosition;
@@ -142,6 +144,26 @@ async fn a_cancelled_pass_requeues_the_popped_rows_once() {
     assert_eq!(harness.logs.len(), 1);
     assert_eq!(harness.log_writer.calls(), 0);
     assert!(!harness.trace.ran("guardrail"));
+}
+
+#[tokio::test]
+async fn a_dropped_write_returns_the_popped_rows_to_the_queue_head() {
+    let harness = Harness::new();
+    harness.log_writer.stall();
+    harness
+        .logs
+        .enqueue(&[guardrail_row("r1")], QueuePosition::Tail);
+    let job = harness.job();
+    let mut write = Box::pin(job.write_popped_logs());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), write.as_mut())
+            .await
+            .is_err()
+    );
+    assert_eq!(harness.logs.len(), 0);
+    assert_eq!(harness.log_writer.calls(), 1);
+    drop(write);
+    assert_eq!(harness.logs.len(), 1);
 }
 
 #[tokio::test]

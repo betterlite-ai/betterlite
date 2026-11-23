@@ -205,6 +205,28 @@ async fn a_capture_with_falsey_evidence_fields_is_published() {
 }
 
 #[tokio::test]
+async fn a_capture_prices_the_routing_decisions_classifier_cost() {
+    let case = TurnCase::new();
+    let capture = captured("sk-capture", "sess-1");
+    let metadata = metadata_object(r#"{"routing_decision":{"classifier_cost":0.25}}"#);
+    let daily = daily_payload("{}");
+    let input = BaselineCaptureInput {
+        serialized: Some(&capture),
+        api_key: Some("sk-capture"),
+        session_id: Some("sess-1"),
+        request_id: Some("req-log"),
+        spend: Some(Decimal::ONE),
+        turn: None,
+        metadata: &metadata,
+    };
+    let outcome = case.enqueue_baseline(&daily, &input).await.unwrap();
+    assert_eq!(outcome, CaptureOutcome::Captured);
+    let records = case.baseline_records();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].pricing.classifier_cost, Decimal::new(25, 2));
+}
+
+#[tokio::test]
 async fn a_capture_naming_another_log_publishes_nothing() {
     let case = TurnCase::new();
     let capture = captured("sk-other", "sess-1");
