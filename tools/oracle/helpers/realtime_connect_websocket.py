@@ -22,18 +22,9 @@ OPENAI_API_BASE = "https://api.openai.com/"
 XAI_API_BASE = "https://api.x.ai/v1"
 PROVIDER_TAGS = {"GeminiRealtimeConfig": "gemini", "MetaRealtimeConfig": "meta"}
 AWS_FIELDS = (
-    "aws_region_name",
-    "aws_access_key_id",
-    "aws_secret_access_key",
-    "aws_session_token",
-    "aws_role_name",
-    "aws_session_name",
-    "aws_profile_name",
-    "aws_web_identity_token",
-    "aws_sts_endpoint",
-    "aws_bedrock_runtime_endpoint",
-    "aws_external_id",
-    "aws_session_tags",
+    "aws_region_name", "aws_access_key_id", "aws_secret_access_key", "aws_session_token",
+    "aws_role_name", "aws_session_name", "aws_profile_name", "aws_web_identity_token",
+    "aws_sts_endpoint", "aws_bedrock_runtime_endpoint", "aws_external_id", "aws_session_tags",
 )
 TEXT = TypeAdapter(str | None)
 OBJECT = TypeAdapter(dict[str, JsonValue] | None)
@@ -44,7 +35,7 @@ class Scope(TypedDict):
     headers: list[tuple[bytes, bytes]]
 
 
-# the oracle's client sends no OpenAI-Beta header, so LiteLLM's own negotiation sees a headerless scope
+# the oracle's client sends no OpenAI-Beta header, so the scope carries none
 class HeaderlessClient:
     @property
     def scope(self) -> Scope:
@@ -190,9 +181,8 @@ def azure_branch(case: Case) -> dict[str, JsonValue]:
     api_key = first_text([
         case.api_key, litellm.api_key, litellm.openai_key, get_secret_str("AZURE_API_KEY")])
     version = first_text([
-        text_field(case.params, "api_version"), text_field(case.params, "generic_api_version")])
-    if version is None:
-        version = AZURE_DEFAULT_API_VERSION
+        text_field(case.params, "api_version"), text_field(case.params, "generic_api_version"),
+        AZURE_DEFAULT_API_VERSION])
     ad_token = None
     if api_key is None:
         ad_params = TypeAdapter(GenericLiteLLMParams).validate_python(case.params)
@@ -294,11 +284,8 @@ def run_scenario(scenario: Scenario) -> JsonValue:
         api_key=text_field(params, "api_key"),
     )
     query = scenario.get("query_params")
-    if query is not None:
-        copied = dict(query)
-        if "model" in copied:
-            copied["model"] = model
-        query = copied
+    if query is not None and "model" in query:
+        query = {**query, "model": model}
     case = Case(
         model=model, provider=provider, api_base=dynamic_api_base, api_key=dynamic_api_key,
         params=params, query=query, tokens=tokens, projects=projects,
